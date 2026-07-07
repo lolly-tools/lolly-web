@@ -1,0 +1,387 @@
+/* ─── Saved section (gallery page) ─────────────────────────────────────── */
+
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+  margin: 0 0 12px;
+}
+.small{font-size:13px}
+
+/* ─── Storage bar (used inline on the profile page) ─────────────────────── */
+
+.storage-bar-wrap {
+  display: inline-block;
+  width: 80px;
+  height: 6px;
+  background: hsl(var(--border));
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.storage-bar-fill {
+  display: block;
+  height: 100%;
+  background: hsl(var(--muted-foreground));
+  border-radius: 3px;
+  min-width: 2px;
+}
+
+.storage-subsection {
+  margin-top: 1.25em;
+  border-top: 1px solid hsl(var(--border));
+  padding-top: 1em;
+}
+.storage-subsection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 0.5em;
+}
+.storage-count {
+  display: inline-block;
+  background: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+  border-radius: 99px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 4px;
+}
+.storage-hint {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.storage-empty {
+  list-style: none;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  opacity: 0.6;
+  padding: 4px 0;
+}
+.storage-hint-text {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  opacity: 0.6;
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+.feature-hint-text {margin-bottom:2em;}
+/* .session-size + the .saved-* session-row component moved to parts/saved-list.css
+   (always-loaded via app.css) so the gallery history modal — which the landing
+   renders without loading storage.css — gets them too. */
+.btn-link-danger {
+  background: hsl(0 72% 51% / 0.1);
+  border: 1px solid hsl(0 72% 51% / 0.35);
+  color: hsl(0 72% 51%);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+.btn-link-danger:hover { background: hsl(0 72% 51% / 0.18); border-color: hsl(0 72% 51% / 0.55); }
+.btn-link-danger:disabled,
+.userimg-delete:disabled{ opacity: 0.4; cursor: default; }
+
+/* My images — personal device-image library */
+.userimg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.userimg-item {
+  position: relative;
+  aspect-ratio: 1;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: hsl(var(--muted));
+}
+.userimg-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+}
+.userimg-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.15s ease;
+}
+/* SVGs (logos/icons) are shown whole, not cropped to fill. */
+.userimg-thumb.is-vector { object-fit: contain; padding: 6px; }
+.userimg-view:hover .userimg-thumb { transform: scale(1.05); }
+.userimg-delete {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: hsl(var(--background) / 0.85);
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.userimg-item:hover .userimg-delete,
+.userimg-delete:focus-visible { opacity: 1; }
+.userimg-delete:hover { color: hsl(var(--destructive)); background: hsl(var(--accent)); }
+
+/* "Add" tile — sits in the grid as the last cell (or the only cell when empty),
+   matching the thumb cells in size but dashed to read as an upload affordance. */
+.userimg-add {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.4);
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.userimg-add:hover {
+  border-color: hsl(var(--ring) / 0.6);
+  color: hsl(var(--foreground));
+  background: hsl(var(--accent));
+}
+.userimg-add:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.userimg-add:disabled,
+.btn-danger:disabled{ opacity: 0.5; cursor: default; }
+.userimg-add-icon { font-size: 20px; line-height: 1; font-weight: 300; }
+.userimg-add-text { font-size: 10px; letter-spacing: 0.02em; }
+
+/* My images — full-size preview lightbox */
+.userimg-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6vh 6vw;
+  background: rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+.userimg-lightbox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  max-height: 100%;
+}
+.userimg-lightbox-img {
+  max-width: 100%;
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: var(--radius);
+  background: hsl(var(--muted));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+/* viewBox-only SVGs report no intrinsic size — in an <img> they'd fall back to
+   ~300×150 and look tiny. Give vectors a definite, bounded box and let
+   object-fit scale them up to fit (preserving the viewBox aspect, no distortion
+   at any size), on a card so transparent art stays visible. */
+.userimg-lightbox-img.is-vector {
+  width: min(86vw, 680px);
+  height: min(78vh, 520px);
+  object-fit: contain;
+  padding: 28px;
+  background: hsl(var(--card));
+}
+.userimg-lightbox-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: #fff;
+  font-size: 13px;
+}
+.userimg-lightbox-dims {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.userimg-lightbox-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  color: #111;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.userimg-lightbox-close:hover { background: hsl(var(--accent)); }
+
+.btn-danger {
+  background: hsl(0 72% 51%);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-danger:hover { background: hsl(0 72% 42%); }
+
+/* ─── Clear-data confirmation dialog ────────────────────────────────────── */
+
+.clear-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: hsl(0 0% 0% / 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.clear-dialog {
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 28px 32px;
+  max-width: 360px;
+  width: 90%;
+  box-shadow: 0 8px 32px hsl(0 0% 0% / 0.2);
+}
+
+.clear-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.clear-dialog p {
+  margin: 0 0 24px;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+
+.clear-dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.clear-dialog-actions .btn {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid hsl(var(--border));
+  background: transparent;
+  color: hsl(var(--foreground));
+  text-align: center;
+}
+
+.clear-dialog-actions .btn:hover { background: hsl(var(--muted)); }
+.clear-dialog-actions .btn.btn-danger { border-color: transparent; }
+.clear-dialog-actions .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* "Type <word> to confirm" gate on the destructive clear-all dialog. */
+.clear-confirm { display: flex; flex-direction: column; gap: 6px; margin: -8px 0 20px; }
+.clear-confirm-prompt { font-size: 13px; color: hsl(var(--muted-foreground)); }
+.clear-confirm-prompt strong { color: hsl(var(--foreground)); font-weight: 700; letter-spacing: .02em; }
+.clear-confirm-input {
+  font: inherit; font-size: 14px; padding: 9px 12px;
+  border: 1px solid hsl(var(--input)); border-radius: 8px;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.clear-confirm-input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+
+/* "Export my data & render everything" — the headline archive action, so it's a big,
+   celebratory full-width CTA that stands clearly apart from the smaller export/import row
+   above it (it also earns a victory fanfare when it fires). */
+.storage-hoard-btn {
+  display: block; width: 100%; margin-top: 16px; text-align: center;
+  padding: 15px 22px; font-size: 16px; font-weight: 650; line-height: 1.25;
+  border-radius: 12px; border-color: hsl(var(--primary) / 0.55);
+  box-shadow: inset 0 1px #fff3, 0 2px 8px hsl(var(--primary) / 0.14);
+}
+.storage-hoard-btn:hover { background: hsl(var(--primary) / 0.08); border-color: hsl(var(--primary)); }
+.storage-hoard-hint { margin: 6px 2px 0; font-size: 12px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.storage-hoard-hint strong { color: hsl(var(--foreground)); font-weight: 600; }
+
+/* The confirm gate reuses the clear-all dialog's layout, but this action is celebratory
+   (a big backup, nothing destroyed) — so the primary "go" button uses the accent colour
+   instead of danger red. Same type-a-word speed-bump, opposite mood. */
+.clear-dialog-actions .btn.btn-go {
+  border-color: transparent; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-weight: 600;
+}
+.clear-dialog-actions .btn.btn-go:hover:not(:disabled) { background: hsl(var(--primary) / 0.9); }
+.clear-dialog-actions .btn.btn-go:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Dim the progress toast while the "keep this tab active?" choice sits in front of it. */
+.pro-toast.is-dimmed { opacity: 0.35; pointer-events: none; transition: opacity 0.15s; }
+
+/* The .saved-* session-row component moved to parts/saved-list.css (always-loaded
+   via app.css) — see the note by .session-size above. */
+
+/* ─── Segmented control ─────────────────────────────────────────────────── */
+
+.segmented-control {
+  display: inline-flex;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: hsl(var(--muted));
+}
+
+.segmented-btn {
+  flex: 1;
+  padding: 6px 16px;
+  border: none;
+  border-right: 1px solid hsl(var(--border));
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  text-transform:uppercase;
+}
+
+.segmented-btn:last-child {
+  border-right: none;
+}
+
+.segmented-btn:hover:not([aria-pressed="true"]) {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.segmented-btn[aria-pressed="true"] {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-weight: 600;
+}
+

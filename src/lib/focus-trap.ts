@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: MPL-2.0
+/**
+ * Keyboard focus containment for a modal overlay that is a `<div role="dialog">`
+ * (NOT a native `<dialog>`, which the browser traps for free). Two guards, matching
+ * the belt-and-braces pattern the Export popup already ships (views/tool.ts):
+ *
+ *   1. INERT the background — walking up from the overlay, every sibling at each
+ *      ancestor level is marked `inert`, so pointer events and the accessibility
+ *      tree skip everything behind the modal, wherever the overlay is mounted
+ *      (document.body or a view container).
+ *   2. WRAP Tab/Shift+Tab within the overlay's focusables — inert alone can still
+ *      let Tab graze the browser chrome between the last and first stop.
+ *
+ * Callers keep their own Escape/close + focus-restore (most dialogs already have it);
+ * pass `onEscape` only if the dialog has none. `release()` restores inert + listeners.
+ */
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+  'textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+
+export interface FocusTrap { release(): void; }
+
+export interface FocusTrapOptions {
+  /** Element (or a getter) to focus on open. Omit to leave focus where it is. */
+  initialFocus?: HTMLElement | null | (() => HTMLElement | null);
+  /** Only pass this if the overlay does NOT already handle Escape itself. */
+  onEscape?: () => void;
+}
+
+export function trapFocus(overlay: HTMLElement, opts: FocusTrapOptions = {}): FocusTrap {
+  const visible = (el: HTMLElement): boolean => el.offsetParent !== null || el === document.activeElement;
+  const focusables = (): HTMLElement[] =>
+    // Exclude roving tabindex=-1 stops (e.g. a menuitemradio group where only the checked
+    // one is tab-reachable): they're reachable via JS/arrow-keys but NOT via Tab, so they
+    // must not define the wrap boundary. (The element selectors above still match them via
+    // `button`/`input`; el.tabIndex reflects the effective, roving value.)
+    [...overlay.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => visible(el) && el.tabIndex !== -1);
+
+  // 1. Inert everything outside the overlay's branch (siblings up the ancestor chain).
+  //    Skip already-inert nodes so a nested trap doesn't clobber an outer one on release.
+  const inerted: HTMLElement[] = [];
+  let node: HTMLElement | null = overlay;
+  while (node && node.parentElement && node !== document.body) {
+    for (const sib of node.parentElement.children) {
+      const el = sib as HTMLElement;
+      if (el !== node && !el.inert) { el.inert = true; inerted.push(el); }
+    }
+    node = node.parentElement;
+  }
+
+  // 2. Tab wrap (+ optional Escape).
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && opts.onEscape) { e.preventDefault(); opts.onEscape(); return; }
+    if (e.key !== 'Tab') return;
+    const active = document.activeElement as HTMLElement | null;
+    // Only wrap when focus is inside THIS overlay — so a nested modal (e.g. the
+    // webcam over the picker) is handled solely by its own trap, and this outer
+    // trap stays quiet. The inert background already stops Tab escaping the modal.
+    if (!active || !overlay.contains(active)) return;
+    const f = focusables();
+    if (!f.length) { e.preventDefault(); return; }
+    const first = f[0]!, last = f[f.length - 1]!;
+    if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+  };
+  document.addEventListener('keydown', onKey);
+
+  const target = typeof opts.initialFocus === 'function' ? opts.initialFocus() : opts.initialFocus;
+  target?.focus();
+
+  let released = false;
+  return {
+    release(): void {
+      if (released) return;
+      released = true;
+      document.removeEventListener('keydown', onKey);
+      for (const el of inerted) el.inert = false;
+    },
+  };
+}

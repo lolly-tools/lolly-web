@@ -1,0 +1,455 @@
+/* ─── Dashboard view (#/d) — the read-only instrument panel ──────────────────
+   Layout + the pieces unique to this view (device hero, palette ink-ribbon,
+   storage glance, capability disclosure). The card/section chrome (.plat-*,
+   .cap-feat) and the catalogue tiles (.cat-*) come from platform.css /
+   components.css, which this view also loads. */
+
+.dashboard-view { overflow-y: auto; }
+.dashboard-view .dash-layout {
+  width: 100%;
+  max-width: 100vw;      /* full-bleed — the instrument panel earns the whole screen */
+  margin: 0 auto;
+  padding: 3.25rem clamp(1rem, 3.2vw, 3rem) 5rem; /* top clears the fixed "Tools" pill; sides scale with width */
+}
+
+/* Mono is the instrument typeface here — labels, readouts, hex. */
+.dashboard-view .dash-dev-stat-label,
+.dashboard-view .dash-dev-stat-value.is-mono,
+.dashboard-view .dash-readout,
+.dashboard-view .dash-readout-hex { font-family: 'SUSE Mono', ui-monospace, monospace; }
+
+/* ── Entrance cascade — one ladder over the back-link, header and each section.
+   armViewEnter() stamps --enter-i on every .tools-home/.plat-header/.plat-section
+   (document order) and toggles .is-entering; the CSS owns the motion. Gated on
+   no-preference so reduced motion renders instantly. Mirrors platform.css. */
+@media (prefers-reduced-motion: no-preference) {
+  .dashboard-view.is-entering .tools-home,
+  .dashboard-view.is-entering .plat-header,
+  .dashboard-view.is-entering .plat-section,
+  .dashboard-view.is-entering .dash-foot {
+    animation: card-in var(--enter-dur) var(--enter-ease) both;
+    animation-delay: calc(var(--enter-i, 0) * 0.05s);
+  }
+}
+
+/* Non-collapsible sections carry their own padding (they hold content directly,
+   unlike the <details> reference panels, which pad via summary/body). */
+.dash-section { padding: 1.4rem; }
+.dash-section.dash-device { padding-bottom: 1.5rem; }
+
+.dash-sec-head { margin: 0 0 1.05rem; }
+.dash-sec-title { margin: 0; font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
+.dash-sec-desc {
+  margin: .35rem 0 0; max-width: 78ch;
+  color: hsl(var(--muted-foreground)); font-size: .84rem; line-height: 1.55;
+}
+.dash-sec-desc strong { color: hsl(var(--foreground)); }
+.dash-sec-desc a, .dash-foot a, .dash-store-note a, .dash-store-headline a { color: hsl(var(--primary)); }
+
+/* Rows of side-by-side cards; sections inside drop their own bottom margin so the
+   grid gap is the only gap. */
+.dash-row { display: grid; gap: 1.1rem; margin: 0 0 1.1rem; align-items: start; }
+.dash-row--2 { grid-template-columns: 1fr 1fr; }
+.dash-row > .plat-section { margin: 0; }
+@media (max-width: 780px) { .dash-row--2 { grid-template-columns: 1fr; } }
+
+/* ── Collapsible primary sections (device · palette · catalogue · capabilities) ──
+   Each folds the whole card down to its title bar, reusing the reference-panel
+   <details> chrome (.plat-section-summary / .plat-section-body handle the chevron +
+   padding). The mount plays a soft hydraulic cue on toggle (data-dash-collapse). */
+.dash-collapse { margin: 0 0 1.1rem; }
+.dash-row .dash-collapse { margin: 0; }        /* the row's gap is the only gap */
+/* A prominent, sentence-case title (these anchor the page — not the tiny uppercase
+   reference-panel labels at the foot). */
+.dash-collapse-summary .plat-section-title {
+  font-size: .95rem; font-weight: 700; letter-spacing: -.01em;
+  text-transform: none; color: hsl(var(--foreground));
+}
+.dash-collapse-summary .plat-section-chev { width: 17px; height: 17px; }
+/* The section blurb sits under the title inside the body, spaced from the content. */
+.dash-collapse-desc { margin-top: 0; margin-bottom: 1rem; }
+/* A collapsed card reads as a quiet, closed bar. */
+.dash-collapse:not([open]) .dash-collapse-summary { opacity: .82; }
+.dash-collapse:not([open]) .dash-collapse-summary:hover { opacity: 1; }
+
+/* ── Bento — the instrument tiles fan across the full width and grow to fill each row.
+   Flex-wrap + grow (not a fixed column grid) means the last row's tiles simply widen to
+   close any remainder, so there are never stranded empty cells — the old grid left a hole
+   whenever the tile count didn't divide evenly across its columns. */
+.dash-bento { display: flex; flex-wrap: wrap; gap: 1.1rem; margin: 0 0 1.1rem; }
+.dash-bento > .plat-section { margin: 0; flex: 1 1 340px; min-width: 0; }
+/* Recent / Exports tiles start [hidden] until their data loads. The card `display:flex`
+   below outranks the UA [hidden] rule, so without this they'd reserve an empty tile-sized
+   gap in the flow — force them out until unhidden. */
+.dash-bento > .plat-section[hidden] { display: none; }
+/* The instrument tiles read as cards — a hair more presence than a bare section. */
+.dash-bento .dash-card { display: flex; flex-direction: column; box-shadow: 0 1px 3px hsl(0 0% 0% / 0.05); }
+.dash-bento .dash-card .dash-sec-head { margin-bottom: 0.7rem; }
+
+
+/* ── Type-in-motion tile. */
+.dash-typedemo .dash-sec-head { margin-bottom: 0.8rem; }
+/* The tile is a query container so its specimen can go two-up when it's wide enough
+   (see the @container rule in type-demo.css). On desktop the showcase claims its own
+   full-width bento row, which gives the mono + SUSE faces room to sit side by side. */
+.dash-typedemo { container-type: inline-size; }
+@media (min-width: 781px) { .dash-bento > .dash-typedemo { flex-basis: 100%; } }
+
+/* Type facts — the compact figures under the live specimen (they carry what the old
+   Typography reference panel showed: variable/static, weights, styles, source). */
+.dash-type-facts {
+  list-style: none; margin: .9rem 0 0; padding: .9rem 0 0;
+  border-top: 1px solid hsl(var(--border));
+  display: flex; flex-direction: column; gap: .55rem;
+}
+.dash-type-facts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .6rem; }
+.dash-type-fam { font-size: .95rem; font-weight: 600; }
+.dash-type-meta { font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.dash-type-src { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: .66rem; color: hsl(var(--muted-foreground) / .85); margin-left: auto; }
+
+/* ── Sound & theme card — one card, sound settings above the theme picker, the two
+   blocks parted by a labelled rule (the shared sound switch injects its own styles). */
+.dash-sound-mount { margin-top: .1rem; }
+.dash-sound-theme-split { margin-top: 1.2rem; }
+
+/* ── Theme box — the previews are real buttons; the active one reads as pressed. */
+.dash-theme-pick { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+.dash-theme-opt {
+  font: inherit; text-align: left; cursor: pointer; width: 100%;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+.dash-theme-opt:hover { border-color: hsl(var(--primary) / .55); transform: translateY(-2px); box-shadow: 0 6px 16px hsl(0 0% 0% / .1); }
+.dash-theme-opt:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.dash-theme-opt.is-active { border-color: hsl(var(--primary)); box-shadow: inset 0 0 0 1px hsl(var(--primary)); }
+.dash-theme-opt .plat-theme-name { display: flex; align-items: center; gap: .4rem; }
+.dash-theme-opt.is-active .plat-theme-name::after { content: '✓'; margin-left: auto; color: hsl(var(--primary)); font-weight: 800; }
+@media (prefers-reduced-motion: reduce) { .dash-theme-opt { transition: none; } }
+
+/* ── Storage ring — a rounded-cap donut of used vs. device budget. Sized to fill the
+   card so the Storage block reads as tall as its neighbours, not a small dial. */
+.dash-store-donut { position: relative; width: min(240px, 88%); margin: 0.6rem auto 1.1rem; }
+.dash-store-donut svg { width: 100%; display: block; }
+.dash-donut-track { stroke: hsl(var(--muted)); }
+.dash-donut-arc { stroke: hsl(var(--primary)); transition: stroke-dasharray 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.dash-store-donut-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.dash-store-donut-c strong { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; }
+.dash-store-donut-c span { font-size: 0.8rem; color: hsl(var(--muted-foreground)); margin-top: 0.1rem; }
+.dash-store-donut-c em { font-size: 0.68rem; font-style: normal; font-weight: 700; color: hsl(var(--primary)); margin-top: 0.28rem; letter-spacing: 0.02em; }
+@media (prefers-reduced-motion: reduce) { .dash-donut-arc { transition: none; } }
+
+/* ── This device — a full-width collapsible section. Six big readouts, the machine
+   leading with a green spine, then the full card grid below the "Full readout" rule. */
+.dash-dev-hero {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: .8rem; margin: 0 0 1.25rem;
+}
+.dash-dev-stat {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; gap: .18rem;
+  padding: .9rem 1rem; min-height: 82px;
+  background: hsl(var(--background)); border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+.dash-dev-stat.is-skeleton { background: hsl(var(--muted) / .4); border-style: dashed; }
+.dash-dev-stat-icon { position: absolute; top: .75rem; right: .8rem; width: 22px; height: 22px; color: hsl(var(--muted-foreground) / .5); }
+.dash-dev-stat-icon svg { width: 100%; height: 100%; display: block; }
+.dash-dev-stat-label { font-size: .58rem; text-transform: uppercase; letter-spacing: .14em; color: hsl(var(--muted-foreground)); }
+.dash-dev-stat-value { font-size: 1.15rem; font-weight: 700; line-height: 1.15; word-break: break-word; padding-right: 1.4rem; }
+.dash-dev-stat-value.is-mono { letter-spacing: -.01em; }
+.dash-dev-stat-sub { font-size: .68rem; color: hsl(var(--muted-foreground)); }
+/* The machine is the star — green spine, bigger value, primary-tinted panel. */
+.dash-dev-hero .dash-dev-stat:first-child { background: hsl(var(--primary) / .06); border-color: hsl(var(--primary) / .35); }
+.dash-dev-hero .dash-dev-stat:first-child::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: hsl(var(--primary)); }
+.dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-value { font-size: 1.45rem; }
+.dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-icon { color: hsl(var(--primary) / .6); }
+
+/* Summary vs. detail — the two box kinds in "This device" read differently on sight.
+   SUMMARY (the hero readouts) are FILLED chips: solid muted panel, borderless, the
+   headline glance. DETAIL (the full card grid below) are OUTLINED: no fill, a hairline
+   border and an underlined title — a reference spec-sheet that recedes behind the glance. */
+.dash-device .dash-dev-stat {
+  background: hsl(var(--muted) / .55);
+  border-color: transparent;
+}
+.dash-device .dash-dev-cards .plat-client-card {
+  background: none;
+  border: 1px solid hsl(var(--border));
+}
+.dash-device .dash-dev-cards .plat-client-title {
+  padding-bottom: .55rem;
+  border-bottom: 1px solid hsl(var(--border) / .7);
+}
+
+/* The rule that separates the summary readouts from the full detail readout. */
+.dash-dev-split {
+  display: flex; align-items: center; gap: .7rem;
+  margin: .35rem 0 1.1rem;
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: .58rem; text-transform: uppercase; letter-spacing: .16em;
+  color: hsl(var(--muted-foreground));
+}
+.dash-dev-split::after { content: ''; flex: 1 1 auto; height: 1px; background: hsl(var(--border)); }
+
+/* ── Your activity (mirrors the Profile card; scoped so the shared markup reads
+   correctly here). In this narrow card the stats stack above the leaderboard. */
+.dashboard-view .activity-split { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
+.dashboard-view .activity-split .activity-grid, .dashboard-view .activity-split .activity-block { margin: 0; }
+.dashboard-view .activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: .7rem; }
+.dashboard-view .activity-stat {
+  text-align: center; padding: .7rem .4rem; border-radius: var(--radius);
+  background: hsl(var(--muted) / .5); display: flex; flex-direction: column; gap: .25rem;
+}
+.dashboard-view .activity-num { font-size: 1.5rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.dashboard-view .activity-label { font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); }
+.dashboard-view .activity-block { margin: 0; }
+.dashboard-view .activity-h3 { margin: 0 0 .6rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: hsl(var(--muted-foreground)); font-weight: 700; }
+.dashboard-view .fmt-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+.dashboard-view .fmt-row { display: grid; grid-template-columns: 4.5rem 1fr 2.5rem; align-items: center; gap: .6rem; font-size: .78rem; }
+.dashboard-view .fmt-name { font-weight: 700; letter-spacing: .03em; }
+.dashboard-view .fmt-track { height: .5rem; background: hsl(var(--muted)); border-radius: 999px; overflow: hidden; }
+.dashboard-view .fmt-fill { display: block; height: 100%; border-radius: 999px; background: hsl(var(--primary) / .5); }
+.dashboard-view .fmt-row.is-top .fmt-fill { background: hsl(var(--primary)); }
+.dashboard-view .fmt-count { text-align: right; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.dashboard-view .activity-meta { font-size: .8rem; line-height: 1.7; margin: 1rem 0 0; color: hsl(var(--muted-foreground)); }
+.dashboard-view .activity-meta strong { color: hsl(var(--foreground)); font-weight: 700; }
+.dashboard-view .activity-meta .dot { opacity: .45; margin: 0 .15rem; }
+.dashboard-view .activity-meta .activity-fav { color: hsl(var(--primary)); font-weight: 650; text-decoration: none; }
+.dashboard-view .activity-meta .activity-fav::after { content: " →"; opacity: .6; }
+.dashboard-view .storage-hint-text { margin: 0; color: hsl(var(--muted-foreground)); font-size: .85rem; line-height: 1.6; }
+
+/* ── Storage glance — a read-only composition bar. */
+.dash-store-headline { margin: 0 0 .65rem; font-size: .95rem; }
+.dash-store-headline strong { font-weight: 700; }
+.dash-store-bar { display: flex; gap: 2px; height: .8rem; border-radius: 999px; overflow: hidden; background: hsl(var(--muted)); box-shadow: inset 0 0 0 1px hsl(var(--border) / .6); }
+.dash-store-seg { display: block; min-width: 3px; }
+.dash-store-seg--sessions { background: hsl(var(--primary)); }
+.dash-store-seg--images   { background: #2453ff; }
+.dash-store-seg--cache    { background: #fe7c3f; }
+.dash-store-seg--previews { background: #90ebcd; }
+.dash-store-seg--other    { background: hsl(var(--muted-foreground) / .4); }
+.dash-store-legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; margin: .7rem 0 0; font-size: .74rem; color: hsl(var(--muted-foreground)); }
+.dash-store-key { display: inline-flex; align-items: center; gap: .4rem; }
+.dash-store-key strong { color: hsl(var(--foreground)); font-variant-numeric: tabular-nums; font-weight: 650; }
+/* Inset hairline so a pale segment colour (e.g. the mint previews swatch) stays
+   distinguishable from a near-white card in light theme. */
+.dash-store-dot { width: .7rem; height: .7rem; border-radius: 3px; flex: 0 0 auto; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .18); }
+.dash-store-note { margin: .85rem 0 0; font-size: .74rem; color: hsl(var(--muted-foreground)); line-height: 1.5; }
+
+/* ── Colour palette — the compact ink ribbon. Each family is a labelled row of
+   thin bars; hover/focus drives the mono readout, click copies the hex. */
+.dash-ribbon { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; margin: 0 0 1rem; }
+.dash-ink-group { display: flex; flex-direction: column; gap: .45rem; flex: 1 1 200px; min-width: 0; }
+.dash-ink-group-label {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .09em;
+  color: hsl(var(--muted-foreground));
+}
+.dash-ink-group-n { font-size: .58rem; font-weight: 600; padding: .02rem .38rem; border-radius: 999px; background: hsl(var(--muted)); letter-spacing: 0; }
+.dash-ink-row { display: flex; gap: 2px; height: 46px; border-radius: 8px; overflow: hidden; box-shadow: inset 0 0 0 1px hsl(var(--border) / .55); }
+.dash-ink {
+  position: relative; flex: 1 1 0; min-width: 13px; padding: 0; border: 0; cursor: pointer;
+  background: var(--ink, hsl(var(--muted))); transition: box-shadow .12s;
+}
+.dash-ink.is-transparent {
+  background-color: hsl(var(--card));
+  background-image: conic-gradient(hsl(var(--muted-foreground) / .25) 25%, transparent 0 50%, hsl(var(--muted-foreground) / .25) 0 75%, transparent 0);
+  background-size: 10px 10px;
+}
+.dash-ink:hover, .dash-ink:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px hsl(0 0% 100% / .92), inset 0 0 0 3px hsl(0 0% 0% / .32);
+  z-index: 1;
+}
+/* A tiny cap-dot marks an ink with measured (exact) CMYK. */
+.dash-ink.is-measured::after {
+  content: ''; position: absolute; top: 3px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%;
+  background: hsl(0 0% 100% / .85); box-shadow: 0 0 0 1px hsl(0 0% 0% / .28);
+}
+.dash-ink.is-copied::before {
+  content: '✓'; position: absolute; inset: 0; display: grid; place-content: center;
+  color: #fff; font-size: .72rem; font-weight: 700; background: hsl(0 0% 0% / .45);
+}
+
+.dash-readout {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  padding: .55rem .8rem; min-height: 2.5rem;
+  background: hsl(var(--muted) / .5); border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  font-size: .82rem;
+}
+.dash-readout-swatch { flex: 0 0 auto; width: 1.5rem; height: 1.5rem; border-radius: 5px; background: hsl(var(--muted)); box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+.dash-readout-swatch.is-transparent {
+  background-image: conic-gradient(hsl(var(--muted-foreground) / .25) 25%, transparent 0 50%, hsl(var(--muted-foreground) / .25) 0 75%, transparent 0);
+  background-size: 9px 9px;
+}
+.dash-readout-name { font-weight: 600; font-family: var(--font-sans, system-ui, sans-serif); }
+.dash-readout-hex { color: hsl(var(--foreground)); }
+.dash-readout-cmyk { color: hsl(var(--muted-foreground)); font-size: .78rem; font-family: var(--font-sans, system-ui, sans-serif); }
+.dash-readout-cmyk.is-measured { color: hsl(var(--primary)); font-weight: 600; }
+.dash-readout:not(.is-active) .dash-readout-hex,
+.dash-readout:not(.is-active) .dash-readout-cmyk { display: none; }
+.dash-readout:not(.is-active) .dash-readout-swatch { opacity: .5; }
+
+/* All values — the classic swatch grid, disclosed on demand (no figure hidden). */
+.dash-values { margin: 1rem 0 0; border-top: 1px solid hsl(var(--border)); }
+.dash-values-summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: .5rem;
+  padding: .85rem 0 .1rem; font-size: .72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em; color: hsl(var(--muted-foreground));
+}
+.dash-values-summary::-webkit-details-marker { display: none; }
+.dash-values-summary:hover { color: hsl(var(--foreground)); }
+.dash-values-n { font-size: .62rem; padding: .05rem .4rem; border-radius: 999px; background: hsl(var(--muted)); letter-spacing: 0; }
+.dash-values-summary .plat-section-chev { margin-left: auto; width: 15px; height: 15px; transition: transform .15s ease; }
+.dash-values[open] .dash-values-summary .plat-section-chev { transform: rotate(90deg); }
+.dash-values-body { padding: .4rem 0 .2rem; }
+
+/* ── Capabilities — each sub-section is a full-width banner (one big icon +
+      title/desc), then a grid of boxes that FILL the row; a box previews its modal
+      subheadings in tiny SUSE Mono, then pops the detail into a dialog. ── */
+/* Two-up: the heading + description live in their own left rail (sticky, so they
+   stay beside their cards as you scroll a tall group); the box grid fills the right. */
+/* Each capability group is a collapsible accordion panel: a summary row
+   (icon · title · one-line description · chevron) over a grid of feature cards
+   that expands below. Folded groups keep the whole map scannable at a glance. */
+.dash-cap-group {
+  margin: 0 0 .7rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  background: hsl(var(--card) / 0.4);
+  overflow: hidden;
+}
+.dash-cap-group:last-child { margin-bottom: 0; }
+.dash-cap-group-head {
+  display: flex; align-items: center; gap: .9rem;
+  margin: 0; padding: .8rem 1rem;
+  cursor: pointer; list-style: none;                 /* it's a <summary> now */
+}
+.dash-cap-group-head::-webkit-details-marker { display: none; }
+.dash-cap-group-head:hover { background: hsl(var(--muted) / 0.5); }
+.dash-cap-group-icon {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  background: none; color: hsl(var(--muted-foreground));
+}
+.dash-cap-group-icon svg { width: 1.85rem; height: 1.85rem; display: block; }
+.dash-cap-group-text { min-width: 0; flex: 1 1 auto; }
+.dash-cap-group-title { margin: 0; font-size: 1rem; font-weight: 700; letter-spacing: -.01em; }
+.dash-cap-group-desc { margin: .15rem 0 0; color: hsl(var(--muted-foreground)); font-size: .8rem; line-height: 1.45; }
+.dash-cap-group-head .plat-section-chev { flex: 0 0 auto; margin-left: .4rem; color: hsl(var(--muted-foreground)); }
+.dash-cap-group[open] > .dash-cap-group-head .plat-section-chev { transform: rotate(90deg); }
+
+/* Full-width grid of boxes — many, evenly sized, so the row never looks squished. */
+.dash-cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 264px), 1fr)); gap: .8rem; align-items: stretch; padding: 0 1rem 1rem; }
+.dash-cap-item { min-width: 0; display: flex; }
+
+/* Each box is a button that pops its detail into the dialog. */
+.dash-cap-card {
+  width: 100%; display: flex; flex-direction: column; gap: .65rem;
+  padding: 1rem 1.05rem .8rem; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * 1.1);
+  transition: border-color .15s ease, background .15s ease, transform .12s ease, box-shadow .15s ease;
+}
+.dash-cap-card:hover {
+  background: hsl(var(--muted) / .35); border-color: hsl(var(--primary) / .55);
+  transform: translateY(-2px); box-shadow: 0 8px 22px hsl(0 0% 0% / .1);
+}
+.dash-cap-card:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+.dash-cap-card-top { display: flex; align-items: center; gap: .6rem; }
+.dash-cap-icon {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: auto; height: auto;
+  background: none; color: hsl(var(--muted-foreground));
+}
+.dash-cap-icon svg { width: 1.75rem; height: 1.75rem; display: block; }
+
+/* Every "What Lolly can do" icon (banner, card, modal): thin hairline stroke that
+   stays 1.5px however large it renders (non-scaling), capped at 5em, muted. */
+.dash-cap-group-icon svg, .dash-cap-icon svg, .dash-cap-modal-icon svg {
+  max-width: 5em; max-height: 5em; stroke-width: 1.5px;
+}
+.dash-cap-group-icon svg *, .dash-cap-icon svg *, .dash-cap-modal-icon svg * {
+  vector-effect: non-scaling-stroke;
+}
+.dash-cap-title { flex: 1 1 auto; min-width: 0; font-size: .92rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+
+/* The mono sneak — the exact subheadings the modal will show, small + muted. */
+.dash-cap-peek {
+  flex: 1 1 auto; list-style: none; margin: 0; padding: 0;
+  font-family: 'SUSE Mono', ui-monospace, monospace; font-size: .64rem; line-height: 1.7;
+  color: hsl(var(--muted-foreground));
+}
+.dash-cap-peek li { position: relative; padding-left: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-cap-peek li::before { content: '›'; position: absolute; left: 0; color: hsl(var(--primary) / .7); font-weight: 700; }
+
+.dash-cap-foot { display: flex; align-items: center; gap: .5rem; margin-top: .1rem; padding-top: .55rem; border-top: 1px dashed hsl(var(--border)); }
+.dash-cap-n { flex: 0 0 auto; font-size: .6rem; font-weight: 700; padding: .12rem .45rem; border-radius: 999px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+.dash-cap-more { margin-left: auto; font-size: .72rem; font-weight: 700; color: hsl(var(--primary)); opacity: .7; transform: translateX(-2px); transition: opacity .15s ease, transform .15s ease; }
+.dash-cap-card:hover .dash-cap-more, .dash-cap-card:focus-visible .dash-cap-more { opacity: 1; transform: none; }
+.dash-cap-feat { padding: 0; margin: 0; }
+.dash-cap-feat dd a { color: hsl(var(--primary)); }
+
+/* Build-up: cards float in, staggered, when the grid scrolls into view (JS adds
+   [data-build] + .is-in; without JS/reduced-motion they're just visible). */
+.dash-cap-grid[data-build] .dash-cap-item { opacity: 0; }
+.dash-cap-grid[data-build].is-in .dash-cap-item {
+  animation: dash-cap-in .5s cubic-bezier(.2, .9, .25, 1.12) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+@keyframes dash-cap-in {
+  from { opacity: 0; transform: translateY(16px) scale(.9); }
+  60%  { opacity: 1; transform: translateY(-3px) scale(1.02); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Capability detail popup (native <dialog>). ── */
+.dash-cap-modal {
+  padding: 0;
+  width: min(560px, 92vw);
+  max-width: 92vw;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.25);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  box-shadow: 0 28px 70px hsl(0 0% 0% / .38);
+}
+.dash-cap-modal::backdrop { background: hsl(0 0% 0% / .5); backdrop-filter: blur(2px); }
+.dash-cap-modal[open] { animation: dash-modal-in .22s ease-out; }
+@keyframes dash-modal-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+.dash-cap-modal-head { display: flex; align-items: center; gap: .6rem; padding: 1rem 1.1rem; border-bottom: 1px solid hsl(var(--border)); }
+.dash-cap-modal-icon { flex: 0 0 auto; display: inline-flex; width: 24px; height: 24px; color: hsl(var(--muted-foreground)); }
+.dash-cap-modal-icon svg { width: 100%; height: 100%; display: block; }
+.dash-cap-modal-title { flex: 1 1 auto; margin: 0; font-size: 1.02rem; font-weight: 700; }
+.dash-cap-modal-close { flex: 0 0 auto; width: 30px; height: 30px; border: 0; border-radius: 50%; background: hsl(var(--muted) / .5); color: hsl(var(--muted-foreground)); font-size: 15px; line-height: 1; cursor: pointer; }
+.dash-cap-modal-close:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.dash-cap-modal-body { padding: 1rem 1.1rem 1.25rem; max-height: 70vh; overflow: auto; }
+
+/* ── Reference panels (typography / themes / print) — collapsible <details>. */
+.dash-ref-grid { display: grid; gap: 1.1rem; margin: 0 0 1.1rem; }
+.dash-ref-grid > .plat-section { margin: 0; }
+
+.dash-foot { margin: 0; max-width: none; }
+
+/* Shared focus ring for the disclosure summaries here. */
+.dash-values-summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -3px; border-radius: var(--radius); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-ink, .dash-values-summary .plat-section-chev { transition: none; }
+  .dash-cap-card { transition: none; }
+  .dash-cap-grid[data-build] .dash-cap-item { opacity: 1; animation: none; }
+  .dash-cap-modal[open] { animation: none; }
+}
+
+/* Narrow: tighten the accordion head + card padding. */
+@media (max-width: 560px) {
+  .dash-cap-group-head { padding: .7rem .8rem; gap: .7rem; }
+  .dash-cap-group-icon svg { width: 1.6rem; height: 1.6rem; }
+  .dash-cap-group-title { font-size: .95rem; }
+  .dash-cap-grid { padding: 0 .8rem .8rem; }
+}
+
+@media (max-width: 560px) {
+  .dashboard-view .dash-layout { padding: 3rem 1rem 4rem; }
+  .dash-section { padding: 1.1rem; }
+  .dash-dev-hero { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}

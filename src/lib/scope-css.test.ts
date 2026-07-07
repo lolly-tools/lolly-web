@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: MPL-2.0
+// Contract tests for the shared CSS scoper — including the two regressions the
+// old regex caused, which tools had to work around by hand.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { scopeCss } from './scope-css.ts';
+
+const S = '#c';
+const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+test('scopes a simple rule and every selector in a list', () => {
+  assert.equal(norm(scopeCss('.a{color:red}', S)), '#c .a {color:red}');
+  const list = scopeCss('.a, .b .c{color:red}', S);
+  assert.match(list, /#c \.a/);
+  assert.match(list, /#c \.b \.c/);
+});
+
+test('regression: the FIRST rule inside @media is scoped (regex left it global)', () => {
+  const out = scopeCss('@media (max-width:600px){.a{color:red}.b{color:blue}}', S);
+  assert.match(out, /@media \(max-width:600px\)/); // prelude untouched
+  assert.match(out, /#c \.a/);                     // first child now scoped
+  assert.match(out, /#c \.b/);
+});
+
+test('regression: multi-step @keyframes stops are NOT scoped (regex corrupted them)', () => {
+  const out = scopeCss('@keyframes spin{from{opacity:0}50%{opacity:.5}to{opacity:1}}', S);
+  assert.match(out, /@keyframes spin/);
+  assert.doesNotMatch(out, /#c\s+(from|to|50%)/); // stops stay bare
+  for (const stop of ['from{', '50%{', 'to{']) assert.ok(out.includes(stop), `kept ${stop}`);
+});
+
+test('nested @media inside @media still scopes the inner style rules', () => {
+  assert.match(scopeCss('@media screen{@media (min-width:1px){.a{}}}', S), /#c \.a/);
+});
+
+test('at-statements and @font-face bodies are left alone', () => {
+  assert.match(scopeCss('@import "x.css";.a{}', S), /@import "x\.css";/);
+  const ff = scopeCss('@font-face{font-family:Foo;src:url(a.woff2)}', S);
+  assert.match(ff, /@font-face\s*\{/);
+  assert.doesNotMatch(ff, /#c/); // no selector inside to scope
+});
+
+test('braces inside strings and comments are not treated as blocks', () => {
+  const out = scopeCss('.a{content:"}"}/* .z{} */.b{}', S);
+  assert.match(out, /#c \.a/);
+  assert.match(out, /#c \.b/);
+  assert.doesNotMatch(out, /#c \.z/); // the .z in the comment must not be scoped
+});
+
+// ─── top-level-only comma splitting (bracket/string/comment aware) ───────────
+// A comma inside :is()/:where()/:not()/[attr] or a comment must NOT split the
+// list and must NOT inject a scope prefix inside the parens/string.
+const count = (s: string, needle: string) => s.split(needle).length - 1;
+
+test('comma inside :is() is not a list separator', () => {
+  const out = scopeCss(':is(.a, .b) span{color:red}', S);
+  assert.equal(count(out, S), 1, 'exactly one scope prefix');
+  assert.doesNotMatch(out, /\([^)]*#c/, 'no scope token inside parentheses');
+  assert.match(out, /#c :is\(\.a, \.b\) span/);
+});
+
+test('comma inside an [attr="a,b"] value is preserved', () => {
+  const out = scopeCss('[data-title="Hello, World"]{color:red}', S);
+  assert.equal(count(out, S), 1);
+  assert.ok(out.includes('[data-title="Hello, World"]'), 'attribute value intact');
+  assert.doesNotMatch(out, /Hello, #c/);
+});
+
+test('top-level list mixed with a functional-pseudo comma', () => {
+  const out = scopeCss('.x:not(.a, .b), .y{color:red}', S);
+  assert.equal(count(out, S), 2, 'two real list members, not three');
+  assert.match(out, /#c \.x:not\(\.a, \.b\)/, ':not() args kept together');
+  assert.match(out, /#c \.y/);
+});
+
+test(':where() and :nth-child(An+B of …) commas are not splits', () => {
+  assert.equal(count(scopeCss(':where(.a, .b){}', S), S), 1);
+  const nth = scopeCss(':nth-child(2n of .a, .b){}', S);
+  assert.equal(count(nth, S), 1);
+  assert.doesNotMatch(nth, /\([^)]*#c/);
+});
+
+test('comment inside a selector list is not a delimiter', () => {
+  const out = scopeCss('.a /*x*/, .b{}', S);
+  assert.equal(count(out, S), 2);
+  assert.ok(out.includes('/*x*/'), 'comment preserved');
+});
+
+// ─── conditional group nested in a style rule (native CSS nesting) ───────────
+test('nested @media as first child: relative children stay unscoped', () => {
+  const out = scopeCss('.card{@media (min-width:600px){.title{color:blue}}}', S);
+  assert.equal(count(out, S), 1, 'only .card is scoped');
+  assert.match(out, /#c \.card/);
+  assert.match(out, /@media \(min-width:600px\)/, 'prelude untouched');
+  assert.doesNotMatch(out, /#c \.title/, '.title is relative to .card, not scoped');
+});
+
+test('nested conditional group is order-independent (after a nested rule OR a declaration)', () => {
+  const afterRule = scopeCss('.card{.a{}@media (min-width:1px){.b{}}}', S);
+  assert.equal(count(afterRule, S), 1);
+  assert.doesNotMatch(afterRule, /#c \.b/);
+  const afterDecl = scopeCss('.card{color:red;@media (min-width:1px){.b{}}}', S);
+  assert.equal(count(afterDecl, S), 1);
+  assert.doesNotMatch(afterDecl, /#c \.b/);
+});
+
+test('& nesting stays relative (never scoped)', () => {
+  const out = scopeCss('.card{&:hover{color:red}}', S);
+  assert.match(out, /#c \.card/);
+  assert.doesNotMatch(out, /#c\s*&/, '& is relative to the parent rule');
+});
+
+// ─── corpus sweep: run the scoper over every real tool styles.css ────────────
+// Structural check (string/comment/bracket aware) that the scope token is never
+// injected inside a (…)/[…] group, a '…'/"…" string, or a /* … */ comment.
+// A regex can't do this — it spans across quotes — so we scan properly.
+function tokenLeaks(css: string, token: string): boolean {
+  let i = 0, depth = 0;
+  const n = css.length;
+  while (i < n) {
+    const c = css[i];
+    if (c === '/' && css[i + 1] === '*') {
+      const e = css.indexOf('*/', i + 2); const j = e === -1 ? n : e + 2;
+      if (css.slice(i, j).includes(token)) return true; i = j; continue;
+    }
+    if (c === '"' || c === "'") {
+      const q = c; let j = i + 1;
+      while (j < n && css[j] !== q) { j += css[j] === '\\' ? 2 : 1; }
+      if (css.slice(i, j + 1).includes(token)) return true; i = j + 1; continue;
+    }
+    if (c === '(' || c === '[') { depth++; i++; continue; }
+    if (c === ')' || c === ']') { if (depth > 0) depth--; i++; continue; }
+    if (depth > 0 && css.startsWith(token, i)) return true;
+    i++;
+  }
+  return false;
+}
+
+test('corpus: scoping every tool styles.css never leaks the token into parens or strings', () => {
+  const TK = '.zzscopezz'; // distinctive: never collides with hex colours (#ccc…)
+  const toolsDir = fileURLToPath(new URL('../../../../tools', import.meta.url));
+  let checked = 0;
+  for (const d of readdirSync(toolsDir, { withFileTypes: true })) {
+    if (!d.isDirectory()) continue;
+    const p = `${toolsDir}/${d.name}/styles.css`;
+    if (!existsSync(p)) continue;
+    const css = readFileSync(p, 'utf8');
+    const out = scopeCss(css, TK);
+    checked++;
+    assert.ok(!tokenLeaks(out, TK), `${d.name}: scope token leaked into a paren/string/comment`);
+    assert.equal(count(out, '{'), count(css, '{'), `${d.name}: '{' balance preserved`);
+    assert.equal(count(out, '}'), count(css, '}'), `${d.name}: '}' balance preserved`);
+    assert.doesNotThrow(() => scopeCss(out, TK), `${d.name}: re-scoping does not crash`);
+  }
+  assert.ok(checked > 0, 'expected to find at least one tool styles.css');
+});
+
+test('empty input returns empty', () => {
+  assert.equal(scopeCss('', S), '');
+});

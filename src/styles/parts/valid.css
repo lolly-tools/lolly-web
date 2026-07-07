@@ -1,0 +1,268 @@
+/* ─── /verify — Content Credentials check ─────────────────────────────────────
+   Shares the platform/capabilities chrome (.platform-layout/.plat-header); these
+   rules cover only the drop zone and the verification report. The entrance wave
+   is armed by mountValid via armViewEnter and rides the shared card-in ladder
+   (the .verify-view selectors live in the entrance block above, next to the
+   platform/capabilities ones). */
+
+.verify-view { overflow-y: auto; }
+.verify-view .platform-layout {
+  width: 100%; max-width: 1080px; margin: 0 auto;
+  padding: 3.25rem 1.25rem 5rem; /* top clears the fixed "Tools" pill */
+}
+
+.valid-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 2.5rem 1.5rem;
+  border: 2px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.valid-drop:hover,
+.valid-drop:focus-visible,
+.valid-drop.is-over {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--accent));
+}
+.valid-drop:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.valid-drop span:not(.valid-drop-icon),
+.identity-via{ color: hsl(var(--muted-foreground)); font-size: 0.85rem; }
+.valid-drop-icon svg { width: 34px; height: 34px; opacity: 0.7; }
+
+.valid-report { margin-top: 1.25rem; }
+.valid-busy { color: hsl(var(--muted-foreground)); }
+
+.valid-result {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  padding: 1.25rem 1.4rem;
+  display: grid;
+  gap: 0.9rem;
+}
+.valid-hero { display: flex; gap: 0.9rem; align-items: flex-start; }
+.valid-hero-icon svg { width: 40px; height: 40px; }
+.valid-hero h2 { margin: 0 0 0.2rem; font-size: 1.15rem; }
+.valid-hero p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.9rem; max-width: 60ch; }
+.valid-result.is-valid .valid-hero-icon { color: hsl(151 57% 38%); }
+.valid-result.is-invalid .valid-hero-icon { color: hsl(var(--destructive)); }
+.valid-result.is-none .valid-hero-icon { color: hsl(var(--muted-foreground)); }
+
+/* The headline answer: credential intact AND it records a Lolly export. */
+.valid-result.is-lolly {
+  border-color: hsl(151 57% 38% / 0.55);
+  box-shadow: 0 0 0 1px hsl(151 57% 38% / 0.25), 0 10px 28px -18px hsl(151 57% 30% / 0.45);
+}
+.valid-result.is-lolly .valid-hero h2 { color: hsl(var(--primary)); }
+.valid-lolly-badge { margin-left: 0.45rem; color: hsl(151 57% 42%); }
+
+/* Signing chain verified against the pinned Lolly CA root — same green family
+   as .is-lolly (identity is the stronger statement, same visual register). */
+.valid-result.is-trusted {
+  border-color: hsl(151 57% 38% / 0.55);
+  box-shadow: 0 0 0 1px hsl(151 57% 38% / 0.25), 0 10px 28px -18px hsl(151 57% 30% / 0.45);
+}
+.valid-result.is-trusted .valid-hero h2 { color: hsl(151 57% 38%); }
+.valid-trusted-badge { margin-left: 0.45rem; color: hsl(151 57% 42%); }
+/* "Signed by <email> — …" under the hero sub; rendered whenever the chain
+   verified (trusted, or anchored-but-expired). Scoped under .valid-hero to
+   out-specify the `.valid-hero p` margin reset above. */
+.valid-hero .valid-identity-line { margin: 0.35rem 0 0; font-size: 0.8rem; color: hsl(var(--muted-foreground)); }
+.valid-hero .valid-identity-line strong {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.92em; font-weight: 600; color: hsl(var(--foreground));
+}
+
+.valid-result.is-expired .valid-hero-icon { color: hsl(38 80% 45%); }
+
+.valid-file { margin: 0; font-size: 0.85rem; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+.valid-file strong { color: hsl(var(--foreground)); }
+.valid-selfnote { margin: 0 0 -0.35rem; font-size: 0.75rem; font-style: italic; color: hsl(var(--muted-foreground)); }
+.valid-fmt {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.3rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.valid-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1.5rem 1.25rem;
+  border-block: 1px solid hsl(var(--border));
+  padding-block: 0.9rem;
+}
+.valid-fact dt { display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: hsl(var(--muted-foreground)); }
+.valid-fact-ic { display: inline-flex; flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
+.valid-fact-ic svg { width: 2.5em; height: 2.5em; opacity: 1; stroke-width: 1px; margin-left: -1em; color: hsl(var(--border)); }
+.valid-fact dd { margin: 0.1rem 0 0; padding-left: 1.3rem; font-size: 0.88rem; overflow-wrap: anywhere; }
+
+/* Hero scorecard — eight canonical checks at a glance. The icon says WHICH
+   check; colour says its state (pass / fail / warn / not-applicable). */
+.valid-score { list-style: none; margin: 0.8rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.valid-score-pip {
+  --pip: hsl(var(--muted-foreground));
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0.4rem;
+  width: 6rem; min-height: 6rem;
+  padding: 0.6rem 0.4rem;
+  border-radius: 0.7rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.35);
+  color: var(--pip);
+  text-align: center;
+}
+.valid-score-ic { display: inline-flex; flex: 0 0 auto; color: var(--pip); }
+.valid-score-pip svg { width: 2em; height: 2em; stroke-width: 1.5; }
+.valid-score-label { font-size: 0.66rem; line-height: 1.2; font-weight: 500; color: hsl(var(--foreground)); overflow-wrap: anywhere; }
+.valid-score-status {
+  margin-top: auto;
+  font-size: 0.58rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0.05rem 0.45rem; border-radius: 999px;
+  border: 1px solid currentColor; color: var(--pip);
+  overflow-wrap: anywhere;
+}
+.valid-score-pip.is-na .valid-score-label { color: hsl(var(--muted-foreground)); }
+.valid-score-pip.is-pass { --pip: hsl(151 57% 38%); border-color: hsl(151 57% 38% / 0.4); background: hsl(151 57% 38% / 0.12); }
+.valid-score-pip.is-fail { --pip: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.4); background: hsl(var(--destructive) / 0.1); }
+.valid-score-pip.is-warn { --pip: hsl(38 80% 45%); border-color: hsl(38 80% 45% / 0.45); background: hsl(38 80% 45% / 0.14); }
+.valid-score-pip.is-na { opacity: 0.45; }
+
+.valid-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.valid-check { display: flex; gap: 0.6rem; align-items: baseline; font-size: 0.85rem; }
+.valid-check-mark { flex: 0 0 1.1rem; text-align: center; font-weight: 700; }
+.valid-check--ok .valid-check-mark { color: hsl(151 57% 38%); }
+.valid-check--bad .valid-check-mark { color: hsl(var(--destructive)); }
+.valid-check--info .valid-check-mark { color: hsl(var(--muted-foreground)); }
+.valid-check-text { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; }
+.valid-check-text code { font-size: 0.78rem; background: hsl(var(--muted)); padding: 0.05rem 0.35rem; border-radius: 0.3rem; }
+.valid-check-text > span { color: hsl(var(--muted-foreground)); }
+.valid-check--bad .valid-check-text > span { color: hsl(var(--foreground)); }
+
+.valid-note { margin: 0; font-size: 0.8rem; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+.valid-note a { color: inherit; }
+
+/* ─── Multi-file: a stack of collapsible reports ─────────────────────────────
+   Dropping several files at once yields one <details> per file. The <summary>
+   is the always-visible "highlights" glance (state badge + name + signer + a
+   mini scorecard); the body holds the full report, borderless since the card
+   already frames it. */
+.valid-reports-list { display: grid; gap: 0.75rem; }
+.valid-reports-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.75rem; margin-bottom: 0.85rem;
+}
+.valid-reports-count { font-size: 0.85rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
+.valid-reports-actions { display: flex; gap: 0.4rem; }
+.valid-reports-toggle { font-size: 0.78rem; padding: 3px 10px; }
+
+.valid-item {
+  border: 1px solid hsl(var(--border));
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  overflow: hidden;
+}
+.valid-item.is-good { border-left-color: hsl(151 57% 38% / 0.65); }
+.valid-item.is-bad  { border-left-color: hsl(var(--destructive) / 0.65); }
+.valid-item.is-warn { border-left-color: hsl(38 80% 45% / 0.65); }
+.valid-item.is-none,
+.valid-item.is-busy { border-left-color: hsl(var(--border)); }
+.valid-item[open] { box-shadow: 0 10px 28px -22px hsl(0 0% 0% / 0.55); }
+
+.valid-item-summary {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem 0.75rem;
+  padding: 0.7rem 0.9rem;
+  cursor: pointer; list-style: none; user-select: none;
+}
+.valid-item-summary::-webkit-details-marker { display: none; }
+.valid-item-summary:hover { background: hsl(var(--accent) / 0.5); }
+.valid-item-summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+
+.valid-item-badge {
+  flex: 0 0 auto;
+  font-size: 0.74rem; font-weight: 600; white-space: nowrap;
+  padding: 0.15rem 0.6rem; border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.valid-item-badge.is-good { color: hsl(151 57% 38%); background: hsl(151 57% 38% / 0.1); }
+.valid-item-badge.is-bad  { color: hsl(var(--destructive)); background: hsl(var(--destructive) / 0.1); }
+.valid-item-badge.is-warn { color: hsl(38 80% 45%); background: hsl(38 80% 45% / 0.12); }
+.valid-item-badge.is-none { color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.5); }
+.valid-item-badge.is-busy { color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.4); border-style: dashed; }
+
+.valid-item-name {
+  flex: 1 1 8rem; min-width: 0;
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.9rem; font-weight: 600; color: hsl(var(--foreground));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.valid-item-signer {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.3rem;
+  max-width: 15rem; font-size: 0.78rem; color: hsl(var(--muted-foreground));
+}
+.valid-item-signer svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.valid-item-signer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.valid-item-chev { flex: 0 0 auto; display: inline-flex; color: hsl(var(--muted-foreground)); transition: transform 0.15s ease; }
+.valid-item-chev svg { width: 18px; height: 18px; }
+.valid-item[open] .valid-item-chev { transform: rotate(180deg); }
+
+.valid-item-body { padding: 0 0.9rem 0.95rem; }
+/* The card is the frame now — drop the report's own border/box so it doesn't nest. */
+.valid-item-body .valid-result { border: 0; background: transparent; padding: 0; border-radius: 0; box-shadow: none; }
+
+/* Mini scorecard in the summary — icon-only pips, colour still = state. */
+.valid-score--mini { margin: 0; gap: 0.3rem; flex: 0 0 auto; }
+.valid-score--mini .valid-score-pip {
+  width: auto; min-height: 0; padding: 0.28rem; border-radius: 0.4rem;
+}
+.valid-score--mini .valid-score-label,
+.valid-score--mini .valid-score-status { display: none; }
+.valid-score--mini .valid-score-pip svg { width: 1.05em; height: 1.05em; }
+
+/* ─── Content Credentials identity (profile) ────────────────────────────────
+   Enrollment UI in the profile's Content Credentials section. Buttons reuse
+   the global .btn outline style; only layout + status colouring live here. */
+.identity-blurb { margin: 0 0 0.85rem; font-size: 0.85rem; color: hsl(var(--muted-foreground)); max-width: 62ch; }
+.identity-blurb a { color: inherit; }
+
+.identity-providers { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem; }
+
+.identity-email-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.identity-email-row .identity-email-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 5px 10px;
+  font-size: 13px;
+}
+.identity-email-row .identity-email-input:disabled { opacity: 0.5; }
+
+.identity-status { display: grid; gap: 0.45rem; justify-items: start; }
+.identity-signing { margin: 0; font-size: 0.95rem; }
+.identity-life { margin: 0; font-size: 0.8rem; color: hsl(var(--muted-foreground)); }
+.identity-status.is-expired .identity-life { color: hsl(var(--destructive)); font-weight: 600; }
+.identity-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.2rem; }
+/* Armed "Really forget?" state — two-class so it beats the generic .btn colour. */
+.identity-actions .btn.is-confirm { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.55); }
+
+.identity-error { margin: 0.6rem 0 0; font-size: 13px; color: hsl(var(--destructive)); }
+.identity-pending { margin: 0; font-size: 0.9rem; }
+
+/* Lifetime pick (7/30/90/365) shown on the enrol form only — the cert window
+   is fixed at issuance, so the status card shows the outcome, not a picker. */
+.identity-days-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.85rem; font-size: 0.85rem; }
+.identity-days-row .identity-days-select {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.identity-days-hint { flex-basis: 100%; font-size: 0.75rem; color: hsl(var(--muted-foreground)); max-width: 62ch; }

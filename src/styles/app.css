@@ -1,0 +1,29 @@
+/*
+ * App chrome — layout and component styles for the web shell.
+ *
+ * All colours flow through tokens.css HSL variables so the three themes
+ * (light / dark / suse) require no per-component overrides here.
+ * Tool-internal styles live in each tool's own template <style> block and
+ * are scoped to #tool-canvas — they don't inherit these variables.
+ */
+
+/* Landing + shared chrome. Everything here render-blocks first paint, so it holds
+ * ONLY what the gallery/catalog landing and every-page chrome need. View-specific
+ * sheets (tool, editor, profile, picker, platform, valid, storage) are imported
+ * from their own lazy view modules instead — Vite emits them as async CSS chunks
+ * loaded with the view, keeping ~60% of the old bundle off the critical path. */
+@import './fonts.css';
+@import './tokens.css';
+@import './parts/base.css';
+@import './parts/utilities.css';
+@import './parts/gallery.css';
+@import './parts/featured.css';
+@import './parts/topbar.css';
+@import './parts/folders.css';
+@import './parts/projects.css';
+@import './parts/catalog.css'; /* Catalog view (a primary tab; kept on the landing sheet) */
+@import './parts/components.css';
+@import './parts/dialogs.css';
+@import './parts/saved-list.css'; /* saved-session rows — history modal + drawer + /profile */
+@import './parts/notfound.css';
+@import './parts/a11y.css';

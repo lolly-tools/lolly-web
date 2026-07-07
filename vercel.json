@@ -1,0 +1,27 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node ../../docs/build.ts && node ../../scripts/build-tool-og.ts && node ../../scripts/build-view-og.ts && npm run build",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www\\.lolly\\.tools" }],
+      "destination": "https://lolly.tools/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": ".*lolly\\.(art|ad|bot|codes|design|free|gallery|graphics|ing|ink|is|media|sh|style|to|work)" }],
+      "destination": "https://lolly.tools/:path*",
+      "permanent": true
+    }
+  ],
+  "rewrites": [
+    { "source": "/t/:id", "destination": "/t/:id.html" },
+    { "source": "/d", "destination": "/view/d.html" },
+    { "source": "/v", "destination": "/view/v.html" },
+    { "source": "/c", "destination": "/view/c.html" },
+    { "source": "/p", "destination": "/view/p.html" },
+    { "source": "/profile", "destination": "/view/profile.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
