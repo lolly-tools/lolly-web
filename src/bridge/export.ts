@@ -38,6 +38,7 @@ import { videoMimeCandidates } from './video-mime.ts';
 import { canRecord } from './format-support.ts';
 export { videoSupport, cmykTiffSupport, tiffSupport } from './format-support.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
+import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from '../../../../engine/src/pptx.ts';
 import type { HostV1, ExportMeta } from '../../../../engine/src/bridge/host-v1.ts';
 import type { PrintGeometry, LabelSlot } from '../../../../engine/src/print-marks.ts';
 import type { Dimension } from '../../../../engine/src/units.ts';
@@ -347,7 +348,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
   const restore = await swapBlobUrls(node);
   // Deterministic base frame (t=0) for a frame-clock tool, so a still of an
   // animating canvas captures the configured pose, not a random rAF moment.
-  const fc = beginFrameClock(); renderFrameAt(fc, 0);
+  const fc = beginFrameClock(node); renderFrameAt(fc, 0);
   try {
     const dataUrl = await (format === 'jpeg'
       ? lib.toJpeg(node, { quality: opts.quality ?? 0.92, ...dtoOpts })
@@ -385,7 +386,7 @@ async function renderBitmap(node: Element, mimeType: string, opts: ExportOpts): 
   const d = exportDims(node, opts);
   const dtoOpts = rasterStyle(d, opts);
   const restore = await swapBlobUrls(node);
-  const fc = beginFrameClock(); renderFrameAt(fc, 0);
+  const fc = beginFrameClock(node); renderFrameAt(fc, 0);
   let raw: HTMLCanvasElement;
   try {
     raw = await lib.toCanvas(node, dtoOpts);
@@ -4847,20 +4848,29 @@ const NO_VIDEO_MSG = 'Video recording is not supported in this browser. Use GIF 
 // tool that never registers the hook is byte-for-byte unchanged. Scoped to these
 // snapshot paths ONLY — never the real-time captureStream path (which returns
 // before createFrameSource), so the two mechanisms can't both fire per export.
-interface FrameClockWindow { __lollyFrameRender?: (t: number) => void; __lollyFrameDriven?: boolean }
-function beginFrameClock(): boolean {
-  const w = window as unknown as FrameClockWindow;
-  if (typeof w.__lollyFrameRender !== 'function') return false;
-  w.__lollyFrameDriven = true;
-  return true;
+// Per-NODE channel (not a window global): the hook lives ON the tool's canvas, so
+// it can't leak across SPA tool navigation — a detached canvas from a previous tool
+// is never inside the node being exported, so an unrelated tool never enters this path.
+type FrameClockCanvas = HTMLCanvasElement & { __lollyFrameRender?: (t: number) => void; __lollyFrameDriven?: boolean };
+function frameClockCanvas(node: Element): FrameClockCanvas | null {
+  const self = node as FrameClockCanvas;
+  if (typeof self.__lollyFrameRender === 'function') return self;
+  for (const c of Array.from(node.querySelectorAll?.('canvas') ?? [])) {
+    if (typeof (c as FrameClockCanvas).__lollyFrameRender === 'function') return c as FrameClockCanvas;
+  }
+  return null;
 }
-function renderFrameAt(active: boolean, t: number): void {
-  if (!active) return;
-  const w = window as unknown as FrameClockWindow;
-  try { w.__lollyFrameRender!(t); } catch (e) { _host?.log?.('warn', `__lollyFrameRender threw: ${(e as Error)?.message ?? e}`); }
+function beginFrameClock(node: Element): FrameClockCanvas | null {
+  const c = frameClockCanvas(node);
+  if (c) c.__lollyFrameDriven = true;   // freeze the tool's own rAF for the capture
+  return c;
 }
-function endFrameClock(active: boolean): void {
-  if (active) delete (window as unknown as FrameClockWindow).__lollyFrameDriven;
+function renderFrameAt(c: FrameClockCanvas | null, t: number): void {
+  if (!c || typeof c.__lollyFrameRender !== 'function') return;
+  try { c.__lollyFrameRender(t); } catch (e) { _host?.log?.('warn', `__lollyFrameRender threw: ${(e as Error)?.message ?? e}`); }
+}
+function endFrameClock(c: FrameClockCanvas | null): void {
+  if (c) c.__lollyFrameDriven = false;
 }
 
 async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
@@ -4883,12 +4893,12 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
   let settled = false;
   // Raise the driven flag now (before the first capture) so a frame-clock tool's
   // rAF loop stops advancing on its own; frame(t) then paints the exact phase.
-  const frameClock = beginFrameClock();
+  const frameClock = beginFrameClock(node);
   return {
     width: targetW,
     height: targetH,
     async frame(t = 0): Promise<HTMLCanvasElement> {
-      if (frameClock) renderFrameAt(true, t);   // deterministic phase — no settle wait needed
+      if (frameClock) renderFrameAt(frameClock, t);   // deterministic phase — no settle wait needed
       else if (!settled) { await new Promise<void>(r => setTimeout(r, waitMs)); settled = true; }
       return lib.toCanvas(node, dtoOpts);
     },
@@ -4996,17 +5006,195 @@ async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
 }
 
 // ── PPTX (PowerPoint) ─────────────────────────────────────────────────────────
-// One slide per page, each a full-frame picture. A paged tool ([data-pdf-page]) fans
-// out to one slide per page (like renderMultiPagePdf); a single-canvas tool is one
-// slide. Each page is rasterised to a HIGH-RES PNG (2× the page box) so the slide
-// looks pixel-identical to Lolly — gradients, photos, filters and effects all survive
-// — and opens everywhere (PowerPoint desktop/online, LibreOffice, Keynote). (EMF was
-// tried as a "scalable vector picture" but flattens gradients + mishandles rich CSS
-// backgrounds, so it read wrong for editorial pages; PNG is the faithful choice.)
-// The engine (buildPptxParts) frames the OOXML; the shell measures pages, renders
-// pictures, zips.
+// Purpose: transport a page's treated IMAGES and VECTORS into PowerPoint as separate,
+// extractable objects at full fidelity — layout is secondary. So instead of one flat
+// picture per slide, the DOM is decomposed:
+//   • an <svg> → a real embedded SVG picture (asvg:svgBlip + a PNG fallback), so the
+//     recipient can pull the crisp vector out (PowerPoint even "Convert to Shape"s it);
+//   • an <img> → a high-res PNG at (up to) its native resolution, with any CSS
+//     treatment baked in — the actual treated photo, extractable;
+//   • a url() background → the fetched asset bytes as a picture;
+//   • text → a native, editable text box (font size / colour / weight / align);
+//   • solid/gradient backgrounds + borders → rect shapes (light layout context);
+//   • anything the walkers can't express (filter/mask/blend/clip/conic) → that subtree
+//     rasterised to a PNG picture (baked, but faithful).
+// A paged tool ([data-pdf-page]) fans out to one slide per page; a single-canvas tool
+// is one slide. The engine (buildPptxParts) frames the OOXML from the shapes + media.
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-const PPTX_SCALE = 2;   // slide picture resolution multiple over the page's CSS box
+const MAX_PPTX_PX = 3000;      // per-side cap for any rasterised slide picture
+const PPTX_RASTER_SCALE = 2;   // default resolution multiple over an element's CSS box
+const MAX_PPTX_SHAPES = 1200;  // safety bound on objects emitted for one slide
+
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+  const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+const hex2 = (v: number): string => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+const rgbaHex = (c: Rgba): string => `#${hex2(c[0])}${hex2(c[1])}${hex2(c[2])}`;
+
+function pptxSolidFill(colorStr: string | null | undefined): PptxFill | null {
+  const c = parseCssColorFull(colorStr);
+  return c && c[3] > 0.01 ? { solid: rgbaHex(c), alpha: c[3] < 1 ? c[3] : undefined } : null;
+}
+// A CSS linear-gradient background → a PptxFill (reuses the engine gradient parsers).
+function pptxGradientFill(bgImage: string | null | undefined): PptxFill | null {
+  if (!bgImage || !/linear-gradient\(/i.test(bgImage)) return null;
+  const m = /linear-gradient\(([\s\S]*)\)\s*$/i.exec(bgImage.trim());
+  if (!m) return null;
+  const args = splitCssArgs(m[1]!);
+  if (!args.length) return null;
+  let angle = 180, start = 0;
+  if (/(^|\s)to\s|deg|turn|rad|grad/i.test(args[0]!)) { angle = parseGradientAngle(args[0]!) * 180 / Math.PI; start = 1; }
+  const stopArgs = args.slice(start);
+  const grad: Array<{ pos: number; color: string; alpha?: number }> = [];
+  stopArgs.forEach((raw, i) => {
+    const s = parseGradientStop(raw, i, stopArgs.length);
+    const c = s.colorStr ? parseCssColorFull(s.colorStr) : null;
+    if (!c) return;
+    const pos = s.offset.endsWith('%') ? parseFloat(s.offset) / 100 : (stopArgs.length > 1 ? i / (stopArgs.length - 1) : 0);
+    grad.push({ pos, color: rgbaHex(c), alpha: c[3] < 1 ? c[3] : undefined });
+  });
+  return grad.length >= 2 ? { grad, angle } : null;
+}
+// Sniff a fetched background asset's kind from magic bytes / URL.
+function sniffImgExt(buf: Uint8Array, url: string): 'png' | 'jpeg' | 'svg' | null {
+  if (buf[0] === 0x89 && buf[1] === 0x50) return 'png';
+  if (buf[0] === 0xff && buf[1] === 0xd8) return 'jpeg';
+  const head = new TextDecoder().decode(buf.subarray(0, 256)).trim();
+  if (head.startsWith('<svg') || head.startsWith('<?xml')) return 'svg';
+  return /\.svg(\?|#|$)/i.test(url) ? 'svg' : null;
+}
+// Rasterise SVG bytes to a PNG (the fallback blip a PowerPoint svgBlip requires).
+async function svgBytesToPng(svgBytes: Uint8Array, w: number, h: number): Promise<Uint8Array | null> {
+  if (typeof document === 'undefined') return null;
+  const url = URL.createObjectURL(new Blob([svgBytes as BlobPart], { type: 'image/svg+xml' }));
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('svg raster')); im.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(2, Math.min(MAX_PPTX_PX, Math.round(w)));
+    canvas.height = Math.max(2, Math.min(MAX_PPTX_PX, Math.round(h)));
+    const cx = canvas.getContext('2d');
+    if (!cx) return null;
+    cx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return dataUrlToBytes(canvas.toDataURL('image/png'));
+  } catch { return null; } finally { URL.revokeObjectURL(url); }
+}
+
+// Walk one page element into PPTX shapes + media (see the section comment above).
+async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<PptxSlide> {
+  const shapes: PptxShape[] = [];
+  const media: PptxMedia[] = [];
+  const rootRect = pageEl.getBoundingClientRect();
+  const E = EMU_PER_PX;
+  const addMedia = (bytes: Uint8Array, ext: PptxMedia['ext']): number => (media.push({ bytes, ext }), media.length - 1);
+  const boxOf = (r: DOMRect) => ({ x: Math.round((r.left - rootRect.left) * E), y: Math.round((r.top - rootRect.top) * E), cx: Math.round(r.width * E), cy: Math.round(r.height * E) });
+  const full = () => shapes.length >= MAX_PPTX_SHAPES;
+
+  async function rasterPic(el: HTMLElement, r: DOMRect, name?: string, hiRes = false): Promise<void> {
+    let scale = PPTX_RASTER_SCALE;
+    if (hiRes) {
+      const nat = (el as HTMLImageElement).naturalWidth || 0;
+      if (nat > r.width) scale = Math.max(scale, Math.min(nat / r.width, MAX_PPTX_PX / Math.max(1, r.width)));
+    }
+    const pxW = Math.max(2, Math.min(MAX_PPTX_PX, Math.round(r.width * scale)));
+    const pxH = Math.max(2, Math.min(MAX_PPTX_PX, Math.round(r.height * scale)));
+    const dataUrl = await rasterizeNodeToDataUrl(el, pxW, pxH);
+    if (dataUrl) shapes.push({ kind: 'pic', ...boxOf(r), media: addMedia(dataUrlToBytes(dataUrl), 'png'), name });
+  }
+
+  async function svgPic(el: Element, r: DOMRect): Promise<void> {
+    const clone = el.cloneNode(true) as Element;
+    stripCommentNodes(clone);
+    if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    await inlineBlobUrlsInEl(clone);
+    const svgBytes = new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + new XMLSerializer().serializeToString(clone));
+    const png = await svgBytesToPng(svgBytes, r.width * 2, r.height * 2);
+    if (!png) { await rasterPic(el as HTMLElement, r, 'vector'); return; }  // no fallback raster → bake
+    const pngIdx = addMedia(png, 'png');
+    const svgIdx = addMedia(svgBytes, 'svg');
+    shapes.push({ kind: 'pic', ...boxOf(r), media: pngIdx, svg: svgIdx, name: 'vector' });
+  }
+
+  async function bgImagePic(el: Element, style: CSSStyleDeclaration, r: DOMRect): Promise<void> {
+    const m = /url\((["']?)([^"')]+)\1\)/.exec(style.backgroundImage);
+    if (!m) return;
+    try {
+      const buf = new Uint8Array(await (await fetch(m[2]!)).arrayBuffer());
+      const ext = sniffImgExt(buf, m[2]!);
+      if (ext === 'png' || ext === 'jpeg') { shapes.push({ kind: 'pic', ...boxOf(r), media: addMedia(buf, ext), name: 'background' }); return; }
+      if (ext === 'svg') {
+        const png = await svgBytesToPng(buf, r.width * 2, r.height * 2);
+        if (png) shapes.push({ kind: 'pic', ...boxOf(r), media: addMedia(png, 'png'), svg: addMedia(buf, 'svg'), name: 'background' });
+      }
+    } catch { /* asset unreachable — skip */ }
+  }
+
+  const directText = (el: Element): string => {
+    let s = '';
+    for (const nd of Array.from(el.childNodes)) if (nd.nodeType === 3) s += nd.textContent || '';
+    return s.replace(/\s+/g, ' ').trim();
+  };
+
+  async function visit(el: Element): Promise<void> {
+    if (full() || el.nodeType !== 1) return;
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'style' || tag === 'script') return;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') === 0) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 0.5 || rect.height < 0.5) return;
+
+    // A rotated element: bake it to a picture (rotation preserved) rather than
+    // reconstructing the transform per shape kind. Rare in these tools; layout secondary.
+    if (pureRotationDeg(style.transform)) { await rasterPic(el as HTMLElement, rect, 'rotated'); return; }
+    if (tag === 'svg') { await svgPic(el, rect); return; }
+    if (tag === 'img') { await rasterPic(el as HTMLElement, rect, 'image', true); return; }
+    if (tag === 'canvas' || tag === 'video') { await rasterPic(el as HTMLElement, rect, tag); return; }
+
+    // Effects the shape/text walkers can't express → bake the subtree to a picture.
+    // (background-image:url() is handled specially below — it's an extractable asset.)
+    const reason = detectUnsupportedCss(el, style);
+    if (reason && reason !== 'background-image:url()') { await rasterPic(el as HTMLElement, rect, reason); return; }
+
+    // Background / border / radius → a rect shape (layout context).
+    const fill = pptxGradientFill(style.backgroundImage) ?? pptxSolidFill(style.backgroundColor) ?? undefined;
+    const bw = parseFloat(style.borderTopWidth) || 0;
+    const bc = bw > 0 && style.borderTopStyle !== 'none' ? parseCssColorFull(style.borderTopColor) : null;
+    const line = bc && bc[3] > 0.01 ? { color: rgbaHex(bc), w: Math.round(bw * E) } : undefined;
+    const radiusPx = parseFloat(style.borderTopLeftRadius) || 0;
+    if (fill || line || radiusPx > 0) {
+      shapes.push({ kind: 'rect', ...boxOf(rect), fill, line, radius: radiusPx > 0 ? Math.round(radiusPx * E) : undefined });
+    }
+    if (/url\(/.test(style.backgroundImage)) await bgImagePic(el, style, rect);
+
+    // Children stack above this element's background.
+    for (const child of Array.from(el.children)) { if (full()) break; await visit(child); }
+
+    // Direct text (the leaf-most container of a run) → an editable text box.
+    const txt = directText(el);
+    if (txt && !full()) {
+      const sizePt = (parseFloat(style.fontSize) || 16) * 0.75;
+      const cc = parseCssColorFull(style.color);
+      const align: 'l' | 'ctr' | 'r' | 'just' =
+        style.textAlign === 'center' ? 'ctr' : style.textAlign === 'right' ? 'r' : style.textAlign === 'justify' ? 'just' : 'l';
+      const font = (style.fontFamily || '').split(',')[0]?.replace(/["']/g, '').trim() || undefined;
+      const bold = style.fontWeight === 'bold' || (parseInt(style.fontWeight, 10) || 400) >= 600;
+      shapes.push({
+        kind: 'text', ...boxOf(rect), anchor: 't',
+        paras: [{ align, runs: [{ text: txt, sizePt, color: cc ? rgbaHex(cc) : undefined, bold, italic: style.fontStyle === 'italic', font }] }],
+      });
+    }
+  }
+
+  await visit(pageEl);
+  if (full()) _host?.log?.('warn', `pptx: slide hit the ${MAX_PPTX_SHAPES}-object cap; some elements were dropped.`);
+  return { shapes, media };
+}
+
 async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob> {
   const pages = node.querySelectorAll ? [...node.querySelectorAll('[data-pdf-page]')] : [];
   const pageEls: Element[] = pages.length ? pages : [node];
@@ -5016,19 +5204,9 @@ async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob> {
   const emuW = Math.max(1, Math.round((r0.width || 1) * EMU_PER_PX));
   const emuH = Math.max(1, Math.round((r0.height || 1) * EMU_PER_PX));
 
-  const slides: Array<{ image: Uint8Array; ext: 'emf' | 'png'; wPx: number; hPx: number }> = [];
+  const slides: PptxSlide[] = [];
   for (const el of pageEls) {
-    const r = el.getBoundingClientRect();
-    const wPx = Math.max(1, Math.round(r.width || 1));
-    const hPx = Math.max(1, Math.round(r.height || 1));
-    // Render the page picture at 2× its box; never carry the whole export's
-    // bundle/lock/credential opts onto a per-slide picture render.
-    const png = await renderRaster(el, 'png', {
-      ...opts, width: wPx * PPTX_SCALE, height: hPx * PPTX_SCALE, unit: 'px',
-      bundleFormats: undefined, filename: undefined, c2pa: false,
-      password: undefined, strongPassword: undefined, meta: undefined,
-    });
-    slides.push({ image: new Uint8Array(await png.arrayBuffer()), ext: 'png', wPx, hPx });
+    slides.push(await pptxSlideFromPage(el, opts));
     opts.onProgress?.(slides.length, pageEls.length);
   }
 
