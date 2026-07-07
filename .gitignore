@@ -1,2 +1,11 @@
 .DS_Store
 node_modules/
+dist/
+.vercel
+coverage
+public/_testlogos/
+public/info/*.html
+public/info/logos/
+public/info/og/
+public/t/
+public/view/
