@@ -36,41 +36,128 @@
 .identity-via{ color: hsl(var(--muted-foreground)); font-size: 0.85rem; }
 .valid-drop-icon svg { width: 34px; height: 34px; opacity: 0.7; }
 
-.valid-report { margin-top: 1.25rem; }
+.valid-report {
+  margin-top: 1.25rem;
+  /* Page-local status palette. Deliberately theme-independent: the pass/fail
+     chips are struck seals meant to read the SAME vivid green / persimmon off
+     any card in any theme. Each status carries a top→bottom glass gradient
+     (--*-1 light crown, --*-2 deep base), a solid mid tone, and a glow hue.
+     Defined here (not on .valid-result) so the collapsed-summary mini scorecard
+     — rendered in the <summary>, outside .valid-result — inherits it too. */
+  --vf-pass-1: 150 66% 51%;  --vf-pass-2: 154 58% 33%;  --vf-pass: 151 57% 40%;
+  --vf-fail-1: 20 90% 56%;   --vf-fail-2: 11 80% 42%;   --vf-fail: 15 82% 47%;
+  --vf-warn-1: 44 96% 58%;   --vf-warn-2: 33 90% 47%;   --vf-warn: 36 88% 46%;
+}
 .valid-busy { color: hsl(var(--muted-foreground)); }
 
 .valid-result {
+  position: relative;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--card));
-  padding: 1.25rem 1.4rem;
+  padding: 1.4rem 1.5rem;
   display: grid;
-  gap: 0.9rem;
+  gap: 1.1rem;
 }
-.valid-hero { display: flex; gap: 0.9rem; align-items: flex-start; }
-.valid-hero-icon svg { width: 40px; height: 40px; }
-.valid-hero h2 { margin: 0 0 0.2rem; font-size: 1.15rem; }
+.valid-hero { display: flex; gap: 1.1rem; align-items: flex-start; }
+.valid-hero > div { min-width: 0; }
+.valid-hero h2 { margin: 0 0 0.25rem; font-size: 1.2rem; letter-spacing: -0.01em; }
 .valid-hero p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.9rem; max-width: 60ch; }
-.valid-result.is-valid .valid-hero-icon { color: hsl(151 57% 38%); }
-.valid-result.is-invalid .valid-hero-icon { color: hsl(var(--destructive)); }
-.valid-result.is-none .valid-hero-icon { color: hsl(var(--muted-foreground)); }
+
+/* ── The medallion — the page's signature. A struck, glossy seal that floats
+   off the card. Green states get the full crown-jewel treatment (idle bob +
+   a slow conic sheen sweep); other states share the domed-glass geometry in
+   their own hue. Sits at the head of the hero, out-dazzling every pass pip. */
+.valid-hero-icon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 4.6rem; height: 4.6rem;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  isolation: isolate;
+  color: hsl(var(--muted-foreground));
+  background: radial-gradient(circle at 34% 26%, hsl(var(--muted)), hsl(var(--muted) / 0.6) 72%);
+  box-shadow:
+    inset 0 2px 3px hsl(0 0% 100% / 0.35),
+    inset 0 -7px 13px hsl(0 0% 0% / 0.16),
+    0 8px 20px -10px hsl(0 0% 0% / 0.4);
+}
+.valid-hero-icon svg { position: relative; z-index: 2; width: 2.1rem; height: 2.1rem; }
+/* Wet-glass crown highlight over the top third of every medallion. */
+.valid-hero-icon::before {
+  content: ''; position: absolute; z-index: 1; inset: 7% 12% 46% 12%;
+  border-radius: 50%;
+  background: linear-gradient(hsl(0 0% 100% / 0.6), hsl(0 0% 100% / 0));
+  pointer-events: none;
+}
+
+/* Shared domed seal for the two "damage / absent" hues. */
+.valid-result.is-invalid .valid-hero-icon,
+.valid-result.is-expired .valid-hero-icon {
+  color: hsl(0 0% 100%);
+}
+.valid-result.is-invalid .valid-hero-icon {
+  background: radial-gradient(circle at 34% 26%, hsl(var(--vf-fail-1)), hsl(var(--vf-fail-2)) 72%);
+  box-shadow:
+    inset 0 2px 3px hsl(0 0% 100% / 0.45), inset 0 -8px 14px hsl(11 80% 22% / 0.55),
+    0 12px 28px -10px hsl(var(--vf-fail) / 0.6), 0 3px 10px -4px hsl(0 0% 0% / 0.4);
+}
+.valid-result.is-expired .valid-hero-icon {
+  background: radial-gradient(circle at 34% 26%, hsl(var(--vf-warn-1)), hsl(var(--vf-warn-2)) 72%);
+  color: hsl(30 75% 16%);
+  box-shadow:
+    inset 0 2px 3px hsl(0 0% 100% / 0.5), inset 0 -8px 14px hsl(33 80% 26% / 0.5),
+    0 12px 28px -10px hsl(var(--vf-warn) / 0.55), 0 3px 10px -4px hsl(0 0% 0% / 0.35);
+}
+
+/* ── Green states — the impressive one. Bigger, brighter, animated. */
+.valid-result.is-valid .valid-hero-icon,
+.valid-result.is-trusted .valid-hero-icon,
+.valid-result.is-lolly .valid-hero-icon,
+.valid-result.is-delivered .valid-hero-icon {
+  width: 5.4rem; height: 5.4rem;
+  color: hsl(0 0% 100%);
+  background: radial-gradient(circle at 33% 25%, hsl(var(--vf-pass-1)), hsl(var(--vf-pass-2)) 72%);
+  box-shadow:
+    inset 0 2px 4px hsl(0 0% 100% / 0.55), inset 0 -9px 16px hsl(154 70% 16% / 0.55),
+    0 14px 34px -10px hsl(var(--vf-pass) / 0.7), 0 4px 12px -4px hsl(0 0% 0% / 0.4);
+  animation: valid-medallion-float 4.8s ease-in-out infinite;
+}
+.valid-result.is-valid .valid-hero-icon svg,
+.valid-result.is-trusted .valid-hero-icon svg,
+.valid-result.is-lolly .valid-hero-icon svg,
+.valid-result.is-delivered .valid-hero-icon svg { width: 2.5rem; height: 2.5rem; }
+
+/* Slow conic light sweep — the "struck coin catching the light" flourish,
+   reserved for the intact-green medallion so it reads as the hero. */
+.valid-result.is-valid .valid-hero-icon::after,
+.valid-result.is-trusted .valid-hero-icon::after,
+.valid-result.is-lolly .valid-hero-icon::after,
+.valid-result.is-delivered .valid-hero-icon::after {
+  content: ''; position: absolute; z-index: 1; inset: -1px; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 68%, hsl(0 0% 100% / 0.55) 80%, transparent 90%);
+  mix-blend-mode: screen; pointer-events: none;
+  animation: valid-medallion-sheen 4.5s linear infinite;
+}
+
+@keyframes valid-medallion-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -6px; } }
+@keyframes valid-medallion-sheen { to { rotate: 360deg; } }
 
 /* The headline answer: credential intact AND it records a Lolly export. */
-.valid-result.is-lolly {
-  border-color: hsl(151 57% 38% / 0.55);
-  box-shadow: 0 0 0 1px hsl(151 57% 38% / 0.25), 0 10px 28px -18px hsl(151 57% 30% / 0.45);
+.valid-result.is-lolly,
+.valid-result.is-trusted,
+.valid-result.is-delivered {
+  border-color: hsl(var(--vf-pass) / 0.5);
+  background:
+    radial-gradient(120% 90% at 8% 0%, hsl(var(--vf-pass) / 0.09), transparent 60%),
+    hsl(var(--card));
+  box-shadow: 0 0 0 1px hsl(var(--vf-pass) / 0.2), 0 18px 44px -26px hsl(var(--vf-pass) / 0.5);
 }
 .valid-result.is-lolly .valid-hero h2 { color: hsl(var(--primary)); }
-.valid-lolly-badge { margin-left: 0.45rem; color: hsl(151 57% 42%); }
-
-/* Signing chain verified against the pinned Lolly CA root — same green family
-   as .is-lolly (identity is the stronger statement, same visual register). */
-.valid-result.is-trusted {
-  border-color: hsl(151 57% 38% / 0.55);
-  box-shadow: 0 0 0 1px hsl(151 57% 38% / 0.25), 0 10px 28px -18px hsl(151 57% 30% / 0.45);
-}
-.valid-result.is-trusted .valid-hero h2 { color: hsl(151 57% 38%); }
-.valid-trusted-badge { margin-left: 0.45rem; color: hsl(151 57% 42%); }
+.valid-result.is-trusted .valid-hero h2,
+.valid-result.is-delivered .valid-hero h2 { color: hsl(var(--vf-pass)); }
+.valid-lolly-badge,
+.valid-trusted-badge { margin-left: 0.45rem; color: hsl(var(--vf-pass)); }
 /* "Signed by <email> — …" under the hero sub; rendered whenever the chain
    verified (trusted, or anchored-but-expired). Scoped under .valid-hero to
    out-specify the `.valid-hero p` margin reset above. */
@@ -79,8 +166,6 @@
   font-family: 'SUSE Mono', ui-monospace, monospace;
   font-size: 0.92em; font-weight: 600; color: hsl(var(--foreground));
 }
-
-.valid-result.is-expired .valid-hero-icon { color: hsl(38 80% 45%); }
 
 .valid-file { margin: 0; font-size: 0.85rem; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
 .valid-file strong { color: hsl(var(--foreground)); }
@@ -94,62 +179,182 @@
   color: hsl(var(--muted-foreground));
 }
 
+/* The credential's recorded facts, as a grid of floating cards — each fact its
+   own tile that lifts on hover, so the metadata reads as an object collection
+   rather than a wall of <dt>/<dd> rows. */
 .valid-facts {
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 1.5rem 1.25rem;
-  border-block: 1px solid hsl(var(--border));
-  padding-block: 0.9rem;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.75rem;
 }
-.valid-fact dt { display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: hsl(var(--muted-foreground)); }
-.valid-fact-ic { display: inline-flex; flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
-.valid-fact-ic svg { width: 2.5em; height: 2.5em; opacity: 1; stroke-width: 1px; margin-left: -1em; color: hsl(var(--border)); }
-.valid-fact dd { margin: 0.1rem 0 0; padding-left: 1.3rem; font-size: 0.88rem; overflow-wrap: anywhere; }
-
-/* Hero scorecard — eight canonical checks at a glance. The icon says WHICH
-   check; colour says its state (pass / fail / warn / not-applicable). */
-.valid-score { list-style: none; margin: 0.8rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.valid-score-pip {
-  --pip: hsl(var(--muted-foreground));
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0.4rem;
-  width: 6rem; min-height: 6rem;
-  padding: 0.6rem 0.4rem;
-  border-radius: 0.7rem;
+.valid-fact {
+  position: relative;
+  padding: 0.7rem 0.85rem 0.8rem;
+  border-radius: 0.8rem;
   border: 1px solid hsl(var(--border));
-  background: hsl(var(--muted) / 0.35);
-  color: var(--pip);
-  text-align: center;
+  background: linear-gradient(180deg, hsl(var(--card)), hsl(var(--muted) / 0.35));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04), 0 1px 2px hsl(0 0% 0% / 0.05), 0 8px 18px -14px hsl(0 0% 0% / 0.5);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
-.valid-score-ic { display: inline-flex; flex: 0 0 auto; color: var(--pip); }
-.valid-score-pip svg { width: 2em; height: 2em; stroke-width: 1.5; }
-.valid-score-label { font-size: 0.66rem; line-height: 1.2; font-weight: 500; color: hsl(var(--foreground)); overflow-wrap: anywhere; }
+.valid-fact:hover {
+  transform: translateY(-3px);
+  border-color: hsl(var(--vf-pass) / 0.35);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), 0 14px 26px -16px hsl(0 0% 0% / 0.55);
+}
+.valid-fact dt { display: flex; align-items: center; gap: 0.4rem; font-size: 0.66rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: hsl(var(--muted-foreground)); }
+.valid-fact-ic { display: inline-flex; flex: 0 0 auto; color: hsl(var(--vf-pass)); }
+.valid-fact-ic svg { width: 0.95rem; height: 0.95rem; }
+.valid-fact dd { margin: 0.4rem 0 0; font-size: 0.9rem; font-weight: 500; color: hsl(var(--foreground)); overflow-wrap: anywhere; }
+
+/* Hero scorecard — eight canonical checks at a glance. Each pip is a struck
+   status chip: pass = glossy pine glass, fail = persimmon/rust glass (equal
+   drama), warn = amber glass — all floating off the card on a coloured glow —
+   and not-applicable = a faded sheet of paper lying flat. The icon says WHICH
+   check; the chip's material says its state. Pips arm in a staggered cascade. */
+.valid-score { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.6rem; }
+
+.valid-score-pip {
+  --g1: var(--muted); --g2: var(--muted); --ink: hsl(var(--muted-foreground)); --glow: transparent;
+  position: relative; isolation: isolate;
+  display: flex; flex-direction: column; align-items: center; gap: 0.45rem;
+  border-radius: 0.85rem;
+  text-align: center;
+  color: var(--ink);
+}
+.valid-score-pip > * { position: relative; z-index: 1; }
+.valid-score-ic { display: inline-flex; flex: 0 0 auto; color: currentColor; }
+.valid-score-pip svg { stroke-width: 1.6; }
+.valid-score-label { font-size: 0.66rem; line-height: 1.2; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
 .valid-score-status {
   margin-top: auto;
-  font-size: 0.58rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
-  padding: 0.05rem 0.45rem; border-radius: 999px;
-  border: 1px solid currentColor; color: var(--pip);
+  font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0.08rem 0.5rem; border-radius: 999px;
+  border: 1px solid currentColor; color: var(--ink);
   overflow-wrap: anywhere;
 }
-.valid-score-pip.is-na .valid-score-label { color: hsl(var(--muted-foreground)); }
-.valid-score-pip.is-pass { --pip: hsl(151 57% 38%); border-color: hsl(151 57% 38% / 0.4); background: hsl(151 57% 38% / 0.12); }
-.valid-score-pip.is-fail { --pip: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.4); background: hsl(var(--destructive) / 0.1); }
-.valid-score-pip.is-warn { --pip: hsl(38 80% 45%); border-color: hsl(38 80% 45% / 0.45); background: hsl(38 80% 45% / 0.14); }
-.valid-score-pip.is-na { opacity: 0.45; }
 
+/* Full-size chips + the staggered "power-on" entrance. */
+.valid-score:not(.valid-score--mini) .valid-score-pip {
+  width: 6.25rem; min-height: 6.5rem;
+  padding: 0.7rem 0.45rem 0.65rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.4);
+  animation: valid-pip-in 0.5s cubic-bezier(0.2, 0.8, 0.3, 1.25) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.valid-score:not(.valid-score--mini) .valid-score-pip svg { width: 2em; height: 2em; }
+
+/* Not applicable — a faded sheet of paper: flat on the card, muted, a soft
+   close shadow. Almost recedes. */
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-na {
+  --ink: hsl(var(--muted-foreground) / 0.8);
+  background: hsl(var(--muted) / 0.4);
+  border-color: hsl(var(--border) / 0.7);
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.07);
+}
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-na .valid-score-status { opacity: 0.7; }
+
+/* Glossy glass chips — pass / fail / warn share the domed build; only the hue
+   differs. Lifted off the page on a coloured glow, with a wet-glass crown. */
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-pass,
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-fail,
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-warn {
+  border: 1px solid hsl(0 0% 100% / 0.28);
+  background: linear-gradient(163deg, hsl(var(--g1)), hsl(var(--g2)));
+  translate: 0 -3px;
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.5),
+    inset 0 -10px 18px -8px hsl(0 0% 0% / 0.35),
+    0 15px 28px -10px hsl(var(--glow)),
+    0 6px 14px -6px hsl(0 0% 0% / 0.35);
+  transition: translate 0.18s ease, box-shadow 0.18s ease;
+}
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-pass::before,
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-fail::before,
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-warn::before {
+  content: ''; position: absolute; z-index: 0; inset: 1px 1px 42% 1px;
+  border-radius: 0.8rem 0.8rem 45% 45% / 0.8rem 0.8rem 100% 100%;
+  background: linear-gradient(hsl(0 0% 100% / 0.42), hsl(0 0% 100% / 0));
+  pointer-events: none;
+}
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-pass:hover,
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-fail:hover,
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-warn:hover { translate: 0 -6px; }
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-pass .valid-score-status,
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-fail .valid-score-status,
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-warn .valid-score-status {
+  border-color: hsl(0 0% 100% / 0.4);
+  background: hsl(0 0% 100% / 0.22);
+}
+
+/* Status hues — the glass gradient stops, ink, and glow colour per state. */
+.valid-score-pip.is-pass { --g1: var(--vf-pass-1); --g2: var(--vf-pass-2); --ink: hsl(0 0% 100%); --glow: var(--vf-pass) / 0.55; }
+.valid-score-pip.is-fail { --g1: var(--vf-fail-1); --g2: var(--vf-fail-2); --ink: hsl(0 0% 100%); --glow: var(--vf-fail) / 0.5; }
+.valid-score-pip.is-warn { --g1: var(--vf-warn-1); --g2: var(--vf-warn-2); --ink: hsl(30 75% 15%); --glow: var(--vf-warn) / 0.5; }
+
+@keyframes valid-pip-in { from { opacity: 0; scale: 0.6; } to { opacity: 1; scale: 1; } }
+
+/* The assertion log — a video-game "power-on" cascade: rows arm one after
+   another, each swept once by a light bar as it lands. The round mark chip
+   reads like a HUD status light. */
 .valid-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
-.valid-check { display: flex; gap: 0.6rem; align-items: baseline; font-size: 0.85rem; }
-.valid-check-mark { flex: 0 0 1.1rem; text-align: center; font-weight: 700; }
-.valid-check--ok .valid-check-mark { color: hsl(151 57% 38%); }
-.valid-check--bad .valid-check-mark { color: hsl(var(--destructive)); }
-.valid-check--info .valid-check-mark { color: hsl(var(--muted-foreground)); }
-.valid-check-text { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; }
-.valid-check-text code { font-size: 0.78rem; background: hsl(var(--muted)); padding: 0.05rem 0.35rem; border-radius: 0.3rem; }
+.valid-check {
+  position: relative; overflow: hidden;
+  display: flex; gap: 0.65rem; align-items: center;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.6rem;
+  background: hsl(var(--muted) / 0.35);
+  font-size: 0.85rem;
+  opacity: 0;
+  animation: valid-check-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 55ms + 0.2s);
+}
+.valid-check::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 20%, hsl(var(--vf-pass) / 0.22) 50%, transparent 80%);
+  translate: -110% 0;
+  animation: valid-check-sweep 0.7s ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 55ms + 0.2s);
+}
+.valid-check--bad { background: hsl(var(--vf-fail) / 0.09); }
+.valid-check-mark {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.4rem; height: 1.4rem; border-radius: 50%;
+  font-size: 0.78rem; font-weight: 700; line-height: 1;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.valid-check--ok .valid-check-mark { color: hsl(var(--vf-pass)); background: hsl(var(--vf-pass) / 0.16); }
+.valid-check--bad .valid-check-mark { color: hsl(var(--vf-fail)); background: hsl(var(--vf-fail) / 0.16); }
+.valid-check--info .valid-check-mark { color: hsl(var(--muted-foreground)); background: hsl(var(--muted-foreground) / 0.14); }
+.valid-check-text { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; align-items: baseline; }
+.valid-check-text code { font-size: 0.78rem; font-family: 'SUSE Mono', ui-monospace, monospace; background: hsl(var(--muted)); padding: 0.05rem 0.4rem; border-radius: 0.3rem; }
 .valid-check-text > span { color: hsl(var(--muted-foreground)); }
 .valid-check--bad .valid-check-text > span { color: hsl(var(--foreground)); }
 
-.valid-note { margin: 0; font-size: 0.8rem; color: hsl(var(--muted-foreground)); max-width: 72ch; }
-.valid-note a { color: inherit; }
+@keyframes valid-check-in { from { opacity: 0; translate: -10px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes valid-check-sweep { to { translate: 110% 0; } }
+
+/* On-device footnote — a professional callout: a lock chip (nothing was
+   uploaded) beside the explanatory prose. */
+.valid-note {
+  display: flex; gap: 0.75rem; align-items: flex-start;
+  margin: 0; padding: 0.8rem 0.95rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  background: hsl(var(--muted) / 0.4);
+}
+.valid-note-ic {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 0.55rem;
+  background: hsl(var(--vf-pass) / 0.14); color: hsl(var(--vf-pass));
+}
+.valid-note-ic svg { width: 1.1rem; height: 1.1rem; }
+.valid-note-body { margin: 0; font-size: 0.8rem; line-height: 1.55; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+.valid-note-body strong { color: hsl(var(--foreground)); font-weight: 600; }
+.valid-note-body a { color: hsl(var(--vf-pass)); text-decoration: underline; text-underline-offset: 2px; }
+.valid-note-body code { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: 0.92em; }
 
 /* ─── Multi-file: a stack of collapsible reports ─────────────────────────────
    Dropping several files at once yields one <details> per file. The <summary>
@@ -172,12 +377,13 @@
   background: hsl(var(--card));
   overflow: hidden;
 }
-.valid-item.is-good { border-left-color: hsl(151 57% 38% / 0.65); }
-.valid-item.is-bad  { border-left-color: hsl(var(--destructive) / 0.65); }
-.valid-item.is-warn { border-left-color: hsl(38 80% 45% / 0.65); }
+.valid-item.is-good { border-left-color: hsl(var(--vf-pass) / 0.7); }
+.valid-item.is-bad  { border-left-color: hsl(var(--vf-fail) / 0.7); }
+.valid-item.is-warn { border-left-color: hsl(var(--vf-warn) / 0.7); }
 .valid-item.is-none,
 .valid-item.is-busy { border-left-color: hsl(var(--border)); }
 .valid-item[open] { box-shadow: 0 10px 28px -22px hsl(0 0% 0% / 0.55); }
+.valid-item.is-good[open] { box-shadow: 0 14px 32px -22px hsl(var(--vf-pass) / 0.7); }
 
 .valid-item-summary {
   display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem 0.75rem;
@@ -190,13 +396,19 @@
 
 .valid-item-badge {
   flex: 0 0 auto;
-  font-size: 0.74rem; font-weight: 600; white-space: nowrap;
+  font-size: 0.74rem; font-weight: 700; white-space: nowrap;
   padding: 0.15rem 0.6rem; border-radius: 999px;
   border: 1px solid currentColor;
 }
-.valid-item-badge.is-good { color: hsl(151 57% 38%); background: hsl(151 57% 38% / 0.1); }
-.valid-item-badge.is-bad  { color: hsl(var(--destructive)); background: hsl(var(--destructive) / 0.1); }
-.valid-item-badge.is-warn { color: hsl(38 80% 45%); background: hsl(38 80% 45% / 0.12); }
+/* The "good" summary badge echoes the hero chips: a glossy green fill that lifts
+   slightly off the row — a compact cousin of the pass pips. */
+.valid-item-badge.is-good {
+  color: hsl(0 0% 100%); border-color: hsl(0 0% 100% / 0.3);
+  background: linear-gradient(163deg, hsl(var(--vf-pass-1)), hsl(var(--vf-pass-2)));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.45), 0 4px 10px -5px hsl(var(--vf-pass) / 0.7);
+}
+.valid-item-badge.is-bad  { color: hsl(var(--vf-fail)); background: hsl(var(--vf-fail) / 0.12); }
+.valid-item-badge.is-warn { color: hsl(var(--vf-warn)); background: hsl(var(--vf-warn) / 0.14); }
 .valid-item-badge.is-none { color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.5); }
 .valid-item-badge.is-busy { color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.4); border-style: dashed; }
 
@@ -221,14 +433,20 @@
 /* The card is the frame now — drop the report's own border/box so it doesn't nest. */
 .valid-item-body .valid-result { border: 0; background: transparent; padding: 0; border-radius: 0; box-shadow: none; }
 
-/* Mini scorecard in the summary — icon-only pips, colour still = state. */
+/* Mini scorecard in the summary — icon-only pips, colour still = state. A quiet
+   flat echo of the hero chips (no gloss/float — this rides a dense summary row). */
 .valid-score--mini { margin: 0; gap: 0.3rem; flex: 0 0 auto; }
 .valid-score--mini .valid-score-pip {
   width: auto; min-height: 0; padding: 0.28rem; border-radius: 0.4rem;
+  border: 1px solid transparent;
 }
 .valid-score--mini .valid-score-label,
 .valid-score--mini .valid-score-status { display: none; }
 .valid-score--mini .valid-score-pip svg { width: 1.05em; height: 1.05em; }
+.valid-score--mini .valid-score-pip.is-pass { color: hsl(var(--vf-pass)); background: hsl(var(--vf-pass) / 0.16); }
+.valid-score--mini .valid-score-pip.is-fail { color: hsl(var(--vf-fail)); background: hsl(var(--vf-fail) / 0.16); }
+.valid-score--mini .valid-score-pip.is-warn { color: hsl(var(--vf-warn)); background: hsl(var(--vf-warn) / 0.18); }
+.valid-score--mini .valid-score-pip.is-na { color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.5); opacity: 0.6; }
 
 /* ─── Content Credentials identity (profile) ────────────────────────────────
    Enrollment UI in the profile's Content Credentials section. Buttons reuse
@@ -266,3 +484,18 @@
   font-size: 13px;
 }
 .identity-days-hint { flex-basis: 100%; font-size: 0.75rem; color: hsl(var(--muted-foreground)); max-width: 62ch; }
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────────
+   Honour the OS preference: no entrance cascade, no medallion float or sheen,
+   no sweep. Everything resolves to its final resting state, fully visible. */
+@media (prefers-reduced-motion: reduce) {
+  .valid-hero-icon,
+  .valid-hero-icon::after,
+  .valid-score-pip,
+  .valid-check,
+  .valid-check::after {
+    animation: none !important;
+  }
+  .valid-check { opacity: 1; translate: none; }
+  .valid-check::after { display: none; }
+}

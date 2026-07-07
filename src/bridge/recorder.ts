@@ -244,7 +244,12 @@ function createMeter(): MeterAPI {
   async function start(): Promise<void> {
     refcount++;
     if (stream) return;
-    if (starting) return starting;
+    if (starting) {
+      // Follower on a shared in-flight start: if that start rejects, drop the
+      // refcount we just took so the leader's teardown isn't blocked and the mic
+      // doesn't stay lit.
+      return starting.catch((e) => { refcount = Math.max(0, refcount - 1); throw e; });
+    }
     starting = (async () => {
       // The meter is a pre-record SOUND CHECK, so open the mic RAW — no echo
       // cancellation, no noise suppression, no auto-gain. It never plays audio back,

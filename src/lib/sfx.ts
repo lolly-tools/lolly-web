@@ -29,7 +29,7 @@
  *    it no longer silences sounds by default.) An explicit stored preference always wins.
  */
 
-export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'warn' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
+export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'warn' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
 
 /** localStorage mirror of the mute flag ('1' muted / '0' on). Canonical store is the profile. */
 const MUTE_KEY = 'lolly:sfxMuted';
@@ -220,6 +220,53 @@ function surge(ctx: AudioContext, out: AudioNode, { type = 'triangle', from, to,
   osc.stop(t0 + dur + 0.03);
 }
 
+interface BrassOpts {
+  /** Fundamental (Hz). */ from: number;
+  /** Total duration (s) — this voice is allowed to ring long. */ dur: number;
+  /** Peak gain (0–1, relative to master). */ peak?: number;
+  /** Amp attack (s) — fast punch-in, not a swell. */ attack?: number;
+  /** Lowpass cutoff at onset (Hz) — dark/muffled. */ cutoffFrom?: number;
+  /** Lowpass cutoff at full bloom (Hz) — open/bright, the "…aaah" vowel. */ cutoffTo?: number;
+  /** Seconds for the filter to open (the bloom). */ bloom?: number;
+  /** Ensemble detune spread (cents) across the two saws — the brass "grit". */ detune?: number;
+  /** Start offset (s). */ delay?: number;
+}
+
+/**
+ * A brass "braaam" voice: a pair of detuned sawtooths through a lowpass whose cutoff
+ * BLOOMS open just after a fast attack (that opening is the vowel — the "…aaah"), then
+ * darkens again as the long tail decays. Each osc bends up into pitch over the first ~70ms
+ * the way a brass player's attack does. Where `surge` swells and `blip` taps, `brass`
+ * PUNCHES then blooms and rings — the core of a deep cinematic hit. Layer a few at octaves.
+ */
+function brass(ctx: AudioContext, out: AudioNode, { from, dur, peak = 0.2, attack = 0.03, cutoffFrom = 180, cutoffTo = 2000, bloom = 0.22, detune = 10, delay = 0 }: BrassOpts): void {
+  const t0 = ctx.currentTime + delay;
+  const eps = 0.0001;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.Q.setValueAtTime(1.1, t0);                                                  // a touch of vocal resonance
+  lp.frequency.setValueAtTime(Math.max(1, cutoffFrom), t0);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(1, cutoffTo), t0 + bloom);  // open — the "…aaah"
+  lp.frequency.exponentialRampToValueAtTime(Math.max(1, cutoffTo * 0.32), t0 + dur); // darken into the tail
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(eps, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + attack);        // fast punch in
+  g.gain.exponentialRampToValueAtTime(peak * 0.62, t0 + dur * 0.6); // sustain sag
+  g.gain.exponentialRampToValueAtTime(eps, t0 + dur);            // long ring-out
+  lp.connect(g).connect(out);
+  // Two saws, detuned apart, beating against each other for ensemble width.
+  for (const cents of [-detune / 2, detune / 2]) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.detune.setValueAtTime(cents + (Math.random() * 2 - 1) * 3, t0);
+    osc.frequency.setValueAtTime(from * 0.972, t0);                     // start a hair flat…
+    osc.frequency.exponentialRampToValueAtTime(from, t0 + 0.07);        // …and bend up into pitch (brass attack)
+    osc.connect(lp);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.04);
+  }
+}
+
 // ── the sound grammar ───────────────────────────────────────────────────────────
 // One small vocabulary, deliberately consistent: rising = "leaving", falling = "settling",
 // receding + noise = "gone". Kept quiet and short so it reads as feedback, not decoration.
@@ -263,6 +310,30 @@ function yum(ctx: AudioContext, out: AudioNode, { pitch = 620, dur = 0.16, peak 
   src.start(t0); vib.start(t0); src.stop(t0 + dur + 0.08); vib.stop(t0 + dur + 0.08);
 }
 
+/** A metallic "ching" — a sword-cross clang. A bright band-passed noise scrape (the
+ *  steel-on-steel impact) under a cluster of INHARMONIC partials — non-integer frequency
+ *  ratios, which is what makes struck metal SING like steel rather than ring like a pure
+ *  bell. Each partial glides down a hair and decays as it rings, the higher ones softer and
+ *  shorter (so it flashes bright on the strike then mellows). Fast attack, medium ring. Two
+ *  staggered (a touch apart in pitch) read as "ching-ching" — two blades crossing. */
+function clash(ctx: AudioContext, out: AudioNode, { freq = 2600, dur = 0.5, peak = 0.22, delay = 0 }: { freq?: number; dur?: number; peak?: number; delay?: number }): void {
+  // The impact: a sharp initial "chink" over a broader bright scrape — metal on metal.
+  tick(ctx, out, { dur: 0.012, peak: peak * 0.9, freq: freq * 2.6, q: 1.4, delay });
+  tick(ctx, out, { dur: 0.045, peak: peak * 0.65, freq: freq * 2.0, q: 0.8, delay });
+  // The ringing steel: inharmonic partials, higher = softer + shorter, each easing down.
+  const partials: Array<[number, number, number]> = [
+    [1.00, dur,        1.00],
+    [1.49, dur * 0.80, 0.55],
+    [2.03, dur * 0.60, 0.34],
+    [2.66, dur * 0.42, 0.20],
+    [3.42, dur * 0.28, 0.11],
+  ];
+  for (const [ratio, d, amp] of partials) {
+    const f = freq * ratio;
+    blip(ctx, out, { type: 'sine', from: f, to: f * 0.985, dur: d, peak: peak * amp, delay });
+  }
+}
+
 const VOICES: Record<SfxName, (ctx: AudioContext, out: AudioNode) => void> = {
   // Making a NEW session from a tool — "Twinkle bloom" (sound audition #8): a soft shimmer that
   // blooms open and floats down. Feather-light and quietly celebratory — a fresh canvas
@@ -296,15 +367,16 @@ const VOICES: Record<SfxName, (ctx: AudioContext, out: AudioNode) => void> = {
     tick(ctx, out, { dur: 0.007, peak: 0.16, freq: 3600, q: 1.0 });
     blip(ctx, out, { type: 'sine', from: 940, to: 780, dur: 0.024, peak: 0.13 });
   },
-  // "Maglev Glide" — Andy's pick for VISITING the Verify page (Sound Lab, 2026-07-06). A
-  // frictionless rising doppler: two sine tones SWELLING in and gliding up (a fundamental +
-  // an octave shimmer) under an airy forward sweep that opens bright — the sound of sliding
-  // cleanly onto the page. Played on the "Verify" nav link (the page visit), not the in-page
-  // file action.
+  // "Bing & blades" — Andy's pick for VISITING the Verify page (Sound Lab, 2026-07-07). A
+  // bright bell BING rings out while two metallic sword crosses ("ching-ching") slash over
+  // the top of it, overlapping: the first clash lands WITH the bing, the second crosses a
+  // beat later and a hair higher (the answering blade). Bell under, steel over — a crisp
+  // "checked & cleared" flourish. Played on the "Verify" nav link (the page visit), not the
+  // in-page file action.
   verify(ctx, out) {
-    surge(ctx, out, { type: 'sine', from: 320, to: 1000, dur: 0.46, peak: 0.22, attack: 0.12 });
-    surge(ctx, out, { type: 'sine', from: 640, to: 2000, dur: 0.46, peak: 0.09, attack: 0.14, detune: 6 });
-    sweep(ctx, out, { dur: 0.40, peak: 0.10, cutoffFrom: 900, cutoffTo: 3400 });   // airy top, opening upward
+    bell(ctx, out, { freq: 1047, dur: 0.58, peak: 0.20 });                 // C6 bing — rings out underneath
+    clash(ctx, out, { freq: 2600, dur: 0.50, peak: 0.19 });                // ching — with the bing
+    clash(ctx, out, { freq: 3100, dur: 0.46, peak: 0.20, delay: 0.13 });   // ching — the cross, higher, over the ring
   },
   // A card lifts out of the grid — a short upward glide.
   pickup(ctx, out) {
@@ -483,6 +555,22 @@ const VOICES: Record<SfxName, (ctx: AudioContext, out: AudioNode) => void> = {
     blip(ctx, out, { type: 'triangle', from: 1319, dur: 0.34, peak: 0.22, delay: 0.16 });   // E6 — the "-da", rings out
     blip(ctx, out, { type: 'sine',     from: 1568, dur: 0.3,  peak: 0.12, delay: 0.18 });   // G6 shine on top
     tick(ctx, out, { dur: 0.01, peak: 0.09, freq: 6000, q: 1.0, delay: 0.16 });             // sparkle
+  },
+  // The "braaam" — a deep cinematic brass hit for the Verify verdict when a credential is
+  // intact (the moment the green medallion lights up). SOFT (lowpass-tamed saws, never a
+  // buzzer), FAST (a ~30ms punch, and it fires the instant it's triggered), DEEP (an A1 root
+  // + fifth + octave over a pure sub), and it's allowed to RING LONGER than any other cue
+  // (~2s tail). Open fifths keep it triumphant, not ominous; a whisper of high shimmer tips
+  // it toward "authentic!" rather than "doom". The single most impressive sound in the app.
+  braaam(ctx, out) {
+    const D = 2.0;
+    tick(ctx, out, { dur: 0.05, peak: 0.05, freq: 480, q: 0.5 });                                            // soft brass "chiff" on the attack
+    brass(ctx, out, { from: 55.00, dur: D,        peak: 0.24, attack: 0.028, cutoffFrom: 150, cutoffTo: 1500, bloom: 0.24, detune: 13 });          // A1 — the weight
+    brass(ctx, out, { from: 82.41, dur: D * 0.94, peak: 0.15, attack: 0.032, cutoffFrom: 190, cutoffTo: 1900, bloom: 0.22, detune: 11, delay: 0.006 }); // E2 — the fifth
+    brass(ctx, out, { from: 110.0, dur: D * 0.86, peak: 0.11, attack: 0.036, cutoffFrom: 240, cutoffTo: 2300, bloom: 0.2,  detune: 9,  delay: 0.012 }); // A2 — presence
+    blip(ctx, out, { type: 'sine', from: 55.00, to: 51, dur: D, peak: 0.20 });                               // pure sub — chest weight, no buzz
+    blip(ctx, out, { type: 'triangle', from: 880, dur: 0.6, peak: 0.045, delay: 0.05 });                     // a whisper of shimmer — triumphant, not grim
+    blip(ctx, out, { type: 'sine', from: 1760, dur: 0.4, peak: 0.02, delay: 0.06 });                         // faint top glint
   },
   // The gentle inverse of victory — a soft, low, DESCENDING two-note "uh-oh" with a
   // little low body: signals "didn't pass" (a broken or missing credential) without a
@@ -728,152 +816,6 @@ export function playThemeSfx(theme: string): void {
   try { (THEME_VOICES[theme] ?? THEME_VOICES.light)?.(a.ctx, a.master); } catch { /* best-effort */ }
 }
 
-// ── arrival "ahhh" (gallery + catalog) ───────────────────────────────────────────
-// A single, PUNCHY "ahhh" — the sound of landing on a top-level page. One-shot (never loops):
-// a fast swell in, a brief peak, then a fade. Built from a config so each surface gets its own
-// character: the GALLERY is low, bassy and breathy; the CATALOG is lighter and brighter (an
-// octave-plus up, no sub, brighter vowel + more air) and is led in by four rising "stacking"
-// clicks — like assets snapping into a stack. Synthesised (zero assets), gesture-gated, and
-// silent only when sound is muted (sound defaults ON — reduced motion no longer mutes it; that
-// preference gates visual motion, not audio). Tune per surface via the config.
-interface AahConfig {
-  peak: number;       // env target before the formant filtering + 0.26 master attenuate it
-  attack: number;     // s — punchy onset
-  dur: number;        // s — short; self-terminating (no loop)
-  chord: readonly number[];
-  formants: readonly { f: number; q: number; g: number }[];
-  soften: number;     // low-pass cutoff over the vowel (higher = brighter)
-  breath: number;     // aspiration-noise level sung through the vowel (the breathiness)
-  air: number;        // high-pass "air" over the top
-  airHz: number;
-  sub: number;        // sub-root sine level under the vowel (0 = none)
-  clicks: number;     // leading rising "stacking" ticks (0 = none)
-}
-
-// The gallery arrival — a warm, musical low "hum": a soft C-major chord in a cosy
-// low-mid register (with its third, so it reads major and friendly, not an ominous
-// hollow drone), rounded formants and only a little sub. Led in by the SAME four
-// rising "stacking" clicks the catalog uses. Quiet, soft and hummy — but musical.
-const GALLERY_AAH: AahConfig = {
-  peak: 0.30, attack: 0.09, dur: 1.1,
-  chord: [130.81, 196.00, 261.63, 329.63], // C3 · G3 · C4 · E4 — a warm major chord
-  formants: [{ f: 350, q: 5, g: 1.0 }, { f: 700, q: 6, g: 0.45 }], // rounded "hum", not nasal-menacing
-  soften: 1100, breath: 0.16, air: 0.05, airHz: 3600, sub: 0.28, clicks: 4,
-};
-
-const CATALOG_AAH: AahConfig = {
-  peak: 0.42, attack: 0.11, dur: 1.25,
-  chord: [261.63, 392.00, 523.25, 659.25], // C4 · G4 · C5 · E5 — light + bright
-  formants: [{ f: 800, q: 6, g: 0.85 }, { f: 1250, q: 9, g: 0.6 }, { f: 2950, q: 11, g: 0.42 }],
-  soften: 4400, breath: 0.4, air: 0.22, airHz: 5200, sub: 0, clicks: 4,
-};
-
-// Projects: the highest, brightest, lightest of the three — up another octave, the brightest
-// vowel, the most air, no bass and no stacking clicks; a delicate airy sparkle on arrival.
-const PROJECTS_AAH: AahConfig = {
-  peak: 0.36, attack: 0.10, dur: 1.1,
-  chord: [523.25, 659.25, 783.99, 1046.50], // C5 · E5 · G5 · C6 — highest + brightest
-  formants: [{ f: 880, q: 6, g: 0.7 }, { f: 1400, q: 9, g: 0.6 }, { f: 3200, q: 11, g: 0.5 }],
-  soften: 6000, breath: 0.36, air: 0.28, airHz: 6000, sub: 0, clicks: 0,
-};
-
-/** Render one "ahhh" (+ any lead-in stacking clicks) into `out`. Caller guarantees a RUNNING,
- *  un-muted context. One-shot: a punchy attack, a brief peak, then a fade. */
-function renderAah(ctx: AudioContext, out: AudioNode, cfg: AahConfig): void {
-  const t0 = ctx.currentTime;
-  const eps = 0.0001;
-  const DUR = cfg.dur;
-
-  // Optional lead-in — a few rising "stacking" clicks (assets snapping into a stack): each a
-  // touch higher + louder so it builds. The vowel then blooms once the stack has landed.
-  for (let i = 0; i < cfg.clicks; i++) {
-    tick(ctx, out, { dur: 0.02, peak: 0.16 + i * 0.02, freq: 1500 * 1.16 ** i, q: 1.3, delay: i * 0.06 });
-  }
-  const s = t0 + (cfg.clicks ? cfg.clicks * 0.06 : 0); // the vowel's own start (after the stack)
-
-  // Master one-shot envelope — punchy attack, a brief peak, then an exponential fade to silence.
-  const env = ctx.createGain();
-  env.gain.setValueAtTime(eps, s);
-  env.gain.exponentialRampToValueAtTime(cfg.peak, s + cfg.attack);
-  env.gain.setValueAtTime(cfg.peak, s + cfg.attack + 0.18);   // brief hold at the peak
-  env.gain.exponentialRampToValueAtTime(eps, s + DUR);        // fade out — the tail of the "ahh"
-  env.connect(out);
-
-  // "Ah" vowel formant bank — tone AND breath pass through it, so the whole hit sings the vowel;
-  // the low-pass sets the brightness.
-  const mix = ctx.createGain();
-  mix.gain.value = 0.34;
-  const formantSum = ctx.createGain();
-  for (const fm of cfg.formants) {
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = fm.f;
-    bp.Q.value = fm.q;
-    const fg = ctx.createGain();
-    fg.gain.value = fm.g;
-    mix.connect(bp).connect(fg).connect(formantSum);
-  }
-  const soften = ctx.createBiquadFilter();
-  soften.type = 'lowpass';
-  soften.frequency.value = cfg.soften;
-  soften.Q.value = 0.4;
-  formantSum.connect(soften).connect(env);
-
-  // The chord — each note doubled + detuned for ensemble width; feeds the vowel formants.
-  for (const f of cfg.chord) {
-    for (const det of [-7, 7]) {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = f;
-      o.detune.value = det;
-      o.connect(mix);
-      o.start(s);
-      o.stop(s + DUR + 0.05);
-    }
-  }
-
-  // Sub-root — pure low sines UNDER the vowel (parallel to the formants, whose lowest band
-  // would filter the fundamental right out) for bass weight. Omitted for the light/bright config.
-  if (cfg.sub > 0) {
-    for (const [f, g] of [[cfg.chord[0]! / 2, cfg.sub], [cfg.chord[0]!, cfg.sub * 0.55]] as const) {
-      const sub = ctx.createOscillator();
-      const sg = ctx.createGain();
-      sub.type = 'sine';
-      sub.frequency.value = f;
-      sg.gain.setValueAtTime(eps, s);
-      sg.gain.exponentialRampToValueAtTime(g, s + cfg.attack);
-      sg.gain.exponentialRampToValueAtTime(eps, s + DUR);
-      sub.connect(sg).connect(env);
-      sub.start(s);
-      sub.stop(s + DUR + 0.05);
-    }
-  }
-
-  // Breath — aspiration noise sung through the vowel formants (a breathy "ahh"), plus a whisper
-  // of high air. Front-loaded (fast in, out before the tone) so it's the breath at the TOP of
-  // the hit, not a wash underneath.
-  const n = Math.max(1, Math.floor(ctx.sampleRate * DUR));
-  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) data[i] = Math.random() * 2 - 1; // shell code — Math.random is fine
-  const nSrc = ctx.createBufferSource();
-  nSrc.buffer = buf;
-  const nEnv = ctx.createGain();
-  nEnv.gain.setValueAtTime(eps, s);
-  nEnv.gain.exponentialRampToValueAtTime(cfg.breath, s + 0.10); // quick breath in
-  nEnv.gain.exponentialRampToValueAtTime(eps, s + DUR * 0.8);   // fades before the tone tail
-  nSrc.connect(nEnv);
-  nEnv.connect(mix); // breathy vowel — through the formants
-  const air = ctx.createBiquadFilter();
-  air.type = 'highpass';
-  air.frequency.value = cfg.airHz;
-  const airG = ctx.createGain();
-  airG.gain.value = cfg.air;
-  nEnv.connect(air).connect(airG).connect(env); // a little high "air" over the top
-  nSrc.start(s);
-  nSrc.stop(s + DUR + 0.05);
-}
-
 type ArrivalRender = (ctx: AudioContext, out: AudioNode) => void;
 let pendingArrival: ArrivalRender | null = null; // an arrival hit waiting for the first gesture
 let arrivalArmed = false;                         // a one-shot gesture listener is pending (autoplay-gated)
@@ -939,10 +881,69 @@ function renderProjectsWind(ctx: AudioContext, out: AudioNode): void {
   src.stop(s + dur + 0.02);
 }
 
+// A reedy, low, breathy FOGHORN — the Catalog arrival's voice. A beating pair of detuned
+// sawtooths + a triangle body + an octave (which carries the low fundamental on small
+// speakers), through a dark low-pass, swelling in slowly; `sag` bends the pitch DOWN over
+// the tail for the mournful harbour droop. `air` sings a little low-passed breath through it.
+function foghorn(ctx: AudioContext, out: AudioNode, opts: {
+  freq: number; dur: number; peak?: number; delay?: number; sag?: number; bright?: number; attack?: number; air?: number;
+}): void {
+  const { freq, dur, peak = 0.34, delay = 0, sag = 0, bright = 640, attack = 0.18, air = 0.1 } = opts;
+  const t = ctx.currentTime + delay;
+  const eps = 0.0001;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(eps, t);
+  env.gain.exponentialRampToValueAtTime(peak, t + attack);                    // slow swell in
+  env.gain.setValueAtTime(peak, t + Math.min(dur * 0.6, attack + 0.22));      // hold at the peak
+  env.gain.exponentialRampToValueAtTime(eps, t + dur);                        // long fade out
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = bright; lp.Q.value = 0.6;
+  lp.connect(env).connect(out);
+  const voices: readonly { m: number; det: number; g: number; type: OscillatorType }[] = [
+    { m: 1, det: -7, g: 0.5,  type: 'sawtooth' },
+    { m: 1, det:  7, g: 0.5,  type: 'sawtooth' }, // the pair beats = the wavering horn
+    { m: 1, det:  0, g: 0.55, type: 'triangle' }, // rounder body
+    { m: 2, det:  0, g: 0.16, type: 'sawtooth' }, // octave — carries on small speakers
+  ];
+  for (const v of voices) {
+    const o = ctx.createOscillator();
+    o.type = v.type;
+    o.frequency.setValueAtTime(freq * v.m, t);
+    o.detune.setValueAtTime(v.det, t);
+    if (sag) o.frequency.exponentialRampToValueAtTime(Math.max(1, freq * v.m * (1 - sag)), t + dur);
+    const g = ctx.createGain(); g.gain.value = v.g;
+    o.connect(g).connect(lp);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  if (air > 0) {                                                              // breath through the horn
+    const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; // shell code — Math.random is fine
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const nlp = ctx.createBiquadFilter(); nlp.type = 'lowpass'; nlp.frequency.value = 900;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(eps, t);
+    ng.gain.exponentialRampToValueAtTime(air, t + attack * 0.7);
+    ng.gain.exponentialRampToValueAtTime(eps, t + dur * 0.75);
+    src.connect(nlp).connect(ng).connect(out);
+    src.start(t); src.stop(t + dur + 0.05);
+  }
+}
+
+// The Catalog arrival — a deep, fast-hitting harbour foghorn (Andy, Sound Lab 2026-07-07,
+// LOCKED): three octaves below the original "Deep Harbor" pitch, a near-instant onset (no
+// slow swell) and no book stacking — just the horn, with a mournful downward sag on the tail.
+// The ~7.25 Hz fundamental is infrasound (felt, not heard); its dense sawtooth harmonics
+// (passed up to ~620 Hz) carry the pitch as a low growl on small speakers.
+function renderCatalogHorn(ctx: AudioContext, out: AudioNode): void {
+  foghorn(ctx, out, { freq: 7.25, dur: 1.85, peak: 0.5, attack: 0.03, sag: 0.07, bright: 620, air: 0.12 });
+}
+
 /** The gallery's arrival — faint, high fairy bells (a sparkly "ding-a-ring-ding"). */
 export function playGalleryAah(): void { scheduleArrival(renderGalleryBell); }
-/** The catalog's arrival — now the (old projects) bright, delicate airy sparkle. */
-export function playCatalogAah(): void { scheduleArrival((c, o) => renderAah(c, o, PROJECTS_AAH)); }
+/** The catalog's arrival — a deep harbour foghorn with books stacking over its sustain. */
+export function playCatalogAah(): void { scheduleArrival(renderCatalogHorn); }
 /** The projects tab's arrival — the stacking clicks, then a soft quick puff of wind. */
 export function playProjectsAah(): void { scheduleArrival(renderProjectsWind); }
 /** Cancel a pending arrival hit — call on leaving a view so it can't fire on another page. */
@@ -978,7 +979,7 @@ function isSfxName(v: string | undefined): v is SfxName {
   return v === 'click' || v === 'pickup' || v === 'drop' || v === 'delete' || v === 'toggle'
     || v === 'navigate' || v === 'shutter' || v === 'shuffle' || v === 'coverflow' || v === 'gallery'
     || v === 'save' || v === 'saveProfile' || v === 'whoosh' || v === 'vacuum' || v === 'fanfare'
-    || v === 'twinkle' || v === 'shimmer' || v === 'ding' || v === 'victory' || v === 'warn'
+    || v === 'twinkle' || v === 'shimmer' || v === 'ding' || v === 'victory' || v === 'braaam' || v === 'warn'
     || v === 'shoo' || v === 'reel' || v === 'aperture' || v === 'scribble' || v === 'flick'
     || v === 'optIn' || v === 'optOut' || v === 'key' || v === 'slider' || v === 'scrub'
     || v === 'select' || v === 'hydraulicOpen' || v === 'hydraulicClose' || v === 'verify' || v === 'dashboard' || v === 'newSession' || v === 'leaveSession'

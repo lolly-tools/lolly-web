@@ -276,21 +276,8 @@ function tileShell({ ref, kind, batch, cover, title, sub, badges, openAttr, open
 }
 
 // ── Time / size helpers (shared) ────────────────────────────────────────────
-
-export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const s = Math.max(0, (Date.now() - then) / 1000);
-  if (s < 60) return 'just now';
-  const m = s / 60; if (m < 60) return `${Math.round(m)}m ago`;
-  const h = m / 60; if (h < 24) return `${Math.round(h)}h ago`;
-  const d = h / 24; if (d < 7) return `${Math.round(d)}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-}
-
-export function fmtBytes(bytes: number | null | undefined): string {
-  if (!bytes) return '';
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
+// Canonical implementations live in ./lib/format.ts; re-exported here so
+// existing importers of these names keep working.
+export { relativeTime, fmtBytes } from './lib/format.ts';
+// Local bindings for the two used above (a re-export creates no in-scope name).
+import { relativeTime, fmtBytes } from './lib/format.ts';

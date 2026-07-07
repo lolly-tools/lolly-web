@@ -423,9 +423,10 @@ export async function mountValid(viewEl: HTMLElement, _host: HostV1): Promise<vo
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
         ? renderReportBody(file.name, report)
         : `<p class="valid-busy">Could not check this file: ${escape(error!)}</p>`;
-      // Audible verdict: a victory "ta-da" when the credential is intact, a soft
-      // cautionary "uh-oh" when it's broken, missing, or unreadable.
-      playSfx(report?.state === 'valid' ? 'victory' : 'warn');
+      // Audible verdict: a deep cinematic "braaam" when the credential is intact (the
+      // green medallion moment), a soft cautionary "uh-oh" when it's broken, missing,
+      // or unreadable.
+      playSfx(report?.state === 'valid' ? 'braaam' : 'warn');
       reportEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       return;
     }
@@ -477,8 +478,8 @@ export async function mountValid(viewEl: HTMLElement, _host: HostV1): Promise<vo
       }
       if (report?.state !== 'valid') allValid = false;
     }
-    // One summary verdict for the whole batch — victory only if every file passed.
-    playSfx(allValid ? 'victory' : 'warn');
+    // One summary verdict for the whole batch — the "braaam" only if every file passed.
+    playSfx(allValid ? 'braaam' : 'warn');
   }
 
   drop.addEventListener('click', () => input.click());
