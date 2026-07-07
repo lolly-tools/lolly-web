@@ -217,6 +217,12 @@
   text-align: left;
   transition: border-color 0.12s;
   justify-content: end;
+  /* Query container: the trigger collapses to just the swatch circle when squeezed
+     next to other controls, and shows the colour name (+ hex) when there's room. Named
+     + scoped to the button so it can't clash with other @container rules — and crucially
+     the popover is a SIBLING of this button, not a descendant, so making the button a
+     container never turns it into the fixed popover's containing block. */
+  container: colortrig / inline-size;
 }
 
 .color-trigger:hover {
@@ -232,10 +238,20 @@
   flex-shrink: 0;
 }
 
-.color-trigger-hex {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+/* The friendly colour name ("Persimmon 3") — small, muted SUSE Mono. The hex value is
+   NOT shown here; it lives only inside the popover picker. */
+.color-trigger-name {
+  font-family: "SUSE Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: .01em;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
 }
+.color-trigger-name:empty { display: none; }   /* custom colours have no name → just the circle */
+
+/* When the field is squeezed in next to other controls, drop the name and collapse to
+   just the swatch circle. */
+@container colortrig (max-width: 120px) { .color-trigger-name { display: none; } }
 
 .color-popover {
   position: absolute;
@@ -357,4 +373,27 @@
   background-position: 0 0, 0 4px, 4px -4px, -4px 0;
   background-color: #fff;
 }
+
+/* Floating swatch-name chip — painted in the swatch's own colour (--sw-c) with a
+   black/white contrast label (set inline by showSwatchTip). Fixed to the body so the
+   scrolling swatch grid never clips it; pointer-events:none so it never intercepts a
+   click on the swatch below — slide straight to the next one. Anchored above the swatch
+   (JS sets left/top to its top-centre; the translate lifts + centres the chip). The tiny
+   pop-in delay is done in JS (a 240ms timer before .is-shown), so it only fades in. */
+.swatch-name-tip {
+  position: fixed;
+  z-index: 10000;
+  transform: translate(-50%, -100%);
+  padding: 3px 8px;
+  border-radius: 7px;
+  font-family: "SUSE Mono", ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  box-shadow: 0 2px 10px #0005, inset 0 0 0 1px #ffffff30;
+}
+.swatch-name-tip.is-shown { opacity: 1; }
 

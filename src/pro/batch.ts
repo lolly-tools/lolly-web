@@ -59,7 +59,7 @@ export interface RunBatchOpts {
   strongPassword?: string;
 }
 
-const FMT_EXT: Record<string, string> = { 'pdf-cmyk': 'pdf', jpeg: 'jpg', 'eps-cmyk': 'eps' };
+const FMT_EXT: Record<string, string> = { 'pdf-cmyk': 'pdf', jpeg: 'jpg', 'eps-cmyk': 'eps', 'svg-anim': 'svg', 'webp-anim': 'webp' };
 const extFor = (fmt: string): string => FMT_EXT[fmt] ?? fmt;
 
 const sanitizeSeg = (s: string): string => s.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '');

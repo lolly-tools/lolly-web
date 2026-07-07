@@ -5033,9 +5033,15 @@ function zipMemberName(base: string, f: string): string {
 
 async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
   const base = (opts.filename || 'export').replace(/\.[a-z0-9]+$/i, '') || 'export';
-  // A locked bundle encrypts the WHOLE zip; the individual members must NOT also be
-  // password-locked (a bundled PDF would otherwise get its own RC4/AES pass on top).
-  const memberOpts: ExportOpts = { ...opts, password: undefined, strongPassword: undefined };
+  const password = opts.strongPassword || opts.password;
+  // Defense-in-depth, matching the folder/batch path (pro/zip.ts): when the whole zip
+  // is locked, any PDF member is ALSO individually AES-256 (R6) locked with the same
+  // password — so a PDF stays locked even after the zip is unpacked. Always the strong
+  // tier for the inner PDF (RC4 needs a plain unfinished doc; AES composes with any).
+  // Non-PDF members carry no lock of their own — only the container protects them.
+  const memberOpts: ExportOpts = password
+    ? { ...opts, password: undefined, strongPassword: password }
+    : { ...opts, password: undefined, strongPassword: undefined };
   const members: Array<{ name: string; bytes: Uint8Array }> = [];
   for (const f of (opts.bundleFormats ?? []).filter(x => x !== 'zip')) {
     const blob = await renderFormat(node, f, memberOpts);
@@ -5046,7 +5052,6 @@ async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
   // Explorer; weak); strong = WinZip AES-256 (7-Zip / Keka / macOS; strong). Mirrors
   // the two-tier PDF lock. The shell compresses each member with fflate + hands the
   // engine bytes + CRC; buildEncryptedZip does the crypto + framing.
-  const password = opts.strongPassword || opts.password;
   if (password) {
     const { deflateSync } = await import('fflate');
     const entries = members.map(({ name, bytes }) => {

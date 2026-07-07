@@ -60,6 +60,33 @@ function toHex(value: unknown): string {
   return ((value && typeof value === 'object' && typeof o.ref === 'string') ? (o.value ?? '') : value) as string;
 }
 
+/**
+ * The palette name for a colour value ("Persimmon 3"), or '' when it isn't a named
+ * swatch (a custom colour). Matches on the RGB channels — alpha is ignored — against
+ * the active swatch list (the brand palette, or tokens once setSwatches() has run).
+ * The FIRST matching swatch wins, so a hex shared by several ramps takes its primary
+ * name (e.g. #0c322c → "Pine", not "Jungle 1").
+ */
+export function swatchName(value: unknown): string {
+  const raw = toHex(value);
+  if (typeof raw !== 'string' || !raw) return '';
+  let v = raw.toLowerCase();
+  if (v !== 'transparent' && /^#[0-9a-f]{8}$/.test(v)) v = v.slice(0, 7); // ignore alpha when naming
+  for (const s of SWATCHES) {
+    const sv = typeof s.value === 'string' ? s.value.toLowerCase() : '';
+    if (sv && sv === v) return s.label || '';
+  }
+  return '';
+}
+
+/** Black or white — whichever reads on `hex`. Perceptual luminance threshold. */
+export function contrastText(hex: string): string {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
+  if (!m) return '#000000';
+  const r = parseInt(m[1]!, 16), g = parseInt(m[2]!, 16), b = parseInt(m[3]!, 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#000000' : '#ffffff';
+}
+
 export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false }: { float?: boolean; swatchesOnly?: boolean } = {}): string {
   const rawVal = toHex(value) ?? '';
   const isTransparent = rawVal === 'transparent';
@@ -72,14 +99,23 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   const previewBg = isTransparent ? '' : `style="background:${rawVal || '#000000'}"`;
   const previewClass = `color-trigger-preview${isTransparent ? ' color-swatch--transparent' : ''}`;
   const eid = escape(id);
+  const hexText = hexDisplay || rawVal || '#000000';
+  const name = swatchName(value);
 
   // Swatches are NOT rendered here — they're the heaviest part (the whole
   // palette per field) and are built lazily on first popover open (see
   // buildSwatches in wireColorField). Keeps the initial grid DOM light.
+  //
+  // The trigger shows the swatch circle + the colour NAME (small, muted SUSE Mono) —
+  // NOT the hex; the hex value lives only inside the popover picker. A CSS container
+  // query on the button collapses the name away, leaving just the circle, when the
+  // field is squeezed in next to other controls (see .color-trigger in components.css).
+  // The name span is always present (:empty hides it) so live edits can fill/clear it
+  // without a rebuild. The hex still rides in the aria-label for screen readers.
   return `<div class="color-picker-field${float ? ' color-field--float' : ''}" data-color-field="${eid}">
-    <button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(hexDisplay || rawVal || '#000000')}">
+    <button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(name ? name + ' ' : '')}${escape(hexText)}">
       <span class="${previewClass}" ${previewBg} aria-hidden="true"></span>
-      <span class="color-trigger-hex">${escape(hexDisplay || rawVal || '#000000')}</span>
+      <span class="color-trigger-name">${escape(name)}</span>
     </button>
     <div class="color-popover" role="group" aria-label="Colour options" hidden>
       ${swatchesOnly ? '' : `<input type="text" class="color-hex-input" data-color-hex="${eid}"
@@ -103,13 +139,70 @@ function swatchButtonsHtml(id: string): string {
   return SWATCHES.map(s => {
     const isTrans = s.value === 'transparent';
     const refAttr = s.ref ? ` data-swatch-ref="${escape(s.ref)}"` : '';
-    const label = s.group && s.label ? `${s.group} · ${s.label}` : (s.label || s.value);
+    const name = s.label || s.value;
+    const aria = s.group && s.label ? `${s.group} · ${s.label}` : name;
+    // Each swatch carries its own colour (--sw-c) + a black/white contrast colour
+    // (--sw-fg) as inline custom props; the floating hover tooltip paints itself in
+    // those (see showSwatchTip). Transparent has no colour of its own, so give the
+    // tooltip a neutral chip. No native `title` — the graphical tip replaces it.
+    const tip = isTrans ? '--sw-c:#c9ccd1;--sw-fg:#1d1d1d' : `--sw-c:${escape(s.value)};--sw-fg:${contrastText(s.value)};background:${escape(s.value)}`;
     return `<button type="button"
       class="color-swatch${isTrans ? ' color-swatch--transparent' : ''}"
       data-swatch-for="${eid}" data-swatch-value="${escape(s.value)}"${refAttr}
-      ${isTrans ? '' : `style="background:${escape(s.value)}"`}
-      title="${escape(label)}" aria-label="${escape(label)}"></button>`;
+      data-name="${escape(name)}" style="${tip}"
+      aria-label="${escape(aria)}"></button>`;
   }).join('');
+}
+
+// ── Swatch name tooltip (a single shared, floating chip) ─────────────────────────
+// A graphical hover label for the palette swatches: a little chip painted in the
+// swatch's OWN colour with a contrasting black/white name. It lives on document.body
+// as position:fixed, so the swatch grid's own scroll/overflow never clips it (a CSS
+// ::after would be), pops in after a tiny delay, and is pointer-events:none — hovering
+// it never steals a click, so you can slide straight onto the next swatch. One shared
+// element + delegated listeners cover every field's (lazily built) swatches.
+let swatchTip: HTMLElement | null = null;
+let swatchTipTimer: ReturnType<typeof setTimeout> | undefined;
+let swatchTipArmed = false;
+
+function showSwatchTip(swatch: HTMLElement): void {
+  const name = swatch.dataset.name;
+  if (!name) return;
+  if (!swatchTip) {
+    swatchTip = document.createElement('div');
+    swatchTip.className = 'swatch-name-tip';
+    swatchTip.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(swatchTip);
+  }
+  const tip = swatchTip;
+  tip.textContent = name;
+  tip.style.background = swatch.style.getPropertyValue('--sw-c').trim() || '#333';
+  tip.style.color = swatch.style.getPropertyValue('--sw-fg').trim() || '#fff';
+  const r = swatch.getBoundingClientRect();
+  tip.style.left = `${Math.round(r.left + r.width / 2)}px`;
+  tip.style.top = `${Math.round(r.top - 6)}px`;
+  clearTimeout(swatchTipTimer);
+  swatchTipTimer = setTimeout(() => tip.classList.add('is-shown'), 240); // the tiny delay
+}
+
+function hideSwatchTip(): void {
+  clearTimeout(swatchTipTimer);
+  swatchTip?.classList.remove('is-shown');
+}
+
+/** Arm the delegated swatch-tooltip listeners once (idempotent across every wireColorField). */
+function armSwatchTip(): void {
+  if (swatchTipArmed) return;
+  swatchTipArmed = true;
+  document.addEventListener('mouseover', (e) => {
+    const sw = (e.target as Element | null)?.closest<HTMLElement>('.color-swatch');
+    if (sw) showSwatchTip(sw);
+  });
+  document.addEventListener('mouseout', (e) => {
+    if ((e.target as Element | null)?.closest('.color-swatch')) hideSwatchTip();
+  });
+  // A fixed chip doesn't follow a scrolling swatch grid — drop it rather than strand it.
+  window.addEventListener('scroll', hideSwatchTip, true);
 }
 
 /**
@@ -121,18 +214,20 @@ function swatchButtonsHtml(id: string): string {
 export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInteractStart, onInteractEnd }: WireColorFieldOpts = {}): void {
   const interact = (on: boolean) => { (on ? onInteractStart : onInteractEnd)?.(); };
   const q = <T extends Element = Element>(sel: string) => scope.querySelector<T>(sel);
+  armSwatchTip();
 
   function updateTrigger(field: HTMLElement | null, value: string): void {
     const preview = field?.querySelector<HTMLElement>('.color-trigger-preview');
-    const hexText = field?.querySelector<HTMLElement>('.color-trigger-hex');
+    const nameText = field?.querySelector<HTMLElement>('.color-trigger-name');
     const isTrans = value === 'transparent';
     if (preview) {
       preview.classList.toggle('color-swatch--transparent', isTrans);
       preview.style.background = isTrans ? '' : (value || '#000000');
     }
-    if (hexText) hexText.textContent = value || '#000000';
+    const name = swatchName(value);
+    if (nameText) nameText.textContent = name;             // :empty CSS hides it for custom colours
     const trigger = field?.querySelector('.color-trigger');
-    if (trigger) trigger.setAttribute('aria-label', `Colour: ${value || '#000000'}`);
+    if (trigger) trigger.setAttribute('aria-label', `Colour: ${name ? name + ' ' : ''}${value || '#000000'}`);
   }
 
   // ── Palette swatches (lazy) ──────────────────────────────────────────────────

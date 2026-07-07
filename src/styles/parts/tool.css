@@ -523,9 +523,9 @@
 .tool-inputs:focus-within > .input-row:has(.color-trigger):not(:focus-within),
 .input-section:focus-within .input-row:has(.color-trigger):not(:focus-within) { opacity: 1; }
 .tool-inputs:focus-within > .input-row:has(.color-trigger):not(:focus-within) > .input-label,
-.tool-inputs:focus-within > .input-row:has(.color-trigger):not(:focus-within) .color-trigger-hex,
+.tool-inputs:focus-within > .input-row:has(.color-trigger):not(:focus-within) .color-trigger-name,
 .input-section:focus-within .input-row:has(.color-trigger):not(:focus-within) > .input-label,
-.input-section:focus-within .input-row:has(.color-trigger):not(:focus-within) .color-trigger-hex { opacity: 0.45; }
+.input-section:focus-within .input-row:has(.color-trigger):not(:focus-within) .color-trigger-name { opacity: 0.45; }
 
 @media (prefers-reduced-motion: reduce) {
   /* The global reset covers animations + scroll-behavior but not transitions. These

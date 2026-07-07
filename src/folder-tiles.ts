@@ -63,9 +63,10 @@ export interface ImageTileRef {
 // Export-format display labels (mirrors the subset used by the gallery/tool views).
 const FMT_LABEL: Record<string, string> = {
   'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', jpeg: 'JPG', jpg: 'JPG',
-  webm: 'WebM', mp4: 'MP4', emf: 'EMF', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', ics: 'Calendar', vcf: 'vCard', ico: 'Icon',
-  zip: 'ZIP', csv: 'CSV', json: 'JSON', svg: 'SVG', pdf: 'PDF', png: 'PNG',
-  webp: 'WebP', avif: 'AVIF', html: 'HTML', md: 'Markdown', txt: 'Text', gif: 'GIF',
+  webm: 'WebM', mp4: 'MP4', emf: 'EMF', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF', pptx: 'PowerPoint',
+  ics: 'Calendar', vcf: 'vCard', ico: 'Icon',
+  zip: 'ZIP', csv: 'CSV', json: 'JSON', svg: 'SVG', 'svg-anim': 'Animated SVG', pdf: 'PDF', png: 'PNG',
+  webp: 'WebP', 'webp-anim': 'Animated WebP', avif: 'AVIF', html: 'HTML', md: 'Markdown', txt: 'Text', gif: 'GIF',
 };
 export const fmtLabel = (f: string | null | undefined): string => (f != null ? FMT_LABEL[f] : undefined) ?? String(f ?? '').toUpperCase();
 
