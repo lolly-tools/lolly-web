@@ -29,7 +29,7 @@
  *    it no longer silences sounds by default.) An explicit stored preference always wins.
  */
 
-export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'warn' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
+export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'sign' | 'warn' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
 
 /** localStorage mirror of the mute flag ('1' muted / '0' on). Canonical store is the profile. */
 const MUTE_KEY = 'lolly:sfxMuted';
@@ -571,6 +571,28 @@ const VOICES: Record<SfxName, (ctx: AudioContext, out: AudioNode) => void> = {
     blip(ctx, out, { type: 'sine', from: 55.00, to: 51, dur: D, peak: 0.20 });                               // pure sub — chest weight, no buzz
     blip(ctx, out, { type: 'triangle', from: 880, dur: 0.6, peak: 0.045, delay: 0.05 });                     // a whisper of shimmer — triumphant, not grim
     blip(ctx, out, { type: 'sine', from: 1760, dur: 0.4, peak: 0.02, delay: 0.06 });                         // faint top glint
+  },
+  // The "signing" flourish for a VALID Lolly credential (the green medallion moment on the
+  // Verify page). Andy's brief (2026-07-07): a bright, long, almost-CHIRPING signature — quick
+  // up-gliding chirps running UP a scale then back DOWN, ending on a final RISE and a bell DING.
+  // Where the old "braaam" was a deep brass hit, this is high, sparkly and playful: the sound of
+  // a document being signed off and cleared. Pentatonic so every chirp lands consonant.
+  sign(ctx, out) {
+    // Each note is a quick UPWARD glide — the "chirp" — stepping through a pentatonic run.
+    const chirp = (from: number, delay: number, peak = 0.2): void =>
+      blip(ctx, out, { type: 'sine', from, to: from * 1.06, dur: 0.1, peak, delay });
+    const up   = [1046.50, 1174.66, 1318.51, 1567.98, 1760.00, 2093.00]; // C6 D6 E6 G6 A6 C7 — up the scale
+    const down = [1760.00, 1567.98, 1318.51, 1174.66];                    // A6 G6 E6 D6 — …and back down
+    const step = 0.072;
+    up.forEach((f, i)   => chirp(f, i * step, 0.2));
+    down.forEach((f, i) => chirp(f, (up.length + i) * step, 0.17));
+    // A few airy sparkles riding the run so it glints like a nib catching the light.
+    [0, 3, 6].forEach((i) => tick(ctx, out, { dur: 0.008, peak: 0.05, freq: 7000 + i * 400, q: 1.2, delay: i * step }));
+    // …then END ON A RISE — a bright chirp sweeping up high — capped by a bell DING at the top.
+    const end = (up.length + down.length) * step;                                                       // after the up-and-down run
+    blip(ctx, out, { type: 'triangle', from: 1318.51, to: 2637.02, dur: 0.42, peak: 0.2, delay: end });  // the final rise, E6 → E7
+    bell(ctx, out, { freq: 2637.02, dur: 0.6, peak: 0.2, delay: end + 0.18 });                            // the DING at the top
+    tick(ctx, out, { dur: 0.012, peak: 0.09, freq: 8000, q: 1.0, delay: end + 0.18 });                    // sparkle on the ding
   },
   // The gentle inverse of victory — a soft, low, DESCENDING two-note "uh-oh" with a
   // little low body: signals "didn't pass" (a broken or missing credential) without a

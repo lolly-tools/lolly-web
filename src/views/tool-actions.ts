@@ -1256,7 +1256,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       void (async () => {
         try {
           const { recordExport } = await import('../lib/export-history.ts');
-          const thumb = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, fmt);
+          const thumb = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, fmt, false);
           await recordExport({ toolId: manifest.id, label: manifest.name, filename, format: fmt, thumb, query: serializeUrlState(runtime.getModel()), at: Date.now() });
         } catch { /* history is best-effort */ }
       })();
@@ -1436,7 +1436,7 @@ function addScrubBehavior(inputEl: HTMLInputElement, onChange: () => void, opts:
 // the raster path so a single thumbnail never bloats storage unbounded.
 const SVG_THUMB_MAX_BYTES = 1_500_000;
 
-async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | null, runtime: Runtime, exportUnscaled: ExportUnscaled, format = ''): Promise<string | null> {
+async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | null, runtime: Runtime, exportUnscaled: ExportUnscaled, format = '', shutter = true): Promise<string | null> {
   // Capture at the canvas's ACTUAL laid-out aspect, not the manifest default. A reflow tool
   // (e.g. color-block) sizes its canvas to the ?width/height it was loaded with, so a wide /
   // tall / banner look must be captured at THAT aspect — exporting it into the default square
@@ -1465,7 +1465,7 @@ async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | 
     try {
       const blob = await exportUnscaled(
         () => runtime.export(canvasEl, 'svg', { width: nw, height: nh, embedMeta: false, thumbnail: true }),
-        { shutter: true },
+        { shutter },
       );
       const svg = await blob.text();
       if (svg && svg.length <= SVG_THUMB_MAX_BYTES) {
@@ -1489,7 +1489,7 @@ async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | 
       // thumbnail:true lets expensive hooks (e.g. url-shot's capture) reuse the
       // last render on the canvas instead of re-running a slow capture.
       () => runtime.export(canvasEl, 'png', { width: tw, height: th, embedMeta: false, thumbnail: true }),
-      { shutter: true },
+      { shutter },
     );
     return await new Promise<string | null>((resolve, reject) => {
       const reader = new FileReader();

@@ -1198,7 +1198,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const posCur = String(b[cfg.imgPosField] || 'center');
     const blendCur = b[cfg.blendField] || 'normal';
     const radiusCur = Math.max(0, Math.round(parseFloat(String(b[cfg.radiusField])) || 0));
-    const opacityCur = Math.round(parseFloat(String(b[cfg.opacityField])) ?? 100);
+    const opacityCur = Math.round(clampN(b[cfg.opacityField], 100, 0, 100));
     // Shadow state — target picks the CSS mechanism; colour/x/y/blur are shared.
     const shadowCur = String(b[cfg.shadowField] || 'none');
     const shColor = String(b[cfg.shadowColorField] || '#00000055');

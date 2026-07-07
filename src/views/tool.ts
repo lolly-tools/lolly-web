@@ -1289,7 +1289,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Temporarily remove the CSS scale so dom-to-image sees native dimensions.
   // Also strips data-canvas-input attrs so they don't appear in exported files,
   // restoring them after so click-to-focus keeps working post-export.
-  async function exportUnscaled<T>(fn: () => Promise<T>, { shutter = false }: { shutter?: boolean } = {}): Promise<T> {
+  // Serialized behind exportChain: overlapping exports (e.g. a Download click while
+  // the fire-and-forget history thumbnail captures) would otherwise both read
+  // prevTransform and the later one restore a stale '', leaving the canvas unscaled.
+  let exportChain: Promise<unknown> = Promise.resolve();
+  function exportUnscaled<T>(fn: () => Promise<T>, opts: { shutter?: boolean } = {}): Promise<T> {
+    const run = exportChain.catch(() => {}).then(() => exportUnscaledRaw(fn, opts));
+    exportChain = run.catch(() => {});
+    return run;
+  }
+  async function exportUnscaledRaw<T>(fn: () => Promise<T>, { shutter = false }: { shutter?: boolean } = {}): Promise<T> {
     // Renders are coalesced behind rAF (see the subscriber below); an export reads
     // the canvas DOM directly, so force any pending paint to land first — otherwise
     // we'd capture the frame before the latest keystroke.
@@ -2264,23 +2273,60 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     });
   }
 
-  viewEl.querySelector('#clear-inputs-btn')?.addEventListener('click', () => {
-    showClearDialog(async () => {
+  const clearBtn = viewEl.querySelector<HTMLButtonElement>('#clear-inputs-btn');
+  const utils = viewEl.querySelector<HTMLElement>('#sidebar-utils');
+  if (clearBtn && utils) {
+    const resetToDefaults = async () => {
       dirtyParams.clear();
       markSessionDirty();   // clearing is an edit — flag unsaved + flash the Save pill
       for (const input of runtime.getModel()) {
         // Revoke a picked file's preview URL before clearing it (avoid a leak).
         const prevUrl = asRow(input.value).url;
         if (input.type === 'file' && prevUrl) URL.revokeObjectURL(prevUrl as string);
-        const blank: InputValue = input.type === 'boolean' ? false
+        // Reset to the tool's DECLARED default — a real "reset to defaults", so a
+        // boolean default:true, default `blocks` rows, a default select/colour/asset
+        // all come back. Only fall back to a type-appropriate empty when there is no
+        // declared default (files never have one). Previously every non-scalar was
+        // forced blank regardless of its default.
+        const dflt = input.default as InputValue | undefined;
+        const value: InputValue = dflt !== undefined && dflt !== null ? dflt
+          : input.type === 'boolean' ? false
           : input.type === 'asset' ? null
           : input.type === 'file' ? null
           : input.type === 'blocks' ? []
-          : (input.default ?? '');
-        await runtime.setInput(input.id, blank);
+          : '';
+        await runtime.setInput(input.id, value);
       }
+    };
+    // Two-step confirm INLINE + full-width in the sidebar (no centred modal). The
+    // #sidebar-utils grid is one column, so the confirm/cancel buttons each span the
+    // full width; swapping the button's own container in place moves nothing else.
+    // The armed confirm is destructive AND persists (its #sidebar-utils host isn't
+    // re-rendered by edits), so it must be dismissible passively — Escape, an outside
+    // click, or a timeout — mirroring the block-remove two-step confirm's disarm.
+    let disarmTimer: ReturnType<typeof setTimeout> | undefined;
+    const restore = (): void => {
+      utils.classList.remove('is-confirming');
+      document.removeEventListener('pointerdown', onOutside, true);
+      document.removeEventListener('keydown', onKey, true);
+      if (disarmTimer) clearTimeout(disarmTimer);
+      utils.replaceChildren(clearBtn);
+    };
+    const onOutside = (e: PointerEvent) => { if (!utils.contains(e.target as Node | null)) restore(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); restore(); } };
+    clearBtn.addEventListener('click', () => {
+      utils.classList.add('is-confirming');
+      utils.innerHTML =
+        '<button type="button" class="clear-inputs-confirm">Reset to defaults</button>' +
+        '<button type="button" class="clear-inputs-cancel">Cancel</button>';
+      utils.querySelector('.clear-inputs-confirm')!.addEventListener('click', async () => { restore(); await resetToDefaults(); });
+      utils.querySelector('.clear-inputs-cancel')!.addEventListener('click', restore);
+      (utils.querySelector('.clear-inputs-cancel') as HTMLElement | null)?.focus();
+      setTimeout(() => document.addEventListener('pointerdown', onOutside, true), 0); // skip the arming click
+      document.addEventListener('keydown', onKey, true);
+      disarmTimer = setTimeout(restore, 6000);
     });
-  });
+  }
 }
 
 

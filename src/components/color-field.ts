@@ -216,32 +216,45 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       popover.style.cssText = `position:fixed;top:${Math.round(t.top)}px;left:${left}px;width:${W}px;right:auto;z-index:9999;border-top-left-radius:0;`;
       armOutside(field, popover);
     } else {
-      // Regular sidebar field. Default CSS opens the popover downward (absolute, so
-      // it scrolls with the field). Where the field sits low in the scroll area the
-      // popover would be clipped by the sidebar's bottom — so flip it ABOVE the
-      // trigger instead (still absolute, still attached). Measure off-screen first.
+      // Regular sidebar field: portal to position:fixed anchored to the field (like the
+      // block/float branches). An absolute popover was trapped whenever an ancestor
+      // formed a stacking context — the focus-spotlight `opacity:.45` on non-focused
+      // sections, or the section's own clip — and a later section painted over it (the
+      // "picker renders below" bug). Fixed escapes every ancestor stacking context and
+      // overflow clip, so it's always on top. Flip above when it would overflow the
+      // sidebar's bottom; close on any outside interaction.
       const sb = scope.closest('.sidebar-body') || scope.closest('.sidebar');
-      const t = trigger.getBoundingClientRect();
+      const f = field.getBoundingClientRect();
       const prev = popover.style.cssText;
-      popover.style.cssText = `position:fixed;visibility:hidden;left:-9999px;top:0;width:${Math.round(field.getBoundingClientRect().width)}px;`;
+      popover.style.cssText = `position:fixed;visibility:hidden;left:-9999px;top:0;width:${Math.round(f.width)}px;`;
       const ph = popover.offsetHeight;
-      popover.style.cssText = prev; // back to default downward (absolute) positioning
-      if (sb && (sb.getBoundingClientRect().bottom - t.bottom) < ph + 10) {
-        popover.style.top = 'auto';
-        popover.style.bottom = 'calc(100% + 4px)';
-      }
+      const bottomLimit = sb ? sb.getBoundingClientRect().bottom : window.innerHeight;
+      const openUp = (bottomLimit - f.bottom) < ph + 10;
+      const top = openUp ? Math.max(8, Math.round(f.top - 4 - ph)) : Math.round(f.bottom + 4);
+      popover.style.cssText = prev;
+      popover.style.cssText = `position:fixed;top:${top}px;left:${Math.round(f.left)}px;width:${Math.round(f.width)}px;right:auto;z-index:9999;`;
+      armOutside(field, popover);
     }
   }
 
-  // Outside-click close (float fields only).
+  // Outside-click / scroll close (float + regular sidebar fields, both position:fixed).
   let outside: ((e: PointerEvent) => void) | null = null;
+  let onScroll: (() => void) | null = null;
   function armOutside(field: HTMLElement, popover: HTMLElement): void {
     disarmOutside();
-    outside = (e) => { if (!field.contains(e.target as Node | null)) { popover.hidden = true; popover.style.cssText = ''; field.querySelector('.color-trigger')?.setAttribute('aria-expanded', 'false'); disarmOutside(); } };
-    setTimeout(() => document.addEventListener('pointerdown', outside!), 0);
+    const close = () => { popover.hidden = true; popover.style.cssText = ''; field.querySelector('.color-trigger')?.setAttribute('aria-expanded', 'false'); disarmOutside(); };
+    outside = (e) => { if (!field.contains(e.target as Node | null)) close(); };
+    // A fixed popover doesn't follow the field — close it on scroll rather than leave
+    // it stranded over unrelated controls (capture catches the sidebar's own scroll).
+    onScroll = () => close();
+    setTimeout(() => {
+      document.addEventListener('pointerdown', outside!);
+      window.addEventListener('scroll', onScroll!, true);
+    }, 0);
   }
   function disarmOutside(): void {
     if (outside) { document.removeEventListener('pointerdown', outside); outside = null; }
+    if (onScroll) { window.removeEventListener('scroll', onScroll, true); onScroll = null; }
   }
 
   // ── Native colour input (RGB) ────────────────────────────────────────────────

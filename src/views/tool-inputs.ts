@@ -106,16 +106,16 @@ function revealBlockFields(item: Element): void {
   if (prefersReducedMotion()) return;
   const fields = item.querySelector<HTMLElement>('.block-fields');
   if (!fields || typeof fields.animate !== 'function') return;
-  fields.style.height = '0px';
-  fields.style.overflow = 'hidden';
-  const h = fields.scrollHeight;               // full content height even while clamped to 0
-  if (!h) { fields.style.height = ''; fields.style.overflow = ''; return; }
-  const anim = fields.animate(
-    [{ height: '0px', opacity: 0.4 }, { height: `${h}px`, opacity: 1 }],
-    { duration: 180, easing: 'ease' }
+  // Compositor-only fade — NO height tween. The old height animation forced a full
+  // sidebar reflow every frame and slid every block below for 180ms, while the card
+  // chrome (padding/border-radius/background) snapped instantly — the visible shake.
+  // The fields are display:none when collapsed, so they land in their FINAL position
+  // in a single reflow the moment they un-hide; only opacity/transform (which never
+  // affect layout) animate, so nothing moves a pixel after settle.
+  fields.animate(
+    [{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }],
+    { duration: 120, easing: 'ease-out' }
   );
-  const clear = () => { fields.style.height = ''; fields.style.overflow = ''; };
-  anim.onfinish = anim.oncancel = clear;
 }
 
 // Single seam for folding/unfolding a block: keeps the collapse class, the chevron
@@ -146,7 +146,9 @@ function focusSidebarBlock(blocksEl: Element, index: number | string): void {
 
   // Reveal the block if it sits inside a closed section, then bring it into view.
   target.closest('details.input-section')?.setAttribute('open', '');
-  scrollToControl(target);
+  // Defer the scroll one frame: the bulk collapse above relocated every block, so
+  // scrolling now would chase a layout that's about to settle (a double-motion lurch).
+  requestAnimationFrame(() => scrollToControl(target));
 
   const field = target.querySelector<HTMLInputElement | HTMLTextAreaElement>(
     '.block-fields textarea.block-field, .block-fields input.block-field:not([type="range"])'
@@ -1392,7 +1394,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           aria-label="${escape(f.label ?? f.id)}">`;
       };
 
-      const removeBtn = (idx: number, label: unknown): string => `<button type="button" class="block-remove"
+      const removeBtn = (idx: number, label: unknown): string => `<button type="button" class="block-remove" draggable="false"
         data-block-remove data-block-input="${id}" data-block-index="${idx}"
         aria-label="Remove ${escape(label || 'block')}" title="Remove">&#x2715;</button>`;
 
