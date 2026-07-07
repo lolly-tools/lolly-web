@@ -1287,6 +1287,29 @@ background-color:hsl(var(--background) / 1);
 .block-item--row:not(.is-collapsed) .block-fields:not(:has(> .block-control)):not(:has(> :nth-child(4))) > .block-color-field {
   flex: 0 0 auto;
 }
+/* Text + number inputs sitting side by side in a compact row join into ONE seamless
+   segment — like the position/vector fields: the first rounds its LEFT, the last
+   text/number rounds its RIGHT, and the shared border collapses so there's a single
+   divider between them. This is keyed off the RUN of inputs (`:has(+ …)` and the
+   adjacent-sibling combinator) — never `:last-child`, because a compact row often ends
+   in a colour swatch or a button, and those keep their own shape. `SEAM` below is
+   "a text or number block field": input.block-field that isn't a range or a checkbox
+   (selects, colour fields, textareas and buttons aren't <input>, so they're excluded). */
+.block-item--row:not(.is-collapsed) .block-fields:not(:has(> .block-control)):not(:has(> :nth-child(4))) > input.block-field:not([type="range"]):not([type="checkbox"]):has(+ input.block-field:not([type="range"]):not([type="checkbox"])) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right-width: 0;                 /* the next field's left border becomes the shared divider */
+}
+.block-item--row:not(.is-collapsed) .block-fields:not(:has(> .block-control)):not(:has(> :nth-child(4))) > input.block-field:not([type="range"]):not([type="checkbox"]) + input.block-field:not([type="range"]):not([type="checkbox"]) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -8px;                     /* cancel the row's 8px column-gap so the pair sits flush */
+}
+/* Lift a focused seam field (its focus ring) above its flush neighbour. */
+.block-item--row:not(.is-collapsed) .block-fields:not(:has(> .block-control)):not(:has(> :nth-child(4))) > input.block-field:not([type="range"]):not([type="checkbox"]):focus {
+  position: relative;
+  z-index: 1;
+}
 .block-control { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .block-control--full { grid-column: 1 / -1; }
 .block-control-label {
