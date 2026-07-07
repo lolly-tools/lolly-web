@@ -14,7 +14,7 @@ import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseTo
 import { escape } from '../utils.js';
 import { announce } from '../a11y.js';
 import { PALETTE } from '../palette.js';
-import { colorFieldHtml, wireColorField } from '../components/color-field.js';
+import { colorFieldHtml, wireColorField, swatchName, contrastText } from '../components/color-field.js';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { canSkipInputsRebuild } from './inputs-sync.js';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -1318,15 +1318,25 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         if (f.type === 'color') {
           const hex = String(item[f.id] ?? '').trim();
           const pickerVal = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#30ba78';
-          const swatches = PALETTE.map(s => `<button type="button"
-            class="color-swatch"
-            data-block-swatch-field="${fieldId}" data-swatch-value="${s.hex}"
-            style="background:${s.hex}" title="${escape(s.label)}"></button>`).join('');
+          // Same trigger + swatch grammar as the shared colour picker (colorFieldHtml):
+          // the trigger shows the swatch circle + a small muted SUSE Mono name (NOT the
+          // hex — that lives in the popover), and each swatch carries its colour (--sw-c)
+          // + contrast text (--sw-fg) + name for the floating hover tooltip.
+          const swatches = PALETTE.map(s => {
+            const isTrans = s.hex === 'transparent';
+            const tip = isTrans ? '--sw-c:#c9ccd1;--sw-fg:#1d1d1d' : `--sw-c:${s.hex};--sw-fg:${contrastText(s.hex)};background:${s.hex}`;
+            return `<button type="button"
+              class="color-swatch${isTrans ? ' color-swatch--transparent' : ''}"
+              data-block-swatch-field="${fieldId}" data-swatch-value="${s.hex}"
+              data-name="${escape(s.label)}" style="${tip}"
+              aria-label="${escape(s.label)}"></button>`;
+          }).join('');
+          const name = swatchName(pickerVal);
           return labelled(f, `<div class="color-picker-field block-color-field" data-color-field="${fieldId}">
             <button type="button" class="color-trigger" data-color-trigger="${fieldId}"
-              aria-label="${escape(f.label ?? f.id)}">
+              aria-label="${escape(f.label ?? f.id)}: ${escape(name || pickerVal)}">
               <span class="color-trigger-preview" style="background:${pickerVal}"></span>
-              <span class="color-trigger-hex">${pickerVal}</span>
+              <span class="color-trigger-name">${escape(name)}</span>
             </button>
             <div class="color-popover" hidden>
               <div class="color-swatches">${swatches}</div>

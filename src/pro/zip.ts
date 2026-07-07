@@ -71,6 +71,7 @@ const iconFor = (f: ManifestFile): string =>
 // Friendly format names for the manifest (mirrors the subset the UI shows).
 const FMT_LABEL: Record<string, string> = {
   'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', 'eps-cmyk': 'EPS (CMYK)',
+  'svg-anim': 'Animated SVG', 'webp-anim': 'Animated WebP', dxf: 'DXF', pptx: 'PowerPoint',
   jpeg: 'JPG', jpg: 'JPG', md: 'Markdown', txt: 'Text', ico: 'Icon', vcf: 'vCard', ics: 'Calendar',
 };
 const fmtLabel = (f?: string): string => (f ? (FMT_LABEL[f] ?? String(f).toUpperCase()) : '');

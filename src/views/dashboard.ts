@@ -425,7 +425,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           <p class="plat-sub">One read-only panel for everything defined once and used everywhere — this device, your activity, the brand system and the full feature set.</p>
           <div class="plat-stats">
             <span class="plat-stat" data-tool-count${toolCount ? '' : ' hidden'}><strong>${escape(String(toolCount || ''))}</strong>tools</span>
-            <span class="plat-stat"><strong>26</strong>export formats</span>
+            <span class="plat-stat"><strong>30</strong>export formats</span>
             <span class="plat-stat"><strong>6</strong>surfaces</span>
             <span class="plat-stat" data-asset-stat hidden><strong data-asset-stat-n></strong>brand assets</span>
           </div>

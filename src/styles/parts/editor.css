@@ -275,14 +275,14 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .fc-color-btn { padding: 0; overflow: visible; }
 .fc-toolbar .color-picker-field { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
 .fc-toolbar .color-trigger { width: 34px; height: 34px; padding: 0; gap: 0; justify-content: center; border-radius: 10px; }
-.fc-toolbar .color-trigger-hex { display: none; }
+.fc-toolbar .color-trigger-name { display: none; }
 .fc-toolbar .color-trigger-preview { width: 22px; height: 22px; border-radius: 7px; }
 
 /* Context-bar fill + text-colour fields — compact swatch triggers. */
 .fc-cfield { display: inline-flex; }
 .fc-ctxbar .color-picker-field { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
 .fc-ctxbar .color-trigger { width: 30px; height: 30px; padding: 0; gap: 0; justify-content: center; border-radius: 8px; }
-.fc-ctxbar .color-trigger-hex { display: none; }
+.fc-ctxbar .color-trigger-name { display: none; }
 .fc-ctxbar .color-trigger-preview { width: 20px; height: 20px; border-radius: 6px; }
 
 /* "More" panel: shape / radius / opacity / image fit / blend. */
@@ -439,7 +439,7 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .fc-fmt-typegroup .fc-fmt-color .color-trigger {
   width: auto; height: auto; padding: 0 10px; gap: 0; border-radius: 0; justify-content: center;
 }
-.fc-fmt-typegroup .fc-fmt-color .color-trigger-hex { display: none; }
+.fc-fmt-typegroup .fc-fmt-color .color-trigger-name { display: none; }
 .fc-fmt-typegroup .fc-fmt-color .color-trigger-preview { width: 18px; height: 18px; border-radius: 5px; }
 /* Hover / focus lifts the active segment's border above its overlapped neighbours. */
 .fc-fmt-typegroup > :hover,
@@ -523,7 +523,7 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
    filling the row's flex cell gives the swatch and its popover proper room. */
 .fc-more-panel .fc-row .color-picker-field { width: 100%; height: auto; display: block; }
 .fc-more-panel .fc-row .color-trigger { justify-content: flex-start; padding: 5px 10px; border-radius: var(--radius); }
-.fc-more-panel .fc-row .color-trigger-hex { display: inline; }
+.fc-more-panel .fc-row .color-trigger-name { display: inline; }
 
 /* Position & size panel — each concept (position / size / rotation) on its own
    icon-led row: two labelled number cells (X·Y, W·H) or a number + drag slider. */

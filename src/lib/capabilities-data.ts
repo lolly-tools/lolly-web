@@ -172,11 +172,12 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
   },
   {
     flag: 'formats', id: 'cap-formats', title: 'Export formats', icon: ICONS.image,
-    desc: 'Over two dozen formats across vector, raster, print, motion and data. A tool offers only the formats its author declared, and the picker hides any your browser can’t produce.',
+    desc: 'Thirty formats across vector, raster, print, motion, documents and data. A tool offers only the formats its author declared, and the picker hides any your browser can’t produce.',
     cards: [
       { icon: ICONS.vector, title: 'Vector', features: [
         { name: 'SVG', desc: 'Infinitely scalable and self-contained — text is outlined to paths (HarfBuzz-shaped) so it renders identically without the font installed.' },
         { name: 'EMF · EPS · EPS (CMYK)', desc: 'EMF pastes as editable vector into PowerPoint and Word; EPS is PostScript vector for Illustrator and press workflows, with a DeviceCMYK variant. Text is outlined to paths in all of them.' },
+        { name: 'DXF (cut file)', desc: 'AutoCAD R12 interchange for laser cutters, vinyl plotters and CNC/CAD — outline paths in millimetres, colour as the nearest AutoCAD Color Index. Line-art only.' },
       ] },
       { icon: ICONS.image, title: 'Raster', features: [
         { name: 'PNG · JPG · WebP · AVIF · ICO', desc: 'Lossless or compact, alpha where supported, with the real DPI and an embedded sRGB ICC profile so colour reproduces faithfully.' },
@@ -185,14 +186,16 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'PDF · Print PDF (CMYK) · CMYK TIFF', desc: 'True page sizes and DeviceCMYK output for the press — see Print production below.' },
       ] },
       { icon: ICONS.film, title: 'Motion', features: [
-        { name: 'MP4 · WebM · GIF · APNG', desc: 'Animated tools record to video (the picker shows what your browser can encode), or to GIF and lossless animated PNG, which work everywhere.' },
+        { name: 'MP4 · WebM · GIF · APNG · Animated WebP', desc: 'Animated tools record to video (the picker shows what your browser can encode), or to GIF, lossless animated PNG, and colour-plus-alpha animated WebP — all of which work everywhere.' },
+        { name: 'Animated SVG', desc: 'A self-contained vector animation — stacks vector snapshots with embedded CSS keyframes, so it scales to any size with no codec and loops in a browser tab or an <img>.' },
       ] },
       { icon: ICONS.doc, title: 'Documents & data', features: [
+        { name: 'PowerPoint (PPTX)', desc: 'Multi-page and layout tools export an editable deck — each page decomposed into native text boxes, real shapes, and extractable images and vectors (logos embedded as real SVG). Built to hand a colleague content they can edit and reuse, not a flat screenshot.' },
         { name: 'HTML · MD · TXT', desc: 'HTML pastes formatted into mail clients; Markdown and plain text for content.' },
         { name: 'JSON · CSV · ICS · VCF', desc: 'Structured data straight from the input model — calendar invites, contacts, tabular and machine-readable payloads.' },
       ] },
       { icon: ICONS.zip, title: 'Bundles', features: [
-        { name: 'ZIP', desc: 'Bundle several formats of one design into a single download.' },
+        { name: 'ZIP', desc: 'Bundle several formats of one design into a single download — optionally password-locked (ZipCrypto or AES-256), with any PDF inside individually locked too.' },
       ] },
     ],
   },
@@ -244,7 +247,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       ] },
       { icon: ICONS.mcp, title: 'MCP server (add-on)', features: [
         { name: 'Native agent endpoint', desc: 'An optional <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> server any MCP client (Claude Code, an agent runtime) connects to — discover a tool, fill its declared inputs, and get back an on-brand file plus an editable link. Tools sync as data, so it needs no app update.' },
-        { name: 'Every format an agent asks for', desc: 'One <code>lolly_render</code> call returns vector (SVG/PDF/EPS), raster (PNG/JPG/WebP/AVIF/TIFF), motion (MP4/WebM/GIF/APNG) or data — the server picks how to render each; the agent just names a format the tool declares.' },
+        { name: 'Every format an agent asks for', desc: 'One <code>lolly_render</code> call returns vector (SVG/PDF/EPS/DXF), raster (PNG/JPG/WebP/AVIF/TIFF), motion (MP4/WebM/GIF/APNG/Animated WebP/Animated SVG), documents (PowerPoint) or data — the server picks how to render each; the agent just names a format the tool declares.' },
         { name: 'A hosted add-on — not offline or edge', desc: 'Unlike the rest of Lolly, the MCP server is a <strong>server-side component</strong>: producing the full format range drives a headless browser against a built web shell, so it runs as a hosted service and is <strong>not suitable for offline or edge deployments</strong>. The on-device shells — web, desktop, mobile and CLI — stay the offline / air-gapped path.' },
         { name: 'Connect from claude.ai or Claude Code', desc: 'Add the hosted endpoint to claude.ai as a <strong>custom connector</strong> (OAuth 2.1), or point Claude Code / any MCP client at it with a bearer token. Either way the client authenticates before it can render, and access is verified statelessly on every call — no session store to breach. See <strong>Security &amp; access control</strong>.' },
       ] },
