@@ -494,7 +494,7 @@ export function mountFeaturedRow(
     if (coverflow) {
       if (Math.abs(velocity) > INERTIA_MIN_V) {    // coast from a flick/wheel
         viewport.scrollLeft += (velocity * dt) / 1000;
-        velocity = clampV(velocity * Math.pow(INERTIA_FRICTION, dt / 16.67));
+        velocity = clampV(velocity * INERTIA_FRICTION ** (dt / 16.67));
         if (Math.abs(velocity) < INERTIA_MIN_V) velocity = 0;
         layoutCoverflow();
         return;
@@ -510,7 +510,7 @@ export function mountFeaturedRow(
 
     if (Math.abs(velocity) > INERTIA_MIN_V) {      // (2) flick / wheel coast
       viewport.scrollLeft += (velocity * dt) / 1000;
-      velocity = clampV(velocity * Math.pow(INERTIA_FRICTION, dt / 16.67)); // frame-rate independent
+      velocity = clampV(velocity * INERTIA_FRICTION ** (dt / 16.67)); // frame-rate independent
       if (Math.abs(velocity) < INERTIA_MIN_V) velocity = 0;
       normalizeWrap();
       return;

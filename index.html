@@ -54,7 +54,7 @@
        With no saved preference, seed from the OS colour scheme (mirrors
        initTheme in theme.js) so a dark-OS visitor gets no light flash. -->
   <script>
-    (function () {
+    (() => {
       var t = localStorage.getItem('theme');
       if (!t && matchMedia('(prefers-color-scheme: dark)').matches) t = 'dark';
       if (t === 'dark' || t === 'suse') document.documentElement.dataset.theme = t;

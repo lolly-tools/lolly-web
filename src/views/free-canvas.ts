@@ -1651,7 +1651,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!idx.length) return;
     const clones: Box[] = [];
     const nextSel = new Set<string>();
-    let pool = boxes.slice();
+    const pool = boxes.slice();
     for (const i of idx) {
       const id = freshId(pool.concat(clones));
       const r = boxRect(boxes[i], cfg);

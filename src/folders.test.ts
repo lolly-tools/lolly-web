@@ -31,7 +31,7 @@ test('create / list / rename / remove', async () => {
   assert.ok(f.id);
   assert.deepEqual(f.items, []);
 
-  let all = await store.list();
+  const all = await store.list();
   assert.equal(all.length, 1);
 
   await store.rename(f.id, 'Renamed');

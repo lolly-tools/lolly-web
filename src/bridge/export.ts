@@ -345,6 +345,9 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
   // the canvas stays clean. The live node MUST be passed (not a clone) so that
   // dom-to-image reads computed styles from elements that are in the document.
   const restore = await swapBlobUrls(node);
+  // Deterministic base frame (t=0) for a frame-clock tool, so a still of an
+  // animating canvas captures the configured pose, not a random rAF moment.
+  const fc = beginFrameClock(); renderFrameAt(fc, 0);
   try {
     const dataUrl = await (format === 'jpeg'
       ? lib.toJpeg(node, { quality: opts.quality ?? 0.92, ...dtoOpts })
@@ -373,6 +376,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
     return blob;
   } finally {
     restore();
+    endFrameClock(fc);
   }
 }
 
@@ -381,11 +385,13 @@ async function renderBitmap(node: Element, mimeType: string, opts: ExportOpts): 
   const d = exportDims(node, opts);
   const dtoOpts = rasterStyle(d, opts);
   const restore = await swapBlobUrls(node);
+  const fc = beginFrameClock(); renderFrameAt(fc, 0);
   let raw: HTMLCanvasElement;
   try {
     raw = await lib.toCanvas(node, dtoOpts);
   } finally {
     restore();
+    endFrameClock(fc);
   }
   const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
   return new Promise<Blob>((resolve, reject) => {
@@ -3774,8 +3780,6 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
         finally { svgEl?.remove(); }
         if (svgEl) return;
       }
-
-      {
         try {
           const dataUrl0 = src.startsWith('data:') ? src
             : src.startsWith('blob:') ? await blobToDataUrl(src) : src;
@@ -3823,7 +3827,6 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
             pdf.addImage(imgSrc, fmt, x, y, w, h);
           }
         } catch { /* skip unloadable images */ }
-      }
       return;
     }
 
@@ -4835,7 +4838,32 @@ const NO_VIDEO_MSG = 'Video recording is not supported in this browser. Use GIF 
 //   width / height — target pixel size (defaults to the node's box)
 //   frame()        — Promise<HTMLCanvasElement> for the current moment
 //   dispose()      — restore the blob:-URL swap; call once capture is done
-async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(): Promise<HTMLCanvasElement>; dispose(): void }> {
+// ── Deterministic export-frame clock (opt-in) ────────────────────────────────
+// A canvas-animation tool can register `window.__lollyFrameRender(t)` to render a
+// deterministic frame at normalized loop time t∈[0,1). The snapshot export paths
+// drive it: they raise `window.__lollyFrameDriven` (so the tool's own rAF loop
+// bails — dom-to-image's toCanvas is async, and a stray repaint would otherwise
+// clobber the frame), paint the exact phase, then capture. Presence-keyed, so a
+// tool that never registers the hook is byte-for-byte unchanged. Scoped to these
+// snapshot paths ONLY — never the real-time captureStream path (which returns
+// before createFrameSource), so the two mechanisms can't both fire per export.
+interface FrameClockWindow { __lollyFrameRender?: (t: number) => void; __lollyFrameDriven?: boolean }
+function beginFrameClock(): boolean {
+  const w = window as unknown as FrameClockWindow;
+  if (typeof w.__lollyFrameRender !== 'function') return false;
+  w.__lollyFrameDriven = true;
+  return true;
+}
+function renderFrameAt(active: boolean, t: number): void {
+  if (!active) return;
+  const w = window as unknown as FrameClockWindow;
+  try { w.__lollyFrameRender!(t); } catch (e) { _host?.log?.('warn', `__lollyFrameRender threw: ${(e as Error)?.message ?? e}`); }
+}
+function endFrameClock(active: boolean): void {
+  if (active) delete (window as unknown as FrameClockWindow).__lollyFrameDriven;
+}
+
+async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
   const targetW = ((opts.width  as number) > 0) ? (opts.width  as number) : nodeW;
@@ -4853,14 +4881,18 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
   const restore = await swapBlobUrls(node);
   const waitMs = (opts.wait ?? 1) * 1000;
   let settled = false;
+  // Raise the driven flag now (before the first capture) so a frame-clock tool's
+  // rAF loop stops advancing on its own; frame(t) then paints the exact phase.
+  const frameClock = beginFrameClock();
   return {
     width: targetW,
     height: targetH,
-    async frame(): Promise<HTMLCanvasElement> {
-      if (!settled) { await new Promise<void>(r => setTimeout(r, waitMs)); settled = true; }
+    async frame(t = 0): Promise<HTMLCanvasElement> {
+      if (frameClock) renderFrameAt(true, t);   // deterministic phase — no settle wait needed
+      else if (!settled) { await new Promise<void>(r => setTimeout(r, waitMs)); settled = true; }
       return lib.toCanvas(node, dtoOpts);
     },
-    dispose() { restore(); },
+    dispose() { endFrameClock(frameClock); restore(); },
   };
 }
 
@@ -5196,14 +5228,22 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   const { audio, mimeType } = await prepareExportAudio(opts, preferred, opts.duration ?? 5);
   if (!mimeType) { audio?.stop(); throw new Error(NO_VIDEO_MSG); }
 
-  if (typeof (node as any).captureStream === 'function') {
-    // node itself is a canvas — use it directly (rare but possible)
-    const cv         = node as HTMLCanvasElement;
+  // A tool with a continuously-animating <canvas> can OPT IN to real-time stream
+  // capture by marking it `data-capture-stream` — the canvas's own rAF loop is
+  // recorded at wall-clock speed, so a self-looping animation (e.g. the 3d tool's
+  // turntable: one revolution per `duration`s) yields a genuine seamless loop, and
+  // it's faster than the frame-by-frame path. Opt-in so tools that composite DOM
+  // overlays on top of a canvas keep the compositing (frame-by-frame) path.
+  const streamCanvas = (node as Element).querySelector?.('canvas[data-capture-stream]') as HTMLCanvasElement | null;
+  const captureEl = (typeof (node as any).captureStream === 'function')
+    ? (node as HTMLCanvasElement)
+    : (streamCanvas && typeof streamCanvas.captureStream === 'function' ? streamCanvas : null);
+  if (captureEl) {
     const waitMs     = (opts.wait     ?? 1) * 1000;
     const durationMs = (opts.duration ?? 5) * 1000;
     const canvasFps  = opts.fps ?? 30;
     await new Promise<void>(r => setTimeout(r, waitMs));
-    return recordStream(cv.captureStream(canvasFps), { durationMs, mimeType, audio, meta: opts.meta, width: cv.width, height: cv.height, fps: canvasFps });
+    return recordStream(captureEl.captureStream(canvasFps), { durationMs, mimeType, audio, meta: opts.meta, width: captureEl.width, height: captureEl.height, fps: canvasFps });
   }
 
   const fps        = opts.fps ?? 24;
@@ -5232,7 +5272,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   const frames: ImageBitmap[]  = [];
   try {
     for (let i = 0; i < frameCount; i++) {
-      frames.push(await createImageBitmap(await source.frame()));
+      frames.push(await createImageBitmap(await source.frame(i / frameCount)));
       // Progress for a slow N-frame render (no-op when no listener is wired).
       opts.onProgress?.(i + 1, frameCount);
     }
@@ -5554,10 +5594,10 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
 // footage as overlays (lower-third, logo bug), entering at the head and leaving at the
 // tail. Detected via [data-record-stage].
 
-const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
 function easeOutBack(t: number): number {
   const c1 = 1.70158, c3 = c1 + 1;
-  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
 }
 
 // One object's animated offset at progress p∈[0,1] (0 = entrance start, 1 = at rest).
@@ -5911,7 +5951,7 @@ async function renderGif(node: Element, opts: ExportOpts): Promise<Blob> {
 
     const repeat = opts.repeat != null ? opts.repeat : 0;
     for (let i = 0; i < frameCount; i++) {
-      const canvas = await source.frame();
+      const canvas = await source.frame(i / frameCount);
       offCtx.clearRect(0, 0, targetW, targetH);
       offCtx.drawImage(canvas, 0, 0, targetW, targetH);
       const pixels = offCtx.getImageData(0, 0, targetW, targetH).data;
@@ -5989,7 +6029,7 @@ async function renderApng(node: Element, opts: ExportOpts): Promise<Blob> {
   const frames: Uint8Array[] = [];
   try {
     for (let i = 0; i < frameCount; i++) {
-      const canvas = await source.frame();
+      const canvas = await source.frame(i / frameCount);
       offCtx.clearRect(0, 0, targetW, targetH);
       offCtx.drawImage(canvas, 0, 0, targetW, targetH);
       const blob = await new Promise<Blob>((res, rej) =>
@@ -6057,7 +6097,7 @@ async function renderWebpAnim(node: Element, opts: ExportOpts): Promise<Blob> {
   const frames: Uint8Array[] = [];
   try {
     for (let i = 0; i < frameCount; i++) {
-      const canvas = await source.frame();
+      const canvas = await source.frame(i / frameCount);
       offCtx.clearRect(0, 0, targetW, targetH);
       offCtx.drawImage(canvas, 0, 0, targetW, targetH);
       const blob = await new Promise<Blob>((res, rej) =>

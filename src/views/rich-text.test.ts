@@ -177,7 +177,7 @@ test('clearFormatting strips bold/italic/weight/colour over a range, keeps text 
 });
 
 test('clearFormatting only affects the given range', () => {
-  let chars: any[] = setFlag(plain('abcd'), 0, 4, 'b', true);
+  const chars: any[] = setFlag(plain('abcd'), 0, 4, 'b', true);
   const cleared = clearFormatting(chars, 0, 2);
   assert.equal(rangeHasFlag(cleared, 0, 2, 'b'), false);       // in-range cleared
   assert.equal(rangeHasFlag(cleared, 2, 4, 'b'), true);        // out-of-range kept
