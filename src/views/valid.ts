@@ -347,12 +347,12 @@ function renderReportBody(fileName: string, report: VerifyReport): string {
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
     ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no
         standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment:
-        only Lolly (here and via <code>brand-tool validate</code>) can read it — external C2PA viewers
+        only Lolly (here and via <code>lolly validate</code>) can read it — external C2PA viewers
         don't support WebM at all.`
     : identity
       ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. The signer's identity
         was verified against the Lolly CA root pinned in this app (the same root
-        <code>brand-tool validate --trust-anchor</code> uses). Validators that don't pin that root —
+        <code>lolly validate --trust-anchor</code> uses). Validators that don't pin that root —
         <a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>,
         or <code>c2patool</code> without <code>--trust_anchors</code> — still show the signer as an unknown source.`
       : `<strong>Checked entirely on this device</strong> — the file was not uploaded. The same file on
@@ -423,10 +423,10 @@ export async function mountValid(viewEl: HTMLElement, _host: HostV1): Promise<vo
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
         ? renderReportBody(file.name, report)
         : `<p class="valid-busy">Could not check this file: ${escape(error!)}</p>`;
-      // Audible verdict: a deep cinematic "braaam" when the credential is intact (the
-      // green medallion moment), a soft cautionary "uh-oh" when it's broken, missing,
-      // or unreadable.
-      playSfx(report?.state === 'valid' ? 'braaam' : 'warn');
+      // Audible verdict: a bright, chirping "signing" flourish when the credential is intact
+      // (the green medallion moment) — up-and-down scales ending on a rise and a ding — and a
+      // soft cautionary "uh-oh" when it's broken, missing, or unreadable.
+      playSfx(report?.state === 'valid' ? 'sign' : 'warn');
       reportEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       return;
     }
@@ -478,8 +478,8 @@ export async function mountValid(viewEl: HTMLElement, _host: HostV1): Promise<vo
       }
       if (report?.state !== 'valid') allValid = false;
     }
-    // One summary verdict for the whole batch — the "braaam" only if every file passed.
-    playSfx(allValid ? 'braaam' : 'warn');
+    // One summary verdict for the whole batch — the "signing" flourish only if every file passed.
+    playSfx(allValid ? 'sign' : 'warn');
   }
 
   drop.addEventListener('click', () => input.click());

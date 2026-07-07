@@ -340,6 +340,20 @@
 
 .sidebar-utils{display: grid;
     grid-template-columns: 1fr;}
+/* Inline, FULL-WIDTH two-step confirm for "Clear changes" (replaces the centred modal).
+   The grid is one column, so both buttons span the whole sidebar; place-self:stretch
+   overrides the resting button's place-self:end. */
+.sidebar-utils.is-confirming { gap: 8px; }
+.clear-inputs-confirm, .clear-inputs-cancel {
+  appearance: none; width: 100%; place-self: stretch;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  padding: 9px 16px; font: inherit; font-size: 13px; cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.clear-inputs-confirm { border-color: hsl(var(--destructive)); color: #fff; background: hsl(var(--destructive)); font-weight: 600; }
+.clear-inputs-confirm:hover { filter: brightness(0.94); }
+.clear-inputs-cancel { background: transparent; color: hsl(var(--muted-foreground)); }
+.clear-inputs-cancel:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .sidebar-body {
   flex: 1;
   /* Hold the open width so the controls don't reflow (squish/wrap) frame-by-frame
@@ -514,8 +528,13 @@
 .input-section:focus-within .input-row:has(.color-trigger):not(:focus-within) .color-trigger-hex { opacity: 0.45; }
 
 @media (prefers-reduced-motion: reduce) {
-  /* The global reset covers animations + scroll-behavior but not transitions. */
-  .input-row, .input-section, .block-item, .block-control { transition: none; }
+  /* The global reset covers animations + scroll-behavior but not transitions. These
+     include LAYOUT-affecting ones (tree reparent margin-left, chevron rotation) that
+     the low-specificity rule above doesn't reach. */
+  .input-row, .input-section, .block-item, .block-control,
+  .blocks-input--tree .block-item.is-nestable,
+  .block-collapse svg,
+  .input-section-summary::after { transition: none; }
 }
 
 /* On-demand help: a small info button by the label reveals the help text on hover
@@ -578,8 +597,9 @@
 .input-section:has(.help-tip-btn:hover),
 .input-section:has(.help-tip-btn:focus-visible),
 .input-section:has(.help-tip-pop:not([hidden])),
-.input-section:has(.input-section-summary:focus-visible),
-.input-section:has(.color-popover:not([hidden])) { clip-path: none; }
+.input-section:has(.input-section-summary:focus-visible) { overflow: visible; }
+/* Colour popover no longer needs an un-clip — it portals to position:fixed (color-field.ts),
+   escaping the section entirely so it's always on top and never clipped. */
 /* Desktop reveal on hover / keyboard focus of the trigger. Touch toggles via JS. */
 @media (hover: hover) {
   .input-row:has(.help-tip-btn:hover) > .help-tip-pop,
@@ -977,15 +997,15 @@ span.flatpickr-weekday {
 .input-section {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
-  /* Clip content to the rounded corners with clip-path, NOT overflow:hidden. The
-     help-tip / colour popovers below un-clip the section while a popover is open;
-     with overflow, that toggle flips the section between being a scroll container
-     and not on every hover, and because the section wraps the focused field the
-     browser re-anchors/re-scrolls the sidebar each flip — the sidebar visibly
-     thrashes up and down as the pointer crosses input rows. clip-path is paint-
-     only: it never establishes a scroll container, so toggling it is inert to
-     scroll position. (See the popover un-clip rule near .help-tip-pop.) */
-  clip-path: inset(0 round var(--radius));
+  /* Clip content to the rounded corners with `overflow: clip` — NOT clip-path and
+     NOT overflow:hidden. `overflow: clip` clips only DESCENDANTS (never the element's
+     own border/box-shadow), so the border stays solid + continuous in every state —
+     unlike clip-path, which clipped the 1px border itself and let a hovered summary's
+     opaque fill break it at the rounded corners. It also creates no stacking context
+     (clip-path did — that trapped the colour popover below sibling sections) and is
+     NOT a scroll container (unlike overflow:hidden), so the popover un-clip toggle
+     below can flip it to `visible` without any scroll thrash. */
+  overflow: clip;
   /* No border-color transition: Chromium can leave a :has()-triggered transition
      stuck at its start value, so the focus-ring border below would never paint.
      The ring switches instantly instead (the box-shadow halo carries the motion). */
@@ -1087,7 +1107,8 @@ background-color:hsl(var(--background) / 1);
 .block-field:focus { border-color: hsl(var(--ring)); outline: none; box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15); }
 
 .block-remove {
-  width: 24px; height: 24px; flex-shrink: 0;
+  width: 28px; height: 28px; flex-shrink: 0;   /* larger tap target (was 24) */
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer;
   color: hsl(var(--muted-foreground)); border-radius: var(--radius);
   font-size: 12px; transition: color 0.12s, background 0.12s;
@@ -1195,7 +1216,7 @@ background-color:hsl(var(--background) / 1);
 /* The header doubles as a drag handle (grip + label); the remove button sits at
    the far end, pushed there by the label's flex-grow. */
 .block-item.is-typed .block-head {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;   /* more separation between grip/label/actions (was 6) */
   margin-bottom: 8px;
   cursor: grab;
   user-select: none;
@@ -1242,7 +1263,7 @@ background-color:hsl(var(--background) / 1);
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
 }
 .block-remove.is-confirming:hover { background: hsl(var(--destructive, 0 72% 51%)); color: #fff; }
-.block-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 2px; align-items: end; }
+.block-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; align-items: end; }
 
 /* Compact untyped blocks (bare fields, no per-field labels, ≤3 fields) lay their
    fields side by side in a single row instead of the 2-col grid, which would wrap a
@@ -1296,7 +1317,7 @@ background-color:hsl(var(--background) / 1);
    rotates to point right when collapsed. */
 .block-collapse {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; padding: 0;
+  width: 28px; height: 28px; padding: 0;   /* larger tap target (was 22) */
   border: none; border-radius: 6px; background: transparent;
   color: hsl(var(--muted-foreground)); cursor: pointer;
 }

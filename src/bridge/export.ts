@@ -5227,6 +5227,50 @@ function pptxFitInto(box: { x: number; y: number; cx: number; cy: number }, aw: 
   const { ox, oy } = pptxObjOffset(style.objectPosition, box.cx - cx, box.cy - cy);
   return { x: box.x + ox, y: box.y + oy, cx, cy };
 }
+// object-fit:cover — the box stays full; the SOURCE is cropped (srcRect) so the visible
+// aspect matches without distorting. Returns per-edge crop fractions, or null when no
+// crop is needed. object-position places the crop window.
+function pptxCoverSrcRect(boxCx: number, boxCy: number, aw: number, ah: number, style: CSSStyleDeclaration): { l: number; t: number; r: number; b: number } | null {
+  if ((style.objectFit || 'fill') !== 'cover' || !(aw > 0 && ah > 0 && boxCx > 0 && boxCy > 0)) return null;
+  const imgA = aw / ah, boxA = boxCx / boxCy;
+  if (Math.abs(imgA - boxA) < 1e-3) return null;
+  if (imgA > boxA) {                                   // image wider → crop left/right
+    const crop = 1 - boxA / imgA;
+    const ox = pptxObjOffset(style.objectPosition, 1, 0).ox;
+    return { l: crop * ox, t: 0, r: crop * (1 - ox), b: 0 };
+  }
+  const crop = 1 - imgA / boxA;                        // image taller → crop top/bottom
+  const oy = pptxObjOffset(style.objectPosition, 0, 1).oy;
+  return { l: 0, t: crop * oy, r: 0, b: crop * (1 - oy) };
+}
+
+// Per-side CSS borders → thin rect shapes. A uniform 4-side border returns one outline
+// (via `line`); otherwise each visible side becomes its own edge rect — so a heading's
+// `border-bottom` accent rule survives (the earlier top-side-only check missed it).
+type PptxEdgeRect = { x: number; y: number; cx: number; cy: number; fill: PptxFill };
+function pptxBorderRects(style: CSSStyleDeclaration, box: { x: number; y: number; cx: number; cy: number }, E: number): { outline?: { color: string; w: number }; edges: PptxEdgeRect[] } {
+  const side = (w: string, s: string, c: string) => {
+    const width = parseFloat(w) || 0;
+    if (width <= 0 || s === 'none' || s === 'hidden') return null;
+    const col = parseCssColorFull(c);
+    return col && col[3] > 0.01 ? { w: width, color: rgbaHex(col), alpha: col[3] < 1 ? col[3] : undefined } : null;
+  };
+  const t = side(style.borderTopWidth, style.borderTopStyle, style.borderTopColor);
+  const r = side(style.borderRightWidth, style.borderRightStyle, style.borderRightColor);
+  const b = side(style.borderBottomWidth, style.borderBottomStyle, style.borderBottomColor);
+  const l = side(style.borderLeftWidth, style.borderLeftStyle, style.borderLeftColor);
+  type Side = ReturnType<typeof side>;
+  const same = (a: Side, z: Side): boolean => (!a && !z) || (!!a && !!z && a.w === z.w && a.color === z.color);
+  if (t && same(t, r) && same(t, b) && same(t, l)) return { outline: { color: t.color, w: Math.round(t.w * E) }, edges: [] };
+  const edges: PptxEdgeRect[] = [];
+  const fillOf = (s: NonNullable<Side>): PptxFill => ({ solid: s.color, alpha: s.alpha });
+  const px = (w: number) => Math.max(1, Math.round(w * E));
+  if (t) edges.push({ x: box.x, y: box.y, cx: box.cx, cy: px(t.w), fill: fillOf(t) });
+  if (b) edges.push({ x: box.x, y: box.y + box.cy - px(b.w), cx: box.cx, cy: px(b.w), fill: fillOf(b) });
+  if (l) edges.push({ x: box.x, y: box.y, cx: px(l.w), cy: box.cy, fill: fillOf(l) });
+  if (r) edges.push({ x: box.x + box.cx - px(r.w), y: box.y, cx: px(r.w), cy: box.cy, fill: fillOf(r) });
+  return { edges };
+}
 
 // Walk one page element into PPTX shapes + media (see the section comment above).
 async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<PptxSlide> {
@@ -5296,8 +5340,13 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
           if (png) { shapes.push({ kind: 'pic', ...placed, media: addMedia(png, 'png'), svg: addMedia(buf, 'svg'), name: 'vector' }); return; }
         } else if (ext === 'png' || ext === 'jpeg') {
           const im = el as HTMLImageElement;
-          const placed = pptxFitInto(boxOf(r), im.naturalWidth || 0, im.naturalHeight || 0, style);
-          shapes.push({ kind: 'pic', ...placed, media: addMedia(buf, ext), name: 'image' }); return;
+          const nw = im.naturalWidth || 0, nh = im.naturalHeight || 0;
+          const box = boxOf(r);
+          // cover → keep the full box but crop the source (srcRect); contain → letterbox;
+          // fill/default → stretch to the box (a plain blipFill).
+          const srcRect = pptxCoverSrcRect(box.cx, box.cy, nw, nh, style) ?? undefined;
+          const placed = srcRect ? box : pptxFitInto(box, nw, nh, style);
+          shapes.push({ kind: 'pic', ...placed, media: addMedia(buf, ext), name: 'image', srcRect }); return;
         }
       } catch { /* fall through to rasterise */ }
     }
@@ -5325,15 +5374,17 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     const reason = detectUnsupportedCss(el, style);
     if (reason && reason !== 'background-image:url()') { await rasterPic(el as HTMLElement, rect, reason); return; }
 
-    // Background / border / radius → a rect shape (layout context).
+    // Background / border / radius → rect shape(s) (layout context). A uniform border
+    // becomes the rect's outline; per-side borders (e.g. a heading's accent
+    // border-bottom rule) each become their own thin edge rect.
+    const box = boxOf(rect);
     const fill = pptxGradientFill(style.backgroundImage) ?? pptxSolidFill(style.backgroundColor) ?? undefined;
-    const bw = parseFloat(style.borderTopWidth) || 0;
-    const bc = bw > 0 && style.borderTopStyle !== 'none' ? parseCssColorFull(style.borderTopColor) : null;
-    const line = bc && bc[3] > 0.01 ? { color: rgbaHex(bc), w: Math.round(bw * E) } : undefined;
+    const borders = pptxBorderRects(style, box, E);
     const radiusPx = parseFloat(style.borderTopLeftRadius) || 0;
-    if (fill || line || radiusPx > 0) {
-      shapes.push({ kind: 'rect', ...boxOf(rect), fill, line, radius: radiusPx > 0 ? Math.round(radiusPx * E) : undefined });
+    if (fill || borders.outline || radiusPx > 0) {
+      shapes.push({ kind: 'rect', ...box, fill, line: borders.outline, radius: radiusPx > 0 ? Math.round(radiusPx * E) : undefined });
     }
+    for (const e of borders.edges) shapes.push({ kind: 'rect', x: e.x, y: e.y, cx: e.cx, cy: e.cy, fill: e.fill });
     if (/url\(/.test(style.backgroundImage)) await bgImagePic(el, style, rect);
 
     // A pure text block (only text + inline formatting) → ONE editable text box whose
