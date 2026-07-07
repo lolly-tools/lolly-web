@@ -98,6 +98,7 @@ const ICONS = {
   cpu: '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',
   calendar: '<rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',
   package: '<path d="M16.5 9.4 7.5 4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.2" r="1.1"/>',
 };
 const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'needs attention', na: 'not applicable' };
 
@@ -197,19 +198,19 @@ function scorecardModel(report: VerifyReport): ScorecardItem[] {
 }
 
 function scorecardHtml(report: VerifyReport): string {
-  return `<ul class="valid-score" aria-label="Verification checks at a glance">${scorecardModel(report).map((it) =>
-    `<li class="valid-score-pip is-${it.status}" aria-label="${escape(it.label)}: ${STATUS_WORD[it.status]}">` +
+  return `<ul class="valid-score" aria-label="Verification checks at a glance">${scorecardModel(report).map((it, i) =>
+    `<li class="valid-score-pip is-${it.status}" style="--i:${i}" aria-label="${escape(it.label)}: ${STATUS_WORD[it.status]}">` +
       `<span class="valid-score-ic" aria-hidden="true">${svgIcon(ICONS[it.icon])}</span>` +
       `<span class="valid-score-label" aria-hidden="true">${escape(it.label)}</span>` +
       `<span class="valid-score-status" aria-hidden="true">${STATUS_WORD[it.status]}</span>` +
     `</li>`).join('')}</ul>`;
 }
 
-function checkRow(c: Check): string {
+function checkRow(c: Check, i = 0): string {
   const cls = c.ok ? 'ok' : isExpectedRow(c) ? 'info' : 'bad';
   const mark = c.ok ? '✓' : isExpectedRow(c) ? 'ℹ' : '✕';
   return `
-    <li class="valid-check valid-check--${cls}">
+    <li class="valid-check valid-check--${cls}" style="--i:${i}">
       <span class="valid-check-mark" aria-hidden="true">${mark}</span>
       <span class="valid-check-text"><code>${escape(c.code)}</code><span>${escape(c.explanation)}</span></span>
     </li>`;
@@ -220,6 +221,14 @@ function fact(label: string, value: unknown, icon: keyof typeof ICONS): string {
   const ic = icon && ICONS[icon] ? `<span class="valid-fact-ic" aria-hidden="true">${svgIcon(ICONS[icon])}</span>` : '';
   return `<div class="valid-fact"><dt>${ic}<span>${escape(label)}</span></dt><dd>${escape(String(value))}</dd></div>`;
 }
+
+// The "checked on this device" footnote, wrapped as a professional callout: a
+// lock chip (privacy — nothing left the device) beside the explanatory prose.
+const deviceNote = (inner: string): string =>
+  `<div class="valid-note">
+    <span class="valid-note-ic" aria-hidden="true">${svgIcon(ICONS.lock)}</span>
+    <p class="valid-note-body">${inner}</p>
+  </div>`;
 
 const fmtDate = (iso: unknown): string => {
   const d = new Date(iso as string | number | Date);
@@ -335,19 +344,20 @@ function renderReportBody(fileName: string, report: VerifyReport): string {
           ${fact('Manifest', claim.manifestLabel, 'document')}
         </dl>` : ''}
       ${report.checks.length ? `<ul class="valid-checks">${report.checks.map(checkRow).join('')}</ul>` : ''}
-      ${report.found ? (report.format === 'webm' || report.format === 'mkv' ? `
-        <p class="valid-note">Checked entirely on this device — the file was not uploaded. WebM has no
+      ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
+    ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no
         standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment:
         only Lolly (here and via <code>brand-tool validate</code>) can read it — external C2PA viewers
-        don't support WebM at all.</p>` : identity ? `
-        <p class="valid-note">Checked entirely on this device — the file was not uploaded. The signer's identity
+        don't support WebM at all.`
+    : identity
+      ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. The signer's identity
         was verified against the Lolly CA root pinned in this app (the same root
         <code>brand-tool validate --trust-anchor</code> uses). Validators that don't pin that root —
         <a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>,
-        or <code>c2patool</code> without <code>--trust_anchors</code> — still show the signer as an unknown source.</p>` : `
-        <p class="valid-note">Checked entirely on this device — the file was not uploaded. The same file on
+        or <code>c2patool</code> without <code>--trust_anchors</code> — still show the signer as an unknown source.`
+      : `<strong>Checked entirely on this device</strong> — the file was not uploaded. The same file on
         <a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>
-        reads the same, with the signer shown as an unknown source (there is no CA behind an on-device key — by design).</p>`) : ''}
+        reads the same, with the signer shown as an unknown source (there is no CA behind an on-device key — by design).`) : ''}
     </div>`;
 }
 
