@@ -222,7 +222,7 @@ function parseSwatches(doc: Document | null): Record<string, string> {
 
 function resolveColor(ref: string | null, swatches: Record<string, string>): string {
   if (!ref) return '';
-  if (Object.prototype.hasOwnProperty.call(swatches, ref)) return swatches[ref] ?? '';
+  if (Object.hasOwn(swatches, ref)) return swatches[ref] ?? '';
   return '';
 }
 

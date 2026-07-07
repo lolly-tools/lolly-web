@@ -82,7 +82,7 @@ function spectralCues(freqDb: Float32Array, humBins: Set<number>, loBin: number,
   let total = 0, mains = 0;             // linear-amplitude sums for the hum ratio
   let logSum = 0, linSum = 0, n = 0;    // for flatness over the mid band
   for (let i = 1; i < freqDb.length; i++) {
-    const amp = Math.pow(10, freqDb[i]! / 20);   // dB → linear amplitude
+    const amp = 10 ** (freqDb[i]! / 20);   // dB → linear amplitude
     total += amp;
     if (humBins.has(i)) mains += amp;
     if (i >= loBin && i <= hiBin) {

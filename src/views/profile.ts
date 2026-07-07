@@ -678,7 +678,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const tick = (now: number) => {
         if (t0 == null) t0 = now;
         const p = Math.min(1, (now - t0) / dur);
-        const eased = 1 - Math.pow(1 - p, 3);
+        const eased = 1 - (1 - p) ** 3;
         el.textContent = fmtBytes(Math.round(from + (to - from) * eased));
         if (p < 1) requestAnimationFrame(tick); else el.textContent = fmtBytes(to);
       };

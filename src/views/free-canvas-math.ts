@@ -439,7 +439,7 @@ export function seedBox(cfg: BoxFieldConfig, defaults: Box | null | undefined, k
 
 /** Normalise a drag rect (can be dragged up/left) into positive w/h with a floor. */
 export function normDragRect(x0: number, y0: number, x1: number, y1: number, minSize = 8): MarqueeRect {
-  let x = Math.min(x0, x1), y = Math.min(y0, y1);
+  const x = Math.min(x0, x1), y = Math.min(y0, y1);
   let w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
   if (w < minSize) w = minSize;
   if (h < minSize) h = minSize;

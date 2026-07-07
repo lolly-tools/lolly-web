@@ -263,7 +263,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     const rAvg = (regX + regY) / 2;
 
     if (tag === 'g' || tag === 'a' || tag === 'svg') {
-      let nt: WalkTransform = { ...t };
+      const nt: WalkTransform = { ...t };
       const transform = el.getAttribute?.('transform') || '';
       if (transform) {
         const tm = transform.match(/translate\(\s*([+-]?\d*\.?\d+)[,\s]\s*([+-]?\d*\.?\d+)\s*\)/) ??

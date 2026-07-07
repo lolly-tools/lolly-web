@@ -1206,21 +1206,21 @@ a.gtile-name:focus-visible::after {
   gap: 4px;
 }
 .gtile-fmt {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 9px;
+  font-weight: 500;
   letter-spacing: 0.02em;
   line-height: 1;
-  padding: 3px 6px;
-  border-radius: 5px;
+  padding: 2px 5px;
+  border-radius: 4px;
   white-space: nowrap;
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.55);
-  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground) / 0.7);
+  background: hsl(var(--muted) / 0.35);
+  border: 1px solid hsl(var(--border) / 0.6);
 }
 .gtile-fmt--default {
-  color: hsl(var(--primary-foreground));
-  background: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+  color: hsl(var(--primary) / 0.85);
+  background: hsl(var(--primary) / 0.1);
+  border-color: hsl(var(--primary) / 0.35);
 }
 
 /* Per-card (i) info / (h) history buttons — floated over the top-right of the

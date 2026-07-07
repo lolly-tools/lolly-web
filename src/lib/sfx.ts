@@ -787,7 +787,7 @@ function renderAah(ctx: AudioContext, out: AudioNode, cfg: AahConfig): void {
   // Optional lead-in — a few rising "stacking" clicks (assets snapping into a stack): each a
   // touch higher + louder so it builds. The vowel then blooms once the stack has landed.
   for (let i = 0; i < cfg.clicks; i++) {
-    tick(ctx, out, { dur: 0.02, peak: 0.16 + i * 0.02, freq: 1500 * Math.pow(1.16, i), q: 1.3, delay: i * 0.06 });
+    tick(ctx, out, { dur: 0.02, peak: 0.16 + i * 0.02, freq: 1500 * 1.16 ** i, q: 1.3, delay: i * 0.06 });
   }
   const s = t0 + (cfg.clicks ? cfg.clicks * 0.06 : 0); // the vowel's own start (after the stack)
 
@@ -914,7 +914,7 @@ function renderGalleryBell(ctx: AudioContext, out: AudioNode): void {
 function renderProjectsWind(ctx: AudioContext, out: AudioNode): void {
   const eps = 0.0001;
   for (let i = 0; i < 4; i++) { // the same rising stack the catalog used to lead with
-    tick(ctx, out, { dur: 0.02, peak: 0.14 + i * 0.02, freq: 1500 * Math.pow(1.16, i), q: 1.3, delay: i * 0.06 });
+    tick(ctx, out, { dur: 0.02, peak: 0.14 + i * 0.02, freq: 1500 * 1.16 ** i, q: 1.3, delay: i * 0.06 });
   }
   const s = ctx.currentTime + 4 * 0.06; // the gust starts as the stack lands
   const dur = 0.55;

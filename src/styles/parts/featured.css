@@ -49,7 +49,7 @@
 .featured-mount--utilities[hidden] { display: none; }
 /* With the hero present, the masonry no longer needs its cluster clearance — the
    featured row provides it — so it tucks up right below the strip. */
-.gallery.has-featured .tool-masonry { padding-top: 1.25rem; }
+.gallery.has-featured .tool-masonry { padding-top: 3em; }
 @media (max-width: 640px) { .gallery.has-featured .tool-masonry { padding-top: .85rem; } }
 
 /* The strip itself — ONE inset panel. A native horizontal scroller (swipe / wheel /
