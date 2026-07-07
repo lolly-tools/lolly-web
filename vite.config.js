@@ -19,6 +19,8 @@ const MIME = {
   '.woff2':'font/woff2',
   '.ttf':  'font/ttf',
   '.mp3':  'audio/mpeg',
+  '.glb':  'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
 };
 
 // Vite resolve.alias only rewrites JS import statements — it has no effect on
