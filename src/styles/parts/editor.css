@@ -1,0 +1,702 @@
+/* ─── WYSIWYG editor layout (render.layout:'editor') ──────────────────────────
+   A chromeless free-canvas surface: no input sidebar, but the fixed render canvas,
+   pan/zoom and full export UI are kept. The direct-manipulation overlay + left
+   toolbar are stage siblings mounted by shells/web/src/views/free-canvas.js. All
+   chrome carries [data-export-hide] and sits outside #tool-canvas, so it never
+   appears in exported files. These rules follow the [data-sidebar="hidden"] block
+   above so .is-editor re-centres the fixed canvas (that block left-aligns it). */
+.tool-layout.is-editor .tool-stage {
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  place-items: center;
+  background-color: hsl(var(--muted));
+  background-image:
+    linear-gradient(45deg, rgba(0, 0, 0, 0.045) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.045) 75%),
+    linear-gradient(45deg, rgba(0, 0, 0, 0.045) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.045) 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* Editor mode surfaces Export/Save/Copy/Share as prominent icons in the toolbar
+   rail (see .fc-action), so the floating bottom Export|Save pill is removed. The
+   #render-fab / #render-save buttons stay in the DOM (hidden) — the rail icons
+   trigger them, and the Export popup still opens from the rail Export icon. */
+.tool-layout.is-editor .render-pill { display: none; }
+
+/* Left toolbar rail — reveal-dimmed at rest on desktop, always-on for touch.
+   Vertically centred by a flex DOCK wrapper — NOT a transform. The rail must not
+   carry `transform`/`backdrop-filter`, since either would become the containing
+   block for its colour-picker popover's `position:fixed` and knock it off-screen. */
+.fc-toolbar-dock {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  padding-left: calc(10px + var(--vv-left, 0px));
+  pointer-events: none;
+  z-index: 16;
+}
+.fc-toolbar {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px;
+  border-radius: 16px;
+  background: hsl(var(--card) / 0.7);
+  isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px hsl(var(--border));
+  opacity: 0.5;
+  transition: opacity 0.18s ease;
+}
+.tool-stage:hover .fc-toolbar,
+.fc-toolbar:hover,
+.fc-toolbar:focus-within { opacity: 1; }
+
+/* Undo / redo joined into ONE history control — two stacked halves of a single
+   capsule (undo above, redo below) so the rail reads it as one back/forward
+   indicator rather than two separate buttons. Outer corners round; a hairline
+   splits the halves; each half dims (.fc-btn:disabled) at its end of the stack. */
+.fc-history {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: hsl(var(--muted) / 0.55);
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+/* Scoped under .fc-history so height/colour win over the later .fc-btn rules. */
+.fc-history .fc-hist-btn { height: 32px; border-radius: 0; color: hsl(var(--muted-foreground)); }
+.fc-history .fc-hist-btn:hover:not(:disabled) { color: hsl(var(--foreground)); }
+.fc-history .fc-hist-btn svg { width: 18px; height: 18px; }
+.fc-history .fc-hist-btn:first-child { border-radius: 12px 12px 0 0; }
+.fc-history .fc-hist-btn:last-child { border-radius: 0 0 12px 12px; }
+.fc-history .fc-hist-btn + .fc-hist-btn { box-shadow: inset 0 1px 0 hsl(var(--border)); }
+@media (pointer: coarse) { .fc-history .fc-hist-btn { height: 40px; } }
+
+.fc-btn {
+  width: 40px; height: 40px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 11px;
+  background: transparent; color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: background-color 0.14s ease;
+}
+.fc-btn svg { width: 21px; height: 21px; }
+.fc-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
+.fc-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+/* Undo/redo dim out at the ends of history (same treatment as .history-btn). */
+.fc-btn:disabled { opacity: 0.3; cursor: default; }
+.fc-btn.is-armed { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+/* Primary actions (Export/Save/Copy/Share) — a touch more prominent than the plain
+   tools: brand-accent icons, with Export filled as the lead call-to-action. */
+.fc-btn.fc-action { color: hsl(var(--primary)); }
+.fc-btn.fc-action:hover:not(:disabled) { background: hsl(var(--primary) / 0.12); }
+.fc-btn.fc-action-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.fc-btn.fc-action-primary:hover:not(:disabled) { background: hsl(var(--primary) / 0.85); }
+/* Amber "unsaved" cue mirrored from the render pill's Save button. */
+.fc-btn.fc-action-save.is-unsaved,
+.fc-btn.fc-action-save.is-unsaved:hover:not(:disabled) { background: #f5a524; color: #0c322c; }
+.fc-sep { height: 1px; background: hsl(var(--border)); margin: 3px 4px; }
+.fc-sep-v { display: inline-block; width: 1px; height: 20px; background: hsl(var(--border)); margin: 0 3px; }
+
+/* Toolbar popovers (add / arrange / align / context menu). These host no
+   colour-picker (no position:fixed descendants), so the blur can sit on the
+   element itself — which also keeps it correct when the menu scrolls, unlike the
+   ::before technique the picker-hosting bars need. */
+.fc-popover {
+  position: absolute; z-index: 24; min-width: 184px;
+  background: hsl(var(--card) / 0.82); color: hsl(var(--foreground));
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid hsl(var(--border)); border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+  padding: 5px; display: flex; flex-direction: column;
+}
+.fc-pop-item {
+  display: flex; align-items: center; gap: 9px;
+  border: none; background: transparent; color: inherit;
+  font: inherit; font-size: 13.5px; text-align: left;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+}
+.fc-pop-item:hover:not(:disabled) { background: hsl(var(--muted)); }
+.fc-pop-item:disabled,
+.fc-pop-gitem:disabled{ opacity: 0.38; cursor: default; }
+.fc-pop-item.fc-pop-danger:hover:not(:disabled),
+.fc-cbtn.fc-danger:hover{ background: #ef4444; color: #ffffff; }
+.fc-pop-ic svg { width: 16px; height: 16px; display: block; }
+.fc-pop-sep { height: 1px; background: hsl(var(--border)); margin: 4px 2px; }
+/* Icon-only action grid inside a popover (align = 3 cols, distribute = 2). Fixed-width
+   columns so both grids share the same square button size and sit left-aligned. */
+.fc-pop-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), 40px);
+  gap: 2px;
+  padding: 2px;
+}
+.fc-pop-gitem {
+  height: 34px; border: none; background: transparent; color: inherit;
+  border-radius: 8px; cursor: pointer;
+}
+.fc-pop-gitem svg { width: 18px; height: 18px; display: block; }
+.fc-pop-gitem:hover:not(:disabled) { background: hsl(var(--muted)); }
+/* Right-click context menu — longer, so cap its height and scroll. */
+.fc-context-menu { max-height: min(80vh, 560px); overflow-y: auto; min-width: 210px; }
+
+/* Selection overlay — siblings of the canvas, never exported. */
+.fc-overlay { position: absolute; inset: 0; z-index: 12; pointer-events: none; }
+/* Frame dimmer — sits above the artboard but below the selection chrome (no
+   z-index, first overlay child). Its big outset box-shadow floods everything
+   OUTSIDE the frame with a faint background-matched tint, so boxes dragged off the
+   artboard read as gently faded (~0.8) while remaining fully visible + selectable.
+   Zero per-box cost; pointer-transparent; the stage clips the shadow's reach.
+   Theme-aware via --background, so it fades toward the surrounding stage in every
+   theme. Editor-only and inside .fc-overlay, so it never reaches export. */
+.fc-frame-scrim {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: 0 0 0 100vmax hsl(var(--background) / 0.22);
+}
+.fc-outline {
+  position: absolute; box-sizing: border-box;
+  border: 1.5px solid hsl(var(--primary));
+  transform-origin: 50% 50%;
+}
+/* Group / multi-selection bounding box — dashed to distinguish from a box outline. */
+.fc-group-outline { border-style: dashed; }
+.fc-handle {
+  position: absolute; width: 12px; height: 12px;
+  margin-left: -6px; margin-top: -6px;
+  background: #ffffff; border: 1.5px solid hsl(var(--primary));
+  border-radius: 3px; pointer-events: auto; touch-action: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+.fc-handle::after { content: ""; position: absolute; inset: -9px; }  /* fat touch target */
+.fc-h-n, .fc-h-s { cursor: ns-resize; }
+.fc-h-e, .fc-h-w { cursor: ew-resize; }
+.fc-h-ne, .fc-h-sw { cursor: nesw-resize; }
+.fc-h-nw, .fc-h-se { cursor: nwse-resize; }
+.fc-h-rotate {
+  width: 14px; height: 14px; margin-left: -7px; margin-top: -7px;
+  border-radius: 50%; cursor: grab; background: hsl(var(--primary)); border-color: #ffffff;
+}
+.fc-rot-stem {
+  position: absolute; height: 1.5px; background: hsl(var(--primary));
+  transform-origin: 0 50%; margin-top: -0.75px; pointer-events: none;
+}
+
+/* Rubber-band (create-drag + marquee). */
+.fc-rubber {
+  position: absolute; z-index: 13;
+  border: 1.5px dashed hsl(var(--primary));
+  background: hsl(var(--primary) / 0.10);
+  pointer-events: none;
+}
+
+/* Contextual bar above the selection. Its `left` is JS-centred (NOT translateX,
+   and no backdrop-filter) so its colour-picker popover's `position:fixed` stays
+   viewport-relative rather than anchoring to a transformed/filtered ancestor. */
+.fc-ctxbar {
+  position: absolute; z-index: 15;
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px; border-radius: 12px;
+  background: hsl(var(--card) / 0.7);
+  isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.24), 0 0 0 1px hsl(var(--border));
+  pointer-events: auto;
+}
+.fc-cbtn {
+  min-width: 32px; height: 32px; padding: 0 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 8px; background: transparent;
+  color: hsl(var(--foreground)); font: inherit; font-size: 14px; font-weight: 700;
+  cursor: pointer;
+}
+.fc-cbtn svg { width: 18px; height: 18px; }
+.fc-cbtn:hover { background: hsl(var(--muted)); }
+.fc-readout {
+  font-size: 11px; color: hsl(var(--muted-foreground));
+  padding: 0 6px; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+
+/* Armed-create cursor + gesture body state. */
+.tool-stage.fc-arming { cursor: crosshair; }
+/* Connect mode: linking cards. The crosshair signals "click a card"; cards lift on
+   hover so it's clear they're the click targets. */
+.tool-stage.fc-connecting { cursor: crosshair; }
+.tool-stage.fc-connecting .lolly-box { cursor: crosshair; }
+.tool-stage.fc-connecting .lolly-box:hover { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+/* Keyboard focus on a card (Tab) — a visible ring; focus also makes it the selection. */
+.fc-open-canvas .lolly-box:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: 2px; }
+
+/* Empty-canvas first-run invite (overlay lets pointer through except the button). */
+.fc-empty { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 2; }
+.fc-empty[hidden] { display: none; }
+.fc-empty-add {
+  pointer-events: auto; cursor: pointer; font: inherit; font-weight: 600;
+  padding: 12px 20px; border-radius: 10px;
+  border: 1.5px dashed hsl(var(--border)); background: hsl(var(--card) / 0.82);
+  color: hsl(var(--muted-foreground)); backdrop-filter: blur(3px);
+}
+.fc-empty-add:hover { border-color: hsl(var(--primary)); color: hsl(var(--foreground)); }
+.fc-empty-add:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+/* The connector preview <svg> (rubber line + live-drag lines) never eats pointers. */
+.fc-connect-layer { pointer-events: none; }
+body.fc-manipulating { user-select: none; -webkit-user-select: none; }
+
+/* Hide the editor chrome while the export shutter is closing (belt-and-braces —
+   detachExportHidden also removes it during the actual capture). */
+.tool-stage:has(.export-shutter.is-active) .fc-overlay,
+.tool-stage:has(.export-shutter.is-active) .fc-toolbar { opacity: 0; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-toolbar { transition: none; }
+}
+
+/* Touch: always-visible toolbar + larger hit targets. */
+@media (pointer: coarse) {
+  .fc-toolbar { opacity: 1; }
+  .fc-btn { width: 44px; height: 44px; }
+  .fc-handle { width: 16px; height: 16px; margin-left: -8px; margin-top: -8px; }
+  .fc-h-rotate { width: 18px; height: 18px; margin-left: -9px; margin-top: -9px; }
+}
+
+/* ── Editor iteration 2: guides · unified controls · colour picker · text edit ── */
+
+/* Snap / alignment guide lines drawn during move / resize / create. */
+.fc-guides { position: absolute; inset: 0; pointer-events: none; z-index: 14; }
+.fc-guide {
+  position: absolute; height: 1.5px; background: #ff2d78;
+  transform-origin: 0 0; pointer-events: none;
+  box-shadow: 0 0 0 0.5px rgba(255, 45, 120, 0.35);
+}
+
+/* Toolbar canvas-background — the shared colour picker, compacted to a swatch. */
+.fc-color-btn { padding: 0; overflow: visible; }
+.fc-toolbar .color-picker-field { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
+.fc-toolbar .color-trigger { width: 34px; height: 34px; padding: 0; gap: 0; justify-content: center; border-radius: 10px; }
+.fc-toolbar .color-trigger-hex { display: none; }
+.fc-toolbar .color-trigger-preview { width: 22px; height: 22px; border-radius: 7px; }
+
+/* Context-bar fill + text-colour fields — compact swatch triggers. */
+.fc-cfield { display: inline-flex; }
+.fc-ctxbar .color-picker-field { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
+.fc-ctxbar .color-trigger { width: 30px; height: 30px; padding: 0; gap: 0; justify-content: center; border-radius: 8px; }
+.fc-ctxbar .color-trigger-hex { display: none; }
+.fc-ctxbar .color-trigger-preview { width: 20px; height: 20px; border-radius: 6px; }
+
+/* "More" panel: shape / radius / opacity / image fit / blend. */
+.fc-panel {
+  position: absolute; z-index: 24; min-width: 238px;
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 11px 12px; border-radius: 12px;
+  background: hsl(var(--card) / 0.72); color: hsl(var(--foreground));
+  isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
+  border: 1px solid hsl(var(--border)); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+}
+.fc-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
+.fc-row > span { flex: 0 0 86px; color: hsl(var(--muted-foreground)); }
+.fc-row select, .fc-row input[type="range"] { flex: 1; min-width: 0; }
+.fc-row select {
+  font: inherit; font-size: 12.5px; padding: 4px 6px; border-radius: 7px;
+  border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
+}
+.fc-row > b { flex: 0 0 32px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Toggle rows (ligatures / stylistic alternates) — checkbox sits at the right edge. */
+.fc-row-toggle { cursor: pointer; }
+.fc-row-toggle > span { flex: 1 1 auto; }
+.fc-row-toggle input[type="checkbox"] { flex: none; width: 16px; height: 16px; accent-color: hsl(var(--primary)); cursor: pointer; }
+
+/* Connector inspector (org-chart) — the properties popover for a selected line. */
+.fc-edge-panel { min-width: 236px; }
+.fc-edge-count {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  color: hsl(var(--primary)); padding: 1px 2px 5px; margin-bottom: 2px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.fc-edge-panel .fc-seg { flex: 1 1 auto; }
+.fc-edge-actions { justify-content: flex-end; margin-top: 2px; }
+.fc-edge-actions .fc-cbtn {
+  width: auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 11px; font: inherit; font-size: 12px; font-weight: 600; border-radius: 8px;
+}
+.fc-edge-actions .fc-cbtn svg { width: 15px; height: 15px; }
+
+/* Canvas-size panel — presets grid + custom width/height. */
+.fc-size-panel { min-width: 262px; }
+.fc-panel-head { }
+.fc-size-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.fc-size-preset {
+  display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
+  padding: 7px 9px; border-radius: 8px; cursor: pointer;
+  border: 1px solid hsl(var(--border)); background: hsl(var(--background)); color: inherit;
+  font: inherit; font-size: 12px; text-align: left;
+}
+.fc-size-preset b { font-weight: 600; }
+.fc-size-preset span { font-size: 10.5px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.fc-size-preset:hover { border-color: hsl(var(--ring) / 0.5); }
+.fc-size-preset.is-current { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.08); }
+.fc-size-panel .fc-row input[type="number"] {
+  flex: 1; min-width: 0; font: inherit; font-size: 12.5px; padding: 4px 6px;
+  border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
+}
+
+/* Pages panel — a page-count stepper above the shared page-size presets. */
+.fc-pages-panel .fc-panel-head + .fc-panel-head { margin-top: 10px; }
+.fc-pages-step { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.fc-pages-step .fc-step-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 9px; cursor: pointer;
+  border: 1px solid hsl(var(--border)); background: hsl(var(--background)); color: inherit;
+}
+.fc-pages-step .fc-step-btn:hover:not(:disabled) { border-color: hsl(var(--ring) / 0.5); }
+.fc-pages-step .fc-step-btn:disabled { opacity: 0.4; cursor: default; }
+.fc-pages-step .fc-step-btn svg { width: 18px; height: 18px; }
+.fc-pages-count { min-width: 1.6ch; text-align: center; font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
+
+/* Inline text editing — the box's own text element becomes contentEditable. */
+.lolly-box-text.fc-editing {
+  outline: 2px solid #2d7ff9; outline-offset: 3px;
+  /* Square the focus ring — an outline follows the element's own radius, so a
+     rounded box would otherwise round the blue ring while editing. */
+  border-radius: 0 !important;
+  cursor: text; min-height: 1em; min-width: 8px; caret-color: #2d7ff9;
+}
+/* While editing, let the caret/text spill past the box so nothing types "into the
+   void"; the box re-clips (and grows to fit) on commit. Rounding and clip masks
+   come off too (inline styles, hence !important) — editing happens on a plain
+   rectangle so corners/masks never hide the caret or the copy. */
+.lolly-box.fc-box-editing {
+  overflow: visible;
+  border-radius: 0 !important;
+  clip-path: none !important;
+}
+/* Gentle placeholder in an empty text box being edited (editor-only: the class is
+   removed before export, so it never leaks into output). */
+.lolly-box-text.fc-editing:empty::before {
+  content: "Type\2026"; opacity: 0.4; pointer-events: none;
+}
+
+/* Floating format bar shown while editing text: bold / italic / bullets, plus
+   text alignment (horizontal + vertical), weight, and size. Sits in the
+   pointer-events:none overlay, so it opts back in. */
+.fc-fmtbar {
+  position: absolute; z-index: 16; pointer-events: auto;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  flex-wrap: wrap; max-width: min(92vw, 540px);
+  padding: 4px 5px; border-radius: 12px;
+  background: hsl(var(--card) / 0.7);
+  isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.24), 0 0 0 1px hsl(var(--border));
+}
+/* Frosted-glass backing for the floating chrome that sits over the canvas
+   (toolbar rail, object bar, format bar, panels), so it reads as part of the
+   scene rather than an opaque slab. The blur lives on a ::before pseudo BEHIND the
+   content — NOT on the element itself — because an element with backdrop-filter
+   becomes the containing block for its position:fixed descendants, which would
+   knock the colour-picker popovers these bars host off-screen. The pseudo has no
+   descendants, so it frosts the canvas without capturing those popovers. Each host
+   sets `isolation:isolate` so the z-index:-1 pseudo stays layered behind its own
+   content but above the artboard. The host keeps a translucent solid background too
+   — a graceful fallback where backdrop-filter is unsupported, and it keeps a
+   scrolling panel readable in the strip a scrolled-away pseudo can't cover. */
+.fc-toolbar::before, .fc-ctxbar::before, .fc-fmtbar::before, .fc-panel::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: inherit;
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+}
+.fc-fmtbar .fc-cbtn { min-width: 32px; }
+.fc-fmtbar i { font-style: italic; }
+/* Logical clusters (type · styles · align · valign · size · OpenType). Buttons sit
+   tight WITHIN a group (1px); the bar's own 7px gap sets the group apart. Each group
+   is one non-splitting flex item, so a wrap breaks cleanly between groups. */
+.fc-fmt-group { display: inline-flex; align-items: center; gap: 1px; }
+.fc-fmtbar .fc-cbtn.is-on { background: hsl(var(--primary) / 0.16); color: hsl(var(--primary)); }
+.fc-fmt-weight, .fc-fmt-font {
+  font: inherit; font-size: 12.5px; max-width: 104px;
+  padding: 4px 4px; border-radius: 8px;
+  border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
+}
+.fc-fmt-font { max-width: 118px; }
+
+/* Type pill — font · weight · colour joined into one connected control. Inner
+   borders collapse (each control after the first pulls left 1px to overlap the
+   shared edge) and only the pill's outer corners round, so the three read as a
+   single object. The `:first-child`/`:last-child` rules also target the colour
+   field's nested trigger (its real bordered element), so the ends round whichever
+   control sits there. */
+.fc-fmt-typegroup { display: inline-flex; align-items: stretch; }
+.fc-fmt-typegroup > * { margin: 0; }
+.fc-fmt-typegroup > * + * { margin-left: -1px; }
+.fc-fmt-typegroup .fc-fmt-font,
+.fc-fmt-typegroup .fc-fmt-weight { border-radius: 0; max-width: 108px; }
+.fc-fmt-typegroup .fc-fmt-weight { max-width: 92px; }
+/* Colour segment: the swatch chip only (hex hidden), squared, filling the pill
+   height so it lines up with the two selects. */
+.fc-fmt-typegroup .fc-fmt-color,
+.fc-fmt-typegroup .fc-fmt-color .color-picker-field { display: flex; align-items: stretch; }
+.fc-fmt-typegroup .fc-fmt-color .color-trigger {
+  width: auto; height: auto; padding: 0 10px; gap: 0; border-radius: 0; justify-content: center;
+}
+.fc-fmt-typegroup .fc-fmt-color .color-trigger-hex { display: none; }
+.fc-fmt-typegroup .fc-fmt-color .color-trigger-preview { width: 18px; height: 18px; border-radius: 5px; }
+/* Hover / focus lifts the active segment's border above its overlapped neighbours. */
+.fc-fmt-typegroup > :hover,
+.fc-fmt-typegroup select:focus,
+.fc-fmt-typegroup .color-trigger:hover { position: relative; z-index: 1; }
+/* Round only the pill's outer corners. */
+.fc-fmt-typegroup > :first-child,
+.fc-fmt-typegroup > :first-child .color-trigger { border-top-left-radius: 9px; border-bottom-left-radius: 9px; }
+.fc-fmt-typegroup > :last-child,
+.fc-fmt-typegroup > :last-child .color-trigger { border-top-right-radius: 9px; border-bottom-right-radius: 9px; }
+
+/* The "Aa" text-options trigger — nudge its glyph so it reads as a type control. */
+.fc-cbtn-text { font-weight: 800; letter-spacing: -0.02em; }
+
+/* Brand-ligature inserter — force a colour-emoji font for the LABEL so all three
+   glyphs read as 🦎💚🐧 (the SUSE text font supplies a chameleon glyph for 🦎 but
+   not the heart/penguin, so in that font the label would look truncated). The
+   inserted text still renders in the SUSE font, where the trio shapes into the
+   brand mark. flex:none so the wider label never shrinks and clips. */
+.fc-fmt-emoji {
+  flex: none; min-width: 0; padding: 0 7px; letter-spacing: 1px; font-size: 13px;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+}
+
+/* Segmented control (align / vertical align) inside the Text panel. */
+.fc-seg { display: inline-flex; flex: 1; min-width: 0; gap: 2px; padding: 2px;
+  border-radius: 8px; background: hsl(var(--muted)); }
+.fc-seg-btn {
+  flex: 1; min-width: 0; height: 26px; padding: 0 6px;
+  border: none; border-radius: 6px; background: transparent; color: inherit;
+  font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.fc-seg-btn:hover { background: hsl(var(--background) / 0.6); }
+.fc-seg-btn.is-on {
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  font-weight: 700; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+.fc-text-panel { min-width: 256px; }
+
+/* Icon segment buttons (align / shape / fit) — centre the glyph. */
+.fc-seg-btn.fc-seg-ic { display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; }
+.fc-seg-btn.fc-seg-ic svg { width: 16px; height: 16px; }
+
+/* Image-position anchor picker: a 3×3 grid where each cell IS its anchor. The dot
+   is a target affordance; the selected cell lights up like any .fc-seg-btn.is-on. */
+.fc-seg.fc-posgrid { display: grid; flex: none; grid-template-columns: repeat(3, 24px); grid-auto-rows: 24px; }
+.fc-pos-btn { flex: none; width: auto; height: auto; padding: 0; display: grid; place-items: center; }
+.fc-pos-btn i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.35; transition: opacity 0.1s; }
+.fc-pos-btn:hover i { opacity: 0.6; }
+.fc-pos-btn.is-on i { opacity: 1; }
+
+/* Leading icon+label for More-panel rows (radius / opacity / fit / shape / blend). */
+.fc-row-lbl { display: inline-flex; align-items: center; gap: 6px; }
+.fc-row-lbl svg { width: 15px; height: 15px; flex: none; }
+.fc-row-lbl > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Text-only inputs / steppers / dims / info panels share the number+text field look. */
+.fc-panel input[type="number"], .fc-panel input[type="text"] {
+  flex: 1; min-width: 0; font: inherit; font-size: 12.5px; padding: 4px 6px;
+  border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
+}
+.fc-panel .fc-cfield { flex: 1; }
+
+/* Size stepper (A− / number / A+) in the Text panel. */
+.fc-stepper { flex: 1; display: inline-flex; align-items: center; gap: 6px; }
+.fc-stepper input[type="number"] { text-align: center; }
+.fc-stepper .fc-cbtn { min-width: 30px; height: 28px; border: 1px solid hsl(var(--input)); border-radius: 7px; font-size: 13px; }
+.fc-stepper .fc-cbtn:hover { background: hsl(var(--muted)); }
+
+/* More panel: sub-heading (Shadow) + a taller, scrollable body. */
+.fc-more-panel { min-width: 270px; max-height: min(72vh, 540px); overflow-y: auto; }
+.fc-panel-sub { margin-top: 2px; padding-top: 9px;
+  border-top: 1px solid hsl(var(--border));
+}
+.fc-more-panel .color-picker-field { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
+.fc-more-panel .color-trigger { min-width: 0; padding: 3px 7px; border-radius: 7px; }
+.fc-more-panel .color-trigger-preview { width: 18px; height: 18px; border-radius: 5px; }
+/* Shadow colour sits in a LABELLED row ("Colour  [swatch hex]"), so it gets a
+   full-width trigger + hex — not the 30px icon treatment above. The popover is
+   left:0/right:0 on the field, so a 30px field also made a 30px (unusable) picker;
+   filling the row's flex cell gives the swatch and its popover proper room. */
+.fc-more-panel .fc-row .color-picker-field { width: 100%; height: auto; display: block; }
+.fc-more-panel .fc-row .color-trigger { justify-content: flex-start; padding: 5px 10px; border-radius: var(--radius); }
+.fc-more-panel .fc-row .color-trigger-hex { display: inline; }
+
+/* Position & size panel — each concept (position / size / rotation) on its own
+   icon-led row: two labelled number cells (X·Y, W·H) or a number + drag slider. */
+.fc-dims-panel { min-width: 236px; }
+.fc-dims { display: flex; flex-direction: column; gap: 8px; }
+.fc-dims-row { display: grid; grid-template-columns: 18px 1fr 1fr; align-items: center; gap: 8px; }
+.fc-dims-ic { display: inline-flex; color: hsl(var(--muted-foreground)); }
+.fc-dims-ic svg { width: 16px; height: 16px; }
+.fc-dims-f { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.fc-dims-f > span { flex: none; width: 9px; font-weight: 600; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.fc-dims-f > i { flex: none; font-style: normal; font-size: 10.5px; color: hsl(var(--muted-foreground)); }
+.fc-dims-f input[type="number"] { flex: 1; min-width: 0; }
+/* Rotation row: a narrower number cell + a drag slider filling the rest. */
+.fc-dims-rot { grid-template-columns: 18px 86px 1fr; }
+.fc-dims-slider { width: 100%; min-width: 0; accent-color: hsl(var(--primary)); cursor: pointer; }
+
+/* Document info panel — editable name + at-a-glance meta rows. */
+.fc-info-panel { min-width: 262px; }
+.fc-info-meta { display: flex; flex-direction: column; gap: 5px; padding-top: 9px; border-top: 1px solid hsl(var(--border)); }
+.fc-info-line { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
+.fc-info-line > span { color: hsl(var(--muted-foreground)); }
+.fc-info-line > b { font-weight: 600; text-align: right; word-break: break-word; }
+/* "Embedded in exports" sub-heading + the provenance opt-in note. */
+.fc-panel-head.fc-info-sub { margin-top: 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: hsl(var(--muted-foreground)); }
+.fc-info-note { font-size: 11px; line-height: 1.4; color: hsl(var(--muted-foreground)); margin-top: 2px; }
+.fc-info-note a { color: hsl(var(--primary)); text-decoration: underline; }
+.fc-info-note:empty { display: none; }
+
+/* The transform readout is now a button (opens the dims panel). */
+button.fc-readout { border: none; background: transparent; cursor: pointer; font: inherit; border-radius: 7px; height: 32px; }
+button.fc-readout:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+button.fc-readout:empty { display: none; }
+
+@media (pointer: coarse) {
+  .fc-ctxbar .color-picker-field, .fc-ctxbar .color-trigger { width: 36px; height: 36px; }
+}
+
+/* Canvas-layout file utilities (render.layout:"canvas") put the drop zone on
+   #tool-content; sidebar tools with a dropToAdd blocks input (e.g. logo-wall) put
+   it on the #tool-canvas preview. Either way, dragging files over the canvas draws
+   a clear drop affordance. The outline is transient (only while dragging, removed
+   before export), so it never bleeds into output. */
+#tool-content.is-file-dragover,
+#tool-canvas.is-file-dragover {
+  outline: 3px dashed hsl(var(--primary));
+  outline-offset: -12px;
+  background: hsl(var(--primary) / 0.05);
+}
+
+/* On-device reassurance badge, floated onto the stage when there's no sidebar to
+   host it. Pinned bottom-centre, out of the way of the canvas content. */
+.on-device-badge--float {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  margin-bottom: 0;
+  background: hsl(var(--background));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+
+.tool-canvas {
+  background: transparent;
+  overflow: hidden;
+  position: relative;
+  transform-origin: top left;
+}
+/* Editor (free-canvas) only — boxes dragged off the artboard stay visible and
+   selectable: hit-testing follows the visual overflow, and the box DOM still
+   lives inside the canvas so clicks bubble to the overlay's handlers. `> *`
+   un-clips the tool's own clipping root (e.g. layout-studio's .artboard)
+   without naming a tool class. Export is unaffected: the raster capture is
+   bounded by the canvas rect, and the vector walkers' out-of-viewBox geometry
+   never paints. */
+.tool-canvas.fc-open-canvas,
+.tool-canvas.fc-open-canvas > * { overflow: visible !important; }
+
+/* ── Canvas pan/zoom (setupStageNav) ────────────────────────────────────── */
+/* Panning the stage: Space- or middle-drag. Plain clicks stay free for the
+   canvas click-to-focus behaviour, so the grab cursor only shows on Space-hold. */
+.tool-stage.is-grabbable { cursor: grab; }
+.tool-stage.is-grabbing  { cursor: grabbing; }
+
+/* Zoom HUD — a small bottom-right pill: −  [NN%]  +  Fit. Dimmed until the stage
+   is hovered or the canvas is zoomed, so it stays out of the way at rest. */
+.stage-nav {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: hsl(var(--card) / 0.85);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border: 1px solid hsl(var(--border));
+  opacity: 0.45;
+  transition: opacity 0.12s;
+}
+.tool-stage:hover .stage-nav,
+.stage-nav[data-zoomed="1"],
+.stage-nav:focus-within { opacity: 1; }
+
+.stage-nav-btn,
+.stage-nav-pct {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: hsl(var(--foreground));
+  height: 26px;
+  border-radius: 999px;
+  transition: background 0.12s, color 0.12s;
+}
+.stage-nav-btn { width: 26px; font-size: 16px; line-height: 1; }
+.stage-nav-pct { min-width: 48px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.stage-nav-fit { width: auto; padding: 0 10px; font-size: 12px; font-weight: 600; }
+.stage-nav-btn:hover,
+.stage-nav-pct:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+
+/* Theme cycle + sound toggles docked at the end of the HUD (createThemeToggle /
+   createSoundToggle) — icon-only .stage-nav-btn, set off from the zoom controls by a
+   hairline separator so they don't read as zoom buttons. The explicit svg size pins
+   BOTH icons at 16px; without it a global svg rule wins and — on mobile, where the
+   button becomes width:auto — the icon balloons. */
+.stage-nav-theme svg,
+.stage-nav-sound svg { width: 16px; height: 16px; }
+.stage-nav-sep {
+  flex: none;
+  align-self: center;
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  border-radius: 1px;
+  background: hsl(var(--border));
+}
+
+/* Mobile: stack the zoom HUD into a vertical capsule so it fits the narrow stage,
+   reading + / NN% / − / Fit top-to-bottom like a map zoom control. */
+@media (max-width: 640px) {
+  .stage-nav {
+    flex-direction: column;
+    align-items: stretch;
+    opacity: 1;                                    /* no hover on touch — keep it visible */
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));  /* clear the home indicator */
+  }
+  .stage-nav-btn { width: auto; }                 /* fill the column when stacked */
+  .stage-nav [data-nav="in"]  { order: 1; }       /* + */
+  .stage-nav [data-nav="pct"] { order: 2; }       /* NN% */
+  .stage-nav [data-nav="out"] { order: 3; }       /* − */
+  .stage-nav [data-nav="fit"] { order: 4; }       /* Fit */
+  .stage-nav-sep              { order: 5; }        /* divider */
+  .stage-nav-theme            { order: 6; }        /* theme */
+  .stage-nav-sound            { order: 7; }        /* sound (capsule's bottom) */
+  /* The separator turns horizontal in the stacked capsule. */
+  .stage-nav-sep {
+    width: auto;
+    height: 1px;
+    margin: 3px 6px;
+    align-self: stretch;
+  }
+  /* Round the capsule's ends: top button (+) and the bottom (sound) toggle. The theme
+     toggle is now a middle segment (sound follows it), so it loses its round. */
+  .stage-nav [data-nav="in"]  { border-radius: 6em 6em 1em 1em; }
+  .stage-nav [data-nav="fit"] { border-radius: 999px; }
+  .stage-nav-theme            { border-radius: 1em; }
+  .stage-nav-sound            { border-radius: 1em 1em 6em 6em; }
+}
+
+/* On touch the HUD is the primary zoom control; the canvas also keeps pinch/drag. */
+

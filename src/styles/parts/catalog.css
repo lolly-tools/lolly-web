@@ -1,0 +1,550 @@
+/* ─── Catalog view (/#/c) — every asset + swatches + downloadable fonts ─────────
+   A gallery-style page reached from the Tools | Projects | Catalog toggle. Reuses the
+   fixed .gallery-topbar chrome (see topbar.css) and the .plat-swatch / .plat-font panels
+   (platform.css) for the read-only reference sections at the bottom. */
+
+.catalog-view { display: block; }
+/* Full-bleed like the gallery/projects; top clears the fixed toggle band + topright
+   cluster (both position:fixed), matching .projects' own clearance. */
+/* Bottom padding clears the fixed footer search bar (the same .gallery-footer as Tools). */
+.catalog { padding: 52px 20px calc(5.5rem + env(safe-area-inset-bottom)); min-height: 100vh; box-sizing: border-box; }
+
+/* Full-bleed like the Tools masonry — fill the whole window width (minus the
+   .catalog side gutters) instead of centring in a fixed 1200px column. */
+.catalog-body { max-width: none; }
+
+/* ── Toolbar — a floating pill that sticks to the top as you scroll past the header, so
+   the filetype filter + Expand/Collapse-all + Hide-hidden stay reachable everywhere. It's
+   centred (width:fit-content + auto margins) so it clears the fixed corner chrome (view
+   toggle top-left, profile/history cluster top-right) instead of underlapping it. */
+.cat-toolbar {
+  position: sticky;
+  /* Pin BELOW the fixed top chrome — the centred view toggle (Tools|Projects|Catalog) and
+     the profile cluster both live in the top ~48px band; sitting there would overlap them. */
+  top: 52px;
+  z-index: 50;
+  display: flex; align-items: center; gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 1rem;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: hsl(var(--background) / .82);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 3px 14px #0000001f;
+}
+.cat-count { font-size: .85rem; color: hsl(var(--muted-foreground)); font-weight: 600; padding: 0 2px; white-space: nowrap; text-align: center; font-variant-numeric: tabular-nums; }
+/* Segmented filetype filter (image / vector / motion / all) — a pill-in-pill toggle. */
+.cat-typefilter { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: hsl(var(--muted) / .6); }
+.cat-typefilter-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  background: none; border: none; border-radius: 999px;
+  padding: 5px 12px; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.cat-typefilter-opt svg, .cat-showhidden svg { width: 15px; height: 15px; flex-shrink: 0; }
+.cat-typefilter-opt:hover { color: hsl(var(--foreground)); }
+.cat-typefilter-opt.is-on { background: hsl(var(--background)); color: hsl(var(--foreground)); box-shadow: 0 1px 3px #0000001a; }
+.cat-showhidden {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 6px 9px; cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.cat-showhidden:hover { border-color: hsl(var(--primary) / .5); }
+.cat-showhidden.is-on { background: hsl(var(--muted)); }
+/* Both .cat-showhidden buttons (Collapse-all + Show-hidden) are icon-only on the toolbar:
+   a stable square footprint that never re-widths as their label toggles (Collapse↔Expand,
+   Show↔Hide, or the "(N)" count changing), and whose icon can't be clobbered. The state
+   lives entirely in the swapped glyph; aria-label + title (set in JS) keep them named. */
+.cat-showhidden .cat-btn-label { display: none; }
+/* Mobile: the fixed topbar is taller (safe-area inset) — clear it — and let the pill wrap
+   / drop the count rather than overflow a narrow viewport. */
+@media (max-width: 640px) {
+  .cat-toolbar {
+    top: calc(52px + env(safe-area-inset-top, 0px));
+    gap: 7px; padding: 6px 8px;
+    max-width: calc(100vw - 20px);
+    flex-wrap: wrap; justify-content: center;
+  }
+  .cat-toolbar .cat-count { display: none; }
+  /* The type filters collapse to icon-only too on mobile (they keep their labels on desktop;
+     the .cat-showhidden buttons are already icon-only everywhere). aria-label + title keep
+     them named for assistive tech and long-press tooltips. */
+  .cat-typefilter-opt .cat-btn-label { display: none; }
+  .cat-typefilter-opt { padding: 6px 9px; }
+}
+
+/* ── Collapsible groups ──
+   NB: `.cat-group*`, `.cat-grid` and `.cat-tile` are ALSO defined by the shared
+   catalogue-summary component (components.css, on /platform + /profile). That sheet
+   imports AFTER this one, so at equal specificity its generic rules would win here —
+   every view rule that shares a name is scoped under `.catalog` so this view owns its
+   own look regardless of import order. (The details/download dialogs mount on <body>,
+   OUTSIDE `.catalog`, so their `.cat-*` classes below are deliberately left unscoped.) */
+.catalog .cat-group { margin-bottom: 1.6rem; }
+.catalog .cat-group-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 2px; margin-bottom: .6rem;
+  font: inherit; text-align: left; cursor: pointer;
+  background: none; border: none; border-bottom: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.catalog .cat-group-chevron { display: inline-flex; transition: transform .18s ease; color: hsl(var(--muted-foreground)); }
+/* Per-category glyph (lib/category-icons.ts) — sits between the chevron and title. */
+.catalog .cat-group-icon { display: inline-flex; flex-shrink: 0; color: hsl(var(--muted-foreground)); }
+.catalog .cat-group:not(.is-collapsed) .cat-group-chevron { transform: rotate(90deg); }
+.catalog .cat-group-title {
+  font-size: 1.05rem; font-weight: 700;
+  /* Fully declared: the summary component's `.cat-group-title` (uppercase, letter-spaced,
+     muted) would otherwise leak in — this is a plain, dark section heading. */
+  text-transform: none; letter-spacing: normal; color: hsl(var(--foreground));
+}
+.catalog .cat-group-count {
+  font-size: .75rem; font-weight: 600; color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / .6); border-radius: 999px; padding: 1px 8px;
+}
+.catalog .cat-group.is-collapsed .cat-group-body { display: none; }
+
+.catalog .cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+/* ── Asset tile ──
+   Same look as the Tools-view cards (.gtile): borderless, a soft drop-shadow and the
+   same slightly-rounded corner, on a --card surface. `display` / `padding` / `border`
+   / `background` are set explicitly so nothing leaks in from the summary component's
+   generic `.cat-tile` (padding + flex + --background border) — see the note above. */
+.catalog .cat-tile {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--radius) * 1.1);
+  background: hsl(var(--card));
+  overflow: hidden;
+  box-shadow: 0 .1rem .4rem #0002;
+  transition: box-shadow .14s, opacity .12s;
+  /* Skip layout + paint (the conic-gradient checkerboard figure, shadow, star chip)
+     for tiles scrolled off-screen — the catalog builds hundreds of tiles at once.
+     Mirrors the gallery's .gtile. `auto` remembers each tile's real rendered height
+     so the grid/scrollbar barely shifts on scroll-back. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
+.catalog .cat-tile:hover { box-shadow: 0 .3rem .9rem #00000026; }
+.catalog .cat-tile.is-hidden-asset { opacity: .55; }
+/* The tile body is a button that opens the details modal. Reset button chrome. */
+.cat-tile-open {
+  display: flex; flex-direction: column; width: 100%;
+  padding: 0; border: none; background: none; text-align: left; cursor: pointer;
+  font: inherit; color: inherit;
+}
+.cat-tile-open:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+
+.cat-tile-fig {
+  aspect-ratio: 4 / 3;
+  position: relative;                 /* anchor for the absolutely-filled thumb */
+  display: grid; place-items: center; /* centres the stub text when there's no image */
+  background: repeating-conic-gradient(hsl(var(--muted) / .5) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+  overflow: hidden;
+}
+.cat-thumb { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+/* Fill the fixed 4/3 box absolutely. A percentage/max height can't resolve against the
+   aspect-ratio-derived (indefinite) height of a grid item, so a portrait image overflows
+   and clips like `cover`. inset:0 sizes the thumb to the frame regardless, and the
+   inherited `object-fit:contain` letterboxes the picture inside it. (The details modal
+   keeps the base rule above — it sizes to the image, not a fixed box.) */
+.cat-tile-fig .cat-thumb { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cat-thumb-stub {
+  width: 100%; height: 100%; display: grid; place-items: center;
+  font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: hsl(var(--muted-foreground));
+}
+/* A looping Lottie preview: the still poster (inline background-image) is the resting frame;
+   the on-screen-gated player mounts its <svg> on top (autoplayLottieThumbs). A posterless user
+   upload shows a centred ▶ until the player mounts over it. Sizing/position come from the base
+   `.cat-tile-fig .cat-thumb` (absolute, inset:0). */
+.cat-thumb-motion {
+  display: grid; place-items: center; overflow: hidden;
+  background-position: center; background-repeat: no-repeat; background-size: contain;
+  color: hsl(var(--muted-foreground));
+}
+.cat-thumb-motion > svg { width: 100%; height: 100%; display: block; }
+
+.cat-tile-cap { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cat-tile-name {
+  font-size: 14px; font-weight: 600; line-height: 1.2; color: hsl(var(--foreground));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cat-tile-sub { font-size: 11.5px; color: hsl(var(--muted-foreground)); display: flex; align-items: center; gap: 4px; }
+.cat-src {
+  font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 1px 5px; border-radius: 4px;
+}
+.cat-src--user { background: hsl(var(--primary) / .15); color: hsl(var(--primary)); }
+.cat-src--lib  { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
+
+/* Star — a floating chip over the figure, revealed/emphasised on hover/focus. */
+.cat-star {
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: none; border-radius: 999px; cursor: pointer;
+  color: #fff; background: #0006;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  opacity: 0; transition: opacity .12s, background .12s, color .12s, transform .12s;
+}
+.cat-tile:hover .cat-star,
+.cat-tile:focus-within .cat-star { opacity: 1; }
+.cat-star:hover { background: #000a; }
+.cat-star svg { fill: none; }
+/* A favourited star is always visible + filled gold. */
+.cat-tile.is-fav .cat-star { opacity: 1; background: hsl(var(--primary)); }
+.cat-tile.is-fav .cat-star svg { fill: currentColor; }
+.cat-star:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+/* Selection checkbox — a floating chip, top-RIGHT (the favourite star owns top-left), only
+   on the user's own upload tiles. Hidden until hover on fine pointers; always shown once
+   anything in the grid is selected (so the rest are obviously togglable) and on coarse
+   pointers. */
+.cat-check {
+  position: absolute; top: 6px; right: 6px; z-index: 3;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  border: 2px solid #fff; border-radius: 8px; cursor: pointer;
+  color: transparent; background: #0006;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  opacity: 0; transition: opacity .12s, background .12s, color .12s;
+}
+.cat-check svg { display: block; }
+.cat-tile:hover .cat-check,
+.cat-tile:focus-within .cat-check,
+.catalog.has-selection .cat-check { opacity: 1; }
+.cat-check[aria-pressed="true"] {
+  opacity: 1; background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: #fff;
+}
+.cat-check:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+/* A selected tile reads clearly — a primary ring, mirroring the projects tiles. */
+.catalog .cat-tile.is-selected { box-shadow: 0 0 0 2px hsl(var(--primary)), 0 .3rem .9rem #00000026; }
+@media (pointer: coarse) {
+  .cat-check { opacity: 1; }
+  /* Touch shows every star + check chip at once, so a live backdrop-filter blur runs
+     on all ~240 tiles simultaneously — one of the priciest mobile paint ops. Drop the
+     blur here; a more-opaque solid background reads just as clearly. Desktop keeps the
+     frosted look (only the hovered tile's chip is visible at a time). */
+  .cat-star, .cat-check { -webkit-backdrop-filter: none; backdrop-filter: none; background: #0009; }
+}
+
+/* Uploads section — the "Select all / Deselect all" control leads the section BODY (right-
+   aligned above the grid), so it folds away with the grid when the section is collapsed
+   instead of lingering on the always-visible header row (which read as confusing). */
+.cat-uploads-bar { display: flex; justify-content: flex-end; margin-bottom: .7rem; }
+.cat-uploads-selectall {
+  flex: none; font: inherit; font-size: 12.5px; font-weight: 600;
+  color: hsl(var(--foreground)); background: hsl(var(--background));
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  padding: 5px 12px; cursor: pointer; transition: background .12s, border-color .12s;
+}
+.cat-uploads-selectall:hover { border-color: hsl(var(--primary) / .5); }
+.cat-uploads-selectall[aria-pressed="true"] { background: hsl(var(--muted)); }
+
+/* ── Bulk-action bar (a multi-selection of uploads) ── Fixed, bottom-centre, above the
+   footer search; mirrors the projects view's .projects-bulkbar. */
+.cat-bulkbar {
+  position: fixed; left: 50%; bottom: calc(4.8rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 9000;
+  display: flex; align-items: center; gap: 14px;
+  padding: 8px 8px 8px 16px; border-radius: 999px;
+  background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border)); box-shadow: 0 .6rem 2rem #0006;
+}
+.cat-bulkbar[hidden] { display: none; }
+.cat-bulkbar-count { font-size: .9rem; font-weight: 700; white-space: nowrap; }
+.cat-bulkbar-actions { display: flex; gap: 8px; }
+.cat-bulkbar-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.cat-bulkbar-actions .btn svg { width: 15px; height: 15px; }
+.cat-bulk-danger.btn { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / .4); }
+.cat-bulk-danger.btn:hover { background: hsl(var(--destructive) / .1); border-color: hsl(var(--destructive)); }
+.cat-bulkbar-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 999px; cursor: pointer;
+  font-size: 16px; line-height: 1; color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / .6); border: none;
+}
+.cat-bulkbar-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+/* Reserve room so the bar never sits over the last row (mobile stacks the footer + bar). */
+.catalog.has-selection { padding-bottom: calc(8rem + env(safe-area-inset-bottom)); }
+@media (max-width: 640px) {
+  .cat-bulkbar { flex-wrap: wrap; justify-content: center; width: min(92vw, 420px); border-radius: var(--radius); }
+}
+
+.cat-empty {
+  padding: 3rem 1.5rem; text-align: center;
+  color: hsl(var(--muted-foreground)); font-size: .95rem;
+}
+
+/* ── Reference sections (Swatches, Fonts) ──
+   These are collapsible .cat-group sections now (see groupSection in catalog.ts); their
+   bodies keep the panel-* styling below. A divider on the first sets the reference zone
+   apart from the asset categories above. */
+.catalog .cat-group--ref { margin-top: 2.4rem; padding-top: 1.4rem; border-top: 1px solid hsl(var(--border)); }
+.cat-panel-desc { font-size: .9rem; color: hsl(var(--muted-foreground)); margin: 0 0 1.2rem; max-width: 60ch; }
+.cat-panel-subhead { font-size: .95rem; font-weight: 700; margin: 1.4rem 0 .6rem; }
+.cat-panel-foot { font-size: .85rem; color: hsl(var(--muted-foreground)); margin-top: 1.2rem; }
+.cat-panel-foot a, .cat-download { color: hsl(var(--primary)); }
+
+/* Font download links under each specimen. */
+.cat-font-downloads { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.cat-download {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; text-decoration: none;
+  padding: 6px 10px; border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--background)); transition: border-color .12s, background .12s;
+}
+.cat-download:hover { border-color: hsl(var(--primary) / .5); background: hsl(var(--muted) / .5); }
+
+/* Copied-flash on a swatch chip (the copy handler toggles .is-copied briefly). */
+.plat-swatch-chip.is-copied { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+
+/* ── Favourites strip ── The shared featured-row component at the same commanding height
+   as the Tools hero (--ftile-h lives in featured.css — one source for all three strips),
+   with a little air below it. The negative top margin cancels .catalog's top padding so the
+   featured hero bleeds flush to the very top of the viewport (the floating view-toggle +
+   profile pills, which have their own backdrop, sit over it); the negative side margins
+   full-bleed it past the .catalog side gutters. Keep -top in step with .catalog padding-top. */
+.cat-fav-strip { margin: -52px -20px 1.2rem; }
+
+/* ── View-options popover (favourites view mode + strip toggle) ── */
+.cat-viewopts {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  min-width: 210px; z-index: 100000;
+}
+.cat-viewopts .view-seg { margin-bottom: 8px; }
+
+/* ── Asset details modal ──
+   Mobile: a stacked card (preview on top, meta/actions below). Desktop: a big two-column
+   inspector (large preview left, meta/actions right) that claims real screen space so the
+   art can be examined at size. */
+.cat-details {
+  border: none; border-radius: calc(var(--radius) * 1.4); padding: 0;
+  width: min(560px, calc(100vw - 32px)); max-height: 92vh; overflow: auto;
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  box-shadow: 0 1.5rem 4rem #0007;
+}
+.cat-details::backdrop { background: #0008; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.cat-details-close {
+  position: absolute; top: 10px; right: 12px; z-index: 4;
+  width: 32px; height: 32px; border: none; border-radius: 999px; cursor: pointer;
+  font-size: 20px; line-height: 1; color: hsl(var(--foreground)); background: hsl(var(--muted) / .7);
+}
+.cat-details-close:hover { background: hsl(var(--muted)); }
+/* Prev/next lightbox paging — round buttons floating over the preview's left/right edges
+   (inside .cat-details-preview so they track the image, not the metadata column on desktop). */
+.cat-details-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 4;
+  width: 40px; height: 40px; padding: 0; border: none; border-radius: 999px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; background: #0007;
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  transition: background .12s;
+}
+.cat-details-nav:hover { background: #000a; }
+.cat-details-nav:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.cat-details-prev { left: 12px; }
+.cat-details-next { right: 12px; }
+.cat-details-preview {
+  position: relative;
+  display: grid; place-items: center; min-height: 200px; max-height: 46vh; padding: 20px;
+  background: repeating-conic-gradient(hsl(var(--muted) / .5) 0% 25%, transparent 0% 50%) 50% / 18px 18px;
+  border-radius: calc(var(--radius) * 1.4) calc(var(--radius) * 1.4) 0 0;
+  overflow: hidden;
+}
+.cat-details-preview .cat-thumb { max-width: 100%; max-height: 40vh; object-fit: contain; }
+.cat-details-body { padding: 18px 20px 22px; }
+
+/* Desktop: a wide two-column inspector. The dialog becomes the grid; the close button is
+   absolutely positioned, so it stays out of the column flow. Each pane manages its own
+   height — the preview fills, the body scrolls if the metadata is long. */
+@media (min-width: 860px) {
+  .cat-details {
+    /* Claim the viewport so the preview pane gets as much room as possible. A small margin
+       keeps the backdrop visible (still reads as a modal), and the large max caps stop it
+       stretching absurdly on ultra-wide or very tall monitors. */
+    width: min(1760px, calc(100vw - 40px));
+    height: min(1120px, calc(100vh - 40px)); max-height: none; overflow: hidden;
+    /* Metadata column is a fixed, comfortable width; ALL extra width flows to the preview. */
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  }
+  .cat-details-preview {
+    height: 100%; max-height: none;
+    border-radius: calc(var(--radius) * 1.4) 0 0 calc(var(--radius) * 1.4);
+  }
+  .cat-details-preview .cat-thumb { max-height: 100%; }
+  /* Definite preview height here (from `.cat-details-preview { height: 100% }` above), so the
+     zoomed image can fill it — the mobile `46vh` fallback is scoped to max-width:859px below. */
+  .cat-details-preview.is-zoomable .cat-zoom-stage .cat-thumb { max-height: 100%; }
+  .cat-details-body { overflow: auto; padding: 40px 28px 28px; }
+}
+
+/* ── Zoom inspector (the preview when it's a real image) ──
+   A stage that clips the scaled art, plus a floating HUD. attachZoom() in catalog.ts
+   drives the transform. */
+.cat-details-preview.is-zoomable { padding: 0; }
+/* A DEFINITE height on the mobile layout, so `.cat-zoom-stage`'s `height: 100%` resolves and
+   the stage becomes a fixed-size clip viewport (the media overflows it and is clipped) instead
+   of growing to fit its content. A content-sized stage measures taller than the visible
+   `overflow: hidden` area, so attachZoom() clamps the pan against that inflated height and the
+   bottom/right edges become unreachable. Desktop already has a definite preview height (the
+   `.cat-details` grid, in the min-width:860px block above), so this is scoped below that. */
+@media (max-width: 859px) {
+  .cat-details-preview.is-zoomable { height: 46vh; }
+}
+.cat-zoom-stage {
+  width: 100%; height: 100%; min-height: inherit;
+  /* position:relative so the absolutely-centred media (below) resolves against THIS box.
+     The media is NOT grid-centred: an oversized grid item (art zoomed past fit) pins to the
+     stage's top-left under `place-items: center` — the scroll-container "safe overflow" rule —
+     which yanks every focal-zoom step to the top-left. Absolute + translate(-50%,-50%) keeps
+     the art's centre on the stage centre at any size, which is what attachZoom's math assumes. */
+  position: relative; overflow: hidden;
+  padding: 20px; box-sizing: border-box;
+  cursor: zoom-in; touch-action: none;   /* wheel/drag handled in JS */
+}
+.cat-zoom-stage.is-zoomed { cursor: grab; }
+.cat-zoom-stage.is-panning { cursor: grabbing; }
+.cat-zoom-stage .cat-thumb {
+  /* Centred deterministically (not via the stage's grid) so it stays centred even when zoomed
+     larger than the stage — see the .cat-zoom-stage note. attachZoom() overwrites `transform`
+     with `translate(-50%,-50%) translate(tx,ty)`; this default keeps it centred pre-JS. */
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  /* Mobile: a definite viewport-unit cap — the preview's height is indefinite here, so a
+     % max-height wouldn't resolve (same trap as the base .cat-thumb). Desktop overrides
+     to 100% inside the media query above, where the preview height IS definite. */
+  max-width: 100%; max-height: 40vh; object-fit: contain;
+  transform-origin: center center; will-change: transform;
+  /* No transform transition: this is a direct-manipulation surface — wheel + drag must
+     track the pointer 1:1, and a CSS transition on transform here also prevents the
+     JS-set transform from taking effect at all. Zoom updates apply immediately. */
+}
+.cat-zoom-hud {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 3;
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px; border-radius: 999px;
+  background: #000a; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px #0005;
+}
+.cat-zoom-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 30px; height: 30px; padding: 0 8px;
+  border: none; background: none; color: #fff; cursor: pointer; border-radius: 999px;
+  font: inherit; font-size: 12px; font-weight: 600;
+}
+.cat-zoom-btn:hover { background: #ffffff26; }
+.cat-zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+.cat-zoom-pct { min-width: 46px; font-variant-numeric: tabular-nums; }
+/* Play/pause overlay for the details-modal Lottie player. Bottom-left of the preview, clear of
+   the centred zoom HUD and the vertically-centred prev/next chevrons. z-index above the stage so
+   the stage's wheel/drag surface doesn't swallow the click. */
+.cat-motion-toggle {
+  position: absolute; bottom: 12px; left: 12px; z-index: 4;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: 0;
+  border: none; border-radius: 999px; cursor: pointer; color: #fff;
+  background: #000000b3; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px #0005;
+}
+.cat-motion-toggle:hover { background: #000000d9; }
+.cat-motion-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.cat-details-name { font-size: 1.25rem; font-weight: 700; margin: 0 0 12px; }
+.cat-details-meta { margin: 0 0 16px; display: grid; gap: 6px; }
+.cat-details-meta > div { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: baseline; font-size: .85rem; }
+.cat-details-meta dt { color: hsl(var(--muted-foreground)); font-weight: 600; }
+.cat-details-meta dd { margin: 0; word-break: break-word; }
+.cat-details-meta code { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: .8rem; }
+.cat-details-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.cat-tag { font-size: .7rem; padding: 1px 7px; border-radius: 999px; background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
+.cat-details-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cat-details-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.cat-details-actions .btn svg { width: 15px; height: 15px; }
+.cat-act-fav.is-fav { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
+.cat-act-fav.is-fav svg { fill: currentColor; }
+.cat-act-danger { color: hsl(var(--destructive, 0 70% 50%)); }
+.cat-act-share.is-copied { color: hsl(var(--primary)); }
+
+/* ── Download dialog (icon styler + SVG/PNG size) ── */
+.cat-dl {
+  border: none; border-radius: calc(var(--radius) * 1.4); padding: 20px;
+  width: min(420px, calc(100vw - 32px)); background: hsl(var(--card)); color: hsl(var(--foreground));
+  box-shadow: 0 1.5rem 4rem #0007;
+}
+.cat-dl::backdrop { background: #0008; }
+.cat-dl-title { font-size: 1.1rem; font-weight: 700; margin: 0 0 12px; }
+.cat-dl-preview {
+  display: grid; place-items: center; height: 160px; margin-bottom: 14px; border-radius: var(--radius);
+  background: repeating-conic-gradient(hsl(var(--muted) / .5) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+}
+/* Contain within the fixed preview box, aspect preserved: max-width resolves fine, but
+   the max-height MUST be a definite value — a % can't resolve against the grid track, so
+   the art would render at its intrinsic size and overflow (same trap as the tile figure
+   above). The longer side hits whichever max it reaches first; object-fit letterboxes. */
+.cat-dl-img { max-width: 100%; max-height: 130px; object-fit: contain; }
+.cat-dl-section { margin-bottom: 14px; }
+.cat-dl-label { display: block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); margin-bottom: 6px; }
+.cat-dl-themes { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-dl-theme { padding: 3px; border: 2px solid transparent; border-radius: 999px; background: none; cursor: pointer; }
+.cat-dl-theme.is-active { border-color: hsl(var(--primary)); }
+.cat-dl-duo { display: inline-flex; width: 30px; height: 18px; border-radius: 999px; overflow: hidden; border: 1px solid #0002; }
+.cat-dl-duo i { flex: 1; }
+.cat-dl-fmt { display: flex; gap: 16px; font-size: .9rem; }
+.cat-dl-fmt label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.cat-dl-hint { color: hsl(var(--muted-foreground)); font-size: .75rem; }
+.cat-dl-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+/* Crop dialog — the asset fitted into an aspect-matched stage with a drag/resize crop
+   box (dialogs mount on document.body, so these are NOT scoped under .catalog). The stage
+   matches the asset aspect so the image fills it edge-to-edge; the box is then a straight
+   fraction of the asset. */
+.cat-crop {
+  border: none; border-radius: calc(var(--radius) * 1.4); padding: 20px;
+  width: max-content; max-width: calc(100vw - 32px); background: hsl(var(--card)); color: hsl(var(--foreground));
+  box-shadow: 0 1.5rem 4rem #0007;
+}
+.cat-crop::backdrop { background: #0008; }
+.cat-crop-stage {
+  position: relative; margin: 0 auto 14px; max-width: 100%;
+  overflow: hidden; border-radius: var(--radius);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  background: repeating-conic-gradient(hsl(var(--muted) / .5) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+}
+.cat-crop-img { display: block; width: 100%; height: 100%; pointer-events: none; -webkit-user-drag: none; }
+.cat-crop-box {
+  position: absolute; box-sizing: border-box;
+  border: 1.5px solid #fff; outline: 1px solid #0007; cursor: move;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .5);   /* dim everything outside the crop (clipped by the stage) */
+}
+.cat-crop-h { position: absolute; width: 14px; height: 14px; background: #fff; border: 1px solid #0007; border-radius: 2px; }
+.cat-crop-h[data-h="nw"] { top: -7px; left: -7px; cursor: nwse-resize; }
+.cat-crop-h[data-h="ne"] { top: -7px; right: -7px; cursor: nesw-resize; }
+.cat-crop-h[data-h="sw"] { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.cat-crop-h[data-h="se"] { bottom: -7px; right: -7px; cursor: nwse-resize; }
+
+@media (max-width: 640px) {
+  .catalog { padding: calc(4.2rem + env(safe-area-inset-top, 0px)) 12px calc(5.5rem + env(safe-area-inset-bottom)); }
+  .catalog .cat-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  /* Touch: no hover, so keep the star always visible. */
+  .cat-star { opacity: 1; }
+  /* Match the mobile .catalog padding-top so the featured hero still bleeds to the top. */
+  .cat-fav-strip { margin: calc(-4.2rem - env(safe-area-inset-top, 0px)) -12px 1.2rem; }
+  .cat-viewopts { position: fixed; top: auto; bottom: 12px; left: 12px; right: 12px; }
+}

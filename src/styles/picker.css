@@ -1,0 +1,940 @@
+/* Asset Picker Modal — host-owned chrome */
+
+.asset-picker-modal:empty { display: none; }
+
+.asset-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.asset-picker-panel {
+  position: fixed;
+  inset: 5vh 5vw;
+  z-index: 1001;
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 2);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.asset-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.asset-picker-header h2 { margin: 0; font-size: 15px; font-weight: 600; flex-shrink: 0; }
+
+.asset-picker-search {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.asset-picker-search:focus { border-color: hsl(var(--primary)); }
+.asset-picker-search::placeholder { color: hsl(var(--muted-foreground)); }
+
+.asset-picker-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  transition: color 0.12s, background 0.12s;
+}
+.asset-picker-close:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--accent));
+}
+
+/* ── Source tabs (Library / Saved creations / Tools) ─────────────────────── */
+.asset-picker-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px 0;
+  border-bottom: 1px solid hsl(var(--border));
+  overflow-x: auto;             /* 4 tabs can outrun a narrow modal — scroll, don't wrap */
+  scrollbar-width: none;
+}
+.asset-picker-tabs::-webkit-scrollbar { display: none; }
+.asset-picker-tab {
+  position: relative;
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 8px 12px 10px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radius) var(--radius) 0 0;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.asset-picker-tab:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+.asset-picker-tab.is-active {
+  color: hsl(var(--primary));
+  border-bottom-color: hsl(var(--primary));
+}
+.asset-picker-tab:focus-visible { outline: 2px solid hsl(var(--primary) / 0.5); outline-offset: -2px; }
+
+/* ── "Current image is a Lolly render" banner ──────────────────────────────
+   Shown when the slot being changed already holds a tool-sourced image
+   (meta.toolUrl): an edit path back into the source tool's own inputs, while
+   the grids below still offer picking a different image. Hidden during the
+   paste/embed takeover card. */
+.asset-picker-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--accent) / 0.4);
+}
+.asset-picker-current[hidden] { display: none; }
+.asset-picker-current-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.asset-picker-current-label strong { color: hsl(var(--foreground)); font-weight: 600; }
+.asset-picker-current-spark { color: hsl(var(--primary)); }
+.asset-picker-current-edit {
+  flex: none;
+  padding: 4px 12px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  transition: border-color 0.12s, color 0.12s;
+}
+.asset-picker-current-edit:hover { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
+
+.asset-picker-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+.asset-picker-pane[hidden],
+.asset-picker-toolcard-host[hidden] { display: none; }
+
+/* ── Icon colour themes strip ───────────────────────────────────────────────
+   Colour pairings for themable two-colour icons (c1 accent / c2 base). Rendered
+   inside the "Icons" group header (directly above the icons it recolours) only
+   when the library contains themable icons; the chosen pairing live-retints their
+   thumbnails and rides in the picked asset id. */
+.asset-picker-themes,
+.asset-picker-treatments {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.asset-picker-themes[hidden] { display: none; }
+.asset-picker-themes-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  margin-right: 4px;
+}
+.asset-picker-theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 5px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.asset-picker-theme:hover { border-color: hsl(var(--primary)); }
+.asset-picker-theme.is-active {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 1px hsl(var(--primary));
+  font-weight: 600;
+}
+.asset-picker-theme-duo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 30px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  overflow: hidden;
+}
+.asset-picker-theme-duo i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+/* Photo treatment swatch — a single filled chip previewing the greyscale ramp or
+   the duotone's shadow→highlight gradient. 'None' shows an empty chip with a
+   diagonal strike. */
+.asset-picker-treat-sw {
+  display: block;
+  width: 26px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid hsl(var(--border));
+  background-clip: padding-box;
+}
+.asset-picker-treat-sw.is-none {
+  background:
+    linear-gradient(to top left,
+      transparent calc(50% - 1px), hsl(var(--border)) calc(50% - 1px),
+      hsl(var(--border)) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+/* Collapsible library sections (Photos / Backgrounds / Logos / Icons). Each has a
+   toggle header; a themable group (Icons) also carries the colour strip below its
+   title, so the strip reads as belonging to the icons it recolours. */
+.asset-picker-group + .asset-picker-group {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid hsl(var(--border));
+}
+.asset-picker-group-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.asset-picker-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 2px 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+}
+.asset-picker-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.asset-picker-group-chevron {
+  display: inline-flex;
+  transform: rotate(90deg);          /* points down when the section is open */
+  transition: transform 0.15s ease;
+}
+.asset-picker-group.is-collapsed .asset-picker-group-chevron { transform: rotate(0deg); }
+/* Per-category glyph (lib/category-icons.ts) — smaller than the catalog's to suit
+   the compact uppercase group titles here. */
+.asset-picker-group-icon { display: inline-flex; flex-shrink: 0; color: hsl(var(--muted-foreground)); }
+.asset-picker-group-icon svg { width: 15px; height: 15px; }
+.asset-picker-group.is-collapsed .asset-picker-group-body { display: none; }
+/* Inside a section header the strip already has the header's bottom gap. */
+.asset-picker-group-head .asset-picker-themes { margin-bottom: 0; }
+/* Nested sub-group (e.g. Headshots inside Photos): same mechanics, quieter
+   header — indented, no divider rule, normal-case title. */
+.asset-picker-group .asset-picker-group {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: 0;
+  padding-left: 10px;
+  border-left: 2px solid hsl(var(--border));
+}
+.asset-picker-group .asset-picker-group .asset-picker-group-title {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+/* "Your images" uses the shared group chrome; its wrapper keeps the divider. */
+.asset-picker-userassets .asset-picker-group { margin-top: 0; }
+
+/* ── Category filter row ─────────────────────────────────────────────────────
+   One icon per present library category, pinned to the top of the library pane.
+   Clicking one pins its section open and collapses the rest (a quick filter); the
+   active state mirrors which section is open, so a manual section toggle moves it
+   too. Sticky so it stays reachable while scrolling a tall library; the negative
+   margins + matching padding let it bleed to the body's padded edges so content
+   scrolls cleanly beneath it (top: cancels the body's 16px top padding). */
+.asset-picker-catbar {
+  position: sticky;
+  top: -16px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -16px -20px 12px;
+  padding: 14px 20px 10px;
+  background: hsl(var(--popover));
+  border-bottom: 1px solid hsl(var(--border));
+}
+.asset-picker-catbar[hidden] { display: none; }
+.asset-picker-catbtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.asset-picker-catbtn:hover { color: hsl(var(--foreground)); border-color: hsl(var(--primary)); }
+.asset-picker-catbtn.is-active {
+  color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.1);
+}
+.asset-picker-catbtn:focus-visible { outline: 2px solid hsl(var(--primary) / 0.5); outline-offset: 2px; }
+.asset-picker-catbtn-glyph { display: inline-flex; }
+.asset-picker-catbtn-glyph svg { width: 18px; height: 18px; }
+/* Pretty tooltip — the category name in a small bubble below the icon, on hover
+   or keyboard focus. Below (not above) because the row hugs the top of the
+   scrolling body, whose overflow would clip a bubble reaching up over the tabs.
+   aria-label carries the same name for assistive tech. */
+.asset-picker-catbtn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-3px);
+  padding: 4px 8px;
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 6;
+}
+.asset-picker-catbtn[data-tip]::before {
+  content: "";
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-bottom-color: hsl(var(--foreground));
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 6;
+}
+.asset-picker-catbtn:hover::after,
+.asset-picker-catbtn:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+.asset-picker-catbtn:hover::before,
+.asset-picker-catbtn:focus-visible::before { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .asset-picker-catbtn[data-tip]::after { transition: none; transform: translateX(-50%); }
+}
+
+.asset-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.asset-picker-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.5);
+  padding: 8px;
+  cursor: pointer;
+  gap: 4px;
+  font: inherit;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.asset-picker-card:hover {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.12);
+}
+/* Keyboard focus (arrow-key navigation) — clear ring on the focused card.
+   Uses :focus-within (not :focus-visible) so the card focused on open always
+   shows it. For user cards the focusable element is the inner pick button, so
+   :focus-within lifts the ring onto the wrapper — the element that owns the
+   border + radius the ring should trace, so it lines up exactly. */
+.asset-picker-card:focus-within {
+  outline: none;
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.45);
+}
+.asset-picker-card-pick:focus { outline: none; }
+
+/* Small file-format badge, bottom-right of each card. */
+.asset-picker-fmt {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+.asset-picker-thumb {
+  width: 100%;
+  height: 100px;
+  object-fit: contain;
+  background: hsl(var(--muted));
+  border-radius: calc(var(--radius));
+}
+.asset-picker-thumb-stub {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--muted-foreground));
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+/* Looping Lottie thumbnail: the still poster (inline background-image) rests behind the
+   on-screen-gated player's <svg>; a posterless user upload shows a centred ▶ until it mounts.
+   Shares .asset-picker-thumb's 100px height/width/background. */
+.asset-picker-thumb-motion {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  color: hsl(var(--muted-foreground));
+}
+.asset-picker-thumb-motion > svg { width: 100%; height: 100%; display: block; }
+
+.asset-picker-name {
+  font-size: 12px;
+  font-weight: 600;
+  /* One line, ellipsis on overflow. Full name shows via the title tooltip on
+     hover (min-width:0 lets the flex item shrink below its content width). */
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.asset-picker-id {
+  padding-right: 2.75rem; /* keep ids clear of the badge */
+  font-size: 7px;
+  color: hsl(var(--muted-foreground));
+  font-family: "SUSE Mono", ui-monospace, monospace;
+}
+
+.asset-picker-empty,
+.asset-picker-error {
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  padding: 40px 0;
+}
+.asset-picker-error { color: hsl(var(--destructive)); }
+
+.asset-picker-loading {
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  padding: 28px 0;
+  font-size: 13px;
+}
+
+/* ── Paste-a-Lolly-link render card ────────────────────────────────────────
+   Shown in the library region when a tool URL is pasted into the search box.
+   The tool becomes an image: choose format + size, preview, then commit. */
+.asset-picker-toolcard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 460px;
+  margin: 4px auto;
+  padding: 16px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.5);
+}
+
+.asset-picker-toolcard-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: hsl(var(--card-foreground));
+}
+.asset-picker-toolcard-head strong { font-weight: 700; }
+.asset-picker-toolcard-spark { color: hsl(var(--primary)); font-size: 15px; }
+
+.asset-picker-toolcard-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.asset-picker-toolcard-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.asset-picker-toolcard-controls select,
+.asset-picker-toolcard-controls input {
+  height: 30px;
+  padding: 0 8px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.asset-picker-toolcard-controls input { width: 5.5rem; }
+.asset-picker-toolcard-controls select:focus,
+.asset-picker-toolcard-controls input:focus { border-color: hsl(var(--primary)); }
+
+.asset-picker-toolcard-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  padding: 10px;
+  background: hsl(var(--muted));
+  border-radius: var(--radius);
+  /* Checkerboard so transparent renders read clearly against the panel. */
+  background-image:
+    linear-gradient(45deg, hsl(var(--border) / 0.5) 25%, transparent 25%),
+    linear-gradient(-45deg, hsl(var(--border) / 0.5) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, hsl(var(--border) / 0.5) 75%),
+    linear-gradient(-45deg, transparent 75%, hsl(var(--border) / 0.5) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.asset-picker-toolcard-img {
+  max-width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+}
+
+/* Tool tiles (the "Make an image from a tool" grid) — preview-forward like the
+   gallery, with the inline icon as the fallback when a preview 404s. */
+.asset-picker-toolgrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.asset-picker-toolitem { align-items: stretch; }
+.asset-picker-toolitem-preview {
+  width: 100%;
+  height: 84px;
+  object-fit: contain;
+  border-radius: var(--radius);
+  background: hsl(var(--muted));
+}
+/* The icon is always in the DOM but shown ONLY when there's no usable preview
+   (none declared, or the <img> errored → .no-preview added in JS). */
+.asset-picker-toolitem-icon { display: none; }
+.asset-picker-toolitem.no-preview .asset-picker-toolitem-preview { display: none; }
+.asset-picker-toolitem.no-preview .asset-picker-toolitem-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84px;
+  border-radius: var(--radius);
+  background: hsl(var(--muted));
+  color: hsl(var(--primary));
+}
+.asset-picker-toolitem-icon svg { width: 26px; height: 26px; }
+
+/* Saved-creation tiles reuse the asset card; just the relative-time line is new. */
+.asset-picker-sessitem-when {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+}
+/* A session/tool with no rendered thumb falls back to its tool icon. */
+.asset-picker-thumb-icon { color: hsl(var(--primary)); }
+.asset-picker-thumb-icon svg { width: 34px; height: 34px; }
+
+/* ── Projects tab (folders of saved creations + images) ─────────────────────
+   A breadcrumb trail plus folder cards that drill in, above the current folder's
+   pickable items. Folder cards reuse the asset-card chrome with a folder glyph as
+   the "thumb". */
+.asset-picker-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.asset-picker-crumb {
+  padding: 2px 6px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.asset-picker-crumb:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+.asset-picker-crumb:focus-visible { outline: 2px solid hsl(var(--primary) / 0.5); outline-offset: -1px; }
+.asset-picker-crumb.is-current { color: hsl(var(--foreground)); cursor: default; }
+.asset-picker-crumb-sep { color: hsl(var(--muted-foreground)); opacity: 0.6; }
+
+/* Folder cards read one row of a couple bigger tiles — a folder is a container,
+   not a picture, so the glyph sits centred on a muted field. */
+.asset-picker-foldergrid { margin-bottom: 14px; }
+.asset-picker-folder-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--primary));
+  background: hsl(var(--muted));
+}
+.asset-picker-folder-thumb svg { width: 40px; height: 40px; }
+
+/* Back affordance + secondary action in the render-as-image takeover card. */
+.asset-picker-toolcard-back {
+  background: none;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  line-height: 1;
+  font-size: 15px;
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.asset-picker-toolcard-back:hover { color: hsl(var(--foreground)); border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
+
+.asset-picker-toolcard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.asset-picker-toolcard-actions .tc-edit,
+.asset-picker-toolcard-actions .tc-back {
+  padding: 7px 14px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.asset-picker-toolcard-actions .tc-edit:hover,
+.asset-picker-toolcard-actions .tc-back:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
+.asset-picker-toolcard-actions .tc-use {
+  padding: 7px 16px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border: none;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.asset-picker-toolcard-actions .tc-use:hover { opacity: 0.9; }
+.asset-picker-toolcard-actions .tc-use:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.asset-picker-footer {
+  padding: 12px 20px;
+  border-top: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.5);
+}
+
+.asset-picker-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.asset-picker-upload:hover {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--accent));
+}
+.asset-picker-upload.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.asset-picker-footer { display: flex; align-items: center; gap: 10px; }
+.asset-picker-webcam {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.asset-picker-webcam:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
+.asset-picker-webcam svg { display: block; }
+
+/* ── Webcam capture dialog ─────────────────────────────────────────────────
+   Stacks above the picker panel (which is z 1001). Sibling on <body>. */
+.webcam-capture-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+}
+.webcam-capture-panel {
+  position: fixed;
+  z-index: 1101;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(640px, 92vw);
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 2);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.webcam-capture-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid hsl(var(--border));
+  font-size: 14px;
+  font-weight: 600;
+}
+.webcam-capture-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  padding: 2px 6px;
+  border-radius: var(--radius);
+}
+.webcam-capture-close:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+.webcam-capture-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  background: #000;
+}
+.webcam-capture-video {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  /* Mirror the preview so it reads like a mirror (the captured frame is un-mirrored). */
+  transform: scaleX(-1);
+}
+.webcam-capture-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+}
+.webcam-capture-status[hidden] { display: none; }
+.webcam-capture-status.webcam-capture-error { color: hsl(var(--destructive)); }
+.webcam-capture-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid hsl(var(--border));
+}
+.webcam-capture-actions .webcam-capture-cancel {
+  padding: 7px 14px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.webcam-capture-actions .webcam-capture-shoot {
+  padding: 7px 18px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border: none;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.webcam-capture-actions .webcam-capture-shoot:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── User's personal image library ─────────────────────────────────────── */
+
+.asset-picker-userassets {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.asset-picker-userassets[hidden] { display: none; }
+
+.asset-picker-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: hsl(var(--muted-foreground));
+}
+.asset-picker-count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+/* Folder grouping heading within "Your images" (browse-only; organized in the
+   gallery's folder overlay). */
+.asset-picker-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+.asset-picker-folder-head::before {
+  content: "📁";
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Padding lives on the pick button, not here, so the button fills the whole
+   card and its focus ring matches the card's width/height (not an inset box). */
+.asset-picker-card-user { position: relative; padding: 0; }
+
+.asset-picker-card-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  /* Grow to fill the card so the whole card area stays clickable even when the
+     grid row stretches this card taller than its content (a taller sibling).
+     basis:auto (not 0) so an all-user-card row never collapses to nothing. */
+  flex: 1 0 auto;
+  padding: 8px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.asset-picker-card-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: hsl(var(--background) / 0.85);
+  color: hsl(var(--muted-foreground));
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.asset-picker-card-user:hover .asset-picker-card-delete,
+.asset-picker-card-delete:focus-visible { opacity: 1; }
+.asset-picker-card-delete:hover {
+  color: hsl(var(--destructive));
+  background: hsl(var(--accent));
+}

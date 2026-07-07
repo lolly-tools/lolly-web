@@ -1,0 +1,38 @@
+/* SUSE variable fonts — served from catalog/fonts/ (alongside the brand
+   assets), available to all tools and app UI via these @font-face registrations. */
+
+@font-face {
+  font-family: 'SUSE';
+  src: url('/catalog/fonts/webfonts/SUSE[wght].woff2') format('woff2-variations'),
+       url('/catalog/fonts/variable/SUSE[wght].ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SUSE';
+  src: url('/catalog/fonts/webfonts/SUSE-Italic[wght].woff2') format('woff2-variations'),
+       url('/catalog/fonts/variable/SUSE-Italic[wght].ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SUSE Mono';
+  src: url('/catalog/fonts/webfonts/SUSEMono[wght].woff2') format('woff2-variations'),
+       url('/catalog/fonts/variable/SUSEMono[wght].ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SUSE Mono';
+  src: url('/catalog/fonts/webfonts/SUSEMono-Italic[wght].woff2') format('woff2-variations'),
+       url('/catalog/fonts/variable/SUSEMono-Italic[wght].ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}

@@ -1,0 +1,148 @@
+/* Saved-session list rows — the shared component behind the per-tool history
+   modal (gallery.ts `savedItem` / `showHistoryDialog`), the global saved-sessions
+   drawer, and the /profile storage view. Lives in an always-loaded part (imported
+   by app.css) so it styles the rows wherever they render — the history modal is
+   appended to <body>, OUTSIDE `.gallery-view`, and the gallery landing never loads
+   storage.css, so scoping these to either would leave the modal's thumbnails
+   unsized and ballooning to natural size. */
+
+.saved-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.saved-row {
+  position: relative;
+  margin: 4px 0;
+  gap: 12px;
+  align-items: center;
+  /* Keep the row only slightly taller than the 48px .saved-thumb — no dead
+     space above/below. Override .tool-card's min-height:7em (it's reused for
+     the saved-row markup) so the row collapses to the thumb height + padding. */
+  padding: 3px 10px;
+  min-height: 0;
+  border-bottom: 0;
+  font-size: 13px;
+  transition: background 0.12s;
+  display: grid !important;
+  grid-template-columns: 3.5em 4fr;
+  border-radius: 1.05em;
+}
+
+/* Collapsed/filtered rows must leave the layout entirely (not just go invisible)
+   so a long saved list can't push the page tall. `.saved-row` sets
+   `display:grid !important` and the global `[hidden]` only adds visibility:hidden,
+   so the hide needs `!important` + higher specificity to win and pull the row
+   out of flow completely. */
+.gallery-view .saved-list > [hidden] { display: none !important; }
+
+.saved-label {
+  display: grid;
+  grid-template-columns: 4fr 1fr 1fr 2em;
+  place-items: inherit;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-row .muted { display: block; }
+
+.saved-thumb {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: calc(var(--radius) / 2);
+  object-fit: contain;
+  background: hsl(var(--background));
+  display: block;
+}
+
+.saved-thumb--empty {
+  opacity: 0.3;
+  background: hsl(var(--muted));
+}
+
+/* Batch sessions have no render thumbnail — show a package icon instead. */
+.saved-thumb--batch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+.saved-thumb--batch svg { width: 24px; height: 24px; }
+/* Keep the user's session name verbatim (the row otherwise capitalizes). */
+.saved-row--batch h4 { text-transform: none; }
+
+.saved-row:hover { background: hsl(var(--accent)); }
+
+/* date-time + size stamps: dim at rest, full on hover. */
+.saved-row:hover .saved-label { opacity: 1; }
+.saved-row:not(:hover) .saved-label { opacity: .5; }
+
+.session-size {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  margin-left: auto;
+  margin-right: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Saved rows cascade in behind the drawer's slide (also the per-tool history
+   modal). A tight, quick stagger; capped so a long list stays snappy. */
+@media (prefers-reduced-motion: no-preference) {
+  .saved-list .saved-row { animation: card-in var(--enter-dur) var(--enter-ease) both; }
+  .saved-list .saved-row:nth-child(1)  { animation-delay: 0.04s; }
+  .saved-list .saved-row:nth-child(2)  { animation-delay: 0.07s; }
+  .saved-list .saved-row:nth-child(3)  { animation-delay: 0.10s; }
+  .saved-list .saved-row:nth-child(4)  { animation-delay: 0.13s; }
+  .saved-list .saved-row:nth-child(5)  { animation-delay: 0.16s; }
+  .saved-list .saved-row:nth-child(6)  { animation-delay: 0.19s; }
+  .saved-list .saved-row:nth-child(7)  { animation-delay: 0.22s; }
+  .saved-list .saved-row:nth-child(8)  { animation-delay: 0.25s; }
+  .saved-list .saved-row:nth-child(9)  { animation-delay: 0.28s; }
+  .saved-list .saved-row:nth-child(10) { animation-delay: 0.31s; }
+  .saved-list .saved-row:nth-child(n+11) { animation-delay: 0.34s; }
+}
+
+.saved-delete button:focus { opacity: 1 !important; }
+
+.saved-resume {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  z-index: 0;
+}
+
+.saved-delete {
+  position: relative;
+  z-index: 1;
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid transparent;
+  border-radius: 50%;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.saved-delete:hover {
+  color: hsl(var(--destructive));
+  border-color: hsl(var(--destructive) / 0.5);
+  background: hsl(var(--destructive) / 0.08);
+}

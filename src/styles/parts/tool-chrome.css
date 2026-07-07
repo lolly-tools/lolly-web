@@ -1,0 +1,1051 @@
+/* ─── Toast — transient feedback (undo/redo) ────────────────────────────────
+   Body-mounted, fixed bottom-centre pill in the .stage-nav idiom (translucent
+   card + blur + hairline border, theme-aware via tokens). Sits above page chrome
+   (z 900) but below modals (1000+). pointer-events:none so canvas clicks fall
+   through — only the action button re-enables them. Entrance is a TRANSITION
+   (not a keyframe) so it still plays under prefers-reduced-motion, matching the
+   .export-popup philosophy. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(92vw, 30rem);
+  padding: 6px 6px 6px 14px;
+  border-radius: 999px;
+  background: hsl(var(--card) / 0.92);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  color: hsl(var(--foreground));
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(8px);
+  transition: opacity 0.16s ease, transform 0.22s cubic-bezier(0.32, 0.72, 0, 1), visibility 0.16s;
+}
+.toast.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+.toast-icon { display: inline-flex; flex: none; color: hsl(var(--muted-foreground)); }
+.toast-icon svg { width: 16px; height: 16px; display: block; }
+.toast-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast-label { color: hsl(var(--muted-foreground)); }
+.toast.is-muted { padding: 6px 14px; }
+.toast.is-muted .toast-message { color: hsl(var(--muted-foreground)); }
+.toast-action {
+  pointer-events: auto;            /* the one part of the toast that takes clicks */
+  flex: none;
+  border: none;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 999px;
+  transition: filter 0.12s;
+}
+.toast-action:hover { filter: brightness(1.08); }
+.toast-action:active { filter: brightness(0.95); }
+
+/* Mobile: lift the toast above the bottom-centre Render FAB (z55), and cap its
+   width so its right edge can't reach (and steal taps from) the bottom-right zoom
+   HUD. A long label ellipsises rather than spanning edge-to-edge. */
+@media (max-width: 640px) {
+  .toast {
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    max-width: calc(100vw - 6rem);
+  }
+}
+
+/* ── Mobile (≤640px): controls become a drag sheet, preview fills below ──────
+   Placed after the base .sidebar / .tool-stage rules so it actually wins the
+   cascade. The controls panel is anchored at the TOP with the grip on its BOTTOM
+   edge, so dragging the grip down grows the controls (and shrinks the preview)
+   while the grip tracks the finger 1:1. Snap heights mirror setupMobileSheet. */
+@media (max-width: 640px) {
+  .tool-layout {
+    display: block;
+    height: 100dvh;
+    --sheet-h: 50dvh;                 /* default; overridden per data-sheet state */
+    /* Clearance below the peek bar so the preview doesn't run up under it. Driven
+       by --peek-h (the measured header height, set in setupMobileSheet) so the
+       taller two-row header still fully shows in peek; 56px is the fallback.
+       Static — independent of the sheet height — so the preview never rescales. */
+    --preview-top: calc(var(--peek-h, 56px) + 0dvh);
+  }
+  .tool-layout[data-sheet="peek"] { --sheet-h: var(--peek-h, 56px); }
+  .tool-layout[data-sheet="half"] { --sheet-h: 50dvh; }
+  .tool-layout[data-sheet="full"] { --sheet-h: 90dvh; }
+
+  /* Controls panel — anchored at the top, grip on its bottom edge. The --vv-*
+     offsets (set by the VisualViewport shim in main.js) keep it pinned to the
+     VISIBLE area while the page is pinch-zoomed; they're 0px when not zoomed. */
+  .sidebar {
+    position: fixed;
+    top: var(--vv-top, 0px); left: var(--vv-left, 0px); right: auto;
+    width: 100% !important;           /* override the desktop inline width */
+    height: var(--sheet-h);
+    max-height: 92dvh;
+    display: flex;
+    flex-direction: column;
+    border-right: none;
+    border-bottom: 1px solid hsl(var(--border));
+    border-radius: 0 0 16px 16px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+    transition: height 0.34s cubic-bezier(0.32, 0.72, 0, 1); /* confident, decelerating settle */
+    z-index: 50;
+    /* Clip the sheet so the form can't spill past its rounded bottom edge. The
+       grip is NOT a child (it's a sibling in tool.js, position:fixed) so this
+       clipping never crops it. Inputs scroll via .sidebar-body's own overflow. */
+    overflow: hidden;
+  }
+  /* The title bar doubles as a wide drag handle for the sheet (see addDragHandle
+     in tool.js). touch-action:none so the drag moves the panel instead of the
+     page; the inner Tools link / controls stay tappable and are excluded in JS. */
+  .sidebar-header {
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-layout.is-sheet-dragging .sidebar-header { cursor: grabbing; }
+
+  /* Grip is pinned to the divider line itself (fixed, out of the panel's flow),
+     so it's always visible and grabbable no matter how short the panel gets. */
+  .sheet-grip {
+    display: flex;
+    position: fixed;
+    left: var(--vv-left, 0px); right: auto; width: 100%;
+    top: calc(var(--sheet-h) + var(--vv-top, 0px));   /* tracks the sheet + the visible-area offset */
+    transform: translateY(-50%);
+    height: 30px;                 /* generous hit area straddling the divider */
+    z-index: 60;                  /* above the panel (50) and the preview */
+    transition: top 0.34s cubic-bezier(0.32, 0.72, 0, 1); /* match the sheet's settle */
+  }
+  .tool-layout.is-sheet-dragging .sheet-grip { transition: none; }
+
+  /* Preview — a static backdrop offset below the top bar. The controls sheet
+     slides over it (it doesn't rescale on half/full), and Fit fits to this region
+     since fitCanvas reads the stage rect. Collapse to peek and it re-fits to fill
+     the freed space (see setupMobileSheet's peek re-fit in tool.js). */
+  .tool-stage {
+    position: fixed;
+    /* --preview-top is the mobile top-bar clearance (measured header height, default
+       56px, set on .tool-layout above). The chromeless editor zeroes it (rule below)
+       since its "Tools" link + left rail float over the stage rather than occupying a
+       bar; the 0px fallback also covers any layout that never sets it. */
+    inset: var(--preview-top, 0px) 0 0 0;
+    height: auto;
+  }
+  /* Editor (render.layout:'editor'): the stage keeps `height:100dvh !important` from
+     the [data-sidebar="hidden"] rule, so a non-zero top inset makes it overflow the
+     viewport bottom by that amount — which pushed the bottom-anchored zoom HUD
+     (.stage-nav) off-screen. There's no real top bar here, so pin top:0 and the
+     fixed stage (top 0 + 100dvh) fills the viewport exactly, HUD included. */
+  .tool-layout.is-editor { --preview-top: 0px; }
+
+  /* Track the finger 1:1 while dragging — no easing on the panel height. */
+  .tool-layout.is-sheet-dragging .sidebar { transition: none; }
+
+  /* The grip replaces the desktop width handle + fullscreen toggles. */
+  .sidebar-drag-handle { display: none; }
+  .fullscreen-toggle,
+  .fullscreen-toggle-float { display: none !important; }
+
+  /* The desktop "collapsed" hide must not blank the sheet body on mobile. */
+  .tool-layout[data-sidebar="closed"] .sidebar-body { opacity: 1 !important; pointer-events: auto !important; }
+  /* The sheet is full-width; don't pin the body to the desktop open width. */
+  .sidebar-body { min-width: 0; }
+
+  /* Get|Save pill — the primary export/save CTA, floating bottom-centre over the
+     preview, always reachable regardless of the controls-sheet position. */
+  .render-pill {
+    display: inline-flex;
+    align-items: stretch;
+    position: fixed;
+    left: 50%;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    z-index: 55;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.3), inset 0 .1px #fff6;
+  }
+  .tool-layout.export-open .render-pill { display: none; }
+
+  /* Recorder tools (render.capture) put a "Warm the mic / Record" button at the foot
+     of the stage — the SAME bottom-centre lane as the Get|Save FAB above, so on mobile
+     the pill sits right on top of it. Lift the record button (and its take timer) to
+     stack ABOVE the pill instead. Only needed in this mobile FAB layout: on desktop the
+     pill lives inside the sidebar and never shares the stage lane. */
+  .tool-stage.has-record .canvas-record-btn {
+    bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+  }
+  .tool-stage.has-record .canvas-record-timer {
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Export popup — a bottom sheet holding the (moved) actions panel. Hidden until
+     Render is tapped; dismiss via the scrim or the ✕. */
+  .export-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+  }
+  .tool-layout.export-open .export-overlay { opacity: 1; visibility: visible; }
+  .export-overlay-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+  .export-popup {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    max-height: 85dvh;
+    display: flex;
+    flex-direction: column;
+    background: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.3);
+    transform: translateY(100%);
+    transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1); /* same settle as the sheet */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .tool-layout.export-open .export-popup { transform: translateY(0); }
+  /* While the finger is dragging the sheet down, track it 1:1 — the spring-back
+     / dismiss animation re-enables once the touch ends. */
+  .export-popup.is-popup-dragging { transition: none; }
+  /* Grab affordance — hints that the sheet can be flicked away. */
+  .export-popup::before {
+    content: "";
+    position: absolute;
+    top: 8px; left: 50%;
+    transform: translateX(-50%);
+    width: 40px; height: 4px;
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+  .export-popup-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 16px 12px;
+    border-bottom: 1px solid hsl(var(--border));
+    flex-shrink: 0;
+  }
+  .export-popup-title {
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
+  }
+  .export-popup-close {
+    border: none; background: none; cursor: pointer; padding: 4px 8px;
+    font-size: 18px; line-height: 1; color: hsl(var(--muted-foreground));
+  }
+  .export-popup-body { overflow-y: auto; padding: 16px; }
+  /* Drop the sidebar-specific spacing now that the panel lives in the popup. */
+  .export-popup-body .tool-actions { margin: 0; padding: 0; border-top: none; }
+}
+
+/* ─── Actions bar ───────────────────────────────────────────────────────── */
+/* The export panel is a strict priority stack: filename·format → dimensions →
+   ancillary settings → action buttons. DOM order encodes the hierarchy, so a
+   flex column keeps the layout stable no matter which optional rows a given
+   tool/format contributes. */
+.tool-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid hsl(var(--border));
+  margin-top: auto;
+  margin-bottom:5em;
+  width: 100%;
+}
+
+/* Collapse the whitespace-only text nodes left by the template literal so they
+   don't add phantom gaps between rows. */
+.tool-actions:empty { display: none; }
+
+.export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.export-option:hover {
+  border-color: hsl(var(--ring) / 0.4);
+  background: hsl(var(--accent));
+}
+
+.export-option:has(input:checked) {
+  border-color: hsl(var(--primary) / 0.5);
+  background: hsl(var(--primary) / 0.07);
+}
+
+.export-option input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: hsl(var(--primary));
+  cursor: pointer;
+}
+
+/* Tier 2 — dimensions. The headline sizing control: both fields share the full
+   width and sit taller than the other inputs. Each field carries a directional
+   icon (↔ width, ↕ height) tucked inside on the left. */
+.export-dims {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+
+.dim-field {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.dim-icon {
+  position: absolute;
+  /* Centred in the 18px gap before the text: (18 − 15)/2 ≈ 1.5px each side. */
+  left: 1.5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  transition: color 0.12s;
+}
+
+.dim-field:focus-within .dim-icon { color: hsl(var(--ring)); }
+
+.export-dims input[type="number"] {
+  width: 100%;
+  padding: 9px 10px 9px 18px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: 0;                      /* segmented pill — outer caps added below */
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.export-dims input[type="number"]:focus {
+  cursor: text;
+  user-select: auto;
+}
+
+/* Width | height | unit (| dpi) read as ONE seamless segmented pill: no gaps,
+   adjacent 1px borders collapsed into a shared line, only the outer corners
+   rounded. The leftmost segment (width) carries the left cap; the rightmost
+   VISIBLE segment carries the right cap — normally the unit select, but the DPI
+   field when it's shown (physical units). `:has` rather than `:last-child`
+   because the DPI field is hidden with display:none, not removed from the DOM. */
+.export-dims > * + * { margin-left: -1px; }              /* overlap borders into one */
+.export-dims .dim-field:first-child input[type="number"] {
+  border-radius: var(--radius) 0 0 var(--radius);        /* left cap = width */
+}
+.export-dims .dim-unit { border-radius: 0 var(--radius) var(--radius) 0; } /* right cap = unit… */
+.export-dims:has(.dim-dpi:not([style*="none"])) .dim-unit { border-radius: 0; }
+.export-dims:has(.dim-dpi:not([style*="none"])) .dim-dpi {
+  border-radius: 0 var(--radius) var(--radius) 0;         /* …but the DPI segment when it's shown */
+}
+/* The focused segment's (ring-coloured) border sits above its neighbours' edges. */
+.export-dims .dim-field:focus-within,
+.export-dims .dim-unit:focus,
+.export-dims .dim-dpi:focus-within { position: relative; z-index: 1; }
+
+/* Units selector — the "value type" (px/mm/cm/in/pt). Its chevron is stacked
+   directly UNDER the unit text (centred, mirroring how the DPI caption sits
+   under its number) instead of to the right of it — so the segment is only as
+   wide as the "mm" text, with no horizontal arrow gutter to pay for. Frees up
+   width for the width & height fields at small sidebar widths.
+   Scoped under .export-dims so it outranks the generic `.tool-actions select`
+   chevron rule (right-side 14px caret) that would otherwise win on specificity. */
+.export-dims .dim-unit {
+  flex: 0 0 auto;
+  align-self: stretch;   /* match the height of the dimension inputs in its row */
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center bottom 3px;  /* chevron centred beneath the text */
+  background-size: 7px;                    /* tiny — matched to the 7px DPI caption scale */
+  border: 1px solid hsl(var(--input));
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;
+  text-align-last: center;                 /* centre the selected value over the chevron */
+  padding: 0 6px 10px;    /* symmetric sides; bottom room for the stacked chevron */
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+.export-dims .dim-unit:focus { border-color: hsl(var(--ring)); outline: none; }
+
+/* DPI field — only shown for physical units. The whole label is the rightmost
+   pill segment: the number sits on top of a micro "DPI" caption, so the segment
+   is only as wide as the number itself (no horizontal "dpi" word), leaving more
+   room for width & height at small sidebar widths. */
+.dim-dpi {
+  flex: 0 0 auto;
+  align-self: stretch;              /* a real segment — match the row height */
+  display: inline-flex;
+  flex-direction: column;           /* stack the number over the caption */
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border: 1px solid hsl(var(--input));
+  background-color: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+}
+.dim-dpi > span {                   /* the micro "DPI" caption, under the number */
+  font-size: 7px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+.export-dims .dim-dpi input[type="number"] {
+  width: 2.9rem;             /* border-box: just fits a 4-digit dpi (max 1200) */
+  border: 0;                 /* the .dim-dpi container carries the segment border */
+  background: transparent;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;        /* centred over the caption */
+  cursor: text;              /* not a scrub field */
+  user-select: auto;
+}
+/* Focus ring lives on the segment container, not the borderless inner input. */
+.export-dims .dim-dpi:focus-within {
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+}
+.export-dims .dim-dpi input[type="number"]:focus { box-shadow: none; }
+
+/* Spinner-hiding + focus ring shared by all action-bar number inputs
+   (dimensions and video timing). Kept as one rule so the two contexts can't
+   drift. */
+.export-dims input[type="number"]::-webkit-inner-spin-button,
+.export-dims input[type="number"]::-webkit-outer-spin-button,
+.video-params input[type="number"]::-webkit-inner-spin-button,
+.video-params input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.export-dims input[type="number"]:focus,
+.video-params input[type="number"]:focus {
+  border-color: hsl(var(--ring));
+  outline: none;
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+}
+
+/* Claim the *horizontal* gesture on the scrubbable dimension fields so a drag
+   scrubs the value, while leaving the vertical axis to the browser so the export
+   bottom sheet still scrolls when a swipe starts on a field. The scrub is
+   horizontal-only, so pan-y (not none) is the right grant: a horizontal-dominant
+   gesture reaches our pointer handlers; a vertical one scrolls and fires
+   pointercancel, which tears the scrub down cleanly. DPI is typed, not scrubbed,
+   so it keeps native behaviour. */
+.export-dims input[data-action="export-width"],
+.export-dims input[data-action="export-height"] {
+  touch-action: pan-y;
+}
+
+/* Floating value indicator shown while a dimension field is dragged-to-scrub.
+   Desktop anchors it above the control (the pointer is locked, cursor hidden);
+   touch tracks it above the finger where the value would otherwise hide.
+   Created + positioned in components/scrub-readout.js. */
+.scrub-readout {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 10000;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 6px 20px hsl(0 0% 0% / 0.28);
+  opacity: 0;
+  transform: scale(0.92);
+  transform-origin: center bottom;
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+.scrub-readout.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.scrub-readout.is-below {
+  transform-origin: center top;
+}
+/* Caret pointing down at the control / finger (above mode). */
+.scrub-readout::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: var(--caret-x, 50%);
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: hsl(var(--primary));
+}
+/* Flipped to point up when the bubble sits below the target. */
+.scrub-readout.is-below::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: hsl(var(--primary));
+}
+/* A zoom is exactly the vestibular motion reduced-motion targets — drop the
+   scale and keep only the fade for users who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .scrub-readout,
+  .scrub-readout.is-visible { transform: none; }
+}
+
+/* Tier 4 — actions. Download is the primary CTA and gets the widest track;
+   any present secondary buttons (copy/save) split the remainder evenly. */
+.export-action-buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+  /* Query container so Copy/Save/Share react to the row's own width — the
+     sidebar is resizable, so the viewport isn't a reliable signal here. */
+  container-type: inline-size;
+}
+/* Taller, easier-to-hit targets while labelled; collapses back to compact icons
+   in the @container query below. */
+.export-action-buttons button { flex: 1 1 0; min-width: 0; padding-block: 9px; }
+/* Copy and Save each carry a line-art glyph ahead of their label. */
+.copy-btn,
+.save-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.copy-icon,
+.save-icon { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* Share button — equal flex sibling of Copy and Save in the actions row (sized
+   by .export-action-buttons button), link glyph riding ahead of the label. */
+.copy-url-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.copy-url-icon { width: 15px; height: 15px; flex-shrink: 0; }
+
+/* When the actions row gets too narrow for icon + label to sit comfortably
+   side by side, drop the labels and let Copy/Save/Share collapse to their
+   three icons. `title`/`aria-label` keep each button's meaning available. */
+@container (max-width: 220px) {
+  .copy-btn > span,
+  .save-btn > [data-save-label],
+  .copy-url-btn > [data-copy-url-label] { display: none; }
+  .copy-btn,
+  .save-btn,
+  .copy-url-btn { gap: 0; }
+  /* Icon-only: drop back to a compact square rather than a tall, empty pill. */
+  .export-action-buttons button { padding-block: 6px; }
+}
+
+/* Tier 1 — filename · format. The filename fills the row; when a format
+   selector exists the two fuse into a single "name.format" segmented control. */
+.filename-extension {
+  display: flex;
+  align-items: stretch;
+}
+.filename-extension .export-filename {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.filename-extension:has(select) .export-filename {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+.filename-extension:has(select) select[data-action="format"] {
+  flex: 0 0 auto;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* Tier 3 — ancillary settings. A single wrapping cluster of chips so optional
+   controls never disrupt the rows above. */
+.export-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.export-settings:empty { display: none; }
+
+.export-cmyk,
+.export-audio,
+.export-pdfpass,
+.export-c2pa{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.45);
+}
+.cmyk-head,
+.audio-head,
+.c2pa-head,
+.print-head{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.cmyk-icon,
+.audio-icon,
+.pdfpass-icon,
+.c2pa-icon,
+.print-icon{
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: hsl(var(--primary));
+}
+.export-cmyk select[data-action="cmyk-profile"] {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.cmyk-hint,
+.pdfpass-hint,
+.c2pa-hint,
+.print-hint{
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+}
+.audio-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.export-audio select[data-action="video-audio"] {
+  flex: 1;
+  min-width: 0;   /* let the select shrink so the preview button always fits the row */
+}
+/* Play/pause toggle that auditions the selected music bed before export. */
+.audio-preview {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
+}
+.audio-preview svg { width: 18px; height: 18px; display: block; }
+.audio-preview:hover:not(:disabled) { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
+.audio-preview.is-playing {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.audio-preview:disabled { opacity: 0.45; cursor: default; }
+.audio-preview.is-loading { opacity: 0.6; cursor: progress; }
+/* Music-bed fade in/out (seconds) — applies the gain envelope baked into the export. */
+.audio-fade {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.audio-fade label { display: inline-flex; align-items: center; gap: 6px; }
+.audio-fade input {
+  width: 52px;
+  padding: 3px 6px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font: inherit;
+}
+
+/* Editor-only aspect-ratio warning (render.aspectWarning), shown beside the
+   dimension fields when the page size leaves the tool's supported orientation.
+   Amber caution rather than destructive red — the export still works, it just
+   won't lay out as intended. No --warning token exists, so the hue is inline. */
+.export-aspect-warning {
+  --aspect-warn: 38 92% 45%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: -2px;
+  padding: 10px 12px;
+  border: 1px solid hsl(var(--aspect-warn) / 0.5);
+  border-radius: var(--radius);
+  background: hsl(var(--aspect-warn) / 0.12);
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  line-height: 1.45;
+}
+.export-aspect-warning[hidden] { display: none; }
+.aspect-warn-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: hsl(var(--aspect-warn));
+}
+/* Clickable disclosure header — resets the button chrome, and carries a CSS caret
+   (same idiom as .input-section-summary) that rotates when the card is open. */
+.pdfpass-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.pdfpass-head:hover { color: hsl(var(--primary)); }
+.pdfpass-head::after {
+  content: '';
+  display: block;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.export-pdfpass.is-open .pdfpass-head::after { transform: rotate(45deg); }
+.pdfpass-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.export-pdfpass input[type="password"] {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+/* Encryption-strength selector (Standard 40-bit vs Strong AES-256). */
+.pdfpass-tier {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  box-sizing: border-box;
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+.pdfpass-tier:focus { outline: none; border-color: hsl(var(--ring)); }
+.pdfpass-tier option:disabled { color: hsl(var(--muted-foreground)); }
+.export-pdfpass input[type="password"]:focus,
+.print-bleed input[type="number"]:focus{
+  outline: none;
+  border-color: hsl(var(--ring));
+}
+.c2pa-enable,
+.print-enable{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.c2pa-enable input[type="checkbox"] { flex: 0 0 auto; }
+.c2pa-enable:has(input:disabled) { cursor: default; opacity: 0.55; }
+
+/* Print marks & bleed card — mirrors .export-cmyk; revealed for pdf / pdf-cmyk.
+   A master checkbox (.print-enable) reveals the body so ordinary PDFs stay plain. */
+.export-print {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.45);
+}
+.print-enable input[type="checkbox"] { flex: 0 0 auto; }
+.print-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.print-bleed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: hsl(var(--foreground));
+}
+.print-bleed input[type="number"] {
+  width: 72px;
+  padding: 7px 10px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+/* Mark toggles reuse the .export-option chip; wrap so they pack side by side in a
+   wide sidebar and stack only when there's no room. */
+.print-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Filename input */
+.export-filename {
+  padding: 9px 12px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  transition: border-color 0.12s;
+}
+
+.export-filename:hover {
+  border-color: hsl(var(--ring) / 0.4);
+}
+
+.export-filename:focus {
+  border-color: hsl(var(--ring));
+  outline: none;
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+}
+
+/* Format selector */
+.tool-actions select {
+  padding: 9px 28px 9px 12px;   /* right room for the custom chevron */
+  background-color: hsl(var(--background));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+  /* Custom chevron + appearance:none — same native-menulist jitter fix as
+     .input-row select. The 28px right padding already reserved arrow space. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.tool-actions select:hover {
+  border-color: hsl(var(--ring) / 0.4);
+}
+
+.tool-actions select:focus {
+  border-color: hsl(var(--ring));
+  outline: none;
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+}
+/* Timing inputs — wait and duration, shown for webm and gif formats */
+/* Shown only for animated formats. Takes its own full-width row in the Tier-3
+   cluster and wraps internally, so the timing controls reflow cleanly instead
+   of overflowing a narrow sidebar. */
+.video-params {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 6px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  padding: 6px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+}
+
+/* Keep each "label · input · unit" trio together as one unwrappable unit. */
+.vp-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.video-params input[type="number"] {
+  width: 48px;
+  padding: 5px 6px;
+  font-size: 12px;
+  text-align: center;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+/* Dither / 60fps toggles — shown inside .video-params for gif / webm. Separated
+   from the timing fields by the cluster gap so they wrap without a stray
+   divider hanging at the start of a wrapped line. */
+.gif-dither-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gif-dither-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: hsl(var(--primary));
+}
+
+/* Action buttons — outline style by default */
+.btn,
+.tool-actions button {
+  text-decoration:none;
+  padding: 5px 14px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: inset 0 1px #fff3, 0 1px 3px #0002;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.tool-actions button:hover {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--border));
+}
+
+.tool-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Inline (i) help buttons (help-tip.js) sit inside the export popup's C2PA and
+   audio cards, which live in #tool-actions. The generic `.tool-actions button`
+   pill rule above outranks `.help-tip-btn` on specificity, so without this reset
+   those info buttons render as bordered pills. Restore the transparent icon-only
+   affordance (and hover state) the sidebar's input helpers use. */
+.tool-actions .help-tip-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  box-shadow: none;
+  font-size: inherit;
+  color: hsl(var(--muted-foreground));
+  cursor: help;
+}
+.tool-actions .help-tip-btn:hover,
+.tool-actions .help-tip-btn:focus-visible {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Copy button armed by the ?copy URL action — pulses to invite the click that
+   gives the clipboard write its required user gesture. */
+.tool-actions [data-action="copy"].copy-armed {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
+  animation: copy-armed-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes copy-armed-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.5); }
+  50%      { box-shadow: 0 0 0 5px hsl(var(--primary) / 0); }
+}
+
+/* Download is the primary CTA — the biggest, easiest target in the row. */
+.tool-actions [data-action="download"] {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
+  font-weight: 600;
+  padding-block: 13px;
+}
+
+/* Down-arrow glyph as the download affordance, riding ahead of the label. */
+.tool-actions [data-action="download"]::before {
+  content: "\2193";   /* ↓ */
+  margin-right: 0.4em;
+  font-weight: 700;
+}
+
+.tool-actions [data-action="download"]:hover {
+  background: hsl(var(--primary) / 0.88);
+  border-color: hsl(var(--primary) / 0.88);
+}
+
