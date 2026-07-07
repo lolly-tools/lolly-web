@@ -145,6 +145,23 @@ interface WalkTransform {
   sY: number;
 }
 
+// Compose an element's own `transform` (translate/scale) onto the inherited CTM.
+// Applies to containers AND leaf drawables — a <path transform="translate() scale()">
+// (brand-lockup's per-leaf layout) must scale/position like a <g> would.
+function applyElementTransform(el: Element, t: WalkTransform): WalkTransform {
+  const nt: WalkTransform = { ...t };
+  const transform = el.getAttribute?.('transform') || '';
+  if (transform) {
+    const { sX, sY } = t;
+    const tm = transform.match(/translate\(\s*([+-]?\d*\.?\d+)[,\s]\s*([+-]?\d*\.?\d+)\s*\)/) ??
+               transform.match(/translate\(\s*([+-]?\d*\.?\d+)\s*\)/);
+    const sm = transform.match(/scale\(\s*([+-]?\d*\.?\d+)(?:[,\s]\s*([+-]?\d*\.?\d+))?\s*\)/);
+    if (tm) { nt.tx += sX * parseFloat(tm[1]!); nt.ty += sY * parseFloat(tm[2] ?? '0'); }
+    if (sm) { nt.sX = sX * parseFloat(sm[1]!); nt.sY = sY * parseFloat(sm[2] ?? sm[1]!); }
+  }
+  return nt;
+}
+
 /** Geometry closures + per-leaf opacity handed to emitText. */
 interface LeafTextGeometry {
   PX: (v: number) => number;
@@ -255,7 +272,11 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     const tag = el.tagName.toLowerCase().replace(/^svg:/, '');
     if (SKIP.has(tag)) return;
 
-    const { tx, ty, sX, sY } = t;
+    // Compose this element's own transform onto the inherited CTM. Containers pass
+    // it to their children; leaf drawables map their own geometry through it (so a
+    // per-leaf `transform` is honoured, not silently dropped).
+    const et = applyElementTransform(el, t);
+    const { tx, ty, sX, sY } = et;
     const PX = (v: number) => (tx + sX * v - vbX) * regX;
     const PY = (v: number) => (ty + sY * v - vbY) * regY;
     const mapPt = (x: number, y: number) => ({ x: PX(x), y: PY(y) });
@@ -263,15 +284,6 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     const rAvg = (regX + regY) / 2;
 
     if (tag === 'g' || tag === 'a' || tag === 'svg') {
-      const nt: WalkTransform = { ...t };
-      const transform = el.getAttribute?.('transform') || '';
-      if (transform) {
-        const tm = transform.match(/translate\(\s*([+-]?\d*\.?\d+)[,\s]\s*([+-]?\d*\.?\d+)\s*\)/) ??
-                   transform.match(/translate\(\s*([+-]?\d*\.?\d+)\s*\)/);
-        const sm = transform.match(/scale\(\s*([+-]?\d*\.?\d+)(?:[,\s]\s*([+-]?\d*\.?\d+))?\s*\)/);
-        if (tm) { nt.tx += sX * parseFloat(tm[1]!); nt.ty += sY * parseFloat(tm[2] ?? '0'); }
-        if (sm) { nt.sX = sX * parseFloat(sm[1]!); nt.sY = sY * parseFloat(sm[2] ?? sm[1]!); }
-      }
       const style = parseStyleAttr(el);
       const inh: StyleMap = {
         fill: prop(el, style, 'fill', inherited),
@@ -282,7 +294,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
         'stroke-width': prop(el, style, 'stroke-width', inherited),
         opacity: undefined, // group opacity does not inherit as a property; applied per-leaf
       };
-      for (const child of el.children) await visit(child, nt, inh);
+      for (const child of el.children) await visit(child, et, inh);
       return;
     }
 

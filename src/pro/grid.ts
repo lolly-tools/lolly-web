@@ -302,7 +302,6 @@ export function bodyRow(row: GridRow, columns: Column[], ctx: GridCtx): string {
   // mix (e.g. one row 100×75mm, another 1080px). Placeholder shows the tool's
   // native size converted into the effective unit so the default is legible.
   const unit = row.unit ?? ctx.unit ?? 'px';
-  const dpi = row.dpi ?? ctx.dpi ?? 300;
   const nativeW = row.manifest?.render?.width;
   const nativeH = row.manifest?.render?.height;
   const ph = (native: number | undefined): string => {

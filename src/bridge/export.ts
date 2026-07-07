@@ -2980,7 +2980,11 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
 
     if (tag === 'line') {
       const strokeStr = el.getAttribute('stroke') ?? '';
-      let rgb = (strokeStr && strokeStr !== 'none') ? parseSvgColor(strokeStr) : null;
+      if (strokeStr === 'none') return;
+      let rgb = strokeStr ? parseSvgColor(strokeStr) : null;
+      // Fall back to the COMPUTED stroke when set via CSS (or a named colour that
+      // slipped through) so <line stroke="red">/CSS-styled lines aren't dropped.
+      if (!rgb) rgb = parseSvgColor(computedPaint(el, 'stroke'));
       if (!rgb) return;
       const opacity = parseFloat(el.getAttribute('opacity') ?? el.getAttribute('stroke-opacity') ?? '1');
       if (opacity < 0.01) return;
@@ -3000,6 +3004,9 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       let fillStr = el.getAttribute('fill');
       if (!fillStr || fillStr === 'currentColor') fillStr = computedPaint(el, 'fill') || '#000000';
       let rgb = parseSvgColor(fillStr);
+      // Fall back to the COMPUTED fill when the attribute is a named/CSS colour
+      // that didn't parse, so <text fill="navy"> isn't silently dropped.
+      if (!rgb) rgb = parseSvgColor(computedPaint(el, 'fill'));
       if (!rgb) return;
       const opacity = parseFloat(el.getAttribute('opacity') ?? el.getAttribute('fill-opacity') ?? '1');
       if (opacity < 0.01) return;
@@ -3008,11 +3015,16 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       if (!text) return;
       const xt = PX(svgLen(el.getAttribute('x'), vbW));
       const yt = PY(svgLen(el.getAttribute('y'), vbH));
-      const fs = parseFloat(el.getAttribute('font-size') ?? '16') * gAvg * rAvg;
-      const fw = parseInt(el.getAttribute('font-weight') ?? '400') || 400;
-      const italic  = el.getAttribute('font-style') === 'italic';
+      // Font props: attribute first, else the COMPUTED style — tools that set the
+      // typeface/size/weight via CSS (chart-creator/d3 → SUSE) otherwise fell back
+      // to Helvetica at the default size in PDF.
+      const cs = (typeof window !== 'undefined' && el.isConnected) ? window.getComputedStyle(el) : null;
+      const fs = parseFloat(el.getAttribute('font-size') ?? cs?.fontSize ?? '16') * gAvg * rAvg;
+      const fw = parseInt(el.getAttribute('font-weight') ?? cs?.fontWeight ?? '400') || 400;
+      const fontStyleStr = el.getAttribute('font-style') ?? cs?.fontStyle ?? '';
+      const italic  = fontStyleStr === 'italic' || fontStyleStr === 'oblique';
       const anchor  = el.getAttribute('text-anchor') ?? 'start';
-      const family  = (el.getAttribute('font-family') ?? '').toLowerCase();
+      const family  = (el.getAttribute('font-family') ?? cs?.fontFamily ?? '').toLowerCase();
       pdf.setTextColor(rgb[0], rgb[1], rgb[2]);
       pdf.setFontSize(Math.max(1, fs));
       let fontSet = false;
@@ -4465,12 +4477,66 @@ function resolveColor(el: any): Rgb | null {
   return computed ? parseSvgColor(computed) : null;
 }
 
+// CSS3 extended named-colour table. Without it, named colours (navy, red,
+// steelblue, …) parse to null and <text fill="navy">/<line stroke="red"> get
+// silently dropped from PDF (EMF renders them via svg-ir's own table).
+const SVG_NAMED_COLORS: Record<string, Rgb> = {
+  aliceblue: [240,248,255], antiquewhite: [250,235,215], aqua: [0,255,255],
+  aquamarine: [127,255,212], azure: [240,255,255], beige: [245,245,220],
+  bisque: [255,228,196], black: [0,0,0], blanchedalmond: [255,235,205],
+  blue: [0,0,255], blueviolet: [138,43,226], brown: [165,42,42],
+  burlywood: [222,184,135], cadetblue: [95,158,160], chartreuse: [127,255,0],
+  chocolate: [210,105,30], coral: [255,127,80], cornflowerblue: [100,149,237],
+  cornsilk: [255,248,220], crimson: [220,20,60], cyan: [0,255,255],
+  darkblue: [0,0,139], darkcyan: [0,139,139], darkgoldenrod: [184,134,11],
+  darkgray: [169,169,169], darkgreen: [0,100,0], darkgrey: [169,169,169],
+  darkkhaki: [189,183,107], darkmagenta: [139,0,139], darkolivegreen: [85,107,47],
+  darkorange: [255,140,0], darkorchid: [153,50,204], darkred: [139,0,0],
+  darksalmon: [233,150,122], darkseagreen: [143,188,143], darkslateblue: [72,61,139],
+  darkslategray: [47,79,79], darkslategrey: [47,79,79], darkturquoise: [0,206,209],
+  darkviolet: [148,0,211], deeppink: [255,20,147], deepskyblue: [0,191,255],
+  dimgray: [105,105,105], dimgrey: [105,105,105], dodgerblue: [30,144,255],
+  firebrick: [178,34,34], floralwhite: [255,250,240], forestgreen: [34,139,34],
+  fuchsia: [255,0,255], gainsboro: [220,220,220], ghostwhite: [248,248,255],
+  gold: [255,215,0], goldenrod: [218,165,32], gray: [128,128,128],
+  green: [0,128,0], greenyellow: [173,255,47], grey: [128,128,128],
+  honeydew: [240,255,240], hotpink: [255,105,180], indianred: [205,92,92],
+  indigo: [75,0,130], ivory: [255,255,240], khaki: [240,230,140],
+  lavender: [230,230,250], lavenderblush: [255,240,245], lawngreen: [124,252,0],
+  lemonchiffon: [255,250,205], lightblue: [173,216,230], lightcoral: [240,128,128],
+  lightcyan: [224,255,255], lightgoldenrodyellow: [250,250,210], lightgray: [211,211,211],
+  lightgreen: [144,238,144], lightgrey: [211,211,211], lightpink: [255,182,193],
+  lightsalmon: [255,160,122], lightseagreen: [32,178,170], lightskyblue: [135,206,250],
+  lightslategray: [119,136,153], lightslategrey: [119,136,153], lightsteelblue: [176,196,222],
+  lightyellow: [255,255,224], lime: [0,255,0], limegreen: [50,205,50],
+  linen: [250,240,230], magenta: [255,0,255], maroon: [128,0,0],
+  mediumaquamarine: [102,205,170], mediumblue: [0,0,205], mediumorchid: [186,85,211],
+  mediumpurple: [147,112,219], mediumseagreen: [60,179,113], mediumslateblue: [123,104,238],
+  mediumspringgreen: [0,250,154], mediumturquoise: [72,209,204], mediumvioletred: [199,21,133],
+  midnightblue: [25,25,112], mintcream: [245,255,250], mistyrose: [255,228,225],
+  moccasin: [255,228,181], navajowhite: [255,222,173], navy: [0,0,128],
+  oldlace: [253,245,230], olive: [128,128,0], olivedrab: [107,142,35],
+  orange: [255,165,0], orangered: [255,69,0], orchid: [218,112,214],
+  palegoldenrod: [238,232,170], palegreen: [152,251,152], paleturquoise: [175,238,238],
+  palevioletred: [219,112,147], papayawhip: [255,239,213], peachpuff: [255,218,185],
+  peru: [205,133,63], pink: [255,192,203], plum: [221,160,221],
+  powderblue: [176,224,230], purple: [128,0,128], rebeccapurple: [102,51,153],
+  red: [255,0,0], rosybrown: [188,143,143], royalblue: [65,105,225],
+  saddlebrown: [139,69,19], salmon: [250,128,114], sandybrown: [244,164,96],
+  seagreen: [46,139,87], seashell: [255,245,238], sienna: [160,82,45],
+  silver: [192,192,192], skyblue: [135,206,235], slateblue: [106,90,205],
+  slategray: [112,128,144], slategrey: [112,128,144], snow: [255,250,250],
+  springgreen: [0,255,127], steelblue: [70,130,180], tan: [210,180,140],
+  teal: [0,128,128], thistle: [216,191,216], tomato: [255,99,71],
+  turquoise: [64,224,208], violet: [238,130,238], wheat: [245,222,179],
+  white: [255,255,255], whitesmoke: [245,245,245], yellow: [255,255,0],
+  yellowgreen: [154,205,50],
+};
+
 function parseSvgColor(color: string | null): Rgb | null {
   if (!color) return null;
   const lc = color.toLowerCase().trim();
   if (lc === 'none' || lc === 'transparent') return null;
-  if (lc === 'white') return [255, 255, 255];
-  if (lc === 'black') return [0, 0, 0];
   if (lc.startsWith('#')) {
     const h = lc.slice(1);
     if (h.length === 3) return [
@@ -4482,7 +4548,7 @@ function parseSvgColor(color: string | null): Rgb | null {
   }
   const m = lc.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
   if (m) return [+m[1]!, +m[2]!, +m[3]!];
-  return null;
+  return SVG_NAMED_COLORS[lc] ?? null;
 }
 
 // Ensures a canvas is exactly w×h logical pixels. dom-to-image-more may return
@@ -5084,6 +5150,84 @@ async function svgBytesToPng(svgBytes: Uint8Array, w: number, h: number): Promis
   } catch { return null; } finally { URL.revokeObjectURL(url); }
 }
 
+// Inline tags whose text folds into the PARENT's text box as styled RUNS (instead of
+// becoming their own overlapping box). Anything else is block-level → its own object.
+const PPTX_INLINE_TAGS = new Set(['span', 'b', 'strong', 'i', 'em', 'a', 'u', 's', 'strike',
+  'small', 'sub', 'sup', 'mark', 'code', 'abbr', 'cite', 'q', 'time', 'label', 'wbr', 'bdi', 'bdo', 'font']);
+
+// True when el's content is only text + inline elements (no block/asset descendants) —
+// i.e. one flowing text block that should become a single text box, not many.
+function pptxIsInlineTextTree(el: Element): boolean {
+  for (const nd of Array.from(el.childNodes)) {
+    if (nd.nodeType !== 1) continue;
+    const t = (nd as Element).tagName.toLowerCase();
+    if (t === 'br') continue;
+    if (!PPTX_INLINE_TAGS.has(t) || !pptxIsInlineTextTree(nd as Element)) return false;
+  }
+  return true;
+}
+
+type PptxRunDraft = { text: string; sizePt: number; color?: string; bold?: boolean; italic?: boolean; font?: string };
+function pptxRunStyle(text: string, cs: CSSStyleDeclaration): PptxRunDraft {
+  const cc = parseCssColorFull(cs.color);
+  return {
+    text,
+    sizePt: (parseFloat(cs.fontSize) || 16) * 0.75,
+    color: cc ? rgbaHex(cc) : undefined,
+    bold: cs.fontWeight === 'bold' || (parseInt(cs.fontWeight, 10) || 400) >= 600,
+    italic: cs.fontStyle === 'italic',
+    font: (cs.fontFamily || '').split(',')[0]?.replace(/["']/g, '').trim() || undefined,
+  };
+}
+
+// Flatten an inline text tree into styled runs — each text node carries its OWN parent's
+// computed font style, so <b>/<i>/coloured spans keep their formatting in one text box.
+function pptxCollectRuns(el: Element): PptxRunDraft[] {
+  const runs: PptxRunDraft[] = [];
+  const walk = (node: Element): void => {
+    for (const nd of Array.from(node.childNodes)) {
+      if (nd.nodeType === 3) {
+        const raw = (nd.textContent || '').replace(/\s+/g, ' ');
+        if (raw) runs.push(pptxRunStyle(raw, window.getComputedStyle(node)));
+      } else if (nd.nodeType === 1) {
+        if ((nd as Element).tagName.toLowerCase() === 'br') runs.push({ text: ' ', sizePt: 12 });
+        else walk(nd as Element);
+      }
+    }
+  };
+  walk(el);
+  while (runs.length && !runs[0]!.text.trim()) runs.shift();
+  while (runs.length && !runs[runs.length - 1]!.text.trim()) runs.pop();
+  return runs;
+}
+
+// Intrinsic aspect (w,h) of an SVG from its viewBox (or width/height attrs), for
+// fitting it into a box without distortion.
+function pptxSvgAspect(bytes: Uint8Array): [number, number] | null {
+  const head = new TextDecoder().decode(bytes.subarray(0, 1024));
+  const vb = /viewBox\s*=\s*["']\s*[\d.eE+-]+\s+[\d.eE+-]+\s+([\d.eE+-]+)\s+([\d.eE+-]+)/.exec(head);
+  if (vb) return [parseFloat(vb[1]!), parseFloat(vb[2]!)];
+  const w = /\bwidth\s*=\s*["']?([\d.]+)/.exec(head), h = /\bheight\s*=\s*["']?([\d.]+)/.exec(head);
+  return w && h ? [parseFloat(w[1]!), parseFloat(h[1]!)] : null;
+}
+// object-position → offset of a fitted picture within the leftover box space.
+function pptxObjOffset(posStr: string | undefined, freeX: number, freeY: number): { ox: number; oy: number } {
+  const toks = (posStr || '50% 50%').trim().toLowerCase().split(/\s+/);
+  const fx = (k: string): number => k === 'left' ? 0 : k === 'right' ? 1 : k === 'center' ? 0.5 : k.endsWith('%') ? parseFloat(k) / 100 : 0.5;
+  const fy = (k: string): number => k === 'top' ? 0 : k === 'bottom' ? 1 : k === 'center' ? 0.5 : k.endsWith('%') ? parseFloat(k) / 100 : 0.5;
+  return { ox: Math.round(freeX * fx(toks[0] ?? '50%')), oy: Math.round(freeY * fy(toks[1] ?? '50%')) };
+}
+// Fit an intrinsic aspect into a box per object-fit:contain (+ object-position); other
+// fit modes keep the full box (stretch), which is what a plain blipFill does.
+function pptxFitInto(box: { x: number; y: number; cx: number; cy: number }, aw: number, ah: number, style: CSSStyleDeclaration): { x: number; y: number; cx: number; cy: number } {
+  if ((style.objectFit || 'fill') !== 'contain' || !(aw > 0 && ah > 0)) return box;
+  const imgA = aw / ah, boxA = box.cx / Math.max(1, box.cy);
+  let cx = box.cx, cy = box.cy;
+  if (imgA > boxA) cy = Math.round(box.cx / imgA); else cx = Math.round(box.cy * imgA);
+  const { ox, oy } = pptxObjOffset(style.objectPosition, box.cx - cx, box.cy - cy);
+  return { x: box.x + ox, y: box.y + oy, cx, cy };
+}
+
 // Walk one page element into PPTX shapes + media (see the section comment above).
 async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<PptxSlide> {
   const shapes: PptxShape[] = [];
@@ -5133,11 +5277,32 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     } catch { /* asset unreachable — skip */ }
   }
 
-  const directText = (el: Element): string => {
-    let s = '';
-    for (const nd of Array.from(el.childNodes)) if (nd.nodeType === 3) s += nd.textContent || '';
-    return s.replace(/\s+/g, ' ').trim();
-  };
+  // An <img>. A SVG-sourced logo (the common case in Lolly — assets arrive as
+  // <img src="blob:…svg">) is embedded as a REAL vector (svgBlip) so it extracts crisp;
+  // an untreated raster embeds its ORIGINAL bytes (native res, no re-encode); a treated
+  // image (CSS filter / blend) is rasterised so the treatment is baked in.
+  async function imgPic(el: Element, style: CSSStyleDeclaration, r: DOMRect): Promise<void> {
+    const src = (el as HTMLImageElement).currentSrc || el.getAttribute('src') || '';
+    const treated = (style.filter && style.filter !== 'none') || (style.mixBlendMode && style.mixBlendMode !== 'normal');
+    if (src && !treated) {
+      try {
+        const buf = new Uint8Array(await (await fetch(src)).arrayBuffer());
+        const ext = sniffImgExt(buf, src);
+        if (ext === 'svg') {
+          // Keep it a real vector; place it contain-fitted (logos use object-fit:contain).
+          const asp = pptxSvgAspect(buf);
+          const placed = asp ? pptxFitInto(boxOf(r), asp[0], asp[1], style) : boxOf(r);
+          const png = await svgBytesToPng(buf, (placed.cx / E) * 2, (placed.cy / E) * 2);
+          if (png) { shapes.push({ kind: 'pic', ...placed, media: addMedia(png, 'png'), svg: addMedia(buf, 'svg'), name: 'vector' }); return; }
+        } else if (ext === 'png' || ext === 'jpeg') {
+          const im = el as HTMLImageElement;
+          const placed = pptxFitInto(boxOf(r), im.naturalWidth || 0, im.naturalHeight || 0, style);
+          shapes.push({ kind: 'pic', ...placed, media: addMedia(buf, ext), name: 'image' }); return;
+        }
+      } catch { /* fall through to rasterise */ }
+    }
+    await rasterPic(el as HTMLElement, r, 'image', true);
+  }
 
   async function visit(el: Element): Promise<void> {
     if (full() || el.nodeType !== 1) return;
@@ -5152,7 +5317,7 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     // reconstructing the transform per shape kind. Rare in these tools; layout secondary.
     if (pureRotationDeg(style.transform)) { await rasterPic(el as HTMLElement, rect, 'rotated'); return; }
     if (tag === 'svg') { await svgPic(el, rect); return; }
-    if (tag === 'img') { await rasterPic(el as HTMLElement, rect, 'image', true); return; }
+    if (tag === 'img') { await imgPic(el, style, rect); return; }
     if (tag === 'canvas' || tag === 'video') { await rasterPic(el as HTMLElement, rect, tag); return; }
 
     // Effects the shape/text walkers can't express → bake the subtree to a picture.
@@ -5171,23 +5336,21 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     }
     if (/url\(/.test(style.backgroundImage)) await bgImagePic(el, style, rect);
 
-    // Children stack above this element's background.
-    for (const child of Array.from(el.children)) { if (full()) break; await visit(child); }
-
-    // Direct text (the leaf-most container of a run) → an editable text box.
-    const txt = directText(el);
-    if (txt && !full()) {
-      const sizePt = (parseFloat(style.fontSize) || 16) * 0.75;
-      const cc = parseCssColorFull(style.color);
-      const align: 'l' | 'ctr' | 'r' | 'just' =
-        style.textAlign === 'center' ? 'ctr' : style.textAlign === 'right' ? 'r' : style.textAlign === 'justify' ? 'just' : 'l';
-      const font = (style.fontFamily || '').split(',')[0]?.replace(/["']/g, '').trim() || undefined;
-      const bold = style.fontWeight === 'bold' || (parseInt(style.fontWeight, 10) || 400) >= 600;
-      shapes.push({
-        kind: 'text', ...boxOf(rect), anchor: 't',
-        paras: [{ align, runs: [{ text: txt, sizePt, color: cc ? rgbaHex(cc) : undefined, bold, italic: style.fontStyle === 'italic', font }] }],
-      });
+    // A pure text block (only text + inline formatting) → ONE editable text box whose
+    // runs carry per-fragment styling, so <b>/<i>/coloured spans stay in the same box
+    // instead of each becoming a separate, overlapping shape.
+    if (pptxIsInlineTextTree(el) && (el.textContent || '').trim()) {
+      const runs = pptxCollectRuns(el);
+      if (runs.length) {
+        const align: 'l' | 'ctr' | 'r' | 'just' =
+          style.textAlign === 'center' ? 'ctr' : style.textAlign === 'right' ? 'r' : style.textAlign === 'justify' ? 'just' : 'l';
+        shapes.push({ kind: 'text', ...boxOf(rect), anchor: 't', paras: [{ align, runs }] });
+      }
+      return;   // inline children are consumed as runs — don't recurse into them
     }
+
+    // Otherwise recurse block children (each stacks above this element's background).
+    for (const child of Array.from(el.children)) { if (full()) break; await visit(child); }
   }
 
   await visit(pageEl);
