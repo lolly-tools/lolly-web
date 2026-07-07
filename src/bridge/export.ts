@@ -4966,11 +4966,15 @@ async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
 // ── PPTX (PowerPoint) ─────────────────────────────────────────────────────────
 // One slide per page, each a full-frame picture. A paged tool ([data-pdf-page]) fans
 // out to one slide per page (like renderMultiPagePdf); a single-canvas tool is one
-// slide. "Vector picture per slide": each page is rendered to EMF (scalable in desktop
-// PowerPoint, and now faithful — the vector walker embeds photos/filters as a raster
-// escape-hatch), with a high-res PNG fallback if the EMF path fails. The engine
-// (buildPptxParts) frames the OOXML; the shell measures pages, renders pictures, zips.
+// slide. Each page is rasterised to a HIGH-RES PNG (2× the page box) so the slide
+// looks pixel-identical to Lolly — gradients, photos, filters and effects all survive
+// — and opens everywhere (PowerPoint desktop/online, LibreOffice, Keynote). (EMF was
+// tried as a "scalable vector picture" but flattens gradients + mishandles rich CSS
+// backgrounds, so it read wrong for editorial pages; PNG is the faithful choice.)
+// The engine (buildPptxParts) frames the OOXML; the shell measures pages, renders
+// pictures, zips.
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+const PPTX_SCALE = 2;   // slide picture resolution multiple over the page's CSS box
 async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob> {
   const pages = node.querySelectorAll ? [...node.querySelectorAll('[data-pdf-page]')] : [];
   const pageEls: Element[] = pages.length ? pages : [node];
@@ -4981,30 +4985,20 @@ async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob> {
   const emuH = Math.max(1, Math.round((r0.height || 1) * EMU_PER_PX));
 
   const slides: Array<{ image: Uint8Array; ext: 'emf' | 'png'; wPx: number; hPx: number }> = [];
-  let fallbacks = 0;
   for (const el of pageEls) {
     const r = el.getBoundingClientRect();
     const wPx = Math.max(1, Math.round(r.width || 1));
     const hPx = Math.max(1, Math.round(r.height || 1));
-    // Each slide picture is sized to the page's own box, at px; never carry the whole
-    // export's bundle/lock/credential opts onto a per-slide picture render.
-    const pageOpts: ExportOpts = {
-      ...opts, width: wPx, height: hPx, unit: 'px',
+    // Render the page picture at 2× its box; never carry the whole export's
+    // bundle/lock/credential opts onto a per-slide picture render.
+    const png = await renderRaster(el, 'png', {
+      ...opts, width: wPx * PPTX_SCALE, height: hPx * PPTX_SCALE, unit: 'px',
       bundleFormats: undefined, filename: undefined, c2pa: false,
       password: undefined, strongPassword: undefined, meta: undefined,
-    };
-    try {
-      const emf = await renderEmf(el, pageOpts);
-      slides.push({ image: new Uint8Array(await emf.arrayBuffer()), ext: 'emf', wPx, hPx });
-    } catch (err) {
-      fallbacks++;
-      _host?.log?.('warn', `pptx: slide rendered as PNG instead of vector (${(err as { message?: string })?.message ?? err}).`);
-      const png = await renderRaster(el, 'png', { ...pageOpts, width: wPx * 2, height: hPx * 2 });
-      slides.push({ image: new Uint8Array(await png.arrayBuffer()), ext: 'png', wPx, hPx });
-    }
+    });
+    slides.push({ image: new Uint8Array(await png.arrayBuffer()), ext: 'png', wPx, hPx });
     opts.onProgress?.(slides.length, pageEls.length);
   }
-  if (fallbacks) _host?.log?.('info', `pptx: ${fallbacks}/${pageEls.length} slide(s) used a PNG fallback.`);
 
   const parts = buildPptxParts(slides, {
     emuW, emuH,
