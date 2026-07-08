@@ -60,12 +60,150 @@
       if (t === 'dark' || t === 'suse') document.documentElement.dataset.theme = t;
     })();
   </script>
+
+  <!-- No-JavaScript welcome. Lolly renders entirely client-side, so with scripting
+       off the app can never boot. Rather than strand visitors on a permanent
+       "Loading…", this styles a self-contained welcome (revealed by the <noscript>
+       in <body>) and hides the two now-misleading shell affordances. Kept in
+       <noscript> so it only applies — and only downloads meaning — when JS is off;
+       its own colours + dark-mode make it stand alone even if the app CSS never loads. -->
+  <noscript>
+    <style>
+      .loading { display: none !important; }   /* never resolves without JS */
+      .skip-link { display: none !important; }  /* nothing to skip past here */
+
+      .nojs {
+        --ink: #0c322c; --ink-soft: #3f5a52; --line: #d7e7e0;
+        --card: #ffffff; --page1: #ffffff; --page2: #e7f3ee;
+        --pine: #159f66; --pine-strong: #128a58; --pine-ink: #ffffff; --glow: 21 159 102;
+        position: relative; overflow: hidden; box-sizing: border-box;
+        min-height: 100vh; min-height: 100dvh;
+        display: flex; align-items: center; justify-content: center;
+        padding: 40px 20px;
+        background: linear-gradient(160deg, var(--page1), var(--page2));
+        color: var(--ink);
+        font-family: 'SUSE', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+      }
+      .nojs::before, .nojs::after {
+        content: ''; position: absolute; width: 62vmax; height: 62vmax;
+        border-radius: 50%; pointer-events: none; z-index: 0;
+      }
+      .nojs::before { top: -24vmax; left: -20vmax;
+        background: radial-gradient(closest-side, rgba(var(--glow), .20), transparent 70%); }
+      .nojs::after { bottom: -28vmax; right: -22vmax;
+        background: radial-gradient(closest-side, rgba(12, 50, 44, .12), transparent 70%); }
+
+      .nojs-card {
+        position: relative; z-index: 1; width: 100%; max-width: 540px;
+        background: var(--card); border: 1px solid var(--line); border-radius: 22px;
+        padding: 40px 36px 32px; text-align: center;
+        box-shadow: 0 1px 2px rgba(12,50,44,.05), 0 26px 60px -30px rgba(12,50,44,.32);
+        animation: nojs-rise .6s cubic-bezier(.2,.7,.2,1) both;
+      }
+      @keyframes nojs-rise { from { opacity: 0; transform: translateY(14px); } }
+
+      .nojs-mark {
+        width: 76px; height: 76px; border-radius: 20px; display: block; margin: 0 auto 22px;
+        box-shadow: 0 12px 28px -14px rgba(12,50,44,.55);
+      }
+      .nojs-title { margin: 0; font-size: clamp(30px, 6vw, 40px); font-weight: 800;
+        letter-spacing: -.02em; line-height: 1; }
+      .nojs-badge { display: inline-flex; align-items: center; gap: 8px; margin: 16px auto 0;
+        padding: 8px 15px; border-radius: 999px; border: 1px solid var(--pine);
+        background: rgba(var(--glow), .12); color: var(--pine);
+        font-size: 15px; font-weight: 800; letter-spacing: -.01em; }
+      .nojs-badge svg { width: 17px; height: 17px; }
+      .nojs-lead { margin: 18px auto 0; max-width: 42ch; font-size: 16px; line-height: 1.65;
+        color: var(--ink-soft); }
+      .nojs-lead strong { color: var(--ink); font-weight: 700; }
+
+      .nojs-formats-label { margin: 24px 0 0; font-size: 11.5px; font-weight: 700;
+        letter-spacing: .09em; text-transform: uppercase; color: var(--ink-soft); opacity: .7; }
+      .nojs-formats { list-style: none; margin: 11px 0 0; padding: 0;
+        display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+      .nojs-formats li { font-size: 11px; font-weight: 600; color: var(--ink-soft);
+        padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px;
+        background: rgba(var(--glow), .05); white-space: nowrap; }
+
+      .nojs-actions { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px;
+        justify-content: center; }
+      .nojs-btn { display: inline-flex; align-items: center; gap: 8px; font: inherit;
+        font-size: 15px; font-weight: 700; text-decoration: none; padding: 12px 22px;
+        border-radius: 12px; border: 1px solid var(--line); color: var(--ink);
+        background: transparent; transition: transform .15s ease, background .15s ease, border-color .15s ease; }
+      .nojs-btn:hover { transform: translateY(-1px); background: rgba(var(--glow), .08);
+        border-color: var(--pine); }
+      .nojs-btn--primary { background: var(--pine); color: var(--pine-ink); border-color: var(--pine); }
+      .nojs-btn--primary:hover { background: var(--pine-strong); }
+      .nojs-btn svg { width: 16px; height: 16px; }
+
+      .nojs-note { margin: 26px auto 0; max-width: 40ch; font-size: 13px; line-height: 1.55;
+        color: var(--ink-soft); opacity: .9; }
+      .nojs-note strong { color: var(--ink); font-weight: 700; }
+
+      @media (max-width: 480px) {
+        .nojs-card { padding: 32px 22px 26px; border-radius: 18px; }
+        .nojs-btn { flex: 1 1 auto; justify-content: center; }
+      }
+      @media (prefers-color-scheme: dark) {
+        .nojs {
+          --ink: #eaf5f0; --ink-soft: #a7c8bc; --line: rgba(160,210,195,.18);
+          --card: #0f2723; --page1: #0a1f1b; --page2: #061310;
+          --pine: #37c684; --pine-strong: #2ea774; --pine-ink: #06231b; --glow: 48 186 120;
+        }
+        .nojs-card { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 30px 70px -30px rgba(0,0,0,.72); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .nojs-card { animation: none; }
+        .nojs-btn { transition: none; }
+      }
+    </style>
+  </noscript>
 </head>
 <body>
   <a class="skip-link" href="#view">Skip to content</a>
   <div id="app">
     <main id="view" class="app-view" tabindex="-1">
       <p class="loading">Loading…</p>
+      <noscript>
+        <section class="nojs" aria-label="Welcome to Lolly">
+          <div class="nojs-card">
+            <img class="nojs-mark" src="/icons/icon-192.png" width="76" height="76" alt="Lolly" decoding="async" />
+            <h1 class="nojs-title">Lolly</h1>
+            <p class="nojs-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>
+              JavaScript Required
+            </p>
+            <p class="nojs-lead">
+              Lolly makes design assets in your browser.<br>
+              Everything stays on your device.<br>
+              It needs <strong>JavaScript switched on</strong> to run.
+            </p>
+            <div class="nojs-actions">
+              <a class="nojs-btn nojs-btn--primary" href="/info/">
+                What is Lolly?
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              </a>
+              <a class="nojs-btn" href="/info/getting-started.html">Getting started</a>
+            </div>
+            <p class="nojs-note">
+              The guides above work without JavaScript. To use the app itself,
+              <strong>turn JavaScript on and reload this page.</strong>
+            </p>
+            <p class="nojs-formats-label">Exports to</p>
+            <ul class="nojs-formats" aria-label="Formats Lolly exports">
+              <li>PNG</li><li>JPG</li><li>WebP</li><li>AVIF</li><li>GIF</li><li>TIFF</li><li>ICO</li>
+              <li>SVG</li><li>PDF</li><li>EPS</li><li>EMF</li><li>DXF</li>
+              <li>PDF/CMYK</li><li>EPS/CMYK</li><li>CMYK TIFF</li>
+              <li>APNG</li><li>Animated WebP</li><li>Animated SVG</li><li>MP4</li><li>WebM</li>
+              <li>PPTX</li>
+              <li>HTML</li><li>Markdown</li><li>TXT</li><li>CSV</li><li>JSON</li>
+              <li>ICS</li><li>VCF</li><li>ZIP</li>
+            </ul>
+          </div>
+        </section>
+      </noscript>
     </main>
   </div>
 

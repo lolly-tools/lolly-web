@@ -1166,8 +1166,21 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           audioOpt = { audio: { id: audioId, url: ref.url, fadeIn, fadeOut, volume, duck } };
         }
       }
+      // Surface progress on the button for slow non-animated exports — the CMYK
+      // TIFF pass and the SVG/PDF vector walk emit onProgress, which was being
+      // discarded (the label sat on a static "Exporting…"). Throttle to integer
+      // percent so a per-row callback can't thrash the DOM. Animated formats keep
+      // their own time-based label (guarded by isAnimated).
+      let lastExportPct = -1;
       const opts: RunExportOpts = {
         ...exportDims(),
+        onProgress: (done, total) => {
+          if (isAnimated || total <= 0) return;
+          const pct = Math.floor((done / total) * 100);
+          if (pct === lastExportPct) return;
+          lastExportPct = pct;
+          btn.textContent = `Exporting… ${pct}%`;
+        },
         ...(isAnimated ? videoParams() : {}),
         ...audioOpt,
         ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
