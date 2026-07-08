@@ -3033,43 +3033,74 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
     }
 
     if (tag === 'text') {
-      let fillStr = el.getAttribute('fill');
-      if (!fillStr || fillStr === 'currentColor') fillStr = computedPaint(el, 'fill') || '#000000';
-      let rgb = parseSvgColor(fillStr);
-      // Fall back to the COMPUTED fill when the attribute is a named/CSS colour
-      // that didn't parse, so <text fill="navy"> isn't silently dropped.
-      if (!rgb) rgb = parseSvgColor(computedPaint(el, 'fill'));
-      if (!rgb) return;
-      const opacity = parseFloat(el.getAttribute('opacity') ?? el.getAttribute('fill-opacity') ?? '1');
-      if (opacity < 0.01) return;
-      if (opacity < 0.999) rgb = blendSvgWithWhite(rgb, opacity);
-      const text = (el.textContent ?? '').trim();
-      if (!text) return;
-      const xt = PX(svgLen(el.getAttribute('x'), vbW));
-      const yt = PY(svgLen(el.getAttribute('y'), vbH));
-      // Font props: attribute first, else the COMPUTED style — tools that set the
-      // typeface/size/weight via CSS (chart-creator/d3 → SUSE) otherwise fell back
-      // to Helvetica at the default size in PDF.
-      const cs = (typeof window !== 'undefined' && el.isConnected) ? window.getComputedStyle(el) : null;
-      const fs = parseFloat(el.getAttribute('font-size') ?? cs?.fontSize ?? '16') * gAvg * rAvg;
-      const fw = parseInt(el.getAttribute('font-weight') ?? cs?.fontWeight ?? '400') || 400;
-      const fontStyleStr = el.getAttribute('font-style') ?? cs?.fontStyle ?? '';
-      const italic  = fontStyleStr === 'italic' || fontStyleStr === 'oblique';
-      const anchor  = el.getAttribute('text-anchor') ?? 'start';
-      const family  = (el.getAttribute('font-family') ?? cs?.fontFamily ?? '').toLowerCase();
-      pdf.setTextColor(rgb[0], rgb[1], rgb[2]);
-      pdf.setFontSize(Math.max(1, fs));
-      let fontSet = false;
-      if (family.includes('suse') && registeredFonts) {
-        const mono = family.includes('mono');
-        const suseStyle = await embedSuseFont(pdf, registeredFonts, fw, italic, mono);
-        if (suseStyle) { pdf.setFont(suseFontName(mono), suseStyle); fontSet = true; }
+      // Draw ONE run (the <text> itself, or one <tspan>) at (userX,userY) in the element's
+      // own style, then return its advance in USER units. Font props: attribute first, else
+      // the COMPUTED style — tools that set the typeface/size/weight via CSS (chart-creator/d3
+      // → SUSE) otherwise fell back to Helvetica at the default size. Advance uses the
+      // browser's measured getComputedTextLength (a length → maps like the x attrs); jsPDF's
+      // width is the fallback. Baseline y matches jsPDF's default (SVG y IS the baseline).
+      const drawRun = async (styleEl: any, runText: string, userX: number, userY: number, anchor: string): Promise<number> => {
+        const t = (runText ?? '').trim();
+        if (!t) return 0;
+        const cs = (typeof window !== 'undefined' && styleEl.isConnected) ? window.getComputedStyle(styleEl) : null;
+        let fillStr = styleEl.getAttribute('fill');
+        if (!fillStr || fillStr === 'currentColor') fillStr = computedPaint(styleEl, 'fill') || '#000000';
+        let rgb = parseSvgColor(fillStr) ?? parseSvgColor(computedPaint(styleEl, 'fill'));
+        const op = parseFloat(styleEl.getAttribute('opacity') ?? styleEl.getAttribute('fill-opacity') ?? '1');
+        const fs = parseFloat(styleEl.getAttribute('font-size') ?? cs?.fontSize ?? '16') * gAvg * rAvg;
+        const fw = parseInt(styleEl.getAttribute('font-weight') ?? cs?.fontWeight ?? '400') || 400;
+        const fst = styleEl.getAttribute('font-style') ?? cs?.fontStyle ?? '';
+        const italic = fst === 'italic' || fst === 'oblique';
+        const family = (styleEl.getAttribute('font-family') ?? cs?.fontFamily ?? '').toLowerCase();
+        pdf.setFontSize(Math.max(1, fs));
+        let fontSet = false;
+        if (family.includes('suse') && registeredFonts) {
+          const mono = family.includes('mono');
+          const suseStyle = await embedSuseFont(pdf, registeredFonts, fw, italic, mono);
+          if (suseStyle) { pdf.setFont(suseFontName(mono), suseStyle); fontSet = true; }
+        }
+        if (!fontSet) pdf.setFont('helvetica', fw >= 600 ? (italic ? 'bolditalic' : 'bold') : (italic ? 'italic' : 'normal'));
+        // Draw only when visible + paintable, but ALWAYS measure so following inline runs flow.
+        if (rgb && op >= 0.01) {
+          if (op < 0.999) rgb = blendSvgWithWhite(rgb, op);
+          pdf.setTextColor(rgb[0], rgb[1], rgb[2]);
+          const align = anchor === 'middle' ? 'center' : anchor === 'end' ? 'right' : 'left';
+          pdf.text(t, PX(userX), PY(userY), { align });
+        }
+        let wUser = 0;
+        try { wUser = typeof styleEl.getComputedTextLength === 'function' ? styleEl.getComputedTextLength() : 0; } catch { wUser = 0; }
+        if (!wUser) { const wpt = pdf.getTextWidth(t); wUser = (gAvg * rAvg) ? wpt / (gAvg * rAvg) : 0; }
+        return wUser;
+      };
+
+      const nodes = el.childNodes ? [...el.childNodes] : [];
+      const hasTspan = nodes.some((n: any) => n.nodeType === 1 && n.tagName?.toLowerCase() === 'tspan');
+      // Plain <text> (no tspans): one run at the text's own x/y — unchanged behaviour.
+      if (!hasTspan) {
+        await drawRun(el, el.textContent ?? '', svgLen(el.getAttribute('x'), vbW), svgLen(el.getAttribute('y'), vbH), el.getAttribute('text-anchor') ?? 'start');
+        return;
       }
-      if (!fontSet) {
-        pdf.setFont('helvetica', fw >= 600 ? (italic ? 'bolditalic' : 'bold') : (italic ? 'italic' : 'normal'));
+      // Multi-run: a <tspan> may RESET the pen (x/y) or OFFSET it (dx/dy) and carry its own
+      // fill/font; a bare text node flows at the pen in the <text>'s style. Positions resolve
+      // from attributes (same user space as PX/PY) so multi-line / positioned tspan text lays
+      // out like the browser instead of collapsing every line onto the parent's baseline.
+      let penX = svgLen(el.getAttribute('x'), vbW);
+      let penY = svgLen(el.getAttribute('y'), vbH);
+      const textAnchor = el.getAttribute('text-anchor') ?? 'start';
+      for (const n of nodes) {
+        if (n.nodeType === 3) {                                   // bare text node — flows inline
+          if ((n.textContent ?? '').trim()) penX += await drawRun(el, n.textContent, penX, penY, 'start');
+        } else if (n.nodeType === 1 && (n as any).tagName?.toLowerCase() === 'tspan') {
+          const ts: any = n;
+          const emPx = parseFloat((ts.isConnected ? window.getComputedStyle(ts).fontSize : '') || ts.getAttribute('font-size') || '16') || 16;
+          const relLen = (v: string | null): number => { if (!v) return 0; const s = v.trim(); return s.endsWith('em') ? parseFloat(s) * emPx : (parseFloat(s) || 0); };
+          if (ts.hasAttribute('x')) penX = svgLen(ts.getAttribute('x'), vbW);
+          if (ts.hasAttribute('y')) penY = svgLen(ts.getAttribute('y'), vbH);
+          penX += relLen(ts.getAttribute('dx'));
+          penY += relLen(ts.getAttribute('dy'));
+          penX += await drawRun(ts, ts.textContent, penX, penY, ts.getAttribute('text-anchor') ?? textAnchor);
+        }
       }
-      const align = anchor === 'middle' ? 'center' : anchor === 'end' ? 'right' : 'left';
-      pdf.text(text, xt, yt, { align });
       return;
     }
 
