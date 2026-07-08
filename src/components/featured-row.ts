@@ -175,7 +175,7 @@ export function mountFeaturedRow(
   mount: HTMLElement,
   entriesIn: FeaturedEntry[],
   host: FeaturedHost,
-  opts: { viewMode?: FeaturedViewMode; label?: string; ariaLabel?: string; tileDragOut?: boolean; tileMenu?: boolean; labelHref?: string; labelHelp?: string } = {},
+  opts: { viewMode?: FeaturedViewMode; label?: string; ariaLabel?: string; tileDragOut?: boolean; tileMenu?: boolean; labelHref?: string; labelHelp?: string; onActivate?: (id: string) => void } = {},
 ): FeaturedRowHandle {
   const entries = [...entriesIn].sort(byFeaturedOrder);
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -188,6 +188,13 @@ export function mountFeaturedRow(
   // Per-tile ⋯ menu button (Projects' Uncategorised ribbon): a visible, touch-friendly handle
   // whose click the consumer delegates to its own actions menu (Move to folder…, Rename, …).
   const tileMenu = opts.tileMenu === true;
+  // In-view activation: when the consumer wants a tile press to DO something in place
+  // (e.g. open a modal) rather than navigate a route, it passes onActivate. Tiles then
+  // hand their id to it instead of following their href — which is what keeps the
+  // catalogue favourites strip's "Open" (a same-route #/c?asset=… link) from being
+  // swallowed by the router's same-route dedupe. The <a href> is kept as the middle- /
+  // ⌘-click "open in new tab" + no-JS deep-link fallback.
+  const onActivate = opts.onActivate;
 
   mount.innerHTML = `
     <section class="featured${reduced ? ' featured--static' : ''}${coverflow ? ' featured--coverflow' : ''}" aria-label="${escape(opts.ariaLabel || opts.label || 'Featured tools')}" aria-roledescription="carousel">
@@ -594,6 +601,12 @@ export function mountFeaturedRow(
   // mousedown and mouseup resolve to different nodes (and which pointer capture can
   // retarget off the anchor) — the root of "Open sometimes does nothing" on desktop.
   const openLink = (link: HTMLAnchorElement | null): void => {
+    // Consumer-driven in-view open (see onActivate): hand the tile's id to the callback
+    // rather than navigating its href, so a same-route "Open" isn't lost to route dedupe.
+    if (onActivate) {
+      const id = link?.closest<HTMLElement>('.ftile')?.dataset.tool;
+      if (id) { onActivate(id); return; }
+    }
     const href = link?.href || link?.getAttribute('href');
     if (href) window.location.href = href;
   };
@@ -772,6 +785,17 @@ export function mountFeaturedRow(
     // so the anchor doesn't fire a second, duplicate navigation.
     if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); dragMoved = false; return; }
     if (dragMoved) { e.preventDefault(); e.stopPropagation(); dragMoved = false; return; }
+    // In-view activation (onActivate): a plain, unmodified click that DIDN'T come from a
+    // pointerup-open — keyboard Enter on the focused anchor, or any native click we didn't
+    // already handle — hands off to onActivate instead of the anchor's href navigation, so
+    // keyboard users get the same in-view open (and it isn't lost to route dedupe). Modified
+    // / middle clicks fall through so ⌘/ctrl/middle-click still open the deep link in a new
+    // tab. In Cover Flow only the centred cover activates; a side cover still centres below.
+    if (onActivate && e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)) {
+      const link = (e.target as Element | null)?.closest?.<HTMLAnchorElement>('.ftile-link');
+      const centredOrGallery = !coverflow || (link?.closest('.ftile')?.classList.contains('is-centred') ?? false);
+      if (link && centredOrGallery) { e.preventDefault(); e.stopPropagation(); openLink(link); return; }
+    }
     // Cover Flow: clicking a side cover brings it to the centre (select it) rather than
     // opening; only the already-centred cover opens its tool.
     if (coverflow) {

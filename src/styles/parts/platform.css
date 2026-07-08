@@ -69,7 +69,7 @@
   margin: 0 0 1.1rem;
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
-  border: 1px solid hsl(var(--border));
+  border: 0;
   border-radius: calc(var(--radius) * 1.25);
 }
 /* Section headings match the profile cards: small uppercase muted labels
