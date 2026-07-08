@@ -65,7 +65,7 @@ interface VerifyReport {
   checks: Check[];
   reason?: string;
   claim?: Claim;
-  environment?: Record<string, string | number | boolean> | null;
+  environment?: (Record<string, string | number | boolean> & { inputs?: Record<string, string> }) | null;
   author?: { name: string; email?: string };
   signer?: Signer;
   aiGenerated?: { kind: 'generated' | 'composite'; sourceType: string };
@@ -254,6 +254,25 @@ function fact(label: string, value: unknown, icon: keyof typeof ICONS): string {
   return `<div class="valid-fact"><dt>${ic}<span>${escape(label)}</span></dt><dd>${escape(String(value))}</dd></div>`;
 }
 
+// The scalar-input digest recorded by the writer's tools.lolly.export assertion
+// (env.inputs) — "what this was made from": the colours, sizes, toggles and short
+// text the tool rendered with. A compact key/value list under the fact grid, so
+// an inspected asset tells its own story. Empty in → nothing rendered.
+function inputsDigestHtml(inputs: Record<string, string> | undefined): string {
+  const entries = inputs ? Object.entries(inputs).filter(([, v]) => v != null && v !== '') : [];
+  if (!entries.length) return '';
+  const isColor = (v: string): boolean => /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
+  const rows = entries.map(([k, v]) => {
+    const sw = isColor(v) ? `<span class="valid-input-swatch" style="background:${escape(v)}" aria-hidden="true"></span>` : '';
+    return `<div class="valid-input-row"><dt>${escape(k)}</dt><dd>${sw}<span>${escape(v)}</span></dd></div>`;
+  }).join('');
+  return `
+    <div class="valid-inputs">
+      <h4>${svgIcon(ICONS.sparkle)}<span>Made from</span></h4>
+      <dl class="valid-input-list">${rows}</dl>
+    </div>`;
+}
+
 // The "checked on this device" footnote, wrapped as a professional callout: a
 // lock chip (privacy — nothing left the device) beside the explanatory prose.
 const deviceNote = (inner: string): string =>
@@ -414,8 +433,8 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
     .filter((x) => x.items.length);
   const sensitive = meta.fields.some((f) => f.sensitive);
   const n = meta.fields.length;
-  const section = (label: string, icon: keyof typeof ICONS, rows: string): string => `
-    <section class="valid-meta-group">
+  const section = (g: MetaGroup, label: string, icon: keyof typeof ICONS, rows: string): string => `
+    <section class="valid-meta-group${g === 'description' ? ' valid-meta-group--desc' : ''}">
       <h4>${svgIcon(ICONS[icon])}<span>${escape(label)}</span></h4>
       <dl>${rows}</dl>
     </section>`;
@@ -442,7 +461,7 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
     : `Remove it with the <a href="#/tool/strip-data">Hidden Data</a> tool.`}</p>
       <div class="valid-meta-grid">
         ${locationBlock}
-        ${groups.map((x) => section(META_GROUP_LABEL[x.g], META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}
+        ${groups.map((x) => section(x.g, META_GROUP_LABEL[x.g], META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}
       </div>
     </section>`;
 }
@@ -643,7 +662,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const { state, sub, identity } = resolveState(report);
   const claim: Partial<Claim> = report.claim ?? {};
   const signer: Partial<Signer> = report.signer ?? {};
-  const env: Record<string, string | number | boolean> = report.environment ?? {};
+  const env: Record<string, string | number | boolean> & { inputs?: Record<string, string> } = report.environment ?? {};
   const signedAt = claim.actions?.find((a) => a.when)?.when;
   const generator = claim.generatorInfo?.name
     ? `${claim.generatorInfo!.name}${claim.generatorInfo!.version ? ' ' + claim.generatorInfo!.version : ''}`
@@ -674,6 +693,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           ${fact(report.delivered ? 'Delivered by' : 'Made with', generator, report.delivered ? 'package' : 'lollipop')}
           ${fact('Signed', signedAt ? fmtDate(signedAt) : null, 'clock')}
           ${fact('Where', [env.surface, env.engine, env.os].filter(Boolean).join(' · ') || null, 'globe')}
+          ${fact('Size', env.dimensions, 'image')}
           ${fact('Signer', signer.commonName, 'seal')}
           ${fact('Identity', identity?.email, 'mail')}
           ${fact('Issuer', identity ? identity.issuer
@@ -687,6 +707,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
         <p class="valid-file"><strong>${escape(fileName)}</strong>${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}${report.reason ? ` — ${escape(report.reason)}` : ''}</p>
         ${selfnoteBlock}
         ${factsBlock}
+        ${inputsDigestHtml(env.inputs)}
       </div>`;
   const panelsBlock = `<div class="valid-panels">${summaryBlock}${stepsBlock}${checksBlock}</div>`;
   const verdictBadge = report.madeWithLolly ? '<span class="valid-lolly-badge" aria-hidden="true">✦</span>' : report.trusted ? '<span class="valid-trusted-badge" aria-hidden="true">✓</span>' : '';
