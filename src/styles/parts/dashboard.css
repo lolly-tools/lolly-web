@@ -27,7 +27,7 @@
   .dashboard-view.is-entering .plat-header,
   .dashboard-view.is-entering .plat-section,
   .dashboard-view.is-entering .dash-foot {
-    animation: card-in var(--enter-dur) var(--enter-ease) both;
+    animation: card-in var(--enter-dur) var(--enter-ease) backwards;
     animation-delay: calc(var(--enter-i, 0) * 0.05s);
   }
 }

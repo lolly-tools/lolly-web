@@ -61,7 +61,9 @@ function serveRepoStatic() {
       const outDir = resolve(__dirname, 'dist');
       for (const dir of ['catalog', 'tools', 'schemas']) {
         const src = resolve(repoRoot, dir);
-        if (existsSync(src)) cpSync(src, resolve(outDir, dir), { recursive: true });
+        // dereference: tools/ and catalog are profile VIEWS (symlink farms built
+        // by scripts/use-profile.ts) — copy the real files, not the links.
+        if (existsSync(src)) cpSync(src, resolve(outDir, dir), { recursive: true, dereference: true });
       }
     },
   };

@@ -53,13 +53,15 @@ function asPlainSelect(target: EventTarget | null): HTMLSelectElement | null {
   return sel;
 }
 
-/** Move the selection one enabled step in `dir` (clamped) and fire input+change. */
+/** Move the selection one enabled step in `dir` (clamped) and fire input+change.
+ *  Skips `hidden` options too — the select-search filter box hides non-matching
+ *  options, and scrubbing must not land on a value the user just filtered away. */
 function step(sel: HTMLSelectElement, dir: number): void {
   const opts = sel.options;
   let next = sel.selectedIndex;
   for (let n = sel.selectedIndex + dir; n >= 0 && n < opts.length; n += dir) {
     const o = opts[n];
-    if (o && !o.disabled) { next = n; break; }
+    if (o && !o.disabled && !o.hidden) { next = n; break; }
   }
   if (next === sel.selectedIndex) return;                        // already at an end
   sel.selectedIndex = next;

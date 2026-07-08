@@ -143,7 +143,9 @@ test('corpus: scoping every tool styles.css never leaks the token into parens or
   const toolsDir = fileURLToPath(new URL('../../../../tools', import.meta.url));
   let checked = 0;
   for (const d of readdirSync(toolsDir, { withFileTypes: true })) {
-    if (!d.isDirectory()) continue;
+    // tools/ is a profile VIEW (symlink farm — scripts/use-profile.ts), so tool
+    // dirs are symlinks here: Dirent.isDirectory() is false for them.
+    if (!d.isDirectory() && !d.isSymbolicLink()) continue;
     const p = `${toolsDir}/${d.name}/styles.css`;
     if (!existsSync(p)) continue;
     const css = readFileSync(p, 'utf8');

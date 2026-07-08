@@ -527,6 +527,17 @@
 .input-section:focus-within .input-row:has(.color-trigger):not(:focus-within) > .input-label,
 .input-section:focus-within .input-row:has(.color-trigger):not(:focus-within) .color-trigger-name { opacity: 0.45; }
 
+/* A container hosting an OPEN swatch popover never dims: opacity < 1 would make it an
+   atomic stacking context, so the fixed popover would render faded AND paint under
+   later siblings (same paint phase, later tree order). An open popover means the user
+   is choosing a colour — it must stay solid and on top no matter where focus sits.
+   Later + more specific than every dim rule above, so it wins. */
+.tool-inputs:focus-within .input-section:has(.color-popover:not([hidden])),
+.tool-inputs:focus-within > .input-row:has(.color-popover:not([hidden])),
+.input-section:focus-within .input-row:has(.color-popover:not([hidden])),
+.blocks-list:focus-within .block-item:has(.color-popover:not([hidden])),
+.block-fields:focus-within .block-control:has(.color-popover:not([hidden])) { opacity: 1; }
+
 @media (prefers-reduced-motion: reduce) {
   /* The global reset covers animations + scroll-behavior but not transitions. These
      include LAYOUT-affecting ones (tree reparent margin-left, chevron rotation) that

@@ -441,6 +441,20 @@ export function createAssetsAPI(db: AssetsDb) {
       return blob ?? null;
     },
 
+    /**
+     * Internal: the first synced catalog asset of a given type, or null. Lets a
+     * sibling bridge discover a well-known singleton document (e.g. the brand
+     * `tokens` asset) from the stored metadata — offline-safe once boot sync has
+     * run — instead of hardcoding a brand-specific id. Same rule as the MCP
+     * server's tokens resource (`idx.assets.find(a => a.type === …)`); getAll
+     * returns id order rather than index order, which only differs if a catalog
+     * ships more than one asset of a singleton type.
+     */
+    async _findMetaByType(type: AssetRef['type']): Promise<AssetMetaRecord | null> {
+      const all = await db.getAll('asset-meta');
+      return all.find(m => m.type === type) ?? null;
+    },
+
     async _blobCacheSize(): Promise<number> {
       const blobs = await db.getAll('asset-blob');
       return blobs.reduce((sum, b) => sum + (b?.size ?? 0), 0);

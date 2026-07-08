@@ -96,7 +96,7 @@
 /* Saved rows cascade in behind the drawer's slide (also the per-tool history
    modal). A tight, quick stagger; capped so a long list stays snappy. */
 @media (prefers-reduced-motion: no-preference) {
-  .saved-list .saved-row { animation: card-in var(--enter-dur) var(--enter-ease) both; }
+  .saved-list .saved-row { animation: card-in var(--enter-dur) var(--enter-ease) backwards; }
   .saved-list .saved-row:nth-child(1)  { animation-delay: 0.04s; }
   .saved-list .saved-row:nth-child(2)  { animation-delay: 0.07s; }
   .saved-list .saved-row:nth-child(3)  { animation-delay: 0.10s; }

@@ -86,10 +86,15 @@
 /* Staggered entrance cascade for a section's items as it opens (lib/reveal.ts sets a
    per-item --reveal-delay). Reuses the gallery's card-in keyframes so an input group
    or a catalog category unfolds with the same satisfying rise the gallery tiles have.
-   Gated to no-preference: under reduced motion the items simply appear. */
+   Gated to no-preference: under reduced motion the items simply appear.
+   Fill is `backwards`, NOT `both`: backwards still hides the item through its stagger
+   delay, but once the animation ends the item returns to its natural style — `both`
+   left a computed `translate: 0px` on it forever, which made the item the containing
+   block + stacking context for any position:fixed popover inside it (a colour field's
+   swatch panel: clipped by the section's overflow, painted under later sections). */
 @media (prefers-reduced-motion: no-preference) {
   .reveal-item {
-    animation: card-in var(--enter-dur, 0.32s) var(--enter-ease, cubic-bezier(.22, .61, .36, 1)) both;
+    animation: card-in var(--enter-dur, 0.32s) var(--enter-ease, cubic-bezier(.22, .61, .36, 1)) backwards;
     animation-delay: var(--reveal-delay, 0ms);
   }
 }
@@ -387,7 +392,7 @@
    pop-in delay is done in JS (a 240ms timer before .is-shown), so it only fades in. */
 .swatch-name-tip {
   position: fixed;
-  z-index: 10000;
+  z-index: 10002; /* above the portaled popovers (10001) it labels */
   transform: translate(-50%, -100%);
   padding: 3px 8px;
   border-radius: 7px;
