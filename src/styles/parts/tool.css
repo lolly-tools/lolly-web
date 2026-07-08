@@ -2378,6 +2378,47 @@ background-color:hsl(var(--background) / 1);
   .tool-canvas-outer.is-resizing { transition: none; }
 }
 
+/* ── Multi-page document editor (render.paged, e.g. multi-page-pdf) ──────────────
+   The whole document is laid out at full length and the CANVAS SURFACE scrolls, so
+   every page is visible and pages no longer "appear out of nowhere" from a one-page
+   clip. Each [data-pdf-page] box keeps its locked one-page size — that's what export
+   reads — it just stops bounding what the editor shows. The stage stays overflow:hidden
+   so the docked toggles keep their fixed spot; the outer wrapper is the scroll surface. */
+.tool-layout.is-paged .tool-stage { overflow: hidden; }
+.tool-layout.is-paged .tool-canvas-outer {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 24px 44px;                 /* side padding leaves room for the page shadows */
+  background: none;
+  box-shadow: none;                       /* each page carries its own shadow */
+  touch-action: pan-y;                    /* native vertical scroll on touch */
+}
+/* Grow the canvas to the full stacked height (it was locked to one page) and keep it at
+   its content height so the surface — not an inner one-page window — owns the scroll.
+   overflow:visible so each page's own drop-shadow shows instead of being clipped at the
+   canvas edge — safe here: export draws each [data-pdf-page] individually (never the whole
+   canvas) and every page clips its own content, so nothing can bleed into the output. */
+.tool-layout.is-paged #tool-canvas {
+  height: auto !important;
+  overflow: visible !important;
+  flex-shrink: 0;
+  box-shadow: none;
+  transform: none !important;             /* fit is via `zoom`, not a transform */
+}
+/* Undo the tool root's own fill-and-internal-scroll (e.g. .mpdf-doc { height:100%;
+   overflow:auto }) so the pages stack naturally to full length. Targets the mounted
+   root generically (skips the tool's <style>), never a tool-specific class. */
+.tool-layout.is-paged #tool-canvas > *:not(style) {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
 /* Export shutter — a CSS camera-iris that sweeps in to COVER the whole stage
    while the brief full-res resize during export (the "shake") happens, then
    sweeps back out. Template-agnostic: the live canvas is what's exported

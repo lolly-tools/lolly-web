@@ -7,7 +7,10 @@
 
 .verify-view { overflow-y: auto; }
 .verify-view .platform-layout {
-  width: 100%; max-width: 1080px; margin: 0 auto;
+  /* Fluid, not fixed — a report with several boxed sections earns more width
+     than a single narrow reading column; this still leaves generous margins
+     on very wide displays rather than going full-bleed. */
+  width: 100%; max-width: min(1320px, 94vw); margin: 0 auto;
   padding: 3.25rem 1.25rem 5rem; /* top clears the fixed "Tools" pill */
 }
 
@@ -66,6 +69,42 @@
 .valid-hero > div { min-width: 0; }
 .valid-hero h2 { margin: 0 0 0.25rem; font-size: 1.2rem; letter-spacing: -0.01em; }
 .valid-hero p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.9rem; max-width: 60ch; }
+
+/* ── Uploaded-media preview ──────────────────────────────────────────────────
+   A look at the file being checked — large at the top of the card, small beside
+   the embedded metadata. A faint checkerboard sits behind it so transparency
+   reads honestly. As the first child of the .valid-result grid, the large view
+   inherits the card's gap and sits above the verdict hero. */
+.valid-preview {
+  margin: 0;
+  border-radius: calc(var(--radius) - 0.35rem);
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  background:
+    conic-gradient(from 90deg, hsl(var(--muted-foreground) / 0.10) 25%, transparent 0 50%, hsl(var(--muted-foreground) / 0.10) 0 75%, transparent 0) 0 0 / 22px 22px,
+    hsl(var(--muted) / 0.5);
+  display: grid;
+  place-items: center;
+}
+.valid-preview img,
+.valid-preview video { display: block; max-width: 100%; height: auto; object-fit: contain; }
+.valid-preview--lg { max-height: 22rem; }
+.valid-preview--lg img,
+.valid-preview--lg video { max-height: 22rem; }
+.valid-preview--lg embed { display: block; width: 100%; height: 22rem; background: hsl(var(--muted)); }
+.valid-preview--sm { max-width: 12rem; justify-self: start; }
+.valid-preview--sm img,
+.valid-preview--sm video { max-height: 9rem; }
+/* Formats a browser can't decode inline (TIFF, MKV) — a quiet labelled tile. */
+.valid-preview.is-placeholder {
+  padding: 2rem 1rem;
+  gap: 0.5rem;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.4);
+  text-align: center;
+}
+.valid-preview-ic svg { width: 2.2rem; height: 2.2rem; opacity: 0.7; }
+.valid-preview.is-placeholder figcaption { font-size: 0.8rem; }
 
 /* ── The medallion — the page's signature. A struck, glossy seal that floats
    off the card. Green states get the full crown-jewel treatment (idle bob +
@@ -132,7 +171,7 @@
   background: radial-gradient(circle at 33% 25%, hsl(var(--vf-pass-1)), hsl(var(--vf-pass-2)) 72%);
   box-shadow:
     inset 0 2px 4px hsl(0 0% 100% / 0.55), inset 0 -9px 16px hsl(154 70% 16% / 0.55),
-    0 14px 34px -10px hsl(var(--vf-pass) / 0.7), 0 4px 12px -4px hsl(0 0% 0% / 0.4);
+    0 14px 20px -7px hsl(var(--vf-pass) / 0.27), 0 4px 12px -4px hsl(0 0% 0% / 0.24);
   animation: valid-medallion-float 4.8s ease-in-out infinite;
 }
 .valid-result.is-valid .valid-hero-icon svg,
@@ -154,7 +193,7 @@
   background: radial-gradient(circle at 33% 25%, hsl(210 18% 94%), hsl(215 13% 70%) 72%);
   box-shadow:
     inset 0 2px 4px hsl(0 0% 100% / 0.8), inset 0 -9px 16px hsl(215 20% 46% / 0.4),
-    0 14px 34px -10px hsl(215 16% 46% / 0.5), 0 4px 12px -4px hsl(0 0% 0% / 0.35);
+    0 14px 34px -10px hsl(215 16% 46% / 0.25), 0 4px 12px -4px hsl(0 0% 0% / 0.15);
 }
 
 /* Slow conic light sweep — the "struck coin catching the light" flourish,
@@ -214,7 +253,9 @@
 .valid-facts {
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  /* auto-fit + a capped max: more columns appear as the page widens, but a
+     lone fact on a wide screen stays a plate-sized card, not a stretched bar. */
+  grid-template-columns: repeat(auto-fit, minmax(210px, 250px));
   gap: 0.75rem;
 }
 /* The "made with" details — a struck-silver spec plate. Brushed metal, black
@@ -225,9 +266,9 @@
   position: relative;
   padding: 0.7rem 0.85rem 0.8rem;
   border-radius: 0.8rem;
-  border: 1px solid hsl(215 15% 60%);
+  border: 1px solid hsl(215 15% 80%);
   background: linear-gradient(165deg, hsl(210 20% 94%), hsl(215 13% 79%));
-  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.6), 0 1px 2px hsl(0 0% 0% / 0.12), 0 8px 18px -14px hsl(0 0% 0% / 0.5);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.6), 0 1px 2px hsl(0 0% 0% / 0.12), 0 8px 18px -14px hsl(0 0% 0% / 0.15);
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 .valid-fact:hover {
@@ -266,11 +307,22 @@
 }
 .valid-meta-note { margin: 0.45rem 0 0; font-size: 0.78rem; line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 68ch; }
 .valid-meta-note a { color: hsl(var(--primary)); text-underline-offset: 2px; }
+/* The "download a cleaned copy" action — deliberately just another inline text
+   link beside the Hidden Data tool link, not a CTA button, so a fast lossless
+   clean-up path sits quietly where a viewer just saw what the file discloses. */
+.valid-clean-link {
+  appearance: none; background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; font-size: 0.78rem; color: hsl(var(--primary));
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.valid-clean-link:hover { opacity: 0.8; }
+.valid-clean-link:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.valid-clean-link:disabled { color: hsl(var(--muted-foreground)); text-decoration: none; cursor: default; opacity: 0.8; }
 
 .valid-meta-grid {
   margin-top: 1.5rem;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 280px));
   gap: 1.6rem 2.4rem;
   align-items: start;
 }
@@ -303,9 +355,9 @@
 .valid-locator {
   display: block; width: 100%; max-width: 560px; height: auto;
   margin: 0.1rem 0 0; border-radius: 0.7rem;
-  background: hsl(var(--muted) / 0.35);
+  background: hsl(var(--muted) / 0);
 }
-.valid-locator-sea { fill: hsl(var(--muted) / 0.55); }
+.valid-locator-sea { fill: hsl(var(--muted) / 0); }
 .valid-locator-land {
   fill: hsl(var(--muted-foreground) / 0.26);
   stroke: hsl(var(--muted-foreground) / 0.4); stroke-width: 0.5; vector-effect: non-scaling-stroke;
@@ -345,7 +397,7 @@
   margin-top: auto;
   font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
   padding: 0.08rem 0.5rem; border-radius: 999px;
-  border: 1px solid currentColor; color: var(--ink);
+  border: 0; color: var(--ink);
   overflow-wrap: anywhere;
 }
 
@@ -354,7 +406,7 @@
   width: 6.25rem; min-height: 6.5rem;
   padding: 0.7rem 0.45rem 0.65rem;
   justify-content: center;
-  border: 1px solid hsl(var(--border));
+  border: 0;
   background: hsl(var(--muted) / 0.4);
   animation: valid-pip-in 0.5s cubic-bezier(0.2, 0.8, 0.3, 1.25) backwards;
   animation-delay: calc(var(--i, 0) * 70ms);
@@ -388,15 +440,16 @@
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-pass,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-fail,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-warn {
-  border: 1px solid hsl(0 0% 100% / 0.28);
+  border: 0;
   background: linear-gradient(163deg, hsl(var(--g1)), hsl(var(--g2)));
-  translate: 0 -3px;
+  
+  scale: 1;
   box-shadow:
     inset 0 1px 0 hsl(0 0% 100% / 0.5),
     inset 0 -10px 18px -8px hsl(0 0% 0% / 0.35),
     0 15px 28px -10px hsl(var(--glow)),
     0 6px 14px -6px hsl(0 0% 0% / 0.35);
-  transition: translate 0.18s ease, box-shadow 0.18s ease;
+  transition: scale 0.18s ease, box-shadow 0.18s ease;
 }
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-pass::before,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-fail::before,
@@ -471,46 +524,67 @@
   50%      { opacity: 0.78; transform: scale(1.12) rotate(8deg); }
 }
 
-/* ── Edit history — the credential's recorded actions as a vertical timeline. */
-.valid-steps { display: grid; gap: 0.7rem; }
-.valid-steps > h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.95rem; }
-.valid-steps > h3 svg { width: 1.05em; height: 1.05em; color: hsl(var(--muted-foreground)); }
-.valid-steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
-.valid-step {
-  position: relative;
-  display: grid; grid-template-columns: 1.9rem 1fr; align-items: center;
-  column-gap: 0.7rem; row-gap: 0.1rem;
-  padding-bottom: 0.85rem;
+/* ── Panels — "what happened" (edit history) and "what was checked" (assertion
+   log) as two distinct boxed sections rather than two lists silently stacked in
+   one column. A fluid grid: one column on narrow viewports, opens to two
+   wherever the page has the room — no hard breakpoint needed. */
+.valid-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.25rem;
+  align-items: start;
 }
-.valid-step:last-child { padding-bottom: 0; }
-.valid-step-ic {
-  grid-row: 1 / span 2; align-self: start; position: relative; z-index: 1;
-  width: 1.9rem; height: 1.9rem; border-radius: 50%;
-  display: grid; place-items: center;
-  background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
+.valid-panel {
+  display: grid; gap: 0.7rem; align-content: start; min-width: 0;
+  padding: 1rem 1.1rem 1.15rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.22);
+}
+.valid-panel > h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.95rem; }
+.valid-panel > h3 svg { width: 1.05em; height: 1.05em; color: hsl(var(--muted-foreground)); }
+
+/* ── Edit history — the credential's recorded actions as a timeline. Each row is
+   anchored by a colour-coded MAKER pill on the left: Lolly reads bold green (our
+   own edits, marked up prominently), an AI-sourced step reads violet, any other
+   maker a solid grey. The pill answers "who did this" at a glance; the row body
+   carries what they did. */
+.valid-steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.valid-step {
+  display: grid; grid-template-columns: minmax(3.6rem, max-content) 1fr;
+  column-gap: 0.75rem; row-gap: 0.12rem; align-items: start;
+}
+/* The maker pill — the left anchor. */
+.valid-step-agent {
+  grid-row: 1 / span 2; align-self: start; justify-self: stretch;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.24rem 0.55rem; border-radius: 999px;
+  font-size: 0.66rem; font-weight: 600; letter-spacing: 0.02em; line-height: 1.1;
+  text-align: center; white-space: nowrap;
+  background: hsl(var(--muted)); color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border));
 }
-.valid-step-ic svg { width: 1rem; height: 1rem; }
-/* Connector line joining the step dots. */
-.valid-step:not(:last-child)::before {
-  content: ''; position: absolute; left: 0.94rem; top: 1.9rem; bottom: -0.05rem; width: 2px;
-  background: hsl(var(--border)); z-index: 0;
+.valid-step.is-lolly .valid-step-agent {
+  background: linear-gradient(150deg, hsl(var(--vf-pass-1)), hsl(var(--vf-pass-2)));
+  color: hsl(0 0% 100%); font-weight: 800; border-color: hsl(0 0% 100% / 0.28);
+  box-shadow: 0 4px 12px -5px hsl(var(--vf-pass) / 0.65), inset 0 1px 0 hsl(0 0% 100% / 0.4);
 }
-.valid-step-label { align-self: center; font-weight: 650; font-size: 0.9rem; }
+.valid-step.is-ai .valid-step-agent {
+  background: linear-gradient(150deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
+  color: hsl(0 0% 100%); font-weight: 700; border-color: hsl(0 0% 100% / 0.28);
+  box-shadow: 0 4px 12px -5px hsl(var(--vf-ai) / 0.65), inset 0 1px 0 hsl(0 0% 100% / 0.4);
+}
+.valid-step-main { min-width: 0; display: grid; gap: 0.12rem; }
+.valid-step-label { display: flex; align-items: center; gap: 0.4rem; font-weight: 650; font-size: 0.9rem; }
+.valid-step-ic { display: inline-flex; flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
+.valid-step-ic svg { width: 0.95rem; height: 0.95rem; }
 .valid-step-meta {
-  grid-column: 2; align-items: center;
-  display: flex; flex-wrap: wrap; gap: 0.1rem 0.4rem;
+  display: flex; flex-wrap: wrap; gap: 0.1rem 0.4rem; align-items: center;
   font-size: 0.78rem; color: hsl(var(--muted-foreground));
 }
 .valid-step-dot { opacity: 0.5; }
 .valid-step-src { display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 600; }
 .valid-step-src svg { width: 0.9em; height: 0.9em; }
-/* AI-sourced step — violet dot + violet source tag, matching the banner. */
-.valid-step.is-ai .valid-step-ic {
-  background: linear-gradient(160deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
-  color: hsl(0 0% 100%); border-color: hsl(var(--vf-ai-1) / 0.6);
-  box-shadow: 0 4px 12px -4px hsl(var(--vf-ai) / 0.7);
-}
 .valid-step.is-ai .valid-step-src { color: hsl(var(--vf-ai)); }
 
 /* Compact AI chip in the collapsed multi-file summary row. */
@@ -551,9 +625,9 @@
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.4rem; height: 1.4rem; border-radius: 50%;
   font-size: 0.78rem; font-weight: 700; line-height: 1;
-  box-shadow: inset 0 0 0 1px currentColor;
+box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 1px #fff1;
 }
-.valid-check--ok .valid-check-mark { color: hsl(var(--vf-pass)); background: hsl(var(--vf-pass) / 0.16); }
+.valid-check--ok .valid-check-mark { color: hsl(var(--vf-pass)); background: hsl(var(--vf-pass) / 0.3);  }
 .valid-check--bad .valid-check-mark { color: hsl(var(--vf-fail)); background: hsl(var(--vf-fail) / 0.16); }
 .valid-check--info .valid-check-mark { color: hsl(var(--muted-foreground)); background: hsl(var(--muted-foreground) / 0.14); }
 .valid-check-text { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; align-items: baseline; }
@@ -639,6 +713,22 @@
 .valid-item-badge.is-warn { color: hsl(var(--vf-warn)); background: hsl(var(--vf-warn) / 0.14); }
 .valid-item-badge.is-none { color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.5); }
 .valid-item-badge.is-busy { color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.4); border-style: dashed; }
+
+/* Maker pill — the "who made it" lead on an intact collapsed row, mirroring the
+   timeline's maker pills: Lolly reads the same glossy green as the good badge,
+   every other vendor a solid grey. */
+.valid-item-maker {
+  flex: 0 0 auto; white-space: nowrap;
+  font-size: 0.74rem; font-weight: 700;
+  padding: 0.15rem 0.6rem; border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted)); color: hsl(var(--foreground));
+}
+.valid-item-maker.is-lolly {
+  color: hsl(0 0% 100%); font-weight: 800; border-color: hsl(0 0% 100% / 0.3);
+  background: linear-gradient(163deg, hsl(var(--vf-pass-1)), hsl(var(--vf-pass-2)));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.45), 0 4px 10px -5px hsl(var(--vf-pass) / 0.7);
+}
 
 .valid-item-name {
   flex: 1 1 8rem; min-width: 0;

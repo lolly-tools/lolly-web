@@ -664,6 +664,7 @@ stroke-width:.81;
   justify-content: flex-end;
   align-items: center;
   padding: 8px 12px;
+  aspect-ratio: auto;      /* drop the square — this is a slim Continue bar, not a preview */
   background: none;        /* drop the checkerboard placeholder */
   line-height: normal;     /* was 0 (for the image) — let the chip size the bar */
 }
@@ -747,12 +748,15 @@ stroke-width:.81;
   }
 }
 
-/* Hero preview — the most-recent session, natural aspect (no crop/letterbox). */
+/* Hero preview — a FIXED SQUARE box (matches the example carousels), the preview fitted
+   within via object-fit:contain. One uniform preview size across every card means the
+   masonry never reflows as art decodes or a session thumb of a different shape loads. */
 .gtile-hero {
   display: block;
   position: relative;
   isolation: isolate;                /* contain the .gtile-iconfill backdrop's z-index:-1 */
   width: 100%;
+  aspect-ratio: 1 / 1;               /* square preview area — the preview contains within it */
   padding: 0;
   border: 0;
   margin: 0;
@@ -760,11 +764,17 @@ stroke-width:.81;
   background: repeating-conic-gradient(#ffffff06 0% 25%,#00000006 0% 50%) 50%/.5em .5em;
   line-height: 0;
 }
-/* object-fit:contain is a safety net against distortion: with correct intrinsic dims
-   (every preview SVG now carries width/height attrs — see build-svg-card.ts + the card
-   authoring) height:auto already yields the true box, but a Safari SVG-in-<img> that ever
-   reports a fallback 300×150 intrinsic must NEVER stretch to fill — it letterboxes instead. */
-.gtile-hero-img { width: 100%; height: auto; display: block; object-fit: contain; }
+/* Every hero image/iframe fills the square and letterboxes within (never cropped, never
+   stretched — a safety net too against a Safari SVG-in-<img> reporting a fallback 300×150
+   intrinsic). Absolute so it can't push the box off its 1:1 aspect. */
+.gtile-hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
 
 /* ── Icon backdrop ────────────────────────────────────────────────────────────
    The tool's inlined icon, always rendered behind a preview image/carousel as an
@@ -825,19 +835,11 @@ stroke-width:.81;
 /* Preview failed for good: pin the icon-only hero visible (it never got the load-driven
    .is-ready reveal) and lift the muted ghost a touch so the fallback still reads. */
 .gtile-hero--icononly .gtile-iconfill-base { color: hsl(var(--muted-foreground) / .32); }
-/* Cross-fade frames for a tile with several saved sessions. The first frame stays
-   in normal flow (so it sets the tile's natural height); the rest are stacked over
-   it. Only .is-active is opaque — the opacity transition IS the dissolve. On a
-   single-session tile (no .gtile-hero--rotate) the lone frame just shows at full
-   opacity, so this is inert there. */
-.gtile-hero-frame--over {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center bottom;
-}
+/* Cross-fade frames for a tile with several saved sessions. Every frame is already an
+   absolutely-filled, contained .gtile-hero-img (see above), stacked in the same square
+   box — so this only drives the dissolve. Only .is-active is opaque; the opacity
+   transition IS the dissolve. On a single-session tile (no .gtile-hero--rotate) the lone
+   frame just shows at full opacity, so this is inert there. */
 .gtile-hero--rotate .gtile-hero-frame {
   opacity: 0;
   transition: opacity 0.9s ease;
@@ -854,19 +856,17 @@ stroke-width:.81;
 
 /* ── Example preview strip (carousel) ────────────────────────────────────────
    A tile with manifest `examples`: a horizontally scroll-snapping strip of the
-   newest saved session (if any) then a few live-rendered example states. The box
-   is pinned to the tool's canvas aspect (inline style) so masonry packs it with no
-   reflow as art decodes; every slide is object-fit:contain (never cropped). */
+   newest saved session (if any) then a few live-rendered example states. The box is
+   a FIXED SQUARE so masonry packs it with no reflow — ever — and every slide is
+   object-fit:contain, so differently-shaped example looks fit within the one frame
+   without cropping and without resizing the box as the strip advances. */
 .gcar {
   position: relative;                /* anchor for nav, dots, badge, Continue chip */
   isolation: isolate;                /* contain the .gtile-iconfill backdrop's z-index:-1 */
   width: 100%;
+  aspect-ratio: 1 / 1;               /* uniform square preview area (matches .gtile-hero) */
   overflow: hidden;
   line-height: 0;
-  /* The box adopts each centred look's real aspect (gallery.ts applyCarAspect) so a tool's
-     differently-shaped examples show at their true size; glide the resize instead of jumping.
-     Only heterogeneous strips ever change, so this is inert for most tiles. */
-  transition: aspect-ratio .4s ease;
   background: repeating-conic-gradient(#ffffff06 0% 25%, #00000006 0% 50%) 50% / .5em .5em;
 }
 .gcar-track {
@@ -926,9 +926,9 @@ stroke-width:.81;
 
 /* Multi-page tools (render.paged) render their pages as a swipeable STACK — the same
    visual language as carousel-maker's featured card. Each page is an absolutely-positioned
-   layer, offset + slightly rotated by its depth (--d: 0 = front, on top). The gcar's
-   aspect-ratio is one page's aspect, so each page fills its box and the shadow/rim hug the
-   real page edge (no letterbox). */
+   layer, offset + slightly rotated by its depth (--d: 0 = front, on top). The gcar is a
+   fixed square; each page is object-fit:contain, so a portrait/landscape page fits within
+   the deck (letterboxed) rather than dictating the box shape. */
 .gcar-deck {
   position: relative;
   display: block;
@@ -1190,37 +1190,49 @@ a.gtile-name:focus-visible::after {
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }
-/* Intended output (primary format + canvas size) — the card answers "what will I
-   get?" at a glance. Sits under the description, set smaller with tabular figures so
-   the dimensions stay legible. */
-/* Available export formats — a compact chip row under the description. The default
-   (first-declared) format is filled with the accent so a browser sees at a glance what
-   they'll get; the rest are muted outlines showing the full range. Replaces the old
-   "format · dimensions" spec line (size lives in the info dialog now). */
-.gtile-formats {
+/* Export-format chips — moved OFF the card into the info (i) dialog. Grouped into
+   vector / raster / video / data sections (see gallery.ts showInfoDialog) with the
+   DEFAULT (first-declared) format filled with the accent. The Exports fact row gets
+   .meta-fmts-row so the dt sits above a full-width, wrapping chip block. */
+.meta-dialog-facts > div.meta-fmts-row {
+  grid-template-columns: 1fr;   /* stack the dt over the chips (they need the full width) */
+  gap: 6px;
+}
+.meta-fmt-groups { display: flex; flex-direction: column; gap: 7px; }
+.meta-fmt-grp { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.meta-fmt-kind {
+  flex: 0 0 3.6em;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground) / 0.75);
+}
+.meta-fmts {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
 }
-.gtile-fmt {
-  font-size: 9px;
+.meta-fmt {
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
   line-height: 1;
-  padding: 2px 5px;
-  border-radius: 4px;
+  padding: 3px 7px;
+  border-radius: 5px;
   white-space: nowrap;
-  color: hsl(var(--muted-foreground) / 0.7);
-  background: hsl(var(--muted) / 0.35);
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.4);
   border: 1px solid hsl(var(--border) / 0.6);
 }
-.gtile-fmt--default {
-  color: hsl(var(--primary) / 0.85);
-  background: hsl(var(--primary) / 0.1);
-  border-color: hsl(var(--primary) / 0.35);
+.meta-fmt--default {
+  color: hsl(var(--primary));
+  font-weight: 600;
+  background: hsl(var(--primary) / 0.12);
+  border-color: hsl(var(--primary) / 0.4);
 }
 
 /* Per-card (i) info / (h) history buttons — floated over the top-right of the

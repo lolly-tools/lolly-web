@@ -8,7 +8,7 @@
  * warn the user.
  */
 
-import { stripAssetModifiers } from '@lolly/engine';
+import { stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
 import type { StateAPI, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
 
 /** The saved payload: input values plus the runtime's `__`-prefixed markers. */

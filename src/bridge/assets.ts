@@ -14,10 +14,8 @@
  *   - on-demand → fetched lazily, then cached
  */
 
-import {
-  parseThemedAssetId, applyIconTheme, parseIconThemesDoc,
-  parseTreatedAssetId, parsePhotoTreatmentsDoc, wrapRasterWithTreatment, stripAssetModifiers,
-} from '@lolly/engine';
+import { parseThemedAssetId, applyIconTheme, parseIconThemesDoc } from '../../../../engine/src/icon-theme.ts';
+import { parseTreatedAssetId, parsePhotoTreatmentsDoc, wrapRasterWithTreatment, stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
 import type { AssetRef, AssetQuery } from '../../../../engine/src/bridge/host-v1.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
@@ -58,6 +56,11 @@ interface UserAssetRecord {
   width?: number;
   height?: number;
   meta?: Record<string, unknown>;
+  // Preserved Content Credentials captured at ingest — the raw C2PA manifest
+  // store only (no pixels/EXIF), so a placed credentialed image can carry its
+  // provenance into an export without re-hoarding the metadata upload strips.
+  credential?: Uint8Array;
+  credentialFormat?: string;
 }
 
 /** The record shape toAssetRef consumes — a user record or a catalog record resolved
@@ -520,6 +523,17 @@ export function createAssetsAPI(db: AssetsDb) {
         meta.formats.map(f => db.get('asset-blob', `${baseId}:${f.format}:${meta.version}`)),
       );
       return cached.some(Boolean);
+    },
+
+    // The Content Credentials captured for a user upload at ingest, if any — the
+    // raw C2PA manifest store + its original container format. The runtime uses
+    // this to preserve a placed credentialed asset's provenance as an export
+    // ingredient. Only user uploads can carry one; everything else is null.
+    async credential(id: string): Promise<{ store: Uint8Array; format: string } | null> {
+      if (!id.startsWith('user/')) return null;
+      const rec = await db.get('user-assets', id);
+      if (!rec?.credential || !rec.credentialFormat) return null;
+      return { store: rec.credential, format: rec.credentialFormat };
     },
   };
   return api;

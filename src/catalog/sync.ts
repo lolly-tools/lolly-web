@@ -16,6 +16,7 @@
  */
 
 import { verifyAssetChecksum } from '../bridge/assets.ts';
+import { assertToolIndexIntegrity } from './integrity.ts';
 
 /** One resolvable file for a catalog asset (an entry in an asset's `formats`).
  *  Structurally matches the bridge's AssetFormat so it flows into
@@ -193,7 +194,11 @@ async function syncTools(host: SyncHost): Promise<void> {
         host.log('info', 'Tool catalog unchanged (304)');
         return;
       }
-      const index = await resp.json() as ToolIndex;
+      const text = await resp.text();
+      // Fail closed when this build pins a catalog signing key; inert otherwise
+      // (catalog/integrity.ts). Throwing lands in the retry/offline path below.
+      await assertToolIndexIntegrity(text);
+      const index = JSON.parse(text) as ToolIndex;
       window.__toolIndex = index;
       const json = JSON.stringify(index);
       // Record whether the fetched bytes actually differ from the cached copy, reusing
