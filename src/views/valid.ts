@@ -23,7 +23,7 @@
  */
 
 import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
-import { verifyC2pa, pemToDer } from '@lolly/engine';
+import { verifyC2pa, pemToDer, c2paTrustAnchors } from '@lolly/engine';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
 import { armViewEnter } from '../view-enter.ts';
@@ -68,10 +68,17 @@ interface VerifyReport {
   signer?: Signer;
 }
 
-// The pinned Lolly root becomes the trust anchor. While the PEM is the empty
-// placeholder we pass NO options, so verification stays byte-identical to the
-// anchorless behaviour.
-const VERIFY_OPTS: { trustAnchors: Uint8Array[] } | undefined = CA_ROOT_PEM ? { trustAnchors: [pemToDer(CA_ROOT_PEM)] } : undefined;
+// Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
+// plus the vendored C2PA trust list (Google/Gemini, the camera makers, Bria,
+// …), so a credential from a recognised signer upgrades from "valid" to a
+// named, CA-verified identity — "signed by <issuer>". A self-signed on-device
+// export still reads as intact-but-untrusted (it chains to none of these).
+const VERIFY_OPTS: { trustAnchors: Uint8Array[] } = {
+  trustAnchors: [
+    ...(CA_ROOT_PEM ? [pemToDer(CA_ROOT_PEM)] : []),
+    ...c2paTrustAnchors(),
+  ],
+};
 
 const ICON_SHIELD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
 const ICON_CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;

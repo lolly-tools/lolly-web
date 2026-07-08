@@ -200,6 +200,31 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     ],
   },
   {
+    flag: 'import', id: 'cap-import', title: 'Import formats', icon: ICONS.install,
+    desc: 'Bring existing work in — photos, design files, tables and video. Every file is parsed on your device and never uploaded: design files open as an editable layout, images join your local library, and data fills a tool’s blocks.',
+    cards: [
+      { icon: ICONS.image, title: 'Images', features: [
+        { name: 'PNG · JPG · WebP · AVIF · HEIC/HEIF', desc: 'Drop a photo or graphic into any image picker or your <strong>My images</strong> library. Stills are downscaled and stripped of EXIF/GPS on ingest; iPhone HEIC/HEIF decodes even where the browser can’t, via a bundled fallback. AVIF reads wherever the browser decodes it.' },
+        { name: 'Animated GIF · APNG · animated WebP', desc: 'Animated rasters are recognised and kept <em>verbatim</em> — frames intact — so a looping GIF or animated PNG stays animated when you place it.' },
+        { name: 'SVG', desc: 'Vector artwork is sanitised — scripts, <code>on*</code> handlers and <code>javascript:</code> URLs are stripped — and normalised to a clean viewBox before it’s stored.' },
+      ] },
+      { icon: ICONS.vector, title: 'Design files', features: [
+        { name: 'Figma · Penpot · Illustrator · InDesign · PDF', desc: 'Layout Studio imports a native Figma <code>.fig</code>, a Penpot export, an Illustrator <code>.ai</code> or any <code>.pdf</code>, and an InDesign <code>.idml</code> — each parsed in the browser into editable boxes. Text stays text, shapes stay shapes, complex art flattens faithfully.' },
+        { name: 'Any SVG is the wide door', desc: 'Almost every design app can export SVG, so an SVG export becomes an editable, brand-conformed layout — the universal way in.' },
+      ] },
+      { icon: ICONS.doc, title: 'Data & animation', features: [
+        { name: 'CSV · JSON', desc: 'Paste or drop a table and a tool’s repeating blocks fill from it — RFC 4180 CSV (quoted fields, embedded newlines) or JSON rows/arrays, up to a thousand rows.' },
+        { name: 'Lottie (.json · .lottie)', desc: 'Bodymovin JSON and dotLottie animations validate and place as live vector animations.' },
+      ] },
+      { icon: ICONS.film, title: 'Video', features: [
+        { name: 'MP4 · MOV · WebM', desc: 'Video files are stored <em>verbatim</em> — never transcoded — and their dimensions probed locally, ready to place in motion tools.' },
+      ] },
+      { icon: ICONS.credential, title: 'Content Credentials (verify)', features: [
+        { name: 'Read provenance from any file', desc: 'Verify checks a signed <a href="https://c2pa.org" target="_blank" rel="noopener">C2PA</a> manifest embedded in PDF, PNG/APNG, JPG, GIF, SVG, TIFF, WebP, MP4 and WebM/MKV — cryptographically, entirely on-device. See <a href="#/verify">Verify</a>.' },
+      ] },
+    ],
+  },
+  {
     flag: 'print', id: 'cap-print', title: 'Print production', icon: ICONS.printer,
     desc: 'Press-ready output computed entirely on-device — the engine owns the dimension and colour maths, and each shell draws it. No print service, no upload.',
     cards: [
@@ -246,10 +271,10 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Cheap & deterministic', desc: 'A parameterised URL is a few tokens and always renders the same press-quality result locally — no prompt drift, no stochastic surprises in production.' },
       ] },
       { icon: ICONS.mcp, title: 'MCP server (add-on)', features: [
-        { name: 'Native agent endpoint', desc: 'An optional <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> server any MCP client (Claude Code, an agent runtime) connects to — discover a tool, fill its declared inputs, and get back an on-brand file plus an editable link. Tools sync as data, so it needs no app update.' },
+        { name: 'Native agent endpoint', desc: 'An optional <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> server that any MCP client — an agent runtime, an IDE, a script — connects to: discover a tool, fill its declared inputs, and get back an on-brand file plus an editable link. Tools sync as data, so it needs no app update.' },
         { name: 'Every format an agent asks for', desc: 'One <code>lolly_render</code> call returns vector (SVG/PDF/EPS/DXF), raster (PNG/JPG/WebP/AVIF/TIFF), motion (MP4/WebM/GIF/APNG/Animated WebP/Animated SVG), documents (PowerPoint) or data — the server picks how to render each; the agent just names a format the tool declares.' },
         { name: 'A hosted add-on — not offline or edge', desc: 'Unlike the rest of Lolly, the MCP server is a <strong>server-side component</strong>: producing the full format range drives a headless browser against a built web shell, so it runs as a hosted service and is <strong>not suitable for offline or edge deployments</strong>. The on-device shells — web, desktop, mobile and CLI — stay the offline / air-gapped path.' },
-        { name: 'Connect from claude.ai or Claude Code', desc: 'Add the hosted endpoint to claude.ai as a <strong>custom connector</strong> (OAuth 2.1), or point Claude Code / any MCP client at it with a bearer token. Either way the client authenticates before it can render, and access is verified statelessly on every call — no session store to breach. See <strong>Security &amp; access control</strong>.' },
+        { name: 'Connect any MCP client', desc: 'Register the hosted endpoint as a <strong>custom connector</strong> (OAuth 2.1) in any client that supports one, or point an MCP-capable agent or IDE at it with a bearer token. Either way the client authenticates before it can render, and access is verified statelessly on every call — no session store to breach. See <strong>Security &amp; access control</strong>.' },
       ] },
     ],
   },
@@ -337,7 +362,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Allowlisted network only', desc: 'The one network path a tool has is the host’s allowlisted fetch, which the host can deny per the tool’s manifest. There is no other route out, so a template can’t exfiltrate what you type.' },
       ] },
       { icon: ICONS.mcp, title: 'Access-controlled agent endpoint', features: [
-        { name: 'OAuth 2.1 on the MCP server', desc: 'The optional hosted MCP server is gated by <strong>OAuth 2.1</strong> — add it to claude.ai as a custom connector, or bring a bearer token from Claude Code. Client registration, authorization codes and tokens are short-lived signed values (PKCE-protected) verified on each call, so there is no session store to breach. The on-device shells need no server at all and stay behind your firewall.' },
+        { name: 'OAuth 2.1 on the MCP server', desc: 'The optional hosted MCP server is gated by <strong>OAuth 2.1</strong> — register it as a custom connector in any MCP client, or bring a bearer token from an MCP-capable agent or IDE. Client registration, authorization codes and tokens are short-lived signed values (PKCE-protected) verified on each call, so there is no session store to breach. The on-device shells need no server at all and stay behind your firewall.' },
       ] },
       { icon: ICONS.credential, title: 'Tamper-evident provenance', features: [
         { name: 'Prove what made a file', desc: 'Exports can carry a signed, on-device <a href="https://c2pa.org" target="_blank" rel="noopener">C2PA</a> credential recording the tool, author and export — no cloud signing service — and <a href="#/verify">Verify</a> checks any file locally. See <strong>Privacy &amp; data ownership</strong>.' },

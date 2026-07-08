@@ -504,7 +504,7 @@
 .cat-dl-themes { display: flex; flex-wrap: wrap; gap: 6px; }
 .cat-dl-theme { padding: 3px; border: 2px solid transparent; border-radius: 999px; background: none; cursor: pointer; }
 .cat-dl-theme.is-active { border-color: hsl(var(--primary)); }
-.cat-dl-duo { display: inline-flex; width: 30px; height: 18px; border-radius: 999px; overflow: hidden; border: 1px solid #0002; }
+.cat-dl-duo { display: inline-flex; width: 30px; height: 18px; border-radius: 999px; overflow: hidden; border: 0; }
 .cat-dl-duo i { flex: 1; }
 .cat-dl-fmt { display: flex; gap: 16px; font-size: .9rem; }
 .cat-dl-fmt label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }

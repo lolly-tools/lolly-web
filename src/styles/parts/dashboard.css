@@ -314,7 +314,8 @@
    that expands below. Folded groups keep the whole map scannable at a glance. */
 .dash-cap-group {
   margin: 0 0 .7rem;
-  border: 1px solid hsl(var(--border));
+  border: 0;
+      box-shadow: 0 .1rem 1rem #0003;
   border-radius: 14px;
   background: hsl(var(--card) / 0.4);
   overflow: hidden;
@@ -346,7 +347,7 @@
 .dash-cap-card {
   width: 100%; display: flex; flex-direction: column; gap: .65rem;
   padding: 1rem 1.05rem .8rem; text-align: left; font: inherit; color: inherit; cursor: pointer;
-  background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * 1.1);
+  background: hsl(var(--background)); border:0; border-radius: calc(var(--radius) * 1.1);
   transition: border-color .15s ease, background .15s ease, transform .12s ease, box-shadow .15s ease;
 }
 .dash-cap-card:hover {
@@ -407,7 +408,7 @@
   padding: 0;
   width: min(560px, 92vw);
   max-width: 92vw;
-  border: 1px solid hsl(var(--border));
+  border: none;
   border-radius: calc(var(--radius) * 1.25);
   background: hsl(var(--card));
   color: hsl(var(--foreground));

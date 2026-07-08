@@ -880,6 +880,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       viewMode: favView,
       label: 'Favourites',
       ariaLabel: 'Favourite assets',
+      // Open the asset's details modal in place. The tiles' hrefs point at this same view
+      // (#/c?asset=…), so a route navigation would be swallowed by the router's same-route
+      // dedupe (→ "Open does nothing"); opening the modal directly also preserves the grid's
+      // scroll/expansion state and lets the same favourite be reopened repeatedly.
+      onActivate: (id) => { const ref = assetById.get(id); if (ref) openDetails(ref, catIconTheme, catPhotoTreatment); },
     });
   }
 
