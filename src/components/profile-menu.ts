@@ -97,6 +97,10 @@ export function attachProfileMenu(
       ${savedCount ? `<button type="button" class="profile-menu-item" role="menuitem" data-act="history">
         <span>Saved sessions</span><span class="profile-menu-count">${savedCount}</span>
       </button>` : ''}
+      <a class="profile-menu-item" role="menuitem" href="#/start" data-act="brand">
+        <span>Set up your brand</span>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+      </a>
       <a class="profile-menu-item" role="menuitem" href="#/profile" data-act="settings">
         <span>Settings</span>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
@@ -152,7 +156,10 @@ export function attachProfileMenu(
       close();
       onHistory?.();
     });
-    // Settings is a plain hash link; just let it navigate, closing the menu first.
+    // Brand wizard + Settings are plain hash links; just let them navigate,
+    // closing the menu first. The wizard entry shows always — a branded user
+    // re-running it is a supported path (it overwrites the user tokens).
+    el.querySelector('[data-act="brand"]')?.addEventListener('click', () => close());
     el.querySelector('[data-act="settings"]')?.addEventListener('click', () => close());
 
     outside = (e) => { if (menu && !menu.contains(e.target as Node) && !trigger.contains(e.target as Node)) close(); };

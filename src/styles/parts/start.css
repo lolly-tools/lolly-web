@@ -1,0 +1,220 @@
+/*
+ * #/start — brand wizard (views/start.ts). Async CSS chunk, loaded with the view.
+ *
+ * Chrome colours flow through the tokens.css HSL variables; the preview ramps
+ * and specimen cards carry DERIVED BRAND values inline from the view (that's
+ * the point — the brand is shown in its own colours, not the shell's).
+ */
+
+.start {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 20px 90px;
+}
+
+.start-back {
+  display: inline-block;
+  margin-bottom: 22px;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  text-decoration: none;
+}
+.start-back:hover { color: hsl(var(--foreground)); }
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.start-head { margin-bottom: 30px; max-width: 560px; }
+.start-eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+}
+.start-title {
+  margin: 0 0 10px;
+  font-size: clamp(28px, 4.5vw, 42px);
+  font-weight: 780;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.start-sub {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: hsl(var(--muted-foreground));
+}
+
+/* ── Two-column shell: controls | live preview ───────────────────────────── */
+.start-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+@media (max-width: 880px) { .start-grid { grid-template-columns: 1fr; } }
+
+.start-controls { display: flex; flex-direction: column; gap: 16px; }
+
+.start-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.6);
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+}
+
+.start-field { display: flex; flex-direction: column; gap: 8px; }
+.start-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+}
+/* The shared .view-seg buttons stretch evenly; let long labels wrap the row. */
+.start-seg { flex-wrap: wrap; }
+.start-seg .view-seg-btn { flex: 1 1 auto; }
+
+/* Primary CTA — filled, unmistakable (self-contained: the generic .btn rule
+   ships with the tool view's lazy sheet, so we don't lean on it here). */
+.start-cta {
+  padding: 11px 18px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: var(--radius);
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.start-cta:hover { filter: brightness(1.08); }
+.start-cta:disabled { opacity: 0.6; cursor: default; }
+.start-cta-note {
+  margin: -8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+.start-error {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: hsl(var(--destructive));
+}
+
+/* ── Import panel ────────────────────────────────────────────────────────── */
+.start-import { gap: 10px; }
+.start-import-title { margin: 0; font-size: 15px; font-weight: 700; }
+.start-import-sub { margin: 0 0 4px; font-size: 12.5px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.start-import-btn {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.start-import-btn:hover { border-color: hsl(var(--primary) / 0.5); }
+.start-import-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+}
+.start-import-name { margin: 0; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.start-import-source {
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.start-import-stats { margin: 0; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.start-import-warn { margin: 0; font-size: 12px; color: hsl(var(--muted-foreground)); font-style: italic; }
+.start-import-err { margin: 0; font-size: 12.5px; font-weight: 600; color: hsl(var(--destructive)); }
+.start-cta--import { align-self: flex-start; padding: 8px 14px; font-size: 13px; }
+
+/* ── Live preview ────────────────────────────────────────────────────────── */
+.start-preview-mount { display: flex; flex-direction: column; gap: 22px; }
+
+.start-ramps { display: flex; flex-direction: column; gap: 12px; }
+.start-ramp-row { display: flex; flex-direction: column; gap: 5px; }
+.start-ramp-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+}
+.start-ramp {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 3px;
+  border-radius: calc(var(--radius) * 0.9);
+  overflow: hidden;
+}
+.start-ramp-cell { height: 34px; border-radius: 4px; }
+
+/* Specimen cards — one per theme, side by side. All colours arrive inline. */
+.start-specs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 560px) { .start-specs { grid-template-columns: 1fr; } }
+
+.start-spec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid; /* colour comes inline (the theme's --edge) */
+  border-radius: calc(var(--radius) * 1.6);
+  min-height: 190px;
+}
+.start-spec-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.start-spec-name {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.start-spec-default {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.start-spec-heading { margin: 0; font-size: 19px; font-weight: 750; letter-spacing: -0.01em; line-height: 1.2; }
+.start-spec-body { margin: 0; font-size: 13px; line-height: 1.55; }
+.start-spec-rule { width: 100%; margin: 2px 0; border: 0; border-top: 1px solid; }
+.start-spec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; }
+.start-spec-btn {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.start-spec-ratio { font-size: 11px; font-variant-numeric: tabular-nums; }
