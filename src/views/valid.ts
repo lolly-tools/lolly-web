@@ -69,6 +69,7 @@ interface VerifyReport {
   author?: { name: string; email?: string };
   signer?: Signer;
   aiGenerated?: { kind: 'generated' | 'composite'; sourceType: string };
+  history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown }>;
 }
 
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
@@ -330,6 +331,7 @@ function summaryInner(fileName: string, report: VerifyReport): string {
   const who = identity ? (identity.email || report.signer?.organization || report.signer?.commonName) : null;
   return `
     <span class="valid-item-badge is-${stateTone(report)}">${escape(state.title)}</span>
+    ${report.aiGenerated ? `<span class="valid-item-ai" title="Content Credential declares AI-generated content">${svgIcon(ICONS.aiSpark)}<span>AI</span></span>` : ''}
     <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
     ${who ? `<span class="valid-item-signer" title="Signed by ${escape(who)}">${svgIcon(ICONS.mail)}<span>${escape(who)}</span></span>` : ''}
     ${miniScoreHtml(report)}
@@ -465,17 +467,19 @@ const sourceSlug = (a: { digitalSourceType?: unknown }): string =>
   (typeof a.digitalSourceType === 'string' ? a.digitalSourceType : '').split('/').pop() ?? '';
 
 function stepsHtml(report: VerifyReport): string {
-  const acts = report.claim?.actions ?? [];
+  // The full provenance chain (all manifests) when the engine surfaced it, else
+  // just the active manifest's own actions.
+  const acts = report.history?.length ? report.history : (report.claim?.actions ?? []);
   if (!acts.length) return '';
   const rows = acts.map((a) => {
     const code = String(a.action ?? '');
-    const label = ACTION_LABEL[code] ?? code.replace(/^c2pa\./, '') || 'Step';
+    const label = ACTION_LABEL[code] ?? (code.replace(/^c2pa\./, '') || 'Step');
     const icon = ACTION_ICON[code] ?? 'clock';
     const slug = sourceSlug(a);
     const isAi = !!AI_SOURCE_SLUGS[slug];
     const src = SOURCE_TYPE_LABEL[slug];
     const meta = [
-      a.when ? fmtDate(a.when) : null,
+      a.when ? escape(fmtDate(a.when)) : null,
       a.softwareAgent ? escape(String(a.softwareAgent)) : null,
       src ? `<span class="valid-step-src">${isAi ? `${svgIcon(ICONS.aiSpark)} ` : ''}${escape(src)}</span>` : null,
     ].filter(Boolean).join('<span class="valid-step-dot" aria-hidden="true">·</span>');
@@ -523,6 +527,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta?: FileMet
           ${report.found ? scorecardHtml(report) : ''}
         </div>
       </div>
+      ${aiFlagHtml(report)}
       <p class="valid-file"><strong>${escape(fileName)}</strong>${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}${report.reason ? ` — ${escape(report.reason)}` : ''}</p>
       ${report.found && report.claim && !report.madeWithLolly ? `
         <p class="valid-selfnote">${identity
@@ -544,6 +549,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta?: FileMet
           ${fact('Certificate valid', signer.notBefore ? `${fmtDate(signer.notBefore)} → ${fmtDate(signer.notAfter)}` : null, 'calendar')}
           ${fact('Manifest', claim.manifestLabel, 'document')}
         </dl>` : ''}
+      ${report.found && report.claim ? stepsHtml(report) : ''}
       ${report.checks.length ? `<ul class="valid-checks">${report.checks.map(checkRow).join('')}</ul>` : ''}
       ${renderMetadata(meta)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
