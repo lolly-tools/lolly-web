@@ -1,0 +1,53 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>pdf-tspan-check</title></head>
+<body><div id="result">running…</div>
+<script type="module">
+import { createExportAPI } from '/src/bridge/export.ts';
+const out = document.getElementById('result');
+const log = (m) => { out.textContent += '\n' + m; };
+
+// A <text> with three <tspan> lines, each RESET to x=10 with dy line advance, plus a
+// plain single-line <text>. viewBox 0 0 200 200. If tspans collapse (the bug) all
+// three lines sit on ONE baseline (~y=40). Fixed → distinct baselines 40/70/100.
+const svg =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">` +
+  `<text x="10" y="40" font-family="Helvetica" font-size="16" fill="#ff0000">` +
+    `<tspan x="10">Line One</tspan>` +
+    `<tspan x="10" dy="30">Line Two</tspan>` +
+    `<tspan x="10" dy="30">Line Three</tspan>` +
+  `</text>` +
+  `<text x="10" y="160" font-family="Helvetica" font-size="14" fill="#0000ff">Plain single line</text>` +
+  `</svg>`;
+const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+const box = document.createElement('div');
+box.style.cssText = 'position:fixed;left:0;top:0;width:400px;height:400px;background:#fff';
+box.innerHTML = `<img src="${dataUrl}" style="width:400px;height:400px;display:block">`;
+document.body.appendChild(box);
+await box.querySelector('img').decode().catch(() => {});
+
+const api = createExportAPI({ log() {} });
+try {
+  const blob = await api.render(box, 'pdf', { width: 400, height: 400 });
+  const text = await blob.text();
+  // jsPDF text ops appear as BT ... Td/Tm ... (str) Tj ... ET, or via its text() using
+  // Td with a Y coordinate. Page is 400px→300pt; user y 40/70/100 → PDF y 300-(40/70/100)*1.5.
+  // We just count distinct baseline Y positions among the red-text draws by scanning Td/Tm Y.
+  // Simpler + robust: count how many times "Line" strings were emitted as separate Tj.
+  const tjs = (text.match(/\(([^)]*)\)\s*Tj/g) || []).map(s => s.replace(/\)\s*Tj$/,'').replace(/^\(/,''));
+  log('text runs drawn (Tj): ' + JSON.stringify(tjs));
+  // Extract Y of each text-positioning (Td/Tm) op to see distinct baselines.
+  const ys = [...text.matchAll(/([\d.]+)\s+([\d.]+)\s+Td/g)].map(m => Number(m[2]));
+  const tmYs = [...text.matchAll(/1(?:\.0+)?\s+0\s+0\s+1(?:\.0+)?\s+([\d.]+)\s+([\d.]+)\s+Tm/g)].map(m => Number(m[2]));
+  const allYs = [...ys, ...tmYs];
+  const distinct = [...new Set(allYs.map(y => Math.round(y)))];
+  log('distinct text baseline Ys (pt): ' + JSON.stringify(distinct));
+  const threeLines = tjs.filter(t => /Line/.test(t)).length;
+  const distinctLineYs = new Set(tmYs.concat(ys).map(y=>Math.round(y))).size;
+  const pass = threeLines >= 3 && distinctLineYs >= 3;
+  log('VERDICT: ' + (pass ? 'PASS (3 lines on distinct baselines)' : 'FAIL (lines collapsed / missing)'));
+  document.title = 'RESULT:' + (pass ? 'PASS' : 'FAIL');
+} catch (e) {
+  log('ERROR: ' + (e && e.stack || e));
+  document.title = 'RESULT:ERROR ' + (e && e.message || e);
+}
+</script></body></html>
