@@ -888,13 +888,17 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
         ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark)
         : `<p class="valid-busy">Could not check this file: ${escape(error!)}</p>`;
-      // Audible verdict: a bright, chirping "signing" flourish when the credential is intact
-      // (the green medallion moment) — up-and-down scales ending on a rise and a ding — and a
-      // soft cautionary "uh-oh" when it's broken, missing, or unreadable.
-      playSfx(report?.state === 'valid' ? 'sign' : 'warn');
-      // …and a spooky ghost "hoooo" layered under the verdict when the credential
-      // declares AI-generated content (as the purple AI banner appears).
-      if (report?.aiGenerated) playSfx('ghost');
+      // Audible verdict, as two composable signals: the spooky ghost "hoooo" marks
+      // AI-generated content, the bright "signing" chirps mark an intact Lolly make.
+      // A file that's BOTH gets the chirps over the ooo; any OTHER AI file gets the
+      // ooo alone (no chirps); a non-AI file keeps the usual verdict — chirps if
+      // intact, a soft cautionary "uh-oh" if broken, missing, or unreadable.
+      if (report?.aiGenerated) {
+        if (report.madeWithLolly) playSfx('sign');
+        playSfx('ghost');
+      } else {
+        playSfx(report?.state === 'valid' ? 'sign' : 'warn');
+      }
       reportEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       return;
     }
@@ -932,7 +936,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     });
     reportEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    let allValid = true, anyAi = false;
+    let allValid = true, anyAi = false, anyLolly = false;
     for (let i = 0; i < list.length; i++) {
       const file = list[i]!, card = cards[i]!;
       const { report, error, meta, watermark } = await verifyFile(file);
@@ -946,11 +950,17 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       }
       if (report?.state !== 'valid') allValid = false;
       if (report?.aiGenerated) anyAi = true;
+      if (report?.madeWithLolly) anyLolly = true;
     }
-    // One summary verdict for the whole batch — the "signing" flourish only if every file passed.
-    playSfx(allValid ? 'sign' : 'warn');
-    // …with the ghost "hoooo" if any file in the batch declares AI-generated content.
-    if (anyAi) playSfx('ghost');
+    // One summary verdict, mirroring the single-file rule: AI in the batch → the
+    // ghost "hoooo", with the "signing" chirps over it ONLY when every file passed
+    // and at least one is a Lolly make; a non-AI batch keeps the usual flourish.
+    if (anyAi) {
+      if (allValid && anyLolly) playSfx('sign');
+      playSfx('ghost');
+    } else {
+      playSfx(allValid ? 'sign' : 'warn');
+    }
   }
 
   // Append "-clean" before the extension: report.pdf → report-clean.pdf.
