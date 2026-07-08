@@ -19,6 +19,7 @@ import {
   splitCssArgs, parseGradientAngle, parseGradientStop,
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
   embedC2pa, exportActionSteps, C2PA_FORMATS, packTiff, ENGINE_VERSION,
+  embedWatermark,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
   buildEncryptDictValues, encryptObjectBytes, preparePassword,
   buildEncryptedZip,
@@ -79,6 +80,10 @@ export interface ExportOpts {
   audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number };
   c2pa?: boolean;
   c2paDays?: number | string;
+  /** Embed the Lolly pixel watermark into raster exports (png/jpg/webp). Off by
+   *  default; opt-in via the `imprint` URL param. A durable, imperceptible mark
+   *  that survives what strips the C2PA credential — see engine/pixel-watermark. */
+  imprint?: boolean;
   palette?: BrandPaletteEntry[];
   bleed?: number | string;
   cropMarks?: boolean;
@@ -340,6 +345,18 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
   }
 }
 
+// Embed the Lolly pixel watermark into a canvas in place (straight sRGB RGBA;
+// canvas 2D getImageData is un-premultiplied). No-op contract lives in the
+// engine — flat/tiny buffers return unchanged. See engine/src/pixel-watermark.ts.
+function imprintCanvas(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || canvas.width < 8 || canvas.height < 8) return;
+  const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const marked = embedWatermark(id.data, { width: canvas.width, height: canvas.height });
+  id.data.set(marked);
+  ctx.putImageData(id, 0, 0);
+}
+
 async function renderRaster(node: Element, format: string, opts: ExportOpts): Promise<Blob> {
   const lib = await getDomToImage();
   const d = exportDims(node, opts);
@@ -353,11 +370,21 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
   // animating canvas captures the configured pose, not a random rAF moment.
   const fc = beginFrameClock(node); renderFrameAt(fc, 0);
   try {
-    const dataUrl = await (format === 'jpeg'
-      ? lib.toJpeg(node, { quality: opts.quality ?? 0.92, ...dtoOpts })
-      : lib.toPng(node, dtoOpts));
-    const res = await fetch(dataUrl);
-    let blob = await res.blob();
+    let blob: Blob;
+    if (opts.imprint) {
+      // Pixel-watermark path: rasterise to a canvas so we can perturb the pixels
+      // before encoding, then encode with the same quality the dataURL path uses.
+      const raw = await lib.toCanvas(node, dtoOpts);
+      const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
+      imprintCanvas(canvas);
+      blob = await canvasToBlob(canvas, format === 'jpeg' ? 'image/jpeg' : 'image/png', format === 'jpeg' ? (opts.quality ?? 0.92) : undefined);
+    } else {
+      const dataUrl = await (format === 'jpeg'
+        ? lib.toJpeg(node, { quality: opts.quality ?? 0.92, ...dtoOpts })
+        : lib.toPng(node, dtoOpts));
+      const res = await fetch(dataUrl);
+      blob = await res.blob();
+    }
     // Stamp the DPI (physical size) + provenance metadata + colour profile in a
     // SINGLE parse/serialise cycle: read the encoded bytes once, splice every
     // chunk/segment in order, rebuild the Blob once. (Each stamp was previously
@@ -384,6 +411,17 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
   }
 }
 
+// Promisified canvas.toBlob — quality is passed through only for lossy encoders.
+function canvasToBlob(canvas: HTMLCanvasElement, mimeType: string, quality?: number): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => blob ? resolve(blob) : reject(new Error(`Encoding failed for ${mimeType}`)),
+      mimeType,
+      quality,
+    );
+  });
+}
+
 async function renderBitmap(node: Element, mimeType: string, opts: ExportOpts): Promise<Blob> {
   const lib = await getDomToImage();
   const d = exportDims(node, opts);
@@ -398,13 +436,8 @@ async function renderBitmap(node: Element, mimeType: string, opts: ExportOpts): 
     endFrameClock(fc);
   }
   const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => blob ? resolve(blob) : reject(new Error(`Encoding failed for ${mimeType}`)),
-      mimeType,
-      opts.quality ?? 0.9,
-    );
-  });
+  if (opts.imprint) imprintCanvas(canvas);
+  return canvasToBlob(canvas, mimeType, opts.quality ?? 0.9);
 }
 
 // ── RGB TIFF export (archival / lossless raster) ────────────────────────────

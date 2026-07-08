@@ -1203,6 +1203,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...(isC2paFmt(fmt) && el!.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]')?.checked
           ? { c2pa: true, ...(c2paDaysVal() ? { c2paDays: c2paDaysVal()! } : {}) }
           : {}),
+        // Pixel watermark (?imprint= default) — the bridge applies it only to raster
+        // formats, so it's harmless to pass through for others / zip members.
+        ...(exportDefaults.imprint ? { imprint: true } : {}),
         ...(fmt === 'zip' ? {
           ...printOpts(),   // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
           palette: PALETTE,

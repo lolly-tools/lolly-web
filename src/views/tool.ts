@@ -142,6 +142,8 @@ export interface ExportDefaults {
   marks?: PrintMarks | null;
   nostage?: boolean;
   c2pa?: { on: boolean; days?: number | null };
+  /** Pixel-watermark opt-in from ?imprint= — applied to raster exports. */
+  imprint?: boolean;
 }
 
 /** mountTool's strip-scale → export → reapply wrapper (injected into renderActions). */
@@ -184,6 +186,7 @@ export interface RunExportOpts {
   strongPassword?: string;
   c2pa?: boolean;
   c2paDays?: number;
+  imprint?: boolean;
   bleed?: string;
   cropMarks?: boolean;
   registrationMarks?: boolean;
@@ -363,7 +366,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A no-op for ordinary readable links. Done once so every consumer below agrees.
   urlParams = await expandQuery(urlParams ?? '');
 
-  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa } = parseUrlState(urlParams, tool.manifest);
+  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint } = parseUrlState(urlParams, tool.manifest);
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
   // `?nostage` pre-checks the export panel's "Full page" toggle (HTML export only):
@@ -1418,6 +1421,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // Content Credentials from ?c2pa= ({ on, days } or undefined) — an explicit
     // link setting beats the tool's render.c2pa default in the popup.
     c2pa:     urlC2pa || undefined,
+    // Pixel watermark from ?imprint= — a raster-export opt-in (off by default).
+    imprint:  urlImprint || undefined,
   };
   // Rewrite the URL hash query string to reflect the current tool state so the
   // page is shareable and bookmarkable. Uses replaceState — no history entry.
@@ -2190,6 +2195,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           expOpts.c2pa = true;
           if (urlC2pa?.days) expOpts.c2paDays = urlC2pa.days;
         }
+        // Pixel watermark (?imprint=): a raster-export opt-in, independent of C2PA.
+        if (urlImprint && ['png', 'jpg', 'jpeg', 'webp', 'avif'].includes(fmt)) expOpts.imprint = true;
         // Print prep: honour ?bleed= / ?marks= so a deep link auto-exports a
         // print-ready file. Applied only when the link asks for it (never default).
         if (isPrintFmt(fmt) && (urlBleed || urlMarks)) {
