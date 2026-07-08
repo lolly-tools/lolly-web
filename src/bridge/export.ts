@@ -75,6 +75,7 @@ export interface ExportOpts {
   unit?: string;
   meta?: ExportMeta;
   ingredients?: IngredientCredential[];  // preserved source-asset credentials → C2PA
+  c2paInputs?: Record<string, string>;   // scalar-input digest → tools.lolly.export assertion (runtime-supplied)
   colorProfile?: string;
   thumbnail?: boolean;
   audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number };
@@ -257,7 +258,13 @@ async function renderFormat(node: Element, format: string, opts: ExportOpts = {}
     ? (blob.type.includes('mp4') ? 'mp4' : 'webm')
     : format === 'webp-anim' ? 'webp'          // animated WebP stamps like a still WebP (placeWebp appends a C2PA RIFF chunk)
     : format;
-  if (opts.c2pa && C2PA_STAMPABLE.has(key)) return stampC2pa(blob, key, opts);
+  if (opts.c2pa && C2PA_STAMPABLE.has(key)) {
+    // The output size is only knowable here (node + opts); pass it to the stamp so
+    // the credential can record "where/how big" alongside the input digest.
+    let dimensions: string | undefined;
+    try { dimensions = describeDimensions(exportDims(node, opts)); } catch { /* size is a nicety */ }
+    return stampC2pa(blob, key, opts, dimensions);
+  }
   return blob;
 }
 
@@ -2501,10 +2508,23 @@ async function renderPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   return blob;
 }
 
-// Coarse export environment for the `tools.lolly.export` assertion: browser
-// ENGINE family + major version and OS family only — deliberately far short of
-// a fingerprint, but enough for "where was this made" provenance.
-function c2paEnvironment(format: string, opts: ExportOpts): Record<string, string> {
+// A human-readable size line for the export environment: physical exports read
+// "210 × 297 mm @ 300 DPI"; pixel exports read "1080 × 1080 px". Values are the
+// resolved output size (parseDimension → node fallback), rounded for legibility.
+function describeDimensions(d: ExportDims): string {
+  const n = (v: number): string => (Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, ''));
+  if (d.physical && d.w.unit === d.h.unit) return `${n(d.w.value)} × ${n(d.h.value)} ${d.w.unit} @ ${d.dpi} DPI`;
+  const w = d.physical ? toPixels(d.w, d.dpi) : Math.round(d.w.value);
+  const h = d.physical ? toPixels(d.h, d.dpi) : Math.round(d.h.value);
+  return `${w} × ${h} px`;
+}
+
+// Export environment for the `tools.lolly.export` assertion: the "where / when /
+// how big / from what" record. Browser ENGINE family + major version and OS
+// family (deliberately far short of a fingerprint), the export date, the output
+// size, and the runtime-supplied scalar-input digest — enough that an inspected
+// asset tells its own story without leaking a device fingerprint.
+function c2paEnvironment(format: string, opts: ExportOpts, dimensions?: string): Record<string, unknown> {
   const ua = navigator.userAgent || '';
   let engine = 'unknown';
   let m: RegExpExecArray | null;
@@ -2516,12 +2536,16 @@ function c2paEnvironment(format: string, opts: ExportOpts): Record<string, strin
     : /Mac/.test(ua) ? 'macOS'
     : /Windows/.test(ua) ? 'Windows'
     : /Linux|CrOS/.test(ua) ? 'Linux' : 'unknown';
+  const inputs = opts.c2paInputs && Object.keys(opts.c2paInputs).length ? opts.c2paInputs : undefined;
   return {
     ...(opts.meta?.tool ? { tool: opts.meta.tool } : {}),
     format: String(format),
     surface: 'web',
     engine,
     os,
+    date: new Date().toISOString(),
+    ...(dimensions ? { dimensions } : {}),
+    ...(inputs ? { inputs } : {}),
   };
 }
 
@@ -2544,7 +2568,7 @@ function c2paAuthor(meta: ExportMeta | null | undefined): { name: string; email?
 // unverified. An encrypted PDF can't take the update, so a password wins; any
 // other cannot-attach case ('C2PA embed: …') logs and ships the un-stamped
 // file — a credential failure must never fail the export.
-async function stampC2pa(blob: Blob, format: string, opts: ExportOpts): Promise<Blob> {
+async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimensions?: string): Promise<Blob> {
   if ((opts.password || opts.strongPassword) && (format === 'pdf' || format === 'pdf-cmyk')) {
     _host?.log?.('info', 'pdf: password-locked export — skipping Content Credentials (an encrypted document cannot take the C2PA update)');
     return blob;
@@ -2572,7 +2596,7 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts): Promise<
       title: opts.meta?.tool,
       claimGenerator: `${opts.meta?.software || 'Lolly'} lolly.tools`,
       generatorInfo: { name: opts.meta?.software || 'Lolly', version: ENGINE_VERSION },
-      environment: c2paEnvironment(format, opts),
+      environment: c2paEnvironment(format, opts, dimensions),
       author: c2paAuthor(opts.meta),
       actions,
       ...(opts.ingredients?.length ? { ingredients: opts.ingredients } : {}),

@@ -356,6 +356,15 @@
 .valid-meta-group h4 svg,
 .valid-meta-location h4 svg { width: 0.82rem; height: 0.82rem; opacity: 0.75; }
 .valid-meta-group dl { margin: 0; display: grid; gap: 0.5rem 0.9rem; grid-template-columns: auto 1fr; }
+/* Description & text — the group most likely to hold long values (titles,
+   captions, comments), so it gets its own inset card and spans two columns to
+   give that prose room to breathe. */
+.valid-meta-group--desc {
+  grid-column: span 2;
+  box-shadow: inset 0 .1em .9em #0001, inset 0 0 0 1px #00000005;
+  padding: 1.5rem;
+  border-radius: 1em;
+}
 .valid-meta-row { display: contents; }
 .valid-meta-row dt {
   font-size: 0.72rem; line-height: 1.35; color: hsl(var(--muted-foreground));
@@ -581,6 +590,31 @@
    siblings; the facts grid collapses to a single value-per-row list at this
    column's width instead of the wide multi-up layout it gets full-bleed. */
 .valid-summary .valid-facts { grid-template-columns: 1fr; }
+
+/* "Made from" — the scalar-input digest (env.inputs). A quiet key/value list
+   under the fact grid: monospace values, a swatch chip for colours, so the
+   asset shows what it was rendered from without competing with the facts above. */
+.valid-inputs { display: grid; gap: 0.5rem; }
+.valid-inputs h4 {
+  display: flex; align-items: center; gap: 0.4rem; margin: 0;
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+}
+.valid-inputs h4 svg { width: 0.9rem; height: 0.9rem; }
+.valid-input-list { margin: 0; display: grid; gap: 0.3rem; }
+.valid-input-row {
+  display: grid; grid-template-columns: minmax(4rem, 8rem) 1fr; gap: 0.6rem;
+  align-items: baseline; font-size: 0.75rem;
+}
+.valid-input-row dt { margin: 0; font-weight: 600; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+.valid-input-row dd {
+  margin: 0; display: flex; align-items: center; gap: 0.35rem; min-width: 0;
+  font-family: 'SUSE Mono', ui-monospace, monospace; overflow-wrap: anywhere;
+}
+.valid-input-swatch {
+  flex: 0 0 auto; width: 0.85rem; height: 0.85rem; border-radius: 0.2rem;
+  border: 1px solid hsl(var(--border)); box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.25);
+}
 .valid-panel {
   display: grid; gap: 0.7rem; align-content: start; min-width: 0;
   padding: 1rem 1.1rem 1.15rem;
@@ -598,16 +632,36 @@
    carries what they did. */
 .valid-steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
 .valid-step {
-  display: grid; grid-template-columns: minmax(3.6rem, max-content) 1fr;
+  position: relative;
+  /* Fixed pill gutter (not max-content) so the timeline rail below sits at a
+     deterministic x through every pill's centre. --rail-x is that centre. */
+  --rail-x: 2.25rem;
+  --step-ic: 0.95rem; /* step-icon width — drives the meta indent (goal 3) */
+  display: grid; grid-template-columns: 4.5rem 1fr;
   column-gap: 0.75rem; row-gap: 0.12rem; align-items: start;
 }
-/* The maker pill — the left anchor. */
+/* The connecting rail — a vertical line from each pill's centre to the next, so
+   the steps read as one timeline. Drawn behind the pills (which are opaque), so
+   it shows only in the gaps between them — the classic node-and-connector look.
+   Anchored top→bottom (top at this pill's centre, bottom reaching into the next
+   step by one pill-half + the list gap), so it stretches with any step height. */
+.valid-step:not(:last-child)::before {
+  content: '';
+  position: absolute; z-index: 0;
+  left: var(--rail-x); transform: translateX(-50%);
+  top: 0.7rem; bottom: -1.25rem;
+  width: 2px; border-radius: 1px;
+  background: hsl(var(--border));
+}
+/* The maker pill — the left anchor / timeline node. Centred in the gutter so it
+   sits on the rail; long brand names wrap inside it rather than overflow. */
 .valid-step-agent {
-  grid-row: 1 / span 2; align-self: start; justify-self: stretch;
+  grid-row: 1 / span 2; align-self: start; justify-self: center;
+  position: relative; z-index: 1; max-width: 100%;
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0.24rem 0.55rem; border-radius: 999px;
   font-size: 0.66rem; font-weight: 600; letter-spacing: 0.02em; line-height: 1.1;
-  text-align: center; white-space: nowrap;
+  text-align: center; white-space: normal;
   background: hsl(var(--muted)); color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border));
 }
@@ -622,15 +676,26 @@
   box-shadow: 0 4px 12px -5px hsl(var(--vf-ai) / 0.65), inset 0 1px 0 hsl(0 0% 100% / 0.4);
 }
 .valid-step-main { min-width: 0; display: grid; gap: 0.12rem; }
-.valid-step-label { display: flex; align-items: center; gap: 0.4rem; font-weight: 650; font-size: 0.9rem; }
+/* Icon + label. min-height matches the pill so the icon and label text sit on
+   the pill's vertical centre; flex-wrap lets the icon drop to its own line if the
+   row ever gets too tight, rather than crushing the text. */
+.valid-step-label {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+  min-height: 1.4rem; font-weight: 650; font-size: 0.9rem;
+}
 .valid-step-ic { display: inline-flex; flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
-.valid-step-ic svg { width: 0.95rem; height: 0.95rem; }
+.valid-step-ic svg { width: var(--step-ic); height: var(--step-ic); }
+/* Description / timestamp / source-type sit UNDER the label, indented by the
+   icon + its gap so they optically start where the label TEXT does, not under
+   the icon. */
+.valid-step-meta,
+.valid-step-src { padding-left: calc(var(--step-ic) + 0.4rem); }
 .valid-step-meta {
   display: flex; flex-wrap: wrap; gap: 0.1rem 0.4rem; align-items: center;
   font-size: 0.78rem; color: hsl(var(--muted-foreground));
 }
 .valid-step-dot { opacity: 0.5; }
-.valid-step-src { display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 600; }
+.valid-step-src { display: flex; align-items: center; gap: 0.25rem; font-weight: 600; }
 .valid-step-src svg { width: 0.9em; height: 0.9em; }
 .valid-step.is-ai .valid-step-src { color: hsl(var(--vf-ai)); }
 
