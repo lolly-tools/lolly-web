@@ -23,7 +23,9 @@
  */
 
 import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
-import { verifyC2pa, pemToDer, c2paTrustAnchors } from '@lolly/engine';
+import { verifyC2pa, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL } from '@lolly/engine';
+import type { FileMetadata, MetaGroup } from '@lolly/engine';
+import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
 import { armViewEnter } from '../view-enter.ts';
@@ -95,6 +97,7 @@ const ICONS = {
   hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
   userCheck: '<path d="M14 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="8" cy="8" r="4"/><path d="M15 11.5l2.2 2.2 4.3-4.3"/>',
   sparkle: '<path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z"/>',
+  lollipop: '<circle cx="9" cy="9" r="7"/><path d="M9 5a4 4 0 0 1 0 8 2 2 0 0 1 0-4"/><path d="m14 14 6 6"/>',
   tag: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
   tool: '<path d="M14.7 6.3a4 4 0 0 0-5.2 5.2l-6.1 6.1a1.5 1.5 0 0 0 2.1 2.1l6.1-6.1a4 4 0 0 0 5.2-5.2l-2.4 2.4-2-2z"/>',
   user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
@@ -106,6 +109,8 @@ const ICONS = {
   calendar: '<rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',
   package: '<path d="M16.5 9.4 7.5 4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
   lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.2" r="1.1"/>',
+  mapPin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
+  camera: '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
 };
 const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'needs attention', na: 'not applicable' };
 
@@ -172,7 +177,7 @@ const isExpectedRow = (c: Check): boolean => c.code === 'signingCredential.untru
 // …); this collapses them onto a stable eight so the hero reads as a consistent
 // glance, with each pip's state (pass / fail / warn / not-applicable) derived
 // from the actual rows — never hard-coded.
-interface ScorecardItem { icon: keyof typeof ICONS; label: string; status: keyof typeof STATUS_WORD; }
+interface ScorecardItem { icon: keyof typeof ICONS; label: string; status: keyof typeof STATUS_WORD; hideStatus?: boolean; ash?: boolean; }
 function scorecardModel(report: VerifyReport): ScorecardItem[] {
   const cs = report.checks || [];
   const okRow = (code: string): boolean => cs.some((c) => c.ok && c.code === code);
@@ -190,26 +195,33 @@ function scorecardModel(report: VerifyReport): ScorecardItem[] {
     : (okRow('assertion.dataHash.match') || okRow('assertion.bmffHash.match')) ? 'pass' : na;
   const trust = okRow('signingCredential.trusted') ? 'pass'
     : (report.signer?.identity && present('signingCredential.expired')) ? 'warn' : na;
-  const lolly = report.madeWithLolly ? 'pass' : na;
+  const lollyMade = !!report.madeWithLolly;
 
   return [
+    // Yes/no, not a graded check: "Made with Lolly" (green tick) or a plain
+    // "Not made with Lolly" with no status pill — "not applicable" reads wrong here.
+    { icon: 'lollipop', label: lollyMade ? 'Made with Lolly' : 'Not made with Lolly', status: lollyMade ? 'pass' : na, hideStatus: !lollyMade },
     { icon: 'document', label: 'Manifest found', status: found ? 'pass' : na },
     { icon: 'eye', label: 'Manifest readable', status: readable },
     { icon: 'link', label: 'Assertions bound to the claim', status: assertions },
     { icon: 'pen', label: 'Claim signature valid', status: signature },
     { icon: 'clock', label: 'Certificate within validity', status: validity },
     { icon: 'hash', label: 'File bytes match (hard binding)', status: binding },
-    { icon: 'userCheck', label: 'Signer identity (CA-verified)', status: trust },
-    { icon: 'sparkle', label: 'Made with Lolly', status: lolly },
+    // "Signer identity" has no CA answer when the file was signed with a
+    // self-signed on-device key — so say that plainly (dark-ash card) rather
+    // than a bare "not applicable".
+    (trust === 'na' && report.signer?.selfSigned
+      ? { icon: 'cpu', label: 'Signed with an on-device key', status: na, hideStatus: true, ash: true }
+      : { icon: 'userCheck', label: 'Signer identity (CA-verified)', status: trust }),
   ];
 }
 
 function scorecardHtml(report: VerifyReport): string {
   return `<ul class="valid-score" aria-label="Verification checks at a glance">${scorecardModel(report).map((it, i) =>
-    `<li class="valid-score-pip is-${it.status}" style="--i:${i}" aria-label="${escape(it.label)}: ${STATUS_WORD[it.status]}">` +
+    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" style="--i:${i}" aria-label="${escape(it.label)}${it.hideStatus ? '' : `: ${STATUS_WORD[it.status]}`}">` +
       `<span class="valid-score-ic" aria-hidden="true">${svgIcon(ICONS[it.icon])}</span>` +
       `<span class="valid-score-label" aria-hidden="true">${escape(it.label)}</span>` +
-      `<span class="valid-score-status" aria-hidden="true">${STATUS_WORD[it.status]}</span>` +
+      (it.hideStatus ? '' : `<span class="valid-score-status" aria-hidden="true">${STATUS_WORD[it.status]}</span>`) +
     `</li>`).join('')}</ul>`;
 }
 
@@ -267,11 +279,23 @@ function resolveState(report: VerifyReport): ResolvedState {
   // Two subs would lie once a chain verifies against the anchor: the lolly one claims
   // "an on-device key, not a CA identity" and the expired one blames "a one-year
   // on-device key". Swap the wording, keep the state.
+  // The default trusted copy is Lolly-specific ("the pinned Lolly CA root"),
+  // which is wrong for a third-party signer (Google, Adobe, Microsoft…). When
+  // the chain verified against a NON-Lolly anchor, name the actual root and the
+  // signer's organisation instead. Delivered/lolly stay Lolly-worded (they ARE
+  // Lolly). signerOrg comes from the CA-verified cert — only used once trusted.
+  const signerOrg = report.signer?.organization || report.signer?.commonName;
+  const thirdPartyRoot = !!identity?.issuer && !/\blolly\b/i.test(identity.issuer);
+  // NB: `sub` is rendered as raw HTML (so the signer/anchor names can be <strong>).
+  // The static STATE_COPY subs carry no HTML metacharacters; any cert-derived value
+  // interpolated here (issuer, signerOrg) MUST be escape()'d — it is attacker-controlled.
   const sub = state === STATE_COPY.lolly && report.trusted
     ? 'The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim, signed under a CA-verified identity.)'
     : state === STATE_COPY.expired && identity
       ? 'The file still matches exactly what its credential signed — nothing was modified — but the short-lived signing certificate has expired, so the credential no longer validates. Without a trusted timestamp the time of signing cannot be proven.'
-      : state.sub;
+      : state === STATE_COPY.trusted && thirdPartyRoot
+        ? `The file is exactly what its embedded credential signed, and the signing certificate chains to <strong>${escape(identity!.issuer!)}</strong> — a recognised C2PA trust anchor${signerOrg ? `, identifying the signer as <strong>${escape(signerOrg)}</strong>` : ''}. Integrity plus a CA-verified identity; what it records about how it was made is still the signer’s own claim.`
+        : state.sub;
   return { state, sub, identity };
 }
 
@@ -291,22 +315,90 @@ function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none' {
 function miniScoreHtml(report: VerifyReport): string {
   if (!report.found) return '';
   return `<ul class="valid-score valid-score--mini" aria-hidden="true">${scorecardModel(report).map((it) =>
-    `<li class="valid-score-pip is-${it.status}" title="${escape(it.label)}: ${STATUS_WORD[it.status]}"><span class="valid-score-ic">${svgIcon(ICONS[it.icon])}</span></li>`).join('')}</ul>`;
+    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${STATUS_WORD[it.status]}`}"><span class="valid-score-ic">${svgIcon(ICONS[it.icon])}</span></li>`).join('')}</ul>`;
 }
 
 // The always-visible summary row of a collapsible report: state badge, filename,
 // signer identity (when CA-verified), and the mini scorecard glance.
 function summaryInner(fileName: string, report: VerifyReport): string {
   const { state, identity } = resolveState(report);
+  // Attribution chip: OIDC email for a device credential, else the CA signer's
+  // organisation (Google, Adobe…). Only when the chain reached a pinned anchor.
+  const who = identity ? (identity.email || report.signer?.organization || report.signer?.commonName) : null;
   return `
     <span class="valid-item-badge is-${stateTone(report)}">${escape(state.title)}</span>
     <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
-    ${identity?.email ? `<span class="valid-item-signer" title="Signed by ${escape(identity.email)}">${svgIcon(ICONS.mail)}<span>${escape(identity.email)}</span></span>` : ''}
+    ${who ? `<span class="valid-item-signer" title="Signed by ${escape(who)}">${svgIcon(ICONS.mail)}<span>${escape(who)}</span></span>` : ''}
     ${miniScoreHtml(report)}
     <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>`;
 }
 
-function renderReportBody(fileName: string, report: VerifyReport): string {
+// Which glyph heads each metadata section.
+const META_GROUP_ICON: Record<MetaGroup, keyof typeof ICONS> = {
+  location: 'mapPin', device: 'cpu', capture: 'camera', software: 'tool',
+  authorship: 'user', timestamps: 'calendar', description: 'document', technical: 'hash',
+};
+
+// An offline world locator: the photo's GPS fix plotted on an embedded land
+// outline (no tile server — the coordinates never leave the device). Rendered
+// full-width above the sections when a file records a position.
+function renderLocator(lat: number, lon: number): string {
+  const { x, y } = projectLatLon(lat, lon);
+  return `<svg class="valid-locator" viewBox="${WORLD_VIEWBOX}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="World map with a pin at the recorded location">
+      <rect class="valid-locator-sea" x="151.67" y="242.58" width="656.66" height="288.84" rx="7"/>
+      <path class="valid-locator-land" d="${WORLD_LAND_PATH}"/>
+      <g class="valid-locator-pin" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">
+        <path class="valid-locator-tick" d="M0,-15V-7 M0,7V15 M-15,0H-7 M7,0H15"/>
+        <circle class="valid-locator-halo" r="9"/>
+        <circle class="valid-locator-dot" r="3"/>
+      </g>
+    </svg>`;
+}
+
+// The embedded-metadata reveal — everything the file discloses about the device,
+// place, person, and software behind it, read on-device from its own bytes and
+// laid out clinically by section. Independent of the C2PA verdict: a file with no
+// credential can still be dense with EXIF. Empty in → nothing rendered.
+function renderMetadata(meta: FileMetadata | undefined): string {
+  if (!meta || !meta.fields.length) return '';
+  const loc = meta.fields.filter((f) => f.group === 'location');
+  const groups = META_GROUP_ORDER
+    .filter((g) => g !== 'location')
+    .map((g) => ({ g, items: meta.fields.filter((f) => f.group === g) }))
+    .filter((x) => x.items.length);
+  const sensitive = meta.fields.some((f) => f.sensitive);
+  const n = meta.fields.length;
+  const section = (label: string, icon: keyof typeof ICONS, rows: string): string => `
+    <section class="valid-meta-group">
+      <h4>${svgIcon(ICONS[icon])}<span>${escape(label)}</span></h4>
+      <dl>${rows}</dl>
+    </section>`;
+  const row = (f: { label: string; value: string; sensitive?: boolean }): string =>
+    `<div class="valid-meta-row${f.sensitive ? ' is-sensitive' : ''}"><dt>${escape(f.label)}</dt><dd>${escape(f.value)}</dd></div>`;
+  const locationBlock = meta.gps ? `
+    <section class="valid-meta-location">
+      <h4>${svgIcon(ICONS.mapPin)}<span>Location</span></h4>
+      ${renderLocator(meta.gps.lat, meta.gps.lon)}
+      <div class="valid-meta-loc-read">
+        ${loc.map((f) => `<span class="valid-meta-loc-item"><span class="k">${escape(f.label)}</span><span class="v">${escape(f.value)}</span></span>`).join('')}
+        ${meta.mapUrl ? `<a class="valid-meta-map" href="${escape(meta.mapUrl)}" target="_blank" rel="noopener noreferrer">OpenStreetMap ↗</a>` : ''}
+      </div>
+    </section>` : '';
+  return `
+    <section class="valid-meta">
+      <div class="valid-meta-head">
+        <h3>${svgIcon(ICONS.eye)}<span>Embedded metadata</span></h3>
+        <span class="valid-meta-count">${n} field${n > 1 ? 's' : ''}${meta.format ? ` · ${escape(meta.format)}` : ''}</span>
+      </div>
+      <p class="valid-meta-note">Read on this device from the file's own bytes — the EXIF, XMP and container data it carries wherever it travels.${sensitive ? ' Values that can identify a person, place or device are marked.' : ''} Remove it with the <a href="#/tool/strip-data">Hidden Data</a> tool.</p>
+      <div class="valid-meta-grid">
+        ${locationBlock}
+        ${groups.map((x) => section(META_GROUP_LABEL[x.g], META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}
+      </div>
+    </section>`;
+}
+
+function renderReportBody(fileName: string, report: VerifyReport, meta?: FileMetadata): string {
   const { state, sub, identity } = resolveState(report);
   const claim: Partial<Claim> = report.claim ?? {};
   const signer: Partial<Signer> = report.signer ?? {};
@@ -315,17 +407,24 @@ function renderReportBody(fileName: string, report: VerifyReport): string {
   const generator = claim.generatorInfo?.name
     ? `${claim.generatorInfo!.name}${claim.generatorInfo!.version ? ' ' + claim.generatorInfo!.version : ''}`
     : claim.claimGenerator;
-  const identityLine = identity?.email ? `
+  // Who signed: the device credential's OIDC email when present, else the
+  // organisation / common name from a CA signer's certificate (Google, Adobe,
+  // Microsoft… carry no SAN email). Only shown when the chain reached a pinned
+  // anchor (identity set) — an org name alone is never proof.
+  const signerWho = identity ? (identity.email || signer.organization || signer.commonName) : null;
+  const identityLine = (identity && signerWho) ? `
           <p class="valid-identity-line">${report.trusted
-    ? `Signed by <strong>${escape(identity!.email)}</strong> — identity verified by ${escape(identity!.issuer)}`
-    : `Signed by <strong>${escape(identity!.email)}</strong> — identity was CA-verified; the certificate has since expired`}</p>` : '';
+    ? `Signed by <strong>${escape(signerWho)}</strong> — identity verified by <strong>${escape(identity!.issuer ?? 'a recognised C2PA root')}</strong>`
+    : `Signed by <strong>${escape(signerWho)}</strong> — identity was CA-verified; the certificate has since expired`}</p>` : '';
   return `
     <div class="valid-result ${state.cls}">
       <div class="valid-hero">
-        <span class="valid-hero-icon">${ICON_SHIELD}</span>
+        <span class="valid-hero-icon">${report.madeWithLolly
+    ? '<img class="valid-hero-logo" src="/icons/icon-192.png" width="192" height="192" alt="" aria-hidden="true" decoding="async">'
+    : ICON_SHIELD}</span>
         <div>
           <h2>${escape(state.title)}${report.madeWithLolly ? '<span class="valid-lolly-badge" aria-hidden="true">✦</span>' : report.trusted ? '<span class="valid-trusted-badge" aria-hidden="true">✓</span>' : ''}</h2>
-          <p>${escape(sub)}</p>${identityLine}
+          <p>${sub}</p>${identityLine}
           ${report.found ? scorecardHtml(report) : ''}
         </div>
       </div>
@@ -339,18 +438,19 @@ function renderReportBody(fileName: string, report: VerifyReport): string {
           ${fact('Title', claim.title, 'tag')}
           ${fact('Tool', env.tool, 'tool')}
           ${fact('Produced by', report.author ? `${report.author.name}${report.author.email ? ` <${report.author.email}>` : ''}` : null, 'user')}
-          ${fact(report.delivered ? 'Delivered by' : 'Made with', generator, report.delivered ? 'package' : 'sparkle')}
+          ${fact(report.delivered ? 'Delivered by' : 'Made with', generator, report.delivered ? 'package' : 'lollipop')}
           ${fact('Signed', signedAt ? fmtDate(signedAt) : null, 'clock')}
           ${fact('Where', [env.surface, env.engine, env.os].filter(Boolean).join(' · ') || null, 'globe')}
           ${fact('Signer', signer.commonName, 'seal')}
           ${fact('Identity', identity?.email, 'mail')}
           ${fact('Issuer', identity ? identity.issuer
-    : signer.organization ? `${signer.organization}${signer.selfSigned ? ' (self-signed, on-device)' : ''}` : null, 'building')}
+    : signer.organization ? `${signer.organization} ${signer.selfSigned ? '(self-signed, on-device)' : '(unverified — does not chain to a trust anchor)'}` : null, 'building')}
           ${fact('Algorithm', signer.alg, 'cpu')}
           ${fact('Certificate valid', signer.notBefore ? `${fmtDate(signer.notBefore)} → ${fmtDate(signer.notAfter)}` : null, 'calendar')}
           ${fact('Manifest', claim.manifestLabel, 'document')}
         </dl>` : ''}
       ${report.checks.length ? `<ul class="valid-checks">${report.checks.map(checkRow).join('')}</ul>` : ''}
+      ${renderMetadata(meta)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
     ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no
         standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment:
@@ -368,7 +468,7 @@ function renderReportBody(fileName: string, report: VerifyReport): string {
     </div>`;
 }
 
-export async function mountValid(viewEl: HTMLElement, _host: HostV1): Promise<void> {
+export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<void> {
   document.title = 'Verify — Lolly';
 
   viewEl.innerHTML = `
@@ -397,14 +497,43 @@ export async function mountValid(viewEl: HTMLElement, _host: HostV1): Promise<vo
   const input = drop.querySelector<HTMLInputElement>('input[type="file"]')!;
   const reportEl = viewEl.querySelector<HTMLElement>('[data-report]')!;
 
-  // Verify one file's bytes, returning either its report or an error message. Kept
-  // narrow so both the single- and multi-file paths share the exact engine call.
-  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string }> {
+  // Verify one file's bytes, returning its C2PA report, its embedded metadata
+  // (EXIF/XMP/… — PDF via the shell's pdf bridge, everything else on the engine),
+  // or an error message. Kept narrow so both the single- and multi-file paths
+  // share the exact engine call. Bytes are read once and reused for both reads.
+  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata }> {
     try {
-      return { report: await verifyC2pa(new Uint8Array(await file.arrayBuffer()), VERIFY_OPTS) };
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const report = await verifyC2pa(bytes, VERIFY_OPTS);
+      return { report, meta: await readMetadata(bytes) };
     } catch (err) {
       return { error: (err as Error)?.message || String(err) };
     }
+  }
+
+  // Which section a PDF finding's label belongs in (its findings arrive as flat
+  // {label, detail, tone} rows from host.pdf.analyze).
+  const pdfGroup = (label: string): MetaGroup => {
+    const l = label.toLowerCase();
+    if (l === 'created' || l === 'modified' || l.includes('date')) return 'timestamps';
+    if (l.includes('produc') || l.includes('created with') || l.includes('creatortool') || l.includes('software')) return 'software';
+    if (l.includes('author') || l.includes('creator')) return 'authorship';
+    if (l.includes('title') || l.includes('subject') || l.includes('keyword')) return 'description';
+    return 'description';
+  };
+
+  // PDF is parsed by the shell (pdf-lib, via host.pdf.analyze); every other format
+  // is read by the DOM-free engine extractor. Never throws — worst case, undefined.
+  async function readMetadata(bytes: Uint8Array): Promise<FileMetadata | undefined> {
+    const isPdf = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+    if (!isPdf) return extractFileMetadata(bytes);
+    try {
+      const findings = (await host.pdf?.analyze(bytes))?.findings ?? [];
+      return {
+        format: 'PDF',
+        fields: findings.map((f) => ({ label: f.label, value: f.detail, group: pdfGroup(f.label), sensitive: f.tone === 'warn' })),
+      };
+    } catch { return undefined; }
   }
 
   // A collapsed report whose credential check failed to even run (unreadable bytes).
@@ -426,9 +555,9 @@ export async function mountValid(viewEl: HTMLElement, _host: HostV1): Promise<vo
     if (list.length === 1) {
       const file = list[0]!;
       reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">Checking ${escape(file.name)}…</p></div>`;
-      const { report, error } = await verifyFile(file);
+      const { report, error, meta } = await verifyFile(file);
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
-        ? renderReportBody(file.name, report)
+        ? renderReportBody(file.name, report, meta)
         : `<p class="valid-busy">Could not check this file: ${escape(error!)}</p>`;
       // Audible verdict: a bright, chirping "signing" flourish when the credential is intact
       // (the green medallion moment) — up-and-down scales ending on a rise and a ding — and a
@@ -474,11 +603,11 @@ export async function mountValid(viewEl: HTMLElement, _host: HostV1): Promise<vo
     let allValid = true;
     for (let i = 0; i < list.length; i++) {
       const file = list[i]!, card = cards[i]!;
-      const { report, error } = await verifyFile(file);
+      const { report, error, meta } = await verifyFile(file);
       if (report) {
         card.className = `valid-item is-${stateTone(report)}`;
         card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report)}</summary>` +
-          `<div class="valid-item-body">${renderReportBody(file.name, report)}</div>`;
+          `<div class="valid-item-body">${renderReportBody(file.name, report, meta)}</div>`;
       } else {
         card.className = 'valid-item is-bad';
         card.innerHTML = errorSummary(file.name, error!);

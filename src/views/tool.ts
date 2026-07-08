@@ -201,6 +201,9 @@ export interface RunExportOpts {
   filename?: string;
   bundleFormats?: string[];
   convertPaths?: boolean;
+  /** Progress callback for slow exports (CMYK TIFF pass, SVG/PDF vector walk).
+   *  The engine/bridge emit it; the export UI uses it to update the button label. */
+  onProgress?: (done: number, total: number) => void;
 }
 
 function marksFromCsv(csv: string | null | undefined): PrintMarks | null {

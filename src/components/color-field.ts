@@ -206,6 +206,36 @@ function armSwatchTip(): void {
 }
 
 /**
+ * The viewport origin of the box a `position:fixed` descendant of `el` is laid out
+ * against. `fixed` is viewport-relative ONLY when no ancestor establishes a containing
+ * block — a `transform`, the individual `translate`/`scale`/`rotate` properties,
+ * `perspective`, `filter`, `backdrop-filter`, `will-change`, or `contain` on an ancestor
+ * all make `fixed` resolve against THAT box's padding edge instead. Two traps bite here:
+ * the sidebar carries `backdrop-filter: blur()`, and every `.input-row` keeps a computed
+ * `translate: 0px` from the `card-in` enter animation's `both` fill-mode — and a non-`none`
+ * `translate` establishes a containing block even at zero (a computed value other than
+ * `none`, not a visible offset, is the trigger). Either way a popover portalled to `fixed`
+ * lands on the controls below its trigger. Callers subtract this origin so their
+ * viewport-space coords stay correct; returns {0,0} (a no-op) when nothing traps `fixed`.
+ */
+function fixedContainingBlockOrigin(el: HTMLElement): { x: number; y: number } {
+  for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+    const s = getComputedStyle(a);
+    const backdrop = s.backdropFilter || s.getPropertyValue('-webkit-backdrop-filter');
+    if (s.transform !== 'none' || s.translate !== 'none' || s.scale !== 'none' || s.rotate !== 'none' ||
+        s.perspective !== 'none' || s.filter !== 'none' ||
+        (backdrop && backdrop !== 'none') ||
+        /\b(transform|perspective|filter|translate|scale|rotate)\b/.test(s.willChange) ||
+        /\b(strict|content|layout|paint)\b/.test(s.contain)) {
+      const r = a.getBoundingClientRect();
+      // Containing block is the ancestor's padding box, not its border box.
+      return { x: r.left + (parseFloat(s.borderLeftWidth) || 0), y: r.top + (parseFloat(s.borderTopWidth) || 0) };
+    }
+  }
+  return { x: 0, y: 0 };
+}
+
+/**
  * Wire every colour field within `scope`. Calls onChange(id, value) with the
  * canonical value string (#rrggbb, #rrggbbaa, or 'transparent'). The trigger
  * preview + sibling controls are kept in sync so the field reflects changes
@@ -292,13 +322,17 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   });
 
   function positionPopover(field: HTMLElement, trigger: HTMLElement, popover: HTMLElement): void {
+    // We compute viewport-space coords below, then translate into the box `fixed`
+    // is actually laid out against (the sidebar's backdrop-filter traps it — see
+    // fixedContainingBlockOrigin). `cb` is {0,0} when `fixed` is truly viewport-relative.
+    const cb = fixedContainingBlockOrigin(popover);
     if (field.classList.contains('block-color-field')) {
       // Block colour fields span the sidebar (escape its overflow clipping).
       const sidebar = scope.closest('.sidebar-body') || scope.closest('.sidebar');
       if (sidebar) {
         const sb = sidebar.getBoundingClientRect();
         const t = trigger.getBoundingClientRect();
-        popover.style.cssText = `position:fixed;top:${t.bottom + 4}px;left:${sb.left + 14}px;width:${sb.width - 28}px;right:auto;z-index:9999;`;
+        popover.style.cssText = `position:fixed;top:${t.bottom + 4 - cb.y}px;left:${sb.left + 14 - cb.x}px;width:${sb.width - 28}px;right:auto;z-index:9999;`;
       }
     } else if (field.classList.contains('color-field--float')) {
       // Float: dock to the CELL frame's top-left (not the trigger's — the field's
@@ -308,7 +342,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const t = (trigger.closest('td') || trigger).getBoundingClientRect();
       const W = Math.max(224, Math.round(t.width));
       const left = Math.max(8, Math.min(t.left, window.innerWidth - W - 8));
-      popover.style.cssText = `position:fixed;top:${Math.round(t.top)}px;left:${left}px;width:${W}px;right:auto;z-index:9999;border-top-left-radius:0;`;
+      popover.style.cssText = `position:fixed;top:${Math.round(t.top - cb.y)}px;left:${Math.round(left - cb.x)}px;width:${W}px;right:auto;z-index:9999;border-top-left-radius:0;`;
       armOutside(field, popover);
     } else {
       // Regular sidebar field: portal to position:fixed anchored to the field (like the
@@ -327,7 +361,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const openUp = (bottomLimit - f.bottom) < ph + 10;
       const top = openUp ? Math.max(8, Math.round(f.top - 4 - ph)) : Math.round(f.bottom + 4);
       popover.style.cssText = prev;
-      popover.style.cssText = `position:fixed;top:${top}px;left:${Math.round(f.left)}px;width:${Math.round(f.width)}px;right:auto;z-index:9999;`;
+      popover.style.cssText = `position:fixed;top:${top - cb.y}px;left:${Math.round(f.left) - cb.x}px;width:${Math.round(f.width)}px;right:auto;z-index:9999;`;
       armOutside(field, popover);
     }
   }

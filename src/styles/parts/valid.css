@@ -83,6 +83,15 @@
     0 8px 20px -10px hsl(0 0% 0% / 0.4);
 }
 .valid-hero-icon svg { position: relative; z-index: 2; width: 2.1rem; height: 2.1rem; }
+/* The Lolly app icon, struck into the centre of the medallion as a circular
+   badge (the state-coloured coin around it still carries the verdict). */
+.valid-hero-logo {
+  position: relative; z-index: 2;
+  width: 2.9rem; height: 2.9rem;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 2px hsl(0 0% 100% / 0.55), 0 3px 7px hsl(0 0% 0% / 0.4);
+}
 /* Wet-glass crown highlight over the top third of every medallion. */
 .valid-hero-icon::before {
   content: ''; position: absolute; z-index: 1; inset: 7% 12% 46% 12%;
@@ -127,6 +136,23 @@
 .valid-result.is-trusted .valid-hero-icon svg,
 .valid-result.is-lolly .valid-hero-icon svg,
 .valid-result.is-delivered .valid-hero-icon svg { width: 2.5rem; height: 2.5rem; }
+.valid-result.is-valid .valid-hero-logo,
+.valid-result.is-trusted .valid-hero-logo,
+.valid-result.is-lolly .valid-hero-logo,
+.valid-result.is-delivered .valid-hero-logo { width: 3.5rem; height: 3.5rem; }
+
+/* Silver medallion — the credential verifies, but it was NOT made with Lolly.
+   The animated green coin above is reserved for the branded "Made with Lolly"
+   answer; every other intact result (integrity-only, CA-trusted, delivered)
+   gets a premium struck-silver coin instead. Same size + float + sheen, cooler
+   metal. Higher specificity than the green block, so it wins for non-lolly. */
+.valid-result.is-valid:not(.is-lolly) .valid-hero-icon {
+  color: hsl(220 22% 30%);
+  background: radial-gradient(circle at 33% 25%, hsl(210 18% 94%), hsl(215 13% 70%) 72%);
+  box-shadow:
+    inset 0 2px 4px hsl(0 0% 100% / 0.8), inset 0 -9px 16px hsl(215 20% 46% / 0.4),
+    0 14px 34px -10px hsl(215 16% 46% / 0.5), 0 4px 12px -4px hsl(0 0% 0% / 0.35);
+}
 
 /* Slow conic light sweep — the "struck coin catching the light" flourish,
    reserved for the intact-green medallion so it reads as the hero. */
@@ -188,24 +214,110 @@
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 0.75rem;
 }
+/* The "made with" details — a struck-silver spec plate. Brushed metal, black
+   labels; the values ("the numbers") read as small muted SUSE Mono, like an
+   engraved data readout. Explicit metal hues (not theme vars) so the plate looks
+   the same engraved-silver in light and dark. */
 .valid-fact {
   position: relative;
   padding: 0.7rem 0.85rem 0.8rem;
   border-radius: 0.8rem;
-  border: 1px solid hsl(var(--border));
-  background: linear-gradient(180deg, hsl(var(--card)), hsl(var(--muted) / 0.35));
-  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04), 0 1px 2px hsl(0 0% 0% / 0.05), 0 8px 18px -14px hsl(0 0% 0% / 0.5);
+  border: 1px solid hsl(215 15% 60%);
+  background: linear-gradient(165deg, hsl(210 20% 94%), hsl(215 13% 79%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.6), 0 1px 2px hsl(0 0% 0% / 0.12), 0 8px 18px -14px hsl(0 0% 0% / 0.5);
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 .valid-fact:hover {
   transform: translateY(-3px);
-  border-color: hsl(var(--vf-pass) / 0.35);
-  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06), 0 14px 26px -16px hsl(0 0% 0% / 0.55);
+  border-color: hsl(215 20% 50%);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.7), 0 14px 26px -16px hsl(0 0% 0% / 0.5);
 }
-.valid-fact dt { display: flex; align-items: center; gap: 0.4rem; font-size: 0.66rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: hsl(var(--muted-foreground)); }
-.valid-fact-ic { display: inline-flex; flex: 0 0 auto; color: hsl(var(--vf-pass)); }
+.valid-fact dt { display: flex; align-items: center; gap: 0.4rem; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: hsl(0 0% 8%); }
+.valid-fact-ic { display: inline-flex; flex: 0 0 auto; color: hsl(215 22% 32%); }
 .valid-fact-ic svg { width: 0.95rem; height: 0.95rem; }
-.valid-fact dd { margin: 0.4rem 0 0; font-size: 0.9rem; font-weight: 500; color: hsl(var(--foreground)); overflow-wrap: anywhere; }
+.valid-fact dd { margin: 0.4rem 0 0; font-size: 0.75rem; font-weight: 500; font-family: 'SUSE Mono', ui-monospace, monospace; color: hsl(215 12% 40%); overflow-wrap: anywhere; }
+
+/* ─── Embedded-metadata reveal ───────────────────────────────────────────────
+   A clinical readout of everything the file discloses (EXIF/XMP/GPS/…). Hierarchy
+   is carried entirely by type — tracked uppercase section heads, muted labels,
+   SUSE-Mono values — and whitespace. No boxes, no rules, no coloured margins;
+   sensitivity is signalled by colouring the value itself, not by chrome. */
+.valid-meta {
+    margin: 1.5rem 0 0;
+    padding-top: 1.3rem;
+    border-top: 1px solid hsl(var(--border));
+    box-shadow: 0 .2rem 1rem #0003;
+    border-radius: var(--radius);
+    padding: 3rem;
+}
+.valid-meta-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.valid-meta-head h3 {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin: 0; font-size: 0.95rem; font-weight: 650; letter-spacing: -0.01em;
+}
+.valid-meta-head h3 svg { width: 2rem; height: 2rem; color: hsl(var(--muted-foreground)); }
+.valid-meta-count {
+  margin-left: auto;
+  font-family: 'SUSE Mono', ui-monospace, monospace; font-size: 0.68rem;
+  color: hsl(var(--muted-foreground)); letter-spacing: 0.02em;
+}
+.valid-meta-note { margin: 0.45rem 0 0; font-size: 0.78rem; line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 68ch; }
+.valid-meta-note a { color: hsl(var(--primary)); text-underline-offset: 2px; }
+
+.valid-meta-grid {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 1.6rem 2.4rem;
+  align-items: start;
+}
+.valid-meta-group h4,
+.valid-meta-location h4 {
+  display: flex; align-items: center; gap: 0.4rem;
+  margin: 0 0 0.7rem;
+  font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em;
+  color: hsl(var(--muted-foreground));
+}
+.valid-meta-group h4 svg,
+.valid-meta-location h4 svg { width: 0.82rem; height: 0.82rem; opacity: 0.75; }
+.valid-meta-group dl { margin: 0; display: grid; gap: 0.5rem 0.9rem; grid-template-columns: auto 1fr; }
+.valid-meta-row { display: contents; }
+.valid-meta-row dt {
+  font-size: 0.72rem; line-height: 1.35; color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.valid-meta-row dd {
+  margin: 0; font-size: 0.72rem; line-height: 1.35; font-weight: 500;
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  color: hsl(var(--foreground)); overflow-wrap: anywhere; word-break: break-word;
+}
+/* Personally identifying — GPS, serials, author names. The exposed VALUE is
+   tinted persimmon; the eye lands on the datum, not on decoration. */
+.valid-meta-row.is-sensitive dd { color: hsl(var(--vf-fail)); }
+
+/* Location — a full-width offline world plot with the fix pinned. */
+.valid-meta-location { grid-column: 1 / -1; }
+.valid-locator {
+  display: block; width: 100%; max-width: 560px; height: auto;
+  margin: 0.1rem 0 0; border-radius: 0.7rem;
+  background: hsl(var(--muted) / 0.35);
+}
+.valid-locator-sea { fill: hsl(var(--muted) / 0.55); }
+.valid-locator-land {
+  fill: hsl(var(--muted-foreground) / 0.26);
+  stroke: hsl(var(--muted-foreground) / 0.4); stroke-width: 0.5; vector-effect: non-scaling-stroke;
+}
+.valid-locator-halo { fill: hsl(var(--vf-fail) / 0.22); }
+.valid-locator-dot { fill: hsl(var(--vf-fail)); stroke: hsl(var(--card)); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.valid-locator-tick { stroke: hsl(var(--vf-fail)); stroke-width: 1.4; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.valid-meta-loc-read {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 1.4rem;
+  margin-top: 0.7rem;
+}
+.valid-meta-loc-item { display: inline-flex; align-items: baseline; gap: 0.5rem; }
+.valid-meta-loc-item .k { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.07em; color: hsl(var(--muted-foreground)); }
+.valid-meta-loc-item .v { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: 0.75rem; color: hsl(var(--vf-fail)); }
+.valid-meta-map { font-size: 0.7rem; color: hsl(var(--primary)); text-underline-offset: 2px; white-space: nowrap; }
 
 /* Hero scorecard — eight canonical checks at a glance. Each pip is a struck
    status chip: pass = glossy pine glass, fail = persimmon/rust glass (equal
@@ -238,6 +350,7 @@
 .valid-score:not(.valid-score--mini) .valid-score-pip {
   width: 6.25rem; min-height: 6.5rem;
   padding: 0.7rem 0.45rem 0.65rem;
+  justify-content: center;
   border: 1px solid hsl(var(--border));
   background: hsl(var(--muted) / 0.4);
   animation: valid-pip-in 0.5s cubic-bezier(0.2, 0.8, 0.3, 1.25) backwards;
@@ -251,9 +364,21 @@
   --ink: hsl(var(--muted-foreground) / 0.8);
   background: hsl(var(--muted) / 0.4);
   border-color: hsl(var(--border) / 0.7);
-  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.07);
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.07);border:0;
 }
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-na .valid-score-status { opacity: 0.7; }
+
+/* On-device signature — no CA identity to verify, but not a non-answer either.
+   A dark-ash slate: the file WAS signed, just with a self-issued on-device key.
+   Overrides the faded-paper is-na look above (later + more specific). */
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-ash {
+  --ink: hsl(220 14% 88%);
+  background: linear-gradient(165deg, hsl(220 9% 30%), hsl(222 11% 21%));
+  border-color: hsl(220 10% 40%);border:0;
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.08),
+    0 8px 20px -12px hsl(0 0% 0% / 0.6), 0 2px 6px -3px hsl(0 0% 0% / 0.4);
+}
 
 /* Glossy glass chips — pass / fail / warn share the domed build; only the hue
    differs. Lifted off the page on a coloured glow, with a wet-glass crown. */
@@ -275,7 +400,8 @@
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-warn::before {
   content: ''; position: absolute; z-index: 0; inset: 1px 1px 42% 1px;
   border-radius: 0.8rem 0.8rem 45% 45% / 0.8rem 0.8rem 100% 100%;
-  background: linear-gradient(hsl(0 0% 100% / 0.42), hsl(0 0% 100% / 0));
+  background: linear-gradient(hsl(0 0% 100% / 0.2), hsl(0 0% 100% / 0));
+  border: 0;
   pointer-events: none;
 }
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-pass:hover,
@@ -383,7 +509,7 @@
 .valid-item.is-none,
 .valid-item.is-busy { border-left-color: hsl(var(--border)); }
 .valid-item[open] { box-shadow: 0 10px 28px -22px hsl(0 0% 0% / 0.55); }
-.valid-item.is-good[open] { box-shadow: 0 14px 32px -22px hsl(var(--vf-pass) / 0.7); }
+ 
 
 .valid-item-summary {
   display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem 0.75rem;

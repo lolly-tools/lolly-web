@@ -44,6 +44,11 @@ const THEME_COLORS: Record<string, string> = {
   suse: '#0c322c',  // 171 62% 12% (Pine)
 };
 
+// Handle for the transition-class cleanup timer. Module-scoped so rapid theme
+// switches clear the pending timeout instead of letting an earlier one fire early
+// and cut the current transition short.
+let themeTransitionTimer: ReturnType<typeof setTimeout> | undefined;
+
 /**
  * Apply a theme, persist it to localStorage (for FOUC prevention), and
  * optionally animate the colour transition.
@@ -53,7 +58,8 @@ export function applyTheme(theme: string, animate = true): void {
 
   if (animate) {
     html.classList.add('theme-transitioning');
-    setTimeout(() => html.classList.remove('theme-transitioning'), 220);
+    clearTimeout(themeTransitionTimer);
+    themeTransitionTimer = setTimeout(() => html.classList.remove('theme-transitioning'), 220);
   }
 
   html.dataset.theme = theme;
