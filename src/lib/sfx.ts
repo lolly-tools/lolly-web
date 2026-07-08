@@ -29,7 +29,7 @@
  *    it no longer silences sounds by default.) An explicit stored preference always wins.
  */
 
-export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'sign' | 'warn' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
+export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'sign' | 'warn' | 'ghost' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
 
 /** localStorage mirror of the mute flag ('1' muted / '0' on). Canonical store is the profile. */
 const MUTE_KEY = 'lolly:sfxMuted';
@@ -602,6 +602,59 @@ const VOICES: Record<SfxName, (ctx: AudioContext, out: AudioNode) => void> = {
     blip(ctx, out, { type: 'triangle', from: 294, to: 262, dur: 0.26, peak: 0.15, delay: 0.13 }); // D4→C4 — falls
     blip(ctx, out, { type: 'sine',     from: 130, to: 98,  dur: 0.28, peak: 0.09, delay: 0.13 }); // low body
   },
+  // A spooky ghost "hoooo" — played on the Verify page when a credential DECLARES
+  // AI-generated content (layered under the verdict cue, as the purple AI banner
+  // appears). A wavering "oo" wail: a low carrier swells in breathy, rises then
+  // droops, with a widening vibrato for the ghostly waver and a hollow partner a
+  // fifth up tuned a hair flat so the two beat against each other (the eerie
+  // shimmer); "oo" vowel formants shape the "hooo"; a drift of airy breath haunts
+  // underneath. Quiet and long-tailed — it haunts, never jump-scares.
+  ghost(ctx, out) {
+    const t0 = ctx.currentTime;
+    const eps = 0.0001;
+    const D = 1.6;
+    // Vibrato LFO — the waver. Widens toward the peak of the wail, then eases off.
+    const vib = ctx.createOscillator(); vib.type = 'sine';
+    vib.frequency.setValueAtTime(5.2, t0);
+    const vibg = ctx.createGain();
+    vibg.gain.setValueAtTime(6, t0);
+    vibg.gain.linearRampToValueAtTime(15, t0 + D * 0.5);   // waver widens into the "…OOO…"
+    vibg.gain.linearRampToValueAtTime(7, t0 + D);          // settles as it drifts away
+    vib.connect(vibg);
+    // Shared "oo" formant sum + breathy amp envelope.
+    const sum = ctx.createGain();
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(eps, t0);
+    g.gain.exponentialRampToValueAtTime(0.24, t0 + 0.4);   // breathy swell — "hoo…"
+    g.gain.exponentialRampToValueAtTime(0.17, t0 + D * 0.7);
+    g.gain.exponentialRampToValueAtTime(eps, t0 + D);      // …drifts away
+    sum.connect(g).connect(out);
+    const formant = (freq: number, q: number, gain: number, src: AudioNode): void => {
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(freq, t0); bp.Q.setValueAtTime(q, t0);
+      const fg = ctx.createGain(); fg.gain.value = gain;
+      src.connect(bp).connect(fg).connect(sum);
+    };
+    // Two wailing voices: a low carrier that rises then droops, and a hollow fifth
+    // over it tuned a hair flat, so the pair beat against each other — the eerie moan.
+    const voice = (base: number, level: number, flat: number): void => {
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(base, t0);
+      o.frequency.exponentialRampToValueAtTime(base * 1.5, t0 + D * 0.42); // rise — "hoo-OOO"
+      o.frequency.exponentialRampToValueAtTime(base * 0.9, t0 + D);        // droop — "…ooo"
+      o.detune.setValueAtTime(flat, t0);
+      vibg.connect(o.frequency);                                            // share the waver
+      const lvl = ctx.createGain(); lvl.gain.value = level; o.connect(lvl);
+      formant(360, 6, 1.0, lvl);   // F1 of "oo"
+      formant(860, 8, 0.45, lvl);  // F2 of "oo"
+      o.start(t0); o.stop(t0 + D + 0.06);
+    };
+    voice(196, 0.5, 0);    // G3 carrier — the body of the moan
+    voice(294, 0.3, -22);  // D4, ~22 cents flat — hollow, beating, eerie
+    vib.start(t0); vib.stop(t0 + D + 0.06);
+    // A drift of airy breath under the wail — spectral hiss, quiet.
+    sweep(ctx, out, { dur: D * 0.85, peak: 0.05, cutoffFrom: 900, cutoffTo: 400, delay: 0.15 });
+  },
   // A quick, quiet "shoo" for dismissing a modal/overlay — a short airy hush that
   // falls away fast (filtered noise sweeping high→low). Barely there, never a whoosh.
   shoo(ctx, out) {
@@ -1001,7 +1054,7 @@ function isSfxName(v: string | undefined): v is SfxName {
   return v === 'click' || v === 'pickup' || v === 'drop' || v === 'delete' || v === 'toggle'
     || v === 'navigate' || v === 'shutter' || v === 'shuffle' || v === 'coverflow' || v === 'gallery'
     || v === 'save' || v === 'saveProfile' || v === 'whoosh' || v === 'vacuum' || v === 'fanfare'
-    || v === 'twinkle' || v === 'shimmer' || v === 'ding' || v === 'victory' || v === 'braaam' || v === 'warn'
+    || v === 'twinkle' || v === 'shimmer' || v === 'ding' || v === 'victory' || v === 'braaam' || v === 'warn' || v === 'ghost'
     || v === 'shoo' || v === 'reel' || v === 'aperture' || v === 'scribble' || v === 'flick'
     || v === 'optIn' || v === 'optOut' || v === 'key' || v === 'slider' || v === 'scrub'
     || v === 'select' || v === 'hydraulicOpen' || v === 'hydraulicClose' || v === 'verify' || v === 'dashboard' || v === 'newSession' || v === 'leaveSession'

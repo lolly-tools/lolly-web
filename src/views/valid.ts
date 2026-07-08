@@ -892,6 +892,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       // (the green medallion moment) — up-and-down scales ending on a rise and a ding — and a
       // soft cautionary "uh-oh" when it's broken, missing, or unreadable.
       playSfx(report?.state === 'valid' ? 'sign' : 'warn');
+      // …and a spooky ghost "hoooo" layered under the verdict when the credential
+      // declares AI-generated content (as the purple AI banner appears).
+      if (report?.aiGenerated) playSfx('ghost');
       reportEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       return;
     }
@@ -929,7 +932,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     });
     reportEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    let allValid = true;
+    let allValid = true, anyAi = false;
     for (let i = 0; i < list.length; i++) {
       const file = list[i]!, card = cards[i]!;
       const { report, error, meta, watermark } = await verifyFile(file);
@@ -942,9 +945,12 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
         card.innerHTML = errorSummary(file.name, error!);
       }
       if (report?.state !== 'valid') allValid = false;
+      if (report?.aiGenerated) anyAi = true;
     }
     // One summary verdict for the whole batch — the "signing" flourish only if every file passed.
     playSfx(allValid ? 'sign' : 'warn');
+    // …with the ghost "hoooo" if any file in the batch declares AI-generated content.
+    if (anyAi) playSfx('ghost');
   }
 
   // Append "-clean" before the extension: report.pdf → report-clean.pdf.
