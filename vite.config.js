@@ -123,6 +123,12 @@ export default defineConfig({
             // here — otherwise it co-locates into the c2pa chunk and pemToDer's boot
             // edge drags the whole 17 KB c2pa blob back onto the preload set.
             { name: 'engine-x509', test: /engine\/src\/x509\.ts$/, minSize: 0, minShareCount: 1 },
+            // Catalog signature verification (catalog-integrity.ts). catalog/sync.ts
+            // needs verifyCatalogEnvelope at boot; without its own chunk it co-locates
+            // into engine-render and that boot edge drags the whole render/validate
+            // blob (+ Handlebars + Ajv) back onto the preload set. MUST precede
+            // engine-render. Its only engine dep is pemToDer (engine-x509, above).
+            { name: 'engine-integrity', test: /engine\/src\/catalog-integrity\.ts$/, minSize: 0, minShareCount: 1 },
             // On-device C2PA sign/verify + CBOR codec (~17 KB gz). Only the lazy
             // /valid view and export-with-provenance run these — keep them off the
             // render-blocking gallery boot path.

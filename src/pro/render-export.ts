@@ -108,6 +108,81 @@ function withThumbAssets(host: HostV1): HostV1 {
   } as HostV1;
 }
 
+/**
+ * Mount a tool's hydrated template into a fresh off-viewport stage and run the
+ * shared post-paint settle. Both renderRowToBlob and renderToolPages go through
+ * this so the offscreen lifecycle can't drift between them (they were two near-
+ * identical copies), and — like the live view (views/tool.ts paint()) — BOTH
+ * lottie AND <video> players are mounted: mountVideoPlayers resolves only once a
+ * clip has a decoded frame, so a batch/compose/preview export snapshots a real
+ * frame instead of a blank one (previously only lottie was mounted here, so a
+ * `[data-video-key]` tool could export a not-yet-decoded frame).
+ *
+ * `fixedHeight` sets a stage/canvas height for the single-frame row path; omit it
+ * for the paged path, which must lay out its full auto height so every page box is
+ * measured. Returns the mounted { stage, canvas }; the caller exports from it and
+ * MUST call stage._lottieCleanup?.() + stage.remove() in a finally. If the settle
+ * itself throws, the stage is torn down here before rethrowing (no leak).
+ */
+async function mountToolCanvas(
+  styles: string | null | undefined,
+  hydrated: string,
+  { layoutW, fixedHeight, composeStack, host }: { layoutW: number; fixedHeight?: number; composeStack?: readonly string[]; host: HostV1 },
+): Promise<{ stage: ExportStage; canvas: HTMLDivElement }> {
+  const stage: ExportStage = document.createElement('div');
+  stage.setAttribute('aria-hidden', 'true');
+  // `contain:paint` makes the stage the containing block for `position:fixed` descendants (and
+  // clips its paint to this box). Without it, a tool template's fixed element (e.g. text-helper's
+  // Copy pill) positions against the VIEWPORT — not this left:-100000px stage — and flashes
+  // on-screen for the ~350ms it's mounted; a viewport-unit-sized one flashes huge. Paint
+  // containment doesn't contain size, so an auto-height stage still lays out fully.
+  const heightCss = fixedHeight !== undefined ? `height:${fixedHeight}px;` : '';
+  stage.style.cssText = `position:fixed;left:-100000px;top:0;width:${layoutW}px;${heightCss}contain:paint;pointer-events:none;z-index:-1;`;
+  if (styles) {
+    const style = document.createElement('style');
+    style.textContent = scopeCss(styles, `.${CANVAS_CLASS}`);
+    stage.appendChild(style);
+  }
+  const canvas = document.createElement('div');
+  canvas.className = CANVAS_CLASS;
+  canvas.style.cssText = fixedHeight !== undefined ? `width:${layoutW}px;height:${fixedHeight}px;` : `width:${layoutW}px;`;
+  // Neutralise any lolly.tools embed URLs BEFORE insertion so this off-screen node
+  // (batch row / composed child / single export) never fires a network request for
+  // them — the live-preview wiring in views/tool.ts isn't on this path.
+  canvas.innerHTML = neutralizeEmbeds(hydrated);
+  stage.appendChild(canvas);
+  document.body.appendChild(stage);
+
+  try {
+    runTemplateScripts(canvas);
+    // Batch path historically settled a touch faster than the live view (350 vs
+    // the shared 400ms default); preserved explicitly so extraction changed nothing.
+    await waitForQuiescence(canvas, { silenceMs: 350 });
+    // Resolve embeds to local blob/data URLs before export so the embedded render
+    // appears in the output. The compose stack is threaded so an embed inside a
+    // composed child stays guarded (undefined → [] for the paged path).
+    await hydrateEmbeds(canvas, { host, embed: { stack: composeStack ?? [] } });
+    // Lottie + video markers: the live view mounts both; the chunks load only when a
+    // marker exists. Lottie players are OWNED (must be reaped → _lottieCleanup); video
+    // is progressive enhancement that owns nothing, but its promise gates on a decoded
+    // frame so the export isn't blank.
+    if (canvas.querySelector('[data-lottie-src]')) {
+      const { mountLottiePlayers, destroyLottiePlayers } = await import('../views/lottie-mount.ts');
+      await mountLottiePlayers(canvas);
+      stage._lottieCleanup = () => destroyLottiePlayers(canvas);
+    }
+    if (canvas.querySelector('video[data-video-key]')) {
+      const { mountVideoPlayers } = await import('../views/video-mount.ts');
+      await mountVideoPlayers(canvas);
+    }
+    return { stage, canvas };
+  } catch (e) {
+    stage._lottieCleanup?.();
+    stage.remove();
+    throw e;
+  }
+}
+
 interface RenderRowResult {
   blob: Blob;
   format: string;
@@ -167,48 +242,9 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
   const outW = dim(width);
   const outH = dim(height);
 
-  const stage: ExportStage = document.createElement('div');
-  stage.setAttribute('aria-hidden', 'true');
-  // `contain:paint` makes the stage the containing block for `position:fixed` descendants (and
-  // clips its paint to this box). Without it, a tool template's fixed element (e.g. text-helper's
-  // Copy pill) positions against the VIEWPORT — not this left:-100000px stage — and flashes
-  // on-screen for the ~350ms it's mounted; a viewport-unit-sized one flashes huge. Paint
-  // containment doesn't contain size, so an auto-height stage still lays out fully.
-  stage.style.cssText = `position:fixed;left:-100000px;top:0;width:${layoutW}px;height:${layoutH}px;contain:paint;pointer-events:none;z-index:-1;`;
-
-  if (tool.styles) {
-    const style = document.createElement('style');
-    style.textContent = scopeCss(tool.styles, `.${CANVAS_CLASS}`);
-    stage.appendChild(style);
-  }
-
-  const canvas = document.createElement('div');
-  canvas.className = CANVAS_CLASS;
-  canvas.style.cssText = `width:${layoutW}px;height:${layoutH}px;`;
-  // Neutralise any lolly.tools embed URLs BEFORE insertion so this off-screen
-  // node (batch row / composed child / single export) never fires a network
-  // request for them — the live-preview wiring in views/tool.js isn't on this path.
-  canvas.innerHTML = neutralizeEmbeds(runtime.getHydrated());
-  stage.appendChild(canvas);
-  document.body.appendChild(stage);
+  const { stage, canvas } = await mountToolCanvas(tool.styles, runtime.getHydrated(), { layoutW, fixedHeight: layoutH, composeStack, host });
 
   try {
-    runTemplateScripts(canvas);
-    // Batch path historically settled a touch faster than the live view (350 vs
-    // the shared 400ms default); preserved explicitly so extraction changed nothing.
-    await waitForQuiescence(canvas, { silenceMs: 350 });
-    // Resolve embeds to local blob/data URLs before export so the embedded render
-    // appears in the output (the existing image seams then handle the blob). The
-    // compose stack is threaded so an embed inside a composed child stays guarded.
-    await hydrateEmbeds(canvas, { host, embed: { stack: composeStack ?? [] } });
-    // Mount lottie players on any [data-lottie-src] markers — batch/folder renders
-    // bypass the live-preview wiring in views/tool.js, so without this the capture
-    // would show empty containers. The chunk loads only when a marker exists.
-    if (canvas.querySelector('[data-lottie-src]')) {
-      const { mountLottiePlayers, destroyLottiePlayers } = await import('../views/lottie-mount.ts');
-      await mountLottiePlayers(canvas);
-      stage._lottieCleanup = () => destroyLottiePlayers(canvas);
-    }
     const fmt = chooseFormat(tool.manifest, format);
     // A "reopen in Lolly" link: this tool's short URL carrying the exact inputs +
     // export settings used for THIS render, so a zip recipient can return to
@@ -266,35 +302,12 @@ export async function renderToolPages(row: BatchRow, host: HostV1, { format, thu
 
   const runtime = await createRuntime(tool, thumbAssets ? withThumbAssets(host) : host, { ...(row.values ?? {}) });
 
-  const stage: ExportStage = document.createElement('div');
-  stage.setAttribute('aria-hidden', 'true');
-  // No fixed height on the stage/canvas: let the document lay out its FULL height so
-  // every page box is measured (page boxes are fixed-size, so they render identically
-  // whether or not the viewport clips them). `contain:paint` keeps any `position:fixed`
-  // template element off the real viewport (see renderRowToBlob's note) — it doesn't contain
-  // size, so the auto-height layout is unaffected.
-  stage.style.cssText = `position:fixed;left:-100000px;top:0;width:${layoutW}px;contain:paint;pointer-events:none;z-index:-1;`;
-  if (tool.styles) {
-    const style = document.createElement('style');
-    style.textContent = scopeCss(tool.styles, `.${CANVAS_CLASS}`);
-    stage.appendChild(style);
-  }
-  const canvas = document.createElement('div');
-  canvas.className = CANVAS_CLASS;
-  canvas.style.cssText = `width:${layoutW}px;`;
-  canvas.innerHTML = neutralizeEmbeds(runtime.getHydrated());
-  stage.appendChild(canvas);
-  document.body.appendChild(stage);
+  // No fixed height: let the document lay out its FULL height so every page box is
+  // measured (page boxes are fixed-size, so they render identically whether or not
+  // the viewport clips them).
+  const { stage, canvas } = await mountToolCanvas(tool.styles, runtime.getHydrated(), { layoutW, host });
 
   try {
-    runTemplateScripts(canvas);
-    await waitForQuiescence(canvas, { silenceMs: 350 });
-    await hydrateEmbeds(canvas, { host, embed: { stack: [] } });
-    if (canvas.querySelector('[data-lottie-src]')) {
-      const { mountLottiePlayers, destroyLottiePlayers } = await import('../views/lottie-mount.ts');
-      await mountLottiePlayers(canvas);
-      stage._lottieCleanup = () => destroyLottiePlayers(canvas);
-    }
     const fmt = chooseFormat(tool.manifest, format);
     // Each page box is exported on its own; no page boxes → export the whole canvas once.
     const pageEls = [...canvas.querySelectorAll<HTMLElement>('[data-pdf-page]')];

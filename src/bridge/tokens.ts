@@ -17,7 +17,7 @@
  * that doesn't provide it just doesn't offer token-driven swatches.
  */
 
-import { createTokenSet } from '@lolly/engine';
+import { createTokenSet } from '../../../../engine/src/tokens.ts';
 import type { TokensAPI, TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
 
 /** The slice of the host this bridge reads: the asset store's raw blob access. */

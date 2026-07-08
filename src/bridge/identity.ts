@@ -16,7 +16,7 @@
  * HostV1 capability: tools can never observe or depend on enrollment.
  */
 
-import { pemToDer } from '@lolly/engine';
+import { pemToDer } from '../../../../engine/src/x509.ts';
 import type { IDBPDatabase } from 'idb';
 
 // The persisted certificate record (the 'cert' entry in the 'identity' store):

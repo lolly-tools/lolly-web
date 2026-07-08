@@ -23,8 +23,8 @@
  */
 
 import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
-import { verifyC2pa, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL } from '@lolly/engine';
-import type { FileMetadata, MetaGroup } from '@lolly/engine';
+import { verifyC2pa, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat } from '@lolly/engine';
+import type { FileMetadata, MetaGroup, StripFormat } from '@lolly/engine';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
@@ -53,7 +53,7 @@ interface Claim {
   generatorInfo: Record<string, string | number | boolean> | null;
   instanceId: unknown;
   manifestLabel: string;
-  actions: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown }>;
+  actions: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown }>;
 }
 interface VerifyReport {
   found: boolean;
@@ -69,7 +69,7 @@ interface VerifyReport {
   author?: { name: string; email?: string };
   signer?: Signer;
   aiGenerated?: { kind: 'generated' | 'composite'; sourceType: string };
-  history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown }>;
+  history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; generator?: unknown }>;
 }
 
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
@@ -115,8 +115,10 @@ const ICONS = {
   camera: '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
   // Big central sparkle + two small twinkles — the "auto / AI generated" glyph.
   aiSpark: '<path d="M12 2.5l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 15v3.5M17.25 16.75h3.5"/><path d="M5 3.5v3M3.5 5h3"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.8"/><path d="m21 15-4.5-4.5L5 21"/>',
+  checklist: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1.3 1.3L6.5 5"/><path d="m3 12 1.3 1.3 2.2-2.3"/><path d="m3 18 1.3 1.3 2.2-2.3"/>',
 };
-const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'needs attention', na: 'not applicable' };
+const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'invalid', na: 'n/a' };
 
 const STATE_COPY = {
   valid: {
@@ -139,7 +141,7 @@ const STATE_COPY = {
   // with which app — remains the signer’s own claim.
   trusted: {
     cls: 'is-valid is-trusted',
-    title: 'Credential intact — identity verified',
+    title: 'Verified',
     sub: 'The file is exactly what its embedded credential signed, and the signing certificate chains to the pinned Lolly CA root — integrity plus a CA-verified identity. What it records about how it was made is still the signer’s own claim.',
   },
   // state 'valid' + the claim records Lolly → the answer users came for.
@@ -324,13 +326,45 @@ function miniScoreHtml(report: VerifyReport): string {
 
 // The always-visible summary row of a collapsible report: state badge, filename,
 // signer identity (when CA-verified), and the mini scorecard glance.
+// The maker(s) behind a report — the active manifest's generator first, then any
+// distinct upstream makers from the provenance chain (preserved ingredients),
+// as short brand names. `lolly` when Lolly is anywhere in the mix. null when the
+// generator can't be read.
+function reportMaker(report: VerifyReport): { names: string[]; lolly: boolean } | null {
+  const gi = report.claim?.generatorInfo;
+  const primaryRaw = (gi && typeof gi.name === 'string' && gi.name)
+    || (typeof report.claim?.claimGenerator === 'string' && report.claim.claimGenerator) || '';
+  const primary = primaryRaw ? shortAgent(String(primaryRaw)) : (report.madeWithLolly ? 'Lolly' : '');
+  if (!primary) return null;
+  const names = [primary];
+  const seen = new Set([primary.toLowerCase()]);
+  for (const s of report.history ?? []) {
+    const raw = (typeof s.softwareAgent === 'string' && s.softwareAgent)
+      || (typeof s.generator === 'string' && s.generator) || '';
+    if (!raw) continue;
+    const v = shortAgent(String(raw));
+    if (!seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); names.push(v); }
+  }
+  return { names, lolly: report.madeWithLolly || names.some((n) => /lolly/i.test(n)) };
+}
+
 function summaryInner(fileName: string, report: VerifyReport): string {
   const { state, identity } = resolveState(report);
   // Attribution chip: OIDC email for a device credential, else the CA signer's
   // organisation (Google, Adobe…). Only when the chain reached a pinned anchor.
   const who = identity ? (identity.email || report.signer?.organization || report.signer?.commonName) : null;
+  const tone = stateTone(report);
+  const maker = reportMaker(report);
+  // An intact credential leads with WHO made it — "Made with Google" (grey),
+  // "Made with Lolly" (green), several vendors joined when a chain preserved
+  // ingredients — matching the timeline's maker pills. A broken / expired / no-
+  // credential file leads with the verdict badge instead: the problem is the
+  // headline, and its maker isn't something to vouch for.
+  const lead = (tone === 'good' && maker)
+    ? `<span class="valid-item-maker ${maker.lolly ? 'is-lolly' : 'is-other'}" title="${escape(state.title)}">Made with ${escape(maker.names.join(' · '))}</span>`
+    : `<span class="valid-item-badge is-${tone}">${escape(state.title)}</span>`;
   return `
-    <span class="valid-item-badge is-${stateTone(report)}">${escape(state.title)}</span>
+    ${lead}
     ${report.aiGenerated ? `<span class="valid-item-ai" title="Content Credential declares AI-generated content">${svgIcon(ICONS.aiSpark)}<span>AI</span></span>` : ''}
     <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
     ${who ? `<span class="valid-item-signer" title="Signed by ${escape(who)}">${svgIcon(ICONS.mail)}<span>${escape(who)}</span></span>` : ''}
@@ -364,7 +398,7 @@ function renderLocator(lat: number, lon: number): string {
 // place, person, and software behind it, read on-device from its own bytes and
 // laid out clinically by section. Independent of the C2PA verdict: a file with no
 // credential can still be dense with EXIF. Empty in → nothing rendered.
-function renderMetadata(meta: FileMetadata | undefined): string {
+function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number): string {
   if (!meta || !meta.fields.length) return '';
   const loc = meta.fields.filter((f) => f.group === 'location');
   const groups = META_GROUP_ORDER
@@ -395,7 +429,10 @@ function renderMetadata(meta: FileMetadata | undefined): string {
         <h3>${svgIcon(ICONS.eye)}<span>Embedded metadata</span></h3>
         <span class="valid-meta-count">${n} field${n > 1 ? 's' : ''}${meta.format ? ` · ${escape(meta.format)}` : ''}</span>
       </div>
-      <p class="valid-meta-note">Read on this device from the file's own bytes — the EXIF, XMP and container data it carries wherever it travels.${sensitive ? ' Values that can identify a person, place or device are marked.' : ''} Remove it with the <a href="#/tool/strip-data">Hidden Data</a> tool.</p>
+      ${mediaPreviewHtml(preview, 'sm')}
+      <p class="valid-meta-note">Read on this device from the file's own bytes — the EXIF, XMP and container data it carries wherever it travels.${sensitive ? ' Values that can identify a person, place or device are marked.' : ''} ${isStrippableFormat(meta.format)
+    ? `<button type="button" class="valid-clean-link" data-clean-copy="${fileIndex}" data-clean-format="${escape(meta.format)}">Download a cleaned copy</button> or use the <a href="#/tool/strip-data">Hidden Data</a> tool for more control.`
+    : `Remove it with the <a href="#/tool/strip-data">Hidden Data</a> tool.`}</p>
       <div class="valid-meta-grid">
         ${locationBlock}
         ${groups.map((x) => section(META_GROUP_LABEL[x.g], META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}
@@ -458,6 +495,8 @@ const SOURCE_TYPE_LABEL: Record<string, string> = {
   computationalCapture: 'Computational capture',
   digitalArt: 'Digital art',
   minorHumanEdits: 'Minor human edits',
+  composite: 'Composite of multiple elements',
+  softwareImage: 'Software-generated image',
 };
 const AI_SOURCE_SLUGS: Record<string, 'generated' | 'composite'> = {
   trainedAlgorithmicMedia: 'generated',
@@ -465,6 +504,30 @@ const AI_SOURCE_SLUGS: Record<string, 'generated' | 'composite'> = {
 };
 const sourceSlug = (a: { digitalSourceType?: unknown }): string =>
   (typeof a.digitalSourceType === 'string' ? a.digitalSourceType : '').split('/').pop() ?? '';
+
+// Tidy a verbose generator string into a short pill label. Known makers collapse
+// to their brand; anything else keeps its first token (truncated), so the pill
+// stays legible ("Google", "Lolly", "Adobe" — not "Google C2PA Core Generator…").
+const AGENT_BRANDS = ['Lolly', 'Nano Banana', 'Gemini', 'Google', 'Adobe', 'Photoshop', 'Firefly', 'OpenAI', 'DALL·E', 'Microsoft', 'Meta', 'Midjourney', 'Canva', 'Figma', 'Leica', 'Sony', 'Nikon', 'Canon'];
+function shortAgent(name: string): string {
+  const s = name.trim();
+  for (const b of AGENT_BRANDS) if (new RegExp(b.replace(/[.·]/g, '.?').replace(/\s+/g, '\\s*'), 'i').test(s)) return b;
+  const first = s.split(/[\s/,]/)[0] || s;
+  return first.length > 15 ? first.slice(0, 14) + '…' : first;
+}
+// The "who did this step": the action's softwareAgent if set, else the recording
+// manifest's generator. null when neither is present.
+const stepAgent = (a: { softwareAgent?: unknown; generator?: unknown }): string | null => {
+  const raw = (typeof a.softwareAgent === 'string' && a.softwareAgent) || (typeof a.generator === 'string' && a.generator) || '';
+  return raw ? String(raw) : null;
+};
+// Strip a trailing "… by <maker>." now that the maker rides in the pill, and
+// drop the description entirely if what remains just echoes the step label
+// (e.g. "Resized by Google Generative AI." → "" beside a "Resized" row).
+function tidyStepDescription(desc: string, label: string): string {
+  const cleaned = desc.replace(/\s+by\s+[^.]+\.?\s*$/i, '').trim();
+  return cleaned.toLowerCase() === label.toLowerCase() ? '' : cleaned;
+}
 
 function stepsHtml(report: VerifyReport): string {
   // The full provenance chain (all manifests) when the engine surfaced it, else
@@ -478,26 +541,81 @@ function stepsHtml(report: VerifyReport): string {
     const slug = sourceSlug(a);
     const isAi = !!AI_SOURCE_SLUGS[slug];
     const src = SOURCE_TYPE_LABEL[slug];
+    // Who did it → a left-side pill. Lolly reads bold green (mark our own edits
+    // prominently), an AI-sourced step reads purple, any other maker solid grey.
+    const agent = stepAgent(a);
+    const agentCls = agent && /lolly/i.test(agent) ? 'lolly' : isAi ? 'ai' : 'other';
+    const desc = a.description ? tidyStepDescription(String(a.description), label) : '';
     const meta = [
+      desc ? escape(desc) : null,
       a.when ? escape(fmtDate(a.when)) : null,
-      a.softwareAgent ? escape(String(a.softwareAgent)) : null,
-      src ? `<span class="valid-step-src">${isAi ? `${svgIcon(ICONS.aiSpark)} ` : ''}${escape(src)}</span>` : null,
     ].filter(Boolean).join('<span class="valid-step-dot" aria-hidden="true">·</span>');
+    // The source-type note (e.g. "Generated by AI") always gets its own line —
+    // it's a distinct claim from the description/timestamp, not more list prose.
+    const srcLine = src ? `<span class="valid-step-src">${isAi ? `${svgIcon(ICONS.aiSpark)} ` : ''}${escape(src)}</span>` : '';
     return `
-      <li class="valid-step${isAi ? ' is-ai' : ''}">
-        <span class="valid-step-ic" aria-hidden="true">${svgIcon(ICONS[icon])}</span>
-        <span class="valid-step-label">${escape(label)}</span>
-        ${meta ? `<span class="valid-step-meta">${meta}</span>` : ''}
+      <li class="valid-step is-${agentCls}">
+        <span class="valid-step-agent" title="${agent ? escape(agent) : 'Unknown source'}">${escape(agent ? shortAgent(agent) : '—')}</span>
+        <div class="valid-step-main">
+          <span class="valid-step-label"><span class="valid-step-ic" aria-hidden="true">${svgIcon(ICONS[icon])}</span>${escape(label)}</span>
+          ${meta ? `<span class="valid-step-meta">${meta}</span>` : ''}
+          ${srcLine}
+        </div>
       </li>`;
   }).join('');
   return `
-    <div class="valid-steps">
+    <div class="valid-steps valid-panel">
       <h3>${svgIcon(ICONS.clock)}<span>Edit history</span></h3>
       <ol class="valid-steps-list">${rows}</ol>
     </div>`;
 }
 
-function renderReportBody(fileName: string, report: VerifyReport, meta?: FileMetadata): string {
+// The assertion/validation log, boxed as a panel matching Edit history — the raw,
+// per-check result behind the hero scorecard's eight collapsed pips (every
+// hashed-URI assertion, the claim signature, the certificate window, the hard
+// binding, trust). Paired with stepsHtml() into .valid-panels so "what happened"
+// and "what was checked" read as two distinct boxes, side by side when there's room.
+function checksHtml(report: VerifyReport): string {
+  if (!report.checks.length) return '';
+  return `
+    <div class="valid-checks-panel valid-panel">
+      <h3>${svgIcon(ICONS.checklist)}<span>Assertion log</span></h3>
+      <ul class="valid-checks">${report.checks.map(checkRow).join('')}</ul>
+    </div>`;
+}
+
+// ── Uploaded-media preview ──────────────────────────────────────────────────
+// A look at the actual file being checked: a large view at the top of the card,
+// a smaller one beside the embedded metadata. Images and video render inline;
+// PDF gets the browser's native viewer; formats a browser can't decode (TIFF,
+// MKV) fall back to a labelled placeholder. The object URL is owned by handle().
+type PreviewKind = 'image' | 'video' | 'pdf' | 'none';
+interface Preview { url?: string; kind: PreviewKind; format: string; name: string; }
+const PREVIEW_IMG = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'webp']);
+const PREVIEW_VID = new Set(['mp4', 'm4v', 'mov', 'webm']);
+function previewKind(format: string | null, name: string): PreviewKind {
+  const f = (format || name.split('.').pop() || '').toLowerCase();
+  if (PREVIEW_IMG.has(f)) return 'image';
+  if (PREVIEW_VID.has(f)) return 'video';
+  if (f === 'pdf') return 'pdf';
+  return 'none';
+}
+function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
+  if (!p) return '';
+  const cls = `valid-preview valid-preview--${size} is-${p.kind}`;
+  if (p.kind === 'image' && p.url)
+    return `<figure class="${cls}"><img src="${escape(p.url)}" alt="Preview of ${escape(p.name)}" decoding="async"></figure>`;
+  if (p.kind === 'video' && p.url)
+    return `<figure class="${cls}"><video src="${escape(p.url)}#t=0.1" preload="metadata" playsinline muted${size === 'lg' ? ' controls' : ''}></video></figure>`;
+  if (p.kind === 'pdf' && p.url && size === 'lg')
+    return `<figure class="${cls}"><embed src="${escape(p.url)}#toolbar=0&view=FitH" type="application/pdf"></figure>`;
+  // Not inline-previewable at this size — a quiet labelled placeholder (large only).
+  if (size === 'lg')
+    return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon(ICONS.image)}</span><figcaption>No inline preview for ${escape((p.format || 'this format').toUpperCase())}</figcaption></figure>`;
+  return '';
+}
+
+function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number): string {
   const { state, sub, identity } = resolveState(report);
   const claim: Partial<Claim> = report.claim ?? {};
   const signer: Partial<Signer> = report.signer ?? {};
@@ -515,8 +633,14 @@ function renderReportBody(fileName: string, report: VerifyReport, meta?: FileMet
           <p class="valid-identity-line">${report.trusted
     ? `Signed by <strong>${escape(signerWho)}</strong> — identity verified by <strong>${escape(identity!.issuer ?? 'a recognised C2PA root')}</strong>`
     : `Signed by <strong>${escape(signerWho)}</strong> — identity was CA-verified; the certificate has since expired`}</p>` : '';
+  // "What happened" and "what was checked" — two distinct boxed panels, paired
+  // side by side wherever the page has the room (see .valid-panels).
+  const stepsBlock = report.found && report.claim ? stepsHtml(report) : '';
+  const checksBlock = checksHtml(report);
+  const panelsBlock = (stepsBlock || checksBlock) ? `<div class="valid-panels">${stepsBlock}${checksBlock}</div>` : '';
   return `
     <div class="valid-result ${state.cls}">
+      ${mediaPreviewHtml(preview, 'lg')}
       <div class="valid-hero">
         <span class="valid-hero-icon">${report.madeWithLolly
     ? '<img class="valid-hero-logo" src="/icons/icon-192.png" width="192" height="192" alt="" aria-hidden="true" decoding="async">'
@@ -549,9 +673,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta?: FileMet
           ${fact('Certificate valid', signer.notBefore ? `${fmtDate(signer.notBefore)} → ${fmtDate(signer.notAfter)}` : null, 'calendar')}
           ${fact('Manifest', claim.manifestLabel, 'document')}
         </dl>` : ''}
-      ${report.found && report.claim ? stepsHtml(report) : ''}
-      ${report.checks.length ? `<ul class="valid-checks">${report.checks.map(checkRow).join('')}</ul>` : ''}
-      ${renderMetadata(meta)}
+      ${panelsBlock}
+      ${renderMetadata(meta, preview, fileIndex)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
     ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no
         standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment:
@@ -647,9 +770,29 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       <div class="valid-item-body"><p class="valid-busy">Could not check this file: ${escape(message)}</p></div>`;
   }
 
+  // Object URLs minted for the media previews. Revoked wholesale at the start of
+  // the next check so a fresh drop never leaks the previous batch's blobs.
+  let previewUrls: string[] = [];
+  function makePreview(file: File, report?: VerifyReport): Preview {
+    const kind = previewKind(report?.format ?? null, file.name);
+    const format = report?.format || (file.name.split('.').pop() || '');
+    const url = kind === 'none' ? undefined : URL.createObjectURL(file);
+    if (url) previewUrls.push(url);
+    return { url, kind, format, name: file.name };
+  }
+
+  // The File objects behind the current batch of reports, indexed exactly like the
+  // cards/reportBody calls below — so a "download a cleaned copy" click (delegated
+  // on reportEl, see wireCleanCopy) can re-read the right file's bytes on demand
+  // rather than holding every batch's bytes in memory between renders.
+  let activeFiles: File[] = [];
+
   async function handle(files: FileList | File[] | null | undefined): Promise<void> {
     const list = files ? [...files] : [];
     if (!list.length) return;
+    previewUrls.forEach((u) => URL.revokeObjectURL(u));
+    previewUrls = [];
+    activeFiles = list;
     reportEl.hidden = false;
 
     // One file reads exactly as before — the full report inline, no collapse chrome.
@@ -658,7 +801,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">Checking ${escape(file.name)}…</p></div>`;
       const { report, error, meta } = await verifyFile(file);
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
-        ? renderReportBody(file.name, report, meta)
+        ? renderReportBody(file.name, report, meta, makePreview(file, report), 0)
         : `<p class="valid-busy">Could not check this file: ${escape(error!)}</p>`;
       // Audible verdict: a bright, chirping "signing" flourish when the credential is intact
       // (the green medallion moment) — up-and-down scales ending on a rise and a ding — and a
@@ -708,7 +851,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       if (report) {
         card.className = `valid-item is-${stateTone(report)}`;
         card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report)}</summary>` +
-          `<div class="valid-item-body">${renderReportBody(file.name, report, meta)}</div>`;
+          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i)}</div>`;
       } else {
         card.className = 'valid-item is-bad';
         card.innerHTML = errorSummary(file.name, error!);
@@ -718,6 +861,50 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     // One summary verdict for the whole batch — the "signing" flourish only if every file passed.
     playSfx(allValid ? 'sign' : 'warn');
   }
+
+  // Append "-clean" before the extension: report.pdf → report-clean.pdf.
+  const cleanFileName = (name: string): string => {
+    const dot = name.lastIndexOf('.');
+    return dot > 0 ? `${name.slice(0, dot)}-clean${name.slice(dot)}` : `${name}-clean`;
+  };
+  const CLEAN_MIME: Record<string, string> = { jpeg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml' };
+
+  // The quiet "download a cleaned copy" action beside the metadata reveal — same
+  // lossless byte surgery as the Hidden Data tool (JPEG/PNG/SVG in-engine,
+  // PDF via host.pdf.strip), offered right where a viewer just saw what the file
+  // discloses, without sending them off to a separate tool.
+  async function downloadCleanCopy(btn: HTMLButtonElement): Promise<void> {
+    const file = activeFiles[Number(btn.dataset.cleanCopy)];
+    const format = (btn.dataset.cleanFormat || '').toUpperCase();
+    if (!file) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Cleaning…';
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let outBytes: Uint8Array, mime: string;
+      if (format === 'PDF') {
+        if (!host.pdf?.strip) throw new Error('PDF cleaning isn’t available in this app.');
+        ({ bytes: outBytes } = await host.pdf.strip(bytes));
+        mime = 'application/pdf';
+      } else {
+        const fmt = format.toLowerCase() as StripFormat;
+        outBytes = stripMetadata(bytes, fmt);
+        mime = CLEAN_MIME[fmt] || 'application/octet-stream';
+      }
+      await host.export.file(new Blob([outBytes as BlobPart], { type: mime }), { filename: cleanFileName(file.name) });
+      btn.textContent = 'Downloaded ✓';
+    } catch (err) {
+      btn.textContent = 'Couldn’t clean this file';
+      host.log('warn', 'valid: clean-copy failed', { error: (err as Error)?.message });
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 2000);
+    }
+  }
+  reportEl.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-clean-copy]');
+    if (btn) downloadCleanCopy(btn);
+  });
 
   drop.addEventListener('click', () => input.click());
   drop.addEventListener('keydown', (e) => {

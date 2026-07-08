@@ -31,7 +31,7 @@
 
 import '../styles/picker.css';   // async CSS chunk (lazy view — not on the landing)
 import DOMPurify from 'dompurify';
-import { createRuntime, serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers } from '@lolly/engine';
+import { createRuntime, serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore } from '@lolly/engine';
 import { getTool } from '../bridge/tool-loader.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { downscaleRaster, readVideoDimensions } from '../bridge/image-resize.ts';
@@ -114,6 +114,8 @@ interface UserAssetRecordInput {
   width?: number;
   height?: number;
   meta?: Record<string, unknown>;
+  credential?: Uint8Array;
+  credentialFormat?: string;
 }
 
 /** The picker's option bag: AssetPickerOpts (title/allowUpload/current/type/…)
@@ -651,11 +653,11 @@ async function render(
     }
   });
 
-  // A tool preview is a build artifact that can 404 (catalog/previews/ isn't committed
-  // and build:web doesn't generate it) — when one fails, reveal the tool's inline icon
-  // instead of a broken image. Error events don't bubble, so listen in the capture
-  // phase, scoped to tool previews so library/session thumbs are untouched (mirrors
-  // gallery.js).
+  // A tool preview is a build artifact (catalog/previews/) that, though committed, can
+  // be missing on a fresh checkout / before `npm run previews`, or drift from the index
+  // — when one 404s, reveal the tool's inline icon instead of a broken image. Error
+  // events don't bubble, so listen in the capture phase, scoped to tool previews so
+  // library/session thumbs are untouched (mirrors gallery.ts).
   body.addEventListener('error', (e) => {
     const img = e.target;
     if (img instanceof HTMLImageElement && img.classList.contains('asset-picker-toolitem-preview')) {
@@ -1593,10 +1595,10 @@ function card(ref: AssetRef): string {
 
 // A tool the user can render to an image. Preview-forward like the gallery: show the
 // tool's rendered preview thumbnail, falling back to its inline icon. The `preview` is
-// a build artifact (catalog/previews/) that can 404 (not committed, not built by
-// build:web) — so the icon is always rendered too, revealed by a capture-phase error
-// handler (see render). The index ships the icon as trusted inline SVG (built from
-// tools/<id>/icon.svg) — inlined so it themes via currentColor.
+// a build artifact (catalog/previews/ — committed, but absent on a fresh checkout or
+// after index drift) that can still 404 — so the icon is always rendered too, revealed
+// by a capture-phase error handler (see render). The index ships the icon as trusted
+// inline SVG (built from tools/<id>/icon.svg) — inlined so it themes via currentColor.
 function toolCard(t: PickerTool): string {
   const hasPreview = Boolean(t.preview);
   // The preview slot is a fixed 84px-tall box (picker.css). A card.html banner renders in
@@ -2031,6 +2033,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     ({ blob, format, width, height } = resized);
   }
 
+  // Preserve any Content Credentials the ORIGINAL carried, BEFORE the re-encode
+  // above discards them — the raw C2PA manifest store only (no pixels/EXIF), so a
+  // placed credentialed image (an AI render, a signed photo) keeps its provenance
+  // into an export without re-hoarding the metadata the upload strips. SVG is
+  // sanitised (credential gone) and Lottie is JSON, so both are skipped. Best-
+  // effort: an unreadable or absent credential just means nothing to preserve.
+  let credential: Uint8Array | undefined, credentialFormat: string | undefined;
+  if (!isLottie && !isVector) {
+    try {
+      const ex = extractC2paStore(new Uint8Array(await file.arrayBuffer()));
+      if (ex) { credential = ex.store; credentialFormat = ex.format; }
+    } catch { /* nothing to preserve */ }
+  }
+
   const record: UserAssetRecordInput = {
     id,
     type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : 'raster',
@@ -2039,6 +2055,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     width,
     height,
     version: '1.0.0',
+    ...(credential && credentialFormat ? { credential, credentialFormat } : {}),
     // Rasters get re-encoded (usually to WebP), so the original extension can
     // lie — a "photo.jpg" now holds WebP bytes. Show a name whose extension
     // matches what we actually stored so the filename and format badge agree.

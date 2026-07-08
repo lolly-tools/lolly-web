@@ -145,6 +145,22 @@ const FMT_LABEL: Record<string, string> = {
 };
 const fmtLabel = (f: string) => FMT_LABEL[f] ?? String(f).toUpperCase();
 
+// Export-format families, so the info dialog can group + order chips (vector first,
+// then raster, then motion, then data) rather than dumping the raw manifest order.
+// Mirrors engine VECTOR_FORMATS (inputs.ts) plus the raster/video/data buckets.
+type FmtKind = 'vector' | 'raster' | 'video' | 'data';
+const FMT_KIND: Record<string, FmtKind> = {
+  svg: 'vector', 'svg-anim': 'vector', pdf: 'vector', 'pdf-cmyk': 'vector',
+  eps: 'vector', 'eps-cmyk': 'vector', emf: 'vector', dxf: 'vector',
+  png: 'raster', jpg: 'raster', jpeg: 'raster', webp: 'raster', 'webp-anim': 'raster',
+  avif: 'raster', gif: 'raster', apng: 'raster', tiff: 'raster', 'cmyk-tiff': 'raster', ico: 'raster',
+  webm: 'video', mp4: 'video',
+};
+const fmtKind = (f: string): FmtKind => FMT_KIND[f] ?? 'data';
+// Group order + human label for the dialog's chip sections.
+const FMT_KIND_ORDER: readonly FmtKind[] = ['vector', 'raster', 'video', 'data'];
+const FMT_KIND_LABEL: Record<FmtKind, string> = { vector: 'Vector', raster: 'Raster', video: 'Video', data: 'Data' };
+
 // "1080 × 1080 px" — the tool's intended output canvas (render.width/height carried
 // into the index entry, at the manifest unit; px when unset). Empty when a tool
 // declares no size, so callers can drop the line entirely.
@@ -835,9 +851,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
         img.addEventListener('load', () => {
           slide.classList.add('is-loaded');
           gcar.classList.add('has-art');   // first rendered look → stop the waiting tracer
-          // If the box is parked on THIS look, adopt its real aspect now it has decoded.
-          const trk = gcar.querySelector<HTMLElement>('.gcar-track');
-          if (trk && trk.children[centredSlideIndex(trk)] === slide) applyCarAspect(gcar, centredSlideIndex(trk));
         }, { once: true });
         img.src = thumb;
       } catch (e) {
@@ -874,26 +887,11 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   // code all land on the same scroll-snap points.
   function setCarDot(gcar: HTMLElement, idx: number): void {
     gcar.querySelectorAll<HTMLElement>('.gcar-dot').forEach((d, k) => d.classList.toggle('is-active', k === idx));
-    applyCarAspect(gcar, idx);
   }
-  // Size the strip's box to the CENTRED look's REAL aspect ratio, so a tool whose examples
-  // are different shapes (event-name-badge portrait + landscape, color-block square · wide ·
-  // tall · banner) shows each at its true size instead of squishing them all into one fixed
-  // box (the tool's default render aspect). Read straight from the decoded <img>'s intrinsic
-  // size; a no-op until the look loads and for tools whose looks all share one aspect (the
-  // common case — so only genuinely heterogeneous strips ever reflow). The .gcar transition
-  // (parts/gallery.css) makes the resize glide rather than jump.
-  function applyCarAspect(gcar: HTMLElement, idx: number): void {
-    const track = gcar.querySelector<HTMLElement>('.gcar-track');
-    const img = track?.children[idx]?.querySelector<HTMLImageElement>('.gcar-img');
-    if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-      gcar.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-    }
-  }
-  // Index of the slide currently snapped under the viewport of a strip.
-  function centredSlideIndex(track: HTMLElement): number {
-    return Math.round(track.scrollLeft / (track.clientWidth || 1));
-  }
+  // The strip's box is a FIXED SQUARE (parts/gallery.css .gcar) and every slide is
+  // object-fit:contain, so differently-shaped example looks fit within one unchanging
+  // frame — no per-look reflow as the carousel advances (which used to jitter the whole
+  // masonry). Nothing here resizes the box any more.
   function scrollCarTo(gcar: HTMLElement, idx: number): void {
     const track = gcar.querySelector<HTMLElement>('.gcar-track');
     if (!track || !track.clientWidth) return;
@@ -955,15 +953,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     // such event), so auto-advance can't pause itself. Sync the dots on any scroll.
     for (const ev of ['pointerdown', 'wheel', 'touchstart'] as const) track.addEventListener(ev, () => pauseCarousel(gcar), { passive: true });
     track.addEventListener('scroll', () => { if (track.clientWidth) setCarDot(gcar, Math.round(track.scrollLeft / track.clientWidth)); }, { passive: true });
-    // The lead slide (committed card or saved-session thumb) carries a src from the start —
-    // adopt its true aspect once decoded so the box opens at the right shape, not the tool
-    // default. Later example looks are handled as they decode in hydrateCarousel.
-    const lead = track.querySelector<HTMLImageElement>('.gcar-slide:first-child .gcar-img');
-    if (lead) {
-      const adopt = (): void => { if (centredSlideIndex(track) === 0) applyCarAspect(gcar, 0); };
-      if (lead.complete && lead.naturalWidth > 0) adopt();
-      else lead.addEventListener('load', adopt, { once: true });
-    }
   }
 
   // The example index of the slide currently centred in a carousel, or null when that
@@ -1046,15 +1035,23 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   }
 
   // The stable, full tile set: every tool that could ever show in the grid (feature
-  // flags hide whole categories; utilities live in the bottom strip, never the grid).
+  // flags hide whole categories). Utilities live in the bottom strip in the default
+  // browse view, but they ARE rendered as (hidden) grid tiles too so a search can
+  // surface them — matchesQuery gates them to query-only (see below).
   // Search / category / sort only ever hide-show or reorder THIS set's tiles — they
   // never change membership — so we render it to the DOM once and mutate in place.
-  const allTools: GalleryTool[] = index.tools.filter(t => !hidden.has(t.category) && t.category !== 'utility');
+  const allTools: GalleryTool[] = index.tools.filter(t => !hidden.has(t.category));
 
   // The search + active-category predicate, WITHOUT the sort (assumes the tool is
   // already in allTools). Drives the in-place hide-show; sort is applied separately.
   function matchesQuery(t: GalleryTool): boolean {
     const q = query.trim();
+    // Utilities are "hidden" from the main grid — they browse via the bottom strip, not
+    // a category pill — but they must still be findable, so they surface as grid tiles
+    // ONLY while a search is active (never in the default / category / favourites views).
+    if (t.category === 'utility') {
+      return q.length > 0 && (t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q));
+    }
     if (q) return t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q);
     if (activeCat === FAV_CAT) return favourites.has(t.id);   // starred collection
     return activeCat === 'all' || t.category === activeCat;
@@ -1517,10 +1514,10 @@ function cardMarkup(
   } else if (paged) {
     // Multi-page document: the strip scrolls through each PAGE. Page count is unknown
     // until the doc renders, so start with one skeleton slide; hydratePaged (mountGallery)
-    // renders the pages and rebuilds the slides + dots. Box pinned to one page's aspect.
-    const carAspect = (tool.width && tool.height) ? `${tool.width} / ${tool.height}` : '3 / 4';
+    // renders the pages and rebuilds the slides + dots. Box is a fixed square (gallery.css);
+    // each page is object-fit:contain, so a portrait/landscape page fits without cropping.
     visual = `
-      <div class="gcar" data-tool="${escape(tool.id)}" data-paged="1" style="aspect-ratio:${carAspect}">
+      <div class="gcar" data-tool="${escape(tool.id)}" data-paged="1">
         ${iconBackdrop(tool.icon)}
         <ol class="gcar-track"><li class="gcar-slide gcar-slide--ex"><span class="gcar-img" aria-hidden="true"></span></li></ol>
         ${statusBadge}
@@ -1529,11 +1526,10 @@ function cardMarkup(
     // Horizontally-scrollable preview strip. Slide 0 is the newest saved session (a
     // data-URL — instant, resumes on click) when one exists; the rest are example
     // states, each an EMPTY <img> hydrated lazily by mountGallery (renderFeaturedVariant,
-    // cached under featured:<id>:<i>) as the tile nears the viewport. The box is pinned
-    // to the tool's canvas aspect so masonry packs it with no reflow as art decodes, and
-    // every slide is object-fit:contain (never cropped). Decorative: the real navigation
-    // is the card's name link + info/history buttons, so slides are aria-hidden.
-    const carAspect = (tool.width && tool.height) ? `${tool.width} / ${tool.height}` : '4 / 3';
+    // cached under featured:<id>:<i>) as the tile nears the viewport. The box is a FIXED
+    // SQUARE (gallery.css) so masonry packs it with no reflow ever, and every slide is
+    // object-fit:contain (differently-shaped looks fit within, never cropped). Decorative:
+    // the real navigation is the card's name link + info/history buttons, so slides are aria-hidden.
     // Lead slide: a saved-session thumb (resume) wins; else the committed authored card
     // (bag-video's animated Geeko) leads with the tool's real hero. Only one lead.
     const leadSlide = hasThumbHero
@@ -1568,7 +1564,7 @@ function cardMarkup(
          <button class="gcar-nav gcar-next" type="button" tabindex="-1" aria-hidden="true" title="Next example">${CHEVRON_RIGHT}</button>`
       : '';
     visual = `
-      <div class="gcar${hasThumbHero ? ' has-art' : ''}" data-tool="${escape(tool.id)}" style="aspect-ratio:${carAspect}">
+      <div class="gcar${hasThumbHero ? ' has-art' : ''}" data-tool="${escape(tool.id)}">
         ${iconBackdrop(tool.icon)}
         <ol class="gcar-track">${leadSlide}${exSlides}</ol>
         ${nav}
@@ -1614,7 +1610,9 @@ function cardMarkup(
         ${personalizedThumb
           // A personalized re-render is always a raster data URL — a plain <img>.
           ? `<img class="gtile-hero-img" src="${escape(personalizedThumb)}" alt="" aria-hidden="true" loading="lazy" decoding="async">`
-          : previewMedia(tool.preview!, 'gtile-hero-img', (tool.width && tool.height) ? `width:100%;aspect-ratio:${tool.width} / ${tool.height};height:auto` : undefined)}
+          // Fixed-square hero (gallery.css): the img/iframe fills it and contains within,
+          // so no per-tool aspect is threaded through — every preview box is the same size.
+          : previewMedia(tool.preview!, 'gtile-hero-img')}
         <span class="gtile-continue">Open</span>
         ${statusBadge}
       </a>`;
@@ -1633,16 +1631,8 @@ function cardMarkup(
     ? `Last opened · ${escape(relativeTime(latest!.updatedAt))}`
     : '';
 
-  // Available export formats — a compact chip row with the DEFAULT (first-declared)
-  // format highlighted, so a browser sees what they'll get and the full range at a
-  // glance. Describes the tool (not the session), so it shows on every exportable card.
-  // On-device transforms declare no export formats, so the row is dropped for them.
-  const fmtList = tool.exportable === false || !Array.isArray(tool.formats) ? [] : tool.formats;
-  const formatsRow = fmtList.length
-    ? `<ul class="gtile-formats" aria-label="Export formats">${fmtList
-        .map((f, i) => `<li class="gtile-fmt${i === 0 ? ' gtile-fmt--default' : ''}"${i === 0 ? ' title="Default format"' : ''}>${escape(fmtLabel(f))}</li>`)
-        .join('')}</ul>`
-    : '';
+  // Export formats no longer clutter the card — they live in the info (i) dialog now,
+  // grouped by vector / raster with the default highlighted (see showInfoDialog).
 
   // The title is the "start a new session" link. A stretched ::after (see CSS)
   // makes the whole text body — caption + description — its click target, so a
@@ -1668,7 +1658,6 @@ function cardMarkup(
             ${name}
             ${sub ? `<span class="gtile-sub">${sub}</span>` : ''}
             <p class="gtile-desc">${escape(tool.description ?? '')}</p>
-            ${formatsRow}
           </span>
           ${hasSession ? '<span class="gtile-new" aria-hidden="true">+ New</span>' : ''}
           ${hasImageHero
@@ -1696,10 +1685,23 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
   // Transform-vs-export is decided by the `exportable` flag alone (NOT by whether
   // formats happen to be present), so a tool that declares formats always lists
   // them; only genuinely non-exporting utilities show the transform note.
-  const formats = (Array.isArray(tool.formats) ? tool.formats : []).map(fmtLabel);
-  const formatsText = tool.exportable === false
+  // Export formats moved off the tile into this dialog: chips grouped into vector /
+  // raster / video / data sections (each keeping the tool's declared order within the
+  // group), with the DEFAULT (first-declared) format filled with the accent so a browser
+  // sees at a glance what they'll get and the full range on offer.
+  const rawFormats = tool.exportable === false || !Array.isArray(tool.formats) ? [] : tool.formats;
+  const defaultFmt = rawFormats[0];
+  const fmtChip = (f: string): string =>
+    `<li class="meta-fmt${f === defaultFmt ? ' meta-fmt--default' : ''}"${f === defaultFmt ? ' title="Default format"' : ''}>${escape(fmtLabel(f))}${f === defaultFmt ? '<span class="visually-hidden"> (default)</span>' : ''}</li>`;
+  const fmtGroupsHtml = FMT_KIND_ORDER
+    .map(kind => ({ kind, list: rawFormats.filter(f => fmtKind(f) === kind) }))
+    .filter(g => g.list.length)
+    .map(g => `<div class="meta-fmt-grp"><span class="meta-fmt-kind">${FMT_KIND_LABEL[g.kind]}</span><ul class="meta-fmts">${g.list.map(fmtChip).join('')}</ul></div>`)
+    .join('');
+  const hasFmtChips = tool.exportable !== false && rawFormats.length > 0;
+  const exportsDd = tool.exportable === false
     ? 'On-device transform (no file export)'
-    : (formats.length ? formats.join(', ') : '—');
+    : hasFmtChips ? `<div class="meta-fmt-groups">${fmtGroupsHtml}</div>` : '—';
   // Intended canvas size — paired with the format list so the modal answers both
   // "what file" and "how big". Omitted for transforms (size isn't meaningful) and for
   // any tool that declares no render size.
@@ -1719,7 +1721,7 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
       </header>
       <p class="meta-dialog-desc">${escape(tool.description ?? '')}</p>
       <dl class="meta-dialog-facts">
-        <div><dt>Exports</dt><dd>${escape(formatsText || '—')}</dd></div>
+        <div${hasFmtChips ? ' class="meta-fmts-row"' : ''}><dt>Exports</dt><dd>${exportsDd}</dd></div>
         ${dims ? `<div><dt>Size</dt><dd>${escape(dims)}</dd></div>` : ''}
         ${caps.length ? `<div><dt>Uses</dt><dd>${caps.map(c => escape(capabilityLabel(c))).join(', ')}</dd></div>` : ''}
         ${tool.privacy === 'on-device' ? `<div><dt>Privacy</dt><dd>Runs entirely on your device</dd></div>` : ''}
