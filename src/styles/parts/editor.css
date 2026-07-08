@@ -285,6 +285,17 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .fc-ctxbar .color-trigger-name { display: none; }
 .fc-ctxbar .color-trigger-preview { width: 20px; height: 20px; border-radius: 6px; }
 
+/* Any picker-hosting chrome with an OPEN colour popover leapfrogs the rest of the
+   stage chrome. The popover stays a DOM descendant of its bar, and the bars form
+   stacking contexts (isolation:isolate / their own z-index), so its z-index:10001
+   resolves INSIDE the bar — at z-15/16 it loses overlaps against the zoom HUD (20)
+   and panels (24). Raising the HOST while the popover is open is the only way the
+   swatches paint over neighbouring chrome; reverts the moment it closes. */
+.fc-toolbar-dock:has(.color-popover:not([hidden])),
+.fc-ctxbar:has(.color-popover:not([hidden])),
+.fc-fmtbar:has(.color-popover:not([hidden])),
+.fc-panel:has(.color-popover:not([hidden])) { z-index: 30; }
+
 /* "More" panel: shape / radius / opacity / image fit / blend. */
 .fc-panel {
   position: absolute; z-index: 24; min-width: 238px;

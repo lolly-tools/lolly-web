@@ -1894,25 +1894,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     })
   );
 
-  // QOL: step a focused <select> with ↑/↓ and apply each value instantly, without
-  // opening the dropdown. macOS opens the native menu on Arrow keys (Windows/Linux
-  // cycle the value); intercepting it makes the behaviour consistent and lets the user
-  // tab to a select and audition options one keypress at a time. Delegated on the
-  // container so it covers top-level AND block-field selects and survives re-renders;
-  // while the native menu is open the element doesn't receive these keydowns.
-  inputsEl?.addEventListener('keydown', e => {
-    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || e.metaKey || e.ctrlKey || e.altKey) return;
-    const sel = e.target as HTMLSelectElement;
-    if (!sel || sel.tagName !== 'SELECT' || sel.disabled) return;
-    e.preventDefault(); // stop macOS popping the native menu on Arrow
-    const opts = sel.options, dir = e.key === 'ArrowDown' ? 1 : -1;
-    let next = sel.selectedIndex + dir;
-    while (next >= 0 && next < opts.length && opts[next]!.disabled) next += dir; // skip disabled
-    if (next < 0 || next >= opts.length || next === sel.selectedIndex) return;  // clamp at the ends
-    sel.selectedIndex = next;
-    sel.dispatchEvent(new Event('input', { bubbles: true }));
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
-  });
+  // ↑/↓ select scrubbing is handled ONCE, app-wide, by select-preview.ts (installed
+  // at boot). Do NOT add a per-view arrow handler here: a second stepper made every
+  // press advance TWO options — this one stepped + re-rendered, then the document
+  // handler stepped the detached select again, and its input listener still updated
+  // the runtime — so options between were unreachable by keyboard.
 
   // Click-to-focus: clicking a rendered canvas element that represents an input
   // focuses the corresponding sidebar control. Tools can suppress this per-element

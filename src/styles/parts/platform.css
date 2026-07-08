@@ -48,7 +48,7 @@
   .verify-view.is-entering > .tools-home,
   .verify-view.is-entering > .platform-layout > .plat-header,
   .verify-view.is-entering > .platform-layout > .valid-drop {
-    animation: card-in var(--enter-dur) var(--enter-ease) both;
+    animation: card-in var(--enter-dur) var(--enter-ease) backwards;
     animation-delay: calc(var(--enter-i, 0) * 0.05s);
   }
 }

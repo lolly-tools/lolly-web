@@ -301,6 +301,16 @@
   --enter-ease: cubic-bezier(.22, .61, .36, 1);
 }
 
+/* GUARDRAIL for every card-in user: fill with `backwards`, not `both`/`forwards`.
+   A persisted fill keeps a computed `translate: 0px` on the element after the
+   animation ends, and any non-`none` translate — even zero — makes it the containing
+   block + stacking context for position:fixed descendants (colour-swatch popovers,
+   menus), which then clip under `overflow: clip` ancestors and paint beneath later
+   siblings. `backwards` still covers the stagger-delay period; after the run the
+   element returns to its natural style, which equals the `to` state, so nothing
+   visibly changes. Sole exception: the armed masonry below — its tiles' BASE state
+   is `opacity: 0`, so the persisted fill is what keeps them visible (and no fixed
+   popover ever mounts inside a tile). */
 @keyframes card-in {
   from { opacity: 0; translate: 0 6px; }
   to   { opacity: 1; translate: 0 0;   }
@@ -743,6 +753,10 @@ stroke-width:.81;
 @media (prefers-reduced-motion: no-preference) {
   .tool-masonry.reveal-armed .gtile { opacity: 0; }
   .tool-masonry.reveal-armed .gtile.is-in {
+    /* `both` is load-bearing here (unlike every other card-in user): the armed base
+       state above is opacity:0, so the persisted end fill is what keeps a revealed
+       tile visible. The translate residue this leaves is only safe because tiles
+       never host position:fixed popovers — see the card-in guardrail comment. */
     animation: card-in var(--enter-dur) var(--enter-ease) both;
     animation-delay: var(--reveal-delay, 0ms);
   }

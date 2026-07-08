@@ -17,8 +17,12 @@ interface RevealOpts {
   /** Play the shuffle cue (default true). */ sound?: boolean;
 }
 
-/** Cascade `items` in with a stepped delay + a soft shuffle. Safe to call repeatedly. */
-export function staggerReveal(items: Element[], { step = 22, max = 260, sound = true }: RevealOpts = {}): void {
+/** Cascade `items` in with a stepped delay + a soft shuffle. Safe to call repeatedly.
+ *  The `.reveal-item` animation fills `backwards` (see components.css): once each
+ *  item's entrance ends it returns to its natural style, leaving NO translate residue —
+ *  a persisted fill would make the item a containing block + stacking context that
+ *  clips any position:fixed popover inside it (e.g. a colour field's swatch panel). */
+export function staggerReveal(items: Element[], { step = 14, max = 160, sound = true }: RevealOpts = {}): void {
   if (!items.length) return;
   for (const el of items) el.classList.remove('reveal-item');   // reset any in-flight run
   void (items[0] as HTMLElement).offsetWidth;                   // one reflow re-arms the animation
