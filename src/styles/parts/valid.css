@@ -47,6 +47,9 @@
   --vf-pass-1: 150 66% 51%;  --vf-pass-2: 154 58% 33%;  --vf-pass: 151 57% 40%;
   --vf-fail-1: 20 90% 56%;   --vf-fail-2: 11 80% 42%;   --vf-fail: 15 82% 47%;
   --vf-warn-1: 44 96% 58%;   --vf-warn-2: 33 90% 47%;   --vf-warn: 36 88% 46%;
+  /* AI-generated flag — a distinct violet, deliberately outside the pass/fail
+     palette so "made by a model" never reads as a verdict on integrity. */
+  --vf-ai-1: 276 86% 67%;    --vf-ai-2: 262 74% 48%;    --vf-ai: 270 80% 58%;
 }
 .valid-busy { color: hsl(var(--muted-foreground)); }
 
@@ -421,6 +424,105 @@
 
 @keyframes valid-pip-in { from { opacity: 0; scale: 0.6; } to { opacity: 1; scale: 1; } }
 
+/* ── AI-generated flag ───────────────────────────────────────────────────────
+   The loudest element on the page. A full-width violet banner with a pulsing
+   glow, a swept sheen, and a twinkling sparkle — impossible to scroll past. */
+.valid-ai-flag {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: flex; align-items: center; gap: 0.9rem;
+  padding: 0.95rem 1.1rem;
+  border-radius: var(--radius);
+  border: 1px solid hsl(var(--vf-ai-1) / 0.65);
+  color: hsl(0 0% 100%);
+  background: linear-gradient(115deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
+  box-shadow: 0 12px 30px -12px hsl(var(--vf-ai) / 0.65), inset 0 1px 0 hsl(0 0% 100% / 0.35);
+  animation: valid-ai-pulse 2.8s ease-in-out infinite;
+}
+/* Sheen bar that sweeps across every few seconds. */
+.valid-ai-flag::after {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 32%, hsl(0 0% 100% / 0.3) 48%, transparent 64%);
+  transform: translateX(-120%);
+  animation: valid-ai-sheen 3.6s ease-in-out infinite;
+}
+.valid-ai-flag > * { position: relative; z-index: 1; }
+.valid-ai-flag-ic { flex: 0 0 auto; display: inline-flex; }
+.valid-ai-flag-ic svg {
+  width: 2rem; height: 2rem; stroke-width: 1.7;
+  filter: drop-shadow(0 1px 2px hsl(var(--vf-ai-2) / 0.6));
+  animation: valid-ai-twinkle 2.2s ease-in-out infinite;
+}
+.valid-ai-flag-text { display: grid; gap: 0.15rem; min-width: 0; }
+.valid-ai-flag-text strong { font-size: 1.02rem; letter-spacing: -0.01em; }
+.valid-ai-flag-text span { font-size: 0.82rem; color: hsl(0 0% 100% / 0.9); }
+.valid-ai-flag-tag {
+  flex: 0 0 auto; margin-left: auto; align-self: flex-start;
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.09em;
+  padding: 0.2rem 0.55rem; border-radius: 999px;
+  background: hsl(0 0% 100% / 0.22); border: 1px solid hsl(0 0% 100% / 0.45);
+}
+@keyframes valid-ai-pulse {
+  0%, 100% { box-shadow: 0 12px 30px -12px hsl(var(--vf-ai) / 0.5),  inset 0 1px 0 hsl(0 0% 100% / 0.35); }
+  50%      { box-shadow: 0 16px 42px -10px hsl(var(--vf-ai) / 0.95), inset 0 1px 0 hsl(0 0% 100% / 0.45); }
+}
+@keyframes valid-ai-sheen { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
+@keyframes valid-ai-twinkle {
+  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  50%      { opacity: 0.78; transform: scale(1.12) rotate(8deg); }
+}
+
+/* ── Edit history — the credential's recorded actions as a vertical timeline. */
+.valid-steps { display: grid; gap: 0.7rem; }
+.valid-steps > h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.95rem; }
+.valid-steps > h3 svg { width: 1.05em; height: 1.05em; color: hsl(var(--muted-foreground)); }
+.valid-steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.valid-step {
+  position: relative;
+  display: grid; grid-template-columns: 1.9rem 1fr; align-items: center;
+  column-gap: 0.7rem; row-gap: 0.1rem;
+  padding-bottom: 0.85rem;
+}
+.valid-step:last-child { padding-bottom: 0; }
+.valid-step-ic {
+  grid-row: 1 / span 2; align-self: start; position: relative; z-index: 1;
+  width: 1.9rem; height: 1.9rem; border-radius: 50%;
+  display: grid; place-items: center;
+  background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+}
+.valid-step-ic svg { width: 1rem; height: 1rem; }
+/* Connector line joining the step dots. */
+.valid-step:not(:last-child)::before {
+  content: ''; position: absolute; left: 0.94rem; top: 1.9rem; bottom: -0.05rem; width: 2px;
+  background: hsl(var(--border)); z-index: 0;
+}
+.valid-step-label { align-self: center; font-weight: 650; font-size: 0.9rem; }
+.valid-step-meta {
+  grid-column: 2; align-items: center;
+  display: flex; flex-wrap: wrap; gap: 0.1rem 0.4rem;
+  font-size: 0.78rem; color: hsl(var(--muted-foreground));
+}
+.valid-step-dot { opacity: 0.5; }
+.valid-step-src { display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 600; }
+.valid-step-src svg { width: 0.9em; height: 0.9em; }
+/* AI-sourced step — violet dot + violet source tag, matching the banner. */
+.valid-step.is-ai .valid-step-ic {
+  background: linear-gradient(160deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
+  color: hsl(0 0% 100%); border-color: hsl(var(--vf-ai-1) / 0.6);
+  box-shadow: 0 4px 12px -4px hsl(var(--vf-ai) / 0.7);
+}
+.valid-step.is-ai .valid-step-src { color: hsl(var(--vf-ai)); }
+
+/* Compact AI chip in the collapsed multi-file summary row. */
+.valid-item-ai {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.06em;
+  padding: 0.14rem 0.44rem; border-radius: 999px; color: hsl(0 0% 100%);
+  background: linear-gradient(120deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
+  box-shadow: 0 2px 8px -3px hsl(var(--vf-ai) / 0.7);
+}
+.valid-item-ai svg { width: 0.85em; height: 0.85em; }
+
 /* The assertion log — a video-game "power-on" cascade: rows arm one after
    another, each swept once by a light bar as it lands. The round mark chip
    reads like a HUD status light. */
@@ -619,9 +721,13 @@
   .valid-hero-icon::after,
   .valid-score-pip,
   .valid-check,
-  .valid-check::after {
+  .valid-check::after,
+  .valid-ai-flag,
+  .valid-ai-flag::after,
+  .valid-ai-flag-ic svg {
     animation: none !important;
   }
+  .valid-ai-flag::after { display: none; }
   .valid-check { opacity: 1; translate: none; }
   .valid-check::after { display: none; }
 }

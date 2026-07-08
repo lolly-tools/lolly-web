@@ -2870,7 +2870,34 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
     if (++nodesWalked % YIELD_NODES === 0) await new Promise<void>((r) => setTimeout(r));
     const tag = el.tagName.toLowerCase().replace(/^svg:/, '');
 
-    // Map an SVG user-space coord (inside this element's inherited group transform)
+    if (tag === 'defs' || tag === 'clippath' || tag === 'lineargradient' ||
+        tag === 'radialgradient' || tag === 'symbol') return;
+
+    // Compose this element's OWN transform (translate/scale/rotate) onto the inherited
+    // CTM — applied to CONTAINERS and LEAF drawables alike. brand-lockup lays its whole
+    // lockup out as sibling <path transform="translate()/scale()"> with no wrapping <g>,
+    // so unless a leaf's own transform is honoured here every glyph run and the chameleon
+    // collapse onto the origin at native scale when the lockup is embedded as an image and
+    // the parent (e.g. Layout Studio) exports PDF. Mirrors the EMF/EPS/DXF walker's
+    // applyElementTransform (svg-ir.ts), which already maps per-leaf transforms.
+    const tx0 = tx, ty0 = ty, sX0 = sX, sY0 = sY;
+    let rotDeg = 0, rotCx = 0, rotCy = 0;
+    {
+      const t = el.getAttribute('transform') ?? '';
+      if (t) {
+        const tm = t.match(/translate\(\s*([+-]?\d*\.?\d+)[,\s]\s*([+-]?\d*\.?\d+)\s*\)/) ??
+                   t.match(/translate\(\s*([+-]?\d*\.?\d+)\s*\)/);
+        const sm = t.match(/scale\(\s*([+-]?\d*\.?\d+)(?:[,\s]\s*([+-]?\d*\.?\d+))?\s*\)/);
+        const rm = t.match(/rotate\(\s*([+-]?\d*\.?\d+)(?:[,\s]+([+-]?\d*\.?\d+)[,\s]+([+-]?\d*\.?\d+))?\s*\)/);
+        // SVG order is translate-then-scale, so the local translate is taken in the
+        // PARENT's scale (sX0/sY0) and the scales multiply; rotation is applied last.
+        if (tm) { tx = tx0 + sX0 * parseFloat(tm[1]); ty = ty0 + sY0 * parseFloat(tm[2] ?? '0'); }
+        if (sm) { sX = sX0 * parseFloat(sm[1]); sY = sY0 * parseFloat(sm[2] ?? sm[1]); }
+        if (rm) { rotDeg = parseFloat(rm[1]); rotCx = rm[2] != null ? parseFloat(rm[2]) : 0; rotCy = rm[3] != null ? parseFloat(rm[3]) : 0; }
+      }
+    }
+
+    // Map an SVG user-space coord (inside this element's own + inherited transform)
     // into PDF points: apply the accumulated translate+scale, shift by the viewBox
     // origin, then scale into the target region. LW/LH scale a length.
     const gAvg = (sX + sY) / 2, rAvg = (sx + sy) / 2;
@@ -2907,41 +2934,13 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       return { fillRgb, strokeRgb, lw };
     };
 
-    if (tag === 'defs' || tag === 'clippath' || tag === 'lineargradient' ||
-        tag === 'radialgradient' || tag === 'symbol') return;
-
+    // Render this element — leaf geometry, or a container's children — under any own
+    // rotation. Translate/scale are already folded into tx/ty/sX/sY above; a rotate()
+    // (d3.zoom groups, pose-geeko's articulated limbs) is applied about its pivot via
+    // the PDF matrix, wrapping the whole subtree. Skew/matrix() are not handled.
+    const drawSelf = async (): Promise<void> => {
     if (tag === 'g') {
-      // Compose this group's transform onto the inherited one. Supports the
-      // translate(+scale) that d3.zoom emits (street-map pan/zoom lives here) and
-      // a rotate() for articulated illustrations (pose-geeko's limbs / head / tail
-      // / body). SVG order is translate-then-scale, so the local translate is taken
-      // in the PARENT's scale and the scales multiply; the rotation is applied last,
-      // about its pivot, via the PDF matrix. Skew is not handled.
-      let ntx = tx, nty = ty, nsX = sX, nsY = sY;
-      const t = el.getAttribute('transform') ?? '';
-      let rotDeg = 0, rotCx = 0, rotCy = 0;
-      if (t) {
-        const tm = t.match(/translate\(\s*([+-]?\d*\.?\d+)[,\s]\s*([+-]?\d*\.?\d+)\s*\)/) ??
-                   t.match(/translate\(\s*([+-]?\d*\.?\d+)\s*\)/);
-        const sm = t.match(/scale\(\s*([+-]?\d*\.?\d+)(?:[,\s]\s*([+-]?\d*\.?\d+))?\s*\)/);
-        if (tm) { ntx += sX * parseFloat(tm[1]); nty += sY * parseFloat(tm[2] ?? '0'); }
-        if (sm) { nsX = sX * parseFloat(sm[1]); nsY = sY * parseFloat(sm[2] ?? sm[1]); }
-        const rm = t.match(/rotate\(\s*([+-]?\d*\.?\d+)(?:[,\s]+([+-]?\d*\.?\d+)[,\s]+([+-]?\d*\.?\d+))?\s*\)/);
-        if (rm) { rotDeg = parseFloat(rm[1]); rotCx = rm[2] != null ? parseFloat(rm[2]) : 0; rotCy = rm[3] != null ? parseFloat(rm[3]) : 0; }
-      }
-      if (rotDeg) {
-        // Rotate pivot mapped to PDF pt through this group's composed diagonal
-        // transform. A reflection (negative determinant, e.g. a scale(-1) mirror
-        // ancestor) reverses rotation handedness, so negate to match the SVG.
-        const rotPx = ox + ((ntx + nsX * rotCx) - vbX) * sx;
-        const rotPy = oy + ((nty + nsY * rotCy) - vbY) * sy;
-        const deg = (nsX * nsY * sx * sy) < 0 ? -rotDeg : rotDeg;
-        await withPdfRotation(pdf, deg, rotPx, rotPy, async () => {
-          for (const child of el.children) await visit(child, ntx, nty, nsX, nsY);
-        });
-      } else {
-        for (const child of el.children) await visit(child, ntx, nty, nsX, nsY);
-      }
+      for (const child of el.children) await visit(child, tx, ty, sX, sY);
       return;
     }
 
@@ -3124,6 +3123,19 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
     }
 
     for (const child of el.children) await visit(child, tx, ty, sX, sY);
+    };
+
+    if (rotDeg) {
+      // Rotate pivot mapped to PDF pt through this element's composed diagonal
+      // transform. A reflection (negative determinant, e.g. a scale(-1) mirror
+      // ancestor) reverses rotation handedness, so negate to match the SVG.
+      const rotPx = ox + ((tx + sX * rotCx) - vbX) * sx;
+      const rotPy = oy + ((ty + sY * rotCy) - vbY) * sy;
+      const deg = (sX * sY * sx * sy) < 0 ? -rotDeg : rotDeg;
+      await withPdfRotation(pdf, deg, rotPx, rotPy, drawSelf);
+    } else {
+      await drawSelf();
+    }
   }
 
   await visit(svgEl, 0, 0, 1, 1);
