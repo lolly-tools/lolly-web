@@ -23,7 +23,7 @@
  */
 
 import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
-import { verifyC2pa, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat } from '@lolly/engine';
+import { verifyC2pa, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark } from '@lolly/engine';
 import type { FileMetadata, MetaGroup, StripFormat } from '@lolly/engine';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
@@ -72,6 +72,11 @@ interface VerifyReport {
   history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; generator?: unknown }>;
 }
 
+// The pixel-watermark detection result (engine detectWatermark), surfaced only
+// when present — a durable, lower-confidence provenance signal that lives in the
+// pixels rather than the C2PA metadata container.
+interface Watermark { present: boolean; score: number; }
+
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
 // plus the vendored C2PA trust list (Google/Gemini, the camera makers, Bria,
 // …), so a credential from a recognised signer upgrades from "valid" to a
@@ -117,6 +122,8 @@ const ICONS = {
   aiSpark: '<path d="M12 2.5l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 15v3.5M17.25 16.75h3.5"/><path d="M5 3.5v3M3.5 5h3"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.8"/><path d="m21 15-4.5-4.5L5 21"/>',
   checklist: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1.3 1.3L6.5 5"/><path d="m3 12 1.3 1.3 2.2-2.3"/><path d="m3 18 1.3 1.3 2.2-2.3"/>',
+  // A framed ripple — the "in-pixel imprint" glyph.
+  imprint: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M6.5 13.5c1.8-3 3.6-3 5.5 0s3.7 3 5.5 0"/><path d="M6.5 9.5c1.8-2.4 3.6-2.4 5.5 0s3.7 2.4 5.5 0"/>',
 };
 const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'invalid', na: 'n/a' };
 
@@ -467,6 +474,23 @@ function aiFlagHtml(report: VerifyReport): string {
     </div>`;
 }
 
+// ── Lolly pixel watermark ─────────────────────────────────────────────────────
+// Shown ONLY when the in-pixel mark is found (absence is uninformative — resize
+// erases it and non-Lolly rasters never carry it, so "not found" must never read
+// as "not made with Lolly"). Deliberately quiet and clearly secondary to the
+// C2PA verdict: a durable hint, not a cryptographic guarantee.
+function watermarkNote(wm: Watermark | undefined): string {
+  if (!wm?.present) return '';
+  return `
+    <div class="valid-wm" role="note">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon(ICONS.imprint)}</span>
+      <div class="valid-wm-text">
+        <strong>Lolly pixel watermark present</strong>
+        <span>An imperceptible mark Lolly can embed in the pixels of a raster export. Unlike the Content Credential — which travels in metadata and is lost to a re-save or strip — this rides in the image itself and survives recompression, so it's a durable hint that the image came from Lolly. A supporting signal, not a cryptographic guarantee.</span>
+      </div>
+    </div>`;
+}
+
 // ── Edit history (the recorded C2PA actions) ────────────────────────────────
 // Human labels + a glyph per C2PA action code; unknown codes fall back to the
 // bare code with the c2pa. prefix stripped.
@@ -615,7 +639,7 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
   return '';
 }
 
-function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number): string {
+function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark): string {
   const { state, sub, identity } = resolveState(report);
   const claim: Partial<Claim> = report.claim ?? {};
   const signer: Partial<Signer> = report.signer ?? {};
@@ -634,30 +658,15 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
     ? `Signed by <strong>${escape(signerWho)}</strong> — identity verified by <strong>${escape(identity!.issuer ?? 'a recognised C2PA root')}</strong>`
     : `Signed by <strong>${escape(signerWho)}</strong> — identity was CA-verified; the certificate has since expired`}</p>` : '';
   // "What happened" and "what was checked" — two distinct boxed panels, paired
-  // side by side wherever the page has the room (see .valid-panels).
+  // with the file/facts summary as a third column so all three share one row
+  // wherever the page has the room (see .valid-panels).
   const stepsBlock = report.found && report.claim ? stepsHtml(report) : '';
   const checksBlock = checksHtml(report);
-  const panelsBlock = (stepsBlock || checksBlock) ? `<div class="valid-panels">${stepsBlock}${checksBlock}</div>` : '';
-  return `
-    <div class="valid-result ${state.cls}">
-      ${mediaPreviewHtml(preview, 'lg')}
-      <div class="valid-hero">
-        <span class="valid-hero-icon">${report.madeWithLolly
-    ? '<img class="valid-hero-logo" src="/icons/icon-192.png" width="192" height="192" alt="" aria-hidden="true" decoding="async">'
-    : ICON_SHIELD}</span>
-        <div>
-          <h2>${escape(state.title)}${report.madeWithLolly ? '<span class="valid-lolly-badge" aria-hidden="true">✦</span>' : report.trusted ? '<span class="valid-trusted-badge" aria-hidden="true">✓</span>' : ''}</h2>
-          <p>${sub}</p>${identityLine}
-          ${report.found ? scorecardHtml(report) : ''}
-        </div>
-      </div>
-      ${aiFlagHtml(report)}
-      <p class="valid-file"><strong>${escape(fileName)}</strong>${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}${report.reason ? ` — ${escape(report.reason)}` : ''}</p>
-      ${report.found && report.claim && !report.madeWithLolly ? `
+  const selfnoteBlock = report.found && report.claim && !report.madeWithLolly ? `
         <p class="valid-selfnote">${identity
     ? 'As recorded in the credential — asserted by its CA-verified signer:'
-    : 'As recorded in the credential — self-asserted by whoever signed it:'}</p>` : ''}
-      ${report.found && report.claim ? `
+    : 'As recorded in the credential — self-asserted by whoever signed it:'}</p>` : '';
+  const factsBlock = report.found && report.claim ? `
         <dl class="valid-facts">
           ${fact('Title', claim.title, 'tag')}
           ${fact('Tool', env.tool, 'tool')}
@@ -672,9 +681,34 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           ${fact('Algorithm', signer.alg, 'cpu')}
           ${fact('Certificate valid', signer.notBefore ? `${fmtDate(signer.notBefore)} → ${fmtDate(signer.notAfter)}` : null, 'calendar')}
           ${fact('Manifest', claim.manifestLabel, 'document')}
-        </dl>` : ''}
+        </dl>` : '';
+  const summaryBlock = `
+      <div class="valid-summary valid-panel">
+        <p class="valid-file"><strong>${escape(fileName)}</strong>${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}${report.reason ? ` — ${escape(report.reason)}` : ''}</p>
+        ${selfnoteBlock}
+        ${factsBlock}
+      </div>`;
+  const panelsBlock = `<div class="valid-panels">${summaryBlock}${stepsBlock}${checksBlock}</div>`;
+  const verdictBadge = report.madeWithLolly ? '<span class="valid-lolly-badge" aria-hidden="true">✦</span>' : report.trusted ? '<span class="valid-trusted-badge" aria-hidden="true">✓</span>' : '';
+  return `
+    <div class="valid-result ${state.cls}">
+      <div class="valid-top">
+        ${mediaPreviewHtml(preview, 'lg')}
+        <div class="valid-hero">
+          <div class="valid-hero-title">
+            <span class="valid-hero-icon">${report.madeWithLolly
+    ? '<img class="valid-hero-logo" src="/icons/icon-192.png" width="192" height="192" alt="" aria-hidden="true" decoding="async">'
+    : ICON_SHIELD}</span>
+            <h2><span class="valid-hero-filename">${escape(fileName)}</span> <span class="valid-hero-verdict">${escape(state.title)}</span>${verdictBadge}</h2>
+          </div>
+          <p>${sub}</p>${identityLine}
+        </div>
+        ${report.found ? scorecardHtml(report) : ''}
+      </div>
+      ${aiFlagHtml(report)}
       ${panelsBlock}
       ${renderMetadata(meta, preview, fileIndex)}
+      ${watermarkNote(watermark)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
     ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no
         standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment:
@@ -725,13 +759,43 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   // (EXIF/XMP/… — PDF via the shell's pdf bridge, everything else on the engine),
   // or an error message. Kept narrow so both the single- and multi-file paths
   // share the exact engine call. Bytes are read once and reused for both reads.
-  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata }> {
+  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark }> {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const report = await verifyC2pa(bytes, VERIFY_OPTS);
-      return { report, meta: await readMetadata(bytes) };
+      const meta = await readMetadata(bytes);
+      const watermark = await detectPixelWatermark(file, report.format);
+      return { report, meta, watermark };
     } catch (err) {
       return { error: (err as Error)?.message || String(err) };
+    }
+  }
+
+  // Decode a raster file to RGBA and run the engine's pixel-watermark detector.
+  // NB: no downscale — detection must see native-resolution pixels (a resize
+  // shifts the 8×8 grid and erases the mark). Best-effort; anything we can't
+  // decode (TIFF, SVG, PDF, video) or that faults returns undefined.
+  const WM_DECODABLE = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp']);
+  async function detectPixelWatermark(file: File, format: string | null): Promise<Watermark | undefined> {
+    const fmt = (format || file.name.split('.').pop() || '').toLowerCase();
+    if (!WM_DECODABLE.has(fmt)) return undefined;
+    let bmp: ImageBitmap | undefined;
+    try {
+      bmp = await createImageBitmap(file);
+      const w = bmp.width, h = bmp.height;
+      if (w < 8 || h < 8) return undefined;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return undefined;
+      ctx.drawImage(bmp, 0, 0);
+      const { data } = ctx.getImageData(0, 0, w, h);
+      const r = detectWatermark(data, { width: w, height: h });
+      return { present: r.present, score: r.score };
+    } catch {
+      return undefined;
+    } finally {
+      bmp?.close?.();
     }
   }
 
@@ -799,9 +863,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     if (list.length === 1) {
       const file = list[0]!;
       reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">Checking ${escape(file.name)}…</p></div>`;
-      const { report, error, meta } = await verifyFile(file);
+      const { report, error, meta, watermark } = await verifyFile(file);
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
-        ? renderReportBody(file.name, report, meta, makePreview(file, report), 0)
+        ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark)
         : `<p class="valid-busy">Could not check this file: ${escape(error!)}</p>`;
       // Audible verdict: a bright, chirping "signing" flourish when the credential is intact
       // (the green medallion moment) — up-and-down scales ending on a rise and a ding — and a
@@ -847,11 +911,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     let allValid = true;
     for (let i = 0; i < list.length; i++) {
       const file = list[i]!, card = cards[i]!;
-      const { report, error, meta } = await verifyFile(file);
+      const { report, error, meta, watermark } = await verifyFile(file);
       if (report) {
         card.className = `valid-item is-${stateTone(report)}`;
         card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report)}</summary>` +
-          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i)}</div>`;
+          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i, watermark)}</div>`;
       } else {
         card.className = 'valid-item is-bad';
         card.innerHTML = errorSummary(file.name, error!);

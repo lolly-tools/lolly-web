@@ -65,9 +65,29 @@
   display: grid;
   gap: 1.1rem;
 }
-.valid-hero { display: flex; gap: 1.1rem; align-items: flex-start; }
-.valid-hero > div { min-width: 0; }
-.valid-hero h2 { margin: 0 0 0.25rem; font-size: 1.2rem; letter-spacing: -0.01em; }
+/* The uploaded-media preview, the verdict hero, and the at-a-glance scorecard,
+   side by side wherever the card is wide enough. Stacked (preview, then hero,
+   then score) on narrow viewports; the score rejoins the hero's row as a third
+   column only once there's room for all three without cramping. */
+.valid-top { display: grid; gap: 1.1rem; align-items: start; }
+@media (min-width: 640px) {
+  .valid-top { grid-template-columns: minmax(200px, 22rem) 1fr; }
+  .valid-top > .valid-score { grid-column: 1 / -1; margin-top: 0; }
+}
+@media (min-width: 1080px) {
+  .valid-top { grid-template-columns: minmax(200px, 22rem) 1fr minmax(210px, 320px); }
+  .valid-top > .valid-score { grid-column: auto; }
+}
+.valid-hero { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+/* Icon + heading, grouped so the medallion reads as part of the verdict line
+   rather than spanning the whole hero block (sub-copy, identity line, …). */
+.valid-hero-title { display: flex; gap: 0.9rem; align-items: center; }
+.valid-hero-title h2 { min-width: 0; }
+.valid-hero h2 { margin: 0; font-size: 1.2rem; letter-spacing: -0.01em; }
+/* Filename stays plain foreground; only the verdict word takes the state's
+   accent colour (see the .is-lolly/.is-trusted/.is-delivered rules below). */
+.valid-hero-filename { color: hsl(var(--foreground)); font-weight: 600; overflow-wrap: anywhere; }
+.valid-hero-verdict { color: inherit; }
 .valid-hero p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.9rem; max-width: 60ch; }
 
 /* ── Uploaded-media preview ──────────────────────────────────────────────────
@@ -221,9 +241,9 @@
     hsl(var(--card));
   box-shadow: 0 0 0 1px hsl(var(--vf-pass) / 0.2), 0 18px 44px -26px hsl(var(--vf-pass) / 0.5);
 }
-.valid-result.is-lolly .valid-hero h2 { color: hsl(var(--primary)); }
-.valid-result.is-trusted .valid-hero h2,
-.valid-result.is-delivered .valid-hero h2 { color: hsl(var(--vf-pass)); }
+.valid-result.is-lolly .valid-hero-verdict { color: hsl(var(--primary)); }
+.valid-result.is-trusted .valid-hero-verdict,
+.valid-result.is-delivered .valid-hero-verdict { color: hsl(var(--vf-pass)); }
 .valid-lolly-badge,
 .valid-trusted-badge { margin-left: 0.45rem; color: hsl(var(--vf-pass)); }
 /* "Signed by <email> — …" under the hero sub; rendered whenever the chain
@@ -524,16 +544,43 @@
   50%      { opacity: 0.78; transform: scale(1.12) rotate(8deg); }
 }
 
-/* ── Panels — "what happened" (edit history) and "what was checked" (assertion
-   log) as two distinct boxed sections rather than two lists silently stacked in
-   one column. A fluid grid: one column on narrow viewports, opens to two
-   wherever the page has the room — no hard breakpoint needed. */
+/* ── Lolly pixel-watermark note ───────────────────────────────────────────────
+   A quiet, clearly-secondary callout shown only when the in-pixel mark is found.
+   Deliberately understated (a soft green-tinted card, no gloss/animation) so it
+   never competes with the C2PA hero or reads as the cryptographic verdict. */
+.valid-wm {
+  display: flex; gap: 0.75rem; align-items: flex-start;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid hsl(var(--vf-pass) / 0.35);
+  border-radius: 0.75rem;
+  background: hsl(var(--vf-pass) / 0.07);
+}
+.valid-wm-ic {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 0.55rem;
+  background: hsl(var(--vf-pass) / 0.16); color: hsl(var(--vf-pass));
+}
+.valid-wm-ic svg { width: 1.15rem; height: 1.15rem; }
+.valid-wm-text { display: grid; gap: 0.15rem; min-width: 0; }
+.valid-wm-text strong { font-size: 0.9rem; font-weight: 650; color: hsl(var(--foreground)); }
+.valid-wm-text span { font-size: 0.8rem; line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+
+/* ── Panels — the file/facts summary, "what happened" (edit history) and "what
+   was checked" (assertion log) as three distinct boxed columns rather than
+   lists silently stacked in one column. A fluid grid: one column on narrow
+   viewports, opens to two then three wherever the page has the room — no hard
+   breakpoint needed. */
 .valid-panels {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1.25rem;
   align-items: start;
 }
+/* The summary column (filename, self-note, fact list) shares the same boxed
+   treatment as the edit-history/assertion-log panels so all three read as
+   siblings; the facts grid collapses to a single value-per-row list at this
+   column's width instead of the wide multi-up layout it gets full-bleed. */
+.valid-summary .valid-facts { grid-template-columns: 1fr; }
 .valid-panel {
   display: grid; gap: 0.7rem; align-content: start; min-width: 0;
   padding: 1rem 1.1rem 1.15rem;
