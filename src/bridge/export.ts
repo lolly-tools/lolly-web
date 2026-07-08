@@ -2934,6 +2934,39 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       return { fillRgb, strokeRgb, lw };
     };
 
+    // Paint + draw any shape expressed as an SVG `d` — shared by <path> and the shapes
+    // that reduce to a path (<polygon>/<polyline>/<ellipse>). Resolves fill/stroke with
+    // currentColor + computed-style fallback, per-element + fill/stroke opacity, and
+    // fill-rule exactly as the <path> branch always has, so the added shapes match it.
+    const drawShapeD = (e: any, d: string): void => {
+      if (!d.trim()) return;
+      let fillStr = e.getAttribute('fill') ?? resolveStyleProp(e, 'fill');
+      if (!fillStr || fillStr === 'currentColor') fillStr = computedPaint(e, 'fill') || 'black';
+      let strokeStr = e.getAttribute('stroke') ?? resolveStyleProp(e, 'stroke') ?? 'none';
+      if (strokeStr === 'currentColor') strokeStr = computedPaint(e, 'stroke') || 'none';
+      const elemOp  = parseFloat(e.getAttribute('opacity') ?? '1');
+      const fillOp  = elemOp * parseFloat(e.getAttribute('fill-opacity')   ?? '1');
+      const strkOp  = elemOp * parseFloat(e.getAttribute('stroke-opacity') ?? '1');
+      let fillRgb   = (fillStr   && fillStr   !== 'none') ? parseSvgColor(fillStr)   : null;
+      let strokeRgb = (strokeStr && strokeStr !== 'none') ? parseSvgColor(strokeStr) : null;
+      if (fillOp   < 0.01) fillRgb   = null;
+      if (strkOp   < 0.01) strokeRgb = null;
+      if (!fillRgb && !strokeRgb) return;
+      if (fillRgb   && fillOp   < 0.999) fillRgb   = blendSvgWithWhite(fillRgb,   fillOp);
+      if (strokeRgb && strkOp   < 0.999) strokeRgb = blendSvgWithWhite(strokeRgb, strkOp);
+      if (fillRgb)   pdf.setFillColor(fillRgb[0], fillRgb[1], fillRgb[2]);
+      if (strokeRgb) {
+        pdf.setDrawColor(strokeRgb[0], strokeRgb[1], strokeRgb[2]);
+        const lw = parseFloat(e.getAttribute('stroke-width') ?? '1') * strokeMul(e);
+        pdf.setLineWidth(Math.max(0.1, lw));
+      }
+      drawSvgPathToPdf(pdf, d, PX, PY);
+      const fillRule = e.getAttribute('fill-rule') ?? 'nonzero';
+      if (fillRgb && strokeRgb) pdf.fillStroke();
+      else if (fillRgb) { fillRule === 'evenodd' ? pdf.fillEvenOdd() : pdf.fill(); }
+      else pdf.stroke();
+    };
+
     // Render this element — leaf geometry, or a container's children — under any own
     // rotation. Translate/scale are already folded into tx/ty/sX/sY above; a rotate()
     // (d3.zoom groups, pose-geeko's articulated limbs) is applied about its pivot via
@@ -3040,40 +3073,31 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       return;
     }
 
-    if (tag === 'path') {
-      const d = el.getAttribute('d') ?? '';
-      if (!d.trim()) return;
-      // Fill/stroke fall back to the COMPUTED paint (not a literal black), so a path
-      // that inherits its colour from an ancestor group (e.g. logo-wall's one-ink
-      // <g fill="ink">) or uses currentColor resolves correctly in PDF instead of
-      // rendering black. getComputedStyle resolves SVG inheritance on the live DOM.
-      let fillStr = el.getAttribute('fill') ?? resolveStyleProp(el, 'fill');
-      if (!fillStr || fillStr === 'currentColor') fillStr = computedPaint(el, 'fill') || 'black';
-      let strokeStr = el.getAttribute('stroke') ?? resolveStyleProp(el, 'stroke') ?? 'none';
-      if (strokeStr === 'currentColor') strokeStr = computedPaint(el, 'stroke') || 'none';
-      const elemOp  = parseFloat(el.getAttribute('opacity') ?? '1');
-      const fillOp  = elemOp * parseFloat(el.getAttribute('fill-opacity')   ?? '1');
-      const strkOp  = elemOp * parseFloat(el.getAttribute('stroke-opacity') ?? '1');
-      let fillRgb   = (fillStr   && fillStr   !== 'none') ? parseSvgColor(fillStr)   : null;
-      let strokeRgb = (strokeStr && strokeStr !== 'none') ? parseSvgColor(strokeStr) : null;
-      if (fillOp   < 0.01) fillRgb   = null;
-      if (strkOp   < 0.01) strokeRgb = null;
-      if (!fillRgb && !strokeRgb) return;
-      if (fillRgb   && fillOp   < 0.999) fillRgb   = blendSvgWithWhite(fillRgb,   fillOp);
-      if (strokeRgb && strkOp   < 0.999) strokeRgb = blendSvgWithWhite(strokeRgb, strkOp);
-      if (fillRgb)   pdf.setFillColor(fillRgb[0], fillRgb[1], fillRgb[2]);
-      if (strokeRgb) {
-        pdf.setDrawColor(strokeRgb[0], strokeRgb[1], strokeRgb[2]);
-        const lw = parseFloat(el.getAttribute('stroke-width') ?? '1') * strokeMul(el);
-        pdf.setLineWidth(Math.max(0.1, lw));
-      }
-      const ptx = (v: number) => PX(v);
-      const pty = (v: number) => PY(v);
-      drawSvgPathToPdf(pdf, d, ptx, pty);
-      const fillRule = el.getAttribute('fill-rule') ?? 'nonzero';
-      if (fillRgb && strokeRgb) pdf.fillStroke();
-      else if (fillRgb) { fillRule === 'evenodd' ? pdf.fillEvenOdd() : pdf.fill(); }
-      else pdf.stroke();
+    // Fill/stroke fall back to the COMPUTED paint (not a literal black), so a path that
+    // inherits its colour from an ancestor group (e.g. logo-wall's one-ink <g fill="ink">)
+    // or uses currentColor resolves correctly in PDF instead of rendering black —
+    // getComputedStyle resolves SVG inheritance on the live DOM. (See drawShapeD.)
+    if (tag === 'path') { drawShapeD(el, el.getAttribute('d') ?? ''); return; }
+
+    // <ellipse> / <polygon> / <polyline> reduce to a `d` and paint through the same path
+    // pipeline. Previously they fell through to the generic child-recurse and were
+    // silently DROPPED from PDF output — real geometry loss for filter-voronoi (all
+    // polygons), org-chart / diagram-builder connectors, multi-page-pdf, etc. The
+    // EMF/EPS/DXF walker (svg-ir.ts) has always drawn them via the same reduction.
+    if (tag === 'ellipse') {
+      const ecx = svgLen(el.getAttribute('cx'), vbW), ecy = svgLen(el.getAttribute('cy'), vbH);
+      const erx = svgLen(el.getAttribute('rx'), vbW), ery = svgLen(el.getAttribute('ry'), vbH);
+      if (erx <= 0 || ery <= 0) return;
+      drawShapeD(el, `M${ecx - erx},${ecy} A${erx},${ery} 0 1 0 ${ecx + erx},${ecy} A${erx},${ery} 0 1 0 ${ecx - erx},${ecy} Z`);
+      return;
+    }
+
+    if (tag === 'polygon' || tag === 'polyline') {
+      const pts = (el.getAttribute('points') || '').match(/[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g);
+      if (!pts || pts.length < 4) return;
+      let d = `M${pts[0]},${pts[1]}`;
+      for (let i = 2; i + 1 < pts.length; i += 2) d += ` L${pts[i]},${pts[i + 1]}`;
+      drawShapeD(el, d + (tag === 'polygon' ? ' Z' : ''));
       return;
     }
 
