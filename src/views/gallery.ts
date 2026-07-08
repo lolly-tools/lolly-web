@@ -1420,6 +1420,31 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
 
   render();
 
+  // ── First-run welcome + tips strip (unbranded installs only) ────────────────
+  // Unbranded = token discovery still resolves the lolly-start placeholder
+  // (`lolly/tokens/brand`); once the user installs a brand, discovery returns
+  // `user/tokens/brand` and this never fires again. The check rides on the
+  // SYNCED asset metadata: on a no-cache first boot _findMetaByType resolves
+  // null until the catalog sync lands (main.ts's post-sync re-mount re-runs the
+  // check), so the dialog can never flash mid-sync — we only ever prompt off a
+  // non-null resolution. Lazy-loaded, so branded installs pay nothing; the
+  // continuation re-checks this gallery is still mounted before touching the DOM
+  // (the trigger must never surface on another view), and the dialog itself
+  // closes on any route change (see components/welcome-dialog.ts) — no cleanup
+  // entry here, so the same-route post-sync re-mount keeps it open seamlessly.
+  const galleryRoot = viewEl.querySelector<HTMLElement>('.gallery');
+  void (async () => {
+    let unbranded = false;
+    try {
+      unbranded = (await host.assets._findMetaByType('tokens'))?.id === 'lolly/tokens/brand';
+    } catch { /* IDB unavailable — treat as branded; the gallery must never block on this */ }
+    if (!unbranded || !galleryRoot?.isConnected) return;
+    const welcome = await import('../components/welcome-dialog.ts');
+    if (!galleryRoot.isConnected) return; // navigated away while the chunk loaded
+    welcome.mountBrandTips(viewEl.querySelector<HTMLElement>('.tool-masonry'));
+    if (!welcome.isWelcomeDismissed()) void welcome.showWelcomeDialog(); // 'brand' navigates itself
+  })();
+
   // Profile-personalized previews: once the user has opted in to "use my details",
   // re-render the few profile-bound tools that have no saved session — off the
   // critical path (idle, serial) — and lazily swap the personalized image into its

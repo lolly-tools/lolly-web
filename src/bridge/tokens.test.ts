@@ -7,11 +7,15 @@
  * These live next to the bridge (not the repo-root tests/ suite) because they
  * cover shell-side loading, not engine token semantics. DOM-free: the bridge
  * touches only the injected host slice and global fetch — both stubbed here
- * with plain objects (Node ≥18 supplies Blob/Response natively).
+ * with plain objects (Node ≥18 supplies Blob/Response natively). The user-
+ * tokens tests further down compose the REAL assets bridge over an in-memory
+ * idb stand-in, so the user-beats-catalog discovery order is exercised
+ * end-to-end rather than restated in a stub.
  */
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTokensAPI } from './tokens.ts';
+import { createTokensAPI, installUserTokens } from './tokens.ts';
+import { createAssetsAPI } from './assets.ts';
 
 // Minimal DTCG doc — one colour token, enough for a non-empty set.
 const DOC  = { color: { brand: { jungle: { $type: 'color', $value: '#30ba78' } } } };
@@ -106,4 +110,81 @@ test('bust() drops the memoised document and per-theme sets', async () => {
   assert.equal(await api.resolve('color.brand.jungle'), '#30ba78'); // still the cached set
   api.bust();
   assert.equal(await api.resolve('color.brand.jungle'), '#123456'); // re-discovered + reloaded
+});
+
+// ── User tokens (the runtime brand) — real assets bridge over an in-memory db ──
+
+/** Minimal in-memory stand-in for the idb slice bridge/assets.ts consumes —
+ *  just the user-assets / asset-meta / asset-blob reads and writes these tests
+ *  exercise (the transaction form is only needed by sync/prune, unused here). */
+function memDb(seed: {
+  meta?: Array<Record<string, unknown>>;
+  blobs?: Record<string, Blob>;
+  users?: Array<Record<string, unknown>>;
+} = {}) {
+  const stores: Record<string, Map<string, unknown>> = {
+    'user-assets': new Map((seed.users ?? []).map(r => [String(r.id), r])),
+    'asset-meta':  new Map((seed.meta ?? []).map(r => [String(r.id), r])),
+    'asset-blob':  new Map(Object.entries(seed.blobs ?? {})),
+  };
+  return {
+    async get(store: string, key: string) { return stores[store]!.get(key); },
+    async getAll(store: string) { return [...stores[store]!.values()]; },
+    async getAllKeys(store: string) { return [...stores[store]!.keys()]; },
+    async put(store: string, value: unknown, key?: string) {
+      stores[store]!.set(key ?? String((value as { id: string }).id), value);
+    },
+    async delete(store: string, key: string) { stores[store]!.delete(key); },
+  } as unknown as Parameters<typeof createAssetsAPI>[0];
+}
+
+/** A synced catalog carrying the shipped starter brand (the unbranded state). */
+const CATALOG_TOKENS = () => ({
+  meta: [{
+    id: 'lolly/tokens/brand', type: 'tokens', version: '1.0.0', tier: 'core',
+    formats: [{ format: 'json', url: '/catalog/assets/lolly/tokens/brand.json' }],
+  }],
+  blobs: { 'lolly/tokens/brand:json:1.0.0': docBlob(DOC) },
+});
+
+test('a user tokens asset wins discovery over the catalog brand — its doc is served', async () => {
+  stubFetch({});
+  const assets = createAssetsAPI(memDb({
+    ...CATALOG_TOKENS(),
+    users: [{ id: 'user/tokens/brand', type: 'tokens', format: 'json', blob: docBlob(DOC2), version: '1.0.0' }],
+  }));
+  const api = createTokensAPI({ assets });
+  assert.equal((await assets._findMetaByType('tokens'))?.id, 'user/tokens/brand');
+  assert.equal(await api.resolve('{color.brand.jungle}'), '#123456'); // DOC2 (user), not the catalog DOC
+});
+
+test('installUserTokens writes + busts — the very next resolve() sees the new doc', async () => {
+  stubFetch({});
+  const assets = createAssetsAPI(memDb(CATALOG_TOKENS()));
+  const tokens = createTokensAPI({ assets });
+  const host = { assets, tokens };
+  assert.equal(await tokens.resolve('color.brand.jungle'), '#30ba78'); // shipped brand, now memoised
+  await installUserTokens(host, DOC2, { label: 'Acme brand' });
+  assert.equal(await tokens.resolve('color.brand.jungle'), '#123456'); // no manual bust() — install did it
+});
+
+test('installUserTokens rejects a non-object document without touching the store', async () => {
+  stubFetch({});
+  const assets = createAssetsAPI(memDb(CATALOG_TOKENS()));
+  const tokens = createTokensAPI({ assets });
+  for (const bad of [null, undefined, 'oklch(60% 0.1 250)', 42, ['not', 'a', 'doc']]) {
+    await assert.rejects(installUserTokens({ assets, tokens }, bad), /DTCG token document/);
+  }
+  assert.equal((await assets._findMetaByType('tokens'))?.id, 'lolly/tokens/brand'); // still unbranded
+});
+
+test('discovery id flips lolly/tokens/brand → user/tokens/brand after install (the branded signal)', async () => {
+  stubFetch({});
+  const assets = createAssetsAPI(memDb(CATALOG_TOKENS()));
+  const tokens = createTokensAPI({ assets });
+  // Unbranded detection (welcome trigger): the discovered tokens id is the shipped one…
+  assert.equal((await assets._findMetaByType('tokens'))?.id, 'lolly/tokens/brand');
+  await installUserTokens({ assets, tokens }, DOC2);
+  // …and installing user tokens flips it, which is exactly what "branded" means.
+  assert.equal((await assets._findMetaByType('tokens'))?.id, 'user/tokens/brand');
 });

@@ -32,6 +32,7 @@ import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
 import { PALETTE } from '../palette.ts';
 import { setSwatches } from '../components/color-field.ts';
+import { applyBrandVars } from '../brand-vars.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
 import { createSoundToggle } from '../components/sound-toggle.ts';
 import { scopeCss } from '../lib/scope-css.ts';
@@ -789,6 +790,14 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const canvasEl  = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas');
   const outerEl   = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas-outer');
   const contentEl = (hideSidebar ? viewEl.querySelector<HTMLElement>('#tool-content') : canvasEl)!;
+  // Inject the brand's semantic colour slots (--primary, --surface, …) from the
+  // active tokens onto the canvas root, so templates can consume
+  // `var(--primary, <fallback>)`. Like the token-sourced swatches above
+  // (setSwatches), this is best-effort and fire-and-forget: a missing tokens doc
+  // leaves the template fallbacks in charge, and mounting never waits on it.
+  // Scoped HERE, not :root — styles/tokens.css owns `--primary` there as a
+  // shell HSL triple (see brand-vars.ts for the deliberate shadow).
+  void applyBrandVars(contentEl, host);
   // Always present in the template (both layouts render #tool-stage), so treat it
   // as non-null — mirrors mountTool's unguarded uses (ro.observe, fitCanvas, …).
   const stageEl   = viewEl.querySelector<HTMLElement>('#tool-stage')!;

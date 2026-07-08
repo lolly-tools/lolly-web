@@ -25,7 +25,7 @@ import { announce } from './a11y.ts';
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify';
+type RouteName = 'gallery' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -36,6 +36,7 @@ type Route =
   | { name: 'pro'; params?: string }
   | { name: 'projects'; folderId: string | null; params?: string }
   | { name: 'catalog'; params?: string }
+  | { name: 'start'; params?: string }
   | { name: 'gallery' };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
@@ -58,7 +59,7 @@ let mountedRouteSig = '';
 // Announce client-side route changes (the view swaps via innerHTML, which
 // assistive tech wouldn't otherwise notice).
 function announceRoute(name: RouteName): void {
-  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify' };
+  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup' };
   announce(`${labels[name] ?? 'Page'} loaded`);
 }
 
@@ -123,6 +124,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   view.classList.toggle('projects-view', route.name === 'projects');
   view.classList.toggle('catalog-view', route.name === 'catalog');
   view.classList.toggle('verify-view', route.name === 'verify');
+  view.classList.toggle('start-view', route.name === 'start');
   view.classList.toggle('is-returning', returning);
 
   // When the route NAME changes, the view-scoping class above changes with it
@@ -214,6 +216,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     case 'catalog': {
       const { mountCatalog } = await import('./views/catalog.ts');
       await mountCatalog(view, host, route.params);
+      break;
+    }
+    // --- /start: the brand wizard (derive-or-import your tokens). Lazy-loaded —
+    // it statically pulls the engine's derive/token modules, which the gallery
+    // cold-load must not pay for. ---
+    case 'start': {
+      const { mountStart } = await import('./views/start.ts');
+      await mountStart(view, host as unknown as Parameters<typeof mountStart>[1]);
       break;
     }
     case 'gallery':
@@ -490,6 +500,7 @@ function parseRoute(): Route {
       return { name: 'dashboard', params: query || '' };
     }
     if (parts[0] === 'verify' || parts[0] === 'valid' || parts[0] === 'v') return { name: 'verify', params: query || '' };
+    if (parts[0] === 'start') return { name: 'start', params: query || '' }; // brand wizard
     if (parts[0] === 'pro') return { name: 'pro', params: query || '' }; // /pro batch mode
     if (parts[0] === 'p') return { name: 'projects', folderId: parts[1] || null, params: query || '' };
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
@@ -528,6 +539,8 @@ function parseRoute(): Route {
     }
     // /verify is canonical; /valid and the /v shortlink are aliases.
     if (pathParts[0] === 'verify' || pathParts[0] === 'valid' || pathParts[0] === 'v') { window.location.replace('/#/verify'); return { name: 'verify' }; }
+    // /start is the brand wizard, not a tool shortcut.
+    if (pathParts[0] === 'start') { window.location.replace('/#/start'); return { name: 'start' }; }
     window.location.replace(`/#/tool/${pathParts[0]}${window.location.search}`);
     return { name: 'gallery' };
   }

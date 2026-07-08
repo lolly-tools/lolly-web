@@ -1,0 +1,105 @@
+/*
+ * First-run welcome dialog + gallery tips strip (components/welcome-dialog.ts).
+ *
+ * Loaded WITH the welcome-dialog module — the gallery lazy-imports it only for
+ * unbranded installs, so branded catalogs never pay for this sheet. All colours
+ * flow through the tokens.css HSL variables (shell chrome, not brand values).
+ */
+
+.welcome-dialog {
+  border: 1px solid hsl(var(--border));
+  padding: 28px;
+  width: min(600px, 94vw);
+  margin: auto; /* re-assert centring at class specificity (see .projects-confirm) */
+  border-radius: calc(var(--radius) * 2);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  box-shadow: 0 24px 64px hsl(0 0% 0% / 0.4);
+}
+.welcome-dialog::backdrop {
+  background: hsl(0 0% 0% / 0.45);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.welcome-eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+}
+.welcome-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+.welcome-sub {
+  margin: 0 0 20px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: hsl(var(--muted-foreground));
+}
+
+.welcome-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .welcome-cards { grid-template-columns: 1fr; } }
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  padding: 16px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.4);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, transform 0.12s;
+}
+.welcome-card:hover { border-color: hsl(var(--primary) / 0.55); transform: translateY(-1px); }
+.welcome-card--brand {
+  border-color: hsl(var(--primary) / 0.45);
+  background: hsl(var(--primary) / 0.06);
+}
+.welcome-card-kicker { font-size: 15px; font-weight: 700; }
+.welcome-card-line { font-size: 12.5px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.welcome-card-cta { margin-top: auto; padding-top: 4px; font-size: 12.5px; font-weight: 650; color: hsl(var(--primary)); }
+
+/* ── Tips strip — slim, above the masonry, until dismissed ─────────────────── */
+.brand-tips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 14px;
+  padding: 7px 8px 7px 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+  font-size: 12.5px;
+}
+.brand-tips-text { margin: 0; line-height: 1.4; }
+.brand-tips-dot { opacity: 0.55; }
+.brand-tips-dismiss {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.brand-tips-dismiss:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }

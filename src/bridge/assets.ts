@@ -429,6 +429,12 @@ export function createAssetsAPI(db: AssetsDb) {
      * Resolves on-demand tiers the same way get() does. Returns null if absent.
      */
     async _getBlob(id: string, opts: { format?: string; version?: string } = {}): Promise<Blob | null> {
+      // `user/…` ids live in the user-assets store as one already-resolved blob
+      // (no format/version keying) — mirror get()'s resolution order so callers
+      // like the tokens bridge can read a user-installed document by id.
+      if (id.startsWith('user/')) {
+        return (await db.get('user-assets', id))?.blob ?? null;
+      }
       const meta = await db.get('asset-meta', id);
       if (!meta) return null;
       const format = pickFormat(meta, opts.format);
@@ -442,15 +448,37 @@ export function createAssetsAPI(db: AssetsDb) {
     },
 
     /**
-     * Internal: the first synced catalog asset of a given type, or null. Lets a
-     * sibling bridge discover a well-known singleton document (e.g. the brand
-     * `tokens` asset) from the stored metadata — offline-safe once boot sync has
-     * run — instead of hardcoding a brand-specific id. Same rule as the MCP
-     * server's tokens resource (`idx.assets.find(a => a.type === …)`); getAll
-     * returns id order rather than index order, which only differs if a catalog
-     * ships more than one asset of a singleton type.
+     * Internal: the first asset of a given type, or null — the USER'S OWN store
+     * first, then the synced catalog metadata. Lets a sibling bridge discover a
+     * well-known singleton document (e.g. the brand `tokens` asset) — offline-
+     * safe once boot sync has run — instead of hardcoding a brand-specific id.
+     * User-first is deliberate: an installed `user/tokens/brand` beats the
+     * shipped brand (and the flip of the returned id is exactly how the shell
+     * detects "branded" — see bridge/tokens.ts installUserTokens). A user
+     * record holds one already-resolved blob and no catalog URLs, so it's
+     * shaped as a metadata record with empty `formats`; readers get the bytes
+     * via _getBlob, which resolves `user/…` ids from the user store. The
+     * catalog scan keeps the MCP server's rule (`idx.assets.find(a => a.type
+     * === …)`); getAll returns id order rather than index order, which only
+     * differs if a catalog ships more than one asset of a singleton type.
      */
     async _findMetaByType(type: AssetRef['type']): Promise<AssetMetaRecord | null> {
+      const users = await db.getAll('user-assets');
+      const u = users.find(r => r.type === type);
+      if (u) {
+        const name = u.meta?.name;
+        return {
+          id: u.id,
+          type: u.type,
+          ...(typeof name === 'string' ? { name } : {}),
+          version: u.version,
+          checksum: u.checksum,
+          width: u.width,
+          height: u.height,
+          meta: u.meta,
+          formats: [],
+        };
+      }
       const all = await db.getAll('asset-meta');
       return all.find(m => m.type === type) ?? null;
     },

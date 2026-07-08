@@ -19,7 +19,10 @@
  * direct fetch of the asset's file. If nothing resolves, an empty set is
  * returned — the picker quietly falls back to its built-in palette — and
  * nothing is memoised, so every subsequent call retries. A brand-ingest flow
- * that installs new tokens must call bust() so the next read re-discovers.
+ * that installs new tokens must call bust() so the next read re-discovers —
+ * installUserTokens (below) is the canonical write path: it stores the user's
+ * own DTCG doc as the `user/tokens/brand` asset, which discovery returns ahead
+ * of any catalog tokens (assets._findMetaByType checks the user store first).
  *
  * This is an *additive* v1 capability (HostV1.tokens?), like net/text — a shell
  * that doesn't provide it just doesn't offer token-driven swatches.
@@ -52,6 +55,55 @@ export interface WebTokensAPI extends TokensAPI {
 }
 
 const ASSET_INDEX_URL = '/catalog/assets/index.json';
+
+/** The user-installed brand tokens' well-known asset id. Its presence flips
+ *  discovery away from the catalog's tokens (e.g. `lolly/tokens/brand`) — the
+ *  shell's branded/unbranded signal (plans/brand-token-contract.md §5). */
+export const USER_TOKENS_ID = 'user/tokens/brand';
+
+/** The host slice installUserTokens needs: the asset store's user-upload writer
+ *  plus (when wired) this module's own live tokens instance, to bust its caches.
+ *  The record parameter mirrors bridge/assets.ts's UserAssetRecord for the
+ *  fields we set — the same contract the picker's uploads write. */
+interface InstallTokensHost {
+  assets: {
+    _uploadUserAsset(record: {
+      id: string;
+      type: 'tokens';
+      format: string;
+      blob: Blob;
+      version?: string;
+      meta?: Record<string, unknown>;
+    }): Promise<void>;
+  };
+  tokens?: TokensAPI & { bust?(): void };
+}
+
+/**
+ * Install the user's own brand tokens (plans/brand-token-contract.md §5):
+ * validate + write the DTCG document as the well-known `user/tokens/brand`
+ * asset, then bust the tokens caches so the very next get()/resolve() re-runs
+ * discovery — which now returns the user asset ahead of the shipped brand.
+ */
+export async function installUserTokens(
+  host: InstallTokensHost, doc: unknown, opts: { label?: string } = {},
+): Promise<void> {
+  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
+    throw new Error('installUserTokens: expected a DTCG token document (a plain object)');
+  }
+  await host.assets._uploadUserAsset({
+    id: USER_TOKENS_ID,
+    type: 'tokens',
+    format: 'json',
+    blob: new Blob([JSON.stringify(doc)], { type: 'application/json' }),
+    version: '1.0.0',
+    meta: { name: opts.label ?? 'Brand tokens' },
+  });
+  // The web tokens API memoises the doc + per-theme sets (see createTokensAPI);
+  // bust so nothing keeps serving the outgoing brand. Optional-chained: a host
+  // without the tokens capability just installs for the next boot.
+  host.tokens?.bust?.();
+}
 
 export function createTokensAPI(host: TokensHost): WebTokensAPI {
   const setByTheme = new Map<string, TokenSet>(); // theme key ('' = default) → token set, cached once non-empty
