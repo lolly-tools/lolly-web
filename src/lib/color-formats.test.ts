@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hexToRgba, rgbaToHex, formatColor, parseColor } from './color-formats.ts';
+import { hexToRgba, rgbaToHex, formatColor, parseColor, rgbToHsl, hslToRgb } from './color-formats.ts';
 
 test('hexToRgba parses #rgb / #rrggbb / #rrggbbaa (with or without #)', () => {
   assert.deepEqual(hexToRgba('#4f83cc'), { r: 79, g: 131, b: 204, a: 1 });
@@ -76,9 +76,43 @@ test('parseColor: CMYK (percentages) → rgb hex, and hex→cmyk→hex is close'
   }
 });
 
+test('alpha survives every space that can carry it (hex8 / RGBA / OKLCH)', () => {
+  const translucent = '#0088ff80'; // ~50% blue
+  // Hex keeps the alpha byte.
+  assert.equal(parseColor('hex', translucent), '#0088ff80');
+  assert.equal(formatColor('hex', translucent), '#0088FF80');
+  // RGBA shows + parses the 4th channel.
+  assert.equal(formatColor('rgba', translucent), '0, 136, 255, 0.502');
+  assert.equal(parseColor('rgba', '0, 136, 255, 0.5'), '#0088ff80');
+  // OKLCH carries alpha as "… / a" and round-trips back to a hex8.
+  const okText = formatColor('oklch', translucent);
+  assert.match(okText, / \/ 0?\.\d+$/, `expected an "/ a" suffix, got ${okText}`);
+  const round = parseColor('oklch', okText)!;
+  assert.match(round, /^#[0-9a-f]{8}$/i);
+  assert.ok(Math.abs(parseInt(round.slice(7, 9), 16) - 0x80) <= 2, 'alpha byte preserved via OKLCH');
+  // CMYK has no alpha — it stays opaque (a 6-digit hex).
+  assert.equal(formatColor('cmyk', translucent), formatColor('cmyk', '#0088ff'));
+  assert.match(parseColor('cmyk', formatColor('cmyk', translucent))!, /^#[0-9a-f]{6}$/i);
+});
+
 test('empty / whitespace input parses to null (caller holds last good value)', () => {
   for (const f of ['hex', 'rgb', 'rgba', 'oklch', 'cmyk'] as const) {
     assert.equal(parseColor(f, '   '), null);
     assert.equal(parseColor(f, ''), null);
   }
+});
+
+test('rgbToHsl / hslToRgb round-trip a saturated colour', () => {
+  const [h, s, l] = rgbToHsl(79, 131, 204);
+  assert.ok(h > 200 && h < 230, `hue ~215, got ${h}`);
+  const [r, g, b] = hslToRgb(h, s, l);
+  assert.ok(Math.abs(r - 79) <= 1 && Math.abs(g - 131) <= 1 && Math.abs(b - 204) <= 1, `got ${r},${g},${b}`);
+});
+
+test('rgbToHsl: pure grey has zero saturation; hslToRgb honours it', () => {
+  const [, s] = rgbToHsl(128, 128, 128);
+  assert.equal(Math.round(s), 0);
+  assert.deepEqual(hslToRgb(0, 0, 50), [128, 128, 128]);
+  assert.deepEqual(hslToRgb(200, 80, 0), [0, 0, 0]);   // black regardless of h/s
+  assert.deepEqual(hslToRgb(200, 80, 100), [255, 255, 255]); // white
 });

@@ -19,7 +19,7 @@
  * a fixed layout.
  */
 
-import { colorToHex } from '@lolly/engine';
+import { colorToHex, TOKEN_EXT } from '@lolly/engine';
 
 type Rec = Record<string, unknown>;
 
@@ -165,6 +165,52 @@ export function setSemanticRampAlias(doc: unknown, role: 'neutral' | 'secondary'
     const semantic = leafAt(doc, [set, 'color', 'semantic']);
     if (semantic) semantic[role] = { $value: `{color.ramp.${role}.${step}}` };
   }
+}
+
+// ── Primary print (CMYK) override ─────────────────────────────────────────────
+// "Auto CMYK until you pin one": the brand primary's screen colour is the source
+// of truth (sRGB/OKLCH), and print/PDF-CMYK export auto-converts it — UNLESS a
+// CMYK anchor is pinned here, which the export palette then substitutes exactly.
+// The anchor rides in the DTCG `$extensions` vendor namespace (TOKEN_EXT) on the
+// primary ramp's step 5 (THE brand colour — see the ramp $description), which
+// tokens.colors() already surfaces as `.cmyk` and the CMYK export reads. A
+// re-derive rebuilds the ramp, so the editor re-applies this after deriving.
+
+/** JSON path to the primary anchor swatch (ramp step 5), or null if absent. */
+function primaryAnchorPath(doc: unknown): string[] | null {
+  const multiSet = isRec(doc) && [...SET_KEYS].some(k => k in doc);
+  const p = multiSet ? ['base', 'color', 'ramp', 'primary', '5'] : ['color', 'ramp', 'primary', '5'];
+  return leafAt(doc, p) ? p : null;
+}
+
+/** The primary's pinned CMYK print override (C,M,Y,K 0–100), or null when auto. */
+export function getPrimaryPrintOverride(doc: unknown): [number, number, number, number] | null {
+  const path = primaryAnchorPath(doc);
+  const leaf = path ? leafAt(doc, path) : null;
+  const ext = leaf && isRec(leaf.$extensions) ? (leaf.$extensions as Rec)[TOKEN_EXT] : null;
+  const cmyk = isRec(ext) ? ext.cmyk : null;
+  return Array.isArray(cmyk) && cmyk.length === 4 && cmyk.every(n => typeof n === 'number')
+    ? (cmyk as [number, number, number, number]) : null;
+}
+
+/** Pin (or clear, with null) the primary's CMYK print anchor. */
+export function setPrimaryPrintOverride(doc: unknown, cmyk: [number, number, number, number] | null): boolean {
+  const path = primaryAnchorPath(doc);
+  const leaf = path ? leafAt(doc, path) : null;
+  if (!leaf) return false;
+  if (cmyk === null) {
+    const ext = isRec(leaf.$extensions) ? (leaf.$extensions as Rec) : null;
+    if (ext && isRec(ext[TOKEN_EXT])) {
+      delete (ext[TOKEN_EXT] as Rec).cmyk;
+      if (Object.keys(ext[TOKEN_EXT] as Rec).length === 0) delete ext[TOKEN_EXT];
+      if (Object.keys(ext).length === 0) delete leaf.$extensions;
+    }
+    return true;
+  }
+  const ext = (isRec(leaf.$extensions) ? leaf.$extensions : (leaf.$extensions = {} as Rec)) as Rec;
+  const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
+  ns.cmyk = cmyk.map(v => Math.round(Math.min(100, Math.max(0, v))));
+  return true;
 }
 
 /**

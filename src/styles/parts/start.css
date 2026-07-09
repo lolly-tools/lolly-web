@@ -1,20 +1,37 @@
 /*
- * #/start — brand wizard (views/start.ts). Async CSS chunk, loaded with the view.
- *
- * Chrome colours flow through the tokens.css HSL variables; the preview ramps
- * and specimen cards carry DERIVED BRAND values inline from the view (that's
- * the point — the brand is shown in its own colours, not the shell's).
+ * #/start — the brand wizard shell (views/start.ts). Async CSS chunk, loaded
+ * with the view. The heart of the page is the shared brand editor (lib/
+ * brand-editor.ts, .be-* styles from dashboard.css, imported by the view); this
+ * sheet only styles the shell around it — header, the corner-style + import
+ * panels, and the Done affordance. Chrome colours flow through tokens.css.
  */
 
 .start {
-  max-width: 1080px;
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 28px 20px 90px;
+  padding: 40px 22px 96px;
+  position: relative;
 }
+.start--editor { max-width: 1040px; }
+/* A soft brand-tinted wash behind the hero so a first-run page reads as crafted,
+   not blank — the accent the user is about to define, hinted. Theme-aware via the
+   primary token; pointer-events-through so it never blocks the controls. */
+.start::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 340px;
+  background:
+    radial-gradient(120% 80% at 15% 0%, hsl(var(--primary) / 0.10), transparent 60%),
+    radial-gradient(90% 70% at 100% 0%, hsl(var(--primary) / 0.06), transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+.start > * { position: relative; z-index: 1; }
 
 .start-back {
   display: inline-block;
-  margin-bottom: 22px;
+  margin-bottom: 26px;
   font-size: 13px;
   font-weight: 600;
   color: hsl(var(--muted-foreground));
@@ -23,113 +40,61 @@
 .start-back:hover { color: hsl(var(--foreground)); }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
-.start-head { margin-bottom: 30px; max-width: 560px; }
+.start-head { margin-bottom: 34px; max-width: 660px; }
 .start-eyebrow {
-  margin: 0 0 6px;
+  display: inline-block;
+  margin: 0 0 12px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: hsl(var(--muted-foreground));
 }
 .start-title {
-  margin: 0 0 10px;
-  font-size: clamp(28px, 4.5vw, 42px);
-  font-weight: 780;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
+  margin: 0 0 12px;
+  font-size: clamp(30px, 5vw, 46px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.03;
 }
 .start-sub {
   margin: 0;
-  font-size: 14.5px;
-  line-height: 1.6;
+  font-size: 15.5px;
+  line-height: 1.62;
   color: hsl(var(--muted-foreground));
 }
 
-/* ── Two-column shell: controls | live preview ───────────────────────────── */
-.start-grid {
-  display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-  gap: 28px;
-  align-items: start;
-}
-@media (max-width: 880px) { .start-grid { grid-template-columns: 1fr; } }
+/* ── The editor + its sibling panels (radius, import), stacked ─────────────── */
+.start-editor-wrap { display: flex; flex-direction: column; gap: 22px; }
+.start-editor-mount { display: block; }
+.start-editor-loading { margin: 0; font-size: 13px; color: hsl(var(--muted-foreground)); }
+/* The shared editor's own panels already gap themselves (.be gap); match that
+   rhythm so the whole page reads as one column of evenly-spaced cards. */
+.start-editor-mount .be { gap: 22px; }
 
-.start-controls { display: flex; flex-direction: column; gap: 16px; }
+/* Secondary utilities — corner + import, side by side (they're settings, not the
+   brand work), collapsing to one column when there isn't room. */
+.start-utils { display: grid; gap: 22px; }
+@media (min-width: 720px) { .start-utils { grid-template-columns: 1fr 1fr; align-items: start; } }
 
-.start-panel {
+/* Corner-style + import reuse the editor's .be-panel chrome (dashboard.css). */
+.start-radius-panel .brand-radius-row,
+.start .brand-radius-row {
   display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 22px;
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1.6);
-  background: hsl(var(--card));
-  color: hsl(var(--card-foreground));
-}
-
-.start-field { display: flex; flex-direction: column; gap: 8px; }
-.start-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: hsl(var(--muted-foreground));
-}
-/* The shared .view-seg buttons stretch evenly; let long labels wrap the row. */
-.start-seg { flex-wrap: wrap; }
-.start-seg .view-seg-btn { flex: 1 1 auto; }
-
-/* Primary CTA — filled, unmistakable (self-contained: the generic .btn rule
-   ships with the tool view's lazy sheet, so we don't lean on it here). */
-.start-cta {
-  padding: 11px 18px;
-  border: 1px solid hsl(var(--primary));
-  border-radius: var(--radius);
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: filter 0.12s;
-}
-.start-cta:hover { filter: brightness(1.08); }
-.start-cta:disabled { opacity: 0.6; cursor: default; }
-.start-cta-note {
-  margin: -8px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: hsl(var(--muted-foreground));
-}
-.start-error {
-  margin: 0;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: hsl(var(--destructive));
+  align-items: center;
+  gap: 12px;
+  margin-top: 0.2rem;
 }
 
 /* ── Import panel ────────────────────────────────────────────────────────── */
-.start-import { gap: 10px; }
-.start-import-title { margin: 0; font-size: 15px; font-weight: 700; }
-.start-import-sub { margin: 0 0 4px; font-size: 12.5px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
-.start-import-btn {
-  align-self: flex-start;
-  padding: 8px 14px;
-  border: 1px solid hsl(var(--input));
-  border-radius: var(--radius);
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
-}
-.start-import-btn:hover { border-color: hsl(var(--primary) / 0.5); }
 .start-import-result {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: 12px;
   padding: 12px 14px;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
@@ -151,98 +116,41 @@
 .start-import-stats { margin: 0; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
 .start-import-warn { margin: 0; font-size: 12px; color: hsl(var(--muted-foreground)); font-style: italic; }
 .start-import-err { margin: 0; font-size: 12.5px; font-weight: 600; color: hsl(var(--destructive)); }
-.start-cta--import { align-self: flex-start; padding: 8px 14px; font-size: 13px; }
+.start-cta--import { align-self: flex-start; }
 
-/* ── Live preview ────────────────────────────────────────────────────────── */
-.start-preview-mount { display: flex; flex-direction: column; gap: 22px; }
-
-.start-ramps { display: flex; flex-direction: column; gap: 12px; }
-.start-ramp-row { display: flex; flex-direction: column; gap: 5px; }
-.start-ramp-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* ── Done — filled, unmistakable (self-contained: the generic .btn rule ships
+      with the tool view's lazy sheet, so we don't lean on it here) ──────────── */
+.start-done-row {
+  margin-top: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--primary) / 0.05);
+  flex-wrap: wrap;
+}
+.start-done-note {
+  margin: 0;
+  flex: 1 1 320px;
+  font-size: 13px;
+  line-height: 1.55;
   color: hsl(var(--muted-foreground));
 }
-.start-ramp {
-  display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  gap: 3px;
-  border-radius: calc(var(--radius) * 0.9);
-  overflow: hidden;
-}
-.start-ramp-cell { height: 34px; border-radius: 4px; }
-
-/* Specimen cards — one per theme, side by side. All colours arrive inline. */
-.start-specs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-@media (max-width: 560px) { .start-specs { grid-template-columns: 1fr; } }
-
-.start-spec {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 20px;
-  border: 1px solid; /* colour comes inline (the theme's edge slot, --brand-edge on canvases) */
-  border-radius: calc(var(--radius) * 1.6);
-  min-height: 190px;
-}
-.start-spec-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.start-spec-name {
-  font-size: 11px;
+.start-cta {
+  padding: 11px 20px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: var(--radius);
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font: inherit;
+  font-size: 14px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter 0.12s;
 }
-.start-spec-default {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.start-spec-heading { margin: 0; font-size: 19px; font-weight: 750; letter-spacing: -0.01em; line-height: 1.2; }
-.start-spec-body { margin: 0; font-size: 13px; line-height: 1.55; }
-.start-spec-rule { width: 100%; margin: 2px 0; border: 0; border-top: 1px solid; }
-.start-spec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; }
-.start-spec-btn {
-  display: inline-block;
-  padding: 8px 16px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 700;
-}
-.start-spec-ratio { font-size: 11px; font-variant-numeric: tabular-nums; }
-
-/* ── Scheme mode previews — two live dots per mode (primary + that scheme's
-      derived secondary), repainted with every colour change ───────────────── */
-.start-seg--scheme .start-scheme-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding-top: 8px;
-  padding-bottom: 7px;
-}
-.start-scheme-label { line-height: 1; }
-.start-scheme-dots {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
-  min-height: 10px; /* reserve the row so an unpainted strip doesn't jump */
-}
-.start-scheme-dot {
-  width: 16px;
-  height: 10px;
-  border-radius: 999px;
-  border: 1px solid hsl(var(--border) / 0.7);
-}
-
-/* ── Share panel — mirrors the import panel's look ──────────────────────── */
-.start-share { gap: 10px; }
-.start-share-btn { font: inherit; font-size: 13px; font-weight: 600; }
+.start-cta:hover { filter: brightness(1.08); }
+.start-cta:disabled { opacity: 0.6; cursor: default; }

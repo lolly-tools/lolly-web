@@ -124,6 +124,44 @@
    sliders + swatch palette side by side, given the whole panel width to breathe
    (it used to be a cramped popover trapped in the narrow controls column). */
 .be-colorpick { grid-column: 1 / -1; display: grid; gap: .5rem; }
+
+/* Screen / print substitution — the primary shown in both its on-screen (sRGB)
+   and print (CMYK) forms, with an optional pinned-CMYK override for press work. */
+.be-subst { display: grid; gap: .3rem; margin-top: .35rem; font-size: .78rem; }
+.be-subst-line { display: flex; align-items: center; gap: .6rem; }
+.be-subst-key {
+  flex: 0 0 3.4rem; font-size: .66rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: hsl(var(--muted-foreground));
+}
+.be-subst-val { font-family: var(--font-mono); font-size: .76rem; color: hsl(var(--foreground)); }
+.be-subst-tag {
+  margin-inline-start: auto; font-size: .64rem; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: hsl(var(--muted-foreground));
+}
+.be-subst-toggle {
+  margin-inline-start: auto; border: 0; background: none; cursor: pointer; padding: .1rem .2rem;
+  font: inherit; font-size: .68rem; font-weight: 600; color: hsl(var(--primary));
+  border-radius: calc(var(--radius) * .4);
+}
+.be-subst-toggle:hover { text-decoration: underline; }
+.be-subst.is-pinned .be-subst-val[data-be-print] { color: hsl(var(--primary)); font-weight: 600; }
+.be-subst-override { display: flex; align-items: end; gap: .5rem; flex-wrap: wrap; margin-top: .15rem; }
+.be-cmyk-inputs { display: flex; gap: .35rem; }
+.be-cmyk-in { display: grid; gap: .12rem; justify-items: center; }
+.be-cmyk-in span {
+  font-family: var(--font-mono); font-size: .62rem; font-weight: 700; color: hsl(var(--muted-foreground));
+}
+.be-cmyk-in input {
+  width: 3.1rem; padding: .28rem .35rem; text-align: center; font: inherit; font-size: .76rem;
+  font-family: var(--font-mono); border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.be-cmyk-in input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
+.be-subst-reset {
+  border: 0; background: none; cursor: pointer; padding: .28rem .2rem; font: inherit;
+  font-size: .68rem; font-weight: 600; color: hsl(var(--muted-foreground));
+}
+.be-subst-reset:hover { color: hsl(var(--destructive)); text-decoration: underline; }
 .be-derive-controls { display: grid; gap: .8rem; align-content: start; }
 .be-field { display: grid; gap: .35rem; }
 .be-field-label { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
@@ -169,17 +207,19 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 
 .be-swatch {
   display: flex; align-items: center; gap: .55rem; text-align: start; cursor: pointer;
-  padding: .4rem .5rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .55);
+  padding: .4rem .5rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * 2);
   background: hsl(var(--background)); font: inherit;
 }
 .be-swatch:hover { border-color: hsl(var(--primary) / .55); }
 .be-swatch.is-selected { border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--ring) / .28); }
 .be-swatch-chip {
-  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; background: var(--sw, transparent);
+  flex: 0 0 auto; width: 48px; height: 48px; border-radius: var(--radius);
+  /* The colour rides OVER a checkerboard, so a translucent swatch shows its
+     alpha (the checker peeks through) instead of reading as a solid colour. */
+  background:
+    linear-gradient(var(--sw, transparent), var(--sw, transparent)),
+    repeating-conic-gradient(hsl(var(--muted-foreground) / .35) 0% 25%, hsl(var(--card)) 0% 50%) 50% / 8px 8px;
   box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12);
-}
-.be-swatch.is-empty .be-swatch-chip {
-  background: repeating-conic-gradient(hsl(var(--muted)) 0% 25%, transparent 0% 50%) 50% / 10px 10px;
 }
 .be-swatch-meta { display: grid; gap: 1px; min-width: 0; }
 .be-swatch-name { font-size: .76rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -198,6 +238,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   width: 100%; padding: .4rem .55rem; font: inherit; font-size: .8rem;
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground));
+  outline: none;
 }
 /* "Set by value" — colour-space select + value input + the extrapolated readout. */
 .be-fmt-row { display: flex; gap: .4rem; }
@@ -205,12 +246,20 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   flex: 0 0 auto; padding: .4rem .5rem; font: inherit; font-size: .76rem; cursor: pointer;
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground));
+  outline: none;
 }
 .be-fmt-input {
   flex: 1 1 auto; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .8rem;
   font-family: var(--font-mono); border: 1px solid hsl(var(--input));
   border-radius: calc(var(--radius) * .5); background: hsl(var(--background)); color: hsl(var(--foreground));
+  outline: none;
 }
+/* Mouse/programmatic focus (openEditor() auto-focuses Name on open) — a subtle
+   tinted border, same treatment as .color-hex-input, instead of the browser
+   default. Real keyboard focus gets a proper ring back via a11y.css. */
+.be-editor-name:focus,
+.be-fmt-sel:focus,
+.be-fmt-input:focus { border-color: hsl(var(--ring) / .6); }
 .be-fmt-out { font-size: .68rem; color: hsl(var(--muted-foreground)); font-family: var(--font-mono); min-height: 1em; }
 .be-editor-actions { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .be-editor-del {
@@ -243,6 +292,32 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground));
 }
+
+/* Logo variants — four optional upload slots (horizontal · vertical · mono · reverse). */
+.be-logo-grid { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.be-logo-slot { display: grid; gap: .4rem; }
+.be-logo-slot-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.2rem; }
+.be-logo-slot-name { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-logo-del {
+  border: 0; background: transparent; cursor: pointer; padding: .1rem .3rem; line-height: 1;
+  color: hsl(var(--muted-foreground)); font-size: .8rem; border-radius: 6px;
+}
+.be-logo-del:hover { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .1); }
+.be-logo-drop {
+  display: grid; place-items: center; cursor: pointer; overflow: hidden;
+  aspect-ratio: 16 / 10; padding: .8rem;
+  border: 1.5px dashed hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--background)); transition: border-color .12s, background .12s;
+}
+.be-logo-slot.is-filled .be-logo-drop { border-style: solid; }
+.be-logo-drop:hover { border-color: hsl(var(--primary) / .55); }
+.be-logo-art { display: grid; place-items: center; width: 100%; height: 100%; border-radius: calc(var(--radius) * .6); }
+.be-logo-art img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* Reverse mark reads on dark; monochrome on a neutral card so a white-on-white PNG still shows. */
+.be-logo-slot[data-be-logo="reverse"] .be-logo-art { background: hsl(var(--foreground)); padding: .5rem; }
+.be-logo-slot[data-be-logo="mono"] .be-logo-art { background: hsl(var(--muted) / .5); padding: .5rem; }
+.be-logo-empty { font-size: 1.6rem; font-weight: 300; color: hsl(var(--muted-foreground) / .7); }
+.be-logo-hint { margin: 0; font-size: .7rem; line-height: 1.45; color: hsl(var(--muted-foreground)); }
 
 /* Share. */
 .be-share-row { display: flex; gap: .5rem; flex-wrap: wrap; }

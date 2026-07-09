@@ -40,6 +40,7 @@ import type { WebTokensAPI } from '../bridge/tokens.ts';
 import { installUserTokens } from '../bridge/tokens.ts';
 import {
   isRec, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
+  setPrimaryPrintOverride, getPrimaryPrintOverride,
 } from './brand-doc.ts';
 import type { BrandSwatch } from './brand-doc.ts';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex } from '../brand-vars.ts';
@@ -55,6 +56,8 @@ import {
   listUserFonts, installGoogleFont, setPrimaryFont, removeUserFont, primaryFontFamily,
 } from '../user-fonts.ts';
 import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
+import { LOGO_VARIANTS, LOGO_META, listLogos, installLogo, removeLogo } from './brand-logos.ts';
+import type { LogoVariant, LogoSlot } from './brand-logos.ts';
 import { POPULAR_FAMILIES } from './google-fonts.ts';
 import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
 import type { BrandTransferHost } from '../brand-transfer.ts';
@@ -294,12 +297,55 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   // default to the engine's own anchor step (5) so behaviour is unchanged
   // until the user actively picks a different one (see setSemanticRampAlias).
   let neutralStep = DEFAULT_RAMP_STEP, secondaryStep = DEFAULT_RAMP_STEP;
+  // The primary's pinned CMYK print override (null = auto-convert at export),
+  // seeded from the installed brand. Re-applied to the doc after every re-derive.
+  let printOverride: [number, number, number, number] | null = installedDoc ? getPrimaryPrintOverride(installedDoc) : null;
   const currentTheme = document.documentElement.dataset.theme || 'light';
 
   const initialDraft = deriveSafe({ primary, scheme, surface, contrast });
 
   root.innerHTML = `
     <div class="be" data-brand-editor>
+      <div class="be-panel be-colour">
+        <div class="be-panel-head"><h3 class="be-panel-title">Colour</h3>
+          <p class="be-panel-sub">Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette below — <strong>Save colour</strong> is what actually keeps it.</p></div>
+        <div class="be-derive">
+          <div class="be-colorpick">
+            <span class="be-field-label">Primary colour</span>
+            ${colorFieldHtml('be-primary', primary, { inline: true, modes: true })}
+            <!-- Screen / print substitution: the primary is one colour; Lolly shows
+                 its on-screen (sRGB) and print (CMYK) forms and auto-converts for
+                 print UNLESS a CMYK is pinned here (then export substitutes it exactly). -->
+            <div class="be-subst" data-be-subst>
+              <div class="be-subst-line">
+                <span class="be-subst-key">Screen</span>
+                <code class="be-subst-val" data-be-screen></code>
+                <span class="be-subst-tag">auto</span>
+              </div>
+              <div class="be-subst-line">
+                <span class="be-subst-key">Print</span>
+                <code class="be-subst-val" data-be-print></code>
+                <button type="button" class="be-subst-toggle" data-be-print-toggle aria-expanded="false"></button>
+              </div>
+              <div class="be-subst-override" data-be-override hidden>
+                <div class="be-cmyk-inputs">
+                  ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-cmyk="${i}" aria-label="${l === 'K' ? 'Black' : l === 'C' ? 'Cyan' : l === 'M' ? 'Magenta' : 'Yellow'} %"></label>`).join('')}
+                </div>
+                <button type="button" class="be-subst-reset" data-be-print-reset>Reset to auto</button>
+              </div>
+            </div>
+          </div>
+          <div class="be-derive-controls">
+            <label class="be-field"><span class="be-field-label">Scheme</span>${segHtml('scheme', SCHEMES, scheme, 'Colour scheme')}</label>
+            <label class="be-field"><span class="be-field-label">Surface</span>${segHtml('surface', SURFACES, surface, 'Default surface')}</label>
+            <label class="be-field"><span class="be-field-label">Contrast</span>${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}</label>
+            <button type="button" class="be-cta" data-be-derive>Use this colour</button>
+            <button type="button" class="be-cta" data-be-save hidden>Save colour</button>
+          </div>
+          <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep }) : ''}</div>
+        </div>
+      </div>
+
       <div class="be-panel be-fonts">
         <div class="be-panel-head"><h3 class="be-panel-title">Fonts</h3>
           <p class="be-panel-sub">Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>.</p></div>
@@ -312,23 +358,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
         <p class="be-err" data-be-font-err hidden></p>
       </div>
 
-      <div class="be-panel be-colour">
-        <div class="be-panel-head"><h3 class="be-panel-title">Colour</h3>
-          <p class="be-panel-sub">Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette below — <strong>Save colour</strong> is what actually keeps it.</p></div>
-        <div class="be-derive">
-          <div class="be-colorpick">
-            <span class="be-field-label">Primary colour</span>
-            ${colorFieldHtml('be-primary', primary, { inline: true })}
-          </div>
-          <div class="be-derive-controls">
-            <label class="be-field"><span class="be-field-label">Scheme</span>${segHtml('scheme', SCHEMES, scheme, 'Colour scheme')}</label>
-            <label class="be-field"><span class="be-field-label">Surface</span>${segHtml('surface', SURFACES, surface, 'Default surface')}</label>
-            <label class="be-field"><span class="be-field-label">Contrast</span>${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}</label>
-            <button type="button" class="be-cta" data-be-derive>Use this colour</button>
-            <button type="button" class="be-cta" data-be-save hidden>Save colour</button>
-          </div>
-          <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep }) : ''}</div>
-        </div>
+      <div class="be-panel be-logos">
+        <div class="be-panel-head"><h3 class="be-panel-title">Logo</h3>
+          <p class="be-panel-sub">Add your mark in the variants you have — <strong>horizontal</strong>, <strong>vertical</strong>, <strong>monochrome</strong> and <strong>reverse</strong> (for dark backgrounds). PNG, SVG, JPEG or WebP, each optional. They stay on this device and travel in your brand file.</p></div>
+        <div class="be-logo-grid" data-be-logos></div>
+        <p class="be-err" data-be-logo-err hidden></p>
       </div>
 
       <div class="be-panel be-palette">
@@ -342,7 +376,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
 
       <div class="be-panel be-share">
         <div class="be-panel-head"><h3 class="be-panel-title">Share</h3>
-          <p class="be-panel-sub">One file with your tokens, fonts and theme — send it to anyone and their Lolly wears your brand.</p></div>
+          <p class="be-panel-sub">One file with your tokens, fonts, logos and theme — send it to anyone and their Lolly wears your brand.</p></div>
         <div class="be-share-row">
           <button type="button" class="be-btn" data-be-export data-sfx="whoosh">Export brand file</button>
           <button type="button" class="be-btn" data-be-import>Load a brand file…</button>
@@ -455,8 +489,53 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       if (!raw || raw === 'transparent') return;
       primary = /^#[0-9a-fA-F]{8}$/.test(raw) ? raw.slice(0, 7) : raw;
       renderPreview();
+      renderSubst();
     },
   });
+
+  // ── Screen / print substitution readout + optional CMYK override ────────────
+  const screenEl = $('[data-be-screen]') as HTMLElement | null;
+  const printEl = $('[data-be-print]') as HTMLElement | null;
+  const printToggle = $('[data-be-print-toggle]') as HTMLButtonElement | null;
+  const overrideBox = $('[data-be-override]') as HTMLElement | null;
+  const cmykInputs = Array.from(root.querySelectorAll<HTMLInputElement>('[data-be-cmyk]'));
+  const primaryHex = (): string => (/^#/.test(primary) ? primary : `#${primary}`);
+  /** The auto sRGB→CMYK conversion of the current primary (C,M,Y,K 0–100). */
+  const autoCmyk = (): [number, number, number, number] => {
+    const p = formatColor('cmyk', primaryHex()).split(',').map(n => Math.round(parseFloat(n)) || 0);
+    return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 0];
+  };
+  const renderSubst = (): void => {
+    const hex = primaryHex();
+    if (screenEl) screenEl.textContent = `${hex.toUpperCase()} · rgb(${formatColor('rgb', hex)})`;
+    const eff = printOverride ?? autoCmyk();
+    if (printEl) printEl.textContent = `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}`;
+    if (printToggle) printToggle.textContent = printOverride ? 'pinned — edit' : 'override…';
+    $('[data-be-subst]')?.classList.toggle('is-pinned', !!printOverride);
+    if (printOverride) cmykInputs.forEach((inp, i) => { if (document.activeElement !== inp) inp.value = String(printOverride![i]); });
+  };
+  printToggle?.addEventListener('click', () => {
+    const opening = !!overrideBox?.hidden;
+    if (overrideBox) overrideBox.hidden = !opening;
+    printToggle.setAttribute('aria-expanded', String(opening));
+    if (opening) { const eff = printOverride ?? autoCmyk(); cmykInputs.forEach((inp, i) => { inp.value = String(eff[i]); }); }
+  });
+  const commitOverride = (): void => {
+    printOverride = cmykInputs.map(inp => Math.min(100, Math.max(0, Math.round(parseFloat(inp.value) || 0)))) as [number, number, number, number];
+    setPrimaryPrintOverride(doc, printOverride); // rides on the current draft; Save persists it
+    setDirty(true);
+    renderSubst();
+  };
+  cmykInputs.forEach(inp => inp.addEventListener('input', commitOverride));
+  $('[data-be-print-reset]')?.addEventListener('click', () => {
+    printOverride = null;
+    setPrimaryPrintOverride(doc, null);
+    setDirty(true);
+    if (overrideBox) overrideBox.hidden = true;
+    printToggle?.setAttribute('aria-expanded', 'false');
+    renderSubst();
+  });
+  renderSubst();
   root.querySelectorAll<HTMLElement>('[data-be-seg]').forEach(seg => {
     const on = (e: Event): void => {
       const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
@@ -486,6 +565,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     catch (err) { announce(`Couldn't derive from ${primary}: ${String((err as { message?: unknown })?.message ?? err)}`, { assertive: true }); return; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);
+    setPrimaryPrintOverride(next, printOverride); // ramp rebuilt → re-pin the print anchor
     const ok = swatches.some(s => s.kind === 'custom')
       ? await confirmDialog({ title: 'Re-derive the palette?', message: 'This rebuilds every swatch from your colour and drops the custom swatches you added.', confirmLabel: 'Re-derive' })
       : true;
@@ -531,16 +611,17 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     });
   };
   /**
-   * Apply a colour to the selected swatch from EITHER surface: normalise to a
-   * solid hex (brand swatches are opaque — the same hex8→hex6 drop the field
-   * already did), write it to the doc, repaint the tile + value row, and persist.
-   * `rerenderField` re-seeds the visual field (used when the value row drove the
-   * change, so the sliders catch up; NOT when the field itself did, mid-drag).
+   * Apply a colour to the selected swatch from EITHER surface: write it to the
+   * doc, repaint the tile + value row, and persist. Alpha is kept — an `#rrggbbaa`
+   * from the field's opacity slider (or an rgba()/oklch(… / a) value) flows
+   * through verbatim, so brand swatches can be translucent. `rerenderField`
+   * re-seeds the visual field (used when the value row drove the change, so the
+   * sliders catch up; NOT when the field itself did, mid-drag).
    */
   function applyEditedHex(rawHex: string, opts: { rerenderField?: boolean } = {}): void {
     const cur = selected >= 0 ? swatches[selected] : null; if (!cur) return;
-    const hex = /^#[0-9a-fA-F]{8}$/.test(rawHex) ? rawHex.slice(0, 7) : rawHex;
-    if (!hex || hex === 'transparent') return;
+    if (!rawHex || rawHex === 'transparent') return;
+    const hex = rawHex; // keep #rrggbbaa alpha — brand swatches may be translucent
     setSwatchValue(doc, cur.path, hex);
     cur.hex = colorToHex(hex) ?? hex; cur.raw = hex;
     const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${selected}"]`);
@@ -737,6 +818,55 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const ok = await confirmDialog({ title: `Remove ${fam.family}?`, message: `Its font files (${fmtBytes(fam.bytes)}) are deleted from this device${fam.primary ? ' and the next font becomes primary' : ''}.`, confirmLabel: 'Remove' });
     if (!ok) return; del.disabled = true;
     try { await removeUserFont(fontsHost, fam); await paintFonts(); } catch (err) { del.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); }
+  });
+
+  // ── Logo variants (horizontal · vertical · mono · reverse) ──────────────────
+  // Each slot is a drop/upload tile: empty → "Add", filled → the mark on a chip
+  // sized to its variant (reverse on dark, mono on neutral) with a Replace/Remove
+  // pair. Stored as user assets via brand-logos.ts; all four optional.
+  const logoErr = $('[data-be-logo-err]') as HTMLElement | null;
+  const showLogoErr = (m: string): void => { if (logoErr) { logoErr.textContent = m; logoErr.hidden = !m; } if (m) announce(m, { assertive: true }); };
+  let logoUrls: string[] = []; // object URLs to revoke on repaint/teardown
+  const logoTile = (v: LogoVariant, slot: LogoSlot | undefined): string => {
+    const m = LOGO_META[v];
+    const body = slot
+      ? `<span class="be-logo-art" data-variant="${v}"><img src="${escape(slot.url)}" alt="${escape(m.label)} logo" loading="lazy"></span>`
+      : `<span class="be-logo-empty" data-variant="${v}" aria-hidden="true">+</span>`;
+    return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${v}">
+        <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(m.label)}</span>
+          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${v}" aria-label="Remove ${escape(m.label)} logo">&#x2715;</button>` : ''}</div>
+        <label class="be-logo-drop">
+          ${body}
+          <input type="file" class="be-logo-file" data-logo-file="${v}" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
+        </label>
+        <p class="be-logo-hint">${escape(slot ? 'Click to replace' : m.hint)}</p>
+      </div>`;
+  };
+  const paintLogos = async (): Promise<void> => {
+    const mount = $('[data-be-logos]') as HTMLElement | null; if (!mount) return;
+    logoUrls.forEach(u => URL.revokeObjectURL(u)); logoUrls = [];
+    const slots = await listLogos(fontsHost).catch(() => [] as LogoSlot[]);
+    logoUrls = slots.map(s => s.url);
+    const byVariant = new Map(slots.map(s => [s.variant, s]));
+    if (root.isConnected) mount.innerHTML = LOGO_VARIANTS.map(v => logoTile(v, byVariant.get(v))).join('');
+  };
+  void paintLogos();
+  cleanups.push(() => logoUrls.forEach(u => URL.revokeObjectURL(u)));
+  $('[data-be-logos]')?.addEventListener('change', async (e) => {
+    const input = (e.target as HTMLElement).closest<HTMLInputElement>('[data-logo-file]'); if (!input) return;
+    const variant = input.dataset.logoFile as LogoVariant;
+    const file = input.files?.[0]; input.value = ''; if (!file) return;
+    showLogoErr('');
+    try { await installLogo(fontsHost, variant, file); playSfx('saveProfile'); await paintLogos(); announce(`${LOGO_META[variant].label} logo added`); }
+    catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
+  });
+  $('[data-be-logos]')?.addEventListener('click', async (e) => {
+    const del = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-logo-del]'); if (!del) return;
+    e.preventDefault();
+    const variant = del.dataset.logoDel as LogoVariant;
+    const ok = await confirmDialog({ title: `Remove the ${LOGO_META[variant].label.toLowerCase()} logo?`, message: 'It’s deleted from this device.', confirmLabel: 'Remove' });
+    if (!ok) return; del.disabled = true;
+    try { await removeLogo(fontsHost, variant); await paintLogos(); } catch (err) { del.disabled = false; showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
   });
 
   // ── Share ─────────────────────────────────────────────────────────────────

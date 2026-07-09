@@ -131,7 +131,7 @@
   top: 2em;
   left: 2em;
   padding: 8px 18px;
-  border-radius: 999px;            /* pill */
+  border-radius: var(--radius);            /* pill */
   text-decoration: none;
   transition: background 0.12s, box-shadow 0.12s;
 }
@@ -164,7 +164,7 @@
     font-size: 13px;
     border: 1px solid hsl(var(--primary));
     padding: 12px 10px 12px 3em;
-    border-radius: 2em;
+    border-radius: var(--radius);
     text-shadow: 1px hsl(var(--secondary) / .35);
     backdrop-filter: blur(2px);
     transition: background 0.12s, color 0.12s;
@@ -309,7 +309,10 @@
   row-gap: 12px;
   align-items: start;
 }
-.color-field--inline .color-lch       { grid-column: 1; grid-row: 1; }
+/* .color-modes (the tabbed multi-space picker) takes the left column's row 1 in
+   place of a bare .color-lch; either way row 1 col 1 is the slider stack. */
+.color-field--inline .color-lch,
+.color-field--inline .color-modes     { grid-column: 1; grid-row: 1; }
 .color-field--inline .color-hex-input  { grid-column: 1; grid-row: 2; }
 .color-field--inline .color-alpha-row  { grid-column: 1; grid-row: 3; }
 .color-field--inline .color-popover-native { grid-column: 1; grid-row: 4; }
@@ -321,10 +324,34 @@
 @media (max-width: 560px) {
   .color-field--inline .color-popover { grid-template-columns: 1fr; }
   .color-field--inline .color-lch,
+  .color-field--inline .color-modes,
   .color-field--inline .color-hex-input,
   .color-field--inline .color-alpha-row,
   .color-field--inline .color-swatches { grid-column: 1; grid-row: auto; }
 }
+
+/* ── Colour-space modes: tab bar + per-space slider groups ───────────────────
+   The tabs are a segmented control; the active group's sliders reuse the OKLCH
+   slider look (.color-lch-slider styles also match .color-mode-slider below). */
+.color-modes { display: flex; flex-direction: column; gap: 10px; }
+.color-mode-tabs {
+  display: flex; gap: 2px; padding: 3px;
+  background: hsl(var(--muted) / .5); border-radius: 999px;
+}
+.color-mode-tab {
+  flex: 1 1 0; min-width: 0; padding: 5px 8px; border: 0; cursor: pointer;
+  background: transparent; color: hsl(var(--muted-foreground));
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em;
+  border-radius: 999px; transition: background .12s, color .12s;
+}
+.color-mode-tab:hover { color: hsl(var(--foreground)); }
+.color-mode-tab[aria-selected="true"] {
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  box-shadow: 0 1px 2px hsl(0 0% 0% / .12);
+}
+.color-mode-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.color-modegroup { display: flex; flex-direction: column; gap: 8px; }
+.color-modegroup[hidden] { display: none; }
 
 .color-hex-input {
   width: 100%;
@@ -398,7 +425,8 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.color-lch-slider {
+.color-lch-slider,
+.color-mode-slider {
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
@@ -408,7 +436,8 @@
   cursor: pointer;
   /* background = the axis gradient, inline from JS */
 }
-.color-lch-slider::-webkit-slider-thumb {
+.color-lch-slider::-webkit-slider-thumb,
+.color-mode-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 18px;
@@ -418,7 +447,8 @@
   border: 3px solid #fff;
   box-shadow: 0 0 0 1px #0006, inset 0 0 0 1px #0006, 0 1px 3px #0004;
 }
-.color-lch-slider::-moz-range-thumb {
+.color-lch-slider::-moz-range-thumb,
+.color-mode-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -426,7 +456,8 @@
   border: 3px solid #fff;
   box-shadow: 0 0 0 1px #0006, inset 0 0 0 1px #0006, 0 1px 3px #0004;
 }
-.color-lch-slider:focus-visible {
+.color-lch-slider:focus-visible,
+.color-mode-slider:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }

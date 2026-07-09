@@ -278,9 +278,8 @@
 .valid-result.is-lolly .valid-hero-icon::after,
 .valid-result.is-delivered .valid-hero-icon::after {
   content: ''; position: absolute; z-index: 5; inset: -1px; border-radius: 50%;
-  background:conic-gradient(from 
-0deg, transparent 0 54%, hsl(0 0% 100% / 1) 55%, hsl(0 0% 100% / 1) 80%, transparent 80%);
-      mix-blend-mode: difference;pointer-events: none;
+  background:conic-gradient(from 0deg, transparent 0 64%, #fff5 75%, #fff 80%, transparent 80%);
+      mix-blend-mode: overlay;pointer-events: none;
   animation: valid-medallion-sheen 4.5s linear infinite;
 }
 

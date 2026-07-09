@@ -115,7 +115,7 @@
   min-width:19em;
   display: inline-flex; align-items: center; gap: .55rem;
   margin: 0 auto 0 0; padding: .4rem .8rem; /* margin-right:auto keeps the buttons on the right */
-  border: 1px solid hsl(var(--border)); border-radius: 999px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
   font-size: .85rem; cursor: pointer;
   transition: border-color .12s, background .12s;
 }
@@ -149,7 +149,7 @@
 .profile-view .profile-check-tag {
   flex: none;
   font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
-  padding: .1rem .45rem; border-radius: 999px;
+  padding: .1rem .45rem; border-radius: calc(var(--radius)*2);
   background: hsl(var(--primary) / .15); color: hsl(var(--primary));
 }
 
@@ -159,7 +159,7 @@
   
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .55rem .9rem;
-  border: 1px solid hsl(var(--border)); border-radius: 2em;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
   font-size: .9rem; cursor: pointer;
   transition: border-color .12s, background .12s;
 }
@@ -206,7 +206,7 @@
   border-radius: var(--radius); border: 1px solid hsl(var(--border));
   cursor: pointer; text-decoration: none; text-align: center; line-height: 1.4;
 }
-.profile-view .profile-btn-primary { padding: 1em 2em;   border-radius: 3em;background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
+.profile-view .profile-btn-primary { padding: 1em 2em;   border-radius: calc(var(--radius) *2);background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
 .profile-view .profile-btn-primary:hover { filter: brightness(1.08); }
 .headshot-heading{text-align:center;}
 /* Appearance segmented control — a fixed-ish pill, not the full card width.
