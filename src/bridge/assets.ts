@@ -38,6 +38,9 @@ interface AssetMetaRecord {
   version?: string;
   tier?: string;
   deprecated?: boolean;
+  /** Tokens assets only: this brand is authoritative and not user-overridable
+   *  (see bridge/tokens.ts). Rides the index entry through _syncFromIndex. */
+  brandLock?: boolean;
   checksum?: string;
   width?: number;
   height?: number;
@@ -461,23 +464,29 @@ export function createAssetsAPI(db: AssetsDb) {
      * catalog scan keeps the MCP server's rule (`idx.assets.find(a => a.type
      * === …)`); getAll returns id order rather than index order, which only
      * differs if a catalog ships more than one asset of a singleton type.
+     *
+     * `opts.catalogOnly` skips the user store — for reading a property that is a
+     * fact about the SHIPPED brand a user asset must not be able to shadow (the
+     * `brandLock` flag on the catalog tokens asset; see bridge/tokens.ts).
      */
-    async _findMetaByType(type: AssetRef['type']): Promise<AssetMetaRecord | null> {
-      const users = await db.getAll('user-assets');
-      const u = users.find(r => r.type === type);
-      if (u) {
-        const name = u.meta?.name;
-        return {
-          id: u.id,
-          type: u.type,
-          ...(typeof name === 'string' ? { name } : {}),
-          version: u.version,
-          checksum: u.checksum,
-          width: u.width,
-          height: u.height,
-          meta: u.meta,
-          formats: [],
-        };
+    async _findMetaByType(type: AssetRef['type'], opts: { catalogOnly?: boolean } = {}): Promise<AssetMetaRecord | null> {
+      if (!opts.catalogOnly) {
+        const users = await db.getAll('user-assets');
+        const u = users.find(r => r.type === type);
+        if (u) {
+          const name = u.meta?.name;
+          return {
+            id: u.id,
+            type: u.type,
+            ...(typeof name === 'string' ? { name } : {}),
+            version: u.version,
+            checksum: u.checksum,
+            width: u.width,
+            height: u.height,
+            meta: u.meta,
+            formats: [],
+          };
+        }
       }
       const all = await db.getAll('asset-meta');
       return all.find(m => m.type === type) ?? null;

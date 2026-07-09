@@ -485,7 +485,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     } else {
       // Regular sidebar field: portal to position:fixed anchored to the field (like the
       // block/float branches). An absolute popover was trapped whenever an ancestor
-      // formed a stacking context — the focus-spotlight `opacity:.45` on non-focused
+      // formed a stacking context — the focus-spotlight dim on non-focused
       // sections, or the section's own clip — and a later section painted over it (the
       // "picker renders below" bug). Fixed escapes every ancestor stacking context and
       // overflow clip, so it's always on top. Flip above when it would overflow the

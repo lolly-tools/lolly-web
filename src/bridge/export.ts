@@ -27,9 +27,10 @@ import {
 } from '@lolly/engine';
 import {
   suseFontFile, SUSE_FONT_DIR,
-  resolveSuseFontUrl, canVectoriseText, textBaselineY,
+  canVectoriseText, textBaselineY,
   featureSettingsToHb, letterSpacingPx,
 } from './text-svg.ts';
+import { resolveVectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { videoMimeCandidates } from './video-mime.ts';
@@ -1860,7 +1861,10 @@ async function emitInlineTextSvg(
       const fillAttr  = col ? `rgb(${col[0]},${col[1]},${col[2]})` : null;
       const alphaAttr = col && col[3] < 1 ? String(col[3]) : null;
       const fontSizePx = parseFloat(nodeStyle.fontSize) || 16;
-      const fontUrl = resolveSuseFontUrl(nodeStyle);
+      // SUSE statics, a user's Google font (decompressed on demand) or the
+      // platform face — whichever the family stack resolves to first.
+      const vf = textApi ? await resolveVectorFont(nodeStyle, text) : null;
+      const fontUrl = vf?.url ?? null;
       const vectorise = canVectoriseText(nodeStyle, fontUrl, Boolean(textApi));
       // Tracking + OpenType feature toggles are baked into the shaped path so the
       // outline matches the on-screen (and raster) run exactly.
@@ -1874,8 +1878,10 @@ async function emitInlineTextSvg(
         const top = r.top - rootRect.top;
         if (vectorise) {
           try {
-            const { d } = await textApi!.toPath({ text: lineText, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing });
-            if (d) {
+            // `notdef` > 0 means this face has no glyph for something in the run —
+            // outlining would draw tofu, so keep the <text> fallback instead.
+            const { d, notdef } = await textApi!.toPath({ text: lineText, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations });
+            if (d && !notdef) {
               const { ascent, descent } = fontMetricsPx(nodeStyle, fontSizePx);
               const by = textBaselineY(top, r.height, ascent, descent);
               const p = document.createElementNS(NS, 'path');
@@ -2069,7 +2075,8 @@ async function svgPseudoContent(NS: string, parentG: Element, rootRect: { left: 
     }
     if (!ds.text.trim()) continue;
     const fontSizePx = parseFloat(ds.ps.fontSize) || 16;
-    const fontUrl = resolveSuseFontUrl(ds.ps);
+    const vf = vectorText && _host?.text ? await resolveVectorFont(ds.ps, ds.text) : null;
+    const fontUrl = vf?.url ?? null;
     const col = parseCssColorFull(ds.ps.color);
     const fillAttr  = col ? `rgb(${col[0]},${col[1]},${col[2]})` : null;
     const alphaAttr = col && col[3] < 1 ? String(col[3]) : null;
@@ -2077,8 +2084,8 @@ async function svgPseudoContent(NS: string, parentG: Element, rootRect: { left: 
     let placed = false;
     if (vectorText && canVectoriseText(ds.ps, fontUrl, Boolean(_host?.text))) {
       try {
-        const { d } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx });
-        if (d) {
+        const { d, notdef } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx, variations: vf!.variations });
+        if (d && !notdef) {
           const { ascent, descent } = fontMetricsPx(ds.ps, fontSizePx);
           const by = textBaselineY(y, lineH, ascent, descent);
           const p = document.createElementNS(NS, 'path');
@@ -4079,7 +4086,8 @@ async function renderInlineContent(
       await applyPdfTextStyle(pdf, nodeStyle, cssToPt, registeredFonts);
 
       const fontSizePx = parseFloat(nodeStyle.fontSize) || 16;
-      const fontUrl = resolveSuseFontUrl(nodeStyle);
+      const vf = convertPaths && _host?.text ? await resolveVectorFont(nodeStyle, text) : null;
+      const fontUrl = vf?.url ?? null;
       const outline = convertPaths && canVectoriseText(nodeStyle, fontUrl, Boolean(_host?.text));
       const letterSpacing = letterSpacingPx(nodeStyle.letterSpacing);
       const features = featureSettingsToHb(nodeStyle.fontFeatureSettings);
@@ -4105,8 +4113,10 @@ async function renderInlineContent(
             let drawn = false;
             if (outline) {
               try {
-                const { d } = await _host!.text!.toPath({ text: shown, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing });
-                if (d) {
+                // A glyph the face lacks (notdef) would print as tofu — fall through
+                // to pdf.text, which at least renders through an embedded/base font.
+                const { d, notdef } = await _host!.text!.toPath({ text: shown, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations });
+                if (d && !notdef) {
                   pdf.setFillColor(textRgb[0], textRgb[1], textRgb[2]);
                   drawSvgPathToPdf(pdf, d,
                     (sx: number) => x + sx * cssToPt,
@@ -4172,13 +4182,14 @@ async function pdfPseudoContent(pdf: any, el: Element, rootRect: { left: number;
     }
     if (!ds.text.trim()) continue;
     const fontSizePx = parseFloat(ds.ps.fontSize) || 16;
-    const fontUrl = resolveSuseFontUrl(ds.ps);
+    const vf = convertPaths && _host?.text ? await resolveVectorFont(ds.ps, ds.text) : null;
+    const fontUrl = vf?.url ?? null;
     const textRgb = parseCssColor(ds.ps.color) || ([0, 0, 0] as Rgb);
     let drawn = false;
     if (convertPaths && canVectoriseText(ds.ps, fontUrl, Boolean(_host?.text))) {
       try {
-        const { d } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx });
-        if (d) {
+        const { d, notdef } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx, variations: vf!.variations });
+        if (d && !notdef) {
           const ascentPt = fontMetricsPx(ds.ps, fontSizePx).ascent * cssToPt;
           pdf.setFillColor(textRgb[0], textRgb[1], textRgb[2]);
           drawSvgPathToPdf(pdf, d, (sx: number) => x + sx * cssToPt, (sy: number) => y + ascentPt + sy * cssToPt);

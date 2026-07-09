@@ -259,7 +259,12 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
       const r = sw.getBoundingClientRect();
       // Lazy: confetti code only loads on first activation of this niche feature,
       // not on the gallery boot path. celebrateBurst is already fire-and-forget.
-      void import('../lib/particles.ts').then(m => m.celebrateBurst(r.left + r.width / 2, r.top + r.height / 2));
+      // Passing the host lets the chips take the LOADED brand's light/dark pairs
+      // (the runtime host is the full WebHost, so tokens rides along even though
+      // this control's slice type doesn't declare it).
+      void import('../lib/particles.ts').then(m =>
+        m.celebrateBurst(r.left + r.width / 2, r.top + r.height / 2,
+          host as import('../lib/particles.ts').ChipPairsHost));
     }
     await setNeurospicyEnabled(host, on);
     if (sel && getNeurospicy().loopId) sel.value = getNeurospicy().loopId; // enabling may auto-pick the first loop

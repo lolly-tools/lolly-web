@@ -88,6 +88,24 @@ const schemeSegHtml = (options: ReadonlyArray<{ id: string; label: string }>, ac
 export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<void> {
   document.title = 'Make it yours · Lolly';
 
+  // A locked catalog is authoritative — its brand can't be adjusted. Skip the
+  // whole wizard (derive + import both funnel through installUserTokens, which
+  // would refuse anyway) and show why, so the route degrades gracefully rather
+  // than dead-ending on an error.
+  if (await host.tokens?.isLocked?.().catch(() => false)) {
+    document.title = 'Brand · Lolly';
+    viewEl.innerHTML = `
+      <div class="start">
+        <a class="start-back" href="#/">&larr; Tools</a>
+        <header class="start-head">
+          <p class="start-eyebrow">Brand</p>
+          <h1 class="start-title">This brand is set</h1>
+          <p class="start-sub">This build ships with a fixed brand — its colours, fonts and tokens are what every tool and export use. Brand adjustment is turned off here, so there’s nothing to change.</p>
+        </header>
+      </div>`;
+    return;
+  }
+
   let primary = DEFAULT_PRIMARY;
   let scheme: Scheme = 'mono';
   let surface: Surface = 'light';
@@ -296,8 +314,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     btn.textContent = 'Installing…';
     try {
       // A derived/imported doc with no font group inherits the fonts the user
-      // already installed (Profile → Your brand) — re-branding never silently
-      // undoes a chosen face.
+      // already installed (Profile → Adjust your brand) — re-branding never
+      // silently undoes a chosen face.
       const withFonts = await carryUserFontTokens(host as unknown as UserFontsHost, doc);
       await installUserTokens(host, withFonts, { label });
       // The chrome accent follows the brand — repaint it now; bust() emptied the

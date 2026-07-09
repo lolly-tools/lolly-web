@@ -32,26 +32,46 @@ import { createTokenSet } from '../../../../engine/src/tokens.ts';
 import type { TokensAPI, TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
 
 /** The catalog-asset slice discovery needs: an id to read the cached blob by,
- *  and the file URL to fall back to. Structurally satisfied both by the asset
- *  bridge's stored metadata records and by raw index.json entries. */
+ *  the file URL to fall back to, and the `brandLock` flag (tokens assets only).
+ *  Structurally satisfied both by the asset bridge's stored metadata records and
+ *  by raw index.json entries. */
 interface TokensAssetMeta {
   id: string;
   formats: Array<{ url: string }>;
+  brandLock?: boolean;
 }
 
 /** The slice of the host this bridge reads: the asset store's synced metadata
- *  lookup and raw blob access. */
+ *  lookup and raw blob access. `catalogOnly` skips the user store — needed to
+ *  read the SHIPPED brand's lock flag, which a user asset must not shadow. */
 interface TokensHost {
   assets: {
     _getBlob(id: string): Promise<Blob | null>;
-    _findMetaByType(type: string): Promise<TokensAssetMeta | null>;
+    _findMetaByType(type: string, opts?: { catalogOnly?: boolean }): Promise<TokensAssetMeta | null>;
   };
 }
 
-/** The web shell's tokens surface: HostV1's TokensAPI plus the cache-buster. */
+/** The web shell's tokens surface: HostV1's TokensAPI plus the cache-buster and
+ *  the brand-lock query. */
 export interface WebTokensAPI extends TokensAPI {
   /** Drop caches (e.g. after the user imports their own tokens). */
   bust(): void;
+  /**
+   * The raw effective DTCG document — the user install if present, else the
+   * shipped catalog brand (a locked build always yields the catalog doc). This
+   * is the SAME document get()/resolve() read, handed back unresolved so the
+   * brand editor can mutate a colour leaf's `$value` and re-install it. Null
+   * when no tokens are reachable yet. Memoised alongside the token sets, so a
+   * bust() (after installUserTokens) makes the next call re-load the new doc.
+   */
+  raw(): Promise<unknown>;
+  /**
+   * True when the SHIPPED catalog brand declares itself authoritative
+   * (`brandLock` on its tokens asset): the app resolves ITS colours/fonts and
+   * ignores any user-installed brand, and the brand-customisation UI is
+   * disabled. False for a customisable brand (e.g. lolly-start). Cached.
+   */
+  isLocked(): Promise<boolean>;
 }
 
 const ASSET_INDEX_URL = '/catalog/assets/index.json';
@@ -62,9 +82,10 @@ const ASSET_INDEX_URL = '/catalog/assets/index.json';
 export const USER_TOKENS_ID = 'user/tokens/brand';
 
 /** The host slice installUserTokens needs: the asset store's user-upload writer
- *  plus (when wired) this module's own live tokens instance, to bust its caches.
- *  The record parameter mirrors bridge/assets.ts's UserAssetRecord for the
- *  fields we set — the same contract the picker's uploads write. */
+ *  plus (when wired) this module's own live tokens instance, to bust its caches
+ *  and honour the brand lock. The record parameter mirrors bridge/assets.ts's
+ *  UserAssetRecord for the fields we set — the same contract the picker's
+ *  uploads write. */
 interface InstallTokensHost {
   assets: {
     _uploadUserAsset(record: {
@@ -76,7 +97,17 @@ interface InstallTokensHost {
       meta?: Record<string, unknown>;
     }): Promise<void>;
   };
-  tokens?: TokensAPI & { bust?(): void };
+  tokens?: TokensAPI & { bust?(): void; isLocked?(): Promise<boolean> };
+}
+
+/** Thrown when a brand override is attempted on a locked (authoritative) brand.
+ *  UI should gate on host.tokens.isLocked() so this stays a defence-in-depth
+ *  backstop rather than a path users reach. */
+export class BrandLockedError extends Error {
+  constructor() {
+    super('This build’s brand is fixed and can’t be changed.');
+    this.name = 'BrandLockedError';
+  }
 }
 
 /**
@@ -84,10 +115,17 @@ interface InstallTokensHost {
  * validate + write the DTCG document as the well-known `user/tokens/brand`
  * asset, then bust the tokens caches so the very next get()/resolve() re-runs
  * discovery — which now returns the user asset ahead of the shipped brand.
+ *
+ * Refuses when the shipped brand is LOCKED (brandLock): a locked catalog eats
+ * what it is given, so user brand tokens are never installed. This is the single
+ * write chokepoint every override path funnels through (the #/start wizard,
+ * brand-file import, and every set/add/remove-font action), so one guard here
+ * covers them all.
  */
 export async function installUserTokens(
   host: InstallTokensHost, doc: unknown, opts: { label?: string } = {},
 ): Promise<void> {
+  if (await host.tokens?.isLocked?.()) throw new BrandLockedError();
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
     throw new Error('installUserTokens: expected a DTCG token document (a plain object)');
   }
@@ -108,16 +146,21 @@ export async function installUserTokens(
 export function createTokensAPI(host: TokensHost): WebTokensAPI {
   const setByTheme = new Map<string, TokenSet>(); // theme key ('' = default) → token set, cached once non-empty
   let docPromise: Promise<unknown> | null = null;
+  let catalogMetaPromise: Promise<TokensAssetMeta | null> | null = null;
 
   /** The first catalog asset with `type: 'tokens'`, or null if there is none
    *  reachable. Synced metadata first — present and offline-safe once boot
-   *  sync ran — then the network index (cold first load, before sync). */
-  async function findTokensAsset(): Promise<TokensAssetMeta | null> {
+   *  sync ran — then the network index (cold first load, before sync).
+   *  `catalogOnly` reads the SHIPPED brand (skips the user store) — used to read
+   *  the un-shadowable `brandLock` flag. */
+  async function findTokensAsset(catalogOnly = false): Promise<TokensAssetMeta | null> {
     try {
-      const meta = await host.assets._findMetaByType('tokens');
+      const meta = await host.assets._findMetaByType('tokens', { catalogOnly });
       if (meta) return meta;
     } catch { /* IDB unavailable / not synced yet — fall through to the index */ }
     try {
+      // The catalog index carries only shipped assets, so it is catalog-only by
+      // construction — the right cold-load source for both callers.
       const resp = await fetch(ASSET_INDEX_URL);
       if (resp.ok) {
         const idx = await resp.json() as { assets?: Array<TokensAssetMeta & { type?: string }> };
@@ -127,9 +170,18 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     return null;
   }
 
-  async function loadDoc(): Promise<unknown> {
-    const asset = await findTokensAsset();
-    if (!asset) return null; // no tokens asset anywhere → empty set, retried next call
+  /** The SHIPPED brand's tokens asset (never a user install). Memoised — its
+   *  brandLock flag is a build fact that doesn't change within a session. */
+  function catalogTokensAsset(): Promise<TokensAssetMeta | null> {
+    if (!catalogMetaPromise) {
+      catalogMetaPromise = findTokensAsset(true).then(m => { if (!m) catalogMetaPromise = null; return m; });
+    }
+    return catalogMetaPromise;
+  }
+
+  /** Read + parse one tokens asset's DTCG document (cached blob first, then a
+   *  direct fetch of its file). Null when neither is reachable yet. */
+  async function readAssetDoc(asset: TokensAssetMeta): Promise<unknown> {
     // 1) The core-prefetched blob — present and offline-safe once boot sync ran.
     //    Read the bytes directly; minting/fetching an object URL just to re-parse
     //    in-memory JSON would pin an unused URL in the asset bridge's cache.
@@ -146,6 +198,23 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
       }
     } catch { /* offline and not yet prefetched */ }
     return null;
+  }
+
+  async function loadDoc(): Promise<unknown> {
+    // A LOCKED brand is authoritative: resolve the shipped catalog doc and
+    // ignore any user install (which the guard in installUserTokens also
+    // prevents from ever being written — but a leftover from an earlier,
+    // unlocked profile must still be shadowed here).
+    const catalog = await catalogTokensAsset();
+    if (catalog?.brandLock) return readAssetDoc(catalog);
+    // Unlocked: a USER install wins. _findMetaByType is user-first AND IDB-only
+    // (the index fallback lives here in the bridge, not in it), so consult it for
+    // a user asset and otherwise reuse the catalog asset already resolved above —
+    // this avoids a second index fetch on a cold boot.
+    let userMeta: TokensAssetMeta | null = null;
+    try { userMeta = await host.assets._findMetaByType('tokens'); } catch { /* IDB unavailable */ }
+    if (userMeta && userMeta.id.startsWith('user/')) return readAssetDoc(userMeta);
+    return catalog ? readAssetDoc(catalog) : null; // no tokens anywhere → empty set, retried next call
   }
 
   async function doc(): Promise<unknown> {
@@ -170,9 +239,14 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     colors: async (opts = {}) => (await ensure(opts.theme)).colors(),
     /** Resolve a `{path}` alias (or bare path) to its value. */
     resolve: async (ref, opts = {}) => (await ensure(opts.theme)).resolve(ref),
+    /** The raw effective DTCG document (see WebTokensAPI.raw). */
+    raw: () => doc(),
     /** Theme names declared in the document. */
     themes: async () => (await ensure()).themes(),
-    /** Drop caches (e.g. after the user imports their own tokens). */
+    /** True when the shipped brand is locked (see WebTokensAPI.isLocked). */
+    async isLocked() { return !!(await catalogTokensAsset())?.brandLock; },
+    /** Drop caches (e.g. after the user imports their own tokens). The lock is a
+     *  build fact, not user state, so its cache survives a bust. */
     bust() { setByTheme.clear(); docPromise = null; },
   };
 }

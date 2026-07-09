@@ -6,8 +6,8 @@
  * between people: one `.zip` carrying the active design tokens, every locally
  * installed font face (the actual woff2 bytes — the receiver renders your type
  * with zero network), and the brand-adjacent preferences (theme). Export it
- * from Profile → Your brand or the #/start wizard; anyone loads it from the
- * same places and their whole install wears the brand — chrome, tools,
+ * from Profile → Adjust your brand or the #/start wizard; anyone loads it from
+ * the same places and their whole install wears the brand — chrome, tools,
  * exports.
  *
  * The envelope copies the backup bundle's proven rules (docs/data-transfer.md):
@@ -138,7 +138,7 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
     `[[ 🎨 ${filename} ]]`,
     '',
     `A portable Lolly brand${label ? ` — ${label}` : ''}: design tokens, fonts and theme in one file.`,
-    'Open Lolly, go to Profile → Your brand → “Load a brand file…” (or the',
+    'Open Lolly, go to Profile → Adjust your brand → “Load a brand file…” (or the',
     '#/start wizard) and choose this .zip. Everything installs on-device;',
     'nothing is uploaded anywhere.',
     '',

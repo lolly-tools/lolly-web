@@ -14,7 +14,7 @@
  */
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTokensAPI, installUserTokens } from './tokens.ts';
+import { createTokensAPI, installUserTokens, BrandLockedError } from './tokens.ts';
 import { createAssetsAPI } from './assets.ts';
 import { applyBrandVars } from '../brand-vars.ts';
 
@@ -188,6 +188,52 @@ test('discovery id flips lolly/tokens/brand → user/tokens/brand after install 
   await installUserTokens({ assets, tokens }, DOC2);
   // …and installing user tokens flips it, which is exactly what "branded" means.
   assert.equal((await assets._findMetaByType('tokens'))?.id, 'user/tokens/brand');
+});
+
+// ── Brand lock (an authoritative, non-overridable catalog brand) ──────────────
+
+/** A synced catalog whose tokens asset declares brandLock — the app must resolve
+ *  ITS doc and ignore any user install (the SUSE profile's stance). */
+const LOCKED_CATALOG_TOKENS = () => ({
+  meta: [{
+    id: 'suse/tokens/brand', type: 'tokens', version: '1.0.0', tier: 'core', brandLock: true,
+    formats: [{ format: 'json', url: '/catalog/assets/suse/tokens/brand.json' }],
+  }],
+  blobs: { 'suse/tokens/brand:json:1.0.0': docBlob(DOC) },
+});
+
+test('isLocked reflects the SHIPPED catalog flag (true for a locked brand, false otherwise)', async () => {
+  stubFetch({});
+  const locked = createTokensAPI({ assets: createAssetsAPI(memDb(LOCKED_CATALOG_TOKENS())) });
+  assert.equal(await locked.isLocked(), true);
+  const open = createTokensAPI({ assets: createAssetsAPI(memDb(CATALOG_TOKENS())) });
+  assert.equal(await open.isLocked(), false);
+});
+
+test('a locked brand IGNORES a pre-existing user tokens asset — the catalog doc is served', async () => {
+  stubFetch({});
+  const assets = createAssetsAPI(memDb({
+    ...LOCKED_CATALOG_TOKENS(),
+    // A leftover from an earlier, unlocked profile — user-first discovery would normally serve it.
+    users: [{ id: 'user/tokens/brand', type: 'tokens', format: 'json', blob: docBlob(DOC2), version: '1.0.0' }],
+  }));
+  const api = createTokensAPI({ assets });
+  // Default (user-first) discovery still points at the user asset…
+  assert.equal((await assets._findMetaByType('tokens'))?.id, 'user/tokens/brand');
+  // …but catalogOnly sees the locked shipped brand, and resolution follows it.
+  assert.equal((await assets._findMetaByType('tokens', { catalogOnly: true }))?.id, 'suse/tokens/brand');
+  assert.equal(await api.isLocked(), true);
+  assert.equal(await api.resolve('{color.brand.jungle}'), '#30ba78'); // catalog DOC, NOT the user DOC2
+});
+
+test('installUserTokens refuses on a locked brand (BrandLockedError) and writes nothing', async () => {
+  stubFetch({});
+  const assets = createAssetsAPI(memDb(LOCKED_CATALOG_TOKENS()));
+  const tokens = createTokensAPI({ assets });
+  await assert.rejects(installUserTokens({ assets, tokens }, DOC2, { label: 'Nope' }), BrandLockedError);
+  // No user asset was written — the shipped brand still stands.
+  assert.equal((await assets._findMetaByType('tokens'))?.id, 'suse/tokens/brand');
+  assert.equal(await tokens.resolve('{color.brand.jungle}'), '#30ba78');
 });
 
 // ── applyBrandVars (brand-vars.ts) — the contract-§3 injection rules ───────────

@@ -24,6 +24,7 @@
 
 import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
+import { bustFontRegistry } from './bridge/font-registry.ts';
 import { fetchGoogleFont, GOOGLE_FAMILY_RE } from './lib/google-fonts.ts';
 import type { DownloadedFontFace } from './lib/google-fonts.ts';
 
@@ -97,6 +98,10 @@ async function registerFace(
  * best-effort) and after a backup import. Idempotent per document.
  */
 export async function registerUserFonts(host: UserFontsHost): Promise<void> {
+  // The installed set may have just changed (install, brand pack, backup restore
+  // — every path funnels through here), so the vector-export font registry must
+  // re-read it rather than serve a stale family map. See bridge/font-registry.ts.
+  bustFontRegistry();
   let records: Array<{ id: string; type: string; blob?: Blob; meta?: Record<string, unknown> }>;
   try { records = await host.assets._exportUserAssets(); }
   catch { return; }
@@ -322,6 +327,7 @@ export async function removeUserFont(host: UserFontsHost, family: UserFontFamily
     const face = REGISTERED.get(id);
     if (face) { document.fonts.delete(face); REGISTERED.delete(id); }
   }
+  bustFontRegistry();   // the family is gone — exports must stop resolving it
   if (family.primary) {
     const rest = (await listUserFonts(host)).filter(f => f.family !== family.family);
     await setPrimaryFont(host, rest[0]?.family ?? null);
