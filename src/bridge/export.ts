@@ -2585,12 +2585,27 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
     const days = [7, 30, 90, 365].includes(Number(opts.c2paDays)) ? Number(opts.c2paDays) : 30;
     // Honest action history from what THIS export actually did — the pipeline
     // signals are all on opts/format, so nothing extra needs threading out of
-    // the per-format renderers. CMYK / brand-palette → a colour conversion; any
-    // print mark or bleed → an edit; the experimental-tool overlay → an edit.
+    // the per-format renderers. Each genuine transformation gets its own,
+    // individually-described step (task: "as granular as possible") rather than
+    // a handful of lumped-together flags.
+    const marks: string[] = [];
+    if (opts.bleed) marks.push(`${opts.bleed}${typeof opts.bleed === 'number' ? 'px' : ''} bleed`);
+    if (opts.cropMarks) marks.push('crop marks');
+    if (opts.registrationMarks) marks.push('registration marks');
+    if (opts.bleedMarks) marks.push('bleed marks');
+    if (opts.colorBars) marks.push('a colour bar');
+    // The durable in-pixel watermark only actually runs for the canvas-based
+    // raster encoders (renderRaster/renderBitmap's opts.imprint branch) — gate
+    // on those formats so the credential never claims a mark that format's
+    // export path can't actually embed.
+    const imprintCapable = format === 'png' || format === 'jpg' || format === 'jpeg' || format === 'webp';
     const actions = exportActionSteps(format, {
-      colorAdjusted: /cmyk/i.test(format) || !!(opts.palette && opts.palette.length),
-      markedUp: !!(opts.bleed || opts.cropMarks || opts.registrationMarks || opts.bleedMarks || opts.colorBars),
+      cmyk: /cmyk/i.test(format),
+      paletteColors: opts.palette?.length,
+      marks,
       watermarked: !!opts.watermark,
+      imprint: !!opts.imprint && imprintCapable,
+      audio: !!opts.audio?.url,
     });
     const stamped = await embedC2pa(new Uint8Array(await blob.arrayBuffer()), format, {
       title: opts.meta?.tool,
