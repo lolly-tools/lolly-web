@@ -90,6 +90,57 @@
 .valid-hero-verdict { color: inherit; }
 .valid-hero p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.9rem; max-width: 60ch; }
 
+/* The verdict pill — "Made with Lolly" / "Verified", struck as a small glossy
+   badge (mirrors .valid-item-badge.is-good) rather than plain coloured text, so
+   it reads as a stamp beside the filename. vertical-align keeps it optically
+   centred on the filename's baseline rather than the pill's own box. */
+.valid-hero-pill {
+  display: inline-flex; align-items: center; gap: 0.32rem;
+  vertical-align: middle;
+  font-size: 0.76rem; font-weight: 800; letter-spacing: 0.01em;
+  padding: 0.24rem 0.75rem 0.26rem; border-radius: 999px;
+  color: hsl(0 0% 100%);
+  border: 1px solid hsl(0 0% 100% / 0.3);
+  white-space: nowrap;
+}
+.valid-hero-pill--lolly {
+  background: linear-gradient(163deg, hsl(var(--vf-pass-1)), hsl(var(--vf-pass-2)));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.45), 0 4px 12px -5px hsl(var(--vf-pass) / 0.7);
+}
+.valid-hero-pill--trusted {
+  background: linear-gradient(163deg, hsl(215 18% 60%), hsl(215 16% 42%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.35), 0 4px 12px -5px hsl(215 16% 40% / 0.6);
+}
+.valid-lolly-badge,
+.valid-trusted-badge { font-size: 1em; line-height: 1; }
+
+/* The two "key validations" under the Made-with-Lolly pill — big, obvious,
+   iconed badges rather than a sentence to parse. */
+.valid-hero-vbadges { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.15rem; }
+.valid-vbadge {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.55rem 0.95rem 0.55rem 0.55rem;
+  border-radius: 0.85rem;
+  border: 1px solid hsl(var(--vf-pass) / 0.3);
+  background: hsl(var(--vf-pass) / 0.09);
+  color: hsl(var(--foreground));
+  font-size: 0.85rem; font-weight: 600;
+}
+.valid-vbadge-ic {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 1.9rem; height: 1.9rem; border-radius: 50%;
+  background: hsl(var(--vf-pass) / 0.18); color: hsl(var(--vf-pass));
+}
+.valid-vbadge-ic svg { width: 1.05rem; height: 1.05rem; }
+/* The signer-identity footnote — same small/muted/SUSE-Mono treatment used for
+   every other engraved value on this page (facts, metadata, checks). */
+.valid-hero-signedby {
+  margin: 0.15rem 0 0;
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.74rem; color: hsl(var(--muted-foreground));
+}
+.valid-hero-signedby strong { color: hsl(var(--foreground)); font-weight: 700; }
+
 /* ── Uploaded-media preview ──────────────────────────────────────────────────
    A look at the file being checked — large at the top of the card, small beside
    the embedded metadata. A faint checkerboard sits behind it so transparency
@@ -135,6 +186,7 @@
   flex: 0 0 auto;
   width: 4.6rem; height: 4.6rem;
   border-radius: 50%;
+  overflow: hidden;
   display: grid; place-items: center;
   isolation: isolate;
   color: hsl(var(--muted-foreground));
@@ -145,11 +197,13 @@
     0 8px 20px -10px hsl(0 0% 0% / 0.4);
 }
 .valid-hero-icon svg { position: relative; z-index: 2; width: 2.1rem; height: 2.1rem; }
-/* The Lolly app icon, struck into the centre of the medallion as a circular
-   badge (the state-coloured coin around it still carries the verdict). */
+/* The Lolly app icon, filling the whole medallion (not a small badge struck
+   into its centre) — the crown highlight and conic sheen (both z-index 1,
+   painted before/after this in tree order) still show through and sweep over
+   it, so the "radar" flourish rides on top of the full logo. */
 .valid-hero-logo {
-  position: relative; z-index: 2;
-  width: 2.9rem; height: 2.9rem;
+  position: relative; z-index: 1;
+  width: 100%; height: 100%;
   border-radius: 50%;
   object-fit: cover;
   box-shadow: 0 0 0 2px hsl(0 0% 100% / 0.55), 0 3px 7px hsl(0 0% 0% / 0.4);
@@ -198,10 +252,8 @@
 .valid-result.is-trusted .valid-hero-icon svg,
 .valid-result.is-lolly .valid-hero-icon svg,
 .valid-result.is-delivered .valid-hero-icon svg { width: 2.5rem; height: 2.5rem; }
-.valid-result.is-valid .valid-hero-logo,
-.valid-result.is-trusted .valid-hero-logo,
-.valid-result.is-lolly .valid-hero-logo,
-.valid-result.is-delivered .valid-hero-logo { width: 3.5rem; height: 3.5rem; }
+/* .valid-hero-logo has no per-state size rule — it always fills .valid-hero-icon
+   at 100%/100%, so it grows with the medallion automatically. */
 
 /* Silver medallion — the credential verifies, but it was NOT made with Lolly.
    The animated green coin above is reserved for the branded "Made with Lolly"
@@ -241,11 +293,6 @@
     hsl(var(--card));
   box-shadow: 0 0 0 1px hsl(var(--vf-pass) / 0.2), 0 18px 44px -26px hsl(var(--vf-pass) / 0.5);
 }
-.valid-result.is-lolly .valid-hero-verdict { color: hsl(var(--primary)); }
-.valid-result.is-trusted .valid-hero-verdict,
-.valid-result.is-delivered .valid-hero-verdict { color: hsl(var(--vf-pass)); }
-.valid-lolly-badge,
-.valid-trusted-badge { margin-left: 0.45rem; color: hsl(var(--vf-pass)); }
 /* "Signed by <email> — …" under the hero sub; rendered whenever the chain
    verified (trusted, or anchored-but-expired). Scoped under .valid-hero to
    out-specify the `.valid-hero p` margin reset above. */
@@ -292,7 +339,7 @@
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 .valid-fact:hover {
-  transform: translateY(-3px);
+  transform: scale(1.03);
   border-color: hsl(215 20% 50%);
   box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.7), 0 14px 26px -16px hsl(0 0% 0% / 0.5);
 }
@@ -574,10 +621,11 @@
 .valid-wm-text strong { font-size: 0.9rem; font-weight: 650; color: hsl(var(--foreground)); }
 .valid-wm-text span { font-size: 0.8rem; line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
 
-/* ── Panels — the file/facts summary, "what happened" (edit history) and "what
-   was checked" (assertion log) as three distinct boxed columns rather than
-   lists silently stacked in one column. A fluid grid: one column on narrow
-   viewports, opens to two then three wherever the page has the room — no hard
+/* ── Panels — the file/facts summary, "made from" inputs digest, "what happened"
+   (change history) and "what was checked" (assertion log) as distinct boxed
+   columns rather than lists silently stacked in one column. A fluid grid: one
+   column on narrow viewports (so "made from" always sits directly above change
+   history), opens to more columns wherever the page has the room — no hard
    breakpoint needed. */
 .valid-panels {
   display: grid;
@@ -586,21 +634,15 @@
   align-items: start;
 }
 /* The summary column (filename, self-note, fact list) shares the same boxed
-   treatment as the edit-history/assertion-log panels so all three read as
+   treatment as the made-from/change-history/assertion-log panels so all read as
    siblings; the facts grid collapses to a single value-per-row list at this
    column's width instead of the wide multi-up layout it gets full-bleed. */
 .valid-summary .valid-facts { grid-template-columns: 1fr; }
 
-/* "Made from" — the scalar-input digest (env.inputs). A quiet key/value list
-   under the fact grid: monospace values, a swatch chip for colours, so the
-   asset shows what it was rendered from without competing with the facts above. */
-.valid-inputs { display: grid; gap: 0.5rem; }
-.valid-inputs h4 {
-  display: flex; align-items: center; gap: 0.4rem; margin: 0;
-  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-  color: hsl(var(--muted-foreground));
-}
-.valid-inputs h4 svg { width: 0.9rem; height: 0.9rem; }
+/* "Made from" — the scalar-input digest (env.inputs), boxed as its own panel
+   (matching change-history/assertion-log) so it reads as a peer section rather
+   than a footnote of the summary card: monospace values, a swatch chip for
+   colours, so the asset shows what it was rendered from at a glance. */
 .valid-input-list { margin: 0; display: grid; gap: 0.3rem; }
 .valid-input-row {
   display: grid; grid-template-columns: minmax(4rem, 8rem) 1fr; gap: 0.6rem;
@@ -618,18 +660,21 @@
 .valid-panel {
   display: grid; gap: 0.7rem; align-content: start; min-width: 0;
   padding: 1rem 1.1rem 1.15rem;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: var(--radius);box-shadow: 0 .3rem 1rem #0002, 0 -1px #fff1;
   background: hsl(var(--muted) / 0.22);
 }
 .valid-panel > h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.95rem; }
 .valid-panel > h3 svg { width: 1.05em; height: 1.05em; color: hsl(var(--muted-foreground)); }
 
-/* ── Edit history — the credential's recorded actions as a timeline. Each row is
-   anchored by a colour-coded MAKER pill on the left: Lolly reads bold green (our
-   own edits, marked up prominently), an AI-sourced step reads violet, any other
-   maker a solid grey. The pill answers "who did this" at a glance; the row body
-   carries what they did. */
+/* ── Change history — the credential's recorded actions as a timeline. Each row
+   is anchored by a colour-coded MAKER pill on the left: Lolly reads bold green
+   (our own edits, marked up prominently), an AI-sourced step reads violet, any
+   other maker a solid grey. The pill answers "who did this" at a glance; the
+   row body carries what they did. The connecting rail itself also turns green
+   for the run of steps between the first and last Lolly-credited row (see
+   .valid-step--rail-lolly below) — so "the Lolly leg" of a file's journey
+   visually pops even inside a longer multi-manifest chain. */
 .valid-steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
 .valid-step {
   position: relative;
@@ -652,6 +697,12 @@
   top: 0.7rem; bottom: -1.25rem;
   width: 2px; border-radius: 1px;
   background: hsl(var(--border));
+}
+/* The rail segment running through the Lolly leg of the journey (between the
+   first and last Lolly-credited step, set in valid.ts) — same gradient as the
+   Lolly maker pill it connects, rather than the neutral grey used everywhere else. */
+.valid-step.valid-step--rail-lolly:not(:last-child)::before {
+  background: linear-gradient(180deg, hsl(var(--vf-pass-1)), hsl(var(--vf-pass-2)));
 }
 /* The maker pill — the left anchor / timeline node. Centred in the gutter so it
    sits on the rail; long brand names wrap inside it rather than overflow. */
@@ -690,9 +741,13 @@
    the icon. */
 .valid-step-meta,
 .valid-step-src { padding-left: calc(var(--step-ic) + 0.4rem); }
+/* Small, muted, SUSE Mono — the same engraved-value treatment as every other
+   detail on the page (facts, metadata rows, checks), so a step's recorded
+   date/description reads as data, not prose. */
 .valid-step-meta {
   display: flex; flex-wrap: wrap; gap: 0.1rem 0.4rem; align-items: center;
-  font-size: 0.78rem; color: hsl(var(--muted-foreground));
+  font-size: 0.72rem; font-family: 'SUSE Mono', ui-monospace, monospace;
+  color: hsl(var(--muted-foreground));
 }
 .valid-step-dot { opacity: 0.5; }
 .valid-step-src { display: flex; align-items: center; gap: 0.25rem; font-weight: 600; }
@@ -712,13 +767,14 @@
 /* The assertion log — a video-game "power-on" cascade: rows arm one after
    another, each swept once by a light bar as it lands. The round mark chip
    reads like a HUD status light. */
-.valid-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.valid-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
 .valid-check {
   position: relative; overflow: hidden;
-  display: flex; gap: 0.65rem; align-items: center;
+  display: flex; gap: 1rem; align-items: baseline;
   padding: 0.5rem 0.65rem;
-  border-radius: 0.6rem;
-  background: hsl(var(--muted) / 0.35);
+  border-radius: 1rem;
+  background: hsl(var(--background) / .5);
+  box-shadow: inset 0 .061rem .35rem #0001, 0 1px #fff1, 0 -1px #0001;
   font-size: 0.85rem;
   opacity: 0;
   animation: valid-check-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
@@ -740,10 +796,11 @@
 box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 1px #fff1;
 }
 .valid-check--ok .valid-check-mark { color: hsl(var(--vf-pass)); background: hsl(var(--vf-pass) / 0.3);  }
+.valid-check--ok code{color:hsl(var(--vf-pass) / 1); margin-left:-5px}
 .valid-check--bad .valid-check-mark { color: hsl(var(--vf-fail)); background: hsl(var(--vf-fail) / 0.16); }
 .valid-check--info .valid-check-mark { color: hsl(var(--muted-foreground)); background: hsl(var(--muted-foreground) / 0.14); }
 .valid-check-text { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; align-items: baseline; }
-.valid-check-text code { font-size: 0.78rem; font-family: 'SUSE Mono', ui-monospace, monospace; background: hsl(var(--muted)); padding: 0.05rem 0.4rem; border-radius: 0.3rem; }
+.valid-check-text code {     font-weight: 700;;font-size: 0.78rem; font-family: 'SUSE Mono', ui-monospace, monospace; background: hsl(var(--muted)); padding: 0.05rem 0.4rem; border-radius: 0.3rem; }
 .valid-check-text > span { color: hsl(var(--muted-foreground)); }
 .valid-check--bad .valid-check-text > span { color: hsl(var(--foreground)); }
 
