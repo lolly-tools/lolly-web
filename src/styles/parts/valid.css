@@ -274,9 +274,10 @@
 .valid-result.is-trusted .valid-hero-icon::after,
 .valid-result.is-lolly .valid-hero-icon::after,
 .valid-result.is-delivered .valid-hero-icon::after {
-  content: ''; position: absolute; z-index: 1; inset: -1px; border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0 68%, hsl(0 0% 100% / 0.55) 80%, transparent 90%);
-  mix-blend-mode: screen; pointer-events: none;
+  content: ''; position: absolute; z-index: 5; inset: -1px; border-radius: 50%;
+  background:conic-gradient(from 
+0deg, transparent 0 54%, hsl(0 0% 100% / 1) 55%, hsl(0 0% 100% / 1) 80%, transparent 80%);
+      mix-blend-mode: difference;pointer-events: none;
   animation: valid-medallion-sheen 4.5s linear infinite;
 }
 
@@ -506,13 +507,13 @@
   --ink: hsl(220 14% 88%);
   background: linear-gradient(165deg, hsl(220 9% 30%), hsl(222 11% 21%));
   border-color: hsl(220 10% 40%);border:0;
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.08),
-    0 8px 20px -12px hsl(0 0% 0% / 0.6), 0 2px 6px -3px hsl(0 0% 0% / 0.4);
+  box-shadow:inset 0 1px #ffffff14,0 8px 20px -12px #0009,0 2px 6px -3px #0006, 0 0 0 1px #30333b;
+
 }
 
 /* Glossy glass chips — pass / fail / warn share the domed build; only the hue
    differs. Lifted off the page on a coloured glow, with a wet-glass crown. */
+
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-pass,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-fail,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-warn {
@@ -525,8 +526,10 @@
     inset 0 -10px 18px -8px hsl(0 0% 0% / 0.35),
     0 15px 28px -10px hsl(var(--glow)),
     0 6px 14px -6px hsl(0 0% 0% / 0.35);
-  transition: scale 0.18s ease, box-shadow 0.18s ease;
+  transition: scale 0.3s cubic-bezier(.2,.2,.1,1.2), box-shadow 0.18s ease;
 }
+ .valid-score:not(.valid-score--mini) .valid-score-pip.is-ash  {  transition: scale 0.3s cubic-bezier(.2,.2,.1,1.2), box-shadow 0.18s ease;}
+
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-pass::before,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-fail::before,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-warn::before {
@@ -536,9 +539,11 @@
   border: 0;
   pointer-events: none;
 }
+
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-ash:hover,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-pass:hover,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-fail:hover,
-.valid-score:not(.valid-score--mini) .valid-score-pip.is-warn:hover { translate: 0 -6px; }
+.valid-score:not(.valid-score--mini) .valid-score-pip.is-warn:hover { scale: 1.1;  }
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-pass .valid-score-status,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-fail .valid-score-status,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-warn .valid-score-status {
