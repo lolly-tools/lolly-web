@@ -335,10 +335,10 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       <span class="color-trigger-name">${escape(name)}</span>
     </button>`}
     <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
-      ${swatchesOnly ? '' : `${modes ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null) : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
-      <input type="text" class="color-hex-input" data-color-hex="${eid}"
+      ${swatchesOnly ? '' : `<input type="text" class="color-hex-input" data-color-hex="${eid}"
              value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}"
              ${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
+      ${modes ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null) : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
         <input type="range" class="color-alpha-slider" data-color-alpha="${eid}"
