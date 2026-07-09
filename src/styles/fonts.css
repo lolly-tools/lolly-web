@@ -1,6 +1,55 @@
-/* SUSE variable fonts — served from catalog/fonts/ (alongside the brand
-   assets), available to all tools and app UI via these @font-face registrations. */
+/* Platform typefaces.
+   DEFAULTS (shell-served from public/fonts/ — profile-independent, work on every
+   brand pack): Outfit for UI/body, SUSE Mono for code/readouts. Both OFL; license
+   files sit beside the binaries. The UI consumes them via the :root --font-brand /
+   --font-mono stacks in tokens.css, which applyChromeBrandVars overrides when the
+   active brand's tokens declare font.brand / font.mono — so the UI always follows
+   the brand font once one is loaded.
+   BRAND (catalog-served): the SUSE family below resolves only under a profile whose
+   catalog ships it (brands/suse); under other profiles the @font-face simply never
+   loads and the Outfit default stands. */
 
+/* Outfit — variable, upright only (the family has no italics). Latin split from
+   latin-ext exactly as Google Fonts serves it, so most loads fetch ~32 KB. */
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/Outfit-latin[wght].woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/Outfit-latin-ext[wght].woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* SUSE Mono — shell-served (public/fonts/), NOT the catalog: it is the platform's
+   default mono on every profile, so it must not 404 when the SUSE catalog isn't
+   mounted. (The font itself is OFL — the family name is not a brand dependency.) */
+@font-face {
+  font-family: 'SUSE Mono';
+  src: url('/fonts/SUSEMono[wght].woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SUSE Mono';
+  src: url('/fonts/SUSEMono-Italic[wght].woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* SUSE variable fonts — served from catalog/fonts/ (brand-pack assets); available
+   to tools and, via the brand font.brand token, the app UI under the SUSE profile. */
 @font-face {
   font-family: 'SUSE';
   src: url('/catalog/fonts/webfonts/SUSE[wght].woff2') format('woff2-variations'),
@@ -14,24 +63,6 @@
   font-family: 'SUSE';
   src: url('/catalog/fonts/webfonts/SUSE-Italic[wght].woff2') format('woff2-variations'),
        url('/catalog/fonts/variable/SUSE-Italic[wght].ttf') format('truetype');
-  font-weight: 100 900;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'SUSE Mono';
-  src: url('/catalog/fonts/webfonts/SUSEMono[wght].woff2') format('woff2-variations'),
-       url('/catalog/fonts/variable/SUSEMono[wght].ttf') format('truetype');
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'SUSE Mono';
-  src: url('/catalog/fonts/webfonts/SUSEMono-Italic[wght].woff2') format('woff2-variations'),
-       url('/catalog/fonts/variable/SUSEMono-Italic[wght].ttf') format('truetype');
   font-weight: 100 900;
   font-style: italic;
   font-display: swap;

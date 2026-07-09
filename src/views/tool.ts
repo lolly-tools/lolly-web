@@ -17,7 +17,7 @@ import '../styles/parts/tool.css';
 import '../styles/parts/editor.css';
 import '../styles/parts/document.css';
 import '../styles/parts/tool-chrome.css';
-import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS } from '@lolly/engine';
+import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
 
 // Above this readable-query length the address bar and the Share dialog switch to
@@ -31,7 +31,8 @@ import { toolSupport, capabilityLabel, CAPTURE_EXTENSION_URL } from '../capabili
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
 import { PALETTE } from '../palette.ts';
-import { setSwatches } from '../components/color-field.ts';
+import { setSwatches, colorFieldHtml, wireColorField, fixedContainingBlockOrigin } from '../components/color-field.ts';
+import { askLollyIntent } from './picker.ts';
 import { applyBrandVars } from '../brand-vars.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
 import { createSoundToggle } from '../components/sound-toggle.ts';
@@ -58,7 +59,7 @@ import { asRow } from './tool-types.ts';
 import { setupStageNav, type StageNav } from './tool-stage-nav.ts';
 import {
   syncInputs, openEmbedEditor, scrollToControl, focusSidebarBlock,
-  fileToRef, fmtBytes, makeBlocksDropper, _sliderDragging,
+  fileToRef, fmtBytes, makeBlocksDropper, _sliderDragging, asStr,
 } from './tool-inputs.ts';
 import {
   renderActions, captureThumbnail, extFor, isCmykFmt, isPrintFmt,
@@ -1915,6 +1916,124 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // handler stepped the detached select again, and its input listener still updated
   // the runtime — so options between were unreachable by keyboard.
 
+  // Click-to-edit-in-place: a clicked canvas element whose input has a direct
+  // in-place editor (colour swatch, asset thumbnail, select) opens THAT right
+  // where the user clicked, instead of jumping to the sidebar — one shared
+  // popover per input type, reusing the exact same components/commit path the
+  // sidebar uses (colorFieldHtml/wireColorField, host.assets.pick), so the two
+  // stay in lockstep and there is nothing new to keep in sync. Every other
+  // control (text, sliders, vectors, blocks rows) has no in-place equivalent
+  // yet and keeps the sidebar-focus behaviour below.
+  const INLINE_EDIT_CONTROLS = new Set(['color-picker', 'select', 'asset-picker']);
+
+  // Colour: a temporary, otherwise-invisible instance of the shared colour-field
+  // component, positioned over the clicked swatch and opened programmatically —
+  // so the popover it opens (float mode) is byte-for-byte the sidebar's own
+  // widget, just anchored at the click instead of docked under a sidebar row.
+  // Removed the moment its popover closes (Escape / outside click), detected via
+  // the `hidden` attribute the component already flips on close — one signal,
+  // whichever of the three ways it happened to close.
+  function openColorPopover(anchor: HTMLElement, input: InputModelItem): void {
+    const box = document.createElement('div');
+    box.className = 'canvas-color-popover-host';
+    box.innerHTML = colorFieldHtml(input.id, input.value, { swatchesOnly: input.swatchesOnly === true, float: true });
+    document.body.appendChild(box);
+    const trigger = box.querySelector<HTMLElement>('.color-trigger');
+    const popover = box.querySelector<HTMLElement>('.color-popover');
+    if (!trigger || !popover) { box.remove(); return; }
+    const ar = anchor.getBoundingClientRect();
+    box.style.cssText = `position:fixed;left:${Math.round(ar.left)}px;top:${Math.round(ar.top)}px;width:${Math.round(ar.width)}px;height:${Math.round(ar.height)}px;`;
+    wireColorField(box, {
+      onChange: (fieldId, value) => { runtime.setInput(fieldId, value); markUserDirty(fieldId); },
+    });
+    trigger.style.opacity = '0';
+    trigger.style.pointerEvents = 'none';
+    trigger.click(); // opens the popover via the component's own (tested) logic
+    const observer = new MutationObserver(() => { if (popover.hidden) { observer.disconnect(); box.remove(); } });
+    observer.observe(popover, { attributes: true, attributeFilter: ['hidden'] });
+  }
+
+  // Select: no shared floating widget exists for this yet (the sidebar uses a
+  // plain native <select>, and a native dropdown can't be opened by script from
+  // an unrelated click target) — so this is a small bespoke option-list popover,
+  // generic enough it could grow into a shared component if more call sites want
+  // one. Picking an option commits and closes immediately (a select's change IS
+  // the complete action, unlike a colour field's fiddly controls).
+  function openSelectPopover(anchor: HTMLElement, input: InputModelItem): void {
+    const options = input.options ?? [];
+    const box = document.createElement('div');
+    box.className = 'canvas-input-popover';
+    box.setAttribute('role', 'listbox');
+    box.setAttribute('aria-label', input.label ?? input.id);
+    box.innerHTML = options.map((o, i) => `<button type="button" class="canvas-input-popover-opt${o.value === input.value ? ' is-current' : ''}" role="option" aria-selected="${o.value === input.value}" data-i="${i}">${escape(o.label ?? String(o.value))}</button>`).join('');
+    box.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;';
+    document.body.appendChild(box);
+    const w = box.offsetWidth, h = box.offsetHeight;
+    const ar = anchor.getBoundingClientRect();
+    const cb = fixedContainingBlockOrigin(box);
+    const left = Math.max(6, Math.min(ar.left - cb.x, window.innerWidth - w - 8));
+    const top = Math.max(6, Math.min(ar.bottom + 6 - cb.y, window.innerHeight - h - 8));
+    box.style.cssText = `position:fixed;left:${Math.round(left)}px;top:${Math.round(top)}px;z-index:10001;`;
+
+    const close = (): void => {
+      box.remove();
+      document.removeEventListener('pointerdown', onDocDown, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+    box.querySelectorAll<HTMLElement>('[data-i]').forEach(btn => btn.addEventListener('click', () => {
+      const opt = options[Number(btn.dataset.i)];
+      if (!opt) return;
+      runtime.setInput(input.id, opt.value);
+      markUserDirty(input.id);
+      close();
+    }));
+    const onDocDown = (e: PointerEvent): void => { if (!box.contains(e.target as Node | null)) close(); };
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') close(); };
+    setTimeout(() => {
+      document.addEventListener('pointerdown', onDocDown, true);
+      document.addEventListener('keydown', onKey, true);
+    }, 0);
+    (box.querySelector<HTMLElement>('.is-current') ?? box.querySelector<HTMLElement>('button'))?.focus();
+  }
+
+  // Asset: host.assets.pick is already a self-contained modal picker (input-
+  // agnostic — the sidebar just calls it with an options object), so a click
+  // opens it directly, no intermediate popover chrome needed. Mirrors the
+  // sidebar's asset-picker wiring in tool-inputs.ts exactly, including the
+  // "edit the tool you're using" prompt for a slot that already holds a live
+  // Lolly render.
+  async function openAssetPickerInline(input: InputModelItem): Promise<void> {
+    const curVal = input.value as AssetRef | null;
+    const curToolUrl = asStr(asRow(curVal?.meta as InputValue | undefined).toolUrl);
+    if (curToolUrl && host.compose?.renderUrl) {
+      const intent = await askLollyIntent(asStr(asRow(curVal?.meta as InputValue | undefined).name));
+      if (!intent) return;
+      if (intent === 'edit') {
+        const edited = await openEmbedEditor(host, { editUrl: curToolUrl, slotLabel: input.label ?? input.id });
+        if (edited) { runtime.setInput(input.id, edited); markUserDirty(input.id); }
+        return;
+      }
+    }
+    const ref = await host.assets.pick({
+      title: `Choose ${input.label ?? input.id}`,
+      type: input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
+      tags: (input.filter?.tags as string[] | undefined),
+      namespace: (input.filter?.namespace as string | undefined),
+      allowUpload: input.allowUpload === true,
+      current: curVal?.id,
+      currentToolUrl: curToolUrl,
+      currentToolName: asStr(asRow(curVal?.meta as InputValue | undefined).name),
+      editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: input.label ?? input.id, mode }),
+    } as Parameters<WebToolHost['assets']['pick']>[0]);
+    if (ref) { runtime.setInput(input.id, ref); markUserDirty(input.id); }
+  }
+
+  function openInlineInputEditor(anchor: HTMLElement, input: InputModelItem): void {
+    if (input.control === 'color-picker') openColorPopover(anchor, input);
+    else if (input.control === 'select') openSelectPopover(anchor, input);
+    else if (input.control === 'asset-picker') void openAssetPickerInline(input);
+  }
+
   // Click-to-focus: clicking a rendered canvas element that represents an input
   // focuses the corresponding sidebar control. Tools can suppress this per-element
   // with pointer-events:none. The handler is added once; annotations are re-applied
@@ -1924,6 +2043,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const target = (e.target as HTMLElement).closest<HTMLElement>('[data-canvas-input]');
     if (!target) return;
     const id = target.dataset.canvasInput!;
+
+    // A plain top-level input (never a "<blocksId>:<index>" block reference —
+    // that never matches a top-level model item's id) whose control has an
+    // in-place editor opens it right here instead of falling through to the
+    // sidebar-focus path below.
+    const inlineInput = runtime.getModel().find(i => i.id === id);
+    if (inlineInput && INLINE_EDIT_CONTROLS.has(inlineInput.control)) {
+      openInlineInputEditor(target, inlineInput);
+      return;
+    }
 
     // Most ids map straight to a sidebar row. A "<blocksInputId>:<index>" id
     // (emitted per rendered block, e.g. data-canvas-input="blocks:0") points at
@@ -2418,8 +2547,10 @@ function setupCanvasFileDrop({ viewEl, contentEl, runtime, input, onDirty }: {
   };
   const load = async (file: File | null | undefined) => {
     if (!file) return;
-    if (input.maxSize && file.size > input.maxSize) {
-      announce(`That file is too large (max ${fmtBytes(input.maxSize)}).`, { assertive: true });
+    // Manifest cap when declared, engine backstop otherwise (see tool-inputs.ts).
+    const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
+    if (file.size > cap) {
+      announce(`That file is too large (max ${fmtBytes(cap)}).`, { assertive: true });
       return;
     }
     const ref = await fileToRef(file);

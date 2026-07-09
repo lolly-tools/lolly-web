@@ -53,7 +53,7 @@ export async function openHeadshotCropper(file: File): Promise<CroppedHeadshot |
     overlay.innerHTML = `
       <div class="cropper" role="dialog" aria-modal="true" aria-label="Crop your headshot">
         <h3 class="cropper-title">Position your headshot</h3>
-        <div class="cropper-stage" id="cropper-stage">
+        <div class="cropper-stage" id="cropper-stage" tabindex="0" role="group" aria-label="Headshot preview. Drag, or use the arrow keys to pan and + or − to zoom.">
           <img class="cropper-img" id="cropper-img" src="${url}" alt="Headshot being cropped" draggable="false" style="image-orientation:from-image">
           <div class="cropper-mask" aria-hidden="true"></div>
         </div>
@@ -155,7 +155,26 @@ export async function openHeadshotCropper(file: File): Promise<CroppedHeadshot |
       if (opener instanceof HTMLElement) opener.focus();
       resolve(result);
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(null); };
+    // Keyboard pan/zoom — the accessible peer of drag + wheel/slider (WCAG 2.1.1).
+    // Arrows nudge the frame; Shift = coarse; + / − zoom about centre. The zoom
+    // slider keeps its own native arrow keys when it's the focused element.
+    const PAN_STEP = 24;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { close(null); return; }
+      if (e.target === zoomEl) return;
+      const step = e.shiftKey ? PAN_STEP * 3 : PAN_STEP;
+      switch (e.key) {
+        case 'ArrowLeft':  tx += step; break;
+        case 'ArrowRight': tx -= step; break;
+        case 'ArrowUp':    ty += step; break;
+        case 'ArrowDown':  ty -= step; break;
+        case '+': case '=': zoomTo(zoom * 1.1); e.preventDefault(); return;
+        case '-': case '_': zoomTo(zoom / 1.1); e.preventDefault(); return;
+        default: return;
+      }
+      apply();   // re-clamps tx/ty so the image keeps covering the viewport
+      e.preventDefault();
+    };
     document.addEventListener('keydown', onKey);
     overlay.addEventListener('pointerdown', (e) => { if (e.target === overlay) close(null); });
     overlay.querySelector('#cropper-cancel')!.addEventListener('click', () => close(null));

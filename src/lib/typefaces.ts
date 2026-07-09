@@ -33,10 +33,40 @@ const FONT_DIR = '/catalog/fonts';
 // variable axis (upright + italic) as both TTF (desktop) and WOFF2 (web); the per-weight
 // statics under otf/ + ttf/ exist on disk too but aren't surfaced (the variable file is
 // the canonical one).
+// Shell-served platform defaults (public/fonts/ — present on every profile).
+const SHELL_FONT_DIR = '/fonts';
+
 export const FONTS: FontSpec[] = [
   {
+    family: 'Outfit',
+    role: 'UI & body (platform default)',
+    stack: "'Outfit', ui-sans-serif, system-ui, sans-serif",
+    variable: true,
+    weights: '100–900',
+    styles: ['normal'],
+    source: `${SHELL_FONT_DIR}/Outfit[wght].ttf`,
+    downloads: [
+      { label: 'Variable TTF', href: `${SHELL_FONT_DIR}/Outfit[wght].ttf` },
+      { label: 'Variable WOFF2 (latin)', href: `${SHELL_FONT_DIR}/Outfit-latin[wght].woff2` },
+      { label: 'Variable WOFF2 (latin-ext)', href: `${SHELL_FONT_DIR}/Outfit-latin-ext[wght].woff2` },
+    ],
+  },
+  {
+    family: 'SUSE Mono',
+    role: 'Monospace (platform default)',
+    stack: "'SUSE Mono', ui-monospace, monospace",
+    variable: true,
+    weights: '100–900',
+    styles: ['normal', 'italic'],
+    source: `${SHELL_FONT_DIR}/SUSEMono[wght].woff2`,
+    downloads: [
+      { label: 'Variable WOFF2', href: `${SHELL_FONT_DIR}/SUSEMono[wght].woff2` },
+      { label: 'Variable WOFF2 (italic)', href: `${SHELL_FONT_DIR}/SUSEMono-Italic[wght].woff2` },
+    ],
+  },
+  {
     family: 'SUSE',
-    role: 'Display, UI & body',
+    role: 'Brand — display, UI & body',
     stack: "'SUSE', system-ui, sans-serif",
     variable: true,
     weights: '100–900',
@@ -47,21 +77,6 @@ export const FONTS: FontSpec[] = [
       { label: 'Variable TTF (italic)', href: `${FONT_DIR}/variable/SUSE-Italic[wght].ttf` },
       { label: 'Variable WOFF2', href: `${FONT_DIR}/webfonts/SUSE[wght].woff2` },
       { label: 'Variable WOFF2 (italic)', href: `${FONT_DIR}/webfonts/SUSE-Italic[wght].woff2` },
-    ],
-  },
-  {
-    family: 'SUSE Mono',
-    role: 'Monospace',
-    stack: "'SUSE Mono', ui-monospace, monospace",
-    variable: true,
-    weights: '100–900',
-    styles: ['normal', 'italic'],
-    source: `${FONT_DIR}/variable/SUSEMono[wght].ttf`,
-    downloads: [
-      { label: 'Variable TTF', href: `${FONT_DIR}/variable/SUSEMono[wght].ttf` },
-      { label: 'Variable TTF (italic)', href: `${FONT_DIR}/variable/SUSEMono-Italic[wght].ttf` },
-      { label: 'Variable WOFF2', href: `${FONT_DIR}/webfonts/SUSEMono[wght].woff2` },
-      { label: 'Variable WOFF2 (italic)', href: `${FONT_DIR}/webfonts/SUSEMono-Italic[wght].woff2` },
     ],
   },
 ];

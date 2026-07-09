@@ -27,10 +27,17 @@ import {
 import type { BrandDeriveOptions } from '@lolly/engine';
 import type { TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
 import { installUserTokens } from '../bridge/tokens.ts';
+import { applyChromeBrandVars } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
 import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-dialog.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
+import { applyTheme } from '../theme.ts';
+import { saveBlob } from '../pro/zip.ts';
+import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
+import type { BrandTransferHost } from '../brand-transfer.ts';
+import { carryUserFontTokens } from '../user-fonts.ts';
+import type { UserFontsHost } from '../user-fonts.ts';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
 type ViewElement = HTMLElement & { _cleanup?: () => void };
@@ -67,6 +74,17 @@ const segHtml = (name: string, options: ReadonlyArray<{ id: string; label: strin
     ${options.map(o => `<button type="button" class="view-seg-btn" data-val="${escape(o.id)}" aria-pressed="${o.id === active}">${escape(o.label)}</button>`).join('')}
   </div>`;
 
+// The scheme segment carries a live two-swatch strip per mode (primary +
+// that scheme's derived secondary) so all four looks are comparable at a
+// glance BEFORE picking one — the dots repaint with every colour change.
+const schemeSegHtml = (options: ReadonlyArray<{ id: string; label: string }>, active: string): string => `
+  <div class="view-seg start-seg start-seg--scheme" role="group" aria-label="Colour scheme" data-seg="scheme">
+    ${options.map(o => `<button type="button" class="view-seg-btn start-scheme-btn" data-val="${escape(o.id)}" aria-pressed="${o.id === active}">
+      <span class="start-scheme-label">${escape(o.label)}</span>
+      <span class="start-scheme-dots" aria-hidden="true"></span>
+    </button>`).join('')}
+  </div>`;
+
 export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<void> {
   document.title = 'Make it yours · Lolly';
 
@@ -92,7 +110,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
             </div>
             <div class="start-field">
               <span class="start-label">Scheme</span>
-              ${segHtml('scheme', SCHEMES, scheme, 'Colour scheme')}
+              ${schemeSegHtml(SCHEMES, scheme)}
             </div>
             <div class="start-field">
               <span class="start-label">Surface</span>
@@ -106,14 +124,19 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
             <p class="start-cta-note">Saved on this device as your brand — re-run this any time from the profile menu.</p>
             <p class="start-error" role="alert" hidden></p>
           </section>
-          <section class="start-panel start-import" aria-label="Import tokens">
-            <h2 class="start-import-title">Already have tokens?</h2>
-            <p class="start-import-sub">Bring a W3C design-tokens or Tokens Studio JSON export (single file).</p>
+          <section class="start-panel start-import" aria-label="Import a brand">
+            <h2 class="start-import-title">Already have a brand?</h2>
+            <p class="start-import-sub">Bring a W3C design-tokens / Tokens Studio JSON export, or a Lolly <strong>brand file</strong> (.zip) someone shared — tokens, fonts and theme in one.</p>
             <label class="start-import-btn">
-              Import tokens (.json)&hellip;
-              <input type="file" class="start-import-file" accept=".json,application/json" hidden>
+              Import tokens or brand file&hellip;
+              <input type="file" class="start-import-file" accept=".json,application/json,.zip,application/zip" hidden>
             </label>
             <div class="start-import-result" hidden></div>
+          </section>
+          <section class="start-panel start-share" aria-label="Share this brand">
+            <h2 class="start-import-title">Share this brand</h2>
+            <p class="start-import-sub">Export the installed brand — tokens, fonts, theme — as one file others can load.</p>
+            <button type="button" class="start-import-btn start-share-btn">Export brand file</button>
           </section>
         </div>
         <section class="start-preview" aria-label="Live preview">
@@ -187,6 +210,32 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
 
   const deriveOpts = (): BrandDeriveOptions => ({ primary, scheme, surface, contrast, name: 'My brand' });
 
+  // Each scheme mode's signature pair — the primary anchor and THAT scheme's
+  // derived secondary (ramp step 5, where the anchor chroma peaks). Read
+  // straight off the derived doc (base.color.ramp.*.5.$value is a raw oklch()
+  // string, valid CSS) — no token-set resolution needed for two dots.
+  const schemeDots = (s: Scheme): string[] => {
+    try {
+      const doc = deriveBrandTokens({ primary, scheme: s, surface, contrast }) as {
+        base?: { color?: { ramp?: Record<string, Record<string, { $value?: unknown }>> } };
+      };
+      const ramp = doc.base?.color?.ramp;
+      return ['primary', 'secondary']
+        .map(r => ramp?.[r]?.['5']?.$value)
+        .filter((v): v is string => typeof v === 'string');
+    } catch { return []; }
+  };
+
+  /** Repaint every scheme button's two-dot strip from the current colour. */
+  function paintSchemeDots(): void {
+    viewEl.querySelectorAll<HTMLElement>('[data-seg="scheme"] [data-val]').forEach(btn => {
+      const mount = btn.querySelector<HTMLElement>('.start-scheme-dots');
+      if (!mount) return;
+      mount.innerHTML = schemeDots(btn.dataset.val as Scheme)
+        .map(c => `<i class="start-scheme-dot" style="background:${escape(c)}"></i>`).join('');
+    });
+  }
+
   function renderPreview(): void {
     let doc: Record<string, unknown>;
     try {
@@ -205,6 +254,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
         ${specCard('light', light, defaultTheme === 'light')}
         ${specCard('dark', dark, defaultTheme !== 'light')}
       </div>`;
+    paintSchemeDots(); // the four mode strips track the same colour state
   }
   renderPreview();
 
@@ -245,7 +295,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     const prevLabel = btn.textContent;
     btn.textContent = 'Installing…';
     try {
-      await installUserTokens(host, doc, { label });
+      // A derived/imported doc with no font group inherits the fonts the user
+      // already installed (Profile → Your brand) — re-branding never silently
+      // undoes a chosen face.
+      const withFonts = await carryUserFontTokens(host as unknown as UserFontsHost, doc);
+      await installUserTokens(host, withFonts, { label });
+      // The chrome accent follows the brand — repaint it now; bust() emptied the
+      // token caches but nothing re-reads them into the chrome by itself.
+      void applyChromeBrandVars(host);
       // The brand question is settled — the welcome must not re-prompt. Set even
       // when the view was torn down mid-install (the brand IS installed)…
       markWelcomeDismissed();
@@ -301,6 +358,37 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     importFile.value = ''; // so re-picking the same file re-fires change
     if (!file) return;
     importedDoc = null;
+
+    // A .zip is a Lolly BRAND FILE (brand-transfer.ts): tokens + fonts + theme,
+    // installed in one step — no preview/confirm leg like the raw-tokens path,
+    // because the pack was exported by Lolly and carries its own integrity map.
+    if (/\.zip$/i.test(file.name) || file.type === 'application/zip') {
+      if (file.size > 64 * 1024 * 1024) {
+        showImportResult(`<p class="start-import-err">${escape(file.name)} is too large for a brand file (max 64 MB).</p>`);
+        return;
+      }
+      showImportResult(`<p class="start-import-stats">Loading ${escape(file.name)}…</p>`);
+      try {
+        const summary = await importBrandPack(
+          { host: host as unknown as BrandTransferHost, storage: localStorage },
+          await file.arrayBuffer());
+        applyTheme(localStorage.getItem('theme') || 'light');
+        markWelcomeDismissed();
+        closeWelcomeDialog();
+        announce(`Brand loaded — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}${summary.tokens ? ', tokens installed' : ''}`);
+        if (viewEl.isConnected) window.location.hash = '#/'; // land on the freshly-branded gallery
+      } catch (err) {
+        showImportResult(`<p class="start-import-err">${escape(String((err as { message?: unknown })?.message ?? err))}</p>`);
+      }
+      return;
+    }
+
+    // Token documents are hand-authored JSON, a few KB to a few MB — bound the
+    // read so a mispicked/hostile multi-GB file can't be parsed into memory.
+    if (file.size > 10 * 1024 * 1024) {
+      showImportResult(`<p class="start-import-err">${escape(file.name)} is too large for a token file (max 10 MB).</p>`);
+      return;
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(await file.text());
@@ -336,6 +424,26 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
   importResult.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-install-import]');
     if (btn && importedDoc) void install(importedDoc, importedLabel, btn);
+  });
+
+  // ── Share path — the same pack profile's "Export brand file" makes ──────────
+  viewEl.querySelector<HTMLButtonElement>('.start-share-btn')?.addEventListener('click', async e => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    try {
+      const { blob, filename, summary } = await exportBrandPack(
+        { host: host as unknown as BrandTransferHost, storage: localStorage });
+      saveBlob(blob, filename);
+      btn.textContent = 'Exported';
+      announce(`Brand exported — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}${summary.tokens ? ', tokens included' : ''}`);
+    } catch (err) {
+      btn.textContent = 'Export failed';
+      errorEl.textContent = `Couldn't export the brand: ${String((err as { message?: unknown })?.message ?? err)}`;
+      errorEl.hidden = false;
+    }
+    setTimeout(() => { if (viewEl.isConnected) { btn.textContent = prev; btn.disabled = false; } }, 1800);
   });
 
   // ── Escape returns to the gallery (colour-popover Escapes stopPropagation

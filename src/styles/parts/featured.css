@@ -98,7 +98,7 @@
    than a tint — Pine-Green glow against near-black / dark-teal. Light theme keeps the
    subtle wash from the base rule (its primary is the dark SUSE teal). */
 [data-theme="dark"] .featured-viewport { --spot: hsl(var(--primary) / .22); }
-[data-theme="suse"] .featured-viewport { --spot: hsl(var(--primary) / .18); }
+[data-theme="brand"] .featured-viewport { --spot: hsl(var(--primary) / .18); }
 .featured-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .featured.is-grabbing .featured-viewport { cursor: grabbing; }
 /* Grabbing lights the backdrop a touch — playful, and it gives transparent-background

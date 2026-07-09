@@ -879,7 +879,7 @@ export function playVoice(text: string): void {
 }
 
 /**
- * Play the magical theme-change chime for `theme` ('light' | 'dark' | 'suse' | …).
+ * Play the magical theme-change chime for `theme` ('light' | 'dark' | 'brand' | …).
  * A longer, shimmering cue that differs per theme; falls back to the light chime for
  * an unknown theme. Same mute / availability / never-throw guarantees as playSfx.
  * Call ONLY at user-initiated switches (not applyTheme, which also runs at boot).

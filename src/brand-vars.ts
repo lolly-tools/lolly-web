@@ -22,7 +22,7 @@
  * to template authors.
  */
 
-import { colorToHex, isAlias } from '@lolly/engine';
+import { colorToHex, isAlias, parseOklch, oklchToHex, hexToOklch } from '@lolly/engine';
 
 /** The seven semantic slots (token leaf under `color.semantic`) → CSS var. */
 const SLOTS = [
@@ -38,6 +38,207 @@ const SLOTS = [
 /** The host slice this module reads — just the (optional) tokens resolver. */
 interface BrandVarsHost {
   tokens?: { resolve(ref: string, opts?: { theme?: string }): Promise<unknown> };
+}
+
+// ── Chrome (app UI) brand accent ─────────────────────────────────────────────
+// The second half of the contract: the SHELL's own chrome follows the brand's
+// primary. tokens.css hardcodes shadcn HSL-triple accents per theme; when the
+// active brand resolves `color.semantic.primary`, we override the accent
+// triples (--primary / --primary-foreground / --ring — deliberately nothing
+// else: backgrounds, borders and text stay the shell's own) via one injected
+// <style>, per shell theme so light/dark each take their brand-theme value.
+// No semantic slots (the SUSE doc has none) → the style is removed and the
+// hardcoded chrome stands. lolly-start's starter tokens alias primary to the
+// neutral ink ramp, so the out-of-the-box chrome accent is black until the
+// user installs a brand (#/start wizard / ingest).
+
+const CHROME_STYLE_ID = 'brand-chrome-vars';
+
+// ── Brand fonts ──────────────────────────────────────────────────────────────
+// The platform's default faces are Outfit (UI/body) and SUSE Mono (code) —
+// shell-served @font-face registrations (styles/fonts.css) behind the :root
+// --font-brand / --font-mono stacks in tokens.css. When the active brand's
+// tokens declare `font.brand` / `font.mono` (DTCG fontFamily), the resolved
+// families are applied INLINE on <html> (style attribute beats the :root
+// stylesheet default at equal cascade origin), with the default stack kept as
+// the tail so an unloadable family degrades to the platform face. The applied
+// stacks are cached in localStorage so index.html's pre-boot script can restore
+// them before first paint (same trick as the theme flash guard) — without it,
+// a branded profile would flash Outfit on every load until boot JS runs.
+
+/** slot in the tokens doc (`font.<slot>`) → CSS var → default stack tail. */
+const FONT_SLOTS = [
+  ['brand', '--font-brand', "'Outfit', ui-sans-serif, system-ui, sans-serif"],
+  ['mono', '--font-mono', "'SUSE Mono', ui-monospace, monospace"],
+] as const;
+
+const FONT_CACHE_KEY = 'brand-fonts';
+
+// Family names come from an untrusted imported tokens doc and land in a style
+// value — allow only plain name characters (letters/digits/space/_/-), so no
+// quotes, braces, url() or declaration smuggling can pass. Same stance as
+// SAFE_CSS_COLOR in color-field.ts.
+const FONT_FAMILY_RE = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/;
+
+/**
+ * A resolved `font.*` token value → a safe CSS font-family stack ending in the
+ * platform default `tail`, or null when nothing usable resolved. Accepts a
+ * string or a DTCG fontFamily array; strips optional quotes; rejects any
+ * family that isn't a plain name (see FONT_FAMILY_RE). Exported for tests.
+ */
+export function brandFontStack(value: unknown, tail: string): string | null {
+  const fams = (Array.isArray(value) ? value : [value])
+    .filter((f): f is string => typeof f === 'string' && !isAlias(f))
+    .map(f => f.trim().replace(/^['"]+|['"]+$/g, '').trim())
+    .filter(f => FONT_FAMILY_RE.test(f));
+  if (!fams.length) return null;
+  // A brand naming a platform default (SUSE's font.mono is 'SUSE Mono') would
+  // otherwise emit the family twice — once from the token, again leading the
+  // tail. Drop tail entries whose family the token already names.
+  const named = new Set(fams.map(f => f.toLowerCase()));
+  const restTail = tail.split(',')
+    .filter(part => !named.has(part.trim().replace(/^['"]+|['"]+$/g, '').trim().toLowerCase()))
+    .map(part => part.trim()).join(', ');
+  return `${fams.map(f => `'${f}'`).join(', ')}${restTail ? `, ${restTail}` : ''}`;
+}
+
+/** Resolve the brand font slots and apply/clear them inline on <html>. */
+async function applyBrandFonts(host: BrandVarsHost): Promise<void> {
+  const applied: Record<string, string> = {};
+  for (const [slot, cssVar, tail] of FONT_SLOTS) {
+    let stack: string | null = null;
+    try {
+      stack = brandFontStack(await host.tokens?.resolve(`{font.${slot}}`), tail);
+    } catch { /* no tokens / broken doc → platform default */ }
+    if (stack) {
+      document.documentElement.style.setProperty(cssVar, stack);
+      applied[cssVar] = stack;
+    } else {
+      document.documentElement.style.removeProperty(cssVar);
+    }
+  }
+  try {
+    if (Object.keys(applied).length) localStorage.setItem(FONT_CACHE_KEY, JSON.stringify(applied));
+    else localStorage.removeItem(FONT_CACHE_KEY);
+  } catch { /* storage unavailable — pre-boot restore just won't happen */ }
+}
+
+/** #rrggbb → a shadcn "H S% L%" triple (so hsl(var(--x) / α) keeps working). */
+export function hexToHslTriple(hex: string): string | null {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  if (!m) return null;
+  const r = parseInt(m[1]!, 16) / 255, g = parseInt(m[2]!, 16) / 255, b = parseInt(m[3]!, 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  const l = (max + min) / 2;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d !== 0) {
+    h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+  }
+  const rnd = (v: number) => Math.round(v * 10) / 10;
+  return `${rnd(h)} ${rnd(s * 100)}% ${rnd(l * 100)}%`;
+}
+
+/** A resolved token value → #rrggbb, or null when it isn't a usable colour.
+ * Ramps store raw `oklch()` strings — the browser resolves those in var()
+ * injection, but the HSL-triple convention needs real RGB, so gamut-map them
+ * through the engine (the same path deriveBrandTokens uses). */
+function tokenValueToHex(value: unknown): string | null {
+  if (typeof value === 'string' && /^(oklch|lch)\(/i.test(value.trim())) {
+    const o = parseOklch(value);
+    return o ? oklchToHex(o) : null;
+  }
+  const hex = colorToHex(typeof value === 'string' && isAlias(value) ? null : value);
+  return typeof hex === 'string' && /^#[0-9a-f]{6}/i.test(hex) ? hex.slice(0, 7) : null;
+}
+
+/** One shell theme's accent overrides, or '' when primary didn't resolve. */
+function accentBlock(selector: string, primary: string | null, onPrimary: string | null): string {
+  const p = primary && hexToHslTriple(primary);
+  if (!p) return '';
+  const fg = onPrimary && hexToHslTriple(onPrimary);
+  return `${selector} {\n  --primary: ${p};\n  --ring: ${p};\n${fg ? `  --primary-foreground: ${fg};\n` : ''}}`;
+}
+
+/**
+ * Construct the `brand` theme — the mid-toned colored chrome — from the brand's
+ * two primaries. The recipe is the old SUSE theme reverse-engineered into OKLCH
+ * (its static block in tokens.css remains the SUSE-palette instance of exactly
+ * this): SURFACES take the light primary's hue at low chroma across fixed
+ * mid-dark lightness stops (Pine-tinted panels, in SUSE terms); the ACCENT is
+ * the dark primary verbatim (Jungle). Chroma is anchored to the light primary's
+ * own chroma, so a neutral starter brand (ink primary) yields a tastefully
+ * grey chrome and a vivid brand yields a tinted one — never garish: surface
+ * chroma is capped at 0.08.
+ */
+export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string, darkOnPrimaryHex: string | null): string {
+  const surf = hexToOklch(lightPrimaryHex);
+  const acc = hexToOklch(darkPrimaryHex);
+  if (!surf || !acc) return '';
+  const h = surf.h;
+  const cBase = Math.min(Math.max(surf.c, 0.008), 0.055); // background chroma anchor
+  const t = (l: number, cMul: number, hue = h) =>
+    hexToHslTriple(oklchToHex({ l, c: Math.min(cBase * cMul, 0.08), h: hue }));
+  const accent = hexToHslTriple(darkPrimaryHex);
+  const accentFg = (darkOnPrimaryHex && hexToHslTriple(darkOnPrimaryHex)) ?? t(0.23, 0.7);
+  const v = (name: string, val: string | null) => (val ? `  --${name}: ${val};\n` : '');
+  // Lightness stops lifted from the SUSE construction: bg .29, card .35,
+  // muted .38, secondary .39, accent-surface .40, border .51; text .95/.84.
+  return `[data-theme="brand"] {
+  color-scheme: dark;
+${v('background', t(0.29, 1))}${v('foreground', t(0.95, 0.35))}${v('card', t(0.35, 1.18))}${v('card-foreground', t(0.95, 0.35))}${v('popover', t(0.35, 1.18))}${v('popover-foreground', t(0.95, 0.35))}${v('primary', accent)}${v('primary-foreground', accentFg)}${v('secondary', t(0.39, 1.27))}${v('secondary-foreground', t(0.95, 0.35))}${v('muted', t(0.38, 1.2))}${v('muted-foreground', t(0.84, 0.55))}${v('accent', t(0.40, 1.3))}${v('accent-foreground', t(0.95, 0.35))}${v('border', t(0.51, 1.45))}${v('input', t(0.51, 1.45))}${v('ring', accent)}${v('store-1', t(0.65, 0.75, acc.h))}${v('store-2', t(0.70, 0.75, acc.h))}${v('store-3', t(0.74, 0.75, acc.h))}${v('store-4', t(0.79, 0.75, acc.h))}${v('store-other', t(0.62, 0.4))}}`;
+}
+
+/** The full injected stylesheet text. Exported for tests. Under the suse
+ * PROFILE no semantic slots resolve, nothing is emitted, and the static
+ * tokens.css blocks (including the brand theme's SUSE-palette defaults)
+ * stand untouched. */
+export function chromeBrandCss(
+  light: { primary: string | null; onPrimary: string | null },
+  dark: { primary: string | null; onPrimary: string | null },
+): string {
+  return [
+    accentBlock(':root, [data-theme="light"]', light.primary, light.onPrimary),
+    accentBlock('[data-theme="dark"]', dark.primary, dark.onPrimary),
+    // The brand theme is CONSTRUCTED, not accent-patched: surfaces from the
+    // light primary's hue, accent from the dark primary (see brandThemeCss).
+    light.primary && dark.primary ? brandThemeCss(light.primary, dark.primary, dark.onPrimary) : '',
+  ].filter(Boolean).join('\n');
+}
+
+/**
+ * Resolve the brand primary per theme and inject/refresh the chrome override
+ * stylesheet (appended to <head>, so it wins the tokens.css cascade at equal
+ * specificity). Call at boot and again after installUserTokens — the bridge's
+ * bust() empties the token caches but nothing re-paints chrome by itself.
+ * Best-effort like applyBrandVars: never throws, removes the style when the
+ * brand has no resolvable primary.
+ */
+export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
+  const resolveHex = async (slot: string, theme: string): Promise<string | null> => {
+    try {
+      return tokenValueToHex(await host.tokens?.resolve(`{color.semantic.${slot}}`, { theme }));
+    } catch { return null; }
+  };
+  // Fonts first, independently of the colour blocks — a brand may declare
+  // font tokens without semantic colour slots (the SUSE doc) or vice versa.
+  await applyBrandFonts(host).catch(() => { /* never breaks boot */ });
+  try {
+    const [lp, lop, dp, dop] = await Promise.all([
+      resolveHex('primary', 'light'), resolveHex('on-primary', 'light'),
+      resolveHex('primary', 'dark'), resolveHex('on-primary', 'dark'),
+    ]);
+    const css = chromeBrandCss({ primary: lp, onPrimary: lop }, { primary: dp, onPrimary: dop });
+    let styleEl = document.getElementById(CHROME_STYLE_ID);
+    if (!css) { styleEl?.remove(); return; }
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = CHROME_STYLE_ID;
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = css;
+  } catch { /* cosmetic only — never break boot */ }
 }
 
 /**

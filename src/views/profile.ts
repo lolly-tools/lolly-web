@@ -30,6 +30,15 @@ import { storeUserUpload } from './picker.ts';
 import { CATEGORY_FLAGS, PRO_FLAG, flagEnabled } from '../feature-flags.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
+import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
+import {
+  listUserFonts, installGoogleFont, removeUserFont, setPrimaryFont, registerUserFonts,
+  primaryFontFamily,
+} from '../user-fonts.ts';
+import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
+import { POPULAR_FAMILIES } from '../lib/google-fonts.ts';
+import { USER_TOKENS_ID } from '../bridge/tokens.ts';
+import { applyChromeBrandVars } from '../brand-vars.ts';
 import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import { relativeTime } from '../folder-tiles.ts';
 import { catalogSummaryBody, hydrateCatalogAssets } from '../lib/catalog-summary.ts';
@@ -247,6 +256,36 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </form>
       </section>
 
+      <section class="profile-card brand-card" id="brand-card" aria-label="Your brand">
+        <h2>Your brand</h2>
+        <div class="brand-cta-row">
+          <p class="brand-status" id="brand-status">Loading…</p>
+          <a href="#/start" class="profile-btn-primary brand-setup-link" id="brand-setup-link">Set up your brand →</a>
+        </div>
+
+        <div class="brand-fonts">
+          <h3 class="brand-subhead">Brand fonts</h3>
+          <p class="storage-hint-text">Add any <strong>Google Font</strong> — it downloads to <em>this device</em> (latin faces, a few hundred KB), works fully offline, and renders in the app, your tools and every export. One font is always the <strong>primary</strong> — the face the whole app wears.</p>
+          <ul class="brand-font-list" id="brand-font-list" role="list"></ul>
+          <form class="brand-font-add" id="brand-font-add">
+            <input type="text" id="brand-font-input" list="google-font-list" placeholder="Search Google Fonts — e.g. Inter, Fraunces, Space Grotesk" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Google Fonts family name">
+            <datalist id="google-font-list">${POPULAR_FAMILIES.map(f => `<option value="${escape(f)}"></option>`).join('')}</datalist>
+            <button type="submit" class="btn" id="brand-font-add-btn">Add font</button>
+          </form>
+          <p class="profile-inline-error" id="brand-font-error" style="color:hsl(var(--destructive));font-size:13px;margin:.4rem 0 0" hidden></p>
+        </div>
+
+        <div class="brand-share">
+          <h3 class="brand-subhead">Share your brand</h3>
+          <p class="storage-hint-text">One file with your design tokens, fonts and theme — send it to anyone and their Lolly wears your brand. Loading a brand file changes the look only; sessions and images stay put.</p>
+          <div class="storage-actions">
+            <button type="button" id="brand-export-btn" class="btn" data-sfx="whoosh">Export brand file</button>
+            <button type="button" id="brand-import-btn" class="btn">Load a brand file…</button>
+            <input type="file" id="brand-import-input" accept=".zip,application/zip" hidden>
+          </div>
+        </div>
+      </section>
+
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
         <summary class="profile-collapse-summary"><h2>Your activity</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body">${renderActivity(getMetrics(), window.__toolIndex?.tools ?? [])}</div>
@@ -443,6 +482,190 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
   }
 
+  // ── Your brand: the prominent #/start pathway (for anyone who missed the
+  // welcome's "make it yours"), the Google-Fonts manager, and the shareable
+  // brand pack. Hydrates immediately — it's IDB reads only, and this card is
+  // the one that must never hide behind a collapsed section. ───────────────────
+  const fontsHost = host as unknown as UserFontsHost;
+  const brandErr = viewEl.querySelector<HTMLElement>('#brand-font-error');
+  const showBrandError = (msg: string) => {
+    if (brandErr) { brandErr.textContent = msg; brandErr.hidden = !msg; }
+    if (msg) announce(msg, { assertive: true });
+  };
+
+  async function paintBrandStatus(): Promise<void> {
+    const statusEl = viewEl.querySelector<HTMLElement>('#brand-status');
+    const linkEl = viewEl.querySelector<HTMLElement>('#brand-setup-link');
+    if (!statusEl || !linkEl) return;
+    let metaId = '';
+    try {
+      metaId = (await (host.assets as unknown as {
+        _findMetaByType?(t: string): Promise<{ id: string } | null>;
+      })._findMetaByType?.('tokens'))?.id ?? '';
+    } catch { /* discovery unavailable — show the unbranded pathway */ }
+    if (metaId === USER_TOKENS_ID) {
+      statusEl.innerHTML = 'Your brand is installed — every tool, page and export wears it.';
+      linkEl.textContent = 'Adjust your brand →';
+    } else if (metaId) {
+      statusEl.innerHTML = 'Running the catalogue’s built-in brand. Derive your own from a single colour — it takes a minute and stays on this device.';
+      linkEl.textContent = 'Set up your brand →';
+    } else {
+      statusEl.innerHTML = 'This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.';
+      linkEl.textContent = 'Set up your brand →';
+    }
+  }
+
+  function fontRowHtml(f: UserFontFamily): string {
+    return `
+      <li class="brand-font-row${f.primary ? ' is-primary' : ''}" data-font-family="${escape(f.family)}">
+        <span class="brand-font-specimen" style="font-family:'${escape(f.family)}'" aria-hidden="true">Aa</span>
+        <span class="brand-font-meta">
+          <span class="brand-font-name" style="font-family:'${escape(f.family)}'">${escape(f.family)}</span>
+          <span class="brand-font-sub">${escape(f.weights)} · ${fmtBytes(f.bytes)}</span>
+        </span>
+        ${f.primary
+    ? '<span class="brand-font-primary-badge">Primary</span>'
+    : `<button type="button" class="btn brand-font-make-primary" data-make-primary="${escape(f.family)}">Make primary</button>`}
+        <button type="button" class="brand-font-del" data-del-font="${escape(f.family)}" aria-label="Remove ${escape(f.family)}">&#x2715;</button>
+      </li>`;
+  }
+
+  let fontFamilies: UserFontFamily[] = [];
+  async function paintFontList(): Promise<void> {
+    const list = viewEl.querySelector<HTMLElement>('#brand-font-list');
+    if (!list) return;
+    fontFamilies = await listUserFonts(fontsHost).catch(() => []);
+    // There is always exactly one primary. When it isn't one of the added fonts
+    // — the active brand's own font token (e.g. SUSE) or the platform default —
+    // show it as a fixed row so the "primary" story never has a hole in it.
+    const rows: string[] = [];
+    if (!fontFamilies.some(f => f.primary)) {
+      const builtin = await primaryFontFamily(fontsHost).catch(() => '');
+      rows.push(`
+        <li class="brand-font-row is-primary is-builtin">
+          <span class="brand-font-specimen" style="font-family:'${escape(builtin || 'Outfit')}'" aria-hidden="true">Aa</span>
+          <span class="brand-font-meta">
+            <span class="brand-font-name">${escape(builtin || 'Outfit')}</span>
+            <span class="brand-font-sub">${builtin ? 'built-in brand font' : 'platform default'}</span>
+          </span>
+          <span class="brand-font-primary-badge">Primary</span>
+        </li>`);
+    }
+    rows.push(...fontFamilies.map(fontRowHtml));
+    if (!fontFamilies.length) {
+      rows.push('<li class="brand-font-empty">No fonts added yet — pick any Google Font below to make it yours.</li>');
+    }
+    list.innerHTML = rows.join('');
+  }
+  void paintBrandStatus();
+  void paintFontList();
+
+  // Add a family — the module downloads it, stores the faces as user assets,
+  // registers them, and auto-primaries the first font.
+  viewEl.querySelector<HTMLFormElement>('#brand-font-add')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const input = viewEl.querySelector<HTMLInputElement>('#brand-font-input');
+    const btn = viewEl.querySelector<HTMLButtonElement>('#brand-font-add-btn');
+    const family = input?.value.trim();
+    if (!family || !btn || !input) return;
+    showBrandError('');
+    const prev = btn.textContent;
+    btn.disabled = true; input.disabled = true;
+    btn.textContent = 'Downloading…';
+    try {
+      const fam = await installGoogleFont(fontsHost, family);
+      input.value = '';
+      playSfx('saveProfile');
+      await paintFontList();
+      await paintBrandStatus(); // a first font installs user tokens → branded
+      await refreshCounter();   // the faces live in user storage — remeter
+      announce(`Added ${fam.family}${fam.primary ? ' as your primary font' : ''} — stored on this device`);
+    } catch (err) {
+      showBrandError(String((err as { message?: unknown })?.message ?? err));
+    }
+    btn.textContent = prev; btn.disabled = false; input.disabled = false;
+    input.focus();
+  });
+
+  // Make-primary / remove, delegated (rows repaint wholesale).
+  viewEl.querySelector('#brand-font-list')?.addEventListener('click', async e => {
+    const make = (e.target as Element).closest<HTMLButtonElement>('[data-make-primary]');
+    if (make) {
+      make.disabled = true;
+      try {
+        await setPrimaryFont(fontsHost, make.dataset.makePrimary!);
+        await paintFontList();
+        await paintBrandStatus();
+        announce(`${make.dataset.makePrimary} is now your primary font`);
+      } catch (err) { make.disabled = false; showBrandError(String((err as { message?: unknown })?.message ?? err)); }
+      return;
+    }
+    const del = (e.target as Element).closest<HTMLButtonElement>('[data-del-font]');
+    if (!del) return;
+    const fam = fontFamilies.find(f => f.family === del.dataset.delFont);
+    if (!fam) return;
+    const ok = await confirmDialog({
+      title: `Remove ${fam.family}?`,
+      message: `Its font files (${fmtBytes(fam.bytes)}) are deleted from this device${fam.primary ? ' and the next font (or the platform default) becomes primary' : ''}. You can re-add it any time.`,
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
+    del.disabled = true;
+    try {
+      await removeUserFont(fontsHost, fam);
+      await paintFontList();
+      await refreshCounter();
+      announce(`Removed ${fam.family}`);
+    } catch (err) { del.disabled = false; showBrandError(String((err as { message?: unknown })?.message ?? err)); }
+  });
+
+  // Export the brand pack (tokens + fonts + theme) as one shareable zip.
+  viewEl.querySelector('#brand-export-btn')?.addEventListener('click', async e => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Exporting…';
+    try {
+      const { blob, filename, summary } = await exportBrandPack(
+        { host: host as unknown as Parameters<typeof exportBrandPack>[0]['host'], storage: localStorage });
+      saveBlob(blob, filename);
+      btn.textContent = 'Exported';
+      announce(`Brand exported — ${summary.tokens ? 'tokens, ' : ''}${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}`);
+    } catch (err) {
+      host.log?.('error', 'Brand export failed', { error: String(err) });
+      btn.textContent = 'Export failed';
+      showBrandError(String((err as { message?: unknown })?.message ?? err));
+    }
+    setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 1800);
+  });
+
+  // Load someone else's brand pack. Merge-only; sessions/images untouched.
+  const brandImportInput = viewEl.querySelector<HTMLInputElement>('#brand-import-input');
+  viewEl.querySelector('#brand-import-btn')?.addEventListener('click', () => brandImportInput?.click());
+  brandImportInput?.addEventListener('change', async () => {
+    const file = brandImportInput!.files?.[0];
+    brandImportInput!.value = '';
+    if (!file) return;
+    showBrandError('');
+    const btn = viewEl.querySelector<HTMLButtonElement>('#brand-import-btn');
+    const prev = btn?.textContent ?? '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+    try {
+      const summary = await importBrandPack(
+        { host: host as unknown as Parameters<typeof importBrandPack>[0]['host'], storage: localStorage },
+        await file.arrayBuffer());
+      applyTheme(localStorage.getItem('theme') || 'light');
+      playSfx('optIn');
+      await paintFontList();
+      await paintBrandStatus();
+      await refreshCounter();
+      const failNote = summary.failedFonts ? ` · ${summary.failedFonts} font file${summary.failedFonts === 1 ? '' : 's'} couldn’t be stored` : '';
+      announce(`Brand loaded — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}${summary.tokens ? ', tokens installed' : ''}${failNote}`, summary.failedFonts ? { assertive: true } : undefined);
+    } catch (err) {
+      showBrandError(String((err as { message?: unknown })?.message ?? err));
+    }
+    if (btn) { btn.textContent = prev; btn.disabled = false; }
+  });
+
   // ── Storage: lazy. Fetch the data + render the (heavy) image grid only when the
   // section is first expanded, then wire its handlers. ──────────────────────────
   const storageDetails = viewEl.querySelector<HTMLDetailsElement>('#storage-section');
@@ -491,7 +714,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       measurePreviews(),
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
-    const imageList = allImages.filter(a => a.id !== HEADSHOT_ID); // headshot hidden from the grid (its bytes stay in the slice)
+    // The grid shows visual uploads only: the headshot is hidden, and the non-visual
+    // user assets (brand tokens doc, font faces — managed in the Your brand card)
+    // would render as broken tiles. Their bytes stay in the slice either way.
+    const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
+    const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));
     const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes;
     const hasEstimate = !!(estimate && estimate.usage != null);
     const usage: number | null = hasEstimate ? estimate!.usage! : null;
@@ -598,7 +825,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           </details>
 
           <details class="store-manage" data-cat="images">
-            <summary class="store-manage-sum">${COLLAPSE_CHEV}<span>My images</span> <span class="storage-count" id="userimg-count">0</span> <span class="storage-hint" id="userimg-size">0 KB</span> ${infoDot('Images you save to reuse across tools. This size includes your profile photo.')}</summary>
+            <summary class="store-manage-sum">${COLLAPSE_CHEV}<span>My images</span> <span class="storage-count" id="userimg-count">0</span> <span class="storage-hint" id="userimg-size">0 KB</span> ${infoDot('Images you save to reuse across tools. This size includes your profile photo and any brand fonts.')}</summary>
             <div class="store-manage-body">
               <div class="userimg-grid" id="userimg-grid">
                 ${m.images.list.map(userImageThumb).join('')}
@@ -1232,6 +1459,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         const bytes = await file.arrayBuffer();
         const summary = await importBackup({ host: host as unknown as Parameters<typeof importBackup>[0]['host'], storage: localStorage }, bytes);
         host.profile.bust!();
+        // The bundle may carry a brand: user tokens + font-face assets restore as
+        // plain user assets, so drop the token caches, load the faces into
+        // document.fonts and repaint the chrome — same as a fresh boot would.
+        (host.tokens as { bust?(): void } | undefined)?.bust?.();
+        await registerUserFonts(fontsHost).catch(() => { /* faces load at next boot */ });
+        void applyChromeBrandVars(host as unknown as Parameters<typeof applyChromeBrandVars>[0]);
         applyTheme(localStorage.getItem('theme') || 'light');
         // `skipped` > 0 means the bundle came from a newer app and carried parts this
         // build doesn't understand yet — surface it rather than pretend a full restore.

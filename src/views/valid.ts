@@ -89,6 +89,12 @@ const VERIFY_OPTS: { trustAnchors: Uint8Array[] } = {
   ],
 };
 
+// Verification reads the WHOLE file into memory (and the PDF extractor makes a
+// byte-transparent string copy on top), so bound what a drop can pull in. Far
+// above any real credentialed asset; a multi-GB drop must fail with a message,
+// not an OOM'd tab.
+const MAX_VERIFY_BYTES = 256 * 1024 * 1024;
+
 const ICON_SHIELD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
 const ICON_CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
 
@@ -812,6 +818,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   // share the exact engine call. Bytes are read once and reused for both reads.
   async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark }> {
     try {
+      if (file.size > MAX_VERIFY_BYTES) {
+        return { error: `File is too large to verify here (over ${Math.round(MAX_VERIFY_BYTES / 1024 / 1024)} MB).` };
+      }
       const bytes = new Uint8Array(await file.arrayBuffer());
       const report = await verifyC2pa(bytes, VERIFY_OPTS);
       const meta = await readMetadata(bytes);
@@ -1012,6 +1021,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     btn.disabled = true;
     btn.textContent = 'Cleaning…';
     try {
+      if (file.size > MAX_VERIFY_BYTES) throw new Error('File is too large to clean here.');
       const bytes = new Uint8Array(await file.arrayBuffer());
       let outBytes: Uint8Array, mime: string;
       if (format === 'PDF') {

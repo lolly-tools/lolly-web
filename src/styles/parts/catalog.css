@@ -471,7 +471,7 @@
 .cat-details-meta > div { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: baseline; font-size: .85rem; }
 .cat-details-meta dt { color: hsl(var(--muted-foreground)); font-weight: 600; }
 .cat-details-meta dd { margin: 0; word-break: break-word; }
-.cat-details-meta code { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: .8rem; }
+.cat-details-meta code { font-family: var(--font-mono); font-size: .8rem; }
 .cat-details-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .cat-tag { font-size: .7rem; padding: 1px 7px; border-radius: 999px; background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
 .cat-details-actions { display: flex; flex-wrap: wrap; gap: 8px; }

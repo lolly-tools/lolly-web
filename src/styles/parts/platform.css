@@ -85,7 +85,7 @@
 .plat-section-desc { margin: .55rem 0 0; max-width: 74ch; color: hsl(var(--muted-foreground)); font-size: .9rem; line-height: 1.5; }
 .plat-section-desc code, .plat-note code,
 .plat-swatch-hex, .plat-swatch-cmyk, .plat-table td code {
-  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 .plat-legend { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; margin: 0 0 1rem; font-size: .8rem; color: hsl(var(--muted-foreground)); }
@@ -212,7 +212,7 @@
 .plat-kv--wide dd { word-break: break-word; }
 .plat-kv .is-stacked { flex-direction: column; gap: .15rem; }
 .plat-kv .is-stacked dt { flex: none; }
-.plat-kv dd.is-mono { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: .72rem; word-break: break-all; color: hsl(var(--muted-foreground)); }
+.plat-kv dd.is-mono { font-family: var(--font-mono); font-size: .72rem; word-break: break-all; color: hsl(var(--muted-foreground)); }
 .plat-kv dd.is-lead { font-size: .95rem; font-weight: 650; line-height: 1.2; }
 .plat-kv .is-hero { flex-direction: column; align-items: flex-start; gap: .25rem; }
 .plat-kv .is-hero dt { flex: none; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; }
@@ -256,5 +256,5 @@
 .cap-feat > div { display: block; }
 .cap-feat dt { margin: 0 0 .12rem; font-size: .82rem; font-weight: 650; color: hsl(var(--foreground)); }
 .cap-feat dd { margin: 0; font-size: .8rem; line-height: 1.5; color: hsl(var(--muted-foreground)); }
-.cap-feat dd code { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: .92em; }
+.cap-feat dd code { font-family: var(--font-mono); font-size: .92em; }
 

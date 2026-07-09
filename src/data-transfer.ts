@@ -38,7 +38,7 @@
  * round-trip can be exercised headlessly in tests against an in-memory bridge.
  */
 
-import { zip, unzip, zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { zip, unzip, zipSync, unzipSync, strToU8, strFromU8, type UnzipFileInfo } from 'fflate';
 import type { Unzipped } from 'fflate';
 
 export const BACKUP_FORMAT = 'lolly-backup';
@@ -127,10 +127,33 @@ function zipAsync(entries: Record<string, BundleEntry>): Promise<Uint8Array> {
   });
 }
 
+// Declared-size bounds checked BEFORE each entry inflates: a restore should never
+// balloon a small hostile zip into gigabytes of memory (the classic zip bomb).
+// Real backups are images stored uncompressed, far under these.
+const MAX_RESTORE_ENTRY_BYTES = 512 * 1024 * 1024;
+const MAX_RESTORE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+
 function unzipAsync(bytes: Uint8Array): Promise<Unzipped> {
-  if (!HAS_WORKER) return Promise.resolve(unzipSync(bytes));
+  let total = 0;
+  let bomb: string | null = null;
+  const filter = (f: UnzipFileInfo): boolean => {
+    total += f.originalSize || 0;
+    if ((f.originalSize || 0) > MAX_RESTORE_ENTRY_BYTES || total > MAX_RESTORE_TOTAL_BYTES) {
+      bomb = f.name;
+      return false;
+    }
+    return true;
+  };
+  const guard = (data: Unzipped): Unzipped => {
+    if (bomb) throw new Error(`That backup expands too large to restore (${bomb}).`);
+    return data;
+  };
+  if (!HAS_WORKER) return Promise.resolve().then(() => guard(unzipSync(bytes, { filter })));
   return new Promise((resolve, reject) => {
-    unzip(bytes, (err, data) => (err ? reject(err) : resolve(data)));
+    unzip(bytes, { filter }, (err, data) => {
+      if (err) return reject(err);
+      try { resolve(guard(data)); } catch (e) { reject(e); }
+    });
   });
 }
 
@@ -203,7 +226,7 @@ function backupReadme(
     '',
     `👤 Profile           ${summary.profile ? 'included' : 'not included'}`,
     `🗂  Saved sessions    ${summary.sessions}`,
-    `🖼  Uploaded images   ${summary.userAssets}`,
+    `🖼  Images, fonts & brand   ${summary.userAssets}`,
     `⚙  Preferences        ${summary.prefs}`,
     '',
     '',
@@ -212,8 +235,8 @@ function backupReadme(
     'manifest.json   what the app reads to restore this backup',
     'profile.json    your saved details + preferences',
     'sessions.json   your saved tool sessions (thumbnails included)',
-    'assets.json     details of your uploaded images',
-    'assets/blobs/   the uploaded image files themselves',
+    'assets.json     details of your uploaded images, brand tokens & fonts',
+    'assets/blobs/   the image and font files themselves',
     'prefs.json      theme + local settings',
     'lolly.txt       this summary (the app ignores it on import)',
   ];

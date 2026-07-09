@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Theme cycle toggle — one compact, icon-only button that steps through the
- * themes (light → dark → suse → …) on click, showing the active theme's glyph.
+ * themes (light → dark → brand → …) on click, showing the active theme's glyph.
  * It lives in the canvas zoom HUD (.stage-nav) so every tool with a live canvas
  * — including the chromeless editor/Layout Studio — carries a theme switcher,
  * and the sidebar header stays uncluttered.
@@ -65,7 +65,7 @@ export function createThemeToggle(host: ThemeToggleHost): HTMLButtonElement {
 }
 
 /**
- * The theme picker as a segmented control (Light / Dark / SUSE) for a view-settings
+ * The theme picker as a segmented control (Light / Dark / Brand) for a view-settings
  * popover — matching the `.view-seg` controls those popovers already carry (the gallery's
  * "Featured view", the catalog's "Favourites"). Returned as an HTML string so it drops
  * straight into the popover markup; wire the clicks with wireThemeSegment() once it's in

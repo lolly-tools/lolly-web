@@ -1,42 +1,102 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Variable-type demonstrator — a live showcase of the two bundled variable faces,
+ * Variable-type demonstrator — a live showcase of the two faces IN FORCE,
  * driven by the WEIGHT axis itself:
- *   • SUSE Mono — a faux terminal types a command, an italic comment pops in, and the
- *     whole block animates its weight across its axis. Rendered larger.
- *   • SUSE — a display word + an italic phrase, both animating the same weight axis.
+ *   • the mono face (`--font-mono`) — a faux terminal types a command, an italic
+ *     comment pops in, and the whole block animates its weight. Rendered larger.
+ *   • the brand face (`--font-brand`) — a display word + an italic phrase, both
+ *     animating the same weight axis.
  *
- * Both faces animate by default; each has a slider that scrubs the weight from min to
- * max, and an Auto toggle to hand control back to the animation. Each face scrubs its
- * OWN axis — SUSE spans 100–900, SUSE Mono's variable font tops out at ExtraBold (800),
- * so the mono slider stops there instead of running dead against a clamped top end.
+ * The faces are RESOLVED, not hardcoded: the specimens render in the live
+ * `--font-brand` / `--font-mono` custom properties (platform defaults Outfit +
+ * SUSE Mono; overridden inline on <html> by applyBrandFonts when the brand's
+ * `font.brand` / `font.mono` tokens or a user-installed primary font are in
+ * force), the labels show the first family of each computed stack, and each
+ * slider spans the axis the loaded FontFace actually declares — so the
+ * dashboard always demonstrates the fonts the user has set.
+ *
+ * Both faces animate by default; each has a slider that scrubs the weight from
+ * min to max, and an Auto toggle to hand control back to the animation.
  *
  * The sample text is EDITABLE — the display word, the italic phrase and the terminal
  * command/comment are all contenteditable, so anyone can type their own words and watch
  * them animate. Focusing the terminal settles the typewriter so it can be edited.
  *
  * Motion is JS-started (so it doesn't run before the block is seen) and reduced-motion
- * rests at a mid weight with the slider still live. Nothing here depends on a webfont
- * fetch — both faces are already registered via @font-face.
+ * rests at a mid weight with the slider still live.
  */
 
 import './type-demo.css';
 import { escapeHtml } from './html.ts';
 
-const TYPED = 'lolly qr-code --url=suse.com';
+const TYPED = 'lolly qr-code --url=lolly.tools';
 const ITALIC = '// vector, on-brand, instant';
-const SUSE_ROMAN = 'define once,';
-const SUSE_ITALIC = 'use everywhere';
+const BRAND_ROMAN = 'define once,';
+const BRAND_ITALIC = 'use everywhere';
 
-type FaceKey = 'mono' | 'suse';
+type FaceKey = 'mono' | 'brand';
 
-// Each face's usable weight axis. SUSE spans the full 100–900; SUSE Mono's variable font
-// tops out at ExtraBold (800), so its slider + auto-sweep stop there — no dead travel at
-// the top end where the axis would otherwise clamp.
-const AXIS: Record<FaceKey, { min: number; max: number; hi: string }> = {
-  mono: { min: 100, max: 800, hi: 'ExtraBold' },
-  suse: { min: 100, max: 900, hi: 'Black' },
+const WEIGHT_NAMES: Record<number, string> = {
+  100: 'Thin', 200: 'ExtraLight', 300: 'Light', 400: 'Regular', 500: 'Medium',
+  600: 'SemiBold', 700: 'Bold', 800: 'ExtraBold', 900: 'Black',
 };
+
+interface Axis { min: number; max: number; hi: string }
+
+// Faces whose real axis differs from their @font-face descriptor: the bundled
+// SUSE Mono variable file tops out at ExtraBold (800) even though its
+// registration declares 100–900 — stopping the slider there avoids dead travel
+// against the clamped top end.
+const AXIS_OVERRIDES: Record<string, { min: number; max: number }> = {
+  'suse mono': { min: 100, max: 800 },
+};
+
+/** The first family name of a computed font stack ("'Outfit', ui-sans-serif, …"). */
+export function firstFamily(stack: string, fallback: string): string {
+  const first = stack.split(',')[0]?.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  return first || fallback;
+}
+
+/** The usable weight axis for `family`, read from the FontFaces the document
+ *  actually has (CSS @font-face and user fonts registered via the FontFace API
+ *  both appear in document.fonts, with `weight` descriptors like "100 900").
+ *  Unknown/system faces get the full range — sweeping an axis a static face
+ *  doesn't have is a visual no-op, never an error. */
+export function axisFor(family: string): Axis {
+  const key = family.trim().toLowerCase();
+  const named = (min: number, max: number): Axis => ({ min, max, hi: WEIGHT_NAMES[max] ?? String(max) });
+  const ov = AXIS_OVERRIDES[key];
+  if (ov) return named(ov.min, ov.max);
+  let min = Infinity, max = -Infinity;
+  try {
+    document.fonts.forEach((face) => {
+      if (face.family.replace(/^['"]+|['"]+$/g, '').trim().toLowerCase() !== key) return;
+      const m = /^(\d+)(?:\s+(\d+))?$/.exec(face.weight.trim());
+      if (!m) return;
+      const lo = Number(m[1]), hi = m[2] ? Number(m[2]) : lo;
+      min = Math.min(min, lo); max = Math.max(max, hi);
+    });
+  } catch { /* document.fonts unavailable — fall through to the default */ }
+  if (Number.isFinite(min) && max > min) return named(min, max);
+  return named(100, 900); // static/system/unknown face: a full sweep is a harmless no-op
+}
+
+/** One live face: its display label and weight axis, resolved at call time. */
+export interface LiveFace { key: FaceKey; label: string; axis: Axis }
+
+/** Resolve the two faces in force from the live custom properties. */
+export function activeFaces(): { brand: LiveFace; mono: LiveFace } {
+  const rootStyle = getComputedStyle(document.documentElement);
+  const face = (key: FaceKey, cssVar: string, fallback: string): LiveFace => {
+    const label = firstFamily(rootStyle.getPropertyValue(cssVar), fallback);
+    return { key, label, axis: axisFor(label) };
+  };
+  return {
+    brand: face('brand', '--font-brand', 'Outfit'),
+    mono: face('mono', '--font-mono', 'SUSE Mono'),
+  };
+}
+
 const WSTART = 440; // resting / reduced-motion weight (within every axis)
 
 // Shared attributes for an editable sample field — plaintext-only so pasted markup can't
@@ -44,48 +104,54 @@ const WSTART = 440; // resting / reduced-motion weight (within every axis)
 const EDIT_ATTRS = 'contenteditable="plaintext-only" spellcheck="false" data-td-edit role="textbox" title="Click to edit"';
 
 // One weight control: an Auto toggle + a min↔max range slider, sharing one id `key`.
-function control(key: FaceKey): string {
-  const ax = AXIS[key];
+// The slider's min/max carry the resolved axis — wireTypeDemo reads them back from
+// the DOM, so render and wiring can't disagree.
+function control(face: LiveFace): string {
+  const ax = face.axis;
+  const lo = WEIGHT_NAMES[ax.min] ?? String(ax.min);
   return `
-    <div class="td-ctl" data-td-ctl="${key}">
-      <button type="button" class="td-auto is-on" data-td-auto="${key}" aria-pressed="true" aria-label="Animate weight">
+    <div class="td-ctl" data-td-ctl="${face.key}">
+      <button type="button" class="td-auto is-on" data-td-auto="${face.key}" aria-pressed="true" aria-label="Animate weight">
         <span class="td-auto-dot" aria-hidden="true"></span>Auto
       </button>
       <span class="td-range-wrap">
-        <input type="range" class="td-range" data-td-range="${key}" min="${ax.min}" max="${ax.max}" step="1" value="${WSTART}"
+        <input type="range" class="td-range" data-td-range="${face.key}" min="${ax.min}" max="${ax.max}" step="1" value="${WSTART}"
                aria-label="Weight, ${ax.min} to ${ax.max}">
-        <span class="td-scale" aria-hidden="true"><i>Thin</i><i>${escapeHtml(ax.hi)}</i></span>
+        <span class="td-scale" aria-hidden="true"><i>${escapeHtml(lo)}</i><i>${escapeHtml(ax.hi)}</i></span>
       </span>
     </div>`;
 }
 
-/** Markup for the demonstrator. `wireTypeDemo` starts the motion. */
+/** Markup for the demonstrator — specimens render in the LIVE `--font-mono` /
+ *  `--font-brand` stacks (see type-demo.css), labels + axes resolved at call
+ *  time from the same vars. `wireTypeDemo` starts the motion. */
 export function renderTypeDemo(): string {
+  const { brand, mono } = activeFaces();
   return `
     <div class="type-demo" data-type-demo>
       <div class="td-half td-half--mono">
         <div class="td-head">
           <span class="td-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span class="td-face">SUSE&nbsp;Mono</span>
+          <span class="td-face">${escapeHtml(mono.label)}</span>
           <span class="td-axis">wght&nbsp;<b data-td-val="mono">${WSTART}</b></span>
         </div>
         <div class="td-term" data-td-face="mono" style="--td-w-mono:${WSTART}">
           <code class="td-line"><span class="td-prompt">$</span> <span class="td-typed" data-td-typed ${EDIT_ATTRS} aria-label="Terminal command"></span><span class="td-caret" data-td-caret aria-hidden="true"></span></code>
           <code class="td-italic" data-td-italic ${EDIT_ATTRS} aria-label="Terminal comment">${escapeHtml(ITALIC)}</code>
         </div>
-        ${control('mono')}
+        ${control(mono)}
       </div>
       <div class="td-divider" aria-hidden="true"></div>
-      <div class="td-half td-half--suse">
+      <div class="td-half td-half--brand">
         <div class="td-head">
-          <span class="td-face">SUSE</span>
-          <span class="td-axis">wght&nbsp;<b data-td-val="suse">${WSTART}</b></span>
+          <span class="td-face">${escapeHtml(brand.label)}</span>
+          <span class="td-axis">wght&nbsp;<b data-td-val="brand">${WSTART}</b></span>
         </div>
-        <div class="td-sample" data-td-face="suse" style="--td-w-suse:${WSTART}">
-          <span class="td-roman" ${EDIT_ATTRS} aria-label="Display word">${escapeHtml(SUSE_ROMAN)}</span>
-          <span class="td-ital" ${EDIT_ATTRS} aria-label="Italic phrase">${escapeHtml(SUSE_ITALIC)}</span>
+        <div class="td-sample" data-td-face="brand" style="--td-w-brand:${WSTART}">
+          <span class="td-roman" ${EDIT_ATTRS} aria-label="Display word">${escapeHtml(BRAND_ROMAN)}</span>
+          <span class="td-ital" ${EDIT_ATTRS} aria-label="Italic phrase">${escapeHtml(BRAND_ITALIC)}</span>
         </div>
-        ${control('suse')}
+        ${control(brand)}
       </div>
     </div>`;
 }
@@ -111,16 +177,19 @@ export function wireTypeDemo(root: HTMLElement): () => void {
 
   // ── Weight controls (both faces) ──────────────────────────────────────────
   const faces: FaceCtl[] = [];
-  (['mono', 'suse'] as const).forEach((key, i) => {
+  (['mono', 'brand'] as const).forEach((key, i) => {
     const el = demo.querySelector<HTMLElement>(`[data-td-face="${key}"]`);
     if (!el) return;
+    // The axis rides the slider's min/max attributes (stamped by control() from
+    // the resolved face) — read it back so render and sweep can't disagree.
+    const range = demo.querySelector<HTMLInputElement>(`[data-td-range="${key}"]`);
     faces.push({
       key,
       el,
       prop: `--td-w-${key}`,
-      min: AXIS[key].min,
-      max: AXIS[key].max,
-      range: demo.querySelector<HTMLInputElement>(`[data-td-range="${key}"]`),
+      min: range ? Number(range.min) || 100 : 100,
+      max: range ? Number(range.max) || 900 : 900,
+      range,
       val: demo.querySelector<HTMLElement>(`[data-td-val="${key}"]`),
       auto: demo.querySelector<HTMLButtonElement>(`[data-td-auto="${key}"]`),
       animating: !reduce,          // animated by default; reduced-motion starts manual

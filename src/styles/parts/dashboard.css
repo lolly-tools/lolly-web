@@ -16,7 +16,7 @@
 .dashboard-view .dash-dev-stat-label,
 .dashboard-view .dash-dev-stat-value.is-mono,
 .dashboard-view .dash-readout,
-.dashboard-view .dash-readout-hex { font-family: 'SUSE Mono', ui-monospace, monospace; }
+.dashboard-view .dash-readout-hex { font-family: var(--font-mono); }
 
 /* ── Entrance cascade — one ladder over the back-link, header and each section.
    armViewEnter() stamps --enter-i on every .tools-home/.plat-header/.plat-section
@@ -105,7 +105,10 @@
 .dash-type-facts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .6rem; }
 .dash-type-fam { font-size: .95rem; font-weight: 600; }
 .dash-type-meta { font-size: .72rem; color: hsl(var(--muted-foreground)); }
-.dash-type-src { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: .66rem; color: hsl(var(--muted-foreground) / .85); margin-left: auto; }
+.dash-type-src { font-family: var(--font-mono); font-size: .66rem; color: hsl(var(--muted-foreground) / .85); margin-left: auto; }
+.dash-type-manage { justify-content: flex-end; }
+.dash-type-manage a { font-size: .72rem; color: hsl(var(--primary)); text-decoration: none; }
+.dash-type-manage a:hover { text-decoration: underline; }
 
 /* ── Sound & theme card — one card, sound settings above the theme picker, the two
    blocks parted by a labelled rule (the shared sound switch injects its own styles). */
@@ -184,7 +187,7 @@
 .dash-dev-split {
   display: flex; align-items: center; gap: .7rem;
   margin: .35rem 0 1.1rem;
-  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: .58rem; text-transform: uppercase; letter-spacing: .16em;
   color: hsl(var(--muted-foreground));
 }
@@ -377,7 +380,7 @@
 /* The mono sneak — the exact subheadings the modal will show, small + muted. */
 .dash-cap-peek {
   flex: 1 1 auto; list-style: none; margin: 0; padding: 0;
-  font-family: 'SUSE Mono', ui-monospace, monospace; font-size: .64rem; line-height: 1.7;
+  font-family: var(--font-mono); font-size: .64rem; line-height: 1.7;
   color: hsl(var(--muted-foreground));
 }
 .dash-cap-peek li { position: relative; padding-left: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

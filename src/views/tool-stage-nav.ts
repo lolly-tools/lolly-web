@@ -201,6 +201,14 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   });
 
   const endTouch = (e: PointerEvent) => {
+    // Mouse pointerups belong to the desktop pan path (endMouse below). Without
+    // this guard — the pointerdown/move handlers have it, this one didn't — a
+    // middle-drag PAN at Fit fell through to the settle check: pan never changes
+    // `scale`, so "scale ≈ 1" read as "back at fit" and the release snapped the
+    // canvas straight back to centre. The fit lock is released by the pan itself
+    // (tx/ty ≠ 0 → isZoomed() → fitCanvas preserves the view); letting go of the
+    // button must not re-engage it.
+    if (e.pointerType === 'mouse') return;
     pts.delete(e.pointerId);
     if (pts.size < 2) { lastMid = null; pinchDist = 0; }
     if (pts.size === 1) {

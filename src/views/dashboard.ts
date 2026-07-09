@@ -22,7 +22,8 @@
  *   catalogue → window.__toolIndex + /catalog/assets/index.json
  *   caps      → lib/capabilities-data.ts
  *   CMYK      → engine/src/color.ts (CMYK_CONDITIONS)
- *   themes    → src/theme.ts (THEMES) · fonts → lib/typefaces.ts (FONTS)
+ *   themes    → src/theme.ts (THEMES) · fonts → the LIVE --font-brand/--font-mono
+ *               vars (lib/type-demo.ts activeFaces — brand/user fonts included)
  */
 
 import '../styles/parts/platform.css'; // shared dashboard chrome (.plat-* / .cap-*)
@@ -31,13 +32,12 @@ import { escape } from '../utils.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
 import { renderPaletteWheel, wirePaletteWheel } from '../lib/palette-wheel.ts';
-import { renderTypeDemo, wireTypeDemo } from '../lib/type-demo.ts';
+import { renderTypeDemo, wireTypeDemo, activeFaces } from '../lib/type-demo.ts';
 import { catalogSummaryBody, hydrateCatalogAssets } from '../lib/catalog-summary.ts';
 import type { CatalogTool } from '../lib/catalog-summary.ts';
 import { PALETTE } from '../palette.ts';
 import type { PaletteEntry } from '../palette.ts';
 import { groupPalette, swatch, isTransparent, cmykText } from '../lib/swatches.ts';
-import { FONTS } from '../lib/typefaces.ts';
 import { THEMES, THEME_LABELS, currentTheme, applyTheme } from '../theme.ts';
 import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
 import { getMetrics } from '../metrics.ts';
@@ -249,18 +249,27 @@ function themesBody(): string {
     </div>`;
 }
 
-// A compact "type facts" strip for the Type-in-motion tile — the same figures the old
-// Typography reference panel carried (variable/static, weight range, styles, source),
-// small and muted, so the detail lives beside the live specimen instead of at the foot.
+// A compact "type facts" strip for the Type-in-motion tile — the fonts IN FORCE,
+// resolved from the live --font-brand / --font-mono vars (platform defaults, the
+// brand's font tokens, or a user-installed primary — whatever is actually set),
+// with each row rendered in its own face. "Manage fonts" points at the profile's
+// Brand fonts panel, where fonts are added and the primary is chosen.
 function typeFacts(): string {
+  const { brand, mono } = activeFaces();
+  const rootStyle = getComputedStyle(document.documentElement);
+  const rows = [
+    { face: brand, role: 'Brand · UI & body', cssVar: '--font-brand' },
+    { face: mono, role: 'Mono · code & data', cssVar: '--font-mono' },
+  ];
   return `
     <ul class="dash-type-facts">
-      ${FONTS.map((f) => `
+      ${rows.map(({ face, role, cssVar }) => `
         <li>
-          <span class="dash-type-fam" style="font-family:${f.stack}">${escape(f.family)}</span>
-          <span class="dash-type-meta">${f.variable ? 'Variable' : 'Static'} · ${escape(f.weights)} · ${f.styles.map(escape).join(' / ')}</span>
-          <code class="dash-type-src">${escape(f.source)}</code>
+          <span class="dash-type-fam" style="font-family:var(${cssVar})">${escape(face.label)}</span>
+          <span class="dash-type-meta">${escape(role)} · wght ${face.axis.min}–${face.axis.max}</span>
+          <code class="dash-type-src">${escape(`${cssVar}: ${rootStyle.getPropertyValue(cssVar).trim()}`)}</code>
         </li>`).join('')}
+      <li class="dash-type-manage"><a href="#/profile">Manage fonts →</a></li>
     </ul>`;
 }
 
@@ -460,7 +469,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           ${renderPaletteWheel(wheelColors)}
         </section>
         <section class="plat-section dash-section dash-card dash-typedemo" id="dash-typedemo" data-flag="type typography font motion kinetic">
-          ${sectionHead('Type in motion', 'dash-typedemo-h', 'Both bundled variable faces — the axes themselves are the animation.')}
+          ${sectionHead('Type in motion', 'dash-typedemo-h', 'The faces in force — your brand and mono fonts, live. The axes themselves are the animation.')}
           ${renderTypeDemo()}
           ${typeFacts()}
         </section>

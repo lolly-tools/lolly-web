@@ -45,9 +45,12 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" href="/icons/icon-192.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-  <!-- Preload the primary upright UI weight so it isn't discovered only after
-       app.css → @import fonts.css resolves (which causes a visible swap). Same
-       woff2 URL fonts.css lists first; crossorigin is required for fonts. -->
+  <!-- Preload the upright UI faces so they aren't discovered only after
+       app.css → @import fonts.css resolves (which causes a visible swap).
+       Outfit (latin) is the shell-served platform default on every profile;
+       the catalog-served SUSE face is the brand UI font under the SUSE profile
+       (a harmless 404 elsewhere). crossorigin is required for fonts. -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/Outfit-latin[wght].woff2" />
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/catalog/fonts/webfonts/SUSE[wght].woff2" />
   <link rel="stylesheet" href="/src/styles/app.css" />
   <!-- Apply saved theme before CSS paints to prevent flash of wrong theme.
@@ -56,8 +59,18 @@
   <script>
     (() => {
       var t = localStorage.getItem('theme');
+      if (t === 'suse') t = 'brand'; // retired name — theme.ts migrates the store on apply
       if (!t && matchMedia('(prefers-color-scheme: dark)').matches) t = 'dark';
-      if (t === 'dark' || t === 'suse') document.documentElement.dataset.theme = t;
+      if (t === 'dark' || t === 'brand') document.documentElement.dataset.theme = t;
+      // Restore the brand font stacks the same way (written by applyChromeBrandVars
+      // in brand-vars.ts) so a branded profile doesn't flash the Outfit default
+      // every load. setProperty is CSSOM — the cached value can't inject markup.
+      try {
+        var f = JSON.parse(localStorage.getItem('brand-fonts') || 'null');
+        if (f) for (var k in f) {
+          if (k === '--font-brand' || k === '--font-mono') document.documentElement.style.setProperty(k, f[k]);
+        }
+      } catch (e) { /* corrupt cache — boot JS rewrites it */ }
     })();
   </script>
 
