@@ -790,14 +790,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const canvasEl  = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas');
   const outerEl   = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas-outer');
   const contentEl = (hideSidebar ? viewEl.querySelector<HTMLElement>('#tool-content') : canvasEl)!;
-  // Inject the brand's semantic colour slots (--primary, --surface, …) from the
-  // active tokens onto the canvas root, so templates can consume
-  // `var(--primary, <fallback>)`. Like the token-sourced swatches above
-  // (setSwatches), this is best-effort and fire-and-forget: a missing tokens doc
-  // leaves the template fallbacks in charge, and mounting never waits on it.
-  // Scoped HERE, not :root — styles/tokens.css owns `--primary` there as a
-  // shell HSL triple (see brand-vars.ts for the deliberate shadow).
-  void applyBrandVars(contentEl, host);
+  // Inject the brand's semantic colour slots (--brand-primary, --brand-surface,
+  // …) from the active tokens onto the canvas root, so templates can consume
+  // `var(--brand-primary, <fallback>)`. Like the token-sourced swatches above
+  // (setSwatches), this is best-effort and non-blocking for the interactive
+  // mount: a missing tokens doc leaves the template fallbacks in charge. The
+  // promise IS captured, though — the deep-link auto-export/copy/preview paths
+  // await it (raced with a short cap so a stalled tokens fetch can't hold up a
+  // capture beyond quiescence) so a `?export=` capture doesn't race the tokens
+  // fetch and ship fallback colours. Namespaced --brand-* so the vars can never
+  // collide with the shell's :root shadcn HSL triples (see brand-vars.ts).
+  const brandVarsReady: Promise<unknown> = Promise.race([
+    applyBrandVars(contentEl, host),
+    new Promise<void>(resolve => setTimeout(resolve, 3000)),
+  ]).catch(() => { /* cosmetic — never block a mount or fail an export on brand vars */ });
   // Always present in the template (both layouts render #tool-stage), so treat it
   // as non-null — mirrors mountTool's unguarded uses (ro.observe, fitCanvas, …).
   const stageEl   = viewEl.querySelector<HTMLElement>('#tool-stage')!;
@@ -2160,7 +2166,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (pendingAutoExport) {
       pendingAutoExport = false;
       const fmt = urlFormat || tool.manifest.render.formats[0]!;
-      waitForQuiescence(contentEl).then(() => {
+      // Brand vars land async (tokens fetch) — await them alongside quiescence so
+      // a deep-link export captures the branded canvas, not the fallbacks.
+      Promise.all([waitForQuiescence(contentEl), brandVarsReady]).then(() => {
         const name = urlFilename || tool.manifest.id;
         // Honour ?unit=/?dpi= so a deep link (or CLI) renders the right physical size.
         const u = urlUnit || 'px';
@@ -2214,12 +2222,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
     if (pendingAutoCopy) {
       pendingAutoCopy = false;
-      waitForQuiescence(contentEl).then(() => armAutoCopy(actionsEl, actionsApi, urlFormat || undefined));
+      Promise.all([waitForQuiescence(contentEl), brandVarsReady])
+        .then(() => armAutoCopy(actionsEl, actionsApi, urlFormat || undefined));
     }
 
     if (pendingAutoPreview) {
       pendingAutoPreview = false;
-      waitForQuiescence(contentEl).then(() =>
+      Promise.all([waitForQuiescence(contentEl), brandVarsReady]).then(() =>
         runPreview().catch(err => console.error('Auto-preview failed:', err))
       );
     }

@@ -54,6 +54,13 @@ type Corner = 'nw' | 'ne' | 'se' | 'sw';
 /** One entry of a `canvas.addKinds` list — a "kind" the add-box menu can create. */
 interface AddKind { id: string; label?: string; seed?: Box }
 
+/** The subset of a blocks-field declaration the editor reads: the font select's
+ *  declared options drive the typography menus, so the editor writes exactly the
+ *  wire values the tool's hooks.js understands (e.g. 'SUSE'/'SUSE Mono' on the
+ *  SUSE profile, 'sans'/'mono' on lolly-start). */
+interface BlockFieldDef { id: string; default?: unknown; options?: Array<{ value?: unknown; label?: string }> }
+interface FontOption { value: string; label: string }
+
 /** The free-form per-tool `canvas` schema block (from the manifest). */
 interface CanvasCfg {
   idField?: string;
@@ -157,7 +164,7 @@ interface InitFreeCanvasOpts {
   canvasEl: HTMLElement;
   runtime: RuntimeApi;
   host: HostApi;
-  input: { id: string; canvas?: CanvasCfg };
+  input: { id: string; canvas?: CanvasCfg; fields?: BlockFieldDef[] };
   nativeW: number;
   nativeH: number;
   onDirty?(id: string): void;
@@ -347,22 +354,31 @@ function icon(paths: string): string {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
 
-// SUSE weight menu (shared by the Text panel and the in-edit format bar).
-// SUSE Mono has no Black cut — its variable axis tops out at 800 — so the mono
-// menu stops at Extrabold (hooks.js + the vector exporter cap it the same way).
+// Weight menu (shared by the Text panel and the in-edit format bar). Mono cuts
+// rarely ship a Black — their variable axes top out at 800 — so the mono menu
+// stops at Extrabold (both profiles' hooks.js + the vector exporter cap it the
+// same way; mono detection lives in isMonoFont inside initFreeCanvas).
 const WEIGHT_CHOICES: Array<[string, string]> = [
   ['100', 'Thin'], ['200', 'Extra light'], ['300', 'Light'], ['400', 'Regular'],
   ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extrabold'], ['900', 'Black'],
 ];
-const weightChoicesFor = (font: any): Array<[string, string]> => WEIGHT_CHOICES.filter(([v]) => String(font) !== 'SUSE Mono' || +v <= 800);
-// Live-preview font stacks + OpenType feature string — kept byte-for-byte in
-// step with hooks.js (FONTS / typeFeatureCss) so the in-edit preview matches the
-// committed render and the vector export exactly.
+// Fallback font menu for editor tools whose manifest doesn't declare a font
+// select — the historical hard-coded pair, so such tools keep working unchanged.
+const FALLBACK_FONT_OPTIONS: FontOption[] = [
+  { value: 'SUSE', label: 'SUSE Sans' },
+  { value: 'SUSE Mono', label: 'SUSE Mono' },
+];
+// Live-preview font stacks — kept byte-for-byte in step with the shipped
+// layout-studio hooks.js FONTS maps (SUSE profile: 'SUSE'/'SUSE Mono';
+// lolly-start: 'sans'/'mono') so the in-edit preview matches the committed
+// render and the vector export exactly. Wire values not listed here derive a
+// stack from the value itself (fontStackFor inside initFreeCanvas).
 const FONT_STACK: Record<string, string> = {
   'SUSE Mono': "'SUSE Mono', ui-monospace, SFMono-Regular, monospace",
   'SUSE': "'SUSE', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+  'mono': 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  'sans': "var(--font-brand, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif)",
 };
-const fontStackFor = (v: any): string => FONT_STACK[String(v)] || FONT_STACK.SUSE!;
 // ligatures default ON (off → disable liga/clig); alternates default OFF (on → salt).
 function featureSettings(ligOn: boolean, altOn: boolean): string {
   const feat: string[] = [];
@@ -418,6 +434,39 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }) as FieldCfg;
   const unwrapColor = (v: ColorFieldValue) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
   const minSize = cv.minSize ?? 8;
+  // ── Manifest-driven typography ────────────────────────────────────────────────
+  // The Text panel + format-bar font menus are built from the tool's OWN declared
+  // font select (the blocks field named by canvas.fontField), so the editor writes
+  // exactly the wire values the tool's hooks.js understands under any profile
+  // (SUSE: 'SUSE'/'SUSE Mono'; lolly-start: 'sans'/'mono'). Tools without a font
+  // field declaration fall back to the historical hard-coded pair.
+  const fontFieldDef = cfg.fontField ? (input.fields || []).find((f) => f.id === cfg.fontField) : undefined;
+  const fontOptions: FontOption[] = (fontFieldDef?.options?.length ? fontFieldDef.options : FALLBACK_FONT_OPTIONS)
+    .map((o) => ({ value: String(o.value ?? ''), label: String(o.label || o.value || '') }));
+  const defaultFont = String(fontFieldDef?.default || fontOptions[0]!.value);
+  // Mono detection mirrors hooks.js weightOf (/mono/i on the wire value; the label
+  // covers manifests whose values don't self-describe). Mono cuts rarely ship a
+  // Black, so the weight menu and the font-change clamp cap mono at 800.
+  const isMonoFont = (font: any): boolean => {
+    const v = String(font);
+    return /mono/i.test(v) || fontOptions.some((o) => o.value === v && /mono/i.test(o.label));
+  };
+  const maxWeightFor = (font: any): number => (isMonoFont(font) ? 800 : 900);
+  const weightChoicesFor = (font: any): Array<[string, string]> =>
+    WEIGHT_CHOICES.filter(([v]) => +v <= maxWeightFor(font));
+  // Live-preview stack: exact hooks.js stacks for the known wire values; other
+  // declared options derive one from the value (leading family + a generic tail);
+  // unknown/empty values preview as the manifest's default font, mirroring
+  // hooks.js fontFamily's fallback.
+  const stackOf = (s: string): string => FONT_STACK[s] || (isMonoFont(s)
+    ? `'${s}', ui-monospace, SFMono-Regular, monospace`
+    : `'${s}', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`);
+  const fontStackFor = (v: any): string => {
+    const s = String(v ?? '');
+    return s && fontOptions.some((o) => o.value === s) ? stackOf(s) : stackOf(defaultFont);
+  };
+  const fontOptionsHtml = (cur?: any): string => fontOptions.map((o) =>
+    `<option value="${escapeHtml(o.value)}"${String(cur) === o.value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
   const addKinds: AddKind[] = Array.isArray(cv.addKinds) && cv.addKinds.length
     ? cv.addKinds : [{ id: 'box', label: 'Box', seed: {} }];
   // Opt-in design-file import (Figma SVG / Penpot). Falsy for Layout Studio, whose
@@ -1443,7 +1492,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!idx.length) return;
     const b: Box = boxes[idx[0]!] || {};
     const opt = (v: string, label: string, cur: any): string => `<option value="${v}"${String(cur) === v ? ' selected' : ''}>${label}</option>`;
-    const fontCur = String(b[cfg.fontField] || 'SUSE');
+    const fontCur = String(b[cfg.fontField] || defaultFont);
     const sizeCur = Math.max(1, Math.round(parseFloat(String(b[cfg.fontSizeField])) || 48));
     const weightCur = String(b[cfg.weightField] || '700');
     const lhRaw = parseFloat(String(b[cfg.lineHeightField]));
@@ -1462,7 +1511,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.className = 'fc-panel fc-text-panel';
     p.innerHTML =
       '<div class="fc-panel-head">Text</div>' +
-      (cfg.fontField ? `<label class="fc-row"><span>Font</span><select data-tp="font">${opt('SUSE', 'SUSE Sans', fontCur)}${opt('SUSE Mono', 'SUSE Mono', fontCur)}</select></label>` : '') +
+      (cfg.fontField ? `<label class="fc-row"><span>Font</span><select data-tp="font">${fontOptionsHtml(fontCur)}</select></label>` : '') +
       // Size row now carries the A−/A+ steppers (moved off the object bar) around the number.
       (cfg.fontSizeField ? `<div class="fc-row"><span>Size</span><div class="fc-stepper">
         <button type="button" class="fc-cbtn" data-tp="smaller" title="Smaller" aria-label="Smaller text">A−</button>
@@ -1482,7 +1531,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.querySelector<HTMLButtonElement>('[data-tp="bigger"]')?.addEventListener('click', () => { bumpFont(6); const s = p.querySelector<HTMLInputElement>('[data-tp="size"]'); if (s) s.value = String((parseInt(s.value, 10) || 48) + 6); });
     p.querySelectorAll<HTMLSelectElement>('select[data-tp]').forEach((sel) => sel.addEventListener('change', () => {
       if (sel.dataset.tp !== 'font') { setField(cfg.weightField, sel.value); return; }
-      // Font change: SUSE Mono has no 900 cut, so clamp any Black boxes to 800 in
+      // Font change: mono cuts have no 900, so clamp any Black boxes to 800 in
       // the SAME commit (one undo step), then refresh the weight menu to match.
       const font = sel.value;
       const bx = getBoxes();
@@ -1490,12 +1539,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       commit(bx.map((row, k) => {
         if (!selSet.has(k)) return row;
         const nb = { ...row, [cfg.fontField]: font };
-        if (cfg.weightField && font === 'SUSE Mono' && (parseInt(String(nb[cfg.weightField]), 10) || 700) > 800) nb[cfg.weightField] = '800';
+        if (cfg.weightField && isMonoFont(font) && (parseInt(String(nb[cfg.weightField]), 10) || 700) > 800) nb[cfg.weightField] = '800';
         return nb;
       }));
       const wSel = p.querySelector<HTMLSelectElement>('select[data-tp="weight"]');
       if (wSel) {
-        const cur = Math.min(parseInt(wSel.value, 10) || 700, font === 'SUSE Mono' ? 800 : 900);
+        const cur = Math.min(parseInt(wSel.value, 10) || 700, maxWeightFor(font));
         wSel.innerHTML = weightChoicesFor(font).map(([v, l]) => opt(v, l, String(cur))).join('');
       }
     }));
@@ -2367,12 +2416,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       fsel.className = 'fc-fmt-font';
       fsel.title = 'Font';
       fsel.setAttribute('aria-label', 'Font');
-      fsel.innerHTML = `<option value="SUSE">SUSE Sans</option><option value="SUSE Mono">SUSE Mono</option>`;
+      fsel.innerHTML = fontOptionsHtml();
       fsel.addEventListener('pointerdown', (e) => e.stopPropagation());
       fsel.addEventListener('change', () => {
         const font = fsel.value;
         applyPending(cfg.fontField, font);
-        if (cfg.weightField && font === 'SUSE Mono') {
+        if (cfg.weightField && isMonoFont(font)) {
           const bx: Box = getBoxes()[indexOfId(getBoxes(), editing!.id)] || {};
           if ((parseInt(pendingOr(cfg.weightField, bx[cfg.weightField]), 10) || 700) > 800) applyPending(cfg.weightField, '800');
         }
@@ -2394,7 +2443,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       sel.className = 'fc-fmt-weight';
       sel.title = 'Weight of the selected text';
       sel.setAttribute('aria-label', 'Weight of the selected text');
-      const font = String((cfg.fontField && box[cfg.fontField]) || 'SUSE');
+      const font = String((cfg.fontField && box[cfg.fontField]) || defaultFont);
       sel.innerHTML = '<option value="">Auto</option>' + weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
       sel.value = '';
       // Stash the selection on engage (the select steals focus/selection when it
@@ -2512,7 +2561,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     // Whole-box font + OpenType feature toggles (staged in pending).
     if (r.font && document.activeElement !== r.font) {
-      r.font.value = String(pendingOr(cfg.fontField, box[cfg.fontField]) || 'SUSE');
+      r.font.value = String(pendingOr(cfg.fontField, box[cfg.fontField]) || defaultFont);
     }
     r.lig?.classList.toggle('is-on', boolOf(pendingOr(cfg.ligaturesField, box[cfg.ligaturesField]), true));
     r.alt?.classList.toggle('is-on', boolOf(pendingOr(cfg.alternatesField, box[cfg.alternatesField]), false));

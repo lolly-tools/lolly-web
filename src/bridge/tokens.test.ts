@@ -16,6 +16,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTokensAPI, installUserTokens } from './tokens.ts';
 import { createAssetsAPI } from './assets.ts';
+import { applyBrandVars } from '../brand-vars.ts';
 
 // Minimal DTCG doc — one colour token, enough for a non-empty set.
 const DOC  = { color: { brand: { jungle: { $type: 'color', $value: '#30ba78' } } } };
@@ -187,4 +188,66 @@ test('discovery id flips lolly/tokens/brand → user/tokens/brand after install 
   await installUserTokens({ assets, tokens }, DOC2);
   // …and installing user tokens flips it, which is exactly what "branded" means.
   assert.equal((await assets._findMetaByType('tokens'))?.id, 'user/tokens/brand');
+});
+
+// ── applyBrandVars (brand-vars.ts) — the contract-§3 injection rules ───────────
+// DOM-free like the rest of this file: applyBrandVars only touches
+// el.style.setProperty/removeProperty, so a recording stand-in suffices.
+
+/** Style-only HTMLElement stand-in recording custom-property writes. */
+function stubEl(seed: Record<string, string> = {}) {
+  const props = new Map(Object.entries(seed));
+  const el = { style: {
+    setProperty: (k: string, v: string) => { props.set(k, v); },
+    removeProperty: (k: string) => { props.delete(k); },
+  } } as unknown as HTMLElement;
+  return { el, props };
+}
+
+/** A tokens host resolving `{color.semantic.<slot>}` refs from a slot table. */
+const hostFor = (slots: Record<string, unknown>) => ({
+  tokens: { resolve: async (ref: string) => slots[ref.slice('{color.semantic.'.length, -1)] },
+});
+
+test('applyBrandVars sets the seven slots under the --brand-* namespace, never the bare shell names', async () => {
+  const { el, props } = stubEl();
+  await applyBrandVars(el, hostFor({
+    'primary': 'oklch(60% 0.1 250)', 'on-primary': '#ffffff', 'secondary': '#123456',
+    'surface': '#fafafa', 'text': '#111111', 'muted': '#666666', 'edge': '#dddddd',
+  }));
+  assert.equal(props.get('--brand-primary'), 'oklch(60% 0.1 250)'); // raw oklch passes through (browser-native)
+  assert.equal(props.get('--brand-on-primary'), '#ffffff');
+  assert.deepEqual([...props.keys()].sort(), [
+    '--brand-edge', '--brand-muted', '--brand-on-primary', '--brand-primary',
+    '--brand-secondary', '--brand-surface', '--brand-text',
+  ]);
+  // Bare --primary/--muted/… are the SHELL's shadcn HSL-triple vocabulary
+  // (styles/tokens.css) that community tools consume via hsl(var(--primary)) —
+  // injecting full colours under those names would break them (contract §3).
+  assert.equal(props.has('--primary'), false);
+});
+
+test('applyBrandVars treats alias residue as a missing slot — removed, never injected verbatim', async () => {
+  const { el, props } = stubEl({ '--brand-surface': '#eeeeee' }); // stale value from a prior brand
+  await applyBrandVars(el, hostFor({ primary: '#30ba78', surface: '{color.ramp.neutral.9}' }));
+  assert.equal(props.get('--brand-primary'), '#30ba78');
+  // An unresolvable alias would DEFINE the var, so `var(--brand-surface, #fff)`
+  // would substitute garbage instead of the fallback. It must be unset.
+  assert.equal(props.has('--brand-surface'), false);
+});
+
+test('applyBrandVars normalises structured DTCG colour objects via the engine (CLI parity)', async () => {
+  const { el, props } = stubEl();
+  await applyBrandVars(el, hostFor({
+    primary: { components: [0, 1, 0] }, // modern DTCG object form → hex, matching the CLI
+    secondary: { nonsense: true },      // unreadable object → missing slot
+  }));
+  assert.equal(props.get('--brand-primary'), '#00ff00');
+  assert.equal(props.has('--brand-secondary'), false);
+});
+
+test('applyBrandVars removes every slot when tokens are absent (missing slot ⇒ var not set, never \'\')', async () => {
+  const { el, props } = stubEl({ '--brand-primary': '#30ba78', '--brand-text': '#111111' });
+  await applyBrandVars(el, {}); // a host without the tokens capability
+  assert.equal(props.size, 0);
 });

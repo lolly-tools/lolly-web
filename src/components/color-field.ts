@@ -79,6 +79,24 @@ export function swatchName(value: unknown): string {
   return '';
 }
 
+// A colour value is only interpolated into an inline `style="…"` attribute after
+// passing this shape test: a bare hex, a colour function (rgb()/hsl()/oklch()/…)
+// whose arguments contain no nested parens/quotes/semicolons/braces, or a plain
+// ident ('rebeccapurple', 'transparent'). Swatch values can come from a
+// user-IMPORTED tokens document (setSwatches ← host.tokens.colors(), fed by the
+// #/start wizard), and escape() doesn't neutralise CSS metacharacters — so a
+// malicious $value like `#000; background-image:url(https://evil.example/x)`
+// would otherwise smuggle a live declaration into the attribute and fire an
+// external request. The engine's colorToHex is the primary gate upstream; this
+// is the defense-in-depth at the sink.
+const SAFE_CSS_COLOR = /^(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([^();"'{}<>\\]*\)|[a-z][a-z0-9-]*)$/i;
+
+/** `v` when it's a safely inlinable CSS colour, else '' (paints nothing). */
+function safeCssColor(v: unknown): string {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return SAFE_CSS_COLOR.test(s) ? s : '';
+}
+
 /** Black or white — whichever reads on `hex`. Perceptual luminance threshold. */
 export function contrastText(hex: string): string {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
@@ -96,7 +114,7 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   const alphaInt = isHex8 ? parseInt(rawVal.slice(7, 9), 16) : (isTransparent ? 0 : 255);
   const alphaPct = Math.round(alphaInt / 255 * 100);
   const hexDisplay = isHex8 ? rawVal.toLowerCase() : (isHex6 ? rawVal.toLowerCase() : '');
-  const previewBg = isTransparent ? '' : `style="background:${rawVal || '#000000'}"`;
+  const previewBg = isTransparent ? '' : `style="background:${escape(safeCssColor(rawVal) || '#000000')}"`;
   const previewClass = `color-trigger-preview${isTransparent ? ' color-swatch--transparent' : ''}`;
   const eid = escape(id);
   const hexText = hexDisplay || rawVal || '#000000';
@@ -145,7 +163,10 @@ function swatchButtonsHtml(id: string): string {
     // (--sw-fg) as inline custom props; the floating hover tooltip paints itself in
     // those (see showSwatchTip). Transparent has no colour of its own, so give the
     // tooltip a neutral chip. No native `title` — the graphical tip replaces it.
-    const tip = isTrans ? '--sw-c:#c9ccd1;--sw-fg:#1d1d1d' : `--sw-c:${escape(s.value)};--sw-fg:${contrastText(s.value)};background:${escape(s.value)}`;
+    // safeCssColor: this is a CSS context, so attribute-escaping alone isn't
+    // enough — an unvalidated token value could smuggle extra declarations.
+    const val = safeCssColor(s.value);
+    const tip = isTrans ? '--sw-c:#c9ccd1;--sw-fg:#1d1d1d' : `--sw-c:${escape(val || '#c9ccd1')};--sw-fg:${contrastText(val)};background:${escape(val)}`;
     return `<button type="button"
       class="color-swatch${isTrans ? ' color-swatch--transparent' : ''}"
       data-swatch-for="${eid}" data-swatch-value="${escape(s.value)}"${refAttr}

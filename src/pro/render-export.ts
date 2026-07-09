@@ -40,6 +40,7 @@ async function preferCompactQuery(query: string): Promise<string> {
 }
 import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
+import { applyBrandVars } from '../brand-vars.ts';
 import { scopeCss } from '../lib/scope-css.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { MOTION_EXPORT_FORMATS } from './folder-rows.ts';
@@ -154,6 +155,15 @@ async function mountToolCanvas(
   document.body.appendChild(stage);
 
   try {
+    // Brand semantic vars (--brand-primary, …) must reach EVERY path that mounts
+    // tool markup (plans/brand-token-contract.md §3). This offscreen stage serves
+    // /pro batch rows, compose children, featured renders and personalize
+    // previews — the live view applies the same vars in mountTool (views/tool.ts),
+    // so without this call a batch/compose render of a semantic-var template
+    // would fall back to the template defaults and mismatch its direct export.
+    // Awaited (unlike the live mount): an offscreen render exports immediately,
+    // so the vars must be on the node before the settle/capture below.
+    await applyBrandVars(canvas, host);
     runTemplateScripts(canvas);
     // Batch path historically settled a touch faster than the live view (350 vs
     // the shared 400ms default); preserved explicitly so extraction changed nothing.
