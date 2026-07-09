@@ -41,6 +41,7 @@ import { toolSeedHref } from '../lib/seed-url.ts';
 import type { WebStateAPI } from '../bridge/state.ts';
 import type { WebProfileAPI } from '../bridge/profile.ts';
 import type { createAssetsAPI } from '../bridge/assets.ts';
+import type { WebTokensAPI } from '../bridge/tokens.ts';
 import type { PreviewsAPI, PreviewRecord } from '../bridge/previews.ts';
 
 /**
@@ -116,6 +117,7 @@ type GalleryHost = HostV1 & {
   state: WebStateAPI;
   profile: WebProfileAPI;
   assets: ReturnType<typeof createAssetsAPI>;
+  tokens?: WebTokensAPI;
   previews?: PreviewsAPI;
 };
 
@@ -1411,6 +1413,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   void (async () => {
     let tokensId: string | undefined;
     try {
+      // A LOCKED brand (brandLock — e.g. the SUSE build) is branded by decree:
+      // there's no brand question to settle, so never greet it with the welcome
+      // or the tips strip, whatever the placeholder check below resolves to.
+      if (await host.tokens?.isLocked?.()) return;
       tokensId = (await host.assets._findMetaByType('tokens'))?.id;
       if (tokensId === undefined && galleryRoot?.isConnected) {
         const resp = await fetch('/catalog/assets/index.json');

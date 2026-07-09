@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseGoogleFontCss, keepFaces, GOOGLE_FAMILY_RE } from './google-fonts.ts';
+import { parseGoogleFontCss, keepFaces, GOOGLE_FAMILY_RE, encodeFamily, variableSpec, staticSpecs } from './google-fonts.ts';
 
 // A trimmed, structurally-faithful css2 response: variable font, three subsets.
 const CSS_VARIABLE = `
@@ -36,12 +36,21 @@ const CSS_VARIABLE = `
   src: url(https://fonts.gstatic.com/s/inter/v13/lat.woff2) format('woff2');
   unicode-range: U+0000-00FF;
 }
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/inter/v13/lat-italic.woff2) format('woff2');
+  unicode-range: U+0000-00FF;
+}
 `;
 
 test('parses css2 blocks: family, weight range, subset, unicode-range, url', () => {
   const faces = parseGoogleFontCss(CSS_VARIABLE);
-  assert.equal(faces.length, 3);
-  const latin = faces.find(f => f.subset === 'latin')!;
+  assert.equal(faces.length, 4);
+  const latin = faces.find(f => f.subset === 'latin' && f.style === 'normal')!;
   assert.equal(latin.family, 'Inter');
   assert.equal(latin.style, 'normal');
   assert.equal(latin.weight, '100 900');
@@ -49,9 +58,18 @@ test('parses css2 blocks: family, weight range, subset, unicode-range, url', () 
   assert.equal(latin.unicodeRange, 'U+0000-00FF');
 });
 
-test('keepFaces keeps latin + latin-ext, drops other subsets', () => {
+test('parses the italic block with font-style: italic', () => {
+  const italic = parseGoogleFontCss(CSS_VARIABLE).find(f => f.style === 'italic')!;
+  assert.ok(italic);
+  assert.equal(italic.subset, 'latin');
+  assert.equal(italic.weight, '100 900');
+  assert.equal(italic.url, 'https://fonts.gstatic.com/s/inter/v13/lat-italic.woff2');
+});
+
+test('keepFaces keeps latin + latin-ext (both slants), drops other subsets', () => {
   const kept = keepFaces(parseGoogleFontCss(CSS_VARIABLE));
-  assert.deepEqual(kept.map(f => f.subset).sort(), ['latin', 'latin-ext']);
+  assert.deepEqual(kept.map(f => f.subset).sort(), ['latin', 'latin', 'latin-ext']);
+  assert.equal(kept.filter(f => f.style === 'italic').length, 1);
 });
 
 test('keepFaces keeps everything when css names no subsets', () => {
@@ -91,4 +109,26 @@ test('family-name gate: plain names pass, injection shapes fail', () => {
   for (const bad of ['', ' Inter', "x'; url(", 'a{b}', 'font:family', 'x'.repeat(70)]) {
     assert.ok(!GOOGLE_FAMILY_RE.test(bad), JSON.stringify(bad));
   }
+});
+
+// ── spec builders (pure) ──────────────────────────────────────────────────────
+
+test('encodeFamily turns spaces into +', () => {
+  assert.equal(encodeFamily('Space Grotesk'), 'Space+Grotesk');
+  assert.equal(encodeFamily('  Inter  '), 'Inter');
+});
+
+test('variableSpec asks for both slants across the weight range, upright first', () => {
+  assert.equal(variableSpec('Inter', 100, 900), 'Inter:ital,wght@0,100..900;1,100..900');
+  assert.equal(variableSpec('Figtree', 300, 900), 'Figtree:ital,wght@0,300..900;1,300..900');
+});
+
+test('staticSpecs ladder covers regular+bold, single weight, both slants, then bare', () => {
+  const specs = staticSpecs('Anton');
+  assert.deepEqual(specs, [
+    'Anton:ital,wght@0,400;0,700;1,400;1,700',
+    'Anton:ital,wght@0,400;1,400',
+    'Anton:ital@0;1',
+    'Anton',
+  ]);
 });

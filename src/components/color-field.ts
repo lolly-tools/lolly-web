@@ -141,7 +141,7 @@ export function contrastText(hex: string): string {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#000000' : '#ffffff';
 }
 
-export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean } = {}): string {
+export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean } = {}): string {
   const rawVal = toHex(value) ?? '';
   const isTransparent = rawVal === 'transparent';
   const isHex8 = /^#[0-9a-fA-F]{8}$/.test(rawVal);
@@ -169,12 +169,19 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   // `block` marks a field living inside a block-editor row: positionPopover's
   // block-color-field branch spans the popover across the sidebar, and the block
   // host routes its onChange by the composite id ("blockId:idx:fieldId").
-  return `<div class="color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}" data-color-field="${eid}">
-    <button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(name ? name + ' ' : '')}${escape(hexText)}">
+  // `inline` drops the trigger entirely and keeps the popover always-open, laid
+  // out in flow (no floating/positioning) — for hosts with room to spare that
+  // want the picker as a spacious inline panel, not a click-to-open popover (the
+  // dashboard brand editor's Primary colour). CSS (.color-field--inline) turns
+  // the popover static + horizontal; wireColorField builds its swatches up front
+  // since the lazy-on-open path never fires without a trigger.
+  const cls = `color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}${inline ? ' color-field--inline' : ''}`;
+  return `<div class="${cls}" data-color-field="${eid}">
+    ${inline ? '' : `<button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(name ? name + ' ' : '')}${escape(hexText)}">
       <span class="${previewClass}" ${previewBg} aria-hidden="true"></span>
       <span class="color-trigger-name">${escape(name)}</span>
-    </button>
-    <div class="color-popover" role="group" aria-label="Colour options" hidden>
+    </button>`}
+    <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
       ${swatchesOnly ? '' : `${lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
       <input type="text" class="color-hex-input" data-color-hex="${eid}"
              value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="#rrggbbaa"
@@ -413,6 +420,10 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     box.querySelectorAll<HTMLElement>('[data-swatch-value]').forEach(btn =>
       btn.addEventListener('click', () => applySwatch(field, btn.dataset.swatchValue!, btn.dataset.swatchRef || null)));
   }
+
+  // Inline fields have no trigger and their popover is always open, so the
+  // lazy-on-open build above never fires — build their swatch grid up front.
+  scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(buildSwatches);
 
   // ── Trigger: open/close the popover ──────────────────────────────────────────
   scope.querySelectorAll<HTMLElement>('[data-color-trigger]').forEach(trigger => {

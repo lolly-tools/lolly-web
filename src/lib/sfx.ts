@@ -29,7 +29,7 @@
  *    it no longer silences sounds by default.) An explicit stored preference always wins.
  */
 
-export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'sign' | 'warn' | 'ghost' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
+export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'sign' | 'warn' | 'ghost' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'byebye' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
 
 /** localStorage mirror of the mute flag ('1' muted / '0' on). Canonical store is the profile. */
 const MUTE_KEY = 'lolly:sfxMuted';
@@ -716,6 +716,21 @@ const VOICES: Record<SfxName, (ctx: AudioContext, out: AudioNode) => void> = {
     blip(ctx, out, { type: 'sawtooth', from: 311.13, to: 174.61, dur: 0.85, peak: 0.20, delay: 1.08 });   // the long final droop, E♭4 → F3
     blip(ctx, out, { type: 'sine',     from: 174.61, to: 116.54, dur: 0.95, peak: 0.15, delay: 1.06 });   // hollow low body, F3 → B♭2
   },
+  // Clearing ALL data — the "bye-bye song": a fond sing-song wave goodbye, NOT the sombre
+  // optOut sigh above (the slate is being wiped clean for a fresh hello, so it should smile).
+  // Two vocal "bye~"s on the classic falling sing-song third (the yum voice with a downward
+  // lilt), then a gentle farewell walk-down settling on a warm low root, while a soft receding
+  // whoosh underneath carries the data away — and a tiny click as the door closes behind it.
+  byebye(ctx, out) {
+    yum(ctx, out, { pitch: 784, dur: 0.22, peak: 0.30, lilt: 0.80 });               // "bye~" — G5 drooping down
+    yum(ctx, out, { pitch: 622, dur: 0.28, peak: 0.28, delay: 0.30, lilt: 0.76 });  // "bye~" — a third lower, drooping further
+    // …a little farewell walk-down, each step softer: G5 E5 D5 C5.
+    [783.99, 659.25, 587.33, 523.25].forEach((f, i) =>
+      blip(ctx, out, { type: 'sine', from: f, dur: 0.24 + i * 0.05, peak: 0.16 - i * 0.02, delay: 0.68 + i * 0.14 }));
+    blip(ctx, out, { type: 'sine', from: 261.63, dur: 0.8, peak: 0.12, delay: 1.1 });        // C4 warm root — settled, at peace
+    sweep(ctx, out, { dur: 0.7, peak: 0.15, cutoffFrom: 2400, cutoffTo: 220, delay: 0.8 });  // the data receding away
+    tick(ctx, out, { dur: 0.02, peak: 0.09, freq: 1700, q: 0.8, delay: 1.55 });              // the door closes softly behind it
+  },
   // A single keystroke in a text field — a soft mechanical "clack": a low woody
   // band-passed tick with a whisper of a low body under it. Deliberately quiet + very
   // short (~14ms) and pitch-jittered so a fast run of typing reads like a keyboard, not
@@ -1056,7 +1071,7 @@ function isSfxName(v: string | undefined): v is SfxName {
     || v === 'save' || v === 'saveProfile' || v === 'whoosh' || v === 'vacuum' || v === 'fanfare'
     || v === 'twinkle' || v === 'shimmer' || v === 'ding' || v === 'victory' || v === 'braaam' || v === 'warn' || v === 'ghost'
     || v === 'shoo' || v === 'reel' || v === 'aperture' || v === 'scribble' || v === 'flick'
-    || v === 'optIn' || v === 'optOut' || v === 'key' || v === 'slider' || v === 'scrub'
+    || v === 'optIn' || v === 'optOut' || v === 'byebye' || v === 'key' || v === 'slider' || v === 'scrub'
     || v === 'select' || v === 'hydraulicOpen' || v === 'hydraulicClose' || v === 'verify' || v === 'dashboard' || v === 'newSession' || v === 'leaveSession'
     || v === 'whisper' || v === 'crystal' || v === 'land';
 }

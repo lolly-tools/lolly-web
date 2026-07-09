@@ -239,5 +239,16 @@ export function createTextAPI(): TextAPI {
     async preload(fontUrl) {
       await loadFace(fontUrl);
     },
+
+    /** The font's variable-axis defaults (tag → value), `{}` for a static font.
+     *  Lets a caller embedding the raw file elsewhere (jsPDF, which has no axis
+     *  control) know which instance it will actually get. */
+    async axisDefaults(fontUrl) {
+      const { face } = await loadFace(fontUrl);
+      const out: Record<string, number> = {};
+      const infos = face.getAxisInfos();
+      for (const [tag, info] of Object.entries(infos)) out[tag] = info.default;
+      return out;
+    },
   };
 }

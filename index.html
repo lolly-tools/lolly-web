@@ -71,6 +71,12 @@
           if (k === '--font-brand' || k === '--font-mono') document.documentElement.style.setProperty(k, f[k]);
         }
       } catch (e) { /* corrupt cache — boot JS rewrites it */ }
+      // Same trick for a customised corner radius (unlocked brands only —
+      // applyBrandRadius never writes this key for a locked catalog).
+      try {
+        var r = localStorage.getItem('brand-radius');
+        if (r) document.documentElement.style.setProperty('--radius', r);
+      } catch (e) { /* corrupt cache — boot JS rewrites it */ }
     })();
   </script>
 
