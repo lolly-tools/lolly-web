@@ -296,6 +296,11 @@
    panel already is one), and lays the sliders/hex/alpha stack beside the swatch
    palette so a roomy host (the dashboard brand editor) uses the width. Collapses
    to a single column when narrow. */
+/* Query container: the sliders+swatches lay out two-up when the field is wide
+   (the dashboard/start primary) and stack when it's narrow (the swatch-editor
+   card) — keyed on the FIELD's own width, not the viewport, so a 300px popover
+   collapses even on a wide screen. */
+.color-field--inline { container: colorinline / inline-size; }
 .color-field--inline .color-popover {
   position: static;
   z-index: auto;
@@ -321,7 +326,7 @@
   grid-row: 1 / 5;               /* stand beside the whole left stack */
   align-content: start;
 }
-@media (max-width: 560px) {
+@container colorinline (max-width: 440px) {
   .color-field--inline .color-popover { grid-template-columns: 1fr; }
   .color-field--inline .color-lch,
   .color-field--inline .color-modes,

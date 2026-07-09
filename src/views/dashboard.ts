@@ -642,13 +642,13 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     try {
       const { mountBrandEditor, BRAND_DRAFT_EVENT } = await import('../lib/brand-editor.ts');
       if (!viewEl.contains(mount)) return;
-      const stopEditor = await mountBrandEditor(mount, host);
-      if (!viewEl.contains(mount)) { stopEditor(); return; }
+      const editor = await mountBrandEditor(mount, host);
+      if (!viewEl.contains(mount)) { editor.teardown(); return; }
       // Best-effort: track the editor's live Colour-panel draft in the
       // "Colour palette" ink bar below, even before it's saved.
       const stopPaletteSync = wireLivePaletteDraft(viewEl, BRAND_DRAFT_EVENT);
       const prev = (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup;
-      (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { prev?.(); stopEditor(); stopPaletteSync(); };
+      (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { prev?.(); editor.teardown(); stopPaletteSync(); };
     } catch (err) {
       console.error('Brand editor failed to mount:', err);
       mount.innerHTML = '<p class="cat-empty">The brand editor is unavailable right now.</p>';

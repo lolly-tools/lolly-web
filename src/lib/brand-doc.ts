@@ -97,7 +97,10 @@ function toSwatch(path: string[], raw: string, desc: unknown, resolve?: (key: st
   let group = prettify(path[path.length - 2] ?? 'Colour');
   let deletable = true;
   if (at('ramp') >= 0) {
-    kind = 'ramp'; deletable = false;
+    // Ramp steps (primary/neutral/secondary shades) are user-deletable — the shade
+    // count is theirs to shape (a semantic role aliasing a deleted step just falls
+    // back to a blank chip until re-derived, same as any dangling alias).
+    kind = 'ramp'; deletable = true;
     group = prettify(path[at('ramp') + 1] ?? 'Ramp');
   } else if (at('spectrum') >= 0) { kind = 'spectrum'; group = 'Spectrum'; }
   else if (at('custom') >= 0) { kind = 'custom'; group = 'Custom'; }

@@ -75,11 +75,13 @@ test('the theme argument selects which set’s roles surface', () => {
   assert.notEqual(surfL.hex.toLowerCase(), surfD.hex.toLowerCase());
 });
 
-test('ramps + roles are structural (not deletable); spectrum + custom are the user’s', () => {
+test('roles are structural (not deletable); ramps, spectrum + custom are the user’s', () => {
   const doc = load();
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
-  assert.ok(s.filter(x => x.kind === 'ramp').every(x => !x.deletable));
+  // Semantic roles are the fixed contract slots — never deletable.
   assert.ok(s.filter(x => x.kind === 'semantic').every(x => !x.deletable));
+  // Ramp steps ARE user-deletable now (the user shapes their own shade set).
+  assert.ok(s.filter(x => x.kind === 'ramp').every(x => x.deletable));
   assert.ok(s.filter(x => x.kind === 'spectrum').every(x => x.deletable));
 });
 

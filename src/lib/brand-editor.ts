@@ -265,7 +265,13 @@ function paletteHtml(swatches: BrandSwatch[]): string {
  * Render the brand editor into `root` and wire it. Returns a teardown that stops
  * the (font/preview) listeners. Locked builds render a read-only note and no-op.
  */
-export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Promise<() => void> {
+/** teardown: unmount. saveDraft: commit the Colour panel's pending, unsaved
+ *  derive (a no-op when there's nothing dirty) — for a host that wants an
+ *  explicit "finish up" action instead of leaving an unsaved draft to be
+ *  silently discarded on teardown (see the bottom of this function). */
+export interface BrandEditorHandle { teardown: () => void; saveDraft: () => void }
+
+export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Promise<BrandEditorHandle> {
   const tokens = host.tokens as unknown as WebTokensAPI | undefined;
   const fontsHost = host as unknown as UserFontsHost;
   const transferHost = { host: host as unknown as BrandTransferHost, storage: localStorage };
@@ -274,7 +280,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   try { locked = !!(await tokens?.isLocked?.()); } catch { /* treat as unlocked */ }
   if (locked) {
     root.innerHTML = `<p class="be-locked">This build ships with a fixed brand — its colours, fonts and tokens are what the whole app, your tools and every export wear. Brand editing is turned off here.</p>`;
-    return () => {};
+    return { teardown: () => {}, saveDraft: () => {} };
   }
 
   // The document we edit: the installed brand if any, else a fresh derive from
@@ -363,7 +369,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
 
       <div class="be-panel be-logos">
         <div class="be-panel-head"><h3 class="be-panel-title">Logo</h3>
-          <p class="be-panel-sub">Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary full-colour, mono, and reverse for dark backgrounds). Every slot is optional and independent. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.</p></div>
+          <p class="be-panel-sub">Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds). Every slot is optional and independent. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.</p></div>
         <div class="be-logo-grid" data-be-logos></div>
         <p class="be-err" data-be-logo-err hidden></p>
       </div>
@@ -618,7 +624,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   /** (Re)build the visual colour field on a hex, wiring its live onChange. */
   const renderEditField = (hex: string): void => {
     const mountEl = editorEl?.querySelector<HTMLElement>('[data-be-editor-color]'); if (!mountEl) return;
-    mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', { block: true });
+    // Inline (not block): the sliders + swatches sit in the editor card's flow
+    // instead of a floating popover that overlapped the value/name rows below.
+    mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', { inline: true });
     wireColorField(mountEl, {
       onChange: (id, value) => {
         if (id !== 'be-edit-color') return;
@@ -667,7 +675,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     delBtn.hidden = !s.deletable;
     // Position the popover under the tile, clamped to the editor box.
     const r = tile.getBoundingClientRect(), pr = root.getBoundingClientRect();
-    editorEl.style.left = `${Math.min(Math.max(8, r.left - pr.left), pr.width - 280)}px`;
+    editorEl.style.left = `${Math.min(Math.max(8, r.left - pr.left), pr.width - 308)}px`;
     editorEl.style.top = `${r.bottom - pr.top + 8}px`;
     editorEl.hidden = false;
     nameInput.focus();
@@ -927,10 +935,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     } catch (err) { if (shareErr) { shareErr.textContent = String((err as { message?: unknown })?.message ?? err); shareErr.hidden = false; } }
   });
 
-  return () => {
-    clearTimeout(saveTimer); cleanups.forEach(fn => fn());
-    // A live-previewed but unsaved colour draft must not outlive the editor —
-    // restore the chrome accent from whatever's actually installed.
-    void applyChromeBrandVars(host);
+  return {
+    teardown: () => {
+      clearTimeout(saveTimer); cleanups.forEach(fn => fn());
+      // A live-previewed but unsaved colour draft must not outlive the editor —
+      // restore the chrome accent from whatever's actually installed (unless
+      // the caller already committed it via saveDraft() first).
+      void applyChromeBrandVars(host);
+    },
+    saveDraft: () => { if (saveBtn && !saveBtn.hidden) persist(true); },
   };
 }
