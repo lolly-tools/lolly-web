@@ -447,7 +447,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     showFontErr(''); const prev = btn.textContent;
     btn.disabled = input.disabled = true; btn.textContent = 'Downloading…';
     try { const fam = await installGoogleFont(fontsHost, family); input.value = ''; playSfx('saveProfile'); await paintFonts(); announce(`Added ${fam.family}${fam.primary ? ' as your primary font' : ''}`); }
-    catch (err) { showFontErr(String((err as { message?: unknown })?.message ?? err)); }
+    // Clear on failure too — otherwise the failed attempt's text blocks searching
+    // for a different font until manually cleared (matches the success path above).
+    catch (err) { showFontErr(String((err as { message?: unknown })?.message ?? err)); input.value = ''; }
     btn.textContent = prev; btn.disabled = input.disabled = false; input.focus();
   });
   $('[data-be-fonts]')?.addEventListener('click', async (e) => {

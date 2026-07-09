@@ -25,7 +25,7 @@
  *   device    → lib/device-info.ts        (live session snapshot)
  *   activity  → metrics.ts + lib/activity-summary.ts
  *   storage   → navigator.storage + host.state / host.assets measurers
- *   palette   → src/palette.ts (PALETTE) via lib/swatches.ts
+ *   palette   → lib/live-palette.ts (host.tokens, falls back to src/palette.ts) via lib/swatches.ts
  *   catalogue → window.__toolIndex + /catalog/assets/index.json
  *   caps      → lib/capabilities-data.ts
  *   CMYK      → engine/src/color.ts (CMYK_CONDITIONS)
@@ -42,8 +42,8 @@ import { renderPaletteWheel, wirePaletteWheel } from '../lib/palette-wheel.ts';
 import { renderTypeDemo, wireTypeDemo, activeFaces } from '../lib/type-demo.ts';
 import { catalogSummaryBody, hydrateCatalogAssets } from '../lib/catalog-summary.ts';
 import type { CatalogTool } from '../lib/catalog-summary.ts';
-import { PALETTE } from '../palette.ts';
 import type { PaletteEntry } from '../palette.ts';
+import { livePalette } from '../lib/live-palette.ts';
 import { groupPalette, swatch, isTransparent, cmykText } from '../lib/swatches.ts';
 import { THEMES, THEME_LABELS, currentTheme, applyTheme } from '../theme.ts';
 import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
@@ -127,9 +127,9 @@ function inkGroup(label: string, cols: readonly PaletteEntry[], count = false): 
     </div>`;
 }
 
-function paletteSection(): string {
-  const { brand, spectrum, ramps } = groupPalette(PALETTE);
-  const measuredCount = PALETTE.filter((c) => Array.isArray(c.cmyk)).length;
+function paletteSection(palette: readonly PaletteEntry[]): string {
+  const { brand, spectrum, ramps } = groupPalette(palette);
+  const measuredCount = palette.filter((c) => Array.isArray(c.cmyk)).length;
 
   const ribbon = `
     <div class="dash-ribbon" data-ribbon>
@@ -148,7 +148,7 @@ function paletteSection(): string {
   // hex / CMYK figure is ever hidden, only tucked away.
   const fullGrid = `
     <details class="dash-values">
-      <summary class="dash-values-summary">All values<span class="dash-values-n">${PALETTE.length}</span>${COLLAPSE_CHEV}</summary>
+      <summary class="dash-values-summary">All values<span class="dash-values-n">${palette.length}</span>${COLLAPSE_CHEV}</summary>
       <div class="dash-values-body">
         <div class="plat-legend">
           <span class="plat-legend-item"><span class="plat-chip-flag is-static">CMYK</span> exact ink substitution</span>
@@ -168,7 +168,7 @@ function paletteSection(): string {
     id: 'dash-palette',
     flag: 'color colour colours',
     title: 'Colour palette',
-    desc: `Shown in every colour picker. <strong>${measuredCount} of ${PALETTE.length}</strong> carry measured CMYK ink values, substituted directly into CMYK PDF exports — the tick on a bar marks one.`,
+    desc: `Shown in every colour picker. <strong>${measuredCount} of ${palette.length}</strong> carry measured CMYK ink values, substituted directly into CMYK PDF exports — the tick on a bar marks one.`,
     body: `${ribbon}${fullGrid}`,
     half: true,
   });
@@ -425,6 +425,11 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
   const capsHtml = await capabilitiesSection();
 
+  // The active brand's palette (SUSE's measured inks, or whichever catalog is
+  // mounted) — not the tokenless PALETTE fallback, so this page always shows
+  // the profile that's actually running. See lib/live-palette.ts.
+  const palette = await livePalette(host);
+
   // The whole palette on the wheel, each dot labelled with its canonical scale-token name
   // — jungle-6, pine-2, persimmon-5 — not the display label ("Jungle 6"). The tint ramps
   // (jungle-1..8, pine-1..8, …) are what carry those numbered tokens, so they're plotted
@@ -437,7 +442,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   const familyOf = (name: string): string => name.replace(/-\d+$/, '');                  // "jungle-6" → "jungle"
   const isScaleToken = (name: string): boolean => /-\d+$/.test(name);
   const byHex = new Map<string, { hex: string; label: string }>();
-  for (const c of PALETTE) {
+  for (const c of palette) {
     if (isTransparent(c.hex)) continue;
     const key = c.hex.toLowerCase();
     const name = tokenName(c.label);
@@ -518,7 +523,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       })}
 
       <div class="dash-row dash-row--2">
-        ${paletteSection()}
+        ${paletteSection(palette)}
         ${collapse({
           id: 'dash-catalogue',
           flag: 'catalog catalogue',

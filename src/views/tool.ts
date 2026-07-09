@@ -30,7 +30,7 @@ import { navigateTo } from '../nav.ts';
 import { toolSupport, capabilityLabel, CAPTURE_EXTENSION_URL } from '../capabilities.ts';
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
-import { PALETTE } from '../palette.ts';
+import { livePalette } from '../lib/live-palette.ts';
 import { setSwatches, colorFieldHtml, wireColorField, fixedContainingBlockOrigin } from '../components/color-field.ts';
 import { askLollyIntent } from './picker.ts';
 import { applyBrandVars } from '../brand-vars.ts';
@@ -2296,8 +2296,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       pendingAutoExport = false;
       const fmt = urlFormat || tool.manifest.render.formats[0]!;
       // Brand vars land async (tokens fetch) — await them alongside quiescence so
-      // a deep-link export captures the branded canvas, not the fallbacks.
-      Promise.all([waitForQuiescence(contentEl), brandVarsReady]).then(() => {
+      // a deep-link export captures the branded canvas, not the fallbacks. The live
+      // palette (for CMYK ink substitution) is the same tokens fetch, so it rides
+      // along rather than adding its own wait.
+      Promise.all([waitForQuiescence(contentEl), brandVarsReady, livePalette(host)]).then(([, , palette]) => {
         const name = urlFilename || tool.manifest.id;
         // Honour ?unit=/?dpi= so a deep link (or CLI) renders the right physical size.
         const u = urlUnit || 'px';
@@ -2309,7 +2311,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // brand palette for exact ink matches; the TIFF does a flat per-pixel pass.
         if (isCmykFmt(fmt)) {
           expOpts.colorProfile = urlProfile || DEFAULT_CMYK_CONDITION;
-          if (fmt === 'pdf-cmyk') expOpts.palette = PALETTE;
+          if (fmt === 'pdf-cmyk') expOpts.palette = palette;
         }
         // HTML: honour ?nostage so a deep link auto-exports the full-page document
         // (no fixed-size canvas frame) — mirrors the panel's "Full page" toggle.

@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFontFamilies, parseUnicodeRange, rangesCover, pickFace } from './font-registry.ts';
+import { parseFontFamilies, parseUnicodeRange, rangesCover, coverageCount, pickFaces } from './font-registry.ts';
 
 // ── parseFontFamilies ────────────────────────────────────────────────────────
 
@@ -56,56 +56,96 @@ test('astral codepoints are read whole (surrogate pairs), not per unit', () => {
   assert.equal(rangesCover(bmp, '😀'), false); // U+1F600 sits above the BMP
 });
 
-// ── pickFace ─────────────────────────────────────────────────────────────────
+test('coverageCount ranks faces by how much of the run they can draw', () => {
+  const latin = parseUnicodeRange('U+0000-00FF');
+  const ext   = parseUnicodeRange('U+0100-024F');
+  assert.equal(coverageCount(latin, 'Łódź'), 2);   // ó, d
+  assert.equal(coverageCount(ext,   'Łódź'), 2);   // Ł, ź
+  assert.equal(coverageCount(latin, 'Hello World'), 10);  // the space doesn't count
+  assert.equal(coverageCount(ext,   'Hello World'), 0);
+  assert.equal(coverageCount([],    'Łódź'), 4);   // unsubsetted face draws it all
+});
 
-const face = (o: Partial<Parameters<typeof pickFace>[0][number]>) => ({
+// ── pickFaces ────────────────────────────────────────────────────────────────
+
+type Face = Parameters<typeof pickFaces>[0][number];
+const face = (o: Partial<Face>): Face => ({
   assetId: 'a', staticUrl: '', weight: '400', style: 'normal', unicodeRange: '', ...o,
-} as Parameters<typeof pickFace>[0][number]);
+} as Face);
 
-test('a variable face wins and carries the run weight as a wght axis', () => {
-  const faces = [face({ weight: '100 900' })];
-  const hit = pickFace(faces, { fontFamily: 'X', fontWeight: '700' }, 'Hi');
-  assert.deepEqual(hit?.variations, ['wght=700']);
+const LATIN = 'U+0000-00FF';
+const EXT   = 'U+0100-024F';
+
+test('a variable face carries the run weight as a wght axis', () => {
+  const chain = pickFaces([face({ weight: '100 900' })], { fontFamily: 'X', fontWeight: '700' }, 'Hi');
+  assert.equal(chain.length, 1);
+  assert.deepEqual(chain[0]!.variations, ['wght=700']);
 });
 
 test('the wght axis is clamped to the face range', () => {
-  const faces = [face({ weight: '300 600' })];
-  assert.deepEqual(pickFace(faces, { fontFamily: 'X', fontWeight: '900' }, 'Hi')?.variations, ['wght=600']);
-  assert.deepEqual(pickFace(faces, { fontFamily: 'X', fontWeight: '100' }, 'Hi')?.variations, ['wght=300']);
+  const f = [face({ weight: '300 600' })];
+  assert.deepEqual(pickFaces(f, { fontFamily: 'X', fontWeight: '900' }, 'Hi')[0]!.variations, ['wght=600']);
+  assert.deepEqual(pickFaces(f, { fontFamily: 'X', fontWeight: '100' }, 'Hi')[0]!.variations, ['wght=300']);
 });
 
-test('static faces: the nearest weight wins, with no variations', () => {
+test('static faces: the nearest weight wins and the other weights are dropped', () => {
   const faces = [face({ assetId: 'r', weight: '400' }), face({ assetId: 'b', weight: '700' })];
-  const bold = pickFace(faces, { fontFamily: 'X', fontWeight: '600' }, 'Hi');
-  assert.equal(bold?.face.assetId, 'b');
-  assert.equal(bold?.variations, undefined);
-  assert.equal(pickFace(faces, { fontFamily: 'X', fontWeight: '500' }, 'Hi')?.face.assetId, 'r');
+  const bold = pickFaces(faces, { fontFamily: 'X', fontWeight: '600' }, 'Hi');
+  assert.deepEqual(bold.map(c => c.face.assetId), ['b']);   // never falls back into regular
+  assert.equal(bold[0]!.variations, undefined);
+  assert.deepEqual(pickFaces(faces, { fontFamily: 'X', fontWeight: '500' }, 'Hi').map(c => c.face.assetId), ['r']);
+  assert.deepEqual(pickFaces(faces, { fontFamily: 'X' }, 'Hi').map(c => c.face.assetId), ['r']); // default 400
 });
 
-test('missing weight defaults to 400', () => {
-  const faces = [face({ assetId: 'r', weight: '400' }), face({ assetId: 'b', weight: '700' })];
-  assert.equal(pickFace(faces, { fontFamily: 'X' }, 'Hi')?.face.assetId, 'r');
-});
-
-test('the face is chosen by unicode coverage of the actual run', () => {
+test('a static family keeps BOTH subsets of the chosen weight in the chain', () => {
   const faces = [
-    face({ assetId: 'latin', weight: '100 900', unicodeRange: 'U+0000-00FF' }),
-    face({ assetId: 'ext', weight: '100 900', unicodeRange: 'U+0100-024F' }),
+    face({ assetId: 'r-latin', weight: '400', unicodeRange: LATIN }),
+    face({ assetId: 'r-ext',   weight: '400', unicodeRange: EXT }),
+    face({ assetId: 'b-latin', weight: '700', unicodeRange: LATIN }),
+    face({ assetId: 'b-ext',   weight: '700', unicodeRange: EXT }),
   ];
-  assert.equal(pickFace(faces, { fontFamily: 'X' }, 'Hello')?.face.assetId, 'latin');
-  assert.equal(pickFace(faces, { fontFamily: 'X' }, 'Ĳssel')?.face.assetId, 'ext');
-  // A run straddling both subsets has no single covering face → caller falls back.
-  assert.equal(pickFace(faces, { fontFamily: 'X' }, 'HelloĲ'), null);
+  assert.deepEqual(
+    pickFaces(faces, { fontFamily: 'X', fontWeight: '700' }, 'Łódź').map(c => c.face.assetId).sort(),
+    ['b-ext', 'b-latin'],
+  );
+});
+
+test('the chain leads with the face covering most of the run', () => {
+  const faces = [
+    face({ assetId: 'latin', weight: '100 900', unicodeRange: LATIN }),
+    face({ assetId: 'ext',   weight: '100 900', unicodeRange: EXT }),
+  ];
+  // Pure ASCII: the ext subset draws nothing, so it never enters the chain.
+  assert.deepEqual(pickFaces(faces, { fontFamily: 'X' }, 'Hello').map(c => c.face.assetId), ['latin']);
+  // Mostly ext: ext leads, latin follows for the ASCII tail.
+  assert.deepEqual(pickFaces(faces, { fontFamily: 'X' }, 'ĲĲĲa').map(c => c.face.assetId), ['ext', 'latin']);
+  // A mixed run keeps both — the disjoint subsets each carry half of "Łódź".
+  assert.equal(pickFaces(faces, { fontFamily: 'X' }, 'Łódź').length, 2);
+});
+
+test('every face in the chain carries its own axis settings', () => {
+  const faces = [
+    face({ assetId: 'latin', weight: '100 900', unicodeRange: LATIN }),
+    face({ assetId: 'ext',   weight: '100 900', unicodeRange: EXT }),
+  ];
+  for (const c of pickFaces(faces, { fontFamily: 'X', fontWeight: '600' }, 'Łódź')) {
+    assert.deepEqual(c.variations, ['wght=600']);
+  }
 });
 
 test('italic runs never borrow an upright face (they would un-slant silently)', () => {
   const faces = [face({ weight: '100 900', style: 'normal' })];
-  assert.equal(pickFace(faces, { fontFamily: 'X', fontStyle: 'italic' }, 'Hi'), null);
-  assert.equal(pickFace(faces, { fontFamily: 'X', fontStyle: 'oblique' }, 'Hi'), null);
-  assert.ok(pickFace(faces, { fontFamily: 'X', fontStyle: 'normal' }, 'Hi'));
+  assert.deepEqual(pickFaces(faces, { fontFamily: 'X', fontStyle: 'italic' }, 'Hi'), []);
+  assert.deepEqual(pickFaces(faces, { fontFamily: 'X', fontStyle: 'oblique' }, 'Hi'), []);
+  assert.equal(pickFaces(faces, { fontFamily: 'X', fontStyle: 'normal' }, 'Hi').length, 1);
 });
 
 test('an italic face serves an italic run', () => {
   const faces = [face({ assetId: 'i', weight: '400', style: 'italic' })];
-  assert.equal(pickFace(faces, { fontFamily: 'X', fontStyle: 'italic' }, 'Hi')?.face.assetId, 'i');
+  assert.equal(pickFaces(faces, { fontFamily: 'X', fontStyle: 'italic' }, 'Hi')[0]!.face.assetId, 'i');
+});
+
+test('a run no face can draw yields an empty chain (caller keeps <text>)', () => {
+  const faces = [face({ weight: '100 900', unicodeRange: LATIN })];
+  assert.deepEqual(pickFaces(faces, { fontFamily: 'X' }, '漢字'), []);
 });

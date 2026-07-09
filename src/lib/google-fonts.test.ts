@@ -61,8 +61,28 @@ test('keepFaces keeps everything when css names no subsets', () => {
   assert.equal(kept[0]!.weight, '400');
 });
 
-test('non-woff2 sources are skipped (legacy ttf fallback css)', () => {
+test('legacy ttf responses are accepted (format:"truetype" recorded) — css2 serves this whenever it doesn\'t recognise the request as a modern browser, and discarding the whole family would make it undownloadable for no reason', () => {
   const css = `@font-face { font-family: 'Old'; src: url(https://fonts.gstatic.com/s/old/a.ttf) format('truetype'); }`;
+  const faces = parseGoogleFontCss(css);
+  assert.equal(faces.length, 1);
+  assert.equal(faces[0]!.format, 'truetype');
+  assert.equal(faces[0]!.url, 'https://fonts.gstatic.com/s/old/a.ttf');
+});
+
+test('otf responses are accepted too (format:"opentype")', () => {
+  const css = `@font-face { font-family: 'Old'; src: url(https://fonts.gstatic.com/s/old/a.otf) format('opentype'); }`;
+  const faces = parseGoogleFontCss(css);
+  assert.equal(faces.length, 1);
+  assert.equal(faces[0]!.format, 'opentype');
+});
+
+test('woff2 responses record format:"woff2"', () => {
+  const kept = keepFaces(parseGoogleFontCss(CSS_VARIABLE));
+  assert.ok(kept.every(f => f.format === 'woff2'));
+});
+
+test('an unrecognised extension (e.g. eot) is skipped — we truly can\'t use it', () => {
+  const css = `@font-face { font-family: 'Old'; src: url(https://fonts.gstatic.com/s/old/a.eot) format('embedded-opentype'); }`;
   assert.equal(parseGoogleFontCss(css).length, 0);
 });
 

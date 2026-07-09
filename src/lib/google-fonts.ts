@@ -1,24 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Google Fonts — fetch a family's css2 stylesheet and resolve it to a set of
- * downloadable woff2 files, so a chosen face can be stored ON-DEVICE (as
- * `type:'font'` user assets) and served from IndexedDB forever after. The
- * network is touched exactly once per family — at add time; from then on the
- * face is local, offline, and travels in the data backup like any user asset.
+ * downloadable font files (woff2 when the request is recognised as a modern
+ * browser, truetype/opentype otherwise — see FONT_EXT_FORMAT below), so a
+ * chosen face can be stored ON-DEVICE (as `type:'font'` user assets) and
+ * served from IndexedDB forever after. The network is touched exactly once
+ * per family — at add time; from then on the face is local, offline, and
+ * travels in the data backup like any user asset.
  *
  * Scope decisions (deliberate):
  *   - latin + latin-ext subsets only — matches the shell's own Outfit build
  *     (shells/web/public/fonts/) and keeps a family to a few hundred KB.
- *   - The variable-width axis when the family has one (wght@100..900), else
- *     regular + bold statics, else whatever single style the family ships.
- *     Italics are skipped in v1 (double the payload for a rarely-used axis).
+ *   - Upright AND italic (`ital@0;1`). A family with no italic simply returns
+ *     upright faces — css2 ignores the slant rather than erroring — so asking
+ *     always is free. Without the real italic face an italic run cannot be
+ *     outlined at all (an upright outline would silently un-slant the text).
+ *   - The variable `wght` axis whenever the family has one, at its TRUE range
+ *     (see resolveFamilySpec): css2 rejects a range the family doesn't cover,
+ *     and its 400 body is a generic error page, so the range is discovered by
+ *     probing. Families with no axis fall back to their static weights.
  *   - Licensing: everything on Google Fonts is OFL/Apache/UFL — free to
  *     download, embed and redistribute; the css2 endpoint and fonts.gstatic.com
  *     both serve CORS `*`, and the service worker ignores cross-origin URLs,
  *     so a plain fetch works. The font's own licence rides along in meta.
  *
- * The css2 parser is pure and exported for tests; only fetchGoogleFont touches
- * the network.
+ * The css2 parser and the spec builders are pure and exported for tests; only
+ * fetchGoogleFont and resolveFamilySpec touch the network.
  */
 
 /** One @font-face block resolved out of a css2 response. */
@@ -28,7 +35,8 @@ export interface GoogleFontFace {
   weight: string;         // '400' or a variable range '100 900'
   subset: string;         // 'latin', 'latin-ext', … (from the preceding comment)
   unicodeRange: string;   // the block's unicode-range, verbatim ('' if absent)
-  url: string;            // the woff2 file on fonts.gstatic.com
+  url: string;            // the font file on fonts.gstatic.com
+  format: 'woff2' | 'truetype' | 'opentype'; // actual format served (see FONT_EXT_FORMAT)
 }
 
 /** A downloaded face: the parsed descriptor plus its bytes. */
@@ -46,11 +54,25 @@ const CSS2 = 'https://fonts.googleapis.com/css2';
 // safety gate before the name lands in a CSS font-family value or an asset id.
 export const GOOGLE_FAMILY_RE = /^[A-Za-z0-9][A-Za-z0-9 ]{0,63}$/;
 
+// css2 serves woff2 only when it recognises the request as a modern browser —
+// a UA it doesn't recognise (an unusual/locked-down browser, a privacy
+// extension that normalises the UA header on cross-origin requests, a proxy)
+// gets the SAME @font-face data back as legacy truetype instead. That's the
+// entire response format for every face, not a mix — so accepting whichever
+// format actually came back (rather than discarding the whole family) is what
+// makes a family reliably downloadable regardless of the requester's UA. The
+// vector-export path (bridge/font-registry.ts) already sniffs the stored
+// bytes' own magic number rather than trusting a format field, so it already
+// handles either shape.
+const FONT_EXT_FORMAT: Record<string, GoogleFontFace['format']> = {
+  woff2: 'woff2', ttf: 'truetype', otf: 'opentype',
+};
+
 /**
  * Parse a css2 response into faces. css2 emits one @font-face block per
  * subset, each preceded by a comment naming it — "latin-ext" then a block
- * with font-family/style/weight, a fonts.gstatic.com woff2 src, and that
- * subset's unicode-range. Pure; exported for tests.
+ * with font-family/style/weight, a fonts.gstatic.com src, and that subset's
+ * unicode-range. Pure; exported for tests.
  */
 export function parseGoogleFontCss(css: string): GoogleFontFace[] {
   const faces: GoogleFontFace[] = [];
@@ -63,7 +85,8 @@ export function parseGoogleFontCss(css: string): GoogleFontFace[] {
     const prop = (name: string): string =>
       new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(body)?.[1]?.trim() ?? '';
     const url = /src\s*:[^;]*url\((['"]?)([^)'"]+)\1\)/.exec(body)?.[2] ?? '';
-    if (!url || !/\.woff2(\?|$)/.test(url)) continue; // woff2 only — no legacy ttf fallbacks
+    const ext = /\.(woff2|ttf|otf)(\?|$)/i.exec(url)?.[1]?.toLowerCase();
+    if (!url || !ext) continue; // an unrecognised format we can't use at all
     faces.push({
       family: prop('font-family').replace(/^['"]|['"]$/g, ''),
       style: prop('font-style') || 'normal',
@@ -71,6 +94,7 @@ export function parseGoogleFontCss(css: string): GoogleFontFace[] {
       subset,
       unicodeRange: prop('unicode-range'),
       url,
+      format: FONT_EXT_FORMAT[ext]!,
     });
   }
   return faces;
@@ -84,21 +108,100 @@ export function keepFaces(faces: GoogleFontFace[]): GoogleFontFace[] {
   return named.filter(f => SUBSETS_KEPT.has(f.subset));
 }
 
-/** css2 axis-spec attempts, best first: the full variable weight range (static
- *  families 400 that request), then regular+bold statics, then the bare family
- *  (single-style faces like Bebas Neue reject explicit weight lists). */
-function specLadder(family: string): string[] {
-  const enc = family.trim().replace(/ /g, '+');
-  return [
-    `${enc}:wght@100..900`,
-    `${enc}:wght@400;700`,
-    enc,
-  ];
+/** The family name as css2 wants it in the `family=` value. */
+export const encodeFamily = (family: string): string => family.trim().replace(/ /g, '+');
+
+/** Both slants across a variable weight range: `Inter:ital,wght@0,100..900;1,100..900`.
+ *  Upright is listed first, so the primary face leads the css2 response. */
+export const variableSpec = (enc: string, lo: number, hi: number): string =>
+  `${enc}:ital,wght@0,${lo}..${hi};1,${lo}..${hi}`;
+
+/**
+ * The non-variable ladder, best first — regular+bold in both slants, then a
+ * single weight in both slants (display faces like Anton ship only 400 and
+ * reject a `700` they don't have), then every style the family has at its
+ * default weight, then the bare family (some faces reject any axis spec).
+ */
+export const staticSpecs = (enc: string): string[] => [
+  `${enc}:ital,wght@0,400;0,700;1,400;1,700`,
+  `${enc}:ital,wght@0,400;1,400`,
+  `${enc}:ital@0;1`,
+  enc,
+];
+
+// Where a Google variable `wght` axis can start and end. Probed low-to-high and
+// high-to-low respectively, so the FIRST hit is the true bound.
+const WGHT_LO_STOPS = [100, 200, 300, 400] as const;
+const WGHT_HI_STOPS = [1000, 900, 800, 700] as const;
+// A weight no static instance is ever named at: only a real variable axis
+// answers 200 for it. (`Anton:wght@450` → 400; `Figtree:wght@450` → 200.)
+const VARIABLE_PROBE_WEIGHT = 450;
+
+/** GET a css2 spec: its text when the API accepts it, null on a 400 (this spec
+ *  doesn't fit the family). Any other status, or a dead network, throws. */
+async function fetchSpec(spec: string, name: string): Promise<string | null> {
+  let resp: Response;
+  try {
+    resp = await fetch(`${CSS2}?family=${spec}&display=swap`);
+  } catch {
+    throw new Error('Couldn’t reach Google Fonts — check your connection and try again.');
+  }
+  if (resp.ok) return resp.text();
+  if (resp.status === 400) return null;
+  throw new Error(`Google Fonts didn't recognise "${name}".`);
+}
+
+/** True when css2 accepts this spec at all (used for the cheap axis probes). */
+async function specOk(spec: string): Promise<boolean> {
+  try {
+    return (await fetch(`${CSS2}?family=${spec}&display=swap`)).ok;
+  } catch { return false; }
 }
 
 /**
- * Fetch + parse + download one family: css2 (first axis spec the API accepts),
- * filter to the kept subsets, then pull every face's woff2 bytes. Throws with a
+ * The variable `wght` range this family actually exposes, or null when it has
+ * no axis. css2 refuses a range that isn't a subrange of the family's own
+ * (`Figtree:wght@100..900` → 400, because Figtree starts at 300) and its error
+ * body is an HTML page, not a machine-readable range — and the metadata
+ * endpoint that would answer this serves no CORS header. So bound-probe with
+ * single-weight requests, which cost ~1 KB each and only run when the widest
+ * range was refused.
+ */
+async function probeWeightRange(enc: string): Promise<{ lo: number; hi: number } | null> {
+  if (!await specOk(`${enc}:wght@${VARIABLE_PROBE_WEIGHT}`)) return null;  // static family
+  let lo: number | null = null;
+  for (const w of WGHT_LO_STOPS) if (await specOk(`${enc}:wght@${w}`)) { lo = w; break; }
+  let hi: number | null = null;
+  for (const w of WGHT_HI_STOPS) if (await specOk(`${enc}:wght@${w}`)) { hi = w; break; }
+  return lo != null && hi != null && hi > lo ? { lo, hi } : null;
+}
+
+/**
+ * The css2 stylesheet for a family, with the widest weight axis and both slants
+ * it supports. Tries the common `100..900` first (one request for most
+ * families), then probes the real axis bounds, then the static ladder.
+ * Returns null when css2 refuses every spec — i.e. no such family.
+ */
+export async function resolveFamilySpec(name: string): Promise<string | null> {
+  const enc = encodeFamily(name);
+  const wide = await fetchSpec(variableSpec(enc, 100, 900), name);
+  if (wide) return wide;
+
+  const range = await probeWeightRange(enc);
+  if (range) {
+    const css = await fetchSpec(variableSpec(enc, range.lo, range.hi), name);
+    if (css) return css;
+  }
+  for (const spec of staticSpecs(enc)) {
+    const css = await fetchSpec(spec, name);
+    if (css) return css;
+  }
+  return null;
+}
+
+/**
+ * Fetch + parse + download one family: css2 (widest axis + both slants), filter
+ * to the kept subsets, then pull every face's bytes. Throws with a
  * user-presentable message when the family doesn't exist or the network is out.
  */
 export async function fetchGoogleFont(family: string): Promise<DownloadedFontFace[]> {
@@ -106,20 +209,7 @@ export async function fetchGoogleFont(family: string): Promise<DownloadedFontFac
   if (!GOOGLE_FAMILY_RE.test(name)) {
     throw new Error(`"${family}" doesn't look like a Google Fonts family name.`);
   }
-  let css = '';
-  for (const spec of specLadder(name)) {
-    let resp: Response;
-    try {
-      resp = await fetch(`${CSS2}?family=${spec}&display=swap`);
-    } catch {
-      throw new Error('Couldn’t reach Google Fonts — check your connection and try again.');
-    }
-    if (resp.ok) { css = await resp.text(); break; }
-    // 400 = this axis spec doesn't fit the family (e.g. not variable) — try the next.
-    if (resp.status !== 400) {
-      throw new Error(`Google Fonts didn't recognise "${name}".`);
-    }
-  }
+  const css = await resolveFamilySpec(name);
   if (!css) throw new Error(`Google Fonts didn't recognise "${name}".`);
 
   const faces = keepFaces(parseGoogleFontCss(css));
