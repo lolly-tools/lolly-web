@@ -23,7 +23,10 @@ export const USER_LOGO_PREFIX = 'user/logo/';
 // slot — you can supply a primary horizontal AND a reverse vertical AND a mono
 // horizontal, etc. The variant key is `<orientation>-<treatment>`.
 export const LOGO_ORIENTATIONS = ['horizontal', 'vertical'] as const;
-export const LOGO_TREATMENTS = ['primary', 'mono', 'reverse'] as const;
+// Each treatment is its own optional slot: full-colour and mono, each with a
+// reverse (dark-background) form. So a brand can carry a primary-reverse and a
+// mono-reverse in both orientations.
+export const LOGO_TREATMENTS = ['primary', 'primary-reverse', 'mono', 'mono-reverse'] as const;
 export type LogoOrientation = typeof LOGO_ORIENTATIONS[number];
 export type LogoTreatment = typeof LOGO_TREATMENTS[number];
 export type LogoVariant = `${LogoOrientation}-${LogoTreatment}`;
@@ -38,9 +41,13 @@ export const ORIENTATION_META: Record<LogoOrientation, { label: string; hint: st
 };
 export const TREATMENT_META: Record<LogoTreatment, { label: string; hint: string }> = {
   primary: { label: 'Primary', hint: 'Full-colour lockup.' },
+  'primary-reverse': { label: 'Primary reverse', hint: 'Full-colour, for dark backgrounds.' },
   mono: { label: 'Mono', hint: 'One-colour mark.' },
-  reverse: { label: 'Reverse', hint: 'Light mark for dark backgrounds.' },
+  'mono-reverse': { label: 'Mono reverse', hint: 'One-colour, for dark backgrounds.' },
 };
+
+/** True when a treatment is a reverse (dark-background) form. */
+export function isReverseTreatment(t: LogoTreatment): boolean { return t.endsWith('reverse'); }
 
 /** Split a variant key back into its two axes. */
 export function splitVariant(v: LogoVariant): { orientation: LogoOrientation; treatment: LogoTreatment } {

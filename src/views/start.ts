@@ -21,18 +21,20 @@
 
 import '../styles/parts/start.css';       // this view's shell/layout (lazy chunk)
 import '../styles/parts/dashboard.css';   // the mounted editor's .be-* styles live here
-import { coerceTokensDoc, summarizeTokensDoc } from '@lolly/engine';
+import { coerceTokensDoc, summarizeTokensDoc, extractPenpotProject, extractSvgColors, deriveBrandTokens } from '@lolly/engine';
 import { installUserTokens } from '../bridge/tokens.ts';
 import { applyChromeBrandVars, brandRadiusValue } from '../brand-vars.ts';
 import { mountBrandEditor } from '../lib/brand-editor.ts';
 import { carryUserFontTokens, setBrandRadius } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
-import { importBrandPack } from '../brand-transfer.ts';
+import { importBrandPack, unzipBrandBytes } from '../brand-transfer.ts';
 import type { BrandTransferHost } from '../brand-transfer.ts';
+import { addSwatch } from '../lib/brand-doc.ts';
 import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-dialog.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
 import { applyTheme } from '../theme.ts';
+import { strFromU8 } from 'fflate';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
 type ViewElement = HTMLElement & { _cleanup?: () => void };
@@ -94,24 +96,25 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
             <p class="be-err" id="start-radius-error" role="alert" hidden></p>
           </section>
 
-          <!-- Already have a brand? Bring a tokens JSON or a Lolly brand file. -->
+          <!-- Already have a brand? Bring a tokens JSON, a Penpot file, an SVG, or a Lolly brand file. -->
           <section class="be-panel start-import" aria-label="Import a brand">
             <div class="be-panel-head"><h3 class="be-panel-title">Already have a brand?</h3>
-              <p class="be-panel-sub">Bring a W3C design-tokens / Tokens Studio JSON export, or a Lolly <strong>brand file</strong> (.zip) someone shared — tokens, fonts, logos and theme in one.</p></div>
+              <p class="be-panel-sub">Bring a W3C design-tokens / Tokens Studio JSON export, a <strong>Penpot</strong> file (its design tokens), an <strong>SVG</strong> (we'll read the colours it uses), or a Lolly <strong>brand file</strong> (.zip) someone shared.</p></div>
             <label class="be-btn start-import-btn">
-              Import tokens or brand file&hellip;
-              <input type="file" class="start-import-file" accept=".json,application/json,.zip,application/zip" hidden>
+              Import a design or brand file&hellip;
+              <input type="file" class="start-import-file" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip" hidden>
             </label>
             <div class="start-import-result" hidden></div>
           </section>
         </div>
       </div>
 
-      <div class="start-done-row">
-        <p class="start-done-note">Everything you set here is saved on this device as your brand — every tool, page and export follows it. Adjust it any time from your dashboard.</p>
-        <a class="start-cta start-done" href="#/">Done — take me to my tools &rarr;</a>
-      </div>
-    </div>`;
+      <p class="start-done-note">Everything you set here is saved on this device as your brand — every tool, page and export follows it. Adjust it any time from your dashboard.</p>
+    </div>
+    <button type="button" class="start-float-cta" id="start-float-save">
+      Save &amp; begin
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+    </button>`;
 
   const importResult = viewEl.querySelector<HTMLElement>('.start-import-result')!;
   const showImportResult = (html: string): void => {
@@ -121,9 +124,9 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
 
   // ── The shared brand editor (fonts · colour · palette · share) ───────────────
   const editorMount = viewEl.querySelector<HTMLElement>('[data-start-editor]')!;
-  let editorTeardown: (() => void) | null = null;
+  let editor: Awaited<ReturnType<typeof mountBrandEditor>> | null = null;
   try {
-    editorTeardown = await mountBrandEditor(editorMount, host as unknown as Parameters<typeof mountBrandEditor>[1]);
+    editor = await mountBrandEditor(editorMount, host as unknown as Parameters<typeof mountBrandEditor>[1]);
   } catch (err) {
     editorMount.innerHTML = `<p class="be-err">Couldn't open the brand editor: ${escape(String((err as { message?: unknown })?.message ?? err))}</p>`;
   }
@@ -181,33 +184,137 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
   let importedDoc: Record<string, unknown> | null = null;
   let importedLabel = 'My brand';
 
+  // Shared "N sets · N themes · N tokens, N colours" blurb — every doc-shaped
+  // import path (JSON tokens, Penpot tokens) shows the same stats before the
+  // user commits.
+  function statLineFor(doc: Record<string, unknown>): string {
+    try {
+      const s = summarizeTokensDoc(doc);
+      return [
+        s.sets.length ? `${s.sets.length} set${s.sets.length === 1 ? '' : 's'}` : null,
+        s.themes.length ? `${s.themes.length} theme${s.themes.length === 1 ? '' : 's'}` : null,
+        `${s.tokenCount} token${s.tokenCount === 1 ? '' : 's'}`,
+        `${s.colorCount} colour${s.colorCount === 1 ? '' : 's'}`,
+      ].filter(Boolean).join(' · ');
+    } catch { return ''; } // stats are decorative — the install button still stands
+  }
+
+  // A tiny local mirror of brand-transfer.ts's private readJson (not exported —
+  // this is the only other place that needs to peek at a zip's manifest before
+  // deciding which importer owns it).
+  function readManifest(files: Record<string, Uint8Array>): { format?: string; type?: string } | null {
+    const bytes = files['manifest.json'];
+    if (!bytes) return null;
+    try { return JSON.parse(strFromU8(bytes)); } catch { return null; }
+  }
+
   importFile.addEventListener('change', async () => {
     const file = importFile.files?.[0];
     importFile.value = ''; // so re-picking the same file re-fires change
     if (!file) return;
     importedDoc = null;
 
-    // A .zip is a Lolly BRAND FILE (brand-transfer.ts): tokens + fonts + theme,
-    // installed in one step — no preview/confirm leg like the raw-tokens path,
-    // because the pack was exported by Lolly and carries its own integrity map.
-    if (/\.zip$/i.test(file.name) || file.type === 'application/zip') {
-      if (file.size > 64 * 1024 * 1024) {
-        showImportResult(`<p class="start-import-err">${escape(file.name)} is too large for a brand file (max 64 MB).</p>`);
+    // SVG has no formal-token concept — every colour it uses is "not a token",
+    // so scan for what's actually there and let the user pick which to keep
+    // (see the checkbox review below) rather than treating every incidental
+    // fill as part of the brand.
+    if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') {
+      if (file.size > 10 * 1024 * 1024) {
+        showImportResult(`<p class="start-import-err">${escape(file.name)} is too large for an SVG scan (max 10 MB).</p>`);
         return;
       }
-      showImportResult(`<p class="start-import-stats">Loading ${escape(file.name)}…</p>`);
+      let svgColors: string[] = [];
       try {
-        const summary = await importBrandPack(
-          { host: host as unknown as BrandTransferHost, storage: localStorage },
-          await file.arrayBuffer());
-        applyTheme(localStorage.getItem('theme') || 'light');
-        markWelcomeDismissed();
-        closeWelcomeDialog();
-        announce(`Brand loaded — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}${summary.tokens ? ', tokens installed' : ''}`);
-        if (viewEl.isConnected) window.location.hash = '#/'; // land on the freshly-branded gallery
+        svgColors = extractSvgColors(await file.text());
+      } catch {
+        showImportResult(`<p class="start-import-err">Couldn't read ${escape(file.name)} as SVG.</p>`);
+        return;
+      }
+      if (!svgColors.length) {
+        showImportResult(`<p class="start-import-err">No colours found in ${escape(file.name)}.</p>`);
+        return;
+      }
+      importedLabel = file.name.replace(/\.svg$/i, '') || 'My brand';
+      showImportResult(`
+        <p class="start-import-name">${escape(file.name)}<span class="start-import-source">colours in use</span></p>
+        <p class="start-import-warn">Found ${svgColors.length} colour${svgColors.length === 1 ? '' : 's'} — none are linked to a design token, so review and drop any you don't want. The first one kept becomes your main brand colour.</p>
+        <div class="start-color-actions">
+          <button type="button" class="be-btn be-btn--sm" data-colors-all>Select all</button>
+          <button type="button" class="be-btn be-btn--sm" data-colors-none>Select none</button>
+        </div>
+        <ul class="start-color-grid" role="list">
+          ${svgColors.map((hex, i) => `
+            <li class="start-color-chip">
+              <label>
+                <input type="checkbox" data-color-idx="${i}" checked>
+                <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
+                <span class="start-color-hex">${escape(hex)}</span>
+              </label>
+            </li>`).join('')}
+        </ul>
+        <button type="button" class="be-cta start-cta--import" data-install-colors disabled>Use these colours</button>`);
+      // The colour-review path builds its doc lazily from whichever boxes are
+      // still checked at click time (see data-install-colors below) rather
+      // than from importedDoc/data-install-import.
+      return;
+    }
+
+    // A zip archive is either a Lolly BRAND FILE (tokens + fonts + theme,
+    // installed in one step — no preview leg, because the pack carries its own
+    // integrity map) or a Penpot project export (its FORMAL design tokens only
+    // — Penpot shape/layer fills that aren't tied to a token are out of scope
+    // here, same "prefer tokens" stance as the SVG path's opposite case).
+    // Sniff the manifest once to route between the two; a .penpot file is a
+    // zip archive under a different extension.
+    if (/\.(zip|penpot)$/i.test(file.name) || file.type === 'application/zip') {
+      if (file.size > 64 * 1024 * 1024) {
+        showImportResult(`<p class="start-import-err">${escape(file.name)} is too large (max 64 MB).</p>`);
+        return;
+      }
+      let files: Record<string, Uint8Array>;
+      try {
+        files = await unzipBrandBytes(await file.arrayBuffer());
       } catch (err) {
         showImportResult(`<p class="start-import-err">${escape(String((err as { message?: unknown })?.message ?? err))}</p>`);
+        return;
       }
+      const manifest = readManifest(files);
+
+      if (manifest?.format === 'lolly-brand') {
+        showImportResult(`<p class="start-import-stats">Loading ${escape(file.name)}…</p>`);
+        try {
+          const summary = await importBrandPack(
+            { host: host as unknown as BrandTransferHost, storage: localStorage },
+            await file.arrayBuffer());
+          applyTheme(localStorage.getItem('theme') || 'light');
+          markWelcomeDismissed();
+          closeWelcomeDialog();
+          announce(`Brand loaded — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}${summary.tokens ? ', tokens installed' : ''}`);
+          if (viewEl.isConnected) window.location.hash = '#/'; // land on the freshly-branded gallery
+        } catch (err) {
+          showImportResult(`<p class="start-import-err">${escape(String((err as { message?: unknown })?.message ?? err))}</p>`);
+        }
+        return;
+      }
+
+      if (manifest?.type === 'penpot/export-files') {
+        const { doc, warnings } = extractPenpotProject(files);
+        if (!doc) {
+          showImportResult(`<p class="start-import-err">No design tokens found in ${escape(file.name)}${warnings[0] ? ` — ${escape(warnings[0])}` : ''}. Try exporting an SVG instead so we can read its colours.</p>`);
+          return;
+        }
+        importedDoc = doc;
+        importedLabel = file.name.replace(/\.(penpot|zip)$/i, '') || 'My brand';
+        const statLine = statLineFor(doc);
+        showImportResult(`
+          <p class="start-import-name">${escape(file.name)}<span class="start-import-source">penpot tokens</span></p>
+          ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
+          ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
+          <button type="button" class="be-cta start-cta--import" data-install-import>Install these tokens</button>`);
+        return;
+      }
+
+      showImportResult(`<p class="start-import-err">${escape(file.name)} isn't a brand file or a Penpot export we recognise.</p>`);
       return;
     }
 
@@ -231,16 +338,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     }
     importedDoc = doc;
     importedLabel = file.name.replace(/\.json$/i, '') || 'My brand';
-    let statLine = '';
-    try {
-      const s = summarizeTokensDoc(doc);
-      statLine = [
-        s.sets.length ? `${s.sets.length} set${s.sets.length === 1 ? '' : 's'}` : null,
-        s.themes.length ? `${s.themes.length} theme${s.themes.length === 1 ? '' : 's'}` : null,
-        `${s.tokenCount} token${s.tokenCount === 1 ? '' : 's'}`,
-        `${s.colorCount} colour${s.colorCount === 1 ? '' : 's'}`,
-      ].filter(Boolean).join(' · ');
-    } catch { /* stats are decorative — the install button still stands */ }
+    const statLine = statLineFor(doc);
     showImportResult(`
       <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${escape(source)}</span></p>
       ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
@@ -248,10 +346,54 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
       <button type="button" class="be-cta start-cta--import" data-install-import>Install these tokens</button>`);
   });
 
+  // Colour-review checkboxes (the SVG path): select all/none, enable "Use
+  // these colours" only while at least one is checked, and build the doc from
+  // whatever's checked at click time.
+  importResult.addEventListener('input', (e) => {
+    if (!(e.target as HTMLElement).matches('[data-color-idx]')) return;
+    const installBtn = importResult.querySelector<HTMLButtonElement>('[data-install-colors]');
+    const anyChecked = !!importResult.querySelector('[data-color-idx]:checked');
+    if (installBtn) installBtn.disabled = !anyChecked;
+  });
+  importResult.addEventListener('click', (e) => {
+    const all = (e.target as HTMLElement).closest('[data-colors-all]');
+    const none = (e.target as HTMLElement).closest('[data-colors-none]');
+    if (!all && !none) return;
+    importResult.querySelectorAll<HTMLInputElement>('[data-color-idx]').forEach(cb => { cb.checked = !!all; });
+    const installBtn = importResult.querySelector<HTMLButtonElement>('[data-install-colors]');
+    if (installBtn) installBtn.disabled = !all;
+  });
+
   // Delegated: the install button is re-created with every result render.
   importResult.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-install-import]');
-    if (btn && importedDoc) void install(importedDoc, importedLabel, btn);
+    const importBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-install-import]');
+    if (importBtn && importedDoc) { void install(importedDoc, importedLabel, importBtn); return; }
+
+    const colorsBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-install-colors]');
+    if (!colorsBtn) return;
+    const swatches = importResult.querySelectorAll<HTMLElement>('.start-color-chip');
+    const kept: string[] = [];
+    swatches.forEach(li => {
+      const cb = li.querySelector<HTMLInputElement>('[data-color-idx]');
+      const hex = li.querySelector<HTMLElement>('.start-color-hex')?.textContent;
+      if (cb?.checked && hex) kept.push(hex);
+    });
+    if (!kept.length) return;
+    const doc = deriveBrandTokens({ primary: kept[0]!, name: importedLabel });
+    kept.slice(1).forEach((hex, i) => addSwatch(doc, 'custom', `Extracted ${i + 2}`, hex));
+    void install(doc, importedLabel, colorsBtn);
+  });
+
+  // ── Floating "Save & begin" — the one explicit way out. Palette/font/logo
+  // edits already persist immediately; saveDraft() covers the one thing that
+  // doesn't — an unsaved Colour-panel derive, which teardown would otherwise
+  // silently discard (see mountBrandEditor). Gives the wizard a single,
+  // always-visible, unmistakable finish line instead of the old inline link
+  // (removed above) plus whatever install button a given import path happens
+  // to be showing.
+  viewEl.querySelector<HTMLButtonElement>('#start-float-save')?.addEventListener('click', () => {
+    editor?.saveDraft();
+    window.location.hash = '#/';
   });
 
   // ── Escape returns to the gallery (colour-popover Escapes stopPropagation at
@@ -264,6 +406,6 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
   document.addEventListener('keydown', onKey);
   (viewEl as ViewElement)._cleanup = () => {
     document.removeEventListener('keydown', onKey);
-    editorTeardown?.();
+    editor?.teardown();
   };
 }
