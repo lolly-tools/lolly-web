@@ -196,7 +196,7 @@
     flex-direction: column;
     align-items: stretch;
     padding: 8px 8px 10px;
-    border-bottom: 1px solid hsl(var(--border));
+    border-bottom: 0;
     flex-shrink: 0;
     gap: 8px;
 
@@ -209,7 +209,7 @@
     -webkit-backdrop-filter: blur(5px);
     backdrop-filter: blur(5px);
     width: 100%;
-    box-shadow: inset 0 -1px #fff1, 0 .1em .6em #0002, 0 .1em .2em #0002;
+    box-shadow: inset 0 -1px #fff1, 0 .1em 2.7em #0001, 0 .1em .2em #0001
 }
 
 /* Top row of the sidebar header: the Tools back pill (left) + undo/redo (right).
@@ -737,7 +737,8 @@
   background-position: right 10px center;
   background-size: 14px;
   color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--border));
+  border: 0;
+  box-shadow: inset 0 1px #fff1, 0 .1rem .3rem #0002;
   border-radius: var(--radius);
   font: inherit;
   font-size: 13px;
@@ -801,17 +802,20 @@
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  border: 1px solid hsl(var(--border));
+  border: 0;
   border-radius: var(--radius);
   background: hsl(var(--background));
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
+    box-shadow: inset 0 1px #fff1,inset 0 .06rem .3rem #0002;
   user-select: none;
 }
 
 .input-row--checkbox:hover {
   border-color: hsl(var(--ring) / 0.4);
   background: hsl(var(--accent));
+  
+    box-shadow:  0 1px #fff2,inset 0 .06rem .3rem #0004;
 }
 
 .input-row--checkbox:has(input:checked) {
@@ -983,7 +987,7 @@ span.flatpickr-weekday {
 .flatpickr-time .flatpickr-am-pm {
   background: transparent;
   color:      hsl(var(--popover-foreground));
-  font-family: SUSE, ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-brand);
 }
 
 .flatpickr-time input:hover,
@@ -1006,7 +1010,7 @@ span.flatpickr-weekday {
 /* ─── Collapsible input section ─────────────────────────────────────────── */
 
 .input-section {
-  border: 1px solid hsl(var(--border));
+  border: 0; box-shadow: 0 .06rem .3rem #0001;
   border-radius: var(--radius);
   /* Clip content to the rounded corners with `overflow: clip` — NOT clip-path and
      NOT overflow:hidden. `overflow: clip` clips only DESCENDANTS (never the element's
@@ -1027,13 +1031,13 @@ span.flatpickr-weekday {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 12px;
   /* Match a sidebar <select>'s height (39.5px) so a collapsed section lines up
      with the dropdowns in the input list — minus the section's 2px border. */
-  min-height: 37.5px;
+  min-height: 32px;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; 
   letter-spacing: 0.06em;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
@@ -1651,7 +1655,7 @@ background-color:hsl(var(--background) / 1);
     cursor: pointer;
     float: right;
     text-decoration: none;
-    font-family: "SUSE Mono", monospace;
+    font-family: var(--font-mono);
 }
 
 .asset-picker-thumb-inline {
@@ -1872,7 +1876,7 @@ background-color:hsl(var(--background) / 1);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  font-family: "SUSE Mono", monospace;
+  font-family: var(--font-mono);
   color: hsl(var(--muted-foreground));
 }
 
@@ -1987,6 +1991,39 @@ background-color:hsl(var(--background) / 1);
 @media (prefers-reduced-motion: reduce) {
   .canvas-live-toggle.is-live .canvas-live-dot { animation: none; }
 }
+
+/* Click-to-edit-in-place: the small option-list popover a canvas click opens for
+   a `select` input (see tool.ts openSelectPopover). position:fixed is set inline
+   per-instance (viewport coords, computed off the clicked element); this only
+   carries the visual recipe — same card/border/shadow as .color-popover
+   (components.css) so the two read as siblings when they appear side by side. */
+.canvas-input-popover {
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: min(360px, calc(100vh - 16px));
+  overflow: auto;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px hsl(0 0% 0% / 0.15);
+}
+.canvas-input-popover-opt {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  background: none;
+  color: hsl(var(--foreground));
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.canvas-input-popover-opt:hover,
+.canvas-input-popover-opt:focus-visible { background: hsl(var(--muted)); outline: none; }
+.canvas-input-popover-opt.is-current { font-weight: 600; color: hsl(var(--primary)); }
 
 /* Device recording (engine v1.17): a Record button centred at the foot of the stage,
    for tools declaring render.capture. */

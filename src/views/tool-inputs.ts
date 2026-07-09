@@ -10,11 +10,10 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows } from '@lolly/engine';
+import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES } from '@lolly/engine';
 import { escape } from '../utils.js';
 import { announce } from '../a11y.js';
-import { PALETTE } from '../palette.js';
-import { colorFieldHtml, wireColorField, swatchName, contrastText } from '../components/color-field.js';
+import { colorFieldHtml, wireColorField } from '../components/color-field.js';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { canSkipInputsRebuild } from './inputs-sync.js';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -44,7 +43,7 @@ interface DragHandle extends HTMLElement { _dragJustHappened?: boolean; }
 /** The active block drag-reorder gesture, or null when none is running. */
 interface BlockDrag { inputId: string; from: number; intent: 'before' | 'after' | 'inside' | null; over: number | null; }
 
-const asStr = (v: InputValue | undefined): string | undefined => (typeof v === 'string' ? v : undefined);
+export const asStr = (v: InputValue | undefined): string | undefined => (typeof v === 'string' ? v : undefined);
 
 // Set to true while a custom slider is being dragged so renderInputs
 // doesn't rebuild the sidebar (killing pointer capture mid-drag).
@@ -470,8 +469,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       native?.addEventListener('change', async () => {
         const file = native.files && native.files[0];
         if (!file) return;
-        if (input.maxSize && file.size > input.maxSize) {
-          announce(`That file is too large (max ${fmtBytes(input.maxSize)}).`, { assertive: true });
+        // Manifest cap when declared, engine backstop otherwise — a pick is a
+        // full read into memory, so it is never unbounded.
+        const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
+        if (file.size > cap) {
+          announce(`That file is too large (max ${fmtBytes(cap)}).`, { assertive: true });
           native.value = '';
           return;
         }
@@ -567,11 +569,26 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
-  // Top-level colour inputs use the shared SUSE colour picker (swatches, native,
-  // hex, alpha, popover toggle). Block-colour fields below keep their own wiring
-  // since they write into a block array, not a top-level input.
+  // ONE shared colour picker for every colour surface (OKLCH sliders, hex, alpha,
+  // swatches, popover toggle). Top-level inputs commit via setInput(id); a block
+  // field's composite id ("blockId:idx:fieldId" — ':' never appears in a real
+  // input id) routes into its block row instead. Block rows store plain strings,
+  // so a token-linked swatch pick is flattened to its hex there — the {ref,value}
+  // shape is a top-level-input contract (resolveTokenRefs), not a row value.
   wireColorField(el, {
-    onChange: (inputId: string, value: InputValue) => { runtime.setInput(inputId, value); onDirty?.(inputId); },
+    onChange: (inputId: string, value: InputValue) => {
+      if (!inputId.includes(':')) { runtime.setInput(inputId, value); onDirty?.(inputId); return; }
+      const parts = inputId.split(':');
+      const blockId = parts[0]!, idx = parseInt(parts[1]!, 10), fieldId = parts[2]!;
+      const inp = panelModel.find(i => i.id === blockId);
+      if (!inp) return;
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      const row = arr[idx] ?? (arr[idx] = {});
+      const o = value as { ref?: unknown; value?: unknown };
+      row[fieldId] = (value && typeof value === 'object' && typeof o.ref === 'string' ? String(o.value ?? '') : value) as InputValue;
+      runtime.setInput(blockId, arr);
+      onDirty?.(blockId);
+    },
     onInteractStart: () => { _sliderDragging = true; },
     onInteractEnd: () => { _sliderDragging = false; },
   });
@@ -580,25 +597,6 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // survives rebuilds; the aria-describedby links are (re)applied every render.
   wireHelpTips(el);
   linkHelpDescriptions(el);
-
-  el.querySelectorAll<HTMLElement>('[data-block-swatch-field]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const fieldKey = btn.dataset.blockSwatchField!; // "blockId:idx:fieldId"
-      const hex = btn.dataset.swatchValue!;
-      const parts = fieldKey.split(':');
-      const blockId = parts[0]!, bIdx = parseInt(parts[1]!, 10), fId = parts[2]!;
-      const native = el.querySelector<HTMLInputElement>(`[data-field-id="${CSS.escape(fieldKey)}"]`);
-      if (native && hex.startsWith('#')) native.value = hex;
-      const inp = panelModel.find(i => i.id === blockId);
-      if (!inp) return;
-      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
-      const row = arr[bIdx] ?? (arr[bIdx] = {});
-      row[fId] = hex;
-      runtime.setInput(blockId, arr);
-      onDirty?.(blockId);
-    });
-  });
-
 
   // Block field changes
   el.querySelectorAll<HTMLInputElement>('[data-field-id]').forEach(field => {
@@ -1316,34 +1314,11 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         }
 
         if (f.type === 'color') {
-          const hex = String(item[f.id] ?? '').trim();
-          const pickerVal = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#30ba78';
-          // Same trigger + swatch grammar as the shared colour picker (colorFieldHtml):
-          // the trigger shows the swatch circle + a small muted SUSE Mono name (NOT the
-          // hex — that lives in the popover), and each swatch carries its colour (--sw-c)
-          // + contrast text (--sw-fg) + name for the floating hover tooltip.
-          const swatches = PALETTE.map(s => {
-            const isTrans = s.hex === 'transparent';
-            const tip = isTrans ? '--sw-c:#c9ccd1;--sw-fg:#1d1d1d' : `--sw-c:${s.hex};--sw-fg:${contrastText(s.hex)};background:${s.hex}`;
-            return `<button type="button"
-              class="color-swatch${isTrans ? ' color-swatch--transparent' : ''}"
-              data-block-swatch-field="${fieldId}" data-swatch-value="${s.hex}"
-              data-name="${escape(s.label)}" style="${tip}"
-              aria-label="${escape(s.label)}"></button>`;
-          }).join('');
-          const name = swatchName(pickerVal);
-          return labelled(f, `<div class="color-picker-field block-color-field" data-color-field="${fieldId}">
-            <button type="button" class="color-trigger" data-color-trigger="${fieldId}"
-              aria-label="${escape(f.label ?? f.id)}: ${escape(name || pickerVal)}">
-              <span class="color-trigger-preview" style="background:${pickerVal}"></span>
-              <span class="color-trigger-name">${escape(name)}</span>
-            </button>
-            <div class="color-popover" hidden>
-              <div class="color-swatches">${swatches}</div>
-              <input type="color" class="color-popover-native"
-                data-field-id="${fieldId}" value="${pickerVal}">
-            </div>
-          </div>`);
+          // The SAME picker as top-level colour inputs (OKLCH sliders, hex, alpha,
+          // lazy token-aware swatches) — `block` spans the popover across the
+          // sidebar and wireColorField's onChange routes the composite id back
+          // into this block's row (see the ':' route in the wiring below).
+          return labelled(f, colorFieldHtml(fieldId, String(item[f.id] ?? '').trim(), { block: true }));
         }
 
         if (f.type === 'select') {

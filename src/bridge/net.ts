@@ -8,6 +8,13 @@
 
 import type { NetAPI } from '../../../../engine/src/bridge/host-v1.ts';
 
+// Hard cap on a fetched response body. An allowlisted host can still be wrong,
+// compromised, or redirect-to-huge — the tool buffers whatever it reads into
+// memory, so the bridge bounds it: a lying/absent Content-Length is caught by
+// the counting stream, not trusted from the header. Far above any tile/API/font
+// payload a tool legitimately pulls.
+const MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+
 export function createNetAPI({ allowlist = [] }: { allowlist?: readonly string[] }): NetAPI {
   return {
     async fetch(url, init) {
@@ -15,9 +22,29 @@ export function createNetAPI({ allowlist = [] }: { allowlist?: readonly string[]
       if (!allowed) {
         throw new Error(`Tool tried to fetch disallowed URL: ${url}`);
       }
-      return fetch(url, init);
+      return capResponse(await fetch(url, init), MAX_RESPONSE_BYTES);
     },
   };
+}
+
+// Wrap the body in a counting stream that errors past the cap, so the reader
+// (tool) fails mid-stream instead of buffering an unbounded body. Declared
+// Content-Length is only a fast-fail; the count is the enforcement.
+function capResponse(res: Response, cap: number): Response {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > cap) {
+    throw new Error(`net: response is ${declared} bytes — over the ${cap}-byte limit`);
+  }
+  if (!res.body || typeof TransformStream !== 'function') return res;
+  let total = 0;
+  const counted = res.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      total += chunk.byteLength;
+      if (total > cap) controller.error(new Error(`net: response exceeds the ${cap}-byte limit`));
+      else controller.enqueue(chunk);
+    },
+  }));
+  return new Response(counted, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
 function matches(pattern: string, url: string): boolean {

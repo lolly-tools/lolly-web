@@ -19,6 +19,8 @@
  * scrolling container (the /pro grid). Regular sidebar fields use plain CSS
  * positioning; block-colour fields keep their sidebar-spanning behaviour.
  */
+import { hexToOklch, oklchToHex } from '@lolly/engine';
+import type { Oklch } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
 import { escape } from '../utils.ts';
 
@@ -97,6 +99,40 @@ function safeCssColor(v: unknown): string {
   return SAFE_CSS_COLOR.test(s) ? s : '';
 }
 
+// ── OKLCH sliders (the LCH-first custom-colour surface) ─────────────────────
+// The picker's custom-colour controls are OKLCH sliders — perceptual axes
+// (lightness / chroma / hue) instead of the RGB cube, matching the OKLCH-native
+// brand token system. The engine's brand-derive module is the conversion
+// authority: hexToOklch to seed the sliders, gamut-mapped oklchToHex (chroma
+// reduced until sRGB-representable) on the way out — so any slider position
+// yields a real, in-gamut hex.
+
+/** Slider ranges. C's ceiling is CSS Color 4's practical sRGB chroma maximum. */
+export const LCH_MAX = { l: 100, c: 0.4, h: 360 } as const;
+
+/** Sliders' fallback when the current value has no colour to seed from
+ * ('transparent', or an unparsable string): a pleasant mid-blue, not black —
+ * black sits at C=0 where the H slider does nothing, a dead-feeling start. */
+const LCH_SEED: Oklch = { l: 0.62, c: 0.11, h: 250 };
+
+/**
+ * The three slider-track gradients for the current colour, as CSS backgrounds.
+ * Each axis sweeps its own range while holding the other two at the current
+ * value, so the track previews exactly what dragging that thumb will do.
+ * Stops are raw `oklch()` strings — the browser renders and gamut-maps them;
+ * no per-stop JS conversion. Exported for tests.
+ */
+export function lchTrackGradients(l: number, c: number, h: number): { l: string; c: string; h: string } {
+  const stops = (n: number, at: (t: number) => string) =>
+    `linear-gradient(to right, ${Array.from({ length: n }, (_, i) => at(i / (n - 1))).join(', ')})`;
+  const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
+  return {
+    l: stops(9, t => `oklch(${pct(t)} ${c} ${h})`),
+    c: stops(9, t => `oklch(${pct(l)} ${t * LCH_MAX.c} ${h})`),
+    h: stops(13, t => `oklch(${pct(l)} ${Math.max(c, 0.08)} ${t * 360})`), // floor C so the hue sweep stays visible near grey
+  };
+}
+
 /** Black or white — whichever reads on `hex`. Perceptual luminance threshold. */
 export function contrastText(hex: string): string {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
@@ -105,7 +141,7 @@ export function contrastText(hex: string): string {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#000000' : '#ffffff';
 }
 
-export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false }: { float?: boolean; swatchesOnly?: boolean } = {}): string {
+export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean } = {}): string {
   const rawVal = toHex(value) ?? '';
   const isTransparent = rawVal === 'transparent';
   const isHex8 = /^#[0-9a-fA-F]{8}$/.test(rawVal);
@@ -130,13 +166,17 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   // field is squeezed in next to other controls (see .color-trigger in components.css).
   // The name span is always present (:empty hides it) so live edits can fill/clear it
   // without a rebuild. The hex still rides in the aria-label for screen readers.
-  return `<div class="color-picker-field${float ? ' color-field--float' : ''}" data-color-field="${eid}">
+  // `block` marks a field living inside a block-editor row: positionPopover's
+  // block-color-field branch spans the popover across the sidebar, and the block
+  // host routes its onChange by the composite id ("blockId:idx:fieldId").
+  return `<div class="color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}" data-color-field="${eid}">
     <button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(name ? name + ' ' : '')}${escape(hexText)}">
       <span class="${previewClass}" ${previewBg} aria-hidden="true"></span>
       <span class="color-trigger-name">${escape(name)}</span>
     </button>
     <div class="color-popover" role="group" aria-label="Colour options" hidden>
-      ${swatchesOnly ? '' : `<input type="text" class="color-hex-input" data-color-hex="${eid}"
+      ${swatchesOnly ? '' : `${lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
+      <input type="text" class="color-hex-input" data-color-hex="${eid}"
              value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="#rrggbbaa"
              maxlength="9" spellcheck="false" autocomplete="off" aria-label="Hex colour value">
       <div class="color-alpha-row">
@@ -149,6 +189,36 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       <div class="color-swatches"></div>
     </div>
   </div>`;
+}
+
+/** Slider readout formatting per axis — L in %, C to 3 places, H in degrees. */
+function lchValText(axis: 'l' | 'c' | 'h', v: number): string {
+  return axis === 'l' ? `${Math.round(v)}%` : axis === 'c' ? v.toFixed(3) : `${Math.round(v)}°`;
+}
+
+/**
+ * The OKLCH slider stack for one field, seeded from `rgbHex` (or the neutral
+ * seed when the value has no colour, e.g. 'transparent'). The current OKLCH
+ * state rides on data-l/c/h of the wrapper — the sliders are its projection,
+ * and slider drags mutate the state directly (never a hex round-trip, which
+ * would drift hue at low chroma).
+ */
+function lchSlidersHtml(eid: string, rgbHex: string | null): string {
+  const o = (rgbHex ? hexToOklch(rgbHex) : null) ?? LCH_SEED;
+  const tracks = lchTrackGradients(o.l, o.c, o.h);
+  const row = (axis: 'l' | 'c' | 'h', label: string, aria: string, max: number, step: number, value: number) => `
+      <div class="color-lch-row">
+        <span class="color-lch-label" aria-hidden="true">${label}</span>
+        <input type="range" class="color-lch-slider" data-lch-axis="${axis}"
+               min="0" max="${max}" step="${step}" value="${value}"
+               style="background:${tracks[axis]}" aria-label="${aria}">
+        <span class="color-lch-val" data-lch-val="${axis}">${lchValText(axis, value)}</span>
+      </div>`;
+  return `<div class="color-lch" data-color-lch="${eid}" data-l="${o.l}" data-c="${o.c}" data-h="${o.h}">
+      ${row('l', 'L', 'Lightness', LCH_MAX.l, 0.5, Math.round(o.l * 1000) / 10)}
+      ${row('c', 'C', 'Chroma', LCH_MAX.c, 0.004, Math.round(o.c * 1000) / 1000)}
+      ${row('h', 'H', 'Hue', LCH_MAX.h, 1, Math.round(o.h))}
+    </div>`;
 }
 
 /** The palette swatch buttons for a field — built lazily on first popover open. */
@@ -239,7 +309,7 @@ function armSwatchTip(): void {
  * lands on the controls below its trigger. Callers subtract this origin so their
  * viewport-space coords stay correct; returns {0,0} (a no-op) when nothing traps `fixed`.
  */
-function fixedContainingBlockOrigin(el: HTMLElement): { x: number; y: number } {
+export function fixedContainingBlockOrigin(el: HTMLElement): { x: number; y: number } {
   for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
     const s = getComputedStyle(a);
     const backdrop = s.backdropFilter || s.getPropertyValue('-webkit-backdrop-filter');
@@ -286,6 +356,34 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     if (trigger) trigger.setAttribute('aria-label', `Colour: ${name ? name + ' ' : ''}${value || '#000000'}`);
   }
 
+  // ── OKLCH sliders ────────────────────────────────────────────────────────────
+  // The wrapper's data-l/c/h is the single OKLCH state; sliders read AND write
+  // it. Drags convert state → hex (gamut-mapped) for the output; hex/swatch/
+  // native edits convert hex → state to re-seat the sliders. State only ever
+  // crosses through hex in that one direction, so low-chroma hue never drifts.
+
+  /** Repaint the three tracks + readouts from the wrapper's current state. */
+  function paintLch(box: HTMLElement): void {
+    const l = parseFloat(box.dataset.l!), c = parseFloat(box.dataset.c!), h = parseFloat(box.dataset.h!);
+    const tracks = lchTrackGradients(l, c, h);
+    for (const [axis, value] of [['l', l * 100], ['c', c], ['h', h]] as const) {
+      const slider = box.querySelector<HTMLInputElement>(`[data-lch-axis="${axis}"]`);
+      const val = box.querySelector<HTMLElement>(`[data-lch-val="${axis}"]`);
+      if (slider) { slider.value = String(value); slider.style.background = tracks[axis]; }
+      if (val) val.textContent = axis === 'l' ? `${Math.round(value)}%` : axis === 'c' ? value.toFixed(3) : `${Math.round(value)}°`;
+    }
+  }
+
+  /** Re-seed the sliders from a hex chosen elsewhere (swatch / hex box / native). */
+  function seedLch(field: HTMLElement, hex: string): void {
+    const box = field.querySelector<HTMLElement>('.color-lch');
+    if (!box) return;
+    const o = hexToOklch(hex.startsWith('#') ? hex.slice(0, 7) : hex);
+    if (!o) return; // 'transparent' / invalid — leave the sliders where they were
+    box.dataset.l = String(o.l); box.dataset.c = String(o.c); box.dataset.h = String(o.h);
+    paintLch(box);
+  }
+
   // ── Palette swatches (lazy) ──────────────────────────────────────────────────
   // Apply a swatch's colour to the field, syncing the popover controls + trigger.
   // A swatch carrying a token `ref` emits a token value ({ ref, value }) so the
@@ -301,6 +399,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     if (hexInput) hexInput.value = hex;
     if (alphaSlider) alphaSlider.value = hex === 'transparent' ? '0' : '255';
     if (alphaPctEl) alphaPctEl.textContent = (hex === 'transparent' ? 0 : 100) + '%';
+    seedLch(field, hex);
     updateTrigger(field, hex);
     onChange(id!, ref ? { ref, value: hex } : hex);
   }
@@ -425,6 +524,33 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     if (onScroll) { window.removeEventListener('scroll', onScroll, true); onScroll = null; }
   }
 
+  // ── OKLCH sliders (the primary custom-colour control) ───────────────────────
+  scope.querySelectorAll<HTMLElement>('.color-lch[data-color-lch]').forEach(box => {
+    const id = box.dataset.colorLch!;
+    const field = box.closest<HTMLElement>('[data-color-field]');
+    box.querySelectorAll<HTMLInputElement>('.color-lch-slider').forEach(slider => {
+      slider.addEventListener('pointerdown', () => interact(true));
+      slider.addEventListener('pointerup', () => interact(false));
+      slider.addEventListener('input', () => {
+        const axis = slider.dataset.lchAxis as 'l' | 'c' | 'h';
+        const raw = parseFloat(slider.value);
+        box.dataset[axis] = String(axis === 'l' ? raw / 100 : raw);
+        const state = { l: parseFloat(box.dataset.l!), c: parseFloat(box.dataset.c!), h: parseFloat(box.dataset.h!) };
+        paintLch(box); // repaint the OTHER two tracks around the new position
+        const rgbHex = oklchToHex(state); // gamut-mapped — always a real sRGB hex
+        const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
+        const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
+        const fullHex = alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex;
+        const hexInput = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
+        if (hexInput) hexInput.value = fullHex;
+        const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
+        if (native) native.value = rgbHex;
+        updateTrigger(field, fullHex);
+        onChange(id, fullHex);
+      });
+    });
+  });
+
   // ── Native colour input (RGB) ────────────────────────────────────────────────
   scope.querySelectorAll<HTMLInputElement>('input.color-popover-native[data-input-id]').forEach(native => {
     const id = native.dataset.inputId!;
@@ -437,6 +563,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const fullHex = (alphaInt < 255 ? native.value + alphaInt.toString(16).padStart(2, '0') : native.value).toLowerCase();
       const hexInput = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
       if (hexInput) hexInput.value = fullHex;
+      if (field) seedLch(field, native.value);
       updateTrigger(field, fullHex);
       onChange(id, fullHex);
     });
@@ -459,6 +586,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       if (alphaSlider) alphaSlider.value = String(alphaInt);
       if (alphaPctEl) alphaPctEl.textContent = Math.round(alphaInt / 255 * 100) + '%';
       const finalVal = (alphaInt < 255 ? raw.slice(0, 9) : raw.slice(0, 7)).toLowerCase();
+      if (field) seedLch(field, finalVal);
       updateTrigger(field, finalVal);
       onChange(id, finalVal);
     });

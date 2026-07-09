@@ -928,15 +928,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     if (next < 0) next = wrap ? ready.length - 1 : 0;
     scrollCarTo(gcar, ready[next]!);
   }
-  // Manual interaction pauses auto-advance for a beat so the code never fights the user.
-  const carPauseTimers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
-  function pauseCarousel(gcar: HTMLElement): void {
-    gcar.dataset.userPaused = '1';
-    const prev = carPauseTimers.get(gcar);
-    if (prev) clearTimeout(prev);
-    carPauseTimers.set(gcar, setTimeout(() => { gcar.dataset.userPaused = '0'; carPauseTimers.delete(gcar); }, 9000));
-  }
-  cleanups.push(() => { for (const t of carPauseTimers.values()) clearTimeout(t); carPauseTimers.clear(); });
   function wireCarousel(gcar: HTMLElement): void {
     const track = gcar.querySelector<HTMLElement>('.gcar-track');
     if (!track) return;
@@ -945,13 +936,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     // nav/dot) falls through untouched, so it still opens the tool.
     gcar.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
-      if (t.closest('.gcar-prev')) { e.preventDefault(); pauseCarousel(gcar); advanceCarousel(gcar, -1, true); }
-      else if (t.closest('.gcar-next')) { e.preventDefault(); pauseCarousel(gcar); advanceCarousel(gcar, 1, true); }
-      else { const dot = t.closest<HTMLElement>('.gcar-dot'); if (dot) { e.preventDefault(); pauseCarousel(gcar); scrollCarTo(gcar, Number(dot.dataset.i)); } }
+      if (t.closest('.gcar-prev')) { e.preventDefault(); advanceCarousel(gcar, -1, true); }
+      else if (t.closest('.gcar-next')) { e.preventDefault(); advanceCarousel(gcar, 1, true); }
+      else { const dot = t.closest<HTMLElement>('.gcar-dot'); if (dot) { e.preventDefault(); scrollCarTo(gcar, Number(dot.dataset.i)); } }
     });
     // pointer/wheel/touch = the user; NOT the programmatic scrollTo above (which emits no
     // such event), so auto-advance can't pause itself. Sync the dots on any scroll.
-    for (const ev of ['pointerdown', 'wheel', 'touchstart'] as const) track.addEventListener(ev, () => pauseCarousel(gcar), { passive: true });
     track.addEventListener('scroll', () => { if (track.clientWidth) setCarDot(gcar, Math.round(track.scrollLeft / track.clientWidth)); }, { passive: true });
   }
 
@@ -978,35 +968,11 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     window.location.hash = await toolSeedHref(toolId, values);
   }
 
-  // Gentle auto-advance — one shared timer scans the DOM each tick (so it survives the
-  // search/filter re-renders that replace the masonry, no re-wiring), staggered across
-  // phases, skipping off-screen, hovered, or just-touched strips. Off under reduced
-  // motion and while the tab is hidden. A tile is either a cross-fade or a carousel,
-  // never both, so this and the hero ticker above never touch the same tile.
-  const CAR_ADVANCE_MS = 3800;
-  const CAR_PHASES = 3;
-  if (!prefersReduced) {
-    let carTick = 0;
-    const carTimer = setInterval(() => {
-      if (document.hidden || !masonry) return;
-      carTick++;
-      const vh = window.innerHeight || document.documentElement.clientHeight;
-      // One rect-reading pass up front (see the hero ticker), then advance the chosen
-      // strips — advanceCarousel's own scroll reads then run without re-thrashing here.
-      const cars = [...masonry.querySelectorAll<HTMLElement>('.gcar')];
-      const carRects = cars.map(c => c.getBoundingClientRect());
-      cars.forEach((gcar, i) => {
-        if (i % CAR_PHASES !== carTick % CAR_PHASES) return;       // stagger
-        if (gcar.dataset.userPaused === '1') return;               // recently touched
-        const r = carRects[i]!;
-        if (!r.width) return;                                      // filtered-out tile
-        if (r.bottom < 0 || r.top > vh) return;                    // off-screen
-        if (gcar.matches(':hover')) return;                        // let the user look
-        advanceCarousel(gcar, 1, true);
-      });
-    }, CAR_ADVANCE_MS);
-    cleanups.push(() => clearInterval(carTimer));
-  }
+  // No auto-advance: the example strips move only when the USER moves them
+  // (arrows, dots, swipe/scroll). The old shared ticker rotated every visible
+  // strip on a stagger — retired 2026-07-09 by request; a busy grid of
+  // self-scrolling cards read as noise, and reduced-motion users already had
+  // the static behaviour this makes universal.
 
   const byName = (a: GalleryTool, b: GalleryTool) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -1752,6 +1718,10 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
   const dialog = document.createElement('dialog');
   dialog.className = 'tool-meta-dialog';
   dialog.setAttribute('aria-labelledby', 'tool-info-title');
+  // The same preview the tile shows (previewMedia handles img vs the sandboxed
+  // card.html iframe), sized by the tool's declared aspect when it has one.
+  const previewAspect = typeof tool.width === 'number' && typeof tool.height === 'number'
+    ? ` style="aspect-ratio:${tool.width}/${tool.height}"` : '';
   dialog.innerHTML = `
     <div class="meta-dialog-body">
       <header class="meta-dialog-head">
@@ -1761,6 +1731,7 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
           <p class="meta-dialog-sub">${escape(catLabel(tool.category))} · ${escape(statusLabel(tool.status))}</p>
         </div>
       </header>
+      ${tool.preview ? `<div class="meta-dialog-preview"${previewAspect}>${previewMedia(tool.preview, 'meta-dialog-preview-img')}</div>` : ''}
       <p class="meta-dialog-desc">${escape(tool.description ?? '')}</p>
       <dl class="meta-dialog-facts">
         <div${hasFmtChips ? ' class="meta-fmts-row"' : ''}><dt>Exports</dt><dd>${exportsDd}</dd></div>
@@ -1769,6 +1740,10 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
         ${tool.privacy === 'on-device' ? `<div><dt>Privacy</dt><dd>Runs entirely on your device</dd></div>` : ''}
         ${tool.version ? `<div><dt>Version</dt><dd>${escape(tool.version)}</dd></div>` : ''}
       </dl>
+      <section class="meta-defaults" aria-label="Default settings" hidden>
+        <h3 class="meta-defaults-title">Defaults</h3>
+        <dl class="meta-defaults-list"></dl>
+      </section>
       <div class="meta-dialog-actions">
         <a class="btn meta-dialog-open" href="#/tool/${escape(tool.id)}">Open tool</a>
         <button type="button" class="btn meta-dialog-close">Close</button>
@@ -1777,6 +1752,73 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
   playSfx('whisper'); // airy elevation as the tool details rise in
   openDialog(dialog);
   dialog.querySelector('.meta-dialog-open')?.addEventListener('click', () => closeDialog(dialog));
+  void fillDefaultsList(dialog, tool.id);
+}
+
+// ── Info dialog: the defaults spec list ──────────────────────────────────────
+// The gallery index deliberately carries no input model, so the dialog fetches
+// the manifest on open and renders each input's out-of-the-box value — a small
+// spec sheet, not a settings UI. Failure (offline, tool gated) just leaves the
+// section hidden; the dialog stands on the index data alone.
+
+/** One input's default, formatted for the spec list. null = skip the row. */
+function defaultText(input: Record<string, unknown>): { text: string; swatch?: string } | null {
+  const d = input.default;
+  const type = String(input.type ?? 'text');
+  if (type === 'file') return null;                       // user-supplied by nature — no default exists
+  if (d === undefined || d === null || d === '') return { text: '—' };
+  switch (type) {
+    case 'boolean': return { text: d ? 'On' : 'Off' };
+    case 'color': {
+      const v = String(d);
+      return { text: v, swatch: /^(#[0-9a-fA-F]{3,8}|transparent)$/.test(v) ? v : undefined };
+    }
+    case 'select': {
+      const opts = Array.isArray(input.options) ? input.options as Array<{ value?: unknown; label?: unknown }> : [];
+      const hit = opts.find(o => (o && typeof o === 'object' ? o.value : o) === d);
+      return { text: String((hit && typeof hit === 'object' && hit.label) || d) };
+    }
+    case 'blocks': return { text: Array.isArray(d) ? `${d.length} item${d.length === 1 ? '' : 's'}` : '—' };
+    case 'vector': return { text: Array.isArray(d) ? d.join(' × ') : String(d) };
+    case 'number': return { text: String(d) + (input.unit ? ` ${input.unit}` : '') };
+    default: {
+      const s = String(d);
+      return { text: s.length > 42 ? `${s.slice(0, 41)}…` : s };
+    }
+  }
+}
+
+async function fillDefaultsList(dialog: HTMLElement, toolId: string): Promise<void> {
+  let inputs: Array<Record<string, unknown>>;
+  try {
+    const resp = await fetch(`/tools/${encodeURIComponent(toolId)}/tool.json`);
+    if (!resp.ok) return;
+    const manifest = await resp.json() as { inputs?: Array<Record<string, unknown>> };
+    inputs = Array.isArray(manifest.inputs) ? manifest.inputs : [];
+  } catch { return; }
+  const section = dialog.querySelector<HTMLElement>('.meta-defaults');
+  const list = dialog.querySelector<HTMLElement>('.meta-defaults-list');
+  if (!section || !list || !dialog.isConnected || !inputs.length) return;
+
+  const MAX_ROWS = 14; // a spec sheet, not a scroll chore — the tool itself shows the rest
+  const rows: string[] = [];
+  for (const input of inputs) {
+    if (rows.length >= MAX_ROWS) break;
+    const v = defaultText(input);
+    if (!v) continue;
+    const label = String(input.label ?? input.id ?? '');
+    const fromProfile = typeof input.bindToProfile === 'string'
+      ? `<span class="meta-default-note">from profile</span>` : '';
+    rows.push(`<div class="meta-default-row">
+      <dt>${escape(label)}</dt>
+      <dd>${v.swatch ? `<span class="meta-default-swatch${v.swatch === 'transparent' ? ' color-swatch--transparent' : ''}"${v.swatch !== 'transparent' ? ` style="background:${escape(v.swatch)}"` : ''} aria-hidden="true"></span>` : ''}<span class="meta-default-value">${escape(v.text)}</span>${fromProfile}</dd>
+    </div>`);
+  }
+  const skipped = inputs.filter(i => String(i.type) !== 'file').length - rows.length;
+  if (!rows.length) return;
+  list.innerHTML = rows.join('') +
+    (skipped > 0 ? `<div class="meta-default-row meta-default-more"><dt></dt><dd>+ ${skipped} more in the tool</dd></div>` : '');
+  section.hidden = false;
 }
 
 // ── History modal ───────────────────────────────────────────────────────────

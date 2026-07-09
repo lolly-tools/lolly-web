@@ -30,12 +30,12 @@ import {
   penpotShapeToNode,
   figmaNodesToNodes,
 } from '@lolly/engine';
-import { unzip, unzipSync, strFromU8 } from 'fflate';
+import { unzip, unzipSync, strFromU8, type UnzipFileInfo } from 'fflate';
 // Figma .fig decode: a canvas.fig is a Kiwi binary (self-describing schema + data).
 // The schema chunk is raw-DEFLATE (native DecompressionStream); the data chunk is zstd
 // (fzstd — pure JS, by the fflate author). kiwi-schema is Evan Wallace's official decoder.
 import { decodeBinarySchema, compileSchema } from 'kiwi-schema';
-import { decompress as zstdDecompress } from 'fzstd';
+import { Decompress as ZstdDecompress } from 'fzstd';
 import type { HostV1, AssetRef } from '../../../../engine/src/bridge/host-v1.ts';
 
 // A 2-D affine matrix (a,b,c,d,e,f), as read from getCTM / rebuilt for flatten transforms.
@@ -66,6 +66,18 @@ interface ElementCtx {
 // of boxes. Anything past this is dropped with a warning.
 const MAX_ELEMENTS = 2000;
 
+// Byte bounds for the import pipeline. The picked file is read whole into memory
+// and several branches make further copies (text decode, unzip, zstd), so every
+// stage is capped: the input itself, each zip entry's DECLARED inflated size and
+// their sum (the classic zip bomb hides behind a tiny compressed payload), and
+// the two .fig decompressors, which are streamed so a lying header is stopped at
+// the cap rather than trusted. All sit far above any real design export.
+const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
+const MAX_ZIP_ENTRY_BYTES = 128 * 1024 * 1024;
+const MAX_ZIP_TOTAL_BYTES = 512 * 1024 * 1024;
+const MAX_FIG_SCHEMA_BYTES = 64 * 1024 * 1024;
+const MAX_FIG_DATA_BYTES = 256 * 1024 * 1024;
+
 // Elements that are never drawn on their own (definitions / metadata / containers).
 // <g> is intentionally NOT here: it's a container we recurse into, not a leaf.
 const SKIP_TAGS = new Set([
@@ -93,6 +105,9 @@ export async function parseDesignFile(
   { host, log }: { host?: HostV1; log?: (msg: string) => void } = {},
 ): Promise<DesignImportResult> {
   const warn: (msg: string) => void = typeof log === 'function' ? log : () => {};
+  if (file.size > MAX_IMPORT_BYTES) {
+    throw new Error(`This file is too large to import (over ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} MB).`);
+  }
   const buf = new Uint8Array(await file.arrayBuffer());
 
   // PDF / Adobe Illustrator: a modern .ai saved with PDF compatibility (the default) IS a
@@ -704,23 +719,63 @@ async function decodeCanvasFig(bytes: Uint8Array): Promise<any> {
   if (magic !== 'fig-kiwi') throw new Error('not a fig-kiwi file');
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let off = 12; // "fig-kiwi"(8) + version u32(4)
+  if (off + 4 > bytes.length) throw new Error('truncated fig-kiwi header');
   const schemaLen = dv.getUint32(off, true); off += 4;
+  if (off + schemaLen + 4 > bytes.length) throw new Error('fig-kiwi schema overruns the file');
   const schemaComp = bytes.subarray(off, off + schemaLen); off += schemaLen;
   const dataLen = dv.getUint32(off, true); off += 4;
+  if (off + dataLen > bytes.length) throw new Error('fig-kiwi data overruns the file');
   const dataComp = bytes.subarray(off, off + dataLen);
 
-  const schema = await inflateRawBytes(schemaComp); // raw DEFLATE (native)
-  const data = zstdDecompress(dataComp);            // zstd (fzstd)
+  const schema = await inflateRawBytes(schemaComp, MAX_FIG_SCHEMA_BYTES); // raw DEFLATE (native)
+  const data = zstdCapped(dataComp, MAX_FIG_DATA_BYTES);                  // zstd (fzstd)
   const compiled = compileSchema(decodeBinarySchema(schema));
   return compiled.decodeMessage(data);              // Figma's root type is "Message"
 }
 
-// Raw DEFLATE via the browser's native DecompressionStream (same primitive url-pack uses).
-async function inflateRawBytes(bytes: Uint8Array): Promise<Uint8Array> {
+// Raw DEFLATE via the browser's native DecompressionStream (same primitive — and
+// same chunked output cap — url-pack uses: the bomb is stopped at ~cap instead of
+// its full expansion being allocated first).
+async function inflateRawBytes(bytes: Uint8Array, cap: number): Promise<Uint8Array> {
   const ds = new DecompressionStream('deflate-raw');
   const w = ds.writable.getWriter();
-  w.write(bytes as Uint8Array<ArrayBuffer>); w.close();
-  return new Uint8Array(await new Response(ds.readable).arrayBuffer());
+  w.write(bytes as Uint8Array<ArrayBuffer>).catch(() => {});
+  w.close().catch(() => {});
+  const reader = ds.readable.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > cap) throw new Error('fig-kiwi schema expands too large');
+      chunks.push(value);
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.byteLength; }
+  return out;
+}
+
+// Streamed zstd with an output cap — fzstd's one-shot decompress() trusts the
+// frame's declared content size, which a hostile file controls.
+function zstdCapped(bytes: Uint8Array, cap: number): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const d = new ZstdDecompress((chunk) => {
+    total += chunk.length;
+    if (total > cap) throw new Error('fig-kiwi data expands too large');
+    chunks.push(chunk);
+  });
+  d.push(bytes, true);
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
 }
 
 // Store a Figma image blob (images/<hash>, extension-less — sniff the type) as a user asset.
@@ -777,11 +832,31 @@ function sniffImageMime(b: Uint8Array): string {
 
 // unzip via fflate, mirroring shells/web/src/data-transfer.js (async offloads to a
 // Worker in a real browser; sync fallback where no Worker exists, e.g. tests).
+// The filter runs BEFORE each entry is inflated: an entry declaring an absurd
+// uncompressed size — or a set of entries summing past the total cap — rejects
+// the whole import instead of inflating a zip bomb into memory.
 function unzipAsync(bytes: Uint8Array): Promise<Record<string, Uint8Array>> {
+  let total = 0;
+  let bomb: string | null = null;
+  const filter = (f: UnzipFileInfo): boolean => {
+    total += f.originalSize || 0;
+    if ((f.originalSize || 0) > MAX_ZIP_ENTRY_BYTES || total > MAX_ZIP_TOTAL_BYTES) {
+      bomb = f.name;
+      return false;
+    }
+    return true;
+  };
+  const guard = <T>(data: T): T => {
+    if (bomb) throw new Error(`This archive expands too large to import (${bomb}).`);
+    return data;
+  };
   const HAS_WORKER = typeof Worker !== 'undefined';
-  if (!HAS_WORKER) return Promise.resolve(unzipSync(bytes));
+  if (!HAS_WORKER) return Promise.resolve().then(() => guard(unzipSync(bytes, { filter })));
   return new Promise((resolve, reject) => {
-    unzip(bytes, (err, data) => (err ? reject(err) : resolve(data)));
+    unzip(bytes, { filter }, (err, data) => {
+      if (err) return reject(err);
+      try { resolve(guard(data)); } catch (e) { reject(e); }
+    });
   });
 }
 

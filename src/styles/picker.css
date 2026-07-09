@@ -472,7 +472,7 @@
   padding-right: 2.75rem; /* keep ids clear of the badge */
   font-size: 7px;
   color: hsl(var(--muted-foreground));
-  font-family: "SUSE Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 .asset-picker-empty,

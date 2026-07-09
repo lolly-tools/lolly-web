@@ -1,30 +1,34 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Theme management — light / dark / suse.
+ * Theme management — light / dark / brand.
  *
  * Applied via [data-theme] on <html>. An inline script in index.html applies
  * the saved preference from localStorage before CSS loads to prevent FOUC.
  * The profile is the canonical store; localStorage is only kept in sync so
  * the FOUC script has something to read on the next cold load.
+ *
+ * 'brand' (2026-07-09) replaces the retired 'suse' theme: the mid-toned
+ * colored chrome, constructed at runtime from the active brand's palette
+ * (brand-vars.ts brandThemeCss) with the SUSE construction as its static
+ * default in tokens.css. Stored 'suse' values migrate on apply.
  */
 
-export type Theme = 'light' | 'dark' | 'suse';
+export type Theme = 'light' | 'dark' | 'brand';
 
-export const THEMES: readonly Theme[] = ['light', 'dark', 'suse'];
+export const THEMES: readonly Theme[] = ['light', 'dark', 'brand'];
 
-// Display names for the cycle toggle (brand cased — 'SUSE', not 'Suse').
-export const THEME_LABELS: Record<Theme, string> = { light: 'Light', dark: 'Dark', suse: 'SUSE' };
+export const THEME_LABELS: Record<Theme, string> = { light: 'Light', dark: 'Dark', brand: 'Brand' };
 
 // One compact glyph per theme (Lucide house style, 16px, currentColor). Distinct
 // enough to read at a glance when the toggle reduces to icon-only: sun / crescent
-// moon / a droplet for the SUSE brand theme.
+// moon / a painter's palette for the brand theme.
 export const THEME_ICONS: Record<Theme, string> = {
   light: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
   dark:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
-  suse:  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>`,
+  brand: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a10 10 0 1 1 10-10c0 2.5-2 3-3.5 3H16a2 2 0 0 0-1 3.75A1.3 1.3 0 0 1 12 22z"/><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/></svg>`,
 };
 
-/** The next theme in the cycle (wraps light → dark → suse → light). */
+/** The next theme in the cycle (wraps light → dark → brand → light). */
 export function nextTheme(theme: string): Theme {
   const i = THEMES.indexOf(theme as Theme);
   return THEMES[(i + 1) % THEMES.length] ?? THEMES[0]!;
@@ -40,8 +44,8 @@ export function currentTheme(): string {
 // active theme instead of pinning it to the SUSE dark-green.
 const THEME_COLORS: Record<string, string> = {
   light: '#ffffff',
-  dark: '#030711',  // 224 71% 4%
-  suse: '#0c322c',  // 171 62% 12% (Pine)
+  dark: '#030711',   // 224 71% 4%
+  brand: '#0c322c',  // the static (SUSE-palette) construction's background
 };
 
 // Handle for the transition-class cleanup timer. Module-scoped so rapid theme
@@ -55,6 +59,9 @@ let themeTransitionTimer: ReturnType<typeof setTimeout> | undefined;
  */
 export function applyTheme(theme: string, animate = true): void {
   const html = document.documentElement;
+  // Migrate the retired theme name wherever it's still stored (old profiles,
+  // old localStorage) — the CSS block and the cycle only know 'brand' now.
+  if (theme === 'suse') theme = 'brand';
 
   if (animate) {
     html.classList.add('theme-transitioning');
@@ -65,9 +72,16 @@ export function applyTheme(theme: string, animate = true): void {
   html.dataset.theme = theme;
   localStorage.setItem('theme', theme);
 
-  // Keep the browser/PWA chrome colour in step with the theme.
+  // Keep the browser/PWA chrome colour in step with the theme. Prefer the LIVE
+  // --background triple (the brand theme is constructed at runtime, so the
+  // static map can't know its surface); the map covers pre-CSS edge cases.
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (meta && THEME_COLORS[theme]) meta.content = THEME_COLORS[theme];
+  if (meta) {
+    const triple = getComputedStyle(html).getPropertyValue('--background').trim();
+    const fallback = THEME_COLORS[theme];
+    if (triple) meta.content = `hsl(${triple})`;
+    else if (fallback) meta.content = fallback;
+  }
 }
 
 /** Called at module boot — applies the localStorage value before the profile loads. */

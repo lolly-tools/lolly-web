@@ -8,6 +8,19 @@
  * :root default so the page renders correctly before JS applies the saved pref.
  */
 
+/* ─── Typeface stacks (theme-independent) ───────────────────────────────────
+ * The platform defaults: Outfit (UI/body) and SUSE Mono (code/readouts), both
+ * shell-served (styles/fonts.css). applyChromeBrandVars (brand-vars.ts)
+ * overrides these two properties inline on <html> when the active brand's
+ * tokens declare font.brand / font.mono, so the UI always follows the brand
+ * font once one is loaded — the stacks below are the unbranded fallback tail
+ * it appends. Tool templates may consume var(--font-brand, …) too (they
+ * inherit through the canvas root). */
+:root {
+  --font-brand: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'SUSE Mono', ui-monospace, monospace;
+}
+
 /* ─── Light ─────────────────────────────────────────────────────────────── */
 :root,
 [data-theme="light"] {
@@ -95,8 +108,15 @@
   --radius:                 1rem;
 }
 
-/* ─── SUSE (dark-teal brand base) ───────────────────────────────────────── */
-[data-theme="suse"] {
+/* ─── Brand (mid-toned, palette-driven) ─────────────────────────────────────
+   The spiritual successor to the old SUSE theme: a colored, mid-toned chrome
+   built from the active brand's palette. These static values ARE that
+   construction for the SUSE palette (Pine surfaces, Jungle accent) — the
+   pre-JS default, and the standing look under the suse profile (whose tokens
+   carry no semantic slots). When a brand's `color.semantic.*` resolves,
+   brand-vars.ts re-constructs this whole block at runtime from the brand's
+   primaries (see brandThemeCss). */
+[data-theme="brand"] {
   color-scheme: dark;
 
   --background:             171 62% 12%;      /* #0c322c dark teal */

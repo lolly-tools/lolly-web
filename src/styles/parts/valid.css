@@ -136,7 +136,7 @@
    every other engraved value on this page (facts, metadata, checks). */
 .valid-hero-signedby {
   margin: 0.15rem 0 0;
-  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.74rem; color: hsl(var(--muted-foreground));
 }
 .valid-hero-signedby strong { color: hsl(var(--foreground)); font-weight: 700; }
@@ -298,7 +298,7 @@
    out-specify the `.valid-hero p` margin reset above. */
 .valid-hero .valid-identity-line { margin: 0.35rem 0 0; font-size: 0.8rem; color: hsl(var(--muted-foreground)); }
 .valid-hero .valid-identity-line strong {
-  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em; font-weight: 600; color: hsl(var(--foreground));
 }
 
@@ -306,7 +306,7 @@
 .valid-file strong { color: hsl(var(--foreground)); }
 .valid-selfnote { margin: 0 0 -0.35rem; font-size: 0.75rem; font-style: italic; color: hsl(var(--muted-foreground)); }
 .valid-fmt {
-  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   padding: 0.05rem 0.4rem;
   border: 1px solid hsl(var(--border));
@@ -346,7 +346,7 @@
 .valid-fact dt { display: flex; align-items: center; gap: 0.4rem; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: hsl(0 0% 8%); }
 .valid-fact-ic { display: inline-flex; flex: 0 0 auto; color: hsl(215 22% 32%); }
 .valid-fact-ic svg { width: 0.95rem; height: 0.95rem; }
-.valid-fact dd { margin: 0.4rem 0 0; font-size: 0.75rem; font-weight: 500; font-family: 'SUSE Mono', ui-monospace, monospace; color: hsl(215 12% 40%); overflow-wrap: anywhere; }
+.valid-fact dd { margin: 0.4rem 0 0; font-size: 0.75rem; font-weight: 500; font-family: var(--font-mono); color: hsl(215 12% 40%); overflow-wrap: anywhere; }
 
 /* ─── Embedded-metadata reveal ───────────────────────────────────────────────
    A clinical readout of everything the file discloses (EXIF/XMP/GPS/…). Hierarchy
@@ -369,7 +369,7 @@
 .valid-meta-head h3 svg { width: 2rem; height: 2rem; color: hsl(var(--muted-foreground)); }
 .valid-meta-count {
   margin-left: auto;
-  font-family: 'SUSE Mono', ui-monospace, monospace; font-size: 0.68rem;
+  font-family: var(--font-mono); font-size: 0.68rem;
   color: hsl(var(--muted-foreground)); letter-spacing: 0.02em;
 }
 .valid-meta-note { margin: 0.45rem 0 0; font-size: 0.78rem; line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 68ch; }
@@ -419,7 +419,7 @@
 }
 .valid-meta-row dd {
   margin: 0; font-size: 0.72rem; line-height: 1.35; font-weight: 500;
-  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   color: hsl(var(--foreground)); overflow-wrap: anywhere; word-break: break-word;
 }
 /* Personally identifying — GPS, serials, author names. The exposed VALUE is
@@ -447,7 +447,7 @@
 }
 .valid-meta-loc-item { display: inline-flex; align-items: baseline; gap: 0.5rem; }
 .valid-meta-loc-item .k { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.07em; color: hsl(var(--muted-foreground)); }
-.valid-meta-loc-item .v { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: 0.75rem; color: hsl(var(--vf-fail)); }
+.valid-meta-loc-item .v { font-family: var(--font-mono); font-size: 0.75rem; color: hsl(var(--vf-fail)); }
 .valid-meta-map { font-size: 0.7rem; color: hsl(var(--primary)); text-underline-offset: 2px; white-space: nowrap; }
 
 /* Hero scorecard — eight canonical checks at a glance. Each pip is a struck
@@ -651,7 +651,7 @@
 .valid-input-row dt { margin: 0; font-weight: 600; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
 .valid-input-row dd {
   margin: 0; display: flex; align-items: center; gap: 0.35rem; min-width: 0;
-  font-family: 'SUSE Mono', ui-monospace, monospace; overflow-wrap: anywhere;
+  font-family: var(--font-mono); overflow-wrap: anywhere;
 }
 .valid-input-swatch {
   flex: 0 0 auto; width: 0.85rem; height: 0.85rem; border-radius: 0.2rem;
@@ -746,7 +746,7 @@
    date/description reads as data, not prose. */
 .valid-step-meta {
   display: flex; flex-wrap: wrap; gap: 0.1rem 0.4rem; align-items: center;
-  font-size: 0.72rem; font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.72rem; font-family: var(--font-mono);
   color: hsl(var(--muted-foreground));
 }
 .valid-step-dot { opacity: 0.5; }
@@ -800,7 +800,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-check--bad .valid-check-mark { color: hsl(var(--vf-fail)); background: hsl(var(--vf-fail) / 0.16); }
 .valid-check--info .valid-check-mark { color: hsl(var(--muted-foreground)); background: hsl(var(--muted-foreground) / 0.14); }
 .valid-check-text { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; align-items: baseline; }
-.valid-check-text code {     font-weight: 700;;font-size: 0.78rem; font-family: 'SUSE Mono', ui-monospace, monospace; background: hsl(var(--muted)); padding: 0.05rem 0.4rem; border-radius: 0.3rem; }
+.valid-check-text code {     font-weight: 700;;font-size: 0.78rem; font-family: var(--font-mono); background: hsl(var(--muted)); padding: 0.05rem 0.4rem; border-radius: 0.3rem; }
 .valid-check-text > span { color: hsl(var(--muted-foreground)); }
 .valid-check--bad .valid-check-text > span { color: hsl(var(--foreground)); }
 
@@ -825,7 +825,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-note-body { margin: 0; font-size: 0.8rem; line-height: 1.55; color: hsl(var(--muted-foreground)); max-width: 72ch; }
 .valid-note-body strong { color: hsl(var(--foreground)); font-weight: 600; }
 .valid-note-body a { color: hsl(var(--vf-pass)); text-decoration: underline; text-underline-offset: 2px; }
-.valid-note-body code { font-family: 'SUSE Mono', ui-monospace, monospace; font-size: 0.92em; }
+.valid-note-body code { font-family: var(--font-mono); font-size: 0.92em; }
 
 /* ─── Multi-file: a stack of collapsible reports ─────────────────────────────
    Dropping several files at once yields one <details> per file. The <summary>

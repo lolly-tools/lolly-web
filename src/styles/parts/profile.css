@@ -516,6 +516,7 @@
   background: hsl(var(--muted)); cursor: grab; touch-action: none; user-select: none;
 }
 .cropper-stage:active { cursor: grabbing; }
+.cropper-stage:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 .cropper-img { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 .cropper-mask {
   position: absolute; inset: 0; pointer-events: none; border-radius: 50%;
@@ -549,3 +550,113 @@
 .identity-verify-link:hover { background: hsl(151 57% 36%); color: #fff; border-color: transparent; }
 .identity-verify-link svg { flex: 0 0 auto; }
 
+
+/* ── Your brand — the prominent #/start pathway, the font manager and the
+      shareable brand pack ─────────────────────────────────────────────────── */
+.profile-view .brand-card { border-inline-start: 3px solid hsl(var(--primary) / 0.55); }
+.brand-cta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.brand-status {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: hsl(var(--muted-foreground));
+  max-width: 52ch;
+}
+.profile-view .brand-setup-link {
+  text-decoration: none;
+  white-space: nowrap;
+  display: inline-block;
+}
+.brand-subhead {
+  margin: 1.5rem 0 0.35rem;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+}
+.brand-font-list {
+  list-style: none;
+  margin: 0.6rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brand-font-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+}
+.brand-font-row.is-primary {
+  border-color: hsl(var(--primary) / 0.55);
+  background: hsl(var(--primary) / 0.06);
+}
+.brand-font-specimen {
+  flex: 0 0 auto;
+  width: 2em;
+  font-size: 22px;
+  line-height: 1;
+  text-align: center;
+}
+.brand-font-meta { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.brand-font-name { font-size: 15px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-font-sub { font-size: 12px; color: hsl(var(--muted-foreground)); }
+.brand-font-primary-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.brand-font-make-primary { white-space: nowrap; }
+.brand-font-del {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.brand-font-del:hover { color: hsl(var(--destructive)); background: hsl(var(--destructive) / 0.08); }
+.brand-font-empty {
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  padding: 4px 0;
+}
+.brand-font-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.brand-font-add input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 13.5px;
+}
+.brand-font-add input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.brand-share .storage-actions { margin-top: 0.5rem; }
+
+@media (max-width: 560px) {
+  .brand-cta-row { flex-direction: column; align-items: stretch; }
+  .profile-view .brand-setup-link { text-align: center; }
+}

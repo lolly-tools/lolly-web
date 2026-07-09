@@ -1905,6 +1905,11 @@ function u8ToBase64(u8: Uint8Array): string {
 // trim/compress rather than letting the store throw QuotaExceededError mid-write.
 const MAX_VIDEO_BYTES = 15 * 1024 * 1024;         // 15 MB
 const MAX_ANIMATED_RASTER_BYTES = 20 * 1024 * 1024; // 20 MB
+// Credential preservation reads the ORIGINAL bytes whole (the only branch that
+// does — rasters otherwise stream through createImageBitmap without a JS-heap
+// copy). Skip the scan for outsized originals rather than buffer them: a real
+// credentialed asset is nowhere near this, and preservation is best-effort.
+const MAX_CREDENTIAL_SCAN_BYTES = 64 * 1024 * 1024; // 64 MB
 
 function assertVerbatimSize(file: File, max: number, kind: string): void {
   if (file.size > max) {
@@ -2040,7 +2045,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // sanitised (credential gone) and Lottie is JSON, so both are skipped. Best-
   // effort: an unreadable or absent credential just means nothing to preserve.
   let credential: Uint8Array | undefined, credentialFormat: string | undefined;
-  if (!isLottie && !isVector) {
+  if (!isLottie && !isVector && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
     try {
       const ex = extractC2paStore(new Uint8Array(await file.arrayBuffer()));
       if (ex) { credential = ex.store; credentialFormat = ex.format; }

@@ -218,3 +218,31 @@
   font-weight: 700;
 }
 .start-spec-ratio { font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* ── Scheme mode previews — two live dots per mode (primary + that scheme's
+      derived secondary), repainted with every colour change ───────────────── */
+.start-seg--scheme .start-scheme-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding-top: 8px;
+  padding-bottom: 7px;
+}
+.start-scheme-label { line-height: 1; }
+.start-scheme-dots {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  min-height: 10px; /* reserve the row so an unpainted strip doesn't jump */
+}
+.start-scheme-dot {
+  width: 16px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border) / 0.7);
+}
+
+/* ── Share panel — mirrors the import panel's look ──────────────────────── */
+.start-share { gap: 10px; }
+.start-share-btn { font: inherit; font-size: 13px; font-weight: 600; }

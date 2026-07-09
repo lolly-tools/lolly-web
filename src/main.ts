@@ -14,6 +14,8 @@ import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChang
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
+import { applyChromeBrandVars } from './brand-vars.ts';
+import { registerUserFonts } from './user-fonts.ts';
 import { hydrateSfxMuted, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateNeurospicy, armNeurospicy } from './lib/neurospicy.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
@@ -271,7 +273,7 @@ function ensureMonoPreload(): void {
   l.as = 'font';
   l.type = 'font/woff2';
   l.crossOrigin = 'anonymous';
-  l.href = '/catalog/fonts/webfonts/SUSEMono[wght].woff2';
+  l.href = '/fonts/SUSEMono[wght].woff2'; // shell-served (fonts.css) — profile-independent
   document.head.appendChild(l);
 }
 
@@ -335,6 +337,15 @@ function trackVisualViewport(): void {
 async function boot(): Promise<void> {
   const host = await createBridge();
   trackVisualViewport();
+
+  // Chrome follows the brand: override the theme accent triples from the active
+  // brand's semantic primary (a doc with no semantic slots — SUSE's — leaves the
+  // hardcoded chrome). Fire-and-forget; the accents refine in place once tokens land.
+  // User fonts first: --font-brand may name a locally-stored Google Font, so its
+  // FontFaces should be in document.fonts by the time the stack applies (both are
+  // async and best-effort — worst case the face pops in a beat later).
+  void registerUserFonts(host as unknown as Parameters<typeof registerUserFonts>[0])
+    .finally(() => { void applyChromeBrandVars(host); });
 
   // Profile is the canonical theme store. Apply it now so the theme is correct
   // before the first view renders. Also keeps localStorage in sync for FOUC.

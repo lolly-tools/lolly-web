@@ -358,7 +358,7 @@ stroke-width:.81;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  font-family:"SUSE Mono";
+  font-family: var(--font-mono);
   z-index: 1;
 }
 /* On cards that lead with a preview image, the status badge is injected into the
@@ -1352,6 +1352,95 @@ a.gtile-name:focus-visible::after {
 .meta-dialog-facts dt { color: hsl(var(--muted-foreground)); font-weight: 600; }
 .meta-dialog-facts dd { margin: 0; }
 .meta-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+
+/* Info dialog: the tool preview — the same media the tile shows (img or the
+   sandboxed card.html iframe), framed like a card. aspect-ratio comes inline
+   from the tool's declared render size; the max-height guards tall/portrait
+   tools from swallowing the dialog. */
+.meta-dialog-preview {
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 0.75);
+  background: hsl(var(--muted) / 0.4);
+  overflow: hidden;
+  max-height: 220px;
+  display: grid;
+  place-items: center;
+}
+.meta-dialog-preview-img,
+.meta-dialog-preview img,
+.meta-dialog-preview iframe {
+  width: 100%;
+  height: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border: 0;
+  display: block;
+  pointer-events: none;   /* preview, not a surface — clicks stay in the dialog */
+}
+
+/* Info dialog: the defaults spec sheet — small, dense, professional. */
+.meta-defaults { border-top: 1px solid hsl(var(--border) / 0.6); padding-top: 10px; }
+.meta-defaults-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.meta-defaults-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 3px 18px;
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.meta-default-row {
+  display: grid;
+  grid-template-columns: minmax(7em, auto) 1fr;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.meta-default-row dt {
+  color: hsl(var(--muted-foreground));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta-default-row dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.meta-default-value {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta-default-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+.meta-default-note {
+  font-size: 10.5px;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  padding: 0 6px;
+  flex: none;
+}
+.meta-default-more dd { color: hsl(var(--muted-foreground)); font-size: 11.5px; }
 .history-list { max-height: 50vh; overflow: auto; margin: 0; padding: 0; }
 
 /* Top-right cluster: history button sits to the LEFT of the profile pill. */
