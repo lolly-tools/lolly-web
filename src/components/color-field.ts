@@ -19,7 +19,7 @@
  * scrolling container (the /pro grid). Regular sidebar fields use plain CSS
  * positioning; block-colour fields keep their sidebar-spanning behaviour.
  */
-import { hexToOklch, oklchToHex, rgbToCmyk, cmykToRgbApprox } from '@lolly/engine';
+import { hexToOklch, oklchToHex, rgbToCmyk, cmykToRgbApprox, contrastRatio } from '@lolly/engine';
 import type { Oklch } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
 import { hexToRgba, rgbaToHex, rgbToHsl, hslToRgb, formatColor, parseColor } from '../lib/color-formats.ts';
@@ -292,6 +292,29 @@ function seedGenGroup(group: HTMLElement, hex: string): void {
   const st = genFromHex(mode, hex);
   for (const [k, v] of Object.entries(st)) group.dataset[k] = String(v);
   paintGenGroup(group);
+}
+
+// The value input doubles as a live swatch of the current colour: the colour
+// itself as background, a contrast-tinted edge of the same colour as border,
+// and the text flipped to whichever of white/black reads with more contrast
+// (WCAG ratio, engine brand-derive math). Delivered as custom properties
+// (--hexin-*) rather than style longhands so the stylesheet's :focus ring
+// still outranks the border tint.
+function hexInputPaintProps(rgbHex: string): string {
+  const fg = contrastRatio('#ffffff', rgbHex) >= contrastRatio('#000000', rgbHex) ? '#ffffff' : '#000000';
+  return `--hexin-bg:${rgbHex};--hexin-border:color-mix(in oklab, ${rgbHex}, ${fg} 25%);--hexin-fg:${fg}`;
+}
+
+/** (Re)paint a value input as the given colour's swatch — or back to the
+ *  neutral chrome when the value has no colour (transparent / mid-edit junk). */
+function paintHexInput(input: HTMLInputElement | null, value: string): void {
+  if (!input) return;
+  const rgb = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value) ? value.slice(0, 7) : null;
+  if (!rgb) {
+    for (const p of ['--hexin-bg', '--hexin-border', '--hexin-fg']) input.style.removeProperty(p);
+    return;
+  }
+  input.style.cssText = input.style.cssText.replace(/--hexin-[^;]*;?/g, '') + hexInputPaintProps(rgb);
 }
 
 export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean } = {}): string {

@@ -95,7 +95,7 @@
 .dash-brand-head-text { min-width: 0; }
 .dash-brand-setup {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: .45rem;
-  padding: .5rem .85rem; border-radius: 999px; text-decoration: none;
+  padding: .5rem .85rem; border-radius: var(--radius); text-decoration: none;
   font-size: .8rem; font-weight: 600; white-space: nowrap;
   color: hsl(var(--primary));
   background: hsl(var(--primary) / .1);
@@ -106,6 +106,7 @@
 .dash-brand-setup svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .dash-brand-status { margin: 0 0 1.1rem; font-size: .84rem; line-height: 1.55; color: hsl(var(--muted-foreground)); max-width: 70ch; }
 .dash-brand-status strong { color: hsl(var(--foreground)); }
+.dash-radius-panel { margin-top: 1.1rem; }
 
 /* ── Brand editor (lib/brand-editor.ts). Panels stack; the derive controls sit
       beside their live preview once there's room. `.be` is the positioning
@@ -129,6 +130,27 @@
 .be-cta:hover { background: hsl(var(--primary) / .88); }
 .be-btn:disabled, .be-cta:disabled { opacity: .55; cursor: default; }
 .be-add--sm, .be-btn--sm { padding: .25rem .6rem; font-size: .72rem; }
+
+/* ── Corner style — the one brand control the shared editor doesn't carry
+      (lib/brand-editor.ts). Lives as its own .be-panel on the Dashboard's "Your
+      brand" section and on the #/start wizard (both import this sheet). */
+.brand-radius-row { display: flex; align-items: center; gap: 12px; margin-top: 0.2rem; }
+.brand-radius-preview {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  background: hsl(var(--primary) / 0.55);
+  border: 1px solid hsl(var(--border)); /* uniform on every side — never a single-edge accent */
+}
+.brand-radius-slider { flex: 1 1 auto; min-width: 0; accent-color: hsl(var(--primary)); }
+.brand-radius-value {
+  flex: 0 0 auto;
+  min-width: 4.5ch;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  color: hsl(var(--muted-foreground));
+  text-align: right;
+}
 
 /* Derive: the Primary picker leads full-width, then controls + live preview. */
 .be-derive { display: grid; gap: 1.1rem; }
@@ -188,8 +210,11 @@
 .be-ramps { display: grid; gap: .5rem; }
 .be-ramp-row { display: grid; grid-template-columns: 5.2rem 1fr; align-items: center; gap: .6rem; }
 .be-ramp-label { font-size: .72rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
-.be-ramp { display: grid; grid-template-columns: repeat(9, 1fr); border-radius: calc(var(--radius) * .45); overflow: hidden; box-shadow: 0 0 0 1px hsl(var(--border)); }
-.be-ramp-cell { display: block; width: 100%; aspect-ratio: 1 / 1.35; min-height: 22px; border: 0; margin: 0; padding: 0; }
+/* flex, not a fixed-column grid — the ramp can be 3 to 20 steps (the Shades
+   slider), so cells must always share the full row width equally, not just 9/9ths
+   of one sized for a hardcoded step count. */
+.be-ramp { display: flex; border-radius: calc(var(--radius) * .45); overflow: hidden; box-shadow: 0 0 0 1px hsl(var(--border)); }
+.be-ramp-cell { display: block; flex: 1 1 0; min-width: 0; aspect-ratio: 1 / 1.35; min-height: 22px; border: 0; margin: 0; padding: 0; }
 /* Neutral/secondary steps are real buttons (the Primary ramp stays a plain
    span) — the selected one gets the same ring `.be-swatch.is-selected` uses. */
 button.be-ramp-cell { cursor: pointer; }
@@ -200,8 +225,38 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-spec-h { margin: 0; font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
 .be-spec-b { margin: 0; font-size: .74rem; line-height: 1.5; }
 .be-spec-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .2rem; }
-.be-spec-btn { border-radius: 999px; padding: .28rem .7rem; font-size: .72rem; font-weight: 600; }
+.be-spec-btn { border-radius: var(--radius); padding: .28rem .7rem; font-size: .72rem; font-weight: 600; }
 .be-spec-ratio { font-size: .68rem; font-variant-numeric: tabular-nums; }
+
+/* ── Build your palette (the brand generator): harmony picker → named candidate
+      chips (each + Add to officiate into the brand) → "applied" preview scenes. */
+.be-generate { display: grid; gap: 1.1rem; }
+.be-schemekinds { flex-wrap: wrap; }
+.be-candidates { display: grid; gap: .55rem; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.be-cand {
+  display: flex; align-items: center; gap: .6rem; min-width: 0;
+  padding: .45rem .55rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6);
+  background: hsl(var(--background));
+}
+.be-cand.is-added { opacity: .62; }
+.be-cand-sw { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12); }
+.be-cand-meta { display: grid; gap: 1px; min-width: 0; margin-inline-end: auto; }
+.be-cand-name { font-size: .78rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-cand-hex { font-family: var(--font-mono); font-size: .66rem; color: hsl(var(--muted-foreground)); }
+.be-cand-add {
+  flex: 0 0 auto; border: 1px solid hsl(var(--primary) / .4); background: hsl(var(--primary) / .1);
+  color: hsl(var(--primary)); font: inherit; font-size: .72rem; font-weight: 700;
+  padding: .3rem .6rem; border-radius: 999px; cursor: pointer; transition: background .12s;
+}
+.be-cand-add:hover:not(:disabled) { background: hsl(var(--primary) / .18); }
+.be-cand-add:disabled { border-color: hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground)); cursor: default; }
+
+.be-previews-wrap { display: grid; gap: .5rem; }
+.be-previews { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.be-pv { margin: 0; display: grid; gap: .35rem; }
+.be-pv-art { border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6); overflow: hidden; background: hsl(var(--background)); }
+.be-pv-art svg { display: block; width: 100%; height: auto; }
+.be-pv-cap { font-size: .68rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 
 /* Palette: the wheel view beside the grouped swatch grid (stacks when narrow). */
 .be-pal-split { display: grid; gap: 1.2rem; }

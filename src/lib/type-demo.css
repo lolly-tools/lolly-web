@@ -116,7 +116,7 @@
   gap: 0.4rem;
   padding: 0.28rem 0.6rem;
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: hsl(var(--background));
   color: hsl(var(--muted-foreground));
   font-size: 0.68rem;

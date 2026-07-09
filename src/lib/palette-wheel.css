@@ -38,7 +38,7 @@
   margin: -9px 0 0 -9px;   /* centre the dot on its point */
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius);
   /* Colour over a fine checkerboard so a translucent swatch's alpha is visible
      (the editable wheel can hold #rrggbbaa dots); opaque dots hide the checker. */
   background:

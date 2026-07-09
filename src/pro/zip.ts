@@ -80,9 +80,10 @@ const HEADER = '📐 Lolly  •  ❤️ Give Fitzy an Ovation  •  🌏 https:/
 
 // The little manifest dropped into every batch zip. Top block = package name +
 // author (if set) + timestamp; then a clean one-line-per-file list; then all the
-// "reopen in Lolly" links gathered into a list at the END (as "filename - url") so
-// they don't clutter the file list. `files` is [{ name, ms, fmt, url }]; opts carries
-// the zip name + author.
+// "reopen in Lolly" links gathered into a list at the END (each as a "## filename"
+// header with the URL on the next line, blocks blank-line separated) so they don't
+// clutter the file list. `files` is [{ name, ms, fmt, url }]; opts carries the zip
+// name + author.
 function creditText(files: ManifestFile[] = [], { zipName, author }: ZipMeta = {}): string {
   const now = new Date();
   const date = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -103,9 +104,10 @@ function creditText(files: ManifestFile[] = [], { zipName, author }: ZipMeta = {
     return `${iconFor(f)} ${f.name}${meta ? `   |  ${meta}` : ''}`;
   });
 
-  // Reopen links, listed at the very end as "filename - url", one per file we could
-  // build a link for. Each reopens the tool in Lolly with the exact inputs used.
-  const linkLines = files.filter(f => f.url).map(f => `${f.name} - ${f.url}`);
+  // Reopen links, listed at the very end as a "## filename" header with the URL on the
+  // next line, one block per file we could build a link for (blocks blank-line separated
+  // where they're joined below). Each reopens the tool in Lolly with the exact inputs used.
+  const linkBlocks = files.filter(f => f.url).map(f => `## ${f.name}\n${f.url}`);
 
   const lines = [
     HEADER,
@@ -130,8 +132,9 @@ function creditText(files: ManifestFile[] = [], { zipName, author }: ZipMeta = {
     ...fileLines,
   );
 
-  // Reopen links, gathered at the end.
-  if (linkLines.length) {
+  // Reopen links, gathered at the end. Blocks are joined by a blank line so each
+  // "## filename" / URL pair stands apart.
+  if (linkBlocks.length) {
     lines.push(
       '',
       '',
@@ -140,7 +143,7 @@ function creditText(files: ManifestFile[] = [], { zipName, author }: ZipMeta = {
       'Each link reopens the tool in Lolly with the exact inputs used —',
       'follow it to recreate or tweak the file at lolly.tools.',
       '',
-      ...linkLines,
+      linkBlocks.join('\n\n'),
     );
   }
 

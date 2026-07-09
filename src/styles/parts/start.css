@@ -80,14 +80,8 @@
 .start-utils { display: grid; gap: 22px; }
 @media (min-width: 720px) { .start-utils { grid-template-columns: 1fr 1fr; align-items: start; } }
 
-/* Corner-style + import reuse the editor's .be-panel chrome (dashboard.css). */
-.start-radius-panel .brand-radius-row,
-.start .brand-radius-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 0.2rem;
-}
+/* Corner-style + import reuse the editor's .be-panel chrome, and the corner-style
+   slider's own .brand-radius-* rules, both from dashboard.css. */
 
 /* ── Import panel ────────────────────────────────────────────────────────── */
 .start-import-result {

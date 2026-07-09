@@ -33,11 +33,13 @@
  * a detached editor (route changed mid-op) never writes to a dead node.
  */
 
-import { deriveBrandTokens, createTokenSet, colorToHex, contrastRatio, RAMP_STEPS_MIN, RAMP_STEPS_MAX } from '@lolly/engine';
-import type { BrandDeriveOptions } from '@lolly/engine';
+import { deriveBrandTokens, createTokenSet, colorToHex, contrastRatio, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
+import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
+import { nameColor } from './color-namer.ts';
+import { palettePreviewSvgs } from './palette-preview.ts';
 import type { HostV1, TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
 import type { WebTokensAPI } from '../bridge/tokens.ts';
-import { installUserTokens } from '../bridge/tokens.ts';
+import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
   isRec, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
   setPrimaryPrintOverride, getPrimaryPrintOverride,
@@ -289,6 +291,18 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const installedDoc = isRec(doc) ? doc : null; // stable snapshot for seeding, below — never reassigned
   if (!isRec(doc)) doc = deriveBrandTokens({ primary: DEFAULT_PRIMARY, name: 'My brand' }) as Record<string, unknown>;
 
+  // Whether installedDoc is something the USER actually saved here, vs just the
+  // catalog's own shipped/placeholder brand — distinct from "is there any doc at
+  // all", since a fresh install still resolves ITS tokens as installedDoc. Only a
+  // real user save should seed a control (like Shades below) away from its
+  // considered default; the catalog's incidental step count isn't a user choice.
+  let isUserBrand = false;
+  try {
+    isUserBrand = (await (host.assets as unknown as {
+      _findMetaByType?(t: string): Promise<{ id: string } | null>;
+    })._findMetaByType?.('tokens'))?.id === USER_TOKENS_ID;
+  } catch { /* discovery unavailable — treat as not user-owned */ }
+
   // Derive-control state (separate from the edited doc — it RE-SEEDS on install).
   // Primary is seeded from the REAL installed brand's current colour, so the
   // picker opens on what's actually running, not a hardcoded default — only a
@@ -303,12 +317,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   }
   let scheme: Scheme = 'mono', surface: Surface = 'light', contrast: Contrast = 'comfort';
   // How many shades each ramp carries. New brands start at 5 (a tight, decisive
-  // palette); an installed brand keeps whatever it shipped (seeded from its
-  // primary ramp's step count) so re-opening the editor never silently reshapes it.
+  // palette); a brand the USER saved here keeps whatever it shipped (seeded from
+  // its primary ramp's step count) so re-opening the editor never silently
+  // reshapes it — but the catalog's own placeholder brand doesn't count as a user
+  // choice, so it doesn't override the 5-step default either.
   const DEFAULT_STEPS = 5;
   const anchorStep = (n: number): number => Math.round((n - 1) / 2) + 1; // mid step = engine at(0.5)
   let steps = DEFAULT_STEPS;
-  if (installedDoc) {
+  if (installedDoc && isUserBrand) {
     try {
       const g = createTokenSet(installedDoc).query({ type: 'color' }).filter(t => /^color\.ramp\.primary\.\d+$/.test(t.path));
       if (g.length >= RAMP_STEPS_MIN) steps = Math.min(RAMP_STEPS_MAX, g.length);
@@ -320,6 +336,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   // The primary's pinned CMYK print override (null = auto-convert at export),
   // seeded from the installed brand. Re-applied to the doc after every re-derive.
   let printOverride: [number, number, number, number] | null = installedDoc ? getPrimaryPrintOverride(installedDoc) : null;
+  // The colour-harmony the "Build your palette" generator suggests accents from.
+  let schemeKind: SchemeKind = 'adjacent-3';
   const currentTheme = document.documentElement.dataset.theme || 'light';
 
   const initialDraft = deriveSafe({ primary, scheme, surface, contrast, steps });
@@ -367,6 +385,22 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
             <button type="button" class="be-cta" data-be-save hidden>Save colour</button>
           </div>
           <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep, steps }) : ''}</div>
+        </div>
+      </div>
+
+      <div class="be-panel be-generate">
+        <div class="be-panel-head"><h3 class="be-panel-title">Build your palette</h3>
+          <p class="be-panel-sub">Generate matching colours from your primary — pick a harmony, then <strong>+ Add</strong> the ones you want to your brand. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.</p></div>
+        <div class="be-field">
+          <span class="be-field-label">Harmony</span>
+          <div class="view-seg be-seg be-schemekinds" role="group" aria-label="Colour harmony" data-be-schemekind>
+            ${SCHEME_KINDS.map(k => `<button type="button" class="view-seg-btn" data-kind="${escape(k.id)}" aria-pressed="${k.id === schemeKind}">${escape(k.label)}</button>`).join('')}
+          </div>
+        </div>
+        <div class="be-candidates" data-be-candidates aria-live="polite"></div>
+        <div class="be-previews-wrap">
+          <span class="be-field-label">Your palette, applied</span>
+          <div class="be-previews" data-be-previews></div>
         </div>
       </div>
 
@@ -450,6 +484,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   let wheelTeardown: (() => void) | undefined;
   let paintWheel: () => void = () => {};
 
+  // Hooks run at the end of every repaintPalette (the generator's candidate
+  // "added" states + applied-previews subscribe here, so any palette change —
+  // add / delete / re-derive — keeps them in sync). Declared as a mutable list
+  // to sidestep the TDZ: the generator functions are defined further below.
+  const paletteHooks: Array<() => void> = [];
   const repaintPalette = (): void => {
     // Roles store `{alias}` refs, so hand the walker a resolver built from the
     // SAME doc + theme the tiles are describing — otherwise every role renders
@@ -463,6 +502,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     if (palMount) palMount.innerHTML = paletteHtml(swatches);
     paintWheel();
     syncPickerSwatches();
+    for (const fn of paletteHooks) fn();
   };
 
   // Feed the colour PICKER's swatch grid from the live (draft) brand palette, so
@@ -539,8 +579,72 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       primary = /^#[0-9a-fA-F]{8}$/.test(raw) ? raw.slice(0, 7) : raw;
       renderPreview();
       renderSubst();
+      renderGenerator();
     },
   });
+
+  /** The current primary as a `#`-prefixed hex (shared by the generator + the
+   *  screen/print readout below). */
+  const primaryHex = (): string => (/^#/.test(primary) ? primary : `#${primary}`);
+
+  // ── Build your palette: generate harmony accents (named) + live "applied" previews ──
+  // Each accent is a candidate the user must explicitly + Add to officiate it
+  // into the brand (addSwatch → repaintPalette → persist), matching the Palette
+  // panel's add semantics. The previews render the CURRENT brand palette on
+  // illustrative graphics so the effect of adding/removing colours is felt.
+  const candidatesEl = $('[data-be-candidates]') as HTMLElement | null;
+  const previewsEl = $('[data-be-previews]') as HTMLElement | null;
+  /** The brand's live palette as hexes (primary first), deduped — feeds the previews. */
+  const paletteHexes = (): string[] => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const add = (h: string | undefined): void => { const k = (h || '').toLowerCase(); if (h && /^#[0-9a-fA-F]{6}/.test(h) && !seen.has(k)) { seen.add(k); out.push(h.slice(0, 7)); } };
+    add(primaryHex());
+    for (const s of swatches) if (s.hex && s.kind !== 'semantic') add(s.hex);
+    return out;
+  };
+  const isInPalette = (hex: string): boolean => {
+    const k = hex.toLowerCase().slice(0, 7);
+    return swatches.some(s => (s.hex || '').toLowerCase().slice(0, 7) === k);
+  };
+  const renderCandidates = (): void => {
+    if (!candidatesEl) return;
+    let accents: ReturnType<typeof generateSchemeAccents> = [];
+    try { accents = generateSchemeAccents(primaryHex(), schemeKind); } catch { accents = []; }
+    candidatesEl.innerHTML = accents.map(a => {
+      const name = nameColor(a.hex);
+      const added = isInPalette(a.hex);
+      return `<div class="be-cand${added ? ' is-added' : ''}">
+          <span class="be-cand-sw" style="background:${escape(a.hex)}" aria-hidden="true"></span>
+          <span class="be-cand-meta"><span class="be-cand-name">${escape(name)}</span><span class="be-cand-hex">${escape(a.hex)}</span></span>
+          <button type="button" class="be-cand-add" data-add-hex="${escape(a.hex)}" data-add-name="${escape(name)}"${added ? ' disabled aria-disabled="true"' : ''}>${added ? '✓ Added' : '+ Add'}</button>
+        </div>`;
+    }).join('');
+  };
+  const renderPreviews = (): void => {
+    if (!previewsEl) return;
+    const scenes = palettePreviewSvgs(paletteHexes(), { steps });
+    previewsEl.innerHTML = scenes.map(s => `<figure class="be-pv"><div class="be-pv-art">${s.svg}</div><figcaption class="be-pv-cap">${escape(s.label)}</figcaption></figure>`).join('');
+  };
+  const renderGenerator = (): void => { renderCandidates(); renderPreviews(); };
+  $('[data-be-schemekind]')?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-kind]'); if (!btn) return;
+    schemeKind = btn.dataset.kind as SchemeKind;
+    root.querySelectorAll<HTMLElement>('[data-be-schemekind] [data-kind]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+    renderCandidates();
+  });
+  candidatesEl?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-add-hex]'); if (!btn || btn.disabled) return;
+    const hex = btn.dataset.addHex!, name = btn.dataset.addName || nameColor(hex);
+    if (isInPalette(hex)) return;
+    addSwatch(doc, 'spectrum', name, hex);
+    repaintPalette();       // refreshes swatches + picker + wheel + (via hook) the generator
+    persist(true);          // officiate: the accent is now part of the brand
+    playSfx('click');
+    announce(`${name} added to your palette`);
+  });
+  paletteHooks.push(renderGenerator); // keep candidates + previews in sync with the palette
+  renderGenerator();                  // initial paint
 
   // ── Screen / print substitution readout + optional CMYK override ────────────
   const screenEl = $('[data-be-screen]') as HTMLElement | null;
@@ -548,7 +652,6 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const printToggle = $('[data-be-print-toggle]') as HTMLButtonElement | null;
   const overrideBox = $('[data-be-override]') as HTMLElement | null;
   const cmykInputs = Array.from(root.querySelectorAll<HTMLInputElement>('[data-be-cmyk]'));
-  const primaryHex = (): string => (/^#/.test(primary) ? primary : `#${primary}`);
   /** The auto sRGB→CMYK conversion of the current primary (C,M,Y,K 0–100). */
   const autoCmyk = (): [number, number, number, number] => {
     const p = formatColor('cmyk', primaryHex()).split(',').map(n => Math.round(parseFloat(n)) || 0);
