@@ -118,23 +118,10 @@
 .start-import-err { margin: 0; font-size: 12.5px; font-weight: 600; color: hsl(var(--destructive)); }
 .start-cta--import { align-self: flex-start; }
 
-/* ── Done — filled, unmistakable (self-contained: the generic .btn rule ships
-      with the tool view's lazy sheet, so we don't lean on it here) ──────────── */
-.start-done-row {
-  margin-top: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 18px 20px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: hsl(var(--primary) / 0.05);
-  flex-wrap: wrap;
-}
+/* ── Done note — the floating "Save & begin" button (below) is the one
+      explicit finish line now; this is just the trailing explanation. ────────── */
 .start-done-note {
-  margin: 0;
-  flex: 1 1 320px;
+  margin: 30px 0 0;
   font-size: 13px;
   line-height: 1.55;
   color: hsl(var(--muted-foreground));
@@ -154,3 +141,78 @@
 }
 .start-cta:hover { filter: brightness(1.08); }
 .start-cta:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Floating "Save & begin" — fixed to the viewport (a sibling of .start, not
+      a descendant, so nothing in the page's own layout/scroll affects it) so
+      it stays reachable no matter how far down the editor/import panels the
+      user has scrolled. */
+.start-float-cta {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 28px -10px hsl(var(--primary) / 0.6), 0 2px 8px hsl(0 0% 0% / 0.15);
+  transition: filter 0.12s, transform 0.12s;
+}
+.start-float-cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.start-float-cta svg { width: 16px; height: 16px; flex: none; }
+@media (max-width: 640px) {
+  .start-float-cta { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); padding: 12px 18px; font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .start-float-cta { transition: none; }
+  .start-float-cta:hover { transform: none; }
+}
+
+/* ── SVG colour review (the "no formal tokens — pick which colours to keep"
+      path) — a checkbox grid, each chip a uniform-border rounded swatch card
+      (never a single accent edge). ─────────────────────────────────────────── */
+.start-color-actions { display: flex; gap: 8px; margin: 10px 0; }
+.start-color-grid {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+.start-color-chip {
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 0.6);
+  overflow: hidden;
+}
+.start-color-chip label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.start-color-chip input[type="checkbox"] { flex: none; margin: 0; accent-color: hsl(var(--primary)); }
+.start-color-swatch {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid hsl(var(--border));
+}
+.start-color-hex {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
