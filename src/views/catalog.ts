@@ -50,6 +50,8 @@ import { groupPalette, swatch } from '../lib/swatches.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
 import { staggerReveal } from '../lib/reveal.ts';
 import { PALETTE } from '../palette.ts';
+import type { PaletteEntry } from '../palette.ts';
+import { livePalette } from '../lib/live-palette.ts';
 import { FONTS, WEIGHT_RAMP, FONT_LICENSE } from '../lib/typefaces.ts';
 import {
   restyleIconTheme, buildThemedAssetId, parseThemedAssetId, treatmentFilterSvg,
@@ -458,6 +460,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let dlDialog: HTMLDialogElement | null = null;        // the download dialog, if open
   let detailsDialog: HTMLDialogElement | null = null;   // the asset details modal, if open
   let cropDialog: HTMLDialogElement | null = null;      // the crop dialog, if open
+  // The active brand's palette (host.tokens, cached) — set once in reload() before
+  // the first render; swatchesSectionHtml() reads this closure var synchronously.
+  let palette: readonly PaletteEntry[] = PALETTE;
 
   // Multi-select of the user's OWN uploads (a closure Set of user-asset ids; survives the
   // render() that wipes viewEl.innerHTML). Only user uploads are selectable — shared
@@ -511,12 +516,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // distinct "couldn't load" state (with a Retry) rather than the identical-looking empty
     // catalogue. The other two loads degrade quietly (uploads/profile are best-effort).
     let failed = false;
-    const [catalog, user, prof] = await Promise.all([
+    const [catalog, user, prof, livePal] = await Promise.all([
       host.assets.query({ includeDeprecated: true }).catch(() => { failed = true; return [] as AssetRef[]; }),
       host.assets._listUserAssets().catch(() => [] as AssetRef[]),
       host.profile.get().catch(() => null),
+      livePalette(host),
     ]);
     if (!mounted) return;
+    palette = livePal;
     loadFailed = failed;
     profile = prof;
     favSet = loadFavouriteAssets(prof);
@@ -932,7 +939,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // Their rich bodies keep the existing .cat-panel-* / .plat-* styling. `cat-group--ref`
   // draws a divider above the first one to set the reference zone apart from the assets.
   function swatchesSectionHtml(): string {
-    const { brand, spectrum, ramps } = groupPalette(PALETTE);
+    const { brand, spectrum, ramps } = groupPalette(palette);
     const total = brand.length + spectrum.length + ramps.reduce((n, [, cols]) => n + cols.length, 0);
     const grid = (list: typeof brand) => `<div class="plat-swatch-grid">${list.map(swatch).join('')}</div>`;
     const rampBlocks = ramps.map(([fam, cols]) =>

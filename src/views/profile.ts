@@ -569,6 +569,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       announce(`Added ${fam.family}${fam.primary ? ' as your primary font' : ''} — stored on this device`);
     } catch (err) {
       showBrandError(String((err as { message?: unknown })?.message ?? err));
+      // Clear on failure too, not just success — otherwise the failed attempt's
+      // text sits in the box and blocks searching for a different font until
+      // the user manually clears it themselves.
+      input.value = '';
     }
     btn.textContent = prev; btn.disabled = false; input.disabled = false;
     input.focus();

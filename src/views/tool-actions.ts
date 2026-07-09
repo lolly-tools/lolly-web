@@ -14,7 +14,7 @@ import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDIT
 import { escape } from '../utils.js';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
-import { PALETTE } from '../palette.js';
+import { livePalette } from '../lib/live-palette.ts';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.js';
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
@@ -1172,6 +1172,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // percent so a per-row callback can't thrash the DOM. Animated formats keep
       // their own time-based label (guarded by isAnimated).
       let lastExportPct = -1;
+      // The live brand palette (host.tokens, cached) — not the tokenless PALETTE
+      // fallback — so CMYK ink substitution always matches the active profile's
+      // real brand (SUSE's measured inks, or whichever catalog is mounted).
+      const brandPalette = await livePalette(host);
       const opts: RunExportOpts = {
         ...exportDims(),
         onProgress: (done, total) => {
@@ -1186,7 +1190,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
         ...(fmt === 'html' ? { fullPage: el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ?? false } : {}),
         ...(isPrintFmt(fmt) ? printOpts() : {}),
-        ...(fmt === 'pdf-cmyk' ? { palette: PALETTE } : {}),
+        ...(fmt === 'pdf-cmyk' ? { palette: brandPalette } : {}),
         ...(isCmykFmt(fmt) ? {
           colorProfile: el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || DEFAULT_CMYK_CONDITION,
         } : {}),
@@ -1208,7 +1212,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...(exportDefaults.imprint ? { imprint: true } : {}),
         ...(fmt === 'zip' ? {
           ...printOpts(),   // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
-          palette: PALETTE,
+          palette: brandPalette,
           colorProfile: el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || DEFAULT_CMYK_CONDITION,
           filename: el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || manifest.name,
           bundleFormats: formats.filter(f => ZIP_BUNDLE.has(f)),

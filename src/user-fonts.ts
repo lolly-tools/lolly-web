@@ -230,11 +230,15 @@ export async function primaryFontFamily(host: UserFontsHost): Promise<string> {
   catch { return ''; }
 }
 
-/** Write `family` (or clear, with null) as font.brand and repaint the chrome. */
+/** Write `family` (or clear, with null) as font.brand and repaint the chrome.
+ *  Throws BrandLockedError when the shipped brand is authoritative (the caller's
+ *  UI should already be hidden — see host.tokens.isLocked). The repaint is
+ *  cosmetic and never fails the write: the font IS the primary once the tokens
+ *  land, even if the chrome can't be redrawn (no DOM, a broken token doc, …). */
 export async function setPrimaryFont(host: UserFontsHost, family: string | null): Promise<void> {
   const doc = withBrandFontToken(await primaryBaseDoc(host), family);
   await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
-  await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]);
+  await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
 }
 
 // ── Install / list / remove ───────────────────────────────────────────────────
@@ -257,14 +261,20 @@ export async function installGoogleFont(
   for (let i = 0; i < faces.length; i++) {
     const f: DownloadedFontFace = faces[i]!;
     const id = `${USER_FONT_PREFIX}${slug}/${i}`;
+    // The stored format mirrors whatever css2 actually served (see
+    // google-fonts.ts's FONT_EXT_FORMAT) — usually woff2, occasionally
+    // truetype/opentype when the request wasn't recognised as a modern
+    // browser. The MIME type is informational only; font-registry.ts sniffs
+    // the bytes' own magic number rather than trusting it.
+    const mime = f.format === 'truetype' ? 'font/ttf' : f.format === 'opentype' ? 'font/otf' : 'font/woff2';
     await host.assets._uploadUserAsset({
       id,
       type: 'font',
-      format: 'woff2',
-      blob: new Blob([f.bytes as BlobPart], { type: 'font/woff2' }),
+      format: f.format,
+      blob: new Blob([f.bytes as BlobPart], { type: mime }),
       version,
       meta: {
-        name: `${canonical} (${f.subset || 'all'}${f.weight !== '400' ? ` ${f.weight}` : ''})`,
+        name: `${canonical} (${f.subset || 'all'}${f.weight !== '400' ? ` ${f.weight}` : ''}${f.style === 'italic' ? ' italic' : ''})`,
         family: canonical,
         style: f.style,
         weight: f.weight,

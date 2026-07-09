@@ -426,7 +426,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
 
     let result: TextPathResult;
     try {
-      result = await textApi!.toPath({ text: raw, fontUrl: fontUrl!, fontSize, features: features as string[], letterSpacing, variations: vf!.variations });
+      result = await textApi!.toPath({ text: raw, fontUrl: fontUrl!, fontSize, features: features as string[], letterSpacing, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
     } catch (e) {
       throw new Error(`EMF export: text shaping failed for "${raw.slice(0, 24)}" — ${(e as Error).message}`);
     }

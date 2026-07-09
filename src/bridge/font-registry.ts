@@ -26,10 +26,13 @@
  * persisted (it's ~2.5× the woff2 we already store).
  *
  * **Google's faces are variable and subsetted.** A family arrives as one file per
- * unicode subset (latin, latin-ext), each carrying the whole `wght` axis. So we
- * pick the face whose `unicode-range` covers the run, and pass the run's computed
- * weight to HarfBuzz as a variation (`wght=700`) — without which every weight
- * would outline at the face's default instance.
+ * unicode subset, each carrying the whole `wght` axis — and the subsets are
+ * DISJOINT: the `latin` file has no `Ł`, the `latin-ext` file has no ASCII, so
+ * no single face can draw "Łódź". We therefore return an ordered CHAIN (the face
+ * covering most of the run first) which host.text shapes segment by segment, the
+ * way a browser resolves fallback. The run's computed weight rides along as a
+ * variation (`wght=700`) — without it every weight would outline at the face's
+ * default instance.
  *
  * Resolution is async (a face may need decompressing) and memoised per asset.
  * Anything unresolvable returns null, and the caller keeps its existing fallback.
@@ -154,31 +157,45 @@ const weightRange = (weight: string): [number, number] | null => {
 };
 
 /**
- * Choose the face to outline `text` with, and the axis settings for the run's
- * weight. Faces are filtered to those that (a) match the run's slant and (b)
- * cover every codepoint; among the survivors a variable face wins (it can hit
- * the exact weight), else the nearest static weight.
+ * Order this family's faces into a shaping chain for `text`: the face that
+ * carries most of the run leads, its siblings follow to cover the rest (the
+ * subsets are disjoint, so "Łódź" genuinely needs both `latin` and `latin-ext`).
+ *
+ * Weight is settled BEFORE coverage: a variable face can hit any weight, so all
+ * variable subsets take a `wght` axis for the run; a static family narrows to
+ * the nearest available weight, and faces of the other weights are dropped
+ * (a bold run must never fall back into the regular file).
  *
  * Italic is deliberately strict: we never download italic faces, and outlining
- * an upright face for an italic run would silently un-slant the text. Returning
- * null keeps the caller's honest <text> fallback. Exported for tests.
+ * an upright face for an italic run would silently un-slant the text. An empty
+ * chain keeps the caller's honest <text> fallback. Exported for tests.
  */
-export function pickFace(faces: RegistryFace[], style: FontStyleSlice, text: string): { face: RegistryFace; variations?: string[] } | null {
+export function pickFaces(faces: RegistryFace[], style: FontStyleSlice, text: string): Array<{ face: RegistryFace; variations?: string[] }> {
   const italic = style.fontStyle === 'italic' || style.fontStyle === 'oblique';
   const weight = parseInt(style.fontWeight ?? '') || 400;
-  const usable = faces.filter(f =>
-    (f.style === 'italic') === italic && rangesCover(parseUnicodeRange(f.unicodeRange), text));
-  if (!usable.length) return null;
+  const slantOk = faces.filter(f => (f.style === 'italic') === italic);
+  if (!slantOk.length) return [];
 
-  const variable = usable.find(f => weightRange(f.weight));
-  if (variable) {
-    const [lo, hi] = weightRange(variable.weight)!;
-    const w = Math.min(hi, Math.max(lo, weight));
-    return { face: variable, variations: [`wght=${w}`] };
+  const variable = slantOk.filter(f => weightRange(f.weight));
+  let candidates: Array<{ face: RegistryFace; variations?: string[] }>;
+  if (variable.length) {
+    candidates = variable.map(f => {
+      const [lo, hi] = weightRange(f.weight)!;
+      return { face: f, variations: [`wght=${Math.min(hi, Math.max(lo, weight))}`] };
+    });
+  } else {
+    const nearest = slantOk.reduce((a, b) =>
+      Math.abs(parseInt(b.weight) - weight) < Math.abs(parseInt(a.weight) - weight) ? b : a);
+    candidates = slantOk.filter(f => f.weight === nearest.weight).map(face => ({ face }));
   }
-  const nearest = usable.reduce((a, b) =>
-    Math.abs(parseInt(b.weight) - weight) < Math.abs(parseInt(a.weight) - weight) ? b : a);
-  return { face: nearest };
+
+  // Rank by how much of THIS run each face can draw; a face that draws none of
+  // it (the latin-ext subset of an ASCII run) has no place in the chain.
+  return candidates
+    .map(c => ({ ...c, n: coverageCount(parseUnicodeRange(c.face.unicodeRange), text) }))
+    .filter(c => c.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .map(({ n: _n, ...c }) => c);
 }
 
 // ── The registry ─────────────────────────────────────────────────────────────
@@ -284,13 +301,20 @@ export async function resolveVectorFont(style: FontStyleSlice, text: string): Pr
     }
     const list = faces.get(key);
     if (!list?.length) continue;
-    const hit = pickFace(list, style, text);
-    if (!hit) continue;
+    const chain = pickFaces(list, style, text);
+    if (!chain.length) continue;
     try {
-      const url = await faceUrl(hit.face);
-      return hit.variations ? { url, variations: hit.variations } : { url };
+      // Decode every face in the chain up front; a failure anywhere means this
+      // family can't be trusted to draw the run, so try the next one.
+      const urls = await Promise.all(chain.map(c => faceUrl(c.face)));
+      const [primary, ...rest] = chain.map((c, i) => ({ fontUrl: urls[i]!, variations: c.variations }));
+      return {
+        url: primary!.fontUrl,
+        ...(primary!.variations ? { variations: primary!.variations } : {}),
+        ...(rest.length ? { fallbacks: rest } : {}),
+      };
     } catch {
-      continue; // this face's bytes are unreadable — try the next family
+      continue; // this family's bytes are unreadable — try the next family
     }
   }
   return null;

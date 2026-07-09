@@ -1880,7 +1880,7 @@ async function emitInlineTextSvg(
           try {
             // `notdef` > 0 means this face has no glyph for something in the run —
             // outlining would draw tofu, so keep the <text> fallback instead.
-            const { d, notdef } = await textApi!.toPath({ text: lineText, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations });
+            const { d, notdef } = await textApi!.toPath({ text: lineText, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
             if (d && !notdef) {
               const { ascent, descent } = fontMetricsPx(nodeStyle, fontSizePx);
               const by = textBaselineY(top, r.height, ascent, descent);
@@ -2084,7 +2084,7 @@ async function svgPseudoContent(NS: string, parentG: Element, rootRect: { left: 
     let placed = false;
     if (vectorText && canVectoriseText(ds.ps, fontUrl, Boolean(_host?.text))) {
       try {
-        const { d, notdef } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx, variations: vf!.variations });
+        const { d, notdef } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
         if (d && !notdef) {
           const { ascent, descent } = fontMetricsPx(ds.ps, fontSizePx);
           const by = textBaselineY(y, lineH, ascent, descent);
@@ -4115,7 +4115,7 @@ async function renderInlineContent(
               try {
                 // A glyph the face lacks (notdef) would print as tofu — fall through
                 // to pdf.text, which at least renders through an embedded/base font.
-                const { d, notdef } = await _host!.text!.toPath({ text: shown, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations });
+                const { d, notdef } = await _host!.text!.toPath({ text: shown, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
                 if (d && !notdef) {
                   pdf.setFillColor(textRgb[0], textRgb[1], textRgb[2]);
                   drawSvgPathToPdf(pdf, d,
@@ -4188,7 +4188,7 @@ async function pdfPseudoContent(pdf: any, el: Element, rootRect: { left: number;
     let drawn = false;
     if (convertPaths && canVectoriseText(ds.ps, fontUrl, Boolean(_host?.text))) {
       try {
-        const { d, notdef } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx, variations: vf!.variations });
+        const { d, notdef } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
         if (d && !notdef) {
           const ascentPt = fontMetricsPx(ds.ps, fontSizePx).ascent * cssToPt;
           pdf.setFillColor(textRgb[0], textRgb[1], textRgb[2]);
