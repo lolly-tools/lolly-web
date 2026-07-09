@@ -295,7 +295,7 @@
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   box-shadow: 0 1px 4px #0004;
 }
 
@@ -318,7 +318,7 @@
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   padding: 6px 13px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   box-shadow: 0 2px 8px #0005;
   pointer-events: none;                       /* the tile itself is the link */
   opacity: 0;
@@ -499,7 +499,7 @@
   .featured-grip-bar {
     width: 44px;
     height: 8px;
-    border-radius: 999px;
+    border-radius: var(--radius);
     background: hsl(var(--primary));
     border: 1px solid #fff5;
     box-shadow: 0 1px 4px rgba(0, 0, 0, .22);

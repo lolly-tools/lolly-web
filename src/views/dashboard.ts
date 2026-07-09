@@ -53,6 +53,9 @@ import { collectDevice, renderDeviceCards, renderDeviceStat, liveValue, fmtBytes
 import { playSfx, playThemeSfx } from '../lib/sfx.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
 import { USER_TOKENS_ID } from '../bridge/tokens.ts';
+import { brandRadiusValue } from '../brand-vars.ts';
+import { setBrandRadius } from '../user-fonts.ts';
+import type { UserFontsHost } from '../user-fonts.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 // Type-only — erased at compile time, so this does NOT pull the (lazily
 // loaded) brand-editor.ts module into this view's bundle. See wireLivePaletteDraft.
@@ -115,6 +118,21 @@ function brandSection(): string {
       </div>
       <p class="dash-brand-status" id="dash-brand-status">Loading…</p>
       <div class="dash-brand-editor" data-brand-editor-mount><p class="cat-empty">Loading your brand…</p></div>
+
+      <!-- Corner style — the one brand control the shared editor doesn't carry
+           (setBrandRadius). Hidden until the async brand hydration below has read
+           the current radius (and stays hidden for a locked brand, whose shape is
+           fixed like its colours). -->
+      <section class="be-panel dash-radius-panel" id="dash-radius-panel" aria-label="Corner style" hidden>
+        <div class="be-panel-head"><h3 class="be-panel-title">Corner style</h3>
+          <p class="be-panel-sub">How rounded your cards, buttons and panels read across the whole app.</p></div>
+        <div class="brand-radius-row">
+          <span class="brand-radius-preview" id="dash-radius-preview" aria-hidden="true"></span>
+          <input type="range" class="brand-radius-slider" id="dash-radius-slider" min="0" max="1.5" step="0.05" value="1" aria-label="Corner radius — how rounded the app's cards, buttons and panels read">
+          <span class="brand-radius-value" id="dash-radius-value">1rem</span>
+        </div>
+        <p class="be-err" id="dash-radius-error" role="alert" hidden></p>
+      </section>
     </section>`;
 }
 
@@ -631,6 +649,41 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           : metaId
             ? 'Running the catalogue’s built-in brand. Make it yours below — pick a colour and Lolly derives the rest. It stays on this device.'
             : 'This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.';
+    }
+
+    // Corner style — the one brand control the shared editor doesn't carry
+    // (setBrandRadius). Hidden for a locked brand (its shape is fixed like its
+    // colours), matching the editor's own gate above. Live app-wide preview on
+    // every drag tick (setProperty directly, instant, no round trip), persisted
+    // debounced so a drag doesn't spam writes.
+    const radiusPanel = viewEl.querySelector<HTMLElement>('#dash-radius-panel');
+    if (!locked && radiusPanel && viewEl.contains(radiusPanel)) {
+      const currentRadius = await (host.tokens as { resolve?(ref: string): Promise<unknown> } | undefined)
+        ?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null;
+      if (viewEl.contains(radiusPanel)) {
+        const currentRadiusRem = currentRadius ? parseFloat(currentRadius) : 1;
+        const preview = radiusPanel.querySelector<HTMLElement>('#dash-radius-preview');
+        const slider = radiusPanel.querySelector<HTMLInputElement>('#dash-radius-slider');
+        const valueEl = radiusPanel.querySelector<HTMLElement>('#dash-radius-value');
+        const errEl = radiusPanel.querySelector<HTMLElement>('#dash-radius-error');
+        if (preview) preview.style.borderRadius = `${currentRadiusRem}rem`;
+        if (slider) slider.value = String(currentRadiusRem);
+        if (valueEl) valueEl.textContent = `${currentRadiusRem}rem`;
+        radiusPanel.hidden = false;
+        let radiusDebounce: ReturnType<typeof setTimeout> | undefined;
+        slider?.addEventListener('input', () => {
+          const css = `${slider.value}rem`;
+          if (preview) preview.style.borderRadius = css;
+          if (valueEl) valueEl.textContent = css;
+          document.documentElement.style.setProperty('--radius', css);
+          clearTimeout(radiusDebounce);
+          radiusDebounce = setTimeout(() => {
+            setBrandRadius(host as unknown as UserFontsHost, css).catch(err => {
+              if (errEl) { errEl.textContent = String((err as { message?: unknown })?.message ?? err); errEl.hidden = false; }
+            });
+          }, 400);
+        });
+      }
     }
 
     // Mount the editor. It is the one interactive thing on this page that writes,

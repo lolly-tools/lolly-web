@@ -30,11 +30,11 @@ import { storeUserUpload } from './picker.ts';
 import { CATEGORY_FLAGS, PRO_FLAG, flagEnabled } from '../feature-flags.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
-// Corner radius is the only brand control left on Profile; colour / palette /
-// fonts / brand-pack all live in the Dashboard's "Your brand" editor now.
-import { registerUserFonts, setBrandRadius } from '../user-fonts.ts';
+// Colour / palette / fonts / brand-pack / corner radius all live in the
+// Dashboard's "Your brand" editor now (and the #/start wizard).
+import { registerUserFonts } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
-import { brandRadiusValue, applyChromeBrandVars } from '../brand-vars.ts';
+import { applyChromeBrandVars } from '../brand-vars.ts';
 import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import { relativeTime } from '../folder-tiles.ts';
 import { catalogSummaryBody, hydrateCatalogAssets } from '../lib/catalog-summary.ts';
@@ -173,19 +173,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Only the first-paint-critical reads run upfront. The Storage section's heavy
   // work is deferred to loadStorage() (run when the section is first expanded).
   const profile = await host.profile.get();
-  // A locked catalog owns the brand — including its corner radius. The radius
-  // slider (the only brand control on Profile) is omitted from the aside when
-  // locked, so the whole brand identity stays fixed as the catalog declares it.
-  const brandLocked = await (host.tokens as { isLocked?(): Promise<boolean> } | undefined)?.isLocked?.().catch(() => false) ?? false;
-  // Corner radius: only meaningful to read/offer for an unlocked brand — a
-  // locked catalog's --radius stands as tokens.css declares it. parseFloat
-  // tolerates a stored px/em value from a hand-authored import; the slider
-  // itself always writes back in rem.
-  const currentRadius = !brandLocked
-    ? await (host.tokens as { resolve?(ref: string): Promise<unknown> } | undefined)
-      ?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null
-    : null;
-  const currentRadiusRem = currentRadius ? parseFloat(currentRadius) : 1;
   const fields = ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
   const currentTheme = (profile as { theme?: string }).theme ?? localStorage.getItem('theme') ?? 'light';
   // The headshot is a user asset; re-resolve it (the stored object URL goes stale
@@ -257,15 +244,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                   ${THEMES.map(t => `<button type="button" class="segmented-btn" data-theme-value="${t}" aria-pressed="${t === currentTheme}">${escape(t.charAt(0).toUpperCase() + t.slice(1))}</button>`).join('')}
                 </div>
               </div>
-              ${brandLocked ? '' : `<div class="profile-field profile-field--radius">
-                <span class="profile-field-label">Corner style</span>
-                <div class="brand-radius-row">
-                  <span class="brand-radius-preview" id="brand-radius-preview" style="border-radius:${currentRadiusRem}rem" aria-hidden="true"></span>
-                  <input type="range" class="brand-radius-slider" id="brand-radius-slider" min="0" max="1.5" step="0.05" value="${currentRadiusRem}" aria-label="Corner radius — how rounded the app's cards, buttons and panels read">
-                  <span class="brand-radius-value" id="brand-radius-value">${currentRadiusRem}rem</span>
-                </div>
-                <p class="profile-inline-error" id="brand-radius-error" style="color:hsl(var(--destructive));font-size:13px;margin:.4rem 0 0" hidden></p>
-              </div>`}
               <div class="profile-field profile-field--sound">
                 ${soundSwitchHtml()}
               </div>
@@ -470,30 +448,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
   }
 
-  // Corner radius (the one brand control that lives on Profile — colour, palette,
-  // fonts and the brand pack are the Dashboard's "Your brand" editor). Hidden for
-  // a locked brand (its shape is fixed like its colours), so the slider only
-  // exists when unlocked. Live app-wide preview on every drag tick (setProperty
-  // directly — the same var applyChromeBrandVars sets, instant, no round trip),
-  // persisted debounced so a drag doesn't spam writes.
   const fontsHost = host as unknown as UserFontsHost;
-  const radiusSlider = viewEl.querySelector<HTMLInputElement>('#brand-radius-slider');
-  const radiusPreview = viewEl.querySelector<HTMLElement>('#brand-radius-preview');
-  const radiusValueEl = viewEl.querySelector<HTMLElement>('#brand-radius-value');
-  const radiusErr = viewEl.querySelector<HTMLElement>('#brand-radius-error');
-  let radiusDebounce: ReturnType<typeof setTimeout> | undefined;
-  radiusSlider?.addEventListener('input', () => {
-    const css = `${radiusSlider.value}rem`;
-    if (radiusPreview) radiusPreview.style.borderRadius = css;
-    if (radiusValueEl) radiusValueEl.textContent = css;
-    document.documentElement.style.setProperty('--radius', css);
-    clearTimeout(radiusDebounce);
-    radiusDebounce = setTimeout(() => {
-      setBrandRadius(fontsHost, css).catch(err => {
-        if (radiusErr) { radiusErr.textContent = String((err as { message?: unknown })?.message ?? err); radiusErr.hidden = false; }
-      });
-    }, 400);
-  });
 
   // ── Storage: lazy. Fetch the data + render the (heavy) image grid only when the
   // section is first expanded, then wire its handlers. ──────────────────────────

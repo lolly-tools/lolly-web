@@ -1184,7 +1184,7 @@ a.gtile-name:focus-visible::after {
   line-height: 1;
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 3px 7px;
 }
 .gtile-sub {

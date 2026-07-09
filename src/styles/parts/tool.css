@@ -23,7 +23,7 @@
 .render-pill {
   display: none;            /* shown per breakpoint */
   align-items: stretch;
-  border-radius: 999px;
+  border-radius: calc(var(--radius)*1.5);
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.3);
@@ -1592,7 +1592,7 @@ background-color:hsl(var(--background) / 1);
   transform: translate(-50%, -50%);
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: hsl(var(--primary));
   box-shadow: 0 1px 4px hsl(0 0% 0% / 0.25);
   pointer-events: none;

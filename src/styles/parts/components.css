@@ -503,7 +503,7 @@
 .color-swatch {
   
   height: 2em;
-  width:2em;border-radius:50%;
+  width:2em;border-radius:var(--radius);
  
   border: none;
   cursor: pointer;
