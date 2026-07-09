@@ -118,22 +118,27 @@ function brandSection(): string {
       </div>
       <p class="dash-brand-status" id="dash-brand-status">Loading…</p>
       <div class="dash-brand-editor" data-brand-editor-mount><p class="cat-empty">Loading your brand…</p></div>
+    </section>`;
+}
 
-      <!-- Corner style — the one brand control the shared editor doesn't carry
-           (setBrandRadius). Hidden until the async brand hydration below has read
-           the current radius (and stays hidden for a locked brand, whose shape is
-           fixed like its colours). -->
-      <section class="be-panel dash-radius-panel" id="dash-radius-panel" aria-label="Corner style" hidden>
-        <div class="be-panel-head"><h3 class="be-panel-title">Corner style</h3>
-          <p class="be-panel-sub">How rounded your cards, buttons and panels read across the whole app.</p></div>
+// Corner style — the one brand control the shared editor doesn't carry
+// (setBrandRadius). Lives in the Sound & focus / Theme card, right under the
+// theme switcher (it reads as app appearance, like the theme). Hidden until
+// the async brand hydration has read the current radius (and stays hidden for
+// a locked brand, whose shape is fixed like its colours). Wears the card's
+// split-divider chrome, not a nested .be-panel card.
+function radiusBody(): string {
+  return `
+      <div class="dash-radius-panel" id="dash-radius-panel" aria-label="Corner style" hidden>
+        <div class="dash-dev-split dash-sound-theme-split"><span>Corner style</span></div>
+        <p class="plat-section-desc">How rounded your cards, buttons and panels read across the whole app.</p>
         <div class="brand-radius-row">
           <span class="brand-radius-preview" id="dash-radius-preview" aria-hidden="true"></span>
           <input type="range" class="brand-radius-slider" id="dash-radius-slider" min="0" max="1.5" step="0.05" value="1" aria-label="Corner radius — how rounded the app's cards, buttons and panels read">
           <span class="brand-radius-value" id="dash-radius-value">1rem</span>
         </div>
         <p class="be-err" id="dash-radius-error" role="alert" hidden></p>
-      </section>
-    </section>`;
+      </div>`;
 }
 
 // ── Palette: the compact "ink ribbon" ──────────────────────────────────────
@@ -559,6 +564,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           <div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>
           <div class="dash-dev-split dash-sound-theme-split"><span>Theme</span></div>
           ${themesBody()}
+          ${radiusBody()}
         </section>
         <section class="plat-section dash-section dash-card" id="dash-activity" data-flag="activity">
           ${sectionHead('Your activity', 'dash-activity-h', 'Local-only counters — nothing here is recorded remotely.')}

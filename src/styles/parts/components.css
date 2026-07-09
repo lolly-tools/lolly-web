@@ -364,18 +364,24 @@
 .color-modes .color-lch,
 .color-modes .color-modegroup { min-height: calc(4 * 18px + 3 * 8px); justify-content: flex-start; }
 
+/* The value field is a live swatch of the current colour: the picker sets
+   --hexin-bg/--hexin-border to the colour and --hexin-fg to white or black,
+   whichever contrasts more (color-field.ts paintHexInput). The fallbacks are
+   the neutral chrome for valueless states (transparent, mid-edit junk). */
 .color-hex-input {
   width: 100%;
   padding: 5px 8px;
-  background: hsl(var(--input) / 0.3);
-  color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--input));
+  background: var(--hexin-bg, hsl(var(--input) / 0.3));
+  color: var(--hexin-fg, hsl(var(--foreground)));
+  caret-color: var(--hexin-fg, hsl(var(--foreground)));
+  border: 1px solid var(--hexin-border, hsl(var(--input)));
   border-radius: calc(var(--radius) *2);
   text-align:center;
   font-family: var(--font-mono);
   font-size: 17px;
   padding:16px;
   outline: none;
+  transition: background-color .12s, color .12s, border-color .12s;
 }
 .color-hex-input:focus {
   border-color: hsl(var(--ring) / 0.6);

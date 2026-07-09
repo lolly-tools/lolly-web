@@ -88,7 +88,7 @@
 .pro-progress-fill {
   display: block; height: 100%; width: 0;
   background: hsl(var(--primary));
-  border-radius: 999px;
+  border-radius: var(--radius);
   transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (prefers-reduced-motion: reduce) { .pro-progress-fill { transition: none; } }
@@ -237,7 +237,7 @@
 .pro-tc-fill {
   display: block; height: 100%;
   background: hsl(var(--primary) / 0.55);
-  border-radius: 999px;
+  border-radius: var(--radius);
   animation: pro-tc-grow 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 /* After the shortest→longest sort the last row is the slowest — give it the full accent. */

@@ -300,9 +300,13 @@ function seedGenGroup(group: HTMLElement, hex: string): void {
 // (WCAG ratio, engine brand-derive math). Delivered as custom properties
 // (--hexin-*) rather than style longhands so the stylesheet's :focus ring
 // still outranks the border tint.
-function hexInputPaintProps(rgbHex: string): string {
+function hexInputPaint(rgbHex: string): Record<string, string> {
   const fg = contrastRatio('#ffffff', rgbHex) >= contrastRatio('#000000', rgbHex) ? '#ffffff' : '#000000';
-  return `--hexin-bg:${rgbHex};--hexin-border:color-mix(in oklab, ${rgbHex}, ${fg} 25%);--hexin-fg:${fg}`;
+  return {
+    '--hexin-bg': rgbHex,
+    '--hexin-border': `color-mix(in oklab, ${rgbHex}, ${fg} 25%)`,
+    '--hexin-fg': fg,
+  };
 }
 
 /** (Re)paint a value input as the given colour's swatch — or back to the
@@ -310,11 +314,11 @@ function hexInputPaintProps(rgbHex: string): string {
 function paintHexInput(input: HTMLInputElement | null, value: string): void {
   if (!input) return;
   const rgb = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value) ? value.slice(0, 7) : null;
-  if (!rgb) {
-    for (const p of ['--hexin-bg', '--hexin-border', '--hexin-fg']) input.style.removeProperty(p);
-    return;
+  const paint = rgb ? hexInputPaint(rgb) : null;
+  for (const p of ['--hexin-bg', '--hexin-border', '--hexin-fg']) {
+    if (paint) input.style.setProperty(p, paint[p]!);
+    else input.style.removeProperty(p);
   }
-  input.style.cssText = input.style.cssText.replace(/--hexin-[^;]*;?/g, '') + hexInputPaintProps(rgb);
 }
 
 export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean } = {}): string {
@@ -360,7 +364,7 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
     <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
       ${swatchesOnly ? '' : `<input type="text" class="color-hex-input" data-color-hex="${eid}"
              value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}"
-             ${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
+             ${isHex6 || isHex8 ? `style="${Object.entries(hexInputPaint(rgbHex)).map(([k, v]) => `${k}:${v}`).join(';')}" ` : ''}${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
       ${modes ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null) : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
@@ -536,10 +540,13 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     return m ? MODE_FMT[(m.dataset.activeMode as ColorMode) || 'oklch'] : null;
   };
   /** Write the shared value field for `id` — in the active mode's space, else hex.
-   *  Never clobbers the field while the user is typing in it. */
+   *  Never clobbers the field's TEXT while the user is typing in it, but always
+   *  repaints its swatch chrome (background/border/contrast-flipped text). */
   const writeValueField = (id: string, field: HTMLElement | null, fullHex: string): void => {
     const input = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
-    if (!input || input === document.activeElement) return;
+    if (!input) return;
+    paintHexInput(input, fullHex);
+    if (input === document.activeElement) return;
     const fmt = valueFmt(field);
     input.value = fmt ? formatColor(fmt, fullHex) : fullHex;
   };
@@ -879,6 +886,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       if (alphaSlider) alphaSlider.value = String(alphaInt);
       if (alphaPctEl) alphaPctEl.textContent = Math.round(alphaInt / 255 * 100) + '%';
       const finalVal = (alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex).toLowerCase();
+      paintHexInput(hexInput, finalVal);   // typing repaints the swatch chrome live
       if (field) seedLch(field, finalVal);
       updateTrigger(field, finalVal);
       onChange(id, finalVal);
