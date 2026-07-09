@@ -19,9 +19,10 @@
  * scrolling container (the /pro grid). Regular sidebar fields use plain CSS
  * positioning; block-colour fields keep their sidebar-spanning behaviour.
  */
-import { hexToOklch, oklchToHex } from '@lolly/engine';
+import { hexToOklch, oklchToHex, rgbToCmyk, cmykToRgbApprox } from '@lolly/engine';
 import type { Oklch } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
+import { hexToRgba, rgbaToHex, rgbToHsl, hslToRgb } from '../lib/color-formats.ts';
 import { escape } from '../utils.ts';
 
 /** One swatch as the picker renders it (see SWATCHES below). */
@@ -141,7 +142,141 @@ export function contrastText(hex: string): string {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#000000' : '#ffffff';
 }
 
-export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean } = {}): string {
+// ── Colour-space slider modes (opt-in via `modes`) ──────────────────────────
+// The picker's default surface is the OKLCH sliders above. `modes` adds a tab
+// bar — OKLCH · HSL · RGB · CMYK — so the same colour can be set in whichever
+// space the user thinks in (the brand primary wants this). OKLCH keeps its own
+// dedicated state machine (.color-lch — its data-l/c/h avoids low-chroma hue
+// drift); the other three are "generic" groups driven by these helpers. Each
+// generic group holds its channels as data-* on the group element and only
+// round-trips to hex on the way OUT, so a lossy space (CMYK↔RGB is many-to-one
+// on K) stays stable while dragging — same discipline as the OKLCH group.
+export type ColorMode = 'oklch' | 'hsl' | 'rgb' | 'cmyk';
+/** The generic (non-OKLCH) spaces — those driven by MODE_AXES + gen* helpers. */
+type GenMode = 'hsl' | 'rgb' | 'cmyk';
+
+interface ModeAxis { ch: string; label: string; aria: string; min: number; max: number; step: number; }
+/** Channel spec per generic mode — UI units (RGB 0–255, HSL h 0–360 s/l 0–100, CMYK 0–100). */
+const MODE_AXES: Record<GenMode, ModeAxis[]> = {
+  hsl: [
+    { ch: 'h', label: 'H', aria: 'Hue', min: 0, max: 360, step: 1 },
+    { ch: 's', label: 'S', aria: 'Saturation', min: 0, max: 100, step: 1 },
+    { ch: 'l', label: 'L', aria: 'Lightness', min: 0, max: 100, step: 1 },
+  ],
+  rgb: [
+    { ch: 'r', label: 'R', aria: 'Red', min: 0, max: 255, step: 1 },
+    { ch: 'g', label: 'G', aria: 'Green', min: 0, max: 255, step: 1 },
+    { ch: 'b', label: 'B', aria: 'Blue', min: 0, max: 255, step: 1 },
+  ],
+  cmyk: [
+    { ch: 'c', label: 'C', aria: 'Cyan', min: 0, max: 100, step: 1 },
+    { ch: 'm', label: 'M', aria: 'Magenta', min: 0, max: 100, step: 1 },
+    { ch: 'y', label: 'Y', aria: 'Yellow', min: 0, max: 100, step: 1 },
+    { ch: 'k', label: 'K', aria: 'Black', min: 0, max: 100, step: 1 },
+  ],
+};
+
+/** A generic mode's channel values (UI units) read from an sRGB hex. */
+function genFromHex(mode: GenMode, hex: string): Record<string, number> {
+  const { r, g, b } = hexToRgba(hex) ?? { r: 0, g: 0, b: 0, a: 1 };
+  if (mode === 'rgb') return { r, g, b };
+  if (mode === 'hsl') { const [h, s, l] = rgbToHsl(r, g, b); return { h, s, l }; }
+  const [c, m, y, k] = rgbToCmyk(r / 255, g / 255, b / 255); // engine returns 0–1
+  return { c: c * 100, m: m * 100, y: y * 100, k: k * 100 };
+}
+
+/** A generic mode's channel values → an sRGB `#rrggbb` (gamut-safe, no alpha). */
+function genToHex(mode: GenMode, st: Record<string, number>): string {
+  if (mode === 'rgb') return rgbaToHex(st.r!, st.g!, st.b!, 1);
+  if (mode === 'hsl') { const [r, g, b] = hslToRgb(st.h!, st.s!, st.l!); return rgbaToHex(r, g, b, 1); }
+  const [r, g, b] = cmykToRgbApprox([st.c! / 100, st.m! / 100, st.y! / 100, st.k! / 100] as [number, number, number, number]);
+  return rgbaToHex(r * 255, g * 255, b * 255, 1);
+}
+
+/** Per-channel track gradient for a generic mode: each sweeps its axis, others held. */
+function genTracks(mode: GenMode, st: Record<string, number>): Record<string, string> {
+  const grad = (stops: string[]): string => `linear-gradient(to right, ${stops.join(', ')})`;
+  if (mode === 'rgb') return {
+    r: grad([`rgb(0,${st.g},${st.b})`, `rgb(255,${st.g},${st.b})`]),
+    g: grad([`rgb(${st.r},0,${st.b})`, `rgb(${st.r},255,${st.b})`]),
+    b: grad([`rgb(${st.r},${st.g},0)`, `rgb(${st.r},${st.g},255)`]),
+  };
+  if (mode === 'hsl') return {
+    h: grad(Array.from({ length: 13 }, (_, i) => `hsl(${i / 12 * 360} ${st.s}% ${st.l}%)`)),
+    s: grad([`hsl(${st.h} 0% ${st.l}%)`, `hsl(${st.h} 100% ${st.l}%)`]),
+    l: grad([`hsl(${st.h} ${st.s}% 0%)`, `hsl(${st.h} ${st.s}% 50%)`, `hsl(${st.h} ${st.s}% 100%)`]),
+  };
+  // CMYK: no CSS cmyk() — sample the approx conversion at 7 stops per axis.
+  const sample = (vary: 'c' | 'm' | 'y' | 'k'): string => grad(Array.from({ length: 7 }, (_, i) => {
+    const v = { ...st, [vary]: (i / 6) * 100 };
+    const [r, g, b] = cmykToRgbApprox([v.c! / 100, v.m! / 100, v.y! / 100, v.k! / 100] as [number, number, number, number]);
+    return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+  }));
+  return { c: sample('c'), m: sample('m'), y: sample('y'), k: sample('k') };
+}
+
+/** A generic channel's readout: hue in degrees, RGB as an integer, the rest as %. */
+function genValText(mode: GenMode, ch: string, v: number): string {
+  if (mode === 'rgb') return `${Math.round(v)}`;
+  if (mode === 'hsl' && ch === 'h') return `${Math.round(v)}°`;
+  return `${Math.round(v)}%`;
+}
+
+/** One generic mode's slider group (channels as data-* on the wrapper). */
+function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean): string {
+  const st = genFromHex(mode, rgbHex);
+  const tracks = genTracks(mode, st);
+  const rows = MODE_AXES[mode].map(a => `
+      <div class="color-lch-row">
+        <span class="color-lch-label" aria-hidden="true">${a.label}</span>
+        <input type="range" class="color-mode-slider" data-mode-ch="${a.ch}"
+               min="${a.min}" max="${a.max}" step="${a.step}" value="${Math.round(st[a.ch]!)}"
+               style="background:${tracks[a.ch]}" aria-label="${a.aria}">
+        <span class="color-lch-val" data-mode-val="${a.ch}">${genValText(mode, a.ch, st[a.ch]!)}</span>
+      </div>`).join('');
+  const data = MODE_AXES[mode].map(a => `data-${a.ch}="${st[a.ch]}"`).join(' ');
+  return `<div class="color-modegroup" data-mode-group="${mode}" ${data}${hidden ? ' hidden' : ''}>${rows}</div>`;
+}
+
+/** The mode tab bar + all four groups (OKLCH default-visible, the rest hidden). */
+function colorModesHtml(eid: string, rgbHex: string | null): string {
+  const seed = rgbHex ?? '#4f83cc'; // generic groups need a real hex; OKLCH seeds itself
+  const tab = (m: ColorMode, label: string, on: boolean): string =>
+    `<button type="button" class="color-mode-tab" role="tab" data-mode="${m}" aria-selected="${on}">${label}</button>`;
+  return `<div class="color-modes" data-color-modes="${eid}">
+      <div class="color-mode-tabs" role="tablist" aria-label="Colour space">
+        ${tab('oklch', 'OKLCH', true)}${tab('hsl', 'HSL', false)}${tab('rgb', 'RGB', false)}${tab('cmyk', 'CMYK', false)}
+      </div>
+      ${lchSlidersHtml(eid, rgbHex)}
+      ${genGroupHtml('hsl', seed, true)}
+      ${genGroupHtml('rgb', seed, true)}
+      ${genGroupHtml('cmyk', seed, true)}
+    </div>`;
+}
+
+/** Repaint a generic group's sliders + readouts + tracks from its data-* state. */
+function paintGenGroup(group: HTMLElement): void {
+  const mode = group.dataset.modeGroup as GenMode;
+  const st: Record<string, number> = {};
+  for (const a of MODE_AXES[mode]) st[a.ch] = parseFloat(group.dataset[a.ch] ?? '0');
+  const tracks = genTracks(mode, st);
+  for (const a of MODE_AXES[mode]) {
+    const slider = group.querySelector<HTMLInputElement>(`[data-mode-ch="${a.ch}"]`);
+    const val = group.querySelector<HTMLElement>(`[data-mode-val="${a.ch}"]`);
+    if (slider) { slider.value = String(Math.round(st[a.ch]!)); slider.style.background = tracks[a.ch]!; }
+    if (val) val.textContent = genValText(mode, a.ch, st[a.ch]!);
+  }
+}
+
+/** Re-seed a generic group's channels from an sRGB hex (external colour change). */
+function seedGenGroup(group: HTMLElement, hex: string): void {
+  const mode = group.dataset.modeGroup as GenMode;
+  const st = genFromHex(mode, hex);
+  for (const [k, v] of Object.entries(st)) group.dataset[k] = String(v);
+  paintGenGroup(group);
+}
+
+export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean } = {}): string {
   const rawVal = toHex(value) ?? '';
   const isTransparent = rawVal === 'transparent';
   const isHex8 = /^#[0-9a-fA-F]{8}$/.test(rawVal);
@@ -182,7 +317,7 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       <span class="color-trigger-name">${escape(name)}</span>
     </button>`}
     <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
-      ${swatchesOnly ? '' : `${lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
+      ${swatchesOnly ? '' : `${modes ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null) : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
       <input type="text" class="color-hex-input" data-color-hex="${eid}"
              value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="#rrggbbaa"
              maxlength="9" spellcheck="false" autocomplete="off" aria-label="Hex colour value">
@@ -381,14 +516,19 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     }
   }
 
-  /** Re-seed the sliders from a hex chosen elsewhere (swatch / hex box / native). */
+  /** Re-seed the sliders from a hex chosen elsewhere (swatch / hex box / native).
+   *  Re-seeds the OKLCH group AND — when a colour-space mode is active (`modes`)
+   *  — the visible generic group, so RGB/HSL/CMYK sliders catch up to the change. */
   function seedLch(field: HTMLElement, hex: string): void {
+    const rgb = hex.startsWith('#') ? hex.slice(0, 7) : hex;
     const box = field.querySelector<HTMLElement>('.color-lch');
-    if (!box) return;
-    const o = hexToOklch(hex.startsWith('#') ? hex.slice(0, 7) : hex);
-    if (!o) return; // 'transparent' / invalid — leave the sliders where they were
-    box.dataset.l = String(o.l); box.dataset.c = String(o.c); box.dataset.h = String(o.h);
-    paintLch(box);
+    if (box) {
+      const o = hexToOklch(rgb);
+      // 'transparent' / invalid — leave the sliders where they were
+      if (o) { box.dataset.l = String(o.l); box.dataset.c = String(o.c); box.dataset.h = String(o.h); paintLch(box); }
+    }
+    const active = field.querySelector<HTMLElement>('.color-modegroup:not([hidden])');
+    if (active && /^#[0-9a-fA-F]{6}$/.test(rgb)) seedGenGroup(active, rgb);
   }
 
   // ── Palette swatches (lazy) ──────────────────────────────────────────────────
@@ -558,6 +698,62 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
         if (native) native.value = rgbHex;
         updateTrigger(field, fullHex);
         onChange(id, fullHex);
+      });
+    });
+  });
+
+  // ── Colour-space modes (opt-in `modes`: OKLCH · HSL · RGB · CMYK) ────────────
+  // The tab bar swaps which slider group is visible; the OKLCH group is the
+  // dedicated .color-lch (wired above), the other three are generic groups
+  // driven by the gen* helpers. Each group re-seeds from the current hex on
+  // entry, so switching spaces never loses the colour.
+  scope.querySelectorAll<HTMLElement>('.color-modes[data-color-modes]').forEach(modes => {
+    const id = modes.dataset.colorModes!;
+    const field = modes.closest<HTMLElement>('[data-color-field]');
+    const lchGroup = modes.querySelector<HTMLElement>('.color-lch');
+    const genGroups = modes.querySelectorAll<HTMLElement>('.color-modegroup');
+
+    /** The field's current sRGB hex (from the shared hex box), or the neutral seed. */
+    const currentHex = (): string => {
+      const raw = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`)?.value.trim() || '';
+      return /^#[0-9a-fA-F]{6}/.test(raw) ? raw.slice(0, 7) : oklchToHex(LCH_SEED);
+    };
+
+    modes.querySelectorAll<HTMLElement>('.color-mode-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const mode = tab.dataset.mode as ColorMode;
+        modes.querySelectorAll<HTMLElement>('.color-mode-tab').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+        if (lchGroup) lchGroup.hidden = mode !== 'oklch';
+        genGroups.forEach(g => {
+          const on = g.dataset.modeGroup === mode;
+          g.hidden = !on;
+          if (on) seedGenGroup(g, currentHex()); // catch up to the current colour
+        });
+        if (mode === 'oklch' && field) seedLch(field, currentHex());
+      });
+    });
+
+    genGroups.forEach(group => {
+      const mode = group.dataset.modeGroup as GenMode;
+      group.querySelectorAll<HTMLInputElement>('.color-mode-slider').forEach(slider => {
+        slider.addEventListener('pointerdown', () => interact(true));
+        slider.addEventListener('pointerup', () => interact(false));
+        slider.addEventListener('input', () => {
+          group.dataset[slider.dataset.modeCh!] = slider.value;
+          const st: Record<string, number> = {};
+          for (const a of MODE_AXES[mode]) st[a.ch] = parseFloat(group.dataset[a.ch] ?? '0');
+          paintGenGroup(group); // repaint the other tracks around the new position
+          const rgbHex = genToHex(mode, st);
+          const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
+          const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
+          const fullHex = alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex;
+          const hexInput = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
+          if (hexInput) hexInput.value = fullHex;
+          const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
+          if (native) native.value = rgbHex;
+          updateTrigger(field, fullHex);
+          onChange(id, fullHex);
+        });
       });
     });
   });

@@ -94,12 +94,12 @@ const SWITCH_CSS = `
 .sound-switch-label { font-weight: 600; font-size: .9rem; color: hsl(var(--foreground)); }
 .sound-switch-track {
   position: relative; flex-shrink: 0; width: 46px; height: 26px; padding: 0; border: none;
-  border-radius: 999px; cursor: pointer; background: hsl(var(--muted));
+  border-radius: var(--radius); cursor: pointer; background: hsl(var(--muted));
   transition: background .2s ease;
 }
 .sound-switch-track[aria-checked="true"] { background: hsl(var(--primary)); }
 .sound-switch-knob {
-  position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: var(--radius);
   background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35);
   transition: transform .22s cubic-bezier(.2,.7,.3,1);
 }

@@ -16,6 +16,7 @@
 
 import { parseThemedAssetId, applyIconTheme, parseIconThemesDoc } from '../../../../engine/src/icon-theme.ts';
 import { parseTreatedAssetId, parsePhotoTreatmentsDoc, wrapRasterWithTreatment, stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
+import { extractC2paStore } from '../../../../engine/src/c2pa-verify.ts';
 import type { AssetRef, AssetQuery } from '../../../../engine/src/bridge/host-v1.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
@@ -106,6 +107,13 @@ interface AssetsDb {
 }
 
 const OBJECT_URL_CACHE = new Map<string, string>(); // key → blob URL, kept alive while bridge is.
+
+// Library-asset credential lookups (host.assets.credential) — the extracted
+// C2PA store per id, or null once an asset is known clean. Manifest stores are
+// small (no pixels); nulls dominate, so the map stays tiny.
+const CREDENTIAL_CACHE = new Map<string, { store: Uint8Array; format: string } | null>();
+// Skip credential-scanning anything enormous — same cap as upload ingest.
+const MAX_CREDENTIAL_SCAN_BYTES = 64 * 1024 * 1024;
 
 // Parsed theme list from the catalog's icon-themes palette asset (a palette-type
 // asset tagged "icon-themes"). Cached per session; reset when the catalog syncs.
@@ -576,15 +584,32 @@ export function createAssetsAPI(db: AssetsDb) {
       return cached.some(Boolean);
     },
 
-    // The Content Credentials captured for a user upload at ingest, if any — the
-    // raw C2PA manifest store + its original container format. The runtime uses
-    // this to preserve a placed credentialed asset's provenance as an export
-    // ingredient. Only user uploads can carry one; everything else is null.
+    // The Content Credentials a placed asset carries, if any — the raw C2PA
+    // manifest store + its original container format. The runtime uses this to
+    // preserve a placed credentialed asset's provenance as an export ingredient.
+    // User uploads serve the store captured at ingest (their stored pixels were
+    // re-encoded, so the bytes no longer carry it); library/catalog assets are
+    // read from their own bytes on demand (v1.31) — cached per id, since the
+    // bytes are immutable for a given version.
     async credential(id: string): Promise<{ store: Uint8Array; format: string } | null> {
-      if (!id.startsWith('user/')) return null;
-      const rec = await db.get('user-assets', id);
-      if (!rec?.credential || !rec.credentialFormat) return null;
-      return { store: rec.credential, format: rec.credentialFormat };
+      if (id.startsWith('user/')) {
+        const rec = await db.get('user-assets', id);
+        if (!rec?.credential || !rec.credentialFormat) return null;
+        return { store: rec.credential, format: rec.credentialFormat };
+      }
+      const cached = CREDENTIAL_CACHE.get(id);
+      if (cached !== undefined) return cached;
+      let out: { store: Uint8Array; format: string } | null = null;
+      try {
+        const ref = await api.get(stripAssetModifiers(id));
+        const blob = await (await fetch(ref.url)).blob();
+        if (blob.size <= MAX_CREDENTIAL_SCAN_BYTES) {
+          const ex = extractC2paStore(new Uint8Array(await blob.arrayBuffer()));
+          if (ex) out = { store: ex.store, format: ex.format };
+        }
+      } catch { /* unresolvable asset → no credential */ }
+      CREDENTIAL_CACHE.set(id, out);
+      return out;
     },
   };
   return api;

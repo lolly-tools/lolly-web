@@ -27,3 +27,15 @@
   outline-offset: 2px;
 }
 
+/* The swatch editor's Name/format fields carry a tighter corner radius than
+   the global :focus-visible rule's border-radius override assumes — restate
+   it here so keyboard focus doesn't visually balloon these small fields into
+   a rounder pill than their own border. */
+.be-editor-name:focus-visible,
+.be-fmt-sel:focus-visible,
+.be-fmt-input:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: calc(var(--radius) * .5);
+}
+

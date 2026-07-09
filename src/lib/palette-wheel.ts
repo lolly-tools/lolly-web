@@ -94,8 +94,8 @@ export function wirePaletteWheel(root: HTMLElement): void {
 export interface WheelDot { idx: number; hex: string; label: string }
 
 export interface BrandWheelHandlers {
-  /** Live during a drag: the dot moved to this hue/chroma (lightness kept). */
-  onRecolor(idx: number, oklch: { l: number; c: number; h: number }): void;
+  /** Live during a drag: the dot moved to this hue/chroma (lightness + alpha kept). */
+  onRecolor(idx: number, oklch: { l: number; c: number; h: number; alpha?: number }): void;
   /** The drag ended — a good moment to persist. */
   onCommit(idx: number): void;
   /** A dot was clicked (not dragged) — open its editor. */
@@ -160,7 +160,8 @@ export function wireBrandWheel(root: HTMLElement, h: BrandWheelHandlers): () => 
     const { x, y } = posPct(e);
     const { c, h: hue } = wheelXYToChromaHue(x, y);
     const cur = hexToOklch(h.hexOf(dragIdx)) ?? { l: 0.62, c, h: hue };
-    h.onRecolor(dragIdx, { l: cur.l, c, h: hue });
+    // Keep the swatch's lightness AND its opacity — dragging only moves hue+chroma.
+    h.onRecolor(dragIdx, { l: cur.l, c, h: hue, alpha: cur.alpha });
   };
   const onUp = (e: PointerEvent): void => {
     if (pointerId !== e.pointerId) return;
@@ -197,11 +198,12 @@ export function updateWheelDot(root: HTMLElement, idx: number, hex: string): voi
   dot.dataset.hex = (hex || '').toUpperCase();
 }
 
-/** Format an OKLCH triple as the `oklch()` string the DTCG doc stores. */
-export function oklchToStored(o: { l: number; c: number; h: number }): string {
+/** Format an OKLCH value as the `oklch()` string the DTCG doc stores (alpha kept
+ *  as `/ a` when < 1, via formatOklch). */
+export function oklchToStored(o: { l: number; c: number; h: number; alpha?: number }): string {
   return formatOklch(o);
 }
-/** OKLCH → hex, for live tile/preview repaint alongside a drag. */
-export function oklchHex(o: { l: number; c: number; h: number }): string {
+/** OKLCH → hex (hex8 when alpha < 1), for live tile/preview repaint alongside a drag. */
+export function oklchHex(o: { l: number; c: number; h: number; alpha?: number }): string {
   return oklchToHex(o);
 }

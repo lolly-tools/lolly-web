@@ -1,43 +1,38 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * #/start — the brand wizard. The product's first impression for an unbranded
- * install: pick ONE colour (plus scheme / surface / contrast), watch a full
- * token system derive live — primary + neutral ramps and both themes' semantic
- * slots as specimen cards — then install it as YOUR brand, entirely on-device.
+ * #/start — the brand wizard, and the product's first impression for an
+ * unbranded install. It is now the SAME editor the Dashboard's "Your brand"
+ * section mounts (lib/brand-editor.ts) — colour (pick one, derive a full token
+ * system live), fonts (add any Google Font, on-device), and the palette (every
+ * swatch editable) — so a first-run user configures a complete brand here in
+ * place, with dashboard parity. Two things sit around that shared editor:
  *
- * Derivation is the engine's (deriveBrandTokens → the same DTCG doc shape the
- * catalog ships), and the preview resolves it through createTokenSet exactly
- * like the runtime will, so what you see here is what every tool renders.
- * A secondary path imports an existing tokens JSON (W3C DTCG / Tokens Studio,
- * monolithic export) via coerceTokensDoc; either path lands in
- * installUserTokens (bridge/tokens.ts), which writes the `user/tokens/brand`
- * asset and busts the tokens cache.
+ *   - a Corner-style slider (the one brand control the editor doesn't carry —
+ *     it lives on Profile too, wired through setBrandRadius); and
+ *   - an "Already have a brand?" import path for a W3C/Tokens-Studio JSON export
+ *     or a Lolly brand file (.zip), which lands the user straight on a branded
+ *     gallery.
  *
- * Chrome uses the shell's design vocabulary (tokens.css HSL vars, the shared
- * colour field, .view-seg segments); ONLY the preview swatches/specimens carry
- * the derived brand values, inline, so the brand is felt rather than described.
+ * Everything persists to the one `user/tokens/brand` install via the bridge's
+ * single write chokepoint (installUserTokens → bust). A LOCKED catalog owns its
+ * brand and can't be adjusted, so the route degrades to a read-only note.
  * Esc or the Back link returns to the gallery.
  */
 
-import '../styles/parts/start.css';   // async CSS chunk (lazy view — not on the landing)
-import {
-  deriveBrandTokens, createTokenSet, coerceTokensDoc, summarizeTokensDoc,
-  colorToHex, contrastRatio,
-} from '@lolly/engine';
-import type { BrandDeriveOptions } from '@lolly/engine';
-import type { TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
+import '../styles/parts/start.css';       // this view's shell/layout (lazy chunk)
+import '../styles/parts/dashboard.css';   // the mounted editor's .be-* styles live here
+import { coerceTokensDoc, summarizeTokensDoc } from '@lolly/engine';
 import { installUserTokens } from '../bridge/tokens.ts';
-import { applyChromeBrandVars } from '../brand-vars.ts';
-import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
+import { applyChromeBrandVars, brandRadiusValue } from '../brand-vars.ts';
+import { mountBrandEditor } from '../lib/brand-editor.ts';
+import { carryUserFontTokens, setBrandRadius } from '../user-fonts.ts';
+import type { UserFontsHost } from '../user-fonts.ts';
+import { importBrandPack } from '../brand-transfer.ts';
+import type { BrandTransferHost } from '../brand-transfer.ts';
 import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-dialog.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
 import { applyTheme } from '../theme.ts';
-import { saveBlob } from '../pro/zip.ts';
-import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
-import type { BrandTransferHost } from '../brand-transfer.ts';
-import { carryUserFontTokens } from '../user-fonts.ts';
-import type { UserFontsHost } from '../user-fonts.ts';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
 type ViewElement = HTMLElement & { _cleanup?: () => void };
@@ -45,53 +40,12 @@ type ViewElement = HTMLElement & { _cleanup?: () => void };
 /** Whatever host installUserTokens needs — stays in lock-step with the bridge. */
 type StartHost = Parameters<typeof installUserTokens>[0];
 
-type Scheme = NonNullable<BrandDeriveOptions['scheme']>;
-type Surface = NonNullable<BrandDeriveOptions['surface']>;
-type Contrast = NonNullable<BrandDeriveOptions['contrast']>;
-
-const SCHEMES: ReadonlyArray<{ id: Scheme; label: string }> = [
-  { id: 'mono', label: 'Mono' },
-  { id: 'complement', label: 'Complement' },
-  { id: 'analogous', label: 'Analogous' },
-  { id: 'triad', label: 'Triad' },
-];
-const SURFACES: ReadonlyArray<{ id: Surface; label: string }> = [
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
-  { id: 'primary', label: 'Deep primary' },
-];
-const CONTRASTS: ReadonlyArray<{ id: Contrast; label: string }> = [
-  { id: 'comfort', label: 'Comfort' },
-  { id: 'high', label: 'High' },
-];
-
-// Matches the templates' canonical `var(--brand-primary, #4f83cc)` fallback — a
-// calm, trustworthy blue the user immediately overwrites with their own.
-const DEFAULT_PRIMARY = '#4f83cc';
-
-const segHtml = (name: string, options: ReadonlyArray<{ id: string; label: string }>, active: string, ariaLabel: string): string => `
-  <div class="view-seg start-seg" role="group" aria-label="${escape(ariaLabel)}" data-seg="${escape(name)}">
-    ${options.map(o => `<button type="button" class="view-seg-btn" data-val="${escape(o.id)}" aria-pressed="${o.id === active}">${escape(o.label)}</button>`).join('')}
-  </div>`;
-
-// The scheme segment carries a live two-swatch strip per mode (primary +
-// that scheme's derived secondary) so all four looks are comparable at a
-// glance BEFORE picking one — the dots repaint with every colour change.
-const schemeSegHtml = (options: ReadonlyArray<{ id: string; label: string }>, active: string): string => `
-  <div class="view-seg start-seg start-seg--scheme" role="group" aria-label="Colour scheme" data-seg="scheme">
-    ${options.map(o => `<button type="button" class="view-seg-btn start-scheme-btn" data-val="${escape(o.id)}" aria-pressed="${o.id === active}">
-      <span class="start-scheme-label">${escape(o.label)}</span>
-      <span class="start-scheme-dots" aria-hidden="true"></span>
-    </button>`).join('')}
-  </div>`;
-
 export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<void> {
   document.title = 'Make it yours · Lolly';
 
-  // A locked catalog is authoritative — its brand can't be adjusted. Skip the
-  // whole wizard (derive + import both funnel through installUserTokens, which
-  // would refuse anyway) and show why, so the route degrades gracefully rather
-  // than dead-ending on an error.
+  // A locked catalog is authoritative — its brand (colours, fonts, radius) can't
+  // be adjusted; every write funnels through installUserTokens, which refuses. So
+  // skip the whole editor and say why, rather than dead-ending on an error.
   if (await host.tokens?.isLocked?.().catch(() => false)) {
     document.title = 'Brand · Lolly';
     viewEl.innerHTML = `
@@ -106,270 +60,126 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     return;
   }
 
-  let primary = DEFAULT_PRIMARY;
-  let scheme: Scheme = 'mono';
-  let surface: Surface = 'light';
-  let contrast: Contrast = 'comfort';
+  // Corner radius seed: the installed brand's --radius, else the shell default
+  // (1rem). parseFloat tolerates a stored px/em value from a hand-authored
+  // import; the slider always writes back in rem.
+  const currentRadius = await (host.tokens as { resolve?(ref: string): Promise<unknown> } | undefined)
+    ?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null;
+  const currentRadiusRem = currentRadius ? parseFloat(currentRadius) : 1;
 
   viewEl.innerHTML = `
-    <div class="start">
+    <div class="start start--editor">
       <a class="start-back" href="#/">&larr; Tools</a>
       <header class="start-head">
         <p class="start-eyebrow">Brand setup</p>
         <h1 class="start-title">Make it yours</h1>
-        <p class="start-sub">One colour is enough — Lolly derives the ramps, both themes and every semantic slot from it. Nothing leaves this device.</p>
+        <p class="start-sub">Pick a colour and Lolly derives a full brand — ramps, both themes, every role. Add fonts, fine-tune the palette, set the corner style. Everything stays on this device.</p>
       </header>
-      <div class="start-grid">
-        <div class="start-controls">
-          <section class="start-panel" aria-label="Brand controls">
-            <div class="start-field">
-              <span class="start-label" id="start-primary-label">Primary colour</span>
-              ${colorFieldHtml('start-primary', primary)}
+
+      <div class="start-editor-wrap">
+        <!-- The shared brand editor: colour, logo, fonts, palette (swatches), share. -->
+        <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">Loading your brand…</p></div>
+
+        <!-- Secondary utilities: corner style + import, side by side below the brand work. -->
+        <div class="start-utils">
+          <!-- Corner style — the one control the editor doesn't carry (setBrandRadius). -->
+          <section class="be-panel start-radius-panel" aria-label="Corner style">
+            <div class="be-panel-head"><h3 class="be-panel-title">Corner style</h3>
+              <p class="be-panel-sub">How rounded your cards, buttons and panels read across the whole app.</p></div>
+            <div class="brand-radius-row">
+              <span class="brand-radius-preview" id="start-radius-preview" style="border-radius:${currentRadiusRem}rem" aria-hidden="true"></span>
+              <input type="range" class="brand-radius-slider" id="start-radius-slider" min="0" max="1.5" step="0.05" value="${currentRadiusRem}" aria-label="Corner radius">
+              <span class="brand-radius-value" id="start-radius-value">${currentRadiusRem}rem</span>
             </div>
-            <div class="start-field">
-              <span class="start-label">Scheme</span>
-              ${schemeSegHtml(SCHEMES, scheme)}
-            </div>
-            <div class="start-field">
-              <span class="start-label">Surface</span>
-              ${segHtml('surface', SURFACES, surface, 'Default surface')}
-            </div>
-            <div class="start-field">
-              <span class="start-label">Contrast</span>
-              ${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}
-            </div>
-            <button type="button" class="start-cta" data-install-derived>Use this brand</button>
-            <p class="start-cta-note">Saved on this device as your brand — re-run this any time from the profile menu.</p>
-            <p class="start-error" role="alert" hidden></p>
+            <p class="be-err" id="start-radius-error" role="alert" hidden></p>
           </section>
-          <section class="start-panel start-import" aria-label="Import a brand">
-            <h2 class="start-import-title">Already have a brand?</h2>
-            <p class="start-import-sub">Bring a W3C design-tokens / Tokens Studio JSON export, or a Lolly <strong>brand file</strong> (.zip) someone shared — tokens, fonts and theme in one.</p>
-            <label class="start-import-btn">
+
+          <!-- Already have a brand? Bring a tokens JSON or a Lolly brand file. -->
+          <section class="be-panel start-import" aria-label="Import a brand">
+            <div class="be-panel-head"><h3 class="be-panel-title">Already have a brand?</h3>
+              <p class="be-panel-sub">Bring a W3C design-tokens / Tokens Studio JSON export, or a Lolly <strong>brand file</strong> (.zip) someone shared — tokens, fonts, logos and theme in one.</p></div>
+            <label class="be-btn start-import-btn">
               Import tokens or brand file&hellip;
               <input type="file" class="start-import-file" accept=".json,application/json,.zip,application/zip" hidden>
             </label>
             <div class="start-import-result" hidden></div>
           </section>
-          <section class="start-panel start-share" aria-label="Share this brand">
-            <h2 class="start-import-title">Share this brand</h2>
-            <p class="start-import-sub">Export the installed brand — tokens, fonts, theme — as one file others can load.</p>
-            <button type="button" class="start-import-btn start-share-btn">Export brand file</button>
-          </section>
         </div>
-        <section class="start-preview" aria-label="Live preview">
-          <div class="start-preview-mount"></div>
-        </section>
+      </div>
+
+      <div class="start-done-row">
+        <p class="start-done-note">Everything you set here is saved on this device as your brand — every tool, page and export follows it. Adjust it any time from your dashboard.</p>
+        <a class="start-cta start-done" href="#/">Done — take me to my tools &rarr;</a>
       </div>
     </div>`;
 
-  const previewMount = viewEl.querySelector<HTMLElement>('.start-preview-mount')!;
-  const errorEl = viewEl.querySelector<HTMLElement>('.start-error')!;
-
-  // ── Live preview ─────────────────────────────────────────────────────────────
-
-  /** A semantic slot's resolved value ('' when the doc/engine can't supply it). */
-  const slot = (set: TokenSet, name: string): string => {
-    const v = set.resolve(`color.semantic.${name}`);
-    return typeof v === 'string' ? v : '';
-  };
-
-  /** "7.2" — WCAG ratio of two resolved colours, '' when either won't parse. */
-  const ratioOf = (fg: string, bg: string): string => {
-    try {
-      const f = colorToHex(fg);
-      const b = colorToHex(bg);
-      return f && b ? contrastRatio(f, b).toFixed(1) : '';
-    } catch { return ''; }
-  };
-
-  const rampRow = (set: TokenSet, ramp: string, label: string): string => {
-    let cells = '';
-    for (let i = 1; i <= 9; i++) {
-      const v = set.resolve(`color.ramp.${ramp}.${i}`);
-      const css = typeof v === 'string' ? v : 'transparent';
-      cells += `<span class="start-ramp-cell" style="background:${escape(css)}" title="${escape(`${label} ${i} · ${css}`)}"></span>`;
-    }
-    return `
-      <div class="start-ramp-row">
-        <span class="start-ramp-label">${escape(label)}</span>
-        <div class="start-ramp" role="img" aria-label="${escape(label)} ramp, dark to light">${cells}</div>
-      </div>`;
-  };
-
-  // A specimen card per theme: its own surface, the text hierarchy (heading in
-  // the brand text slot, body in muted, a hairline in edge) and the primary
-  // button (bg primary, label on-primary) — the tone is felt, not described.
-  // All colours inline: these are BRAND values (the --brand-* contract slots),
-  // never shell-chrome tokens.
-  const specCard = (themeName: 'light' | 'dark', set: TokenSet, isDefault: boolean): string => {
-    const surfaceC = slot(set, 'surface');
-    const text = slot(set, 'text');
-    const muted = slot(set, 'muted');
-    const edge = slot(set, 'edge');
-    const prim = slot(set, 'primary');
-    const onPrim = slot(set, 'on-primary');
-    const ratio = ratioOf(text, surfaceC);
-    return `
-      <article class="start-spec" style="background:${escape(surfaceC)};border-color:${escape(edge)}">
-        <header class="start-spec-top">
-          <span class="start-spec-name" style="color:${escape(muted)}">${themeName === 'light' ? 'Light' : 'Dark'}</span>
-          ${isDefault ? `<span class="start-spec-default" style="background:${escape(prim)};color:${escape(onPrim)}">Default</span>` : ''}
-        </header>
-        <h3 class="start-spec-heading" style="color:${escape(text)}">The quick brown fox</h3>
-        <p class="start-spec-body" style="color:${escape(muted)}">Body copy sits one step back — calm, readable, unmistakably yours.</p>
-        <hr class="start-spec-rule" style="border-color:${escape(edge)}">
-        <div class="start-spec-row">
-          <span class="start-spec-btn" style="background:${escape(prim)};color:${escape(onPrim)}">Primary action</span>
-          ${ratio ? `<span class="start-spec-ratio" style="color:${escape(muted)}">${escape(ratio)}:1 text</span>` : ''}
-        </div>
-      </article>`;
-  };
-
-  const deriveOpts = (): BrandDeriveOptions => ({ primary, scheme, surface, contrast, name: 'My brand' });
-
-  // Each scheme mode's signature pair — the primary anchor and THAT scheme's
-  // derived secondary (ramp step 5, where the anchor chroma peaks). Read
-  // straight off the derived doc (base.color.ramp.*.5.$value is a raw oklch()
-  // string, valid CSS) — no token-set resolution needed for two dots.
-  const schemeDots = (s: Scheme): string[] => {
-    try {
-      const doc = deriveBrandTokens({ primary, scheme: s, surface, contrast }) as {
-        base?: { color?: { ramp?: Record<string, Record<string, { $value?: unknown }>> } };
-      };
-      const ramp = doc.base?.color?.ramp;
-      return ['primary', 'secondary']
-        .map(r => ramp?.[r]?.['5']?.$value)
-        .filter((v): v is string => typeof v === 'string');
-    } catch { return []; }
-  };
-
-  /** Repaint every scheme button's two-dot strip from the current colour. */
-  function paintSchemeDots(): void {
-    viewEl.querySelectorAll<HTMLElement>('[data-seg="scheme"] [data-val]').forEach(btn => {
-      const mount = btn.querySelector<HTMLElement>('.start-scheme-dots');
-      if (!mount) return;
-      mount.innerHTML = schemeDots(btn.dataset.val as Scheme)
-        .map(c => `<i class="start-scheme-dot" style="background:${escape(c)}"></i>`).join('');
-    });
-  }
-
-  function renderPreview(): void {
-    let doc: Record<string, unknown>;
-    try {
-      doc = deriveBrandTokens(deriveOpts()) as Record<string, unknown>;
-    } catch { return; } // a half-typed colour mid-edit — keep the last good preview
-    const light = createTokenSet(doc, { theme: 'light' });
-    const dark = createTokenSet(doc, { theme: 'dark' });
-    // The `surface` option orders $themes (chosen look first = default theme).
-    const defaultTheme = createTokenSet(doc).themes()[0]?.name ?? 'light';
-    previewMount.innerHTML = `
-      <div class="start-ramps">
-        ${rampRow(light, 'primary', 'Primary')}
-        ${rampRow(light, 'neutral', 'Neutral')}
-      </div>
-      <div class="start-specs">
-        ${specCard('light', light, defaultTheme === 'light')}
-        ${specCard('dark', dark, defaultTheme !== 'light')}
-      </div>`;
-    paintSchemeDots(); // the four mode strips track the same colour state
-  }
-  renderPreview();
-
-  // ── Controls ─────────────────────────────────────────────────────────────────
-
-  wireColorField(viewEl, {
-    onChange: (_id, value) => {
-      const raw = typeof value === 'string' ? value : value.value;
-      if (!raw || raw === 'transparent') return; // a transparent primary derives nothing useful
-      // Derivation wants an opaque colour; drop a hex8's alpha channel.
-      primary = /^#[0-9a-fA-F]{8}$/.test(raw) ? raw.slice(0, 7) : raw;
-      renderPreview();
-    },
-  });
-
-  const wireSeg = (name: string, apply: (v: string) => void): void => {
-    const seg = viewEl.querySelector<HTMLElement>(`[data-seg="${name}"]`);
-    seg?.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
-      if (!btn) return;
-      apply(btn.dataset.val!);
-      seg.querySelectorAll<HTMLElement>('[data-val]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
-      renderPreview();
-    });
-  };
-  wireSeg('scheme', v => { scheme = v as Scheme; });
-  wireSeg('surface', v => { surface = v as Surface; });
-  wireSeg('contrast', v => { contrast = v as Contrast; });
-
-  // ── Install (both paths funnel here) ─────────────────────────────────────────
-
-  let installing = false;
-  async function install(doc: Record<string, unknown>, label: string, btn: HTMLButtonElement): Promise<void> {
-    if (installing) return;
-    installing = true;
-    errorEl.hidden = true;
-    btn.disabled = true;
-    const prevLabel = btn.textContent;
-    btn.textContent = 'Installing…';
-    try {
-      // A derived/imported doc with no font group inherits the fonts the user
-      // already installed (Profile → Adjust your brand) — re-branding never
-      // silently undoes a chosen face.
-      const withFonts = await carryUserFontTokens(host as unknown as UserFontsHost, doc);
-      await installUserTokens(host, withFonts, { label });
-      // The chrome accent follows the brand — repaint it now; bust() emptied the
-      // token caches but nothing re-reads them into the chrome by itself.
-      void applyChromeBrandVars(host);
-      // The brand question is settled — the welcome must not re-prompt. Set even
-      // when the view was torn down mid-install (the brand IS installed)…
-      markWelcomeDismissed();
-      // …and close any welcome that raced open meanwhile (the user backed out to
-      // the gallery mid-install; its unbranded check can beat the tokens write).
-      closeWelcomeDialog();
-      // Only a still-mounted wizard may navigate — a detached continuation must
-      // not yank the user off whatever route they moved on to.
-      if (viewEl.isConnected) window.location.hash = '#/';
-    } catch (err) {
-      installing = false;
-      const msg = `Couldn't install the brand: ${String((err as { message?: unknown })?.message ?? err)}`;
-      if (viewEl.isConnected) {
-        btn.disabled = false;
-        btn.textContent = prevLabel;
-        errorEl.textContent = msg;
-        errorEl.hidden = false;
-      } else {
-        // Torn down mid-install — errorEl/btn are detached, so a DOM write would
-        // vanish silently. Surface through the live channels instead.
-        console.error('Brand install failed:', err);
-        announce(msg, { assertive: true });
-      }
-    }
-  }
-
-  viewEl.querySelector<HTMLButtonElement>('[data-install-derived]')?.addEventListener('click', (e) => {
-    let doc: Record<string, unknown>;
-    try {
-      doc = deriveBrandTokens(deriveOpts()) as Record<string, unknown>;
-    } catch (err) {
-      errorEl.textContent = `Couldn't derive a brand from ${primary}: ${String((err as { message?: unknown })?.message ?? err)}`;
-      errorEl.hidden = false;
-      return;
-    }
-    void install(doc, 'My brand', e.currentTarget as HTMLButtonElement);
-  });
-
-  // ── Import path (monolithic JSON only this pass — zips/.penpot come later) ──
-
   const importResult = viewEl.querySelector<HTMLElement>('.start-import-result')!;
-  const importFile = viewEl.querySelector<HTMLInputElement>('.start-import-file')!;
-  let importedDoc: Record<string, unknown> | null = null;
-  let importedLabel = 'My brand';
-
   const showImportResult = (html: string): void => {
     importResult.innerHTML = html;
     importResult.hidden = false;
   };
+
+  // ── The shared brand editor (fonts · colour · palette · share) ───────────────
+  const editorMount = viewEl.querySelector<HTMLElement>('[data-start-editor]')!;
+  let editorTeardown: (() => void) | null = null;
+  try {
+    editorTeardown = await mountBrandEditor(editorMount, host as unknown as Parameters<typeof mountBrandEditor>[1]);
+  } catch (err) {
+    editorMount.innerHTML = `<p class="be-err">Couldn't open the brand editor: ${escape(String((err as { message?: unknown })?.message ?? err))}</p>`;
+  }
+
+  // ── Corner radius ────────────────────────────────────────────────────────────
+  // Live app-wide preview on every drag tick (set --radius directly — instant,
+  // no round trip), persisted debounced so a drag doesn't spam writes.
+  const radiusSlider = viewEl.querySelector<HTMLInputElement>('#start-radius-slider');
+  const radiusPreview = viewEl.querySelector<HTMLElement>('#start-radius-preview');
+  const radiusValueEl = viewEl.querySelector<HTMLElement>('#start-radius-value');
+  const radiusErr = viewEl.querySelector<HTMLElement>('#start-radius-error');
+  let radiusDebounce: ReturnType<typeof setTimeout> | undefined;
+  radiusSlider?.addEventListener('input', () => {
+    const css = `${radiusSlider.value}rem`;
+    if (radiusPreview) radiusPreview.style.borderRadius = css;
+    if (radiusValueEl) radiusValueEl.textContent = css;
+    document.documentElement.style.setProperty('--radius', css);
+    clearTimeout(radiusDebounce);
+    radiusDebounce = setTimeout(() => {
+      setBrandRadius(host as unknown as UserFontsHost, css).catch(err => {
+        if (radiusErr) { radiusErr.textContent = String((err as { message?: unknown })?.message ?? err); radiusErr.hidden = false; }
+      });
+    }, 400);
+  });
+
+  // ── Install (the JSON-import path funnels here) ──────────────────────────────
+  let installing = false;
+  async function install(doc: Record<string, unknown>, label: string, btn: HTMLButtonElement): Promise<void> {
+    if (installing) return;
+    installing = true;
+    btn.disabled = true;
+    const prevLabel = btn.textContent;
+    btn.textContent = 'Installing…';
+    try {
+      // A doc with no font group inherits the fonts already installed here, so an
+      // import never silently undoes a chosen face.
+      const withFonts = await carryUserFontTokens(host as unknown as UserFontsHost, doc);
+      await installUserTokens(host, withFonts, { label });
+      void applyChromeBrandVars(host);         // bust() cleared caches; nothing repaints chrome by itself
+      markWelcomeDismissed();
+      closeWelcomeDialog();
+      if (viewEl.isConnected) window.location.hash = '#/';
+    } catch (err) {
+      installing = false;
+      btn.disabled = false;
+      btn.textContent = prevLabel;
+      const msg = `Couldn't install the brand: ${String((err as { message?: unknown })?.message ?? err)}`;
+      showImportResult(`<p class="start-import-err">${escape(msg)}</p>`);
+      announce(msg, { assertive: true });
+    }
+  }
+
+  // ── Import path — a raw tokens JSON (W3C DTCG / Tokens Studio) or a .zip pack ─
+  const importFile = viewEl.querySelector<HTMLInputElement>('.start-import-file')!;
+  let importedDoc: Record<string, unknown> | null = null;
+  let importedLabel = 'My brand';
 
   importFile.addEventListener('change', async () => {
     const file = importFile.files?.[0];
@@ -435,7 +245,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
       <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${escape(source)}</span></p>
       ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
       ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
-      <button type="button" class="start-cta start-cta--import" data-install-import>Install these tokens</button>`);
+      <button type="button" class="be-cta start-cta--import" data-install-import>Install these tokens</button>`);
   });
 
   // Delegated: the install button is re-created with every result render.
@@ -444,33 +254,16 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     if (btn && importedDoc) void install(importedDoc, importedLabel, btn);
   });
 
-  // ── Share path — the same pack profile's "Export brand file" makes ──────────
-  viewEl.querySelector<HTMLButtonElement>('.start-share-btn')?.addEventListener('click', async e => {
-    const btn = e.currentTarget as HTMLButtonElement;
-    const prev = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Exporting…';
-    try {
-      const { blob, filename, summary } = await exportBrandPack(
-        { host: host as unknown as BrandTransferHost, storage: localStorage });
-      saveBlob(blob, filename);
-      btn.textContent = 'Exported';
-      announce(`Brand exported — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}${summary.tokens ? ', tokens included' : ''}`);
-    } catch (err) {
-      btn.textContent = 'Export failed';
-      errorEl.textContent = `Couldn't export the brand: ${String((err as { message?: unknown })?.message ?? err)}`;
-      errorEl.hidden = false;
-    }
-    setTimeout(() => { if (viewEl.isConnected) { btn.textContent = prev; btn.disabled = false; } }, 1800);
-  });
-
-  // ── Escape returns to the gallery (colour-popover Escapes stopPropagation
-  //    at the field, so they never reach this) ─────────────────────────────────
+  // ── Escape returns to the gallery (colour-popover Escapes stopPropagation at
+  //    the field, so they never reach this) ─────────────────────────────────────
   const onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape' || installing) return; // no Esc-teardown mid-install
     e.preventDefault();
     window.location.hash = '#/';
   };
   document.addEventListener('keydown', onKey);
-  (viewEl as ViewElement)._cleanup = () => document.removeEventListener('keydown', onKey);
+  (viewEl as ViewElement)._cleanup = () => {
+    document.removeEventListener('keydown', onKey);
+    editorTeardown?.();
+  };
 }

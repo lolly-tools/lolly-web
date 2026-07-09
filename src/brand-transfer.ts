@@ -28,6 +28,7 @@ import type { Unzipped } from 'fflate';
 import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts, USER_FONT_PREFIX } from './user-fonts.ts';
+import { USER_LOGO_PREFIX } from './lib/brand-logos.ts';
 import type { UserFontsHost } from './user-fonts.ts';
 
 export const BRAND_FORMAT = 'lolly-brand';
@@ -38,10 +39,10 @@ export const BRAND_READER_VERSION = 1;
 // theme is part of how a brand feels; everything else in prefs is personal.
 const BRAND_PREF_KEYS = ['theme'];
 
-const KNOWN_PARTS = new Set(['manifest.json', 'tokens.json', 'fonts.json', 'prefs.json']);
+const KNOWN_PARTS = new Set(['manifest.json', 'tokens.json', 'fonts.json', 'logos.json', 'prefs.json']);
 const README_NAME = 'lolly.txt';
 const isKnownPart = (path: string): boolean =>
-  KNOWN_PARTS.has(path) || path === README_NAME || path.startsWith('fonts/');
+  KNOWN_PARTS.has(path) || path === README_NAME || path.startsWith('fonts/') || path.startsWith('logos/');
 
 /** The host slice a brand pack travels through — the same seams user-fonts
  *  drives, plus profile.get for the export filename. */
@@ -59,6 +60,7 @@ export interface BrandPackSummary {
   tokens: boolean;
   fontFamilies: number;
   fontFiles: number;
+  logos: number;
   prefs: number;
 }
 
@@ -68,7 +70,7 @@ export interface BrandImportSummary extends BrandPackSummary {
 }
 
 /** One stored face's manifest row: its full asset record sans blob, plus the
- *  in-zip file it rebuilds from. */
+ *  in-zip file it rebuilds from. A logo row is the same shape (an image asset). */
 interface FontRow {
   id: string;
   format: string;
@@ -77,6 +79,7 @@ interface FontRow {
   file: string;
   mime: string;
 }
+type LogoRow = FontRow;
 
 const HAS_WORKER = typeof Worker !== 'undefined';
 type BundleEntry = Uint8Array | [Uint8Array, { level: 0 }];
@@ -211,6 +214,19 @@ export async function exportBrandPack(
   }
   entries['fonts.json'] = strToU8(JSON.stringify(fontRows, null, 2));
 
+  // Brand logo variants (horizontal/vertical/mono/reverse) — image assets under
+  // user/logo/*, carried the same way as fonts so the pack is a complete brand.
+  const logoRows: LogoRow[] = [];
+  for (const r of records) {
+    if (r.type !== 'image' || !r.id.startsWith(USER_LOGO_PREFIX) || !r.blob) continue;
+    const fmt = String(r.meta?.format ?? 'png');
+    const file = `logos/${r.id.slice(USER_LOGO_PREFIX.length).replace(/\//g, '-')}.${fmt}`;
+    entries[file] = new Uint8Array(await r.blob.arrayBuffer());
+    const { blob: _b, ...rest } = r as LogoRow & { blob: Blob; type: string };
+    logoRows.push({ ...(rest as unknown as LogoRow), file, format: fmt, mime: r.blob.type || 'image/png' });
+  }
+  entries['logos.json'] = strToU8(JSON.stringify(logoRows, null, 2));
+
   const prefs: Record<string, string> = {};
   for (const key of BRAND_PREF_KEYS) {
     const v = storage.getItem(key);
@@ -222,6 +238,7 @@ export async function exportBrandPack(
     tokens: !!doc,
     fontFamilies: families.size,
     fontFiles: fontRows.length,
+    logos: logoRows.length,
     prefs: Object.keys(prefs).length,
   };
 
@@ -300,7 +317,7 @@ export async function importBrandPack(
     }
   }
 
-  const summary: BrandImportSummary = { tokens: false, fontFamilies: 0, fontFiles: 0, prefs: 0, skipped: 0, failedFonts: 0 };
+  const summary: BrandImportSummary = { tokens: false, fontFamilies: 0, fontFiles: 0, logos: 0, prefs: 0, skipped: 0, failedFonts: 0 };
 
   // Fonts BEFORE tokens: when the tokens land, applyChromeBrandVars reads
   // font.brand — the faces should already be present so the swap is one paint.
@@ -328,6 +345,28 @@ export async function importBrandPack(
   }
   summary.fontFamilies = families.size;
   await registerUserFonts(host).catch(() => { /* faces load lazily at next boot */ });
+
+  // Logo variants — restore each image asset before tokens land (asset.logo.*
+  // refs resolve to assets that are already present).
+  const logoRows: LogoRow[] = readJson(files, 'logos.json') ?? [];
+  for (const row of logoRows) {
+    if (!row?.id || !String(row.id).startsWith(USER_LOGO_PREFIX) || !row.file) continue;
+    const raw = files[row.file];
+    if (!raw) continue;
+    try {
+      await host.assets._uploadUserAsset({
+        id: row.id,
+        type: 'image',
+        format: row.format || 'png',
+        blob: new Blob([raw as BlobPart], { type: row.mime || 'image/png' }),
+        ...(row.version ? { version: row.version } : {}),
+        ...(row.meta ? { meta: row.meta } : {}),
+      });
+      summary.logos++;
+    } catch (e) {
+      host.log?.('warn', 'Skipped restoring one logo (storage full?)', { id: String(row.id), error: String(e) });
+    }
+  }
 
   const doc = readJson(files, 'tokens.json');
   if (doc && typeof doc === 'object') {

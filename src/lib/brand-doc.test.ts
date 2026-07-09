@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { createTokenSet } from '@lolly/engine';
 import {
   walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, leafAt,
+  setPrimaryPrintOverride, getPrimaryPrintOverride,
 } from './brand-doc.ts';
 
 const BRAND = fileURLToPath(
@@ -170,6 +171,20 @@ test('deleteSwatch removes a leaf, and reports a miss', () => {
   assert.equal(deleteSwatch(doc, ['base', 'color', 'nope', 'x']), false);
 });
 
+test('a translucent (#rrggbbaa) swatch survives into a resolvable token', () => {
+  const doc = load();
+  const path = addSwatch(doc, 'custom', 'Glass', '#0088ff80')!;
+  // The walker keeps the 8-digit hex (alpha not dropped).
+  const sw = walkSwatches(doc, 'light', resolverFor(doc, 'light')).find(s => s.key === 'color.custom.glass')!;
+  assert.equal(sw.hex.toLowerCase(), '#0088ff80');
+  // And it resolves as a real token (so pickers + exports see the alpha), and is deletable.
+  assert.equal(createTokenSet(doc, { theme: 'light' }).resolve('color.custom.glass'), '#0088ff80');
+  assert.ok(sw.deletable);
+  // Recolour-in-place keeps the alpha byte the caller writes.
+  setSwatchValue(doc, path, '#11223344');
+  assert.equal(leafAt(doc, path)!.$value, '#11223344');
+});
+
 test('a single-set (imported) doc still walks and accepts new swatches', () => {
   const doc: Record<string, unknown> = {
     color: { $type: 'color', brand: { blue: { $value: '#0055ff' } } },
@@ -197,4 +212,28 @@ test('walkSwatches ignores $-metadata and non-colour leaves', () => {
   assert.equal(s.length, 1);
   assert.equal(s[0]!.name, 'Ink');
   assert.equal(s[0]!.kind, 'ramp');
+});
+
+test('primary print override: pin, read back, and clear (CMYK anchor round-trip)', () => {
+  const doc = load();
+  assert.equal(getPrimaryPrintOverride(doc), null, 'starter brand has no pinned override');
+
+  assert.equal(setPrimaryPrintOverride(doc, [80, 20, 0, 5]), true);
+  assert.deepEqual(getPrimaryPrintOverride(doc), [80, 20, 0, 5]);
+
+  // The anchor rides in the vendor $extensions on the primary ramp's step 5.
+  const leaf = leafAt(doc, ['base', 'color', 'ramp', 'primary', '5'])!;
+  const ext = leaf.$extensions as Record<string, { cmyk?: unknown }>;
+  assert.deepEqual(ext['com.suse.lolly']!.cmyk, [80, 20, 0, 5]);
+
+  // Clearing removes the anchor (and the empty extension scaffolding).
+  assert.equal(setPrimaryPrintOverride(doc, null), true);
+  assert.equal(getPrimaryPrintOverride(doc), null);
+  assert.equal(leaf.$extensions, undefined, 'empty $extensions cleaned up');
+});
+
+test('primary print override clamps to 0–100 and rounds', () => {
+  const doc = load();
+  setPrimaryPrintOverride(doc, [120, -5, 33.7, 50]);
+  assert.deepEqual(getPrimaryPrintOverride(doc), [100, 0, 34, 50]);
 });

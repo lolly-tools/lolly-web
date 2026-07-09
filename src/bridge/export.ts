@@ -19,6 +19,7 @@ import {
   splitCssArgs, parseGradientAngle, parseGradientStop,
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
   embedC2pa, exportActionSteps, C2PA_FORMATS, packTiff, ENGINE_VERSION,
+  buildExportMeta,
   embedWatermark,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
   buildEncryptDictValues, encryptObjectBytes, preparePassword,
@@ -43,6 +44,7 @@ export { videoSupport, cmykTiffSupport, tiffSupport } from './format-support.ts'
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
 import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from '../../../../engine/src/pptx.ts';
 import type { HostV1, ExportMeta, IngredientCredential } from '../../../../engine/src/bridge/host-v1.ts';
+import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
 import type { PrintGeometry, LabelSlot } from '../../../../engine/src/print-marks.ts';
 import type { Dimension } from '../../../../engine/src/units.ts';
 import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts';
@@ -2582,11 +2584,6 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
     return blob;
   }
   try {
-    // Enrolled-identity signer (device key + CA cert, see bridge/identity.js) —
-    // null when not enrolled or the cert is out of validity, in which case the
-    // engine's ephemeral self-signed default applies unchanged.
-    let signer: any = null;
-    try { signer = await _host?.identity?.signer(); } catch { /* fall back to ephemeral */ }
     // Ephemeral cert window = the user's lifetime pick (clamped; default 30
     // days). Ignored when an enrolled signer is present — its CA-issued cert
     // carries its own window, fixed at enrolment.
@@ -2615,20 +2612,102 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
       imprint: !!opts.imprint && imprintCapable,
       audio: !!opts.audio?.url,
     });
-    const stamped = await embedC2pa(new Uint8Array(await blob.arrayBuffer()), format, {
+    return await signAndEmbedC2pa(blob, format, {
       title: opts.meta?.tool,
-      claimGenerator: `${opts.meta?.software || 'Lolly'} lolly.tools`,
-      generatorInfo: { name: opts.meta?.software || 'Lolly', version: ENGINE_VERSION },
+      software: opts.meta?.software,
       environment: c2paEnvironment(format, opts, dimensions),
       author: c2paAuthor(opts.meta),
       actions,
-      ...(opts.ingredients?.length ? { ingredients: opts.ingredients } : {}),
-      dates: signer ? {} : { notBefore: new Date(Date.now() - 60_000), notAfter: new Date(Date.now() + days * 86_400_000) },
-      ...(signer ? { signer } : {}),
+      ingredients: opts.ingredients,
+      days,
     });
-    return new Blob([stamped as BlobPart], { type: blob.type || 'application/octet-stream' });
   } catch (err) {
     _host?.log?.('warn', `${format}: Content Credentials not attached — ${(err as any)?.message || err}`);
+    return blob;
+  }
+}
+
+// The shared signing core behind stampC2pa and stampDerivedC2pa: enrolled
+// signer when available (else the engine's ephemeral self-signed default with
+// a bounded validity window), one embedC2pa call, Blob back out. Throws on
+// failure — callers decide whether a missing credential may fail the export
+// (they don't: both wrap in try/catch and ship the un-stamped bytes).
+// `host` defaults to the module-level _host, which is only wired once
+// createExportAPI has run — callers that can reach this module before any
+// export (the catalog's download path) pass their host explicitly.
+async function signAndEmbedC2pa(blob: Blob, format: string, o: {
+  title?: string;
+  software?: string;
+  environment: Record<string, unknown>;
+  author?: { name: string; email?: string };
+  actions: C2paActionInput[];
+  ingredients?: IngredientCredential[];
+  days?: number;
+}, host: WebHost | null = _host): Promise<Blob> {
+  // Enrolled-identity signer (device key + CA cert, see bridge/identity.js) —
+  // null when not enrolled or the cert is out of validity, in which case the
+  // engine's ephemeral self-signed default applies unchanged.
+  let signer: any = null;
+  try { signer = await host?.identity?.signer(); } catch { /* fall back to ephemeral */ }
+  const days = o.days ?? 30;
+  const stamped = await embedC2pa(new Uint8Array(await blob.arrayBuffer()), format, {
+    title: o.title,
+    claimGenerator: `${o.software || 'Lolly'} lolly.tools`,
+    generatorInfo: { name: o.software || 'Lolly', version: ENGINE_VERSION },
+    environment: o.environment,
+    author: o.author,
+    actions: o.actions,
+    ...(o.ingredients?.length ? { ingredients: o.ingredients } : {}),
+    dates: signer ? {} : { notBefore: new Date(Date.now() - 60_000), notAfter: new Date(Date.now() + days * 86_400_000) },
+    ...(signer ? { signer } : {}),
+  });
+  return new Blob([stamped as BlobPart], { type: blob.type || 'application/octet-stream' });
+}
+
+/**
+ * Content Credentials for a DERIVED asset — a catalog/library file the user
+ * modified on the way out (icon recolour, photo colour treatment, crop,
+ * re-encode) rather than a tool render. The caller supplies the honest action
+ * history (engine C2paActionInput steps; when `ingredients` carry the source's
+ * own credential the engine prepends a c2pa.opened step per ingredient, so the
+ * list should NOT claim c2pa.created) and a transform-detail map recorded
+ * under the tools.lolly.export assertion's `inputs`. Authorship follows the
+ * profile's "Use my details" opt-in, exactly like tool exports. Never throws —
+ * an un-stampable format or a signing failure logs and returns the original
+ * bytes, because a credential failure must never fail a download.
+ *
+ * Takes the host explicitly: this module is dynamically imported by the
+ * catalog's download path, which runs before any export has wired the
+ * module-level _host via createExportAPI.
+ */
+export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string, o: {
+  /** dc:title for the manifest — usually the asset's display name. */
+  title?: string;
+  /** Where this happened, for the export assertion's `tool` (default 'Catalog'). */
+  tool?: string;
+  /** Honest transform steps (c2pa.color_adjustments / c2pa.cropped / c2pa.converted / …). */
+  actions: C2paActionInput[];
+  /** The source asset's own preserved credential(s), carried as ingredient manifests. */
+  ingredients?: IngredientCredential[];
+  /** Transform detail (source id, treatment, crop box, …) → tools.lolly.export `inputs`. */
+  inputs?: Record<string, string>;
+  /** Output size, e.g. '1024×768'. */
+  dimensions?: string;
+}): Promise<Blob> {
+  try {
+    // Platform + opted-in personal attribution, same gate as tool exports
+    // (Profile → "Use my details"); buildExportMeta fetches the profile itself.
+    const meta = await buildExportMeta(host, { name: o.tool ?? 'Catalog' });
+    return await signAndEmbedC2pa(blob, format, {
+      title: o.title || meta.tool,
+      software: meta.software,
+      environment: c2paEnvironment(format, { meta, c2paInputs: o.inputs } as ExportOpts, o.dimensions),
+      author: c2paAuthor(meta),
+      actions: o.actions,
+      ingredients: o.ingredients,
+    }, host as WebHost);
+  } catch (err) {
+    host.log?.('warn', `${format}: Content Credentials not attached — ${(err as any)?.message || err}`);
     return blob;
   }
 }

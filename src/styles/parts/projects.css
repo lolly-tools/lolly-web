@@ -19,10 +19,10 @@
 }
 .view-toggle {
   display: inline-flex; gap: 2px; padding: 3px;
-  border: 1px solid hsl(var(--border)); border-radius: 999px; background: hsl(var(--muted) / 0.65);backdrop-filter: blur(5px);
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--muted) / 0.65);backdrop-filter: blur(5px);
 }
 .view-toggle-opt {
-  padding: 6px 18px; border-radius: 999px; font-size: 13px; font-weight: 600; line-height: 1.4;
+  padding: 6px 18px; border-radius: calc(var(--radius)/2); font-size: 13px; font-weight: 600; line-height: 1.4;
   color: hsl(var(--muted-foreground)); text-decoration: none; transition: background 0.12s, color 0.12s;
     text-shadow: 0 1px #fff3;
     color: hsl(var(--card-foreground));}

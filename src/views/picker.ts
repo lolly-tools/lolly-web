@@ -2041,11 +2041,13 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // Preserve any Content Credentials the ORIGINAL carried, BEFORE the re-encode
   // above discards them — the raw C2PA manifest store only (no pixels/EXIF), so a
   // placed credentialed image (an AI render, a signed photo) keeps its provenance
-  // into an export without re-hoarding the metadata the upload strips. SVG is
-  // sanitised (credential gone) and Lottie is JSON, so both are skipped. Best-
-  // effort: an unreadable or absent credential just means nothing to preserve.
+  // into an export without re-hoarding the metadata the upload strips. Applies to
+  // SVG too: sanitisation strips the in-file manifest, but the record carries the
+  // store so a re-uploaded signed SVG (e.g. a Lolly catalog recolour) keeps its
+  // chain. Lottie is JSON — nothing to scan. Best-effort: an unreadable or absent
+  // credential just means nothing to preserve.
   let credential: Uint8Array | undefined, credentialFormat: string | undefined;
-  if (!isLottie && !isVector && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
+  if (!isLottie && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
     try {
       const ex = extractC2paStore(new Uint8Array(await file.arrayBuffer()));
       if (ex) { credential = ex.store; credentialFormat = ex.format; }

@@ -56,6 +56,45 @@ const fmtNum = (n: number, dp: number): string => {
   return dp > 0 ? s.replace(/\.?0+$/, '') : s; // trim trailing zeros for the perceptual axes
 };
 
+// ── sRGB ↔ HSL ────────────────────────────────────────────────────────────────
+// The one space the engine doesn't already carry a converter for (it speaks
+// OKLCH/CMYK/hex). Standard sRGB↔HSL, UI units: h 0–360, s/l 0–100, r/g/b 0–255.
+// Exposed for the picker's HSL slider mode; pure so color-formats.test.ts covers it.
+
+/** sRGB (0–255) → HSL (h 0–360, s/l 0–100). Grey → h 0, s 0. */
+export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const rn = clamp(r, 0, 255) / 255, gn = clamp(g, 0, 255) / 255, bn = clamp(b, 0, 255) / 255;
+  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn), d = max - min;
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (d !== 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case rn: h = (gn - bn) / d + (gn < bn ? 6 : 0); break;
+      case gn: h = (bn - rn) / d + 2; break;
+      default: h = (rn - gn) / d + 4; break;
+    }
+    h *= 60;
+  }
+  return [h, s * 100, l * 100];
+}
+
+/** HSL (h 0–360, s/l 0–100) → sRGB (0–255, rounded). */
+export function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const hn = ((h % 360) + 360) % 360 / 360, sn = clamp(s, 0, 100) / 100, ln = clamp(l, 0, 100) / 100;
+  if (sn === 0) { const v = Math.round(ln * 255); return [v, v, v]; }
+  const q = ln < 0.5 ? ln * (1 + sn) : ln + sn - ln * sn;
+  const p = 2 * ln - q;
+  const hue = (t: number): number => {
+    let tn = t; if (tn < 0) tn += 1; if (tn > 1) tn -= 1;
+    if (tn < 1 / 6) return p + (q - p) * 6 * tn;
+    if (tn < 1 / 2) return q;
+    if (tn < 2 / 3) return p + (q - p) * (2 / 3 - tn) * 6;
+    return p;
+  };
+  return [hue(hn + 1 / 3), hue(hn), hue(hn - 1 / 3)].map(v => Math.round(v * 255)) as [number, number, number];
+}
+
 /**
  * Render `hex` (#rrggbb or #rrggbbaa) as the given format's editable text.
  * Non-hex/unset input yields '' (the caller shows a placeholder).
@@ -71,7 +110,9 @@ export function formatColor(fmt: ColorFormat, hex: string): string {
     case 'rgba': return `${r}, ${g}, ${b}, ${fmtNum(a, 3)}`;
     case 'oklch': {
       const o = hexToOklch(hex6);
-      return o ? `${fmtNum(o.l * 100, 1)}% ${fmtNum(o.c, 4)} ${fmtNum(o.h, 1)}` : '';
+      if (!o) return '';
+      const base = `${fmtNum(o.l * 100, 1)}% ${fmtNum(o.c, 4)} ${fmtNum(o.h, 1)}`;
+      return a < 1 ? `${base} / ${fmtNum(a, 3)}` : base;
     }
     case 'cmyk': {
       const [c, m, y, k] = rgbToCmyk(r / 255, g / 255, b / 255);
@@ -106,10 +147,11 @@ export function parseColor(fmt: ColorFormat, text: string): string | null {
       return rgbaToHex(clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255), alpha);
     }
     case 'oklch': {
-      // L (percent) C H — reconstruct the canonical oklch() the engine parses.
-      const [l, c, h] = nums(t);
+      // L (percent) C H [/ A] — reconstruct the canonical oklch() the engine
+      // parses; a 4th number is the alpha (0–1) and yields a hex8.
+      const [l, c, h, a] = nums(t);
       if (l === undefined || c === undefined || h === undefined) return null;
-      return oklchToHex({ l: clamp(l, 0, 100) / 100, c: Math.max(0, c), h });
+      return oklchToHex({ l: clamp(l, 0, 100) / 100, c: Math.max(0, c), h, alpha: a === undefined ? undefined : clamp(a, 0, 1) });
     }
     case 'cmyk': {
       const [c, m, y, k] = nums(t);
