@@ -91,6 +91,20 @@
    border echoes the Profile card this was split from. Editing (fonts, brand-pack
    share) all live HERE now (lib/brand-editor.ts) — status line + the live editor. */
 .dash-brand { border-inline-start: 3px solid hsl(var(--primary) / 0.55); }
+/* Head row: title/desc on the left, the full-page setup-wizard link on the right. */
+.dash-brand-head { display: flex; align-items: start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.dash-brand-head-text { min-width: 0; }
+.dash-brand-setup {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: .45rem;
+  padding: .5rem .85rem; border-radius: 999px; text-decoration: none;
+  font-size: .8rem; font-weight: 600; white-space: nowrap;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / .1);
+  box-shadow: inset 0 0 0 1px hsl(var(--primary) / .22);
+  transition: background .12s, box-shadow .12s;
+}
+.dash-brand-setup:hover { background: hsl(var(--primary) / .16); box-shadow: inset 0 0 0 1px hsl(var(--primary) / .34); }
+.dash-brand-setup svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .dash-brand-status { margin: 0 0 1.1rem; font-size: .84rem; line-height: 1.55; color: hsl(var(--muted-foreground)); max-width: 70ch; }
 .dash-brand-status strong { color: hsl(var(--foreground)); }
 
@@ -293,8 +307,13 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   background: hsl(var(--background)); color: hsl(var(--foreground));
 }
 
-/* Logo variants — four optional upload slots (horizontal · vertical · mono · reverse). */
-.be-logo-grid { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+/* Logo variants — a matrix of orientation (rows) × treatment (tiles per row). */
+.be-logo-grid { display: grid; gap: 1.3rem; }
+.be-logo-group { display: grid; gap: .6rem; }
+.be-logo-group-head { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; }
+.be-logo-group-name { font-size: .8rem; font-weight: 700; letter-spacing: .01em; color: hsl(var(--foreground)); }
+.be-logo-group-hint { font-size: .74rem; color: hsl(var(--muted-foreground)); }
+.be-logo-row { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .be-logo-slot { display: grid; gap: .4rem; }
 .be-logo-slot-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.2rem; }
 .be-logo-slot-name { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
@@ -314,8 +333,8 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-logo-art { display: grid; place-items: center; width: 100%; height: 100%; border-radius: calc(var(--radius) * .6); }
 .be-logo-art img { max-width: 100%; max-height: 100%; object-fit: contain; }
 /* Reverse mark reads on dark; monochrome on a neutral card so a white-on-white PNG still shows. */
-.be-logo-slot[data-be-logo="reverse"] .be-logo-art { background: hsl(var(--foreground)); padding: .5rem; }
-.be-logo-slot[data-be-logo="mono"] .be-logo-art { background: hsl(var(--muted) / .5); padding: .5rem; }
+.be-logo-slot[data-treatment="reverse"] .be-logo-art { background: hsl(var(--foreground)); padding: .5rem; }
+.be-logo-slot[data-treatment="mono"] .be-logo-art { background: hsl(var(--muted) / .5); padding: .5rem; }
 .be-logo-empty { font-size: 1.6rem; font-weight: 300; color: hsl(var(--muted-foreground) / .7); }
 .be-logo-hint { margin: 0; font-size: .7rem; line-height: 1.45; color: hsl(var(--muted-foreground)); }
 

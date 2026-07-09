@@ -436,7 +436,7 @@ stroke-width:.81;
   height: 2.9em;
   padding: 0;
   border: 1px solid hsl(var(--primary));
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: hsl(var(--background) / 0.5);
   color: hsl(var(--primary));
   cursor: pointer;
@@ -592,7 +592,7 @@ stroke-width:.81;
 
 .gallery-pill {
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: calc(var(--radius)*1.5);
   padding: 7px 14px;
   font: inherit;
   font-size: 13px;

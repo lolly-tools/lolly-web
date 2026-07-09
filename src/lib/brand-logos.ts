@@ -18,16 +18,41 @@ import type { UserFontsHost } from '../user-fonts.ts';
 /** Every logo asset id starts here (fixed namespace, like USER_FONT_PREFIX). */
 export const USER_LOGO_PREFIX = 'user/logo/';
 
-export const LOGO_VARIANTS = ['horizontal', 'vertical', 'mono', 'reverse'] as const;
-export type LogoVariant = typeof LOGO_VARIANTS[number];
+// A logo variant is TWO independent axes: an ORIENTATION (how the mark is laid
+// out) × a TREATMENT (its colour form). Every combination is its own optional
+// slot — you can supply a primary horizontal AND a reverse vertical AND a mono
+// horizontal, etc. The variant key is `<orientation>-<treatment>`.
+export const LOGO_ORIENTATIONS = ['horizontal', 'vertical'] as const;
+export const LOGO_TREATMENTS = ['primary', 'mono', 'reverse'] as const;
+export type LogoOrientation = typeof LOGO_ORIENTATIONS[number];
+export type LogoTreatment = typeof LOGO_TREATMENTS[number];
+export type LogoVariant = `${LogoOrientation}-${LogoTreatment}`;
 
-/** Human labels + a one-line hint per slot (shown in the editor panel). */
-export const LOGO_META: Record<LogoVariant, { label: string; hint: string }> = {
+/** The full matrix of variant keys (orientation × treatment), in row order. */
+export const LOGO_VARIANTS: readonly LogoVariant[] =
+  LOGO_ORIENTATIONS.flatMap(o => LOGO_TREATMENTS.map(t => `${o}-${t}` as LogoVariant));
+
+export const ORIENTATION_META: Record<LogoOrientation, { label: string; hint: string }> = {
   horizontal: { label: 'Horizontal', hint: 'Wordmark + symbol in a row — the default lockup.' },
-  vertical: { label: 'Vertical', hint: 'Stacked lockup for square and tall spaces.' },
-  mono: { label: 'Monochrome', hint: 'One-colour mark for stamps, watermarks, faxes.' },
+  vertical: { label: 'Vertical', hint: 'Stacked mark for square and tall spaces.' },
+};
+export const TREATMENT_META: Record<LogoTreatment, { label: string; hint: string }> = {
+  primary: { label: 'Primary', hint: 'Full-colour lockup.' },
+  mono: { label: 'Mono', hint: 'One-colour mark.' },
   reverse: { label: 'Reverse', hint: 'Light mark for dark backgrounds.' },
 };
+
+/** Split a variant key back into its two axes. */
+export function splitVariant(v: LogoVariant): { orientation: LogoOrientation; treatment: LogoTreatment } {
+  const i = v.indexOf('-');
+  return { orientation: v.slice(0, i) as LogoOrientation, treatment: v.slice(i + 1) as LogoTreatment };
+}
+
+/** A human name for a variant ("Horizontal · Reverse"). */
+export function variantLabel(v: LogoVariant): string {
+  const { orientation, treatment } = splitVariant(v);
+  return `${ORIENTATION_META[orientation].label} · ${TREATMENT_META[treatment].label}`;
+}
 
 export interface LogoSlot {
   variant: LogoVariant;
@@ -120,7 +145,10 @@ export async function installLogo(host: LogoHost, variant: LogoVariant, file: Fi
   if (file.size > MAX_BYTES) throw new Error(`That logo is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 4 MB.`);
   const id = USER_LOGO_PREFIX + variant;
   const format = EXT[file.type] || 'png';
-  await host.assets._uploadUserAsset({ id, type: 'image', format, blob: file, meta: { format, variant } });
+  // Store under a real catalogue asset type (the schema enum has no 'image'):
+  // an SVG mark is vector, everything else raster — so it shows in the catalog.
+  const type = format === 'svg' ? 'vector' : 'raster';
+  await host.assets._uploadUserAsset({ id, type, format, blob: file, meta: { format, variant, kind: 'logo' } });
   const doc = withLogoToken(await userDoc(host), variant, id);
   await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
 }

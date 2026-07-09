@@ -22,7 +22,8 @@
 import { hexToOklch, oklchToHex, rgbToCmyk, cmykToRgbApprox } from '@lolly/engine';
 import type { Oklch } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
-import { hexToRgba, rgbaToHex, rgbToHsl, hslToRgb } from '../lib/color-formats.ts';
+import { hexToRgba, rgbaToHex, rgbToHsl, hslToRgb, formatColor, parseColor } from '../lib/color-formats.ts';
+import type { ColorFormat } from '../lib/color-formats.ts';
 import { escape } from '../utils.ts';
 
 /** One swatch as the picker renders it (see SWATCHES below). */
@@ -54,6 +55,23 @@ let SWATCHES: ColorSwatchOption[] = PALETTE.map(s => ({ value: s.hex, label: s.l
 /** Replace the picker's swatches (e.g. with tokens). Ignored if empty/invalid. */
 export function setSwatches(list: ColorSwatchOption[]): void {
   if (Array.isArray(list) && list.length) SWATCHES = list;
+}
+
+/**
+ * Repopulate the already-visible swatch grids under `scope` from the current
+ * SWATCHES — call after setSwatches() when the brand palette changed so open
+ * pickers (the dashboard/start inline primary) reflect added/deleted swatches
+ * live. Closed popovers rebuild lazily on next open, so only touch grids that
+ * are already built (or belong to an always-open inline field). Clicks are
+ * delegated to the persistent box, so no re-wiring is needed here.
+ */
+export function refreshSwatches(scope: HTMLElement): void {
+  scope.querySelectorAll<HTMLElement>('[data-color-field]').forEach(field => {
+    const box = field.querySelector<HTMLElement>('.color-swatches');
+    if (box && (box.childElementCount || field.classList.contains('color-field--inline'))) {
+      box.innerHTML = swatchButtonsHtml(field.dataset.colorField!);
+    }
+  });
 }
 
 // A colour value may be a token value object ({ ref, value }); the field UI works
@@ -243,7 +261,7 @@ function colorModesHtml(eid: string, rgbHex: string | null): string {
   const seed = rgbHex ?? '#4f83cc'; // generic groups need a real hex; OKLCH seeds itself
   const tab = (m: ColorMode, label: string, on: boolean): string =>
     `<button type="button" class="color-mode-tab" role="tab" data-mode="${m}" aria-selected="${on}">${label}</button>`;
-  return `<div class="color-modes" data-color-modes="${eid}">
+  return `<div class="color-modes" data-color-modes="${eid}" data-active-mode="oklch">
       <div class="color-mode-tabs" role="tablist" aria-label="Colour space">
         ${tab('oklch', 'OKLCH', true)}${tab('hsl', 'HSL', false)}${tab('rgb', 'RGB', false)}${tab('cmyk', 'CMYK', false)}
       </div>
@@ -319,8 +337,8 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
     <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
       ${swatchesOnly ? '' : `${modes ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null) : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
       <input type="text" class="color-hex-input" data-color-hex="${eid}"
-             value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="#rrggbbaa"
-             maxlength="9" spellcheck="false" autocomplete="off" aria-label="Hex colour value">
+             value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}"
+             ${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
         <input type="range" class="color-alpha-slider" data-color-alpha="${eid}"
@@ -484,6 +502,25 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   const q = <T extends Element = Element>(sel: string) => scope.querySelector<T>(sel);
   armSwatchTip();
 
+  // ── The value field's format follows the active mode (when `modes` is on) ─────
+  // With a mode picker present, the big value input reads/writes in the active
+  // space (OKLCH string / HSL / RGB / CMYK) — like the swatch editor's set-by-value
+  // row — instead of always hex. Without modes it stays a plain hex field.
+  const MODE_FMT: Record<ColorMode, ColorFormat> = { oklch: 'oklch', hsl: 'hsl', rgb: 'rgb', cmyk: 'cmyk' };
+  /** The active value-field format for a field, or null (plain hex — no modes). */
+  const valueFmt = (field: HTMLElement | null): ColorFormat | null => {
+    const m = field?.querySelector<HTMLElement>('.color-modes');
+    return m ? MODE_FMT[(m.dataset.activeMode as ColorMode) || 'oklch'] : null;
+  };
+  /** Write the shared value field for `id` — in the active mode's space, else hex.
+   *  Never clobbers the field while the user is typing in it. */
+  const writeValueField = (id: string, field: HTMLElement | null, fullHex: string): void => {
+    const input = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
+    if (!input || input === document.activeElement) return;
+    const fmt = valueFmt(field);
+    input.value = fmt ? formatColor(fmt, fullHex) : fullHex;
+  };
+
   function updateTrigger(field: HTMLElement | null, value: string): void {
     const preview = field?.querySelector<HTMLElement>('.color-trigger-preview');
     const nameText = field?.querySelector<HTMLElement>('.color-trigger-name');
@@ -539,11 +576,10 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   function applySwatch(field: HTMLElement, hex: string, ref: string | null = null): void {
     const id = field.dataset.colorField;
     const native = field.querySelector<HTMLInputElement>('input.color-popover-native');
-    const hexInput = field.querySelector<HTMLInputElement>('.color-hex-input');
     const alphaSlider = field.querySelector<HTMLInputElement>('.color-alpha-slider');
     const alphaPctEl = field.querySelector<HTMLElement>('.color-alpha-pct');
     if (native && hex.startsWith('#')) native.value = hex.slice(0, 7);
-    if (hexInput) hexInput.value = hex;
+    if (id) writeValueField(id, field, hex);
     if (alphaSlider) alphaSlider.value = hex === 'transparent' ? '0' : '255';
     if (alphaPctEl) alphaPctEl.textContent = (hex === 'transparent' ? 0 : 100) + '%';
     seedLch(field, hex);
@@ -553,17 +589,24 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
 
   // Build the swatch grid the first time a field's popover opens — deferring the
   // whole palette (the heaviest part of each colour cell) until it's needed.
-  function buildSwatches(field: HTMLElement): void {
-    const box = field.querySelector('.color-swatches');
-    if (!box || box.childElementCount) return; // already built
+  // Clicks are DELEGATED to the (persistent) box, so the grid can be repopulated
+  // later (refreshSwatches, when the brand palette changes) without re-wiring.
+  function buildSwatches(field: HTMLElement, force = false): void {
+    const box = field.querySelector<HTMLElement>('.color-swatches');
+    if (!box || (!force && box.childElementCount)) return; // already built
     box.innerHTML = swatchButtonsHtml(field.dataset.colorField!);
-    box.querySelectorAll<HTMLElement>('[data-swatch-value]').forEach(btn =>
-      btn.addEventListener('click', () => applySwatch(field, btn.dataset.swatchValue!, btn.dataset.swatchRef || null)));
+    if (!box.dataset.wired) {
+      box.dataset.wired = '1';
+      box.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-swatch-value]');
+        if (btn) applySwatch(field, btn.dataset.swatchValue!, btn.dataset.swatchRef || null);
+      });
+    }
   }
 
   // Inline fields have no trigger and their popover is always open, so the
   // lazy-on-open build above never fires — build their swatch grid up front.
-  scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(buildSwatches);
+  scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(f => buildSwatches(f));
 
   // ── Trigger: open/close the popover ──────────────────────────────────────────
   scope.querySelectorAll<HTMLElement>('[data-color-trigger]').forEach(trigger => {
@@ -692,8 +735,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
         const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
         const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
         const fullHex = alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex;
-        const hexInput = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
-        if (hexInput) hexInput.value = fullHex;
+        writeValueField(id, field, fullHex);
         const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
         if (native) native.value = rgbHex;
         updateTrigger(field, fullHex);
@@ -713,15 +755,28 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     const lchGroup = modes.querySelector<HTMLElement>('.color-lch');
     const genGroups = modes.querySelectorAll<HTMLElement>('.color-modegroup');
 
-    /** The field's current sRGB hex (from the shared hex box), or the neutral seed. */
+    /** The field's current sRGB hex. The hidden native input always holds the
+     *  canonical `#rrggbb` (every handler syncs it), so it's the reliable source
+     *  even when the value field is showing a non-hex space (OKLCH/HSL/CMYK). */
     const currentHex = (): string => {
+      const nv = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`)?.value.trim();
+      if (nv && /^#[0-9a-fA-F]{6}$/.test(nv)) return nv;
       const raw = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`)?.value.trim() || '';
-      return /^#[0-9a-fA-F]{6}/.test(raw) ? raw.slice(0, 7) : oklchToHex(LCH_SEED);
+      const parsed = parseColor(valueFmt(field) ?? 'hex', raw);
+      return parsed ? parsed.slice(0, 7) : oklchToHex(LCH_SEED);
     };
 
+    /** Current sRGB hex + the alpha slider's byte → the full value for the field. */
+    const currentFullHex = (): string => {
+      const rgb = currentHex();
+      const alpha = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
+      const a = alpha ? parseInt(alpha.value, 10) : 255;
+      return a < 255 ? rgb + a.toString(16).padStart(2, '0') : rgb;
+    };
     modes.querySelectorAll<HTMLElement>('.color-mode-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         const mode = tab.dataset.mode as ColorMode;
+        modes.dataset.activeMode = mode; // drives the value field's format (valueFmt)
         modes.querySelectorAll<HTMLElement>('.color-mode-tab').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
         if (lchGroup) lchGroup.hidden = mode !== 'oklch';
         genGroups.forEach(g => {
@@ -730,8 +785,11 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
           if (on) seedGenGroup(g, currentHex()); // catch up to the current colour
         });
         if (mode === 'oklch' && field) seedLch(field, currentHex());
+        writeValueField(id, field, currentFullHex()); // reformat the value field to the new space
       });
     });
+    // Seed the value field in the initial (OKLCH) space on wire.
+    if (field) writeValueField(id, field, currentFullHex());
 
     genGroups.forEach(group => {
       const mode = group.dataset.modeGroup as GenMode;
@@ -747,8 +805,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
           const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
           const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
           const fullHex = alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex;
-          const hexInput = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
-          if (hexInput) hexInput.value = fullHex;
+          writeValueField(id, field, fullHex);
           const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
           if (native) native.value = rgbHex;
           updateTrigger(field, fullHex);
@@ -768,8 +825,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
       const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
       const fullHex = (alphaInt < 255 ? native.value + alphaInt.toString(16).padStart(2, '0') : native.value).toLowerCase();
-      const hexInput = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
-      if (hexInput) hexInput.value = fullHex;
+      writeValueField(id, field, fullHex);
       if (field) seedLch(field, native.value);
       updateTrigger(field, fullHex);
       onChange(id, fullHex);
@@ -784,15 +840,22 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     hexInput.addEventListener('blur', () => interact(false));
     hexInput.addEventListener('input', () => {
       const raw = hexInput.value.trim();
-      if (!/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(raw)) return;
-      const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
-      if (native) native.value = raw.slice(0, 7);
+      const fmt = valueFmt(field);
       const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
       const alphaPctEl = q<HTMLElement>(`[data-alpha-pct="${CSS.escape(id)}"]`);
-      const alphaInt = raw.length === 9 ? parseInt(raw.slice(7, 9), 16) : 255;
+      const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
+      // When a mode is active the value field speaks that space (LCH/HSL/RGB/CMYK);
+      // parse in it. `parseColor` may return a hex8 (oklch/rgba can carry alpha);
+      // otherwise keep the alpha slider's current value.
+      const parsed = fmt ? parseColor(fmt, raw) : (/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(raw) ? raw : null);
+      if (!parsed) return; // unparseable mid-edit — hold the last good colour
+      const rgbHex = parsed.slice(0, 7);
+      const alphaInt = parsed.length === 9 ? parseInt(parsed.slice(7, 9), 16)
+        : (fmt && alphaSlider ? parseInt(alphaSlider.value, 10) : 255);
+      if (native) native.value = rgbHex;
       if (alphaSlider) alphaSlider.value = String(alphaInt);
       if (alphaPctEl) alphaPctEl.textContent = Math.round(alphaInt / 255 * 100) + '%';
-      const finalVal = (alphaInt < 255 ? raw.slice(0, 9) : raw.slice(0, 7)).toLowerCase();
+      const finalVal = (alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex).toLowerCase();
       if (field) seedLch(field, finalVal);
       updateTrigger(field, finalVal);
       onChange(id, finalVal);
@@ -812,8 +875,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
       const rgbHex = native?.value || '#000000';
       const fullHex = (alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex).toLowerCase();
-      const hexInput = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
-      if (hexInput) hexInput.value = fullHex;
+      writeValueField(id, field, fullHex);
       updateTrigger(field, fullHex);
       onChange(id, fullHex);
     });

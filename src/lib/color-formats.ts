@@ -17,12 +17,13 @@
 
 import { colorToHex, rgbToCmyk, cmykToRgbApprox, hexToOklch, oklchToHex } from '@lolly/engine';
 
-export type ColorFormat = 'hex' | 'rgb' | 'rgba' | 'oklch' | 'cmyk';
+export type ColorFormat = 'hex' | 'rgb' | 'rgba' | 'hsl' | 'oklch' | 'cmyk';
 
 export const COLOR_FORMATS: ReadonlyArray<{ id: ColorFormat; label: string; hint: string }> = [
   { id: 'hex', label: 'Hex', hint: '#4f83cc' },
   { id: 'rgb', label: 'RGB', hint: '79, 131, 204' },
   { id: 'rgba', label: 'RGBA', hint: '79, 131, 204, 1' },
+  { id: 'hsl', label: 'HSL', hint: '215, 55%, 55%' },
   { id: 'oklch', label: 'OKLCH', hint: '60% 0.1 250' },
   { id: 'cmyk', label: 'CMYK', hint: '61, 36, 0, 20' },
 ];
@@ -108,6 +109,10 @@ export function formatColor(fmt: ColorFormat, hex: string): string {
     case 'hex': return (a < 1 ? rgbaToHex(r, g, b, a) : hex6).toUpperCase();
     case 'rgb': return `${r}, ${g}, ${b}`;
     case 'rgba': return `${r}, ${g}, ${b}, ${fmtNum(a, 3)}`;
+    case 'hsl': {
+      const [h, s, l] = rgbToHsl(r, g, b);
+      return `${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%`;
+    }
     case 'oklch': {
       const o = hexToOklch(hex6);
       if (!o) return '';
@@ -145,6 +150,12 @@ export function parseColor(fmt: ColorFormat, text: string): string | null {
       if (r === undefined || g === undefined || b === undefined) return null;
       const alpha = a === undefined ? 1 : clamp(a, 0, 1);
       return rgbaToHex(clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255), alpha);
+    }
+    case 'hsl': {
+      const [h, s, l] = nums(t);
+      if (h === undefined || s === undefined || l === undefined) return null;
+      const [r, g, b] = hslToRgb(h, clamp(s, 0, 100), clamp(l, 0, 100));
+      return rgbaToHex(r, g, b, 1);
     }
     case 'oklch': {
       // L (percent) C H [/ A] — reconstruct the canonical oklch() the engine
