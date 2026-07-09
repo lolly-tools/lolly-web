@@ -314,11 +314,12 @@
   row-gap: 12px;
   align-items: start;
 }
-/* .color-modes (the tabbed multi-space picker) takes the left column's row 1 in
-   place of a bare .color-lch; either way row 1 col 1 is the slider stack. */
+/* Left column, top-to-bottom: the value field, then the slider stack (.color-lch
+   or the tabbed .color-modes), then alpha. The hex/value input leads so it reads
+   as the headline of the picker. */
+.color-field--inline .color-hex-input  { grid-column: 1; grid-row: 1; }
 .color-field--inline .color-lch,
-.color-field--inline .color-modes     { grid-column: 1; grid-row: 1; }
-.color-field--inline .color-hex-input  { grid-column: 1; grid-row: 2; }
+.color-field--inline .color-modes     { grid-column: 1; grid-row: 2; }
 .color-field--inline .color-alpha-row  { grid-column: 1; grid-row: 3; }
 .color-field--inline .color-popover-native { grid-column: 1; grid-row: 4; }
 .color-field--inline .color-swatches {
@@ -357,6 +358,11 @@
 .color-mode-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .color-modegroup { display: flex; flex-direction: column; gap: 8px; }
 .color-modegroup[hidden] { display: none; }
+/* Reserve the tallest group's height (CMYK = 4 rows) on EVERY mode group, so
+   switching OKLCH/HSL/RGB (3 rows) ↔ CMYK (4 rows) never shifts the layout. One
+   row = the 18px thumb; 4 rows + 3 × 8px gaps. Rows stay top-aligned. */
+.color-modes .color-lch,
+.color-modes .color-modegroup { min-height: calc(4 * 18px + 3 * 8px); justify-content: flex-start; }
 
 .color-hex-input {
   width: 100%;

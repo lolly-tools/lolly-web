@@ -33,7 +33,7 @@
  * a detached editor (route changed mid-op) never writes to a dead node.
  */
 
-import { deriveBrandTokens, createTokenSet, colorToHex, contrastRatio } from '@lolly/engine';
+import { deriveBrandTokens, createTokenSet, colorToHex, contrastRatio, RAMP_STEPS_MIN, RAMP_STEPS_MAX } from '@lolly/engine';
 import type { BrandDeriveOptions } from '@lolly/engine';
 import type { HostV1, TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
 import type { WebTokensAPI } from '../bridge/tokens.ts';
@@ -123,9 +123,9 @@ const ratioOf = (fg: string, bg: string): string => {
  * in the Palette panel below. Omitted (the Primary ramp — it's already driven
  * by the colour field above) they stay plain, non-interactive swatches.
  */
-function rampRow(set: TokenSet, ramp: string, label: string, selected?: number): string {
+function rampRow(set: TokenSet, ramp: string, label: string, steps: number, selected?: number): string {
   let cells = '';
-  for (let i = 1; i <= 9; i++) {
+  for (let i = 1; i <= steps; i++) {
     const v = set.resolve(`color.ramp.${ramp}.${i}`);
     const css = typeof v === 'string' ? v : 'transparent';
     const title = `${label} ${i} · ${css}`;
@@ -156,11 +156,11 @@ function specCard(name: 'Light' | 'Dark', set: TokenSet): string {
 function deriveSafe(opts: BrandDeriveOptions): Record<string, unknown> | null {
   try { return deriveBrandTokens(opts) as Record<string, unknown>; } catch { return null; }
 }
-function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secondary: number }): string {
+function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secondary: number; steps: number }): string {
   const light = createTokenSet(doc, { theme: 'light' });
   const dark = createTokenSet(doc, { theme: 'dark' });
   return `
-    <div class="be-ramps">${rampRow(light, 'primary', 'Primary')}${rampRow(light, 'neutral', 'Neutral', sel.neutral)}${rampRow(light, 'secondary', 'Secondary', sel.secondary)}</div>
+    <div class="be-ramps">${rampRow(light, 'primary', 'Primary', sel.steps)}${rampRow(light, 'neutral', 'Neutral', sel.steps, sel.neutral)}${rampRow(light, 'secondary', 'Secondary', sel.steps, sel.secondary)}</div>
     <div class="be-specs">${specCard('Light', light)}${specCard('Dark', dark)}</div>`;
 }
 
@@ -302,16 +302,27 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     } catch { /* malformed/tokenless doc — keep the default seed */ }
   }
   let scheme: Scheme = 'mono', surface: Surface = 'light', contrast: Contrast = 'comfort';
-  // The neutral/secondary ramp-step picks in the Colour preview below — both
-  // default to the engine's own anchor step (5) so behaviour is unchanged
-  // until the user actively picks a different one (see setSemanticRampAlias).
-  let neutralStep = DEFAULT_RAMP_STEP, secondaryStep = DEFAULT_RAMP_STEP;
+  // How many shades each ramp carries. New brands start at 5 (a tight, decisive
+  // palette); an installed brand keeps whatever it shipped (seeded from its
+  // primary ramp's step count) so re-opening the editor never silently reshapes it.
+  const DEFAULT_STEPS = 5;
+  const anchorStep = (n: number): number => Math.round((n - 1) / 2) + 1; // mid step = engine at(0.5)
+  let steps = DEFAULT_STEPS;
+  if (installedDoc) {
+    try {
+      const g = createTokenSet(installedDoc).query({ type: 'color' }).filter(t => /^color\.ramp\.primary\.\d+$/.test(t.path));
+      if (g.length >= RAMP_STEPS_MIN) steps = Math.min(RAMP_STEPS_MAX, g.length);
+    } catch { /* keep the default */ }
+  }
+  // Neutral/secondary ramp-step picks — default to the anchor (mid) step for the
+  // current division count, so they track the shade count until the user picks.
+  let neutralStep = anchorStep(steps), secondaryStep = anchorStep(steps);
   // The primary's pinned CMYK print override (null = auto-convert at export),
   // seeded from the installed brand. Re-applied to the doc after every re-derive.
   let printOverride: [number, number, number, number] | null = installedDoc ? getPrimaryPrintOverride(installedDoc) : null;
   const currentTheme = document.documentElement.dataset.theme || 'light';
 
-  const initialDraft = deriveSafe({ primary, scheme, surface, contrast });
+  const initialDraft = deriveSafe({ primary, scheme, surface, contrast, steps });
 
   root.innerHTML = `
     <div class="be" data-brand-editor>
@@ -348,10 +359,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
             <label class="be-field"><span class="be-field-label">Scheme</span>${segHtml('scheme', SCHEMES, scheme, 'Colour scheme')}</label>
             <label class="be-field"><span class="be-field-label">Surface</span>${segHtml('surface', SURFACES, surface, 'Default surface')}</label>
             <label class="be-field"><span class="be-field-label">Contrast</span>${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}</label>
+            <div class="be-field be-steps-field">
+              <span class="be-field-label">Shades <span class="be-steps-val" data-be-steps-val>${steps}</span></span>
+              <input type="range" class="be-steps-slider" data-be-steps min="${RAMP_STEPS_MIN}" max="${RAMP_STEPS_MAX}" step="1" value="${steps}" aria-label="Shades per ramp">
+            </div>
             <button type="button" class="be-cta" data-be-derive>Use this colour</button>
             <button type="button" class="be-cta" data-be-save hidden>Save colour</button>
           </div>
-          <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep }) : ''}</div>
+          <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep, steps }) : ''}</div>
         </div>
       </div>
 
@@ -499,12 +514,23 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   // but nothing here calls persist() directly — only the Save colour button
   // does (a Palette-panel persist() can also clear this draft — see persist()).
   const renderPreview = (): void => {
-    const next = deriveSafe({ primary, scheme, surface, contrast });
+    const next = deriveSafe({ primary, scheme, surface, contrast, steps });
     if (!next) return; // a half-typed hex mid-edit — keep the last good preview
-    if (preview) preview.innerHTML = previewHtml(next, { neutral: neutralStep, secondary: secondaryStep });
+    if (preview) preview.innerHTML = previewHtml(next, { neutral: neutralStep, secondary: secondaryStep, steps });
     applyDraftChrome(next);
     broadcastDraft(next);
   };
+  // Shades slider — how many divisions each ramp carries. Re-derives live; the
+  // neutral/secondary step picks re-centre on the new anchor (and clamp in range).
+  const stepsSlider = $('[data-be-steps]') as HTMLInputElement | null;
+  const stepsVal = $('[data-be-steps-val]') as HTMLElement | null;
+  stepsSlider?.addEventListener('input', () => {
+    steps = Math.round(Number(stepsSlider.value)) || DEFAULT_STEPS;
+    if (stepsVal) stepsVal.textContent = String(steps);
+    neutralStep = Math.min(neutralStep, steps);
+    secondaryStep = Math.min(secondaryStep, steps);
+    renderPreview();
+  });
   wireColorField(root, {
     onChange: (id, value) => {
       if (id !== 'be-primary') return;
@@ -584,7 +610,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   });
   $('[data-be-derive]')?.addEventListener('click', async () => {
     let next: Record<string, unknown>;
-    try { next = deriveBrandTokens({ primary, scheme, surface, contrast, name: 'My brand' }) as Record<string, unknown>; }
+    try { next = deriveBrandTokens({ primary, scheme, surface, contrast, steps, name: 'My brand' }) as Record<string, unknown>; }
     catch (err) { announce(`Couldn't derive from ${primary}: ${String((err as { message?: unknown })?.message ?? err)}`, { assertive: true }); return; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);

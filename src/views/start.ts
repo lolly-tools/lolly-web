@@ -208,6 +208,26 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     try { return JSON.parse(strFromU8(bytes)); } catch { return null; }
   }
 
+  // extractSvgColors can return a bare named colour ("rebeccapurple") verbatim
+  // — deriveBrandTokens's parser only understands hex/rgb()/hsl()/oklch()/lch(),
+  // NOT bare names, and throws on anything else. The browser itself is the one
+  // dependency-free place that resolves every CSS colour name it recognises
+  // (not just a hand-copied subset), so ask it via a detached element rather
+  // than hand-rolling a second named-colour table here.
+  function toHexForDerive(value: string): string | null {
+    if (value.startsWith('#')) return value;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:-9999px;';
+    probe.style.color = value;
+    if (!probe.style.color) return null; // the browser didn't recognise it
+    document.body.appendChild(probe);
+    const rgb = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(probe).color);
+    probe.remove();
+    if (!rgb) return null;
+    const hex = (n: string): string => Number(n).toString(16).padStart(2, '0');
+    return `#${hex(rgb[1]!)}${hex(rgb[2]!)}${hex(rgb[3]!)}`;
+  }
+
   importFile.addEventListener('change', async () => {
     const file = importFile.files?.[0];
     importFile.value = ''; // so re-picking the same file re-fires change
@@ -375,10 +395,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     const kept: string[] = [];
     swatches.forEach(li => {
       const cb = li.querySelector<HTMLInputElement>('[data-color-idx]');
-      const hex = li.querySelector<HTMLElement>('.start-color-hex')?.textContent;
+      const raw = li.querySelector<HTMLElement>('.start-color-hex')?.textContent;
+      const hex = raw && toHexForDerive(raw);
       if (cb?.checked && hex) kept.push(hex);
     });
-    if (!kept.length) return;
+    if (!kept.length) {
+      showImportResult('<p class="start-import-err">None of the kept colours could be used — try a different selection.</p>');
+      return;
+    }
     const doc = deriveBrandTokens({ primary: kept[0]!, name: importedLabel });
     kept.slice(1).forEach((hex, i) => addSwatch(doc, 'custom', `Extracted ${i + 2}`, hex));
     void install(doc, importedLabel, colorsBtn);

@@ -179,11 +179,19 @@ export function setSemanticRampAlias(doc: unknown, role: 'neutral' | 'secondary'
 // tokens.colors() already surfaces as `.cmyk` and the CMYK export reads. A
 // re-derive rebuilds the ramp, so the editor re-applies this after deriving.
 
-/** JSON path to the primary anchor swatch (ramp step 5), or null if absent. */
+/** JSON path to the primary anchor swatch — the MIDDLE ramp step (the brand
+ *  colour), computed from however many steps the ramp carries (5 on a 9-step
+ *  ramp, 3 on a 5-step ramp; = the engine's `at(0.5)`). Null if absent. */
 function primaryAnchorPath(doc: unknown): string[] | null {
   const multiSet = isRec(doc) && [...SET_KEYS].some(k => k in doc);
-  const p = multiSet ? ['base', 'color', 'ramp', 'primary', '5'] : ['color', 'ramp', 'primary', '5'];
-  return leafAt(doc, p) ? p : null;
+  const groupPath = multiSet ? ['base', 'color', 'ramp', 'primary'] : ['color', 'ramp', 'primary'];
+  const group = leafAt(doc, groupPath);
+  if (!group) return null;
+  const steps = Object.keys(group).filter(k => /^\d+$/.test(k)).map(Number).sort((a, b) => a - b);
+  if (!steps.length) return null;
+  const anchor = Math.round((steps.length - 1) / 2) + 1;
+  const step = steps.includes(anchor) ? anchor : steps[Math.floor(steps.length / 2)]!;
+  return [...groupPath, String(step)];
 }
 
 /** The primary's pinned CMYK print override (C,M,Y,K 0–100), or null when auto. */
