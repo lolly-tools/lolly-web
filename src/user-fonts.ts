@@ -56,12 +56,14 @@ export interface UserFontsHost {
 /** One installed family, grouped from its per-face assets. */
 export interface UserFontFamily {
   family: string;
-  /** Asset ids of every stored face (latin/latin-ext × weights). */
+  /** Asset ids of every stored face (latin/latin-ext × weights × slants). */
   assetIds: string[];
   /** Total stored bytes across the family's faces. */
   bytes: number;
   /** A human blurb: "variable 100–900" or "400 + 700". */
   weights: string;
+  /** True when the family shipped an italic face too (Anton et al. have none). */
+  italic: boolean;
   primary: boolean;
 }
 
