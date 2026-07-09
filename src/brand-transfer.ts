@@ -218,7 +218,7 @@ export async function exportBrandPack(
   // user/logo/*, carried the same way as fonts so the pack is a complete brand.
   const logoRows: LogoRow[] = [];
   for (const r of records) {
-    if (r.type !== 'image' || !r.id.startsWith(USER_LOGO_PREFIX) || !r.blob) continue;
+    if (!r.id.startsWith(USER_LOGO_PREFIX) || !r.blob) continue;
     const fmt = String(r.meta?.format ?? 'png');
     const file = `logos/${r.id.slice(USER_LOGO_PREFIX.length).replace(/\//g, '-')}.${fmt}`;
     entries[file] = new Uint8Array(await r.blob.arrayBuffer());
@@ -356,7 +356,7 @@ export async function importBrandPack(
     try {
       await host.assets._uploadUserAsset({
         id: row.id,
-        type: 'image',
+        type: (row.format === 'svg' ? 'vector' : 'raster'),
         format: row.format || 'png',
         blob: new Blob([raw as BlobPart], { type: row.mime || 'image/png' }),
         ...(row.version ? { version: row.version } : {}),

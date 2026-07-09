@@ -1,33 +1,38 @@
 // SPDX-License-Identifier: MPL-2.0
-/** brand-logos.ts — the pure doc surgery for the four logo-variant tokens. */
+/** brand-logos.ts — pure doc surgery for the orientation×treatment logo tokens. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withLogoToken, logoGroupOf } from './brand-logos.ts';
+import { withLogoToken, logoGroupOf, LOGO_VARIANTS, splitVariant, variantLabel } from './brand-logos.ts';
+
+test('the variant matrix is orientation × treatment (6 optional slots)', () => {
+  assert.equal(LOGO_VARIANTS.length, 6);
+  assert.ok(LOGO_VARIANTS.includes('horizontal-primary'));
+  assert.ok(LOGO_VARIANTS.includes('vertical-reverse'));
+  assert.deepEqual(splitVariant('vertical-mono'), { orientation: 'vertical', treatment: 'mono' });
+  assert.equal(variantLabel('horizontal-reverse'), 'Horizontal · Reverse');
+});
 
 test('withLogoToken adds/reads/clears a variant on a layered doc (writes into base)', () => {
   const doc = { $themes: [{ name: 'light' }], base: {}, light: {} };
-  const a = withLogoToken(doc, 'horizontal', 'user/logo/horizontal');
+  const a = withLogoToken(doc, 'horizontal-primary', 'user/logo/horizontal-primary');
   const grp = logoGroupOf(a);
   assert.ok(grp, 'group exists');
-  assert.deepEqual(grp!.horizontal, { $type: 'asset', $value: 'user/logo/horizontal' });
-  // Writes into base on a layered doc.
+  assert.deepEqual(grp!['horizontal-primary'], { $type: 'asset', $value: 'user/logo/horizontal-primary' });
   assert.ok((a.base as Record<string, unknown>).asset, 'base.asset created');
 
-  const b = withLogoToken(a, 'reverse', 'user/logo/reverse');
+  const b = withLogoToken(a, 'vertical-reverse', 'user/logo/vertical-reverse');
   assert.equal(Object.keys(logoGroupOf(b)!).length, 2);
 
-  const c = withLogoToken(b, 'horizontal', null);
-  const grpC = logoGroupOf(c)!;
-  assert.equal(grpC.horizontal, undefined);
-  assert.ok(grpC.reverse, 'other variant untouched');
+  const c = withLogoToken(b, 'horizontal-primary', null);
+  assert.equal(logoGroupOf(c)!['horizontal-primary'], undefined);
+  assert.ok(logoGroupOf(c)!['vertical-reverse'], 'other variant untouched');
 
-  // Clearing the last variant removes the empty asset scaffolding.
-  const d = withLogoToken(c, 'reverse', null);
+  const d = withLogoToken(c, 'vertical-reverse', null);
   assert.equal(logoGroupOf(d), null);
   assert.equal((d.base as Record<string, unknown>).asset, undefined);
 });
 
 test('withLogoToken works on a plain (non-layered) doc at the root', () => {
-  const a = withLogoToken({}, 'mono', 'user/logo/mono');
-  assert.deepEqual(logoGroupOf(a)!.mono, { $type: 'asset', $value: 'user/logo/mono' });
+  const a = withLogoToken({}, 'vertical-mono', 'user/logo/vertical-mono');
+  assert.deepEqual(logoGroupOf(a)!['vertical-mono'], { $type: 'asset', $value: 'user/logo/vertical-mono' });
 });

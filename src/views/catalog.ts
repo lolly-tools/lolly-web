@@ -53,11 +53,15 @@ import { PALETTE } from '../palette.ts';
 import type { PaletteEntry } from '../palette.ts';
 import { livePalette } from '../lib/live-palette.ts';
 import { FONTS, WEIGHT_RAMP, FONT_LICENSE } from '../lib/typefaces.ts';
+import type { FontDownload } from '../lib/typefaces.ts';
+import { listUserFonts, familyFromTokenValue } from '../user-fonts.ts';
 import {
   restyleIconTheme, buildThemedAssetId, parseThemedAssetId, treatmentFilterSvg,
   buildTreatedAssetId, parseTreatedAssetId, wrapRasterWithTreatment,
+  prepareC2paIngredient, prepareC2paIngredientFromStore, DIGITAL_SOURCE_TYPE, C2PA_FORMATS,
 } from '@lolly/engine';
-import type { AssetRef, HostV1, Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
+import type { AssetRef, HostV1, IngredientCredential, Profile } from '../../../../engine/src/bridge/host-v1.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 
@@ -67,6 +71,12 @@ const HEADSHOT_ID = 'user/headshot';
 // Only assets that thumbnail as an image belong in the grid; palette/tokens/font/audio
 // entries are engine data (Swatches + Fonts panels cover those below).
 const VISUAL_TYPES = new Set(['raster', 'vector', 'video', 'lottie']);
+
+/** A font as the catalogue renders it — a bundled spec or an on-device user font. */
+interface CatFont {
+  family: string; role: string; stack: string; typeLine: string;
+  downloads: FontDownload[]; onDevice: boolean;
+}
 
 // Coarse filetype filter for the sticky toolbar — three buckets over the four asset
 // types, NOT one option per export format (which would be a huge, noisy list): Image =
@@ -126,19 +136,19 @@ interface CatalogHost extends HostV1 {
 
 // Two-colour icons ('themable', c1/c2) and multi-colour illustrations ('illustration',
 // monochromatic remap) both take a colour theme — the engine recolour handles each shape.
+// Content-credentialed icons are included: a recolour breaks the embedded byte
+// binding, but the download path re-signs the result with the original credential
+// preserved as an ingredient (see downloadSigned), so the chain survives the edit.
 const isThemable = (ref: AssetRef): boolean => {
   const tags = ref.meta?.tags as string[] | undefined;
-  // Content-credentialed assets ship a signed C2PA manifest with a hard byte
-  // binding: re-theming on download (restyleIconTheme) would mutate the bytes
-  // and break the credential. They must always download byte-exact.
-  if (tags?.includes('content-credentials')) return false;
   return Boolean(tags?.includes('themable') || tags?.includes('illustration'));
 };
 
 // Sentinel "theme" = the asset's own bytes, unchanged. Downloading the original
-// keeps any embedded Content Credential intact; a recolour necessarily changes
-// the bytes, so its now-mismatched credential is stripped — a clean unsigned
-// asset, never a "broken" one.
+// keeps any embedded Content Credential intact byte-for-byte; a recolour changes
+// the bytes, so its now-mismatched credential is stripped from them — and the
+// download is re-signed with a Lolly manifest that records the recolour and
+// carries the original credential as an ingredient.
 const ORIGINAL_THEME = '__original';
 const stripC2paManifest = (svg: string): string =>
   svg.replace(/<metadata>\s*<c2pa:manifest>[\s\S]*?<\/c2pa:manifest>\s*<\/metadata>/g, '')
@@ -463,6 +473,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // The active brand's palette (host.tokens, cached) — set once in reload() before
   // the first render; swatchesSectionHtml() reads this closure var synchronously.
   let palette: readonly PaletteEntry[] = PALETTE;
+  // The fonts THIS brand actually carries — its declared font tokens matched to
+  // the bundled specs, plus any on-device Google fonts the user added. Replaces
+  // the old hardcoded FONTS list so a custom brand no longer shows SUSE's faces.
+  let catFonts: CatFont[] = [];
 
   // Multi-select of the user's OWN uploads (a closure Set of user-asset ids; survives the
   // render() that wipes viewEl.innerHTML). Only user uploads are selectable — shared
@@ -511,6 +525,36 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     } catch { /* history unavailable — non-fatal */ }
   };
 
+  // The active brand's fonts: its declared font tokens (matched to a bundled spec
+  // when the family is one Lolly ships, so it keeps downloads + licence), then any
+  // Google fonts the user installed on this device. De-duped by family.
+  async function computeBrandFonts(): Promise<CatFont[]> {
+    const out: CatFont[] = [];
+    const seen = new Set<string>();
+    const push = (family: string, role: string, stack: string, typeLine: string, downloads: FontDownload[], onDevice: boolean): void => {
+      const key = family.trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push({ family, role, stack, typeLine, downloads, onDevice });
+    };
+    const tokenFonts: Array<[string, string]> = [['{font.brand}', 'Brand — UI & body'], ['{font.mono}', 'Brand — monospace']];
+    for (const [ref, role] of tokenFonts) {
+      let family = '';
+      try { family = familyFromTokenValue(await host.tokens?.resolve?.(ref)); } catch { /* unresolved */ }
+      if (!family) continue;
+      const spec = FONTS.find(f => f.family.toLowerCase() === family.toLowerCase());
+      if (spec) push(spec.family, role, spec.stack, `${spec.variable ? 'Variable' : 'Static'} · ${spec.weights}`, spec.downloads, false);
+      else push(family, role, `'${family}', var(--font-brand, ui-sans-serif, sans-serif)`, 'Brand font · on this device', [], true);
+    }
+    try {
+      for (const uf of await listUserFonts(host as unknown as Parameters<typeof listUserFonts>[0])) {
+        push(uf.family, uf.primary ? 'Brand — primary' : 'Added font',
+          `'${uf.family}', ui-sans-serif, sans-serif`, `${uf.weights}${uf.italic ? ' · italic' : ''} · on this device`, [], true);
+      }
+    } catch { /* user fonts unavailable — brand tokens still stand */ }
+    return out;
+  }
+
   async function reload(): Promise<void> {
     // A thrown catalog query is a TOTAL sync failure — track it so the render can show a
     // distinct "couldn't load" state (with a Retry) rather than the identical-looking empty
@@ -524,6 +568,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     ]);
     if (!mounted) return;
     palette = livePal;
+    catFonts = await computeBrandFonts().catch(() => [] as CatFont[]);
     loadFailed = failed;
     profile = prof;
     favSet = loadFavouriteAssets(prof);
@@ -953,7 +998,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   function fontsSectionHtml(): string {
-    const cards = FONTS.map(f => `
+    if (!catFonts.length) return ''; // a brand with no declared/added fonts shows no section
+    const cards = catFonts.map(f => `
       <article class="plat-font cat-font">
         <header class="plat-font-head">
           <span class="plat-font-name" style="font-family:${f.stack}">${escape(f.family)}</span>
@@ -967,18 +1013,19 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           </div>
         </div>
         <dl class="plat-kv">
-          <div><dt>Type</dt><dd>${f.variable ? 'Variable' : 'Static'} · ${escape(f.weights)}</dd></div>
-          <div><dt>Styles</dt><dd>${f.styles.map(escape).join(', ')}</dd></div>
+          <div><dt>Type</dt><dd>${escape(f.typeLine)}</dd></div>
         </dl>
-        <div class="cat-font-downloads">
+        ${f.downloads.length ? `<div class="cat-font-downloads">
           ${f.downloads.map(d => `<a class="cat-download" href="${d.href}" download>${DOWNLOAD_ICON}<span>${escape(d.label)}</span></a>`).join('')}
-        </div>
+        </div>` : ''}
       </article>`).join('');
+    // Show the licence line only when a bundled (downloadable) face is present.
+    const anyBundled = catFonts.some(f => f.downloads.length);
     const body = `
-      <p class="cat-panel-desc">The bundled variable typefaces — available to every tool canvas and the app UI. Download the axis files, or read the licence.</p>
+      <p class="cat-panel-desc">The fonts your brand carries — available to every tool canvas and the app UI. Add more from the brand editor.</p>
       <div class="plat-font-grid cat-font-grid">${cards}</div>
-      <p class="cat-panel-foot">Licensed under the <a href="${FONT_LICENSE.href}" target="_blank" rel="noopener">${escape(FONT_LICENSE.label)}</a>.</p>`;
-    return groupSection('fonts', 'Fonts', FONTS.length, body);
+      ${anyBundled ? `<p class="cat-panel-foot">Bundled faces licensed under the <a href="${FONT_LICENSE.href}" target="_blank" rel="noopener">${escape(FONT_LICENSE.label)}</a>.</p>` : ''}`;
+    return groupSection('fonts', 'Fonts', catFonts.length, body);
   }
 
   // The scrollable content. Swatches + Fonts are reference material, not searchable
@@ -1554,9 +1601,105 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
   }
 
-  // Raster / video / lottie: download the file as-is (no styling or reformat to offer).
+  // ── Content Credentials for modified downloads ────────────────────────────────
+  // A download that changes an asset's bytes (recolour, colour treatment, crop,
+  // rasterise) breaks any credential embedded in them. Instead of shipping a
+  // clean-but-unsigned file, re-sign it: a Lolly manifest whose action history
+  // records exactly what this download did, with the source's own credential
+  // preserved as an ingredient — so an AI-generated or camera-signed origin, or
+  // a previous round of Lolly edits, stays in the chain. Re-uploading such a
+  // download captures its store at ingest, so every edit round adds a manifest.
+
+  // Formats embedC2pa can stamp (png/jpg/webp/gif/svg/tiff/pdf/…).
+  const STAMPABLE = new Set<string>(C2PA_FORMATS as readonly string[]);
+
+  // The source asset's preserved credential, as an embeddable ingredient. User
+  // uploads read the store captured at ingest (their stored pixels were
+  // re-encoded, so the bytes no longer carry it); library assets read their own
+  // bytes. `sourceBytes` skips a refetch when the caller already holds the
+  // original (e.g. the download dialog's fetched SVG text).
+  async function sourceIngredients(ref: AssetRef, sourceBytes?: Uint8Array): Promise<IngredientCredential[] | undefined> {
+    try {
+      let ing: IngredientCredential | null = null;
+      if (ref.id.startsWith('user/')) {
+        const cred = await host.assets.credential?.(ref.id);
+        ing = cred ? prepareC2paIngredientFromStore(cred.store, cred.format) : null;
+      } else {
+        const bytes = sourceBytes ?? new Uint8Array(await (await fetch(ref.url)).arrayBuffer());
+        ing = prepareC2paIngredient(bytes);
+      }
+      if (!ing) return undefined;
+      // The ingredient's own claim title wins (it names the actual work); fall
+      // back to the library's display name so "Opened …" never reads blank.
+      return [{ ...ing, title: ing.title || String(ref.meta?.name ?? ref.id) }];
+    } catch { return undefined; }
+  }
+
+  // Sign a modified download, then save it. `edits` is the honest transform
+  // history for THIS download; when the source carries a credential the engine
+  // prepends a c2pa.opened step per ingredient, and when it doesn't we open
+  // with the same c2pa.created claim a tool render makes. `detail` (plus the
+  // source asset id) is recorded under the tools.lolly.export assertion so an
+  // inspected file shows the exact transform parameters. Signing is
+  // best-effort — any failure ships the un-stamped bytes; a credential failure
+  // must never fail a download.
+  async function downloadSigned(ref: AssetRef, blob: Blob, format: string, filename: string, o: {
+    edits: C2paActionInput[];
+    detail?: Record<string, string>;
+    dims?: string;
+    sourceBytes?: Uint8Array;
+  }): Promise<void> {
+    let out = blob;
+    if (STAMPABLE.has(format)) {
+      try {
+        // Lazily reach the 90 KB export bridge — downloads are always a user
+        // gesture, so this never lands on the gallery/boot path.
+        const { stampDerivedC2pa } = await import('../bridge/export.ts');
+        const ingredients = await sourceIngredients(ref, o.sourceBytes);
+        const actions: C2paActionInput[] = ingredients
+          ? o.edits
+          : [{ action: 'c2pa.created', digitalSourceType: DIGITAL_SOURCE_TYPE }, ...o.edits];
+        out = await stampDerivedC2pa(host, blob, format, {
+          title: String(ref.meta?.name ?? ref.id),
+          actions,
+          ingredients,
+          inputs: { asset: ref.id, ...(o.detail ?? {}) },
+          dimensions: o.dims,
+        });
+      } catch (err) {
+        host.log?.('warn', 'Catalog download: Content Credentials not attached', { id: ref.id, error: String(err) });
+      }
+    }
+    await host.export.download(out, filename);
+  }
+
+  // Raster / video / lottie: download the file as-is (no styling or reformat to
+  // offer) — except a user upload whose ingest captured a credential: its stored
+  // bytes were re-encoded (credential no longer inside), so wrap the save in a
+  // Lolly manifest that opens the original as an ingredient. Even an unmodified
+  // save then keeps the chain — an AI image stays declared as one.
   async function directDownload(ref: AssetRef): Promise<void> {
-    await saveUrl(ref.url, downloadName(ref, String(ref.format || 'bin')));
+    const format = String(ref.format || 'bin');
+    const filename = downloadName(ref, format);
+    if (ref.id.startsWith('user/') && STAMPABLE.has(format)) {
+      try {
+        const ingredients = await sourceIngredients(ref);
+        if (ingredients) {
+          const blob = await (await fetch(ref.url)).blob();
+          const { stampDerivedC2pa } = await import('../bridge/export.ts');
+          const out = await stampDerivedC2pa(host, blob, format, {
+            title: String(ref.meta?.name ?? ref.id),
+            actions: [{ action: 'c2pa.converted', description: `Re-encoded to ${format.toUpperCase()} when added to the device library` }],
+            ingredients,
+            inputs: { asset: ref.id },
+            ...(ref.width && ref.height ? { dimensions: `${ref.width}×${ref.height}` } : {}),
+          });
+          await host.export.download(out, filename);
+          return;
+        }
+      } catch { /* fall through to the plain byte-exact save */ }
+    }
+    await saveUrl(ref.url, filename);
   }
 
   function closeDownloadDialog(): void {
@@ -1576,16 +1719,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   async function openCropDialog(ref: AssetRef, modifier?: string | null): Promise<void> {
     const vector = isVector(ref);
     let svgText: string | null = null;
+    let origSvg: string | null = null;   // pre-recolour source — the credential ingredient
+    let theme: IconTheme | null = null;        // baked into the crop source, recorded in the credential
+    let treatment: PhotoTreatment | null = null;
     let rasterSrc = ref.url;   // crop source for raster — a treatment bakes it into a wrapper
     let aspect = 1;   // provisional for raster; set from naturalWidth on load
     if (vector) {
       try { const r = await fetch(ref.url); svgText = await r.text(); if (!/<svg[\s>]/i.test(svgText)) throw new Error('not svg'); }
       catch { await directDownload(ref); return; }   // not fetchable/SVG → just save it
+      origSvg = svgText;
       // For a themable icon `modifier` is a theme id — bake it into the crop source.
       if (isThemable(ref) && modifier && modifier !== ORIGINAL_THEME) {
         const t = iconThemes.find(x => x.id === modifier);
         const out = t && restyleIconTheme(svgText, t);
-        if (out && out !== svgText) svgText = stripC2paManifest(out);
+        if (out && out !== svgText) { svgText = stripC2paManifest(out); theme = t ?? null; }
       }
       aspect = svgAspect(svgText);
     } else if (modifier && ref.type === 'raster' && photoTreatments.length) {
@@ -1593,7 +1740,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // cropped-out region carries the wash (the wrapper's pixel size = the photo's, so the
       // canvas-cut in downloadCrop is unchanged).
       const wrap = await treatedWrapperSvg(ref, modifier).catch(() => null);
-      if (wrap) { rasterSrc = svgTextToDataUrl(wrap.svg); aspect = wrap.w / wrap.h; }
+      if (wrap) {
+        rasterSrc = svgTextToDataUrl(wrap.svg); aspect = wrap.w / wrap.h;
+        treatment = photoTreatments.find(x => x.id === modifier) ?? null;
+      }
     }
     if (!mounted) return;
     closeCropDialog();
@@ -1696,7 +1846,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (t.closest('.cat-crop-go')) {
         const sw = stage.clientWidth || 1, sh = stage.clientHeight || 1;
         const frac = { fx: bx / sw, fy: by / sh, fw: bw / sw, fh: bh / sh };
-        try { await downloadCrop(ref, vector, svgText, imgEl, frac, fmt()); }
+        try { await downloadCrop(ref, vector, svgText, imgEl, frac, fmt(), { theme, treatment, origSvg }); }
         catch (err) { host.log?.('error', 'Catalog crop failed', { id: ref.id, error: String(err) }); }
         closeCropDialog();
       }
@@ -1706,21 +1856,51 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // Render the framed region. Vector → a narrowed viewBox (SVG stays vector; PNG rasterises
-  // that sub-viewBox). Raster → a canvas cut of the source at natural resolution.
+  // that sub-viewBox). Raster → a canvas cut of the source at natural resolution. Every
+  // output is a modified copy, so it goes out signed (downloadSigned): the crop — plus any
+  // theme/treatment already baked into the crop source — in the action history, and the
+  // source's own credential as an ingredient.
   async function downloadCrop(
     ref: AssetRef, vector: boolean, svgText: string | null, imgEl: HTMLImageElement,
     frac: { fx: number; fy: number; fw: number; fh: number }, fmt: string,
+    baked: { theme?: IconTheme | null; treatment?: PhotoTreatment | null; origSvg?: string | null } = {},
   ): Promise<void> {
     const { fx, fy, fw, fh } = frac;
+    // Steps for what the crop SOURCE already carries (openCropDialog baked these in).
+    const bakedEdits: C2paActionInput[] = [];
+    const detail: Record<string, string> = {};
+    if (baked.theme) {
+      bakedEdits.push({ action: 'c2pa.color_adjustments', description: `Recoloured with the '${baked.theme.label ?? baked.theme.id}' icon colours (${baked.theme.c1 ?? '?'} / ${baked.theme.c2 ?? '?'})` });
+      detail.theme = String(baked.theme.label ?? baked.theme.id);
+      detail.colours = `${baked.theme.c1 ?? ''} / ${baked.theme.c2 ?? ''}`;
+    }
+    if (baked.treatment) {
+      bakedEdits.push({ action: 'c2pa.color_adjustments', description: `Applied the '${baked.treatment.label ?? baked.treatment.id}' colour treatment` });
+      detail.treatment = String(baked.treatment.label ?? baked.treatment.id);
+    }
     if (vector && svgText) {
+      const sourceBytes = baked.origSvg ? new TextEncoder().encode(baked.origSvg) : undefined;
       const [vx, vy, vw, vh] = svgViewBox(svgText);
       const box: [number, number, number, number] = [vx + fx * vw, vy + fy * vh, fw * vw, fh * vh];
       const cropped = cropSvg(svgText, box);
-      if (fmt === 'svg') { await host.export.download(new Blob([cropped], { type: 'image/svg+xml' }), downloadName(ref, 'svg')); return; }
+      const cropStep: C2paActionInput = {
+        action: 'c2pa.cropped',
+        description: `Cropped to ${Math.round(box[2])}×${Math.round(box[3])} of the ${Math.round(vw)}×${Math.round(vh)} artwork (viewBox units)`,
+      };
+      detail.crop = `${Math.round(box[2])}×${Math.round(box[3])} @ ${Math.round(box[0])},${Math.round(box[1])}`;
+      if (fmt === 'svg') {
+        await downloadSigned(ref, new Blob([cropped], { type: 'image/svg+xml' }), 'svg', downloadName(ref, 'svg'), {
+          edits: [...bakedEdits, cropStep], detail, sourceBytes,
+        });
+        return;
+      }
       const edge = 1024, ar = box[2] / box[3];
       const w = ar >= 1 ? edge : Math.max(1, Math.round(edge * ar));
       const h = ar >= 1 ? Math.max(1, Math.round(edge / ar)) : edge;
-      await host.export.download(await svgToPng(cropped, w, h), downloadName(ref, 'png'));
+      await downloadSigned(ref, await svgToPng(cropped, w, h), 'png', downloadName(ref, 'png'), {
+        edits: [...bakedEdits, cropStep, { action: 'c2pa.converted', description: `Rasterised the SVG artwork to PNG at ${w}×${h}px` }],
+        detail, dims: `${w}×${h}`, sourceBytes,
+      });
       return;
     }
     // Raster: cut the source at its NATURAL pixels (fraction × naturalWidth/Height).
@@ -1736,7 +1916,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const mime = fmt === 'jpg' ? 'image/jpeg' : fmt === 'webp' ? 'image/webp' : 'image/png';
     const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, mime, 0.92));
     if (!blob) throw new Error('crop encode failed');
-    await host.export.download(blob, downloadName(ref, fmt === 'jpg' ? 'jpg' : fmt));
+    const outFmt = fmt === 'jpg' ? 'jpg' : fmt;
+    detail.crop = `${swp}×${shp}px @ ${sxp},${syp}`;
+    await downloadSigned(ref, blob, outFmt, downloadName(ref, outFmt), {
+      edits: [
+        ...bakedEdits,
+        { action: 'c2pa.cropped', description: `Cropped to ${swp}×${shp}px (from ${NW}×${NH}px)` },
+        { action: 'c2pa.converted', description: `Rendered to ${outFmt.toUpperCase()}` },
+      ],
+      detail, dims: `${swp}×${shp}`,
+    });
   }
 
   // Vector / themable icon: a small dialog to (optionally) recolour a themable icon via
@@ -1763,8 +1952,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (!themable || themeId === ORIGINAL_THEME || !themeId) return baseSvg;
       const t = iconThemes.find(x => x.id === themeId);
       const out = (t && restyleIconTheme(baseSvg, t)) || baseSvg;
-      // A recolour changes the bytes; strip any credential so the file is a clean
-      // unsigned asset rather than one that reads as "broken". Unchanged → intact.
+      // A recolour changes the bytes, breaking any embedded credential's byte
+      // binding — strip it here; the download re-signs the file with the
+      // original credential preserved as an ingredient (downloadSigned).
       return out === baseSvg ? out : stripC2paManifest(out);
     };
 
@@ -1822,6 +2012,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (t.closest('.cat-dl-cancel')) { closeDownloadDialog(); return; }
       if (t.closest('.cat-dl-go')) {
         const svg = currentSvg();
+        const theme = themable && themeId && themeId !== ORIGINAL_THEME ? iconThemes.find(x => x.id === themeId) : null;
+        const recoloured = Boolean(theme) && svg !== baseSvg;
+        // The transform history + detail for the signed download. The original
+        // (untouched SVG) is the one path that stays byte-exact and unsigned.
+        const edits: C2paActionInput[] = recoloured
+          ? [{ action: 'c2pa.color_adjustments', description: `Recoloured with the '${theme!.label ?? theme!.id}' icon colours (${theme!.c1 ?? '?'} / ${theme!.c2 ?? '?'})` }]
+          : [];
+        const detail: Record<string, string> = recoloured
+          ? { theme: String(theme!.label ?? theme!.id), colours: `${theme!.c1 ?? ''} / ${theme!.c2 ?? ''}` }
+          : {};
+        const sourceBytes = new TextEncoder().encode(baseSvg);
         try {
           if (fmt() === 'png') {
             // No user resize (dimension changes live in the details-view crop). PNG renders
@@ -1829,9 +2030,27 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             const edge = 1024;
             const w = aspect >= 1 ? edge : Math.max(1, Math.round(edge * aspect));
             const h = aspect >= 1 ? Math.max(1, Math.round(edge / aspect)) : edge;
-            await host.export.download(await svgToPng(svg, w, h), downloadName(ref, 'png'));
+            await downloadSigned(ref, await svgToPng(svg, w, h), 'png', downloadName(ref, 'png'), {
+              edits: [...edits, { action: 'c2pa.converted', description: `Rasterised the SVG artwork to PNG at ${w}×${h}px` }],
+              detail, dims: `${w}×${h}`, sourceBytes,
+            });
+          } else if (recoloured) {
+            await downloadSigned(ref, new Blob([svg], { type: 'image/svg+xml' }), 'svg', downloadName(ref, 'svg'), {
+              edits, detail, sourceBytes,
+            });
           } else {
-            await host.export.download(new Blob([svg], { type: 'image/svg+xml' }), downloadName(ref, 'svg'));
+            // Original SVG — byte-exact for library assets (any embedded
+            // credential stays intact). A user upload was sanitised at ingest,
+            // which stripped the in-file credential the record preserved — when
+            // one exists, re-sign so even the unmodified save keeps the chain.
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            if (ref.id.startsWith('user/') && await sourceIngredients(ref)) {
+              await downloadSigned(ref, blob, 'svg', downloadName(ref, 'svg'), {
+                edits: [{ action: 'c2pa.edited', description: 'Sanitised the SVG markup when added to the device library' }],
+              });
+            } else {
+              await host.export.download(blob, downloadName(ref, 'svg'));
+            }
           }
         } catch (err) { host.log?.('error', 'Catalog download failed', { id: ref.id, error: String(err) }); }
         closeDownloadDialog();
@@ -1917,12 +2136,23 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           const f = fmt();
           const wrap = treatmentId ? await treatedWrapperSvg(ref, treatmentId) : null;
           if (!wrap) {
-            // Original (or an unresolvable treatment) → the source bytes, untouched.
+            // Original (or an unresolvable treatment) → the source bytes, untouched
+            // (directDownload still chains a credentialed user upload's provenance).
             await directDownload(ref);
           } else {
             const mime = f === 'jpg' ? 'image/jpeg' : f === 'webp' ? 'image/webp' : 'image/png';
             const blob = await svgToRaster(wrap.svg, wrap.w, wrap.h, mime);
-            await host.export.download(blob, downloadName(ref, f === 'jpg' ? 'jpg' : f));
+            const def = photoTreatments.find(x => x.id === treatmentId);
+            const label = String(def?.label ?? treatmentId);
+            const outFmt = f === 'jpg' ? 'jpg' : f;
+            await downloadSigned(ref, blob, outFmt, downloadName(ref, outFmt), {
+              edits: [
+                { action: 'c2pa.color_adjustments', description: `Applied the '${label}' colour treatment` },
+                { action: 'c2pa.converted', description: `Rendered to ${outFmt.toUpperCase()} at ${wrap.w}×${wrap.h}px` },
+              ],
+              detail: { treatment: label },
+              dims: `${wrap.w}×${wrap.h}`,
+            });
           }
         } catch (err) { host.log?.('error', 'Catalog photo download failed', { id: ref.id, error: String(err) }); }
         closeDownloadDialog();

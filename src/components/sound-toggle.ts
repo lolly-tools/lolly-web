@@ -121,7 +121,7 @@ const SWITCH_CSS = `
 .neurospicy-play:hover { filter: brightness(1.08); }
 .neurospicy-play:active { transform: scale(.93); }
 .neurospicy-play:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
-.neurospicy-loop { flex: 1; min-width: 0; padding: 7px 15px; border-radius: 999px; border: 1px solid hsl(var(--border)); background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: .85rem; cursor: pointer; }
+.neurospicy-loop { flex: 1; min-width: 0; padding: 7px 15px; border-radius: var(--radius); border: 1px solid hsl(var(--border)); background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: .85rem; cursor: pointer; }
 .neurospicy-vol { display: flex; align-items: center; gap: 9px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
 .neurospicy-vol input[type="range"] { flex: 1; accent-color: hsl(var(--primary)); }`;
 function ensureSoundSwitchStyles(): void {

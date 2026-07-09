@@ -44,7 +44,7 @@ import {
 } from './brand-doc.ts';
 import type { BrandSwatch } from './brand-doc.ts';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex } from '../brand-vars.ts';
-import { colorFieldHtml, wireColorField, setSwatches } from '../components/color-field.ts';
+import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
 import { COLOR_FORMATS, formatColor, parseColor } from './color-formats.ts';
 import type { ColorFormat } from './color-formats.ts';
 import {
@@ -56,7 +56,10 @@ import {
   listUserFonts, installGoogleFont, setPrimaryFont, removeUserFont, primaryFontFamily,
 } from '../user-fonts.ts';
 import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
-import { LOGO_VARIANTS, LOGO_META, listLogos, installLogo, removeLogo } from './brand-logos.ts';
+import {
+  LOGO_ORIENTATIONS, LOGO_TREATMENTS, ORIENTATION_META, TREATMENT_META,
+  splitVariant, variantLabel, listLogos, installLogo, removeLogo,
+} from './brand-logos.ts';
 import type { LogoVariant, LogoSlot } from './brand-logos.ts';
 import { POPULAR_FAMILIES } from './google-fonts.ts';
 import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
@@ -360,7 +363,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
 
       <div class="be-panel be-logos">
         <div class="be-panel-head"><h3 class="be-panel-title">Logo</h3>
-          <p class="be-panel-sub">Add your mark in the variants you have — <strong>horizontal</strong>, <strong>vertical</strong>, <strong>monochrome</strong> and <strong>reverse</strong> (for dark backgrounds). PNG, SVG, JPEG or WebP, each optional. They stay on this device and travel in your brand file.</p></div>
+          <p class="be-panel-sub">Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary full-colour, mono, and reverse for dark backgrounds). Every slot is optional and independent. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.</p></div>
         <div class="be-logo-grid" data-be-logos></div>
         <p class="be-err" data-be-logo-err hidden></p>
       </div>
@@ -438,6 +441,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     swatches = walkSwatches(doc, currentTheme, resolve);
     if (palMount) palMount.innerHTML = paletteHtml(swatches);
     paintWheel();
+    syncPickerSwatches();
+  };
+
+  // Feed the colour PICKER's swatch grid from the live (draft) brand palette, so
+  // the inline primary picker's swatches reflect exactly the colours this brand
+  // carries — and grow/shrink as the user adds or deletes them. Roles (aliases)
+  // are skipped (they duplicate the ramp step they point at); transparent leads.
+  // refreshSwatches repopulates the already-open inline grid in place.
+  const syncPickerSwatches = (): void => {
+    const opts = swatches
+      .filter(s => s.hex && s.kind !== 'semantic')
+      .map(s => ({ value: s.hex, label: s.name, group: s.group, ref: s.isAlias ? null : `{${s.key}}` }));
+    setSwatches([{ value: 'transparent', label: 'Transparent', group: null, ref: null }, ...opts]);
+    refreshSwatches(root);
   };
 
   // The Save-colour dirty flag — declared ahead of persist() below, which
@@ -827,19 +844,23 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const logoErr = $('[data-be-logo-err]') as HTMLElement | null;
   const showLogoErr = (m: string): void => { if (logoErr) { logoErr.textContent = m; logoErr.hidden = !m; } if (m) announce(m, { assertive: true }); };
   let logoUrls: string[] = []; // object URLs to revoke on repaint/teardown
+  // One tile per (orientation × treatment) cell — labelled by its treatment; the
+  // chip behind an uploaded mark is themed per treatment (reverse on dark, mono
+  // on neutral) so a light-on-transparent PNG still reads.
   const logoTile = (v: LogoVariant, slot: LogoSlot | undefined): string => {
-    const m = LOGO_META[v];
+    const { treatment } = splitVariant(v);
+    const tm = TREATMENT_META[treatment];
     const body = slot
-      ? `<span class="be-logo-art" data-variant="${v}"><img src="${escape(slot.url)}" alt="${escape(m.label)} logo" loading="lazy"></span>`
-      : `<span class="be-logo-empty" data-variant="${v}" aria-hidden="true">+</span>`;
-    return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${v}">
-        <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(m.label)}</span>
-          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${v}" aria-label="Remove ${escape(m.label)} logo">&#x2715;</button>` : ''}</div>
+      ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(variantLabel(v))} logo" loading="lazy"></span>`
+      : `<span class="be-logo-empty" aria-hidden="true">+</span>`;
+    return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${v}" data-treatment="${treatment}">
+        <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(tm.label)}</span>
+          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${v}" aria-label="Remove ${escape(variantLabel(v))} logo">&#x2715;</button>` : ''}</div>
         <label class="be-logo-drop">
           ${body}
           <input type="file" class="be-logo-file" data-logo-file="${v}" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
         </label>
-        <p class="be-logo-hint">${escape(slot ? 'Click to replace' : m.hint)}</p>
+        <p class="be-logo-hint">${escape(slot ? 'Click to replace' : tm.hint)}</p>
       </div>`;
   };
   const paintLogos = async (): Promise<void> => {
@@ -848,7 +869,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const slots = await listLogos(fontsHost).catch(() => [] as LogoSlot[]);
     logoUrls = slots.map(s => s.url);
     const byVariant = new Map(slots.map(s => [s.variant, s]));
-    if (root.isConnected) mount.innerHTML = LOGO_VARIANTS.map(v => logoTile(v, byVariant.get(v))).join('');
+    // Group by orientation: each is a labelled row of its three treatment tiles.
+    const groups = LOGO_ORIENTATIONS.map(o => {
+      const om = ORIENTATION_META[o];
+      const tiles = LOGO_TREATMENTS.map(t => {
+        const v = `${o}-${t}` as LogoVariant;
+        return logoTile(v, byVariant.get(v));
+      }).join('');
+      return `<div class="be-logo-group">
+          <div class="be-logo-group-head"><span class="be-logo-group-name">${escape(om.label)}</span>
+            <span class="be-logo-group-hint">${escape(om.hint)}</span></div>
+          <div class="be-logo-row">${tiles}</div>
+        </div>`;
+    }).join('');
+    if (root.isConnected) mount.innerHTML = groups;
   };
   void paintLogos();
   cleanups.push(() => logoUrls.forEach(u => URL.revokeObjectURL(u)));
@@ -857,14 +891,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const variant = input.dataset.logoFile as LogoVariant;
     const file = input.files?.[0]; input.value = ''; if (!file) return;
     showLogoErr('');
-    try { await installLogo(fontsHost, variant, file); playSfx('saveProfile'); await paintLogos(); announce(`${LOGO_META[variant].label} logo added`); }
+    try { await installLogo(fontsHost, variant, file); playSfx('saveProfile'); await paintLogos(); announce(`${variantLabel(variant)} logo added`); }
     catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
   });
   $('[data-be-logos]')?.addEventListener('click', async (e) => {
     const del = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-logo-del]'); if (!del) return;
     e.preventDefault();
     const variant = del.dataset.logoDel as LogoVariant;
-    const ok = await confirmDialog({ title: `Remove the ${LOGO_META[variant].label.toLowerCase()} logo?`, message: 'It’s deleted from this device.', confirmLabel: 'Remove' });
+    const ok = await confirmDialog({ title: `Remove the ${variantLabel(variant).toLowerCase()} logo?`, message: 'It’s deleted from this device.', confirmLabel: 'Remove' });
     if (!ok) return; del.disabled = true;
     try { await removeLogo(fontsHost, variant); await paintLogos(); } catch (err) { del.disabled = false; showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
   });
