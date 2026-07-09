@@ -1424,20 +1424,37 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   // Unbranded = token discovery still resolves the lolly-start placeholder
   // (`lolly/tokens/brand`); once the user installs a brand, discovery returns
   // `user/tokens/brand` and this never fires again. The check rides on the
-  // SYNCED asset metadata: on a no-cache first boot _findMetaByType resolves
-  // null until the catalog sync lands (main.ts's post-sync re-mount re-runs the
-  // check), so the dialog can never flash mid-sync — we only ever prompt off a
-  // non-null resolution. Lazy-loaded, so branded installs pay nothing; the
-  // continuation re-checks this gallery is still mounted before touching the DOM
-  // (the trigger must never surface on another view), and the dialog itself
-  // closes on any route change (see components/welcome-dialog.ts) — no cleanup
-  // entry here, so the same-route post-sync re-mount keeps it open seamlessly.
+  // SYNCED asset metadata, so it can resolve null on a pre-sync mount (the
+  // boot fast-path paints from the cached tool index before the asset sync
+  // lands — including the eviction case where IndexedDB was dropped but the
+  // localStorage index survived; main.ts's post-sync re-mount is gated on the
+  // TOOL index bytes changing, which says nothing about the asset-meta store).
+  // On null we re-run the check ONCE against the catalog index itself — the
+  // same cold-load fallback the tokens bridge uses (bridge/tokens.ts
+  // findTokensAsset). That's faithful: user tokens live in the same IndexedDB
+  // as the asset meta, so a null here means the user store had none either,
+  // and the index's first `tokens` asset is exactly what discovery will return
+  // once the sync settles. We still only ever prompt off a non-null answer, so
+  // the dialog can't flash on a genuinely branded install. Lazy-loaded, so
+  // branded installs pay nothing; the continuation re-checks this gallery is
+  // still mounted before touching the DOM (the trigger must never surface on
+  // another view), and the dialog itself closes on any route change (see
+  // components/welcome-dialog.ts) — no cleanup entry here, so the same-route
+  // post-sync re-mount keeps it open seamlessly.
   const galleryRoot = viewEl.querySelector<HTMLElement>('.gallery');
   void (async () => {
-    let unbranded = false;
+    let tokensId: string | undefined;
     try {
-      unbranded = (await host.assets._findMetaByType('tokens'))?.id === 'lolly/tokens/brand';
-    } catch { /* IDB unavailable — treat as branded; the gallery must never block on this */ }
+      tokensId = (await host.assets._findMetaByType('tokens'))?.id;
+      if (tokensId === undefined && galleryRoot?.isConnected) {
+        const resp = await fetch('/catalog/assets/index.json');
+        if (resp.ok) {
+          const idx = await resp.json() as { assets?: Array<{ id?: string; type?: string }> };
+          tokensId = idx.assets?.find(a => a.type === 'tokens')?.id;
+        }
+      }
+    } catch { /* IDB unavailable / offline — treat as branded; never block or nag here */ }
+    const unbranded = tokensId === 'lolly/tokens/brand';
     if (!unbranded || !galleryRoot?.isConnected) return;
     const welcome = await import('../components/welcome-dialog.ts');
     if (!galleryRoot.isConnected) return; // navigated away while the chunk loaded

@@ -28,7 +28,8 @@ import type { BrandDeriveOptions } from '@lolly/engine';
 import type { TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
 import { installUserTokens } from '../bridge/tokens.ts';
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
-import { markWelcomeDismissed } from '../components/welcome-dialog.ts';
+import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-dialog.ts';
+import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
@@ -57,8 +58,8 @@ const CONTRASTS: ReadonlyArray<{ id: Contrast; label: string }> = [
   { id: 'high', label: 'High' },
 ];
 
-// Matches the templates' canonical `var(--primary, #4f83cc)` fallback — a calm,
-// trustworthy blue the user immediately overwrites with their own.
+// Matches the templates' canonical `var(--brand-primary, #4f83cc)` fallback — a
+// calm, trustworthy blue the user immediately overwrites with their own.
 const DEFAULT_PRIMARY = '#4f83cc';
 
 const segHtml = (name: string, options: ReadonlyArray<{ id: string; label: string }>, active: string, ariaLabel: string): string => `
@@ -156,9 +157,10 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
   };
 
   // A specimen card per theme: its own surface, the text hierarchy (heading in
-  // --text, body in --muted, a hairline in --edge) and the primary button (bg
-  // primary, label on-primary) — the tone is felt, not described. All colours
-  // inline: these are BRAND values, never shell-chrome tokens.
+  // the brand text slot, body in muted, a hairline in edge) and the primary
+  // button (bg primary, label on-primary) — the tone is felt, not described.
+  // All colours inline: these are BRAND values (the --brand-* contract slots),
+  // never shell-chrome tokens.
   const specCard = (themeName: 'light' | 'dark', set: TokenSet, isDefault: boolean): string => {
     const surfaceC = slot(set, 'surface');
     const text = slot(set, 'text');
@@ -244,15 +246,29 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
     btn.textContent = 'Installing…';
     try {
       await installUserTokens(host, doc, { label });
-      // The brand question is settled — the welcome must not re-prompt.
+      // The brand question is settled — the welcome must not re-prompt. Set even
+      // when the view was torn down mid-install (the brand IS installed)…
       markWelcomeDismissed();
-      window.location.hash = '#/';
+      // …and close any welcome that raced open meanwhile (the user backed out to
+      // the gallery mid-install; its unbranded check can beat the tokens write).
+      closeWelcomeDialog();
+      // Only a still-mounted wizard may navigate — a detached continuation must
+      // not yank the user off whatever route they moved on to.
+      if (viewEl.isConnected) window.location.hash = '#/';
     } catch (err) {
       installing = false;
-      btn.disabled = false;
-      btn.textContent = prevLabel;
-      errorEl.textContent = `Couldn't install the brand: ${String((err as { message?: unknown })?.message ?? err)}`;
-      errorEl.hidden = false;
+      const msg = `Couldn't install the brand: ${String((err as { message?: unknown })?.message ?? err)}`;
+      if (viewEl.isConnected) {
+        btn.disabled = false;
+        btn.textContent = prevLabel;
+        errorEl.textContent = msg;
+        errorEl.hidden = false;
+      } else {
+        // Torn down mid-install — errorEl/btn are detached, so a DOM write would
+        // vanish silently. Surface through the live channels instead.
+        console.error('Brand install failed:', err);
+        announce(msg, { assertive: true });
+      }
     }
   }
 
@@ -325,7 +341,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
   // ── Escape returns to the gallery (colour-popover Escapes stopPropagation
   //    at the field, so they never reach this) ─────────────────────────────────
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || installing) return; // no Esc-teardown mid-install
     e.preventDefault();
     window.location.hash = '#/';
   };
