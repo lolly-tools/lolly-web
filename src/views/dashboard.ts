@@ -54,6 +54,9 @@ import { playSfx, playThemeSfx } from '../lib/sfx.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
 import { USER_TOKENS_ID } from '../bridge/tokens.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+// Type-only — erased at compile time, so this does NOT pull the (lazily
+// loaded) brand-editor.ts module into this view's bundle. See wireLivePaletteDraft.
+import type { BrandDraftEventDetail } from '../lib/brand-editor.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
@@ -127,7 +130,11 @@ function inkGroup(label: string, cols: readonly PaletteEntry[], count = false): 
     </div>`;
 }
 
-function paletteSection(palette: readonly PaletteEntry[]): string {
+// Split from paletteSection so the live-draft sync below (wireLivePaletteDraft)
+// can rebuild just the description + ribbon + full-values grid — the same
+// markup collapse() wraps in the <details> chrome — without touching that
+// chrome's open/closed state.
+function paletteBody(palette: readonly PaletteEntry[]): { desc: string; body: string } {
   const { brand, spectrum, ramps } = groupPalette(palette);
   const measuredCount = palette.filter((c) => Array.isArray(c.cmyk)).length;
 
@@ -164,14 +171,56 @@ function paletteSection(palette: readonly PaletteEntry[]): string {
       </div>
     </details>`;
 
-  return collapse({
-    id: 'dash-palette',
-    flag: 'color colour colours',
-    title: 'Colour palette',
+  return {
     desc: `Shown in every colour picker. <strong>${measuredCount} of ${palette.length}</strong> carry measured CMYK ink values, substituted directly into CMYK PDF exports — the tick on a bar marks one.`,
     body: `${ribbon}${fullGrid}`,
-    half: true,
+  };
+}
+
+function paletteSection(palette: readonly PaletteEntry[]): string {
+  const { desc, body } = paletteBody(palette);
+  return collapse({ id: 'dash-palette', flag: 'color colour colours', title: 'Colour palette', desc, body, half: true });
+}
+
+// Copy-to-clipboard for ink bars AND the full-values swatch chips, scoped to
+// whatever subtree just got (re)painted — the initial mount (the whole view)
+// and the live-draft palette resync (just its replaced body) both call this.
+function wireCopyButtons(root: ParentNode): void {
+  root.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard?.writeText(btn.dataset.copy!);
+        btn.classList.add('is-copied');
+        setTimeout(() => btn.classList.remove('is-copied'), 900);
+      } catch {
+        /* clipboard blocked — no-op */
+      }
+    });
   });
+}
+
+// Best-effort: keep the "Colour palette" ink-bar section tracking the brand
+// editor's live Colour-panel draft (primary drag, a neutral/secondary ramp
+// pick, "Use this colour") — even before it's saved. Listens for the editor's
+// BRAND_DRAFT_EVENT (passed in, not imported, so this view never statically
+// pulls in the lazily-loaded brand-editor.ts module) and repaints only
+// #dash-palette's body, leaving its open/closed state and every other section
+// untouched. A no-op (never wired) when the editor doesn't mount, and a no-op
+// per event when the section isn't on the page.
+function wireLivePaletteDraft(viewEl: HTMLElement, eventName: string): () => void {
+  const bodyEl = viewEl.querySelector<HTMLElement>('#dash-palette .plat-section-body');
+  if (!bodyEl) return () => {};
+  const onDraft = (e: Event): void => {
+    if (!viewEl.isConnected) return;
+    const palette = (e as CustomEvent<BrandDraftEventDetail>).detail?.palette;
+    if (!palette?.length) return;
+    const { desc, body } = paletteBody(palette);
+    bodyEl.innerHTML = `<p class="plat-section-desc dash-collapse-desc">${desc}</p>${body}`;
+    wireReadout(viewEl);
+    wireCopyButtons(bodyEl);
+  };
+  document.addEventListener(eventName, onDraft);
+  return () => document.removeEventListener(eventName, onDraft);
 }
 
 // ── Capabilities: grouped; each card POPS its detail open in a dialog ────────
@@ -579,12 +628,15 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     const mount = viewEl.querySelector<HTMLElement>('[data-brand-editor-mount]');
     if (!mount || !viewEl.contains(mount)) return;
     try {
-      const { mountBrandEditor } = await import('../lib/brand-editor.ts');
+      const { mountBrandEditor, BRAND_DRAFT_EVENT } = await import('../lib/brand-editor.ts');
       if (!viewEl.contains(mount)) return;
       const stopEditor = await mountBrandEditor(mount, host);
       if (!viewEl.contains(mount)) { stopEditor(); return; }
+      // Best-effort: track the editor's live Colour-panel draft in the
+      // "Colour palette" ink bar below, even before it's saved.
+      const stopPaletteSync = wireLivePaletteDraft(viewEl, BRAND_DRAFT_EVENT);
       const prev = (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup;
-      (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { prev?.(); stopEditor(); };
+      (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { prev?.(); stopEditor(); stopPaletteSync(); };
     } catch (err) {
       console.error('Brand editor failed to mount:', err);
       mount.innerHTML = '<p class="cat-empty">The brand editor is unavailable right now.</p>';
@@ -606,17 +658,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   if (flags.size) applyDeepLink(viewEl, flags);
 
   // Copy-to-clipboard for ink bars AND the full-values swatch chips.
-  viewEl.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard?.writeText(btn.dataset.copy!);
-        btn.classList.add('is-copied');
-        setTimeout(() => btn.classList.remove('is-copied'), 900);
-      } catch {
-        /* clipboard blocked — no-op */
-      }
-    });
-  });
+  wireCopyButtons(viewEl);
 
   // Palette readout: hover/focus an ink bar → update the mono instrument line.
   wireReadout(viewEl);

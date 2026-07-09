@@ -117,9 +117,13 @@
 .be-btn:disabled, .be-cta:disabled { opacity: .55; cursor: default; }
 .be-add--sm { padding: .25rem .6rem; font-size: .72rem; }
 
-/* Derive: controls + live preview. */
+/* Derive: the Primary picker leads full-width, then controls + live preview. */
 .be-derive { display: grid; gap: 1.1rem; }
 @media (min-width: 900px) { .be-derive { grid-template-columns: minmax(240px, 320px) 1fr; align-items: start; } }
+/* The inline colour picker gets its own roomy row spanning both columns —
+   sliders + swatch palette side by side, given the whole panel width to breathe
+   (it used to be a cramped popover trapped in the narrow controls column). */
+.be-colorpick { grid-column: 1 / -1; display: grid; gap: .5rem; }
 .be-derive-controls { display: grid; gap: .8rem; align-content: start; }
 .be-field { display: grid; gap: .35rem; }
 .be-field-label { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
@@ -130,7 +134,11 @@
 .be-ramp-row { display: grid; grid-template-columns: 5.2rem 1fr; align-items: center; gap: .6rem; }
 .be-ramp-label { font-size: .72rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
 .be-ramp { display: grid; grid-template-columns: repeat(9, 1fr); border-radius: calc(var(--radius) * .45); overflow: hidden; box-shadow: 0 0 0 1px hsl(var(--border)); }
-.be-ramp-cell { aspect-ratio: 1 / 1.35; min-height: 22px; }
+.be-ramp-cell { display: block; width: 100%; aspect-ratio: 1 / 1.35; min-height: 22px; border: 0; margin: 0; padding: 0; }
+/* Neutral/secondary steps are real buttons (the Primary ramp stays a plain
+   span) — the selected one gets the same ring `.be-swatch.is-selected` uses. */
+button.be-ramp-cell { cursor: pointer; }
+button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), inset 0 0 0 4px hsl(var(--card)); }
 .be-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .7rem; }
 .be-spec { border: 1px solid; border-radius: calc(var(--radius) * .7); padding: .8rem .85rem; display: grid; gap: .35rem; }
 .be-spec-name { font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -139,6 +147,16 @@
 .be-spec-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .2rem; }
 .be-spec-btn { border-radius: 999px; padding: .28rem .7rem; font-size: .72rem; font-weight: 600; }
 .be-spec-ratio { font-size: .68rem; font-variant-numeric: tabular-nums; }
+
+/* Palette: the wheel view beside the grouped swatch grid (stacks when narrow). */
+.be-pal-split { display: grid; gap: 1.2rem; }
+@media (min-width: 820px) { .be-pal-split { grid-template-columns: minmax(220px, 300px) 1fr; align-items: start; } }
+.be-pal-wheel { align-self: start; }
+.be-wheel-hint { margin: .55rem 0 0; font-size: .68rem; line-height: 1.4; color: hsl(var(--muted-foreground)); text-align: center; }
+/* Editable wheel affordances: crosshair over empty space (= add), grab on a dot. */
+.dash-wheel--edit { cursor: crosshair; touch-action: none; }
+.dash-wheel-dot--edit { cursor: grab; }
+.dash-wheel-dot--edit:active { cursor: grabbing; }
 
 /* Palette: grouped, editable swatch tiles. */
 .be-pal-top { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .9rem; }
@@ -181,6 +199,19 @@
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground));
 }
+/* "Set by value" — colour-space select + value input + the extrapolated readout. */
+.be-fmt-row { display: flex; gap: .4rem; }
+.be-fmt-sel {
+  flex: 0 0 auto; padding: .4rem .5rem; font: inherit; font-size: .76rem; cursor: pointer;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.be-fmt-input {
+  flex: 1 1 auto; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .8rem;
+  font-family: var(--font-mono); border: 1px solid hsl(var(--input));
+  border-radius: calc(var(--radius) * .5); background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.be-fmt-out { font-size: .68rem; color: hsl(var(--muted-foreground)); font-family: var(--font-mono); min-height: 1em; }
 .be-editor-actions { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .be-editor-del {
   border: 1px solid hsl(var(--destructive) / .5); border-radius: calc(var(--radius) * .5);

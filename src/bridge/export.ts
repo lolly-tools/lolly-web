@@ -31,6 +31,7 @@ import {
   featureSettingsToHb, letterSpacingPx,
 } from './text-svg.ts';
 import { resolveVectorFont } from './font-registry.ts';
+import type { VectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { videoMimeCandidates } from './video-mime.ts';
@@ -4082,13 +4083,22 @@ async function renderInlineContent(
       const text = node.textContent;
       if (!text || !text.trim()) return;
 
-      // Set font (color, size, SUSE embedding) first — feeds the <text> fallback.
-      await applyPdfTextStyle(pdf, nodeStyle, cssToPt, registeredFonts);
-
       const fontSizePx = parseFloat(nodeStyle.fontSize) || 16;
-      const vf = convertPaths && _host?.text ? await resolveVectorFont(nodeStyle, text) : null;
+      // Resolve the run's real font (SUSE / a user Google font / platform) in
+      // BOTH modes — live text needs it to choose embed-vs-outline too.
+      const vf = _host?.text ? await resolveVectorFont(nodeStyle, text) : null;
       const fontUrl = vf?.url ?? null;
-      const outline = convertPaths && canVectoriseText(nodeStyle, fontUrl, Boolean(_host?.text));
+      const embedUrl = await pdfUserFontEmbed(vf);
+      const isUserFont = Boolean(vf?.url.startsWith('blob:'));
+      // Outline when converting paths, OR when a user font can't be faithfully
+      // embedded in jsPDF (variable off-weight / needs the subset chain) — so
+      // weight and coverage never silently break in live-text mode either.
+      // A faithfully-embeddable user run stays live (pdf.text below).
+      const outline = canVectoriseText(nodeStyle, fontUrl, Boolean(_host?.text))
+        && (convertPaths || (isUserFont && !embedUrl));
+      // Set the font for the pdf.text path (live text, and the notdef fallback):
+      // the embeddable user font when we have one, else SUSE/Helvetica.
+      await applyPdfTextStyle(pdf, nodeStyle, cssToPt, registeredFonts, embedUrl);
       const letterSpacing = letterSpacingPx(nodeStyle.letterSpacing);
       const features = featureSettingsToHb(nodeStyle.fontFeatureSettings);
       const textRgb = parseCssColor(nodeStyle.color) || ([0, 0, 0] as Rgb);
@@ -4182,11 +4192,14 @@ async function pdfPseudoContent(pdf: any, el: Element, rootRect: { left: number;
     }
     if (!ds.text.trim()) continue;
     const fontSizePx = parseFloat(ds.ps.fontSize) || 16;
-    const vf = convertPaths && _host?.text ? await resolveVectorFont(ds.ps, ds.text) : null;
+    const vf = _host?.text ? await resolveVectorFont(ds.ps, ds.text) : null;
     const fontUrl = vf?.url ?? null;
+    const embedUrl = await pdfUserFontEmbed(vf);
+    const isUserFont = Boolean(vf?.url.startsWith('blob:'));
     const textRgb = parseCssColor(ds.ps.color) || ([0, 0, 0] as Rgb);
     let drawn = false;
-    if (convertPaths && canVectoriseText(ds.ps, fontUrl, Boolean(_host?.text))) {
+    // Outline in convert-paths mode, or for a user font jsPDF can't embed faithfully.
+    if (canVectoriseText(ds.ps, fontUrl, Boolean(_host?.text)) && (convertPaths || (isUserFont && !embedUrl))) {
       try {
         const { d, notdef } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
         if (d && !notdef) {
@@ -4199,15 +4212,17 @@ async function pdfPseudoContent(pdf: any, el: Element, rootRect: { left: number;
       } catch (e) { _host?.log?.('warn', `pdf: pseudo text-to-path failed — ${(e as Error).message}`); }
     }
     if (!drawn) {
-      await applyPdfTextStyle(pdf, ds.ps, cssToPt, registeredFonts);
+      await applyPdfTextStyle(pdf, ds.ps, cssToPt, registeredFonts, embedUrl);
       pdf.text(ds.text, x, y, { baseline: 'top' });
     }
   }
 }
 
-// Sets jsPDF text color, font size, and font family from a computed style object.
-// Embeds the SUSE TTF for the required weight/style if needed.
-async function applyPdfTextStyle(pdf: any, style: CSSStyleDeclaration, cssToPt: number, registeredFonts: Set<unknown>): Promise<void> {
+// Sets jsPDF text color, font size, and the font to draw pdf.text() with. The
+// font is chosen in order: a faithfully-embeddable user font (its sfnt URL,
+// pre-decided by pdfUserFontEmbed) → the SUSE static for the weight/style →
+// Helvetica. Embeds whichever it picks into the PDF (once) as a side effect.
+async function applyPdfTextStyle(pdf: any, style: CSSStyleDeclaration, cssToPt: number, registeredFonts: Set<unknown>, userEmbedUrl: string | null = null): Promise<void> {
   const textRgb = parseCssColor(style.color) || ([0, 0, 0] as Rgb);
   pdf.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
   const pdfSize = parseFloat(style.fontSize) * cssToPt;
@@ -4215,6 +4230,10 @@ async function applyPdfTextStyle(pdf: any, style: CSSStyleDeclaration, cssToPt: 
   const weight = parseInt(style.fontWeight) || 400;
   const italic  = style.fontStyle === 'italic' || style.fontStyle === 'oblique';
   const family  = (style.fontFamily || '').toLowerCase();
+  if (userEmbedUrl) {
+    const name = await embedUserFont(pdf, registeredFonts, userEmbedUrl);
+    if (name) { pdf.setFont(name, 'normal'); return; }
+  }
   if (family.includes('suse')) {
     const mono = family.includes('mono');
     const suseStyle = await embedSuseFont(pdf, registeredFonts, weight, italic, mono);
@@ -4380,6 +4399,49 @@ async function embedSuseFont(pdf: any, registeredFonts: Set<unknown>, weight: nu
     }
   }
   return style;
+}
+
+// Embeds a decompressed USER font (a blob: sfnt URL minted by the font registry
+// from a stored Google woff2) into the jsPDF instance and returns the jsPDF font
+// name to setFont with. The name is derived from the url so it's stable and
+// unique per face across a PDF; registeredFonts embeds each at most once.
+// Unlike SUSE (per-weight static files), a user font is a single variable file,
+// so pdfUserFontEmbed only offers it up when jsPDF's default-instance render is
+// actually faithful — see there.
+async function embedUserFont(pdf: any, registeredFonts: Set<unknown>, url: string): Promise<string | null> {
+  const name = `uf_${url}`;
+  if (!registeredFonts.has(name)) {
+    try {
+      const b64 = await loadFontBase64(url); // blob: URLs are fetchable
+      const file = `${name}.ttf`;
+      pdf.addFileToVFS(file, b64);
+      pdf.addFont(file, name, 'normal'); // slant is baked into the embedded file
+      registeredFonts.add(name);
+    } catch {
+      return null;
+    }
+  }
+  return name;
+}
+
+// Decide whether a resolved run font can be FAITHFULLY embedded as live text in
+// jsPDF, returning its sfnt URL if so, else null (the caller outlines instead —
+// the outline path has the variable axis and per-subset fallback jsPDF lacks).
+// Only decompressed USER faces (blob: URLs) are candidates; SUSE stays on its
+// own per-weight-static path, and the platform face isn't embedded here.
+// Embeddable requires a single face covering the whole run (jsPDF can't chain
+// subsets) rendering at the requested weight: a static face always does; a
+// variable face only when the request equals its default instance (jsPDF can't
+// move the axis). axisDefaults is additive — without it, don't risk a variable
+// face.
+async function pdfUserFontEmbed(vf: VectorFont | null): Promise<string | null> {
+  if (!vf || !vf.url.startsWith('blob:') || vf.fallbacks?.length) return null;
+  if (!vf.variations?.length) return vf.url; // static face → its own weight
+  const wanted = Number(/wght=(\d+(?:\.\d+)?)/.exec(vf.variations[0] ?? '')?.[1]);
+  if (!Number.isFinite(wanted)) return vf.url;
+  const defs = await _host?.text?.axisDefaults?.(vf.url).catch(() => null);
+  const def = defs?.wght;
+  return def != null && Math.abs(def - wanted) < 1 ? vf.url : null;
 }
 
 // ── CMYK PDF export ───────────────────────────────────────────────────────────

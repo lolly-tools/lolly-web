@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import {
   withBrandFontToken, familyFromTokenValue, listUserFonts, removeUserFont,
   setPrimaryFont, primaryFontFamily, USER_FONT_PREFIX,
+  withRadiusToken, setBrandRadius,
 } from './user-fonts.ts';
 import type { UserFontsHost } from './user-fonts.ts';
 
@@ -47,6 +48,29 @@ test('layered doc ($themes): the token lands in the base SET, not top-level', ()
   assert.equal((set as any).font, undefined);
 });
 
+// ── withRadiusToken ──────────────────────────────────────────────────────────
+
+test('plain DTCG doc: sets shape.radius, preserves siblings, clears cleanly', () => {
+  const doc = { color: { x: { $type: 'color', $value: '#123456' } } };
+  const set = withRadiusToken(doc, '0.5rem');
+  assert.deepEqual((set.shape as any).radius, { $type: 'dimension', $value: '0.5rem' });
+  assert.equal((set.color as any).x.$value, '#123456'); // sibling kept
+  assert.ok((doc as any).shape === undefined);           // source untouched
+  const cleared = withRadiusToken(set, null);
+  assert.equal((cleared as any).shape, undefined);
+});
+
+test('layered doc ($themes): the token lands in the base SET, not top-level', () => {
+  const doc = {
+    $themes: [{ name: 'light', selectedTokenSets: { base: 'enabled', light: 'enabled' } }],
+    base: { color: { ramp: {} } },
+    light: {},
+  };
+  const set = withRadiusToken(doc, '0.75rem');
+  assert.equal((set.base as any).shape.radius.$value, '0.75rem');
+  assert.equal((set as any).shape, undefined);
+});
+
 test('familyFromTokenValue: arrays, strings, quotes, alias residue', () => {
   assert.equal(familyFromTokenValue(['Inter', 'sans-serif']), 'Inter');
   assert.equal(familyFromTokenValue('SUSE'), 'SUSE');
@@ -68,14 +92,17 @@ function memoryHost(): UserFontsHost & { store: Map<string, any> } {
       async _getBlob(id: string) { return store.get(id)?.blob ?? null; },
     },
     tokens: {
-      // Resolve {font.brand} from the installed user doc — the live bridge's
-      // discovery order, reduced to the slice these flows exercise.
+      // Resolve {font.brand} / {shape.radius} from the installed user doc —
+      // the live bridge's discovery order, reduced to the slice these flows
+      // exercise (both live at the doc's top level or under 'base', per
+      // fontTargetOf's layered-vs-plain-DTCG resolution).
       async resolve(ref: string) {
-        if (ref !== '{font.brand}') return undefined;
         const blob = store.get('user/tokens/brand')?.blob;
         if (!blob) return undefined;
         const doc = JSON.parse(await blob.text());
-        return doc?.font?.brand?.$value ?? doc?.base?.font?.brand?.$value;
+        if (ref === '{font.brand}') return doc?.font?.brand?.$value ?? doc?.base?.font?.brand?.$value;
+        if (ref === '{shape.radius}') return doc?.shape?.radius?.$value ?? doc?.base?.shape?.radius?.$value;
+        return undefined;
       },
       bust() { /* nothing cached here */ },
     },
@@ -113,6 +140,29 @@ test('setPrimaryFont installs a user tokens doc that resolves back', async () =>
   assert.equal(await primaryFontFamily(host), 'Inter');
   // The write is the standard user-tokens asset — backups carry it for free.
   assert.ok(host.store.has('user/tokens/brand'));
+});
+
+test('setBrandRadius installs a user tokens doc that resolves back, and clears with null', async () => {
+  const host = memoryHost();
+  await setBrandRadius(host, '0.5rem');
+  assert.equal(await host.tokens!.resolve('{shape.radius}'), '0.5rem');
+  assert.ok(host.store.has('user/tokens/brand'));
+  await setBrandRadius(host, null);
+  assert.equal(await host.tokens!.resolve('{shape.radius}'), undefined);
+});
+
+test('setBrandRadius rejects a value that could smuggle CSS', async () => {
+  const host = memoryHost();
+  await assert.rejects(() => setBrandRadius(host, '0.5rem; background:url(//evil)'));
+  assert.equal(await host.tokens!.resolve('{shape.radius}'), undefined); // never written
+});
+
+test('setBrandRadius preserves an existing font.brand token (independent slots)', async () => {
+  const host = memoryHost();
+  await setPrimaryFont(host, 'Inter');
+  await setBrandRadius(host, '1.25rem');
+  assert.equal(await primaryFontFamily(host), 'Inter');
+  assert.equal(await host.tokens!.resolve('{shape.radius}'), '1.25rem');
 });
 
 test('removing the primary family promotes the next installed one', async () => {

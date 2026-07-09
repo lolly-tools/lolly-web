@@ -153,6 +153,21 @@ export function deleteSwatch(doc: unknown, path: string[]): boolean {
 }
 
 /**
+ * Point `color.semantic.<role>` (both the light and dark sets, when present) at
+ * a different ramp step — how the brand editor's neutral/secondary swatch
+ * picker overrides a fresh `deriveBrandTokens` doc before install. `secondary`
+ * already carries such an alias (the engine hardcodes step 5); `neutral` has no
+ * slot of its own today, so this simply adds one, in the same shape.
+ */
+export function setSemanticRampAlias(doc: unknown, role: 'neutral' | 'secondary', step: number): void {
+  if (!isRec(doc)) return;
+  for (const set of ['light', 'dark']) {
+    const semantic = leafAt(doc, [set, 'color', 'semantic']);
+    if (semantic) semantic[role] = { $value: `{color.ramp.${role}.${step}}` };
+  }
+}
+
+/**
  * Add a swatch under the `spectrum` or `custom` colour group, creating the group
  * (and `base.color`, on a multi-set doc) when absent so the very first custom
  * swatch has somewhere to live. Slugs collide-safely. Returns the new leaf's

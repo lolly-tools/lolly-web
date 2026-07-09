@@ -30,14 +30,11 @@ import { storeUserUpload } from './picker.ts';
 import { CATEGORY_FLAGS, PRO_FLAG, flagEnabled } from '../feature-flags.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
-import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
-import {
-  listUserFonts, installGoogleFont, removeUserFont, setPrimaryFont, registerUserFonts,
-  primaryFontFamily,
-} from '../user-fonts.ts';
-import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
-import { POPULAR_FAMILIES } from '../lib/google-fonts.ts';
-import { applyChromeBrandVars } from '../brand-vars.ts';
+// Corner radius is the only brand control left on Profile; colour / palette /
+// fonts / brand-pack all live in the Dashboard's "Your brand" editor now.
+import { registerUserFonts, setBrandRadius } from '../user-fonts.ts';
+import type { UserFontsHost } from '../user-fonts.ts';
+import { brandRadiusValue, applyChromeBrandVars } from '../brand-vars.ts';
 import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import { relativeTime } from '../folder-tiles.ts';
 import { catalogSummaryBody, hydrateCatalogAssets } from '../lib/catalog-summary.ts';
@@ -176,10 +173,19 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Only the first-paint-critical reads run upfront. The Storage section's heavy
   // work is deferred to loadStorage() (run when the section is first expanded).
   const profile = await host.profile.get();
-  // A locked catalog owns the brand — the "Adjust your brand" card's font/import
-  // controls all funnel through installUserTokens, which refuses when locked, so
-  // the card is swapped for a read-only note below (after render).
+  // A locked catalog owns the brand — including its corner radius. The radius
+  // slider (the only brand control on Profile) is omitted from the aside when
+  // locked, so the whole brand identity stays fixed as the catalog declares it.
   const brandLocked = await (host.tokens as { isLocked?(): Promise<boolean> } | undefined)?.isLocked?.().catch(() => false) ?? false;
+  // Corner radius: only meaningful to read/offer for an unlocked brand — a
+  // locked catalog's --radius stands as tokens.css declares it. parseFloat
+  // tolerates a stored px/em value from a hand-authored import; the slider
+  // itself always writes back in rem.
+  const currentRadius = !brandLocked
+    ? await (host.tokens as { resolve?(ref: string): Promise<unknown> } | undefined)
+      ?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null
+    : null;
+  const currentRadiusRem = currentRadius ? parseFloat(currentRadius) : 1;
   const fields = ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
   const currentTheme = (profile as { theme?: string }).theme ?? localStorage.getItem('theme') ?? 'light';
   // The headshot is a user asset; re-resolve it (the stored object URL goes stale
@@ -251,38 +257,21 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                   ${THEMES.map(t => `<button type="button" class="segmented-btn" data-theme-value="${t}" aria-pressed="${t === currentTheme}">${escape(t.charAt(0).toUpperCase() + t.slice(1))}</button>`).join('')}
                 </div>
               </div>
+              ${brandLocked ? '' : `<div class="profile-field profile-field--radius">
+                <span class="profile-field-label">Corner style</span>
+                <div class="brand-radius-row">
+                  <span class="brand-radius-preview" id="brand-radius-preview" style="border-radius:${currentRadiusRem}rem" aria-hidden="true"></span>
+                  <input type="range" class="brand-radius-slider" id="brand-radius-slider" min="0" max="1.5" step="0.05" value="${currentRadiusRem}" aria-label="Corner radius — how rounded the app's cards, buttons and panels read">
+                  <span class="brand-radius-value" id="brand-radius-value">${currentRadiusRem}rem</span>
+                </div>
+                <p class="profile-inline-error" id="brand-radius-error" style="color:hsl(var(--destructive));font-size:13px;margin:.4rem 0 0" hidden></p>
+              </div>`}
               <div class="profile-field profile-field--sound">
                 ${soundSwitchHtml()}
               </div>
             </aside>
           </div>
         </form>
-      </section>
-
-      <section class="profile-card brand-card" id="brand-card" aria-label="Adjust your brand">
-        <h2>Adjust your brand</h2>
-
-        <div class="brand-fonts">
-          <h3 class="brand-subhead">Brand fonts</h3>
-          <p class="storage-hint-text">Add any <strong>Google Font</strong> — it downloads to <em>this device</em> (latin faces, a few hundred KB), works fully offline, and renders in the app, your tools and every export. One font is always the <strong>primary</strong> — the face the whole app wears.</p>
-          <ul class="brand-font-list" id="brand-font-list" role="list"></ul>
-          <form class="brand-font-add" id="brand-font-add">
-            <input type="text" id="brand-font-input" list="google-font-list" placeholder="Search Google Fonts — e.g. Inter, Fraunces, Space Grotesk" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Google Fonts family name">
-            <datalist id="google-font-list">${POPULAR_FAMILIES.map(f => `<option value="${escape(f)}"></option>`).join('')}</datalist>
-            <button type="submit" class="btn" id="brand-font-add-btn">Add font</button>
-          </form>
-          <p class="profile-inline-error" id="brand-font-error" style="color:hsl(var(--destructive));font-size:13px;margin:.4rem 0 0" hidden></p>
-        </div>
-
-        <div class="brand-share">
-          <h3 class="brand-subhead">Share your brand</h3>
-          <p class="storage-hint-text">One file with your design tokens, fonts and theme — send it to anyone and their Lolly wears your brand. Loading a brand file changes the look only; sessions and images stay put.</p>
-          <div class="storage-actions">
-            <button type="button" id="brand-export-btn" class="btn" data-sfx="whoosh">Export brand file</button>
-            <button type="button" id="brand-import-btn" class="btn">Load a brand file…</button>
-            <input type="file" id="brand-import-input" accept=".zip,application/zip" hidden>
-          </div>
-        </div>
       </section>
 
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
@@ -481,178 +470,29 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
   }
 
-  // A locked brand exposes no adjustment controls: swap the whole card for a
-  // read-only note and skip all its wiring (the querySelectors below then find
-  // nothing and no-op — every brand control lives inside #brand-card).
-  if (brandLocked) {
-    const card = viewEl.querySelector('#brand-card');
-    if (card) {
-      card.innerHTML = `
-        <h2>Brand</h2>
-        <p class="storage-hint-text">This build ships with a fixed brand — its colours, fonts and tokens are what the whole app, your tools and every export already wear. Brand adjustment is turned off here.</p>`;
-    }
-  }
-
-  // ── Adjust your brand: the Google-Fonts manager and the shareable brand
-  // pack (the brand-status glance + #/start link now lead the Dashboard).
-  // Hydrates immediately — it's IDB reads only, and this card is the one that
-  // must never hide behind a collapsed section. ─────────────────────────────
+  // Corner radius (the one brand control that lives on Profile — colour, palette,
+  // fonts and the brand pack are the Dashboard's "Your brand" editor). Hidden for
+  // a locked brand (its shape is fixed like its colours), so the slider only
+  // exists when unlocked. Live app-wide preview on every drag tick (setProperty
+  // directly — the same var applyChromeBrandVars sets, instant, no round trip),
+  // persisted debounced so a drag doesn't spam writes.
   const fontsHost = host as unknown as UserFontsHost;
-  const brandErr = viewEl.querySelector<HTMLElement>('#brand-font-error');
-  const showBrandError = (msg: string) => {
-    if (brandErr) { brandErr.textContent = msg; brandErr.hidden = !msg; }
-    if (msg) announce(msg, { assertive: true });
-  };
-
-  function fontRowHtml(f: UserFontFamily): string {
-    return `
-      <li class="brand-font-row${f.primary ? ' is-primary' : ''}" data-font-family="${escape(f.family)}">
-        <span class="brand-font-specimen" style="font-family:'${escape(f.family)}'" aria-hidden="true">Aa</span>
-        <span class="brand-font-meta">
-          <span class="brand-font-name" style="font-family:'${escape(f.family)}'">${escape(f.family)}</span>
-          <span class="brand-font-sub">${escape(f.weights)} · ${fmtBytes(f.bytes)}</span>
-        </span>
-        ${f.primary
-    ? '<span class="brand-font-primary-badge">Primary</span>'
-    : `<button type="button" class="btn brand-font-make-primary" data-make-primary="${escape(f.family)}">Make primary</button>`}
-        <button type="button" class="brand-font-del" data-del-font="${escape(f.family)}" aria-label="Remove ${escape(f.family)}">&#x2715;</button>
-      </li>`;
-  }
-
-  let fontFamilies: UserFontFamily[] = [];
-  async function paintFontList(): Promise<void> {
-    const list = viewEl.querySelector<HTMLElement>('#brand-font-list');
-    if (!list) return;
-    fontFamilies = await listUserFonts(fontsHost).catch(() => []);
-    // There is always exactly one primary. When it isn't one of the added fonts
-    // — the active brand's own font token (e.g. SUSE) or the platform default —
-    // show it as a fixed row so the "primary" story never has a hole in it.
-    const rows: string[] = [];
-    if (!fontFamilies.some(f => f.primary)) {
-      const builtin = await primaryFontFamily(fontsHost).catch(() => '');
-      rows.push(`
-        <li class="brand-font-row is-primary is-builtin">
-          <span class="brand-font-specimen" style="font-family:'${escape(builtin || 'Outfit')}'" aria-hidden="true">Aa</span>
-          <span class="brand-font-meta">
-            <span class="brand-font-name">${escape(builtin || 'Outfit')}</span>
-            <span class="brand-font-sub">${builtin ? 'built-in brand font' : 'platform default'}</span>
-          </span>
-          <span class="brand-font-primary-badge">Primary</span>
-        </li>`);
-    }
-    rows.push(...fontFamilies.map(fontRowHtml));
-    if (!fontFamilies.length) {
-      rows.push('<li class="brand-font-empty">No fonts added yet — pick any Google Font below to make it yours.</li>');
-    }
-    list.innerHTML = rows.join('');
-  }
-  void paintFontList();
-
-  // Add a family — the module downloads it, stores the faces as user assets,
-  // registers them, and auto-primaries the first font.
-  viewEl.querySelector<HTMLFormElement>('#brand-font-add')?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const input = viewEl.querySelector<HTMLInputElement>('#brand-font-input');
-    const btn = viewEl.querySelector<HTMLButtonElement>('#brand-font-add-btn');
-    const family = input?.value.trim();
-    if (!family || !btn || !input) return;
-    showBrandError('');
-    const prev = btn.textContent;
-    btn.disabled = true; input.disabled = true;
-    btn.textContent = 'Downloading…';
-    try {
-      const fam = await installGoogleFont(fontsHost, family);
-      input.value = '';
-      playSfx('saveProfile');
-      await paintFontList();
-      await refreshCounter();   // the faces live in user storage — remeter
-      announce(`Added ${fam.family}${fam.primary ? ' as your primary font' : ''} — stored on this device`);
-    } catch (err) {
-      showBrandError(String((err as { message?: unknown })?.message ?? err));
-      // Clear on failure too, not just success — otherwise the failed attempt's
-      // text sits in the box and blocks searching for a different font until
-      // the user manually clears it themselves.
-      input.value = '';
-    }
-    btn.textContent = prev; btn.disabled = false; input.disabled = false;
-    input.focus();
-  });
-
-  // Make-primary / remove, delegated (rows repaint wholesale).
-  viewEl.querySelector('#brand-font-list')?.addEventListener('click', async e => {
-    const make = (e.target as Element).closest<HTMLButtonElement>('[data-make-primary]');
-    if (make) {
-      make.disabled = true;
-      try {
-        await setPrimaryFont(fontsHost, make.dataset.makePrimary!);
-        await paintFontList();
-        announce(`${make.dataset.makePrimary} is now your primary font`);
-      } catch (err) { make.disabled = false; showBrandError(String((err as { message?: unknown })?.message ?? err)); }
-      return;
-    }
-    const del = (e.target as Element).closest<HTMLButtonElement>('[data-del-font]');
-    if (!del) return;
-    const fam = fontFamilies.find(f => f.family === del.dataset.delFont);
-    if (!fam) return;
-    const ok = await confirmDialog({
-      title: `Remove ${fam.family}?`,
-      message: `Its font files (${fmtBytes(fam.bytes)}) are deleted from this device${fam.primary ? ' and the next font (or the platform default) becomes primary' : ''}. You can re-add it any time.`,
-      confirmLabel: 'Remove',
-    });
-    if (!ok) return;
-    del.disabled = true;
-    try {
-      await removeUserFont(fontsHost, fam);
-      await paintFontList();
-      await refreshCounter();
-      announce(`Removed ${fam.family}`);
-    } catch (err) { del.disabled = false; showBrandError(String((err as { message?: unknown })?.message ?? err)); }
-  });
-
-  // Export the brand pack (tokens + fonts + theme) as one shareable zip.
-  viewEl.querySelector('#brand-export-btn')?.addEventListener('click', async e => {
-    const btn = e.currentTarget as HTMLButtonElement;
-    const prev = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Exporting…';
-    try {
-      const { blob, filename, summary } = await exportBrandPack(
-        { host: host as unknown as Parameters<typeof exportBrandPack>[0]['host'], storage: localStorage });
-      saveBlob(blob, filename);
-      btn.textContent = 'Exported';
-      announce(`Brand exported — ${summary.tokens ? 'tokens, ' : ''}${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}`);
-    } catch (err) {
-      host.log?.('error', 'Brand export failed', { error: String(err) });
-      btn.textContent = 'Export failed';
-      showBrandError(String((err as { message?: unknown })?.message ?? err));
-    }
-    setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 1800);
-  });
-
-  // Load someone else's brand pack. Merge-only; sessions/images untouched.
-  const brandImportInput = viewEl.querySelector<HTMLInputElement>('#brand-import-input');
-  viewEl.querySelector('#brand-import-btn')?.addEventListener('click', () => brandImportInput?.click());
-  brandImportInput?.addEventListener('change', async () => {
-    const file = brandImportInput!.files?.[0];
-    brandImportInput!.value = '';
-    if (!file) return;
-    showBrandError('');
-    const btn = viewEl.querySelector<HTMLButtonElement>('#brand-import-btn');
-    const prev = btn?.textContent ?? '';
-    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
-    try {
-      const summary = await importBrandPack(
-        { host: host as unknown as Parameters<typeof importBrandPack>[0]['host'], storage: localStorage },
-        await file.arrayBuffer());
-      applyTheme(localStorage.getItem('theme') || 'light');
-      playSfx('optIn');
-      await paintFontList();
-      await refreshCounter();
-      const failNote = summary.failedFonts ? ` · ${summary.failedFonts} font file${summary.failedFonts === 1 ? '' : 's'} couldn’t be stored` : '';
-      announce(`Brand loaded — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}${summary.tokens ? ', tokens installed' : ''}${failNote}`, summary.failedFonts ? { assertive: true } : undefined);
-    } catch (err) {
-      showBrandError(String((err as { message?: unknown })?.message ?? err));
-    }
-    if (btn) { btn.textContent = prev; btn.disabled = false; }
+  const radiusSlider = viewEl.querySelector<HTMLInputElement>('#brand-radius-slider');
+  const radiusPreview = viewEl.querySelector<HTMLElement>('#brand-radius-preview');
+  const radiusValueEl = viewEl.querySelector<HTMLElement>('#brand-radius-value');
+  const radiusErr = viewEl.querySelector<HTMLElement>('#brand-radius-error');
+  let radiusDebounce: ReturnType<typeof setTimeout> | undefined;
+  radiusSlider?.addEventListener('input', () => {
+    const css = `${radiusSlider.value}rem`;
+    if (radiusPreview) radiusPreview.style.borderRadius = css;
+    if (radiusValueEl) radiusValueEl.textContent = css;
+    document.documentElement.style.setProperty('--radius', css);
+    clearTimeout(radiusDebounce);
+    radiusDebounce = setTimeout(() => {
+      setBrandRadius(fontsHost, css).catch(err => {
+        if (radiusErr) { radiusErr.textContent = String((err as { message?: unknown })?.message ?? err); radiusErr.hidden = false; }
+      });
+    }, 400);
   });
 
   // ── Storage: lazy. Fetch the data + render the (heavy) image grid only when the
@@ -1204,7 +1044,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Type ${word} to confirm">
           </label>
           <div class="clear-dialog-actions">
-            <button class="btn btn-danger" data-scope="all" disabled>Clear everything</button>
+            <button class="btn btn-danger" data-scope="all" data-sfx="byebye" disabled>Clear everything</button>
             <button class="btn" data-scope="cancel">Cancel</button>
           </div>
         </div>
@@ -1245,10 +1085,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         await clearIdbStores(['state', 'profile', 'user-assets', 'asset-blob', 'asset-meta']);
         host.profile.bust!();
         applyTheme('light');
-        trap?.release();   // un-inert the page before re-mounting the profile view
+        trap?.release();
         document.removeEventListener('keydown', onKey);
         overlay.remove();
-        await mountProfile(viewEl, host);
+        // The bye-bye song is already playing (data-sfx on the confirm button). Land
+        // back on the gallery: with the dismissed flag just wiped, the first-run
+        // "Welcome to Lolly" greets the clean slate there (unbranded installs only —
+        // a locked brand never shows it, see mountGallery).
+        window.location.hash = '';
       });
     });
 

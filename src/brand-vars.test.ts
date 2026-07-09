@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hexToHslTriple, chromeBrandCss, brandThemeCss, brandFontStack } from './brand-vars.ts';
+import { hexToHslTriple, chromeBrandCss, brandThemeCss, brandFontStack, brandRadiusValue } from './brand-vars.ts';
 
 const SANS_TAIL = "'Outfit', ui-sans-serif, system-ui, sans-serif";
 
@@ -37,6 +37,24 @@ test('brandFontStack rejects families that could smuggle CSS', () => {
   assert.equal(brandFontStack('url(//evil.example/f.woff2)', SANS_TAIL), null);
   // A hostile entry in an array is dropped; the clean one survives.
   assert.equal(brandFontStack(['Inter', 'x;y'], SANS_TAIL), `'Inter', ${SANS_TAIL}`);
+});
+
+test('brandRadiusValue accepts a plain CSS length in rem/px/em', () => {
+  assert.equal(brandRadiusValue('0.5rem'), '0.5rem');
+  assert.equal(brandRadiusValue('0rem'), '0rem');
+  assert.equal(brandRadiusValue('12px'), '12px');
+  assert.equal(brandRadiusValue('1em'), '1em');
+});
+
+test('brandRadiusValue rejects anything that isn\'t a bare length', () => {
+  assert.equal(brandRadiusValue(undefined), null);
+  assert.equal(brandRadiusValue(''), null);
+  assert.equal(brandRadiusValue('{shape.radius}'), null); // alias residue
+  assert.equal(brandRadiusValue('1rem; background:url(//evil)'), null); // CSS smuggling
+  assert.equal(brandRadiusValue('calc(1rem + 1px)'), null); // not a bare length
+  assert.equal(brandRadiusValue('1vw'), null); // unit not in the allowed set
+  assert.equal(brandRadiusValue('-1rem'), null); // negative — meaningless for a radius
+  assert.equal(brandRadiusValue(-1), null); // wrong type entirely (a number, not a string)
 });
 
 test('hexToHslTriple produces shadcn "H S% L%" triples', () => {

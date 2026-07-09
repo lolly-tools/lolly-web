@@ -137,18 +137,26 @@ const WGHT_HI_STOPS = [1000, 900, 800, 700] as const;
 // answers 200 for it. (`Anton:wght@450` → 400; `Figtree:wght@450` → 200.)
 const VARIABLE_PROBE_WEIGHT = 450;
 
-/** GET a css2 spec: its text when the API accepts it, null on a 400 (this spec
- *  doesn't fit the family). Any other status, or a dead network, throws. */
-async function fetchSpec(spec: string, name: string): Promise<string | null> {
-  let resp: Response;
+/**
+ * GET a css2 spec: its text when the API accepts it, else null — a SOFT probe
+ * that never throws, so the caller can try the next spec.
+ *
+ * The subtlety that makes this soft: css2 answers a spec that doesn't fit the
+ * family (wrong weight range, unknown family) with a 400 whose error body
+ * carries NO `Access-Control-Allow-Origin` header — so in a browser the `fetch`
+ * itself REJECTS ("TypeError: Failed to fetch") rather than resolving with a
+ * readable 400. A dead network throws identically. We therefore CANNOT tell a
+ * mis-fit spec from real offline here, so both fold to null; resolveFamilySpec
+ * only concludes "unreachable/unknown" once the whole ladder — ending in the
+ * bare family, which 200s for any real font — has failed.
+ */
+async function fetchSpec(spec: string): Promise<string | null> {
   try {
-    resp = await fetch(`${CSS2}?family=${spec}&display=swap`);
+    const resp = await fetch(`${CSS2}?family=${spec}&display=swap`);
+    return resp.ok ? await resp.text() : null;
   } catch {
-    throw new Error('Couldn’t reach Google Fonts — check your connection and try again.');
+    return null;
   }
-  if (resp.ok) return resp.text();
-  if (resp.status === 400) return null;
-  throw new Error(`Google Fonts didn't recognise "${name}".`);
 }
 
 /** True when css2 accepts this spec at all (used for the cheap axis probes). */
@@ -184,16 +192,16 @@ async function probeWeightRange(enc: string): Promise<{ lo: number; hi: number }
  */
 export async function resolveFamilySpec(name: string): Promise<string | null> {
   const enc = encodeFamily(name);
-  const wide = await fetchSpec(variableSpec(enc, 100, 900), name);
+  const wide = await fetchSpec(variableSpec(enc, 100, 900));
   if (wide) return wide;
 
   const range = await probeWeightRange(enc);
   if (range) {
-    const css = await fetchSpec(variableSpec(enc, range.lo, range.hi), name);
+    const css = await fetchSpec(variableSpec(enc, range.lo, range.hi));
     if (css) return css;
   }
   for (const spec of staticSpecs(enc)) {
-    const css = await fetchSpec(spec, name);
+    const css = await fetchSpec(spec);
     if (css) return css;
   }
   return null;
@@ -209,8 +217,17 @@ export async function fetchGoogleFont(family: string): Promise<DownloadedFontFac
   if (!GOOGLE_FAMILY_RE.test(name)) {
     throw new Error(`"${family}" doesn't look like a Google Fonts family name.`);
   }
+  // A definite offline signal short-circuits the whole spec ladder (which would
+  // otherwise fire a dozen doomed requests before failing). navigator.onLine is
+  // only trustworthy in the negative: false ⇒ certainly offline.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('Couldn’t reach Google Fonts — you appear to be offline.');
+  }
   const css = await resolveFamilySpec(name);
-  if (!css) throw new Error(`Google Fonts didn't recognise "${name}".`);
+  // Everything failed: online-but-nothing-resolved is almost always a wrong name
+  // (a mis-fit spec and an unknown family are indistinguishable here — both are
+  // CORS-blocked 400s); a rare true outage lands here too, so name both.
+  if (!css) throw new Error(`Couldn’t find a Google Font called “${name}” — check the spelling (or your connection).`);
 
   const faces = keepFaces(parseGoogleFontCss(css));
   if (!faces.length) throw new Error(`"${name}" has no downloadable latin faces.`);

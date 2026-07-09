@@ -132,6 +132,9 @@
   background: hsl(var(--vf-pass) / 0.18); color: hsl(var(--vf-pass));
 }
 .valid-vbadge-ic svg { width: 1.05rem; height: 1.05rem; }
+/* Fail-tone variant — same struck-badge shape, --vf-fail hue instead of --vf-pass. */
+.valid-vbadge.is-fail { border-color: hsl(var(--vf-fail) / 0.3); background: hsl(var(--vf-fail) / 0.09); }
+.valid-vbadge.is-fail .valid-vbadge-ic { background: hsl(var(--vf-fail) / 0.18); color: hsl(var(--vf-fail)); }
 /* The signer-identity footnote — same small/muted/SUSE-Mono treatment used for
    every other engraved value on this page (facts, metadata, checks). */
 .valid-hero-signedby {

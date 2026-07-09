@@ -742,6 +742,14 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           <p class="valid-hero-signedby">${identity
     ? `Signed with <strong>${escape(signedByCa ?? 'a Certificate Authority')}</strong> Certificate Authority.`
     : 'Signed with an on-device key, not a CA identity.'}</p>` : '';
+  // Mirrors lollyValidationsHtml's badge treatment for the broken-credential
+  // verdict — three plain facts instead of one sentence to parse.
+  const invalidBadgesHtml = state === STATE_COPY.invalid ? `
+          <div class="valid-hero-vbadges">
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>Content Credentials detected</span></div>
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>Bytes no longer match</span></div>
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.pen)}</span><span>Modified after signing</span></div>
+          </div>` : '';
   const verdictHtml = report.madeWithLolly
     ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(state.title)}</span>`
     : report.trusted
@@ -758,7 +766,9 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
     : ICON_SHIELD}</span>
             <h2><span class="valid-hero-filename">${escape(fileName)}</span> ${verdictHtml}</h2>
           </div>
-          ${state === STATE_COPY.lolly ? lollyValidationsHtml : `<p>${sub}</p>${identityLine}`}
+          ${state === STATE_COPY.lolly ? lollyValidationsHtml
+    : state === STATE_COPY.invalid ? invalidBadgesHtml
+      : `<p>${sub}</p>${identityLine}`}
         </div>
         ${report.found ? scorecardHtml(report) : ''}
       </div>

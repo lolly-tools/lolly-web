@@ -481,8 +481,11 @@
   .profile-view .profile-side { display: contents; }
   .profile-view .profile-side .profile-field:has(.headshot) { order: 1; }
   .profile-view .profile-fields { grid-template-columns: 1fr; order: 2; margin-bottom: 0; }
+  /* Appearance group, in the requested order: theme → corner radius → sound. */
   .profile-view .profile-side .profile-field:has(#theme-picker) { order: 3; }
-  .profile-view .profile-actions { order: 4; padding-top: 0; justify-content: center; }
+  .profile-view .profile-side .profile-field--radius { order: 4; }
+  .profile-view .profile-side .profile-field--sound { order: 5; }
+  .profile-view .profile-actions { order: 6; padding-top: 0; justify-content: center; }
   .profile-view .activity-split { grid-template-columns: 1fr; gap: 1.1rem; }
 
   /* "Your details": center the heading + controls; detail inputs stretch
@@ -551,88 +554,23 @@
 .identity-verify-link svg { flex: 0 0 auto; }
 
 
-/* ── Adjust your brand — the font manager and the shareable brand pack (the
-      status glance + #/start link now lead the Dashboard) ───────────────────── */
-.profile-view .brand-card { border-inline-start: 3px solid hsl(var(--primary) / 0.55); }
-.brand-subhead {
-  margin: 1.5rem 0 0.35rem;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: hsl(var(--muted-foreground));
-}
-.brand-font-list {
-  list-style: none;
-  margin: 0.6rem 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.brand-font-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: hsl(var(--background));
-}
-.brand-font-row.is-primary {
-  border-color: hsl(var(--primary) / 0.55);
-  background: hsl(var(--primary) / 0.06);
-}
-.brand-font-specimen {
+/* ── Corner radius — the one brand control on Profile, in the appearance aside
+      between the theme picker and the sound toggle. (Colour, palette, fonts and
+      the brand pack are the Dashboard's "Your brand" editor.) ───────────────── */
+.profile-view .profile-field--radius .brand-radius-row { display: flex; align-items: center; gap: 12px; margin-top: 0.2rem; }
+.brand-radius-preview {
   flex: 0 0 auto;
-  width: 2em;
-  font-size: 22px;
-  line-height: 1;
-  text-align: center;
+  width: 32px;
+  height: 32px;
+  background: hsl(var(--primary) / 0.55);
+  border: 1px solid hsl(var(--border)); /* uniform on every side — never a single-edge accent */
 }
-.brand-font-meta { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.brand-font-name { font-size: 15px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.brand-font-sub { font-size: 12px; color: hsl(var(--muted-foreground)); }
-.brand-font-primary-badge {
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-.brand-font-make-primary { white-space: nowrap; }
-.brand-font-del {
+.brand-radius-slider { flex: 1 1 auto; min-width: 0; accent-color: hsl(var(--primary)); }
+.brand-radius-value {
   flex: 0 0 auto;
-  padding: 4px 8px;
-  border: 0;
-  background: transparent;
+  min-width: 4.5ch;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
   color: hsl(var(--muted-foreground));
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  border-radius: var(--radius);
+  text-align: right;
 }
-.brand-font-del:hover { color: hsl(var(--destructive)); background: hsl(var(--destructive) / 0.08); }
-.brand-font-empty {
-  font-size: 13px;
-  color: hsl(var(--muted-foreground));
-  padding: 4px 0;
-}
-.brand-font-add { display: flex; gap: 8px; flex-wrap: wrap; }
-.brand-font-add input {
-  flex: 1 1 220px;
-  min-width: 0;
-  padding: 9px 12px;
-  border: 1px solid hsl(var(--input));
-  border-radius: var(--radius);
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font: inherit;
-  font-size: 13.5px;
-}
-.brand-font-add input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
-.brand-share .storage-actions { margin-top: 0.5rem; }

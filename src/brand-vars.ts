@@ -127,6 +127,48 @@ async function applyBrandFonts(host: BrandVarsHost): Promise<void> {
   } catch { /* storage unavailable — pre-boot restore just won't happen */ }
 }
 
+// ── Brand shape (corner radius) ──────────────────────────────────────────────
+// The one "shape" token: how rounded the app's OWN chrome (cards, buttons,
+// panels — never a tool canvas; no template consumes var(--radius)) reads.
+// Lives at `shape.radius` (DTCG dimension), applied to --radius on <html>
+// exactly like the font stacks above — inline style beats the :root default
+// at equal cascade origin — and cached in localStorage so index.html's
+// pre-boot script restores it before first paint. Reserved for UNLOCKED
+// brands (profile.ts gates the whole "Adjust your brand" card on brandLocked)
+// — a locked catalog's shape is part of its fixed identity like its colours
+// and fonts.
+
+const RADIUS_CACHE_KEY = 'brand-radius';
+
+// A DTCG dimension value as this app will ever emit or accept for --radius: a
+// non-negative number (optional decimal) in rem/px/em only. Same defense-in-
+// depth stance as FONT_FAMILY_RE/SAFE_CSS_COLOR above — an untrusted imported
+// tokens doc's string lands directly in a CSSOM setProperty call.
+const RADIUS_RE = /^\d+(\.\d+)?(rem|px|em)$/;
+
+/** A resolved `shape.radius` token value → a safe CSS length, or null when it
+ *  isn't one (missing slot, alias residue, or an unsafe/malformed string). */
+export function brandRadiusValue(value: unknown): string | null {
+  const v = typeof value === 'string' ? value.trim() : '';
+  return v && !isAlias(v) && RADIUS_RE.test(v) ? v : null;
+}
+
+/** Resolve `shape.radius` and apply/clear it inline on <html>, caching the
+ *  applied value (or clearing the cache) for index.html's pre-boot restore. */
+async function applyBrandRadius(host: BrandVarsHost): Promise<void> {
+  let radius: string | null = null;
+  try {
+    radius = brandRadiusValue(await host.tokens?.resolve('{shape.radius}'));
+  } catch { /* no tokens / broken doc → platform default */ }
+  if (radius) {
+    document.documentElement.style.setProperty('--radius', radius);
+    try { localStorage.setItem(RADIUS_CACHE_KEY, radius); } catch { /* storage unavailable */ }
+  } else {
+    document.documentElement.style.removeProperty('--radius');
+    try { localStorage.removeItem(RADIUS_CACHE_KEY); } catch { /* storage unavailable */ }
+  }
+}
+
 /** #rrggbb → a shadcn "H S% L%" triple (so hsl(var(--x) / α) keeps working). */
 export function hexToHslTriple(hex: string): string | null {
   const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
@@ -249,6 +291,29 @@ export function chromeBrandCss(
 }
 
 /**
+ * Inject/refresh the chrome override stylesheet from already-resolved primary
+ * (+ on-primary) hexes, per theme. The shared tail of applyChromeBrandVars
+ * (below) — split out so the brand editor's live, in-memory DRAFT preview
+ * (not yet installed, so nothing to resolve via host.tokens) can paint the
+ * same chrome accent without going through the host at all.
+ */
+export function applyChromeAccent(
+  light: { primary: string | null; onPrimary: string | null },
+  dark: { primary: string | null; onPrimary: string | null },
+): void {
+  if (typeof document === 'undefined') return;
+  const css = chromeBrandCss(light, dark);
+  let styleEl = document.getElementById(CHROME_STYLE_ID);
+  if (!css) { styleEl?.remove(); return; }
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = CHROME_STYLE_ID;
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = css;
+}
+
+/**
  * Resolve the brand primary per theme and inject/refresh the chrome override
  * stylesheet (appended to <head>, so it wins the tokens.css cascade at equal
  * specificity). Call at boot and again after installUserTokens — the bridge's
@@ -257,45 +322,46 @@ export function chromeBrandCss(
  * brand has no resolvable primary.
  */
 export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
+  // Nothing here to do without a document (a DOM-free shell / test bridge) —
+  // and every branch below writes to documentElement, so bail before any of
+  // them can throw a ReferenceError. This is the "never throws" contract: a
+  // caller like setPrimaryFont must be able to await this unconditionally.
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement.style;
+
   const resolveHex = async (slot: string, theme: string): Promise<string | null> => {
     try {
       return tokenValueToHex(await host.tokens?.resolve(`{color.semantic.${slot}}`, { theme }));
     } catch { return null; }
   };
-  // Fonts first, independently of the colour blocks — a brand may declare
-  // font tokens without semantic colour slots (the SUSE doc) or vice versa.
+  // Fonts and shape first, independently of the colour blocks below — a brand
+  // may declare font/shape tokens without semantic colour slots (the SUSE doc)
+  // or vice versa.
   await applyBrandFonts(host).catch(() => { /* never breaks boot */ });
+  await applyBrandRadius(host).catch(() => { /* never breaks boot */ });
   // The warm "needs attention" accent scans every resolved colour (ramps,
   // spectrum, roles) — independent of the semantic primary/on-primary block
   // below, so it still finds SUSE's Persimmon even though that catalog
-  // declares no color.semantic.* slots at all.
+  // declares no color.semantic.* slots at all. The catch must NOT touch the
+  // DOM (a resolve() rejection still leaves documentElement writable, but
+  // keeping the handler pure means it can never itself throw).
+  let warn: { hex: string; ink: string } | null = null;
   try {
-    const warm = nearestWarmHex(await host.tokens?.colors?.() ?? []);
-    if (warm) {
-      document.documentElement.style.setProperty('--brand-warn', warm.hex);
-      document.documentElement.style.setProperty('--brand-warn-ink', warm.ink);
-    } else {
-      document.documentElement.style.removeProperty('--brand-warn');
-      document.documentElement.style.removeProperty('--brand-warn-ink');
-    }
-  } catch {
-    document.documentElement.style.removeProperty('--brand-warn');
-    document.documentElement.style.removeProperty('--brand-warn-ink');
+    warn = nearestWarmHex(await host.tokens?.colors?.() ?? []);
+  } catch { warn = null; }
+  if (warn) {
+    root.setProperty('--brand-warn', warn.hex);
+    root.setProperty('--brand-warn-ink', warn.ink);
+  } else {
+    root.removeProperty('--brand-warn');
+    root.removeProperty('--brand-warn-ink');
   }
   try {
     const [lp, lop, dp, dop] = await Promise.all([
       resolveHex('primary', 'light'), resolveHex('on-primary', 'light'),
       resolveHex('primary', 'dark'), resolveHex('on-primary', 'dark'),
     ]);
-    const css = chromeBrandCss({ primary: lp, onPrimary: lop }, { primary: dp, onPrimary: dop });
-    let styleEl = document.getElementById(CHROME_STYLE_ID);
-    if (!css) { styleEl?.remove(); return; }
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = CHROME_STYLE_ID;
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = css;
+    applyChromeAccent({ primary: lp, onPrimary: lop }, { primary: dp, onPrimary: dop });
   } catch { /* cosmetic only — never break boot */ }
 }
 

@@ -23,7 +23,7 @@
  */
 
 import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
-import { applyChromeBrandVars } from './brand-vars.ts';
+import { applyChromeBrandVars, brandRadiusValue } from './brand-vars.ts';
 import { bustFontRegistry } from './bridge/font-registry.ts';
 import { fetchGoogleFont, GOOGLE_FAMILY_RE } from './lib/google-fonts.ts';
 import type { DownloadedFontFace } from './lib/google-fonts.ts';
@@ -173,6 +173,35 @@ export function withBrandFontToken(doc: unknown, family: string | null): Record<
 }
 
 /**
+ * Merge (or clear, with null) the `shape.radius` token into a tokens doc, in
+ * place of a copy. Reuses fontTargetOf — it's the generic "which SET to write
+ * into" resolver (base vs. a layered doc's top level), not actually font-
+ * specific despite the name. Pure; exported for tests.
+ */
+export function withRadiusToken(doc: unknown, value: string | null): Record<string, unknown> {
+  const src = (typeof doc === 'object' && doc !== null && !Array.isArray(doc)) ? doc as Record<string, unknown> : {};
+  const out: Record<string, unknown> = structuredClone(src);
+  const target = fontTargetOf(out);
+  if (value) target.shape = { radius: { $type: 'dimension', $value: value } };
+  else delete target.shape;
+  return out;
+}
+
+/**
+ * Set (or clear, with null) the app's corner-radius override: merges
+ * shape.radius into the base doc (see primaryBaseDoc), installs it as the
+ * user's tokens, and re-applies chrome vars immediately — no reload needed.
+ * Mirrors setPrimaryFont. Rejects an unsafe/malformed value up front (the
+ * same CSS-length gate applyBrandRadius checks on the way back out).
+ */
+export async function setBrandRadius(host: UserFontsHost, value: string | null): Promise<void> {
+  if (value && !brandRadiusValue(value)) throw new Error(`"${value}" isn't a plain CSS length (e.g. "0.5rem").`);
+  const doc = withRadiusToken(await primaryBaseDoc(host), value);
+  await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
+  await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
+}
+
+/**
  * Carry the user's chosen fonts through a brand (re)install: when `doc` (a
  * freshly derived or imported tokens doc) declares no `font` group of its own,
  * graft the one from the user's currently-installed tokens onto it — otherwise
@@ -293,7 +322,7 @@ export async function installGoogleFont(
   const mustBePrimary = opts.primary || !(await primaryFontFamily(host));
   if (mustBePrimary) await setPrimaryFont(host, canonical);
   return families.find(f => f.family === canonical)
-    ?? { family: canonical, assetIds: stored, bytes: 0, weights: '', primary: mustBePrimary };
+    ?? { family: canonical, assetIds: stored, bytes: 0, weights: '', italic: faces.some(f => f.style === 'italic'), primary: mustBePrimary };
 }
 
 /** A weight blurb for the family list: 'variable 100–900' / '400 + 700' / '400'. */
@@ -316,12 +345,13 @@ export async function listUserFonts(host: UserFontsHost): Promise<UserFontFamily
     const family = String(r.meta?.family ?? r.meta?.name ?? 'Font');
     let g = byFamily.get(family);
     if (!g) {
-      g = { family, assetIds: [], bytes: 0, weights: '', primary: family === primary, _weights: new Set() };
+      g = { family, assetIds: [], bytes: 0, weights: '', italic: false, primary: family === primary, _weights: new Set() };
       byFamily.set(family, g);
     }
     g.assetIds.push(r.id);
     g.bytes += r.blob?.size ?? 0;
     if (typeof r.meta?.weight === 'string') g._weights.add(r.meta.weight);
+    if (r.meta?.style === 'italic') g.italic = true;
   }
   return [...byFamily.values()]
     .map(({ _weights, ...fam }) => ({ ...fam, weights: weightsBlurb(_weights) }))
