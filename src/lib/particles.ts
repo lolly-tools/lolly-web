@@ -12,11 +12,14 @@
  * user asked NOT to have (and this control's audience especially).
  */
 
-// Festive SUSE-brand chip colours as [box-fill, ink] pairs — a real mix of the brand's tints and
-// shades so the burst reads as confetti, not one colour. Each pair keeps a strong light/dark
-// contrast so the label stays legible. Jungle (dark & bright), Pine (deep/mid/light), Persimmon
-// (dark & bright), Pine↔Fog both ways for contrast, plus cool Midnight/Waterhole and Mint.
-const CHIP_COLORS: ReadonlyArray<readonly [string, string]> = [
+import { hexToOklch, contrastRatio } from '@lolly/engine';
+import { tokenValueToHex } from '../brand-vars.ts';
+
+/** The chip palette: [box-fill, ink] pairs. Brand-derived when tokens are
+ * loaded (see brandChipPairs); this SUSE set is the fallback for a tokenless
+ * catalog — and the shape reference: every pair is a strong light/dark
+ * contrast so the label stays legible. */
+const FALLBACK_CHIP_COLORS: ReadonlyArray<readonly [string, string]> = [
   ['#0c322c', '#42d29f'], // dark Jungle → Jungle 5
   ['#30ba78', '#0c322c'], // bright Jungle → Pine ink (lighter jungle chip)
   ['#008878', '#bff1ea'], // mid Pine → Pine 7
@@ -35,6 +38,78 @@ const CHIP_COLORS: ReadonlyArray<readonly [string, string]> = [
 const LABELS = ['JUNGLE', 'FOCUS', 'FLOW', 'CALM', 'BEAT', 'RHYTHM', 'DRUM', 'BASS', 'TEMPO', 'SPEED', 'FAST', 'QUICK', 'GENIUS'];
 
 const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+
+// ── Brand-derived chip palette ────────────────────────────────────────────────
+// Build the [fill, ink] pairs from the LOADED brand's tokens: bucket every
+// resolved colour by OKLCH lightness into lights and darks (the mid-tones are
+// skipped — a mid-on-mid chip reads as mud), then keep light/dark combinations
+// with real label contrast, in both orientations like the fallback set. The
+// result is cached for the session; too few usable pairs (a sparse or
+// monochrome brand) falls back to the SUSE set rather than a drab burst.
+
+/** The host slice this needs — the same optional tokens resolver the brand-var
+ * modules use; swatch values may be hex OR raw oklch() ramp strings. */
+export interface ChipPairsHost {
+  tokens?: { colors(): Promise<Array<{ value: string }>> };
+}
+
+const MIN_PAIRS = 6;   // fewer than this and the burst loses its confetti variety
+const MAX_PAIRS = 18;  // enough variety; keeps the pair-building bounded
+
+let chipPairsPromise: Promise<ReadonlyArray<readonly [string, string]>> | null = null;
+
+/** Fisher–Yates, in place. */
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  return arr;
+}
+
+async function buildBrandChipPairs(host: ChipPairsHost): Promise<ReadonlyArray<readonly [string, string]>> {
+  let swatches: Array<{ value: string }> = [];
+  try { swatches = (await host.tokens?.colors()) ?? []; } catch { /* tokenless — fallback below */ }
+  const seen = new Set<string>();
+  const lights: string[] = [];
+  const darks: string[] = [];
+  for (const s of swatches) {
+    const hex = tokenValueToHex(s.value);
+    if (!hex || seen.has(hex)) continue;
+    seen.add(hex);
+    const l = hexToOklch(hex)?.l;
+    if (l === undefined) continue;
+    if (l >= 0.66) lights.push(hex);
+    else if (l <= 0.5) darks.push(hex);
+  }
+  const pairs: Array<readonly [string, string]> = [];
+  for (const d of shuffle(darks)) {
+    for (const l of shuffle([...lights])) {
+      if (contrastRatio(d, l) < 4) continue;   // label must stay legible on the fill
+      pairs.push([d, l], [l, d]);              // dark chip/light ink AND the reverse
+      break;                                    // one partner per dark keeps hue variety over repeats
+    }
+    if (pairs.length >= MAX_PAIRS) break;
+  }
+  // A second pass pairs leftover lights so light-heavy palettes still mix both ways.
+  if (pairs.length < MAX_PAIRS) {
+    for (const l of shuffle([...lights])) {
+      const d = shuffle([...darks]).find(dk => contrastRatio(dk, l) >= 4);
+      if (d) pairs.push([l, d]);
+      if (pairs.length >= MAX_PAIRS) break;
+    }
+  }
+  return pairs.length >= MIN_PAIRS ? pairs : FALLBACK_CHIP_COLORS;
+}
+
+/** The session's chip palette — brand pairs once tokens resolve, cached. */
+function chipPairs(host?: ChipPairsHost): Promise<ReadonlyArray<readonly [string, string]>> {
+  if (!host?.tokens) return Promise.resolve(FALLBACK_CHIP_COLORS);
+  if (!chipPairsPromise) {
+    chipPairsPromise = buildBrandChipPairs(host).catch(() => FALLBACK_CHIP_COLORS);
+  }
+  return chipPairsPromise;
+}
 
 let measureCanvas: CanvasRenderingContext2D | null = null;
 function measurer(): CanvasRenderingContext2D | null {
@@ -57,10 +132,10 @@ interface Chip {
 }
 
 /** Bake one chip (filled rounded box + label) into an offscreen sprite at `dpr`, like /info. */
-function makeChipSprite(dpr: number): { spr: HTMLCanvasElement; w: number; h: number } | null {
+function makeChipSprite(dpr: number, palette: ReadonlyArray<readonly [string, string]>): { spr: HTMLCanvasElement; w: number; h: number } | null {
   const m = measurer();
   if (!m) return null;
-  const [fill, ink] = CHIP_COLORS[Math.floor(Math.random() * CHIP_COLORS.length)]!;
+  const [fill, ink] = palette[Math.floor(Math.random() * palette.length)]!;
   const label = LABELS[Math.floor(Math.random() * LABELS.length)]!;
   const fs = rand(11, 20);
   m.font = `700 ${fs}px SUSE, sans-serif`;
@@ -87,11 +162,16 @@ function makeChipSprite(dpr: number): { spr: HTMLCanvasElement; w: number; h: nu
 /**
  * Blast a one-shot confetti burst out from (`x`, `y`) — viewport coordinates — across the whole
  * screen. Fire-and-forget: it paints a transient overlay canvas that cleans itself up.
+ * Pass the host and the chips take the LOADED brand's light/dark pairs (cached after the
+ * first resolve); without one they use the fallback set.
  */
-export function celebrateBurst(x: number, y: number): void {
+export function celebrateBurst(x: number, y: number, host?: ChipPairsHost): void {
   if (typeof document === 'undefined' || typeof window === 'undefined') return;
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return; // calm mode — no blast
+  void chipPairs(host).then(palette => burstWith(x, y, palette));
+}
 
+function burstWith(x: number, y: number, palette: ReadonlyArray<readonly [string, string]>): void {
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   const canvas = document.createElement('canvas');
   canvas.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647';
@@ -104,7 +184,7 @@ export function celebrateBurst(x: number, y: number): void {
   const count = Math.floor(rand(52, 72));
   const chips: Chip[] = [];
   for (let i = 0; i < count; i++) {
-    const s = makeChipSprite(dpr);
+    const s = makeChipSprite(dpr, palette);
     if (!s) continue;
     const angle = (i / count) * Math.PI * 2 + rand(-0.35, 0.35);
     const spd = rand(9, 26);

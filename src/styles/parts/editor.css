@@ -94,9 +94,13 @@
 .fc-btn.fc-action:hover:not(:disabled) { background: hsl(var(--primary) / 0.12); }
 .fc-btn.fc-action-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
 .fc-btn.fc-action-primary:hover:not(:disabled) { background: hsl(var(--primary) / 0.85); }
-/* Amber "unsaved" cue mirrored from the render pill's Save button. */
+/* "Unsaved" cue mirrored from the render pill's Save button — --brand-warn, the
+   active brand's own colour closest in hue to red/yellow (brand-vars.ts
+   nearestWarmHex, recomputed on every brand change), falling back to the
+   tokenless Amber #b28727. Shared by every free-canvas host — Layout Studio,
+   Carousel Maker, Doc Studio — since they all build their toolbar via toolBtn(). */
 .fc-btn.fc-action-save.is-unsaved,
-.fc-btn.fc-action-save.is-unsaved:hover:not(:disabled) { background: #f5a524; color: #0c322c; }
+.fc-btn.fc-action-save.is-unsaved:hover:not(:disabled) { background: var(--brand-warn, #b28727); color: var(--brand-warn-ink, #0c322c); }
 .fc-sep { height: 1px; background: hsl(var(--border)); margin: 3px 4px; }
 .fc-sep-v { display: inline-block; width: 1px; height: 20px; background: hsl(var(--border)); margin: 0 3px; }
 

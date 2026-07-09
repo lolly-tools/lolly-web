@@ -19,19 +19,28 @@ async function loadHarfBuzz(): Promise<HarfBuzzModule> {
   return _hb;
 }
 
-// fontUrl → { blob, face, font, upem }
-// Kept alive so the FinalizationRegistry doesn't destroy them early.
-interface FontEntry {
+// fontUrl → { blob, face, upem }. Kept alive so the FinalizationRegistry doesn't
+// destroy them early. One face per URL; a VARIABLE face then backs several Font
+// instances, one per variation setting (see fontCache).
+interface FaceEntry {
   blob: HbBlob;
   face: HbFace;
-  font: HbFont;
   upem: number;
+  /** Codepoints this face has a glyph for (its cmap), read once and cached. */
+  unicodes: Set<number>;
 }
 
+interface FontEntry {
+  font: HbFont;
+  upem: number;
+  unicodes: Set<number>;
+}
+
+const faceCache = new Map<string, FaceEntry>();
 const fontCache = new Map<string, FontEntry>();
 
-async function loadFont(fontUrl: string): Promise<FontEntry> {
-  if (fontCache.has(fontUrl)) return fontCache.get(fontUrl)!;
+async function loadFace(fontUrl: string): Promise<FaceEntry> {
+  if (faceCache.has(fontUrl)) return faceCache.get(fontUrl)!;
   const hb = await loadHarfBuzz();
 
   const r = await fetch(fontUrl);
@@ -40,12 +49,60 @@ async function loadFont(fontUrl: string): Promise<FontEntry> {
   const buf = new Uint8Array(await r.arrayBuffer());
   const blob = new hb.Blob(buf as unknown as ArrayBuffer);
   const face = new hb.Face(blob);
-  const upem = face.upem;
-  const font = new hb.Font(face);
-  // Keep blob + face alive alongside font — FinalizationRegistry would GC them otherwise.
-  const entry = { blob, face, font, upem };
-  fontCache.set(fontUrl, entry);
+  const entry = { blob, face, upem: face.upem, unicodes: new Set(face.collectUnicodes()) };
+  faceCache.set(fontUrl, entry);
   return entry;
+}
+
+/**
+ * A shaped-ready Font for `fontUrl` at the given variation instance.
+ *
+ * `variations` are HarfBuzz axis strings (`'wght=700'`). Each distinct setting
+ * gets its own cached Font over the SHARED face — hb_font_set_variations is
+ * per-font state, so a bold and a regular run must not share one Font object.
+ * Unparseable axis strings are dropped rather than throwing (a caller's typo
+ * degrades to the default instance, it doesn't fail the export).
+ */
+async function loadFont(fontUrl: string, variations?: string[]): Promise<FontEntry> {
+  const vars = Array.isArray(variations) ? variations.filter(v => typeof v === 'string') : [];
+  const key = vars.length ? `${fontUrl}|${vars.join(',')}` : fontUrl;
+  if (fontCache.has(key)) return fontCache.get(key)!;
+
+  const { face, upem, unicodes } = await loadFace(fontUrl);
+  const hb = _hb!;
+  const font = new hb.Font(face);
+  if (vars.length) {
+    const parsed = vars.map(v => hb.Variation.fromString(v)).filter(Boolean);
+    if (parsed.length) font.setVariations(parsed as NonNullable<ReturnType<typeof hb.Variation.fromString>>[]);
+  }
+  const entry = { font, upem, unicodes };
+  fontCache.set(key, entry);
+  return entry;
+}
+
+/**
+ * Split `text` into maximal runs that one face in `chain` can draw, mirroring
+ * how a browser resolves font fallback: keep the current face while it covers
+ * the character, else take the first face in the chain that does. A character
+ * NO face covers stays with the current face — it shapes as .notdef and gets
+ * counted, so the caller can prefer its own fallback over a tofu outline.
+ *
+ * Whitespace never forces a face change (it carries no visible glyph).
+ */
+function segmentByFace(text: string, chain: FontEntry[]): Array<{ text: string; face: number }> {
+  const segs: Array<{ text: string; face: number }> = [];
+  let cur = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    if (!/\s/.test(ch) && !chain[cur]!.unicodes.has(cp)) {
+      const next = chain.findIndex(f => f.unicodes.has(cp));
+      if (next !== -1) cur = next;
+    }
+    const last = segs[segs.length - 1];
+    if (last && last.face === cur) last.text += ch;
+    else segs.push({ text: ch, face: cur });
+  }
+  return segs;
 }
 
 function fmt(n: number): number {
@@ -87,76 +144,100 @@ export function createTextAPI(): TextAPI {
      *
      * `advanceWidth`: total pen advance in pixels.
      * `bbox`:         tight glyph bounding box in pixels, or null for blank runs.
+     * `notdef`:       glyphs no face in the chain covered (see TextPathResult).
+     *
+     * With `fallbackFonts`, the run is split into maximal single-face segments
+     * (see segmentByFace) and each is shaped by its own face, the pen carried
+     * across in PIXELS — faces may differ in units-per-em, so nothing else is
+     * comparable between them. Shaping per segment means no kerning across a
+     * face boundary, exactly as in a browser.
      */
-    async toPath({ text, fontUrl, fontSize, features, letterSpacing = 0 }) {
+    async toPath({ text, fontUrl, fontSize, features, letterSpacing = 0, variations, fallbackFonts }) {
       if (!text || !text.trim()) {
-        return { d: '', advanceWidth: 0, bbox: null };
+        return { d: '', advanceWidth: 0, bbox: null, notdef: 0 };
       }
 
-      const { font, upem } = await loadFont(fontUrl);
+      const chain = [
+        await loadFont(fontUrl, variations),
+        ...await Promise.all((fallbackFonts ?? []).map(f => loadFont(f.fontUrl, f.variations))),
+      ];
       const hb = _hb!;
-      const scale = fontSize / upem;
-      // letter-spacing is given in px; convert to font units to add to the pen advance.
-      const lsUnits = Number.isFinite(letterSpacing) && letterSpacing ? letterSpacing / scale : 0;
 
-      const buf = new hb.Buffer();
-      buf.addText(text);
-      buf.guessSegmentProperties();
       // OpenType feature toggles (e.g. 'liga=0', 'salt=1') let a caller disable
       // ligatures or enable stylistic alternates; HarfBuzz applies kern + standard
       // ligatures by default, so the common case passes nothing.
       const feats = Array.isArray(features)
         ? features.map((f) => hb.Feature.fromString(f)).filter(Boolean)
         : [];
-      hb.shape(font, buf, feats.length ? (feats as HbFeature[]) : undefined);
 
-      const glyphs = buf.getGlyphInfosAndPositions();
-
-      let penX = 0;
+      let penPx = 0;
       let d = '';
+      let notdef = 0;
       let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
 
-      for (const g of glyphs) {
-        const {
-          codepoint: glyphId,
-          xAdvance = 0,
-          xOffset  = 0,
-          yOffset  = 0,
-        } = g;
+      for (const seg of segmentByFace(text, chain)) {
+        const { font, upem } = chain[seg.face]!;
+        const scale = fontSize / upem;
+        // letter-spacing is given in px; convert to font units to add to the pen advance.
+        const lsUnits = Number.isFinite(letterSpacing) && letterSpacing ? letterSpacing / scale : 0;
+        // Where this segment starts, expressed in THIS face's units.
+        const originUnits = penPx / scale;
 
-        const ox = penX + xOffset;
-        const oy = yOffset;
+        const buf = new hb.Buffer();
+        buf.addText(seg.text);
+        buf.guessSegmentProperties();
+        hb.shape(font, buf, feats.length ? (feats as HbFeature[]) : undefined);
 
-        const rawPath = font.glyphToPath(glyphId);
-        if (rawPath) d += transformPath(rawPath, ox, oy, scale);
+        let penX = 0;
+        for (const g of buf.getGlyphInfosAndPositions()) {
+          const {
+            codepoint: glyphId,
+            xAdvance = 0,
+            xOffset  = 0,
+            yOffset  = 0,
+          } = g;
 
-        // Bbox from glyph extents (cheaper than parsing the transformed path).
-        const ext = font.glyphExtents(glyphId);
-        if (ext) {
-          const bx1 = (ox + ext.xBearing) * scale;
-          const bx2 = (ox + ext.xBearing + ext.width) * scale;
-          // HarfBuzz Y-up: yBearing > 0 above baseline; height < 0 going down.
-          const by1 = -(oy + ext.yBearing) * scale;
-          const by2 = -(oy + ext.yBearing + ext.height) * scale;
-          if (bx1 < x1) x1 = bx1;
-          if (by1 < y1) y1 = by1;
-          if (bx2 > x2) x2 = bx2;
-          if (by2 > y2) y2 = by2;
+          // Glyph 0 is .notdef by OpenType definition — no face in the chain has
+          // the character. Counted, not thrown: the caller decides whether a tofu
+          // outline is worse than its <text> fallback.
+          if (glyphId === 0) notdef++;
+
+          const ox = originUnits + penX + xOffset;
+          const oy = yOffset;
+
+          const rawPath = font.glyphToPath(glyphId);
+          if (rawPath) d += transformPath(rawPath, ox, oy, scale);
+
+          // Bbox from glyph extents (cheaper than parsing the transformed path).
+          const ext = font.glyphExtents(glyphId);
+          if (ext) {
+            const bx1 = (ox + ext.xBearing) * scale;
+            const bx2 = (ox + ext.xBearing + ext.width) * scale;
+            // HarfBuzz Y-up: yBearing > 0 above baseline; height < 0 going down.
+            const by1 = -(oy + ext.yBearing) * scale;
+            const by2 = -(oy + ext.yBearing + ext.height) * scale;
+            if (bx1 < x1) x1 = bx1;
+            if (by1 < y1) y1 = by1;
+            if (bx2 > x2) x2 = bx2;
+            if (by2 > y2) y2 = by2;
+          }
+
+          penX += xAdvance + lsUnits;   // uniform tracking after every glyph (CSS-style)
         }
-
-        penX += xAdvance + lsUnits;   // uniform tracking after every glyph (CSS-style)
+        penPx += penX * scale;
       }
 
       return {
         d,
-        advanceWidth: penX * scale,
+        advanceWidth: penPx,
         bbox: x1 !== Infinity ? { x1, y1, x2, y2 } : null,
+        notdef,
       };
     },
 
     /** Warm the font cache without doing any shaping. Call fire-and-forget. */
     async preload(fontUrl) {
-      await loadFont(fontUrl);
+      await loadFace(fontUrl);
     },
   };
 }

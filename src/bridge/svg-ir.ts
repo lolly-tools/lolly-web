@@ -24,7 +24,8 @@ import { parseSvgPath } from '@lolly/engine';
 import type { HostV1, TextPathResult } from '../../../../engine/src/bridge/host-v1.ts';
 import type { PathSegment } from '../../../../engine/src/svg-path.ts';
 import type { VectorPathPrim, VectorImagePrim, VectorPrim, Rgb } from '../../../../engine/src/emf.ts';
-import { resolveSuseFontUrl, canVectoriseText, featureSettingsToHb, letterSpacingPx } from './text-svg.ts';
+import { canVectoriseText, featureSettingsToHb, letterSpacingPx } from './text-svg.ts';
+import { resolveVectorFont } from './font-registry.ts';
 
 const SKIP = new Set(['defs', 'clippath', 'lineargradient', 'radialgradient',
   'symbol', 'style', 'script', 'title', 'desc', 'metadata', 'filter', 'mask']);
@@ -407,13 +408,16 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     const letterSpacingCss = prop(el, style, 'letter-spacing', null) ?? cs?.letterSpacing;
     const fontStyleObj = { fontFamily: family, fontWeight: weight, fontStyle: italic ? 'italic' : 'normal',
       letterSpacing: letterSpacingCss };
-    const fontUrl = resolveSuseFontUrl(fontStyleObj);
+    // SUSE statics, the user's own Google fonts, or the platform face — this
+    // format has no <text> fallback, so an unresolvable family is fatal.
+    const vf = textApi ? await resolveVectorFont(fontStyleObj, raw) : null;
+    const fontUrl = vf?.url ?? null;
 
     if (!canVectoriseText(fontStyleObj, fontUrl, Boolean(textApi))) {
       throw new Error(
         `${LABEL} export requires outlined text, but the run "${raw.slice(0, 24)}" could not be ` +
         `vectorized (font-family "${family || 'inherited'}"${textApi ? '' : '; no text-shaping in this shell'}). ` +
-        `Use a registered (SUSE) font, or export SVG/PDF.`);
+        `Add the font under Profile → Your brand, or export SVG/PDF.`);
     }
 
     // Tracking + OpenType feature toggles bake into the shaped path (kept outlined).
@@ -422,7 +426,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
 
     let result: TextPathResult;
     try {
-      result = await textApi!.toPath({ text: raw, fontUrl: fontUrl!, fontSize, features: features as string[], letterSpacing });
+      result = await textApi!.toPath({ text: raw, fontUrl: fontUrl!, fontSize, features: features as string[], letterSpacing, variations: vf!.variations });
     } catch (e) {
       throw new Error(`EMF export: text shaping failed for "${raw.slice(0, 24)}" — ${(e as Error).message}`);
     }

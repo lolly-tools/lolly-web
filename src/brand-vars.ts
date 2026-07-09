@@ -22,7 +22,7 @@
  * to template authors.
  */
 
-import { colorToHex, isAlias, parseOklch, oklchToHex, hexToOklch } from '@lolly/engine';
+import { colorToHex, isAlias, parseOklch, oklchToHex, hexToOklch, contrastRatio } from '@lolly/engine';
 
 /** The seven semantic slots (token leaf under `color.semantic`) → CSS var. */
 const SLOTS = [
@@ -35,9 +35,13 @@ const SLOTS = [
   ['edge', '--brand-edge'],
 ] as const;
 
-/** The host slice this module reads — just the (optional) tokens resolver. */
+/** The host slice this module reads — the (optional) tokens resolver, plus
+ * `colors()` for the warm-accent scan (see nearestWarmHex). */
 interface BrandVarsHost {
-  tokens?: { resolve(ref: string, opts?: { theme?: string }): Promise<unknown> };
+  tokens?: {
+    resolve(ref: string, opts?: { theme?: string }): Promise<unknown>;
+    colors?(opts?: { theme?: string }): Promise<Array<{ value: string }>>;
+  };
 }
 
 // ── Chrome (app UI) brand accent ─────────────────────────────────────────────
@@ -142,15 +146,52 @@ export function hexToHslTriple(hex: string): string | null {
 
 /** A resolved token value → #rrggbb, or null when it isn't a usable colour.
  * Ramps store raw `oklch()` strings — the browser resolves those in var()
- * injection, but the HSL-triple convention needs real RGB, so gamut-map them
- * through the engine (the same path deriveBrandTokens uses). */
-function tokenValueToHex(value: unknown): string | null {
+ * injection, but anything needing real RGB (the HSL-triple convention here,
+ * the confetti chip pairs in lib/particles.ts) gamut-maps them through the
+ * engine (the same path deriveBrandTokens uses). */
+export function tokenValueToHex(value: unknown): string | null {
   if (typeof value === 'string' && /^(oklch|lch)\(/i.test(value.trim())) {
     const o = parseOklch(value);
     return o ? oklchToHex(o) : null;
   }
   const hex = colorToHex(typeof value === 'string' && isAlias(value) ? null : value);
   return typeof hex === 'string' && /^#[0-9a-f]{6}/i.test(hex) ? hex.slice(0, 7) : null;
+}
+
+// ── Warm accent (--brand-warn) ───────────────────────────────────────────────
+// "Needs attention" UI (the render pill / editor toolbar's unsaved cue) used to
+// hard-code an amber. Instead, scan the active brand's own colours (ramps,
+// spectrum, semantic roles — whatever resolves) and pick whichever sits closest
+// to the red→amber→yellow arc in OKLCH hue, so the cue is always ON BRAND and
+// automatically follows any colour the user changes. Near-neutral swatches
+// (low chroma) are skipped — a grey has no real hue to judge.
+const WARM_TARGET_HUE = 50;   // OKLCH degrees — the red/amber/yellow arc's centre
+const MIN_WARM_CHROMA = 0.04; // below this a swatch reads as grey, not warm
+
+function hueDistance(h: number, target: number): number {
+  const d = Math.abs(h - target) % 360;
+  return Math.min(d, 360 - d);
+}
+
+/** Among `swatches`, the resolved hex whose OKLCH hue is nearest red/yellow,
+ * plus whichever of black/white reads legibly on top of it — or null when none
+ * resolve to a usable, sufficiently-chromatic colour (caller keeps its own
+ * static fallback, e.g. `var(--brand-warn, #b28727)`). */
+export function nearestWarmHex(swatches: ReadonlyArray<{ value: unknown }>): { hex: string; ink: string } | null {
+  let best: { hex: string; dist: number } | null = null;
+  const seen = new Set<string>();
+  for (const s of swatches) {
+    const hex = tokenValueToHex(s.value);
+    if (!hex || seen.has(hex)) continue;
+    seen.add(hex);
+    const o = hexToOklch(hex);
+    if (!o || o.c < MIN_WARM_CHROMA) continue;
+    const dist = hueDistance(o.h, WARM_TARGET_HUE);
+    if (!best || dist < best.dist) best = { hex, dist };
+  }
+  if (!best) return null;
+  const ink = contrastRatio(best.hex, '#000000') >= contrastRatio(best.hex, '#ffffff') ? '#000000' : '#ffffff';
+  return { hex: best.hex, ink };
 }
 
 /** One shell theme's accent overrides, or '' when primary didn't resolve. */
@@ -224,6 +265,23 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   // Fonts first, independently of the colour blocks — a brand may declare
   // font tokens without semantic colour slots (the SUSE doc) or vice versa.
   await applyBrandFonts(host).catch(() => { /* never breaks boot */ });
+  // The warm "needs attention" accent scans every resolved colour (ramps,
+  // spectrum, roles) — independent of the semantic primary/on-primary block
+  // below, so it still finds SUSE's Persimmon even though that catalog
+  // declares no color.semantic.* slots at all.
+  try {
+    const warm = nearestWarmHex(await host.tokens?.colors?.() ?? []);
+    if (warm) {
+      document.documentElement.style.setProperty('--brand-warn', warm.hex);
+      document.documentElement.style.setProperty('--brand-warn-ink', warm.ink);
+    } else {
+      document.documentElement.style.removeProperty('--brand-warn');
+      document.documentElement.style.removeProperty('--brand-warn-ink');
+    }
+  } catch {
+    document.documentElement.style.removeProperty('--brand-warn');
+    document.documentElement.style.removeProperty('--brand-warn-ink');
+  }
   try {
     const [lp, lop, dp, dop] = await Promise.all([
       resolveHex('primary', 'light'), resolveHex('on-primary', 'light'),

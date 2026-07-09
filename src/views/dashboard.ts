@@ -1,20 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Dashboard view (#/d) — the single read-only "instrument panel" for the whole
- * platform. It merges what used to be two pages (#/platform and #/capabilities)
- * and pulls read-only glances of your own data (activity + storage) from the
- * Profile — nothing here is removed from Profile; this is a mirror, not a move.
+ * Dashboard view (#/d) — the "instrument panel" for the whole platform. It merges
+ * what used to be two pages (#/platform and #/capabilities) and pulls read-only
+ * glances of your own data (activity + storage) from the Profile — nothing here
+ * is removed from Profile; this is a mirror, not a move.
+ * The exception is "Your brand" (see brandSection()), which is a real EDITOR:
+ * colour, the editable palette, fonts and the brand pack are all set here, in
+ * place (lib/brand-editor.ts). Profile keeps its font/share card as a mirror and
+ * #/start remains the first-run wizard, but neither is a detour any more.
  *
- * The layout is deliberate: the bento of instrument tiles (activity, storage,
- * palette wheel, type, aspect ratios), then four collapsible PRIMARY sections
- * built by collapse() — THIS DEVICE (full-width; the live machine readout people
- * find genuinely interesting), a two-up row of Colour palette | Catalogue (each
- * half-width), and What Lolly can do (the full capability map, full-width) — then
- * the type / theme / print reference panels. Each primary section folds to its
- * title bar with a soft hydraulic cue (see the toggle listener in mountDashboard).
- * Nothing is a live editor: it is a snapshot of what this session currently knows.
+ * The layout is deliberate: Your brand leads (full-width, never collapsible),
+ * then the bento of instrument tiles (activity, storage, palette wheel, type,
+ * aspect ratios), then four collapsible PRIMARY sections built by collapse() —
+ * THIS DEVICE (full-width; the live machine readout people find genuinely
+ * interesting), a two-up row of Colour palette | Catalogue (each half-width),
+ * and What Lolly can do (the full capability map, full-width) — then the type /
+ * theme / print reference panels. Each primary section folds to its title bar
+ * with a soft hydraulic cue (see the toggle listener in mountDashboard).
+ * Apart from Your brand (and the theme/sound switches), the rest is a snapshot
+ * of what this session currently knows.
  *
  * Data sources (single sources of truth, imported — never duplicated):
+ *   brand     → host.assets discovery (USER_TOKENS_ID) — same check Profile used
  *   device    → lib/device-info.ts        (live session snapshot)
  *   activity  → metrics.ts + lib/activity-summary.ts
  *   storage   → navigator.storage + host.state / host.assets measurers
@@ -45,6 +52,7 @@ import { renderActivity } from '../lib/activity-summary.ts';
 import { collectDevice, renderDeviceCards, renderDeviceStat, liveValue, fmtBytes } from '../lib/device-info.ts';
 import { playSfx, playThemeSfx } from '../lib/sfx.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
+import { USER_TOKENS_ID } from '../bridge/tokens.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
@@ -75,6 +83,24 @@ function sectionHead(title: string, id: string, desc = ''): string {
   return `<div class="dash-sec-head"><h2 id="${id}" class="dash-sec-title">${escape(title)}</h2>${
     desc ? `<p class="dash-sec-desc">${desc}</p>` : ''
   }</div>`;
+}
+
+// ── Your brand: the live brand EDITOR (lib/brand-editor.ts) — colour, the
+// editable palette, fonts and the shareable brand pack, all in place. This is the
+// "adjust" surface: nothing here bounces you to the wizard (colours) or Profile
+// (fonts) any more. The #/start wizard stays as the first-run pathway, and
+// Profile keeps its own font/share card as a mirror.
+//
+// Mounted just after first paint (IDB reads: brand discovery, tokens, fonts) and
+// never collapsible — this is the one section that must always show. A LOCKED
+// build renders a read-only note from inside the editor and wires nothing.
+function brandSection(): string {
+  return `
+    <section class="plat-section dash-section dash-brand" id="dash-brand" aria-label="Your brand" data-flag="brand colour colours palette fonts">
+      ${sectionHead('Your brand', 'dash-brand-h', 'Your colour, palette and fonts — every tool, page and export follows. Nothing leaves this device.')}
+      <p class="dash-brand-status" id="dash-brand-status">Loading…</p>
+      <div class="dash-brand-editor" data-brand-editor-mount><p class="cat-empty">Loading your brand…</p></div>
+    </section>`;
 }
 
 // ── Palette: the compact "ink ribbon" ──────────────────────────────────────
@@ -431,7 +457,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       <header class="plat-header dash-header">
         <h1 class="plat-title">Dashboard</h1>
         <div class="plat-header-text">
-          <p class="plat-sub">One read-only panel for everything defined once and used everywhere — this device, your activity, the brand system and the full feature set.</p>
+          <p class="plat-sub">One panel for everything defined once and used everywhere — set your brand here, and glance at this device, your activity and the full feature set.</p>
           <div class="plat-stats">
             <span class="plat-stat" data-tool-count${toolCount ? '' : ' hidden'}><strong>${escape(String(toolCount || ''))}</strong>tools</span>
             <span class="plat-stat"><strong>30</strong>export formats</span>
@@ -440,6 +466,8 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           </div>
         </div>
       </header>
+
+      ${brandSection()}
 
       <div class="dash-bento">
         <section class="plat-section dash-section dash-card dash-sound-theme" id="dash-sound-theme" data-flag="sound audio neurospicy focus volume themes theme">
@@ -508,13 +536,55 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       </div>
 
       <p class="plat-note dash-foot" role="note">
-        <strong>Read-only.</strong> Nothing here changes the running app — it is a record of what the platform and this session currently know. Your activity and storage are mirrored from your <a href="#/profile">Profile</a>, where you can manage them.
+        <strong>Your brand is live</strong> — colour, palette and fonts above write straight to this device and every tool, page and export follows. The rest of this page is a record of what the platform and this session currently know; your activity and storage are mirrored from your <a href="#/profile">Profile</a>, where you can manage them.
       </p>
     </div>`;
 
   // Include the read-only foot note in the reveal ladder so it settles with the
   // last section instead of snapping in at full opacity beneath the cascade.
   armViewEnter(viewEl, '.tools-home, .plat-header, .plat-section, .dash-foot');
+
+  // Your brand: a status line (an IDB read via host.assets discovery) plus the
+  // live editor, both hydrated just after first paint rather than blocking it.
+  // The editor owns colour / palette / fonts / share and persists straight to
+  // `user/tokens/brand`; a locked build makes it render its own read-only note.
+  void (async () => {
+    const statusEl = viewEl.querySelector<HTMLElement>('#dash-brand-status');
+    let metaId = '';
+    try {
+      metaId = (await (host.assets as unknown as {
+        _findMetaByType?(t: string): Promise<{ id: string } | null>;
+      })._findMetaByType?.('tokens'))?.id ?? '';
+    } catch { /* discovery unavailable — show the unbranded pathway */ }
+    const locked = await (host.tokens as { isLocked?(): Promise<boolean> } | undefined)?.isLocked?.().catch(() => false) ?? false;
+    if (statusEl && viewEl.contains(statusEl)) {
+      statusEl.innerHTML = locked
+        ? 'This build ships with a fixed brand — every tool, page and export already wears it.'
+        : metaId === USER_TOKENS_ID
+          ? 'Your brand is installed — every tool, page and export wears it. Adjust it below.'
+          : metaId
+            ? 'Running the catalogue’s built-in brand. Make it yours below — pick a colour and Lolly derives the rest. It stays on this device.'
+            : 'This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.';
+    }
+
+    // Mount the editor. It is the one interactive thing on this page that writes,
+    // so its teardown (debounced save timer + document listeners) is chained onto
+    // the view's _cleanup. Guarded: a route change mid-await must not mount into
+    // a detached node.
+    const mount = viewEl.querySelector<HTMLElement>('[data-brand-editor-mount]');
+    if (!mount || !viewEl.contains(mount)) return;
+    try {
+      const { mountBrandEditor } = await import('../lib/brand-editor.ts');
+      if (!viewEl.contains(mount)) return;
+      const stopEditor = await mountBrandEditor(mount, host);
+      if (!viewEl.contains(mount)) { stopEditor(); return; }
+      const prev = (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup;
+      (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { prev?.(); stopEditor(); };
+    } catch (err) {
+      console.error('Brand editor failed to mount:', err);
+      mount.innerHTML = '<p class="cat-empty">The brand editor is unavailable right now.</p>';
+    }
+  })();
 
   // Fold cue: a soft hydraulic open/close whenever a primary section (device,
   // palette, catalogue, capabilities) is collapsed or revealed. Capture phase —

@@ -87,6 +87,141 @@
 .dash-bento .dash-card .dash-sec-head { margin-bottom: 0.7rem; }
 
 
+/* ── Your brand — the read-only status glance at the top of the page; the accent
+   border echoes the Profile card this was split from. Editing (fonts, brand-pack
+   share) all live HERE now (lib/brand-editor.ts) — status line + the live editor. */
+.dash-brand { border-inline-start: 3px solid hsl(var(--primary) / 0.55); }
+.dash-brand-status { margin: 0 0 1.1rem; font-size: .84rem; line-height: 1.55; color: hsl(var(--muted-foreground)); max-width: 70ch; }
+.dash-brand-status strong { color: hsl(var(--foreground)); }
+
+/* ── Brand editor (lib/brand-editor.ts). Panels stack; the derive controls sit
+      beside their live preview once there's room. `.be` is the positioning
+      context for the swatch-editor popover. */
+.be { position: relative; display: grid; gap: 1.1rem; }
+.be-locked { margin: 0; font-size: .86rem; line-height: 1.6; color: hsl(var(--muted-foreground)); }
+.be-panel { border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 1.05rem 1.1rem; background: hsl(var(--card)); }
+.be-panel-head { margin-bottom: .9rem; }
+.be-panel-title { margin: 0; font-size: .84rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: hsl(var(--foreground)); }
+.be-panel-sub { margin: .3rem 0 0; max-width: 74ch; font-size: .8rem; line-height: 1.55; color: hsl(var(--muted-foreground)); }
+.be-panel-sub strong { color: hsl(var(--foreground)); font-weight: 600; }
+.be-err { margin: .5rem 0 0; font-size: .78rem; color: hsl(var(--destructive)); }
+
+.be-btn, .be-cta, .be-add {
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  font: inherit; font-size: .78rem; font-weight: 600; padding: .45rem .85rem; cursor: pointer;
+}
+.be-btn:hover, .be-add:hover { border-color: hsl(var(--primary) / .55); }
+.be-cta { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
+.be-cta:hover { background: hsl(var(--primary) / .88); }
+.be-btn:disabled, .be-cta:disabled { opacity: .55; cursor: default; }
+.be-add--sm { padding: .25rem .6rem; font-size: .72rem; }
+
+/* Derive: controls + live preview. */
+.be-derive { display: grid; gap: 1.1rem; }
+@media (min-width: 900px) { .be-derive { grid-template-columns: minmax(240px, 320px) 1fr; align-items: start; } }
+.be-derive-controls { display: grid; gap: .8rem; align-content: start; }
+.be-field { display: grid; gap: .35rem; }
+.be-field-label { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-seg { flex-wrap: wrap; }
+
+.be-preview { display: grid; gap: .9rem; align-content: start; }
+.be-ramps { display: grid; gap: .5rem; }
+.be-ramp-row { display: grid; grid-template-columns: 5.2rem 1fr; align-items: center; gap: .6rem; }
+.be-ramp-label { font-size: .72rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
+.be-ramp { display: grid; grid-template-columns: repeat(9, 1fr); border-radius: calc(var(--radius) * .45); overflow: hidden; box-shadow: 0 0 0 1px hsl(var(--border)); }
+.be-ramp-cell { aspect-ratio: 1 / 1.35; min-height: 22px; }
+.be-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .7rem; }
+.be-spec { border: 1px solid; border-radius: calc(var(--radius) * .7); padding: .8rem .85rem; display: grid; gap: .35rem; }
+.be-spec-name { font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.be-spec-h { margin: 0; font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
+.be-spec-b { margin: 0; font-size: .74rem; line-height: 1.5; }
+.be-spec-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .2rem; }
+.be-spec-btn { border-radius: 999px; padding: .28rem .7rem; font-size: .72rem; font-weight: 600; }
+.be-spec-ratio { font-size: .68rem; font-variant-numeric: tabular-nums; }
+
+/* Palette: grouped, editable swatch tiles. */
+.be-pal-top { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .9rem; }
+.be-pal-count { font-size: .74rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.be-pal-group + .be-pal-group { margin-top: 1rem; }
+.be-pal-group-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .45rem; }
+.be-pal-group-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-pal-group-n { margin-inline-start: .4rem; font-weight: 500; opacity: .7; }
+.be-pal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: .5rem; }
+
+.be-swatch {
+  display: flex; align-items: center; gap: .55rem; text-align: start; cursor: pointer;
+  padding: .4rem .5rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .55);
+  background: hsl(var(--background)); font: inherit;
+}
+.be-swatch:hover { border-color: hsl(var(--primary) / .55); }
+.be-swatch.is-selected { border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--ring) / .28); }
+.be-swatch-chip {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; background: var(--sw, transparent);
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12);
+}
+.be-swatch.is-empty .be-swatch-chip {
+  background: repeating-conic-gradient(hsl(var(--muted)) 0% 25%, transparent 0% 50%) 50% / 10px 10px;
+}
+.be-swatch-meta { display: grid; gap: 1px; min-width: 0; }
+.be-swatch-name { font-size: .76rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-swatch-hex { font-size: .68rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+
+/* Swatch editor popover — absolutely placed under the clicked tile by JS. */
+.be-editor { position: absolute; z-index: 30; width: 272px; }
+.be-editor[hidden] { display: none; }
+.be-editor-card {
+  display: grid; gap: .7rem; padding: .85rem; border-radius: var(--radius);
+  border: 1px solid hsl(var(--border)); background: hsl(var(--popover));
+  box-shadow: 0 12px 34px hsl(var(--foreground) / .18);
+}
+.be-editor-field { display: grid; gap: .3rem; }
+.be-editor-name {
+  width: 100%; padding: .4rem .55rem; font: inherit; font-size: .8rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.be-editor-actions { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.be-editor-del {
+  border: 1px solid hsl(var(--destructive) / .5); border-radius: calc(var(--radius) * .5);
+  background: transparent; color: hsl(var(--destructive));
+  font: inherit; font-size: .74rem; font-weight: 600; padding: .35rem .7rem; cursor: pointer;
+}
+.be-editor-del:hover { background: hsl(var(--destructive) / .1); }
+.be-editor-del[hidden] { display: none; }
+.be-editor-done { margin-inline-start: auto; }
+
+/* Fonts. */
+.be-font-list { list-style: none; margin: 0 0 .8rem; padding: 0; display: grid; gap: .45rem; }
+.be-font-row { display: flex; align-items: center; gap: .7rem; padding: .5rem .6rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .55); }
+.be-font-row.is-primary { border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .05); }
+.be-font-aa { flex: 0 0 auto; width: 2rem; font-size: 1.1rem; line-height: 1; text-align: center; color: hsl(var(--foreground)); }
+.be-font-meta { display: grid; gap: 1px; min-width: 0; margin-inline-end: auto; }
+.be-font-name { font-size: .82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-font-sub { font-size: .7rem; color: hsl(var(--muted-foreground)); }
+.be-font-badge { font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--primary)); }
+.be-font-del {
+  flex: 0 0 auto; border: 0; background: transparent; cursor: pointer; padding: .25rem .4rem;
+  color: hsl(var(--muted-foreground)); font-size: .8rem; border-radius: 6px;
+}
+.be-font-del:hover { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .1); }
+.be-font-empty { font-size: .78rem; color: hsl(var(--muted-foreground)); padding: .4rem .1rem; }
+.be-font-add { display: flex; gap: .5rem; flex-wrap: wrap; }
+.be-font-add input {
+  flex: 1 1 16rem; min-width: 0; padding: .45rem .6rem; font: inherit; font-size: .8rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+
+/* Share. */
+.be-share-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+@media (max-width: 560px) {
+  .be-panel { padding: .9rem; }
+  .be-pal-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .be-editor { width: min(272px, calc(100vw - 3rem)); }
+}
+
 /* ── Type-in-motion tile. */
 .dash-typedemo .dash-sec-head { margin-bottom: 0.8rem; }
 /* The tile is a query container so its specimen can go two-up when it's wide enough
@@ -318,7 +453,7 @@
 .dash-cap-group {
   margin: 0 0 .7rem;
   border: 0;
-      box-shadow: 0 .1rem 1rem #0003;
+      box-shadow: 0 .1rem .5rem -.2em #0003;
   border-radius: 14px;
   background: hsl(var(--card) / 0.4);
   overflow: hidden;

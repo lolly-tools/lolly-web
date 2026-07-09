@@ -37,7 +37,6 @@ import {
 } from '../user-fonts.ts';
 import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
 import { POPULAR_FAMILIES } from '../lib/google-fonts.ts';
-import { USER_TOKENS_ID } from '../bridge/tokens.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
 import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import { relativeTime } from '../folder-tiles.ts';
@@ -177,6 +176,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Only the first-paint-critical reads run upfront. The Storage section's heavy
   // work is deferred to loadStorage() (run when the section is first expanded).
   const profile = await host.profile.get();
+  // A locked catalog owns the brand — the "Adjust your brand" card's font/import
+  // controls all funnel through installUserTokens, which refuses when locked, so
+  // the card is swapped for a read-only note below (after render).
+  const brandLocked = await (host.tokens as { isLocked?(): Promise<boolean> } | undefined)?.isLocked?.().catch(() => false) ?? false;
   const fields = ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
   const currentTheme = (profile as { theme?: string }).theme ?? localStorage.getItem('theme') ?? 'light';
   // The headshot is a user asset; re-resolve it (the stored object URL goes stale
@@ -256,12 +259,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </form>
       </section>
 
-      <section class="profile-card brand-card" id="brand-card" aria-label="Your brand">
-        <h2>Your brand</h2>
-        <div class="brand-cta-row">
-          <p class="brand-status" id="brand-status">Loading…</p>
-          <a href="#/start" class="profile-btn-primary brand-setup-link" id="brand-setup-link">Set up your brand →</a>
-        </div>
+      <section class="profile-card brand-card" id="brand-card" aria-label="Adjust your brand">
+        <h2>Adjust your brand</h2>
 
         <div class="brand-fonts">
           <h3 class="brand-subhead">Brand fonts</h3>
@@ -482,38 +481,28 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
   }
 
-  // ── Your brand: the prominent #/start pathway (for anyone who missed the
-  // welcome's "make it yours"), the Google-Fonts manager, and the shareable
-  // brand pack. Hydrates immediately — it's IDB reads only, and this card is
-  // the one that must never hide behind a collapsed section. ───────────────────
+  // A locked brand exposes no adjustment controls: swap the whole card for a
+  // read-only note and skip all its wiring (the querySelectors below then find
+  // nothing and no-op — every brand control lives inside #brand-card).
+  if (brandLocked) {
+    const card = viewEl.querySelector('#brand-card');
+    if (card) {
+      card.innerHTML = `
+        <h2>Brand</h2>
+        <p class="storage-hint-text">This build ships with a fixed brand — its colours, fonts and tokens are what the whole app, your tools and every export already wear. Brand adjustment is turned off here.</p>`;
+    }
+  }
+
+  // ── Adjust your brand: the Google-Fonts manager and the shareable brand
+  // pack (the brand-status glance + #/start link now lead the Dashboard).
+  // Hydrates immediately — it's IDB reads only, and this card is the one that
+  // must never hide behind a collapsed section. ─────────────────────────────
   const fontsHost = host as unknown as UserFontsHost;
   const brandErr = viewEl.querySelector<HTMLElement>('#brand-font-error');
   const showBrandError = (msg: string) => {
     if (brandErr) { brandErr.textContent = msg; brandErr.hidden = !msg; }
     if (msg) announce(msg, { assertive: true });
   };
-
-  async function paintBrandStatus(): Promise<void> {
-    const statusEl = viewEl.querySelector<HTMLElement>('#brand-status');
-    const linkEl = viewEl.querySelector<HTMLElement>('#brand-setup-link');
-    if (!statusEl || !linkEl) return;
-    let metaId = '';
-    try {
-      metaId = (await (host.assets as unknown as {
-        _findMetaByType?(t: string): Promise<{ id: string } | null>;
-      })._findMetaByType?.('tokens'))?.id ?? '';
-    } catch { /* discovery unavailable — show the unbranded pathway */ }
-    if (metaId === USER_TOKENS_ID) {
-      statusEl.innerHTML = 'Your brand is installed — every tool, page and export wears it.';
-      linkEl.textContent = 'Adjust your brand →';
-    } else if (metaId) {
-      statusEl.innerHTML = 'Running the catalogue’s built-in brand. Derive your own from a single colour — it takes a minute and stays on this device.';
-      linkEl.textContent = 'Set up your brand →';
-    } else {
-      statusEl.innerHTML = 'This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.';
-      linkEl.textContent = 'Set up your brand →';
-    }
-  }
 
   function fontRowHtml(f: UserFontFamily): string {
     return `
@@ -557,7 +546,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     }
     list.innerHTML = rows.join('');
   }
-  void paintBrandStatus();
   void paintFontList();
 
   // Add a family — the module downloads it, stores the faces as user assets,
@@ -577,7 +565,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       input.value = '';
       playSfx('saveProfile');
       await paintFontList();
-      await paintBrandStatus(); // a first font installs user tokens → branded
       await refreshCounter();   // the faces live in user storage — remeter
       announce(`Added ${fam.family}${fam.primary ? ' as your primary font' : ''} — stored on this device`);
     } catch (err) {
@@ -595,7 +582,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       try {
         await setPrimaryFont(fontsHost, make.dataset.makePrimary!);
         await paintFontList();
-        await paintBrandStatus();
         announce(`${make.dataset.makePrimary} is now your primary font`);
       } catch (err) { make.disabled = false; showBrandError(String((err as { message?: unknown })?.message ?? err)); }
       return;
@@ -656,7 +642,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       applyTheme(localStorage.getItem('theme') || 'light');
       playSfx('optIn');
       await paintFontList();
-      await paintBrandStatus();
       await refreshCounter();
       const failNote = summary.failedFonts ? ` · ${summary.failedFonts} font file${summary.failedFonts === 1 ? '' : 's'} couldn’t be stored` : '';
       announce(`Brand loaded — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}${summary.tokens ? ', tokens installed' : ''}${failNote}`, summary.failedFonts ? { assertive: true } : undefined);
@@ -715,7 +700,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
     // The grid shows visual uploads only: the headshot is hidden, and the non-visual
-    // user assets (brand tokens doc, font faces — managed in the Your brand card)
+    // user assets (brand tokens doc, font faces — managed in the Adjust your brand card)
     // would render as broken tiles. Their bytes stay in the slice either way.
     const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
     const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));

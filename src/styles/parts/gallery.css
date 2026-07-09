@@ -1257,6 +1257,7 @@ a.gtile-name:focus-visible::after {
   right: 8px;
   z-index: 2;
   display: flex;
+  mix-blend-mode:difference;
   gap: 6px;
 }
 .gtile-iconbtn {
@@ -1279,7 +1280,7 @@ a.gtile-name:focus-visible::after {
   border-color: hsl(var(--primary) / 0.5);
   background: hsl(var(--primary) / 0.08);
 }
-.gtile-iconbtn svg { width: 15px; height: 15px; }
+.gtile-iconbtn svg { width: 15px; height: 15px; stroke-width:2.5px}
 /* Favourite (star) toggle — filled + accented when starred, so it reads as "on"
    without needing hover. */
 .gtile-fav.is-fav { color: hsl(var(--primary)); }
@@ -1301,7 +1302,7 @@ a.gtile-name:focus-visible::after {
    drops it when a demo preview 404s and morphs to a text tile). Pixel-identical. */
 .tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-iconbtn {
   color: #fff;
-  filter: drop-shadow(0 0 1px rgba(0, 0, 0, .75)) drop-shadow(0 1px 2px rgba(0, 0, 0, .5));
+
 }
 .tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-iconbtn:hover {
   color: #fff;

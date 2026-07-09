@@ -551,28 +551,9 @@
 .identity-verify-link svg { flex: 0 0 auto; }
 
 
-/* ── Your brand — the prominent #/start pathway, the font manager and the
-      shareable brand pack ─────────────────────────────────────────────────── */
+/* ── Adjust your brand — the font manager and the shareable brand pack (the
+      status glance + #/start link now lead the Dashboard) ───────────────────── */
 .profile-view .brand-card { border-inline-start: 3px solid hsl(var(--primary) / 0.55); }
-.brand-cta-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.brand-status {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
-  color: hsl(var(--muted-foreground));
-  max-width: 52ch;
-}
-.profile-view .brand-setup-link {
-  text-decoration: none;
-  white-space: nowrap;
-  display: inline-block;
-}
 .brand-subhead {
   margin: 1.5rem 0 0.35rem;
   font-size: 12px;
@@ -655,8 +636,3 @@
 }
 .brand-font-add input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .brand-share .storage-actions { margin-top: 0.5rem; }
-
-@media (max-width: 560px) {
-  .brand-cta-row { flex-direction: column; align-items: stretch; }
-  .profile-view .brand-setup-link { text-align: center; }
-}
