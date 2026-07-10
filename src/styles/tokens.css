@@ -30,6 +30,17 @@
   --vf-ai-1: 276 86% 67%;  --vf-ai-2: 262 74% 48%;  --vf-ai: 270 80% 58%;
 }
 
+/* Verify pass/fail/warn — the same page-local status palette used to live scoped to
+   .valid-report (parts/valid.css), but the catalog details modal reuses the verify
+   checker's own step/pill markup inline (catalog.ts), outside that scope, so the vars
+   need to resolve there too. Global + theme-independent for the same reason --vf-ai
+   is: a verdict should read the same vivid green/persimmon/amber in any brand or theme. */
+:root {
+  --vf-pass-1: 150 66% 51%;  --vf-pass-2: 154 58% 33%;  --vf-pass: 151 57% 40%;
+  --vf-fail-1: 20 90% 56%;   --vf-fail-2: 11 80% 42%;   --vf-fail: 15 82% 47%;
+  --vf-warn-1: 44 96% 58%;   --vf-warn-2: 33 90% 47%;   --vf-warn: 36 88% 46%;
+}
+
 /* ─── Light ─────────────────────────────────────────────────────────────── */
 :root,
 [data-theme="light"] {

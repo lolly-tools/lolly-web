@@ -41,17 +41,10 @@
 
 .valid-report {
   margin-top: 1.25rem;
-  /* Page-local status palette. Deliberately theme-independent: the pass/fail
-     chips are struck seals meant to read the SAME vivid green / persimmon off
-     any card in any theme. Each status carries a top→bottom glass gradient
-     (--*-1 light crown, --*-2 deep base), a solid mid tone, and a glow hue.
-     Defined here (not on .valid-result) so the collapsed-summary mini scorecard
-     — rendered in the <summary>, outside .valid-result — inherits it too. */
-  --vf-pass-1: 150 66% 51%;  --vf-pass-2: 154 58% 33%;  --vf-pass: 151 57% 40%;
-  --vf-fail-1: 20 90% 56%;   --vf-fail-2: 11 80% 42%;   --vf-fail: 15 82% 47%;
-  --vf-warn-1: 44 96% 58%;   --vf-warn-2: 33 90% 47%;   --vf-warn: 36 88% 46%;
-  /* --vf-ai-1/2/* (the AI-generated violet) now live in tokens.css :root — they're
-     shared with the catalog's GEN-AI pill and are brand/verdict-independent. */
+  /* --vf-pass/fail/warn-1/2/* (the page-local status palette) and --vf-ai-1/2/*
+     now live in tokens.css :root — pass/fail/warn moved out of this scope so the
+     catalog details modal's inline reuse of the step/pill markup (catalog.ts)
+     resolves the same colours outside .valid-report. */
 }
 .valid-busy { color: hsl(var(--muted-foreground)); }
 /* Context note carried from the catalog "Check credentials" handoff — e.g. that the
@@ -717,8 +710,32 @@
   border-radius: var(--radius);box-shadow: 0 .3rem 1rem #0002, 0 -1px #fff1;
   background: hsl(var(--muted) / 0.22);
 }
-.valid-panel > h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.95rem; }
-.valid-panel > h3 svg { width: 1.05em; height: 1.05em; color: hsl(var(--muted-foreground)); }
+.valid-panel h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.95rem; }
+.valid-panel h3 svg { width: 1.05em; height: 1.05em; color: hsl(var(--muted-foreground)); }
+
+/* Made-from / Change-history fold as native <details>/<summary> (open by default) —
+   works identically wherever the two panels get reused, incl. inline in the catalog
+   details modal (catalog.ts), with no JS wiring needed. Mirrors the profile page's
+   collapsible cards (parts/profile.css .profile-collapse). */
+.valid-panel--collapsible { display: block; padding: 0; }
+.valid-panel--collapsible > summary {
+  display: flex; align-items: center; gap: 0.5rem;
+  list-style: none; cursor: pointer;
+  padding: 1rem 1.1rem 1.15rem;
+}
+.valid-panel--collapsible > summary::-webkit-details-marker { display: none; }
+.valid-panel--collapsible > summary h3 { flex: 1 1 auto; }
+.valid-panel--collapsible > summary:hover h3 { color: hsl(var(--foreground)); }
+.valid-panel--collapsible > summary:focus-visible {
+  outline: 2px solid hsl(var(--ring)); outline-offset: -3px; border-radius: var(--radius);
+}
+.valid-panel-chev { flex: none; width: 16px; height: 16px; color: hsl(var(--muted-foreground)); transition: transform .15s ease; }
+.valid-panel--collapsible[open] > summary .valid-panel-chev { transform: rotate(90deg); }
+.valid-panel--collapsible > summary + .valid-steps-list,
+.valid-panel--collapsible > summary + .valid-input-list {
+  padding: 0 1.1rem 1.15rem;
+}
+@media (prefers-reduced-motion: reduce) { .valid-panel-chev { transition: none; } }
 
 /* ── Change history — the credential's recorded actions as a timeline. Each row
    is anchored by a colour-coded MAKER pill on the left: Lolly reads bold green

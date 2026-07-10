@@ -529,8 +529,10 @@
 .cat-act-share.is-copied { color: hsl(var(--primary)); }
 
 /* ── Content Credentials (details) ── the checker for any inspectable asset, plus the
-   "Made with Lolly" lockup revealed only once the verifier confirms it (openDetails). */
-.cat-details-cred { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin: 0 0 16px; }
+   "Made with Lolly" lockup revealed only once the verifier confirms it (openDetails).
+   Sits last, after every other action (incl. delete) — a quiet, secondary section
+   rather than competing with the primary actions above it. */
+.cat-details-cred { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin: 20px 0 0; padding-top: 16px; border-top: 1px solid hsl(var(--border)); }
 .cat-act-verify svg { width: 15px; height: 15px; }
 
 /* Shared "Made with Lolly" badge (lib/lolly-badge.ts). Green = the same verified /

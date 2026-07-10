@@ -305,10 +305,10 @@ export function inputsDigestHtml(inputs: Record<string, string> | undefined): st
     return `<div class="valid-input-row"><dt>${escape(k)}</dt><dd>${sw}<span>${escape(v)}</span></dd></div>`;
   }).join('');
   return `
-    <div class="valid-inputs valid-panel">
-      <h3>${svgIcon(ICONS.sparkle)}<span>Made from</span></h3>
+    <details class="valid-inputs valid-panel valid-panel--collapsible" open>
+      <summary><h3>${svgIcon(ICONS.sparkle)}<span>Made from</span></h3><span class="valid-panel-chev" aria-hidden="true">${ICON_CHEVRON}</span></summary>
       <dl class="valid-input-list">${rows}</dl>
-    </div>`;
+    </details>`;
 }
 
 // The "checked on this device" footnote, wrapped as a professional callout: a
@@ -673,10 +673,10 @@ export function stepsHtml(report: VerifyReport): string {
       </li>`;
   }).join('');
   return `
-    <div class="valid-steps valid-panel">
-      <h3>${svgIcon(ICONS.clock)}<span>Change history</span></h3>
+    <details class="valid-steps valid-panel valid-panel--collapsible" open>
+      <summary><h3>${svgIcon(ICONS.clock)}<span>Change history</span></h3><span class="valid-panel-chev" aria-hidden="true">${ICON_CHEVRON}</span></summary>
       <ol class="valid-steps-list">${rows}</ol>
-    </div>`;
+    </details>`;
 }
 
 // The assertion/validation log, boxed as a panel matching Change history — the raw,

@@ -1336,11 +1336,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div><dt>ID</dt><dd><code>${escape(ref.id)}</code></dd></div>
           ${tags.length ? `<div><dt>Tags</dt><dd class="cat-details-tags">${tags.map(t => `<span class="cat-tag">${escape(String(t))}</span>`).join('')}</dd></div>` : ''}
         </dl>
-        ${showVerify ? `<div class="cat-details-cred">
-          <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">This file’s Content Credential records a Lolly export, intact.</span></div>
-          <div class="cat-cred-panels" hidden></div>
-          <button type="button" class="btn cat-act-verify" data-act="verify">${SHIELD_ICON}<span>Check Content Credentials</span></button>
-        </div>` : ''}
         ${themable ? `<div class="cat-dl-section"><span class="cat-dl-label">Colours</span>${iconSwatchRow(dTheme)}</div>` : ''}
         ${treatable ? `<div class="cat-dl-section"><span class="cat-dl-label">Colour</span>${treatmentSwatchRow(dTreatment)}</div>` : ''}
         <div class="cat-details-actions">
@@ -1356,6 +1351,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
                 ? `<button type="button" class="btn" data-act="unhide">${EYE_ICON}<span>Unhide</span></button>`
                 : `<button type="button" class="btn cat-act-danger" data-act="hide">${EYE_OFF_ICON}<span>Hide</span></button>`)}
         </div>
+        ${showVerify ? `<div class="cat-details-cred">
+          <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">This file’s Content Credential records a Lolly export, intact.</span></div>
+          <div class="cat-cred-panels" hidden></div>
+          <button type="button" class="btn cat-act-verify" data-act="verify">${SHIELD_ICON}<span>Check Content Credentials</span></button>
+        </div>` : ''}
       </div>`;
     document.body.appendChild(dlg);
     detailsDialog = dlg;
