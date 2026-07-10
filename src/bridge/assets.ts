@@ -411,9 +411,19 @@ export function createAssetsAPI(db: AssetsDb) {
 
     /** Internal: delete one user image and revoke its cached object URL. */
     async _deleteUserAsset(id: string): Promise<void> {
+      // Read the record first: the deletion event below carries its type so
+      // listeners can react without re-querying a store the record just left.
+      const rec = await db.get('user-assets', id).catch(() => undefined) as { type?: string } | undefined;
       await db.delete('user-assets', id);
       // toAssetRef keys user URLs as `user:<id>:<format>:<version>` — evict any.
       evictObjectUrlsByPrefix(`user:${id}:`);
+      // EVERY user-asset delete funnels through here (catalog, picker, folder
+      // overlay, projects) — announce it so cross-cutting reactions (e.g. the
+      // Neurospicy player dropping a deleted audio track, wired in main.ts)
+      // can't be skipped by whichever surface did the deleting.
+      if (typeof document !== 'undefined') {
+        document.dispatchEvent(new CustomEvent('lolly:user-asset-deleted', { detail: { id, type: rec?.type } }));
+      }
     },
 
     /**

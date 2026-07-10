@@ -69,18 +69,24 @@ export function attachAudioMeter(canvas: HTMLCanvasElement, audioEl: HTMLAudioEl
   };
   idle();
 
-  const safeSource = (): boolean => {
+  // 'pending' = no src yet (e.g. a zzfxm song still rendering to its WAV blob) — a
+  // play in that window must NOT latch the canvas hidden; the next 'play' retries.
+  const sourceState = (): 'ok' | 'pending' | 'unsafe' => {
     const src = audioEl.currentSrc || audioEl.src;
-    if (!src) return false;
+    if (!src) return 'pending';
     try {
       const u = new URL(src, location.href);
-      return u.protocol === 'blob:' || u.origin === location.origin;
-    } catch { return false; }
+      return u.protocol === 'blob:' || u.origin === location.origin ? 'ok' : 'unsafe';
+    } catch { return 'unsafe'; }
   };
 
   const ensureGraph = (): boolean => {
     if (analyser) return true;
-    if (!safeSource()) { canvas.hidden = true; return false; }
+    const state = sourceState();
+    if (state !== 'ok') {
+      if (state === 'unsafe') canvas.hidden = true;
+      return false;
+    }
     try {
       const AC = window.AudioContext ?? (window as WinAudio).webkitAudioContext;
       if (!AC) return false;

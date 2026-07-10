@@ -226,7 +226,7 @@
 /* aspect-ratio (not a fixed height) keeps these perfect circles in a cramped flex row:
    when space is tight the width shrinks and the height follows it, instead of the width
    collapsing against a fixed height and squashing the dot into an oval. */
-.plat-theme-dots span { width: 22px; aspect-ratio: 1; min-width: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+.plat-theme-dots span { width: 22px; aspect-ratio: 1; min-width: 0; border-radius: var(--radius); box-shadow: inset 0 0 0 1px hsl(var(--border)); }
 .plat-theme-sample { font-size: 1.6rem; font-weight: 600; }
 
 .plat-stats { display: flex; flex-wrap: wrap; gap: .6rem; }

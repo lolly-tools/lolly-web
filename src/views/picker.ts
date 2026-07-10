@@ -614,6 +614,8 @@ async function render(
       const card = del.closest<HTMLElement>('.asset-picker-card');
       card?.querySelector('.asset-picker-card-error')?.remove(); // clear any prior failure note
       try {
+        // The bridge announces the delete ('lolly:user-asset-deleted', wired in
+        // main.ts), which also drops an audio upload from the Neurospicy player.
         await host.assets._deleteUserAsset(id);
         userAssets = userAssets.filter(a => a.id !== id);
         renderUserAssets();
@@ -2192,6 +2194,11 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     if (ex && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
       // Credentialed AND it fits → ALWAYS verbatim; the C2PA hard binding stays intact + validates.
       keepBytes();
+    } else if (stripMeta && !canStripInPlace) {
+      // Privacy strip is ON but this format can't be scrubbed in place → re-encode (the
+      // only way to drop its metadata). Checked BEFORE the size prompt: "Keep original"
+      // there must never silently override an explicit strip-metadata opt-in.
+      await reencode();
     } else if (isHuge) {
       // Genuinely huge → let the USER decide (the size warning + a bypass) rather than silently
       // shrinking. Escape/Cancel keeps the original (non-destructive). "Keep original" stores it
@@ -2205,10 +2212,6 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       });
       if (picked === 'resize') await reencode();
       else keepBytes();
-    } else if (stripMeta && !canStripInPlace) {
-      // Good size, privacy strip on, but this format can't be scrubbed in place → re-encode
-      // (the only way to drop metadata from a non-png/jpeg).
-      await reencode();
     } else {
       // Good size → keep the exact bytes. keepBytes() still scrubs EXIF/XMP/GPS in place for
       // png/jpeg when the privacy flag is on (no quality loss, C2PA store preserved).
