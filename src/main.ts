@@ -503,6 +503,13 @@ function parseRoute(): Route {
     }
     if (parts[0] === 'profile') return { name: 'profile', params: query || '' };
     if (parts[0] === 'd' || parts[0] === 'dashboard') return { name: 'dashboard', params: query || '' };
+    // /b and /brand are shortlinks straight to the Dashboard's Design System tab.
+    // Redirect (like /platform → /d) so mountDashboard reads ?tab=brand off the hash.
+    if (parts[0] === 'b' || parts[0] === 'brand') {
+      const q = query ? `${query}&tab=brand` : 'tab=brand';
+      window.location.replace(`/#/d?${q}`);
+      return { name: 'dashboard', params: q };
+    }
     // /platform and /capabilities merged into the single Dashboard (#/d). Redirect
     // old links (and their deep-link flags) so bookmarks keep working — the flags
     // still resolve, since the dashboard's sections carry the same data-flag keys.
@@ -552,6 +559,12 @@ function parseRoute(): Route {
     if (pathParts[0] === 'verify' || pathParts[0] === 'valid' || pathParts[0] === 'v') { window.location.replace('/#/verify'); return { name: 'verify' }; }
     // /start is the brand wizard, not a tool shortcut.
     if (pathParts[0] === 'start') { window.location.replace('/#/start'); return { name: 'start' }; }
+    // /b and /brand → the Dashboard's Design System tab (shortlinks, not tools).
+    if (pathParts[0] === 'b' || pathParts[0] === 'brand') {
+      const q = window.location.search ? `${window.location.search.slice(1)}&tab=brand` : 'tab=brand';
+      window.location.replace(`/#/d?${q}`);
+      return { name: 'dashboard', params: q };
+    }
     window.location.replace(`/#/tool/${pathParts[0]}${window.location.search}`);
     return { name: 'gallery' };
   }

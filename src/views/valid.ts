@@ -729,7 +729,11 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
         ${selfnoteBlock}
         ${factsBlock}
       </div>`;
-  const panelsBlock = `<div class="valid-panels">${summaryBlock}${madeFromBlock}${stepsBlock}${checksBlock}</div>`;
+  // Embedded metadata joins the same flowing panel set (not a separate full-width
+  // section below it) so a short card can settle into whatever column has room
+  // instead of always trailing after a long change-history/assertion-log panel.
+  const metaBlock = renderMetadata(meta, preview, fileIndex);
+  const panelsBlock = `<div class="valid-panels">${summaryBlock}${madeFromBlock}${stepsBlock}${checksBlock}${metaBlock}</div>`;
   // The two "key validations" + the signed-by caption shown under the "Made with
   // Lolly" pill — only for the flagship lolly hero; every other good state keeps
   // the single prose sub + identityLine above.
@@ -774,7 +778,6 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       </div>
       ${aiFlagHtml(report)}
       ${panelsBlock}
-      ${renderMetadata(meta, preview, fileIndex)}
       ${watermarkNote(watermark)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
     ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no
@@ -791,6 +794,76 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
         <a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>
         reads the same, with the signer shown as an unknown source (there is no CA behind an on-device key — by design).`) : ''}
     </div>`;
+}
+
+const MASONRY_BREAKPOINT = '(min-width: 780px)';
+
+// True masonry: each card lands in whichever column is CURRENTLY shortest, not
+// wherever a fixed CSS column-count's strictly-sequential fill would put it.
+// column-count fills column 1 (in DOM order) up to a computed height before
+// spilling into column 2 — so one dominant card (a long change history / input
+// record) can tip its ENTIRE column over while a short sibling column sits
+// mostly empty, stranding the next cards behind the tall one instead of beside
+// it. Greedy shortest-column placement is what actually keeps every card
+// visible near the top instead of trailing a long one.
+// Cards are tagged with their template order (data-m-idx) the first time this
+// runs, since shortest-column placement doesn't preserve a simple document-order
+// split — a later re-layout (crossing the column-count breakpoint) needs that
+// original order to rebuild from, not whatever order cards ended up in last time.
+function layoutMasonry(container: HTMLElement): void {
+  if (!container.offsetParent) return; // closed <details> body — re-runs once opened (see wireMasonry)
+  const cols = window.matchMedia(MASONRY_BREAKPOINT).matches ? 2 : 1;
+  if (container.dataset.masonryCols === String(cols)) return;
+  const cards = Array.from(container.querySelectorAll<HTMLElement>('.valid-panel, .valid-meta'));
+  if (!cards.length) return;
+  cards.forEach((c, i) => { if (c.dataset.mIdx === undefined) c.dataset.mIdx = String(i); });
+  cards.sort((a, b) => Number(a.dataset.mIdx) - Number(b.dataset.mIdx));
+  container.dataset.masonryCols = String(cols);
+  // Never open more columns than there are cards — a lone summary panel (no
+  // claim found, so made-from/steps/checks are all empty) should stay full-width
+  // rather than sit at half-width beside a dead empty column.
+  const activeCols = Math.min(cols, cards.length);
+  if (activeCols <= 1) {
+    cards.forEach((c) => container.appendChild(c));
+    container.querySelectorAll(':scope > .valid-panels-col').forEach((el) => el.remove());
+    return;
+  }
+  const colEls = Array.from({ length: activeCols }, () => {
+    const col = document.createElement('div');
+    col.className = 'valid-panels-col';
+    return col;
+  });
+  container.replaceChildren(...colEls);
+  const heights = new Array(activeCols).fill(0);
+  for (const card of cards) {
+    let shortest = 0;
+    for (let i = 1; i < activeCols; i++) if (heights[i]! < heights[shortest]!) shortest = i;
+    colEls[shortest]!.appendChild(card);
+    heights[shortest] = colEls[shortest]!.getBoundingClientRect().height;
+  }
+}
+
+// Wires the column-count breakpoint (re-lays-out every currently-visible
+// .valid-panels on crossing it) and, since a batch report's cards start
+// collapsed (display:none — nothing to measure), a capture-phase `toggle`
+// listener: <details> doesn't bubble that event, but capture still reaches it
+// from an ancestor. Also fires for the "Expand all" button, which flips `.open`
+// programmatically (that still dispatches toggle).
+function wireMasonry(viewEl: HTMLElement, reportEl: HTMLElement): void {
+  const relayout = (): void => {
+    reportEl.querySelectorAll<HTMLElement>('.valid-panels').forEach(layoutMasonry);
+  };
+  reportEl.addEventListener('toggle', (e) => {
+    const details = e.target as HTMLElement;
+    if ((details as HTMLDetailsElement).open) details.querySelectorAll<HTMLElement>('.valid-panels').forEach(layoutMasonry);
+  }, true);
+  const mq = window.matchMedia(MASONRY_BREAKPOINT);
+  mq.addEventListener('change', relayout);
+  const prev = (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup;
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
+    prev?.();
+    mq.removeEventListener('change', relayout);
+  };
 }
 
 export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<void> {
@@ -821,6 +894,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;
   const input = drop.querySelector<HTMLInputElement>('input[type="file"]')!;
   const reportEl = viewEl.querySelector<HTMLElement>('[data-report]')!;
+  wireMasonry(viewEl, reportEl);
 
   // Verify one file's bytes, returning its C2PA report, its embedded metadata
   // (EXIF/XMP/… — PDF via the shell's pdf bridge, everything else on the engine),
@@ -937,6 +1011,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
         ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark)
         : `<p class="valid-busy">Could not check this file: ${escape(error!)}</p>`;
+      const panels = reportEl.querySelector<HTMLElement>('.valid-panels');
+      if (panels) layoutMasonry(panels);
       // Audible verdict, as two composable signals: the spooky ghost "hoooo" marks
       // AI-generated content, the bright "signing" chirps mark an intact Lolly make.
       // A file that's BOTH gets the chirps over the ooo; any OTHER AI file gets the

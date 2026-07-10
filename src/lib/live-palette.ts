@@ -14,6 +14,7 @@
  * regression this fixes.
  */
 import { PALETTE, type PaletteEntry } from '../palette.ts';
+import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
 
 /** The host slice this module reads. */
 interface LivePaletteHost {
@@ -27,6 +28,7 @@ interface LiveSwatch {
   group: string | null;
   value: string;
   cmyk: number[] | null;
+  spot: SpotColor | null;
 }
 
 // A resolved token's `group` is already prettified for display (e.g. a ramp
@@ -43,6 +45,7 @@ export function toPaletteEntry(s: LiveSwatch): PaletteEntry {
     hex: s.value,
     label: s.name,
     cmyk: Array.isArray(s.cmyk) && s.cmyk.length === 4 ? (s.cmyk as [number, number, number, number]) : null,
+    spot: s.spot,
     group: bucket === 'spectrum' ? 'spectrum' : bucket === 'ramp' ? (s.group ?? undefined) : undefined,
   };
 }

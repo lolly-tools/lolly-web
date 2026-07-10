@@ -294,30 +294,48 @@ function seedGenGroup(group: HTMLElement, hex: string): void {
   paintGenGroup(group);
 }
 
+// Pipette glyph for the screen eyedropper button (stroke follows the input's
+// contrast-flipped text colour via currentColor).
+const EYEDROPPER_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>';
+
 // The value input doubles as a live swatch of the current colour: the colour
-// itself as background, a contrast-tinted edge of the same colour as border,
-// and the text flipped to whichever of white/black reads with more contrast
-// (WCAG ratio, engine brand-derive math). Delivered as custom properties
-// (--hexin-*) rather than style longhands so the stylesheet's :focus ring
-// still outranks the border tint.
-function hexInputPaint(rgbHex: string): Record<string, string> {
-  const fg = contrastRatio('#ffffff', rgbHex) >= contrastRatio('#000000', rgbHex) ? '#ffffff' : '#000000';
+// itself (alpha included, over the .color-input--painted checkerboard so a
+// translucent value previews its opacity) as background, a contrast-tinted
+// edge of the same colour as border, and the text flipped to whichever of
+// white/black reads with more contrast (WCAG ratio, engine brand-derive math).
+// Delivered as custom properties (--color-input-*) rather than style longhands
+// so the stylesheet's :focus ring still outranks the border tint.
+const CHECKER_AVG = 0xe6; // the checkerboard's average grey (#fff / #ccc squares)
+function colorInputPaint(hex: string): Record<string, string> {
+  const rgb = hex.slice(0, 7);
+  const a = hex.length === 9 ? parseInt(hex.slice(7, 9), 16) / 255 : 1;
+  // Judge contrast against what the eye actually sees: a translucent colour
+  // composites over the checkerboard, so blend toward its average grey first.
+  const eff = '#' + [1, 3, 5].map((i) => {
+    const c = parseInt(rgb.slice(i, i + 2), 16);
+    return Math.round(c * a + CHECKER_AVG * (1 - a)).toString(16).padStart(2, '0');
+  }).join('');
+  const fg = contrastRatio('#ffffff', eff) >= contrastRatio('#000000', eff) ? '#ffffff' : '#000000';
   return {
-    '--hexin-bg': rgbHex,
-    '--hexin-border': `color-mix(in oklab, ${rgbHex}, ${fg} 25%)`,
-    '--hexin-fg': fg,
+    '--color-input-bg': hex,
+    '--color-input-border': `color-mix(in oklab, ${rgb}, ${fg} 25%)`,
+    '--color-input-fg': fg,
   };
 }
 
 /** (Re)paint a value input as the given colour's swatch — or back to the
- *  neutral chrome when the value has no colour (transparent / mid-edit junk). */
-function paintHexInput(input: HTMLInputElement | null, value: string): void {
+ *  neutral chrome when the value has no colour (transparent / mid-edit junk).
+ *  The custom props land on the .color-input-wrap (they inherit), so the
+ *  eyedropper button beside the input flips contrast along with the text. */
+function paintColorInput(input: HTMLInputElement | null, value: string): void {
   if (!input) return;
-  const rgb = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value) ? value.slice(0, 7) : null;
-  const paint = rgb ? hexInputPaint(rgb) : null;
-  for (const p of ['--hexin-bg', '--hexin-border', '--hexin-fg']) {
-    if (paint) input.style.setProperty(p, paint[p]!);
-    else input.style.removeProperty(p);
+  const hex = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value) ? value : null;
+  const paint = hex ? colorInputPaint(hex) : null;
+  input.classList.toggle('color-input--painted', Boolean(paint));
+  const holder = input.closest<HTMLElement>('.color-input-wrap') ?? input;
+  for (const p of ['--color-input-bg', '--color-input-border', '--color-input-fg']) {
+    if (paint) holder.style.setProperty(p, paint[p]!);
+    else holder.style.removeProperty(p);
   }
 }
 
@@ -362,9 +380,12 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       <span class="color-trigger-name">${escape(name)}</span>
     </button>`}
     <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
-      ${swatchesOnly ? '' : `<input type="text" class="color-hex-input" data-color-hex="${eid}"
+      ${swatchesOnly ? '' : `<div class="color-input-wrap"${isHex6 || isHex8 ? ` style="${Object.entries(colorInputPaint(hexDisplay)).map(([k, v]) => `${k}:${v}`).join(';')}"` : ''}>
+      <input type="text" class="color-input${isHex6 || isHex8 ? ' color-input--painted' : ''}" data-color-hex="${eid}"
              value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}"
-             ${isHex6 || isHex8 ? `style="${Object.entries(hexInputPaint(rgbHex)).map(([k, v]) => `${k}:${v}`).join(';')}" ` : ''}${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
+             ${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
+      <button type="button" class="color-eyedropper" data-color-eyedropper="${eid}" aria-label="Pick a colour from your screen" title="Pick a colour from your screen">${EYEDROPPER_ICON}</button>
+      </div>
       ${modes ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null) : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
@@ -545,7 +566,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   const writeValueField = (id: string, field: HTMLElement | null, fullHex: string): void => {
     const input = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
     if (!input) return;
-    paintHexInput(input, fullHex);
+    paintColorInput(input, fullHex);
     if (input === document.activeElement) return;
     const fmt = valueFmt(field);
     input.value = fmt ? formatColor(fmt, fullHex) : fullHex;
@@ -862,8 +883,41 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     });
   });
 
+  // ── Screen eyedropper ────────────────────────────────────────────────────────
+  // The EyeDropper API's overlay samples ANYWHERE on screen — other windows and
+  // the desktop included, not just this page (Chromium; secure contexts). Where
+  // it doesn't exist (Firefox/Safari, the Tauri WebViews) the button is removed,
+  // never a dead control. The picked colour applies exactly like a native-picker
+  // change: current alpha kept, sliders re-seeded, trigger + host notified. The
+  // OS overlay swallows pointer events, so the popover's close-on-outside never
+  // fires mid-pick; interact() still brackets it like a slider drag so hosts
+  // hold their popover/undo grouping open.
+  scope.querySelectorAll<HTMLButtonElement>('.color-eyedropper[data-color-eyedropper]').forEach(btn => {
+    type EyeDropperCtor = new () => { open(): Promise<{ sRGBHex: string }> };
+    const EyeDropper = (window as { EyeDropper?: EyeDropperCtor }).EyeDropper;
+    if (!EyeDropper) { btn.remove(); return; }
+    const id = btn.dataset.colorEyedropper!;
+    const field = btn.closest<HTMLElement>('[data-color-field]');
+    btn.addEventListener('click', async () => {
+      interact(true);
+      try {
+        const rgbHex = (await new EyeDropper().open()).sRGBHex.toLowerCase();
+        const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
+        const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
+        const fullHex = alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex;
+        const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
+        if (native) native.value = rgbHex;
+        writeValueField(id, field, fullHex);
+        if (field) seedLch(field, fullHex);
+        updateTrigger(field, fullHex);
+        onChange(id, fullHex);
+      } catch { /* Esc / dismissed — nothing picked */ }
+      finally { interact(false); }
+    });
+  });
+
   // ── Hex text entry ───────────────────────────────────────────────────────────
-  scope.querySelectorAll<HTMLInputElement>('.color-hex-input[data-color-hex]').forEach(hexInput => {
+  scope.querySelectorAll<HTMLInputElement>('.color-input[data-color-hex]').forEach(hexInput => {
     const id = hexInput.dataset.colorHex!;
     const field = hexInput.closest<HTMLElement>('[data-color-field]');
     hexInput.addEventListener('focus', () => interact(true));
@@ -886,7 +940,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       if (alphaSlider) alphaSlider.value = String(alphaInt);
       if (alphaPctEl) alphaPctEl.textContent = Math.round(alphaInt / 255 * 100) + '%';
       const finalVal = (alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex).toLowerCase();
-      paintHexInput(hexInput, finalVal);   // typing repaints the swatch chrome live
+      paintColorInput(hexInput, finalVal);   // typing repaints the swatch chrome live
       if (field) seedLch(field, finalVal);
       updateTrigger(field, finalVal);
       onChange(id, finalVal);

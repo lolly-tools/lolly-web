@@ -62,7 +62,15 @@ interface WebIdentityAPI { signer(): Promise<unknown>; }
 type WebHost = HostV1 & { identity?: WebIdentityAPI };
 
 // The shell's brand palette entries fed via opts.palette (hex + CMYK 0–100).
-interface BrandPaletteEntry { hex?: string; cmyk?: number[]; label?: string; }
+// spot: a named spot/Pantone lock (mutually exclusive with a bare cmyk anchor) —
+// its own cmyk is the equivalent used for preview / non-PDF export / the PDF
+// Separation tint-transform's alternate space (see buildCmykPaletteMap).
+interface BrandPaletteEntry {
+  hex?: string;
+  cmyk?: number[];
+  label?: string;
+  spot?: { name: string; book?: string; cmyk: readonly number[] } | null;
+}
 
 // The union of options this host's export path understands. A superset of the
 // engine's ExportOpts — the extra fields (print marks, video timing, c2pa, …)
@@ -506,9 +514,14 @@ function flattenRgb(rgba: Uint8ClampedArray): Uint8Array {
 // A print-grade CMYK TIFF, written by hand (no browser TIFF encoder exists; this
 // is the same hand-rolled-binary approach used for PNG chunks / EXIF / ICC). The
 // canvas is rasterised like the other raster formats, its sRGB pixels converted
-// per-pixel to *device* CMYK via the engine's rgbToCmyk (Path 1: no ICC transform,
-// no brand-palette substitution — incidental colours only), stored uncompressed in
-// a single strip.
+// per-pixel to *device* CMYK via the engine's rgbToCmyk, except where a pixel's
+// exact colour matches a brand-palette entry (buildCmykPaletteMap, shared with the
+// CMYK PDF path) — then the swatch's locked CMYK (or, for a spot-locked swatch,
+// its CMYK equivalent) is used instead of the naive conversion. A single flat
+// raster has no per-plate channel for a named ink, so a spot lock only ever
+// contributes its CMYK equivalent here — true Separation output is a PDF-only
+// capability (see renderCmykPdf); this is a deliberate scope limit, not a bug.
+// Stored uncompressed in a single strip.
 //
 // Print finishing mirrors the Print PDF, on the same engine geometry
 // (computePrintGeometry): when bleed/marks are requested the design is stretched to
@@ -516,8 +529,8 @@ function flattenRgb(rgba: Uint8ClampedArray): Uint8Array {
 // marks + colour bar are rasterised straight into the CMYK buffer AFTER the
 // conversion — so the line marks land on every plate (C=M=Y=K=255, the raster
 // analogue of the PDF's 1 1 1 1 registration ink) instead of being remapped by the
-// naive per-pixel pass. The bar is the generic process/overprint/tint control strip
-// (the raster does no exact substitution, so there's nothing to verify).
+// naive per-pixel pass. The bar itself stays the generic process/overprint/tint
+// control strip (unlike the PDF path, the verification pairing isn't rebuilt here).
 //
 // Deliberately untagged DeviceCMYK: there is NO embedded output profile (a real
 // profile over the naive conversion would mislabel the file). The chosen press
@@ -529,9 +542,11 @@ function flattenRgb(rgba: Uint8ClampedArray): Uint8Array {
 async function renderCmykTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   const lib = await getDomToImage();
   const d = exportDims(node, opts);
-  // Print finishing geometry — same engine source of truth as the PDF path. Pass
-  // no palette: the raster is a flat per-pixel conversion with no exact brand
-  // substitution to verify, so the colour bar stays the generic control strip.
+  const paletteMap = buildCmykPaletteMap(opts.palette ?? []);
+  // Print finishing geometry — same engine source of truth as the PDF path. Still
+  // pass no palette here: the verification bar's brand pairing is rebuilt from the
+  // PDF path's `usedKeys` (an exact-substitution audit trail this per-pixel pass
+  // doesn't produce), so it stays the generic process/overprint/tint control strip.
   const geo = printGeometry(node, opts, []);
   const ptPx  = (v: number) => Math.round(v * d.dpi / 72);        // points → device px (offset)
   const ptDim = (v: number) => Math.max(1, ptPx(v));              // points → device px (size)
@@ -566,7 +581,7 @@ async function renderCmykTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const rgba = ctx.getImageData(0, 0, W, H).data;   // sRGB, straight (un-premultiplied)
-  const cmyk = await rgbaToDeviceCmyk(rgba, W, H, opts.onProgress);
+  const cmyk = await rgbaToDeviceCmyk(rgba, W, H, paletteMap, opts.onProgress);
 
   // Marks drawn AFTER conversion → registration/crop/bleed land on every plate;
   // provenance credit text is composited as K-only ink (see drawPrintMarksCmyk).
@@ -581,13 +596,19 @@ async function renderCmykTiff(node: Element, opts: ExportOpts): Promise<Blob> {
 // has no alpha channel and print stock is white). ~tens of ms for 1080², but a
 // large print-DPI sheet runs long on the main thread, so the pass yields to the
 // event loop every YIELD_ROWS scanlines (keeping the tab responsive) and reports
-// row progress through opts.onProgress. The arithmetic is unchanged — same bytes.
+// row progress through opts.onProgress. paletteMap (built once by the caller from
+// opts.palette, same as the CMYK PDF path) is consulted per pixel for an exact
+// brand-swatch match before falling back to the naive conversion — an empty map
+// (the common case, no locks configured) skips the lookup entirely so the hot
+// loop's arithmetic is otherwise unchanged.
 const YIELD_ROWS = 256;
 async function rgbaToDeviceCmyk(
   rgba: Uint8ClampedArray, W: number, H: number,
+  paletteMap: Map<string, PaletteHit>,
   onProgress?: (done: number, total: number) => void,
 ): Promise<Uint8Array> {
   const out = new Uint8Array(W * H * 4);
+  const hasPalette = paletteMap.size > 0;
   for (let row = 0; row < H; row++) {
     const base = row * W * 4;
     for (let i = base, end = base + W * 4; i < end; i += 4) {
@@ -597,7 +618,9 @@ async function rgbaToDeviceCmyk(
         const t = a / 255, u = 255 * (1 - t);
         r = r * t + u; g = g * t + u; b = b * t + u;
       }
-      const [c, m, y, k] = rgbToCmyk(r / 255, g / 255, b / 255);
+      const rf = r / 255, gf = g / 255, bf = b / 255;
+      const hit = hasPalette ? paletteMap.get(cmykKey(rf, gf, bf)) : undefined;
+      const [c, m, y, k] = hit ? hit.cmyk : rgbToCmyk(rf, gf, bf);
       out[i]     = (c * 255 + 0.5) | 0;
       out[i + 1] = (m * 255 + 0.5) | 0;
       out[i + 2] = (y * 255 + 0.5) | 0;
@@ -1240,9 +1263,14 @@ async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
 
 // EPS is a fourth sink on the SVG vector pipeline (alongside SVG, PDF, and EMF):
 // same outlined-SVG → engine IR (svgDomToIr) walk, then serialised to PostScript
-// text by emitEps. Device RGB (cmyk=false) or naive DeviceCMYK (cmyk=true, no
-// embedded output intent); gradients/images/alpha are flattened to solids
-// upstream and text is outlined upstream, so the emitter ships no fonts.
+// text by emitEps. Device RGB (cmyk=false) or DeviceCMYK (cmyk=true): an exact
+// brand-palette match (buildCmykPaletteMap, shared with the CMYK PDF/TIFF paths)
+// substitutes its locked CMYK — a spot lock's CMYK equivalent, same as the CMYK
+// TIFF path, since a true PostScript /Separation colourspace is out of scope for
+// this pass (see renderCmykPdf for the PDF path, which does emit one) — else the
+// naive conversion. No embedded output intent; gradients/images/alpha are
+// flattened to solids upstream and text is outlined upstream, so the emitter
+// ships no fonts.
 async function renderEps(node: Element, opts: ExportOpts = {}, cmyk = false): Promise<Blob> {
   let svgEl: Element | null = node.tagName?.toLowerCase() === 'svg' ? node : (node.querySelector?.('svg') ?? null);
   if (!svgEl) {
@@ -1256,7 +1284,11 @@ async function renderEps(node: Element, opts: ExportOpts = {}, cmyk = false): Pr
     background: opts.background,
     label: 'EPS',
   });
-  const text = emitEps(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, cmyk, meta: opts.meta as { title?: string } | undefined });
+  const text = emitEps(ir, {
+    width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, cmyk,
+    meta: opts.meta as { title?: string } | undefined,
+    ...(cmyk ? { cmykPalette: buildCmykPaletteMap(opts.palette ?? []) } : {}),
+  });
   return new Blob([text], { type: 'application/postscript' });
 }
 
@@ -2297,25 +2329,28 @@ function printGeometry(node: Element, opts: ExportOpts, paletteSource: BrandPale
   return computePrintGeometry({ trimWpt: toPoints(d.w), trimHpt: toPoints(d.h), bleedPt, marks, palette });
 }
 
-// Normalise the shell's brand palette (hex + CMYK 0–100) into the engine's
-// colour-bar form: { rgb, cmyk } both 0–1, plus a label. Only entries with a
-// declared CMYK substitution qualify (the others fall back to generic RGB→CMYK
-// at render time and so have nothing to verify). Deduped by hex+ink, since the
-// palette repeats Black/White as ramp endpoints; order is preserved so the
-// primary brand hues lead and survive the flat cell cap.
-function brandSwatchPalette(palette: BrandPaletteEntry[] | undefined): { rgb: Rgb; cmyk: [number, number, number, number]; label?: string }[] {
-  const out: { rgb: Rgb; cmyk: [number, number, number, number]; label?: string }[] = [], seen = new Set<string>();
-  for (const { hex, cmyk, label } of palette ?? []) {
-    if (!hex || !cmyk || cmyk.length !== 4) continue;
+// Normalise the shell's brand palette (hex + CMYK 0–100, or a spot lock's own
+// hex + CMYK-equivalent) into the engine's colour-bar form: { rgb, cmyk } both
+// 0–1, plus a label and — for a spot-locked swatch — its ink name, so the shell's
+// bar renderer can annotate the pair with the name instead of raw CMYK numbers.
+// Only entries with a declared CMYK substitution qualify (the others fall back to
+// generic RGB→CMYK at render time and so have nothing to verify). Deduped by
+// hex+ink, since the palette repeats Black/White as ramp endpoints; order is
+// preserved so the primary brand hues lead and survive the flat cell cap.
+function brandSwatchPalette(palette: BrandPaletteEntry[] | undefined): { rgb: Rgb; cmyk: [number, number, number, number]; label?: string; spotName?: string }[] {
+  const out: { rgb: Rgb; cmyk: [number, number, number, number]; label?: string; spotName?: string }[] = [], seen = new Set<string>();
+  for (const { hex, cmyk, label, spot } of palette ?? []) {
+    const source = spot?.cmyk ?? cmyk;
+    if (!hex || !source || source.length !== 4) continue;
     const h = hex.replace('#', '').toLowerCase();
     if (h.length !== 6) continue;                         // skips 'transparent' etc.
-    const key = `${h}:${cmyk.join(',')}`;
+    const key = `${h}:${source.join(',')}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const r = parseInt(h.slice(0, 2), 16) / 255;
     const g = parseInt(h.slice(2, 4), 16) / 255;
     const b = parseInt(h.slice(4, 6), 16) / 255;
-    out.push({ rgb: [r, g, b], cmyk: cmyk.map(v => v / 100) as [number, number, number, number], label });
+    out.push({ rgb: [r, g, b], cmyk: source.map(v => v / 100) as [number, number, number, number], label, spotName: spot?.name });
   }
   return out;
 }
@@ -4543,7 +4578,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   const rgbBlob = await renderArtworkPdf(node, opts, geo);
   const rgbBytes = new Uint8Array(await rgbBlob.arrayBuffer());
 
-  const { PDFDocument, PDFName, PDFNumber } = await import('pdf-lib') as any;
+  const { PDFDocument, PDFName, PDFNumber, PDFDict } = await import('pdf-lib') as any;
   const pdfDoc = await PDFDocument.load(rgbBytes);
   const m = opts.meta;
   const creator = m?.software || 'Lolly';
@@ -4557,7 +4592,9 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
     if (kw.length) pdfDoc.setKeywords(kw);
   }
   const paletteMap = buildCmykPaletteMap(opts.palette ?? []);
+  const spotResourceNames = assignSpotResourceNames(paletteMap);
   const usedKeys = new Set<string>();   // brand palette keys actually hit during substitution
+  const usedSpots = new Set<string>();  // spot names actually referenced by a content stream
 
   for (const [, obj] of pdfDoc.context.enumerateIndirectObjects()) {
     if (!(obj.contents instanceof Uint8Array)) continue;
@@ -4581,7 +4618,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
     const text = new TextDecoder('latin1').decode(raw);
     if (!/\brg\b|\bRG\b/.test(text)) continue;
 
-    const modified = substitutePdfRgb(text, paletteMap, usedKeys);
+    const modified = substitutePdfRgb(text, paletteMap, spotResourceNames, usedKeys, usedSpots);
     if (modified === text) continue;
 
     const modBytes = Uint8Array.from(modified, c => c.charCodeAt(0));
@@ -4592,6 +4629,34 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
     obj.contents = recompressed;
     dict.set(PDFName.of('Length'), PDFNumber.of(recompressed.length));
     if (!filter) dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+  }
+
+  // Materialise a /Separation colourspace for every spot a content stream actually
+  // referenced above: one Type-2 exponential tint-transform function per spot (a
+  // linear ramp from "no ink" at tint 0 to the spot's CMYK equivalent at tint 1 —
+  // the standard "spot ink with a process alternate" construction) plus the
+  // colourspace array itself, both registered as fresh indirect objects the same
+  // way applyPdfX/setPdfxOutputIntent registers the OutputIntent's ICC stream
+  // below — then wired into the single artwork page's /Resources/ColorSpace dict
+  // under the name substitutePdfRgb already wrote into the content stream
+  // ("/CSn cs"/"/CSn CS"). Deferred until after the enumeration loop so no new
+  // indirect object is registered while pdfDoc.context.enumerateIndirectObjects()
+  // is being walked.
+  if (usedSpots.size) {
+    const page = pdfDoc.getPage(0);
+    const resources = page.node.Resources() || pdfDoc.context.obj({});
+    page.node.set(PDFName.of('Resources'), resources);
+    const csDict = resources.lookupMaybe(PDFName.of('ColorSpace'), PDFDict) || pdfDoc.context.obj({});
+    resources.set(PDFName.of('ColorSpace'), csDict);
+    for (const hit of paletteMap.values()) {
+      const spot = hit.spot;
+      if (!spot || !usedSpots.has(spot.name)) continue;
+      const resourceName = spotResourceNames.get(spot.name)!;
+      if (csDict.get(PDFName.of(resourceName))) continue; // already wired (dup palette entries)
+      const fn = pdfDoc.context.obj({ FunctionType: 2, Domain: [0, 1], C0: [0, 0, 0, 0], C1: spot.cmyk, N: 1 });
+      const csArr = pdfDoc.context.obj(['Separation', spot.name, 'DeviceCMYK', pdfDoc.context.register(fn)]);
+      csDict.set(PDFName.of(resourceName), pdfDoc.context.register(csArr));
+    }
   }
 
   // Print finishing in DeviceCMYK, drawn after the colour swap so registration
@@ -4628,20 +4693,43 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   return opts.strongPassword ? encryptPdfStrong(cmykBlob, opts.strongPassword) : cmykBlob;
 }
 
-// Builds a lookup map from quantised RGB keys (derived from palette hex values)
-// to CMYK 4-tuples in 0–1 range. Used by substitutePdfRgb for exact brand matches.
-function buildCmykPaletteMap(palette: BrandPaletteEntry[]): Map<string, [number, number, number, number]> {
-  const map = new Map<string, [number, number, number, number]>();
-  for (const { hex, cmyk } of palette) {
-    if (!hex || !cmyk || cmyk.length !== 4) continue;
+// A resolved brand-palette hit: the CMYK 4-tuple (0–1) to substitute — a plain
+// process-locked (or auto-derived-and-measured) swatch's own cmyk, or a spot-locked
+// swatch's CMYK *equivalent* — plus, when the swatch is spot-locked, the spot's
+// name for a true /Separation colourspace substitution in the PDF path (the other
+// CMYK paths — TIFF, EPS — only ever use .cmyk; see their own scope notes).
+interface PaletteSpotHit { name: string; cmyk: [number, number, number, number]; }
+interface PaletteHit { cmyk: [number, number, number, number]; spot?: PaletteSpotHit; }
+
+// Builds a lookup map from quantised RGB keys (derived from palette hex values) to
+// their locked CMYK (+ optional spot name). Shared by every CMYK export path
+// (PDF/TIFF/EPS) for exact brand-swatch matches.
+function buildCmykPaletteMap(palette: BrandPaletteEntry[]): Map<string, PaletteHit> {
+  const map = new Map<string, PaletteHit>();
+  for (const { hex, cmyk, spot } of palette) {
+    const source = spot?.cmyk ?? cmyk;
+    if (!hex || !source || source.length !== 4) continue;
     const h = hex.replace('#', '').toLowerCase();
     if (h.length !== 6) continue;
     const r = parseInt(h.slice(0, 2), 16) / 255;
     const g = parseInt(h.slice(2, 4), 16) / 255;
     const b = parseInt(h.slice(4, 6), 16) / 255;
-    map.set(cmykKey(r, g, b), cmyk.map(v => v / 100) as [number, number, number, number]);
+    const frac = source.map(v => v / 100) as [number, number, number, number];
+    map.set(cmykKey(r, g, b), spot ? { cmyk: frac, spot: { name: spot.name, cmyk: frac } } : { cmyk: frac });
   }
   return map;
+}
+
+// Deterministic /CSn resource names for every spot-locked entry in a palette map,
+// assigned up front so substitutePdfRgb can write the final name into the content
+// stream before the matching PDF colourspace object exists — renderCmykPdf only
+// actually creates that object, lazily, for a spot a content stream really used.
+function assignSpotResourceNames(paletteMap: Map<string, PaletteHit>): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const hit of paletteMap.values()) {
+    if (hit.spot && !names.has(hit.spot.name)) names.set(hit.spot.name, `CS${names.size + 1}`);
+  }
+  return names;
 }
 
 // Quantise an RGB triple (0–1) to a brand-match key. The precision MUST match
@@ -4663,15 +4751,15 @@ function paletteHitKey(p: BrandPaletteEntry): string | null {
   return cmykKey(parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255);
 }
 
-// Converts PDF-space RGB (0–1) to CMYK (0–1), preferring an exact palette match
-// (measured brand inks) before the engine's generic device-CMYK conversion. On a
-// brand match the matched key is recorded in `used`, so the verification colour
-// bar can show only the inks that were actually substituted.
-function pdfRgbToCmyk(r: number, g: number, b: number, paletteMap: Map<string, [number, number, number, number]>, used?: Set<string>): [number, number, number, number] {
+// Resolves PDF-space RGB (0–1) against the brand palette map, recording a hit
+// (numeric or spot) into `used` so the verification colour bar can show only the
+// inks that actually substituted. Returns null on a miss (caller falls back to the
+// engine's generic device-CMYK conversion).
+function pdfColorHit(r: number, g: number, b: number, paletteMap: Map<string, PaletteHit>, used?: Set<string>): PaletteHit | null {
   const key = cmykKey(r, g, b);
   const hit = paletteMap.get(key);
-  if (hit) { used?.add(key); return hit; }
-  return rgbToCmyk(r, g, b);
+  if (hit) used?.add(key);
+  return hit ?? null;
 }
 
 // Formats a CMYK component (0–1) as a compact decimal string for PDF output.
@@ -4679,18 +4767,34 @@ function cmykN(v: number): string {
   return v.toFixed(4).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') || '0';
 }
 
-// Replaces `r g b rg` and `r g b RG` operators with their CMYK equivalents.
-// `used` (optional) collects the brand palette keys that matched.
-function substitutePdfRgb(text: string, paletteMap: Map<string, [number, number, number, number]>, used?: Set<string>): string {
+// Replaces `r g b rg` / `r g b RG` operators with their CMYK equivalents — a plain
+// DeviceCMYK "k"/"K" operator for a process-locked (or auto-derived, or naive
+// fallback) match, or, for a spot-locked match, a switch to that spot's
+// /Separation colourspace at full tint ("/CSn cs 1 scn" / "/CSn CS 1 SCN" — the
+// resource name comes from spotNames, assigned by assignSpotResourceNames). `used`
+// collects the brand palette keys that matched (for the colour bar); `usedSpots`
+// collects the spot names actually referenced, so renderCmykPdf only materialises
+// a /Separation object for spots a content stream really uses.
+function substitutePdfRgb(
+  text: string,
+  paletteMap: Map<string, PaletteHit>,
+  spotNames: Map<string, string>,
+  used?: Set<string>,
+  usedSpots?: Set<string>,
+): string {
   const N = '([+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)';
   const W = '[\\s]+';
   return text
     .replace(new RegExp(`${N}${W}${N}${W}${N}${W}\\brg\\b`, 'g'), (_, r, g, b) => {
-      const [c, m, y, k] = pdfRgbToCmyk(+r, +g, +b, paletteMap, used);
+      const hit = pdfColorHit(+r, +g, +b, paletteMap, used);
+      if (hit?.spot) { usedSpots?.add(hit.spot.name); return `/${spotNames.get(hit.spot.name)} cs 1 scn`; }
+      const [c, m, y, k] = hit ? hit.cmyk : rgbToCmyk(+r, +g, +b);
       return `${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} k`;
     })
     .replace(new RegExp(`${N}${W}${N}${W}${N}${W}\\bRG\\b`, 'g'), (_, r, g, b) => {
-      const [c, m, y, k] = pdfRgbToCmyk(+r, +g, +b, paletteMap, used);
+      const hit = pdfColorHit(+r, +g, +b, paletteMap, used);
+      if (hit?.spot) { usedSpots?.add(hit.spot.name); return `/${spotNames.get(hit.spot.name)} CS 1 SCN`; }
+      const [c, m, y, k] = hit ? hit.cmyk : rgbToCmyk(+r, +g, +b);
       return `${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} K`;
     });
 }

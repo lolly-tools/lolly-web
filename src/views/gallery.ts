@@ -454,21 +454,11 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     if (savedView && (FEATURED_VIEWS as readonly string[]).includes(savedView)) featuredView = savedView as FeaturedViewMode;
   } catch { /* storage off */ }
 
-  // A second featured strip at the very bottom, showcasing the on-device Utilities —
-  // minus any already pinned up top (layout-studio is both a utility AND sticky-featured).
-  // These mostly have no live variants (transforms), so they show their committed preview.
-  const featuredIds = new Set(featuredEntries.map(e => e.id));
-  const utilityEntries: FeaturedEntry[] = index.tools
-    .filter(t => t.category === 'utility' && !hidden.has(t.category) && !featuredIds.has(t.id))
-    .map(t => ({
-      id: t.id, name: t.name, preview: t.preview, icon: t.icon, formats: t.formats,
-      status: t.status, isNew: isNew(t.id), examples: t.examples, featured: t.featured ?? { blurb: t.description },
-    }));
-
-  // Utilities are shown ONLY in their own strip at the bottom now, never as a grid
-  // category — so drop them from the grid's category list (and its filter pill).
+  // Utilities live in the grid like every other category now — their own "Utilities"
+  // filter pill, always sorted LAST (categoryRank → Infinity). The old bottom carousel
+  // is gone; a utility renders as a regular tile.
   const visibleCats = Object.keys(grouped)
-    .filter(cat => cat !== 'utility' && !hidden.has(cat))
+    .filter(cat => !hidden.has(cat))
     .sort((a, b) => categoryRank(a) - categoryRank(b));
 
   // Render shell. The pill bar + masonry are filled by render(); the footer
@@ -528,7 +518,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
         ${featuredEntries.length ? '<div class="featured-mount"></div>' : ''}
         <p class="gallery-search-status visually-hidden" role="status" aria-live="polite"></p>
         <div class="tool-masonry"></div>
-        ${utilityEntries.length ? '<div class="featured-mount featured-mount--utilities"></div>' : ''}
       `}
 
       ${footerNav({
@@ -596,10 +585,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   // Utilities. Both render + cache their own looks lazily; the gallery toggles their
   // visibility as the search / filter / hide-previews state changes, and drives the
   // view mode (Gallery | Cover Flow) of both from one control.
-  const featuredMount = viewEl.querySelector<HTMLElement>('.featured-mount:not(.featured-mount--utilities)');
-  const utilMount = viewEl.querySelector<HTMLElement>('.featured-mount--utilities');
+  const featuredMount = viewEl.querySelector<HTMLElement>('.featured-mount');
   let featuredHandle: FeaturedRowHandle | null = null;
-  let utilitiesHandle: FeaturedRowHandle | null = null;
   cleanups.push(() => featuredHandle?.destroy());
   // (Re)mount the featured hero strip with the given entries, destroying any prior
   // instance first. Called on mount and again whenever favourites change (a starred tool
@@ -619,15 +606,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     updateFeaturedVisibility();
   }
   if (featuredMount) mountFeatured(featuredEntries);
-  if (utilMount && utilityEntries.length) {
-    utilitiesHandle = mountFeaturedRow(utilMount, utilityEntries, host, {
-      viewMode: featuredView,
-      label: 'Utilities',
-      labelHref: '/info/#faq-what-makes-utilities-different-from-tools',
-      labelHelp: 'What makes utilities different from tools?',
-    });
-    cleanups.push(() => utilitiesHandle?.destroy());
-  }
   // Featured view-mode segmented control (Gallery | Cover Flow) in the filter popover —
   // drives BOTH strips.
   // Scoped to the Featured-view seg specifically — the popover now also holds a Theme
@@ -647,15 +625,15 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     try { localStorage.setItem(FEATURED_VIEW_STORAGE, featuredView); } catch { /* storage off */ }
     paintViewSeg();
     featuredHandle?.setViewMode(featuredView);
-    utilitiesHandle?.setViewMode(featuredView);
     // Each mode has its own character: Cover Flow = cool & futuristic, Gallery = refined.
     if (changed) playSfx(featuredView === 'coverflow' ? 'coverflow' : 'gallery');
   });
-  // Landing state only: the strips are noise above a searched/filtered/compact grid.
+  // Landing state only: the strip is noise above a searched/filtered grid. It is KEPT
+  // (collapsed to icon + text via .hide-previews) when previews are off — it doesn't
+  // disappear, so the featured picks stay reachable.
   function updateFeaturedVisibility(): void {
-    const show = !query && activeCat === 'all' && !hidePreviews;
+    const show = !query && activeCat === 'all';
     if (featuredMount && featuredHandle) { featuredMount.hidden = !show; featuredHandle.setVisible(show); }
-    if (utilMount && utilitiesHandle) { utilMount.hidden = !show; utilitiesHandle.setVisible(show); }
   }
 
   // A demo preview can be absent — it's a build artifact (catalog/previews/) that,
@@ -1237,20 +1215,28 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   // default returnFocus=false makes this a no-op when already closed.
   cleanups.push(() => closeFilter());
 
-  // "Hide previews" — collapse the demo-preview heroes (.gtile-hero--preview) to
-  // their compact text body. Saved-session previews are untouched. Device-level
-  // view preference, persisted like the theme (localStorage, applied via a class).
+  // "Hide previews" — collapse every card (grid AND featured strip) to icon + text,
+  // keeping a slim Continue bar on resumable sessions. Device-level view preference,
+  // persisted like the theme. The class rides the gallery ROOT so it reaches the
+  // featured strip too (not just the masonry).
   const HIDE_PREVIEWS_KEY = 'lolly-hide-previews';
+  const galleryEl = viewEl.querySelector<HTMLElement>('.gallery');
   const hideCheckbox = viewEl.querySelector<HTMLInputElement>('.filter-hide-previews');
   let hidePreviews = false;
   try { hidePreviews = localStorage.getItem(HIDE_PREVIEWS_KEY) === '1'; } catch { /* storage off */ }
   if (hideCheckbox) hideCheckbox.checked = hidePreviews;
-  masonry?.classList.toggle('hide-previews', hidePreviews);
+  // Both the gallery root (drives the featured strip's collapse) and the masonry
+  // (existing grid rules key on `.tool-masonry.hide-previews`) carry the class.
+  const setHidePreviews = (on: boolean): void => {
+    galleryEl?.classList.toggle('hide-previews', on);
+    masonry?.classList.toggle('hide-previews', on);
+  };
+  setHidePreviews(hidePreviews);
   hideCheckbox?.addEventListener('change', () => {
     hidePreviews = hideCheckbox!.checked;
     try { localStorage.setItem(HIDE_PREVIEWS_KEY, hidePreviews ? '1' : '0'); } catch { /* storage off */ }
-    masonry?.classList.toggle('hide-previews', hidePreviews);
-    updateFeaturedVisibility();   // a preview-free gallery hides the preview-forward hero too
+    setHidePreviews(hidePreviews);
+    updateFeaturedVisibility();
   });
 
   // Global sort — persisted like the theme; re-renders the grid in place.

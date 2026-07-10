@@ -39,12 +39,13 @@ import { escape } from '../utils.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
 import { renderPaletteWheel, wirePaletteWheel } from '../lib/palette-wheel.ts';
-import { renderTypeDemo, wireTypeDemo, activeFaces } from '../lib/type-demo.ts';
+import { renderTypeDemo, wireTypeDemo, loadedFaces } from '../lib/type-demo.ts';
+import type { LiveFace } from '../lib/type-demo.ts';
 import { catalogSummaryBody, hydrateCatalogAssets } from '../lib/catalog-summary.ts';
 import type { CatalogTool } from '../lib/catalog-summary.ts';
 import type { PaletteEntry } from '../palette.ts';
 import { livePalette } from '../lib/live-palette.ts';
-import { groupPalette, swatch, isTransparent, cmykText } from '../lib/swatches.ts';
+import { groupPalette, swatch, isTransparent, inkText, isLockedInk } from '../lib/swatches.ts';
 import { THEMES, THEME_LABELS, currentTheme, applyTheme } from '../theme.ts';
 import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
 import { getMetrics } from '../metrics.ts';
@@ -63,6 +64,52 @@ import type { BrandDraftEventDetail } from '../lib/brand-editor.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+// ── Primary tabs ─────────────────────────────────────────────────────────────
+// The dashboard splits into four tabbed panels. Every section keeps its own id /
+// data-flag / classes, so all the existing wiring (brand editor, themes, device
+// probe, storage, type demo, deep links) works unchanged whichever tab is showing
+// — inactive panels are `hidden`, not removed. The `key` doubles as the ?tab=
+// deep-link value and the /b · /brand alias target (Design system).
+const TAB_ICON: Record<string, string> = {
+  // Monitor — this device.
+  device: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
+  // Palette — the design system (colour, type, brand).
+  brand: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.05 0 1.5-.86 1.5-1.75 0-1.16-.98-2.1-.98-2.1s1.98.35 3.98.35A4.5 4.5 0 0 0 21 12.5C21 7 17 3 12 3z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16.5" cy="10.5" r="1"/></svg>`,
+  // App grid — the full feature set.
+  caps: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
+  // Bars — activity & stats.
+  activity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><rect x="5" y="11" width="3.4" height="6" rx="0.6"/><rect x="10.3" y="7" width="3.4" height="10" rx="0.6"/><rect x="15.6" y="4" width="3.4" height="13" rx="0.6"/></svg>`,
+};
+const DASH_TABS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'device', label: 'This device' },
+  { key: 'brand', label: 'Design system' },
+  { key: 'caps', label: 'Capabilities' },
+  { key: 'activity', label: 'Activity & stats' },
+];
+const DASH_TAB_KEYS = new Set(DASH_TABS.map((t) => t.key));
+
+// The tablist. Roving tabindex (only the active tab is focusable) + arrow-key nav
+// are wired in wireTabs; labels display uppercase via CSS while the DOM keeps a
+// clean accessible name.
+function tabBar(active: string): string {
+  return `
+    <div class="dash-tabs" role="tablist" aria-label="Dashboard sections">
+      ${DASH_TABS.map((t) => `
+        <button type="button" role="tab" id="dtab-${t.key}" class="dash-tab${t.key === active ? ' is-active' : ''}"
+                data-dash-tab="${t.key}" aria-controls="dpanel-${t.key}" aria-selected="${t.key === active ? 'true' : 'false'}"
+                tabindex="${t.key === active ? '0' : '-1'}">
+          <span class="dash-tab-icon" aria-hidden="true">${TAB_ICON[t.key] ?? ''}</span>
+          <span class="dash-tab-label">${escape(t.label)}</span>
+        </button>`).join('')}
+    </div>`;
+}
+
+// One tabpanel wrapper. Inactive panels stay in the DOM (so async hydration + live
+// listeners keep resolving onto them) but are `hidden`.
+function panel(key: string, active: string, inner: string): string {
+  return `<section role="tabpanel" id="dpanel-${key}" class="dash-panel" data-dash-panel="${key}" aria-labelledby="dtab-${key}" tabindex="0"${key === active ? '' : ' hidden'}>${inner}</section>`;
+}
 
 // A collapsible primary section — the whole card folds to its title bar, reusing the
 // reference-panel <details> chrome (.plat-section-summary / .plat-section-body handle
@@ -147,9 +194,9 @@ function radiusBody(): string {
 // full name/hex/CMYK grid is one click away under "All values".
 function inkBar(c: PaletteEntry): string {
   const trans = isTransparent(c.hex);
-  const measured = Array.isArray(c.cmyk);
+  const measured = isLockedInk(c);
   const hex = trans ? 'transparent' : c.hex;
-  const cmyk = trans ? 'no ink' : cmykText(c.cmyk);
+  const cmyk = trans ? 'no ink' : inkText(c);
   return `<button type="button" class="dash-ink${trans ? ' is-transparent' : ''}${measured ? ' is-measured' : ''}"${
     trans ? '' : ` style="--ink:${escape(c.hex)}"`
   } data-copy="${escape(hex)}" data-name="${escape(c.label)}" data-hex="${escape(hex)}" data-cmyk="${escape(cmyk)}"${
@@ -171,7 +218,7 @@ function inkGroup(label: string, cols: readonly PaletteEntry[], count = false): 
 // chrome's open/closed state.
 function paletteBody(palette: readonly PaletteEntry[]): { desc: string; body: string } {
   const { brand, spectrum, ramps } = groupPalette(palette);
-  const measuredCount = palette.filter((c) => Array.isArray(c.cmyk)).length;
+  const measuredCount = palette.filter(isLockedInk).length;
 
   const ribbon = `
     <div class="dash-ribbon" data-ribbon>
@@ -194,6 +241,7 @@ function paletteBody(palette: readonly PaletteEntry[]): { desc: string; body: st
       <div class="dash-values-body">
         <div class="plat-legend">
           <span class="plat-legend-item"><span class="plat-chip-flag is-static">CMYK</span> exact ink substitution</span>
+          <span class="plat-legend-item"><span class="plat-chip-flag is-static">SPOT</span> named spot colour, its CMYK equivalent substituted at export</span>
           <span class="plat-legend-item"><span class="plat-swatch-cmyk is-generic">RGB→CMYK (generic)</span> generic conversion at export</span>
         </div>
         <h3 class="plat-ramp-title">Brand colours</h3>
@@ -207,7 +255,7 @@ function paletteBody(palette: readonly PaletteEntry[]): { desc: string; body: st
     </details>`;
 
   return {
-    desc: `Shown in every colour picker. <strong>${measuredCount} of ${palette.length}</strong> carry measured CMYK ink values, substituted directly into CMYK PDF exports — the tick on a bar marks one.`,
+    desc: `Shown in every colour picker. <strong>${measuredCount} of ${palette.length}</strong> carry a locked ink value (CMYK or spot), substituted directly into CMYK PDF exports — the tick on a bar marks one.`,
     body: `${ribbon}${fullGrid}`,
   };
 }
@@ -365,12 +413,12 @@ function themesBody(): string {
 // with each row rendered in its own face. "Manage fonts" points at the profile's
 // Brand fonts panel, where fonts are added and the primary is chosen.
 function typeFacts(): string {
-  const { brand, mono } = activeFaces();
+  const { brand, mono } = loadedFaces();
   const rootStyle = getComputedStyle(document.documentElement);
-  const rows = [
-    { face: brand, role: 'Brand · UI & body', cssVar: '--font-brand' },
-    { face: mono, role: 'Mono · code & data', cssVar: '--font-mono' },
-  ];
+  const rows = ([
+    brand ? { face: brand, role: 'Brand · UI & body', cssVar: '--font-brand' } : null,
+    mono ? { face: mono, role: 'Mono · code & data', cssVar: '--font-mono' } : null,
+  ] as Array<{ face: LiveFace; role: string; cssVar: string } | null>).filter(Boolean) as Array<{ face: LiveFace; role: string; cssVar: string }>;
   return `
     <ul class="dash-type-facts">
       ${rows.map(({ face, role, cssVar }) => `
@@ -500,8 +548,14 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
   // Deep links: `#/d?print`, `#/d?formats`, … force-open a reference panel or a
   // capability group and scroll to it. Read straight off the hash — no router change.
+  // `?tab=<key>` picks the starting tab (the /b · /brand aliases land here as
+  // ?tab=brand); it is NOT a section flag, so keep it out of the flag set.
   const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
-  const flags = new Set([...params.keys()]);
+  const flags = new Set([...params.keys()].filter((k) => k !== 'tab'));
+  const tabParam = params.get('tab') ?? '';
+  // Design System is the landing tab — the brand is what people come here to set;
+  // ?tab=<key> (and the deep-link handler) override it.
+  const initialTab = DASH_TAB_KEYS.has(tabParam) ? tabParam : 'brand';
 
   const tools = (window as Window & { __toolIndex?: { tools: CatalogTool[] } }).__toolIndex?.tools ?? [];
   const toolCount = tools.length;
@@ -546,83 +600,95 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       <header class="plat-header dash-header">
         <h1 class="plat-title">Dashboard</h1>
         <div class="plat-header-text">
-          <p class="plat-sub">One panel for everything defined once and used everywhere — set your brand here, and glance at this device, your activity and the full feature set.</p>
-          <div class="plat-stats">
+
+        </div>
+      </header>
+
+      ${tabBar(initialTab)}
+
+      <div class="dash-panels">
+        ${panel('device', initialTab, `
+          ${collapse({
+            id: 'dash-device',
+            flag: 'device',
+            title: 'This device',
+            cls: 'dash-device',
+            desc: 'A live snapshot of the browser and machine this session runs on. Read on the fly; nothing is stored or sent anywhere.',
+            body: `
+              <div class="dash-dev-hero" data-dev-hero>
+                ${Array.from({ length: 6 }, () => `<div class="dash-dev-stat is-skeleton"></div>`).join('')}
+              </div>
+              <div class="dash-dev-split"><span>Full readout</span></div>
+              <div class="plat-client-grid dash-dev-cards" data-client-grid></div>`,
+          })}
+          <div class="dash-bento">
+            <section class="plat-section dash-section dash-card dash-sound-theme" id="dash-sound-theme" data-flag="sound audio neurospicy focus volume themes theme">
+              ${sectionHead('Sound & focus', 'dash-sound-h', 'Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.')}
+              <div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>
+              <div class="dash-dev-split dash-sound-theme-split"><span>Theme</span></div>
+              ${themesBody()}
+              ${radiusBody()}
+            </section>
+            <section class="plat-section dash-section dash-card" id="dash-storage" data-flag="storage">
+              ${sectionHead('Storage', 'dash-storage-h', 'What Lolly is keeping on this device.')}
+              <div class="dash-store" data-store><p class="cat-empty">measuring…</p></div>
+            </section>
+          </div>
+        `)}
+
+        ${panel('brand', initialTab, `
+          ${brandSection()}
+          <div class="dash-bento">
+            <section class="plat-section dash-section dash-card" id="dash-palette-wheel" data-flag="color colour colours palette wheel">
+              ${sectionHead('Palette on the wheel', 'dash-wheel-h', 'Every brand colour plotted by hue and lightness — shade ramps fan out dark-centre to bright-rim. Hover a dot to read it.')}
+              ${renderPaletteWheel(wheelColors)}
+            </section>
+            <section class="plat-section dash-section dash-card dash-typedemo" id="dash-typedemo" data-flag="type typography font motion kinetic">
+              ${sectionHead('Type in motion', 'dash-typedemo-h', 'The faces in force — the fonts loaded on this device, live. The axes themselves are the animation.')}
+              ${renderTypeDemo()}
+              ${typeFacts()}
+            </section>
+          </div>
+          ${paletteSection(palette)}
+        `)}
+
+        ${panel('caps', initialTab, `
+          ${capsHtml}
+          <div class="dash-row dash-row--2">
+            ${collapse({
+              id: 'dash-catalogue',
+              flag: 'catalog catalogue',
+              title: 'Catalogue',
+              desc: 'What ships in this build, synced to clients as data.',
+              body: catalogSummaryBody(tools),
+              half: true,
+            })}
+            ${refPanel('print cmyk', false, 'dash-print', 'Print & CMYK', printBody())}
+          </div>
+        `)}
+
+        ${panel('activity', initialTab, `
+          <div class="dash-bento">
+                    <div class="plat-stats">
             <span class="plat-stat" data-tool-count${toolCount ? '' : ' hidden'}><strong>${escape(String(toolCount || ''))}</strong>tools</span>
             <span class="plat-stat"><strong>30</strong>export formats</span>
             <span class="plat-stat"><strong>6</strong>surfaces</span>
             <span class="plat-stat" data-asset-stat hidden><strong data-asset-stat-n></strong>brand assets</span>
           </div>
-        </div>
-      </header>
-
-      ${brandSection()}
-
-      <div class="dash-bento">
-        <section class="plat-section dash-section dash-card dash-sound-theme" id="dash-sound-theme" data-flag="sound audio neurospicy focus volume themes theme">
-          ${sectionHead('Sound & focus', 'dash-sound-h', 'Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.')}
-          <div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>
-          <div class="dash-dev-split dash-sound-theme-split"><span>Theme</span></div>
-          ${themesBody()}
-          ${radiusBody()}
-        </section>
-        <section class="plat-section dash-section dash-card" id="dash-activity" data-flag="activity">
-          ${sectionHead('Your activity', 'dash-activity-h', 'Local-only counters — nothing here is recorded remotely.')}
-          <div class="dash-activity">${renderActivity(metrics, tools as Array<{ id: string } & Record<string, unknown>>)}</div>
-        </section>
-        <section class="plat-section dash-section dash-card" id="dash-storage" data-flag="storage">
-          ${sectionHead('Storage', 'dash-storage-h', 'What Lolly is keeping on this device.')}
-          <div class="dash-store" data-store><p class="cat-empty">measuring…</p></div>
-        </section>
-        <section class="plat-section dash-section dash-card dash-recent" id="dash-recent" data-flag="recent creations" hidden>
-          ${sectionHead('Recent creations', 'dash-recent-h', 'Your latest saved sessions — swipe the stack to browse, tap the top card to reopen.')}
-          <div class="dash-recent-mount" data-recent-stack></div>
-        </section>
-        <section class="plat-section dash-section dash-card dash-recent" id="dash-exports" data-flag="exports downloads latest" hidden>
-          ${sectionHead('Latest exports', 'dash-exports-h', 'Files you downloaded — swipe through and tap one to reopen it exactly as it was.')}
-          <div class="dash-recent-mount" data-exports-stack></div>
-        </section>
-        <section class="plat-section dash-section dash-card" id="dash-palette-wheel" data-flag="color colour colours palette wheel">
-          ${sectionHead('Palette on the wheel', 'dash-wheel-h', 'Every brand colour plotted by hue and lightness — shade ramps fan out dark-centre to bright-rim. Hover a dot to read it.')}
-          ${renderPaletteWheel(wheelColors)}
-        </section>
-        <section class="plat-section dash-section dash-card dash-typedemo" id="dash-typedemo" data-flag="type typography font motion kinetic">
-          ${sectionHead('Type in motion', 'dash-typedemo-h', 'The faces in force — your brand and mono fonts, live. The axes themselves are the animation.')}
-          ${renderTypeDemo()}
-          ${typeFacts()}
-        </section>
-      </div>
-
-      ${collapse({
-        id: 'dash-device',
-        flag: 'device',
-        title: 'This device',
-        cls: 'dash-device',
-        desc: 'A live snapshot of the browser and machine this session runs on. Read on the fly; nothing is stored or sent anywhere.',
-        body: `
-          <div class="dash-dev-hero" data-dev-hero>
-            ${Array.from({ length: 6 }, () => `<div class="dash-dev-stat is-skeleton"></div>`).join('')}
+            <section class="plat-section dash-section dash-card" id="dash-activity" data-flag="activity">
+              ${sectionHead('Your activity', 'dash-activity-h', 'Local-only counters — nothing here is recorded remotely.')}
+              <div class="dash-activity">${renderActivity(metrics, tools as Array<{ id: string } & Record<string, unknown>>)}</div>
+            </section>
+            <section class="plat-section dash-section dash-card dash-recent" id="dash-recent" data-flag="recent creations" hidden>
+              ${sectionHead('Recent creations', 'dash-recent-h', 'Your latest saved sessions — swipe the stack to browse, tap the top card to reopen.')}
+              <div class="dash-recent-mount" data-recent-stack></div>
+            </section>
+            <section class="plat-section dash-section dash-card dash-recent" id="dash-exports" data-flag="exports downloads latest" hidden>
+              ${sectionHead('Latest exports', 'dash-exports-h', 'Files you downloaded — swipe through and tap one to reopen it exactly as it was.')}
+              <div class="dash-recent-mount" data-exports-stack></div>
+            </section>
           </div>
-          <div class="dash-dev-split"><span>Full readout</span></div>
-          <div class="plat-client-grid dash-dev-cards" data-client-grid></div>`,
-      })}
-
-      <div class="dash-row dash-row--2">
-        ${paletteSection(palette)}
-        ${collapse({
-          id: 'dash-catalogue',
-          flag: 'catalog catalogue',
-          title: 'Catalogue',
-          desc: 'What ships in this build, synced to clients as data.',
-          body: catalogSummaryBody(tools),
-          half: true,
-        })}
-      </div>
-
-      ${capsHtml}
-
-      <div class="dash-ref-grid">
-        ${refPanel('print cmyk', false, 'dash-print', 'Print & CMYK', printBody())}
+        `)}
       </div>
 
       <p class="plat-note dash-foot" role="note">
@@ -632,7 +698,12 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
   // Include the read-only foot note in the reveal ladder so it settles with the
   // last section instead of snapping in at full opacity beneath the cascade.
-  armViewEnter(viewEl, '.tools-home, .plat-header, .plat-section, .dash-foot');
+  armViewEnter(viewEl, '.tools-home, .plat-header, .dash-tabs, .plat-section, .dash-foot');
+
+  // Primary tabs. Returns a `selectTab(key)` so the deep-link handler can jump to
+  // the panel that owns a flagged section. Wiring the tabs before the deep link
+  // means a `?print`/`?formats` link both switches to the right tab AND scrolls.
+  const selectTab = wireTabs(viewEl, initialTab);
 
   // Your brand: a status line (an IDB read via host.assets discovery) plus the
   // live editor, both hydrated just after first paint rather than blocking it.
@@ -725,8 +796,9 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     }
   }, true);
 
-  // Deep-link: open + scroll to any panel/group whose flag is in the hash query.
-  if (flags.size) applyDeepLink(viewEl, flags);
+  // Deep-link: switch to the owning tab, then open + scroll to any panel/group
+  // whose flag is in the hash query.
+  if (flags.size) applyDeepLink(viewEl, flags, selectTab);
 
   // Copy-to-clipboard for ink bars AND the full-values swatch chips.
   wireCopyButtons(viewEl);
@@ -887,8 +959,9 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 // Open + scroll to a deep-linked panel/group. Reference panels AND capability
 // groups are <details> now, so force the match open — plus every ancestor <details>
 // (a capability group lives inside the outer "What Lolly can do" panel), or the
-// linked content would be folded away and the scroll would land on nothing.
-function applyDeepLink(viewEl: HTMLElement, flags: Set<string>): void {
+// linked content would be folded away and the scroll would land on nothing. The
+// target may live in an inactive tab, so switch to its panel first.
+function applyDeepLink(viewEl: HTMLElement, flags: Set<string>, selectTab?: (key: string) => void): void {
   let target: HTMLElement | null = null;
   viewEl.querySelectorAll<HTMLElement>('[data-flag]').forEach((el) => {
     const owns = (el.dataset.flag || '').split(/\s+/).some((f) => flags.has(f));
@@ -900,6 +973,10 @@ function applyDeepLink(viewEl: HTMLElement, flags: Set<string>): void {
     }
   });
   if (target) {
+    // Reveal the tab that owns the target before measuring/scrolling — a hidden
+    // panel has no layout box, so scrollIntoView on it would be a no-op.
+    const panelKey = (target as HTMLElement).closest<HTMLElement>('[data-dash-panel]')?.dataset.dashPanel;
+    if (panelKey && selectTab) selectTab(panelKey);
     // Sections above the target (palette wheel, catalogue summary) mount async and keep
     // growing the page for up to ~1.5s after this runs, shoving the target down — a
     // one-shot scroll lands on its pre-expansion spot. Re-land on a short repeating
@@ -911,6 +988,53 @@ function applyDeepLink(viewEl: HTMLElement, flags: Set<string>): void {
     const again = (): void => { land(); if (++n < 12) setTimeout(again, 130); };
     setTimeout(again, 130);
   }
+}
+
+// Primary tabs: show one panel at a time, ARIA tab semantics + roving tabindex,
+// arrow/Home/End keyboard nav. Switching is client-side only — the active tab is
+// mirrored into the hash via replaceState (which fires NO hashchange), so a copied
+// link reopens on the same tab without the router re-mounting the whole view.
+// Returns a `selectTab(key)` the deep-link handler calls to jump tabs.
+function wireTabs(viewEl: HTMLElement, initial: string): (key: string) => void {
+  const tabs = [...viewEl.querySelectorAll<HTMLButtonElement>('[data-dash-tab]')];
+  const panels = [...viewEl.querySelectorAll<HTMLElement>('[data-dash-panel]')];
+  const noop = (): void => {};
+  if (!tabs.length || !panels.length) return noop;
+
+  const select = (key: string, opts: { focus?: boolean; sound?: boolean; updateUrl?: boolean } = {}): void => {
+    if (!DASH_TAB_KEYS.has(key)) return;
+    for (const t of tabs) {
+      const on = t.dataset.dashTab === key;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      if (on && opts.focus) t.focus();
+    }
+    for (const p of panels) p.hidden = p.dataset.dashPanel !== key;
+    if (opts.sound) playSfx('toggle');
+    if (opts.updateUrl) {
+      // Reflect the tab in the URL without re-navigating (replaceState → no hashchange).
+      try { history.replaceState(history.state, '', `#/d?tab=${key}`); } catch { /* history unavailable */ }
+    }
+  };
+
+  tabs.forEach((tab, i) => {
+    tab.addEventListener('click', () => select(tab.dataset.dashTab!, { sound: true, updateUrl: true }));
+    tab.addEventListener('keydown', (e) => {
+      let next = -1;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabs.length - 1;
+      if (next < 0) return;
+      e.preventDefault();
+      select(tabs[next]!.dataset.dashTab!, { focus: true, sound: true, updateUrl: true });
+    });
+  });
+
+  // Establish the initial state without rewriting the URL (aliases already set it).
+  select(initial);
+  return (key: string) => select(key, { sound: false });
 }
 
 // Palette readout instrument — one shared mono line driven by whichever ink bar

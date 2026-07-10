@@ -56,8 +56,9 @@
 .profile-view .profile-field input {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--input));
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: calc(var(--radius)*1.5);
+  box-shadow: 0 1px #fff2, inset 0 .051em .23em #0002;
   font: inherit;
 }
 
