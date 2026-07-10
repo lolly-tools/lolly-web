@@ -48,6 +48,22 @@ type StartHost = Parameters<typeof installUserTokens>[0];
 
 const TAB_KEYS = new Set<string>(BRAND_TABS.map(t => t.id));
 
+// ── The import card's format marks ───────────────────────────────────────────
+// Recognition beats description: the four accepted formats lead the card as
+// icon tiles, in preference order. Lolly's own brand file wears the full-colour
+// app mark; the rest are mono inline SVGs on currentColor so they follow the
+// theme like any glyph.
+const PENPOT_ICON = `<svg viewBox="0 -1 7.6 10.075" width="26" height="26" fill="none" stroke="currentColor" stroke-width="0.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M 1.1,2.4513642 V 0.65136419 l 0.9,-1.3 0.9,1.3 V 1.0513642 L 3.8,-0.24863581 4.7,1.0513642 V 0.65136419 l 0.9,-1.3 0.9,1.3 V 2.4513642 m -2.7,1.4 v 5 m -2.7,-7.3 -0.9,0.5 v 5 l 3.6,1.8 3.6,-1.8 v -5 l -0.9,-0.5 m -6.3,0.5 3.6,1.8 3.6,-1.8 m -4.5,-1 v 2.3 m 1.8,-2.3 v 2.3 m -3,-3.50000001 h 0.6 m 1.2,0.4 h 0.6 m 1.2,-0.4 h 0.6"/><path stroke-width="0.3" d="m 1.1,0.85136419 h 1.8 m 0,0.40000001 h 1.8 m 0,-0.40000001 h 1.8 m -4.5,0 V 2.8513642 m 1.8,-1.6 v 2.6 M 5.6,0.85136419 V 2.9513642"/></svg>`;
+const TOKENS_ICON = `<svg viewBox="0 0 26.0005 20.000443" width="28" height="22" fill="currentColor" aria-hidden="true"><path d="M 21.034696,6.7857749 C 19.657911,6.5152605 18.584202,5.5233742 18.29198,4.2542941 17.730078,1.8096451 14.90387,1.0874383 13.00025,2.0851691 c 0.772302,0.5310098 1.294128,1.3408833 1.415191,2.2584616 0.04342,0.2554858 0.123569,0.5059622 0.223759,0.7480893 a 3.6987005,3.6987005 0 0 0 1.576331,1.7341311 c 0.435829,0.2563208 0.936782,0.3899082 1.422706,0.5176511 0.399092,0.1319176 0.764788,0.3256193 1.071204,0.582775 1.284108,1.0219434 1.284108,3.1267798 0,4.1487228 -0.306416,0.257156 -0.672112,0.450857 -1.071204,0.582775 -0.484254,0.127743 -0.986877,0.260495 -1.422706,0.517651 -0.921753,0.515146 -1.619747,1.436064 -1.80009,2.482221 -0.121063,0.918413 -0.642889,1.728286 -1.415191,2.259296 1.90195,0.996061 4.728158,0.272184 5.29173,-2.16996 0.292222,-1.26908 1.365931,-2.260966 2.742716,-2.531481 3.75965,-0.737235 3.75965,-5.6908219 0,-6.4288921 z M 11.585059,15.658481 A 3.5066687,3.5066687 0 0 0 11.3613,14.909557 3.6987005,3.6987005 0 0 0 9.7849688,13.175426 C 9.34914,12.91994 8.8481873,12.786353 8.3622632,12.657775 A 3.2561923,3.2561923 0 0 1 7.2910594,12.075 c -1.2841087,-1.021943 -1.2841087,-3.1267794 0,-4.1487228 C 7.5974755,7.6691215 7.9631709,7.4754198 8.3622632,7.3435022 8.8465175,7.2149244 9.34914,7.0830069 9.7849688,6.8258511 10.707557,6.3107048 11.404716,5.3897868 11.585059,4.3427958 11.706122,3.4243825 12.227948,2.614509 13.00025,2.0843341 11.0983,1.0874383 8.2720917,1.8096451 7.70852,4.2534592 7.4162976,5.5225393 6.3417541,6.5152605 4.9658041,6.78494 c -3.7596498,0.7380703 -3.7596498,5.692492 0,6.429727 1.3751151,0.26968 2.4504935,1.262401 2.7427159,2.531481 0.5619019,2.443814 3.38811,3.166856 5.29173,2.169125 -0.772302,-0.53101 -1.294128,-1.340883 -1.415191,-2.258461 z"/></svg>`;
+const SVG_ICON = `<svg viewBox="0 0 390 390" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="m 216.63,37.47 53.15,53.98 c 5.04,5.15 4.97,15.13 2.15,18 L 245.54,88.34 240.35,119.6 218.3,107.96 182.99,130.27 171.3,83.24 152.33,116.06 h -29 c -11.82,0 -13.21,-15 -2.47,-25.74 18.76,-20.25 40.29,-40.89 51.99,-52.85 11.76,-12.02 32.25,-11.68 43.78,0 z M 131,238.6 c 3.59,2.23 57.89,13.26 71.16,15.46 4.6,0.97 1.34,5.71 -5,8.91 C 182.86,266.77 113.5,238.6 131,238.6 Z M 163.15,27.83 28.81,165.3 C -16.58,221.51 59.7,214.97 92.4,231.16 104.13,243.15 47.44,252 59.17,264 c 11.73,11.99 70.93,23.1 82.68,35.09 11.73,11.99 -24.01,24.71 -12.28,36.7 11.73,11.99 38.86,0.63 43.94,28.31 3.62,19.78 48.89,8.5 71.03,-7.7 11.73,-12 -22.44,-10.87 -10.71,-22.86 29.17,-29.83 56.33,-10.84 66.31,-40.73 4.93,-14.77 -42.94,-22.77 -31.19,-34.76 33.75,-19.71 150.4,-32.54 95.05,-87.89 L 224.75,27.83 c -17.03,-16.35 -45.45,-16.53 -61.6,0 z m 154.31,264.98 c 0,6.82 50.25,11.29 50.25,-1.61 -7.16,-20.72 -44.31,-19.32 -50.25,1.61 z M 91.1,329.05 c 11.9,10.29 30.28,-2.56 35.79,-16.92 -11.53,-15.32 -54.69,0.55 -35.79,16.92 z m 220.06,-22.23 c -15.34,13.76 1.72,27.72 16.84,18.83 3.37,-3.42 -0.09,-15.41 -16.84,-18.83 z"/></svg>`;
+
+const IMPORT_FORMATS: ReadonlyArray<{ icon: string; name: string; ext: string }> = [
+  { icon: `<img src="/icons/icon-192.png" alt="" width="26" height="26" decoding="async">`, name: 'LollyBrand', ext: '.zip' },
+  { icon: PENPOT_ICON, name: 'Penpot', ext: '.penpot' },
+  { icon: TOKENS_ICON, name: 'Design Tokens', ext: '.json' },
+  { icon: SVG_ICON, name: 'Plain SVG', ext: '.svg' },
+];
+
 export async function mountStart(viewEl: HTMLElement, host: StartHost, params = ''): Promise<void> {
   document.title = 'Make it yours · Lolly';
 
@@ -100,10 +116,21 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         <button type="button" class="be-cta start-save" data-start-save hidden></button>
       </div>
       <div class="start-import-panel" data-start-import-panel hidden>
-        <p class="start-import-blurb">Bring a <strong>W3C design-tokens / Tokens Studio</strong> JSON export, a <strong>Penpot</strong> file (its design tokens), an <strong>SVG</strong> (we'll read the colours it uses), or a Lolly <strong>brand file</strong> (.zip) someone shared.</p>
-        <label class="be-btn start-import-btn">
-          Choose a design or brand file&hellip;
-          <input type="file" class="start-import-file" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip" hidden>
+        <!-- The whole card is the control: click anywhere (it's the file input's
+             label) or drop a file on it. The format tiles lead so people
+             recognise THEIR export at a glance, in preference order. -->
+        <label class="start-import-drop" data-start-import-drop>
+          <input type="file" class="start-import-file visually-hidden" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip" aria-label="Choose a design or brand file">
+          <span class="start-import-formats" role="list" aria-label="Accepted formats, in preference order">
+            ${IMPORT_FORMATS.map(f => `
+              <span class="start-import-fmt" role="listitem">
+                <span class="start-import-fmt-icon" aria-hidden="true">${f.icon}</span>
+                <span class="start-import-fmt-name">${escape(f.name)}</span>
+                <span class="start-import-fmt-ext">${escape(f.ext)}</span>
+              </span>`).join('')}
+          </span>
+          <span class="be-btn start-import-btn" aria-hidden="true">Choose a design or brand file&hellip;</span>
+          <span class="start-import-drophint">or drag &amp; drop it here</span>
         </label>
         <div class="start-import-result" hidden></div>
       </div>
@@ -353,7 +380,29 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   importFile.addEventListener('change', async () => {
     const file = importFile.files?.[0];
     importFile.value = ''; // so re-picking the same file re-fires change
-    if (!file) return;
+    if (file) await handleImportFile(file);
+  });
+
+  // Drag & drop lands on the same routing as the picker — the card is one
+  // control with two mouths.
+  const dropEl = viewEl.querySelector<HTMLElement>('[data-start-import-drop]')!;
+  dropEl.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    dropEl.classList.add('is-dragover');
+  });
+  dropEl.addEventListener('dragleave', (e) => {
+    if (e.relatedTarget && dropEl.contains(e.relatedTarget as Node)) return;
+    dropEl.classList.remove('is-dragover');
+  });
+  dropEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropEl.classList.remove('is-dragover');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) void handleImportFile(file);
+  });
+
+  async function handleImportFile(file: File): Promise<void> {
     importedDoc = null;
 
     // SVG has no formal-token concept — every colour it uses is "not a token",
@@ -493,7 +542,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
       ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
       <button type="button" class="be-cta start-cta--import" data-install-import>Install these tokens</button>`);
-  });
+  }
 
   // Colour-review checkboxes (the SVG path): select all/none, enable "Use
   // these colours" only while at least one is checked, and build the doc from
