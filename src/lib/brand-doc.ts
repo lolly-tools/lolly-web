@@ -32,21 +32,27 @@ const isColorString = (v: unknown): v is string =>
 const isNumberArray = (v: unknown): v is number[] => Array.isArray(v) && v.every(n => typeof n === 'number');
 const isSpotColor = (v: unknown): v is SpotColor => {
   if (!isRec(v) || typeof v.name !== 'string') return false;
-  if (v.book !== undefined && typeof v.book !== 'string') return false;
-  return isNumberArray(v.cmyk) && v.cmyk.length === 4;
+  return v.book === undefined || typeof v.book === 'string';
 };
 
-/** A swatch's print-export lock — exactly one of the two, never both (see
- *  setSwatchPrintOverride). Absent (null) means auto-convert from `$value` at export. */
-export type PrintLock = { cmyk: [number, number, number, number] } | { spot: SpotColor };
+/** A swatch's print-export lock. `cmyk` and `spot` are independent — a token
+ *  may carry either, both, or neither (absent fields, not present at all, when
+ *  not locked): `cmyk` is the process-colour fallback used for preview,
+ *  non-PDF export, and the Separation alternate-space value regardless of
+ *  whether a spot is also set, so locking a named ink never discards a
+ *  separately-tuned CMYK build. Absent entirely means auto-convert from
+ *  `$value` at export. */
+export type PrintLock = { cmyk?: [number, number, number, number]; spot?: SpotColor };
 
-/** Read whichever of `cmyk`/`spot` is present on a leaf's vendor extension, or null. */
+/** Read whichever of `cmyk`/`spot` are present on a leaf's vendor extension, or
+ *  null if neither is. */
 function readPrintLock(leaf: Rec | null): PrintLock | null {
   const ext = leaf && isRec(leaf.$extensions) ? (leaf.$extensions as Rec)[TOKEN_EXT] : null;
   if (!isRec(ext)) return null;
-  if (isSpotColor(ext.spot)) return { spot: ext.spot };
-  if (isNumberArray(ext.cmyk) && ext.cmyk.length === 4) return { cmyk: ext.cmyk as [number, number, number, number] };
-  return null;
+  const lock: PrintLock = {};
+  if (isNumberArray(ext.cmyk) && ext.cmyk.length === 4) lock.cmyk = ext.cmyk as [number, number, number, number];
+  if (isSpotColor(ext.spot)) lock.spot = ext.spot;
+  return lock.cmyk || lock.spot ? lock : null;
 }
 
 export const prettify = (s: string): string => s.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -224,44 +230,52 @@ export function primaryAnchorPath(doc: unknown): string[] | null {
   return [...groupPath, String(step)];
 }
 
-/** The swatch at `path`'s pinned print override (CMYK or spot), or null when auto. */
+/** The swatch at `path`'s pinned print lock (cmyk and/or spot), or null when
+ *  neither is set. */
 export function getSwatchPrintOverride(doc: unknown, path: string[]): PrintLock | null {
   return readPrintLock(leafAt(doc, path));
 }
 
-/**
- * Lock (or clear, with null) the swatch at `path`'s print override. `cmyk` and
- * `spot` are mutually exclusive — setting one always removes the other, so a
- * token never carries both. Clearing (null) removes whichever is present, and
- * the whole `$extensions["com.suse.lolly"]` entry too once it's empty.
- */
-export function setSwatchPrintOverride(doc: unknown, path: string[], override: PrintLock | null): boolean {
+/** Deletes the vendor extension entry once both `cmyk` and `spot` are gone,
+ *  and `$extensions` itself once it's the only thing left in it. */
+function cleanupExt(leaf: Rec): void {
+  const ext = isRec(leaf.$extensions) ? (leaf.$extensions as Rec) : null;
+  if (!ext || !isRec(ext[TOKEN_EXT])) return;
+  if (Object.keys(ext[TOKEN_EXT] as Rec).length === 0) delete ext[TOKEN_EXT];
+  if (Object.keys(ext).length === 0) delete leaf.$extensions;
+}
+
+/** Lock (or clear, with null) the swatch at `path`'s process-CMYK print value.
+ *  Independent of `setSwatchSpotLock` — locking or clearing one never touches
+ *  the other, so a token can carry a CMYK fallback alongside a spot lock. */
+export function setSwatchCmykLock(doc: unknown, path: string[], cmyk: [number, number, number, number] | null): boolean {
   const leaf = leafAt(doc, path);
   if (!leaf) return false;
-  if (override === null) {
+  if (cmyk === null) {
     const ext = isRec(leaf.$extensions) ? (leaf.$extensions as Rec) : null;
-    if (ext && isRec(ext[TOKEN_EXT])) {
-      delete (ext[TOKEN_EXT] as Rec).cmyk;
-      delete (ext[TOKEN_EXT] as Rec).spot;
-      if (Object.keys(ext[TOKEN_EXT] as Rec).length === 0) delete ext[TOKEN_EXT];
-      if (Object.keys(ext).length === 0) delete leaf.$extensions;
-    }
+    if (ext && isRec(ext[TOKEN_EXT])) { delete (ext[TOKEN_EXT] as Rec).cmyk; cleanupExt(leaf); }
     return true;
   }
   const ext = (isRec(leaf.$extensions) ? leaf.$extensions : (leaf.$extensions = {} as Rec)) as Rec;
   const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
   const clamp = (n: number): number => Math.round(Math.min(100, Math.max(0, n)));
-  if ('spot' in override) {
-    delete ns.cmyk;
-    ns.spot = {
-      name: override.spot.name,
-      ...(override.spot.book ? { book: override.spot.book } : {}),
-      cmyk: override.spot.cmyk.map(clamp),
-    };
-  } else {
-    delete ns.spot;
-    ns.cmyk = override.cmyk.map(clamp);
+  ns.cmyk = cmyk.map(clamp);
+  return true;
+}
+
+/** Lock (or clear, with null) the swatch at `path`'s named spot/Pantone ink.
+ *  Independent of `setSwatchCmykLock` (see its doc comment). */
+export function setSwatchSpotLock(doc: unknown, path: string[], spot: SpotColor | null): boolean {
+  const leaf = leafAt(doc, path);
+  if (!leaf) return false;
+  if (spot === null) {
+    const ext = isRec(leaf.$extensions) ? (leaf.$extensions as Rec) : null;
+    if (ext && isRec(ext[TOKEN_EXT])) { delete (ext[TOKEN_EXT] as Rec).spot; cleanupExt(leaf); }
+    return true;
   }
+  const ext = (isRec(leaf.$extensions) ? leaf.$extensions : (leaf.$extensions = {} as Rec)) as Rec;
+  const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
+  ns.spot = { name: spot.name, ...(spot.book ? { book: spot.book } : {}) };
   return true;
 }
 

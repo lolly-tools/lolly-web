@@ -18,8 +18,10 @@
  *
  * cmyk: [C, M, Y, K] as integer percentages 0–100.
  * null = not yet specified; export falls back to generic RGB→CMYK conversion.
- * spot: a named spot/Pantone lock (with its own CMYK equivalent), when the
- * brand editor's swatch is locked to one instead of a plain process anchor.
+ * spot: a named spot/Pantone lock, when the brand editor's swatch is locked to
+ * one. Independent of `cmyk` — a swatch may carry either, both, or neither;
+ * `cmyk` is the process-colour fallback used for preview/non-PDF export/the PDF
+ * Separation tint-transform's alternate space whether or not a spot is set too.
  * group: optional bucket override for the Platform view's grouping —
  *   'spectrum'   = the secondary / infographics palette (NOT a brand colour);
  *   a family name (e.g. 'Neutral') pins the swatch into that tint ramp.
@@ -30,8 +32,8 @@ export interface PaletteEntry {
   label: string;
   /** [C, M, Y, K] integer percentages 0-100; null → generic RGB→CMYK fallback. */
   cmyk: readonly [number, number, number, number] | null;
-  /** Named spot/Pantone lock, when present (mutually exclusive with a bare `cmyk` anchor). */
-  spot?: { name: string; book?: string; cmyk: readonly [number, number, number, number] } | null;
+  /** Named spot/Pantone lock, when present — independent of `cmyk` (see above). */
+  spot?: { name: string; book?: string } | null;
   /** Platform-view grouping override ('spectrum' or a tint-ramp family name). */
   group?: string;
 }

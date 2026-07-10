@@ -50,9 +50,18 @@ test('a malformed cmyk (wrong arity) is treated as absent rather than shipped to
 });
 
 test('a spot-locked swatch passes its SpotColor through untouched', () => {
-  const spot = { name: 'PANTONE 186 C', book: 'PANTONE+ Solid Coated', cmyk: [0, 100, 79, 4] as [number, number, number, number] };
+  const spot = { name: 'PANTONE 186 C', book: 'PANTONE+ Solid Coated' };
   const entry = toPaletteEntry({
     path: 'color.brand.pine', name: 'Pine', group: 'Brand', value: '#0c322c', cmyk: null, spot,
   });
+  assert.deepEqual(entry.spot, spot);
+});
+
+test('a swatch can carry both a CMYK anchor and a spot lock independently', () => {
+  const spot = { name: 'PANTONE 186 C' };
+  const entry = toPaletteEntry({
+    path: 'color.brand.pine', name: 'Pine', group: 'Brand', value: '#0c322c', cmyk: [0, 100, 79, 4], spot,
+  });
+  assert.deepEqual(entry.cmyk, [0, 100, 79, 4]);
   assert.deepEqual(entry.spot, spot);
 });
