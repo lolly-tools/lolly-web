@@ -1,7 +1,7 @@
 {
   "name": "Lolly",
   "short_name": "Lolly",
-  "description": "Generate on-brand assets — QR codes, charts, graphics, PDFs and more — from simple inputs.",
+  "description": "Generate production-ready assets — QR codes, charts, graphics, PDFs and more — from simple inputs.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
@@ -47,7 +47,7 @@
       "sizes": "1200x630",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "Lolly — generate on-brand assets from simple inputs"
+      "label": "Lolly — generate production-ready assets from simple inputs"
     }
   ],
   "lang": "en"

@@ -28,7 +28,7 @@ import type { Unzipped } from 'fflate';
 import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts, USER_FONT_PREFIX } from './user-fonts.ts';
-import { USER_LOGO_PREFIX } from './lib/brand-logos.ts';
+import { USER_LOGO_PREFIX, LOGO_DEFAULT_IDENTITY, parseLogoAssetId } from './lib/brand-logos.ts';
 import type { UserFontsHost } from './user-fonts.ts';
 
 export const BRAND_FORMAT = 'lolly-brand';
@@ -149,6 +149,7 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
     '',
     `🎨 Design tokens   ${summary.tokens ? 'included' : 'not included'}`,
     `🔤 Font families   ${summary.fontFamilies} (${summary.fontFiles} file${summary.fontFiles === 1 ? '' : 's'})`,
+    `🖼  Logo marks      ${summary.logos}`,
     `⚙  Preferences     ${summary.prefs}`,
     '',
     '[ The files in this zip ]',
@@ -157,6 +158,8 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
     'tokens.json     the brand’s design tokens (W3C DTCG / Tokens Studio)',
     'fonts.json      the installed font faces (metadata)',
     'fonts/          the font files themselves (woff2, from Google Fonts — OFL/Apache)',
+    'logos.json      the brand’s logo marks (metadata)',
+    'logos/          the logo images themselves (SVG/PNG/JPEG/WebP per slot)',
     'prefs.json      theme',
     'lolly.txt       this summary (ignored on load)',
   ].join('\n') + '\n';
@@ -214,13 +217,22 @@ export async function exportBrandPack(
   }
   entries['fonts.json'] = strToU8(JSON.stringify(fontRows, null, 2));
 
-  // Brand logo variants (horizontal/vertical/mono/reverse) — image assets under
-  // user/logo/*, carried the same way as fonts so the pack is a complete brand.
+  // Brand logos — the canonical orientation×treatment slots plus any custom
+  // variants and named identities (lib/brand-logos.ts), carried the same way as
+  // fonts so the pack is a complete brand. Default-identity marks keep the
+  // original `logos/<variant>.<ext>` name (what pre-identity packs used); other
+  // identities get `logos/<identity>__<variant>.<ext>`. Import matches rows by
+  // id — the filename only has to be unique — so both forms round-trip, and a
+  // row's meta carries the variant's label. Malformed ids fall back to the old
+  // slash-flattened name rather than being dropped.
   const logoRows: LogoRow[] = [];
   for (const r of records) {
     if (!r.id.startsWith(USER_LOGO_PREFIX) || !r.blob) continue;
     const fmt = String(r.meta?.format ?? 'png');
-    const file = `logos/${r.id.slice(USER_LOGO_PREFIX.length).replace(/\//g, '-')}.${fmt}`;
+    const parsed = parseLogoAssetId(r.id);
+    const file = parsed && parsed.identity !== LOGO_DEFAULT_IDENTITY
+      ? `logos/${parsed.identity}__${parsed.variant}.${fmt}`
+      : `logos/${r.id.slice(USER_LOGO_PREFIX.length).replace(/\//g, '-')}.${fmt}`;
     entries[file] = new Uint8Array(await r.blob.arrayBuffer());
     const { blob: _b, ...rest } = r as LogoRow & { blob: Blob; type: string };
     logoRows.push({ ...(rest as unknown as LogoRow), file, format: fmt, mime: r.blob.type || 'image/png' });
@@ -346,8 +358,10 @@ export async function importBrandPack(
   summary.fontFamilies = families.size;
   await registerUserFonts(host).catch(() => { /* faces load lazily at next boot */ });
 
-  // Logo variants — restore each image asset before tokens land (asset.logo.*
-  // refs resolve to assets that are already present).
+  // Logos — restore each image asset before tokens land (asset.logo.* refs
+  // resolve to assets that are already present). Row-id-driven, so old packs
+  // (`logos/<variant>.<ext>`) and identity-namespaced ones both land verbatim;
+  // meta (incl. variant labels) travels on the row.
   const logoRows: LogoRow[] = readJson(files, 'logos.json') ?? [];
   for (const row of logoRows) {
     if (!row?.id || !String(row.id).startsWith(USER_LOGO_PREFIX) || !row.file) continue;

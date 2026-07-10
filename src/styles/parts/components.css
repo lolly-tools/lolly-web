@@ -160,8 +160,8 @@
     font-size: 13px;
     border: 1px solid hsl(var(--primary));
     padding: 12px 10px 12px 3em;
-    border-radius: var(--radius);
-    text-shadow: 1px hsl(var(--secondary) / .35);
+    border-radius: calc(var(--radius)*1.5);
+    text-shadow: 0 1px hsl(var(--secondary) / .35);
     backdrop-filter: blur(2px);
     transition: background 0.12s, color 0.12s;
   }

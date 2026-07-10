@@ -476,6 +476,9 @@
   top: 1.25rem;
   left: 1.25rem;
   z-index: 100;
+  backdrop-filter: blur(4px);
+  background: hsl(var(--muted) / 0.45);
+  text-shadow: 0 1px hsl(var(--secondary) / .5);
 }
 
 .input-row {

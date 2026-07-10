@@ -162,8 +162,9 @@ type WebComposeAPI = NonNullable<HostV1['compose']> & {
 };
 
 /** The web host surface the picker touches: HostV1 plus the web-only asset/state/
- *  compose helpers (underscore-prefixed, not part of the tool-facing v1 contract). */
-interface PickerHost extends HostV1 {
+ *  compose helpers (underscore-prefixed, not part of the tool-facing v1 contract).
+ *  Exported for surfaces that reuse the picker's ingest path (lib/upload-dropzone.ts). */
+export interface PickerHost extends HostV1 {
   state: WebStateAPI;
   compose: WebComposeAPI;
   assets: HostV1['assets'] & {

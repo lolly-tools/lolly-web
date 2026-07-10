@@ -186,16 +186,26 @@ export function fontGroupOf(doc: unknown): Record<string, unknown> | null {
  * plain DTCG — the SUSE doc's shape). Pure; exported for tests.
  */
 export function withBrandFontToken(doc: unknown, family: string | null): Record<string, unknown> {
+  return withFontRoleToken(doc, 'brand', family);
+}
+
+/**
+ * The role-aware generalisation: `font.brand` is the app's primary face and
+ * `font.mono` its code/data face — the two roles the chrome's --font-brand /
+ * --font-mono vars read (brand-vars.ts FONT_SLOTS). Same merge semantics as
+ * withBrandFontToken always had; pure, exported for tests.
+ */
+export function withFontRoleToken(doc: unknown, role: 'brand' | 'mono', family: string | null): Record<string, unknown> {
   const src = (typeof doc === 'object' && doc !== null && !Array.isArray(doc)) ? doc as Record<string, unknown> : {};
   const out: Record<string, unknown> = structuredClone(src);
   const target = fontTargetOf(out);
   const fontGroup = (typeof target.font === 'object' && target.font !== null)
     ? target.font as Record<string, unknown> : {};
   if (family) {
-    fontGroup.brand = { $type: 'fontFamily', $value: [family] };
+    fontGroup[role] = { $type: 'fontFamily', $value: [family] };
     target.font = fontGroup;
   } else {
-    delete fontGroup.brand;
+    delete fontGroup[role];
     if (Object.keys(fontGroup).filter(k => !k.startsWith('$')).length) target.font = fontGroup;
     else delete target.font;
   }
@@ -298,6 +308,20 @@ export async function primaryFontFamily(host: UserFontsHost): Promise<string> {
  *  land, even if the chrome can't be redrawn (no DOM, a broken token doc, …). */
 export async function setPrimaryFont(host: UserFontsHost, family: string | null): Promise<void> {
   const doc = withBrandFontToken(await primaryBaseDoc(host), family);
+  await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
+  await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
+}
+
+/** The current mono (code/data) family, resolved through the live token set. */
+export async function monoFontFamily(host: UserFontsHost): Promise<string> {
+  try { return familyFromTokenValue(await host.tokens?.resolve('{font.mono}')); }
+  catch { return ''; }
+}
+
+/** Write `family` (or clear, with null) as font.mono — the code/data face —
+ *  and repaint the chrome. Same contract as setPrimaryFont. */
+export async function setMonoFont(host: UserFontsHost, family: string | null): Promise<void> {
+  const doc = withFontRoleToken(await primaryBaseDoc(host), 'mono', family);
   await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
   await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
 }

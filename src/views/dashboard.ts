@@ -4,24 +4,25 @@
  * what used to be two pages (#/platform and #/capabilities) and pulls read-only
  * glances of your own data (activity + storage) from the Profile — nothing here
  * is removed from Profile; this is a mirror, not a move.
- * The exception is "Your brand" (see brandSection()), which is a real EDITOR:
- * colour, the editable palette, fonts and the brand pack are all set here, in
- * place (lib/brand-editor.ts). Profile keeps its font/share card as a mirror and
- * #/start remains the first-run wizard, but neither is a detour any more.
+ * The Design-system tab is deliberately READ-ONLY: it renders the loaded brand
+ * — name, logo, primary colour, the faces in force, the palette and the token
+ * primitives — *wearing* the brand's own variables (see brandHero()), and, when
+ * the catalogue isn't locked, points at #/start where the brand is actually
+ * adjusted. Nothing on this page writes brand state; personal preferences
+ * (theme, sound) live on #/profile.
  *
- * The layout is deliberate: Your brand leads (full-width, never collapsible),
- * then the bento of instrument tiles (activity, storage, palette wheel, type,
- * aspect ratios), then four collapsible PRIMARY sections built by collapse() —
- * THIS DEVICE (full-width; the live machine readout people find genuinely
- * interesting), a two-up row of Colour palette | Catalogue (each half-width),
- * and What Lolly can do (the full capability map, full-width) — then the type /
- * theme / print reference panels. Each primary section folds to its title bar
- * with a soft hydraulic cue (see the toggle listener in mountDashboard).
- * Apart from Your brand (and the theme/sound switches), the rest is a snapshot
- * of what this session currently knows.
+ * The layout is deliberate: the brand hero leads (full-width, never collapsible),
+ * then the bento of instrument tiles (palette wheel, type in motion), the palette
+ * ink-ribbon, the brand-token chips and the print reference — with THIS DEVICE
+ * (the live machine readout people find genuinely interesting), the full
+ * capability map, and activity/storage on the other tabs. Each primary section
+ * folds to its title bar with a soft hydraulic cue (see the toggle listener in
+ * mountDashboard). Apart from the sound switch, everything here is a snapshot of
+ * what this session currently knows.
  *
  * Data sources (single sources of truth, imported — never duplicated):
- *   brand     → host.assets discovery (USER_TOKENS_ID) — same check Profile used
+ *   brand     → host.assets discovery (USER_TOKENS_ID) + host.tokens resolve/raw,
+ *               read-only: the hero's name/logo/primary and the token chips
  *   device    → lib/device-info.ts        (live session snapshot)
  *   activity  → metrics.ts + lib/activity-summary.ts
  *   storage   → navigator.storage + host.state / host.assets measurers
@@ -29,8 +30,8 @@
  *   catalogue → window.__toolIndex + /catalog/assets/index.json
  *   caps      → lib/capabilities-data.ts
  *   CMYK      → engine/src/color.ts (CMYK_CONDITIONS)
- *   themes    → src/theme.ts (THEMES) · fonts → the LIVE --font-brand/--font-mono
- *               vars (lib/type-demo.ts activeFaces — brand/user fonts included)
+ *   fonts     → the LIVE --font-brand/--font-mono vars (lib/type-demo.ts
+ *               loadedFaces — brand/user fonts included)
  */
 
 import '../styles/parts/platform.css'; // shared dashboard chrome (.plat-* / .cap-*)
@@ -46,28 +47,25 @@ import type { CatalogTool } from '../lib/catalog-summary.ts';
 import type { PaletteEntry } from '../palette.ts';
 import { livePalette } from '../lib/live-palette.ts';
 import { groupPalette, swatch, isTransparent, inkText, isLockedInk } from '../lib/swatches.ts';
-import { THEMES, THEME_LABELS, currentTheme, applyTheme } from '../theme.ts';
-import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
+import { currentTheme } from '../theme.ts';
+import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, hexToOklch, formatOklch } from '@lolly/engine';
 import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { collectDevice, renderDeviceCards, renderDeviceStat, liveValue, fmtBytes } from '../lib/device-info.ts';
-import { playSfx, playThemeSfx } from '../lib/sfx.ts';
+import { playSfx } from '../lib/sfx.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
 import { USER_TOKENS_ID } from '../bridge/tokens.ts';
-import { brandRadiusValue } from '../brand-vars.ts';
-import { setBrandRadius } from '../user-fonts.ts';
-import type { UserFontsHost } from '../user-fonts.ts';
+import { applyBrandVars, brandRadiusValue, tokenValueToHex } from '../brand-vars.ts';
+import { listStudioTokens, formatStudioValue, gradientCss } from '../lib/token-studio.ts';
+import type { StudioToken } from '../lib/token-studio.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
-// Type-only — erased at compile time, so this does NOT pull the (lazily
-// loaded) brand-editor.ts module into this view's bundle. See wireLivePaletteDraft.
-import type { BrandDraftEventDetail } from '../lib/brand-editor.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
 
 // ── Primary tabs ─────────────────────────────────────────────────────────────
 // The dashboard splits into four tabbed panels. Every section keeps its own id /
-// data-flag / classes, so all the existing wiring (brand editor, themes, device
+// data-flag / classes, so all the existing wiring (brand hydration, device
 // probe, storage, type demo, deep links) works unchanged whichever tab is showing
 // — inactive panels are `hidden`, not removed. The `key` doubles as the ?tab=
 // deep-link value and the /b · /brand alias target (Design system).
@@ -138,10 +136,6 @@ function collapse(o: {
     </details>`;
 }
 
-// Sparkles (lucide) — the "make it yours" mark on the brand-setup link. Inline so
-// it inherits currentColor; sized by CSS (see .dash-brand-setup svg).
-const SPARKLES_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4M22 5h-4M4 17v2M5 18H3"/></svg>`;
-
 // Section heading + optional deep-link anchor. Sections here are NOT collapsible
 // (the reference panels at the foot are); the label rides above the content.
 function sectionHead(title: string, id: string, desc = ''): string {
@@ -150,50 +144,140 @@ function sectionHead(title: string, id: string, desc = ''): string {
   }</div>`;
 }
 
-// ── Your brand: the live brand EDITOR (lib/brand-editor.ts) — colour, the
-// editable palette, fonts and the shareable brand pack, all in place. This is the
-// "adjust" surface: nothing here bounces you to the wizard (colours) or Profile
-// (fonts) any more. The #/start wizard stays as the first-run pathway, and
-// Profile keeps its own font/share card as a mirror.
-//
-// Mounted just after first paint (IDB reads: brand discovery, tokens, fonts) and
-// never collapsible — this is the one section that must always show. A LOCKED
-// build renders a read-only note from inside the editor and wires nothing.
-function brandSection(): string {
+// ── Brand hero: the Design-system tab's opening statement — a READ-ONLY card
+// that literally wears the loaded brand. Its surface/text/edge come from the
+// brand's semantic slots (applyBrandVars paints --brand-* onto the section just
+// after first paint; every consumer in dashboard.css keeps a shell-token
+// fallback, so an unbranded install — or a doc with no semantic slots, like
+// SUSE's — reads perfectly in both themes). The name, logo, primary colour and
+// status line hydrate async (IDB reads); when the catalogue isn't locked, a
+// single CTA points at #/start, where the brand is actually adjusted. Never
+// collapsible — this is the one section that must always show.
+function brandHero(): string {
+  const { brand, mono } = loadedFaces();
+  const faces = ([
+    brand ? { face: brand, cssVar: '--font-brand', role: 'Primary typeface' } : null,
+    mono ? { face: mono, cssVar: '--font-mono', role: 'Mono typeface' } : null,
+  ] as Array<{ face: LiveFace; cssVar: string; role: string } | null>)
+    .filter(Boolean) as Array<{ face: LiveFace; cssVar: string; role: string }>;
   return `
-    <section class="plat-section dash-section dash-brand" id="dash-brand" aria-label="Your brand" data-flag="brand colour colours palette fonts">
-      <div class="dash-sec-head dash-brand-head">
-        <div class="dash-brand-head-text">
-          <h2 id="dash-brand-h" class="dash-sec-title">Your brand</h2>
-          <p class="dash-sec-desc">Your colour, palette and fonts — every tool, page and export follows. Nothing leaves this device.</p>
+    <section class="plat-section dash-section dash-hero" id="dash-brand" aria-label="Your brand" data-flag="brand logo colour colours palette fonts">
+      <div class="dash-hero-main">
+        <div class="dash-hero-id">
+          <span class="dash-hero-eyebrow">The brand in force</span>
+          <img class="dash-hero-logo" data-hero-logo alt="" hidden>
+          <h2 class="dash-hero-name" id="dash-brand-h" data-hero-name>&nbsp;</h2>
+          <p class="dash-hero-status" id="dash-brand-status">Loading…</p>
+          <a class="dash-hero-cta" href="#/start" data-hero-cta hidden>Adjust your brand <span class="dash-hero-cta-arrow" aria-hidden="true">→</span></a>
         </div>
-        <a class="dash-brand-setup" href="#/start" title="Open the full-page brand setup">
-          ${SPARKLES_ICON}<span>Make it yours</span>
-        </a>
+        <button type="button" class="dash-hero-primary" data-hero-primary data-copy="" aria-label="Primary colour — click to copy its value">
+          <span class="dash-hero-primary-label">Primary</span>
+          <code class="dash-hero-primary-code" data-hero-primary-code></code>
+        </button>
       </div>
-      <p class="dash-brand-status" id="dash-brand-status">Loading…</p>
-      <div class="dash-brand-editor" data-brand-editor-mount><p class="cat-empty">Loading your brand…</p></div>
+      ${faces.length ? `
+      <div class="dash-hero-type">
+        ${faces.map(({ face, cssVar, role }) => `
+          <span class="dash-hero-face" style="font-family:var(${cssVar})">
+            <strong>${escape(face.label)}</strong>
+            <em>${escape(role)}</em>
+          </span>`).join('')}
+      </div>` : ''}
     </section>`;
 }
 
-// Corner style — the one brand control the shared editor doesn't carry
-// (setBrandRadius). Lives in the Sound & focus / Theme card, right under the
-// theme switcher (it reads as app appearance, like the theme). Hidden until
-// the async brand hydration has read the current radius (and stays hidden for
-// a locked brand, whose shape is fixed like its colours). Wears the card's
-// split-divider chrome, not a nested .be-panel card.
-function radiusBody(): string {
+// ── Brand tokens: read-only chips for the brand's non-colour primitives — the
+// corner radius plus anything lib/token-studio.ts manages (spacing, sizing,
+// stroke, opacity, rotation, numbers, shadows, gradients). Rendered hidden and
+// filled by the async brand hydration; a doc carrying none of these keeps the
+// whole section off the page.
+function tokensSection(): string {
   return `
-      <div class="dash-radius-panel" id="dash-radius-panel" aria-label="Corner style" hidden>
-        <div class="dash-dev-split dash-sound-theme-split"><span>Corner style</span></div>
-        <p class="plat-section-desc">How rounded your cards, buttons and panels read across the whole app.</p>
-        <div class="brand-radius-row">
-          <span class="brand-radius-preview" id="dash-radius-preview" aria-hidden="true"></span>
-          <input type="range" class="brand-radius-slider" id="dash-radius-slider" min="0" max="1.5" step="0.05" value="1" aria-label="Corner radius — how rounded the app's cards, buttons and panels read">
-          <span class="brand-radius-value" id="dash-radius-value">1rem</span>
-        </div>
-        <p class="be-err" id="dash-radius-error" role="alert" hidden></p>
-      </div>`;
+    <section class="plat-section dash-section dash-tokens" id="dash-tokens" data-flag="tokens radius spacing shadow gradient" hidden>
+      ${sectionHead('Brand tokens', 'dash-tokens-h', 'The primitives the tokens document carries — shape, space, effects — exactly as tools consume them. Adjusted at <a href="#/start?tab=tokens">Start</a>.')}
+      <ul class="dash-token-grid" data-token-grid></ul>
+    </section>`;
+}
+
+// A CSS length as this page will render into a style attribute — same
+// defence-in-depth stance as brand-vars.ts's RADIUS_RE, widened to allow the
+// negative offsets a shadow may carry. Anything else simply drops its preview.
+const TOKEN_LEN_RE = /^-?\d+(\.\d+)?(px|rem|em)$/;
+
+/** One read-only token chip: kind-specific preview · name over kind · value. */
+function tokenChip(o: { name: string; kind: string; value: string; preview: string }): string {
+  return `
+    <li class="dash-token">
+      <span class="dash-token-preview" aria-hidden="true">${o.preview}</span>
+      <span class="dash-token-text">
+        <span class="dash-token-name">${escape(o.name)}</span>
+        <span class="dash-token-kind">${escape(o.kind)}</span>
+      </span>
+      ${o.value ? `<code class="dash-token-value">${escape(o.value)}</code>` : ''}
+    </li>`;
+}
+
+/** A studio token's tiny visual: bar / rule / translucency / needle / shadow /
+ *  gradient. Values come from an untrusted imported doc and land in a style
+ *  attribute, so every branch validates before it renders — a chip whose value
+ *  can't be shown safely just shows none. */
+function studioPreview(t: StudioToken): string {
+  const raw = t.raw;
+  const len = typeof raw === 'string' && TOKEN_LEN_RE.test(raw.trim()) ? raw.trim() : null;
+  switch (t.kind) {
+    case 'spacing':
+    case 'sizing':
+      return len ? `<span class="dash-token-bar"><i style="width:${escape(len)}"></i></span>` : '';
+    case 'stroke':
+      return len ? `<span class="dash-token-rule"><i style="height:${escape(len)}"></i></span>` : '';
+    case 'opacity': {
+      const n = typeof raw === 'number' && Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : null;
+      return n == null ? '' : `<span class="dash-token-alpha"><i style="opacity:${n}"></i></span>`;
+    }
+    case 'rotation': {
+      const n = typeof raw === 'number' && Number.isFinite(raw) ? Math.round(raw * 100) / 100 : null;
+      return n == null ? '' : `<span class="dash-token-rot"><i style="transform:rotate(${n}deg)"></i></span>`;
+    }
+    case 'shadow': {
+      const css = shadowCss(raw);
+      return css ? `<span class="dash-token-shadow" style="box-shadow:${escape(css)}"></span>` : '';
+    }
+    case 'gradient': {
+      const css = gradientCss(raw, t.angle);
+      return css ? `<span class="dash-token-grad" style="background:${escape(css)}"></span>` : '';
+    }
+    default:
+      return ''; // number — the value line carries it
+  }
+}
+
+/** A DTCG shadow $value ({ color, offsetX, offsetY, blur, spread } strings) as
+ *  a safe CSS box-shadow, or null when its colour or any offset is unusable. */
+function shadowCss(raw: unknown): string | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const dim = (v: unknown): string | null =>
+    typeof v === 'string' && TOKEN_LEN_RE.test(v.trim()) ? v.trim() : null;
+  const color = tokenValueToHex(r.color);
+  if (!color) return null;
+  return `${dim(r.offsetX) ?? '0px'} ${dim(r.offsetY) ?? '0px'} ${dim(r.blur) ?? '0px'} ${dim(r.spread) ?? '0px'} ${color}`;
+}
+
+/** A studio token's display value — the contract's formatter first, else the
+ *  raw string/number itself (shadows/gradients read from their preview). */
+function studioValue(t: StudioToken): string {
+  const formatted = formatStudioValue(t);
+  if (formatted) return formatted;
+  return typeof t.raw === 'string' ? t.raw : typeof t.raw === 'number' ? String(t.raw) : '';
+}
+
+/** A computed `rgb()`/`rgba()` colour → #rrggbb (the hover-code fallback when
+ *  the brand declares no semantic primary and the chip shows the shell accent). */
+function cssRgbToHex(css: string): string | null {
+  const m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(css.trim());
+  if (!m) return null;
+  const h = (n: string) => Math.min(255, +n).toString(16).padStart(2, '0');
+  return `#${h(m[1]!)}${h(m[2]!)}${h(m[3]!)}`;
 }
 
 // ── Palette: the compact "ink ribbon" ──────────────────────────────────────
@@ -220,11 +304,7 @@ function inkGroup(label: string, cols: readonly PaletteEntry[], count = false): 
     </div>`;
 }
 
-// Split from paletteSection so the live-draft sync below (wireLivePaletteDraft)
-// can rebuild just the description + ribbon + full-values grid — the same
-// markup collapse() wraps in the <details> chrome — without touching that
-// chrome's open/closed state.
-function paletteBody(palette: readonly PaletteEntry[]): { desc: string; body: string } {
+function paletteSection(palette: readonly PaletteEntry[]): string {
   const { brand, spectrum, ramps } = groupPalette(palette);
   const measuredCount = palette.filter(isLockedInk).length;
 
@@ -262,20 +342,19 @@ function paletteBody(palette: readonly PaletteEntry[]): { desc: string; body: st
       </div>
     </details>`;
 
-  return {
+  return collapse({
+    id: 'dash-palette',
+    flag: 'color colour colours',
+    title: 'Colour palette',
     desc: `Shown in every colour picker. <strong>${measuredCount} of ${palette.length}</strong> carry a locked ink value (CMYK or spot), substituted directly into CMYK PDF exports — the tick on a bar marks one.`,
     body: `${ribbon}${fullGrid}`,
-  };
+    half: true,
+  });
 }
 
-function paletteSection(palette: readonly PaletteEntry[]): string {
-  const { desc, body } = paletteBody(palette);
-  return collapse({ id: 'dash-palette', flag: 'color colour colours', title: 'Colour palette', desc, body, half: true });
-}
-
-// Copy-to-clipboard for ink bars AND the full-values swatch chips, scoped to
-// whatever subtree just got (re)painted — the initial mount (the whole view)
-// and the live-draft palette resync (just its replaced body) both call this.
+// Copy-to-clipboard for ink bars, the full-values swatch chips AND the hero's
+// primary field (its data-copy hydrates in async; the handler reads the dataset
+// at click time, so wiring before hydration is fine).
 function wireCopyButtons(root: ParentNode): void {
   root.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -288,30 +367,6 @@ function wireCopyButtons(root: ParentNode): void {
       }
     });
   });
-}
-
-// Best-effort: keep the "Colour palette" ink-bar section tracking the brand
-// editor's live Colour-panel draft (primary drag, a neutral/secondary ramp
-// pick, "Use this colour") — even before it's saved. Listens for the editor's
-// BRAND_DRAFT_EVENT (passed in, not imported, so this view never statically
-// pulls in the lazily-loaded brand-editor.ts module) and repaints only
-// #dash-palette's body, leaving its open/closed state and every other section
-// untouched. A no-op (never wired) when the editor doesn't mount, and a no-op
-// per event when the section isn't on the page.
-function wireLivePaletteDraft(viewEl: HTMLElement, eventName: string): () => void {
-  const bodyEl = viewEl.querySelector<HTMLElement>('#dash-palette .plat-section-body');
-  if (!bodyEl) return () => {};
-  const onDraft = (e: Event): void => {
-    if (!viewEl.isConnected) return;
-    const palette = (e as CustomEvent<BrandDraftEventDetail>).detail?.palette;
-    if (!palette?.length) return;
-    const { desc, body } = paletteBody(palette);
-    bodyEl.innerHTML = `<p class="plat-section-desc dash-collapse-desc">${desc}</p>${body}`;
-    wireReadout(viewEl);
-    wireCopyButtons(bodyEl);
-  };
-  document.addEventListener(eventName, onDraft);
-  return () => document.removeEventListener(eventName, onDraft);
 }
 
 // ── Capabilities: grouped; each card POPS its detail open in a dialog ────────
@@ -391,35 +446,11 @@ function refPanel(flag: string, defaultOpen: boolean, id: string, title: string,
     </details>`;
 }
 
-// Interactive theme picker — each preview is a real button that applies the theme
-// app-wide (instant) and persists it to the profile. The active one is flagged.
-// `data-theme` still rides each preview so tokens.css renders its dots in that theme's
-// own colours; `data-theme-set` is the click target (kept distinct — see wireThemes).
-function themesBody(): string {
-  const active = currentTheme();
-  return `
-    <p class="plat-section-desc">Switch the whole app’s theme — applied instantly and remembered on this device.</p>
-    <div class="plat-theme-grid dash-theme-pick" data-theme-pick>
-      ${THEMES.map((t) => `
-        <button type="button" class="plat-theme dash-theme-opt${t === active ? ' is-active' : ''}" data-theme-set="${escape(t)}" data-theme="${escape(t)}" aria-pressed="${t === active ? 'true' : 'false'}">
-          <div class="plat-theme-name">${escape(THEME_LABELS[t])}${t === 'light' ? '<span class="plat-pill">default</span>' : ''}</div>
-          <div class="plat-theme-dots">
-            <span style="background:hsl(var(--primary))" title="primary"></span>
-            <span style="background:hsl(var(--card))" title="card"></span>
-            <span style="background:hsl(var(--accent))" title="accent"></span>
-            <span style="background:hsl(var(--muted))" title="muted"></span>
-            <span style="background:hsl(var(--foreground))" title="foreground"></span>
-          </div>
-          <div class="plat-theme-sample">Aa</div>
-        </button>`).join('')}
-    </div>`;
-}
-
 // A compact "type facts" strip for the Type-in-motion tile — the fonts IN FORCE,
 // resolved from the live --font-brand / --font-mono vars (platform defaults, the
 // brand's font tokens, or a user-installed primary — whatever is actually set),
-// with each row rendered in its own face. "Manage fonts" points at the profile's
-// Brand fonts panel, where fonts are added and the primary is chosen.
+// with each row rendered in its own face. "Manage fonts" points at the Start
+// studio's Type step, where fonts are added and the primary is chosen.
 function typeFacts(): string {
   const { brand, mono } = loadedFaces();
   const rootStyle = getComputedStyle(document.documentElement);
@@ -435,7 +466,7 @@ function typeFacts(): string {
           <span class="dash-type-meta">${escape(role)} · wght ${face.axis.min}–${face.axis.max}</span>
           <code class="dash-type-src">${escape(`${cssVar}: ${rootStyle.getPropertyValue(cssVar).trim()}`)}</code>
         </li>`).join('')}
-      <li class="dash-type-manage"><a href="#/profile">Manage fonts →</a></li>
+      <li class="dash-type-manage"><a href="#/start?tab=type">Manage fonts →</a></li>
     </ul>`;
 }
 
@@ -645,16 +676,12 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             </div>
             <div class="dash-bento">
               ${collapse({
-                id: 'dash-sound-theme',
-                flag: 'sound audio neurospicy focus volume themes theme',
-                title: 'Sound & focus',
-                cls: 'dash-card dash-sound-theme',
+                id: 'dash-sound',
+                flag: 'sound audio neurospicy focus volume',
+                title: 'Sound',
+                cls: 'dash-card dash-sound',
                 desc: 'Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.',
-                body: `
-                  <div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>
-                  <div class="dash-dev-split dash-sound-theme-split"><span>Theme</span></div>
-                  ${themesBody()}
-                  ${radiusBody()}`,
+                body: `<div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>`,
               })}
               ${collapse({
                 id: 'dash-storage',
@@ -669,7 +696,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         `)}
 
         ${panel('brand', initialTab, `
-          ${brandSection()}
+          ${brandHero()}
           <div class="dash-bento">
             <section class="plat-section dash-section dash-card" id="dash-palette-wheel" data-flag="color colour colours palette wheel">
               ${sectionHead('Palette on the wheel', 'dash-wheel-h', 'Every brand colour plotted by hue and lightness — shade ramps fan out dark-centre to bright-rim. Hover a dot to read it.')}
@@ -682,9 +709,10 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             </section>
           </div>
           ${paletteSection(palette)}
+          ${tokensSection()}
           ${refPanel('print cmyk', false, 'dash-print', 'Print & CMYK', printBody(palette))}
           <p class="plat-note dash-foot" role="note">
-            <strong>Your brand is live</strong> — colour, palette and fonts above write straight to this device and every tool, page and export follows. Your activity and storage — tracked on the other tabs above — are mirrored from your <a href="#/profile">Profile</a>, where you can manage them.
+            <strong>This page is read-only</strong> — it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at <a href="#/start">Start</a>; personal preferences — theme and sound — live on your <a href="#/profile">Profile</a>.
           </p>
         `)}
 
@@ -741,84 +769,124 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   // means a `?print`/`?formats` link both switches to the right tab AND scrolls.
   const selectTab = wireTabs(viewEl, initialTab);
 
-  // Your brand: a status line (an IDB read via host.assets discovery) plus the
-  // live editor, both hydrated just after first paint rather than blocking it.
-  // The editor owns colour / palette / fonts / share and persists straight to
-  // `user/tokens/brand`; a locked build makes it render its own read-only note.
+  // The brand hero + token chips, hydrated just after first paint rather than
+  // blocking it (IDB reads: brand discovery, tokens, the raw doc). Everything
+  // here READS — the hero's only affordances are the #/start CTA and a
+  // copy-to-clipboard on the primary field — so there is nothing to tear down.
+  // Guarded after every await: a route change mid-read must not paint a
+  // detached node.
   void (async () => {
-    const statusEl = viewEl.querySelector<HTMLElement>('#dash-brand-status');
-    let metaId = '';
+    const hero = viewEl.querySelector<HTMLElement>('#dash-brand');
+    if (!hero || !viewEl.contains(hero)) return;
+    const tokensApi = host.tokens as {
+      resolve?(ref: string): Promise<unknown>;
+      raw?(): Promise<unknown>;
+      isLocked?(): Promise<boolean>;
+    } | undefined;
+
+    // Dress the hero in the brand's own semantic slots: applyBrandVars resolves
+    // color.semantic.* onto the section as --brand-* custom properties. Every
+    // consumer in dashboard.css keeps a shell-token fallback, so a doc without
+    // semantic slots (SUSE's) or no doc at all reads perfectly in both themes.
+    void applyBrandVars(hero, host as Parameters<typeof applyBrandVars>[1]).catch(() => { /* cosmetic */ });
+
+    // Name + status — the tokens asset's metadata (a user install's own label,
+    // else the catalogue asset's name with its "… tokens" suffix trimmed for
+    // display: "SUSE Brand Design Tokens" reads as "SUSE" up here).
+    let rec: { id: string; name?: string; meta?: Record<string, unknown> } | null = null;
     try {
-      metaId = (await (host.assets as unknown as {
-        _findMetaByType?(t: string): Promise<{ id: string } | null>;
-      })._findMetaByType?.('tokens'))?.id ?? '';
+      rec = (await (host.assets as unknown as {
+        _findMetaByType?(t: string): Promise<{ id: string; name?: string; meta?: Record<string, unknown> } | null>;
+      })._findMetaByType?.('tokens')) ?? null;
     } catch { /* discovery unavailable — show the unbranded pathway */ }
-    const locked = await (host.tokens as { isLocked?(): Promise<boolean> } | undefined)?.isLocked?.().catch(() => false) ?? false;
-    if (statusEl && viewEl.contains(statusEl)) {
+    const locked = await tokensApi?.isLocked?.().catch(() => false) ?? false;
+    if (!viewEl.contains(hero)) return;
+
+    const metaId = rec?.id ?? '';
+    const metaName = typeof rec?.meta?.name === 'string' && rec.meta.name ? rec.meta.name : rec?.name ?? '';
+    const nameEl = hero.querySelector<HTMLElement>('[data-hero-name]');
+    if (nameEl) nameEl.textContent = metaName.replace(/\s+(brand\s+)?(design\s+)?tokens$/i, '').trim() || 'Your brand';
+
+    const statusEl = hero.querySelector<HTMLElement>('#dash-brand-status');
+    if (statusEl) {
       statusEl.innerHTML = locked
         ? 'This build ships with a fixed brand — every tool, page and export already wears it.'
         : metaId === USER_TOKENS_ID
-          ? 'Your brand is installed — every tool, page and export wears it. Adjust it below.'
+          ? 'Your brand is installed — every tool, page and export wears it.'
           : metaId
-            ? 'Running the catalogue’s built-in brand. Make it yours below — pick a colour and Lolly derives the rest. It stays on this device.'
+            ? 'Running the catalogue’s built-in brand. Make it yours — pick a colour and Lolly derives the rest. It stays on this device.'
             : 'This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.';
     }
+    // The one action: adjust the brand at Start. A locked catalogue's brand is
+    // part of its identity, so the CTA never shows there (the status line above
+    // is the fixed-brand note).
+    const cta = hero.querySelector<HTMLElement>('[data-hero-cta]');
+    if (cta) cta.hidden = locked;
 
-    // Corner style — the one brand control the shared editor doesn't carry
-    // (setBrandRadius). Hidden for a locked brand (its shape is fixed like its
-    // colours), matching the editor's own gate above. Live app-wide preview on
-    // every drag tick (setProperty directly, instant, no round trip), persisted
-    // debounced so a drag doesn't spam writes.
-    const radiusPanel = viewEl.querySelector<HTMLElement>('#dash-radius-panel');
-    if (!locked && radiusPanel && viewEl.contains(radiusPanel)) {
-      const currentRadius = await (host.tokens as { resolve?(ref: string): Promise<unknown> } | undefined)
-        ?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null;
-      if (viewEl.contains(radiusPanel)) {
-        const currentRadiusRem = currentRadius ? parseFloat(currentRadius) : 1;
-        const preview = radiusPanel.querySelector<HTMLElement>('#dash-radius-preview');
-        const slider = radiusPanel.querySelector<HTMLInputElement>('#dash-radius-slider');
-        const valueEl = radiusPanel.querySelector<HTMLElement>('#dash-radius-value');
-        const errEl = radiusPanel.querySelector<HTMLElement>('#dash-radius-error');
-        if (preview) preview.style.borderRadius = `${currentRadiusRem}rem`;
-        if (slider) slider.value = String(currentRadiusRem);
-        if (valueEl) valueEl.textContent = `${currentRadiusRem}rem`;
-        radiusPanel.hidden = false;
-        let radiusDebounce: ReturnType<typeof setTimeout> | undefined;
-        slider?.addEventListener('input', () => {
-          const css = `${slider.value}rem`;
-          if (preview) preview.style.borderRadius = css;
-          if (valueEl) valueEl.textContent = css;
-          document.documentElement.style.setProperty('--radius', css);
-          clearTimeout(radiusDebounce);
-          radiusDebounce = setTimeout(() => {
-            setBrandRadius(host as unknown as UserFontsHost, css).catch(err => {
-              if (errEl) { errEl.textContent = String((err as { message?: unknown })?.message ?? err); errEl.hidden = false; }
-            });
-          }, 400);
-        });
+    // The horizontal-primary logo, when the brand carries one — resolved from
+    // its asset token to the stored asset's url and rendered via <img>, so an
+    // uploaded SVG's markup is drawn, never executed. On a dark-leaning theme
+    // (dark/brand) the reverse form is preferred when present. The bridge owns
+    // the object URL (its cache), so nothing here revokes it.
+    try {
+      const wantReverse = currentTheme() !== 'light';
+      const refs = wantReverse
+        ? ['{asset.logo.horizontal-primary-reverse}', '{asset.logo.horizontal-primary}']
+        : ['{asset.logo.horizontal-primary}'];
+      for (const ref of refs) {
+        const id = await tokensApi?.resolve?.(ref);
+        if (typeof id !== 'string' || !id || id.startsWith('{')) continue;
+        const asset = await host.assets.get(id).catch(() => null);
+        if (!viewEl.contains(hero)) break;
+        if (!asset?.url) continue; // stale token / missing asset — try the next form
+        const img = hero.querySelector<HTMLImageElement>('[data-hero-logo]');
+        if (img) { img.src = asset.url; img.hidden = false; }
+        break;
+      }
+    } catch { /* no logo installed — the name carries the hero */ }
+
+    // The primary field's quiet instrument line: hex · oklch, plus click-to-copy
+    // (wireCopyButtons reads data-copy at click time). Resolved from the brand's
+    // semantic primary; when the doc declares none, read the chip's painted
+    // fallback (the shell accent) so the readout always tells the truth.
+    const chip = hero.querySelector<HTMLButtonElement>('[data-hero-primary]');
+    if (chip && viewEl.contains(chip)) {
+      let hex: string | null = null;
+      try { hex = tokenValueToHex(await tokensApi?.resolve?.('{color.semantic.primary}')); } catch { /* fall through */ }
+      if (!hex) hex = cssRgbToHex(getComputedStyle(chip).backgroundColor);
+      if (hex && viewEl.contains(chip)) {
+        const o = hexToOklch(hex);
+        const code = chip.querySelector<HTMLElement>('[data-hero-primary-code]');
+        if (code) code.textContent = o ? `${hex} · ${formatOklch(o)}` : hex;
+        chip.dataset.copy = hex;
+        chip.title = `Primary · ${hex} (click to copy)`;
       }
     }
 
-    // Mount the editor. It is the one interactive thing on this page that writes,
-    // so its teardown (debounced save timer + document listeners) is chained onto
-    // the view's _cleanup. Guarded: a route change mid-await must not mount into
-    // a detached node.
-    const mount = viewEl.querySelector<HTMLElement>('[data-brand-editor-mount]');
-    if (!mount || !viewEl.contains(mount)) return;
+    // Brand tokens — the read-only chip grid: the corner radius (same token the
+    // Start studio's slider writes) plus every studio-managed primitive in the
+    // raw doc. A doc carrying none keeps the section hidden entirely.
     try {
-      const { mountBrandEditor, BRAND_DRAFT_EVENT } = await import('../lib/brand-editor.ts');
-      if (!viewEl.contains(mount)) return;
-      const editor = await mountBrandEditor(mount, host);
-      if (!viewEl.contains(mount)) { editor.teardown(); return; }
-      // Best-effort: track the editor's live Colour-panel draft in the
-      // "Colour palette" ink bar below, even before it's saved.
-      const stopPaletteSync = wireLivePaletteDraft(viewEl, BRAND_DRAFT_EVENT);
-      const prev = (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup;
-      (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { prev?.(); editor.teardown(); stopPaletteSync(); };
-    } catch (err) {
-      console.error('Brand editor failed to mount:', err);
-      mount.innerHTML = '<p class="cat-empty">The brand editor is unavailable right now.</p>';
-    }
+      const radius = await tokensApi?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null;
+      let studio: StudioToken[] = [];
+      try {
+        const doc = await tokensApi?.raw?.();
+        if (doc) studio = listStudioTokens(doc);
+      } catch { /* no readable doc — chips fall back to radius alone */ }
+      const chips = [
+        ...(radius ? [tokenChip({
+          name: 'Corner radius', kind: 'shape', value: radius,
+          preview: `<span class="dash-token-shape" style="border-radius:${escape(radius)}"></span>`,
+        })] : []),
+        ...studio.map(t => tokenChip({ name: t.name, kind: t.kind, value: studioValue(t), preview: studioPreview(t) })),
+      ];
+      const sec = viewEl.querySelector<HTMLElement>('#dash-tokens');
+      const grid = sec?.querySelector<HTMLElement>('[data-token-grid]');
+      if (sec && grid && chips.length && viewEl.contains(sec)) {
+        grid.innerHTML = chips.join('');
+        sec.hidden = false;
+      }
+    } catch { /* tokens unreadable — the section stays hidden */ }
   })();
 
   // Fold cue: a soft hydraulic open/close whenever a primary section (device,
@@ -851,10 +919,8 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { prev?.(); stopTypeDemo(); };
   }
 
-  // The Sound & focus box drives the real sfx + Neurospicy state (self-contained control).
+  // The Sound box drives the real sfx + Neurospicy state (self-contained control).
   wireSoundSwitch(viewEl, host as unknown as Parameters<typeof wireSoundSwitch>[1]);
-  // The Theme box applies + persists the app theme live.
-  wireThemes(viewEl, host);
 
   // Capability cards POP their detail into a shared dialog (no inline reflow). Each card
   // clones its sibling <template>; the native <dialog> gives Esc-to-close + backdrop.
@@ -1108,35 +1174,6 @@ function wireReadout(viewEl: HTMLElement): void {
   };
   ribbon.addEventListener('pointerover', (e) => show(e.target as Element));
   ribbon.addEventListener('focusin', (e) => show(e.target as Element));
-}
-
-// Theme picker — each preview button applies the theme app-wide immediately (applyTheme
-// mirrors to localStorage + updates the PWA chrome colour) and persists it to the profile
-// (canonical). The active preview is flagged; a soft theme cue plays on switch.
-function wireThemes(viewEl: HTMLElement, host: HostV1): void {
-  const pick = viewEl.querySelector<HTMLElement>('[data-theme-pick]');
-  if (!pick) return;
-  pick.querySelectorAll<HTMLButtonElement>('[data-theme-set]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const next = btn.dataset.themeSet;
-      if (!next || next === currentTheme()) return;
-      applyTheme(next);
-      playThemeSfx(next);
-      // Reflect the new active state across the picker.
-      pick.querySelectorAll<HTMLButtonElement>('[data-theme-set]').forEach((b) => {
-        const on = b.dataset.themeSet === next;
-        b.classList.toggle('is-active', on);
-        b.setAttribute('aria-pressed', String(on));
-      });
-      try {
-        // `set` is a web-shell extension (WebProfileAPI), not on the engine's read-only
-        // ProfileAPI — reach it via a narrow cast, and feature-detect for other shells.
-        const profileApi = host.profile as (typeof host.profile) & { set?: (p: unknown) => Promise<void> };
-        const profile = await host.profile.get();
-        await profileApi.set?.({ ...profile, theme: next });
-      } catch { /* preference save is best-effort */ }
-    });
-  });
 }
 
 // Keep the live device rows (viewport, orientation) current while mounted. The

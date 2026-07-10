@@ -30,7 +30,7 @@ import './type-demo.css';
 import { escapeHtml } from './html.ts';
 
 const TYPED = 'lolly qr-code --url=lolly.tools';
-const ITALIC = '// vector, on-brand, instant';
+const ITALIC = '// vector, exact, instant';
 const BRAND_ROMAN = 'define once,';
 const BRAND_ITALIC = 'use everywhere';
 
