@@ -78,38 +78,38 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost): Promise<
         <p class="start-sub">Pick a colour and Lolly derives a full brand — ramps, both themes, every role. Add fonts, fine-tune the palette, set the corner style. Everything stays on this device.</p>
       </header>
 
-      <div class="start-editor-wrap">
-        <!-- The shared brand editor: colour, logo, fonts, palette (swatches), share. -->
-        <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">Loading your brand…</p></div>
+      <!-- Secondary utilities + summary note, surfaced above the brand editor. -->
+      <div class="start-utils">
+        <!-- Rounded Corners — the one control the editor doesn't carry (setBrandRadius). -->
+        <section class="be-panel start-radius-panel" aria-label="Rounded Corners">
+          <div class="be-panel-head"><h3 class="be-panel-title">Rounded Corners</h3>
+            <p class="be-panel-sub">Sets a brand radius value that's customized the UI and even some tools.</p></div>
+          <div class="brand-radius-row">
+            <span class="brand-radius-preview" id="start-radius-preview" style="border-radius:${currentRadiusRem}rem" aria-hidden="true"></span>
+            <input type="range" class="brand-radius-slider" id="start-radius-slider" min="0" max="1.5" step="0.05" value="${currentRadiusRem}" aria-label="Corner radius">
+            <span class="brand-radius-value" id="start-radius-value">${currentRadiusRem}rem</span>
+          </div>
+          <p class="be-err" id="start-radius-error" role="alert" hidden></p>
+        </section>
 
-        <!-- Secondary utilities: corner style + import, side by side below the brand work. -->
-        <div class="start-utils">
-          <!-- Corner style — the one control the editor doesn't carry (setBrandRadius). -->
-          <section class="be-panel start-radius-panel" aria-label="Corner style">
-            <div class="be-panel-head"><h3 class="be-panel-title">Corner style</h3>
-              <p class="be-panel-sub">How rounded your cards, buttons and panels read across the whole app.</p></div>
-            <div class="brand-radius-row">
-              <span class="brand-radius-preview" id="start-radius-preview" style="border-radius:${currentRadiusRem}rem" aria-hidden="true"></span>
-              <input type="range" class="brand-radius-slider" id="start-radius-slider" min="0" max="1.5" step="0.05" value="${currentRadiusRem}" aria-label="Corner radius">
-              <span class="brand-radius-value" id="start-radius-value">${currentRadiusRem}rem</span>
-            </div>
-            <p class="be-err" id="start-radius-error" role="alert" hidden></p>
-          </section>
-
-          <!-- Already have a brand? Bring a tokens JSON, a Penpot file, an SVG, or a Lolly brand file. -->
-          <section class="be-panel start-import" aria-label="Import a brand">
-            <div class="be-panel-head"><h3 class="be-panel-title">Already have a brand?</h3>
-              <p class="be-panel-sub">Bring a W3C design-tokens / Tokens Studio JSON export, a <strong>Penpot</strong> file (its design tokens), an <strong>SVG</strong> (we'll read the colours it uses), or a Lolly <strong>brand file</strong> (.zip) someone shared.</p></div>
-            <label class="be-btn start-import-btn">
-              Import a design or brand file&hellip;
-              <input type="file" class="start-import-file" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip" hidden>
-            </label>
-            <div class="start-import-result" hidden></div>
-          </section>
-        </div>
+        <!-- Already have a brand? Bring a tokens JSON, a Penpot file, an SVG, or a Lolly brand file. -->
+        <section class="be-panel start-import" aria-label="Import a brand">
+          <div class="be-panel-head"><h3 class="be-panel-title">Already have a brand?</h3>
+            <p class="be-panel-sub">Bring a W3C design-tokens / Tokens Studio JSON export, a <strong>Penpot</strong> file (its design tokens), an <strong>SVG</strong> (we'll read the colours it uses), or a Lolly <strong>brand file</strong> (.zip) someone shared.</p></div>
+          <label class="be-btn start-import-btn">
+            Import a design or brand file&hellip;
+            <input type="file" class="start-import-file" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip" hidden>
+          </label>
+          <div class="start-import-result" hidden></div>
+        </section>
       </div>
 
       <p class="start-done-note">Everything you set here is saved on this device as your brand — every tool, page and export follows it. Adjust it any time from your dashboard.</p>
+
+      <div class="start-editor-wrap">
+        <!-- The shared brand editor: colour, logo, fonts, palette (swatches), share. -->
+        <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">Loading your brand…</p></div>
+      </div>
     </div>
     <button type="button" class="start-float-cta" id="start-float-save">
       Save &amp; begin

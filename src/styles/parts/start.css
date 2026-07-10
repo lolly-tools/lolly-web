@@ -112,10 +112,11 @@
 .start-import-err { margin: 0; font-size: 12.5px; font-weight: 600; color: hsl(var(--destructive)); }
 .start-cta--import { align-self: flex-start; }
 
-/* ── Done note — the floating "Save & begin" button (below) is the one
-      explicit finish line now; this is just the trailing explanation. ────────── */
+/* ── Done note — surfaced near the top (above the editor) as the lead-in
+      reassurance; the floating "Save & begin" button (below) is the one
+      explicit finish line. ────────── */
 .start-done-note {
-  margin: 30px 0 0;
+  margin: 30px 0 34px;
   font-size: 13px;
   line-height: 1.55;
   color: hsl(var(--muted-foreground));

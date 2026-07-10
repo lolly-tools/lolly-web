@@ -190,7 +190,7 @@
 .cat-tile-sub { font-size: 11.5px; color: hsl(var(--muted-foreground)); display: flex; align-items: center; gap: 4px; }
 .cat-src {
   font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-  padding: 1px 5px; border-radius: 4px;
+  padding: 1px 5px; border-radius: var(--radius);
 }
 .cat-src--user { background: hsl(var(--primary) / .15); color: hsl(var(--primary)); }
 .cat-src--lib  { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }

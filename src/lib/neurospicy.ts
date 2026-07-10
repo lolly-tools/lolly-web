@@ -27,9 +27,13 @@ export type NeurospicyHost = {
   profile: { get(): Promise<object>; set(p: object): Promise<unknown> };
 };
 
-export interface NeurospicyState { enabled: boolean; loopId: string; volume: number; }
+export interface NeurospicyState { enabled: boolean; loopId: string; volume: number; repeat: boolean; }
 const KEY = 'lolly:neurospicy';
-const DEFAULTS: NeurospicyState = { enabled: false, loopId: '', volume: 0.5 };
+// repeat: the classic behaviour — the selected track loops forever. false = play
+// FORWARD through the list, advancing to the next track when the current one ends.
+// Defaults to repeat (true), so nothing changes for anyone who never touches the
+// toggle; spread into readInitial/hydrate so older persisted states inherit it.
+const DEFAULTS: NeurospicyState = { enabled: false, loopId: '', volume: 0.5, repeat: true };
 
 let state: NeurospicyState = readInitial();
 function readInitial(): NeurospicyState {
@@ -72,6 +76,33 @@ const urlById = new Map<string, string>();
 // song (format 'zzfxm' → render to PCM). Cache the format alongside the URL so
 // loadBuffer picks the right path.
 const formatById = new Map<string, string>();
+// The most recent host play() ran with — so seekNeurospicy (which carries no host
+// of its own) and a source's natural-end handler can advance the playlist in
+// FORWARD mode without threading host through every call site.
+let activeHost: NeurospicyHost | null = null;
+
+/**
+ * Wire a freshly-created buffer source's end behaviour to the current mode:
+ * repeat → loop forever (onended never fires); forward → play once and advance to
+ * the next track when it ends. onended ALSO fires on a manual stop() (track
+ * switch, seek, pause), so those paths null it out BEFORE stopping (see
+ * stopSource / seekNeurospicy) — leaving only a natural end to trigger an advance.
+ */
+function armSourceEnd(s: AudioBufferSourceNode, host: NeurospicyHost | null): void {
+  s.loop = state.repeat;
+  s.onended = state.repeat ? null : () => {
+    // Ignore a stale source (another already took over) or a state that means we
+    // shouldn't keep going (paused, disabled, sound muted).
+    if (s !== src || !state.enabled || paused || isSfxMuted()) return;
+    // Drop the spent one-shot BEFORE advancing: cycleNeurospicyLoop → play() and,
+    // for a single-track (or wrap-to-self) list, that lands on the SAME id — where
+    // play()'s idempotency guard (`src && playingId === loopId`) would otherwise
+    // short-circuit and never build a fresh source, leaving audio dead. Clearing
+    // src here forces the rebuild.
+    stopSource();
+    if (host) void cycleNeurospicyLoop(host, 1);
+  };
+}
 
 function audio(): { ctx: AudioContext; gain: GainNode } | null {
   if (typeof window === 'undefined') return null;
@@ -112,17 +143,19 @@ export function seekNeurospicy(seconds: number): void {
   const buf = src?.buffer;
   if (!a || !src || !buf) return;
   const offset = ((seconds % buf.duration) + buf.duration) % buf.duration;
+  src.onended = null; // our own swap, not a natural end — don't advance the list
   try { src.stop(); } catch { /* already stopped */ }
   src.disconnect();
   const s = a.ctx.createBufferSource();
-  s.buffer = buf; s.loop = true; s.connect(a.gain);
+  s.buffer = buf; s.connect(a.gain);
+  armSourceEnd(s, activeHost); // keep the same repeat/forward behaviour after a seek
   s.start(0, offset);
   src = s;
   srcStartedAt = a.ctx.currentTime; srcOffset = offset;
 }
 
 function stopSource(): void {
-  if (src) { try { src.stop(); } catch { /* already stopped */ } src.disconnect(); src = null; }
+  if (src) { src.onended = null; try { src.stop(); } catch { /* already stopped */ } src.disconnect(); src = null; }
   if (radioEl) { try { radioEl.pause(); } catch { /* ignore */ } radioEl.removeAttribute('src'); }
   playingId = '';
 }
@@ -184,6 +217,7 @@ async function loadBuffer(id: string, url: string, format: string | undefined): 
 
 // Start (or switch to) the selected loop; idempotent when already playing it.
 async function play(host: NeurospicyHost): Promise<void> {
+  activeHost = host; // remembered for seek + end-of-track advance (see armSourceEnd)
   // The interface-sound mute is the MASTER mute: while sound is off, the focus loop is silent
   // too (its enabled preference is kept, so it resumes when sound is turned back on).
   if (!state.enabled || !state.loopId || isSfxMuted() || paused) { stopSource(); return; }
@@ -210,7 +244,8 @@ async function play(host: NeurospicyHost): Promise<void> {
   if (!buf || state.loopId !== id || !state.enabled || paused || isSfxMuted()) return;
   stopSource();
   const s = a.ctx.createBufferSource();
-  s.buffer = buf; s.loop = true; s.connect(a.gain);
+  s.buffer = buf; s.connect(a.gain);
+  armSourceEnd(s, host); // loop (repeat) or advance-on-end (forward), per state.repeat
   a.gain.gain.value = state.volume; s.start();
   src = s; playingId = id;
   srcStartedAt = a.ctx.currentTime; srcOffset = 0;
@@ -260,6 +295,15 @@ export function setNeurospicyVolume(host: NeurospicyHost, v: number): void {
   state.volume = Math.max(0, Math.min(1, v)); persistLocal(); void persistProfile(host);
   if (gain) gain.gain.value = state.volume;
   if (radioEl) radioEl.volume = state.volume;
+}
+/** Switch between repeat (loop the current track) and forward (advance through
+ *  the list when a track ends). Re-arms the live source so it takes effect at once
+ *  — repeat→forward lets the current track finish then advances; forward→repeat
+ *  makes it loop from here on. */
+export async function setNeurospicyRepeat(host: NeurospicyHost, repeat: boolean): Promise<void> {
+  state.repeat = repeat; persistLocal(); void persistProfile(host);
+  activeHost = host;
+  if (src) armSourceEnd(src, host);
 }
 /** Stop playback now WITHOUT changing the saved enabled state — used when the
  *  Neurospicy feature flag is switched off (hide + silence, keep the preference). */

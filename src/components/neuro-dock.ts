@@ -14,7 +14,6 @@ import {
   musicPlayerBodyHtml, wireMusicPlayerBody, refreshMusicPlayer,
 } from './music-player.ts';
 import { getNeurospicy, setNeurospicyEnabled, stopNeurospicy, type NeurospicyHost } from '../lib/neurospicy.ts';
-import { SOMAFM_HOME } from '../lib/radio.ts';
 import { flagEnabledSync } from '../feature-flags.ts';
 
 const DOCK_ID = 'neuro-dock';
@@ -45,10 +44,8 @@ const CSS = `
 .neuro-dock-btn:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .neuro-dock-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 .neuro-dock-body { padding: 12px; }
-.neuro-dock-attr { margin: 0; padding: 0 12px 10px; font-size: .68rem; color: hsl(var(--muted-foreground)); text-align: center; }
-.neuro-dock-attr a { color: hsl(var(--muted-foreground)); text-decoration: underline; }
-.neuro-dock-attr a:hover { color: hsl(var(--foreground)); }
-.neuro-dock[data-collapsed="true"] .neuro-dock-attr { display: none; }
+/* The SomaFM attribution + support link now lives in the Internet Radio group's
+   info tooltip inside the player (music-player.ts), not a footer line here. */
 /* collapsed → a compact pill: only the head shows, and it becomes the expand target */
 .neuro-dock[data-collapsed="true"] { width: auto; }
 .neuro-dock[data-collapsed="true"] .neuro-dock-head { border-bottom: none; cursor: pointer; }
@@ -93,8 +90,7 @@ function build(host: NeurospicyHost): HTMLElement {
       <button type="button" class="neuro-dock-btn" data-dock-min aria-label="Minimize player">${MIN}</button>
       <button type="button" class="neuro-dock-btn" data-dock-close aria-label="Close player">${X}</button>
     </header>
-    <div class="neuro-dock-body">${musicPlayerBodyHtml()}</div>
-    <p class="neuro-dock-attr">Radio via <a href="${SOMAFM_HOME}" target="_blank" rel="noopener noreferrer">SomaFM</a> · needs internet</p>`;
+    <div class="neuro-dock-body">${musicPlayerBodyHtml()}</div>`;
   document.body.appendChild(el);
   wireMusicPlayerBody(el, host);
 

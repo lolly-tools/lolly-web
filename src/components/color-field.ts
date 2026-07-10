@@ -169,7 +169,11 @@ export function contrastText(hex: string): string {
 // generic group holds its channels as data-* on the group element and only
 // round-trips to hex on the way OUT, so a lossy space (CMYK↔RGB is many-to-one
 // on K) stays stable while dragging — same discipline as the OKLCH group.
-export type ColorMode = 'oklch' | 'hsl' | 'rgb' | 'cmyk';
+// 'hex' is a first-class tab too — it has no sliders of its own, so it BORROWS
+// the RGB slider group (sliderMode below maps hex→rgb) while its value field
+// speaks plain #rrggbb. It's the DEFAULT tab (familiar), with OKLCH offered as
+// the emphasised "advanced" perceptual space.
+export type ColorMode = 'hex' | 'oklch' | 'hsl' | 'rgb' | 'cmyk';
 /** The generic (non-OKLCH) spaces — those driven by MODE_AXES + gen* helpers. */
 type GenMode = 'hsl' | 'rgb' | 'cmyk';
 
@@ -256,18 +260,24 @@ function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean): string {
   return `<div class="color-modegroup" data-mode-group="${mode}" ${data}${hidden ? ' hidden' : ''}>${rows}</div>`;
 }
 
-/** The mode tab bar + all four groups (OKLCH default-visible, the rest hidden). */
+/**
+ * The mode tab bar + all slider groups. HEX is the DEFAULT active tab — a
+ * familiar #rrggbb value field riding the RGB sliders (HEX has none of its own,
+ * so it borrows the RGB group). OKLCH is offered but not default, and carries
+ * extra visual weight (dark + bold — .color-mode-tab--oklch) as the "advanced"
+ * perceptual space. So the RGB group starts visible; OKLCH/HSL/CMYK start hidden.
+ */
 function colorModesHtml(eid: string, rgbHex: string | null): string {
   const seed = rgbHex ?? '#4f83cc'; // generic groups need a real hex; OKLCH seeds itself
   const tab = (m: ColorMode, label: string, on: boolean): string =>
-    `<button type="button" class="color-mode-tab" role="tab" data-mode="${m}" aria-selected="${on}">${label}</button>`;
-  return `<div class="color-modes" data-color-modes="${eid}" data-active-mode="oklch">
+    `<button type="button" class="color-mode-tab${m === 'oklch' ? ' color-mode-tab--oklch' : ''}" role="tab" data-mode="${m}" aria-selected="${on}">${label}</button>`;
+  return `<div class="color-modes" data-color-modes="${eid}" data-active-mode="hex">
       <div class="color-mode-tabs" role="tablist" aria-label="Colour space">
-        ${tab('oklch', 'OKLCH', true)}${tab('hsl', 'HSL', false)}${tab('rgb', 'RGB', false)}${tab('cmyk', 'CMYK', false)}
+        ${tab('hex', 'HEX', true)}${tab('oklch', 'OKLCH', false)}${tab('hsl', 'HSL', false)}${tab('rgb', 'RGB', false)}${tab('cmyk', 'CMYK', false)}
       </div>
-      ${lchSlidersHtml(eid, rgbHex)}
+      ${lchSlidersHtml(eid, rgbHex, true)}
       ${genGroupHtml('hsl', seed, true)}
-      ${genGroupHtml('rgb', seed, true)}
+      ${genGroupHtml('rgb', seed, false)}
       ${genGroupHtml('cmyk', seed, true)}
     </div>`;
 }
@@ -411,7 +421,7 @@ function lchValText(axis: 'l' | 'c' | 'h', v: number): string {
  * and slider drags mutate the state directly (never a hex round-trip, which
  * would drift hue at low chroma).
  */
-function lchSlidersHtml(eid: string, rgbHex: string | null): string {
+function lchSlidersHtml(eid: string, rgbHex: string | null, hidden = false): string {
   const o = (rgbHex ? hexToOklch(rgbHex) : null) ?? LCH_SEED;
   const tracks = lchTrackGradients(o.l, o.c, o.h);
   const row = (axis: 'l' | 'c' | 'h', label: string, aria: string, max: number, step: number, value: number) => `
@@ -422,7 +432,7 @@ function lchSlidersHtml(eid: string, rgbHex: string | null): string {
                style="background:${tracks[axis]}" aria-label="${aria}">
         <span class="color-lch-val" data-lch-val="${axis}">${lchValText(axis, value)}</span>
       </div>`;
-  return `<div class="color-lch" data-color-lch="${eid}" data-l="${o.l}" data-c="${o.c}" data-h="${o.h}">
+  return `<div class="color-lch" data-color-lch="${eid}" data-l="${o.l}" data-c="${o.c}" data-h="${o.h}"${hidden ? ' hidden' : ''}>
       ${row('l', 'L', 'Lightness', LCH_MAX.l, 0.5, Math.round(o.l * 1000) / 10)}
       ${row('c', 'C', 'Chroma', LCH_MAX.c, 0.004, Math.round(o.c * 1000) / 1000)}
       ${row('h', 'H', 'Hue', LCH_MAX.h, 1, Math.round(o.h))}
@@ -554,7 +564,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // With a mode picker present, the big value input reads/writes in the active
   // space (OKLCH string / HSL / RGB / CMYK) — like the swatch editor's set-by-value
   // row — instead of always hex. Without modes it stays a plain hex field.
-  const MODE_FMT: Record<ColorMode, ColorFormat> = { oklch: 'oklch', hsl: 'hsl', rgb: 'rgb', cmyk: 'cmyk' };
+  const MODE_FMT: Record<ColorMode, ColorFormat> = { hex: 'hex', oklch: 'oklch', hsl: 'hsl', rgb: 'rgb', cmyk: 'cmyk' };
   /** The active value-field format for a field, or null (plain hex — no modes). */
   const valueFmt = (field: HTMLElement | null): ColorFormat | null => {
     const m = field?.querySelector<HTMLElement>('.color-modes');
@@ -827,19 +837,22 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     modes.querySelectorAll<HTMLElement>('.color-mode-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         const mode = tab.dataset.mode as ColorMode;
+        // HEX has no sliders of its own — it shows the RGB group. Every group-
+        // visibility decision below keys off sliderMode so hex and rgb share it.
+        const sliderMode = mode === 'hex' ? 'rgb' : mode;
         modes.dataset.activeMode = mode; // drives the value field's format (valueFmt)
         modes.querySelectorAll<HTMLElement>('.color-mode-tab').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
-        if (lchGroup) lchGroup.hidden = mode !== 'oklch';
+        if (lchGroup) lchGroup.hidden = sliderMode !== 'oklch';
         genGroups.forEach(g => {
-          const on = g.dataset.modeGroup === mode;
+          const on = g.dataset.modeGroup === sliderMode;
           g.hidden = !on;
           if (on) seedGenGroup(g, currentHex()); // catch up to the current colour
         });
-        if (mode === 'oklch' && field) seedLch(field, currentHex());
+        if (sliderMode === 'oklch' && field) seedLch(field, currentHex());
         writeValueField(id, field, currentFullHex()); // reformat the value field to the new space
       });
     });
-    // Seed the value field in the initial (OKLCH) space on wire.
+    // Seed the value field in the initial (HEX) space on wire.
     if (field) writeValueField(id, field, currentFullHex());
 
     genGroups.forEach(group => {

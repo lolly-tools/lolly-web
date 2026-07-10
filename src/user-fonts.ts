@@ -70,6 +70,27 @@ export interface UserFontFamily {
 const slugOf = (family: string): string =>
   family.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+// ── Brand-font family cache (for tool selectors that list every added font) ────
+// A SYNCHRONOUS snapshot of the installed brand-font family names, so a tool's
+// input renderer (which runs sync) can offer them as select options without an
+// async round-trip. Refreshed at boot (registerUserFonts) and after every
+// install / removal; a change fires 'lolly:brand-fonts' for anything that wants
+// to react (mounted tools re-read it on their next render regardless).
+let brandFontFamilyCache: string[] = [];
+/** The installed brand-font family names (a copy — safe to mutate). */
+export function brandFontFamilies(): string[] { return brandFontFamilyCache.slice(); }
+function setBrandFontFamilyCache(families: string[]): void {
+  const next = [...new Set(families.filter(Boolean))];
+  const changed = next.length !== brandFontFamilyCache.length || next.some((f, i) => f !== brandFontFamilyCache[i]);
+  brandFontFamilyCache = next;
+  if (changed && typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:brand-fonts'));
+}
+/** Recompute the family cache from stored user fonts (best-effort; never throws). */
+export async function refreshBrandFontFamilies(host: UserFontsHost): Promise<void> {
+  try { setBrandFontFamilyCache((await listUserFonts(host)).map(f => f.family)); }
+  catch { /* leave the last-known cache in place */ }
+}
+
 // ── FontFace registration ─────────────────────────────────────────────────────
 
 // Track what this document already registered (asset id → FontFace) so boot +
@@ -107,6 +128,15 @@ export async function registerUserFonts(host: UserFontsHost): Promise<void> {
   let records: Array<{ id: string; type: string; blob?: Blob; meta?: Record<string, unknown> }>;
   try { records = await host.assets._exportUserAssets(); }
   catch { return; }
+  // Refresh the family cache FIRST, off the records' meta — it needs only the
+  // family names, not loaded FontFaces, so populating it before the (awaited)
+  // face-load below means a tool that renders during boot (a deep link straight
+  // to a font-picking tool) already sees the installed brand fonts in its select,
+  // instead of racing the parse. Covers boot, install (installGoogleFont calls us)
+  // and backup import; one store read for both.
+  setBrandFontFamilyCache(records
+    .filter(r => r.type === 'font' && r.id.startsWith(USER_FONT_PREFIX))
+    .map(r => String(r.meta?.family ?? r.meta?.name ?? '')));
   await Promise.all(records
     .filter(r => r.type === 'font' && r.id.startsWith(USER_FONT_PREFIX) && r.blob)
     .map(r => registerFace(r.id, String(r.meta?.family ?? r.meta?.name ?? ''), r.blob!, {
@@ -374,4 +404,5 @@ export async function removeUserFont(host: UserFontsHost, family: UserFontFamily
     const rest = (await listUserFonts(host)).filter(f => f.family !== family.family);
     await setPrimaryFont(host, rest[0]?.family ?? null);
   }
+  await refreshBrandFontFamilies(host); // the removed family must leave tool selectors too
 }

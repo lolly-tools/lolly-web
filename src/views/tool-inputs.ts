@@ -25,6 +25,7 @@ import {
   blockTreeOrder, blockReparentMove, buildRefOptions, materializeRefTarget,
 } from './block-tree.js';
 import { getTool } from '../bridge/tool-loader.js';
+import { brandFontFamilies } from '../user-fonts.ts';
 import { storeUserUpload, askLollyIntent } from './picker.js';
 import flatpickr from 'flatpickr';
 
@@ -1323,8 +1324,16 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
 
         if (f.type === 'select') {
           const cur = String(item[f.id] ?? f.default ?? '');
-          const opts = (f.options ?? []).map(o =>
-            `<option value="${escape(o.value)}" ${String(o.value) === cur ? 'selected' : ''}>${escape(o.label ?? o.value)}</option>`).join('');
+          // brandFonts: append every font the user added to their brand as extra
+          // options (de-duped against the manifest's own), so a font picker lists
+          // the whole brand type kit, not just a hardcoded pair.
+          let choices = (f.options ?? []).map(o => ({ value: String(o.value), label: String(o.label ?? o.value) }));
+          if (f.brandFonts) {
+            const seen = new Set(choices.map(o => o.value));
+            for (const fam of brandFontFamilies()) if (!seen.has(fam)) { choices.push({ value: fam, label: fam }); seen.add(fam); }
+          }
+          const opts = choices.map(o =>
+            `<option value="${escape(o.value)}" ${o.value === cur ? 'selected' : ''}>${escape(o.label)}</option>`).join('');
           return labelled(f, `<select class="block-field" data-field-id="${fieldId}" aria-label="${escape(f.label ?? f.id)}">${opts}</select>`);
         }
 

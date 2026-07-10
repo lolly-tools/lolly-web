@@ -859,11 +859,14 @@ stroke-width:.81;
 }
 /* Base: the very muted ghost that always stands in for a missing/loading preview. */
 .gtile-iconfill-base { color: hsl(var(--muted-foreground) / .18); }
-/* Trace: SUSE Pine Green (#30ba78 — literal, so it stays green in the light theme
-   where --primary is teal). stroke-dasharray leaves one short drawn segment per
-   subpath; the animated dashoffset walks it along the outline and loops seamlessly
-   (offset travels exactly one dash+gap). Transparent gaps reveal the muted base. */
-.gtile-iconfill-trace { color: hsl(151 60% 47%); }
+/* Trace: the brand's own primary from the palette (--brand-primary, set by
+   applyBrandVars when the active brand declares colour.semantic slots), falling
+   back to SUSE Pine Green (#30ba78) when no brand palette is installed — so an
+   unbranded install still traces green, a branded one traces on-brand.
+   stroke-dasharray leaves one short drawn segment per subpath; the animated
+   dashoffset walks it along the outline and loops seamlessly (offset travels
+   exactly one dash+gap). Transparent gaps reveal the muted base. */
+.gtile-iconfill-trace { color: var(--brand-primary, hsl(151 60% 47%)); }
 .gtile-iconfill-trace svg :is(path, circle, rect, line, polyline, polygon, ellipse) {
   stroke-width: 4px;             /* thicker than the 2px base outline it walks over */
   stroke-dasharray: 250 250;     /* equal dash + gap */
