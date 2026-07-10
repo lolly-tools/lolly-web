@@ -99,6 +99,10 @@ function brandChrome() {
 export default defineConfig({
   publicDir: 'public',
   plugins: [serveRepoStatic(), brandChrome()],
+  // The Neurospicy player + video music-bed exporter render ZzFXM songs in a
+  // module worker (src/lib/zzfxm-worker.ts, which ESM-imports the engine). Emit
+  // it as an ES module so the import graph survives the build unchanged.
+  worker: { format: 'es' },
   resolve: {
     alias: {
       '@lolly/engine': resolve(repoRoot, 'engine/src/index.ts'),

@@ -949,7 +949,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       chooseBtn.disabled = true;
       try {
         const { parseDesignFile } = await import('./design-import.ts');
-        const res = await parseDesignFile(f, { host: host as any, log: (m: string) => { status.textContent = m; } });
+        // interactive: a multi-page PDF/.ai asks which page (shared page-picker dialog)
+        // instead of silently importing the first.
+        const res = await parseDesignFile(f, { host: host as any, log: (m: string) => { status.textContent = m; }, interactive: true });
         const boxes = (Array.isArray(res.boxes) ? res.boxes : []) as Box[];
         if (!boxes.length) throw new Error('Nothing importable was found in that file.');
         selection = new Set<string>();

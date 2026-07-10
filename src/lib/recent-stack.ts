@@ -38,11 +38,14 @@ export function createRecentStack(root: HTMLElement, items: StackItem[]): StackH
       <button type="button" class="dash-stack-nav" data-prev aria-label="Previous">‹</button>
       <span class="dash-stack-count" data-count aria-live="polite"></span>
       <button type="button" class="dash-stack-nav" data-next aria-label="Next">›</button>
-    </div>`;
+    </div>
+    <a class="dash-stack-open" data-open href="${escapeHtml(items[0]!.href)}">Open<span class="dash-stack-open-label" data-open-label>${escapeHtml(items[0]!.label)}</span></a>`;
 
   const deck = root.querySelector<HTMLElement>('[data-deck]')!;
   const cards = Array.from(root.querySelectorAll<HTMLElement>('.dash-stack-card'));
   const countEl = root.querySelector<HTMLElement>('[data-count]')!;
+  const openEl = root.querySelector<HTMLAnchorElement>('[data-open]')!;
+  const openLabelEl = root.querySelector<HTMLElement>('[data-open-label]')!;
 
   let top = 0;
   const rel = (i: number): number => ((i - top) % N + N) % N;
@@ -72,6 +75,9 @@ export function createRecentStack(root: HTMLElement, items: StackItem[]): StackH
       card.tabIndex = r === 0 ? 0 : -1;
     }
     countEl.textContent = `${top + 1} / ${N}`;
+    const front = items[top]!;
+    openEl.href = front.href;
+    openLabelEl.textContent = front.label;
   }
 
   function advance(dir: number): void { top = ((top + dir) % N + N) % N; layout(); }

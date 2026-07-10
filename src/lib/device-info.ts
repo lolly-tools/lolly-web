@@ -139,6 +139,21 @@ function gpuIcon(vendor: string): string | null {
   return null;
 }
 
+// Compact "ARM64"/"x64"-style label for the glance chip — UA-CH's raw
+// architecture ('arm'/'x86') + bitness, in the short form people actually recognise.
+function archChip(architecture: string, bitness?: string): string {
+  const a = architecture.toLowerCase();
+  if (a === 'arm') return bitness === '32' ? 'Arm32' : 'Arm64';
+  if (a === 'x86') return bitness === '32' ? 'x86' : 'x64';
+  return architecture;
+}
+
+// "macOS 27.0.0" → "macOS"; "Android 15" → "Android" — the version-free family
+// name for the glance chip (the detail cards keep the full version elsewhere).
+function osFamily(os: string): string {
+  return os === DASH ? DASH : os.replace(/\s+[\d./]+.*$/, '');
+}
+
 function parseBrowser(ua: string): string {
   const tests: Array<[string, RegExp]> = [
     ['Microsoft Edge', /Edg\/([\d.]+)/],
@@ -369,6 +384,13 @@ export interface DeviceStat {
 export interface DeviceSnapshot {
   headline: DeviceStat[];
   groups: ClientGroup[];
+  /** Best-fit icon for the collapsed section header — OS mark, else browser
+   *  mark, else a generic device glyph. Never blank. */
+  icon: string;
+  /** Compact glance facts for the collapsed header (machine, memory,
+   *  architecture, browser, OS) — only the ones this session actually exposes;
+   *  unavailable facts are omitted rather than shown as a dash. */
+  chips: string[];
 }
 
 /**
@@ -558,7 +580,36 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
     { label: 'Viewport', value: liveValue('viewport'), sub: 'live', icon: ICONS.layers!, live: 'viewport' },
   ];
 
-  return { headline, groups };
+  // A single best-fit icon for the collapsed section header: the OS mark reads
+  // best (it's what people recognise their own device by), then the browser
+  // mark, then the generic chip glyph the System card already uses — never blank.
+  const icon = osIcon(os) || browserIcon(browser) || ICONS.system!;
+
+  // Compact glance chips for the collapsed header — machine leads (it's the
+  // most identifying fact, same as the hero band), then memory/architecture/
+  // browser/OS. Only facts this session actually exposes; the rest are
+  // silently skipped rather than shown as a dash — a chip row is a preview,
+  // not a checklist of what's missing. The machine chip in particular is only
+  // worth showing when it's actually short (a clean "AppleM4") — a software
+  // renderer's verbose GPU string ("Google Vulkan 1.3.0 (SwiftShader Device
+  // (LLVM 10.0.0))") reads as a wall of text, not a glance chip, so skip it.
+  // The chip string itself sometimes already carries the vendor name (real
+  // Apple Silicon reports the GPU renderer as "Apple M4", not just "M4") — only
+  // prepend hwVendor when chip doesn't already start with it, or it reads
+  // "AppleApple M4".
+  const machineChip = (hwVendor !== DASH && chip !== DASH
+    ? (chip.toLowerCase().includes(hwVendor.toLowerCase()) ? chip : `${hwVendor} ${chip}`)
+    : hwVendor !== DASH ? hwVendor : chip !== DASH ? chip : ''
+  ).replace(/\s+/g, '');
+  const chips = [
+    machineChip.length <= 20 ? machineChip : '',
+    nav.deviceMemory ? `${nav.deviceMemory}GB` : '',
+    hints?.architecture ? archChip(hints.architecture, hints.bitness) : '',
+    browserName !== DASH ? browserName : '',
+    osFamily(os) !== DASH ? osFamily(os) : '',
+  ].filter(Boolean);
+
+  return { headline, groups, icon, chips };
 }
 
 /** Render one device card (all rows; a `hero` row is sized big by CSS). */

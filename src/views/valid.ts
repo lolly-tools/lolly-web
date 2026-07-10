@@ -130,6 +130,14 @@ const ICONS = {
   checklist: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1.3 1.3L6.5 5"/><path d="m3 12 1.3 1.3 2.2-2.3"/><path d="m3 18 1.3 1.3 2.2-2.3"/>',
   // A framed ripple — the "in-pixel imprint" glyph.
   imprint: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M6.5 13.5c1.8-3 3.6-3 5.5 0s3.7 3 5.5 0"/><path d="M6.5 9.5c1.8-2.4 3.6-2.4 5.5 0s3.7 2.4 5.5 0"/>',
+  // Per-operation change-history glyphs — a recognisable mark for each edit we log.
+  crop: '<path d="M6.13 1 6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13 16 6a2 2 0 0 1 2 2v15"/>',
+  droplet: '<path d="M12 2.7l5.3 5.3a7.5 7.5 0 1 1-10.6 0z"/>',
+  convert: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  resize: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>',
+  // Stacked planes — "composite of multiple elements".
+  layers: '<path d="M12 2 2 7l10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
 };
 const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'invalid', na: 'n/a' };
 
@@ -533,8 +541,15 @@ const ACTION_LABEL: Record<string, string> = {
 const ACTION_ICON: Record<string, keyof typeof ICONS> = {
   'c2pa.created': 'sparkle', 'c2pa.edited': 'pen', 'c2pa.opened': 'eye',
   'c2pa.placed': 'package', 'c2pa.published': 'package', 'c2pa.drawing': 'pen',
-  'c2pa.color_adjustments': 'pen', 'c2pa.filtered': 'pen', 'c2pa.cropped': 'pen',
-  'c2pa.resized': 'pen', 'c2pa.converted': 'tool', 'c2pa.transcoded': 'tool',
+  'c2pa.color_adjustments': 'droplet', 'c2pa.filtered': 'sliders', 'c2pa.cropped': 'crop',
+  'c2pa.resized': 'resize', 'c2pa.converted': 'convert', 'c2pa.transcoded': 'convert',
+};
+// A composite source type reads as stacked layers regardless of the action code
+// carrying it (a created/opened step that merged multiple elements). Keyed on the
+// IPTC digitalSourceType slug — takes precedence over ACTION_ICON in stepsHtml().
+const SOURCE_ICON: Partial<Record<string, keyof typeof ICONS>> = {
+  composite: 'layers',
+  compositeWithTrainedAlgorithmicMedia: 'layers',
 };
 // Friendly wording for an action's IPTC DigitalSourceType (the last path segment).
 const SOURCE_TYPE_LABEL: Record<string, string> = {
@@ -588,10 +603,11 @@ function stepsHtml(report: VerifyReport): string {
   const rowData = acts.map((a) => {
     const code = String(a.action ?? '');
     const label = ACTION_LABEL[code] ?? (code.replace(/^c2pa\./, '') || 'Step');
-    const icon = ACTION_ICON[code] ?? 'clock';
     const slug = sourceSlug(a);
     const isAi = !!AI_SOURCE_SLUGS[slug];
     const src = SOURCE_TYPE_LABEL[slug];
+    // A composite source type wins the glyph (layers); else the action's own icon.
+    const icon = SOURCE_ICON[slug] ?? ACTION_ICON[code] ?? 'clock';
     // Who did it → a left-side pill. Lolly reads bold green (mark our own edits
     // prominently), an AI-sourced step reads purple, any other maker solid grey.
     const agent = stepAgent(a);

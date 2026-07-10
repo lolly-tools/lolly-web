@@ -105,19 +105,11 @@
 .dash-sec-desc strong { color: hsl(var(--foreground)); }
 .dash-sec-desc a, .dash-foot a, .dash-store-note a, .dash-store-headline a { color: hsl(var(--primary)); }
 
-/* Rows of side-by-side cards; sections inside drop their own bottom margin so the
-   grid gap is the only gap. */
-.dash-row { display: grid; gap: 1.1rem; margin: 0 0 1.1rem; align-items: start; }
-.dash-row--2 { grid-template-columns: 1fr 1fr; }
-.dash-row > .plat-section { margin: 0; }
-@media (max-width: 780px) { .dash-row--2 { grid-template-columns: 1fr; } }
-
 /* ── Collapsible primary sections (device · palette · catalogue · capabilities) ──
    Each folds the whole card down to its title bar, reusing the reference-panel
    <details> chrome (.plat-section-summary / .plat-section-body handle the chevron +
    padding). The mount plays a soft hydraulic cue on toggle (data-dash-collapse). */
 .dash-collapse { margin: 0 0 1.1rem; }
-.dash-row .dash-collapse { margin: 0; }        /* the row's gap is the only gap */
 /* A prominent, sentence-case title (these anchor the page — not the tiny uppercase
    reference-panel labels at the foot). */
 .dash-collapse-summary .plat-section-title {
@@ -130,6 +122,18 @@
 /* A collapsed card reads as a quiet, closed bar. */
 .dash-collapse:not([open]) .dash-collapse-summary { opacity: .82; }
 .dash-collapse:not([open]) .dash-collapse-summary:hover { opacity: 1; }
+/* Icon + glance chips, hydrated in once collectDevice() resolves (see
+   dashboard.ts's collapse() and its collectDevice().then(...) hookup) — empty
+   until then, so an unsupported browser just shows the title, never a gap. */
+.dash-collapse-icon { display: flex; width: 19px; height: 19px; flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
+.dash-collapse-icon:empty { display: none; }
+.dash-collapse-icon svg { width: 100%; height: 100%; display: block; }
+.dash-collapse-chips { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
+.dash-chip {
+  font-family: var(--font-mono); font-size: .66rem; line-height: 1.4;
+  padding: .18rem .55rem; border-radius: 999px; white-space: nowrap;
+  background: hsl(var(--muted) / .7); color: hsl(var(--muted-foreground));
+}
 
 /* ── This device tab — "This device" and the Sound&Focus/Storage stack side by
    side on wide screens (roughly equal columns); one column, top to bottom, on
@@ -149,6 +153,10 @@
    whenever the tile count didn't divide evenly across its columns. */
 .dash-bento { display: flex; flex-wrap: wrap; gap: 1.1rem; margin: 0 0 1.1rem; }
 .dash-bento > .plat-section { margin: 0; flex: 1 1 340px; min-width: 0; }
+/* The stats strip isn't a card — it's a header bar, so it always takes the full
+   row (forcing whatever follows in the bento onto the next row) rather than
+   sitting beside the first card at whatever width its own content happens to be. */
+.dash-bento > .plat-stats { flex: 1 1 100%; margin: 0 0 .2rem; }
 /* Recent / Exports tiles start [hidden] until their data loads. The card `display:flex`
    below outranks the UA [hidden] rule, so without this they'd reserve an empty tile-sized
    gap in the flow — force them out until unhidden. */

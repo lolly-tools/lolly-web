@@ -20,6 +20,7 @@ import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
 import { playScrubTick } from '../lib/sfx.ts';
 import { loopRank } from '../lib/neurospicy.ts';
+import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
 import { aspectWarning } from './export-size.js';
 import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, cmykTiffSupport, tiffSupport } from '../bridge/format-support.js';
@@ -1155,6 +1156,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         const audioId = el!.querySelector<HTMLSelectElement>('[data-action="video-audio"]')?.value;
         if (audioId) {
           const ref = await host.assets.get(audioId);
+          // A ZzFXM track has no audio file — render its song to a WAV blob URL so
+          // the URL-driven muxer paths consume it exactly like an encoded loop.
+          const audioUrl = ref.format === 'zzfxm' ? await songUrlToWavBlobUrl(ref.url) : ref.url;
           const numCtl = (a: string, dflt: number): number => {
             const v = el!.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value;
             return v != null && v !== '' ? (Number(v) || 0) : dflt;
@@ -1163,7 +1167,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           const fadeOut = numCtl('audio-fadeout', 0);
           const volume  = Math.max(0, Math.min(100, numCtl('audio-volume', 100))) / 100;
           const duck    = Math.max(0, Math.min(100, numCtl('audio-duck', 100))) / 100;
-          audioOpt = { audio: { id: audioId, url: ref.url, fadeIn, fadeOut, volume, duck } };
+          audioOpt = { audio: { id: audioId, url: audioUrl, fadeIn, fadeOut, volume, duck } };
         }
       }
       // Surface progress on the button for slow non-animated exports — the CMYK
