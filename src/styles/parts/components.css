@@ -352,8 +352,17 @@
   box-shadow: 0 1px 2px hsl(0 0% 0% / .12);
 }
 .color-mode-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+/* OKLCH isn't the default tab (HEX is) but it's the one we want power users to
+   notice — give it dark, bold weight so it reads as the "advanced" space even at
+   rest. Selected state (above) still layers its pill on top. */
+.color-mode-tab--oklch { color: hsl(var(--foreground)); font-weight: 700; }
 .color-modegroup { display: flex; flex-direction: column; gap: 8px; }
 .color-modegroup[hidden] { display: none; }
+/* .color-lch forces display:flex, which (author origin) beats the UA [hidden]
+   rule — so hiding the OKLCH group when another mode is active (or HEX is the
+   default) needs this explicit rule. Harmless for the non-modes inline picker,
+   whose .color-lch never carries [hidden]. */
+.color-lch[hidden] { display: none; }
 /* Reserve the tallest group's height (CMYK = 4 rows) on EVERY mode group, so
    switching OKLCH/HSL/RGB (3 rows) ↔ CMYK (4 rows) never shifts the layout. One
    row = the 18px thumb; 4 rows + 3 × 8px gaps. Rows stay top-aligned. */

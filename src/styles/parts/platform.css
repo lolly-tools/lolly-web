@@ -174,7 +174,7 @@
    page's collapsible cards (style + .15s ease transition). */
 .plat-section-summary {
   list-style: none; cursor: pointer;
-  display: flex; align-items: center; gap: 1rem;
+  display: flex; align-items: center; gap: 1rem;border-radius: var(--radius);
   padding: 1.1rem 1.4rem;
 }
 .plat-section-summary::-webkit-details-marker { display: none; }

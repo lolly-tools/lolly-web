@@ -93,6 +93,7 @@ type EditorHost = HostV1;
 type Scheme = NonNullable<BrandDeriveOptions['scheme']>;
 type Surface = NonNullable<BrandDeriveOptions['surface']>;
 type Contrast = NonNullable<BrandDeriveOptions['contrast']>;
+type Fg = NonNullable<BrandDeriveOptions['foreground']>;
 
 const SCHEMES: ReadonlyArray<{ id: Scheme; label: string }> = [
   { id: 'mono', label: 'Mono' }, { id: 'complement', label: 'Complement' },
@@ -109,6 +110,12 @@ const INTENSITIES: ReadonlyArray<{ id: Surface; label: string }> = [
 ];
 const CONTRASTS: ReadonlyArray<{ id: Contrast; label: string }> = [
   { id: 'comfort', label: 'Comfort' }, { id: 'high', label: 'High' },
+];
+// What sits on top of the brand primary. Auto picks white/black by contrast;
+// Light/Dark force it — the fix for a mid-tone brand colour that "should" wear
+// white text but auto-flips to black for the higher ratio (see deriveBrandTokens).
+const FOREGROUNDS: ReadonlyArray<{ id: Fg; label: string }> = [
+  { id: 'auto', label: 'Auto' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' },
 ];
 const DEFAULT_PRIMARY = '#4f83cc';
 // The engine's own default for `secondary` (deriveBrandTokens hardcodes ramp
@@ -472,6 +479,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     } catch { /* malformed/tokenless doc — keep the default seed */ }
   }
   let scheme: Scheme = 'mono', surface: Surface = 'light', contrast: Contrast = 'comfort';
+  // Foreground preference (text on the brand colour). Defaults to 'auto' — the
+  // engine's contrast pick — until the user forces Light or Dark.
+  let foreground: Fg = 'auto';
   // How many shades each ramp carries. New brands start at 5 (a tight, decisive
   // palette); a brand the USER saved here keeps whatever it shipped (seeded from
   // its primary ramp's step count) so re-opening the editor never silently
@@ -502,7 +512,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   let schemeKind: SchemeKind = 'adjacent-3';
   const currentTheme = document.documentElement.dataset.theme || 'light';
 
-  const initialDraft = deriveSafe({ primary, scheme, surface, contrast, steps });
+  const initialDraft = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
 
   root.innerHTML = `
     <div class="be" data-brand-editor>
@@ -529,6 +539,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
             <label class="be-field"><span class="be-field-label">Scheme</span>${segHtml('scheme', SCHEMES, scheme, 'Colour scheme')}</label>
             <label class="be-field"><span class="be-field-label">UI intensity</span>${segHtml('surface', INTENSITIES, surface, 'UI intensity')}</label>
             <label class="be-field"><span class="be-field-label">Contrast</span>${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}</label>
+            <label class="be-field"><span class="be-field-label">Text on brand</span>${segHtml('foreground', FOREGROUNDS, foreground, 'Text colour on the brand colour')}</label>
             <div class="be-field be-steps-field">
               <span class="be-field-label">Shades <span class="be-steps-val" data-be-steps-val>${steps}</span></span>
               <input type="range" class="be-steps-slider" data-be-steps min="${RAMP_STEPS_MIN}" max="${RAMP_STEPS_MAX}" step="1" value="${steps}" aria-label="Shades per ramp">
@@ -734,7 +745,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   // but nothing here calls persist() directly — only the Save colour button
   // does (a Palette-panel persist() can also clear this draft — see persist()).
   const renderPreview = (): void => {
-    const next = deriveSafe({ primary, scheme, surface, contrast, steps });
+    const next = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
     if (!next) return; // a half-typed hex mid-edit — keep the last good preview
     if (preview) preview.innerHTML = previewHtml(next, { neutral: neutralStep, secondary: secondaryStep, steps });
     applyDraftChrome(next);
@@ -842,6 +853,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       if (name === 'scheme') scheme = btn.dataset.val as Scheme;
       else if (name === 'surface') surface = btn.dataset.val as Surface;
       else if (name === 'contrast') contrast = btn.dataset.val as Contrast;
+      else if (name === 'foreground') foreground = btn.dataset.val as Fg;
       seg.querySelectorAll<HTMLElement>('[data-val]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
       renderPreview();
     };
@@ -883,7 +895,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   });
   $('[data-be-derive]')?.addEventListener('click', async () => {
     let next: Record<string, unknown>;
-    try { next = deriveBrandTokens({ primary, scheme, surface, contrast, steps, name: 'My brand' }) as Record<string, unknown>; }
+    try { next = deriveBrandTokens({ primary, scheme, surface, contrast, steps, foreground, name: 'My brand' }) as Record<string, unknown>; }
     catch (err) { announce(`Couldn't derive from ${primary}: ${String((err as { message?: unknown })?.message ?? err)}`, { assertive: true }); return; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);

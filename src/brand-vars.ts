@@ -362,6 +362,14 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
       resolveHex('primary', 'dark'), resolveHex('on-primary', 'dark'),
     ]);
     applyChromeAccent({ primary: lp, onPrimary: lop }, { primary: dp, onPrimary: dop });
+    // Expose the brand primary GLOBALLY on :root (not just the tool canvas that
+    // applyBrandVars paints) so app chrome outside a tool — the gallery's
+    // preview-loading trace, say — can wear it via var(--brand-primary, <fallback>).
+    // Same precedent as --brand-warn above; a brand with no resolvable primary
+    // (the SUSE catalog declares no semantic slots) removes it so the CSS
+    // fallback stays in charge.
+    if (lp) root.setProperty('--brand-primary', lp);
+    else root.removeProperty('--brand-primary');
   } catch { /* cosmetic only — never break boot */ }
 }
 

@@ -13,12 +13,13 @@
  */
 import {
   getNeurospicy, setNeurospicyLoop, setNeurospicyVolume, listLoops, isNeurospicyPlaying,
-  toggleNeurospicyPlay, cycleNeurospicyLoop,
+  toggleNeurospicyPlay, cycleNeurospicyLoop, setNeurospicyRepeat,
   getNeurospicyAnalyser, getNeurospicyProgress, seekNeurospicy,
   type NeurospicyHost, type NeuroTrack,
 } from '../lib/neurospicy.ts';
 import { getSfxVolume, setSfxVolume } from '../lib/sfx.ts';
 import { drawMeterBars, drawMeterBaseline } from '../lib/audio-meter.ts';
+import { SOMAFM_HOME } from '../lib/radio.ts';
 import { escape } from '../utils.ts';
 
 const PLAY = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M7 4.5a1 1 0 0 1 1.53-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 7 19.5z"/></svg>`;
@@ -26,6 +27,10 @@ const PAUSE = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColo
 const PREV = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M6 5h2v14H6zM20 5.5v13a1 1 0 0 1-1.53.85l-9-6.5a1 1 0 0 1 0-1.7l9-6.5A1 1 0 0 1 20 5.5z"/></svg>`;
 const NEXT = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5.5v13a1 1 0 0 0 1.53.85l9-6.5a1 1 0 0 0 0-1.7l-9-6.5A1 1 0 0 0 4 5.5z"/></svg>`;
 const CARET = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
+// The two playback-order modes the little toggle (right of the transport) flips
+// between: REPEAT = loop the current track; FORWARD = play through the list.
+const REPEAT = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`;
+const FORWARD = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/><path d="m16 12 5 3-5 3v-6Z"/></svg>`;
 
 const STYLE_ID = 'lolly-music-player-styles';
 const CSS = `
@@ -40,13 +45,19 @@ const CSS = `
 .neuro-progress::before { content: ''; position: absolute; inset: -10px 0; }
 .neuro-progress-fill { position: absolute; inset: 0 auto 0 0; width: 0%; background: hsl(var(--primary)); border-radius: inherit; }
 .neuro-progress:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
-.neuro-transport { display: flex; align-items: center; justify-content: center; gap: 16px; }
+/* position:relative so the tiny mode toggle can pin to the right edge while
+   prev/play/next stay optically centred. */
+.neuro-transport { position: relative; display: flex; align-items: center; justify-content: center; gap: 16px; }
 .neuro-tbtn { width: 30px; height: 30px; border-radius: calc(var(--radius)*2); border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; background: transparent; color: hsl(var(--muted-foreground)); transition: color .15s ease, transform .1s ease; }
 .neuro-tbtn:hover { color: hsl(var(--foreground)); }
 .neuro-tbtn:active { transform: scale(.9); }
 .neuro-tbtn.neuro-play { width: 42px; height: 42px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
 .neuro-tbtn.neuro-play:hover { filter: brightness(1.08); color: hsl(var(--primary-foreground)); }
 .neuro-tbtn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+/* The very small repeat/forward toggle, pinned to the right of the transport. */
+.neuro-tbtn.neuro-mode { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; }
+.neuro-tbtn.neuro-mode:active { transform: translateY(-50%) scale(.9); }
+.neuro-tbtn.neuro-mode.is-active { color: hsl(var(--primary)); }
 /* searchable track picker */
 .neuro-picker { position: relative; }
 .neuro-picker-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: .85rem; cursor: pointer; text-align: left; }
@@ -60,8 +71,10 @@ const CSS = `
 .neuro-search { width: 100%; padding: 7px 10px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--background)); color: hsl(var(--foreground)); font-size: .82rem; }
 .neuro-search:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
 /* As tall as fits above the bottom-docked player without clipping the viewport top
-   (the panel opens upward): grows with screen height, floored so it always scrolls. */
-.neuro-list { list-style: none; margin: 0; padding: 0; max-height: clamp(160px, calc(100vh - 360px), 60vh); overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+   (the panel opens upward): grows with screen height but never dominates it. Low
+   floor (120px) so it genuinely SHRINKS on short viewports, and a 52vh cap so it
+   never runs too tall — it always scrolls the overflow. */
+.neuro-list { list-style: none; margin: 0; padding: 0; max-height: clamp(120px, calc(100vh - 360px), 52vh); overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 .neuro-cat { list-style: none; }
 .neuro-cat[hidden] { display: none; }
 .neuro-cat-head { display: flex; align-items: center; gap: 8px; width: 100%;     padding: 22px 8px 8px 0px; border: none; background: transparent; color: hsl(var(--muted-foreground)); font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; border-radius: var(--radius); }
@@ -73,7 +86,9 @@ const CSS = `
 .neuro-cat-count { margin-left: auto; font-weight: 600; opacity: .6; }
 .neuro-cat-tracks { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 .neuro-cat.is-collapsed .neuro-cat-tracks { display: none; }
-.neuro-warn { display: inline-flex; color: hsl(var(--muted-foreground)); cursor: help; }
+.neuro-warn { display: inline-flex; color: hsl(var(--muted-foreground)); cursor: help; border: none; background: transparent; padding: 0; }
+.neuro-warn:hover, .neuro-warn:focus-visible { color: hsl(var(--foreground)); }
+.neuro-warn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: var(--radius); }
 .neuro-warn svg { width: 13px; height: 13px; }
 @media (prefers-reduced-motion: reduce) { .neuro-cat-caret { transition: none; } }
 .neuro-track { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: none; border-radius: var(--radius); background: transparent; color: hsl(var(--foreground)); font-size: .82rem; text-align: left; cursor: pointer; transition: background .12s ease; }
@@ -88,7 +103,15 @@ const CSS = `
 .neuro-vol { display: flex; align-items: center; gap: 9px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
 .neuro-vol span { flex: 0 0 3.4em; }
 .neuro-vol input[type="range"] { flex: 1; accent-color: hsl(var(--primary)); }
-@media (prefers-reduced-motion: reduce) { .neuro-tbtn, .neuro-track, .neuro-picker-caret { transition: none; } }`;
+/* The Internet Radio info tooltip — a real, INTERACTIVE tooltip (the SomaFM link
+   inside is clickable), portalled to <body> as position:fixed so the scrolling
+   track list can't clip it. Hidden = opacity 0 + pointer-events none (never a
+   display:none, so it can fade and be measured for positioning). */
+.neuro-warn-tip { position: fixed; left: 0; top: 0; z-index: 2147483000; max-width: 224px; padding: 9px 12px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--popover, var(--card))); color: hsl(var(--foreground)); font-size: .72rem; line-height: 1.45; box-shadow: 0 10px 30px rgb(0 0 0 / .32); opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+.neuro-warn-tip.is-shown { opacity: 1; pointer-events: auto; }
+.neuro-warn-tip a { color: hsl(var(--primary)); text-decoration: underline; font-weight: 600; }
+.neuro-warn-tip a:hover { text-decoration: none; }
+@media (prefers-reduced-motion: reduce) { .neuro-tbtn, .neuro-track, .neuro-picker-caret, .neuro-warn-tip { transition: none; } }`;
 
 function ensureStyles(): void {
   if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
@@ -99,6 +122,49 @@ function ensureStyles(): void {
 }
 
 const WARN = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`;
+
+// ── Category info tooltip (a real, interactive tooltip — not a native title) ──
+// Currently only the Internet Radio group uses it: it carries the SomaFM
+// attribution + support link (which radio.ts asks us to keep in the UI) and the
+// "needs a connection" note. One shared element on <body>, position:fixed so the
+// scrolling track list never clips it, pointer-events:auto (with a short close
+// delay + its own hover keep-alive) so the link is actually clickable.
+const WARN_TIP_HTML: Record<string, string> = {
+  radio: `Internet radio streams via <a href="${SOMAFM_HOME}" target="_blank" rel="noopener noreferrer">SomaFM</a> — free &amp; listener-supported. Needs an internet connection.`,
+};
+let warnTip: HTMLElement | null = null;
+let warnTipTimer: ReturnType<typeof setTimeout> | undefined;
+function ensureWarnTip(): HTMLElement {
+  if (warnTip) return warnTip;
+  const tip = document.createElement('div');
+  tip.className = 'neuro-warn-tip';
+  tip.setAttribute('role', 'tooltip');
+  tip.addEventListener('mouseenter', () => clearTimeout(warnTipTimer)); // keep open to click the link
+  tip.addEventListener('mouseleave', () => hideWarnTip());
+  window.addEventListener('scroll', () => hideWarnTip(0), true); // don't strand it when the list scrolls
+  document.body.appendChild(tip);
+  warnTip = tip;
+  return tip;
+}
+function showWarnTip(anchor: HTMLElement): void {
+  const html = WARN_TIP_HTML[anchor.dataset.mpWarn ?? ''] ?? escape(anchor.getAttribute('aria-label') ?? '');
+  if (!html) return;
+  const tip = ensureWarnTip();
+  clearTimeout(warnTipTimer);
+  if (tip.dataset.html !== html) { tip.innerHTML = html; tip.dataset.html = html; }
+  const r = anchor.getBoundingClientRect();
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  const left = Math.max(8, Math.min(Math.round(r.left + r.width / 2 - tw / 2), window.innerWidth - tw - 8));
+  let top = Math.round(r.top - th - 8);
+  if (top < 8) top = Math.round(r.bottom + 8); // flip below when there's no room above
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+  tip.classList.add('is-shown');
+}
+function hideWarnTip(delay = 140): void {
+  clearTimeout(warnTipTimer);
+  warnTipTimer = setTimeout(() => warnTip?.classList.remove('is-shown'), delay);
+}
 
 // Track-list groups, in display order. Tracks sort alphabetically WITHIN each group.
 // `collapsed` seeds the group folded (it still expands on click, and while searching).
@@ -111,7 +177,7 @@ const CATEGORIES: { key: string; label: string; icon: string; warn?: string; col
   { key: 'lolly', label: 'Lolly Sings', icon: '🍭' },
   { key: 'ambient', label: 'Ambient', icon: '🌊' },
   { key: 'beats', label: 'Beats', icon: '🥁' },
-  { key: 'radio', label: 'Internet Radio', icon: '📻', warn: 'Requires an internet connection' },
+  { key: 'radio', label: 'Internet Radio', icon: '📻', warn: 'Internet radio, via SomaFM — needs an internet connection' },
 ];
 
 /** Which group a track belongs to. */
@@ -133,6 +199,27 @@ export function trackMood(tags: string[]): string {
   if (tags.includes('lofi')) return 'lo-fi';
   if (tags.includes('generated')) return 'generated';
   return '';
+}
+
+/** The repeat/forward toggle's markup — icon + labels reflect the current mode. */
+function modeButtonHtml(): string {
+  const repeat = getNeurospicy().repeat;
+  const label = repeat ? 'Repeat this track' : 'Play through the list';
+  return `<button type="button" class="neuro-tbtn neuro-mode${repeat ? ' is-active' : ''}" data-mp-mode`
+    + ` aria-pressed="${repeat}" title="${label}" aria-label="${label}">${repeat ? REPEAT : FORWARD}</button>`;
+}
+
+/** Sync the mode toggle's icon/label/state to state.repeat (called on every paint). */
+function paintModeButton(root: ParentNode): void {
+  const btn = root.querySelector<HTMLButtonElement>('[data-mp-mode]');
+  if (!btn) return;
+  const repeat = getNeurospicy().repeat;
+  btn.innerHTML = repeat ? REPEAT : FORWARD;
+  btn.classList.toggle('is-active', repeat);
+  btn.setAttribute('aria-pressed', String(repeat));
+  const label = repeat ? 'Repeat this track' : 'Play through the list';
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
 }
 
 /** The player body markup (no enable switch — that lives with the Sound switch). */
@@ -163,6 +250,7 @@ export function musicPlayerBodyHtml(): string {
         <button type="button" class="neuro-tbtn" data-mp-prev aria-label="Previous track">${PREV}</button>
         <button type="button" class="neuro-tbtn neuro-play" data-mp-play aria-label="${playing ? 'Pause' : 'Play'}" aria-pressed="${playing}">${playing ? PAUSE : PLAY}</button>
         <button type="button" class="neuro-tbtn" data-mp-next aria-label="Next track">${NEXT}</button>
+        ${modeButtonHtml()}
       </div>
       <label class="neuro-vol"><span>Music</span><input type="range" min="0" max="1" step="0.05" value="${getNeurospicy().volume}" data-mp-volume aria-label="Music volume"></label>
       <label class="neuro-vol"><span>Effects</span><input type="range" min="0" max="1" step="0.05" value="${getSfxVolume()}" data-mp-sfx aria-label="Interface sound volume — how much of the UI you hear"></label>
@@ -195,6 +283,7 @@ export function paintMusicPlayer(root: ParentNode): void {
   for (const btn of wrap.querySelectorAll<HTMLElement>('[data-mp-list] .neuro-track')) {
     btn.setAttribute('aria-current', String(btn.dataset.id === curId));
   }
+  paintModeButton(wrap);
   updateProgress(wrap);
 }
 
@@ -257,6 +346,28 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
   });
   wrap.querySelector<HTMLButtonElement>('[data-mp-next]')?.addEventListener('click', async (e) => {
     e.stopPropagation(); await cycleNeurospicyLoop(host, 1); after();
+  });
+  // Repeat ⇄ play-through-list toggle (right of the transport).
+  wrap.querySelector<HTMLButtonElement>('[data-mp-mode]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await setNeurospicyRepeat(host, !getNeurospicy().repeat);
+    paintModeButton(wrap);
+  });
+  // Category info tooltip (Internet Radio). Delegated to the persistent wrap since
+  // the list re-renders; hover OR keyboard focus opens it.
+  wrap.addEventListener('mouseover', (e) => {
+    const w = (e.target as HTMLElement).closest?.('.neuro-warn');
+    if (w) showWarnTip(w as HTMLElement);
+  });
+  wrap.addEventListener('mouseout', (e) => {
+    if ((e.target as HTMLElement).closest?.('.neuro-warn')) hideWarnTip();
+  });
+  wrap.addEventListener('focusin', (e) => {
+    const w = (e.target as HTMLElement).closest?.('.neuro-warn');
+    if (w) showWarnTip(w as HTMLElement);
+  });
+  wrap.addEventListener('focusout', (e) => {
+    if ((e.target as HTMLElement).closest?.('.neuro-warn')) hideWarnTip();
   });
   vol?.addEventListener('input', (e) => { e.stopPropagation(); setNeurospicyVolume(host, Number(vol.value)); });
   // The thin skip-to bar: click/drag to jump within the current local track; ←/→ nudge
@@ -376,7 +487,7 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
             return `<li class="neuro-cat${folded ? ' is-collapsed' : ''}" data-cat="${cat.key}">` +
               `<button type="button" class="neuro-cat-head" data-cat-toggle aria-expanded="${!folded}">` +
               `<span class="neuro-cat-caret">${CARET}</span><span class="neuro-cat-emoji" aria-hidden="true">${cat.icon}</span><span>${escape(cat.label)}</span>` +
-              (cat.warn ? `<span class="neuro-warn" tabindex="0" role="img" title="${escape(cat.warn)}" aria-label="${escape(cat.warn)}">${WARN}</span>` : '') +
+              (cat.warn ? `<span class="neuro-warn" tabindex="0" role="button" data-mp-warn="${escape(cat.key)}" aria-label="${escape(cat.warn)}">${WARN}</span>` : '') +
               `<span class="neuro-cat-count">${items.length}</span></button>` +
               `<ul class="neuro-cat-tracks">${items.map(trackHtml).join('')}</ul></li>`;
           }).join('') + '<li class="neuro-empty" hidden>No matches</li>';

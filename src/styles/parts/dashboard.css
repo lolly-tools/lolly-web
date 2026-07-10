@@ -120,8 +120,8 @@
 /* The section blurb sits under the title inside the body, spaced from the content. */
 .dash-collapse-desc { margin-top: 0; margin-bottom: 1rem; }
 /* A collapsed card reads as a quiet, closed bar. */
-.dash-collapse:not([open]) .dash-collapse-summary { opacity: .82; }
-.dash-collapse:not([open]) .dash-collapse-summary:hover { opacity: 1; }
+.dash-collapse:not([open]) .dash-collapse-summary { opacity: .82; box-shadow: 0 .2px 12px #0002;}
+.dash-collapse:not([open]) .dash-collapse-summary:hover { opacity: 1; box-shadow: 0 .2px 7px #0003;}
 /* Icon + glance chips, hydrated in once collectDevice() resolves (see
    dashboard.ts's collapse() and its collectDevice().then(...) hookup) — empty
    until then, so an unsupported browser just shows the title, never a gap. */
