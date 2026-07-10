@@ -244,6 +244,16 @@ function cropSvg(svgText: string, box: [number, number, number, number]): string
 
 // ── Icons (Lucide house style) ────────────────────────────────────────────────
 const STAR_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+// A filled sparkle (big + small twinkle) — the "generative AI" glyph, matching the
+// verify view's aiSpark. Only shown when the GEN AI pill collapses to a circle.
+const AI_SPARK_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 13.5l.8 2.4 2.4.8-2.4.8-.8 2.4-.8-2.4-2.4-.8 2.4-.8z"/></svg>';
+// Generative-AI provenance pill (styled by .genai-pill in catalog.css). ONE markup for
+// both forms — CSS shows the "GEN AI" text by default and collapses it to the sparkle
+// circle on narrow tiles. `kind`: 'full' = wholly AI-made; 'partial' = contains AI parts.
+function genAiPill(kind: string): string {
+  const title = kind === 'partial' ? 'Contains AI-generated content' : 'Fully AI-generated content';
+  return `<span class="genai-pill" title="${escape(title)}">${AI_SPARK_ICON}<span class="genai-pill-lbl">Gen AI</span></span>`;
+}
 const SHARE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>';
 const TAG_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor"/></svg>';
 const TRASH_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -711,6 +721,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const fmt = ref.type === 'lottie' ? 'LOTTIE' : (ref.format ? String(ref.format).toUpperCase() : '');
     const isUser = ref.source === 'user';
     const sourceLabel = isUser ? 'Yours' : 'Catalog';
+    // Generative-AI disclosure (authored on the catalog entry). Shows a violet GEN AI pill
+    // in the caption — collapses to a sparkle circle on narrow tiles (see catalog.css).
+    const aiKind = ref.meta?.aiGenerated === 'partial' ? 'partial'
+      : ref.meta?.aiGenerated === 'full' ? 'full' : '';
     // Only the user's own uploads carry a selection checkbox (catalog assets can't be
     // bulk-deleted). The whole tile body (bar the star + checkbox) opens the details modal.
     const sel = isUser && selected.has(ref.id);
@@ -721,7 +735,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <span class="cat-tile-fig">${thumbHtml(ref, true)}</span>
           <span class="cat-tile-cap">
             <span class="cat-tile-name" title="${escape(name)}">${escape(name)}</span>
-            <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}</span>
+            <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}</span>
           </span>
         </button>
         <button type="button" class="cat-star" data-star="${escape(ref.id)}" data-sfx="twinkle" aria-pressed="${fav}" title="${fav ? 'Remove from favourites' : 'Add to favourites'}" aria-label="${fav ? 'Remove' : 'Add'} ${escape(name)} ${fav ? 'from' : 'to'} favourites">${STAR_ICON}</button>
@@ -1174,6 +1188,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const hidden = hiddenSet.has(base);
     const name = String(ref.meta?.name ?? ref.id);
     const tags = (ref.meta?.tags as string[] | undefined) ?? [];
+    const aiKind = ref.meta?.aiGenerated === 'partial' ? 'partial'
+      : ref.meta?.aiGenerated === 'full' ? 'full' : '';
     // Themable icons get the same colour swatches as the download dialog, right here in the
     // details view — pick a pairing and the preview recolours live; Download + Copy-link then
     // carry the choice. dBaseSvg caches the raw SVG so re-colouring doesn't re-fetch.
@@ -1232,6 +1248,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div><dt>Source</dt><dd>${isUser ? 'Your upload' : 'SUSE catalog'}</dd></div>
           <div><dt>Category</dt><dd>${escape(categoryLabel(libCategory(ref, overrides)))}</dd></div>
           <div><dt>Format</dt><dd>${escape(String(ref.format ?? ref.type).toUpperCase())}</dd></div>
+          ${aiKind ? `<div><dt>AI content</dt><dd class="cat-details-ai">${genAiPill(aiKind)}<span>${aiKind === 'partial' ? 'Contains AI-generated elements' : 'Fully AI-generated'}</span></dd></div>` : ''}
           <div><dt>ID</dt><dd><code>${escape(ref.id)}</code></dd></div>
           ${tags.length ? `<div><dt>Tags</dt><dd class="cat-details-tags">${tags.map(t => `<span class="cat-tag">${escape(String(t))}</span>`).join('')}</dd></div>` : ''}
         </dl>

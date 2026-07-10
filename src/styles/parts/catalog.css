@@ -195,6 +195,23 @@
 .cat-src--user { background: hsl(var(--primary) / .15); color: hsl(var(--primary)); }
 .cat-src--lib  { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
 
+/* Generative-AI provenance pill. Reuses the /verify AI violet (var(--vf-ai-*) in
+   tokens.css) so it reads identically in every brand — deliberately NOT brand-tinted.
+   SUSE Mono, uppercase. The sparkle <svg> is hidden by default (text says it all);
+   the compact form (narrow tiles, below) collapses to just the sparkle in a circle. */
+.genai-pill {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono);
+  font-size: .58rem; font-weight: 700; letter-spacing: .06em; line-height: 1;
+  text-transform: uppercase; white-space: nowrap;
+  padding: 2px 6px; border-radius: 999px; color: #fff;
+  background: linear-gradient(120deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
+  box-shadow: 0 2px 8px -3px hsl(var(--vf-ai) / .7);
+}
+.genai-pill svg { display: none; width: 1em; height: 1em; }
+/* Details modal: a touch larger, sits on the "AI content" meta row. */
+.cat-details-meta .genai-pill { font-size: .62rem; }
+
 /* Star — a floating chip over the figure, revealed/emphasised on hover/focus. */
 .cat-star {
   position: absolute; top: 6px; left: 6px; z-index: 2;
@@ -491,6 +508,7 @@
 .cat-details-meta > div { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: baseline; font-size: .85rem; }
 .cat-details-meta dt { color: hsl(var(--muted-foreground)); font-weight: 600; }
 .cat-details-meta dd { margin: 0; word-break: break-word; }
+.cat-details-meta dd.cat-details-ai { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cat-details-meta code { font-family: var(--font-mono); font-size: .8rem; }
 .cat-details-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .cat-tag { font-size: .7rem; padding: 1px 7px; border-radius: 999px; background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
@@ -562,6 +580,15 @@
 @media (max-width: 640px) {
   .catalog { padding: calc(4.2rem + env(safe-area-inset-top, 0px)) 12px calc(5.5rem + env(safe-area-inset-bottom)); }
   .catalog .cat-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  /* Narrow tiles: the caption sub-line ("Catalog · SVG") is tight, so collapse the
+     GEN AI pill to just the sparkle in a circle. The details-modal pill is untouched
+     (it's a dialog, not a .cat-tile-sub) — it always shows the full "GEN AI" text. */
+  .cat-tile-sub .genai-pill { gap: 0; padding: 0; width: 18px; height: 18px; justify-content: center; }
+  .cat-tile-sub .genai-pill svg { display: block; }
+  .cat-tile-sub .genai-pill .genai-pill-lbl {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
   /* Touch: no hover, so keep the star always visible. */
   .cat-star { opacity: 1; }
   /* Match the mobile .catalog padding-top so the featured hero still bleeds to the top. */

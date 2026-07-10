@@ -138,6 +138,8 @@ const ICONS = {
   sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>',
   // Stacked planes — "composite of multiple elements".
   layers: '<path d="M12 2 2 7l10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+  // Microphone — "recorded live from the microphone".
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3M8 21h8"/>',
 };
 const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'invalid', na: 'n/a' };
 
@@ -550,6 +552,10 @@ const ACTION_ICON: Record<string, keyof typeof ICONS> = {
 const SOURCE_ICON: Partial<Record<string, keyof typeof ICONS>> = {
   composite: 'layers',
   compositeWithTrainedAlgorithmicMedia: 'layers',
+  // Sensor origin — a live camera frame or a recording. A mic-only take is
+  // re-pointed to the mic glyph in stepsHtml() from its description.
+  digitalCapture: 'camera',
+  computationalCapture: 'camera',
 };
 // Friendly wording for an action's IPTC DigitalSourceType (the last path segment).
 const SOURCE_TYPE_LABEL: Record<string, string> = {
@@ -605,14 +611,19 @@ function stepsHtml(report: VerifyReport): string {
     const label = ACTION_LABEL[code] ?? (code.replace(/^c2pa\./, '') || 'Step');
     const slug = sourceSlug(a);
     const isAi = !!AI_SOURCE_SLUGS[slug];
-    const src = SOURCE_TYPE_LABEL[slug];
-    // A composite source type wins the glyph (layers); else the action's own icon.
-    const icon = SOURCE_ICON[slug] ?? ACTION_ICON[code] ?? 'clock';
+    const desc = a.description ? tidyStepDescription(String(a.description), label) : '';
+    // A mic-only capture (digitalCapture whose description says microphone, not
+    // camera) must NOT read "Captured by a camera": swap to the mic glyph and let
+    // the description carry the wording instead of the camera source line.
+    const isCapture = slug === 'digitalCapture' || slug === 'computationalCapture';
+    const isMicCapture = isCapture && /microphone/i.test(desc) && !/camera/i.test(desc);
+    const src = isMicCapture ? undefined : SOURCE_TYPE_LABEL[slug];
+    // A composite/capture source type wins the glyph; else the action's own icon.
+    const icon = isMicCapture ? 'mic' : (SOURCE_ICON[slug] ?? ACTION_ICON[code] ?? 'clock');
     // Who did it → a left-side pill. Lolly reads bold green (mark our own edits
     // prominently), an AI-sourced step reads purple, any other maker solid grey.
     const agent = stepAgent(a);
     const agentCls = agent && /lolly/i.test(agent) ? 'lolly' : isAi ? 'ai' : 'other';
-    const desc = a.description ? tidyStepDescription(String(a.description), label) : '';
     const meta = [
       desc ? escape(desc) : null,
       a.when ? escape(fmtDate(a.when)) : null,
