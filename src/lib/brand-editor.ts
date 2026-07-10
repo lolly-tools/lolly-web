@@ -42,9 +42,9 @@ import type { WebTokensAPI } from '../bridge/tokens.ts';
 import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
   isRec, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
-  setPrimaryPrintOverride, getPrimaryPrintOverride,
+  setSwatchPrintOverride, getSwatchPrintOverride, primaryAnchorPath,
 } from './brand-doc.ts';
-import type { BrandSwatch } from './brand-doc.ts';
+import type { BrandSwatch, PrintLock } from './brand-doc.ts';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
 import { COLOR_FORMATS, formatColor, parseColor } from './color-formats.ts';
@@ -96,8 +96,14 @@ const SCHEMES: ReadonlyArray<{ id: Scheme; label: string }> = [
   { id: 'mono', label: 'Mono' }, { id: 'complement', label: 'Complement' },
   { id: 'analogous', label: 'Analogous' }, { id: 'triad', label: 'Triad' },
 ];
-const SURFACES: ReadonlyArray<{ id: Surface; label: string }> = [
-  { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }, { id: 'primary', label: 'Deep primary' },
+// UI intensity — the surface look baked into the brand, collapsed from the old
+// Light / Dark / Deep-primary trio to a single Muted ↔ Deep toggle. Light vs dark
+// is the app THEME's job (the Theme picker), so this axis only carries how RICH the
+// surface reads: `muted` = a neutral surface (light default); `deep` = the
+// chroma-rich primary surface. The ids stay the engine's `surface` values so
+// deriveBrandTokens is unchanged (see engine/src/brand-derive.ts).
+const INTENSITIES: ReadonlyArray<{ id: Surface; label: string }> = [
+  { id: 'light', label: 'Muted' }, { id: 'primary', label: 'Deep' },
 ];
 const CONTRASTS: ReadonlyArray<{ id: Contrast; label: string }> = [
   { id: 'comfort', label: 'Comfort' }, { id: 'high', label: 'High' },
@@ -212,17 +218,150 @@ const segHtml = (name: string, opts: ReadonlyArray<{ id: string; label: string }
     ${opts.map(o => `<button type="button" class="view-seg-btn" data-val="${escape(o.id)}" aria-pressed="${o.id === active}">${escape(o.label)}</button>`).join('')}
   </div>`;
 
+// ── Shared print-lock control (Auto ↔ Locked·Process/Spot) ───────────────────
+// One control, two mounts: the Colour panel's primary field and the Palette
+// panel's swatch popover (see mountPrintLock's two call sites below). Auto
+// converts the subject's screen colour to CMYK at export time; Locked pins
+// either a plain process-CMYK anchor or a named spot colour (whose own CMYK
+// equivalent reuses the same four inputs) — the two are mutually exclusive,
+// enforced by brand-doc.ts's setSwatchPrintOverride.
+
+/** The auto sRGB→CMYK conversion of a hex (C,M,Y,K 0–100) — the value Locked
+ *  seeds from, and what Auto shows as the print readout. */
+const autoCmykOf = (hex: string): [number, number, number, number] => {
+  const p = formatColor('cmyk', hex).split(',').map(n => Math.round(parseFloat(n)) || 0);
+  return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 0];
+};
+
+/** Same JSON key path — used to tell whether the Palette panel's currently-edited
+ *  swatch IS the primary ramp's anchor step, so the two print-lock controls that
+ *  can both touch it stay reconciled (see primaryPrintLock's doc comment). */
+const samePath = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((seg, i) => seg === b[i]);
+
+function printLockHtml(): string {
+  return `
+    <div class="be-lock" data-be-lock>
+      <div class="be-subst-line">
+        <span class="be-subst-key">Print</span>
+        <code class="be-subst-val" data-be-lock-readout></code>
+      </div>
+      ${segHtml('lock-mode', [{ id: 'auto', label: 'Auto' }, { id: 'locked', label: 'Locked' }], 'auto', 'Print colour')}
+      <div class="be-lock-body" data-be-lock-body hidden>
+        ${segHtml('lock-kind', [{ id: 'cmyk', label: 'Process (CMYK)' }, { id: 'spot', label: 'Spot colour' }], 'cmyk', 'Lock type')}
+        <div class="be-lock-spot" data-be-lock-spot hidden>
+          <label class="be-lock-field"><span>Name</span><input type="text" data-be-lock-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
+          <label class="be-lock-field"><span>Book <em>(optional)</em></span><input type="text" data-be-lock-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <div class="be-cmyk-inputs">
+          ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-lock-c="${i}" aria-label="${l === 'K' ? 'Black' : l === 'C' ? 'Cyan' : l === 'M' ? 'Magenta' : 'Yellow'} %"></label>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+interface PrintLockCtx {
+  /** The subject's current screen colour — feeds the Auto conversion. */
+  hex: () => string;
+  get: () => PrintLock | null;
+  /** Apply the change; the caller owns persistence/dirty-flag semantics. */
+  set: (lock: PrintLock | null) => void;
+}
+
+/**
+ * Render the print-lock markup into `mount` and wire it against `ctx`. Returns
+ * a handle whose `render()` the caller calls whenever the subject changes
+ * underneath it (a newly selected swatch, an edited primary hex) so the
+ * readout/fields resync without re-mounting the control.
+ *
+ * Call this AFTER any generic `[data-be-seg]` delegate (see the Scheme/Surface/
+ * Contrast wiring below) has already run its one-time `querySelectorAll` — the
+ * control's own Auto/Locked and Process/Spot toggles are built on that same
+ * `segHtml` markup, so mounting later keeps them out of that older NodeList.
+ */
+function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => void } {
+  mount.innerHTML = printLockHtml();
+  const box = mount.querySelector<HTMLElement>('[data-be-lock]');
+  const readout = mount.querySelector<HTMLElement>('[data-be-lock-readout]');
+  const modeSeg = mount.querySelector<HTMLElement>('[data-be-seg="lock-mode"]');
+  const kindSeg = mount.querySelector<HTMLElement>('[data-be-seg="lock-kind"]');
+  const body = mount.querySelector<HTMLElement>('[data-be-lock-body]');
+  const spotFields = mount.querySelector<HTMLElement>('[data-be-lock-spot]');
+  const nameInput = mount.querySelector<HTMLInputElement>('[data-be-lock-name]');
+  const bookInput = mount.querySelector<HTMLInputElement>('[data-be-lock-book]');
+  const cInputs = Array.from(mount.querySelectorAll<HTMLInputElement>('[data-be-lock-c]'));
+  let kind: 'cmyk' | 'spot' = 'cmyk'; // which sub-mode shows while the box is open
+
+  const setPressed = (seg: HTMLElement | null, val: string): void =>
+    seg?.querySelectorAll<HTMLElement>('[data-val]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.val === val)));
+  const cmykFromInputs = (): [number, number, number, number] =>
+    cInputs.map(i => Math.min(100, Math.max(0, Math.round(parseFloat(i.value) || 0)))) as [number, number, number, number];
+
+  const commit = (): void => {
+    if (kind === 'spot') {
+      const name = nameInput?.value.trim();
+      if (!name) return; // a spot lock needs a name — nothing to commit yet
+      const book = bookInput?.value.trim();
+      ctx.set({ spot: { name, ...(book ? { book } : {}), cmyk: cmykFromInputs() } });
+    } else {
+      ctx.set({ cmyk: cmykFromInputs() });
+    }
+    render();
+  };
+
+  modeSeg?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
+    if (btn.dataset.val === 'auto') { ctx.set(null); render(); return; }
+    // Locking with nothing pinned yet seeds from the auto conversion (Process by
+    // default) — "Locked" always leaves something pinned, never a limbo state.
+    if (!ctx.get()) ctx.set({ cmyk: autoCmykOf(ctx.hex()) });
+    render();
+  });
+  kindSeg?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
+    kind = btn.dataset.val === 'spot' ? 'spot' : 'cmyk';
+    setPressed(kindSeg, kind);
+    if (spotFields) spotFields.hidden = kind !== 'spot';
+    if (kind === 'cmyk') commit(); // Process has no name field to wait on — commit straight away
+  });
+  cInputs.forEach(inp => inp.addEventListener('input', commit));
+  nameInput?.addEventListener('input', commit);
+  bookInput?.addEventListener('input', () => { if (kind === 'spot' && nameInput?.value.trim()) commit(); });
+
+  function render(): void {
+    const lock = ctx.get();
+    const eff = lock ? ('spot' in lock ? lock.spot.cmyk : lock.cmyk) : autoCmykOf(ctx.hex());
+    if (readout) {
+      readout.textContent = lock && 'spot' in lock
+        ? `${lock.spot.name} · C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}`
+        : `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}`;
+    }
+    box?.classList.toggle('is-pinned', !!lock);
+    setPressed(modeSeg, lock ? 'locked' : 'auto');
+    if (body) body.hidden = !lock;
+    kind = lock && 'spot' in lock ? 'spot' : 'cmyk';
+    setPressed(kindSeg, kind);
+    if (spotFields) spotFields.hidden = kind !== 'spot';
+    if (nameInput && document.activeElement !== nameInput) nameInput.value = lock && 'spot' in lock ? lock.spot.name : '';
+    if (bookInput && document.activeElement !== bookInput) bookInput.value = lock && 'spot' in lock ? (lock.spot.book ?? '') : '';
+    cInputs.forEach((inp, i) => { if (document.activeElement !== inp) inp.value = String(eff[i]); });
+  }
+  render();
+  return { render };
+}
+
 // ── Swatch tile + palette grid ────────────────────────────────────────────────
 
 function tileHtml(s: BrandSwatch, idx: number): string {
   const trans = !s.hex;
+  const lockTitle = s.lock && 'spot' in s.lock ? `Print colour locked to ${s.lock.spot.name}` : 'Print colour locked';
   return `
-    <button type="button" class="be-swatch${trans ? ' is-empty' : ''}" data-be-tile="${idx}"
+    <button type="button" class="be-swatch${trans ? ' is-empty' : ''}${s.lock ? ' is-pinned' : ''}" data-be-tile="${idx}"
       style="--sw:${escape(s.hex || 'transparent')}"
-      aria-label="${escape(`${s.name} — ${s.hex || 'unset'}`)}">
+      aria-label="${escape(`${s.name} — ${s.hex || 'unset'}${s.lock ? ' (print colour locked)' : ''}`)}">
       <span class="be-swatch-chip" aria-hidden="true"></span>
       <span class="be-swatch-meta">
-        <span class="be-swatch-name">${escape(s.name)}</span>
+        <span class="be-swatch-name">${escape(s.name)}${s.lock ? `<span class="be-swatch-lock" title="${escape(lockTitle)}">LOCK</span>` : ''}</span>
         <code class="be-swatch-hex">${escape(s.hex || '—')}</code>
       </span>
     </button>`;
@@ -333,9 +472,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   // Neutral/secondary ramp-step picks — default to the anchor (mid) step for the
   // current division count, so they track the shade count until the user picks.
   let neutralStep = anchorStep(steps), secondaryStep = anchorStep(steps);
-  // The primary's pinned CMYK print override (null = auto-convert at export),
-  // seeded from the installed brand. Re-applied to the doc after every re-derive.
-  let printOverride: [number, number, number, number] | null = installedDoc ? getPrimaryPrintOverride(installedDoc) : null;
+  // The primary's pinned print lock (null = auto-convert at export) — read LIVE
+  // off `doc` rather than cached, since the very same swatch (the primary ramp's
+  // anchor step) is also reachable — and lockable — through the Palette panel's
+  // swatch popover (see mountPrintLock's two call sites below). A cached copy
+  // would drift the moment the OTHER surface writes the lock straight to `doc`.
+  const primaryPrintLock = (): PrintLock | null => {
+    const p = primaryAnchorPath(doc);
+    return p ? getSwatchPrintOverride(doc, p) : null;
+  };
   // The colour-harmony the "Build your palette" generator suggests accents from.
   let schemeKind: SchemeKind = 'adjacent-3';
   const currentTheme = document.documentElement.dataset.theme || 'light';
@@ -351,31 +496,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
           <div class="be-colorpick">
             <span class="be-field-label">Primary colour</span>
             ${colorFieldHtml('be-primary', primary, { inline: true, modes: true })}
-            <!-- Screen / print substitution: the primary is one colour; Lolly shows
-                 its on-screen (sRGB) and print (CMYK) forms and auto-converts for
-                 print UNLESS a CMYK is pinned here (then export substitutes it exactly). -->
+            <!-- Screen / print: the primary is one colour; Lolly shows its on-screen
+                 (sRGB) form and auto-converts it for print — UNLESS the shared print
+                 lock below pins an exact CMYK anchor or a named spot colour instead. -->
             <div class="be-subst" data-be-subst>
               <div class="be-subst-line">
                 <span class="be-subst-key">Screen</span>
                 <code class="be-subst-val" data-be-screen></code>
                 <span class="be-subst-tag">auto</span>
               </div>
-              <div class="be-subst-line">
-                <span class="be-subst-key">Print</span>
-                <code class="be-subst-val" data-be-print></code>
-                <button type="button" class="be-subst-toggle" data-be-print-toggle aria-expanded="false"></button>
-              </div>
-              <div class="be-subst-override" data-be-override hidden>
-                <div class="be-cmyk-inputs">
-                  ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-cmyk="${i}" aria-label="${l === 'K' ? 'Black' : l === 'C' ? 'Cyan' : l === 'M' ? 'Magenta' : 'Yellow'} %"></label>`).join('')}
-                </div>
-                <button type="button" class="be-subst-reset" data-be-print-reset>Reset to auto</button>
-              </div>
+              <div data-be-lock-mount="primary"></div>
             </div>
           </div>
           <div class="be-derive-controls">
             <label class="be-field"><span class="be-field-label">Scheme</span>${segHtml('scheme', SCHEMES, scheme, 'Colour scheme')}</label>
-            <label class="be-field"><span class="be-field-label">Surface</span>${segHtml('surface', SURFACES, surface, 'Default surface')}</label>
+            <label class="be-field"><span class="be-field-label">UI intensity</span>${segHtml('surface', INTENSITIES, surface, 'UI intensity')}</label>
             <label class="be-field"><span class="be-field-label">Contrast</span>${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}</label>
             <div class="be-field be-steps-field">
               <span class="be-field-label">Shades <span class="be-steps-val" data-be-steps-val>${steps}</span></span>
@@ -446,6 +581,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       <!-- Swatch editor popover (shared; positioned under the clicked tile) -->
       <div class="be-editor" data-be-editor hidden>
         <div class="be-editor-card" role="dialog" aria-label="Edit swatch">
+          <div class="be-editor-head">
+            <span class="be-editor-headlabel">Edit swatch</span>
+            <span class="be-swatch-lock be-editor-lockbadge" data-be-editor-lockbadge hidden>LOCK</span>
+          </div>
           <div class="be-editor-field"><span class="be-field-label">Colour</span><div data-be-editor-color></div></div>
           <div class="be-editor-field be-fmt">
             <span class="be-field-label">Set by value</span>
@@ -459,6 +598,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
           </div>
           <label class="be-editor-field"><span class="be-field-label">Name</span>
             <input type="text" class="be-editor-name" data-be-editor-name autocomplete="off"></label>
+          <div class="be-editor-field" data-be-lock-mount="swatch"></div>
           <div class="be-editor-actions">
             <button type="button" class="be-editor-del" data-be-editor-del hidden>Delete</button>
             <button type="button" class="be-btn be-editor-done" data-be-editor-done>Done</button>
@@ -525,6 +665,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const saveBtn = $('[data-be-save]') as HTMLButtonElement | null;
   const setDirty = (v: boolean): void => { if (saveBtn) saveBtn.hidden = !v; };
 
+  // "Use this colour" lights up bright green (see .be-cta.is-active) the moment any
+  // derive input changes — colour, scheme, surface, contrast, shades, a ramp step —
+  // signalling there's a fresh palette to apply. Cleared once it's applied (or the
+  // draft is saved), so a resting button never nags. Every live change funnels
+  // through renderPreview(), so that's the one place we flag it.
+  const deriveBtn = $('[data-be-derive]') as HTMLButtonElement | null;
+  const setDeriveActive = (v: boolean): void => { deriveBtn?.classList.toggle('is-active', v); };
+
   /**
    * Push the edited doc to the install (debounced) + refresh chrome & pickers.
    * Also clears the Save-colour dirty flag — see setDirty above.
@@ -532,6 +680,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const persist = (immediate = false): void => {
     clearTimeout(saveTimer);
     setDirty(false);
+    setDeriveActive(false); // saved — nothing pending to apply
     const run = async (): Promise<void> => {
       try {
         await installUserTokens(host as unknown as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
@@ -559,6 +708,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     if (preview) preview.innerHTML = previewHtml(next, { neutral: neutralStep, secondary: secondaryStep, steps });
     applyDraftChrome(next);
     broadcastDraft(next);
+    setDeriveActive(true); // a derive input changed → invite the user to apply it
   };
   // Shades slider — how many divisions each ramp carries. Re-derives live; the
   // neutral/secondary step picks re-centre on the new anchor (and clamp in range).
@@ -578,7 +728,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       if (!raw || raw === 'transparent') return;
       primary = /^#[0-9a-fA-F]{8}$/.test(raw) ? raw.slice(0, 7) : raw;
       renderPreview();
-      renderSubst();
+      renderScreen();
+      primaryLock?.render();
       renderGenerator();
     },
   });
@@ -646,48 +797,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   paletteHooks.push(renderGenerator); // keep candidates + previews in sync with the palette
   renderGenerator();                  // initial paint
 
-  // ── Screen / print substitution readout + optional CMYK override ────────────
+  // ── Screen readout — the primary's on-screen (sRGB) form. ───────────────────
   const screenEl = $('[data-be-screen]') as HTMLElement | null;
-  const printEl = $('[data-be-print]') as HTMLElement | null;
-  const printToggle = $('[data-be-print-toggle]') as HTMLButtonElement | null;
-  const overrideBox = $('[data-be-override]') as HTMLElement | null;
-  const cmykInputs = Array.from(root.querySelectorAll<HTMLInputElement>('[data-be-cmyk]'));
-  /** The auto sRGB→CMYK conversion of the current primary (C,M,Y,K 0–100). */
-  const autoCmyk = (): [number, number, number, number] => {
-    const p = formatColor('cmyk', primaryHex()).split(',').map(n => Math.round(parseFloat(n)) || 0);
-    return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 0];
-  };
-  const renderSubst = (): void => {
+  const renderScreen = (): void => {
     const hex = primaryHex();
     if (screenEl) screenEl.textContent = `${hex.toUpperCase()} · rgb(${formatColor('rgb', hex)})`;
-    const eff = printOverride ?? autoCmyk();
-    if (printEl) printEl.textContent = `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}`;
-    if (printToggle) printToggle.textContent = printOverride ? 'pinned — edit' : 'override…';
-    $('[data-be-subst]')?.classList.toggle('is-pinned', !!printOverride);
-    if (printOverride) cmykInputs.forEach((inp, i) => { if (document.activeElement !== inp) inp.value = String(printOverride![i]); });
   };
-  printToggle?.addEventListener('click', () => {
-    const opening = !!overrideBox?.hidden;
-    if (overrideBox) overrideBox.hidden = !opening;
-    printToggle.setAttribute('aria-expanded', String(opening));
-    if (opening) { const eff = printOverride ?? autoCmyk(); cmykInputs.forEach((inp, i) => { inp.value = String(eff[i]); }); }
-  });
-  const commitOverride = (): void => {
-    printOverride = cmykInputs.map(inp => Math.min(100, Math.max(0, Math.round(parseFloat(inp.value) || 0)))) as [number, number, number, number];
-    setPrimaryPrintOverride(doc, printOverride); // rides on the current draft; Save persists it
-    setDirty(true);
-    renderSubst();
-  };
-  cmykInputs.forEach(inp => inp.addEventListener('input', commitOverride));
-  $('[data-be-print-reset]')?.addEventListener('click', () => {
-    printOverride = null;
-    setPrimaryPrintOverride(doc, null);
-    setDirty(true);
-    if (overrideBox) overrideBox.hidden = true;
-    printToggle?.setAttribute('aria-expanded', 'false');
-    renderSubst();
-  });
-  renderSubst();
+  renderScreen();
   root.querySelectorAll<HTMLElement>('[data-be-seg]').forEach(seg => {
     const on = (e: Event): void => {
       const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
@@ -700,6 +816,22 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     };
     seg.addEventListener('click', on);
   });
+  // The primary's print lock — mounted only now, AFTER the generic [data-be-seg]
+  // delegate above has taken its one-time querySelectorAll snapshot, so this
+  // control's own Auto/Locked + Process/Spot segments (built on the same
+  // segHtml markup) don't get swept into that older Scheme/Surface/Contrast
+  // listener (see mountPrintLock's doc comment).
+  const primaryLockMount = $('[data-be-lock-mount="primary"]') as HTMLElement | null;
+  const primaryLock = primaryLockMount ? mountPrintLock(primaryLockMount, {
+    hex: () => primaryHex(),
+    get: () => primaryPrintLock(),
+    set: (lock) => {
+      const path = primaryAnchorPath(doc);
+      if (path) setSwatchPrintOverride(doc, path, lock); // rides on the current draft; Save persists it
+      setDirty(true);
+      repaintPalette(); // same swatch is a tile in the Palette panel — keep its lock badge in sync
+    },
+  }) : null;
   // Neutral/secondary ramp-step picks — the Primary ramp stays non-interactive
   // (it's already driven by the colour field above, not a step choice).
   preview?.addEventListener('click', (e) => {
@@ -717,7 +849,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     catch (err) { announce(`Couldn't derive from ${primary}: ${String((err as { message?: unknown })?.message ?? err)}`, { assertive: true }); return; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);
-    setPrimaryPrintOverride(next, printOverride); // ramp rebuilt → re-pin the print anchor
+    // Read the lock LIVE off the pre-derive `doc` — whichever surface (Colour
+    // panel or the Palette panel's swatch popover) set it last, since both write
+    // straight to `doc` — so re-deriving never silently drops a lock the other
+    // surface just set (see primaryPrintLock's doc comment above).
+    const priorLock = primaryPrintLock();
+    if (priorLock) { const p = primaryAnchorPath(next); if (p) setSwatchPrintOverride(next, p, priorLock); } // ramp rebuilt → re-pin the print lock
     const ok = swatches.some(s => s.kind === 'custom')
       ? await confirmDialog({ title: 'Re-derive the palette?', message: 'This rebuilds every swatch from your colour and drops the custom swatches you added.', confirmLabel: 'Re-derive' })
       : true;
@@ -725,6 +862,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     // Commits into the in-memory draft only — no persist() here; Save colour
     // (below) is the only thing in this panel that writes to storage.
     doc = next; repaintPalette(); applyDraftChrome(doc); broadcastDraft(doc); setDirty(true);
+    setDeriveActive(false); // applied — the button rests until the next change
     playSfx('click');
     announce('Palette re-derived from your colour — click Save colour to keep it');
   });
@@ -741,7 +879,41 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const fmtSel = editorEl?.querySelector<HTMLSelectElement>('[data-be-fmt-sel]') ?? null;
   const fmtInput = editorEl?.querySelector<HTMLInputElement>('[data-be-fmt-input]') ?? null;
   const fmtOut = editorEl?.querySelector<HTMLElement>('[data-be-fmt-out]') ?? null;
+  const editorLockBadge = editorEl?.querySelector<HTMLElement>('[data-be-editor-lockbadge]') ?? null;
   let editFmt: ColorFormat = 'hex'; // sticky across swatch selections
+
+  /** Refresh a swatch's tile in place (lock badge + colour), without a full repaint —
+   *  preserves `.is-selected` (tileHtml doesn't know selection state) so an open
+   *  popover's tile doesn't lose its ring the moment its lock changes. */
+  const refreshTile = (idx: number): void => {
+    const s = swatches[idx]; const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`);
+    if (!s || !tile) return;
+    const wasSelected = tile.classList.contains('is-selected');
+    tile.outerHTML = tileHtml(s, idx);
+    if (wasSelected) palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`)?.classList.add('is-selected');
+  };
+  // The swatch popover's print lock — always reads/writes whichever swatch is
+  // CURRENTLY open (`selected`), so it's built once and driven dynamically
+  // rather than re-mounted per swatch (openEditor calls its render() instead).
+  const swatchLockMount = editorEl?.querySelector<HTMLElement>('[data-be-lock-mount="swatch"]') ?? null;
+  const swatchLock = swatchLockMount ? mountPrintLock(swatchLockMount, {
+    hex: () => (selected >= 0 ? swatches[selected]!.hex : ''),
+    get: () => (selected >= 0 ? getSwatchPrintOverride(doc, swatches[selected]!.path) : null),
+    set: (lock) => {
+      if (selected < 0) return;
+      const cur = swatches[selected]!;
+      setSwatchPrintOverride(doc, cur.path, lock);
+      cur.lock = lock;
+      refreshTile(selected);
+      if (editorLockBadge) editorLockBadge.hidden = !lock;
+      persist();
+      // This swatch may BE the primary ramp's anchor step — the same swatch the
+      // Colour panel's own print lock reads/writes (see primaryPrintLock's doc
+      // comment). Keep that control's readout in sync too.
+      const anchorPath = primaryAnchorPath(doc);
+      if (anchorPath && samePath(anchorPath, cur.path)) primaryLock?.render();
+    },
+  }) : null;
 
   const extrapolation = (hex: string): string =>
     hex ? `${hex.toUpperCase()} · rgb(${formatColor('rgb', hex)})` : '';
@@ -802,6 +974,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     if (fmtOut) fmtOut.textContent = extrapolation(s.hex);
     nameInput.value = s.name;
     delBtn.hidden = !s.deletable;
+    if (editorLockBadge) editorLockBadge.hidden = !s.lock;
+    swatchLock?.render();
     // Position the popover under the tile, clamped to the editor box.
     const r = tile.getBoundingClientRect(), pr = root.getBoundingClientRect();
     editorEl.style.left = `${Math.min(Math.max(8, r.left - pr.left), pr.width - 308)}px`;

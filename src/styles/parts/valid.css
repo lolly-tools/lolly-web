@@ -353,16 +353,15 @@
 
 /* ─── Embedded-metadata reveal ───────────────────────────────────────────────
    A clinical readout of everything the file discloses (EXIF/XMP/GPS/…). Hierarchy
-   is carried entirely by type — tracked uppercase section heads, muted labels,
-   SUSE-Mono values — and whitespace. No boxes, no rules, no coloured margins;
-   sensitivity is signalled by colouring the value itself, not by chrome. */
+   is carried mostly by type — tracked uppercase section heads, muted labels,
+   SUSE-Mono values — and whitespace; sensitivity is signalled by colouring the
+   value itself, not by chrome. Now a peer card inside .valid-panels (see above),
+   so it shares that boxed background instead of trailing below a divider line. */
 .valid-meta {
-    margin: 1.5rem 0 0;
-    padding-top: 1.3rem;
-    border-top: 1px solid hsl(var(--border));
     box-shadow: 0 .2rem 1rem #0003;
     border-radius: var(--radius);
-    padding: 3rem;
+    background: hsl(var(--muted) / 0.22);
+    padding: 1.4rem 1.5rem;
 }
 .valid-meta-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
 .valid-meta-head h3 {
@@ -629,16 +628,40 @@
 .valid-wm-text span { font-size: 0.8rem; line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
 
 /* ── Panels — the file/facts summary, "made from" inputs digest, "what happened"
-   (change history) and "what was checked" (assertion log) as distinct boxed
-   columns rather than lists silently stacked in one column. A fluid grid: one
-   column on narrow viewports (so "made from" always sits directly above change
-   history), opens to more columns wherever the page has the room — no hard
-   breakpoint needed. */
+   (change history), "what was checked" (assertion log) and embedded metadata as
+   distinct boxed cards rather than lists silently stacked in one column.
+   True masonry (layoutMasonry in valid.ts), NOT a grid or CSS column-count:
+   a row-based grid forces every card in a tall card's row to that height and
+   shoves the next row down, and column-count fills column 1 (in DOM order)
+   before spilling to column 2 — either way, one dominant card (a long change
+   history / input record) stacks the others behind it instead of beside it,
+   stranding "assertion log"/"metadata" at the bottom. JS measures each card and
+   places it into whichever column is CURRENTLY shortest, wrapping them in
+   .valid-panels-col — this rule is just the row/column flex scaffolding those
+   wrappers sit in. One column on narrow viewports (so "made from" always sits
+   directly above change history) — see the matching breakpoint in valid.ts's
+   MASONRY_BREAKPOINT. */
 .valid-panels {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 1.25rem;
-  align-items: start;
+  align-items: stretch;
+}
+/* Row layout only once layoutMasonry has actually split the cards into columns
+   (:has(.valid-panels-col)) — it skips that (leaving cards as direct children)
+   when there are fewer cards than columns, e.g. a lone summary panel with no
+   claim found. Gating on the wrapper's presence, not just the viewport width,
+   keeps that lone card stretching full-width instead of shrinking to content
+   width as a lone flex-row item would. */
+@media (min-width: 780px) {
+  .valid-panels:has(.valid-panels-col) { flex-direction: row; align-items: flex-start; }
+}
+.valid-panels-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  flex: 1 1 0;
+  min-width: 0;
 }
 /* The summary column (filename, self-note, fact list) shares the same boxed
    treatment as the made-from/change-history/assertion-log panels so all read as

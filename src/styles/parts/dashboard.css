@@ -25,11 +25,70 @@
 @media (prefers-reduced-motion: no-preference) {
   .dashboard-view.is-entering .tools-home,
   .dashboard-view.is-entering .plat-header,
+  .dashboard-view.is-entering .dash-tabs,
   .dashboard-view.is-entering .plat-section,
   .dashboard-view.is-entering .dash-foot {
     animation: card-in var(--enter-dur) var(--enter-ease) backwards;
     animation-delay: calc(var(--enter-i, 0) * 0.05s);
   }
+}
+
+/* ── Primary tabs ────────────────────────────────────────────────────────────
+   A segmented control under the header; one .dash-panel shows at a time (inactive
+   panels are [hidden] but stay in the DOM so async hydration keeps resolving onto
+   them). Four tabs share a row on desktop and wrap to 2×2 on narrow screens. */
+.dash-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin: 0 0 1.6rem;
+  padding: .38rem;
+  background: hsl(var(--muted) / .55);
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.1);
+}
+.dash-tab {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-width: 0;
+  padding: .62rem .9rem;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) * .85);
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-weight: 650;
+  font-size: .78rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.dash-tab:hover { color: hsl(var(--foreground)); background: hsl(var(--card) / .6); }
+.dash-tab-icon { display: inline-flex; flex: none; }
+.dash-tab-icon svg { width: 18px; height: 18px; display: block; }
+.dash-tab.is-active {
+  background: hsl(var(--card));
+  color: hsl(var(--primary));
+  border-color: hsl(var(--border));
+  box-shadow: 0 1px 3px hsl(0 0% 0% / .07);
+}
+.dash-tab:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+
+.dash-panel[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  /* Each panel fades up as it becomes visible (display:none→block restarts it), so
+     tab switches feel like a settle, not a snap. */
+  .dash-panel:not([hidden]) { animation: dash-panel-in .22s var(--enter-ease, ease) both; }
+}
+@keyframes dash-panel-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 560px) {
+  .dash-tab { flex-basis: calc(50% - .2rem); padding: .58rem .5rem; font-size: .72rem; letter-spacing: .03em; }
 }
 
 /* Non-collapsible sections carry their own padding (they hold content directly,
@@ -129,6 +188,25 @@
 .be-cta { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
 .be-cta:hover { background: hsl(var(--primary) / .88); }
 .be-btn:disabled, .be-cta:disabled { opacity: .55; cursor: default; }
+
+/* "Use this colour" lights up a bright, glossy green — the SAME vivid pass green
+   as the verify view's valid cards (--vf-pass* in valid.css, inlined here since
+   those are page-scoped) — the moment any derive input changes, so a fresh palette
+   is waiting to apply. Mirrors .valid-item-badge.is-good; rests again once applied. */
+.be-cta.is-active {
+  color: hsl(0 0% 100%);
+  border-color: hsl(0 0% 100% / .3);
+  background: linear-gradient(163deg, hsl(150 66% 51%), hsl(154 58% 33%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 4px 12px -5px hsl(151 57% 40% / .7);
+}
+.be-cta.is-active:hover { background: linear-gradient(163deg, hsl(150 70% 54%), hsl(154 60% 36%)); }
+@media (prefers-reduced-motion: no-preference) {
+  .be-cta.is-active { animation: be-cta-pulse 2.4s ease-in-out infinite; }
+}
+@keyframes be-cta-pulse {
+  0%, 100% { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 4px 12px -5px hsl(151 57% 40% / .7); }
+  50%      { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 6px 18px -4px hsl(151 57% 40% / .95); }
+}
 .be-add--sm, .be-btn--sm { padding: .25rem .6rem; font-size: .72rem; }
 
 /* ── Corner style — the one brand control the shared editor doesn't carry
@@ -160,8 +238,8 @@
    (it used to be a cramped popover trapped in the narrow controls column). */
 .be-colorpick { grid-column: 1 / -1; display: grid; gap: .5rem; }
 
-/* Screen / print substitution — the primary shown in both its on-screen (sRGB)
-   and print (CMYK) forms, with an optional pinned-CMYK override for press work. */
+/* Screen readout — the primary's on-screen (sRGB) form (its print form sits in
+   the shared print-lock control, .be-lock, right below). */
 .be-subst { display: grid; gap: .3rem; margin-top: .35rem; font-size: .78rem; }
 .be-subst-line { display: flex; align-items: center; gap: .6rem; }
 .be-subst-key {
@@ -173,14 +251,21 @@
   margin-inline-start: auto; font-size: .64rem; font-weight: 600; letter-spacing: .04em;
   text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
-.be-subst-toggle {
-  margin-inline-start: auto; border: 0; background: none; cursor: pointer; padding: .1rem .2rem;
-  font: inherit; font-size: .68rem; font-weight: 600; color: hsl(var(--primary));
-  border-radius: calc(var(--radius) * .4);
+
+/* Shared print-lock control (Auto ↔ Locked·Process/Spot) — the Colour panel's
+   primary field and the Palette panel's swatch popover both mount one. */
+.be-lock { display: grid; gap: .5rem; margin-top: .2rem; font-size: .78rem; }
+.be-lock.is-pinned .be-subst-val { color: hsl(var(--primary)); font-weight: 600; }
+.be-lock-body { display: grid; gap: .5rem; margin-top: .1rem; }
+.be-lock-spot { display: flex; gap: .5rem; flex-wrap: wrap; }
+.be-lock-field { display: grid; gap: .12rem; flex: 1 1 10rem; font-size: .68rem; color: hsl(var(--muted-foreground)); }
+.be-lock-field em { font-style: normal; opacity: .75; }
+.be-lock-field input {
+  padding: .32rem .5rem; font: inherit; font-size: .78rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
 }
-.be-subst-toggle:hover { text-decoration: underline; }
-.be-subst.is-pinned .be-subst-val[data-be-print] { color: hsl(var(--primary)); font-weight: 600; }
-.be-subst-override { display: flex; align-items: end; gap: .5rem; flex-wrap: wrap; margin-top: .15rem; }
+.be-lock-field input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
 .be-cmyk-inputs { display: flex; gap: .35rem; }
 .be-cmyk-in { display: grid; gap: .12rem; justify-items: center; }
 .be-cmyk-in span {
@@ -192,11 +277,12 @@
   background: hsl(var(--background)); color: hsl(var(--foreground));
 }
 .be-cmyk-in input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
-.be-subst-reset {
-  border: 0; background: none; cursor: pointer; padding: .28rem .2rem; font: inherit;
-  font-size: .68rem; font-weight: 600; color: hsl(var(--muted-foreground));
+/* A locked swatch's small tag — reused on the tile, the popover header + here. */
+.be-swatch-lock {
+  display: inline-block; margin-inline-start: .4rem; padding: .05rem .35rem;
+  font-size: .58rem; font-weight: 700; letter-spacing: .05em; vertical-align: middle;
+  color: hsl(var(--primary)); border: 1px solid hsl(var(--primary) / .4); border-radius: 999px;
 }
-.be-subst-reset:hover { color: hsl(var(--destructive)); text-decoration: underline; }
 .be-derive-controls { display: grid; gap: .8rem; align-content: start; }
 .be-field { display: grid; gap: .35rem; }
 .be-field-label { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
@@ -214,7 +300,7 @@
    slider), so cells must always share the full row width equally, not just 9/9ths
    of one sized for a hardcoded step count. */
 .be-ramp { display: flex; border-radius: calc(var(--radius) * .45); overflow: hidden; box-shadow: 0 0 0 1px hsl(var(--border)); }
-.be-ramp-cell { display: block; flex: 1 1 0; min-width: 0; aspect-ratio: 1 / 1.35; min-height: 22px; border: 0; margin: 0; padding: 0; }
+.be-ramp-cell { height:3.5em; display: block; flex: 1 1 0; min-width: 0; aspect-ratio: 1 / 1.35; min-height: 22px; border: 0; margin: 0; padding: 0; }
 /* Neutral/secondary steps are real buttons (the Primary ramp stays a plain
    span) — the selected one gets the same ring `.be-swatch.is-selected` uses. */
 button.be-ramp-cell { cursor: pointer; }
@@ -284,6 +370,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 }
 .be-swatch:hover { border-color: hsl(var(--primary) / .55); }
 .be-swatch.is-selected { border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--ring) / .28); }
+.be-swatch.is-pinned:not(.is-selected) { border-color: hsl(var(--primary) / .4); }
 .be-swatch-chip {
   flex: 0 0 auto; width: 48px; height: 48px; border-radius: var(--radius);
   /* The colour rides OVER a checkerboard, so a translucent swatch shows its
@@ -307,6 +394,9 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   /* The inline picker makes the card tall — keep it on-screen and scroll inside. */
   max-height: min(80vh, 640px); overflow-y: auto;
 }
+.be-editor-head { display: flex; align-items: center; gap: .5rem; }
+.be-editor-headlabel { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-editor-lockbadge { margin-inline-start: auto; }
 .be-editor-field { display: grid; gap: .3rem; }
 .be-editor-name {
   width: 100%; padding: .4rem .55rem; font: inherit; font-size: .8rem;
@@ -329,7 +419,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   outline: none;
 }
 /* Mouse/programmatic focus (openEditor() auto-focuses Name on open) — a subtle
-   tinted border, same treatment as .color-hex-input, instead of the browser
+   tinted border, same treatment as .color-input, instead of the browser
    default. Real keyboard focus gets a proper ring back via a11y.css. */
 .be-editor-name:focus,
 .be-fmt-sel:focus,
@@ -502,7 +592,6 @@ background-image:
 .dash-dev-stat-sub { font-size: .68rem; color: hsl(var(--muted-foreground)); }
 /* The machine is the star — green spine, bigger value, primary-tinted panel. */
 .dash-dev-hero .dash-dev-stat:first-child { background: hsl(var(--primary) / .06); border-color: hsl(var(--primary) / .35); }
-.dash-dev-hero .dash-dev-stat:first-child::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: hsl(var(--primary)); }
 .dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-value { font-size: 1.45rem; }
 .dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-icon { color: hsl(var(--primary) / .6); }
 

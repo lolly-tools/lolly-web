@@ -97,6 +97,36 @@ export function activeFaces(): { brand: LiveFace; mono: LiveFace } {
   };
 }
 
+/** Families with at least one FontFace registered in the document — CSS
+ *  @font-face rules AND user fonts added via the FontFace API both land in
+ *  `document.fonts`. Lowercased + unquoted for comparison. Empty when
+ *  `document.fonts` is unavailable (e.g. the jsdom CLI shell). */
+function loadedFamilies(): Set<string> {
+  const set = new Set<string>();
+  try {
+    document.fonts.forEach((f) => {
+      const fam = f.family.replace(/^['"]+|['"]+$/g, '').trim().toLowerCase();
+      if (fam) set.add(fam);
+    });
+  } catch { /* document.fonts unavailable — leave empty (callers treat as "unknown") */ }
+  return set;
+}
+
+/** The faces in force that are GENUINELY LOADED, deduped by family. A brand/mono
+ *  var that resolved to an unloaded system fallback is dropped, and when brand and
+ *  mono are the same loaded family only the brand keeps its specimen (no duplicate).
+ *  So an install with one loaded font shows one specimen; the platform default
+ *  (Outfit + SUSE Mono, both bundled) shows two. When `document.fonts` is empty
+ *  (unknown) both are kept, so we never blank the demo on a shell that can't probe. */
+export function loadedFaces(): { brand: LiveFace | null; mono: LiveFace | null } {
+  const { brand, mono } = activeFaces();
+  const loaded = loadedFamilies();
+  const isLoaded = (f: LiveFace): boolean => loaded.size === 0 || loaded.has(f.label.trim().toLowerCase());
+  const brandOn = isLoaded(brand);
+  const monoOn = isLoaded(mono) && mono.label.trim().toLowerCase() !== brand.label.trim().toLowerCase();
+  return { brand: brandOn ? brand : null, mono: monoOn ? mono : null };
+}
+
 const WSTART = 440; // resting / reduced-motion weight (within every axis)
 
 // Shared attributes for an editable sample field — plaintext-only so pasted markup can't
@@ -122,13 +152,16 @@ function control(face: LiveFace): string {
     </div>`;
 }
 
-/** Markup for the demonstrator — specimens render in the LIVE `--font-mono` /
- *  `--font-brand` stacks (see type-demo.css), labels + axes resolved at call
- *  time from the same vars. `wireTypeDemo` starts the motion. */
+/** Markup for the demonstrator — one animated specimen per face that is
+ *  actually LOADED (see {@link loadedFaces}), rendered in the LIVE `--font-mono`
+ *  / `--font-brand` stacks (see type-demo.css). Labels + axes resolve at call
+ *  time from the same vars. A face whose var fell back to an unloaded system
+ *  font is omitted, so an install with a single loaded font shows a single
+ *  half; the platform default shows both. `wireTypeDemo` starts the motion. */
 export function renderTypeDemo(): string {
-  const { brand, mono } = activeFaces();
-  return `
-    <div class="type-demo" data-type-demo>
+  const { brand, mono } = loadedFaces();
+
+  const monoHalf = mono ? `
       <div class="td-half td-half--mono">
         <div class="td-head">
           <span class="td-dots" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -140,8 +173,9 @@ export function renderTypeDemo(): string {
           <code class="td-italic" data-td-italic ${EDIT_ATTRS} aria-label="Terminal comment">${escapeHtml(ITALIC)}</code>
         </div>
         ${control(mono)}
-      </div>
-      <div class="td-divider" aria-hidden="true"></div>
+      </div>` : '';
+
+  const brandHalf = brand ? `
       <div class="td-half td-half--brand">
         <div class="td-head">
           <span class="td-face">${escapeHtml(brand.label)}</span>
@@ -152,8 +186,16 @@ export function renderTypeDemo(): string {
           <span class="td-ital" ${EDIT_ATTRS} aria-label="Italic phrase">${escapeHtml(BRAND_ITALIC)}</span>
         </div>
         ${control(brand)}
-      </div>
-    </div>`;
+      </div>` : '';
+
+  // Both loaded → the divided two-up. One loaded → a single, full-width specimen.
+  // None (only when a probe-less shell also reports no vars) → a quiet note.
+  if (!monoHalf && !brandHalf) {
+    return `<div class="type-demo type-demo--empty" data-type-demo><p class="td-empty">No fonts are loaded on this device yet.</p></div>`;
+  }
+  const divider = monoHalf && brandHalf ? `<div class="td-divider" aria-hidden="true"></div>` : '';
+  const single = monoHalf && brandHalf ? '' : ' type-demo--single';
+  return `<div class="type-demo${single}" data-type-demo>${monoHalf}${divider}${brandHalf}</div>`;
 }
 
 interface FaceCtl {

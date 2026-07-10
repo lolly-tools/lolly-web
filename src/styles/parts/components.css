@@ -119,19 +119,15 @@
   font-size: 13px;
   cursor: pointer;
   z-index: 9;
-  /* Understated brand pill: a soft primary tint with primary text. The old
-     foreground-filled pill paired --foreground with --primary-foreground — two
-     vars from DIFFERENT pairings — so any brand whose on-primary is light read
-     as white-on-light-grey in the dark theme. --primary always contrasts with
-     the page surface (it's the theme accent), so this holds in every theme and
-     under every brand's chrome override. */
+ 
   background-color: hsl(var(--primary) / 0.1);
   color: hsl(var(--primary));
-  box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.22);
+  box-shadow: inset 0 -.1em 1em 1px hsl(var(--primary) / 0.22), 0 .1em .3em #0002;
+
   top: 2em;
   left: 2em;
   padding: 8px 18px;
-  border-radius: var(--radius);            /* pill */
+  border-radius:calc(var(--radius)*1.5);            /* pill */
   text-decoration: none;
   transition: background 0.12s, box-shadow 0.12s;
 }
@@ -317,7 +313,7 @@
 /* Left column, top-to-bottom: the value field, then the slider stack (.color-lch
    or the tabbed .color-modes), then alpha. The hex/value input leads so it reads
    as the headline of the picker. */
-.color-field--inline .color-hex-input  { grid-column: 1; grid-row: 1; }
+.color-field--inline .color-input-wrap  { grid-column: 1; grid-row: 1; }
 .color-field--inline .color-lch,
 .color-field--inline .color-modes     { grid-column: 1; grid-row: 2; }
 .color-field--inline .color-alpha-row  { grid-column: 1; grid-row: 3; }
@@ -331,7 +327,7 @@
   .color-field--inline .color-popover { grid-template-columns: 1fr; }
   .color-field--inline .color-lch,
   .color-field--inline .color-modes,
-  .color-field--inline .color-hex-input,
+  .color-field--inline .color-input-wrap,
   .color-field--inline .color-alpha-row,
   .color-field--inline .color-swatches { grid-column: 1; grid-row: auto; }
 }
@@ -364,26 +360,58 @@
 .color-modes .color-lch,
 .color-modes .color-modegroup { min-height: calc(4 * 18px + 3 * 8px); justify-content: flex-start; }
 
-/* The value field is a live swatch of the current colour: the picker sets
-   --hexin-bg/--hexin-border to the colour and --hexin-fg to white or black,
-   whichever contrasts more (color-field.ts paintHexInput). The fallbacks are
-   the neutral chrome for valueless states (transparent, mid-edit junk). */
-.color-hex-input {
+/* The value field is a live swatch of the current colour: the picker toggles
+   .color-input--painted and sets --color-input-bg/-border to the colour (alpha
+   included) and --color-input-fg to white or black, whichever contrasts more
+   (color-field.ts paintColorInput). While painted, the colour sits on the same
+   checkerboard the transparent swatch chip uses, so a translucent value
+   previews its alpha. The un-painted fallbacks are the neutral chrome for
+   valueless states (transparent, mid-edit junk). */
+/* Wrap = positioning context for the eyedropper button inside the field. */
+.color-input-wrap { position: relative; }
+.color-input {
   width: 100%;
-  padding: 5px 8px;
-  background: var(--hexin-bg, hsl(var(--input) / 0.3));
-  color: var(--hexin-fg, hsl(var(--foreground)));
-  caret-color: var(--hexin-fg, hsl(var(--foreground)));
-  border: 1px solid var(--hexin-border, hsl(var(--input)));
+  background: var(--color-input-bg, hsl(var(--input) / 0.3));
+  color: var(--color-input-fg, hsl(var(--foreground)));
+  caret-color: var(--color-input-fg, hsl(var(--foreground)));
+  border: 1px solid var(--color-input-border, hsl(var(--input)));
   border-radius: calc(var(--radius) *2);
   text-align:center;
   font-family: var(--font-mono);
   font-size: 17px;
-  padding:16px;
+  padding: 16px 44px;   /* symmetric so the centred value clears the eyedropper */
   outline: none;
   transition: background-color .12s, color .12s, border-color .12s;
 }
-.color-hex-input:focus {
+/* Screen eyedropper — sits inside the field's left edge, coloured by the same
+   contrast-flipped --color-input-fg as the value text so it reads on any paint.
+   Removed at wire time where the EyeDropper API doesn't exist. */
+.color-eyedropper {
+  position: absolute;
+  left: 8px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  border: 0; border-radius: calc(var(--radius) * 1.5);
+  background: transparent; cursor: pointer;
+  color: var(--color-input-fg, hsl(var(--foreground)));
+  opacity: .7;
+  transition: opacity .12s, background .12s;
+}
+.color-eyedropper:hover { opacity: 1; background: hsl(0 0% 50% / .22); }
+.color-eyedropper:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.color-eyedropper svg { display: block; width: 16px; height: 16px; }
+.color-input--painted {
+  background-image:
+    linear-gradient(var(--color-input-bg), var(--color-input-bg)),
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: auto, 8px 8px, 8px 8px, 8px 8px, 8px 8px;
+  background-position: 0 0, 0 0, 0 4px, 4px -4px, -4px 0;
+  background-color: #fff;
+}
+.color-input:focus {
   border-color: hsl(var(--ring) / 0.6);
 }
 
@@ -447,8 +475,8 @@
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
-  height: 14px;
-  border-radius: 7px;
+  height: 2em;
+  border-radius: var(--radius);
   border: 1px solid hsl(var(--border));
   cursor: pointer;
   /* background = the axis gradient, inline from JS */

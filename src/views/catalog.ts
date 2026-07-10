@@ -990,7 +990,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const rampBlocks = ramps.map(([fam, cols]) =>
       `<h3 class="cat-panel-subhead">${escape(fam)}</h3>${grid(cols)}`).join('');
     const body = `
-      <p class="cat-panel-desc">The brand palette. Click any chip to copy its hex. A <span class="plat-chip-flag is-static">CMYK</span> flag marks measured ink values used directly in CMYK PDF exports.</p>
+      <p class="cat-panel-desc">The brand palette. Click any chip to copy its hex. A <span class="plat-chip-flag is-static">CMYK</span> or <span class="plat-chip-flag is-static">SPOT</span> flag marks a locked ink value used directly in CMYK PDF exports.</p>
       <h3 class="cat-panel-subhead">Brand</h3>${grid(brand)}
       ${spectrum.length ? `<h3 class="cat-panel-subhead">Spectrum</h3>${grid(spectrum)}` : ''}
       ${rampBlocks}`;

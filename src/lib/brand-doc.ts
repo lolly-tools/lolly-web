@@ -20,6 +20,7 @@
  */
 
 import { colorToHex, TOKEN_EXT } from '@lolly/engine';
+import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
 
 type Rec = Record<string, unknown>;
 
@@ -28,6 +29,25 @@ export const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== nu
 export const isAliasStr = (v: unknown): v is string => typeof v === 'string' && /^\{[^}]+\}$/.test(v.trim());
 const isColorString = (v: unknown): v is string =>
   typeof v === 'string' && v.length > 0 && (isAliasStr(v) || colorToHex(v) !== null);
+const isNumberArray = (v: unknown): v is number[] => Array.isArray(v) && v.every(n => typeof n === 'number');
+const isSpotColor = (v: unknown): v is SpotColor => {
+  if (!isRec(v) || typeof v.name !== 'string') return false;
+  if (v.book !== undefined && typeof v.book !== 'string') return false;
+  return isNumberArray(v.cmyk) && v.cmyk.length === 4;
+};
+
+/** A swatch's print-export lock — exactly one of the two, never both (see
+ *  setSwatchPrintOverride). Absent (null) means auto-convert from `$value` at export. */
+export type PrintLock = { cmyk: [number, number, number, number] } | { spot: SpotColor };
+
+/** Read whichever of `cmyk`/`spot` is present on a leaf's vendor extension, or null. */
+function readPrintLock(leaf: Rec | null): PrintLock | null {
+  const ext = leaf && isRec(leaf.$extensions) ? (leaf.$extensions as Rec)[TOKEN_EXT] : null;
+  if (!isRec(ext)) return null;
+  if (isSpotColor(ext.spot)) return { spot: ext.spot };
+  if (isNumberArray(ext.cmyk) && ext.cmyk.length === 4) return { cmyk: ext.cmyk as [number, number, number, number] };
+  return null;
+}
 
 export const prettify = (s: string): string => s.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
@@ -54,6 +74,8 @@ export interface BrandSwatch {
   set: string | null;
   /** Only swatches the user owns are removable; ramps + roles are structural. */
   deletable: boolean;
+  /** Pinned print-export value (CMYK or spot), or null when auto-converted from `hex`. */
+  lock: PrintLock | null;
 }
 
 /**
@@ -74,7 +96,10 @@ export function walkSwatches(
   const out: BrandSwatch[] = [];
   const walk = (node: unknown, path: string[]): void => {
     if (!isRec(node)) return;
-    if (isColorString(node.$value)) { out.push(toSwatch(path, node.$value, node.$description, resolve)); return; }
+    if (isColorString(node.$value)) {
+      out.push(toSwatch(path, node.$value, node.$description, node.$extensions, resolve));
+      return;
+    }
     for (const k of Object.keys(node)) {
       if (k.startsWith('$')) continue;
       walk(node[k], [...path, k]);
@@ -87,7 +112,9 @@ export function walkSwatches(
   return out.filter(s => s.kind !== 'semantic' || s.set === wantSet);
 }
 
-function toSwatch(path: string[], raw: string, desc: unknown, resolve?: (key: string) => unknown): BrandSwatch {
+function toSwatch(
+  path: string[], raw: string, desc: unknown, extensions: unknown, resolve?: (key: string) => unknown,
+): BrandSwatch {
   const set = SET_KEYS.has(path[0] ?? '') ? path[0]! : null;
   const rest = set ? path.slice(1) : path;
   const key = (rest[0] === 'color' ? rest : ['color', ...rest]).join('.');
@@ -119,6 +146,7 @@ function toSwatch(path: string[], raw: string, desc: unknown, resolve?: (key: st
     path, key, group,
     name: typeof desc === 'string' && desc ? desc : prettify(leaf),
     raw, hex, isAlias, kind, set, deletable,
+    lock: readPrintLock({ $extensions: extensions } as Rec),
   };
 }
 
@@ -170,19 +198,21 @@ export function setSemanticRampAlias(doc: unknown, role: 'neutral' | 'secondary'
   }
 }
 
-// ── Primary print (CMYK) override ─────────────────────────────────────────────
-// "Auto CMYK until you pin one": the brand primary's screen colour is the source
-// of truth (sRGB/OKLCH), and print/PDF-CMYK export auto-converts it — UNLESS a
-// CMYK anchor is pinned here, which the export palette then substitutes exactly.
-// The anchor rides in the DTCG `$extensions` vendor namespace (TOKEN_EXT) on the
-// primary ramp's step 5 (THE brand colour — see the ramp $description), which
-// tokens.colors() already surfaces as `.cmyk` and the CMYK export reads. A
-// re-derive rebuilds the ramp, so the editor re-applies this after deriving.
+// ── Print (CMYK / spot) override — any swatch ────────────────────────────────
+// "Auto-convert until you lock one": a swatch's screen colour ($value) is the
+// source of truth (sRGB/OKLCH), and print/PDF-CMYK export auto-converts it —
+// UNLESS a print value is locked here, which the export palette then substitutes
+// exactly. The lock rides in the DTCG `$extensions` vendor namespace (TOKEN_EXT)
+// as EITHER `cmyk` (a plain process-ink anchor) OR `spot` (a named spot/Pantone
+// colour with a CMYK equivalent for preview/fallback) — never both; setting one
+// clears the other. tokens.colors() already surfaces both as `.cmyk`/`.spot`,
+// which the CMYK export and the Separation tint-transform's alternate space read.
 
-/** JSON path to the primary anchor swatch — the MIDDLE ramp step (the brand
+/** JSON path to the primary ramp's anchor swatch — the MIDDLE step (the brand
  *  colour), computed from however many steps the ramp carries (5 on a 9-step
- *  ramp, 3 on a 5-step ramp; = the engine's `at(0.5)`). Null if absent. */
-function primaryAnchorPath(doc: unknown): string[] | null {
+ *  ramp, 3 on a 5-step ramp; = the engine's `at(0.5)`). Null if absent. A
+ *  re-derive rebuilds the ramp, so the editor re-applies its lock after deriving. */
+export function primaryAnchorPath(doc: unknown): string[] | null {
   const multiSet = isRec(doc) && [...SET_KEYS].some(k => k in doc);
   const groupPath = multiSet ? ['base', 'color', 'ramp', 'primary'] : ['color', 'ramp', 'primary'];
   const group = leafAt(doc, groupPath);
@@ -194,25 +224,25 @@ function primaryAnchorPath(doc: unknown): string[] | null {
   return [...groupPath, String(step)];
 }
 
-/** The primary's pinned CMYK print override (C,M,Y,K 0–100), or null when auto. */
-export function getPrimaryPrintOverride(doc: unknown): [number, number, number, number] | null {
-  const path = primaryAnchorPath(doc);
-  const leaf = path ? leafAt(doc, path) : null;
-  const ext = leaf && isRec(leaf.$extensions) ? (leaf.$extensions as Rec)[TOKEN_EXT] : null;
-  const cmyk = isRec(ext) ? ext.cmyk : null;
-  return Array.isArray(cmyk) && cmyk.length === 4 && cmyk.every(n => typeof n === 'number')
-    ? (cmyk as [number, number, number, number]) : null;
+/** The swatch at `path`'s pinned print override (CMYK or spot), or null when auto. */
+export function getSwatchPrintOverride(doc: unknown, path: string[]): PrintLock | null {
+  return readPrintLock(leafAt(doc, path));
 }
 
-/** Pin (or clear, with null) the primary's CMYK print anchor. */
-export function setPrimaryPrintOverride(doc: unknown, cmyk: [number, number, number, number] | null): boolean {
-  const path = primaryAnchorPath(doc);
-  const leaf = path ? leafAt(doc, path) : null;
+/**
+ * Lock (or clear, with null) the swatch at `path`'s print override. `cmyk` and
+ * `spot` are mutually exclusive — setting one always removes the other, so a
+ * token never carries both. Clearing (null) removes whichever is present, and
+ * the whole `$extensions["com.suse.lolly"]` entry too once it's empty.
+ */
+export function setSwatchPrintOverride(doc: unknown, path: string[], override: PrintLock | null): boolean {
+  const leaf = leafAt(doc, path);
   if (!leaf) return false;
-  if (cmyk === null) {
+  if (override === null) {
     const ext = isRec(leaf.$extensions) ? (leaf.$extensions as Rec) : null;
     if (ext && isRec(ext[TOKEN_EXT])) {
       delete (ext[TOKEN_EXT] as Rec).cmyk;
+      delete (ext[TOKEN_EXT] as Rec).spot;
       if (Object.keys(ext[TOKEN_EXT] as Rec).length === 0) delete ext[TOKEN_EXT];
       if (Object.keys(ext).length === 0) delete leaf.$extensions;
     }
@@ -220,7 +250,18 @@ export function setPrimaryPrintOverride(doc: unknown, cmyk: [number, number, num
   }
   const ext = (isRec(leaf.$extensions) ? leaf.$extensions : (leaf.$extensions = {} as Rec)) as Rec;
   const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
-  ns.cmyk = cmyk.map(v => Math.round(Math.min(100, Math.max(0, v))));
+  const clamp = (n: number): number => Math.round(Math.min(100, Math.max(0, n)));
+  if ('spot' in override) {
+    delete ns.cmyk;
+    ns.spot = {
+      name: override.spot.name,
+      ...(override.spot.book ? { book: override.spot.book } : {}),
+      cmyk: override.spot.cmyk.map(clamp),
+    };
+  } else {
+    delete ns.spot;
+    ns.cmyk = override.cmyk.map(clamp);
+  }
   return true;
 }
 

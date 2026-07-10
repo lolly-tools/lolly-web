@@ -1046,8 +1046,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         // The bye-bye song is already playing (data-sfx on the confirm button). Land
         // back on the gallery: with the dismissed flag just wiped, the first-run
         // "Welcome to Lolly" greets the clean slate there (unbranded installs only —
-        // a locked brand never shows it, see mountGallery).
+        // a locked brand never shows it, see mountGallery). A hard reload (not just
+        // a hash change) is required: in-memory singletons like the tokens bridge
+        // cache (bridge/tokens.ts) only reset on bust(), so a soft nav would keep
+        // painting a just-cleared user brand until the next manual refresh.
         window.location.hash = '';
+        window.location.reload();
       });
     });
 

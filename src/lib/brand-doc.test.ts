@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { createTokenSet } from '@lolly/engine';
 import {
   walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, leafAt,
-  setPrimaryPrintOverride, getPrimaryPrintOverride,
+  setSwatchPrintOverride, getSwatchPrintOverride, primaryAnchorPath,
 } from './brand-doc.ts';
 
 const BRAND = fileURLToPath(
@@ -218,10 +218,11 @@ test('walkSwatches ignores $-metadata and non-colour leaves', () => {
 
 test('primary print override: pin, read back, and clear (CMYK anchor round-trip)', () => {
   const doc = load();
-  assert.equal(getPrimaryPrintOverride(doc), null, 'starter brand has no pinned override');
+  const path = primaryAnchorPath(doc)!;
+  assert.equal(getSwatchPrintOverride(doc, path), null, 'starter brand has no pinned override');
 
-  assert.equal(setPrimaryPrintOverride(doc, [80, 20, 0, 5]), true);
-  assert.deepEqual(getPrimaryPrintOverride(doc), [80, 20, 0, 5]);
+  assert.equal(setSwatchPrintOverride(doc, path, { cmyk: [80, 20, 0, 5] }), true);
+  assert.deepEqual(getSwatchPrintOverride(doc, path), { cmyk: [80, 20, 0, 5] });
 
   // The anchor rides in the vendor $extensions on the primary ramp's step 5.
   const leaf = leafAt(doc, ['base', 'color', 'ramp', 'primary', '5'])!;
@@ -229,13 +230,48 @@ test('primary print override: pin, read back, and clear (CMYK anchor round-trip)
   assert.deepEqual(ext['com.suse.lolly']!.cmyk, [80, 20, 0, 5]);
 
   // Clearing removes the anchor (and the empty extension scaffolding).
-  assert.equal(setPrimaryPrintOverride(doc, null), true);
-  assert.equal(getPrimaryPrintOverride(doc), null);
+  assert.equal(setSwatchPrintOverride(doc, path, null), true);
+  assert.equal(getSwatchPrintOverride(doc, path), null);
   assert.equal(leaf.$extensions, undefined, 'empty $extensions cleaned up');
 });
 
 test('primary print override clamps to 0–100 and rounds', () => {
   const doc = load();
-  setPrimaryPrintOverride(doc, [120, -5, 33.7, 50]);
-  assert.deepEqual(getPrimaryPrintOverride(doc), [100, 0, 34, 50]);
+  const path = primaryAnchorPath(doc)!;
+  setSwatchPrintOverride(doc, path, { cmyk: [120, -5, 33.7, 50] });
+  assert.deepEqual(getSwatchPrintOverride(doc, path), { cmyk: [100, 0, 34, 50] });
+});
+
+test('spot print override: pin, read back, and clear (mutually exclusive with cmyk)', () => {
+  const doc = load();
+  const path = primaryAnchorPath(doc)!;
+
+  assert.equal(setSwatchPrintOverride(doc, path, { cmyk: [80, 20, 0, 5] }), true);
+  assert.equal(
+    setSwatchPrintOverride(doc, path, { spot: { name: 'PANTONE 186 C', book: 'PANTONE+ Solid Coated', cmyk: [0, 100, 79, 4] } }),
+    true,
+  );
+  const locked = getSwatchPrintOverride(doc, path);
+  assert.deepEqual(locked, { spot: { name: 'PANTONE 186 C', book: 'PANTONE+ Solid Coated', cmyk: [0, 100, 79, 4] } });
+
+  // Setting a spot clears any previous cmyk key — never both on the same leaf.
+  const leaf = leafAt(doc, ['base', 'color', 'ramp', 'primary', '5'])!;
+  const ext = leaf.$extensions as Record<string, { cmyk?: unknown; spot?: unknown }>;
+  assert.equal(ext['com.suse.lolly']!.cmyk, undefined);
+
+  // Setting cmyk back clears the spot.
+  assert.equal(setSwatchPrintOverride(doc, path, { cmyk: [10, 10, 10, 10] }), true);
+  assert.equal(ext['com.suse.lolly']!.spot, undefined);
+
+  assert.equal(setSwatchPrintOverride(doc, path, null), true);
+  assert.equal(getSwatchPrintOverride(doc, path), null);
+  assert.equal(leaf.$extensions, undefined, 'empty $extensions cleaned up');
+});
+
+test('walkSwatches surfaces a swatch\'s print lock (cmyk, spot, or none)', () => {
+  const doc = load();
+  const path = primaryAnchorPath(doc)!;
+  setSwatchPrintOverride(doc, path, { spot: { name: 'PANTONE 186 C', cmyk: [0, 100, 79, 4] } });
+  const s = walkSwatches(doc, 'light').find(sw => sw.path.length === path.length && sw.path.every((seg, i) => seg === path[i]));
+  assert.deepEqual(s?.lock, { spot: { name: 'PANTONE 186 C', cmyk: [0, 100, 79, 4] } });
 });

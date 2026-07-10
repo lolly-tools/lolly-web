@@ -21,8 +21,16 @@
    room — a narrow tile keeps the stacked layout. */
 @container (min-width: 620px) {
   .type-demo { grid-template-columns: 1fr 1px 1fr; }
+  .type-demo--single { grid-template-columns: 1fr; } /* one loaded face fills the tile */
   .td-divider { width: 1px; height: auto; }
 }
+
+/* Only one face is loaded → its specimen spans the whole tile at every width. */
+.type-demo--single { grid-template-columns: 1fr; }
+
+/* No loaded faces at all (a probe-less shell that also reports no vars). */
+.type-demo--empty { padding: 1rem 1.1rem; }
+.td-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.86rem; }
 
 .td-head {
   display: flex;

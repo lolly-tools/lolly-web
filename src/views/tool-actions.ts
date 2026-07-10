@@ -1190,7 +1190,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
         ...(fmt === 'html' ? { fullPage: el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ?? false } : {}),
         ...(isPrintFmt(fmt) ? printOpts() : {}),
-        ...(fmt === 'pdf-cmyk' ? { palette: brandPalette } : {}),
+        // Every CMYK export path (PDF, TIFF, EPS) does exact brand-swatch matching
+        // against this same live palette — see buildCmykPaletteMap in bridge/export.ts.
+        ...(isCmykFmt(fmt) || fmt === 'eps-cmyk' ? { palette: brandPalette } : {}),
         ...(isCmykFmt(fmt) ? {
           colorProfile: el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || DEFAULT_CMYK_CONDITION,
         } : {}),
