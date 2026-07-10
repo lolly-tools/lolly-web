@@ -34,8 +34,18 @@ const FALLBACK_CHIP_COLORS: ReadonlyArray<readonly [string, string]> = [
   ['#2453ff', '#c8dafc'], // Waterhole → pale blue
   ['#0c322c', '#90ebcd'], // Pine → Mint
 ];
-// Plain words only — the SUSE font has no glyphs for symbols like ♪/★, which render as tofu.
+// Plain words only — a brand font may have no glyphs for symbols like ♪/★, which render as tofu.
 const LABELS = ['JUNGLE', 'FOCUS', 'FLOW', 'CALM', 'BEAT', 'RHYTHM', 'DRUM', 'BASS', 'TEMPO', 'SPEED', 'FAST', 'QUICK', 'GENIUS'];
+
+// The live brand face — same `--font-brand` custom property applyBrandFonts (brand-vars.ts)
+// sets inline on <html> (or the tokens.css platform default when no brand font is loaded).
+// Read once per burst rather than per-chip since it can't change mid-blast.
+const DEFAULT_FONT_STACK = "'Outfit', ui-sans-serif, system-ui, sans-serif";
+function liveBrandFontStack(): string {
+  if (typeof document === 'undefined') return DEFAULT_FONT_STACK;
+  const stack = getComputedStyle(document.documentElement).getPropertyValue('--font-brand').trim();
+  return stack || DEFAULT_FONT_STACK;
+}
 
 const rand = (a: number, b: number): number => a + Math.random() * (b - a);
 
@@ -132,13 +142,13 @@ interface Chip {
 }
 
 /** Bake one chip (filled rounded box + label) into an offscreen sprite at `dpr`, like /info. */
-function makeChipSprite(dpr: number, palette: ReadonlyArray<readonly [string, string]>): { spr: HTMLCanvasElement; w: number; h: number } | null {
+function makeChipSprite(dpr: number, palette: ReadonlyArray<readonly [string, string]>, fontStack: string): { spr: HTMLCanvasElement; w: number; h: number } | null {
   const m = measurer();
   if (!m) return null;
   const [fill, ink] = palette[Math.floor(Math.random() * palette.length)]!;
   const label = LABELS[Math.floor(Math.random() * LABELS.length)]!;
   const fs = rand(11, 20);
-  m.font = `700 ${fs}px SUSE, sans-serif`;
+  m.font = `700 ${fs}px ${fontStack}`;
   const tw = m.measureText(label).width;
   const px = fs * 0.7, py = fs * 0.62;
   const w = tw + px * 2, h = fs + py * 2, r = Math.round(fs * 0.42);
@@ -151,7 +161,7 @@ function makeChipSprite(dpr: number, palette: ReadonlyArray<readonly [string, st
   roundRect(sx, 0, 0, w, h, r);
   sx.fillStyle = fill; sx.fill();
   sx.fillStyle = ink;
-  sx.font = `700 ${fs}px SUSE, sans-serif`;
+  sx.font = `700 ${fs}px ${fontStack}`;
   sx.textAlign = 'center'; sx.textBaseline = 'alphabetic';
   const tm = sx.measureText(label);
   const asc = tm.actualBoundingBoxAscent || fs * 0.7, desc = tm.actualBoundingBoxDescent || 0;
@@ -181,10 +191,11 @@ function burstWith(x: number, y: number, palette: ReadonlyArray<readonly [string
   if (!ctx) return;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+  const fontStack = liveBrandFontStack();
   const count = Math.floor(rand(52, 72));
   const chips: Chip[] = [];
   for (let i = 0; i < count; i++) {
-    const s = makeChipSprite(dpr, palette);
+    const s = makeChipSprite(dpr, palette, fontStack);
     if (!s) continue;
     const angle = (i / count) * Math.PI * 2 + rand(-0.35, 0.35);
     const spd = rand(9, 26);
