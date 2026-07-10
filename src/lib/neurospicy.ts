@@ -56,6 +56,11 @@ let gain: GainNode | null = null;
 // lights the meter (matching "meter vis, local songs only").
 let analyser: AnalyserNode | null = null;
 let src: AudioBufferSourceNode | null = null;
+// Progress bookkeeping for the current LOCAL source: position within the looping
+// buffer = (ctx.currentTime - srcStartedAt + srcOffset) % duration. Radio has neither
+// (a live stream has no duration), so the seek bar hides for it.
+let srcStartedAt = 0;
+let srcOffset = 0;
 // Radio plays through a plain <audio> element, OUTSIDE the Web Audio graph — no
 // CORS needed, and the analyser/meter (a local-song feature) stays dark for it.
 let radioEl: HTMLAudioElement | null = null;
@@ -88,6 +93,33 @@ function audio(): { ctx: AudioContext; gain: GainNode } | null {
 
 /** The analyser on the focus-loop graph, for a level meter. Null until audio starts. */
 export function getNeurospicyAnalyser(): AnalyserNode | null { return analyser; }
+
+/** Position within the current LOCAL track (a looping buffer, so it wraps). Null for
+ *  radio or while no local source is sounding — callers hide their seek bar then. */
+export function getNeurospicyProgress(): { position: number; duration: number } | null {
+  if (!src?.buffer || !ctx) return null;
+  const dur = src.buffer.duration;
+  if (!(dur > 0)) return null;
+  const pos = (ctx.currentTime - srcStartedAt + srcOffset) % dur;
+  return { position: pos < 0 ? pos + dur : pos, duration: dur };
+}
+
+/** Jump to `seconds` within the current local track (the player's skip-to bar). A
+ *  buffer source is one-shot, so seeking = swap in a new source starting at that
+ *  offset. No-op for radio / while nothing local is sounding. */
+export function seekNeurospicy(seconds: number): void {
+  const a = audio();
+  const buf = src?.buffer;
+  if (!a || !src || !buf) return;
+  const offset = ((seconds % buf.duration) + buf.duration) % buf.duration;
+  try { src.stop(); } catch { /* already stopped */ }
+  src.disconnect();
+  const s = a.ctx.createBufferSource();
+  s.buffer = buf; s.loop = true; s.connect(a.gain);
+  s.start(0, offset);
+  src = s;
+  srcStartedAt = a.ctx.currentTime; srcOffset = offset;
+}
 
 function stopSource(): void {
   if (src) { try { src.stop(); } catch { /* already stopped */ } src.disconnect(); src = null; }
@@ -174,6 +206,7 @@ async function play(host: NeurospicyHost): Promise<void> {
   s.buffer = buf; s.loop = true; s.connect(a.gain);
   a.gain.gain.value = state.volume; s.start();
   src = s; playingId = id;
+  srcStartedAt = a.ctx.currentTime; srcOffset = 0;
   notifyPlaying();
 }
 
@@ -254,13 +287,15 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
         }))
         .sort((a, b) => loopRank(a.id) - loopRank(b.id) || a.name.localeCompare(b.name));
     } catch { loops = []; }
-    // The user's OWN uploaded audio (tagged 'neurospicy') — query() only reads catalog
-    // assets, so pull user uploads separately and merge them in.
+    // The user's OWN uploaded audio — query() only reads catalog assets, so pull user
+    // uploads separately and merge them in. ANY user audio plays here (tags only drive
+    // the picker grouping/mood chip — older uploads, e.g. MIDI-converted songs, predate
+    // the ingest tagging and must not be dropped).
     try {
       const userAssets = host.assets._listUserAssets ? await host.assets._listUserAssets() : [];
       for (const a of userAssets) {
         const tags = Array.isArray(a.meta?.tags) ? (a.meta.tags as string[]) : [];
-        if (a.type !== 'audio' || !tags.includes('neurospicy')) continue;
+        if (a.type !== 'audio') continue;
         if (a.url) urlById.set(a.id, a.url);
         if (a.format) formatById.set(a.id, a.format);
         loops.push({ id: a.id, name: String((a.meta?.name as string | undefined) ?? a.id), tags, format: a.format ?? '' });
@@ -276,6 +311,13 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
     );
   }
   return localLoopsCache;
+}
+
+/** Drop the cached track list (an audio upload or deletion changed it) and nudge any
+ *  mounted player to rebuild — listLoops re-queries on its next call. */
+export function invalidateNeurospicyTracks(): void {
+  localLoopsCache = null;
+  if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-tracks'));
 }
 
 /** Step to the previous/next track in picker order (wraps). Keeps the mode enabled. */

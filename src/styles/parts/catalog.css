@@ -416,6 +416,12 @@
   overflow: hidden;
 }
 .cat-details-preview .cat-thumb { max-width: 100%; max-height: 40vh; object-fit: contain; }
+/* Audio details preview: a big live level meter above the <audio> controls — the same
+   bar look + theming as the Neurospicy player's meter (lib/audio-meter.ts draws both). */
+.cat-details-preview .cat-thumb-audio { display: flex; flex-direction: column; justify-content: center; gap: 14px; width: min(560px, 100%); }
+.cat-thumb-audio audio { width: 100%; }
+.cat-audio-meter { width: 100%; height: 160px; display: block; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); color: hsl(var(--primary)); }
+.cat-audio-meter[hidden] { display: none; }
 .cat-details-body { padding: 18px 20px 22px; }
 
 /* Desktop: a wide two-column inspector. The dialog becomes the grid; the close button is

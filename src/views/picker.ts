@@ -40,6 +40,7 @@ import { createFolderStore, childFolders, folderPath } from '../folders.ts';
 import { announce } from '../a11y.ts';
 import { choiceDialog, confirmDialog } from '../components/confirm-dialog.ts';
 import { maybeNudgeAssetMilestone } from '../lib/asset-milestone.ts';
+import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { libCategory, LIB_GROUPS, loadAssetCategories, categoryLabel } from '../lib/asset-category.ts';
 import type { LibGroup } from '../lib/asset-category.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
@@ -2244,18 +2245,24 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // lie — a "photo.jpg" now holds WebP bytes. Show a name whose extension
     // matches what we actually stored so the filename and format badge agree.
     // (Verbatim animated/video/audio keep their real bytes, so the name stays true.)
-    // Audio carries `tags` so it can surface as focus music — `neurospicy` is the
-    // loop-player's query tag, `audio` groups it with the music beds.
+    // Audio — verbatim uploads AND MIDI-converted songs — carries `tags` so it can
+    // surface as focus music: `neurospicy` is the focus-set tag, `audio` groups it
+    // with the music beds. (The player lists ANY user audio regardless, but the tags
+    // keep grouping/search consistent with catalog audio.)
     meta: {
       name: renameExt(file.name, format),
       ...(animated ? { animated: true } : {}),
-      ...(isAudio ? { tags: ['audio', 'neurospicy'] } : {}),
+      ...(isAudio || isMidi ? { tags: ['audio', 'neurospicy'] } : {}),
     },
   };
 
   // Reach into the underlying IDB the bridge owns. The bridge exposes a
   // narrow upload helper rather than full DB access — keeps surface tight.
   await host.assets._uploadUserAsset(record);
+
+  // A new audio track should appear in the Neurospicy player right away — drop its
+  // cached track list; a mounted player rebuilds via the 'lolly:neuro-tracks' event.
+  if (record.type === 'audio') invalidateNeurospicyTracks();
 
   // Friendly, one-shot nudge as the library crosses a milestone (20/100/500).
   // Fire-and-forget: it must never delay or fail the upload it follows.
