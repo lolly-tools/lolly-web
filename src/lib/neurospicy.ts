@@ -147,10 +147,13 @@ async function playRadio(): Promise<void> {
   } catch { /* offline / stream unavailable — leave silent */ }
 }
 
-// Decoded PCM is big (~1.4 MB per stereo second), and the track list now spans the
-// whole catalog — cap the cache and drop the least-recently-played buffer instead of
-// pinning every audition in memory.
-const MAX_BUFFERS = 8;
+// Decoded PCM is big (~1.4 MB per stereo second) and the track list now spans the
+// whole catalog, including multi-minute music beds (tens of MB each decoded) — so the
+// cache is bounded by BYTES, not entries, evicting least-recently-played first. The
+// currently-sounding buffer is skipped (its source holds it alive regardless, so
+// evicting it would only force a pointless re-decode on replay).
+const MAX_BUFFER_BYTES = 96 * 1024 * 1024;
+const bufferBytes = (b: AudioBuffer): number => b.length * b.numberOfChannels * 4;
 
 async function loadBuffer(id: string, url: string, format: string | undefined): Promise<AudioBuffer | null> {
   const cached = buffers.get(id);
@@ -167,9 +170,13 @@ async function loadBuffer(id: string, url: string, format: string | undefined): 
       buf = await a.ctx.decodeAudioData(bytes);
     }
     buffers.set(id, buf);
-    for (const k of buffers.keys()) {
-      if (buffers.size <= MAX_BUFFERS) break;
-      if (k !== id) buffers.delete(k);
+    let total = 0;
+    for (const b of buffers.values()) total += bufferBytes(b);
+    for (const [k, b] of buffers) {
+      if (total <= MAX_BUFFER_BYTES) break;
+      if (k === id || k === playingId) continue;
+      buffers.delete(k);
+      total -= bufferBytes(b);
     }
     return buf;
   } catch { return null; }
@@ -217,10 +224,18 @@ function notifyPlaying(): void {
   if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-playing'));
 }
 
+// Signal that the enabled flag changed, so other rendered instances of the Sound-settings
+// toggle (e.g. an already-open popover elsewhere) can repaint to match — see wireNeurospicy
+// in sound-toggle.ts.
+function notifyEnabledChanged(): void {
+  if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-enabled'));
+}
+
 export async function applyNeurospicy(host: NeurospicyHost): Promise<void> { await play(host); }
 
 export async function setNeurospicyEnabled(host: NeurospicyHost, on: boolean): Promise<void> {
   state.enabled = on;
+  notifyEnabledChanged();
   paused = false; // enabling/disabling the mode always resets the transport to "play"
   if (on && !state.loopId) { const loops = await listLoops(host); state.loopId = loops[0]?.id ?? ''; }
   persistLocal(); void persistProfile(host);
@@ -301,22 +316,53 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
         loops.push({ id: a.id, name: String((a.meta?.name as string | undefined) ?? a.id), tags, format: a.format ?? '' });
       }
     } catch { /* no user assets on this host */ }
-    localLoopsCache = loops;
+    // Never cache EMPTINESS: on a cold install the dock builds before the catalog
+    // sync lands, and caching that zero-track answer would hide the whole library
+    // until reload. An empty result stays uncached so the next call re-queries
+    // (main.ts also invalidates once the sync resolves).
+    if (loops.length) localLoopsCache = loops;
+    else return radioTracks();
   }
-  // Opt-in radio (SomaFM) trails the local tracks — only when we're online (re-evaluated each call).
-  if (radioAvailable()) {
-    for (const s of RADIO_STATIONS) formatById.set(s.id, 'stream');
-    return localLoopsCache.concat(
-      RADIO_STATIONS.map((s): NeuroTrack => ({ id: s.id, name: s.name, tags: ['radio', 'stream'], format: 'stream' })),
-    );
-  }
-  return localLoopsCache;
+  // Opt-in radio (SomaFM) trails the local tracks — re-evaluated each call so it
+  // appears/disappears with `navigator.onLine` instead of freezing in the cache.
+  return localLoopsCache.concat(radioTracks());
 }
 
-/** Drop the cached track list (an audio upload or deletion changed it) and nudge any
- *  mounted player to rebuild — listLoops re-queries on its next call. */
+/** The connectivity-gated radio stations (empty offline; fresh each call). */
+function radioTracks(): NeuroTrack[] {
+  if (!radioAvailable()) return [];
+  for (const s of RADIO_STATIONS) formatById.set(s.id, 'stream');
+  return RADIO_STATIONS.map((s): NeuroTrack => ({ id: s.id, name: s.name, tags: ['radio', 'stream'], format: 'stream' }));
+}
+
+/** Drop the cached track list (an audio upload changed it) and nudge any mounted
+ *  player to rebuild — listLoops re-queries on its next call. */
 export function invalidateNeurospicyTracks(): void {
   localLoopsCache = null;
+  if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-tracks'));
+}
+
+/** DELETED assets need more than a list rebuild: purge them from every player cache,
+ *  and if one of them is the CURRENT track, stop it — the looping source would keep
+ *  sounding with no row in the picker and a dangling persisted loopId. When the mode
+ *  was actively sounding, move on to the first remaining track (like pressing next);
+ *  otherwise just clear the selection. */
+export async function dropNeurospicyTracks(host: NeurospicyHost, ids: string[]): Promise<void> {
+  for (const id of ids) { buffers.delete(id); urlById.delete(id); formatById.delete(id); }
+  localLoopsCache = null;
+  if (ids.includes(state.loopId)) {
+    const wasSounding = !!src && state.enabled && !paused && !isSfxMuted();
+    stopSource();
+    state.loopId = '';
+    // Skip radio when advancing: it's an OPT-IN networked source — a delete
+    // gesture must never silently start (and persist) a live internet stream.
+    const next = (await listLoops(host)).find((t) => !ids.includes(t.id) && t.format !== 'stream' && !t.tags.includes('radio'));
+    if (next && wasSounding) {
+      await setNeurospicyLoop(host, next.id); // persists + plays
+    } else {
+      persistLocal(); void persistProfile(host);
+    }
+  }
   if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-tracks'));
 }
 

@@ -33,8 +33,11 @@ const CSS = `
 .neuro-meter { width: 100%; height: 24px; display: block; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); color: hsl(var(--primary)); }
 /* Very thin progress + skip-to bar under the meter. Hidden for internet radio (a
    live stream has no duration to seek within). */
-.neuro-progress { position: relative; height: 4px; margin-top: -4px; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); cursor: pointer; overflow: hidden; touch-action: none; }
+.neuro-progress { position: relative; height: 4px; margin-top: -4px; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); cursor: pointer; touch-action: none; }
 .neuro-progress[hidden] { display: none; }
+/* Invisible hit extender: the bar stays 4px visually but accepts taps ±10px around
+   it (it is the only seek surface, and a bare 4px strip is untappable on touch). */
+.neuro-progress::before { content: ''; position: absolute; inset: -10px 0; }
 .neuro-progress-fill { position: absolute; inset: 0 auto 0 0; width: 0%; background: hsl(var(--primary)); border-radius: inherit; }
 .neuro-progress:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 .neuro-transport { display: flex; align-items: center; justify-content: center; gap: 16px; }
@@ -197,16 +200,19 @@ export function paintMusicPlayer(root: ParentNode): void {
 
 /** Reflect playback position in the thin skip-to bar. Radio hides it — a live
  *  stream has no duration to seek within. */
-function updateProgress(root: ParentNode): void {
+function updateProgress(root: ParentNode, p = getNeurospicyProgress()): void {
   const bar = root.querySelector<HTMLElement>('[data-mp-progress]');
   const fill = root.querySelector<HTMLElement>('[data-mp-progress-fill]');
   if (!bar || !fill) return;
   const cur = tracksCache.find((t) => t.id === getNeurospicy().loopId);
   bar.hidden = !!cur && trackCategory(cur) === 'radio';
-  const p = getNeurospicyProgress();
   const frac = p ? p.position / p.duration : 0;
   fill.style.width = `${(frac * 100).toFixed(2)}%`;
-  bar.setAttribute('aria-valuenow', String(Math.round(frac * 100)));
+  // Runs every animation frame while playing — only touch aria-valuenow when the
+  // whole percent actually changes, or a focused slider becomes a screen-reader
+  // announcement firehose.
+  const now = String(Math.round(frac * 100));
+  if (bar.getAttribute('aria-valuenow') !== now) bar.setAttribute('aria-valuenow', now);
 }
 
 /** Repaint + (re)start the meter — used by the dock when it's shown/expanded. */
@@ -327,6 +333,14 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
       e.stopPropagation();
       openPanel(wrap, false);
     }
+    // The search box sits at the panel's BOTTOM (the panel opens upward), AFTER the
+    // list in DOM — so Tab from it would silently leave the still-open panel.
+    // Redirect it to the first visible row (a category head or track) instead.
+    if (e.key === 'Tab' && !e.shiftKey && (e.target as HTMLElement).closest?.('[data-mp-search]')) {
+      const first = [...wrap.querySelectorAll<HTMLElement>('[data-mp-list] .neuro-cat-head, [data-mp-list] .neuro-track')]
+        .find((el) => !el.hidden && el.offsetParent !== null);
+      if (first) { e.preventDefault(); first.focus(); }
+    }
   });
   // Click-away closes the panel.
   document.addEventListener('click', (e) => {
@@ -410,21 +424,24 @@ function startMeter(root: ParentNode): void {
     // Stop when detached OR not visible (offsetParent is null for display:none — a
     // hidden or collapsed dock) so a minimized player doesn't spin rAF forever.
     if (!canvas.isConnected || canvas.offsetParent === null) { canvas.dataset.running = 'false'; return; }
-    updateProgress(root); // the skip-to bar advances with the same loop
+    const p = getNeurospicyProgress();
+    updateProgress(root, p); // the skip-to bar advances with the same loop
     const a = getNeurospicyAnalyser();
     const w = canvas.width;
     const h = canvas.height;
     c2d.clearRect(0, 0, w, h);
     const color = getComputedStyle(canvas).color || '#888';
-    if (isNeurospicyPlaying()) {
-      // Reduced motion parks the meter on its baseline but keeps looping, so the
-      // (slow, informational) progress bar still tracks the track.
+    if (isNeurospicyPlaying() && p) {
+      // A LOCAL source is actually sounding (progress non-null). Reduced motion parks
+      // the meter on its baseline but keeps looping, so the (slow, informational)
+      // progress bar still tracks the track.
       if (a && !reducedMotion) drawMeterBars(c2d, w, h, a, color);
       else drawMeterBaseline(c2d, w, h, color);
       requestAnimationFrame(draw);
     } else {
-      // Idle/paused: a flat baseline; stop until the next transport action restarts
-      // the loop (keeps a hidden dock from spinning rAF forever).
+      // Idle/paused, radio (plays outside the graph — meter dark, bar hidden), or the
+      // pre-gesture boot state: nothing to animate, so park on the baseline and stop.
+      // notifyPlaying ('lolly:neuro-playing') / the next transport action restarts it.
       drawMeterBaseline(c2d, w, h, color);
       canvas.dataset.running = 'false';
     }

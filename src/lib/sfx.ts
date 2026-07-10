@@ -29,7 +29,7 @@
  *    it no longer silences sounds by default.) An explicit stored preference always wins.
  */
 
-export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'sign' | 'warn' | 'ghost' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'flick' | 'optIn' | 'optOut' | 'byebye' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
+export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'sign' | 'warn' | 'ghost' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'waveform' | 'flick' | 'optIn' | 'optOut' | 'byebye' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
 
 /** localStorage mirror of the mute flag ('1' muted / '0' on). Canonical store is the profile. */
 const MUTE_KEY = 'lolly:sfxMuted';
@@ -717,6 +717,17 @@ const VOICES: Record<SfxName, (ctx: AudioContext, out: AudioNode) => void> = {
       t += 0.02 + Math.random() * 0.022;
     }
   },
+  // AUDIO filter — a bright synth pulse that lights up like a waveform: a soft low
+  // "kick" thump under a rising two-note chime (the beat catching light), with a
+  // few quick high ticks scattered across it like an EQ meter flickering.
+  waveform(ctx, out) {
+    blip(ctx, out, { type: 'sine', from: 110, to: 90, dur: 0.16, peak: 0.28 });
+    blip(ctx, out, { type: 'triangle', from: 587.33, dur: 0.30, peak: 0.20, delay: 0.03 });
+    blip(ctx, out, { type: 'triangle', from: 880.00, dur: 0.26, peak: 0.14, delay: 0.06 });
+    tick(ctx, out, { dur: 0.012, peak: 0.08, freq: 6200, q: 1.0, delay: 0.02 });
+    tick(ctx, out, { dur: 0.012, peak: 0.07, freq: 4200, q: 1.0, delay: 0.09 });
+    tick(ctx, out, { dur: 0.012, peak: 0.06, freq: 8000, q: 1.0, delay: 0.15 });
+  },
   // Opting IN to using your details — the most magical moment in the app: a shimmering bell
   // CASCADE up then gently back down (a pentatonic run, so every note is consonant), with
   // sparkles on the climb, a bright shimmer glide over the peak, and a warm low root for body.
@@ -1099,7 +1110,7 @@ function isSfxName(v: string | undefined): v is SfxName {
     || v === 'navigate' || v === 'shutter' || v === 'shuffle' || v === 'coverflow' || v === 'gallery'
     || v === 'save' || v === 'saveProfile' || v === 'whoosh' || v === 'vacuum' || v === 'fanfare'
     || v === 'twinkle' || v === 'shimmer' || v === 'ding' || v === 'victory' || v === 'braaam' || v === 'warn' || v === 'ghost'
-    || v === 'shoo' || v === 'reel' || v === 'aperture' || v === 'scribble' || v === 'flick'
+    || v === 'shoo' || v === 'reel' || v === 'aperture' || v === 'scribble' || v === 'waveform' || v === 'flick'
     || v === 'optIn' || v === 'optOut' || v === 'byebye' || v === 'key' || v === 'slider' || v === 'scrub'
     || v === 'select' || v === 'hydraulicOpen' || v === 'hydraulicClose' || v === 'verify' || v === 'dashboard' || v === 'newSession' || v === 'leaveSession'
     || v === 'whisper' || v === 'crystal' || v === 'land';

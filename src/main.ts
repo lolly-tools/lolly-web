@@ -17,7 +17,7 @@ import { initTheme, applyTheme } from './theme.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts } from './user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
-import { hydrateNeurospicy, armNeurospicy } from './lib/neurospicy.ts';
+import { hydrateNeurospicy, armNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks } from './lib/neurospicy.ts';
 import { hydrateFeatureFlags, flagEnabledSync } from './feature-flags.ts';
 import { syncNeuroDock } from './components/neuro-dock.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
@@ -374,6 +374,15 @@ async function boot(): Promise<void> {
     armNeurospicy(host as unknown as Parameters<typeof armNeurospicy>[0]);
     syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);   // show the bottom-right dock if the mode was left on
   }
+  // EVERY user-asset delete funnels through the bridge, which announces it here —
+  // an audio delete must also leave the music player (stopping it, or advancing,
+  // if it was the sounding track), no matter which surface deleted it (catalog,
+  // picker, the saved-sessions folder overlay, Projects). Not gated on the feature
+  // flag: purging dead cache entries is correct even while the player is hidden.
+  document.addEventListener('lolly:user-asset-deleted', (e) => {
+    const d = (e as CustomEvent<{ id?: string; type?: string }>).detail;
+    if (d?.type === 'audio' && d.id) void dropNeurospicyTracks(host as unknown as Parameters<typeof dropNeurospicyTracks>[0], [d.id]);
+  });
 
   // Prime the in-memory tool index from the last cached copy so the gallery can
   // paint immediately, before the network catalog sync resolves. syncCatalog
@@ -388,6 +397,9 @@ async function boot(): Promise<void> {
 
   const catalogReady = syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]);
   catalogReady.then(() => syncCorePrefetch(host as unknown as Parameters<typeof syncCorePrefetch>[0])); // fire-and-forget after sync
+  // The Neurospicy dock mounts ABOVE, before this sync starts — on a cold install its
+  // track list would be built from a not-yet-synced catalog. Rebuild it once assets land.
+  catalogReady.then(() => { if (flagEnabledSync('neurospicy')) invalidateNeurospicyTracks(); }).catch(() => { /* offline boot — cache-skip above already re-queries */ });
 
   // First-run seed: give a brand-new user the catalog's curated default asset favourites
   // (see catalog/assets/index.json → defaultFavourites) so those headshots are pinned in

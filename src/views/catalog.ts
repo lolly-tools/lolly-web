@@ -49,8 +49,8 @@ import {
 } from '../lib/asset-favourites.ts';
 import { storeUserUpload, isPdfUpload, UPLOAD_ACCEPT } from './picker.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
-import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
+import { exportSwatches, paletteEntriesToSwatches, type SwatchExportFormat } from '../lib/swatch-export.ts';
 import { groupPalette, swatch } from '../lib/swatches.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
 import { staggerReveal } from '../lib/reveal.ts';
@@ -117,13 +117,14 @@ function setCatToggle(btn: HTMLElement, icon: string, label: string): void {
   btn.setAttribute('aria-label', label);
 }
 // Each type filter has a signature click sound: image = a camera shutter snick,
-// vector = a pencil scribble, motion = a film reel spinning up to smooth.
+// vector = a pencil scribble, motion = a film reel spinning up to smooth, audio = a
+// synth pulse lighting up like a waveform.
 const TYPE_FILTERS: { key: TypeFilter; label: string; icon: string; sfx?: string }[] = [
   { key: 'all', label: 'All', icon: CAT_ICONS.all },
   { key: 'image', label: 'Image', icon: CAT_ICONS.image, sfx: 'aperture' },
   { key: 'vector', label: 'Vector', icon: CAT_ICONS.vector, sfx: 'scribble' },
   { key: 'motion', label: 'Motion', icon: CAT_ICONS.motion, sfx: 'reel' },
-  { key: 'audio', label: 'Audio', icon: CAT_ICONS.audio },
+  { key: 'audio', label: 'Audio', icon: CAT_ICONS.audio, sfx: 'waveform' },
 ];
 // Which asset types each filter bucket admits ('all' matches everything).
 const TYPE_FILTER_TYPES: Record<Exclude<TypeFilter, 'all'>, Set<string>> = {
@@ -862,6 +863,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   function assetsSectionHtml(): string {
     const hiddenItems = allAssets.filter(a => hiddenSet.has(assetBaseId(a.id)));
+    // A delete can empty the active filter's bucket — its toolbar button would vanish
+    // (shownFilters below only offers non-empty buckets) while the filter kept hiding
+    // every asset with no visible control explaining why. Fall back to All instead.
+    if (typeFilter !== 'all' && !allAssets.some(a => TYPE_FILTER_TYPES[typeFilter as Exclude<TypeFilter, 'all'>].has(a.type))) typeFilter = 'all';
     // Filter by search first; the count + category buckets both read the matched set.
     const visible = visibleAssets().filter(matchesQuery).filter(matchesType);
 
@@ -1069,13 +1074,28 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // "Collapse all" folds them and the whole page reads as one uniform stack of sections.
   // Their rich bodies keep the existing .cat-panel-* / .plat-* styling. `cat-group--ref`
   // draws a divider above the first one to set the reference zone apart from the assets.
+  // The Swatches section's download row — the palette AS SHOWN (live-resolved
+  // brand tokens: catalog-shipped colours plus everything added in the brand
+  // editor), in each format a designer/dev workflow expects. Clickable links,
+  // matching the Fonts section's convenience; wired in the body click handler.
+  const SWATCH_DOWNLOADS: { fmt: SwatchExportFormat; label: string }[] = [
+    { fmt: 'tokens-json', label: 'Design tokens (JSON)' },
+    { fmt: 'css-vars', label: 'CSS variables' },
+    { fmt: 'css-classes', label: 'CSS classes' },
+    { fmt: 'ase', label: 'Adobe swatches (.ase)' },
+    { fmt: 'gpl', label: 'GIMP palette (.gpl)' },
+  ];
+
   function swatchesSectionHtml(): string {
     const { brand, spectrum, ramps } = groupPalette(palette);
     const total = brand.length + spectrum.length + ramps.reduce((n, [, cols]) => n + cols.length, 0);
     const grid = (list: typeof brand) => `<div class="plat-swatch-grid">${list.map(swatch).join('')}</div>`;
     const rampBlocks = ramps.map(([fam, cols]) =>
       `<h3 class="cat-panel-subhead">${escape(fam)}</h3>${grid(cols)}`).join('');
+    const downloads = `<div class="cat-font-downloads cat-swatch-downloads">${SWATCH_DOWNLOADS.map(d =>
+      `<button type="button" class="cat-download" data-swatch-dl="${d.fmt}" data-sfx="whoosh">${DOWNLOAD_ICON}<span>${escape(d.label)}</span></button>`).join('')}</div>`;
     const body = `
+      ${downloads}
       <p class="cat-panel-desc">The brand palette. Click any chip to copy its hex. A <span class="plat-chip-flag is-static">CMYK</span> or <span class="plat-chip-flag is-static">SPOT</span> flag marks a locked ink value used directly in CMYK PDF exports.</p>
       <h3 class="cat-panel-subhead">Brand</h3>${grid(brand)}
       ${spectrum.length ? `<h3 class="cat-panel-subhead">Spectrum</h3>${grid(spectrum)}` : ''}
@@ -1652,8 +1672,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       confirmLabel: 'Delete',
     });
     if (!ok || !mounted) return;
+    // The bridge announces the delete ('lolly:user-asset-deleted', wired in main.ts),
+    // which also drops an audio upload from the Neurospicy player.
     await host.assets._deleteUserAsset(ref.id).catch(() => {});
-    if (ref.type === 'audio') invalidateNeurospicyTracks(); // drop it from the music player too
     // Prune any dangling per-user overlay entries for the gone asset (one write each,
     // only when actually present).
     if (profile && favSet.delete(base)) await saveFavouriteAssets(host, profile, favSet);
@@ -1766,7 +1787,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       confirmLabel: 'Delete',
     });
     if (!ok || !mounted) return;
-    const hadAudio = ids.some(id => assetById.get(id)?.type === 'audio');
     for (const id of ids) {
       const base = assetBaseId(id);
       await host.assets._deleteUserAsset(id).catch(() => {});
@@ -1778,7 +1798,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       assetById.delete(id);
     }
     selected.clear();
-    if (hadAudio) invalidateNeurospicyTracks(); // drop them from the music player too
     if (!mounted) return;
     rerender();
   }
@@ -2439,6 +2458,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // "Clear search" link in the no-results copy (the footer ✕ is wired separately).
       const clr = t.closest<HTMLElement>('[data-search-clear]');
       if (clr) { e.preventDefault(); clearSearch(); return; }
+
+      // Swatches-section palette download — exports the palette exactly as shown.
+      const sdl = t.closest<HTMLElement>('[data-swatch-dl]');
+      if (sdl) {
+        try {
+          const { blob, filename } = exportSwatches(paletteEntriesToSwatches(palette), sdl.dataset.swatchDl as SwatchExportFormat);
+          await host.export.download(blob, filename);
+          announce(`Palette downloaded as ${filename}`);
+        } catch { announce('Couldn’t export the palette.'); }
+        return;
+      }
 
       // Retry the catalogue load after a total sync failure (the failed state's control).
       const retry = t.closest<HTMLButtonElement>('.cat-retry');

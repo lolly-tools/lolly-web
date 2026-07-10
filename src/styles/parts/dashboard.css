@@ -238,12 +238,13 @@
   width: 32px;
   height: 32px;
   background: hsl(var(--primary) / 0.55);
-  border: 1px solid hsl(var(--border)); /* uniform on every side — never a single-edge accent */
+  border: 0;
+  box-shadow: 0 2px 3px #0002;
 }
 .brand-radius-slider { flex: 1 1 auto; min-width: 0; accent-color: hsl(var(--primary)); }
 .brand-radius-value {
   flex: 0 0 auto;
-  min-width: 4.5ch;
+  min-width: 7.5ch;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12.5px;
   color: hsl(var(--muted-foreground));
@@ -368,6 +369,8 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-pv-cap { font-size: .68rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 
 /* Palette: the wheel view beside the grouped swatch grid (stacks when narrow). */
+.be-pal-actions { display: flex; align-items: flex-end; gap: .6rem; flex-wrap: wrap; margin-bottom: .9rem; }
+.be-pal-fmt-field { flex: 0 1 260px; }
 .be-pal-split { display: grid; gap: 1.2rem; }
 @media (min-width: 820px) { .be-pal-split { grid-template-columns: minmax(220px, 300px) 1fr; align-items: start; } }
 .be-pal-wheel { align-self: start; }

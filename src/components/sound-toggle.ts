@@ -211,6 +211,14 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
   const swWrap = sw?.closest<HTMLElement>('.sound-switch');
   paintNeurospicy(root);   // sync the initial dimmed/off look to the current mute state
   syncNeuroDock(host);     // if the mode is already on, the dock should already be showing
+  // Repaint whenever the shared enabled state changes elsewhere (e.g. the dock's close
+  // button). Popovers get rebuilt/rewired each time they open, so self-unhook once this
+  // instance's root is no longer in the document instead of leaking one listener per open.
+  const onEnabledChange = (): void => {
+    if (!wrap.isConnected) { document.removeEventListener('lolly:neuro-enabled', onEnabledChange); return; }
+    paintNeurospicy(root);
+  };
+  document.addEventListener('lolly:neuro-enabled', onEnabledChange);
   // Mobile "Show player" — reopen the dock that was collapsed (hidden on phones).
   wrap.querySelector<HTMLButtonElement>('[data-neuro-show]')?.addEventListener('click', (e) => {
     e.stopPropagation();

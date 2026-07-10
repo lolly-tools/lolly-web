@@ -358,6 +358,10 @@
   background: hsl(var(--background)); transition: border-color .12s, background .12s;
 }
 .cat-download:hover { border-color: hsl(var(--primary) / .5); background: hsl(var(--muted) / .5); }
+/* The Swatches section's palette-download links are <button>s (they mint blobs,
+   no static href) — reset the UA button chrome so they read like the font links. */
+button.cat-download { font: inherit; cursor: pointer; }
+.cat-swatch-downloads { margin-bottom: 14px; }
 
 /* Copied-flash on a swatch chip (the copy handler toggles .is-copied briefly). */
 .plat-swatch-chip.is-copied { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
@@ -420,7 +424,9 @@
    bar look + theming as the Neurospicy player's meter (lib/audio-meter.ts draws both). */
 .cat-details-preview .cat-thumb-audio { display: flex; flex-direction: column; justify-content: center; gap: 14px; width: min(560px, 100%); }
 .cat-thumb-audio audio { width: 100%; }
-.cat-audio-meter { width: 100%; height: 160px; display: block; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); color: hsl(var(--primary)); }
+/* Big, but never bigger than the preview pane allows: the pane caps at 46vh with
+   overflow:hidden, and the <audio> controls below must stay visible on short screens. */
+.cat-audio-meter { width: 100%; height: min(160px, 24vh); display: block; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); color: hsl(var(--primary)); }
 .cat-audio-meter[hidden] { display: none; }
 .cat-details-body { padding: 18px 20px 22px; }
 

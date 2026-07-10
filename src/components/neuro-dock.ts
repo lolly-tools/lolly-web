@@ -13,7 +13,7 @@
 import {
   musicPlayerBodyHtml, wireMusicPlayerBody, refreshMusicPlayer,
 } from './music-player.ts';
-import { getNeurospicy, setNeurospicyEnabled, type NeurospicyHost } from '../lib/neurospicy.ts';
+import { getNeurospicy, setNeurospicyEnabled, stopNeurospicy, type NeurospicyHost } from '../lib/neurospicy.ts';
 import { SOMAFM_HOME } from '../lib/radio.ts';
 import { flagEnabledSync } from '../feature-flags.ts';
 
@@ -94,7 +94,7 @@ function build(host: NeurospicyHost): HTMLElement {
       <button type="button" class="neuro-dock-btn" data-dock-close aria-label="Close player">${X}</button>
     </header>
     <div class="neuro-dock-body">${musicPlayerBodyHtml()}</div>
-    `;
+    <p class="neuro-dock-attr">Radio via <a href="${SOMAFM_HOME}" target="_blank" rel="noopener noreferrer">SomaFM</a> · needs internet</p>`;
   document.body.appendChild(el);
   wireMusicPlayerBody(el, host);
 
@@ -114,7 +114,8 @@ function build(host: NeurospicyHost): HTMLElement {
   });
   el.querySelector<HTMLButtonElement>('[data-dock-close]')?.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await setNeurospicyEnabled(host, false); // close = leave the mode
+    stopNeurospicy();                          // stop immediately — don't rely solely on play()'s enabled-guard
+    await setNeurospicyEnabled(host, false);    // close = leave the mode
     hideNeuroDock();
   });
   // Escape minimizes an expanded dock — but only when focus is actually inside it,

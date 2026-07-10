@@ -45,6 +45,7 @@ import {
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
 } from './brand-doc.ts';
 import type { BrandSwatch, PrintLock } from './brand-doc.ts';
+import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
 import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
@@ -577,6 +578,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       <div class="be-panel be-palette">
         <div class="be-panel-head"><h3 class="be-panel-title">Palette</h3>
           <p class="be-panel-sub">Every colour your brand carries — as a list, or on the wheel (angle = hue, distance out = chroma). Click a swatch to recolour or rename it, drag a dot to recolour it, click empty space on the wheel to add one. Changes flow to every picker, tool and export.</p></div>
+        <div class="be-pal-actions">
+          <label class="be-field be-pal-fmt-field">
+            <span class="be-field-label">Download all as</span>
+            <select class="be-pal-fmt-sel" data-be-pal-fmt aria-label="Download format">
+              <option value="tokens-json">Design tokens (JSON)</option>
+              <option value="css-vars">CSS variables</option>
+              <option value="css-classes">CSS classes</option>
+              <option value="gpl">GIMP palette (.gpl)</option>
+              <option value="ase">Adobe Swatch Exchange (.ase)</option>
+            </select>
+          </label>
+          <button type="button" class="be-btn" data-be-pal-download data-sfx="whoosh">Download</button>
+        </div>
+        <p class="be-err" data-be-pal-err hidden></p>
         <div class="be-pal-split">
           <div class="be-pal-wheel" data-be-wheel-mount></div>
           <div class="be-pal" data-be-pal></div>
@@ -1240,6 +1255,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const ok = await confirmDialog({ title: `Remove the ${variantLabel(variant).toLowerCase()} logo?`, message: 'It’s deleted from this device.', confirmLabel: 'Remove' });
     if (!ok) return; del.disabled = true;
     try { await removeLogo(fontsHost, variant); await paintLogos(); } catch (err) { del.disabled = false; showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
+  });
+
+  // ── Palette download ─────────────────────────────────────────────────────
+  const palErr = $('[data-be-pal-err]') as HTMLElement | null;
+  const palFmtSel = $('[data-be-pal-fmt]') as HTMLSelectElement | null;
+  $('[data-be-pal-download]')?.addEventListener('click', () => {
+    if (palErr) palErr.hidden = true;
+    try {
+      const format = (palFmtSel?.value ?? 'tokens-json') as SwatchExportFormat;
+      const { blob, filename } = exportSwatches(swatches, format);
+      saveBlob(blob, filename);
+      announce(`Palette downloaded as ${filename}`);
+    } catch (err) {
+      if (palErr) { palErr.textContent = String((err as { message?: unknown })?.message ?? err); palErr.hidden = false; }
+    }
   });
 
   // ── Share ─────────────────────────────────────────────────────────────────
