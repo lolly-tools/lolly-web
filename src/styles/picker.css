@@ -427,6 +427,15 @@
   color: hsl(var(--muted-foreground));
   pointer-events: none;
 }
+/* Generative-AI badge — top-left corner (the format badge owns bottom-right). The
+   .genai-pill visual (fixed violet, sparkle-in-a-circle) is defined in parts/catalog.css. */
+.asset-picker-card .genai-pill {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  z-index: 1;
+  pointer-events: none;
+}
 .asset-picker-thumb {
   width: 100%;
   height: 100px;

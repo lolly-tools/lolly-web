@@ -175,6 +175,30 @@
   color: hsl(var(--primary));
   font-size: .7rem; font-weight: 600; letter-spacing: .02em;
 }
+/* Small (i) explainer beside a flag label. The button is interactive, so a click inside
+   the <label> doesn't toggle the checkbox; the popover shows on hover/focus. */
+.profile-view .feature-flag-info { position: relative; display: inline-flex; vertical-align: middle; margin-left: .35rem; }
+.profile-view .feature-flag-info-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.15rem; height: 1.15rem; padding: 0; border: none; border-radius: 999px;
+  background: none; color: hsl(var(--muted-foreground)); cursor: help;
+}
+.profile-view .feature-flag-info-btn:hover { color: hsl(var(--primary)); }
+.profile-view .feature-flag-info-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.profile-view .feature-flag-info-pop {
+  position: absolute; left: 50%; bottom: calc(100% + .4rem); transform: translateX(-50%);
+  width: max-content; max-width: 16rem; z-index: 5;
+  padding: .5rem .65rem; border-radius: var(--radius);
+  background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border)); box-shadow: 0 8px 24px -8px #0007;
+  font-size: .74rem; font-weight: 400; line-height: 1.4; letter-spacing: 0; text-transform: none;
+  white-space: normal; text-align: left; opacity: 0; visibility: hidden; transition: opacity .12s;
+  /* A tooltip must never intercept clicks (it overhangs the row + the switch when shown) —
+     matching .info-tip. Without this the strip-metadata explainer ate clicks on the toggle. */
+  pointer-events: none;
+}
+.profile-view .feature-flag-info:hover .feature-flag-info-pop,
+.profile-view .feature-flag-info:focus-within .feature-flag-info-pop { opacity: 1; visibility: visible; }
 .profile-view .feature-flag-input { position: absolute; opacity: 0; width: 0; height: 0; }
 .profile-view .feature-flag-switch {
   flex: none; position: relative;

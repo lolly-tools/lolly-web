@@ -209,6 +209,14 @@
   box-shadow: 0 2px 8px -3px hsl(var(--vf-ai) / .7);
 }
 .genai-pill svg { display: none; width: 1em; height: 1em; }
+/* Icon-only form — just the sparkle in a circle. Used in the dense asset picker (via
+   .genai-pill--icon); the narrow-tile media query below applies the same to tiles. */
+.genai-pill--icon { gap: 0; padding: 0; width: 18px; height: 18px; justify-content: center; }
+.genai-pill--icon svg { display: block; }
+.genai-pill--icon .genai-pill-lbl {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 /* Details modal: a touch larger, sits on the "AI content" meta row. */
 .cat-details-meta .genai-pill { font-size: .62rem; }
 
@@ -519,6 +527,35 @@
 .cat-act-fav.is-fav svg { fill: currentColor; }
 .cat-act-danger { color: hsl(var(--destructive, 0 70% 50%)); }
 .cat-act-share.is-copied { color: hsl(var(--primary)); }
+
+/* ── Content Credentials (details) ── the checker for any inspectable asset, plus the
+   "Made with Lolly" lockup revealed only once the verifier confirms it (openDetails). */
+.cat-details-cred { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin: 0 0 16px; }
+.cat-act-verify svg { width: 15px; height: 15px; }
+
+/* Shared "Made with Lolly" badge (lib/lolly-badge.ts). Green = the same verified /
+   made-with-Lolly semantics as the Verify coin, a fixed accent independent of the
+   active brand (like the genai pill's fixed violet). */
+.lolly-badge { --lolly-accent: 145 58% 34%; display: inline-flex; align-items: center; gap: 6px; color: hsl(var(--lolly-accent)); font-weight: 700; }
+.lolly-badge svg { flex: none; }
+.lolly-badge--sm { font-size: .78rem; }
+.lolly-badge--lg { font-size: 1.12rem; letter-spacing: -.01em; }
+[data-theme="dark"] .lolly-badge { --lolly-accent: 145 52% 60%; }
+
+/* The prominent lockup — a FULLY tinted panel (not a one-edge stripe), wordmark + a
+   one-line explanation. Hidden until verifyC2pa confirms madeWithLolly. */
+.cat-cred-lolly {
+  align-self: stretch; display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 14px; border-radius: calc(var(--radius) * 1.1);
+  background: hsl(145 58% 34% / .1); border: 1px solid hsl(145 45% 40% / .32);
+}
+.cat-cred-lolly[hidden] { display: none; }
+.cat-cred-lolly-sub { font-size: .78rem; font-weight: 500; color: hsl(var(--muted-foreground)); }
+
+/* Inline "Made from" + "Change history" panels (the Verify checker's own .valid-panel
+   cards, reused). Stack full-width in the modal; each card styles itself via valid.css. */
+.cat-cred-panels { align-self: stretch; display: grid; gap: 10px; }
+.cat-cred-panels[hidden] { display: none; }
 
 /* ── Download dialog (icon styler + SVG/PNG size) ── */
 .cat-dl {

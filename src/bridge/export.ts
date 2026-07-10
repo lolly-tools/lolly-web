@@ -18,7 +18,7 @@ import {
   parseClipShape, parseRadialGradient, parseDropShadowFilter,
   splitCssArgs, parseGradientAngle, parseGradientStop,
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
-  embedC2pa, exportActionSteps, C2PA_FORMATS, packTiff, ENGINE_VERSION,
+  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
   buildExportMeta,
   embedWatermark,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
@@ -2757,6 +2757,41 @@ export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string,
   } catch (err) {
     host.log?.('warn', `${format}: Content Credentials not attached — ${(err as any)?.message || err}`);
     return blob;
+  }
+}
+
+/**
+ * Content Credentials for a freshly CAPTURED clip — a recorder tool's live camera
+ * or microphone take (added engine v1.35). Signs the raw clip bytes so the file
+ * self-asserts (the created step is IPTC `digitalCapture`, on-device Lolly) and,
+ * placed into a composition, chains as a credentialed ingredient. Returns the
+ * stamped blob PLUS the extracted manifest store, because a `user/` asset's
+ * credential lookup reads the STORED store, not the file's bytes — the caller
+ * persists it on the asset record (mirroring the upload-ingest path). Only mp4 /
+ * webm containers are C2PA-stampable (so webm/m4a audio works, mp3/wav/ogg don't).
+ * Never throws — a stamping failure returns the original blob + a null credential,
+ * so a take is never lost to a provenance hiccup.
+ */
+export async function stampCaptureClip(host: HostV1, blob: Blob, format: 'mp4' | 'webm', o: {
+  camera?: boolean;
+  microphone?: boolean;
+  dimensions?: string;
+}): Promise<{ blob: Blob; credential: { store: Uint8Array; format: string } | null }> {
+  const description = o.camera && o.microphone ? 'Recorded live from the camera and microphone'
+    : o.camera ? 'Captured live from the camera'
+    : 'Recorded live from the microphone';
+  try {
+    // A fresh recording has no ingredients → it honestly claims c2pa.created.
+    const stamped = await stampDerivedC2pa(host, blob, format, {
+      tool: 'Recording',
+      actions: [{ action: 'c2pa.created', digitalSourceType: CAPTURE_SOURCE_TYPE, description }],
+      dimensions: o.dimensions,
+    });
+    const ex = extractC2paStore(new Uint8Array(await stamped.arrayBuffer()));
+    return { blob: stamped, credential: ex ? { store: ex.store, format: ex.format } : null };
+  } catch (err) {
+    host.log?.('warn', `capture clip: Content Credentials not attached — ${(err as any)?.message || err}`);
+    return { blob, credential: null };
   }
 }
 

@@ -13,8 +13,12 @@
  * Turning sound back ON plays a short confirming chirp; turning it off stays silent.
  */
 import { isSfxMuted, setSfxMuted, playSfx } from '../lib/sfx.ts';
-import { getNeurospicy, setNeurospicyEnabled, setNeurospicyLoop, setNeurospicyVolume, listLoops, applyNeurospicy, isNeurospicyPlaying, toggleNeurospicyPlay } from '../lib/neurospicy.ts';
-import { escape } from '../utils.ts';
+import { getNeurospicy, setNeurospicyEnabled, applyNeurospicy } from '../lib/neurospicy.ts';
+import { syncNeuroDock, isNeuroDockCollapsed, reopenNeuroDock } from './neuro-dock.ts';
+import { flagEnabledSync } from '../feature-flags.ts';
+
+/** Phone-width viewport — the collapsed dock is hidden here and reopened from this menu. */
+const isMobileViewport = (): boolean => typeof matchMedia !== 'undefined' && matchMedia('(max-width: 520px)').matches;
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 
 /** The slice of the host this control needs — the profile record it spreads + persists. */
@@ -30,9 +34,6 @@ type NeuroHost = SoundToggleHost & Pick<HostV1, 'assets'>;
 // A heartbeat/waveform — the "beat" behind Neurospicy Mode's focus loop.
 const NEURO_ICON =
   `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h3l2-7 4 18 3-14 2 7h6"/></svg>`;
-const PLAY_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M7 4.5a1 1 0 0 1 1.53-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 7 19.5z"/></svg>`;
-const PAUSE_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>`;
-
 const ICON_ON =
   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
 const ICON_OFF =
@@ -114,16 +115,9 @@ const SWITCH_CSS = `
 /* Sound is the master switch: while it's muted, Neurospicy reads as off + dimmed and can't be
    toggled until sound is turned back on. */
 .neurospicy.is-muted { opacity: .45; pointer-events: none; }
-.neurospicy-body { display: flex; flex-direction: column; gap: 9px; padding-left: 31px; }
-.neurospicy-body[hidden] { display: none; }
-.neurospicy-row { display: flex; align-items: center; gap: 9px; }
-.neurospicy-play { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); transition: filter .15s ease, transform .1s ease; }
-.neurospicy-play:hover { filter: brightness(1.08); }
-.neurospicy-play:active { transform: scale(.93); }
-.neurospicy-play:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
-.neurospicy-loop { flex: 1; min-width: 0; padding: 7px 15px; border-radius: var(--radius); border: 1px solid hsl(var(--border)); background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: .85rem; cursor: pointer; }
-.neurospicy-vol { display: flex; align-items: center; gap: 9px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
-.neurospicy-vol input[type="range"] { flex: 1; accent-color: hsl(var(--primary)); }`;
+.neuro-show-btn { align-self: flex-start; margin-left: 31px; padding: 5px 12px; border-radius: var(--radius); border: 1px solid hsl(var(--border)); background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: .82rem; font-weight: 600; cursor: pointer; }
+.neuro-show-btn:hover { background: hsl(var(--muted)); }
+.neuro-show-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }`;
 function ensureSoundSwitchStyles(): void {
   if (typeof document === 'undefined' || document.getElementById(SWITCH_STYLE_ID)) return;
   const style = document.createElement('style');
@@ -146,7 +140,7 @@ export function soundSwitchHtml(): string {
       <button type="button" class="sound-switch-track" role="switch" aria-checked="${on}" aria-label="Interface sounds" data-sound-switch>
         <span class="sound-switch-knob"></span>
       </button>
-    </div>${neurospicyHtml()}`;
+    </div>${flagEnabledSync('neurospicy') ? neurospicyHtml() : ''}`;
 }
 
 // Neurospicy Mode — a background focus BEAT that loops while you use the app: a switch (like
@@ -165,13 +159,7 @@ function neurospicyHtml(): string {
           <span class="sound-switch-knob"></span>
         </button>
       </div>
-      <div class="neurospicy-body"${on ? '' : ' hidden'}>
-        <div class="neurospicy-row">
-          <button type="button" class="neurospicy-play" data-neurospicy-play aria-label="${isNeurospicyPlaying() ? 'Pause focus loop' : 'Play focus loop'}" aria-pressed="${isNeurospicyPlaying()}">${isNeurospicyPlaying() ? PAUSE_ICON : PLAY_ICON}</button>
-          <select class="neurospicy-loop" data-neurospicy-loop aria-label="Focus loop"><option>Loading beats…</option></select>
-        </div>
-        <label class="neurospicy-vol"><span>Volume</span><input type="range" min="0" max="1" step="0.05" value="${ns.volume}" data-neurospicy-volume aria-label="Focus loop volume"></label>
-      </div>
+      ${on && isMobileViewport() && isNeuroDockCollapsed() ? `<button type="button" class="neuro-show-btn" data-neuro-show>Show player</button>` : ''}
     </div>`;
 }
 
@@ -211,40 +199,23 @@ function paintNeurospicy(root: ParentNode): void {
   wrap.classList.toggle('is-muted', muted);
   wrap.querySelector<HTMLElement>('.sound-switch')?.setAttribute('data-on', String(on));
   wrap.querySelector<HTMLButtonElement>('[data-neurospicy-switch]')?.setAttribute('aria-checked', String(on));
-  const body = wrap.querySelector<HTMLElement>('.neurospicy-body');
-  if (body) body.hidden = !on;
-  paintNeurospicyPlay(wrap);
 }
 
-/** Sync the play/pause button's icon + aria to whether the loop is actually sounding. */
-function paintNeurospicyPlay(wrap: ParentNode): void {
-  const btn = wrap.querySelector<HTMLButtonElement>('[data-neurospicy-play]');
-  if (!btn) return;
-  const playing = isNeurospicyPlaying();
-  btn.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
-  btn.setAttribute('aria-label', playing ? 'Pause focus loop' : 'Play focus loop');
-  btn.setAttribute('aria-pressed', String(playing));
-}
-
-// Wire the Neurospicy block: the switch starts/stops the looping focus beat, the select
-// swaps loops, the range sets volume — each persisted (see lib/neurospicy.ts). stopPropagation
-// keeps a host popover from treating the interaction as a dismiss/select.
+// Wire the Neurospicy block: the switch enables/disables the mode; the actual
+// player lives in the bottom-right toast dock (neuro-dock.ts), shown/hidden here
+// to match. stopPropagation keeps a host popover from treating the click as a dismiss.
 function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
   const wrap = root.querySelector<HTMLElement>('[data-neurospicy-root]');
   if (!wrap) return;
   const sw = wrap.querySelector<HTMLButtonElement>('[data-neurospicy-switch]');
   const swWrap = sw?.closest<HTMLElement>('.sound-switch');
-  const body = wrap.querySelector<HTMLElement>('.neurospicy-body');
-  const sel = wrap.querySelector<HTMLSelectElement>('[data-neurospicy-loop]');
-  const vol = wrap.querySelector<HTMLInputElement>('[data-neurospicy-volume]');
-  const play = wrap.querySelector<HTMLButtonElement>('[data-neurospicy-play]');
   paintNeurospicy(root);   // sync the initial dimmed/off look to the current mute state
-  void listLoops(host).then((loops) => {
-    if (!sel) return;
-    const cur = getNeurospicy().loopId;
-    sel.innerHTML = loops.length
-      ? loops.map((l) => `<option value="${escape(l.id)}"${l.id === cur ? ' selected' : ''}>${escape(l.name)}</option>`).join('')
-      : '<option value="">No beats found</option>';
+  syncNeuroDock(host);     // if the mode is already on, the dock should already be showing
+  // Mobile "Show player" — reopen the dock that was collapsed (hidden on phones).
+  wrap.querySelector<HTMLButtonElement>('[data-neuro-show]')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    reopenNeuroDock(host);
+    (e.currentTarget as HTMLElement).remove(); // dock is visible now — drop the button
   });
   sw?.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -252,7 +223,6 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
     const on = !getNeurospicy().enabled;
     sw.setAttribute('aria-checked', String(on));
     swWrap?.setAttribute('data-on', String(on));
-    if (body) body.hidden = !on;
     // Celebrate turning it ON: a one-shot confetti blast across the screen, launched from the
     // toggle itself (like the /info hero's click-burst). Only on enable, once per activation.
     if (on) {
@@ -267,16 +237,8 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
           host as import('../lib/particles.ts').ChipPairsHost));
     }
     await setNeurospicyEnabled(host, on);
-    if (sel && getNeurospicy().loopId) sel.value = getNeurospicy().loopId; // enabling may auto-pick the first loop
-    paintNeurospicyPlay(wrap);   // switching the mode resets the transport to "play"
+    syncNeuroDock(host, on);   // show (with a spring-in + corner confetti on enable) / hide the dock
   });
-  play?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    await toggleNeurospicyPlay(host);   // pause/resume the loop WITHOUT leaving the mode
-    paintNeurospicyPlay(wrap);
-  });
-  sel?.addEventListener('change', async (e) => { e.stopPropagation(); await setNeurospicyLoop(host, sel.value); paintNeurospicyPlay(wrap); });
-  vol?.addEventListener('input', (e) => { e.stopPropagation(); setNeurospicyVolume(host, Number(vol.value)); });
 }
 
 /**

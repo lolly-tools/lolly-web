@@ -67,6 +67,35 @@ export function hydrateSfxMuted(profileMuted: boolean | undefined): void {
   setSfxMuted(profileMuted);
 }
 
+// ── volume (0–1, how loud interface cues are — separate from the on/off mute) ────
+/** Base headroom so overlapping cues don't clip; the user's volume (0–1) scales it. */
+const SFX_HEADROOM = 0.26;
+const VOLUME_KEY = 'lolly:sfxVolume';
+let sfxVolume = readInitialVolume();
+
+function readInitialVolume(): number {
+  try {
+    const s = localStorage.getItem(VOLUME_KEY);
+    if (s !== null) { const v = parseFloat(s); if (Number.isFinite(v)) return Math.max(0, Math.min(1, v)); }
+  } catch { /* no storage — full by default */ }
+  return 1;
+}
+
+export function getSfxVolume(): number { return sfxVolume; }
+
+/** Set + persist (localStorage mirror) the interface-sound volume; applies live to the
+ *  master gain. Profile write is the caller's job (mirrors setSfxMuted). */
+export function setSfxVolume(v: number): void {
+  sfxVolume = Math.max(0, Math.min(1, v));
+  try { localStorage.setItem(VOLUME_KEY, String(sfxVolume)); } catch { /* best-effort */ }
+  if (master) master.gain.value = SFX_HEADROOM * sfxVolume;
+}
+
+/** Reconcile from the profile (canonical) at boot, like hydrateSfxMuted. */
+export function hydrateSfxVolume(profileVolume: number | undefined): void {
+  if (typeof profileVolume === 'number' && Number.isFinite(profileVolume)) setSfxVolume(profileVolume);
+}
+
 // ── audio graph (lazy, shared) ─────────────────────────────────────────────────
 
 type WindowWithWebkitAudio = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
@@ -82,7 +111,7 @@ function audio(): { ctx: AudioContext; master: GainNode } | null {
   if (!ctx) {
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.26; // modest headroom so overlapping cues don't clip the destination
+    master.gain.value = SFX_HEADROOM * sfxVolume; // headroom scaled by the user's interface-sound volume
     master.connect(ctx.destination);
   }
   if (ctx.state === 'suspended') ctx.resume().catch(() => { /* stays suspended until the next gesture */ });
