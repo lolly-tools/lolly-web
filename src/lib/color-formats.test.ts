@@ -116,3 +116,46 @@ test('rgbToHsl: pure grey has zero saturation; hslToRgb honours it', () => {
   assert.deepEqual(hslToRgb(200, 80, 0), [0, 0, 0]);   // black regardless of h/s
   assert.deepEqual(hslToRgb(200, 80, 100), [255, 255, 255]); // white
 });
+
+test('serializeColor emits engine-parseable notations in every storage format', async () => {
+  const { colorToHex } = await import('@lolly/engine');
+  const { serializeColor } = await import('./color-formats.ts');
+  const hex = '#4f83cc';
+  assert.equal(serializeColor(hex, 'hex'), '#4f83cc');
+  assert.equal(serializeColor(hex, 'rgb'), 'rgb(79, 131, 204)');
+  assert.match(serializeColor(hex, 'hsl'), /^hsl\(\d+, \d+%, \d+%\)$/);
+  assert.match(serializeColor(hex, 'lch'), /^oklch\(/);
+  // Every emitted form must round-trip through the engine's parser near-losslessly.
+  for (const fmt of ['hex', 'rgb', 'hsl', 'lch'] as const) {
+    const back = colorToHex(serializeColor(hex, fmt));
+    assert.ok(typeof back === 'string' && back.startsWith('#'), `${fmt} → ${serializeColor(hex, fmt)} → ${back}`);
+    const d = (i: number): number => Math.abs(parseInt(back!.slice(i, i + 2), 16) - parseInt(hex.slice(i, i + 2), 16));
+    assert.ok(d(1) <= 2 && d(3) <= 2 && d(5) <= 2, `${fmt} drifted: ${back}`);
+  }
+});
+
+test('serializeColor keeps alpha in every storage format', async () => {
+  const { colorToHex } = await import('@lolly/engine');
+  const { serializeColor } = await import('./color-formats.ts');
+  const hex8 = '#0088ff80';
+  assert.equal(serializeColor(hex8, 'hex'), '#0088ff80');
+  assert.match(serializeColor(hex8, 'rgb'), /^rgba\(0, 136, 255, 0\.50?2?\)$/);
+  assert.match(serializeColor(hex8, 'hsl'), /^hsla\(.+, 0\.50?2?\)$/);
+  assert.match(serializeColor(hex8, 'lch'), /\/ 0\.50?2?\)$/);
+  for (const fmt of ['hex', 'rgb', 'hsl', 'lch'] as const) {
+    const back = colorToHex(serializeColor(hex8, fmt));
+    assert.ok(typeof back === 'string' && back.length === 9, `${fmt} lost alpha: ${back}`);
+  }
+});
+
+test('storageFormatOf detects stored notations and defaults to lch', async () => {
+  const { storageFormatOf } = await import('./color-formats.ts');
+  assert.equal(storageFormatOf('#4f83cc'), 'hex');
+  assert.equal(storageFormatOf('rgb(1, 2, 3)'), 'rgb');
+  assert.equal(storageFormatOf('rgba(1, 2, 3, .5)'), 'rgb');
+  assert.equal(storageFormatOf('hsl(215, 55%, 55%)'), 'hsl');
+  assert.equal(storageFormatOf('oklch(62% 0.11 250)'), 'lch');
+  assert.equal(storageFormatOf('lch(52% 40 260)'), 'lch');
+  assert.equal(storageFormatOf('{color.ramp.primary.5}'), 'lch');
+  assert.equal(storageFormatOf(undefined), 'lch');
+});

@@ -15,7 +15,7 @@
 
 import '../styles/parts/profile.css';   // async CSS chunk (lazy view — not on the landing)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
-import { applyTheme, THEMES } from '../theme.ts';
+import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
 import { playThemeSfx, playSfx } from '../lib/sfx.ts';
 import { staggerReveal } from '../lib/reveal.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
@@ -176,7 +176,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // work is deferred to loadStorage() (run when the section is first expanded).
   const profile = await host.profile.get();
   const fields = ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
-  const currentTheme = (profile as { theme?: string }).theme ?? localStorage.getItem('theme') ?? 'light';
+  // The theme in force right now (applied at boot from the profile; localStorage
+  // is only its FOUC mirror) — seeds the Appearance card's active preview.
+  const activeTheme = currentTheme();
   // The headshot is a user asset; re-resolve it (the stored object URL goes stale
   // across reloads).
   const headshotRef = profile.headshot?.id ? await host.assets.get(profile.headshot!.id).catch(() => null) : null;
@@ -243,18 +245,31 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                 </div>
                 <p class="profile-inline-error" id="headshot-error" style="color:hsl(var(--destructive));font-size:13px;margin:.4rem 0 0" hidden></p>
               </div>
-              <div class="profile-field">
-                <span class="profile-field-label">Theme</span>
-                <div class="segmented-control" id="theme-picker" role="group" aria-label="Theme">
-                  ${THEMES.map(t => `<button type="button" class="segmented-btn" data-theme-value="${t}" aria-pressed="${t === currentTheme}">${escape(t.charAt(0).toUpperCase() + t.slice(1))}</button>`).join('')}
-                </div>
-              </div>
               <div class="profile-field profile-field--sound">
                 ${soundSwitchHtml()}
               </div>
             </aside>
           </div>
         </form>
+      </section>
+
+      <section class="profile-card profile-card--appearance">
+        <h2>Appearance</h2>
+        <p class="profile-appearance-sub">How the app dresses for you — your preference, separate from your brand. Applied instantly and remembered on this device.</p>
+        <div class="profile-theme-grid" data-theme-pick>
+          ${THEMES.map(t => `
+            <button type="button" class="profile-theme${t === activeTheme ? ' is-active' : ''}" data-theme-set="${escape(t)}" data-theme="${escape(t)}" aria-pressed="${t === activeTheme ? 'true' : 'false'}">
+              <div class="profile-theme-name">${escape(THEME_LABELS[t])}${t === 'light' ? '<span class="profile-theme-pill">default</span>' : ''}</div>
+              <div class="profile-theme-dots">
+                <span style="background:hsl(var(--primary))" title="primary"></span>
+                <span style="background:hsl(var(--card))" title="card"></span>
+                <span style="background:hsl(var(--accent))" title="accent"></span>
+                <span style="background:hsl(var(--muted))" title="muted"></span>
+                <span style="background:hsl(var(--foreground))" title="foreground"></span>
+              </div>
+              <div class="profile-theme-sample">Aa</div>
+            </button>`).join('')}
+        </div>
       </section>
 
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
@@ -338,18 +353,28 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
   }
 
-  // Theme picker
-  viewEl.querySelector('#theme-picker')!.addEventListener('click', async e => {
-    const btn = (e.target as Element).closest<HTMLElement>('[data-theme-value]');
+  // Appearance — theme preview cards (moved here from the dashboard). Each preview
+  // applies the theme app-wide immediately (applyTheme mirrors to localStorage +
+  // updates the PWA chrome colour) and persists it to the profile (canonical). The
+  // active preview is flagged; a soft theme cue plays on switch.
+  const themePick = viewEl.querySelector<HTMLElement>('[data-theme-pick]');
+  themePick?.addEventListener('click', async e => {
+    const btn = (e.target as Element).closest<HTMLButtonElement>('[data-theme-set]');
     if (!btn) return;
-    const theme = btn.dataset.themeValue!;
-    viewEl.querySelectorAll<HTMLElement>('[data-theme-value]').forEach(b => {
-      b.setAttribute('aria-pressed', String(b.dataset.themeValue === theme));
+    const next = btn.dataset.themeSet;
+    if (!next || next === currentTheme()) return;
+    applyTheme(next);
+    playThemeSfx(next);
+    // Reflect the new active state across the picker.
+    themePick.querySelectorAll<HTMLButtonElement>('[data-theme-set]').forEach(b => {
+      const on = b.dataset.themeSet === next;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-pressed', String(on));
     });
-    applyTheme(theme);
-    playThemeSfx(theme);
-    const updated = { ...(await host.profile.get()), theme };
-    await host.profile.set!(updated);
+    try {
+      const updated = { ...(await host.profile.get()), theme: next };
+      await host.profile.set?.(updated);
+    } catch { /* preference save is best-effort */ }
   });
 
   // Sound switch — the unified "Sound:" toggle (speaker indicator + sliding switch). Auto-saves

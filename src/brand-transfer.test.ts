@@ -94,6 +94,66 @@ test('round-trip: tokens + fonts + theme land intact on a fresh install', async 
   assert.equal(dst.store.has('user/upload/1'), false); // images stay personal
 });
 
+test('logos round-trip: default keeps flat names, identities get <identity>__<variant>', async () => {
+  const src = await seededHost();
+  // As installLogo writes them: a canonical slot, a labelled custom variant
+  // (both default identity) and a second-identity mark.
+  await src.assets._uploadUserAsset({
+    id: 'user/logo/horizontal-primary', type: 'vector', format: 'svg',
+    blob: new Blob([new Uint8Array([10, 11])], { type: 'image/svg+xml' }),
+    meta: { format: 'svg', variant: 'horizontal-primary', identity: 'default', kind: 'logo' },
+  });
+  await src.assets._uploadUserAsset({
+    id: 'user/logo/crest', type: 'raster', format: 'png',
+    blob: new Blob([new Uint8Array([12, 13])], { type: 'image/png' }),
+    meta: { format: 'png', variant: 'crest', identity: 'default', label: 'Crest mark', kind: 'logo' },
+  });
+  await src.assets._uploadUserAsset({
+    id: 'user/logo/acme/icon', type: 'raster', format: 'png',
+    blob: new Blob([new Uint8Array([14, 15])], { type: 'image/png' }),
+    meta: { format: 'png', variant: 'icon', identity: 'acme', label: 'Acme icon', kind: 'logo' },
+  });
+
+  const { blob, summary } = await exportBrandPack({ host: src, storage: memoryStorage() });
+  assert.equal(summary.logos, 3);
+  const { unzipSync } = await import('fflate');
+  const files = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+  assert.ok(files['logos/horizontal-primary.svg'], 'canonical slot keeps the flat name');
+  assert.ok(files['logos/crest.png'], 'custom default-identity variant keeps the flat name');
+  assert.ok(files['logos/acme__icon.png'], 'second identity is namespaced');
+
+  const dst = memoryHost();
+  const imported = await importBrandPack({ host: dst, storage: memoryStorage() }, await blob.arrayBuffer());
+  assert.equal(imported.logos, 3);
+  assert.equal(imported.skipped, 0, 'logos/ entries are known parts');
+  assert.equal(dst.store.get('user/logo/crest').meta.label, 'Crest mark', 'label travels on the row');
+  const icon = dst.store.get('user/logo/acme/icon');
+  assert.equal(icon.meta.identity, 'acme');
+  assert.deepEqual(new Uint8Array(await icon.blob.arrayBuffer()), new Uint8Array([14, 15]));
+});
+
+test('an old pack (flat logo names, no identity meta) still imports verbatim', async () => {
+  // Hand-built to the pre-identity writer's shape: `logos/<variant>.<ext>`
+  // rows whose meta has no identity/label fields.
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const zipBytes = zipSync({
+    'manifest.json': strToU8(JSON.stringify({ format: BRAND_FORMAT, formatVersion: 1, minReader: 1 })),
+    'logos.json': strToU8(JSON.stringify([{
+      id: 'user/logo/horizontal-primary', format: 'png',
+      file: 'logos/horizontal-primary.png', mime: 'image/png',
+      meta: { format: 'png', variant: 'horizontal-primary', kind: 'logo' },
+    }])),
+    'logos/horizontal-primary.png': bytes,
+  });
+  const dst = memoryHost();
+  const summary = await importBrandPack({ host: dst, storage: memoryStorage() }, zipBytes);
+  assert.equal(summary.logos, 1);
+  assert.equal(summary.skipped, 0);
+  const mark = dst.store.get('user/logo/horizontal-primary');
+  assert.equal(mark.meta.variant, 'horizontal-primary');
+  assert.deepEqual(new Uint8Array(await mark.blob.arrayBuffer()), bytes);
+});
+
 test('a data backup (different format) is refused with a clear message', async () => {
   const zipBytes = zipSync({ 'manifest.json': strToU8(JSON.stringify({ format: 'lolly-backup' })) });
   await assert.rejects(

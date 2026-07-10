@@ -91,6 +91,9 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     // (#/d → #/d?print, or an old #/platform?x redirect) re-mounts and re-applies
     // the open+scroll, instead of being deduped as the same 'dashboard' route.
     : route.name === 'dashboard' ? `dashboard:${route.params ?? ''}`
+    // The studio keys on ?tab= for the same reason — "Manage fonts" (#/start?tab=type)
+    // clicked while already on #/start must switch steps, not dedupe to a no-op.
+    : route.name === 'start'     ? `start:${route.params ?? ''}`
     : route.name;
   if (!opts.force && routeSig === mountedRouteSig) return;
   mountedRouteSig = routeSig;
@@ -222,12 +225,13 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       await mountCatalog(view, host, route.params);
       break;
     }
-    // --- /start: the brand wizard (derive-or-import your tokens). Lazy-loaded —
-    // it statically pulls the engine's derive/token modules, which the gallery
+    // --- /start: the brand studio (set, save, import or export your brand
+    // primitives — step tabs, ?tab=<key> deep-links one). Lazy-loaded — it
+    // statically pulls the engine's derive/token modules, which the gallery
     // cold-load must not pay for. ---
     case 'start': {
       const { mountStart } = await import('./views/start.ts');
-      await mountStart(view, host as unknown as Parameters<typeof mountStart>[1]);
+      await mountStart(view, host as unknown as Parameters<typeof mountStart>[1], route.params ?? '');
       break;
     }
     case 'gallery':

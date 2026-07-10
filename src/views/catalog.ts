@@ -47,7 +47,8 @@ import {
   loadFavouriteAssets, saveFavouriteAssets,
   loadHiddenAssets, saveHiddenAssets,
 } from '../lib/asset-favourites.ts';
-import { storeUserUpload, isPdfUpload, UPLOAD_ACCEPT } from './picker.ts';
+import { mountUploadDropzone } from '../lib/upload-dropzone.ts';
+import type { PickerHost } from './picker.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
 import { exportSwatches, paletteEntriesToSwatches, type SwatchExportFormat } from '../lib/swatch-export.ts';
@@ -829,22 +830,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const colourRow = treatable
       ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">Colour</span>${treatmentSwatchRow(catPhotoTreatment)}</div>`
       : '';
-    // Drag files in or click to browse — a <label> over a visually-hidden file input, so
-    // click-to-open is native and the input stays keyboard-focusable (Enter/Space opens
-    // the OS picker; .cat-dropzone:focus-within draws the ring). A prominent dashed drop
-    // zone: an upload icon in a tinted disc, a bold prompt, and a hint line listing the
-    // filetypes the ingest path ACTUALLY accepts. `.cat-dropzone-text` stays the element
-    // the ingest handler swaps to "Adding…" (wire()). Ingest is wired in wire()
-    // (change/dragover/drop on body).
-    const dropzone = `
-      <label class="cat-dropzone${items.length ? '' : ' cat-dropzone--empty'}" data-dropzone>
-        <input type="file" class="cat-dropzone-input visually-hidden" multiple accept="${UPLOAD_ACCEPT}" aria-label="Upload files to your library">
-        <span class="cat-dropzone-icon" aria-hidden="true">${CAT_ICONS.upload}</span>
-        <span class="cat-dropzone-copy">
-          <span class="cat-dropzone-text">Drag &amp; drop files here, or <span class="cat-dropzone-browse">browse</span></span>
-          <span class="cat-dropzone-hint">Images (PNG, JPG, WEBP, GIF), SVG, PDF &amp; Illustrator, audio (MP3, WAV, OGG, M4A, FLAC), plus video &amp; Lottie</span>
-        </span>
-      </label>`;
+    // Drag files in or click to browse — the shared upload dropzone component
+    // (lib/upload-dropzone.ts, extracted from this view so #/start can mount it too)
+    // renders into this placeholder after every body paint: the innerHTML rebuilds
+    // destroy the previous instance, so mountDropzone() re-mounts it (called from
+    // render()/renderBody()). data-empty grows the zone into the roomier column
+    // layout when it IS the section (no uploads yet).
+    const dropzone = `<div data-dropzone-mount${items.length ? '' : ' data-empty'}></div>`;
     return `<section class="cat-group cat-group--uploads${isCollapsed ? ' is-collapsed' : ''}" data-group="${key}">
       <button type="button" class="cat-group-head" data-cat-toggle="${key}" aria-expanded="${!isCollapsed}">
         <span class="cat-group-chevron">${CHEVRON}</span>
@@ -1184,6 +1176,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     syncBulkBar();
     reapplyTreatment();
     mountLottieThumbs();
+    mountDropzone();
     if (firstPaint) { armViewEnter(viewEl, '.cat-assets, .cat-group--ref'); firstPaint = false; }
   }
 
@@ -1198,6 +1191,27 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     lottieThumbs = body ? autoplayLottieThumbs(body, { isCurrent: () => mounted }) : null;
   }
 
+  // The mounted upload dropzone's teardown, if any (lib/upload-dropzone.ts).
+  let dropzoneDispose: (() => void) | null = null;
+  // (Re)mount the shared upload dropzone into the uploads section's placeholder. Called
+  // after every body (re)render — the innerHTML rebuild orphans the previous instance, so
+  // tear it down first (a mid-ingest re-mount is safe: the component's single-flight
+  // ingest guard is module-level, and an in-flight ingest still delivers its onAdded).
+  // Files ingest through the SAME storeUserUpload path as the asset picker (downscale/
+  // sanitise/credential-preserve/animated-sniff); onAdded reloads so the new tiles land
+  // in "Your uploads".
+  function mountDropzone(): void {
+    dropzoneDispose?.();
+    dropzoneDispose = null;
+    const mount = viewEl.querySelector<HTMLElement>('[data-dropzone-mount]');
+    if (!mount) return;   // no uploads section this paint (a total sync failure)
+    dropzoneDispose = mountUploadDropzone(mount, host as unknown as PickerHost, {
+      onAdded: async () => { if (!mounted) return; await reload(); if (mounted) rerender(); },
+    });
+    // The roomier "this IS the section" layout when there are no uploads yet.
+    mount.querySelector('.updz')?.classList.toggle('updz--empty', mount.hasAttribute('data-empty'));
+  }
+
   function renderBody(): void {
     const body = viewEl.querySelector<HTMLElement>('.catalog-body');
     if (!body) { render(); return; }
@@ -1207,6 +1221,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     syncBulkBar();
     reapplyTreatment();
     mountLottieThumbs();
+    mountDropzone();
   }
 
   // Re-render from state, preserving the document scroll position so an in-page action
@@ -2583,83 +2598,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     });
 
     // ── Uploads drop area ────────────────────────────────────────────────────────
-    // Ingest files through the SAME storeUserUpload path as the asset picker (downscale/
-    // sanitise/credential-preserve/animated-sniff), then reload so the new tiles land in
-    // "Your uploads". Sequential on purpose: parallel ingest of a big multi-drop would
-    // spike memory (each raster decode holds a full bitmap).
-    let ingesting = false;
-    async function ingestFiles(files: File[]): Promise<void> {
-      if (!files.length || ingesting) return;
-      ingesting = true;
-      const zone = viewEl.querySelector<HTMLElement>('[data-dropzone]');
-      const textEl = zone?.querySelector<HTMLElement>('.cat-dropzone-text');
-      const idleText = textEl?.innerHTML ?? '';
-      zone?.classList.add('is-busy');
-      if (textEl) textEl.textContent = files.length === 1 ? 'Adding…' : `Adding ${files.length} files…`;
-      let stored = 0;
-      for (const file of files) {
-        try {
-          // A PDF/.ai converts page(s) to SVG assets — multi-page docs ask which pages
-          // (or all) via the shared picker dialog. Lazy chunk: pdf-lib loads only when
-          // a PDF actually arrives. Cancelling the dialog stores nothing for that file.
-          if (isPdfUpload(file)) {
-            const { ingestPdfAsSvgAssets } = await import('./pdf-import.ts');
-            const refs = await ingestPdfAsSvgAssets(host, file, {
-              mode: 'multi',
-              warn: (m) => announce(m, { assertive: true }),
-            });
-            stored += refs.length;
-            continue;
-          }
-          await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file);
-          stored++;
-        } catch (err) {
-          host.log('error', 'Upload failed', { file: file.name, error: String(err) });
-          // Cap/quota errors carry a user-ready message; prefix only the rest.
-          announce((err as { code?: unknown }).code ? (err as Error).message : `Upload failed: ${(err as Error).message}`, { assertive: true });
-        }
-      }
-      ingesting = false;
-      if (!mounted) return;
-      if (!stored) {
-        // Nothing landed — restore the idle drop area (no re-render is coming).
-        zone?.classList.remove('is-busy');
-        if (textEl) textEl.innerHTML = idleText;
-        return;
-      }
-      playSfx('drop');
-      announce(`Added ${stored} file${stored === 1 ? '' : 's'} to your uploads.`);
-      await reload();
-      if (mounted) rerender();
-    }
-    body.addEventListener('change', (e) => {
-      const input = e.target;
-      if (!(input instanceof HTMLInputElement) || !input.classList.contains('cat-dropzone-input')) return;
-      const files = [...(input.files ?? [])];
-      input.value = ''; // allow re-selecting the same file after an error
-      void ingestFiles(files);
-    });
-    // Drag-and-drop onto the zone. dragover MUST preventDefault or the drop never fires;
-    // only file drags count (dragging a tile's image around shouldn't light it up).
-    body.addEventListener('dragover', (e) => {
-      const zone = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-dropzone]') : null;
-      if (!zone || ingesting || !e.dataTransfer?.types.includes('Files')) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-      zone.classList.add('is-dragover');
-    });
-    body.addEventListener('dragleave', (e) => {
-      const zone = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-dropzone]') : null;
-      // relatedTarget still inside the zone = moving between its children, not a leave.
-      if (zone && !(e.relatedTarget instanceof Node && zone.contains(e.relatedTarget))) zone.classList.remove('is-dragover');
-    });
-    body.addEventListener('drop', (e) => {
-      const zone = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-dropzone]') : null;
-      if (!zone || !e.dataTransfer?.files.length) return;
-      e.preventDefault();
-      zone.classList.remove('is-dragover');
-      void ingestFiles([...e.dataTransfer.files]);
-    });
+    // The dropzone + its ingest loop live in the shared lib/upload-dropzone.ts component,
+    // mounted per body paint by mountDropzone() (its listeners sit on the zone itself,
+    // not delegated here — the mount is re-established after every innerHTML rebuild).
 
     // Capture-phase broken-image fallback: a grid thumbnail whose bytes fail to load (a
     // stale/missing derivative) is swapped for the same cat-thumb-stub the placeholder path

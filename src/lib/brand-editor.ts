@@ -1,39 +1,45 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Brand editor — the interactive brand-configuration surface embedded in the
- * Dashboard's "Your brand" section (mountBrandEditor). It is the "adjust"
- * counterpart to the first-run #/start wizard: colour, palette AND fonts are set
- * here, in place, instead of bouncing to the wizard (colours) or Profile (fonts).
+ * Brand studio — the ONE place brand primitives are created, edited, saved,
+ * imported and exported. Mounted exclusively by #/start (the Dashboard's
+ * Design-system tab is a read-only rendering of the result; user preferences
+ * like the app theme live on #/profile — that separation is the whole point).
  *
- * Four panels, all persisting to the one `user/tokens/brand` install via the
- * bridge's single write chokepoint (installUserTokens → bust → the next
- * get()/colors()/resolve() re-reads) — except Colour, which is DRAFT-until-saved
- * (see below):
+ * The studio renders five tab panels, each wrapped in `[data-be-tab-panel]`;
+ * the host view (start.ts) drives visibility by setting `data-active-tab` on
+ * the editor root — every panel stays mounted (and wired) whichever tab shows:
  *
- *  1. Fonts — the Google-Fonts manager (user-fonts.ts), the same primitives
- *     Profile uses, so a font added here is a font added everywhere.
- *  2. Colour — the derive controls (primary + scheme / surface / contrast) with a
- *     live ramp + specimen preview (the engine's deriveBrandTokens, same as the
- *     wizard), plus a selectable step in the neutral/secondary ramps. Every change
- *     here — the primary picker, a ramp-step pick — live-applies the chrome accent
- *     (--primary/--primary-foreground/--ring, brand-vars.ts) app-wide WITHOUT
- *     installing anything. "Use this colour" re-derives the palette into the
- *     in-memory doc (still just a draft); a separate "Save colour" action is the
- *     only thing in this panel that actually persists.
- *  3. Palette — every colour the brand carries as an editable tile: recolour any
- *     swatch, rename it, delete the ones you added, and add your own. Edits are
- *     overrides written straight onto the doc (installed, or the Colour panel's
- *     unsaved draft), so they survive until you re-derive. Ramp + role swatches
- *     are structural (recolour/rename only); spectrum + custom swatches are
- *     add/delete too. These edits persist immediately, same as ever.
- *  4. Share — export/import a brand pack.
+ *  1. logos     — the mark manager (brand-logos.ts): the canonical orientation
+ *                 × treatment matrix, user-named custom marks ("icon", "crest"),
+ *                 and additional logo identities. An SVG upload feeds the Colour
+ *                 tab's "found in your logo" primary suggestion.
+ *  2. color     — the derive controls (primary + scheme / surface / contrast)
+ *                 with live preview (DRAFT-until-saved: only "Save colour"
+ *                 persists), the harmony generator, the palette (every swatch an
+ *                 editable tile + the OKLCH wheel) and optional gradient tokens.
+ *  3. type      — the Google-Fonts manager (user-fonts.ts) plus the two type
+ *                 roles the chrome reads (font.brand / font.mono) and a live
+ *                 specimen, so type is chosen without colour noise.
+ *  4. tokens    — the corner radius plus every other non-colour primitive
+ *                 (spacing, sizing, stroke, opacity, rotation, numbers, shadows
+ *                 — lib/token-studio.ts).
+ *  5. catalogue — brand asset uploads, sorted the same way the Catalogue view
+ *                 sorts them (vector / image / audio / motion).
+ *
+ * Everything persists to the one `user/tokens/brand` install via the bridge's
+ * single write chokepoint (installUserTokens → bust → the next get()/colors()/
+ * resolve() re-reads) — except the Colour panel's derive, which is draft-until-
+ * saved. Palette/font/logo/token edits persist immediately, same as ever.
+ * Import/export of the whole brand pack is exposed on the handle
+ * (exportPack/importPack) so the host view owns those buttons' placement.
  *
  * A LOCKED build (host.tokens.isLocked()) exposes none of this — the caller
  * renders a read-only note instead. Everything is best-effort and DOM-guarded:
  * a detached editor (route changed mid-op) never writes to a dead node.
  */
 
-import { deriveBrandTokens, createTokenSet, colorToHex, contrastRatio, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
+import '../styles/parts/brand-studio.css'; // every .be-* rule — rides this module's lazy chunk
+import { deriveBrandTokens, createTokenSet, colorToHex, contrastRatio, extractSvgColors, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
 import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
 import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
@@ -41,30 +47,33 @@ import type { HostV1, TokenSet } from '../../../../engine/src/bridge/host-v1.ts'
 import type { WebTokensAPI } from '../bridge/tokens.ts';
 import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
-  isRec, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
+  isRec, prettify, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
 } from './brand-doc.ts';
 import type { BrandSwatch, PrintLock } from './brand-doc.ts';
 import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
 import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
-import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex } from '../brand-vars.ts';
+import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex, brandRadiusValue } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
-import { COLOR_FORMATS, formatColor, parseColor } from './color-formats.ts';
-import type { ColorFormat } from './color-formats.ts';
+import { COLOR_FORMATS, STORAGE_FORMATS, formatColor, parseColor, serializeColor, storageFormatOf } from './color-formats.ts';
+import type { ColorFormat, StorageFormat } from './color-formats.ts';
 import {
   renderBrandWheel, wireBrandWheel, updateWheelDot, oklchToStored, oklchHex,
 } from './palette-wheel.ts';
 import type { WheelDot } from './palette-wheel.ts';
 import type { PaletteEntry } from '../palette.ts';
 import {
-  listUserFonts, installGoogleFont, setPrimaryFont, removeUserFont, primaryFontFamily,
+  listUserFonts, installGoogleFont, setPrimaryFont, setMonoFont, removeUserFont,
+  primaryFontFamily, monoFontFamily, setBrandRadius,
 } from '../user-fonts.ts';
 import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
 import {
-  LOGO_ORIENTATIONS, LOGO_TREATMENTS, ORIENTATION_META, TREATMENT_META,
+  LOGO_ORIENTATIONS, LOGO_TREATMENTS, ORIENTATION_META, TREATMENT_META, LOGO_SLUG_RE,
   splitVariant, variantLabel, listLogos, installLogo, removeLogo,
 } from './brand-logos.ts';
 import type { LogoVariant, LogoSlot } from './brand-logos.ts';
+import { mountTokensPanel, mountGradientsPanel, mountCataloguePanel } from './brand-studio-tabs.ts';
+import { STUDIO_GROUPS } from './token-studio.ts';
 import { POPULAR_FAMILIES } from './google-fonts.ts';
 import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
 import type { BrandTransferHost } from '../brand-transfer.ts';
@@ -372,6 +381,91 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   return { render };
 }
 
+// ── Print substitutes, compact (the swatch popover's folded variant) ──────────
+// Same PrintLockCtx contract as mountPrintLock, different clothes: two checkbox
+// rows ("check on" a CMYK build / a named spot ink) sized for the popover, where
+// the primary panel's fuller segmented control would crowd the card. Checking
+// CMYK seeds from the auto conversion so a lock never sits in a limbo state;
+// checking Spot opens the name field and commits once a name is typed.
+
+function printSubstHtml(): string {
+  return `
+    <div class="be-ps" data-be-ps>
+      <label class="be-ps-row">
+        <input type="checkbox" data-be-ps-on="cmyk">
+        <span class="be-ps-key">CMYK</span>
+        <code class="be-ps-val" data-be-ps-val="cmyk"></code>
+      </label>
+      <div class="be-ps-body be-cmyk-inputs" data-be-ps-body="cmyk" hidden>
+        ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-ps-c="${i}" aria-label="${l === 'K' ? 'Black' : l === 'C' ? 'Cyan' : l === 'M' ? 'Magenta' : 'Yellow'} %"></label>`).join('')}
+      </div>
+      <label class="be-ps-row">
+        <input type="checkbox" data-be-ps-on="spot">
+        <span class="be-ps-key">Spot</span>
+        <code class="be-ps-val" data-be-ps-val="spot"></code>
+      </label>
+      <div class="be-ps-body be-ps-spot" data-be-ps-body="spot" hidden>
+        <label class="be-lock-field"><span>Name</span><input type="text" data-be-ps-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
+        <label class="be-lock-field"><span>Book <em>(optional)</em></span><input type="text" data-be-ps-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
+      </div>
+    </div>`;
+}
+
+function mountPrintSubst(mount: HTMLElement, ctx: PrintLockCtx): { render: () => void } {
+  mount.innerHTML = printSubstHtml();
+  const on = (k: string): HTMLInputElement | null => mount.querySelector<HTMLInputElement>(`[data-be-ps-on="${k}"]`);
+  const val = (k: string): HTMLElement | null => mount.querySelector<HTMLElement>(`[data-be-ps-val="${k}"]`);
+  const body = (k: string): HTMLElement | null => mount.querySelector<HTMLElement>(`[data-be-ps-body="${k}"]`);
+  const cInputs = Array.from(mount.querySelectorAll<HTMLInputElement>('[data-be-ps-c]'));
+  const nameInput = mount.querySelector<HTMLInputElement>('[data-be-ps-name]');
+  const bookInput = mount.querySelector<HTMLInputElement>('[data-be-ps-book]');
+
+  const cmykFromInputs = (): [number, number, number, number] =>
+    cInputs.map(i => Math.min(100, Math.max(0, Math.round(parseFloat(i.value) || 0)))) as [number, number, number, number];
+
+  on('cmyk')?.addEventListener('change', () => {
+    ctx.setCmyk(on('cmyk')!.checked ? autoCmykOf(ctx.hex()) : null);
+    render();
+  });
+  cInputs.forEach(inp => inp.addEventListener('input', () => { ctx.setCmyk(cmykFromInputs()); renderCmyk(); }));
+
+  on('spot')?.addEventListener('change', () => {
+    if (!on('spot')!.checked) { ctx.setSpot(null); render(); return; }
+    // Opening only — a spot lock needs a name before anything commits.
+    if (body('spot')) body('spot')!.hidden = false;
+    nameInput?.focus();
+  });
+  const commitSpot = (): void => {
+    const name = nameInput?.value.trim();
+    if (!name) return;
+    const book = bookInput?.value.trim();
+    ctx.setSpot({ name, ...(book ? { book } : {}) });
+    renderSpot();
+  };
+  nameInput?.addEventListener('input', commitSpot);
+  bookInput?.addEventListener('input', () => { if (nameInput?.value.trim()) commitSpot(); });
+
+  function renderCmyk(): void {
+    const cmyk = ctx.getCmyk();
+    const eff = cmyk ?? autoCmykOf(ctx.hex());
+    if (val('cmyk')) val('cmyk')!.textContent = cmyk ? `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}` : 'auto';
+    if (on('cmyk')) on('cmyk')!.checked = !!cmyk;
+    if (body('cmyk')) body('cmyk')!.hidden = !cmyk;
+    cInputs.forEach((inp, i) => { if (document.activeElement !== inp) inp.value = String(eff[i]); });
+  }
+  function renderSpot(): void {
+    const spot = ctx.getSpot();
+    if (val('spot')) val('spot')!.textContent = spot ? spot.name : 'none';
+    if (on('spot')) on('spot')!.checked = !!spot;
+    if (body('spot')) body('spot')!.hidden = !spot && document.activeElement !== nameInput && document.activeElement !== bookInput;
+    if (nameInput && document.activeElement !== nameInput) nameInput.value = spot?.name ?? '';
+    if (bookInput && document.activeElement !== bookInput) bookInput.value = spot?.book ?? '';
+  }
+  function render(): void { renderCmyk(); renderSpot(); }
+  render();
+  return { render };
+}
+
 // ── Swatch tile + palette grid ────────────────────────────────────────────────
 
 function tileHtml(s: BrandSwatch, idx: number): string {
@@ -427,16 +521,47 @@ function paletteHtml(swatches: BrandSwatch[]): string {
 // ── Mount ─────────────────────────────────────────────────────────────────────
 
 /**
- * Render the brand editor into `root` and wire it. Returns a teardown that stops
+ * Render the brand studio into `root` and wire it. Returns a teardown that stops
  * the (font/preview) listeners. Locked builds render a read-only note and no-op.
  */
-/** teardown: unmount. saveDraft: commit the Colour panel's pending, unsaved
- *  derive (a no-op when there's nothing dirty) — for a host that wants an
- *  explicit "finish up" action instead of leaving an unsaved draft to be
- *  silently discarded on teardown (see the bottom of this function). */
-export interface BrandEditorHandle { teardown: () => void; saveDraft: () => void }
+/** The five step tabs the studio renders — the host view's tab bar drives which
+ *  one shows by setting `data-active-tab` on the editor root. */
+export type BrandTabKey = 'logos' | 'color' | 'type' | 'tokens' | 'catalogue';
+export const BRAND_TABS: ReadonlyArray<{ id: BrandTabKey; label: string }> = [
+  { id: 'logos', label: 'Logos' },
+  { id: 'color', label: 'Colours' },
+  { id: 'type', label: 'Type' },
+  { id: 'tokens', label: 'Tokens' },
+  { id: 'catalogue', label: 'Catalogue' },
+];
 
-export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Promise<BrandEditorHandle> {
+export interface BrandEditorOptions {
+  /** Fired after any brand edit lands (persisted or drafted), with the tab it
+   *  came from — the host's "Save & continue" appearance + next-tab nudge. */
+  onChange?: (tab: BrandTabKey) => void;
+}
+
+/** teardown: unmount. saveDraft: commit the Colour panel's pending, unsaved
+ *  derive (a no-op when there's nothing dirty). isDirty: whether such a draft
+ *  is pending. exportPack/importPack: the brand-file share pair, exposed here
+ *  so the host view owns the buttons' placement (errors propagate — the caller
+ *  shows them). */
+export interface BrandEditorHandle {
+  teardown: () => void;
+  saveDraft: () => void;
+  isDirty: () => boolean;
+  exportPack: () => Promise<{ filename: string }>;
+  importPack: (file: File) => Promise<void>;
+  /** Re-read the installed doc and repaint every panel — for a host that
+   *  installed tokens through its own path (JSON/SVG import) underneath us. */
+  reload: () => Promise<void>;
+  /** Close any floating editor UI (the swatch popover) — the host calls this
+   *  on tab switches, where an open popover would otherwise outlive the tile
+   *  it was anchored to (the popover sits outside the tab panels). */
+  closeOverlays: () => void;
+}
+
+export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts: BrandEditorOptions = {}): Promise<BrandEditorHandle> {
   const tokens = host.tokens as unknown as WebTokensAPI | undefined;
   const fontsHost = host as unknown as UserFontsHost;
   const transferHost = { host: host as unknown as BrandTransferHost, storage: localStorage };
@@ -445,7 +570,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   try { locked = !!(await tokens?.isLocked?.()); } catch { /* treat as unlocked */ }
   if (locked) {
     root.innerHTML = `<p class="be-locked">This build ships with a fixed brand — its colours, fonts and tokens are what the whole app, your tools and every export wear. Brand editing is turned off here.</p>`;
-    return { teardown: () => {}, saveDraft: () => {} };
+    return {
+      teardown: () => {}, saveDraft: () => {}, isDirty: () => false,
+      exportPack: () => Promise.reject(new Error('This brand is fixed — there is nothing of yours to export.')),
+      importPack: () => Promise.reject(new Error('This brand is fixed — imports are turned off.')),
+      reload: () => Promise.resolve(),
+      closeOverlays: () => {},
+    };
   }
 
   // The document we edit: the installed brand if any, else a fresh derive from
@@ -516,13 +647,24 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
 
   root.innerHTML = `
     <div class="be" data-brand-editor>
+      <div class="be-tab" data-be-tab-panel="logos">
+        <div class="be-panel be-logos">
+          <div class="be-panel-head"><h3 class="be-panel-title">Logos</h3>
+            <p class="be-panel-sub">Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way — an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.</p></div>
+          <div class="be-logo-grid" data-be-logos></div>
+          <p class="be-err" data-be-logo-err hidden></p>
+        </div>
+      </div>
+
+      <div class="be-tab" data-be-tab-panel="color">
       <div class="be-panel be-colour">
         <div class="be-panel-head"><h3 class="be-panel-title">Colour</h3>
           <p class="be-panel-sub">Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette below — <strong>Save colour</strong> is what actually keeps it.</p></div>
+        <div class="be-suggest" data-be-suggest hidden></div>
         <div class="be-derive">
           <div class="be-colorpick">
             <span class="be-field-label">Primary colour</span>
-            ${colorFieldHtml('be-primary', primary, { inline: true, modes: true })}
+            <div data-be-primary-field>${colorFieldHtml('be-primary', primary, { inline: true, modes: true })}</div>
             <!-- Screen / print: the primary is one colour; Lolly shows its on-screen
                  (sRGB) form and auto-converts it for print — UNLESS the shared print
                  lock below pins an exact CMYK anchor or a named spot colour instead. -->
@@ -567,25 +709,6 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
         </div>
       </div>
 
-      <div class="be-panel be-fonts">
-        <div class="be-panel-head"><h3 class="be-panel-title">Fonts</h3>
-          <p class="be-panel-sub">Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>.</p></div>
-        <ul class="be-font-list" data-be-fonts role="list"></ul>
-        <form class="be-font-add" data-be-font-add>
-          <input type="text" data-be-font-input list="be-google-fonts" placeholder="Search Google Fonts — Inter, Fraunces, Space Grotesk…" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Google Fonts family">
-          <datalist id="be-google-fonts">${POPULAR_FAMILIES.map(f => `<option value="${escape(f)}"></option>`).join('')}</datalist>
-          <button type="submit" class="be-btn" data-be-font-btn>Add font</button>
-        </form>
-        <p class="be-err" data-be-font-err hidden></p>
-      </div>
-
-      <div class="be-panel be-logos">
-        <div class="be-panel-head"><h3 class="be-panel-title">Logo</h3>
-          <p class="be-panel-sub">Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds). Every slot is optional and independent. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.</p></div>
-        <div class="be-logo-grid" data-be-logos></div>
-        <p class="be-err" data-be-logo-err hidden></p>
-      </div>
-
       <div class="be-panel be-palette">
         <div class="be-panel-head"><h3 class="be-panel-title">Palette</h3>
           <p class="be-panel-sub">Every colour your brand carries — as a list, or on the wheel (angle = hue, distance out = chroma). Click a swatch to recolour or rename it, drag a dot to recolour it, click empty space on the wheel to add one. Changes flow to every picker, tool and export.</p></div>
@@ -609,41 +732,83 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
         </div>
       </div>
 
-      <div class="be-panel be-share">
-        <div class="be-panel-head"><h3 class="be-panel-title">Share</h3>
-          <p class="be-panel-sub">One file with your tokens, fonts, logos and theme — send it to anyone and their Lolly wears your brand.</p></div>
-        <div class="be-share-row">
-          <button type="button" class="be-btn" data-be-export data-sfx="whoosh">Export brand file</button>
-          <button type="button" class="be-btn" data-be-import>Load a brand file…</button>
-          <input type="file" data-be-import-file accept=".zip,application/zip" hidden>
-        </div>
-        <p class="be-err" data-be-share-err hidden></p>
+      <div class="be-panel be-gradients" data-be-grads-mount></div>
       </div>
 
-      <!-- Swatch editor popover (shared; positioned under the clicked tile) -->
+      <div class="be-tab" data-be-tab-panel="type">
+      <div class="be-panel be-fonts">
+        <div class="be-panel-head"><h3 class="be-panel-title">Fonts</h3>
+          <p class="be-panel-sub">Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>; another can serve as your <strong>code</strong> face.</p></div>
+        <ul class="be-font-list" data-be-fonts role="list"></ul>
+        <form class="be-font-add" data-be-font-add>
+          <input type="text" data-be-font-input list="be-google-fonts" placeholder="Search Google Fonts — Inter, Fraunces, Space Grotesk…" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Google Fonts family">
+          <datalist id="be-google-fonts">${POPULAR_FAMILIES.map(f => `<option value="${escape(f)}"></option>`).join('')}</datalist>
+          <button type="submit" class="be-btn" data-be-font-btn>Add font</button>
+        </form>
+        <p class="be-err" data-be-font-err hidden></p>
+      </div>
+
+      <div class="be-panel be-typeroles">
+        <div class="be-panel-head"><h3 class="be-panel-title">Type roles</h3>
+          <p class="be-panel-sub">What each face is <em>for</em> — the roles tools and the app read. Headings, body and UI wear the primary; code and data wear the mono face.</p></div>
+        <div class="be-specimen" data-be-specimen aria-live="off"></div>
+      </div>
+      </div>
+
+      <div class="be-tab" data-be-tab-panel="tokens">
+      <div class="be-panel be-radius-panel">
+        <div class="be-panel-head"><h3 class="be-panel-title">Rounded corners</h3>
+          <p class="be-panel-sub">One radius token — cards, buttons and panels across the app (and the tools that opt in) follow it.</p></div>
+        <div class="brand-radius-row">
+          <span class="brand-radius-preview" data-be-radius-preview aria-hidden="true"></span>
+          <input type="range" class="brand-radius-slider" data-be-radius-slider min="0" max="1.5" step="0.05" aria-label="Corner radius">
+          <span class="brand-radius-value" data-be-radius-value></span>
+        </div>
+        <p class="be-err" data-be-radius-err role="alert" hidden></p>
+      </div>
+      <div class="be-panel be-tokens" data-be-tokens-mount></div>
+      </div>
+
+      <div class="be-tab" data-be-tab-panel="catalogue">
+      <div class="be-panel be-cat" data-be-cat-mount></div>
+      </div>
+
+      <!-- Swatch editor popover (shared; positioned under the clicked tile).
+           Compact by design: identity row up top, the picker + value entry in a
+           scrolling middle, print substitutes folded, Delete/Save pinned to a
+           sticky footer — the two actions never scroll away. -->
       <div class="be-editor" data-be-editor hidden>
         <div class="be-editor-card" role="dialog" aria-label="Edit swatch">
-          <div class="be-editor-head">
-            <span class="be-editor-headlabel">Edit swatch</span>
-            <span class="be-swatch-lock be-editor-lockbadge" data-be-editor-lockbadge hidden>LOCK</span>
-          </div>
-          <div class="be-editor-field"><span class="be-field-label">Colour</span><div data-be-editor-color></div></div>
-          <div class="be-editor-field be-fmt">
-            <span class="be-field-label">Set by value</span>
-            <div class="be-fmt-row">
-              <select class="be-fmt-sel" data-be-fmt-sel aria-label="Colour space">
-                ${COLOR_FORMATS.map(f => `<option value="${f.id}">${escape(f.label)}</option>`).join('')}
-              </select>
-              <input type="text" class="be-fmt-input" data-be-fmt-input autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Colour value">
+          <div class="be-editor-scroll">
+            <div class="be-editor-id">
+              <span class="be-editor-chip" data-be-editor-chip aria-hidden="true"></span>
+              <input type="text" class="be-editor-name" data-be-editor-name autocomplete="off" aria-label="Swatch name">
+              <span class="be-swatch-lock be-editor-lockbadge" data-be-editor-lockbadge hidden>LOCK</span>
             </div>
-            <code class="be-fmt-out" data-be-fmt-out aria-live="polite"></code>
+            <div class="be-editor-field"><div data-be-editor-color></div></div>
+            <div class="be-editor-field be-fmt">
+              <div class="be-fmt-row">
+                <select class="be-fmt-sel" data-be-fmt-sel aria-label="Colour space">
+                  ${COLOR_FORMATS.map(f => `<option value="${f.id}">${escape(f.label)}</option>`).join('')}
+                </select>
+                <input type="text" class="be-fmt-input" data-be-fmt-input autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Colour value">
+              </div>
+              <code class="be-fmt-out" data-be-fmt-out aria-live="polite"></code>
+            </div>
+            <div class="be-editor-field be-stored" data-be-stored-row>
+              <span class="be-stored-label" id="be-stored-label">Stored as</span>
+              <div class="be-stored-seg" role="group" aria-labelledby="be-stored-label" data-be-stored>
+                ${STORAGE_FORMATS.map(f => `<button type="button" data-store-fmt="${f.id}" aria-pressed="false">${escape(f.label)}</button>`).join('')}
+              </div>
+            </div>
+            <details class="be-subst-details" data-be-subst-details>
+              <summary><span class="be-subst-details-label">Print substitutes</span><span class="be-subst-chips" data-be-subst-chips></span></summary>
+              <div data-be-subst-mount></div>
+            </details>
           </div>
-          <label class="be-editor-field"><span class="be-field-label">Name</span>
-            <input type="text" class="be-editor-name" data-be-editor-name autocomplete="off"></label>
-          <div class="be-editor-field" data-be-lock-mount="swatch"></div>
           <div class="be-editor-actions">
             <button type="button" class="be-editor-del" data-be-editor-del hidden>Delete</button>
-            <button type="button" class="be-btn be-editor-done" data-be-editor-done>Done</button>
+            <button type="button" class="be-cta be-editor-done" data-be-editor-done>Save</button>
           </div>
         </div>
       </div>
@@ -715,13 +880,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const deriveBtn = $('[data-be-derive]') as HTMLButtonElement | null;
   const setDeriveActive = (v: boolean): void => { deriveBtn?.classList.toggle('is-active', v); };
 
+  /** Tell the host view a brand edit just landed on `tab` (Save-&-continue
+   *  appearance + next-tab nudge). Best-effort — a throwing listener must never
+   *  break an edit. */
+  const notify = (tab: BrandTabKey): void => { try { opts.onChange?.(tab); } catch { /* host's problem */ } };
+
   /**
    * Push the edited doc to the install (debounced) + refresh chrome & pickers.
-   * Also clears the Save-colour dirty flag — see setDirty above.
+   * Also clears the Save-colour dirty flag — see setDirty above. Every caller
+   * is a Colour-tab surface (palette tiles, wheel, locks, generator), so this
+   * is also the one place that flags colour-tab activity to the host.
    */
   const persist = (immediate = false): void => {
     clearTimeout(saveTimer);
     setDirty(false);
+    notify('color');
     setDeriveActive(false); // saved — nothing pending to apply
     const run = async (): Promise<void> => {
       try {
@@ -751,6 +924,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     applyDraftChrome(next);
     broadcastDraft(next);
     setDeriveActive(true); // a derive input changed → invite the user to apply it
+    // Deliberately NO notify() here: a preview-only change isn't saveable yet
+    // (saveDraft() would no-op), so surfacing the host's "Save & continue" now
+    // would be a lie — the glowing "Use this colour" CTA is the honest next step.
   };
   // Shades slider — how many divisions each ramp carries. Re-derives live; the
   // neutral/secondary step picks re-centre on the new anchor (and clamp in range).
@@ -763,18 +939,33 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     secondaryStep = Math.min(secondaryStep, steps);
     renderPreview();
   });
-  wireColorField(root, {
-    onChange: (id, value) => {
-      if (id !== 'be-primary') return;
-      const raw = typeof value === 'string' ? value : value.value;
-      if (!raw || raw === 'transparent') return;
-      primary = /^#[0-9a-fA-F]{8}$/.test(raw) ? raw.slice(0, 7) : raw;
-      renderPreview();
-      renderScreen();
-      primaryLock?.render();
-      renderGenerator();
-    },
-  });
+  const onPrimaryFieldChange = (id: string, value: string | { value: string }): void => {
+    if (id !== 'be-primary') return;
+    const raw = typeof value === 'string' ? value : value.value;
+    if (!raw || raw === 'transparent') return;
+    primary = /^#[0-9a-fA-F]{8}$/.test(raw) ? raw.slice(0, 7) : raw;
+    renderPreview();
+    renderScreen();
+    primaryLock?.render();
+    renderGenerator();
+  };
+  wireColorField(root, { onChange: onPrimaryFieldChange });
+  /** Programmatically move the primary (the logo-colour pathway): re-seed the
+   *  visual field (fresh render + wire — no setter exists on the component) and
+   *  run the same fan-out a manual pick runs. */
+  const setPrimaryTo = (hex: string): void => {
+    primary = hex;
+    const wrap = $('[data-be-primary-field]') as HTMLElement | null;
+    if (wrap) {
+      wrap.innerHTML = colorFieldHtml('be-primary', hex, { inline: true, modes: true });
+      wireColorField(wrap, { onChange: onPrimaryFieldChange });
+      refreshSwatches(wrap);
+    }
+    renderPreview();
+    renderScreen();
+    primaryLock?.render();
+    renderGenerator();
+  };
 
   /** The current primary as a `#`-prefixed hex (shared by the generator + the
    *  screen/print readout below). */
@@ -830,7 +1021,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-add-hex]'); if (!btn || btn.disabled) return;
     const hex = btn.dataset.addHex!, name = btn.dataset.addName || nameColor(hex);
     if (isInPalette(hex)) return;
-    addSwatch(doc, 'spectrum', name, hex);
+    addSwatch(doc, 'spectrum', name, serializeColor(hex, 'lch')); // LCH — the storage default
     repaintPalette();       // refreshes swatches + picker + wheel + (via hook) the generator
     persist(true);          // officiate: the accent is now part of the brand
     playSfx('click');
@@ -872,6 +1063,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       const path = primaryAnchorPath(doc);
       if (path) setSwatchCmykLock(doc, path, cmyk); // rides on the current draft; Save persists it
       setDirty(true);
+      notify('color');
       repaintPalette(); // same swatch is a tile in the Palette panel — keep its lock badge in sync
     },
     getSpot: () => primaryPrintLock()?.spot ?? null,
@@ -879,6 +1071,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       const path = primaryAnchorPath(doc);
       if (path) setSwatchSpotLock(doc, path, spot);
       setDirty(true);
+      notify('color');
       repaintPalette();
     },
   }) : null;
@@ -908,13 +1101,25 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const p = priorLock ? primaryAnchorPath(next) : null;
     if (p && priorLock?.cmyk) setSwatchCmykLock(next, p, priorLock.cmyk); // ramp rebuilt → re-pin the print lock
     if (p && priorLock?.spot) setSwatchSpotLock(next, p, priorLock.spot);
+    // Deriving only rebuilds COLOUR — everything else the doc carries (the
+    // studio's spacing/shadows/gradients, the font roles, the logos' asset
+    // tokens, shape.radius) survives it, same precedent as the print lock.
+    // deriveBrandTokens never emits these groups, so a straight carry is safe.
+    {
+      const cur = isRec(doc) ? doc : {};
+      const srcBase = (isRec(cur.base) ? cur.base : cur) as Record<string, unknown>;
+      const dstBase = (isRec(next.base) ? next.base : next) as Record<string, unknown>;
+      for (const g of [...STUDIO_GROUPS, 'font', 'asset', 'shape']) {
+        if (dstBase[g] === undefined && isRec(srcBase[g])) dstBase[g] = structuredClone(srcBase[g]);
+      }
+    }
     const ok = swatches.some(s => s.kind === 'custom')
       ? await confirmDialog({ title: 'Re-derive the palette?', message: 'This rebuilds every swatch from your colour and drops the custom swatches you added.', confirmLabel: 'Re-derive' })
       : true;
     if (!ok || !root.isConnected) return;
     // Commits into the in-memory draft only — no persist() here; Save colour
     // (below) is the only thing in this panel that writes to storage.
-    doc = next; repaintPalette(); applyDraftChrome(doc); broadcastDraft(doc); setDirty(true);
+    doc = next; repaintPalette(); applyDraftChrome(doc); broadcastDraft(doc); setDirty(true); notify('color');
     setDeriveActive(false); // applied — the button rests until the next change
     playSfx('click');
     announce('Palette re-derived from your colour — click Save colour to keep it');
@@ -928,12 +1133,38 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   // The popover carries TWO ways to set a colour that stay in lock-step: the
   // visual colour field, and a "Set by value" row (Hex / RGB / RGBA / OKLCH /
   // CMYK — see color-formats.ts) that lets a user type an exact value in any
-  // space and extrapolates the rest. Both funnel through applyEditedHex.
+  // space and extrapolates the rest. Both funnel through applyEditedHex, which
+  // WRITES the doc in the swatch's storage format (the "Stored as" toggle —
+  // LCH by default, the notation already in the doc for older edits).
   const fmtSel = editorEl?.querySelector<HTMLSelectElement>('[data-be-fmt-sel]') ?? null;
   const fmtInput = editorEl?.querySelector<HTMLInputElement>('[data-be-fmt-input]') ?? null;
   const fmtOut = editorEl?.querySelector<HTMLElement>('[data-be-fmt-out]') ?? null;
   const editorLockBadge = editorEl?.querySelector<HTMLElement>('[data-be-editor-lockbadge]') ?? null;
+  const editorChip = editorEl?.querySelector<HTMLElement>('[data-be-editor-chip]') ?? null;
+  const storedSeg = editorEl?.querySelector<HTMLElement>('[data-be-stored]') ?? null;
+  const storedRow = editorEl?.querySelector<HTMLElement>('[data-be-stored-row]') ?? null;
+  const substDetails = editorEl?.querySelector<HTMLDetailsElement>('[data-be-subst-details]') ?? null;
+  const substChips = editorEl?.querySelector<HTMLElement>('[data-be-subst-chips]') ?? null;
   let editFmt: ColorFormat = 'hex'; // sticky across swatch selections
+  // The open swatch's $value notation. Entering via the CMYK row keeps this and
+  // additionally pins the typed inks as the print CMYK (see commitFmt) — the
+  // "primary value was a CMYK one" case keeps its anchor rather than storing lch.
+  let storedFmt: StorageFormat = 'lch';
+
+  const renderStoredSeg = (): void => {
+    storedSeg?.querySelectorAll<HTMLElement>('[data-store-fmt]').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.storeFmt === storedFmt)));
+  };
+  /** The print-substitute state, summarised on the folded row so a lock is
+   *  visible without opening it. */
+  const renderSubstChips = (): void => {
+    const cur = selected >= 0 ? swatches[selected] : null;
+    if (!substChips) return;
+    const bits: string[] = [];
+    if (cur?.lock?.cmyk) bits.push(`<span class="be-ps-chip">C${cur.lock.cmyk[0]} M${cur.lock.cmyk[1]} Y${cur.lock.cmyk[2]} K${cur.lock.cmyk[3]}</span>`);
+    if (cur?.lock?.spot) bits.push(`<span class="be-ps-chip">${escape(cur.lock.spot.name)}</span>`);
+    substChips.innerHTML = bits.length ? bits.join('') : '<span class="be-ps-chip be-ps-chip--auto">auto</span>';
+  };
 
   /** Refresh a swatch's tile in place (lock badge + colour), without a full repaint —
    *  preserves `.is-selected` (tileHtml doesn't know selection state) so an open
@@ -945,30 +1176,48 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     tile.outerHTML = tileHtml(s, idx);
     if (wasSelected) palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`)?.classList.add('is-selected');
   };
-  // The swatch popover's print lock — always reads/writes whichever swatch is
-  // CURRENTLY open (`selected`), so it's built once and driven dynamically
-  // rather than re-mounted per swatch (openEditor calls its render() instead).
-  const swatchLockMount = editorEl?.querySelector<HTMLElement>('[data-be-lock-mount="swatch"]') ?? null;
-  // Re-syncs the popover's lock badge + tile + the primary-panel control (when
-  // the edited swatch IS the primary anchor — see primaryPrintLock's doc
-  // comment) after either half of the swatch lock changes.
+  // The swatch popover's print substitutes — always read/write whichever swatch
+  // is CURRENTLY open (`selected`), so the control is built once and driven
+  // dynamically rather than re-mounted per swatch (openEditor calls render()).
+  const substMount = editorEl?.querySelector<HTMLElement>('[data-be-subst-mount]') ?? null;
+  // Re-syncs the popover's lock badge + folded-row chips + tile + the
+  // primary-panel control (when the edited swatch IS the primary anchor — see
+  // primaryPrintLock's doc comment) after either half of the swatch lock changes.
   const afterSwatchLockChange = (): void => {
     if (selected < 0) return;
     const cur = swatches[selected]!;
     cur.lock = getSwatchPrintOverride(doc, cur.path);
     refreshTile(selected);
     if (editorLockBadge) editorLockBadge.hidden = !cur.lock;
+    renderSubstChips();
     persist();
     const anchorPath = primaryAnchorPath(doc);
     if (anchorPath && samePath(anchorPath, cur.path)) primaryLock?.render();
   };
-  const swatchLock = swatchLockMount ? mountPrintLock(swatchLockMount, {
+  const swatchSubst = substMount ? mountPrintSubst(substMount, {
     hex: () => (selected >= 0 ? swatches[selected]!.hex : ''),
     getCmyk: () => (selected >= 0 ? getSwatchPrintOverride(doc, swatches[selected]!.path)?.cmyk ?? null : null),
     setCmyk: (cmyk) => { if (selected >= 0) { setSwatchCmykLock(doc, swatches[selected]!.path, cmyk); afterSwatchLockChange(); } },
     getSpot: () => (selected >= 0 ? getSwatchPrintOverride(doc, swatches[selected]!.path)?.spot ?? null : null),
     setSpot: (spot) => { if (selected >= 0) { setSwatchSpotLock(doc, swatches[selected]!.path, spot); afterSwatchLockChange(); } },
   }) : null;
+
+  // "Stored as" — re-serialise the open swatch's $value in the picked notation.
+  // An alias role has no literal of its own to re-write, so the row hides for
+  // those (recolouring detaches the alias first, which re-shows it).
+  storedSeg?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-store-fmt]'); if (!btn) return;
+    const next = btn.dataset.storeFmt as StorageFormat;
+    if (next === storedFmt) return;
+    storedFmt = next;
+    renderStoredSeg();
+    const cur = selected >= 0 ? swatches[selected] : null;
+    if (!cur || cur.isAlias || !cur.hex) return;
+    const stored = serializeColor(colorToHex(cur.raw) ?? cur.hex, storedFmt);
+    setSwatchValue(doc, cur.path, stored);
+    cur.raw = stored;
+    persist();
+  });
 
   const extrapolation = (hex: string): string =>
     hex ? `${hex.toUpperCase()} · rgb(${formatColor('rgb', hex)})` : '';
@@ -1003,14 +1252,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const cur = selected >= 0 ? swatches[selected] : null; if (!cur) return;
     if (!rawHex || rawHex === 'transparent') return;
     const hex = rawHex; // keep #rrggbbaa alpha — brand swatches may be translucent
-    setSwatchValue(doc, cur.path, hex);
-    cur.hex = colorToHex(hex) ?? hex; cur.raw = hex;
+    // The doc stores the swatch's chosen notation ("Stored as" — LCH default);
+    // the tile/UI keep working in resolved hex. Recolouring an alias role
+    // detaches it to a literal, which is when the storage toggle starts to bite.
+    const stored = serializeColor(colorToHex(hex) ?? hex, storedFmt);
+    setSwatchValue(doc, cur.path, stored);
+    cur.hex = colorToHex(hex) ?? hex; cur.raw = stored;
+    if (cur.isAlias) { cur.isAlias = false; if (storedRow) storedRow.hidden = false; }
     const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${selected}"]`);
     if (tile) {
       tile.style.setProperty('--sw', cur.hex);
       tile.classList.remove('is-empty');
       const hx = tile.querySelector('.be-swatch-hex'); if (hx) hx.textContent = cur.hex;
     }
+    if (editorChip) editorChip.style.setProperty('--sw', cur.hex);
     syncFmtRow(cur.hex);
     if (opts.rerenderField) renderEditField(cur.hex);
     persist();
@@ -1025,15 +1280,27 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const nameInput = editorEl.querySelector<HTMLInputElement>('[data-be-editor-name]')!;
     const delBtn = editorEl.querySelector<HTMLButtonElement>('[data-be-editor-del]')!;
     renderEditField(s.hex);
+    if (editorChip) editorChip.style.setProperty('--sw', s.hex || 'transparent');
     if (fmtInput) fmtInput.value = formatColor(editFmt, s.hex);
     if (fmtOut) fmtOut.textContent = extrapolation(s.hex);
     nameInput.value = s.name;
     delBtn.hidden = !s.deletable;
     if (editorLockBadge) editorLockBadge.hidden = !s.lock;
-    swatchLock?.render();
-    // Position the popover under the tile, clamped to the editor box.
+    // Storage notation: respect what the doc already holds (an older hex edit
+    // stays hex); the app default for everything else — aliases included, which
+    // start storing the moment a recolour detaches them — is LCH. The row hides
+    // while there's no literal to re-write.
+    storedFmt = s.isAlias ? 'lch' : storageFormatOf(s.raw);
+    renderStoredSeg();
+    if (storedRow) storedRow.hidden = s.isAlias;
+    renderSubstChips();
+    if (substDetails) substDetails.open = false; // folded until asked — the lock chips say enough
+    swatchSubst?.render();
+    // Position the popover under the tile, clamped to the editor box — the
+    // left floor (8) must win over the right clamp so a viewport narrower
+    // than the card never pushes it off the left edge.
     const r = tile.getBoundingClientRect(), pr = root.getBoundingClientRect();
-    editorEl.style.left = `${Math.min(Math.max(8, r.left - pr.left), pr.width - 308)}px`;
+    editorEl.style.left = `${Math.max(8, Math.min(r.left - pr.left, pr.width - 308))}px`;
     editorEl.style.top = `${r.bottom - pr.top + 8}px`;
     editorEl.hidden = false;
     nameInput.focus();
@@ -1050,8 +1317,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const commitFmt = (): void => {
     if (!fmtInput) return;
     const hex = parseColor(editFmt, fmtInput.value);
-    if (hex) applyEditedHex(hex, { rerenderField: true });
-    else if (fmtOut) fmtOut.textContent = 'unrecognised value';
+    if (!hex) { if (fmtOut) fmtOut.textContent = 'unrecognised value'; return; }
+    applyEditedHex(hex, { rerenderField: true });
+    // A value ENTERED as CMYK is a print value: pin the typed inks as the
+    // swatch's CMYK substitute (the $value keeps only the sRGB approximation,
+    // so without the lock the exact build would be lost on export).
+    if (editFmt === 'cmyk' && selected >= 0) {
+      const nums = (fmtInput.value.match(/-?\d*\.?\d+/g) ?? []).map(Number);
+      if (nums.length >= 4) {
+        const cmyk = nums.slice(0, 4).map(n => Math.min(100, Math.max(0, Math.round(n)))) as [number, number, number, number];
+        setSwatchCmykLock(doc, swatches[selected]!.path, cmyk);
+        afterSwatchLockChange();
+        swatchSubst?.render();
+      }
+    }
   };
   // Live extrapolation as they type; commit (apply) on blur / Enter.
   fmtInput?.addEventListener('input', () => {
@@ -1065,8 +1344,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const add = (e.target as HTMLElement).closest<HTMLElement>('[data-be-add]');
     if (add) {
       const group = add.dataset.beAdd === 'spectrum' ? 'spectrum' : 'custom';
-      // A neutral new swatch the user immediately recolours.
-      const path = addSwatch(doc, group, group === 'spectrum' ? 'New hue' : 'New swatch', '#888888');
+      // A neutral new swatch the user immediately recolours — stored LCH, the default.
+      const path = addSwatch(doc, group, group === 'spectrum' ? 'New hue' : 'New swatch', serializeColor('#888888', 'lch'));
       repaintPalette(); persist(true);
       // Select the leaf we just wrote (by JSON path — never "the last one", which
       // depends on key order after a repaint).
@@ -1092,12 +1371,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const cur = swatches[selected]; if (!cur || !cur.deletable) return;
     deleteSwatch(doc, cur.path); closeEditor(); repaintPalette(); persist(true);
   });
-  editorEl?.querySelector('[data-be-editor-done]')?.addEventListener('click', closeEditor);
+  // Save = the affirmative close: edits already landed live (same contract as
+  // the wheel/tiles), so this flushes the debounce, confirms audibly, and closes.
+  editorEl?.querySelector('[data-be-editor-done]')?.addEventListener('click', () => {
+    persist(true); playSfx('saveProfile'); closeEditor();
+  });
   // Esc / outside-click closes the swatch editor (the colour popover stops its own Esc).
   const onDocPointer = (e: PointerEvent): void => {
     if (editorEl && !editorEl.hidden && !editorEl.contains(e.target as Node) && !(e.target as HTMLElement).closest('[data-be-tile]')) closeEditor();
   };
-  const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape' && editorEl && !editorEl.hidden) { e.stopPropagation(); closeEditor(); } };
+  // stopImmediatePropagation, not stopPropagation: the host view's own
+  // Esc-to-leave handler listens on the SAME document target, and plain
+  // stopPropagation can't stop a sibling listener — Esc on an open popover
+  // would close it AND kick the user out of the studio. The editor mounts
+  // before the host wires its handler, so this one runs first.
+  const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape' && editorEl && !editorEl.hidden) { e.stopImmediatePropagation(); closeEditor(); } };
   document.addEventListener('pointerdown', onDocPointer, true);
   document.addEventListener('keydown', onKey);
   cleanups.push(() => { document.removeEventListener('pointerdown', onDocPointer, true); document.removeEventListener('keydown', onKey); });
@@ -1123,7 +1411,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       hexOf: (idx) => swatches[idx]?.hex ?? '#888888',
       onRecolor: (idx, o) => {
         const cur = swatches[idx]; if (!cur) return;
-        const stored = oklchToStored(o), hex = oklchHex(o);
+        // Respect the swatch's stored notation: LCH swatches (the default) get
+        // the exact oklch() string; a swatch the user stores as hex/rgb/hsl
+        // keeps its notation through a wheel drag too.
+        const fmt = storageFormatOf(cur.raw);
+        const hex = oklchHex(o);
+        const stored = fmt === 'lch' ? oklchToStored(o) : serializeColor(hex, fmt);
         setSwatchValue(doc, cur.path, stored);
         cur.raw = stored; cur.hex = hex;
         updateWheelDot(wheelMount, idx, hex);
@@ -1152,22 +1445,53 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
 
   repaintPalette();
 
-  // ── Fonts ───────────────────────────────────────────────────────────────────
+  // ── Fonts (the Type tab) ─────────────────────────────────────────────────────
   const fontErr = $('[data-be-font-err]') as HTMLElement | null;
   const showFontErr = (m: string): void => { if (fontErr) { fontErr.textContent = m; fontErr.hidden = !m; } if (m) announce(m, { assertive: true }); };
   let fontFamilies: UserFontFamily[] = [];
-  const fontRow = (f: UserFontFamily): string => `
+  let monoFamily = ''; // the font.mono role's family, '' when the platform default serves
+  const fontRow = (f: UserFontFamily): string => {
+    const isMono = f.family === monoFamily;
+    return `
     <li class="be-font-row${f.primary ? ' is-primary' : ''}" data-font-family="${escape(f.family)}">
       <span class="be-font-aa" style="font-family:'${escape(f.family)}'" aria-hidden="true">Aa</span>
       <span class="be-font-meta"><span class="be-font-name" style="font-family:'${escape(f.family)}'">${escape(f.family)}</span>
         <span class="be-font-sub">${escape(f.weights)} · ${fmtBytes(f.bytes)}</span></span>
       ${f.primary ? '<span class="be-font-badge">Primary</span>'
         : `<button type="button" class="be-btn be-font-mp" data-mp="${escape(f.family)}">Make primary</button>`}
+      ${isMono ? '<span class="be-font-badge be-font-badge--mono">Code</span>'
+        : `<button type="button" class="be-btn be-font-mono" data-mono="${escape(f.family)}" title="Use ${escape(f.family)} for code & data">Use for code</button>`}
       <button type="button" class="be-font-del" data-del="${escape(f.family)}" aria-label="Remove ${escape(f.family)}">&#x2715;</button>
     </li>`;
+  };
+  // The live specimen (Type roles panel): each role rendered in the face that
+  // actually serves it — --font-brand / --font-mono, whatever set them.
+  const paintSpecimen = async (): Promise<void> => {
+    const mount = $('[data-be-specimen]') as HTMLElement | null; if (!mount) return;
+    const brandFace = await primaryFontFamily(fontsHost).catch(() => '') || 'Platform default';
+    const monoFace = monoFamily || 'Platform default';
+    if (!root.isConnected) return;
+    mount.innerHTML = `
+      <div class="be-typerole">
+        <span class="be-typerole-role">Heading</span>
+        <span class="be-typerole-sample be-typerole-sample--h" style="font-family:var(--font-brand)">Pack my box with five dozen liqueur jugs</span>
+        <span class="be-typerole-face">${escape(brandFace)}</span>
+      </div>
+      <div class="be-typerole">
+        <span class="be-typerole-role">Body</span>
+        <span class="be-typerole-sample" style="font-family:var(--font-brand)">Every tool, page and export follows the primary face — headings, body copy and UI alike. Sub-heading, call-to-action and italic roles arrive here as tokens tools can read.</span>
+        <span class="be-typerole-face">${escape(brandFace)}</span>
+      </div>
+      <div class="be-typerole">
+        <span class="be-typerole-role">Code &amp; data</span>
+        <span class="be-typerole-sample be-typerole-sample--mono" style="font-family:var(--font-mono)">lolly qr-code --url=https://example.com --export=svg</span>
+        <span class="be-typerole-face">${escape(monoFace)}</span>
+      </div>`;
+  };
   const paintFonts = async (): Promise<void> => {
     const list = $('[data-be-fonts]') as HTMLElement | null; if (!list) return;
     fontFamilies = await listUserFonts(fontsHost).catch(() => []);
+    monoFamily = await monoFontFamily(fontsHost).catch(() => '');
     const rows: string[] = [];
     if (!fontFamilies.some(f => f.primary)) {
       const builtin = await primaryFontFamily(fontsHost).catch(() => '');
@@ -1178,6 +1502,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     rows.push(...fontFamilies.map(fontRow));
     if (!fontFamilies.length) rows.push('<li class="be-font-empty">No fonts added yet — pick any Google Font below.</li>');
     if (root.isConnected) list.innerHTML = rows.join('');
+    void paintSpecimen();
   };
   void paintFonts();
   $('[data-be-font-add]')?.addEventListener('submit', async (e) => {
@@ -1187,7 +1512,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     const family = input?.value.trim(); if (!family || !btn || !input) return;
     showFontErr(''); const prev = btn.textContent;
     btn.disabled = input.disabled = true; btn.textContent = 'Downloading…';
-    try { const fam = await installGoogleFont(fontsHost, family); input.value = ''; playSfx('saveProfile'); await paintFonts(); announce(`Added ${fam.family}${fam.primary ? ' as your primary font' : ''}`); }
+    try { const fam = await installGoogleFont(fontsHost, family); input.value = ''; playSfx('saveProfile'); await paintFonts(); notify('type'); announce(`Added ${fam.family}${fam.primary ? ' as your primary font' : ''}`); }
     // Clear on failure too — otherwise the failed attempt's text blocks searching
     // for a different font until manually cleared (matches the success path above).
     catch (err) { showFontErr(String((err as { message?: unknown })?.message ?? err)); input.value = ''; }
@@ -1195,38 +1520,51 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   });
   $('[data-be-fonts]')?.addEventListener('click', async (e) => {
     const mp = (e.target as Element).closest<HTMLButtonElement>('[data-mp]');
-    if (mp) { mp.disabled = true; try { await setPrimaryFont(fontsHost, mp.dataset.mp!); await paintFonts(); announce(`${mp.dataset.mp} is now your primary font`); } catch (err) { mp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    if (mp) { mp.disabled = true; try { await setPrimaryFont(fontsHost, mp.dataset.mp!); await paintFonts(); notify('type'); announce(`${mp.dataset.mp} is now your primary font`); } catch (err) { mp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    const mono = (e.target as Element).closest<HTMLButtonElement>('[data-mono]');
+    if (mono) { mono.disabled = true; try { await setMonoFont(fontsHost, mono.dataset.mono!); await paintFonts(); notify('type'); announce(`${mono.dataset.mono} now serves code & data`); } catch (err) { mono.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const del = (e.target as Element).closest<HTMLButtonElement>('[data-del]'); if (!del) return;
     const fam = fontFamilies.find(f => f.family === del.dataset.del); if (!fam) return;
     const ok = await confirmDialog({ title: `Remove ${fam.family}?`, message: `Its font files (${fmtBytes(fam.bytes)}) are deleted from this device${fam.primary ? ' and the next font becomes primary' : ''}.`, confirmLabel: 'Remove' });
     if (!ok) return; del.disabled = true;
-    try { await removeUserFont(fontsHost, fam); await paintFonts(); } catch (err) { del.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); }
+    try {
+      await removeUserFont(fontsHost, fam);
+      if (fam.family === monoFamily) await setMonoFont(fontsHost, null).catch(() => {}); // a removed face can't keep a role
+      await paintFonts(); notify('type');
+    } catch (err) { del.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); }
   });
 
-  // ── Logo variants (horizontal · vertical · mono · reverse) ──────────────────
-  // Each slot is a drop/upload tile: empty → "Add", filled → the mark on a chip
-  // sized to its variant (reverse on dark, mono on neutral) with a Replace/Remove
-  // pair. Stored as user assets via brand-logos.ts; all four optional.
+  // ── Logos (the Logos tab) ────────────────────────────────────────────────────
+  // Identity sections (a brand can carry several distinct logos), each holding
+  // the canonical orientation × treatment matrix plus user-named custom marks
+  // ("icon", "crest", …). Each slot is a drop/upload tile: empty → "Add",
+  // filled → the mark on a chip themed to its treatment (reverse on dark, mono
+  // on neutral) with a Replace/Remove pair. Stored as user assets via
+  // brand-logos.ts; every slot optional.
   const logoErr = $('[data-be-logo-err]') as HTMLElement | null;
   const showLogoErr = (m: string): void => { if (logoErr) { logoErr.textContent = m; logoErr.hidden = !m; } if (m) announce(m, { assertive: true }); };
   let logoUrls: string[] = []; // object URLs to revoke on repaint/teardown
-  // One tile per (orientation × treatment) cell — labelled by its treatment; the
-  // chip behind an uploaded mark is themed per treatment (reverse on dark, mono
-  // on neutral) so a light-on-transparent PNG still reads.
-  const logoTile = (v: LogoVariant, slot: LogoSlot | undefined): string => {
+  // Identities the user added this session that hold no assets yet — an identity
+  // only truly exists through its assets, so empty sections live here until the
+  // first mark lands (and vanish on reload if none ever does; that's honest).
+  const pendingIdentities: string[] = [];
+  const identityLabel = (id: string): string => (id === 'default' ? 'Your logo' : prettify(id));
+  const logoTile = (v: string, identity: string, slot: LogoSlot | undefined, label?: string): string => {
     const { treatment } = splitVariant(v);
-    const tm = TREATMENT_META[treatment];
+    const tm = treatment ? TREATMENT_META[treatment] : null;
+    const name = label ?? slot?.label ?? (tm ? tm.label : prettify(v));
+    const hint = slot ? 'Click to replace' : (tm ? tm.hint : 'Your own named mark.');
     const body = slot
-      ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(variantLabel(v))} logo" loading="lazy"></span>`
+      ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(name)} logo" loading="lazy"></span>`
       : `<span class="be-logo-empty" aria-hidden="true">+</span>`;
-    return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${v}" data-treatment="${treatment}">
-        <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(tm.label)}</span>
-          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${v}" aria-label="Remove ${escape(variantLabel(v))} logo">&#x2715;</button>` : ''}</div>
+    return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${escape(v)}" data-treatment="${treatment ?? 'custom'}">
+        <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(name)}</span>
+          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${escape(v)}" data-identity="${escape(identity)}" aria-label="Remove the ${escape(name)} mark">&#x2715;</button>` : ''}</div>
         <label class="be-logo-drop">
           ${body}
-          <input type="file" class="be-logo-file" data-logo-file="${v}" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
+          <input type="file" class="be-logo-file" data-logo-file="${escape(v)}" data-identity="${escape(identity)}" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
         </label>
-        <p class="be-logo-hint">${escape(slot ? 'Click to replace' : tm.hint)}</p>
+        <p class="be-logo-hint">${escape(hint)}</p>
       </div>`;
   };
   const paintLogos = async (): Promise<void> => {
@@ -1234,39 +1572,156 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     logoUrls.forEach(u => URL.revokeObjectURL(u)); logoUrls = [];
     const slots = await listLogos(fontsHost).catch(() => [] as LogoSlot[]);
     logoUrls = slots.map(s => s.url);
-    const byVariant = new Map(slots.map(s => [s.variant, s]));
-    // Group by orientation: each is a labelled row of its three treatment tiles.
-    const groups = LOGO_ORIENTATIONS.map(o => {
-      const om = ORIENTATION_META[o];
-      const tiles = LOGO_TREATMENTS.map(t => {
-        const v = `${o}-${t}` as LogoVariant;
-        return logoTile(v, byVariant.get(v));
+    // default leads, then stored identities in first-seen order, then this
+    // session's still-empty additions.
+    const identities: string[] = ['default'];
+    for (const s of slots) if (!identities.includes(s.identity)) identities.push(s.identity);
+    for (const p of pendingIdentities) if (!identities.includes(p)) identities.push(p);
+    const sections = identities.map(identity => {
+      const mine = slots.filter(s => s.identity === identity);
+      const byVariant = new Map(mine.map(s => [s.variant, s]));
+      const groups = LOGO_ORIENTATIONS.map(o => {
+        const om = ORIENTATION_META[o];
+        const tiles = LOGO_TREATMENTS.map(t => {
+          const v = `${o}-${t}` as LogoVariant;
+          return logoTile(v, identity, byVariant.get(v));
+        }).join('');
+        return `<div class="be-logo-group">
+            <div class="be-logo-group-head"><span class="be-logo-group-name">${escape(om.label)}</span>
+              <span class="be-logo-group-hint">${escape(om.hint)}</span></div>
+            <div class="be-logo-row">${tiles}</div>
+          </div>`;
       }).join('');
-      return `<div class="be-logo-group">
-          <div class="be-logo-group-head"><span class="be-logo-group-name">${escape(om.label)}</span>
-            <span class="be-logo-group-hint">${escape(om.hint)}</span></div>
-          <div class="be-logo-row">${tiles}</div>
+      const customs = mine.filter(s => s.custom);
+      const customTiles = customs.map(s => logoTile(s.variant, identity, s)).join('');
+      const customGroup = `<div class="be-logo-group be-logo-group--custom">
+          <div class="be-logo-group-head"><span class="be-logo-group-name">Custom marks</span>
+            <span class="be-logo-group-hint">Marks your brand names its own way — an icon, a crest, a favicon.</span></div>
+          <div class="be-logo-row">${customTiles}
+            <form class="be-logo-addmark" data-logo-addmark data-identity="${escape(identity)}">
+              <input type="text" class="be-logo-addmark-name" data-addmark-name placeholder="Name it — Icon, Crest…" autocomplete="off" spellcheck="false" aria-label="Custom mark name">
+              <label class="be-btn be-logo-addmark-pick">Choose file…
+                <input type="file" data-addmark-file accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden></label>
+            </form>
+          </div>
         </div>`;
+      return `<section class="be-logo-identity" data-identity="${escape(identity)}">
+          ${identities.length > 1 || identity !== 'default' ? `<div class="be-logo-identity-head"><h4 class="be-logo-identity-name">${escape(identityLabel(identity))}</h4></div>` : ''}
+          ${groups}${customGroup}
+        </section>`;
     }).join('');
-    if (root.isConnected) mount.innerHTML = groups;
+    const addIdentity = `<form class="be-logo-addidentity" data-logo-addidentity>
+        <input type="text" data-addidentity-name placeholder="Another logo? Name it — Product, Event…" autocomplete="off" spellcheck="false" aria-label="New logo name">
+        <button type="submit" class="be-btn">+ Add another logo</button>
+      </form>`;
+    if (root.isConnected) mount.innerHTML = sections + addIdentity;
   };
   void paintLogos();
   cleanups.push(() => logoUrls.forEach(u => URL.revokeObjectURL(u)));
+
+  /** A slug brand-logos accepts, from whatever the user typed. */
+  const slugify = (name: string): string =>
+    name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+
+  // The logo-colour pathway: an SVG mark carries the brand's real colours, so
+  // offer (or on a still-unbranded install, simply apply) its first colour as
+  // the primary — the Colour tab picks it up from here.
+  const suggestEl = $('[data-be-suggest]') as HTMLElement | null;
+  const suggestFromLogo = async (file: File): Promise<void> => {
+    if (!/svg/i.test(file.type) || file.size > 10 * 1024 * 1024) return;
+    let colors: string[] = [];
+    try { colors = extractSvgColors(await file.text()).map(c => colorToHex(c) ?? '').filter(c => /^#/.test(c)); } catch { return; }
+    const first = colors[0];
+    if (!first || !suggestEl) return;
+    if (!isUserBrand) {
+      // Nothing of the user's to clobber yet — set it, say so, let Save keep it.
+      setPrimaryTo(first);
+      suggestEl.innerHTML = `<span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>Primary set from your logo — <strong>Save colour</strong> keeps it.</span>`;
+      suggestEl.hidden = false;
+      announce('Primary colour set from your logo');
+      return;
+    }
+    suggestEl.innerHTML = `
+      <span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>Found in your logo: <code>${escape(first)}</code></span>
+      <button type="button" class="be-btn be-btn--sm" data-be-suggest-use="${escape(first)}">Use as primary</button>
+      <button type="button" class="be-suggest-dismiss" data-be-suggest-dismiss aria-label="Dismiss suggestion">&#x2715;</button>`;
+    suggestEl.hidden = false;
+  };
+  suggestEl?.addEventListener('click', (e) => {
+    const use = (e.target as HTMLElement).closest<HTMLElement>('[data-be-suggest-use]');
+    if (use) { setPrimaryTo(use.dataset.beSuggestUse!); suggestEl.hidden = true; playSfx('click'); return; }
+    if ((e.target as HTMLElement).closest('[data-be-suggest-dismiss]')) suggestEl.hidden = true;
+  });
+
   $('[data-be-logos]')?.addEventListener('change', async (e) => {
-    const input = (e.target as HTMLElement).closest<HTMLInputElement>('[data-logo-file]'); if (!input) return;
-    const variant = input.dataset.logoFile as LogoVariant;
+    const target = e.target as HTMLElement;
+    // A custom-mark file pick: needs the name typed beside it.
+    const addFile = target.closest<HTMLInputElement>('[data-addmark-file]');
+    if (addFile) {
+      const form = addFile.closest<HTMLElement>('[data-logo-addmark]');
+      const nameInput = form?.querySelector<HTMLInputElement>('[data-addmark-name]');
+      const identity = form?.dataset.identity || 'default';
+      const label = nameInput?.value.trim() ?? '';
+      const slug = slugify(label);
+      const file = addFile.files?.[0]; addFile.value = '';
+      if (!file) return;
+      showLogoErr('');
+      if (!slug || !LOGO_SLUG_RE.test(slug)) { showLogoErr('Name the mark first — letters and numbers, e.g. "Icon".'); nameInput?.focus(); return; }
+      try {
+        await installLogo(fontsHost, slug, file, { identity, label });
+        playSfx('saveProfile'); await paintLogos(); notify('logos');
+        void suggestFromLogo(file);
+        announce(`${label} mark added`);
+      } catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
+      return;
+    }
+    const input = target.closest<HTMLInputElement>('[data-logo-file]'); if (!input) return;
+    const variant = input.dataset.logoFile!;
+    const identity = input.dataset.identity || 'default';
     const file = input.files?.[0]; input.value = ''; if (!file) return;
     showLogoErr('');
-    try { await installLogo(fontsHost, variant, file); playSfx('saveProfile'); await paintLogos(); announce(`${variantLabel(variant)} logo added`); }
-    catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
+    try {
+      await installLogo(fontsHost, variant, file, identity === 'default' ? undefined : { identity });
+      playSfx('saveProfile'); await paintLogos(); notify('logos');
+      void suggestFromLogo(file);
+      announce(`${variantLabel(variant)} logo added`);
+    } catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
+  });
+  $('[data-be-logos]')?.addEventListener('submit', (e) => {
+    // The custom-mark form has no submit button (its "action" is the file
+    // picker), but Enter in its name field still implicitly submits — swallow
+    // that and forward the intent to the picker instead of reloading the page.
+    const addmark = (e.target as HTMLElement).closest<HTMLElement>('[data-logo-addmark]');
+    if (addmark) {
+      e.preventDefault();
+      addmark.querySelector<HTMLInputElement>('[data-addmark-file]')?.click();
+      return;
+    }
+    const form = (e.target as HTMLElement).closest<HTMLElement>('[data-logo-addidentity]');
+    if (!form) return;
+    e.preventDefault();
+    const nameInput = form.querySelector<HTMLInputElement>('[data-addidentity-name]');
+    const slug = slugify(nameInput?.value ?? '');
+    showLogoErr('');
+    if (!slug || !LOGO_SLUG_RE.test(slug)) { showLogoErr('Name the logo first — letters and numbers, e.g. "Product".'); nameInput?.focus(); return; }
+    if (slug === 'default') { showLogoErr('“Default” is the unnamed logo above — pick a different name.'); nameInput?.focus(); return; }
+    if (!pendingIdentities.includes(slug)) pendingIdentities.push(slug);
+    void paintLogos().then(() => {
+      // Land the user in the fresh section rather than leaving them at the form.
+      root.querySelector(`[data-be-logos] .be-logo-identity[data-identity="${slug}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
   });
   $('[data-be-logos]')?.addEventListener('click', async (e) => {
     const del = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-logo-del]'); if (!del) return;
     e.preventDefault();
-    const variant = del.dataset.logoDel as LogoVariant;
-    const ok = await confirmDialog({ title: `Remove the ${variantLabel(variant).toLowerCase()} logo?`, message: 'It’s deleted from this device.', confirmLabel: 'Remove' });
+    const variant = del.dataset.logoDel!;
+    const identity = del.dataset.identity || 'default';
+    const ok = await confirmDialog({ title: `Remove the ${variantLabel(variant).toLowerCase()} mark?`, message: 'It’s deleted from this device.', confirmLabel: 'Remove' });
     if (!ok) return; del.disabled = true;
-    try { await removeLogo(fontsHost, variant); await paintLogos(); } catch (err) { del.disabled = false; showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
+    try {
+      await removeLogo(fontsHost, variant, identity === 'default' ? undefined : identity);
+      await paintLogos(); notify('logos');
+    } catch (err) { del.disabled = false; showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
   });
 
   // ── Palette download ─────────────────────────────────────────────────────
@@ -1284,29 +1739,114 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     }
   });
 
-  // ── Share ─────────────────────────────────────────────────────────────────
-  const shareErr = $('[data-be-share-err]') as HTMLElement | null;
-  $('[data-be-export]')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget as HTMLButtonElement; const prev = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Exporting…';
-    try { const { blob, filename, summary } = await exportBrandPack(transferHost); saveBlob(blob, filename); btn.textContent = 'Exported'; announce(`Brand exported — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}`); }
-    catch (err) { btn.textContent = 'Export failed'; if (shareErr) { shareErr.textContent = String((err as { message?: unknown })?.message ?? err); shareErr.hidden = false; } }
-    setTimeout(() => { if (root.isConnected) { btn.textContent = prev; btn.disabled = false; } }, 1800);
+  // ── Corner radius (the Tokens tab) ───────────────────────────────────────
+  // Live app-wide preview on every drag tick (set --radius directly — instant,
+  // no round trip), persisted debounced so a drag doesn't spam writes.
+  const radiusSlider = $('[data-be-radius-slider]') as HTMLInputElement | null;
+  const radiusPreview = $('[data-be-radius-preview]') as HTMLElement | null;
+  const radiusValueEl = $('[data-be-radius-value]') as HTMLElement | null;
+  const radiusErr = $('[data-be-radius-err]') as HTMLElement | null;
+  void (async () => {
+    // Seed from the installed brand's --radius, else the shell default (1rem).
+    // parseFloat tolerates a stored px/em value from a hand-authored import;
+    // the slider always writes back in rem.
+    const current = await (tokens as { resolve?(ref: string): Promise<unknown> } | undefined)
+      ?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null;
+    const rem = current ? parseFloat(current) : 1;
+    if (radiusSlider) radiusSlider.value = String(rem);
+    if (radiusPreview) radiusPreview.style.borderRadius = `${rem}rem`;
+    if (radiusValueEl) radiusValueEl.textContent = `${rem}rem`;
+  })();
+  let radiusDebounce: ReturnType<typeof setTimeout> | undefined;
+  let radiusPending: string | null = null; // flushed on teardown — a drag right before leaving must still land
+  radiusSlider?.addEventListener('input', () => {
+    const css = `${radiusSlider.value}rem`;
+    if (radiusPreview) radiusPreview.style.borderRadius = css;
+    if (radiusValueEl) radiusValueEl.textContent = css;
+    document.documentElement.style.setProperty('--radius', css);
+    notify('tokens');
+    radiusPending = css;
+    clearTimeout(radiusDebounce);
+    radiusDebounce = setTimeout(() => {
+      radiusPending = null;
+      setBrandRadius(fontsHost, css).catch(err => {
+        if (radiusErr) { radiusErr.textContent = String((err as { message?: unknown })?.message ?? err); radiusErr.hidden = false; }
+      });
+    }, 400);
   });
-  const importFile = $('[data-be-import-file]') as HTMLInputElement | null;
-  $('[data-be-import]')?.addEventListener('click', () => importFile?.click());
-  importFile?.addEventListener('change', async () => {
-    const file = importFile.files?.[0]; importFile.value = ''; if (!file) return;
-    if (shareErr) shareErr.hidden = true;
+  cleanups.push(() => {
+    clearTimeout(radiusDebounce);
+    if (radiusPending) void setBrandRadius(fontsHost, radiusPending).catch(() => {});
+  });
+
+  // ── The three studio panels that live outside this file ──────────────────
+  // Token editors, gradients and catalogue uploads (brand-studio-tabs.ts) —
+  // each gets the same narrow context: the live doc (getter — the Colour tab
+  // reassigns it on re-derive/import), the persist funnel, and its tab's notify.
+  const studioCtx = {
+    host,
+    doc: () => doc as Record<string, unknown>,
+    persist: (immediate?: boolean) => persist(immediate),
+  };
+  const tokensMount = $('[data-be-tokens-mount]') as HTMLElement | null;
+  const tokensPanel = tokensMount ? mountTokensPanel(tokensMount, { ...studioCtx, notify: () => notify('tokens') }) : null;
+  const gradsMount = $('[data-be-grads-mount]') as HTMLElement | null;
+  const gradsPanel = gradsMount ? mountGradientsPanel(gradsMount, { ...studioCtx, notify: () => notify('color'), primaryHex, paletteHexes }) : null;
+  const catMount = $('[data-be-cat-mount]') as HTMLElement | null;
+  const catPanel = catMount ? mountCataloguePanel(catMount, { host, notify: () => notify('catalogue') }) : null;
+  cleanups.push(() => { tokensPanel?.teardown(); gradsPanel?.teardown(); catPanel?.teardown(); });
+  // Token/gradient groups ride the same doc the palette walks, so a re-derive
+  // or pack import must repaint them too.
+  paletteHooks.push(() => { tokensPanel?.render(); gradsPanel?.render(); });
+
+  // ── Share (brand pack in/out) — exposed on the handle; the host view owns
+  //    the buttons' placement (its persistent Import/Export action row).
+  const exportPack = async (): Promise<{ filename: string }> => {
+    const { blob, filename, summary } = await exportBrandPack(transferHost);
+    saveBlob(blob, filename);
+    announce(`Brand exported — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}`);
+    return { filename };
+  };
+  // Something replaced the installed tokens underneath us (a pack import, the
+  // host view's own JSON/SVG install path) — reload the doc and repaint every
+  // panel so the studio shows what's actually installed. The Colour panel's
+  // derive CONTROLS re-seed too (primary, shade count, ramp anchors, the
+  // preview): they were captured from the pre-import doc at mount, and leaving
+  // them stale would make "Use this colour" silently derive from the old brand.
+  const reload = async (): Promise<void> => {
+    tokens?.bust?.();
+    doc = ((await tokens?.raw().catch(() => null)) as Record<string, unknown> | null) ?? doc;
+    isUserBrand = true; // every reload() caller just installed on the user's behalf
     try {
-      await importBrandPack(transferHost, await file.arrayBuffer());
-      // The pack replaced tokens+fonts — reload the doc and repaint everything.
-      tokens?.bust?.();
-      doc = ((await tokens?.raw().catch(() => null)) as Record<string, unknown> | null) ?? doc;
-      repaintPalette(); await paintFonts(); void applyChromeBrandVars(host); setDirty(false);
-      announce('Brand loaded');
-    } catch (err) { if (shareErr) { shareErr.textContent = String((err as { message?: unknown })?.message ?? err); shareErr.hidden = false; } }
-  });
+      const set = createTokenSet(doc, { theme: 'light' });
+      primary = tokenValueToHex(set.resolve('color.semantic.primary')) ?? primary;
+      const g = set.query({ type: 'color' }).filter(t => /^color\.ramp\.primary\.\d+$/.test(t.path));
+      if (g.length >= RAMP_STEPS_MIN) steps = Math.min(RAMP_STEPS_MAX, g.length);
+      neutralStep = anchorStep(steps); secondaryStep = anchorStep(steps);
+    } catch { /* tokenless/malformed doc — keep the previous seeds */ }
+    if (stepsSlider) stepsSlider.value = String(steps);
+    if (stepsVal) stepsVal.textContent = String(steps);
+    const wrap = $('[data-be-primary-field]') as HTMLElement | null;
+    if (wrap) {
+      wrap.innerHTML = colorFieldHtml('be-primary', primary, { inline: true, modes: true });
+      wireColorField(wrap, { onChange: onPrimaryFieldChange });
+    }
+    // Refresh the decorative ramp preview WITHOUT applyDraftChrome/broadcast —
+    // the imported doc's real accents just landed via applyChromeBrandVars, and
+    // a derive draft would immediately paint over them.
+    const fresh = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
+    if (preview && fresh) preview.innerHTML = previewHtml(fresh, { neutral: neutralStep, secondary: secondaryStep, steps });
+    renderScreen();
+    primaryLock?.render();
+    renderGenerator();
+    setDeriveActive(false);
+    repaintPalette(); await paintFonts(); await paintLogos(); void applyChromeBrandVars(host); setDirty(false);
+  };
+  const importPack = async (file: File): Promise<void> => {
+    await importBrandPack(transferHost, await file.arrayBuffer());
+    await reload();
+    announce('Brand loaded');
+  };
 
   return {
     teardown: () => {
@@ -1317,5 +1857,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
       void applyChromeBrandVars(host);
     },
     saveDraft: () => { if (saveBtn && !saveBtn.hidden) persist(true); },
+    isDirty: () => !!saveBtn && !saveBtn.hidden,
+    exportPack,
+    importPack,
+    reload,
+    closeOverlays: closeEditor,
   };
 }

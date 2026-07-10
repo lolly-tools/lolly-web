@@ -233,11 +233,43 @@
 .profile-view .profile-btn-primary { padding: 1em 2em;   border-radius: calc(var(--radius) *2);background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
 .profile-view .profile-btn-primary:hover { filter: brightness(1.08); }
 .headshot-heading{text-align:center;}
-/* Appearance segmented control — a fixed-ish pill, not the full card width.
-   Height matches the Save Profile button (padding 1em 2em @ .85rem + 1.4 line-
-   height + 1px borders = 2.89rem + 2px); buttons stretch and centre their label. */
-.profile-view .segmented-control { display: flex; width: 100%; max-width: 22rem; height: calc(2.89rem + 2px); }
-.profile-view .segmented-btn { }
+
+/* ── Appearance card — theme preview cards (the picker moved here from the
+   dashboard). Each preview is a real <button> carrying its own [data-theme], so
+   tokens.css resolves the dots/sample/border vars in THAT theme's colours no
+   matter which theme the app is wearing. platform.css (.plat-theme*) is a
+   dashboard-only sheet — not on this route — so the equivalents live here under
+   profile-scoped names. Same full-border card chrome as every .profile-card. */
+.profile-view .profile-appearance-sub {
+  margin: -.4rem 0 1rem; max-width: 74ch;
+  font-size: .9rem; line-height: 1.5; color: hsl(var(--muted-foreground));
+}
+.profile-view .profile-theme-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .85rem;
+}
+.profile-view .profile-theme {
+  font: inherit; text-align: left; cursor: pointer; width: 100%;
+  padding: 1rem; border-radius: var(--radius);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+.profile-view .profile-theme:hover { border-color: hsl(var(--primary) / .55); transform: translateY(-2px); box-shadow: 0 6px 16px hsl(0 0% 0% / .1); }
+.profile-view .profile-theme:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.profile-view .profile-theme.is-active { border-color: hsl(var(--primary)); box-shadow: inset 0 0 0 1px hsl(var(--primary)); }
+.profile-view .profile-theme-name { display: flex; align-items: center; gap: .4rem; font-weight: 600; }
+.profile-view .profile-theme.is-active .profile-theme-name::after { content: '✓'; margin-inline-start: auto; color: hsl(var(--primary)); font-weight: 800; }
+/* Tiny "default" pill on the Light preview. */
+.profile-view .profile-theme-pill {
+  display: inline-block; font-size: .58rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+  padding: .12rem .38rem; border-radius: 999px;
+  background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+}
+.profile-view .profile-theme-dots { display: flex; gap: .35rem; margin: .85rem 0; }
+.profile-view .profile-theme-dots span { width: 22px; aspect-ratio: 1; min-width: 0; border-radius: var(--radius); box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+.profile-view .profile-theme-sample { font-size: 1.6rem; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .profile-view .profile-theme { transition: none; } }
 
 /* Activity — stat tiles, a format leaderboard (proportional bars), meta line */
 /* On desktop the stat tiles sit beside the format leaderboard; they stack below. */
@@ -499,17 +531,14 @@
   /* Single-column flow. Flatten both column wrappers (display: contents) so the
      headshot — which lives in .profile-side — can sit above the name/email
      fields, while Save + opt-in (.profile-actions) drop to the bottom. Order:
-     headshot → details → theme → actions. */
+     headshot → details → sound → actions. */
   .profile-view .profile-details-grid { display: flex; flex-direction: column; gap: 1.4rem; align-items: center; }
   .profile-view .profile-details-main,
   .profile-view .profile-side { display: contents; }
   .profile-view .profile-side .profile-field:has(.headshot) { order: 1; }
   .profile-view .profile-fields { grid-template-columns: 1fr; order: 2; margin-bottom: 0; }
-  /* Appearance group, in the requested order: theme → corner radius → sound. */
-  .profile-view .profile-side .profile-field:has(#theme-picker) { order: 3; }
-  .profile-view .profile-side .profile-field--radius { order: 4; }
-  .profile-view .profile-side .profile-field--sound { order: 5; }
-  .profile-view .profile-actions { order: 6; padding-top: 0; justify-content: center; }
+  .profile-view .profile-side .profile-field--sound { order: 3; }
+  .profile-view .profile-actions { order: 4; padding-top: 0; justify-content: center; }
   .profile-view .activity-split { grid-template-columns: 1fr; gap: 1.1rem; }
 
   /* "Your details": center the heading + controls; detail inputs stretch
@@ -520,7 +549,6 @@
   .profile-view .profile-form .profile-field input {
     width: 100%; padding: .65rem .75rem; font-size: 1rem;
   }
-  .profile-view .profile-form .segmented-control { margin-inline: auto; max-width: none; }
   .profile-view .profile-actions { justify-content: center; }
   .profile-view .profile-check { margin: 0; }
 }

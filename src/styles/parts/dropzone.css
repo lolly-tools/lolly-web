@@ -1,0 +1,29 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* ── Shared upload dropzone (lib/upload-dropzone.ts) ── Neutral `.updz*` classes so any
+   surface can mount it (the catalogue's "Your uploads" section, the #/start Catalogue
+   tab); visual treatment ported from the catalogue's old .cat-dropzone. A <label> over
+   a visually-hidden file input, so :focus-within is the input's keyboard ring.
+   Modifiers (applied by the CALLER — the component can't know its surroundings):
+     .updz--empty    the roomier column layout when the zone IS the whole section
+     .updz--compact  a tighter row for dense surfaces (drops the hint line)
+   State classes set by the component: .is-dragover (a file drag is over the zone) and
+   .is-busy (ingest in flight — pointer-events off so a second drop can't land). */
+.updz {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-bottom: .9rem; padding: 14px 16px;
+  border: 2px dashed hsl(var(--border)); border-radius: var(--radius);
+  color: hsl(var(--muted-foreground)); font-size: .9rem; text-align: center;
+  cursor: pointer;
+  transition: border-color .12s, background .12s, color .12s;
+}
+.updz-icon { display: inline-flex; flex: none; }
+.updz-icon svg { width: 20px; height: 20px; }
+.updz--empty { flex-direction: column; gap: 12px; padding: 2.6rem 1.5rem; }
+.updz--empty .updz-icon svg { width: 28px; height: 28px; }
+.updz--compact { margin-bottom: 0; padding: 9px 12px; gap: 8px; font-size: .85rem; }
+.updz--compact .updz-hint { display: none; }
+.updz:hover, .updz:focus-within { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
+.updz:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.updz.is-dragover { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .08); color: hsl(var(--foreground)); }
+.updz.is-busy { opacity: .6; pointer-events: none; }
+.updz-browse { color: hsl(var(--primary)); font-weight: 600; text-decoration: underline; }

@@ -15,9 +15,26 @@
  * human-facing text around them. Pure + DOM-free → unit-tested (color-formats.test.ts).
  */
 
-import { colorToHex, rgbToCmyk, cmykToRgbApprox, hexToOklch, oklchToHex } from '@lolly/engine';
+import { colorToHex, rgbToCmyk, cmykToRgbApprox, hexToOklch, oklchToHex, formatOklch } from '@lolly/engine';
 
 export type ColorFormat = 'hex' | 'rgb' | 'rgba' | 'hsl' | 'oklch' | 'cmyk';
+
+/**
+ * How a swatch's `$value` is WRITTEN into the tokens document — distinct from
+ * ColorFormat (the popover's set-by-value text row). `lch` (= OKLCH, the app's
+ * perceptual default and what derived brands ship) unless the swatch already
+ * carries another notation the user chose. CMYK is deliberately absent: the
+ * engine can't parse it in `$value`, so a CMYK-entered colour stores its sRGB
+ * form here and pins the exact inks as a print substitute instead.
+ */
+export type StorageFormat = 'lch' | 'hex' | 'rgb' | 'hsl';
+
+export const STORAGE_FORMATS: ReadonlyArray<{ id: StorageFormat; label: string }> = [
+  { id: 'lch', label: 'LCH' },
+  { id: 'hex', label: 'Hex' },
+  { id: 'rgb', label: 'RGB' },
+  { id: 'hsl', label: 'HSL' },
+];
 
 export const COLOR_FORMATS: ReadonlyArray<{ id: ColorFormat; label: string; hint: string }> = [
   { id: 'hex', label: 'Hex', hint: '#4f83cc' },
@@ -124,6 +141,47 @@ export function formatColor(fmt: ColorFormat, hex: string): string {
       return [c, m, y, k].map(v => Math.round(v * 100)).join(', ');
     }
   }
+}
+
+/**
+ * Serialise a canonical hex (#rrggbb/#rrggbbaa) into the string form a swatch's
+ * `$value` stores. Every emitted form is one the engine's colorToHex parses back
+ * (comma-form rgb()/hsl() — its splitter doesn't take space-separated channels),
+ * so a doc round-trips whatever notation the user picked. Unparseable input
+ * falls through verbatim rather than eating the value.
+ */
+export function serializeColor(hex: string, fmt: StorageFormat): string {
+  const rgba = hexToRgba(hex);
+  if (!rgba) return hex;
+  const { r, g, b, a } = rgba;
+  switch (fmt) {
+    case 'hex': return a < 1 ? rgbaToHex(r, g, b, a) : rgbaToHex(r, g, b, 1);
+    case 'rgb': return a < 1 ? `rgba(${r}, ${g}, ${b}, ${fmtNum(a, 3)})` : `rgb(${r}, ${g}, ${b})`;
+    case 'hsl': {
+      const [h, s, l] = rgbToHsl(r, g, b);
+      const base = `${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%`;
+      return a < 1 ? `hsla(${base}, ${fmtNum(a, 3)})` : `hsl(${base})`;
+    }
+    case 'lch': {
+      const o = hexToOklch(hex);
+      return o ? formatOklch(o) : hex; // formatOklch keeps `/ alpha` when < 1
+    }
+  }
+}
+
+/**
+ * The storage notation a stored `$value` is already written in — seeds the
+ * popover's "Stored as" toggle so editing respects the user's earlier choice.
+ * Anything unrecognised (aliases, idents, DTCG objects) reports the app default,
+ * `lch`.
+ */
+export function storageFormatOf(raw: unknown): StorageFormat {
+  if (typeof raw !== 'string') return 'lch';
+  const s = raw.trim().toLowerCase();
+  if (s.startsWith('#')) return 'hex';
+  if (/^rgba?\(/.test(s)) return 'rgb';
+  if (/^hsla?\(/.test(s)) return 'hsl';
+  return 'lch';
 }
 
 /**

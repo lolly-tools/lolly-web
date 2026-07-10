@@ -1,9 +1,9 @@
 /*
- * #/start — the brand wizard shell (views/start.ts). Async CSS chunk, loaded
- * with the view. The heart of the page is the shared brand editor (lib/
- * brand-editor.ts, .be-* styles from dashboard.css, imported by the view); this
- * sheet only styles the shell around it — header, the corner-style + import
- * panels, and the Done affordance. Chrome colours flow through tokens.css.
+ * #/start — the brand studio shell (views/start.ts). Async CSS chunk, loaded
+ * with the view. The heart of the page is the brand studio (lib/brand-editor.ts,
+ * .be-* styles from brand-studio.css, imported by that module); this sheet only
+ * styles the shell around it — header, step tabs, the persistent action row,
+ * the import panel and the finish card. Chrome colours flow through tokens.css.
  */
 
 .start {
@@ -12,7 +12,6 @@
   padding: 40px 22px 96px;
   position: relative;
 }
-.start--editor { max-width: 1040px; }
 /* A soft brand-tinted wash behind the hero so a first-run page reads as crafted,
    not blank — the accent the user is about to define, hinted. Theme-aware via the
    primary token; pointer-events-through so it never blocks the controls. */
@@ -40,7 +39,7 @@
 .start-back:hover { color: hsl(var(--foreground)); }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
-.start-head { margin-bottom: 34px; max-width: 660px; }
+.start-head { margin-bottom: 26px; max-width: 660px; }
 .start-eyebrow {
   display: inline-block;
   margin: 0 0 12px;
@@ -67,28 +66,101 @@
   color: hsl(var(--muted-foreground));
 }
 
-/* ── The editor + its sibling panels (radius, import), stacked ─────────────── */
-.start-editor-wrap { display: flex; flex-direction: column; gap: 22px; }
-.start-editor-mount { display: block; }
-.start-editor-loading { margin: 0; font-size: 13px; color: hsl(var(--muted-foreground)); }
-/* The shared editor's own panels already gap themselves (.be gap); match that
-   rhythm so the whole page reads as one column of evenly-spaced cards. */
-.start-editor-mount .be { gap: 22px; }
+/* ── Step tabs — numbered, in working order. The active step is filled; a step
+      with fresh changes nudges the NEXT one (a quiet pulse on its number), so
+      the way forward is always visible without shouting. ───────────────────── */
+.start-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.start-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.start-tab:hover { border-color: hsl(var(--primary) / 0.55); color: hsl(var(--foreground)); }
+.start-tab.is-active {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.start-tab-n {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: hsl(var(--muted) / 0.7);
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.start-tab.is-active .start-tab-n { background: hsl(var(--primary-foreground) / 0.22); color: hsl(var(--primary-foreground)); }
+.start-tab.is-nudge .start-tab-n { background: hsl(var(--primary) / 0.18); color: hsl(var(--primary)); }
+@media (prefers-reduced-motion: no-preference) {
+  .start-tab.is-nudge .start-tab-n { animation: start-nudge 1.8s ease-in-out infinite; }
+}
+@keyframes start-nudge {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.35); }
+  50%      { box-shadow: 0 0 0 5px hsl(var(--primary) / 0); }
+}
 
-/* Secondary utilities — corner + import, side by side (they're settings, not the
-   brand work), collapsing to one column when there isn't room. */
-.start-utils { display: grid; gap: 22px; }
-@media (min-width: 720px) { .start-utils { grid-template-columns: 1fr 1fr; align-items: start; } }
+/* ── The persistent action row: Import/Export always on the left; the primary
+      Save & continue appears on the right the moment anything changes. Sticky
+      under the top of the viewport so the actions never scroll out of reach. ── */
+.start-actions {
+  position: sticky;
+  top: 10px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 18px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card) / 0.92);
+  backdrop-filter: blur(8px);
+}
+.start-actions-note { font-size: 12px; color: hsl(var(--muted-foreground)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.start-actions-note.is-error { color: hsl(var(--destructive)); }
+.start-save { margin-inline-start: auto; }
+.start-save[hidden] { display: none; }
 
-/* Corner-style + import reuse the editor's .be-panel chrome, and the corner-style
-   slider's own .brand-radius-* rules, both from dashboard.css. */
-
-/* ── Import panel ────────────────────────────────────────────────────────── */
+/* ── Import panel (folds open under the action row) ─────────────────────── */
+.start-import-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  margin: -8px 0 18px;
+  padding: 14px 16px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card) / 0.6);
+}
+.start-import-panel[hidden] { display: none; }
+.start-import-blurb { margin: 0; font-size: 13px; line-height: 1.6; color: hsl(var(--muted-foreground)); max-width: 74ch; }
+.start-import-blurb strong { color: hsl(var(--foreground)); }
+.start-import-btn { cursor: pointer; }
 .start-import-result {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 12px;
+  align-self: stretch;
   padding: 12px 14px;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
@@ -112,64 +184,34 @@
 .start-import-err { margin: 0; font-size: 12.5px; font-weight: 600; color: hsl(var(--destructive)); }
 .start-cta--import { align-self: flex-start; }
 
-/* ── Done note — surfaced near the top (above the editor) as the lead-in
-      reassurance; the floating "Save & begin" button (below) is the one
-      explicit finish line. ────────── */
-.start-done-note {
-  margin: 30px 0 34px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: hsl(var(--muted-foreground));
-}
-.start-cta {
-  padding: 11px 20px;
-  border: 1px solid hsl(var(--primary));
-  border-radius: var(--radius);
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
-  transition: filter 0.12s;
-}
-.start-cta:hover { filter: brightness(1.08); }
-.start-cta:disabled { opacity: 0.6; cursor: default; }
+/* ── The studio mount ────────────────────────────────────────────────────── */
+/* z-index auto (overriding .start > *'s 1) keeps this from becoming a stacking
+   context: the swatch popover inside (.be-editor, z-index 30) then joins the
+   page context and paints ABOVE the sticky action row (z-index 20), while the
+   studio's normal-flow panels still scroll beneath it. */
+.start-editor-wrap { display: flex; flex-direction: column; gap: 22px; z-index: auto; }
+.start-editor-mount { display: block; }
+.start-editor-loading { margin: 0; font-size: 13px; color: hsl(var(--muted-foreground)); }
+/* The studio's own panels already gap themselves (.be gap); match that rhythm
+   so the whole page reads as one column of evenly-spaced cards. */
+.start-editor-mount .be { gap: 22px; }
+.start-editor-mount .be-tab { gap: 22px; }
 
-/* ── Floating "Save & begin" — fixed to the viewport (a sibling of .start, not
-      a descendant, so nothing in the page's own layout/scroll affects it) so
-      it stays reachable no matter how far down the editor/import panels the
-      user has scrolled. */
-.start-float-cta {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 50;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 22px;
-  border: 1px solid hsl(var(--primary));
-  border-radius: calc(var(--radius) * 2);
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 10px 28px -10px hsl(var(--primary) / 0.6), 0 2px 8px hsl(0 0% 0% / 0.15);
-  transition: filter 0.12s, transform 0.12s;
+/* ── Finish card — the three ways onward, revealed by the last step's save. ── */
+.start-finish {
+  margin-top: 26px;
+  padding: 22px 24px;
+  border: 1px solid hsl(var(--primary) / 0.35);
+  border-radius: var(--radius);
+  background: hsl(var(--primary) / 0.06);
 }
-.start-float-cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
-.start-float-cta svg { width: 16px; height: 16px; flex: none; }
-@media (max-width: 640px) {
-  .start-float-cta { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); padding: 12px 18px; font-size: 14px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .start-float-cta { transition: none; }
-  .start-float-cta:hover { transform: none; }
-}
+.start-finish[hidden] { display: none; }
+.start-finish-title { margin: 0 0 6px; font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.start-finish-sub { margin: 0 0 14px; font-size: 13.5px; color: hsl(var(--muted-foreground)); }
+.start-finish-links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.start-finish-links a { text-decoration: none; }
+.start-finish-primary { display: inline-flex; align-items: center; gap: 6px; }
+.start-finish-or { font-size: 12px; color: hsl(var(--muted-foreground)); margin-inline: 4px; }
 
 /* ── SVG colour review (the "no formal tokens — pick which colours to keep"
       path) — a checkbox grid, each chip a uniform-border rounded swatch card
@@ -210,4 +252,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .start-actions { top: 6px; flex-wrap: wrap; }
+  .start-save { flex: 1 1 100%; margin-inline-start: 0; }
 }

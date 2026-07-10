@@ -1,0 +1,577 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* ── Brand studio (lib/brand-editor.ts) — every .be-* rule for the editor the
+      #/start brand studio mounts. Extracted from dashboard.css when the editor
+      became start-exclusive; imported by brand-editor.ts so whichever view mounts
+      the editor pulls these styles with the same lazy chunk. `.be` is the
+      positioning context for the swatch-editor popover. */
+
+.be { position: relative; display: grid; gap: 1.1rem; }
+.be-locked { margin: 0; font-size: .86rem; line-height: 1.6; color: hsl(var(--muted-foreground)); }
+.be-panel { border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 1.05rem 1.1rem; background: hsl(var(--card)); }
+.be-panel-head { margin-bottom: .9rem; }
+.be-panel-title { margin: 0; font-size: .84rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: hsl(var(--foreground)); }
+.be-panel-sub { margin: .3rem 0 0; max-width: 74ch; font-size: .8rem; line-height: 1.55; color: hsl(var(--muted-foreground)); }
+.be-panel-sub strong { color: hsl(var(--foreground)); font-weight: 600; }
+.be-err { margin: .5rem 0 0; font-size: .78rem; color: hsl(var(--destructive)); }
+
+.be-btn, .be-cta, .be-add {
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  font: inherit; font-size: .78rem; font-weight: 600; padding: .45rem .85rem; cursor: pointer;
+}
+.be-btn:hover, .be-add:hover { border-color: hsl(var(--primary) / .55); }
+.be-cta { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
+.be-cta:hover { background: hsl(var(--primary) / .88); }
+.be-btn:disabled, .be-cta:disabled { opacity: .55; cursor: default; }
+
+/* "Use this colour" lights up a bright, glossy green — the SAME vivid pass green
+   as the verify view's valid cards (--vf-pass* in valid.css, inlined here since
+   those are page-scoped) — the moment any derive input changes, so a fresh palette
+   is waiting to apply. Mirrors .valid-item-badge.is-good; rests again once applied. */
+.be-cta.is-active {
+  color: hsl(0 0% 100%);
+  border-color: hsl(0 0% 100% / .3);
+  background: linear-gradient(163deg, hsl(150 66% 51%), hsl(154 58% 33%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 4px 12px -5px hsl(151 57% 40% / .7);
+}
+.be-cta.is-active:hover { background: linear-gradient(163deg, hsl(150 70% 54%), hsl(154 60% 36%)); }
+@media (prefers-reduced-motion: no-preference) {
+  .be-cta.is-active { animation: be-cta-pulse 2.4s ease-in-out infinite; }
+}
+@keyframes be-cta-pulse {
+  0%, 100% { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 4px 12px -5px hsl(151 57% 40% / .7); }
+  50%      { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 6px 18px -4px hsl(151 57% 40% / .95); }
+}
+.be-add--sm, .be-btn--sm { padding: .25rem .6rem; font-size: .72rem; }
+
+/* ── Corner style — the shape.radius slider, a .be-panel on the studio's
+      Tokens tab (the Dashboard shows the value read-only, without this). */
+.brand-radius-row { display: flex; align-items: center; gap: 12px; margin-top: 0.2rem; }
+.brand-radius-preview {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  background: hsl(var(--primary) / 0.55);
+  border: 0;
+  box-shadow: 0 2px 3px #0002;
+}
+.brand-radius-slider { flex: 1 1 auto; min-width: 0; accent-color: hsl(var(--primary)); }
+.brand-radius-value {
+  flex: 0 0 auto;
+  min-width: 7.5ch;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  color: hsl(var(--muted-foreground));
+  text-align: right;
+}
+
+/* Derive: the Primary picker leads full-width, then controls + live preview. */
+.be-derive { display: grid; gap: 1.1rem; }
+@media (min-width: 900px) { .be-derive { grid-template-columns: minmax(240px, 320px) 1fr; align-items: start; } }
+/* The inline colour picker gets its own roomy row spanning both columns —
+   sliders + swatch palette side by side, given the whole panel width to breathe
+   (it used to be a cramped popover trapped in the narrow controls column). */
+.be-colorpick { grid-column: 1 / -1; display: grid; gap: .5rem; }
+
+/* Screen readout — the primary's on-screen (sRGB) form (its print form sits in
+   the shared print-lock control, .be-lock, right below). */
+.be-subst { display: grid; gap: .3rem; margin-top: .35rem; font-size: .78rem; }
+.be-subst-line { display: flex; align-items: center; gap: .6rem; }
+.be-subst-key {
+  flex: 0 0 3.4rem; font-size: .66rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: hsl(var(--muted-foreground));
+}
+.be-subst-val { font-family: var(--font-mono); font-size: .76rem; color: hsl(var(--foreground)); }
+.be-subst-tag {
+  margin-inline-start: auto; font-size: .64rem; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: hsl(var(--muted-foreground));
+}
+
+/* Shared print-lock control (independent CMYK lock + Spot-colour lock) — the
+   Colour panel's primary field and the Palette panel's swatch popover both
+   mount one; each block locks/pins independently of the other. */
+.be-lock { display: grid; gap: .6rem; margin-top: .2rem; font-size: .78rem; }
+/* The collapsible bodies set their own display (grid/flex), which would beat the
+   UA's [hidden] { display: none } — restate it so `hidden` actually hides. */
+.be-lock-body[hidden], .be-lock-spot[hidden], .be-ps-body[hidden] { display: none; }
+.be-lock-block { display: grid; gap: .5rem; }
+.be-lock-block + .be-lock-block { padding-top: .5rem; border-top: 1px solid hsl(var(--border) / .5); }
+.be-lock-block.is-pinned .be-subst-val { color: hsl(var(--primary)); font-weight: 600; }
+.be-lock-body { display: grid; gap: .5rem; margin-top: .1rem; }
+.be-lock-spot { display: flex; gap: .5rem; flex-wrap: wrap; }
+.be-lock-field { display: grid; gap: .12rem; flex: 1 1 10rem; font-size: .68rem; color: hsl(var(--muted-foreground)); }
+.be-lock-field em { font-style: normal; opacity: .75; }
+.be-lock-field input {
+  padding: .32rem .5rem; font: inherit; font-size: .78rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.be-lock-field input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
+.be-cmyk-inputs { display: flex; gap: .35rem; }
+.be-cmyk-in { display: grid; gap: .12rem; justify-items: center; }
+.be-cmyk-in span {
+  font-family: var(--font-mono); font-size: .62rem; font-weight: 700; color: hsl(var(--muted-foreground));
+}
+.be-cmyk-in input {
+  width: 3.1rem; padding: .28rem .35rem; text-align: center; font: inherit; font-size: .76rem;
+  font-family: var(--font-mono); border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.be-cmyk-in input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
+/* A locked swatch's small tag — reused on the tile, the popover header + here. */
+.be-swatch-lock {
+  display: inline-block; margin-inline-start: .4rem; padding: .05rem .35rem;
+  font-size: .58rem; font-weight: 700; letter-spacing: .05em; vertical-align: middle;
+  color: hsl(var(--primary)); border: 1px solid hsl(var(--primary) / .4); border-radius: 999px;
+}
+.be-derive-controls { display: grid; gap: .8rem; align-content: start; }
+.be-field { display: grid; gap: .35rem; }
+.be-field-label { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-seg { flex-wrap: wrap; }
+/* Shades slider — how many divisions each ramp carries (3–20). */
+.be-steps-field .be-field-label { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.be-steps-val { font-family: var(--font-mono); font-size: .8rem; font-weight: 700; color: hsl(var(--foreground)); }
+.be-steps-slider { width: 100%; accent-color: hsl(var(--primary)); cursor: pointer; }
+
+.be-preview { display: grid; gap: .9rem; align-content: start; }
+.be-ramps { display: grid; gap: .5rem; }
+.be-ramp-row { display: grid; grid-template-columns: 5.2rem 1fr; align-items: center; gap: .6rem; }
+.be-ramp-label { font-size: .72rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
+/* flex, not a fixed-column grid — the ramp can be 3 to 20 steps (the Shades
+   slider), so cells must always share the full row width equally, not just 9/9ths
+   of one sized for a hardcoded step count. */
+.be-ramp { display: flex; border-radius: calc(var(--radius) * .45); overflow: hidden; box-shadow: 0 0 0 1px hsl(var(--border)); }
+.be-ramp-cell { height:3.5em; display: block; flex: 1 1 0; min-width: 0; aspect-ratio: 1 / 1.35; min-height: 22px; border: 0; margin: 0; padding: 0; }
+/* Neutral/secondary steps are real buttons (the Primary ramp stays a plain
+   span) — the selected one gets the same ring `.be-swatch.is-selected` uses. */
+button.be-ramp-cell { cursor: pointer; }
+button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), inset 0 0 0 4px hsl(var(--card)); }
+.be-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .7rem; }
+.be-spec { border: 1px solid; border-radius: calc(var(--radius) * .7); padding: .8rem .85rem; display: grid; gap: .35rem; }
+.be-spec-name { font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.be-spec-h { margin: 0; font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
+.be-spec-b { margin: 0; font-size: .74rem; line-height: 1.5; }
+.be-spec-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .2rem; }
+.be-spec-btn { border-radius: var(--radius); padding: .28rem .7rem; font-size: .72rem; font-weight: 600; }
+.be-spec-ratio { font-size: .68rem; font-variant-numeric: tabular-nums; }
+
+/* ── Build your palette (the brand generator): harmony picker → named candidate
+      chips (each + Add to officiate into the brand) → "applied" preview scenes. */
+.be-generate { display: grid; gap: 1.1rem; }
+.be-schemekinds { flex-wrap: wrap; }
+.be-candidates { display: grid; gap: .55rem; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.be-cand {
+  display: flex; align-items: center; gap: .6rem; min-width: 0;
+  padding: .45rem .55rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6);
+  background: hsl(var(--background));
+}
+.be-cand.is-added { opacity: .62; }
+.be-cand-sw { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12); }
+.be-cand-meta { display: grid; gap: 1px; min-width: 0; margin-inline-end: auto; }
+.be-cand-name { font-size: .78rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-cand-hex { font-family: var(--font-mono); font-size: .66rem; color: hsl(var(--muted-foreground)); }
+.be-cand-add {
+  flex: 0 0 auto; border: 1px solid hsl(var(--primary) / .4); background: hsl(var(--primary) / .1);
+  color: hsl(var(--primary)); font: inherit; font-size: .72rem; font-weight: 700;
+  padding: .3rem .6rem; border-radius: 999px; cursor: pointer; transition: background .12s;
+}
+.be-cand-add:hover:not(:disabled) { background: hsl(var(--primary) / .18); }
+.be-cand-add:disabled { border-color: hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground)); cursor: default; }
+
+.be-previews-wrap { display: grid; gap: .5rem; }
+.be-previews { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.be-pv { margin: 0; display: grid; gap: .35rem; }
+.be-pv-art { border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6); overflow: hidden; background: hsl(var(--background)); }
+.be-pv-art svg { display: block; width: 100%; height: auto; }
+.be-pv-cap { font-size: .68rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+
+/* Palette: the wheel view beside the grouped swatch grid (stacks when narrow). */
+.be-pal-actions { display: flex; align-items: flex-end; gap: .6rem; flex-wrap: wrap; margin-bottom: .9rem; }
+.be-pal-fmt-field { flex: 0 1 260px; }
+.be-pal-split { display: grid; gap: 1.2rem; }
+@media (min-width: 820px) { .be-pal-split { grid-template-columns: minmax(220px, 300px) 1fr; align-items: start; } }
+.be-pal-wheel { align-self: start; }
+.be-wheel-hint { margin: .55rem 0 0; font-size: .68rem; line-height: 1.4; color: hsl(var(--muted-foreground)); text-align: center; }
+/* Editable wheel affordances: crosshair over empty space (= add), grab on a dot. */
+.dash-wheel--edit { cursor: crosshair; touch-action: none; }
+.dash-wheel-dot--edit { cursor: grab; }
+.dash-wheel-dot--edit:active { cursor: grabbing; }
+
+/* Palette: grouped, editable swatch tiles. */
+.be-pal-top { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .9rem; }
+.be-pal-count { font-size: .74rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.be-pal-group + .be-pal-group { margin-top: 1rem; }
+.be-pal-group-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .45rem; }
+.be-pal-group-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-pal-group-n { margin-inline-start: .4rem; font-weight: 500; opacity: .7; }
+.be-pal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: .5rem; }
+
+.be-swatch {
+  display: flex; align-items: center; gap: .55rem; text-align: start; cursor: pointer;
+  padding: .4rem .5rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * 2);
+  background: hsl(var(--background)); font: inherit;
+}
+.be-swatch:hover { border-color: hsl(var(--primary) / .55); }
+.be-swatch.is-selected { border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--ring) / .28); }
+.be-swatch.is-pinned:not(.is-selected) { border-color: hsl(var(--primary) / .4); }
+.be-swatch-chip {
+  flex: 0 0 auto; width: 48px; height: 48px; border-radius: var(--radius);
+  /* The colour rides OVER a checkerboard, so a translucent swatch shows its
+     alpha (the checker peeks through) instead of reading as a solid colour. */
+  background:
+    linear-gradient(var(--sw, transparent), var(--sw, transparent)),
+    repeating-conic-gradient(hsl(var(--muted-foreground) / .35) 0% 25%, hsl(var(--card)) 0% 50%) 50% / 8px 8px;
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12);
+}
+.be-swatch-meta { display: grid; gap: 1px; min-width: 0; }
+.be-swatch-name { font-size: .76rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-swatch-hex { font-size: .68rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+
+/* Swatch editor popover — absolutely placed under the clicked tile by JS.
+   The card is a flex column: everything scrolls in .be-editor-scroll while the
+   Delete/Save footer stays pinned — the two actions never scroll away. */
+.be-editor { position: absolute; z-index: 30; width: 300px; }
+.be-editor[hidden] { display: none; }
+.be-editor-card {
+  display: flex; flex-direction: column; border-radius: var(--radius);
+  border: 1px solid hsl(var(--border)); background: hsl(var(--popover));
+  box-shadow: 0 12px 34px hsl(var(--foreground) / .18);
+  /* The inline picker makes the card tall — keep it on-screen, scroll the body. */
+  max-height: min(72vh, 560px); overflow: hidden;
+}
+.be-editor-scroll { display: grid; gap: .6rem; padding: .7rem .7rem .6rem; overflow-y: auto; min-height: 0; }
+/* Identity row — the live chip anchors what's being edited; the name renames in place. */
+.be-editor-id { display: flex; align-items: center; gap: .5rem; }
+.be-editor-chip {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: calc(var(--radius) * .45);
+  background:
+    linear-gradient(var(--sw, transparent), var(--sw, transparent)),
+    repeating-conic-gradient(hsl(var(--muted-foreground) / .28) 0% 25%, transparent 0% 50%) 0 0 / 8px 8px;
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12);
+}
+.be-editor-lockbadge { flex: 0 0 auto; }
+.be-editor-field { display: grid; gap: .3rem; }
+.be-editor-name {
+  width: 100%; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .82rem; font-weight: 600;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  outline: none;
+}
+/* "Stored as" — how the token document writes this swatch's value. Tiny on purpose. */
+.be-stored { display: flex; align-items: center; gap: .5rem; }
+.be-stored[hidden] { display: none; }
+.be-stored-label { font-size: .64rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-stored-seg { display: inline-flex; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45); overflow: hidden; }
+.be-stored-seg button {
+  border: 0; background: transparent; color: hsl(var(--muted-foreground));
+  font: inherit; font-size: .64rem; font-weight: 700; letter-spacing: .03em;
+  padding: .22rem .48rem; cursor: pointer;
+}
+.be-stored-seg button + button { border-inline-start: 1px solid hsl(var(--border) / .6); }
+.be-stored-seg button[aria-pressed="true"] { background: hsl(var(--primary) / .14); color: hsl(var(--foreground)); }
+/* Print substitutes — folded until asked; the summary chips carry the state. */
+.be-subst-details { border-top: 1px solid hsl(var(--border) / .6); padding-top: .5rem; }
+.be-subst-details summary {
+  display: flex; align-items: center; gap: .5rem; cursor: pointer; list-style: none;
+  font-size: .64rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground));
+}
+.be-subst-details summary::-webkit-details-marker { display: none; }
+.be-subst-details summary::after { content: '▸'; margin-inline-start: auto; font-size: .7rem; transition: rotate .12s; }
+.be-subst-details[open] summary::after { rotate: 90deg; }
+.be-subst-chips { display: inline-flex; gap: .3rem; }
+.be-ps-chip {
+  font-family: var(--font-mono); font-size: .62rem; text-transform: none; letter-spacing: 0;
+  padding: .1rem .4rem; border-radius: 999px;
+  background: hsl(var(--primary) / .12); color: hsl(var(--foreground));
+}
+.be-ps-chip--auto { background: hsl(var(--muted) / .6); color: hsl(var(--muted-foreground)); }
+.be-ps { display: grid; gap: .45rem; margin-top: .5rem; font-size: .78rem; }
+.be-ps-row { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+.be-ps-row input[type="checkbox"] { accent-color: hsl(var(--primary)); }
+.be-ps-key { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.be-ps-val { font-family: var(--font-mono); font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.be-ps-body { margin-inline-start: 1.45rem; }
+.be-ps-spot { display: flex; gap: .5rem; flex-wrap: wrap; }
+/* "Set by value" — colour-space select + value input + the extrapolated readout. */
+.be-fmt-row { display: flex; gap: .4rem; }
+.be-fmt-sel {
+  flex: 0 0 auto; padding: .4rem .5rem; font: inherit; font-size: .76rem; cursor: pointer;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  outline: none;
+}
+.be-fmt-input {
+  flex: 1 1 auto; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .8rem;
+  font-family: var(--font-mono); border: 1px solid hsl(var(--input));
+  border-radius: calc(var(--radius) * .5); background: hsl(var(--background)); color: hsl(var(--foreground));
+  outline: none;
+}
+/* Mouse/programmatic focus (openEditor() auto-focuses Name on open) — a subtle
+   tinted border, same treatment as .color-input, instead of the browser
+   default. Real keyboard focus gets a proper ring back via a11y.css. */
+.be-editor-name:focus,
+.be-fmt-sel:focus,
+.be-fmt-input:focus { border-color: hsl(var(--ring) / .6); }
+.be-fmt-out { font-size: .68rem; color: hsl(var(--muted-foreground)); font-family: var(--font-mono); min-height: 1em; }
+/* Sticky footer — pinned by the card's flex column, never scrolls away. */
+.be-editor-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  flex: 0 0 auto; padding: .55rem .7rem;
+  border-top: 1px solid hsl(var(--border) / .7); background: hsl(var(--popover));
+}
+.be-editor-del {
+  border: 1px solid hsl(var(--destructive) / .5); border-radius: calc(var(--radius) * .5);
+  background: transparent; color: hsl(var(--destructive));
+  font: inherit; font-size: .74rem; font-weight: 600; padding: .35rem .7rem; cursor: pointer;
+}
+.be-editor-del:hover { background: hsl(var(--destructive) / .1); }
+.be-editor-del[hidden] { display: none; }
+.be-editor-done { margin-inline-start: auto; }
+
+/* Fonts. */
+.be-font-list { list-style: none; margin: 0 0 .8rem; padding: 0; display: grid; gap: .45rem; }
+.be-font-row { display: flex; align-items: center; gap: .7rem; padding: .5rem .6rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .55); }
+.be-font-row.is-primary { border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .05); }
+.be-font-aa { flex: 0 0 auto; width: 2rem; font-size: 1.1rem; line-height: 1; text-align: center; color: hsl(var(--foreground)); }
+.be-font-meta { display: grid; gap: 1px; min-width: 0; margin-inline-end: auto; }
+.be-font-name { font-size: .82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-font-sub { font-size: .7rem; color: hsl(var(--muted-foreground)); }
+.be-font-badge { font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--primary)); }
+.be-font-del {
+  flex: 0 0 auto; border: 0; background: transparent; cursor: pointer; padding: .25rem .4rem;
+  color: hsl(var(--muted-foreground)); font-size: .8rem; border-radius: 6px;
+}
+.be-font-del:hover { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .1); }
+.be-font-empty { font-size: .78rem; color: hsl(var(--muted-foreground)); padding: .4rem .1rem; }
+.be-font-add { display: flex; gap: .5rem; flex-wrap: wrap; }
+.be-font-add input {
+  flex: 1 1 16rem; min-width: 0; padding: .45rem .6rem; font: inherit; font-size: .8rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+
+/* Logo variants — a matrix of orientation (rows) × treatment (tiles per row). */
+.be-logo-grid { display: grid; gap: 1.3rem; }
+.be-logo-group { display: grid; gap: .6rem; }
+.be-logo-group-head { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; }
+.be-logo-group-name { font-size: .8rem; font-weight: 700; letter-spacing: .01em; color: hsl(var(--foreground)); }
+.be-logo-group-hint { font-size: .74rem; color: hsl(var(--muted-foreground)); }
+.be-logo-row { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.be-logo-slot { display: grid; gap: .4rem;}
+.be-logo-slot-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.2rem; }
+.be-logo-slot-name { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-logo-del {
+  border: 0; background: transparent; cursor: pointer; padding: .1rem .3rem; line-height: 1;
+  color: hsl(var(--muted-foreground)); font-size: .8rem; border-radius: 6px;
+}
+.be-logo-del:hover { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .1); }
+.be-logo-drop {
+  display: grid; place-items: center; cursor: pointer; overflow: hidden;
+  aspect-ratio: 1 / 1; padding: .8rem;
+  border: 1.5px dashed hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--background)); transition: border-color .12s, background .12s;
+}
+.be-logo-slot.is-filled .be-logo-drop { border-style: solid; }
+.be-logo-drop:hover { border-color: hsl(var(--primary) / .55); }
+.be-logo-art {
+  
+  background-image:
+    repeating-conic-gradient(
+      rgba(255,255,255,.05) 0% 25%,
+      rgba(0,0,0,.05) 0% 50%);
+     background-position: 50%; background-size: 1rem 1rem ;  display: grid; place-items: center; width: 100%; height: 100%; border-radius: calc(var(--radius) * .6); }
+
+
+     .be-logo-slot[data-treatment$="reverse"] .be-logo-art{
+background-image:
+    repeating-conic-gradient(
+      rgba(255,255,255,.05) 0% 25%,
+      rgba(0,0,0,.05) 0% 50%) #000c;
+     background-position: 50%; background-size: 1rem 1rem !important ;
+     background-color:#000c !important;
+
+     }
+
+
+     .be-logo-art img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* Reverse marks (primary-reverse, mono-reverse) read on dark; plain mono on a
+   neutral card so a one-colour dark mark still shows. */
+.be-logo-slot[data-treatment$="reverse"] .be-logo-art { background: hsl(var(--foreground)); padding: .5rem; }
+.be-logo-slot[data-treatment="mono"] .be-logo-art { background: hsl(var(--muted) / .5); padding: .5rem; }
+.be-logo-empty { font-size: 1.6rem; font-weight: 300; color: hsl(var(--muted-foreground) / .7); }
+.be-logo-hint { margin: 0; font-size: .7rem; line-height: 1.45; color: hsl(var(--muted-foreground)); }
+
+/* Share. */
+.be-share-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+@media (max-width: 560px) {
+  .be-panel { padding: .9rem; }
+  .be-pal-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .be-editor { width: min(300px, calc(100vw - 3rem)); }
+}
+
+/* ── Tab panels — the host view (start.ts) sets data-active-tab on .be; every
+      panel stays mounted (wiring intact) and CSS shows just the active one.
+      Without the attribute (no tab bar) every panel shows, stacked. */
+.be-tab { display: grid; gap: 1.1rem; }
+.be[data-active-tab] > .be-tab { display: none; }
+.be[data-active-tab="logos"] > [data-be-tab-panel="logos"],
+.be[data-active-tab="color"] > [data-be-tab-panel="color"],
+.be[data-active-tab="type"] > [data-be-tab-panel="type"],
+.be[data-active-tab="tokens"] > [data-be-tab-panel="tokens"],
+.be[data-active-tab="catalogue"] > [data-be-tab-panel="catalogue"] { display: grid; }
+
+/* ── Colour-from-logo suggestion (Colour tab, fed by the Logos tab). */
+.be-suggest { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: -.3rem 0 .8rem; }
+.be-suggest[hidden] { display: none; }
+.be-suggest-note { display: inline-flex; align-items: center; gap: .45rem; font-size: .78rem; color: hsl(var(--muted-foreground)); }
+.be-suggest-note code { font-family: var(--font-mono); font-size: .74rem; color: hsl(var(--foreground)); }
+.be-suggest-sw {
+  width: 16px; height: 16px; border-radius: 4px; background: var(--sw, transparent);
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .15);
+}
+.be-suggest-dismiss {
+  border: 0; background: transparent; color: hsl(var(--muted-foreground));
+  font-size: .8rem; cursor: pointer; padding: .15rem .3rem;
+}
+.be-suggest-dismiss:hover { color: hsl(var(--foreground)); }
+
+/* ── Type roles specimen — each role rendered in the face that serves it.
+      (`be-typerole`, NOT `be-spec-*` — the derive preview's spec cards own
+      that family and a shared row class briefly broke their button row.) */
+.be-specimen { display: grid; gap: .9rem; }
+.be-typerole { display: grid; gap: .25rem; padding: .7rem .8rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .55); }
+.be-typerole-role { font-size: .64rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-typerole-sample { font-size: .95rem; line-height: 1.5; color: hsl(var(--foreground)); overflow-wrap: break-word; }
+.be-typerole-sample--h { font-size: 1.5rem; line-height: 1.2; font-weight: 700; }
+.be-typerole-sample--mono { font-size: .84rem; }
+.be-typerole-face { font-size: .68rem; color: hsl(var(--muted-foreground)); }
+.be-font-badge--mono { background: hsl(var(--muted) / .7); color: hsl(var(--foreground)); }
+.be-font-mono { white-space: nowrap; }
+
+/* ── Logos: identity sections + custom marks + the two inline add forms. */
+.be-logo-identity { display: grid; gap: 1rem; }
+.be-logo-identity + .be-logo-identity { margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid hsl(var(--border) / .7); }
+.be-logo-identity-head { display: flex; align-items: baseline; gap: .6rem; }
+.be-logo-identity-name { margin: 0; font-size: .78rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--foreground)); }
+.be-logo-slot[data-treatment="custom"] .be-logo-art { background: hsl(var(--muted) / .35); padding: .5rem; }
+.be-logo-addmark {
+  display: grid; gap: .45rem; align-content: center; padding: .7rem;
+  border: 1px dashed hsl(var(--border)); border-radius: calc(var(--radius) * .55);
+}
+.be-logo-addmark-name {
+  width: 100%; min-width: 0; padding: .35rem .5rem; font: inherit; font-size: .76rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .45);
+  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
+}
+.be-logo-addmark-name:focus { border-color: hsl(var(--ring) / .6); }
+.be-logo-addmark-pick { text-align: center; cursor: pointer; }
+.be-logo-addidentity { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid hsl(var(--border) / .7); }
+.be-logo-addidentity input {
+  flex: 1 1 16rem; min-width: 0; padding: .45rem .6rem; font: inherit; font-size: .8rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
+}
+.be-logo-addidentity input:focus { border-color: hsl(var(--ring) / .6); }
+
+/* ── Tokens tab: grouped rows, one editor per kind. */
+.be-tok-list { display: grid; gap: 1rem; margin-bottom: 1rem; }
+.be-tok-empty, .be-cat-empty { margin: 0; font-size: .8rem; color: hsl(var(--muted-foreground)); }
+.be-tok-group { display: grid; gap: .4rem; }
+.be-tok-group-head { display: flex; align-items: baseline; gap: .4rem; }
+.be-tok-group-label { font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-tok-group-n { font-size: .64rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.be-tok-row {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  padding: .45rem .6rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .5);
+}
+.be-tok-name { font-size: .78rem; font-weight: 600; min-width: 7rem; }
+.be-tok-editor { display: flex; align-items: center; gap: .45rem; flex: 1 1 auto; flex-wrap: wrap; }
+.be-tok-dim, .be-tok-num {
+  padding: .3rem .45rem; font: inherit; font-size: .76rem; font-family: var(--font-mono);
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .45);
+  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
+}
+.be-tok-num { width: 5.5rem; }
+.be-tok-dim:focus, .be-tok-num:focus { border-color: hsl(var(--ring) / .6); }
+.be-tok-range { flex: 1 1 8rem; min-width: 6rem; accent-color: hsl(var(--primary)); }
+.be-tok-out { font-family: var(--font-mono); font-size: .72rem; color: hsl(var(--muted-foreground)); min-width: 2.6rem; }
+.be-tok-unit { font-size: .74rem; color: hsl(var(--muted-foreground)); }
+.be-tok-shadow-chip {
+  width: 26px; height: 26px; flex: 0 0 auto; border-radius: calc(var(--radius) * .4);
+  background: hsl(var(--card)); border: 1px solid hsl(var(--border) / .6);
+}
+.be-tok-shadow-in { display: grid; gap: .1rem; justify-items: center; font-size: .6rem; color: hsl(var(--muted-foreground)); }
+.be-tok-shadow-in input {
+  width: 3.4rem; padding: .22rem .3rem; font: inherit; font-size: .68rem; font-family: var(--font-mono); text-align: center;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .4);
+  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
+}
+.be-tok-shadow-col { width: 30px; height: 26px; padding: 0; border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .4); background: none; cursor: pointer; }
+.be-tok-del {
+  margin-inline-start: auto; border: 0; background: transparent; cursor: pointer;
+  color: hsl(var(--muted-foreground)); font-size: .78rem; padding: .2rem .35rem;
+}
+.be-tok-del:hover { color: hsl(var(--destructive)); }
+.be-tok-add { display: flex; gap: .5rem; flex-wrap: wrap; }
+.be-tok-add-kind {
+  flex: 0 0 auto; padding: .4rem .5rem; font: inherit; font-size: .76rem; cursor: pointer;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
+}
+.be-tok-add-name {
+  flex: 1 1 14rem; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .8rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
+}
+.be-tok-add-kind:focus, .be-tok-add-name:focus { border-color: hsl(var(--ring) / .6); }
+
+/* ── Gradients (Colour tab). */
+.be-grad-list { display: grid; gap: .5rem; margin-bottom: .8rem; }
+.be-grad-row {
+  display: flex; align-items: center; gap: .7rem;
+  padding: .45rem .6rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .5);
+}
+.be-grad-preview { flex: 0 0 auto; width: 64px; height: 30px; border-radius: calc(var(--radius) * .4); box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .1); }
+.be-grad-meta { display: grid; gap: .3rem; min-width: 0; flex: 1 1 auto; }
+.be-grad-name { font-size: .78rem; font-weight: 600; }
+.be-grad-stops { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.be-grad-stop input[type="color"] { width: 26px; height: 22px; padding: 0; border: 1px solid hsl(var(--input)); border-radius: 5px; background: none; cursor: pointer; }
+.be-grad-addstop {
+  width: 22px; height: 22px; border: 1px dashed hsl(var(--border)); border-radius: 5px;
+  background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer; font-size: .8rem; line-height: 1;
+}
+.be-grad-addstop:hover { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
+.be-grad-angle { display: inline-flex; align-items: center; gap: .15rem; font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.be-grad-angle input {
+  width: 3.6rem; padding: .22rem .3rem; font: inherit; font-size: .72rem; font-family: var(--font-mono); text-align: center;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .4);
+  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
+}
+
+/* ── Catalogue tab: dropzone + the sorted recap. */
+.be-cat-groups { display: grid; gap: .45rem; margin-top: .9rem; }
+.be-cat-group { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
+.be-cat-group-label { font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-cat-group-n { margin-inline-start: .3rem; font-size: .66rem; font-weight: 400; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.be-cat-group-names { display: inline-flex; gap: .35rem; flex-wrap: wrap; }
+.be-cat-name {
+  font-size: .7rem; color: hsl(var(--foreground)); background: hsl(var(--muted) / .5);
+  padding: .12rem .5rem; border-radius: 999px; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.be-cat-more { font-size: .7rem; color: hsl(var(--muted-foreground)); align-self: center; }
+
+/* Keyboard focus on the studio's own form fields — their base rules suppress the
+   default outline (matching the app's mouse-focus treatment), which would ALSO
+   beat base.css's global :focus-visible ring (this sheet loads later). Restore a
+   real ring for keyboard users on every studio input in one place. */
+.be-tok-dim:focus-visible, .be-tok-num:focus-visible, .be-tok-add-kind:focus-visible,
+.be-tok-add-name:focus-visible, .be-tok-shadow-in input:focus-visible,
+.be-grad-angle input:focus-visible, .be-logo-addmark-name:focus-visible,
+.be-logo-addidentity input:focus-visible, .be-lock-field input:focus-visible,
+.be-cmyk-in input:focus-visible, .be-editor-name:focus-visible,
+.be-fmt-sel:focus-visible, .be-fmt-input:focus-visible,
+.be-stored-seg button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}

@@ -133,7 +133,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Many at once', desc: 'A grid where each row is a set of inputs, all exported together — a dozen languages or every size variant in one pass.' },
       ] },
       { icon: ICONS.extension, title: 'Browser extension', features: [
-        { name: 'Capture into a tool', desc: 'Pull a page or screenshot from the browser into a Lolly tool to finish it on-brand.' },
+        { name: 'Capture into a tool', desc: 'Pull a page or screenshot from the browser into a Lolly tool to finish and export it.' },
       ] },
       { icon: ICONS.transfer, title: 'Move to another device', features: [
         { name: 'Portable backup', desc: 'Export one checksummed zip — profile, every session + thumbnail, your images and preferences — and import-merge it on another install. No account, no cloud.' },
@@ -271,7 +271,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Cheap & deterministic', desc: 'A parameterised URL is a few tokens and always renders the same press-quality result locally — no prompt drift, no stochastic surprises in production.' },
       ] },
       { icon: ICONS.mcp, title: 'MCP server (add-on)', features: [
-        { name: 'Native agent endpoint', desc: 'An optional <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> server that any MCP client — an agent runtime, an IDE, a script — connects to: discover a tool, fill its declared inputs, and get back an on-brand file plus an editable link. Tools sync as data, so it needs no app update.' },
+        { name: 'Native agent endpoint', desc: 'An optional <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> server that any MCP client — an agent runtime, an IDE, a script — connects to: discover a tool, fill its declared inputs, and get back a finished file plus an editable link. Tools sync as data, so it needs no app update.' },
         { name: 'Every format an agent asks for', desc: 'One <code>lolly_render</code> call returns vector (SVG/PDF/EPS/DXF), raster (PNG/JPG/WebP/AVIF/TIFF), motion (MP4/WebM/GIF/APNG/Animated WebP/Animated SVG), documents (PowerPoint) or data — the server picks how to render each; the agent just names a format the tool declares.' },
         { name: 'A hosted add-on — not offline or edge', desc: 'Unlike the rest of Lolly, the MCP server is a <strong>server-side component</strong>: producing the full format range drives a headless browser against a built web shell, so it runs as a hosted service and is <strong>not suitable for offline or edge deployments</strong>. The on-device shells — web, desktop, mobile and CLI — stay the offline / air-gapped path.' },
         { name: 'Connect any MCP client', desc: 'Register the hosted endpoint as a <strong>custom connector</strong> (OAuth 2.1) in any client that supports one, or point an MCP-capable agent or IDE at it with a bearer token. Either way the client authenticates before it can render, and access is verified statelessly on every call — no session store to breach. See <strong>Security &amp; access control</strong>.' },
@@ -298,7 +298,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
   },
   {
     flag: 'brand', id: 'cap-brand', title: 'Brand & design system', icon: ICONS.swatch,
-    desc: 'Design decisions are locked at the template level; only the inputs that are meant to vary are exposed — so whatever anyone makes is on-brand by construction.',
+    desc: 'Design decisions are locked at the template level; only the inputs that are meant to vary are exposed — so whatever anyone makes stays inside the rules the author set.',
     cards: [
       { icon: ICONS.brush, title: 'Constraint-first tools', features: [
         { name: 'Guardrails, not guidelines', desc: 'Authors hard-code typography, colour and spacing; users just fill in content. The tool is the brand guardrail.' },
@@ -380,7 +380,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'One tool, every shell', desc: 'Tools call a versioned <code>host.*</code> API — profile, assets, state, clipboard, export and text-to-path, plus optional capability-gated extras (design tokens, PDF tools, page capture, network and tool composition) — and never touch the DOM, filesystem or network directly, which is why one tool runs unchanged in browser, Tauri and CLI.' },
       ] },
       { icon: ICONS.cube, title: 'Tool composition', features: [
-        { name: 'Tools compose tools', desc: 'A tool can embed another tool’s rendered output as an image — declared in the manifest (<code>composes</code>) and placed with <code>{{asset …}}</code>. It renders through the same engine path, so the embed is pixel-identical and on-brand, and recursion is depth- and cycle-guarded. One tool reuses another instead of copying its code.' },
+        { name: 'Tools compose tools', desc: 'A tool can embed another tool’s rendered output as an image — declared in the manifest (<code>composes</code>) and placed with <code>{{asset …}}</code>. It renders through the same engine path, so the embed is pixel-identical, and recursion is depth- and cycle-guarded. One tool reuses another instead of copying its code.' },
       ] },
       { icon: ICONS.sync, title: 'Synced as data', features: [
         { name: 'No app update needed', desc: 'Tools and assets sync from a signed manifest; new tools appear automatically on clients.' },

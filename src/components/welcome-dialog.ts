@@ -68,8 +68,8 @@ export function showWelcomeDialog(): Promise<WelcomeChoice> {
     // Static markup — no user-influenced strings, nothing to escape.
     dlg.innerHTML = `
       <p class="welcome-eyebrow">Welcome to Lolly</p>
-      <h2 class="welcome-title">Your brand, your tools</h2>
-      <p class="welcome-sub">On-brand creative assets from simple inputs — pick a path, change your mind any time.</p>
+      <h2 class="welcome-title">Your tools, your rules</h2>
+      <p class="welcome-sub">Finished creative assets from simple inputs — pick a path, change your mind any time.</p>
       <div class="welcome-cards">
         <button type="button" class="welcome-card welcome-card--brand" data-choice="brand">
           <span class="welcome-card-kicker">Make it yours</span>
