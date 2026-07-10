@@ -49,6 +49,8 @@ import {
 } from '../lib/asset-favourites.ts';
 import { storeUserUpload, isPdfUpload, UPLOAD_ACCEPT } from './picker.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
+import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
+import { attachAudioMeter } from '../lib/audio-meter.ts';
 import { groupPalette, swatch } from '../lib/swatches.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
 import { staggerReveal } from '../lib/reveal.ts';
@@ -711,7 +713,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         // to a WAV blob (plays in ANY browser, no codec dependency). Encoded audio plays
         // directly; an onerror surfaces an unsupported-format note instead of failing quietly.
         const zz = ref.format === 'zzfxm';
+        // A big live level meter above the controls (same bar look + theming as the
+        // Neurospicy player's — lib/audio-meter.ts draws both). Wired in openDetails.
         return `<${tag} class="cat-thumb cat-thumb-audio">`
+          + `<canvas class="cat-audio-meter" data-audio-meter width="640" height="160" aria-hidden="true"></canvas>`
           + `<audio ${zz ? `data-zzfxm-url="${escape(ref.url)}"` : `src="${escape(ref.url)}"`} controls preload="metadata" data-audio-preview></audio>`
           + `<p class="cat-audio-note" role="status" hidden></p></${tag}>`;
       }
@@ -1197,8 +1202,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // Opened by clicking a tile OR by a share deep link (/#/c?asset=<id>). Holds the big
   // preview, metadata, and every per-asset action, so a shared link resolves to a real
   // destination (this modal over the catalog), not a bare download.
+  // Dispose hook for the audio preview's level meter (attachAudioMeter). openDetails
+  // always closeDetails()-es first — including ←/→ paging — so this can't leak.
+  let detailsMeterDispose: (() => void) | null = null;
   function closeDetails(): void {
     if (detailsDialog) {
+      detailsMeterDispose?.();
+      detailsMeterDispose = null;
       // Destroy any Lottie player mounted in the preview — lottie-web ticks every mounted player
       // from one global rAF and won't stop on removal alone, so an un-reaped modal player leaks a loop.
       destroyLottiePlayers(detailsDialog);
@@ -1543,6 +1553,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           .then((wav) => { if (detailsDialog === dlg) { audioEl.dataset.wavBlob = wav; audioEl.src = wav; } else URL.revokeObjectURL(wav); })
           .catch(() => { if (note) { note.textContent = 'Couldn’t render this track.'; note.hidden = false; } });
       }
+      // The big preview meter: attaches its analyser on first play (a gesture, so the
+      // shared AudioContext may run) and is disposed with the modal (closeDetails).
+      const meterEl = dlg.querySelector<HTMLCanvasElement>('[data-audio-meter]');
+      if (meterEl) detailsMeterDispose = attachAudioMeter(meterEl, audioEl);
     }
     dlg.querySelector<HTMLButtonElement>('.cat-details-close')?.focus();
   }
@@ -1639,6 +1653,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     });
     if (!ok || !mounted) return;
     await host.assets._deleteUserAsset(ref.id).catch(() => {});
+    if (ref.type === 'audio') invalidateNeurospicyTracks(); // drop it from the music player too
     // Prune any dangling per-user overlay entries for the gone asset (one write each,
     // only when actually present).
     if (profile && favSet.delete(base)) await saveFavouriteAssets(host, profile, favSet);
@@ -1751,6 +1766,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       confirmLabel: 'Delete',
     });
     if (!ok || !mounted) return;
+    const hadAudio = ids.some(id => assetById.get(id)?.type === 'audio');
     for (const id of ids) {
       const base = assetBaseId(id);
       await host.assets._deleteUserAsset(id).catch(() => {});
@@ -1762,6 +1778,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       assetById.delete(id);
     }
     selected.clear();
+    if (hadAudio) invalidateNeurospicyTracks(); // drop them from the music player too
     if (!mounted) return;
     rerender();
   }

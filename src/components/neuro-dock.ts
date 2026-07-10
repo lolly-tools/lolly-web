@@ -94,7 +94,7 @@ function build(host: NeurospicyHost): HTMLElement {
       <button type="button" class="neuro-dock-btn" data-dock-close aria-label="Close player">${X}</button>
     </header>
     <div class="neuro-dock-body">${musicPlayerBodyHtml()}</div>
-    <p class="neuro-dock-attr">Radio via <a href="${SOMAFM_HOME}" target="_blank" rel="noopener noreferrer">SomaFM</a> · needs internet</p>`;
+    `;
   document.body.appendChild(el);
   wireMusicPlayerBody(el, host);
 
