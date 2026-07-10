@@ -43,6 +43,11 @@ export function hydrateNeurospicy(fromProfile: unknown): void {
 type WinAudio = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
 let ctx: AudioContext | null = null;
 let gain: GainNode | null = null;
+// A pass-through analyser between the gain and the speakers, so the player can
+// draw a level meter. Only our LOCAL buffer sources (zzfxm/opus) flow through
+// this graph — a future web-radio <audio> stream plays outside it, so it never
+// lights the meter (matching "meter vis, local songs only").
+let analyser: AnalyserNode | null = null;
 let src: AudioBufferSourceNode | null = null;
 let playingId = '';
 let paused = false;   // transient transport pause (the play/pause button) — mode stays enabled
@@ -57,10 +62,22 @@ function audio(): { ctx: AudioContext; gain: GainNode } | null {
   if (typeof window === 'undefined') return null;
   const AC = window.AudioContext ?? (window as WinAudio).webkitAudioContext;
   if (!AC) return null;
-  if (!ctx) { ctx = new AC(); gain = ctx.createGain(); gain.gain.value = state.volume; gain.connect(ctx.destination); }
+  if (!ctx) {
+    ctx = new AC();
+    gain = ctx.createGain();
+    gain.gain.value = state.volume;
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0.8;
+    gain.connect(analyser);
+    analyser.connect(ctx.destination);
+  }
   if (ctx.state === 'suspended') void ctx.resume().catch(() => { /* stays suspended until the next gesture */ });
   return { ctx, gain: gain! };
 }
+
+/** The analyser on the focus-loop graph, for a level meter. Null until audio starts. */
+export function getNeurospicyAnalyser(): AnalyserNode | null { return analyser; }
 
 function stopSource(): void {
   if (src) { try { src.stop(); } catch { /* already stopped */ } src.disconnect(); src = null; }
@@ -151,17 +168,34 @@ export function loopRank(id: string): number {
   return 1000;                               // the other breaks, in between
 }
 
-let loopsCache: { id: string; name: string }[] | null = null;
-export async function listLoops(host: NeurospicyHost): Promise<{ id: string; name: string }[]> {
+/** A track for the player: id + display name, plus tags (for a mood chip) and the
+ *  format (zzfxm/opus → local, meter-capable; a future 'stream' → radio, no meter). */
+export interface NeuroTrack { id: string; name: string; tags: string[]; format: string }
+let loopsCache: NeuroTrack[] | null = null;
+export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
   if (loopsCache) return loopsCache;
   try {
     const refs = await host.assets.query({ tags: ['neurospicy'] });
     for (const r of refs) { if (r.url) urlById.set(r.id, r.url); if (r.format) formatById.set(r.id, r.format); }
     loopsCache = refs
-      .map((r) => ({ id: r.id, name: String((r.meta?.name as string | undefined) ?? r.id) }))
+      .map((r): NeuroTrack => ({
+        id: r.id,
+        name: String((r.meta?.name as string | undefined) ?? r.id),
+        tags: Array.isArray(r.meta?.tags) ? (r.meta.tags as string[]) : [],
+        format: r.format ?? '',
+      }))
       .sort((a, b) => loopRank(a.id) - loopRank(b.id) || a.name.localeCompare(b.name));
   } catch { loopsCache = []; }
   return loopsCache;
+}
+
+/** Step to the previous/next track in picker order (wraps). Keeps the mode enabled. */
+export async function cycleNeurospicyLoop(host: NeurospicyHost, dir: 1 | -1): Promise<void> {
+  const loops = await listLoops(host);
+  if (!loops.length) return;
+  const cur = loops.findIndex((l) => l.id === state.loopId);
+  const next = ((cur < 0 ? 0 : cur) + dir + loops.length) % loops.length;
+  await setNeurospicyLoop(host, loops[next]!.id);
 }
 
 // Autoplay policy: audio can't start before a user gesture. If enabled at boot, arm a

@@ -91,6 +91,8 @@ export interface ExportOpts {
   meta?: ExportMeta;
   ingredients?: IngredientCredential[];  // preserved source-asset credentials → C2PA
   c2paInputs?: Record<string, string>;   // scalar-input digest → tools.lolly.export assertion (runtime-supplied)
+  c2paCapture?: { camera?: boolean; microphone?: boolean }; // sensor origin → created step = digitalCapture (runtime-supplied)
+  c2paTextAdded?: { sample?: string };   // text over an opened asset → a c2pa.edited "Added text" step (runtime-supplied)
   colorProfile?: string;
   thumbnail?: boolean;
   audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number };
@@ -2652,6 +2654,11 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
       watermarked: !!opts.watermark,
       imprint: !!opts.imprint && imprintCapable,
       audio: !!opts.audio?.url,
+      // Honest origin: the runtime flags a sensor capture (live camera / mic take).
+      ...(opts.c2paCapture ? { capture: opts.c2paCapture } : {}),
+      // The runtime only sets c2paTextAdded when text sits over an opened asset,
+      // so passing it through here keeps the "text is a real edit" gate intact.
+      ...(opts.c2paTextAdded ? { textAdded: true, textSample: opts.c2paTextAdded.sample } : {}),
     });
     return await signAndEmbedC2pa(blob, format, {
       title: opts.meta?.tool,

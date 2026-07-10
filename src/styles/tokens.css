@@ -21,6 +21,15 @@
   --font-mono: 'SUSE Mono', ui-monospace, monospace;
 }
 
+/* Generative-AI flag — a fixed violet, deliberately OUTSIDE any brand palette (and
+   outside the verify pass/fail hues) so "made by a model" reads the same in every
+   brand and never looks like a verdict. Space-separated HSL channels, used as
+   hsl(var(--vf-ai-1) / <a>). Shared by the /verify AI banner (parts/valid.css) and
+   the catalog's .genai-pill (parts/catalog.css). Same in light + dark. */
+:root {
+  --vf-ai-1: 276 86% 67%;  --vf-ai-2: 262 74% 48%;  --vf-ai: 270 80% 58%;
+}
+
 /* ─── Light ─────────────────────────────────────────────────────────────── */
 :root,
 [data-theme="light"] {

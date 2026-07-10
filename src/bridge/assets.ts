@@ -39,6 +39,10 @@ interface AssetMetaRecord {
   version?: string;
   tier?: string;
   deprecated?: boolean;
+  /** Generative-AI provenance disclosure (authored on the catalog entry): 'full' =
+   *  wholly AI-generated, 'partial' = contains AI-generated elements. Rides the index
+   *  entry through _syncFromIndex and surfaces on AssetRef.meta.aiGenerated. */
+  aiGenerated?: 'full' | 'partial';
   /** Tokens assets only: this brand is authoritative and not user-overridable
    *  (see bridge/tokens.ts). Rides the index entry through _syncFromIndex. */
   brandLock?: boolean;
@@ -165,7 +169,7 @@ export function createAssetsAPI(db: AssetsDb) {
       const format = pickFormat(meta, opts.format);
       const version = opts.version ?? meta.version;
       const blobKey = `${baseId}:${format.format}:${version}`;
-      const refMeta = { name: meta.name, tags: meta.tags };
+      const refMeta = { name: meta.name, tags: meta.tags, ...(meta.aiGenerated ? { aiGenerated: meta.aiGenerated } : {}) };
 
       const loadBlob = async (): Promise<Blob> => {
         let blob = await db.get('asset-blob', blobKey);
@@ -330,6 +334,7 @@ export function createAssetsAPI(db: AssetsDb) {
             ...(animated ? { animated: true } : {}),
             ...(thumbUrl ? { thumbUrl } : {}),
             ...(animationUrl ? { animationUrl } : {}),
+            ...(m.aiGenerated ? { aiGenerated: m.aiGenerated } : {}),
           },
         };
       });

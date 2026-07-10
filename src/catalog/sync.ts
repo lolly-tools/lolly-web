@@ -33,6 +33,8 @@ interface AssetMetaRecord {
   id: string;
   version?: string;
   tier?: string;
+  /** Generative-AI provenance disclosure — flows verbatim into the asset-meta store. */
+  aiGenerated?: 'full' | 'partial';
   formats: AssetFormat[];
   [key: string]: unknown;
 }
