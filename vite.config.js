@@ -69,9 +69,36 @@ function serveRepoStatic() {
   };
 }
 
+// Bake per-brand browser/PWA chrome into index.html at build time. The static
+// theme-color in index.html is SUSE pine (#0c322c); on any OTHER brand (e.g. the
+// blank lolly.art profile) that would wrongly tint the mobile address bar / PWA
+// titlebar SUSE green, and the SUSE webfont preload would just 404. Resolve the
+// active profile (LOLLY_PROFILE env on Vercel → the repo-root .lolly-profile
+// sticky file → the suse default) and, for a non-SUSE brand, neutralise the
+// theme-color and drop the dead SUSE font preload. SUSE builds are untouched.
+// (Longer term the colour should come from the active brand's own tokens.)
+function brandChrome() {
+  const NEUTRAL = '#4f84ba'; // the app's canonical brand fallback (brand-vars.ts)
+  let profile = process.env.LOLLY_PROFILE?.trim();
+  if (!profile) {
+    try { profile = readFileSync(resolve(repoRoot, '.lolly-profile'), 'utf8').trim(); } catch { /* no sticky file */ }
+  }
+  if (!profile) profile = 'suse';
+  const isSuse = profile === 'suse';
+  return {
+    name: 'lolly-brand-chrome',
+    transformIndexHtml(html) {
+      if (isSuse) return html; // index.html already carries the SUSE chrome
+      return html
+        .replace('<meta name="theme-color" content="#0c322c" />', `<meta name="theme-color" content="${NEUTRAL}" />`)
+        .replace(/\n\s*<link rel="preload" as="font"[^>]*SUSE\[wght\][^>]*>/, '');
+    },
+  };
+}
+
 export default defineConfig({
   publicDir: 'public',
-  plugins: [serveRepoStatic()],
+  plugins: [serveRepoStatic(), brandChrome()],
   resolve: {
     alias: {
       '@lolly/engine': resolve(repoRoot, 'engine/src/index.ts'),

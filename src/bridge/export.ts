@@ -62,14 +62,17 @@ interface WebIdentityAPI { signer(): Promise<unknown>; }
 type WebHost = HostV1 & { identity?: WebIdentityAPI };
 
 // The shell's brand palette entries fed via opts.palette (hex + CMYK 0–100).
-// spot: a named spot/Pantone lock (mutually exclusive with a bare cmyk anchor) —
-// its own cmyk is the equivalent used for preview / non-PDF export / the PDF
-// Separation tint-transform's alternate space (see buildCmykPaletteMap).
+// spot: a named spot/Pantone lock, independent of cmyk — a swatch may carry
+// either, both, or neither. cmyk (when set) is always the process-colour
+// fallback used for preview / non-PDF export / the PDF Separation
+// tint-transform's alternate space, whether or not a spot is also set; when a
+// spot is locked with no explicit cmyk, buildCmykPaletteMap derives one from
+// the swatch's own hex instead (see its own comment).
 interface BrandPaletteEntry {
   hex?: string;
   cmyk?: number[];
   label?: string;
-  spot?: { name: string; book?: string; cmyk: readonly number[] } | null;
+  spot?: { name: string; book?: string } | null;
 }
 
 // The union of options this host's export path understands. A superset of the
@@ -2329,28 +2332,31 @@ function printGeometry(node: Element, opts: ExportOpts, paletteSource: BrandPale
   return computePrintGeometry({ trimWpt: toPoints(d.w), trimHpt: toPoints(d.h), bleedPt, marks, palette });
 }
 
-// Normalise the shell's brand palette (hex + CMYK 0–100, or a spot lock's own
-// hex + CMYK-equivalent) into the engine's colour-bar form: { rgb, cmyk } both
-// 0–1, plus a label and — for a spot-locked swatch — its ink name, so the shell's
-// bar renderer can annotate the pair with the name instead of raw CMYK numbers.
-// Only entries with a declared CMYK substitution qualify (the others fall back to
-// generic RGB→CMYK at render time and so have nothing to verify). Deduped by
-// hex+ink, since the palette repeats Black/White as ramp endpoints; order is
-// preserved so the primary brand hues lead and survive the flat cell cap.
+// Normalise the shell's brand palette (hex + CMYK 0–100, and/or an independent
+// spot lock) into the engine's colour-bar form: { rgb, cmyk } both 0–1, plus a
+// label and — for a spot-locked swatch — its ink name, so the shell's bar
+// renderer can annotate the pair with the name instead of raw CMYK numbers.
+// Only entries with a declared CMYK anchor or a spot lock qualify (the others
+// fall back to generic RGB→CMYK at render time and so have nothing to verify);
+// a spot lock with no explicit cmyk still qualifies, deriving one from the
+// swatch's own hex (same fallback buildCmykPaletteMap uses) so its Separation
+// substitution has something to verify against. Deduped by hex+ink, since the
+// palette repeats Black/White as ramp endpoints; order is preserved so the
+// primary brand hues lead and survive the flat cell cap.
 function brandSwatchPalette(palette: BrandPaletteEntry[] | undefined): { rgb: Rgb; cmyk: [number, number, number, number]; label?: string; spotName?: string }[] {
   const out: { rgb: Rgb; cmyk: [number, number, number, number]; label?: string; spotName?: string }[] = [], seen = new Set<string>();
   for (const { hex, cmyk, label, spot } of palette ?? []) {
-    const source = spot?.cmyk ?? cmyk;
-    if (!hex || !source || source.length !== 4) continue;
+    if (!hex || (!cmyk && !spot)) continue;
     const h = hex.replace('#', '').toLowerCase();
     if (h.length !== 6) continue;                         // skips 'transparent' etc.
-    const key = `${h}:${source.join(',')}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
     const r = parseInt(h.slice(0, 2), 16) / 255;
     const g = parseInt(h.slice(2, 4), 16) / 255;
     const b = parseInt(h.slice(4, 6), 16) / 255;
-    out.push({ rgb: [r, g, b], cmyk: source.map(v => v / 100) as [number, number, number, number], label, spotName: spot?.name });
+    const frac = cmyk && cmyk.length === 4 ? (cmyk.map(v => v / 100) as [number, number, number, number]) : rgbToCmyk(r, g, b);
+    const key = `${h}:${frac.join(',')}:${spot?.name ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ rgb: [r, g, b], cmyk: frac, label, spotName: spot?.name });
   }
   return out;
 }
@@ -4694,10 +4700,14 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
 }
 
 // A resolved brand-palette hit: the CMYK 4-tuple (0–1) to substitute — a plain
-// process-locked (or auto-derived-and-measured) swatch's own cmyk, or a spot-locked
-// swatch's CMYK *equivalent* — plus, when the swatch is spot-locked, the spot's
-// name for a true /Separation colourspace substitution in the PDF path (the other
-// CMYK paths — TIFF, EPS — only ever use .cmyk; see their own scope notes).
+// process-locked (or auto-derived-and-measured) swatch's own cmyk, or, for a
+// swatch with no explicit cmyk lock, one derived from its screen hex — plus,
+// when the swatch is ALSO spot-locked, the spot's name for a true /Separation
+// colourspace substitution in the PDF path (the other CMYK paths — TIFF, EPS —
+// only ever use .cmyk; see their own scope notes). cmyk and spot are
+// independent locks (see BrandPaletteEntry's doc comment): an explicit cmyk
+// lock is never overridden by a spot lock's derived equivalent, so a
+// separately-tuned process build survives even when a spot is also set.
 interface PaletteSpotHit { name: string; cmyk: [number, number, number, number]; }
 interface PaletteHit { cmyk: [number, number, number, number]; spot?: PaletteSpotHit; }
 
@@ -4707,14 +4717,16 @@ interface PaletteHit { cmyk: [number, number, number, number]; spot?: PaletteSpo
 function buildCmykPaletteMap(palette: BrandPaletteEntry[]): Map<string, PaletteHit> {
   const map = new Map<string, PaletteHit>();
   for (const { hex, cmyk, spot } of palette) {
-    const source = spot?.cmyk ?? cmyk;
-    if (!hex || !source || source.length !== 4) continue;
+    if (!hex || (!cmyk && !spot)) continue;
     const h = hex.replace('#', '').toLowerCase();
     if (h.length !== 6) continue;
     const r = parseInt(h.slice(0, 2), 16) / 255;
     const g = parseInt(h.slice(2, 4), 16) / 255;
     const b = parseInt(h.slice(4, 6), 16) / 255;
-    const frac = source.map(v => v / 100) as [number, number, number, number];
+    // An explicit cmyk lock always wins; a spot-only lock derives its
+    // equivalent from the swatch's own hex (same fallback used when neither
+    // is locked at all).
+    const frac = cmyk && cmyk.length === 4 ? (cmyk.map(v => v / 100) as [number, number, number, number]) : rgbToCmyk(r, g, b);
     map.set(cmykKey(r, g, b), spot ? { cmyk: frac, spot: { name: spot.name, cmyk: frac } } : { cmyk: frac });
   }
   return map;

@@ -608,31 +608,44 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
       <div class="dash-panels">
         ${panel('device', initialTab, `
-          ${collapse({
-            id: 'dash-device',
-            flag: 'device',
-            title: 'This device',
-            cls: 'dash-device',
-            desc: 'A live snapshot of the browser and machine this session runs on. Read on the fly; nothing is stored or sent anywhere.',
-            body: `
-              <div class="dash-dev-hero" data-dev-hero>
-                ${Array.from({ length: 6 }, () => `<div class="dash-dev-stat is-skeleton"></div>`).join('')}
-              </div>
-              <div class="dash-dev-split"><span>Full readout</span></div>
-              <div class="plat-client-grid dash-dev-cards" data-client-grid></div>`,
-          })}
-          <div class="dash-bento">
-            <section class="plat-section dash-section dash-card dash-sound-theme" id="dash-sound-theme" data-flag="sound audio neurospicy focus volume themes theme">
-              ${sectionHead('Sound & focus', 'dash-sound-h', 'Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.')}
-              <div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>
-              <div class="dash-dev-split dash-sound-theme-split"><span>Theme</span></div>
-              ${themesBody()}
-              ${radiusBody()}
-            </section>
-            <section class="plat-section dash-section dash-card" id="dash-storage" data-flag="storage">
-              ${sectionHead('Storage', 'dash-storage-h', 'What Lolly is keeping on this device.')}
-              <div class="dash-store" data-store><p class="cat-empty">measuring…</p></div>
-            </section>
+          <div class="dash-device-grid">
+            <div class="dash-device-col">
+              ${collapse({
+                id: 'dash-device',
+                flag: 'device',
+                title: 'This device',
+                cls: 'dash-device',
+                desc: 'A live snapshot of the browser and machine this session runs on. Read on the fly; nothing is stored or sent anywhere.',
+                body: `
+                  <div class="dash-dev-hero" data-dev-hero>
+                    ${Array.from({ length: 6 }, () => `<div class="dash-dev-stat is-skeleton"></div>`).join('')}
+                  </div>
+                  <div class="dash-dev-split"><span>Full readout</span></div>
+                  <div class="plat-client-grid dash-dev-cards" data-client-grid></div>`,
+              })}
+            </div>
+            <div class="dash-bento">
+              ${collapse({
+                id: 'dash-sound-theme',
+                flag: 'sound audio neurospicy focus volume themes theme',
+                title: 'Sound & focus',
+                cls: 'dash-card dash-sound-theme',
+                desc: 'Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.',
+                body: `
+                  <div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>
+                  <div class="dash-dev-split dash-sound-theme-split"><span>Theme</span></div>
+                  ${themesBody()}
+                  ${radiusBody()}`,
+              })}
+              ${collapse({
+                id: 'dash-storage',
+                flag: 'storage',
+                title: 'Storage',
+                cls: 'dash-card',
+                desc: 'What Lolly is keeping on this device.',
+                body: `<div class="dash-store" data-store><p class="cat-empty">measuring…</p></div>`,
+              })}
+            </div>
           </div>
         `)}
 
@@ -650,6 +663,9 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             </section>
           </div>
           ${paletteSection(palette)}
+          <p class="plat-note dash-foot" role="note">
+            <strong>Your brand is live</strong> — colour, palette and fonts above write straight to this device and every tool, page and export follows. Your activity and storage — tracked on the other tabs above — are mirrored from your <a href="#/profile">Profile</a>, where you can manage them.
+          </p>
         `)}
 
         ${panel('caps', initialTab, `
@@ -690,14 +706,11 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           </div>
         `)}
       </div>
-
-      <p class="plat-note dash-foot" role="note">
-        <strong>Your brand is live</strong> — colour, palette and fonts above write straight to this device and every tool, page and export follows. The rest of this page is a record of what the platform and this session currently know; your activity and storage are mirrored from your <a href="#/profile">Profile</a>, where you can manage them.
-      </p>
     </div>`;
 
-  // Include the read-only foot note in the reveal ladder so it settles with the
-  // last section instead of snapping in at full opacity beneath the cascade.
+  // Include the read-only foot note (now inside the Design system panel) in the
+  // reveal ladder so it settles in with that panel's other sections instead of
+  // snapping in at full opacity beneath the cascade.
   armViewEnter(viewEl, '.tools-home, .plat-header, .dash-tabs, .plat-section, .dash-foot');
 
   // Primary tabs. Returns a `selectTab(key)` so the deep-link handler can jump to

@@ -16,15 +16,20 @@ export const isTransparent = (hex: string): boolean => !hex || hex.toLowerCase()
 export const cmykText = (cmyk: PaletteEntry['cmyk']): string =>
   Array.isArray(cmyk) ? `C ${cmyk[0]}  M ${cmyk[1]}  Y ${cmyk[2]}  K ${cmyk[3]}` : 'RGB→CMYK (generic)';
 
-/** A swatch carries a locked print value — either a plain CMYK anchor or a named
- *  spot colour (which also carries its own CMYK equivalent) — mutually exclusive. */
+/** A swatch carries a locked print value — a CMYK anchor, a named spot colour,
+ *  or both (independent locks; see palette.ts's PaletteEntry doc comment). */
 export const isLockedInk = (c: Pick<PaletteEntry, 'cmyk' | 'spot'>): boolean => Array.isArray(c.cmyk) || !!c.spot;
 
-/** The ink readout for a swatch: the spot name when locked to one (its CMYK
- *  equivalent is for preview/fallback, not what's shown here), else its plain
- *  CMYK figures (measured or the generic RGB→CMYK fallback). */
+/** The ink readout for a swatch: the spot name when locked to one, plus its
+ *  CMYK figures too when a CMYK anchor is ALSO explicitly set (the fallback
+ *  used for non-PDF export); a spot-only lock shows just the name (its
+ *  print-time CMYK equivalent is derived, not a value the user set); a
+ *  CMYK-only lock shows its figures; neither shows the generic RGB→CMYK
+ *  fallback note. */
 export const inkText = (c: Pick<PaletteEntry, 'cmyk' | 'spot'>): string =>
-  c.spot ? `Spot · ${c.spot.name}` : cmykText(c.cmyk);
+  c.spot
+    ? `Spot · ${c.spot.name}${Array.isArray(c.cmyk) ? ` · ${cmykText(c.cmyk)}` : ''}`
+    : cmykText(c.cmyk);
 
 /** One family's tint ramp, e.g. ['Jungle', [Jungle 1, Jungle 2, …]]. */
 export type PaletteRamp = [string, PaletteEntry[]];

@@ -131,6 +131,18 @@
 .dash-collapse:not([open]) .dash-collapse-summary { opacity: .82; }
 .dash-collapse:not([open]) .dash-collapse-summary:hover { opacity: 1; }
 
+/* ── This device tab — "This device" and the Sound&Focus/Storage stack side by
+   side on wide screens (roughly equal columns); one column, top to bottom, on
+   anything narrower. Every header in here is a collapsible <details> (via
+   collapse()), so mobile can fold each one independently. */
+.dash-device-grid { display: grid; gap: 1.1rem; grid-template-columns: 1fr; margin: 0 0 1.1rem; }
+@media (min-width: 900px) { .dash-device-grid { grid-template-columns: 1fr 1fr; align-items: start; } }
+.dash-device-col > .dash-collapse { margin: 0; }
+/* Sound & focus stacked above Storage, not side by side — overrides the
+   fan-and-wrap behaviour below, which is for the Design system tab's bento row. */
+.dash-device-grid .dash-bento { flex-direction: column; margin: 0; }
+.dash-device-grid .dash-bento > .plat-section { flex: 0 1 auto; }
+
 /* ── Bento — the instrument tiles fan across the full width and grow to fill each row.
    Flex-wrap + grow (not a fixed column grid) means the last row's tiles simply widen to
    close any remainder, so there are never stranded empty cells — the old grid left a hole
@@ -252,10 +264,13 @@
   text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
 
-/* Shared print-lock control (Auto ↔ Locked·Process/Spot) — the Colour panel's
-   primary field and the Palette panel's swatch popover both mount one. */
-.be-lock { display: grid; gap: .5rem; margin-top: .2rem; font-size: .78rem; }
-.be-lock.is-pinned .be-subst-val { color: hsl(var(--primary)); font-weight: 600; }
+/* Shared print-lock control (independent CMYK lock + Spot-colour lock) — the
+   Colour panel's primary field and the Palette panel's swatch popover both
+   mount one; each block locks/pins independently of the other. */
+.be-lock { display: grid; gap: .6rem; margin-top: .2rem; font-size: .78rem; }
+.be-lock-block { display: grid; gap: .5rem; }
+.be-lock-block + .be-lock-block { padding-top: .5rem; border-top: 1px solid hsl(var(--border) / .5); }
+.be-lock-block.is-pinned .be-subst-val { color: hsl(var(--primary)); font-weight: 600; }
 .be-lock-body { display: grid; gap: .5rem; margin-top: .1rem; }
 .be-lock-spot { display: flex; gap: .5rem; flex-wrap: wrap; }
 .be-lock-field { display: grid; gap: .12rem; flex: 1 1 10rem; font-size: .68rem; color: hsl(var(--muted-foreground)); }

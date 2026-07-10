@@ -42,9 +42,10 @@ import type { WebTokensAPI } from '../bridge/tokens.ts';
 import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
   isRec, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
-  setSwatchPrintOverride, getSwatchPrintOverride, primaryAnchorPath,
+  setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
 } from './brand-doc.ts';
 import type { BrandSwatch, PrintLock } from './brand-doc.ts';
+import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
 import { COLOR_FORMATS, formatColor, parseColor } from './color-formats.ts';
@@ -218,16 +219,17 @@ const segHtml = (name: string, opts: ReadonlyArray<{ id: string; label: string }
     ${opts.map(o => `<button type="button" class="view-seg-btn" data-val="${escape(o.id)}" aria-pressed="${o.id === active}">${escape(o.label)}</button>`).join('')}
   </div>`;
 
-// ── Shared print-lock control (Auto ↔ Locked·Process/Spot) ───────────────────
+// ── Shared print-lock control (independent CMYK lock + Spot-colour lock) ─────
 // One control, two mounts: the Colour panel's primary field and the Palette
-// panel's swatch popover (see mountPrintLock's two call sites below). Auto
-// converts the subject's screen colour to CMYK at export time; Locked pins
-// either a plain process-CMYK anchor or a named spot colour (whose own CMYK
-// equivalent reuses the same four inputs) — the two are mutually exclusive,
-// enforced by brand-doc.ts's setSwatchPrintOverride.
+// panel's swatch popover (see mountPrintLock's two call sites below). CMYK and
+// spot are independent (see brand-doc.ts's PrintLock doc comment) — a swatch
+// may carry either, both, or neither: CMYK is the process-colour fallback used
+// for preview / non-PDF export / the PDF Separation tint-transform's alternate
+// space whether or not a spot is also set, so locking a named ink never
+// discards a separately-tuned CMYK build.
 
-/** The auto sRGB→CMYK conversion of a hex (C,M,Y,K 0–100) — the value Locked
- *  seeds from, and what Auto shows as the print readout. */
+/** The auto sRGB→CMYK conversion of a hex (C,M,Y,K 0–100) — the value the CMYK
+ *  block seeds from when first locked, and what it shows while auto. */
 const autoCmykOf = (hex: string): [number, number, number, number] => {
   const p = formatColor('cmyk', hex).split(',').map(n => Math.round(parseFloat(n)) || 0);
   return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 0];
@@ -242,110 +244,122 @@ const samePath = (a: readonly string[], b: readonly string[]): boolean =>
 function printLockHtml(): string {
   return `
     <div class="be-lock" data-be-lock>
-      <div class="be-subst-line">
-        <span class="be-subst-key">Print</span>
-        <code class="be-subst-val" data-be-lock-readout></code>
+      <div class="be-lock-block" data-be-lock-block="cmyk">
+        <div class="be-subst-line">
+          <span class="be-subst-key">CMYK</span>
+          <code class="be-subst-val" data-be-lock-readout="cmyk"></code>
+        </div>
+        ${segHtml('lock-cmyk', [{ id: 'auto', label: 'Auto' }, { id: 'locked', label: 'Locked' }], 'auto', 'CMYK print colour')}
+        <div class="be-lock-body" data-be-lock-cmyk-body hidden>
+          <div class="be-cmyk-inputs">
+            ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-lock-c="${i}" aria-label="${l === 'K' ? 'Black' : l === 'C' ? 'Cyan' : l === 'M' ? 'Magenta' : 'Yellow'} %"></label>`).join('')}
+          </div>
+        </div>
       </div>
-      ${segHtml('lock-mode', [{ id: 'auto', label: 'Auto' }, { id: 'locked', label: 'Locked' }], 'auto', 'Print colour')}
-      <div class="be-lock-body" data-be-lock-body hidden>
-        ${segHtml('lock-kind', [{ id: 'cmyk', label: 'Process (CMYK)' }, { id: 'spot', label: 'Spot colour' }], 'cmyk', 'Lock type')}
-        <div class="be-lock-spot" data-be-lock-spot hidden>
+      <div class="be-lock-block" data-be-lock-block="spot">
+        <div class="be-subst-line">
+          <span class="be-subst-key">Spot colour</span>
+          <code class="be-subst-val" data-be-lock-readout="spot"></code>
+        </div>
+        ${segHtml('lock-spot', [{ id: 'none', label: 'None' }, { id: 'set', label: 'Set' }], 'none', 'Spot colour lock')}
+        <div class="be-lock-spot" data-be-lock-spot-body hidden>
           <label class="be-lock-field"><span>Name</span><input type="text" data-be-lock-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
           <label class="be-lock-field"><span>Book <em>(optional)</em></span><input type="text" data-be-lock-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
-        </div>
-        <div class="be-cmyk-inputs">
-          ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-lock-c="${i}" aria-label="${l === 'K' ? 'Black' : l === 'C' ? 'Cyan' : l === 'M' ? 'Magenta' : 'Yellow'} %"></label>`).join('')}
         </div>
       </div>
     </div>`;
 }
 
 interface PrintLockCtx {
-  /** The subject's current screen colour — feeds the Auto conversion. */
+  /** The subject's current screen colour — feeds the Auto CMYK conversion. */
   hex: () => string;
-  get: () => PrintLock | null;
-  /** Apply the change; the caller owns persistence/dirty-flag semantics. */
-  set: (lock: PrintLock | null) => void;
+  getCmyk: () => [number, number, number, number] | null;
+  setCmyk: (cmyk: [number, number, number, number] | null) => void;
+  getSpot: () => SpotColor | null;
+  setSpot: (spot: SpotColor | null) => void;
 }
 
 /**
  * Render the print-lock markup into `mount` and wire it against `ctx`. Returns
  * a handle whose `render()` the caller calls whenever the subject changes
  * underneath it (a newly selected swatch, an edited primary hex) so the
- * readout/fields resync without re-mounting the control.
+ * readouts/fields resync without re-mounting the control.
  *
  * Call this AFTER any generic `[data-be-seg]` delegate (see the Scheme/Surface/
  * Contrast wiring below) has already run its one-time `querySelectorAll` — the
- * control's own Auto/Locked and Process/Spot toggles are built on that same
+ * control's own Auto/Locked and None/Set toggles are built on that same
  * `segHtml` markup, so mounting later keeps them out of that older NodeList.
  */
 function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => void } {
   mount.innerHTML = printLockHtml();
-  const box = mount.querySelector<HTMLElement>('[data-be-lock]');
-  const readout = mount.querySelector<HTMLElement>('[data-be-lock-readout]');
-  const modeSeg = mount.querySelector<HTMLElement>('[data-be-seg="lock-mode"]');
-  const kindSeg = mount.querySelector<HTMLElement>('[data-be-seg="lock-kind"]');
-  const body = mount.querySelector<HTMLElement>('[data-be-lock-body]');
-  const spotFields = mount.querySelector<HTMLElement>('[data-be-lock-spot]');
+  const cmykReadout = mount.querySelector<HTMLElement>('[data-be-lock-readout="cmyk"]');
+  const cmykSeg = mount.querySelector<HTMLElement>('[data-be-seg="lock-cmyk"]');
+  const cmykBlock = mount.querySelector<HTMLElement>('[data-be-lock-block="cmyk"]');
+  const cmykBody = mount.querySelector<HTMLElement>('[data-be-lock-cmyk-body]');
+  const cInputs = Array.from(mount.querySelectorAll<HTMLInputElement>('[data-be-lock-c]'));
+
+  const spotReadout = mount.querySelector<HTMLElement>('[data-be-lock-readout="spot"]');
+  const spotSeg = mount.querySelector<HTMLElement>('[data-be-seg="lock-spot"]');
+  const spotBlock = mount.querySelector<HTMLElement>('[data-be-lock-block="spot"]');
+  const spotBody = mount.querySelector<HTMLElement>('[data-be-lock-spot-body]');
   const nameInput = mount.querySelector<HTMLInputElement>('[data-be-lock-name]');
   const bookInput = mount.querySelector<HTMLInputElement>('[data-be-lock-book]');
-  const cInputs = Array.from(mount.querySelectorAll<HTMLInputElement>('[data-be-lock-c]'));
-  let kind: 'cmyk' | 'spot' = 'cmyk'; // which sub-mode shows while the box is open
 
   const setPressed = (seg: HTMLElement | null, val: string): void =>
     seg?.querySelectorAll<HTMLElement>('[data-val]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.val === val)));
   const cmykFromInputs = (): [number, number, number, number] =>
     cInputs.map(i => Math.min(100, Math.max(0, Math.round(parseFloat(i.value) || 0)))) as [number, number, number, number];
 
-  const commit = (): void => {
-    if (kind === 'spot') {
-      const name = nameInput?.value.trim();
-      if (!name) return; // a spot lock needs a name — nothing to commit yet
-      const book = bookInput?.value.trim();
-      ctx.set({ spot: { name, ...(book ? { book } : {}), cmyk: cmykFromInputs() } });
-    } else {
-      ctx.set({ cmyk: cmykFromInputs() });
-    }
-    render();
+  const commitCmyk = (): void => { ctx.setCmyk(cmykFromInputs()); renderCmyk(); };
+  const commitSpot = (): void => {
+    const name = nameInput?.value.trim();
+    if (!name) return; // a spot lock needs a name — nothing to commit yet
+    const book = bookInput?.value.trim();
+    ctx.setSpot({ name, ...(book ? { book } : {}) });
+    renderSpot();
   };
 
-  modeSeg?.addEventListener('click', (e) => {
+  cmykSeg?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
-    if (btn.dataset.val === 'auto') { ctx.set(null); render(); return; }
-    // Locking with nothing pinned yet seeds from the auto conversion (Process by
-    // default) — "Locked" always leaves something pinned, never a limbo state.
-    if (!ctx.get()) ctx.set({ cmyk: autoCmykOf(ctx.hex()) });
-    render();
+    if (btn.dataset.val === 'auto') { ctx.setCmyk(null); renderCmyk(); return; }
+    // Locking always leaves something pinned, never a limbo state — seed from
+    // the auto conversion.
+    ctx.setCmyk(autoCmykOf(ctx.hex()));
+    renderCmyk();
   });
-  kindSeg?.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
-    kind = btn.dataset.val === 'spot' ? 'spot' : 'cmyk';
-    setPressed(kindSeg, kind);
-    if (spotFields) spotFields.hidden = kind !== 'spot';
-    if (kind === 'cmyk') commit(); // Process has no name field to wait on — commit straight away
-  });
-  cInputs.forEach(inp => inp.addEventListener('input', commit));
-  nameInput?.addEventListener('input', commit);
-  bookInput?.addEventListener('input', () => { if (kind === 'spot' && nameInput?.value.trim()) commit(); });
+  cInputs.forEach(inp => inp.addEventListener('input', commitCmyk));
 
-  function render(): void {
-    const lock = ctx.get();
-    const eff = lock ? ('spot' in lock ? lock.spot.cmyk : lock.cmyk) : autoCmykOf(ctx.hex());
-    if (readout) {
-      readout.textContent = lock && 'spot' in lock
-        ? `${lock.spot.name} · C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}`
-        : `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}`;
-    }
-    box?.classList.toggle('is-pinned', !!lock);
-    setPressed(modeSeg, lock ? 'locked' : 'auto');
-    if (body) body.hidden = !lock;
-    kind = lock && 'spot' in lock ? 'spot' : 'cmyk';
-    setPressed(kindSeg, kind);
-    if (spotFields) spotFields.hidden = kind !== 'spot';
-    if (nameInput && document.activeElement !== nameInput) nameInput.value = lock && 'spot' in lock ? lock.spot.name : '';
-    if (bookInput && document.activeElement !== bookInput) bookInput.value = lock && 'spot' in lock ? (lock.spot.book ?? '') : '';
+  spotSeg?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
+    if (btn.dataset.val === 'none') { ctx.setSpot(null); renderSpot(); return; }
+    // "Set" opens the name field but doesn't commit anything yet — a spot lock
+    // needs a name (commitSpot no-ops until one's typed).
+    setPressed(spotSeg, 'set');
+    if (spotBody) spotBody.hidden = false;
+    nameInput?.focus();
+  });
+  nameInput?.addEventListener('input', commitSpot);
+  bookInput?.addEventListener('input', () => { if (nameInput?.value.trim()) commitSpot(); });
+
+  function renderCmyk(): void {
+    const cmyk = ctx.getCmyk();
+    const eff = cmyk ?? autoCmykOf(ctx.hex());
+    if (cmykReadout) cmykReadout.textContent = `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}`;
+    cmykBlock?.classList.toggle('is-pinned', !!cmyk);
+    setPressed(cmykSeg, cmyk ? 'locked' : 'auto');
+    if (cmykBody) cmykBody.hidden = !cmyk;
     cInputs.forEach((inp, i) => { if (document.activeElement !== inp) inp.value = String(eff[i]); });
   }
+  function renderSpot(): void {
+    const spot = ctx.getSpot();
+    if (spotReadout) spotReadout.textContent = spot ? spot.name : 'Not set';
+    spotBlock?.classList.toggle('is-pinned', !!spot);
+    setPressed(spotSeg, spot ? 'set' : 'none');
+    if (spotBody) spotBody.hidden = !spot;
+    if (nameInput && document.activeElement !== nameInput) nameInput.value = spot?.name ?? '';
+    if (bookInput && document.activeElement !== bookInput) bookInput.value = spot?.book ?? '';
+  }
+  function render(): void { renderCmyk(); renderSpot(); }
   render();
   return { render };
 }
@@ -354,7 +368,9 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
 
 function tileHtml(s: BrandSwatch, idx: number): string {
   const trans = !s.hex;
-  const lockTitle = s.lock && 'spot' in s.lock ? `Print colour locked to ${s.lock.spot.name}` : 'Print colour locked';
+  const lockTitle = s.lock?.spot
+    ? `Print colour locked to ${s.lock.spot.name}${s.lock.cmyk ? ' (with a CMYK fallback)' : ''}`
+    : s.lock?.cmyk ? 'Print colour locked (CMYK)' : '';
   return `
     <button type="button" class="be-swatch${trans ? ' is-empty' : ''}${s.lock ? ' is-pinned' : ''}" data-be-tile="${idx}"
       style="--sw:${escape(s.hex || 'transparent')}"
@@ -824,12 +840,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   const primaryLockMount = $('[data-be-lock-mount="primary"]') as HTMLElement | null;
   const primaryLock = primaryLockMount ? mountPrintLock(primaryLockMount, {
     hex: () => primaryHex(),
-    get: () => primaryPrintLock(),
-    set: (lock) => {
+    getCmyk: () => primaryPrintLock()?.cmyk ?? null,
+    setCmyk: (cmyk) => {
       const path = primaryAnchorPath(doc);
-      if (path) setSwatchPrintOverride(doc, path, lock); // rides on the current draft; Save persists it
+      if (path) setSwatchCmykLock(doc, path, cmyk); // rides on the current draft; Save persists it
       setDirty(true);
       repaintPalette(); // same swatch is a tile in the Palette panel — keep its lock badge in sync
+    },
+    getSpot: () => primaryPrintLock()?.spot ?? null,
+    setSpot: (spot) => {
+      const path = primaryAnchorPath(doc);
+      if (path) setSwatchSpotLock(doc, path, spot);
+      setDirty(true);
+      repaintPalette();
     },
   }) : null;
   // Neutral/secondary ramp-step picks — the Primary ramp stays non-interactive
@@ -852,9 +875,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
     // Read the lock LIVE off the pre-derive `doc` — whichever surface (Colour
     // panel or the Palette panel's swatch popover) set it last, since both write
     // straight to `doc` — so re-deriving never silently drops a lock the other
-    // surface just set (see primaryPrintLock's doc comment above).
+    // surface just set (see primaryPrintLock's doc comment above). cmyk and spot
+    // are independent, so both are re-pinned onto the freshly derived doc.
     const priorLock = primaryPrintLock();
-    if (priorLock) { const p = primaryAnchorPath(next); if (p) setSwatchPrintOverride(next, p, priorLock); } // ramp rebuilt → re-pin the print lock
+    const p = priorLock ? primaryAnchorPath(next) : null;
+    if (p && priorLock?.cmyk) setSwatchCmykLock(next, p, priorLock.cmyk); // ramp rebuilt → re-pin the print lock
+    if (p && priorLock?.spot) setSwatchSpotLock(next, p, priorLock.spot);
     const ok = swatches.some(s => s.kind === 'custom')
       ? await confirmDialog({ title: 'Re-derive the palette?', message: 'This rebuilds every swatch from your colour and drops the custom swatches you added.', confirmLabel: 'Re-derive' })
       : true;
@@ -896,23 +922,25 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost): Pro
   // CURRENTLY open (`selected`), so it's built once and driven dynamically
   // rather than re-mounted per swatch (openEditor calls its render() instead).
   const swatchLockMount = editorEl?.querySelector<HTMLElement>('[data-be-lock-mount="swatch"]') ?? null;
+  // Re-syncs the popover's lock badge + tile + the primary-panel control (when
+  // the edited swatch IS the primary anchor — see primaryPrintLock's doc
+  // comment) after either half of the swatch lock changes.
+  const afterSwatchLockChange = (): void => {
+    if (selected < 0) return;
+    const cur = swatches[selected]!;
+    cur.lock = getSwatchPrintOverride(doc, cur.path);
+    refreshTile(selected);
+    if (editorLockBadge) editorLockBadge.hidden = !cur.lock;
+    persist();
+    const anchorPath = primaryAnchorPath(doc);
+    if (anchorPath && samePath(anchorPath, cur.path)) primaryLock?.render();
+  };
   const swatchLock = swatchLockMount ? mountPrintLock(swatchLockMount, {
     hex: () => (selected >= 0 ? swatches[selected]!.hex : ''),
-    get: () => (selected >= 0 ? getSwatchPrintOverride(doc, swatches[selected]!.path) : null),
-    set: (lock) => {
-      if (selected < 0) return;
-      const cur = swatches[selected]!;
-      setSwatchPrintOverride(doc, cur.path, lock);
-      cur.lock = lock;
-      refreshTile(selected);
-      if (editorLockBadge) editorLockBadge.hidden = !lock;
-      persist();
-      // This swatch may BE the primary ramp's anchor step — the same swatch the
-      // Colour panel's own print lock reads/writes (see primaryPrintLock's doc
-      // comment). Keep that control's readout in sync too.
-      const anchorPath = primaryAnchorPath(doc);
-      if (anchorPath && samePath(anchorPath, cur.path)) primaryLock?.render();
-    },
+    getCmyk: () => (selected >= 0 ? getSwatchPrintOverride(doc, swatches[selected]!.path)?.cmyk ?? null : null),
+    setCmyk: (cmyk) => { if (selected >= 0) { setSwatchCmykLock(doc, swatches[selected]!.path, cmyk); afterSwatchLockChange(); } },
+    getSpot: () => (selected >= 0 ? getSwatchPrintOverride(doc, swatches[selected]!.path)?.spot ?? null : null),
+    setSpot: (spot) => { if (selected >= 0) { setSwatchSpotLock(doc, swatches[selected]!.path, spot); afterSwatchLockChange(); } },
   }) : null;
 
   const extrapolation = (hex: string): string =>
