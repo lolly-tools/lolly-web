@@ -53,6 +53,18 @@ import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
 import type { Folder, FolderItem, FolderHost } from '../folders.ts';
 import type { WebStateAPI } from '../bridge/state.ts';
 
+/** Every file kind the upload surfaces can ingest — the `accept` list for any
+ *  affordance that feeds storeUserUpload (the picker's footer input, the catalog's
+ *  drop area). PDF/.ai don't go through storeUserUpload itself: callers route them
+ *  to pdf-import.ts's ingestPdfAsSvgAssets (page(s) → stored SVG) via isPdfUpload. */
+export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai';
+
+/** A PDF — or an Illustrator .ai, which saved PDF-compatible IS a PDF — that upload
+ *  surfaces must hand to the page→SVG converter instead of storeUserUpload. Sync and
+ *  chunk-free on purpose: callers decide the route before lazy-loading pdf-import. */
+export const isPdfUpload = (file: File): boolean =>
+  /\.(pdf|ai)$/i.test(file.name) || /^application\/(pdf|illustrator)$/i.test(file.type);
+
 /** The window.__toolIndex tool slice the picker reads (a denormalised catalog/sync
  *  projection, not an engine domain type). */
 interface PickerTool {
@@ -360,7 +372,7 @@ async function render(
       ${opts.allowUpload ? `
         <footer class="asset-picker-footer">
           <label class="asset-picker-upload">
-            <input type="file" accept="image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,application/json,.json,.lottie" hidden />
+            <input type="file" accept="${UPLOAD_ACCEPT}" hidden />
             <span class="asset-picker-upload-label">Upload your own…</span>
           </label>
           ${canWebcam ? `<button type="button" class="asset-picker-webcam">${cameraGlyph} Take a photo</button>` : ''}
@@ -751,6 +763,18 @@ async function render(
       const file = fileInput.files?.[0];
       if (!file) return;
       try {
+        // A PDF/.ai becomes an SVG asset of one chosen page (the picker fills a single
+        // slot, so single-select). The converter is a lazy chunk — pdf-lib only loads
+        // when a PDF actually arrives. A cancelled page pick returns no refs: stay open.
+        if (isPdfUpload(file)) {
+          const { ingestPdfAsSvgAssets } = await import('./pdf-import.ts');
+          const refs = await ingestPdfAsSvgAssets(host, file, {
+            mode: 'single',
+            warn: (m) => announce(m, { assertive: true }),
+          });
+          if (refs[0]) close(refs[0]);
+          return;
+        }
         const ref = await storeUserUpload(host, file);
         close(ref);
       } catch (e) {

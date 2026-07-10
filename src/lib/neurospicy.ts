@@ -8,6 +8,8 @@
  * — so mp3/aac priming gaps never apply. Shell chrome (host audio), never the engine.
  */
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
+import { renderSongToAudioBuffer } from './zzfxm-render.ts';
 import { isSfxMuted } from './sfx.ts';
 
 // Just the host surface this module uses — the catalog assets (loop list + bytes) and the
@@ -46,6 +48,10 @@ let playingId = '';
 let paused = false;   // transient transport pause (the play/pause button) — mode stays enabled
 const buffers = new Map<string, AudioBuffer>();
 const urlById = new Map<string, string>();
+// A track is either an encoded audio file (fetch + decodeAudioData) or a ZzFXM
+// song (format 'zzfxm' → render to PCM). Cache the format alongside the URL so
+// loadBuffer picks the right path.
+const formatById = new Map<string, string>();
 
 function audio(): { ctx: AudioContext; gain: GainNode } | null {
   if (typeof window === 'undefined') return null;
@@ -61,12 +67,19 @@ function stopSource(): void {
   playingId = '';
 }
 
-async function loadBuffer(id: string, url: string): Promise<AudioBuffer | null> {
+async function loadBuffer(id: string, url: string, format: string | undefined): Promise<AudioBuffer | null> {
   const cached = buffers.get(id); if (cached) return cached;
   const a = audio(); if (!a) return null;
   try {
-    const bytes = await (await fetch(url)).arrayBuffer();
-    const buf = await a.ctx.decodeAudioData(bytes);
+    let buf: AudioBuffer;
+    if (format === 'zzfxm') {
+      // A ZzFXM song: a few KB of nested-array data, synthesised to PCM in a worker.
+      const song = (await (await fetch(url)).json()) as ZzfxSong;
+      buf = await renderSongToAudioBuffer(a.ctx, song);
+    } else {
+      const bytes = await (await fetch(url)).arrayBuffer();
+      buf = await a.ctx.decodeAudioData(bytes);
+    }
     buffers.set(id, buf); return buf;
   } catch { return null; }
 }
@@ -79,9 +92,17 @@ async function play(host: NeurospicyHost): Promise<void> {
   if (src && playingId === state.loopId) { if (gain) gain.gain.value = state.volume; return; }
   const a = audio(); if (!a) return;
   let url = urlById.get(state.loopId);
-  if (!url) { try { url = (await host.assets.get(state.loopId)).url; if (url) urlById.set(state.loopId, url); } catch { return; } }
+  let format = formatById.get(state.loopId);
+  if (!url || format === undefined) {
+    try {
+      const ref = await host.assets.get(state.loopId);
+      url = ref.url; format = ref.format;
+      if (url) urlById.set(state.loopId, url);
+      if (format) formatById.set(state.loopId, format);
+    } catch { return; }
+  }
   if (!url) return;
-  const buf = await loadBuffer(state.loopId, url); if (!buf || !state.enabled) return;
+  const buf = await loadBuffer(state.loopId, url, format); if (!buf || !state.enabled) return;
   stopSource();
   const s = a.ctx.createBufferSource();
   s.buffer = buf; s.loop = true; s.connect(a.gain);
@@ -135,7 +156,7 @@ export async function listLoops(host: NeurospicyHost): Promise<{ id: string; nam
   if (loopsCache) return loopsCache;
   try {
     const refs = await host.assets.query({ tags: ['neurospicy'] });
-    for (const r of refs) if (r.url) urlById.set(r.id, r.url);
+    for (const r of refs) { if (r.url) urlById.set(r.id, r.url); if (r.format) formatById.set(r.id, r.format); }
     loopsCache = refs
       .map((r) => ({ id: r.id, name: String((r.meta?.name as string | undefined) ?? r.id) }))
       .sort((a, b) => loopRank(a.id) - loopRank(b.id) || a.name.localeCompare(b.name));

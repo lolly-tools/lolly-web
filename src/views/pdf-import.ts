@@ -1,14 +1,24 @@
-// Design Import — PDF / Adobe Illustrator (.ai) parser.
+// Design Import + asset upload — PDF / Adobe Illustrator (.ai) parser.
 //
 // The SHELL half of the PDF import path. An Illustrator .ai file saved with PDF
 // compatibility (Illustrator's default) IS a PDF, so .ai and .pdf both land here.
-// This module owns the byte work — it uses pdf-lib to load the document, decode the
-// first page's content stream(s), and pre-extract resources (fonts → byte→text
+// This module owns the byte work — it uses pdf-lib to load the document, decode a
+// page's content stream(s), and pre-extract resources (fonts → byte→text
 // decoders, XObjects → image markers / nested form streams, ExtGStates → alpha,
 // optional-content groups → layer labels). It hands the decoded content + a plain
 // resource descriptor to the PURE engine interpreter (engine/src/pdf-map.ts), which
-// reconstructs editable DesignNodes, then resolves the image/vector placeholders into
-// stored user assets. Nothing leaves the device — the whole parse is local.
+// reconstructs editable DesignNodes. Nothing leaves the device — the whole parse is
+// local. From those SAME interpreted nodes it serves two ingest surfaces:
+//
+//   parsePdfFile          → Layout Studio boxes (image/vector placeholders resolved
+//                           into individually-stored user assets)
+//   ingestPdfAsSvgAssets  → whole pages as standalone SVG user assets (the upload
+//                           paths: catalog drop area, asset-picker upload), via the
+//                           engine's pdfNodesToSvg with images inlined as data: URIs
+//
+// A multi-page document asks which page(s) with the pickPdfPages dialog — single-
+// select for a canvas import, multi-select (or all) for asset uploads — so the two
+// surfaces stay behaviourally identical.
 //
 // Fidelity: rectangles/ellipses/text/groups come back as editable boxes; arbitrary
 // paths come back as crisp vector (SVG) image boxes; raster image XObjects are decoded
@@ -20,11 +30,13 @@ import {
 } from 'pdf-lib';
 import type { PDFContext, PDFObject } from 'pdf-lib';
 import {
-  interpretPdfPage, parseToUnicode, toUnicodeDecoder, finalizeBoxes, safeColor,
+  interpretPdfPage, parseToUnicode, toUnicodeDecoder, finalizeBoxes, safeColor, pdfNodesToSvg,
 } from '@lolly/engine';
 import type { PdfNode, PdfFontInfo, PdfXObject } from '../../../../engine/src/pdf-map.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AssetRef, HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import { storeUserUpload } from './picker.ts';
+import { trapFocus } from '../lib/focus-trap.ts';
+import type { FocusTrap } from '../lib/focus-trap.ts';
 
 // A pdf-lib lookup key — a value we can hand to `ctx.lookup(...)`. We also let `null`
 // through (some helpers pass a `dictOf(...) → PDFDict | null` result straight back in),
@@ -54,28 +66,28 @@ interface ImageDesc {
   predictor: number | null;
 }
 
-/**
- * Parse a PDF / .ai file into a Layout Studio boxes array.
- * @param {File|Blob} file
- * @param {{ host: object, warn?: (msg: string) => void }} ctx
- * @returns {Promise<{ boxes: object[], width: number, height: number, background: string }>}
- */
-export async function parsePdfFile(
-  file: File | Blob,
-  { host, warn = () => {} }: { host: HostV1; warn?: (msg: string) => void } = {} as { host: HostV1; warn?: (msg: string) => void },
-) {
+// ── document loading + per-page interpretation (shared by both surfaces) ────────
+
+async function loadDoc(file: File | Blob): Promise<PDFDocument> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  let doc: PDFDocument;
   try {
-    doc = await PDFDocument.load(bytes, { ignoreEncryption: true, throwOnInvalidObject: false, updateMetadata: false });
+    return await PDFDocument.load(bytes, { ignoreEncryption: true, throwOnInvalidObject: false, updateMetadata: false });
   } catch (err) {
     throw new Error('Couldn’t read this PDF/.ai — it may be encrypted or damaged. (' + msg(err) + ')');
   }
-  const pageCount = doc.getPageCount();
-  if (!pageCount) throw new Error('This PDF has no pages.');
-  if (pageCount > 1) warn(`Imported the first of ${pageCount} pages.`);
+}
 
-  const pdfPage = doc.getPage(0);
+interface InterpretedPage {
+  nodes: ImportNode[];
+  width: number;
+  height: number;
+  /** Raster XObjects found on this page, keyed by the id the engine echoes back. */
+  imageStreams: Map<string, ImageDesc>;
+}
+
+/** Decode + interpret ONE page (0-based) into DesignNodes with unresolved placeholders. */
+function interpretPage(doc: PDFDocument, pageIndex: number): InterpretedPage {
+  const pdfPage = doc.getPage(pageIndex);
   const ctx = doc.context;
   const node = pdfPage.node;
   const mb = pdfPage.getMediaBox();
@@ -95,7 +107,41 @@ export async function parsePdfFile(
     extgstates: resources.extgstates,
     ocgs: resources.ocgs,
   }) as ImportNode[];
-  if (!nodes.length) throw new Error('Couldn’t find any importable artwork on the first page.');
+
+  return { nodes, width: mb.width, height: mb.height, imageStreams };
+}
+
+/**
+ * Parse a PDF / .ai file into a Layout Studio boxes array.
+ *
+ * Page choice for a multi-page document: an explicit `page` (0-based) wins; else with
+ * `interactive` set the shared pickPdfPages dialog asks (single-select; cancelling
+ * throws an 'Import cancelled.' error); else the first page imports with a warn —
+ * the pre-existing headless behaviour, kept for non-UI callers.
+ */
+export async function parsePdfFile(
+  file: File | Blob,
+  { host, warn = () => {}, page, interactive }: {
+    host: HostV1; warn?: (msg: string) => void; page?: number; interactive?: boolean;
+  } = {} as { host: HostV1; warn?: (msg: string) => void },
+) {
+  const doc = await loadDoc(file);
+  const pageCount = doc.getPageCount();
+  if (!pageCount) throw new Error('This PDF has no pages.');
+
+  let pageIndex = Math.min(Math.max(Math.floor(page ?? 0), 0), pageCount - 1);
+  if (pageCount > 1 && page == null) {
+    if (interactive) {
+      const picked = await pickPdfPages(makeHandle(doc), { mode: 'single', fileName: (file as File).name || '' });
+      if (!picked?.length) throw new Error('Import cancelled.');
+      pageIndex = picked[0]!;
+    } else {
+      warn(`Imported the first of ${pageCount} pages.`);
+    }
+  }
+
+  const { nodes, width, height, imageStreams } = interpretPage(doc, pageIndex);
+  if (!nodes.length) throw new Error('Couldn’t find any importable artwork on that page.');
 
   // Resolve placeholders → stored assets.
   const vecCache = new Map<string, unknown>();
@@ -118,8 +164,8 @@ export async function parsePdfFile(
   }
 
   const boxes = finalizeBoxes(nodes, { prefix: 'p' });
-  if (!boxes.length) throw new Error('Couldn’t find any importable artwork on the first page.');
-  return { boxes, width: Math.max(1, Math.round(mb.width)), height: Math.max(1, Math.round(mb.height)), background: '#ffffff' };
+  if (!boxes.length) throw new Error('Couldn’t find any importable artwork on that page.');
+  return { boxes, width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)), background: '#ffffff' };
 }
 
 // ── pdf-lib access helpers ─────────────────────────────────────────────────────
@@ -251,17 +297,18 @@ function weightFromName(name: string): number {
 
 // ── image resolution ──────────────────────────────────────────────────────────
 
-async function resolveImage(host: HostV1, desc: ImageDesc, warn: (msg: string) => void): Promise<unknown> {
+/** Decode a raster XObject to browser-displayable bytes (shared by the boxes path,
+ *  which stores them as an asset, and the page-SVG path, which inlines a data: URI). */
+async function imageBytes(desc: ImageDesc, warn: (msg: string) => void): Promise<{ bytes: Uint8Array; mime: string; ext: string } | null> {
   const last = desc.filter[desc.filter.length - 1];
   try {
     if (last === 'DCTDecode') {
       // Raw stream bytes ARE the JPEG the browser can decode directly.
-      const jpeg = desc.stream.getContents();
-      return await storeBytes(host, jpeg, 'image/jpeg', 'jpg');
+      return { bytes: desc.stream.getContents(), mime: 'image/jpeg', ext: 'jpg' };
     }
     if ((last === 'FlateDecode' || last == null) && desc.width > 0 && desc.height > 0 && desc.bpc === 8 && !((desc.predictor as number) > 1)) {
       const png = await flateImageToPng(desc);
-      if (png) return await storeBytes(host, png, 'image/png', 'png');
+      if (png) return { bytes: png, mime: 'image/png', ext: 'png' };
     }
     warn(`Skipped an embedded image in an unsupported encoding (${last || 'raw'}).`);
     return null;
@@ -269,6 +316,11 @@ async function resolveImage(host: HostV1, desc: ImageDesc, warn: (msg: string) =
     warn(`Couldn’t import an embedded image (${msg(err)}).`);
     return null;
   }
+}
+
+async function resolveImage(host: HostV1, desc: ImageDesc, warn: (msg: string) => void): Promise<unknown> {
+  const got = await imageBytes(desc, warn);
+  return got ? storeBytes(host, got.bytes, got.mime, got.ext) : null;
 }
 
 // Decode a Flate RGB/Gray image's raw samples into a PNG via a canvas.
@@ -329,3 +381,243 @@ function colorAttr(v: unknown, dflt: string): string {
 function firstColor(v: unknown): string { const s = safeColor(v, ''); return (s && s.toLowerCase() !== 'none') ? s : ''; }
 function clearVector(n: ImportNode): void { delete n._vectorPath; delete n._vectorFill; delete n._vectorStroke; delete n._vectorViewBox; }
 function r(v: number): number { return Math.round((+v || 0) * 100) / 100; }
+
+// ── whole pages as SVG (the asset-upload surface) ──────────────────────────────
+
+/** One page rendered to a standalone SVG document (images inlined as data: URIs). */
+export interface PdfPageSvg {
+  svg: string;
+  width: number;
+  height: number;
+  /** Drawable nodes the interpreter found — 0 means a blank/unimportable page. */
+  elementCount: number;
+}
+
+/** An opened document: page count + a cached page→SVG converter. */
+export interface PdfHandle {
+  pageCount: number;
+  pageToSvg(index: number, opts?: { warn?: (msg: string) => void }): Promise<PdfPageSvg>;
+}
+
+function makeHandle(doc: PDFDocument): PdfHandle {
+  const cache = new Map<number, PdfPageSvg>();
+  return {
+    pageCount: doc.getPageCount(),
+    async pageToSvg(index: number, { warn = () => {} }: { warn?: (msg: string) => void } = {}): Promise<PdfPageSvg> {
+      const hit = cache.get(index);
+      if (hit) return hit;
+      const { nodes, width, height, imageStreams } = interpretPage(doc, index);
+      // Inline every raster XObject the page actually uses, so the SVG is
+      // self-contained (and survives storeUserUpload's DOMPurify pass, which
+      // allows data:image/png|jpeg hrefs on <image>).
+      const images: Record<string, string> = {};
+      for (const n of nodes) {
+        const key = n._imageXObject;
+        if (!key || key in images) continue;
+        const desc = imageStreams.get(key);
+        const got = desc ? await imageBytes(desc, warn) : null;
+        if (got) images[key] = `data:${got.mime};base64,${bytesToBase64(got.bytes)}`;
+      }
+      const out: PdfPageSvg = {
+        svg: pdfNodesToSvg(nodes, { width, height, images }),
+        width: Math.max(1, Math.round(width)),
+        height: Math.max(1, Math.round(height)),
+        elementCount: nodes.length,
+      };
+      cache.set(index, out);
+      return out;
+    },
+  };
+}
+
+/** Open a PDF/.ai for page-level conversion (shared by uploads and the page picker). */
+export async function openPdfFile(file: File | Blob): Promise<PdfHandle> {
+  return makeHandle(await loadDoc(file));
+}
+
+// Base64 in chunks — String.fromCharCode(...bigArray) overflows the call stack.
+function bytesToBase64(u8: Uint8Array): string {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < u8.length; i += CHUNK) bin += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+  return btoa(bin);
+}
+
+function xmlEsc(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;'));
+}
+
+// Previews (and selection) are capped so a 500-page manual can't queue hundreds of
+// full-page conversions from one drop; the footer note says what was cut.
+const MAX_PICK_PAGES = 60;
+
+/**
+ * The shared "which page(s)?" dialog for a multi-page PDF/.ai. Thumbnails are the
+ * pages' actual SVG conversions, generated in the background (and cached on the
+ * handle, so a later ingest of the picked pages costs nothing extra).
+ *
+ * mode 'single' (canvas import, picker upload): clicking a page resolves [index].
+ * mode 'multi'  (catalog upload): pages toggle, everything starts selected — "all of
+ * them" is the one-click default — and the Add button resolves the selection.
+ * Cancel / Escape / backdrop resolve null.
+ */
+export function pickPdfPages(
+  handle: PdfHandle,
+  { mode, fileName = '' }: { mode: 'single' | 'multi'; fileName?: string },
+): Promise<number[] | null> {
+  return new Promise((resolve) => {
+    const total = handle.pageCount;
+    const shown = Math.min(total, MAX_PICK_PAGES);
+    const usable = new Set<number>(Array.from({ length: shown }, (_, i) => i));
+    const selected = new Set<number>(mode === 'multi' ? usable : []);
+
+    let trap: FocusTrap | undefined;
+    const overlay = document.createElement('div');
+    overlay.className = 'pdfpick-overlay';
+    overlay.innerHTML = `
+      <div class="pdfpick-backdrop" aria-hidden="true"></div>
+      <div class="pdfpick-panel" role="dialog" aria-modal="true" aria-label="${mode === 'single' ? 'Choose a page' : 'Choose pages'}">
+        <header class="pdfpick-head">
+          <span class="pdfpick-title">${mode === 'single' ? 'Choose a page' : 'Choose pages'}${fileName ? ` — ${xmlEsc(fileName)}` : ''}</span>
+          <button type="button" class="pdfpick-close" aria-label="Close">&times;</button>
+        </header>
+        <p class="pdfpick-sub">${mode === 'single'
+          ? 'Pick the page to import.'
+          : 'Each selected page is added to your library as an SVG.'}</p>
+        <div class="pdfpick-grid">
+          ${Array.from({ length: shown }, (_, i) => `
+            <button type="button" class="pdfpick-page${mode === 'multi' ? ' is-on' : ''}" data-page="${i}" aria-pressed="${mode === 'multi'}">
+              <span class="pdfpick-thumb" aria-hidden="true"></span>
+              <span class="pdfpick-cap">Page ${i + 1}</span>
+            </button>`).join('')}
+        </div>
+        <footer class="pdfpick-actions">
+          <span class="pdfpick-note">${total > shown ? `Showing the first ${shown} of ${total} pages.` : ''}</span>
+          ${mode === 'multi' ? '<button type="button" class="pdfpick-btn pdfpick-all"></button>' : ''}
+          <button type="button" class="pdfpick-btn pdfpick-cancel">Cancel</button>
+          ${mode === 'multi' ? '<button type="button" class="pdfpick-btn pdfpick-btn--primary pdfpick-add"></button>' : ''}
+        </footer>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const opener = document.activeElement;
+    const done = (val: number[] | null): void => {
+      trap?.release();
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      if (opener instanceof HTMLElement) opener.focus();
+      resolve(val);
+    };
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('.pdfpick-backdrop')?.addEventListener('click', () => done(null));
+    overlay.querySelector('.pdfpick-close')?.addEventListener('click', () => done(null));
+    overlay.querySelector('.pdfpick-cancel')?.addEventListener('click', () => done(null));
+
+    const addBtn = overlay.querySelector<HTMLButtonElement>('.pdfpick-add');
+    const allBtn = overlay.querySelector<HTMLButtonElement>('.pdfpick-all');
+    const sync = (): void => {
+      if (addBtn) {
+        addBtn.disabled = selected.size === 0;
+        addBtn.textContent = selected.size === 1 ? 'Add 1 page' : `Add ${selected.size} pages`;
+      }
+      if (allBtn) allBtn.textContent = (usable.size > 0 && selected.size === usable.size) ? 'Select none' : 'Select all';
+    };
+    const paint = (btn: HTMLButtonElement): void => {
+      const i = Number(btn.dataset.page);
+      btn.classList.toggle('is-on', selected.has(i));
+      btn.setAttribute('aria-pressed', String(selected.has(i)));
+    };
+
+    overlay.querySelector('.pdfpick-grid')?.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.pdfpick-page');
+      if (!btn || btn.disabled) return;
+      const i = Number(btn.dataset.page);
+      if (mode === 'single') { done([i]); return; }
+      if (selected.has(i)) selected.delete(i); else selected.add(i);
+      paint(btn); sync();
+    });
+    allBtn?.addEventListener('click', () => {
+      const all = selected.size < usable.size;
+      selected.clear();
+      if (all) for (const i of usable) selected.add(i);
+      overlay.querySelectorAll<HTMLButtonElement>('.pdfpick-page').forEach(paint);
+      sync();
+    });
+    addBtn?.addEventListener('click', () => done([...selected].sort((a, b) => a - b)));
+    trap = trapFocus(overlay, {
+      initialFocus: overlay.querySelector<HTMLElement>(mode === 'multi' ? '.pdfpick-add' : '.pdfpick-page'),
+    });
+    sync();
+
+    // Thumbnails: convert sequentially in the background; the conversions are cached on
+    // the handle so confirming costs nothing extra. A page that fails (or holds no
+    // artwork) is disabled and dropped from the selection — it can't become an empty asset.
+    void (async () => {
+      for (let i = 0; i < shown; i++) {
+        if (!overlay.isConnected) return;
+        const btn = overlay.querySelector<HTMLButtonElement>(`.pdfpick-page[data-page="${i}"]`);
+        const thumb = btn?.querySelector<HTMLElement>('.pdfpick-thumb');
+        try {
+          const pageSvg = await handle.pageToSvg(i);
+          if (!overlay.isConnected) return;
+          if (!pageSvg.elementCount) throw new Error('empty page');
+          if (thumb) {
+            const img = document.createElement('img');
+            img.alt = '';
+            img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(pageSvg.svg);
+            thumb.replaceChildren(img);
+          }
+        } catch {
+          usable.delete(i); selected.delete(i);
+          if (btn) { btn.disabled = true; paint(btn); }
+          if (thumb) thumb.textContent = 'No artwork';
+          sync();
+        }
+      }
+    })();
+  });
+}
+
+/**
+ * Upload-path entry: convert a PDF/.ai into stored SVG user assets.
+ *
+ * One page → converted directly. Multi-page → the pickPdfPages dialog asks which
+ * (mode 'multi' offers all-of-them; 'single' picks one, for the asset-picker where a
+ * single slot is being filled). Returns the stored refs — empty when cancelled or
+ * nothing converted. Per-page failures warn and continue.
+ */
+export async function ingestPdfAsSvgAssets(
+  host: HostV1,
+  file: File | Blob,
+  { mode = 'multi', warn = () => {} }: { mode?: 'single' | 'multi'; warn?: (msg: string) => void } = {},
+): Promise<AssetRef[]> {
+  const name = (file as File).name || 'document.pdf';
+  const handle = await openPdfFile(file);
+  if (!handle.pageCount) throw new Error('This PDF has no pages.');
+
+  let pages: number[];
+  if (handle.pageCount === 1) {
+    pages = [0];
+  } else {
+    const picked = await pickPdfPages(handle, { mode, fileName: name });
+    if (!picked?.length) return [];
+    pages = picked;
+  }
+
+  const base = name.replace(/\.(pdf|ai)$/i, '').trim() || 'page';
+  const refs: AssetRef[] = [];
+  for (const p of pages) {
+    try {
+      const pageSvg = await handle.pageToSvg(p, { warn });
+      if (!pageSvg.elementCount) { warn(`Page ${p + 1} has no importable artwork — skipped.`); continue; }
+      const svgName = handle.pageCount === 1 ? `${base}.svg` : `${base} — page ${p + 1}.svg`;
+      const svgFile = new File([pageSvg.svg], svgName, { type: 'image/svg+xml' });
+      refs.push(await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], svgFile));
+    } catch (err) {
+      warn(`Couldn’t convert page ${p + 1} (${msg(err)}).`);
+    }
+  }
+  if (!refs.length && handle.pageCount === 1) throw new Error('Couldn’t find any importable artwork in this PDF.');
+  return refs;
+}

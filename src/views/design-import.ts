@@ -97,12 +97,15 @@ const PENPOT_NS_CANDIDATES = [
 /**
  * Parse a design file into a Layout Studio boxes array.
  * @param {File|Blob} file
- * @param {{ host: object, log?: (msg: string) => void }} ctx
+ * @param {{ host: object, log?: (msg: string) => void, interactive?: boolean }} ctx —
+ *   `interactive` lets a multi-page PDF/.ai ask which page via the shared page-picker
+ *   dialog (cancelling throws 'Import cancelled.'); without it the first page imports
+ *   with a warn, the headless-safe default.
  * @returns {Promise<{ boxes: object[], width: number, height: number, background: string }>}
  */
 export async function parseDesignFile(
   file: File | Blob,
-  { host, log }: { host?: HostV1; log?: (msg: string) => void } = {},
+  { host, log, interactive }: { host?: HostV1; log?: (msg: string) => void; interactive?: boolean } = {},
 ): Promise<DesignImportResult> {
   const warn: (msg: string) => void = typeof log === 'function' ? log : () => {};
   if (file.size > MAX_IMPORT_BYTES) {
@@ -114,7 +117,7 @@ export async function parseDesignFile(
   // PDF, so both route to the PDF interpreter. The heavy pdf-lib parser is its own lazy chunk.
   if (isPdf(buf)) {
     const { parsePdfFile } = await import('./pdf-import.ts');
-    return parsePdfFile(file, { host: host as HostV1, warn });
+    return parsePdfFile(file, { host: host as HostV1, warn, interactive });
   }
 
   // Raw InDesign .indd is a proprietary binary database with no open parser — guide the

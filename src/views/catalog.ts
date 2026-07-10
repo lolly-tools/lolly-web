@@ -46,6 +46,7 @@ import {
   loadFavouriteAssets, saveFavouriteAssets,
   loadHiddenAssets, saveHiddenAssets,
 } from '../lib/asset-favourites.ts';
+import { storeUserUpload, isPdfUpload, UPLOAD_ACCEPT } from './picker.ts';
 import { groupPalette, swatch } from '../lib/swatches.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
 import { staggerReveal } from '../lib/reveal.ts';
@@ -95,6 +96,7 @@ const CAT_ICONS = {
   expand:   catIco('<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>'),
   eye:      catIco('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>'),
   eyeOff:   catIco('<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>'),
+  upload:   catIco('<path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'),
 };
 // Update a sticky-toolbar toggle (Collapse-all / Show-hidden) in place: swap its glyph
 // + label span and keep the accessible name in sync. A plain `.textContent =` would drop
@@ -755,10 +757,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     return out;
   }
 
-  // The "Your uploads" section — a standard `.cat-group`, but its body leads with a
-  // "Select all / Deselect all" control. The control lives INSIDE the collapsible body
-  // (not the header) so it folds away with the grid when the section is collapsed —
-  // a bulk-select toggle over a hidden grid just reads as confusing.
+  // The "Your uploads" section — a standard `.cat-group` that is ALWAYS rendered in the
+  // browse view (even with zero uploads): its body leads with a drop area, so adding files
+  // to the library is a first-class affordance right here, not just inside the picker.
+  // The "Select all / Deselect all" control lives INSIDE the collapsible body (not the
+  // header) so it folds away with the grid when the section is collapsed — a bulk-select
+  // toggle over a hidden grid just reads as confusing (and it's dropped entirely at 0 items).
   function uploadsSectionHtml(items: AssetRef[]): string {
     const key = 'your-uploads';
     const isCollapsed = collapsed.has(key) && !query;
@@ -770,6 +774,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const colourRow = treatable
       ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">Colour</span>${treatmentSwatchRow(catPhotoTreatment)}</div>`
       : '';
+    // Drag files in or click to browse — a <label> over a visually-hidden file input, so
+    // click-to-open is native and the input stays keyboard-focusable (Enter/Space opens
+    // the OS picker; .cat-dropzone:focus-within draws the ring). Roomier when it IS the
+    // section (no uploads yet). Ingest is wired in wire() (change/dragover/drop on body).
+    const dropzone = `
+      <label class="cat-dropzone${items.length ? '' : ' cat-dropzone--empty'}" data-dropzone>
+        <input type="file" class="cat-dropzone-input visually-hidden" multiple accept="${UPLOAD_ACCEPT}" aria-label="Upload files to your library">
+        ${CAT_ICONS.upload}
+        <span class="cat-dropzone-text">Drag &amp; drop images, video, Lottie or PDF here — or <span class="cat-dropzone-browse">browse</span></span>
+      </label>`;
     return `<section class="cat-group cat-group--uploads${isCollapsed ? ' is-collapsed' : ''}" data-group="${key}">
       <button type="button" class="cat-group-head" data-cat-toggle="${key}" aria-expanded="${!isCollapsed}">
         <span class="cat-group-chevron">${CHEVRON}</span>
@@ -778,9 +792,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         <span class="cat-group-count">${items.length}</span>
       </button>
       <div class="cat-group-body">
-        <div class="cat-uploads-bar"><button type="button" class="cat-uploads-selectall" data-selectall aria-pressed="${allSel}">${allSel ? 'Deselect all' : 'Select all'}</button></div>
+        ${dropzone}
+        ${items.length ? `<div class="cat-uploads-bar"><button type="button" class="cat-uploads-selectall" data-selectall aria-pressed="${allSel}">${allSel ? 'Deselect all' : 'Select all'}</button></div>` : ''}
         ${colourRow}
-        <div class="cat-grid">${items.map(assetTile).join('')}</div>
+        ${items.length ? `<div class="cat-grid">${items.map(assetTile).join('')}</div>` : ''}
       </div>
     </section>`;
   }
@@ -801,7 +816,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
 
     if (allAssets.length === 0) {
-      return `<p class="cat-empty" role="status">No assets found. Once the catalogue syncs — and after you upload your own images — they'll appear here.</p>`;
+      // A genuinely empty library still leads with the uploads section — its drop area
+      // is exactly what a brand-new profile needs first.
+      return uploadsSectionHtml([]) + `<p class="cat-empty" role="status">No catalogue assets found. Once the catalogue syncs they'll appear here — or drop your own images in above.</p>`;
     }
 
     // Favourites are presented as a cinematic strip (mounted after render, see
@@ -825,7 +842,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
 
     const parts: string[] = [];
-    if (userItems.length) parts.push(uploadsSectionHtml(userItems));
+    // Always present while browsing (the drop area is its point, even at 0 uploads);
+    // during a search it only appears when it holds matching tiles, so the results
+    // grid stays the whole focus.
+    const showUploads = userItems.length > 0 || !query;
+    if (showUploads) parts.push(uploadsSectionHtml(userItems));
     for (const g of LIB_GROUPS) {
       const items = buckets.get(g.key);
       if (!items?.length) continue;
@@ -848,10 +869,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       parts.push(sectionHtml('hidden', 'Hidden', hiddenItems.length, hiddenItems.map(assetTile).join('')));
     }
 
-    // No group matched the active filters → a clear empty line instead of a bare toolbar.
+    // No asset matched the active filters → a clear empty line instead of a bare toolbar.
     // Guarded on the search AND the type filter, so choosing a filter (e.g. Motion) that
     // matches nothing explains the empty grid rather than showing a bare "0 assets".
-    if (!parts.length && (query || typeFilter !== 'all')) {
+    // Keyed off the matched-asset count, not parts.length: the always-there uploads
+    // section (drop area) doesn't count as a match.
+    if (!visible.length && (query || typeFilter !== 'all')) {
       const typeLabel = typeFilter === 'all' ? '' : (TYPE_FILTERS.find(f => f.key === typeFilter)?.label ?? '').toLowerCase();
       const msg = query && typeLabel
         ? `No ${typeLabel} assets match “${escape(query)}”.`
@@ -868,7 +891,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // now defaulting to closed, "Expand all" is the honest first-load label. Mirror the set
     // of sections the body will render (asset groups here + Swatches/Fonts from bodyHtml).
     const renderedKeys = [
-      ...(userItems.length ? ['your-uploads'] : []),
+      ...(showUploads ? ['your-uploads'] : []),
       ...LIB_GROUPS.filter(g => buckets.get(g.key)?.length).map(g => g.key),
       ...(showHidden && hiddenItems.length ? ['hidden'] : []),
       'swatches', 'fonts',
@@ -2354,6 +2377,85 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           setTimeout(() => chip.classList.remove('is-copied'), 900);
         }).catch(() => {});
       }
+    });
+
+    // ── Uploads drop area ────────────────────────────────────────────────────────
+    // Ingest files through the SAME storeUserUpload path as the asset picker (downscale/
+    // sanitise/credential-preserve/animated-sniff), then reload so the new tiles land in
+    // "Your uploads". Sequential on purpose: parallel ingest of a big multi-drop would
+    // spike memory (each raster decode holds a full bitmap).
+    let ingesting = false;
+    async function ingestFiles(files: File[]): Promise<void> {
+      if (!files.length || ingesting) return;
+      ingesting = true;
+      const zone = viewEl.querySelector<HTMLElement>('[data-dropzone]');
+      const textEl = zone?.querySelector<HTMLElement>('.cat-dropzone-text');
+      const idleText = textEl?.innerHTML ?? '';
+      zone?.classList.add('is-busy');
+      if (textEl) textEl.textContent = files.length === 1 ? 'Adding…' : `Adding ${files.length} files…`;
+      let stored = 0;
+      for (const file of files) {
+        try {
+          // A PDF/.ai converts page(s) to SVG assets — multi-page docs ask which pages
+          // (or all) via the shared picker dialog. Lazy chunk: pdf-lib loads only when
+          // a PDF actually arrives. Cancelling the dialog stores nothing for that file.
+          if (isPdfUpload(file)) {
+            const { ingestPdfAsSvgAssets } = await import('./pdf-import.ts');
+            const refs = await ingestPdfAsSvgAssets(host, file, {
+              mode: 'multi',
+              warn: (m) => announce(m, { assertive: true }),
+            });
+            stored += refs.length;
+            continue;
+          }
+          await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file);
+          stored++;
+        } catch (err) {
+          host.log('error', 'Upload failed', { file: file.name, error: String(err) });
+          // Cap/quota errors carry a user-ready message; prefix only the rest.
+          announce((err as { code?: unknown }).code ? (err as Error).message : `Upload failed: ${(err as Error).message}`, { assertive: true });
+        }
+      }
+      ingesting = false;
+      if (!mounted) return;
+      if (!stored) {
+        // Nothing landed — restore the idle drop area (no re-render is coming).
+        zone?.classList.remove('is-busy');
+        if (textEl) textEl.innerHTML = idleText;
+        return;
+      }
+      playSfx('drop');
+      announce(`Added ${stored} file${stored === 1 ? '' : 's'} to your uploads.`);
+      await reload();
+      if (mounted) rerender();
+    }
+    body.addEventListener('change', (e) => {
+      const input = e.target;
+      if (!(input instanceof HTMLInputElement) || !input.classList.contains('cat-dropzone-input')) return;
+      const files = [...(input.files ?? [])];
+      input.value = ''; // allow re-selecting the same file after an error
+      void ingestFiles(files);
+    });
+    // Drag-and-drop onto the zone. dragover MUST preventDefault or the drop never fires;
+    // only file drags count (dragging a tile's image around shouldn't light it up).
+    body.addEventListener('dragover', (e) => {
+      const zone = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-dropzone]') : null;
+      if (!zone || ingesting || !e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      zone.classList.add('is-dragover');
+    });
+    body.addEventListener('dragleave', (e) => {
+      const zone = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-dropzone]') : null;
+      // relatedTarget still inside the zone = moving between its children, not a leave.
+      if (zone && !(e.relatedTarget instanceof Node && zone.contains(e.relatedTarget))) zone.classList.remove('is-dragover');
+    });
+    body.addEventListener('drop', (e) => {
+      const zone = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-dropzone]') : null;
+      if (!zone || !e.dataTransfer?.files.length) return;
+      e.preventDefault();
+      zone.classList.remove('is-dragover');
+      void ingestFiles([...e.dataTransfer.files]);
     });
 
     // Capture-phase broken-image fallback: a grid thumbnail whose bytes fail to load (a

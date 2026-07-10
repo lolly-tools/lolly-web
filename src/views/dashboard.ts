@@ -115,12 +115,20 @@ function panel(key: string, active: string, inner: string): string {
 // reference-panel <details> chrome (.plat-section-summary / .plat-section-body handle
 // the chevron rotation + padding). `half` sizes it for the two-up palette/catalogue row.
 // Marked data-dash-collapse so the mount wires a soft open/close cue on toggle.
-function collapse(o: { id: string; title: string; body: string; desc?: string; flag?: string; open?: boolean; half?: boolean; cls?: string }): string {
+// `iconSlot`/`chipsSlot` render EMPTY hooks (data-dash-collapse-icon/-chips) rather than
+// real content — some callers' icon/facts are only known after an async client-side
+// probe (see collectDevice()), so they hydrate in later exactly like the hero stats do.
+function collapse(o: {
+  id: string; title: string; body: string; desc?: string; flag?: string; open?: boolean; half?: boolean; cls?: string;
+  iconSlot?: boolean; chipsSlot?: boolean;
+}): string {
   return `
     <details class="plat-section dash-collapse${o.half ? ' dash-collapse--half' : ''}${o.cls ? ' ' + o.cls : ''}" id="${o.id}"${
       o.flag ? ` data-flag="${escape(o.flag)}"` : ''} data-dash-collapse${o.open === false ? '' : ' open'}>
       <summary class="plat-section-summary dash-collapse-summary">
+        ${o.iconSlot ? `<span class="dash-collapse-icon" data-dash-collapse-icon aria-hidden="true"></span>` : ''}
         <h2 class="plat-section-title" id="${o.id}-h">${escape(o.title)}</h2>
+        ${o.chipsSlot ? `<span class="dash-collapse-chips" data-dash-collapse-chips></span>` : ''}
         ${COLLAPSE_CHEV}
       </summary>
       <div class="plat-section-body">
@@ -431,8 +439,16 @@ function typeFacts(): string {
     </ul>`;
 }
 
-function printBody(): string {
+// Reuses the shared swatch() tile (chip + name + hex + ink readout, same as the
+// "All values" grid below) rather than a bespoke list — a locked-ink brand
+// colour should look identical wherever it's shown.
+function printBody(palette: readonly PaletteEntry[]): string {
+  const locked = palette.filter((c) => isLockedInk(c) && !isTransparent(c.hex));
   return `
+    <p class="plat-section-desc">Brand colours locked to an exact ink value (CMYK or spot) — substituted directly into CMYK PDF exports instead of a generic sRGB→CMYK conversion.</p>
+    ${locked.length
+      ? `<div class="plat-swatch-grid">${locked.map(swatch).join('')}</div>`
+      : `<p class="cat-empty">No brand colours are locked to an exact ink yet — pin one from a swatch's print lock in the Design system tab above.</p>`}
     <p class="plat-section-desc">Press conditions a CMYK PDF can declare in its <code>OutputIntent</code>. Selected per-export via the <code>colorProfile</code> option; raster &amp; on-screen output stays sRGB.</p>
     <table class="plat-table">
       <thead><tr><th>Profile key</th><th>Identifier</th><th>Condition</th></tr></thead>
@@ -613,8 +629,11 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
               ${collapse({
                 id: 'dash-device',
                 flag: 'device',
-                title: 'This device',
+                title: 'This Machine',
                 cls: 'dash-device',
+                open: false,
+                iconSlot: true,
+                chipsSlot: true,
                 desc: 'A live snapshot of the browser and machine this session runs on. Read on the fly; nothing is stored or sent anywhere.',
                 body: `
                   <div class="dash-dev-hero" data-dev-hero>
@@ -663,44 +682,39 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             </section>
           </div>
           ${paletteSection(palette)}
+          ${refPanel('print cmyk', false, 'dash-print', 'Print & CMYK', printBody(palette))}
           <p class="plat-note dash-foot" role="note">
             <strong>Your brand is live</strong> — colour, palette and fonts above write straight to this device and every tool, page and export follows. Your activity and storage — tracked on the other tabs above — are mirrored from your <a href="#/profile">Profile</a>, where you can manage them.
           </p>
         `)}
 
-        ${panel('caps', initialTab, `
-          ${capsHtml}
-          <div class="dash-row dash-row--2">
+        ${panel('caps', initialTab, capsHtml)}
+
+        ${panel('activity', initialTab, `
+          <div class="dash-bento">
+            <div class="plat-stats">
+              <span class="plat-stat" data-tool-count${toolCount ? '' : ' hidden'}><strong>${escape(String(toolCount || ''))}</strong>tools</span>
+              <span class="plat-stat"><strong>30</strong>export formats</span>
+              <span class="plat-stat"><strong>6</strong>surfaces</span>
+              <span class="plat-stat" data-asset-stat hidden><strong data-asset-stat-n></strong>brand assets</span>
+            </div>
             ${collapse({
               id: 'dash-catalogue',
               flag: 'catalog catalogue',
               title: 'Catalogue',
               desc: 'What ships in this build, synced to clients as data.',
               body: catalogSummaryBody(tools),
-              half: true,
             })}
-            ${refPanel('print cmyk', false, 'dash-print', 'Print & CMYK', printBody())}
-          </div>
-        `)}
-
-        ${panel('activity', initialTab, `
-          <div class="dash-bento">
-                    <div class="plat-stats">
-            <span class="plat-stat" data-tool-count${toolCount ? '' : ' hidden'}><strong>${escape(String(toolCount || ''))}</strong>tools</span>
-            <span class="plat-stat"><strong>30</strong>export formats</span>
-            <span class="plat-stat"><strong>6</strong>surfaces</span>
-            <span class="plat-stat" data-asset-stat hidden><strong data-asset-stat-n></strong>brand assets</span>
-          </div>
             <section class="plat-section dash-section dash-card" id="dash-activity" data-flag="activity">
               ${sectionHead('Your activity', 'dash-activity-h', 'Local-only counters — nothing here is recorded remotely.')}
               <div class="dash-activity">${renderActivity(metrics, tools as Array<{ id: string } & Record<string, unknown>>)}</div>
             </section>
             <section class="plat-section dash-section dash-card dash-recent" id="dash-recent" data-flag="recent creations" hidden>
-              ${sectionHead('Recent creations', 'dash-recent-h', 'Your latest saved sessions — swipe the stack to browse, tap the top card to reopen.')}
+              ${sectionHead('Recent creations', 'dash-recent-h', 'Your latest saved sessions — swipe the stack to browse, or use Open below.')}
               <div class="dash-recent-mount" data-recent-stack></div>
             </section>
             <section class="plat-section dash-section dash-card dash-recent" id="dash-exports" data-flag="exports downloads latest" hidden>
-              ${sectionHead('Latest exports', 'dash-exports-h', 'Files you downloaded — swipe through and tap one to reopen it exactly as it was.')}
+              ${sectionHead('Latest exports', 'dash-exports-h', 'Files you downloaded — swipe through, or use Open below to reopen one exactly as it was.')}
               <div class="dash-recent-mount" data-exports-stack></div>
             </section>
           </div>
@@ -712,6 +726,15 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   // reveal ladder so it settles in with that panel's other sections instead of
   // snapping in at full opacity beneath the cascade.
   armViewEnter(viewEl, '.tools-home, .plat-header, .dash-tabs, .plat-section, .dash-foot');
+
+  // "This device" starts collapsed (the server-rendered default, above) everywhere,
+  // then opens itself right away when the tab actually lays out as two columns
+  // (≥900px, matching .dash-device-grid's breakpoint in dashboard.css) — there's
+  // room to just show it there, whereas mobile's single column wants everything
+  // folded by default. Runs before the toggle-cue listener below is attached, so
+  // this doesn't play the fold sound on page load.
+  const deviceDetails = viewEl.querySelector<HTMLDetailsElement>('#dash-device');
+  if (deviceDetails && window.matchMedia('(min-width: 900px)').matches) deviceDetails.open = true;
 
   // Primary tabs. Returns a `selectTab(key)` so the deep-link handler can jump to
   // the panel that owns a flagged section. Wiring the tabs before the deep link
@@ -935,6 +958,12 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       if (isCurrent(grid)) {
         grid.innerHTML = renderDeviceCards(snap.groups);
         grid.classList.add('plat-hydrated');
+      }
+      const iconSlot = viewEl.querySelector<HTMLElement>('#dash-device [data-dash-collapse-icon]');
+      if (isCurrent(iconSlot)) iconSlot.innerHTML = snap.icon;
+      const chipsSlot = viewEl.querySelector<HTMLElement>('#dash-device [data-dash-collapse-chips]');
+      if (isCurrent(chipsSlot) && snap.chips.length) {
+        chipsSlot.innerHTML = snap.chips.map((c) => `<span class="dash-chip">${escape(c)}</span>`).join('');
       }
       // Only wire the live rows if THIS mount is still the current one — a
       // superseded same-view remount whose probe resolves late must not attach a

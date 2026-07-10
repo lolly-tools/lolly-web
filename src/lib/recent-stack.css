@@ -87,3 +87,22 @@
 @media (prefers-reduced-motion: reduce) {
   .dash-stack-card { transition: opacity 0.2s ease; }
 }
+/* An explicit "Open" affordance under the deck — the front card is already a
+   real link, but swipe-to-browse isn't a discoverable interaction on its own
+   (especially for keyboard/screen-reader use), so this always targets whichever
+   item swiped to the front (kept in sync by layout()). */
+.dash-stack-open {
+  display: flex; align-items: center; justify-content: center; gap: .4rem;
+  margin: .7rem auto 0; width: fit-content; max-width: 100%;
+  padding: .45rem 1rem; border-radius: 999px;
+  border: 1px solid hsl(var(--border)); background: hsl(var(--card));
+  color: hsl(var(--foreground)); font-size: .82rem; font-weight: 600;
+  text-decoration: none; transition: background .15s ease, border-color .15s ease;
+}
+.dash-stack-open:hover { background: hsl(var(--muted) / .5); border-color: hsl(var(--primary) / .5); }
+.dash-stack-open:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.dash-stack-open-label {
+  font-weight: 400; color: hsl(var(--muted-foreground));
+  max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dash-stack-open-label::before { content: '— '; }

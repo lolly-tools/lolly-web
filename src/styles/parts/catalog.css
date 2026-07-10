@@ -246,6 +246,26 @@
   .cat-star, .cat-check { -webkit-backdrop-filter: none; backdrop-filter: none; background: #0009; }
 }
 
+/* Uploads drop area — leads the (always-rendered) "Your uploads" section body: drag files
+   in or click to browse. A <label> over a visually-hidden file input, so :focus-within is
+   the input's keyboard ring. Grows into a roomier card when it IS the section (no uploads). */
+.cat-dropzone {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-bottom: .9rem; padding: 14px 16px;
+  border: 2px dashed hsl(var(--border)); border-radius: var(--radius);
+  color: hsl(var(--muted-foreground)); font-size: .9rem; text-align: center;
+  cursor: pointer;
+  transition: border-color .12s, background .12s, color .12s;
+}
+.cat-dropzone svg { width: 20px; height: 20px; flex: none; }
+.cat-dropzone--empty { flex-direction: column; gap: 12px; padding: 2.6rem 1.5rem; }
+.cat-dropzone--empty svg { width: 28px; height: 28px; }
+.cat-dropzone:hover, .cat-dropzone:focus-within { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
+.cat-dropzone:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.cat-dropzone.is-dragover { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .08); color: hsl(var(--foreground)); }
+.cat-dropzone.is-busy { opacity: .6; pointer-events: none; }
+.cat-dropzone-browse { color: hsl(var(--primary)); font-weight: 600; text-decoration: underline; }
+
 /* Uploads section — the "Select all / Deselect all" control leads the section BODY (right-
    aligned above the grid), so it folds away with the grid when the section is collapsed
    instead of lingering on the always-visible header row (which read as confusing). */
