@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Neurospicy Mode — a background focus-beat player. Loops ONE catalog audio asset (the
- * suse/loops/* Amen breaks, tagged 'neurospicy') continuously while using the app, with a
+ * Neurospicy Mode — a background focus-beat player. Loops ONE catalog audio asset (any
+ * type:'audio' catalog entry — the focus loops/songs tagged 'neurospicy' plus the brand's
+ * other audio, e.g. licensed music beds) continuously while using the app, with a
  * volume. State (enabled / loop id / volume) persists to the PROFILE (canonical) + a
  * localStorage mirror (known before the profile loads), exactly like the sfx mute. Gapless:
  * each loop is decoded into an AudioBuffer and played via an AudioBufferSourceNode(loop=true)
@@ -114,8 +115,14 @@ async function playRadio(): Promise<void> {
   } catch { /* offline / stream unavailable — leave silent */ }
 }
 
+// Decoded PCM is big (~1.4 MB per stereo second), and the track list now spans the
+// whole catalog — cap the cache and drop the least-recently-played buffer instead of
+// pinning every audition in memory.
+const MAX_BUFFERS = 8;
+
 async function loadBuffer(id: string, url: string, format: string | undefined): Promise<AudioBuffer | null> {
-  const cached = buffers.get(id); if (cached) return cached;
+  const cached = buffers.get(id);
+  if (cached) { buffers.delete(id); buffers.set(id, cached); return cached; } // refresh recency
   const a = audio(); if (!a) return null;
   try {
     let buf: AudioBuffer;
@@ -127,7 +134,12 @@ async function loadBuffer(id: string, url: string, format: string | undefined): 
       const bytes = await (await fetch(url)).arrayBuffer();
       buf = await a.ctx.decodeAudioData(bytes);
     }
-    buffers.set(id, buf); return buf;
+    buffers.set(id, buf);
+    for (const k of buffers.keys()) {
+      if (buffers.size <= MAX_BUFFERS) break;
+      if (k !== id) buffers.delete(k);
+    }
+    return buf;
   } catch { return null; }
 }
 
@@ -205,7 +217,7 @@ export function setNeurospicyVolume(host: NeurospicyHost, v: number): void {
  *  Neurospicy feature flag is switched off (hide + silence, keep the preference). */
 export function stopNeurospicy(): void { stopSource(); }
 
-// ── the loop catalogue (audio assets tagged 'neurospicy') ────────────────────────
+// ── the track catalogue (every type:'audio' catalog asset) ──────────────────────
 // The classic breaks earn the top of the picker; the amen loops trail; the rest sit
 // between. Shared by BOTH the Neurospicy select and the video music picker (tool.ts).
 export const FEATURED_LOOPS = ['fools-gold', 'amen-brother', 'funky-drummer'];
@@ -228,7 +240,10 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
   if (!localLoopsCache) {
     let loops: NeuroTrack[] = [];
     try {
-      const refs = await host.assets.query({ tags: ['neurospicy'] });
+      // ALL catalog audio, not just the 'neurospicy'-tagged focus sets — the brand's
+      // other audio (e.g. licensed music beds) is playable here too; the player's
+      // picker groups it under a separate "Catalog" section (see trackCategory).
+      const refs = await host.assets.query({ type: 'audio' });
       for (const r of refs) { if (r.url) urlById.set(r.id, r.url); if (r.format) formatById.set(r.id, r.format); }
       loops = refs
         .map((r): NeuroTrack => ({

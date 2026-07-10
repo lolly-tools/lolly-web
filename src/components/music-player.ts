@@ -89,7 +89,12 @@ function ensureStyles(): void {
 const WARN = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`;
 
 // Track-list groups, in display order. Tracks sort alphabetically WITHIN each group.
-const CATEGORIES: { key: string; label: string; warn?: string }[] = [
+// `collapsed` seeds the group folded (it still expands on click, and while searching).
+const CATEGORIES: { key: string; label: string; warn?: string; collapsed?: boolean }[] = [
+  // The brand catalog's OTHER audio (not the built-in focus sets) — e.g. the licensed
+  // music beds. Leads the list, folded by default: it can be large, and it's only
+  // rendered at all when the catalog actually ships such audio.
+  { key: 'catalog', label: 'Catalog', collapsed: true },
   { key: 'uploads', label: 'Uploads' },
   { key: 'lolly', label: 'Lolly Sings' },
   { key: 'ambient', label: 'Ambient' },
@@ -101,6 +106,7 @@ const CATEGORIES: { key: string; label: string; warn?: string }[] = [
 function trackCategory(t: NeuroTrack): string {
   if (t.format === 'stream' || t.tags.includes('radio') || t.tags.includes('stream')) return 'radio';
   if (t.id.startsWith('user/')) return 'uploads';       // the user's own uploads
+  if (!t.tags.includes('neurospicy')) return 'catalog'; // catalog audio outside the focus sets (music beds…)
   if (t.format === 'zzfxm') return 'lolly';             // our generated / MIDI-converted tracks
   if (t.tags.includes('lofi')) return 'ambient';        // the lo-fi loops
   return 'beats';                                       // the remaining loops (breakbeats)
@@ -130,8 +136,11 @@ export function musicPlayerBodyHtml(): string {
           <span class="neuro-picker-caret">${CARET}</span>
         </button>
         <div class="neuro-picker-panel" data-mp-panel hidden>
-          <input type="search" class="neuro-search" data-mp-search placeholder="Search tracks…" aria-label="Search tracks">
+          <!-- Search sits UNDER the list: the panel is bottom-anchored (it opens upward
+               from the docked player), so results shrinking only moves the panel's TOP
+               edge — the search box stays put instead of jumping as you type. -->
           <ul class="neuro-list" data-mp-list aria-label="Tracks"><li class="neuro-empty">Loading…</li></ul>
+          <input type="search" class="neuro-search" data-mp-search placeholder="Search tracks…" aria-label="Search tracks">
         </div>
       </div>
       <canvas class="neuro-meter" data-mp-meter width="260" height="24" aria-hidden="true"></canvas>
@@ -243,7 +252,10 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
         if (hit) catShown++;
       }
       cat.hidden = catShown === 0;
-      if (q) cat.classList.remove('is-collapsed'); // expand groups while searching
+      if (q) { // expand groups while searching so matches are never behind a fold
+        cat.classList.remove('is-collapsed');
+        cat.querySelector('[data-cat-toggle]')?.setAttribute('aria-expanded', 'true');
+      }
       shown += catShown;
     }
     const empty = list?.querySelector<HTMLElement>('.neuro-empty');
@@ -280,8 +292,8 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
         list.innerHTML = CATEGORIES.map((cat) => {
           const items = (byCat.get(cat.key) ?? []).sort((a, b) => a.name.localeCompare(b.name));
           if (!items.length) return '';
-          return `<li class="neuro-cat" data-cat="${cat.key}">` +
-            `<button type="button" class="neuro-cat-head" data-cat-toggle aria-expanded="true">` +
+          return `<li class="neuro-cat${cat.collapsed ? ' is-collapsed' : ''}" data-cat="${cat.key}">` +
+            `<button type="button" class="neuro-cat-head" data-cat-toggle aria-expanded="${!cat.collapsed}">` +
             `<span class="neuro-cat-caret">${CARET}</span><span>${escape(cat.label)}</span>` +
             (cat.warn ? `<span class="neuro-warn" tabindex="0" role="img" title="${escape(cat.warn)}" aria-label="${escape(cat.warn)}">${WARN}</span>` : '') +
             `<span class="neuro-cat-count">${items.length}</span></button>` +

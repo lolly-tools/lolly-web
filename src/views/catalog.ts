@@ -84,10 +84,11 @@ interface CatFont {
   downloads: FontDownload[]; onDevice: boolean;
 }
 
-// Coarse filetype filter for the sticky toolbar — three buckets over the four asset
-// types, NOT one option per export format (which would be a huge, noisy list): Image =
-// raster photos/logos, Vector = SVG/EPS artwork, Motion = video + Lottie animations.
-type TypeFilter = 'all' | 'image' | 'vector' | 'motion';
+// Coarse filetype filter for the sticky toolbar — buckets over the asset types, NOT one
+// option per export format (which would be a huge, noisy list): Image = raster
+// photos/logos, Vector = SVG/EPS artwork, Motion = video + Lottie animations, Audio =
+// the music/audio tiles admitted into the catalogue view (see the allAssets filter below).
+type TypeFilter = 'all' | 'image' | 'vector' | 'motion' | 'audio';
 // Toolbar glyphs (Lucide house style). Each button shows icon + label on desktop and
 // collapses to the icon alone on mobile (see .cat-btn-label in catalog.css).
 const catIco = (inner: string): string =>
@@ -97,6 +98,7 @@ const CAT_ICONS = {
   image:    catIco('<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>'),
   vector:   catIco('<path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/><path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"/><path d="m2.3 2.3 7.286 7.286"/><circle cx="11" cy="11" r="2"/>'),
   motion:   catIco('<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>'),
+  audio:    catIco('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
   collapse: catIco('<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>'),
   expand:   catIco('<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>'),
   eye:      catIco('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>'),
@@ -119,12 +121,14 @@ const TYPE_FILTERS: { key: TypeFilter; label: string; icon: string; sfx?: string
   { key: 'image', label: 'Image', icon: CAT_ICONS.image, sfx: 'aperture' },
   { key: 'vector', label: 'Vector', icon: CAT_ICONS.vector, sfx: 'scribble' },
   { key: 'motion', label: 'Motion', icon: CAT_ICONS.motion, sfx: 'reel' },
+  { key: 'audio', label: 'Audio', icon: CAT_ICONS.audio },
 ];
 // Which asset types each filter bucket admits ('all' matches everything).
 const TYPE_FILTER_TYPES: Record<Exclude<TypeFilter, 'all'>, Set<string>> = {
   image: new Set(['raster']),
   vector: new Set(['vector']),
   motion: new Set(['video', 'lottie']),
+  audio: new Set(['audio']),
 };
 
 // The web shell's concrete host exposes more than the tool-facing HostV1 contract; we
@@ -476,7 +480,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let headshotUrl = '';
   let showHidden = false;
   let loadFailed = false;                    // the catalog query threw — a total sync failure, distinct from an empty catalogue
-  let typeFilter: TypeFilter = 'all';        // filetype filter in the sticky toolbar (all/image/vector/motion)
+  let typeFilter: TypeFilter = 'all';        // filetype filter in the sticky toolbar (all/image/vector/motion/audio)
   let query = '';                            // footer search text (lowercased); filters the asset grid
   let iconThemes: IconTheme[] = [];          // two-colour pairings for themable icons (styler)
   let catIconTheme: string | null = null;    // colour applied to a themable category's grid (null = base)
@@ -776,7 +780,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // Assets the user hasn't hidden.
   const visibleAssets = (): AssetRef[] => allAssets.filter(a => !hiddenSet.has(assetBaseId(a.id)));
   // Filetype-filter predicate (sticky toolbar) — 'all' passes everything; otherwise the
-  // asset's type must fall in the selected bucket (image/vector/motion).
+  // asset's type must fall in the selected bucket (image/vector/motion/audio).
   function matchesType(a: AssetRef): boolean {
     return typeFilter === 'all' || TYPE_FILTER_TYPES[typeFilter].has(a.type);
   }
@@ -953,9 +957,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // filter (image/vector/motion) stays available even during a search, so you can narrow
     // results by type; the collapse + hide-hidden toggles are section-management, so they're
     // dropped while searching (there are no folds to manage in a flat results grid).
+    // Only offer a bucket the catalogue actually has assets for — e.g. a brand with no
+    // video/Lottie/audio assets never sees an always-empty Motion or Audio button.
+    const shownFilters = TYPE_FILTERS.filter(f => f.key === 'all' || allAssets.some(a => TYPE_FILTER_TYPES[f.key as Exclude<TypeFilter, 'all'>].has(a.type)));
     const filterSeg = `
       <div class="cat-typefilter" role="group" aria-label="Filter by file type">
-        ${TYPE_FILTERS.map(f => `<button type="button" class="cat-typefilter-opt${typeFilter === f.key ? ' is-on' : ''}" data-typefilter="${f.key}"${f.sfx ? ` data-sfx="${f.sfx}"` : ''} data-voice="${escape(f.label)}" aria-pressed="${typeFilter === f.key}" aria-label="${f.label}" title="${f.label}">${f.icon}<span class="cat-btn-label">${f.label}</span></button>`).join('')}
+        ${shownFilters.map(f => `<button type="button" class="cat-typefilter-opt${typeFilter === f.key ? ' is-on' : ''}" data-typefilter="${f.key}"${f.sfx ? ` data-sfx="${f.sfx}"` : ''} data-voice="${escape(f.label)}" aria-pressed="${typeFilter === f.key}" aria-label="${f.label}" title="${f.label}">${f.icon}<span class="cat-btn-label">${f.label}</span></button>`).join('')}
       </div>`;
     const collapseLabel = anyExpanded ? 'Collapse all' : 'Expand all';
     const showHiddenLabel = showHidden ? 'Hide hidden' : `Show hidden (${hiddenItems.length})`;

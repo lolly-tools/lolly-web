@@ -1949,6 +1949,10 @@ const MAX_AUDIO_BYTES = 30 * 1024 * 1024;         // 30 MB
 // copy). Skip the scan for outsized originals rather than buffer them: a real
 // credentialed asset is nowhere near this, and preservation is best-effort.
 const MAX_CREDENTIAL_SCAN_BYTES = 64 * 1024 * 1024; // 64 MB
+// Only a genuinely HUGE raster — a heavy file, or well past 2× the resize target on its
+// longest edge — prompts the keep/resize decision. A merely-large "good size" image is
+// stored verbatim without asking (see storeUserUpload's raster branch).
+const HUGE_UPLOAD_BYTES = 40 * 1024 * 1024;         // 40 MB
 
 function assertVerbatimSize(file: File, max: number, kind: string): void {
   if (file.size > max) {
@@ -2136,15 +2140,14 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     format = animatedKind;
     ({ width, height } = await readDimensions(file).catch(() => ({}) as { width?: number; height?: number }));
   } else {
-    // Raster. A silent re-encode would break a C2PA hard binding, so a credentialed image (an
-    // AI render, a signed photo) that fits is stored VERBATIM — its credential stays intact and
-    // validates. The "strip metadata on upload" flag (default OFF) governs OTHER metadata: ON →
-    // scrub EXIF/XMP/GPS (in place for png/jpeg, preserving any C2PA store; via re-encode for
-    // other formats). OFF → keep the bytes exactly, skipping the WebP conversion entirely — so
-    // an uploaded file can be checked for valid credentials as-is. When an image is too big to
-    // keep verbatim (>20 MB or the longest edge >3840 px) and strip is off, we ASK (Keep original
-    // / Resize) rather than silently shrink; resizing a credentialed image re-signs it as a
-    // c2pa.resized derivative so its provenance still validates to its best extent.
+    // Raster. A good-size image is stored VERBATIM (a silent re-encode would break a C2PA hard
+    // binding, so a credentialed AI render / signed photo always keeps its bytes; other images
+    // keep theirs too). The "strip metadata on upload" flag (default OFF) governs OTHER metadata:
+    // ON → scrub EXIF/XMP/GPS (in place for png/jpeg, preserving any C2PA store; via re-encode
+    // for other formats). OFF → keep the bytes exactly. ONLY when an image is genuinely HUGE do
+    // we prompt + advise (Keep original / Resize) — giving the user the choice rather than
+    // silently shrinking; resizing a credentialed original re-signs it as a c2pa.resized
+    // derivative so its provenance still validates to its best extent.
     const raw = new Uint8Array(await file.arrayBuffer());
     // Scan for a credential structurally (no size cap — a large signed image can still
     // preserve its chain on resize; `raw` is already read, so this parse is ~free).
@@ -2154,7 +2157,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     if (ex) format = ex.format;
     const dims = await readDimensions(file).catch(() => ({}) as { width?: number; height?: number });
     const longest = Math.max(dims.width ?? 0, dims.height ?? 0);
-    const tooLarge = file.size > MAX_ANIMATED_RASTER_BYTES || longest > MAX_LONGEST_EDGE;
+    const isHuge = file.size > HUGE_UPLOAD_BYTES || longest > MAX_LONGEST_EDGE * 2;
     // Keep the exact bytes — but honour the privacy flag: strip-on png/jpeg drops EXIF/XMP/GPS
     // IN PLACE (no quality loss, C2PA store preserved so a credential still verifies).
     const keepBytes = (): void => {
@@ -2188,25 +2191,27 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     if (ex && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
       // Credentialed AND it fits → ALWAYS verbatim; the C2PA hard binding stays intact + validates.
       keepBytes();
-    } else if (stripMeta) {
-      // Privacy strip requested (uncredentialed / credentialed >64 MB). png/jpeg strip in place;
-      // any other format can only be scrubbed by re-encoding — as can a too-large one.
-      if (canStripInPlace && !tooLarge) keepBytes();
-      else await reencode();
-    } else if (!tooLarge) {
-      // Strip off + fits → keep the exact bytes (skips the WebP conversion entirely).
-      keepBytes();
-    } else {
-      // Strip off + too large → ASK rather than silently shrink. Escape/Cancel keeps the original
-      // (non-destructive). "Keep original" stores verbatim with no size cap (device quota still applies).
+    } else if (isHuge) {
+      // Genuinely huge → let the USER decide (the size warning + a bypass) rather than silently
+      // shrinking. Escape/Cancel keeps the original (non-destructive). "Keep original" stores it
+      // verbatim (device quota still applies); "Resize" re-encodes (re-signing a credentialed
+      // original as a c2pa.resized derivative).
       const r = computeResize(dims.width ?? 0, dims.height ?? 0);
       const picked = await choiceDialog({
-        title: 'Large image',
+        title: 'Very large image',
         message: `“${file.name}” is ${fmtBytes(file.size)}${longest ? ` (${dims.width}×${dims.height}px)` : ''}. Keep the original — best for a Content Credential — or resize it${r.width ? ` to ${r.width}×${r.height}px` : ''} to save space?`,
         choices: [{ id: 'resize', label: 'Resize' }, { id: 'keep', label: 'Keep original', primary: true }],
       });
       if (picked === 'resize') await reencode();
       else keepBytes();
+    } else if (stripMeta && !canStripInPlace) {
+      // Good size, privacy strip on, but this format can't be scrubbed in place → re-encode
+      // (the only way to drop metadata from a non-png/jpeg).
+      await reencode();
+    } else {
+      // Good size → keep the exact bytes. keepBytes() still scrubs EXIF/XMP/GPS in place for
+      // png/jpeg when the privacy flag is on (no quality loss, C2PA store preserved).
+      keepBytes();
     }
   }
 
