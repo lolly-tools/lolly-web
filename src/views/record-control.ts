@@ -412,6 +412,12 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       // Video: the footage becomes the compositor's body clip (see export.renderRecord).
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
       const prevClip = runtime.getModel().find(i => i.id === 'clip')?.value as { id?: string; url?: string } | undefined;
+      // Sign the take at capture time as a live camera+mic capture (IPTC digitalCapture,
+      // on-device Lolly) so the clip file self-asserts AND, placed into the composition,
+      // chains as a credentialed ingredient. Never throws — a stamping hiccup returns the
+      // original bytes + a null credential, so a take is never lost.
+      const { stampCaptureClip } = await import('../bridge/export.ts');
+      const { blob: clip, credential } = await stampCaptureClip(host, blob, ext, { camera: true, microphone: true });
       // Persist the take as a DURABLE user asset so a SAVED session restores its footage
       // after a reload — a blob: URL dies on navigation and a bare `recording.mp4` id
       // can't be re-resolved, so before this the clip vanished from any reopened session.
@@ -421,11 +427,11 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       let ref: AssetRef;
       try {
         ref = await storeRecordingAsset(
-          host as unknown as Parameters<typeof storeRecordingAsset>[0], blob, ext, prevClip?.id,
+          host as unknown as Parameters<typeof storeRecordingAsset>[0], clip, ext, prevClip?.id, credential ?? undefined,
         );
       } catch (e) {
         host.log('warn', 'record: could not persist clip — using an in-memory clip', { error: String(e) });
-        ref = { source: 'user', id: `recording.${ext}`, type: 'video', format: ext, url: URL.createObjectURL(blob), meta: { bytes: blob.size } };
+        ref = { source: 'user', id: `recording.${ext}`, type: 'video', format: ext, url: URL.createObjectURL(clip), meta: { bytes: clip.size } };
       }
       // Free the prior take's object URL only if it's OUR in-memory fallback (id
       // `recording.<ext>`, minted just above). Every other clip URL — a persisted
@@ -440,10 +446,19 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       // real-time compositor runs cleanly. Other capture tools (top-tail-recorder) keep
       // the manual "export in the bar" flow.
       if (stageEl.querySelector('[data-record-camera]')) { await autoProcessRecording(ext, takeMs); return; }
-      announce(`Clip captured (${fmtBytes(blob.size)}) — export to save your top-&-tail video.`);
+      announce(`Clip captured (${fmtBytes(clip.size)}) — export to save your top-&-tail video.`);
       return;
     }
-    showAudioDownload(blob, mimeType);
+    // Audio: sign the take so the downloaded voice recording self-asserts as a live
+    // mic capture. Only mp4/webm containers are C2PA-stampable (mp3/ogg are not), so a
+    // non-stampable container just downloads unsigned.
+    const audioExt = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('webm') ? 'webm' : null;
+    let clip = blob;
+    if (audioExt) {
+      const { stampCaptureClip } = await import('../bridge/export.ts');
+      clip = (await stampCaptureClip(host, blob, audioExt, { microphone: true })).blob;
+    }
+    showAudioDownload(clip, mimeType);
   }
 
   // Wrap the fresh clip with the intro/outro on the spot: show a "processing" curtain,

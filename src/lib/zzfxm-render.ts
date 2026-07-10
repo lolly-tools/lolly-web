@@ -37,6 +37,9 @@ function ensureWorker(): Worker {
   worker.onerror = (): void => {
     for (const p of pending.values()) p.reject(new Error('zzfxm worker error'));
     pending.clear();
+    // Drop the dead worker so the next renderSong() spawns a fresh one.
+    if (worker) { worker.onmessage = null; worker.onerror = null; }
+    worker = null;
   };
   return worker;
 }

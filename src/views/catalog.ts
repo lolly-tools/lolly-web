@@ -25,6 +25,7 @@
  */
 
 import { escape } from '../utils.ts';
+import { genAiPill, assetAiKind, GENAI_CLAIM } from '../lib/genai-pill.ts';
 import { announce } from '../a11y.ts';
 import { viewToggle } from '../components/view-toggle.ts';
 import { mountFeaturedRow } from '../components/featured-row.ts';
@@ -47,6 +48,7 @@ import {
   loadHiddenAssets, saveHiddenAssets,
 } from '../lib/asset-favourites.ts';
 import { storeUserUpload, isPdfUpload, UPLOAD_ACCEPT } from './picker.ts';
+import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
 import { groupPalette, swatch } from '../lib/swatches.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
 import { staggerReveal } from '../lib/reveal.ts';
@@ -60,7 +62,10 @@ import {
   restyleIconTheme, buildThemedAssetId, parseThemedAssetId, treatmentFilterSvg,
   buildTreatedAssetId, parseTreatedAssetId, wrapRasterWithTreatment,
   prepareC2paIngredient, prepareC2paIngredientFromStore, DIGITAL_SOURCE_TYPE, C2PA_FORMATS,
+  extractC2paStore, attachC2paStore, verifyC2pa,
 } from '@lolly/engine';
+import { setPendingVerify } from '../lib/verify-handoff.ts';
+import { lollyBadge } from '../lib/lolly-badge.ts';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
 import type { AssetRef, HostV1, IngredientCredential, Profile } from '../../../../engine/src/bridge/host-v1.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
@@ -244,16 +249,6 @@ function cropSvg(svgText: string, box: [number, number, number, number]): string
 
 // ── Icons (Lucide house style) ────────────────────────────────────────────────
 const STAR_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
-// A filled sparkle (big + small twinkle) — the "generative AI" glyph, matching the
-// verify view's aiSpark. Only shown when the GEN AI pill collapses to a circle.
-const AI_SPARK_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 13.5l.8 2.4 2.4.8-2.4.8-.8 2.4-.8-2.4-2.4-.8 2.4-.8z"/></svg>';
-// Generative-AI provenance pill (styled by .genai-pill in catalog.css). ONE markup for
-// both forms — CSS shows the "GEN AI" text by default and collapses it to the sparkle
-// circle on narrow tiles. `kind`: 'full' = wholly AI-made; 'partial' = contains AI parts.
-function genAiPill(kind: string): string {
-  const title = kind === 'partial' ? 'Contains AI-generated content' : 'Fully AI-generated content';
-  return `<span class="genai-pill" title="${escape(title)}">${AI_SPARK_ICON}<span class="genai-pill-lbl">Gen AI</span></span>`;
-}
 const SHARE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>';
 const TAG_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor"/></svg>';
 const TRASH_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -274,6 +269,19 @@ const CHECK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" 
 // Filled play/pause glyphs for the details-modal Lottie playback overlay.
 const PLAY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 const PAUSE_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+// Music-note glyph for an audio-upload tile (audio can't thumbnail as an image).
+const AUDIO_GLYPH = '<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+// Shield-check glyph for the "Check Content Credentials" action.
+const SHIELD_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>';
+
+// Containers the C2PA reader can inspect (engine c2pa-verify sniffFormat / EXTRACTORS):
+// any asset in one of these formats CAN be checked, so its details page offers the
+// checker — whether or not it currently carries a credential (a plain file honestly
+// reports "No Content Credentials"). Lottie/JSON, audio (mp3/wav), fonts and tokens
+// are not readable, so they get no checker.
+const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'tiff', 'webp', 'mp4', 'webm', 'mkv']);
+const isVerifiableAsset = (ref: AssetRef): boolean =>
+  VERIFIABLE_FORMATS.has(String(ref.format ?? '').toLowerCase());
 
 /**
  * Pan/zoom the details-modal preview so a user can inspect an asset closely. Zoom *sizes*
@@ -590,8 +598,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       ? (await host.assets.get(prof.headshot.id).catch(() => null))?.url || ''
       : '';
     const userVisual = user.filter(a => a.id !== HEADSHOT_ID);
-    // Catalog first, then user uploads; only image-thumbnailable types.
-    allAssets = [...catalog, ...userVisual].filter(a => VISUAL_TYPES.has(a.type));
+    // Catalog first, then user uploads. Only image-thumbnailable types from the catalog
+    // (palette/tokens/font catalog entries are engine data covered elsewhere), a user's OWN
+    // audio upload, AND catalog focus-music (audio tagged 'neurospicy' — the generated
+    // songs + lo-fi loops) so they can be auditioned here. Other catalog audio (music beds)
+    // stays out. Each audio tile renders a player in the details modal.
+    allAssets = [...catalog, ...userVisual]
+      .filter(a => VISUAL_TYPES.has(a.type)
+        || (a.type === 'audio' && (a.source === 'user' || (Array.isArray(a.meta?.tags) && (a.meta.tags as string[]).includes('neurospicy')))));
     assetById = new Map(allAssets.map(a => [a.id, a]));
     searchHaystack = null; // asset set changed — drop the stale search index
 
@@ -682,6 +696,23 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (ref.type === 'video') {
       return `<video class="cat-thumb" src="${escape(ref.url)}" muted loop autoplay playsinline preload="metadata"></video>`;
     }
+    // Audio (a user's own music upload) can't thumbnail. In the details modal (full) it
+    // gets a real <audio controls> player to preview; on a grid tile it shows a music-note
+    // glyph. The grid tile nests the thumb inside a <button>, where an interactive <audio>
+    // control is invalid — so the player is the `full` path only (the modal preview isn't a
+    // button). Both use `tag` (span inside a button, div in the modal).
+    if (ref.type === 'audio') {
+      if (full) {
+        // zzfxm songs are JSON, not an audio file — mark them so openDetails renders them
+        // to a WAV blob (plays in ANY browser, no codec dependency). Encoded audio plays
+        // directly; an onerror surfaces an unsupported-format note instead of failing quietly.
+        const zz = ref.format === 'zzfxm';
+        return `<${tag} class="cat-thumb cat-thumb-audio">`
+          + `<audio ${zz ? `data-zzfxm-url="${escape(ref.url)}"` : `src="${escape(ref.url)}"`} controls preload="metadata" data-audio-preview></audio>`
+          + `<p class="cat-audio-note" role="status" hidden></p></${tag}>`;
+      }
+      return `<${tag} class="cat-thumb cat-thumb-stub cat-thumb-audio" aria-hidden="true">${AUDIO_GLYPH}</${tag}>`;
+    }
     // Grid tiles show the small `thumb` derivative (query() puts its url on meta.thumbUrl);
     // the details/zoom modal passes full=true to keep the original for close inspection.
     const src = !full && typeof ref.meta?.thumbUrl === 'string' && ref.meta.thumbUrl ? ref.meta.thumbUrl : ref.url;
@@ -721,10 +752,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const fmt = ref.type === 'lottie' ? 'LOTTIE' : (ref.format ? String(ref.format).toUpperCase() : '');
     const isUser = ref.source === 'user';
     const sourceLabel = isUser ? 'Yours' : 'Catalog';
-    // Generative-AI disclosure (authored on the catalog entry). Shows a violet GEN AI pill
-    // in the caption — collapses to a sparkle circle on narrow tiles (see catalog.css).
-    const aiKind = ref.meta?.aiGenerated === 'partial' ? 'partial'
-      : ref.meta?.aiGenerated === 'full' ? 'full' : '';
+    // Generative-AI disclosure — authored on a catalog entry OR auto-detected from an
+    // upload's C2PA credential. Shows a violet GEN AI pill in the caption; collapses to a
+    // sparkle circle on narrow tiles (see catalog.css).
+    const aiKind = assetAiKind(ref);
     // Only the user's own uploads carry a selection checkbox (catalog assets can't be
     // bulk-deleted). The whole tile body (bar the star + checkbox) opens the details modal.
     const sel = isUser && selected.has(ref.id);
@@ -790,13 +821,19 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       : '';
     // Drag files in or click to browse — a <label> over a visually-hidden file input, so
     // click-to-open is native and the input stays keyboard-focusable (Enter/Space opens
-    // the OS picker; .cat-dropzone:focus-within draws the ring). Roomier when it IS the
-    // section (no uploads yet). Ingest is wired in wire() (change/dragover/drop on body).
+    // the OS picker; .cat-dropzone:focus-within draws the ring). A prominent dashed drop
+    // zone: an upload icon in a tinted disc, a bold prompt, and a hint line listing the
+    // filetypes the ingest path ACTUALLY accepts. `.cat-dropzone-text` stays the element
+    // the ingest handler swaps to "Adding…" (wire()). Ingest is wired in wire()
+    // (change/dragover/drop on body).
     const dropzone = `
       <label class="cat-dropzone${items.length ? '' : ' cat-dropzone--empty'}" data-dropzone>
         <input type="file" class="cat-dropzone-input visually-hidden" multiple accept="${UPLOAD_ACCEPT}" aria-label="Upload files to your library">
-        ${CAT_ICONS.upload}
-        <span class="cat-dropzone-text">Drag &amp; drop images, video, Lottie or PDF here — or <span class="cat-dropzone-browse">browse</span></span>
+        <span class="cat-dropzone-icon" aria-hidden="true">${CAT_ICONS.upload}</span>
+        <span class="cat-dropzone-copy">
+          <span class="cat-dropzone-text">Drag &amp; drop files here, or <span class="cat-dropzone-browse">browse</span></span>
+          <span class="cat-dropzone-hint">Images (PNG, JPG, WEBP, GIF), SVG, PDF &amp; Illustrator, audio (MP3, WAV, OGG, M4A, FLAC), plus video &amp; Lottie</span>
+        </span>
       </label>`;
     return `<section class="cat-group cat-group--uploads${isCollapsed ? ' is-collapsed' : ''}" data-group="${key}">
       <button type="button" class="cat-group-head" data-cat-toggle="${key}" aria-expanded="${!isCollapsed}">
@@ -1158,9 +1195,44 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // Destroy any Lottie player mounted in the preview — lottie-web ticks every mounted player
       // from one global rAF and won't stop on removal alone, so an un-reaped modal player leaks a loop.
       destroyLottiePlayers(detailsDialog);
+      // Free a zzfxm→WAV preview blob (only the one we minted; user-upload URLs are managed).
+      const wav = detailsDialog.querySelector<HTMLAudioElement>('[data-audio-preview]')?.dataset.wavBlob;
+      if (wav) URL.revokeObjectURL(wav);
       if (detailsDialog.open) detailsDialog.close(); detailsDialog.remove(); detailsDialog = null;
     }
   }
+  // Open the Verify checker (#/verify) on this asset and auto-run the on-device C2PA
+  // check — the authoritative source for the AI provenance the badge summarises. The
+  // stored copy is the source of truth: if it still carries a Content Credential (catalog
+  // assets, verbatim uploads) we check it verbatim; if ingest re-encoded it and dropped
+  // the in-file manifest, we re-attach the captured credential store so the provenance
+  // still surfaces (flagged, since a re-encode makes the binding read as modified).
+  async function checkCredentials(ref: AssetRef): Promise<void> {
+    try {
+      const name = String(ref.meta?.name ?? ref.id);
+      const resp = await fetch(ref.url);
+      let bytes: Uint8Array = new Uint8Array(await resp.arrayBuffer());
+      let note: string | undefined;
+      const fmt = String(ref.format ?? '').toLowerCase();
+      if (!extractC2paStore(bytes)) {
+        // Stored file has no embedded credential — fall back to the one captured at ingest.
+        let cred: { store: Uint8Array; format: string } | null = null;
+        try { cred = (await host.assets.credential?.(ref.id)) ?? null; } catch { cred = null; }
+        if (cred?.store && C2PA_FORMATS.includes(fmt)) {
+          try {
+            bytes = attachC2paStore(bytes, fmt, cred.store);
+            note = 'This Content Credential was captured when the file was imported. Lolly re-encoded the image on import, so it no longer binds to the stored copy byte-for-byte — the credential reads as "modified", but the provenance claims below are intact.';
+          } catch { /* re-attach failed — hand over the plain bytes and let Verify report */ }
+        }
+      }
+      const file = new File([bytes as BlobPart], name, { type: resp.headers.get('content-type') || undefined });
+      setPendingVerify({ files: [file], note });
+      location.hash = '#/verify';
+    } catch {
+      announce('Could not open the credential checker for this asset.');
+    }
+  }
+
   // The canonical shareable link that reopens this modal from the catalog view.
   const assetLink = (ref: AssetRef): string =>
     `${location.origin}${location.pathname}#/c?asset=${encodeURIComponent(ref.id)}`;
@@ -1188,8 +1260,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const hidden = hiddenSet.has(base);
     const name = String(ref.meta?.name ?? ref.id);
     const tags = (ref.meta?.tags as string[] | undefined) ?? [];
-    const aiKind = ref.meta?.aiGenerated === 'partial' ? 'partial'
-      : ref.meta?.aiGenerated === 'full' ? 'full' : '';
+    const aiKind = assetAiKind(ref);
+    // Offer the credential checker for every asset whose container the reader can
+    // inspect (not just AI-flagged ones), plus any AI-flagged asset so its claim can
+    // always be checked. The "Made with Lolly" lockup is revealed lazily below.
+    const showVerify = isVerifiableAsset(ref) || !!aiKind;
     // Themable icons get the same colour swatches as the download dialog, right here in the
     // details view — pick a pairing and the preview recolours live; Download + Copy-link then
     // carry the choice. dBaseSvg caches the raw SVG so re-colouring doesn't re-fetch.
@@ -1216,10 +1291,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       : '';
     const isMotionLottie = !!lottieJson;
     // Zoomable when the preview is a real still image OR a Lottie (both inspect crisply under zoom —
-    // a Lottie renders as SVG). A video reads better auto-playing at fit-size, so it opts out; a
-    // placeholder/dataless-lottie stub has nothing to zoom. attachZoom handles the <svg> player.
+    // a Lottie renders as SVG). A video reads better auto-playing at fit-size, so it opts out; audio
+    // is a player, not an image, so it opts out too; a placeholder/dataless-lottie stub has nothing
+    // to zoom. attachZoom handles the <svg> player.
     const zoomable = !ref.meta?._placeholder
       && ref.type !== 'video'
+      && ref.type !== 'audio'
       && !(ref.type === 'lottie' && !isMotionLottie);
     // Crop only makes sense on a static raster/vector — never a live motion preview.
     const croppable = zoomable && !isMotionLottie;
@@ -1248,10 +1325,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div><dt>Source</dt><dd>${isUser ? 'Your upload' : 'SUSE catalog'}</dd></div>
           <div><dt>Category</dt><dd>${escape(categoryLabel(libCategory(ref, overrides)))}</dd></div>
           <div><dt>Format</dt><dd>${escape(String(ref.format ?? ref.type).toUpperCase())}</dd></div>
-          ${aiKind ? `<div><dt>AI content</dt><dd class="cat-details-ai">${genAiPill(aiKind)}<span>${aiKind === 'partial' ? 'Contains AI-generated elements' : 'Fully AI-generated'}</span></dd></div>` : ''}
+          ${aiKind ? `<div><dt>AI content</dt><dd class="cat-details-ai">${genAiPill(aiKind)}<span>Is or contains genAI content</span></dd></div>` : ''}
           <div><dt>ID</dt><dd><code>${escape(ref.id)}</code></dd></div>
           ${tags.length ? `<div><dt>Tags</dt><dd class="cat-details-tags">${tags.map(t => `<span class="cat-tag">${escape(String(t))}</span>`).join('')}</dd></div>` : ''}
         </dl>
+        ${showVerify ? `<div class="cat-details-cred">
+          <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">This file’s Content Credential records a Lolly export, intact.</span></div>
+          <div class="cat-cred-panels" hidden></div>
+          <button type="button" class="btn cat-act-verify" data-act="verify">${SHIELD_ICON}<span>Check Content Credentials</span></button>
+        </div>` : ''}
         ${themable ? `<div class="cat-dl-section"><span class="cat-dl-label">Colours</span>${iconSwatchRow(dTheme)}</div>` : ''}
         ${treatable ? `<div class="cat-dl-section"><span class="cat-dl-label">Colour</span>${treatmentSwatchRow(dTreatment)}</div>` : ''}
         <div class="cat-details-actions">
@@ -1270,6 +1352,40 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>`;
     document.body.appendChild(dlg);
     detailsDialog = dlg;
+
+    // "Made with Lolly" is only honest when the stored file genuinely carries an intact
+    // Lolly credential, so reveal the lockup lazily off the authoritative verifier rather
+    // than asserting it. Cheap gate first: fetch once, skip anything with no embedded
+    // credential (most catalog art, and re-encoded user uploads whose store no longer
+    // binds) before the heavier verify. Video/audio are skipped (a whole-file fetch just
+    // for a badge isn't worth it — the checker button still covers them). Guarded on the
+    // modal still being THIS dialog, since ←/→ paging swaps it out.
+    if (showVerify && ref.type !== 'video' && ref.type !== 'audio' && Number(ref.meta?.bytes ?? 0) < 12_000_000) {
+      void (async () => {
+        try {
+          const bytes = new Uint8Array(await (await fetch(ref.url)).arrayBuffer());
+          if (!extractC2paStore(bytes)) return;
+          const report = await verifyC2pa(bytes);
+          if (detailsDialog !== dlg) return;
+          if (report.madeWithLolly) {
+            const lockup = dlg.querySelector<HTMLElement>('.cat-cred-lolly');
+            if (lockup) lockup.hidden = false;
+          }
+          // Surface the same "Made from" + "Change history" panels the Verify checker
+          // shows, inline — reusing its renderers so they never drift. Only when the
+          // credential parsed (report.found + a claim); each renderer returns '' when it
+          // has nothing, so a bare credential just shows an empty panel set (skipped).
+          if (report.found && report.claim) {
+            const { stepsHtml, inputsDigestHtml } = await import('./valid.ts');
+            if (detailsDialog !== dlg) return;
+            const env = report.environment as { inputs?: Record<string, string> } | null | undefined;
+            const panels = inputsDigestHtml(env?.inputs) + stepsHtml(report);
+            const box = dlg.querySelector<HTMLElement>('.cat-cred-panels');
+            if (box && panels) { box.innerHTML = panels; box.hidden = false; }
+          }
+        } catch { /* leave the lockup + panels hidden — the checker button is still there */ }
+      })();
+    }
 
     // A shared themed link opens on that colour — recolour the preview to match on open
     // (the swatch is already marked active above). Best-effort; leaves the base otherwise.
@@ -1389,6 +1505,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       else if (act === 'hide') await setHidden(base, true);
       else if (act === 'unhide') await setHidden(base, false);
       else if (act === 'delete') await deleteUserAsset(ref);
+      else if (act === 'verify' || act === 'verify-ai') await checkCredentials(ref);
     });
     dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeDetails(); });
     // ← / → page through assets (lightbox style), like the on-screen prev/next buttons.
@@ -1404,6 +1521,21 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (isMotionLottie) {
       const motionEl = dlg.querySelector<HTMLElement>('.cat-thumb-motion');
       if (motionEl) void mountLottieMarker(motionEl, { isCurrent: () => detailsDialog === dlg });
+    }
+    // Audio preview: render a zzfxm song to a WAV blob (codec-independent — plays in any
+    // browser), and surface a clear note if an encoded file's format is unsupported.
+    const audioEl = dlg.querySelector<HTMLAudioElement>('[data-audio-preview]');
+    if (audioEl) {
+      const note = audioEl.parentElement?.querySelector<HTMLElement>('.cat-audio-note');
+      audioEl.addEventListener('error', () => {
+        if (note && !audioEl.dataset.wavBlob) { note.textContent = 'This audio format isn’t supported by your browser.'; note.hidden = false; }
+      });
+      const zzUrl = audioEl.dataset.zzfxmUrl;
+      if (zzUrl) {
+        void songUrlToWavBlobUrl(zzUrl)
+          .then((wav) => { if (detailsDialog === dlg) { audioEl.dataset.wavBlob = wav; audioEl.src = wav; } else URL.revokeObjectURL(wav); })
+          .catch(() => { if (note) { note.textContent = 'Couldn’t render this track.'; note.hidden = false; } });
+      }
     }
     dlg.querySelector<HTMLButtonElement>('.cat-details-close')?.focus();
   }

@@ -30,6 +30,7 @@ import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
+import { takePendingVerify } from '../lib/verify-handoff.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 
 // Local mirror of the engine verifier's report shape (c2pa-verify's C2paReport
@@ -60,6 +61,7 @@ interface VerifyReport {
   state: 'valid' | 'invalid' | 'none';
   trusted: boolean;
   madeWithLolly: boolean;
+  likelyMadeWithLolly: boolean;
   delivered: boolean;
   format: string | null;
   checks: Check[];
@@ -188,6 +190,16 @@ const STATE_COPY = {
     title: 'Credential expired',
     sub: 'The file still matches exactly what its credential signed — nothing was modified — but the signing certificate (a short-lived on-device key; the lifetime is picked at export) has lapsed, so the credential no longer validates.',
   },
+  // state 'invalid', but ONLY the hard binding (the file's own bytes) failed —
+  // the claim signature and every hashed-URI-bound assertion (the actions and
+  // export context this page shows as edit history / "made from") checked out,
+  // and the claim records a Lolly creation. A softer, honest middle ground
+  // between the flat "Made with Lolly" and "Credential broken".
+  likelyLolly: {
+    cls: 'is-none is-likelylolly',
+    title: 'Likely made with Lolly',
+    sub: 'The credential’s own content checks out — its signature is valid and everything it references matches — and it records a Lolly export, but the file’s bytes no longer match the hard binding, so this exact copy can’t be vouched for. It was probably re-saved, re-encoded, or re-uploaded through something that left the manifest alone.',
+  },
 };
 
 // True when the ONLY failure (beyond the always-present untrusted marker) is
@@ -225,11 +237,19 @@ function scorecardModel(report: VerifyReport): ScorecardItem[] {
   const trust = okRow('signingCredential.trusted') ? 'pass'
     : (report.signer?.identity && present('signingCredential.expired')) ? 'warn' : na;
   const lollyMade = !!report.madeWithLolly;
+  const lollyLikely = !!report.likelyMadeWithLolly;
 
   return [
-    // Yes/no, not a graded check: "Made with Lolly" (green tick) or a plain
-    // "Not made with Lolly" with no status pill — "not applicable" reads wrong here.
-    { icon: 'lollipop', label: lollyMade ? 'Made with Lolly' : 'Not made with Lolly', status: lollyMade ? 'pass' : na, hideStatus: !lollyMade },
+    // Yes/no, not a graded check: "Made with Lolly" (green tick), a "Likely"
+    // amber middle ground (manifest content checks out, file bytes don't), or
+    // a plain "Not made with Lolly" — none of these show a status pill, "not
+    // applicable"/"invalid" would misword the amber and grey cases.
+    {
+      icon: 'lollipop',
+      label: lollyMade ? 'Made with Lolly' : lollyLikely ? 'Likely made with Lolly' : 'Not made with Lolly',
+      status: lollyMade ? 'pass' : lollyLikely ? 'warn' : na,
+      hideStatus: !lollyMade,
+    },
     { icon: 'document', label: 'Manifest found', status: found ? 'pass' : na },
     { icon: 'eye', label: 'Manifest readable', status: readable },
     { icon: 'link', label: 'Assertions bound to the claim', status: assertions },
@@ -276,7 +296,7 @@ function fact(label: string, value: unknown, icon: keyof typeof ICONS): string {
 // assertion-log) and placed ABOVE change history so an inspected asset tells its
 // "what it's made from" story before its "what happened to it" story. Empty in →
 // nothing rendered (so panelsBlock silently drops this column when there's no digest).
-function inputsDigestHtml(inputs: Record<string, string> | undefined): string {
+export function inputsDigestHtml(inputs: Record<string, string> | undefined): string {
   const entries = inputs ? Object.entries(inputs).filter(([, v]) => v != null && v !== '') : [];
   if (!entries.length) return '';
   const isColor = (v: string): boolean => /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
@@ -320,6 +340,7 @@ function resolveState(report: VerifyReport): ResolvedState {
   const state = report.madeWithLolly ? STATE_COPY.lolly
     : trusted && report.delivered ? STATE_COPY.delivered
     : trusted ? STATE_COPY.trusted
+    : report.state === 'invalid' && report.likelyMadeWithLolly ? STATE_COPY.likelyLolly
     : report.state === 'invalid' && isExpiredOnly(report) ? STATE_COPY.expired
     : (STATE_COPY[report.state] ?? STATE_COPY.none);
   // Set only when the signing chain verified against the pinned root: a still-valid
@@ -355,7 +376,7 @@ function resolveState(report: VerifyReport): ResolvedState {
 function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none' {
   const { state } = resolveState(report);
   if (state === STATE_COPY.invalid) return 'bad';
-  if (state === STATE_COPY.expired) return 'warn';
+  if (state === STATE_COPY.expired || state === STATE_COPY.likelyLolly) return 'warn';
   if (state === STATE_COPY.none) return 'none';
   return 'good';
 }
@@ -601,7 +622,7 @@ function tidyStepDescription(desc: string, label: string): string {
   return cleaned.toLowerCase() === label.toLowerCase() ? '' : cleaned;
 }
 
-function stepsHtml(report: VerifyReport): string {
+export function stepsHtml(report: VerifyReport): string {
   // The full provenance chain (all manifests) when the engine surfaced it, else
   // just the active manifest's own actions.
   const acts = report.history?.length ? report.history : (report.claim?.actions ?? []);
@@ -781,11 +802,23 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
             <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>Bytes no longer match</span></div>
             <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.pen)}</span><span>Modified after signing</span></div>
           </div>` : '';
+  // The middle-ground verdict: mixed tones in one badge group, unlike the pure
+  // pass (lolly) or pure fail (invalid) groups above — two green facts about
+  // the MANIFEST's own content (still trustworthy) and one amber fact about
+  // the FILE's current bytes (can't be vouched for).
+  const likelyLollyBadgesHtml = state === STATE_COPY.likelyLolly ? `
+          <div class="valid-hero-vbadges">
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>The credential's own content checks out</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.lollipop)}</span><span>It records a Lolly creation</span></div>
+            <div class="valid-vbadge is-warn"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>This file's bytes no longer match</span></div>
+          </div>` : '';
   const verdictHtml = report.madeWithLolly
     ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(state.title)}</span>`
-    : report.trusted
-      ? `<span class="valid-hero-pill valid-hero-pill--trusted"><span class="valid-trusted-badge" aria-hidden="true">✓</span>${escape(state.title)}</span>`
-      : `<span class="valid-hero-verdict">${escape(state.title)}</span>`;
+    : report.likelyMadeWithLolly
+      ? `<span class="valid-hero-pill valid-hero-pill--likely-lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(state.title)}</span>`
+      : report.trusted
+        ? `<span class="valid-hero-pill valid-hero-pill--trusted"><span class="valid-trusted-badge" aria-hidden="true">✓</span>${escape(state.title)}</span>`
+        : `<span class="valid-hero-verdict">${escape(state.title)}</span>`;
   return `
     <div class="valid-result ${state.cls}">
       <div class="valid-top">
@@ -798,6 +831,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
             <h2><span class="valid-hero-filename">${escape(fileName)}</span> ${verdictHtml}</h2>
           </div>
           ${state === STATE_COPY.lolly ? lollyValidationsHtml
+    : state === STATE_COPY.likelyLolly ? likelyLollyBadgesHtml
     : state === STATE_COPY.invalid ? invalidBadgesHtml
       : `<p>${sub}</p>${identityLine}`}
         </div>
@@ -1172,4 +1206,17 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     drop.classList.remove('is-over');
     handle(e.dataTransfer?.files);
   });
+
+  // Arrived here from the catalog's "Check credentials" link? Verify that asset straight
+  // away, and surface the handoff note (e.g. re-encoded-on-import caveat) above the report.
+  const handoff = takePendingVerify();
+  if (handoff?.files.length) {
+    await handle(handoff.files);
+    if (handoff.note) {
+      reportEl.querySelector('.valid-reports-list')?.insertAdjacentHTML(
+        'afterbegin',
+        `<p class="valid-handoff-note">${escape(handoff.note)}</p>`,
+      );
+    }
+  }
 }

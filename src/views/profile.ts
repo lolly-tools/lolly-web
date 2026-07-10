@@ -27,7 +27,9 @@ import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, PRO_FLAG, flagEnabled } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, STRIP_UPLOAD_META_FLAG, flagEnabled, isFlagOn, setFlagMirror } from '../feature-flags.ts';
+import { stopNeurospicy } from '../lib/neurospicy.ts';
+import { syncNeuroDock } from '../components/neuro-dock.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
 // Colour / palette / fonts / brand-pack / corner radius all live in the
@@ -37,7 +39,6 @@ import type { UserFontsHost } from '../user-fonts.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
 import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import { relativeTime } from '../folder-tiles.ts';
-import { catalogSummaryBody, hydrateCatalogAssets } from '../lib/catalog-summary.ts';
 import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
 import type { FeatureFlag } from '../feature-flags.ts';
 
@@ -156,6 +157,7 @@ const HOARD_CONFIRM_WORDS = ['hoard', 'mine', 'stash', 'vault', 'archive', 'home
 
 // Chevron for a collapsible section's summary (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="profile-collapse-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+const INFO_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>`;
 // Shield-with-check — the same glyph the gallery's green Verify button uses.
 const VERIFY_SHIELD = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>`;
 // Jump to the Verify view — styled to match the gallery's green Verify button.
@@ -189,12 +191,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   try { openState = JSON.parse(localStorage.getItem(OPEN_KEY) || '{}') || {}; } catch { /* storage blocked */ }
   const startOpen = (id: string) => (openState[id] ? ' open' : '');
 
-  // One toggle row for a feature flag (closes over `profile` for its checked state).
+  // One toggle row for a feature flag (closes over `profile` for its checked state). Honours
+  // a flag's `default` (opt-in flags start off) and shows an (i) explainer when it has `info`.
   const flagRow = (f: FeatureFlag) => `
     <li>
       <label class="feature-flag">
-        <span class="feature-flag-label">${escape(f.label)}${f.pill ? `<span class="feature-flag-pill">${escape(f.pill)}</span>` : ''}</span>
-        <input type="checkbox" class="feature-flag-input" data-flag="${escape(f.id)}" ${flagEnabled(profile, f.id) ? 'checked' : ''}>
+        <span class="feature-flag-label">${escape(f.label)}${f.pill ? `<span class="feature-flag-pill">${escape(f.pill)}</span>` : ''}${
+          f.info ? `<span class="feature-flag-info"><button type="button" class="feature-flag-info-btn" aria-label="About: ${escape(f.label)}">${INFO_ICON}</button><span class="feature-flag-info-pop" role="tooltip">${escape(f.info)}</span></span>` : ''
+        }</span>
+        <input type="checkbox" class="feature-flag-input" data-flag="${escape(f.id)}" ${isFlagOn(profile, f) ? 'checked' : ''}>
         <span class="feature-flag-switch" aria-hidden="true"></span>
       </label>
     </li>`;
@@ -273,7 +278,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
               (f.category === 'utility' ? '<li class="feature-flag-divider" aria-hidden="true"></li>' : '') + flagRow(f)
             ).join('')}
             <li class="feature-flag-divider" aria-hidden="true"></li>
+            ${flagRow(NEUROSPICY_FLAG)}
             ${flagRow(PRO_FLAG)}
+            ${flagRow(STRIP_UPLOAD_META_FLAG)}
           </ul>
         </div>
       </details>
@@ -281,14 +288,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       <details class="profile-card profile-collapse" id="identity-section"${startOpen('identity-section')}>
         <summary class="profile-collapse-summary"><h2>Content Credentials</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body" id="identity-body"><p class="storage-hint-text">Loading…</p></div>
-      </details>
-
-      <details class="profile-card profile-collapse" id="catalog-section"${startOpen('catalog-section')}>
-        <summary class="profile-collapse-summary"><h2>Catalogue</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body">
-          <p class="storage-hint-text">What ships in this build — the tools and brand assets synced to this device as data.</p>
-          ${catalogSummaryBody(window.__toolIndex?.tools ?? [])}
-        </div>
       </details>
 
     </div>
@@ -304,8 +303,18 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const input = (e.target as Element).closest<HTMLInputElement>('[data-flag]');
     if (!input) return;
     const current = await host.profile.get();
-    const featureFlags = { ...(current.featureFlags ?? {}), [input.dataset.flag!]: input.checked };
+    const flagId = input.dataset.flag!;
+    const featureFlags = { ...(current.featureFlags ?? {}), [flagId]: input.checked };
     await host.profile.set!({ ...current, featureFlags });
+    // Keep the synchronous mirror in step so the Neurospicy player (rendered in
+    // popovers, outside the profile-aware views) reflects the change on next render.
+    setFlagMirror(flagId, input.checked);
+    // Toggling the Neurospicy feature: silence any loop when turning it off (the UI is
+    // gone, so leave no invisible audio), and show/hide the bottom-right dock to match.
+    if (flagId === NEUROSPICY_FLAG.id) {
+      if (!input.checked) stopNeurospicy();
+      syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);
+    }
     announce(`${input.checked ? 'Enabled' : 'Disabled'}`);
   });
 
@@ -440,7 +449,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   });
 
   // Persist each section's open/closed state across visits.
-  for (const id of ['activity-section', 'storage-section', 'feature-flags-section', 'identity-section', 'catalog-section']) {
+  for (const id of ['activity-section', 'storage-section', 'feature-flags-section', 'identity-section']) {
     const d = viewEl.querySelector<HTMLDetailsElement>('#' + id);
     d?.addEventListener('toggle', () => {
       openState[id] = d!.open;
@@ -1273,18 +1282,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // A persisted-open section renders open from the HTML `open` attribute, which does
   // NOT fire `toggle`, so kick the lazy load here (runs after first paint).
   if (storageDetails?.open) loadStorage();
-
-  // ── Catalogue: the tool tiles are in the HTML already; only the brand-asset
-  // counts need a fetch, so defer it to first expand (once). ────────────────────
-  const catalogDetails = viewEl.querySelector<HTMLDetailsElement>('#catalog-section');
-  let catalogHydrated = false;
-  const loadCatalog = () => {
-    if (catalogHydrated || !catalogDetails) return;
-    catalogHydrated = true;
-    hydrateCatalogAssets(catalogDetails);
-  };
-  catalogDetails?.addEventListener('toggle', () => { if (catalogDetails!.open) loadCatalog(); });
-  if (catalogDetails?.open) loadCatalog();
 
   // ── Content Credentials: lazy, like Storage. The identity bridge (host.identity)
   // holds the device keypair + CA-issued cert; this section only ever shows either

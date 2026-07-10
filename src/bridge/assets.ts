@@ -16,7 +16,7 @@
 
 import { parseThemedAssetId, applyIconTheme, parseIconThemesDoc } from '../../../../engine/src/icon-theme.ts';
 import { parseTreatedAssetId, parsePhotoTreatmentsDoc, wrapRasterWithTreatment, stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
-import { extractC2paStore } from '../../../../engine/src/c2pa-verify.ts';
+import { extractC2paStore, prepareC2paIngredientFromStore, aiKind } from '../../../../engine/src/c2pa-verify.ts';
 import type { AssetRef, AssetQuery } from '../../../../engine/src/bridge/host-v1.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
@@ -69,6 +69,11 @@ interface UserAssetRecord {
   // provenance into an export without re-hoarding the metadata upload strips.
   credential?: Uint8Array;
   credentialFormat?: string;
+  // Generative-AI disclosure, DERIVED from `credential` at upload time (the file's C2PA
+  // chain declared AI/ML-generated pixels — Claude, OpenAI, Gemini, …). Cached here so the
+  // catalog/picker badge doesn't re-parse on every render. Absent = not yet computed
+  // (older uploads) — `_listUserAssets` recomputes those from `credential` on the fly.
+  aiGenerated?: 'full' | 'partial';
 }
 
 /** The record shape toAssetRef consumes — a user record or a catalog record resolved
@@ -351,6 +356,11 @@ export function createAssetsAPI(db: AssetsDb) {
      */
     async _uploadUserAsset(record: UserAssetRecord): Promise<void> {
       await assertQuotaRoom(record.blob?.size ?? 0);
+      // Compute the AI-provenance flag once, at ingest, from the captured credential.
+      if (record.aiGenerated === undefined) {
+        const kind = detectAiGenerated(record);
+        if (kind) record.aiGenerated = kind;
+      }
       await db.put('user-assets', record);
     },
 
@@ -359,7 +369,14 @@ export function createAssetsAPI(db: AssetsDb) {
       const all = await db.getAll('user-assets');
       return all
         .sort((a, b) => String(b.id).localeCompare(String(a.id)))
-        .map(rec => toAssetRef(rec, 'user'));
+        .map(rec => {
+          const ref = toAssetRef(rec, 'user');
+          // Surface the AI flag on the ref (persisted on the record for new uploads;
+          // recomputed from `credential` for older ones that predate this).
+          const ai = detectAiGenerated(rec);
+          if (ai) ref.meta = { ...(ref.meta ?? {}), aiGenerated: ai };
+          return ref;
+        });
     },
 
     /**
@@ -709,6 +726,27 @@ function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRe
     height: record.height,
     meta: record.meta,
   };
+}
+
+// Generative-AI provenance derived from a user upload's captured C2PA credential store.
+// The file's manifest chain (walked whole — AI origin often lives in a parent/ingredient
+// manifest) may declare AI/ML-generated pixels via an IPTC digitalSourceType; that's what
+// drives the GEN AI badge on uploaded assets (Claude, OpenAI, Gemini, …). Memoised by asset
+// id (a credential never changes for a given upload) so the catalog/picker don't re-parse.
+const AI_KIND_MEMO = new Map<string, 'full' | 'partial' | undefined>();
+function detectAiGenerated(rec: UserAssetRecord): 'full' | 'partial' | undefined {
+  if (rec.aiGenerated) return rec.aiGenerated;             // already computed + persisted
+  if (AI_KIND_MEMO.has(rec.id)) return AI_KIND_MEMO.get(rec.id);
+  let kind: 'full' | 'partial' | undefined;
+  if (rec.credential && rec.credentialFormat) {
+    try {
+      const dst = prepareC2paIngredientFromStore(rec.credential, rec.credentialFormat)?.digitalSourceType;
+      const k = aiKind(dst);
+      kind = k === 'generated' ? 'full' : k === 'composite' ? 'partial' : undefined;
+    } catch { kind = undefined; }
+  }
+  AI_KIND_MEMO.set(rec.id, kind);
+  return kind;
 }
 
 // An `image` slot accepts any still image — raster OR vector (SVG). It's the

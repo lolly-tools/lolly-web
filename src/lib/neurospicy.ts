@@ -10,13 +10,19 @@
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 import { renderSongToAudioBuffer } from './zzfxm-render.ts';
+import { RADIO_STATIONS, radioStation, isRadioId, radioAvailable, resolveStreamUrl } from './radio.ts';
 import { isSfxMuted } from './sfx.ts';
 
 // Just the host surface this module uses — the catalog assets (loop list + bytes) and the
 // profile (persist). host.profile.set is a web-shell capability, not on the read-only engine
 // ProfileAPI, so this is the shared shape the shell and this module agree on.
 export type NeurospicyHost = {
-  assets: Pick<HostV1['assets'], 'get' | 'query'>;
+  // `_listUserAssets` is a web-shell-internal method (not on the read-only engine
+  // AssetAPI) — used to surface the user's OWN uploaded audio (which query() can't
+  // see, as it only reads catalog assets). Optional so non-web hosts just skip it.
+  assets: Pick<HostV1['assets'], 'get' | 'query'> & {
+    _listUserAssets?(): Promise<Array<{ id: string; type?: string; format?: string; url?: string; meta?: Record<string, unknown> }>>;
+  };
   profile: { get(): Promise<object>; set(p: object): Promise<unknown> };
 };
 
@@ -49,6 +55,9 @@ let gain: GainNode | null = null;
 // lights the meter (matching "meter vis, local songs only").
 let analyser: AnalyserNode | null = null;
 let src: AudioBufferSourceNode | null = null;
+// Radio plays through a plain <audio> element, OUTSIDE the Web Audio graph — no
+// CORS needed, and the analyser/meter (a local-song feature) stays dark for it.
+let radioEl: HTMLAudioElement | null = null;
 let playingId = '';
 let paused = false;   // transient transport pause (the play/pause button) — mode stays enabled
 const buffers = new Map<string, AudioBuffer>();
@@ -81,7 +90,28 @@ export function getNeurospicyAnalyser(): AnalyserNode | null { return analyser; 
 
 function stopSource(): void {
   if (src) { try { src.stop(); } catch { /* already stopped */ } src.disconnect(); src = null; }
+  if (radioEl) { try { radioEl.pause(); } catch { /* ignore */ } radioEl.removeAttribute('src'); }
   playingId = '';
+}
+
+// Play a live radio stream via a bare <audio> element (resolving the current
+// stream URL from the station's .pls). Silent no-op offline or on stream error.
+async function playRadio(): Promise<void> {
+  const id = state.loopId;
+  const station = radioStation(id);
+  if (!station) return;
+  if (playingId === id && radioEl && !radioEl.paused) { radioEl.volume = state.volume; return; }
+  stopSource();
+  try {
+    const streamUrl = await resolveStreamUrl(station.pls);
+    if (state.loopId !== id || !state.enabled || paused || isSfxMuted()) return; // state changed while resolving
+    if (!radioEl) { radioEl = new Audio(); radioEl.preload = 'none'; }
+    radioEl.src = streamUrl;
+    radioEl.volume = state.volume;
+    void radioEl.play().catch(() => { /* needs a gesture or a live connection */ });
+    playingId = id;
+    notifyPlaying();
+  } catch { /* offline / stream unavailable — leave silent */ }
 }
 
 async function loadBuffer(id: string, url: string, format: string | undefined): Promise<AudioBuffer | null> {
@@ -106,25 +136,40 @@ async function play(host: NeurospicyHost): Promise<void> {
   // The interface-sound mute is the MASTER mute: while sound is off, the focus loop is silent
   // too (its enabled preference is kept, so it resumes when sound is turned back on).
   if (!state.enabled || !state.loopId || isSfxMuted() || paused) { stopSource(); return; }
+  // Radio station? Stream it via <audio>, not the focus-loop buffer path.
+  if (isRadioId(state.loopId) || formatById.get(state.loopId) === 'stream') { await playRadio(); return; }
   if (src && playingId === state.loopId) { if (gain) gain.gain.value = state.volume; return; }
   const a = audio(); if (!a) return;
-  let url = urlById.get(state.loopId);
-  let format = formatById.get(state.loopId);
+  // Capture the target now: awaits below can interleave with another play() (rapid
+  // next/next, or a concurrent playRadio), so re-validate the selection afterwards
+  // — otherwise a slow load could start a stale source over the current one.
+  const id = state.loopId;
+  let url = urlById.get(id);
+  let format = formatById.get(id);
   if (!url || format === undefined) {
     try {
-      const ref = await host.assets.get(state.loopId);
+      const ref = await host.assets.get(id);
       url = ref.url; format = ref.format;
-      if (url) urlById.set(state.loopId, url);
-      if (format) formatById.set(state.loopId, format);
+      if (url) urlById.set(id, url);
+      if (format) formatById.set(id, format);
     } catch { return; }
   }
-  if (!url) return;
-  const buf = await loadBuffer(state.loopId, url, format); if (!buf || !state.enabled) return;
+  if (!url || state.loopId !== id) return;
+  const buf = await loadBuffer(id, url, format);
+  if (!buf || state.loopId !== id || !state.enabled || paused || isSfxMuted()) return;
   stopSource();
   const s = a.ctx.createBufferSource();
   s.buffer = buf; s.loop = true; s.connect(a.gain);
   a.gain.gain.value = state.volume; s.start();
-  src = s; playingId = state.loopId;
+  src = s; playingId = id;
+  notifyPlaying();
+}
+
+// Signal that audio just started, so the dock's level meter (re)starts its rAF —
+// notably on the boot autoplay-resume path, where the analyser doesn't exist until
+// the armed gesture fires play(). Kept as a DOM event to avoid the lib↔component dep.
+function notifyPlaying(): void {
+  if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-playing'));
 }
 
 export async function applyNeurospicy(host: NeurospicyHost): Promise<void> { await play(host); }
@@ -154,7 +199,11 @@ export async function setNeurospicyLoop(host: NeurospicyHost, id: string): Promi
 export function setNeurospicyVolume(host: NeurospicyHost, v: number): void {
   state.volume = Math.max(0, Math.min(1, v)); persistLocal(); void persistProfile(host);
   if (gain) gain.gain.value = state.volume;
+  if (radioEl) radioEl.volume = state.volume;
 }
+/** Stop playback now WITHOUT changing the saved enabled state — used when the
+ *  Neurospicy feature flag is switched off (hide + silence, keep the preference). */
+export function stopNeurospicy(): void { stopSource(); }
 
 // ── the loop catalogue (audio assets tagged 'neurospicy') ────────────────────────
 // The classic breaks earn the top of the picker; the amen loops trail; the rest sit
@@ -171,22 +220,47 @@ export function loopRank(id: string): number {
 /** A track for the player: id + display name, plus tags (for a mood chip) and the
  *  format (zzfxm/opus → local, meter-capable; a future 'stream' → radio, no meter). */
 export interface NeuroTrack { id: string; name: string; tags: string[]; format: string }
-let loopsCache: NeuroTrack[] | null = null;
+// Cache only the connectivity-INDEPENDENT part (catalog + user uploads). Radio is
+// appended fresh on every call so it appears/disappears with `navigator.onLine`
+// instead of being frozen at whatever the first call saw.
+let localLoopsCache: NeuroTrack[] | null = null;
 export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
-  if (loopsCache) return loopsCache;
-  try {
-    const refs = await host.assets.query({ tags: ['neurospicy'] });
-    for (const r of refs) { if (r.url) urlById.set(r.id, r.url); if (r.format) formatById.set(r.id, r.format); }
-    loopsCache = refs
-      .map((r): NeuroTrack => ({
-        id: r.id,
-        name: String((r.meta?.name as string | undefined) ?? r.id),
-        tags: Array.isArray(r.meta?.tags) ? (r.meta.tags as string[]) : [],
-        format: r.format ?? '',
-      }))
-      .sort((a, b) => loopRank(a.id) - loopRank(b.id) || a.name.localeCompare(b.name));
-  } catch { loopsCache = []; }
-  return loopsCache;
+  if (!localLoopsCache) {
+    let loops: NeuroTrack[] = [];
+    try {
+      const refs = await host.assets.query({ tags: ['neurospicy'] });
+      for (const r of refs) { if (r.url) urlById.set(r.id, r.url); if (r.format) formatById.set(r.id, r.format); }
+      loops = refs
+        .map((r): NeuroTrack => ({
+          id: r.id,
+          name: String((r.meta?.name as string | undefined) ?? r.id),
+          tags: Array.isArray(r.meta?.tags) ? (r.meta.tags as string[]) : [],
+          format: r.format ?? '',
+        }))
+        .sort((a, b) => loopRank(a.id) - loopRank(b.id) || a.name.localeCompare(b.name));
+    } catch { loops = []; }
+    // The user's OWN uploaded audio (tagged 'neurospicy') — query() only reads catalog
+    // assets, so pull user uploads separately and merge them in.
+    try {
+      const userAssets = host.assets._listUserAssets ? await host.assets._listUserAssets() : [];
+      for (const a of userAssets) {
+        const tags = Array.isArray(a.meta?.tags) ? (a.meta.tags as string[]) : [];
+        if (a.type !== 'audio' || !tags.includes('neurospicy')) continue;
+        if (a.url) urlById.set(a.id, a.url);
+        if (a.format) formatById.set(a.id, a.format);
+        loops.push({ id: a.id, name: String((a.meta?.name as string | undefined) ?? a.id), tags, format: a.format ?? '' });
+      }
+    } catch { /* no user assets on this host */ }
+    localLoopsCache = loops;
+  }
+  // Opt-in radio (SomaFM) trails the local tracks — only when we're online (re-evaluated each call).
+  if (radioAvailable()) {
+    for (const s of RADIO_STATIONS) formatById.set(s.id, 'stream');
+    return localLoopsCache.concat(
+      RADIO_STATIONS.map((s): NeuroTrack => ({ id: s.id, name: s.name, tags: ['radio', 'stream'], format: 'stream' })),
+    );
+  }
+  return localLoopsCache;
 }
 
 /** Step to the previous/next track in picker order (wraps). Keeps the mode enabled. */

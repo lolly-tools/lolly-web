@@ -16,8 +16,10 @@ import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts } from './user-fonts.ts';
-import { hydrateSfxMuted, installGlobalSfx, playSfx } from './lib/sfx.ts';
+import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateNeurospicy, armNeurospicy } from './lib/neurospicy.ts';
+import { hydrateFeatureFlags, flagEnabledSync } from './feature-flags.ts';
+import { syncNeuroDock } from './components/neuro-dock.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
 import { initSelectPreview } from './select-preview.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
@@ -357,12 +359,21 @@ async function boot(): Promise<void> {
   // the sfx layer's localStorage-derived flag with the profile's value once it has loaded,
   // then install the one set of app-wide, delegated cue listeners (idempotent).
   hydrateSfxMuted((profile as { sfxMuted?: boolean }).sfxMuted);
+  hydrateSfxVolume((profile as { sfxVolume?: number }).sfxVolume);
   installGlobalSfx();
   installGlobalReveal();
-  // Neurospicy Mode — reconcile the saved focus-loop state, then (if it was on) arm a
-  // one-shot gesture to resume the loop, since audio can't autoplay before a gesture.
+  // Mirror the profile's feature flags to localStorage so surfaces that render before
+  // (or without) the profile — the Sound control's Neurospicy player in popovers — can
+  // gate synchronously.
+  hydrateFeatureFlags(profile as Parameters<typeof hydrateFeatureFlags>[0]);
+  // Neurospicy Mode — reconcile the saved focus-loop state, then (only if the feature is
+  // enabled and it was on) arm a one-shot gesture to resume the loop, since audio can't
+  // autoplay before a gesture.
   hydrateNeurospicy((profile as { neurospicy?: unknown }).neurospicy);
-  armNeurospicy(host as unknown as Parameters<typeof armNeurospicy>[0]);   // same host cast the view call sites use
+  if (flagEnabledSync('neurospicy')) {
+    armNeurospicy(host as unknown as Parameters<typeof armNeurospicy>[0]);
+    syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);   // show the bottom-right dock if the mode was left on
+  }
 
   // Prime the in-memory tool index from the last cached copy so the gallery can
   // paint immediately, before the network catalog sync resolves. syncCatalog

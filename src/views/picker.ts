@@ -31,10 +31,11 @@
 
 import '../styles/picker.css';   // async CSS chunk (lazy view — not on the landing)
 import DOMPurify from 'dompurify';
-import { createRuntime, serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore } from '@lolly/engine';
+import { createRuntime, serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm } from '@lolly/engine';
+import { fmtBytes } from '../lib/format.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
-import { downscaleRaster, readVideoDimensions } from '../bridge/image-resize.ts';
+import { downscaleRaster, computeResize, MAX_LONGEST_EDGE, readVideoDimensions } from '../bridge/image-resize.ts';
 import { createFolderStore, childFolders, folderPath } from '../folders.ts';
 import { announce } from '../a11y.ts';
 import { choiceDialog, confirmDialog } from '../components/confirm-dialog.ts';
@@ -46,6 +47,8 @@ import { loadFavouriteAssets, loadHiddenAssets, assetBaseId } from '../lib/asset
 import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
+import { genAiPill, assetAiKind } from '../lib/genai-pill.ts';
+import { isFlagOn, STRIP_UPLOAD_META_FLAG } from '../feature-flags.ts';
 import type { AssetRef, AssetPickerOpts, ComposeUrlOpts, ExportFormat, HostV1, Profile } from '../../../../engine/src/bridge/host-v1.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
@@ -55,9 +58,12 @@ import type { WebStateAPI } from '../bridge/state.ts';
 
 /** Every file kind the upload surfaces can ingest — the `accept` list for any
  *  affordance that feeds storeUserUpload (the picker's footer input, the catalog's
- *  drop area). PDF/.ai don't go through storeUserUpload itself: callers route them
- *  to pdf-import.ts's ingestPdfAsSvgAssets (page(s) → stored SVG) via isPdfUpload. */
-export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai';
+ *  drop area). Images (raster + SVG), short video, Lottie, and audio all flow
+ *  through storeUserUpload; audio (the user's own music) is stored verbatim as a
+ *  type:'audio' asset. PDF/.ai don't go through storeUserUpload itself: callers
+ *  route them to pdf-import.ts's ingestPdfAsSvgAssets (page(s) → stored SVG) via
+ *  isPdfUpload. */
+export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai';
 
 /** A PDF — or an Illustrator .ai, which saved PDF-compatible IS a PDF — that upload
  *  surfaces must hand to the page→SVG converter instead of storeUserUpload. Sync and
@@ -1675,14 +1681,18 @@ function sessionThumb(thumb: string | null, iconSvg: string | null): string {
 }
 
 function formatBadge(ref: AssetRef): string {
+  // Generative-AI provenance badge — a sparkle-circle top-left (the format badge owns
+  // bottom-right). Authored on catalog entries; auto-detected on uploads via C2PA.
+  const ai = assetAiKind(ref);
+  const aiBadge = ai ? genAiPill(ai, true) : '';
   // A lottie card thumbnails as its static poster — badge the motion, not the
   // misleading underlying file format.
-  if (ref.type === 'lottie') return `<span class="asset-picker-fmt">▶ LOTTIE</span>`;
+  if (ref.type === 'lottie') return `<span class="asset-picker-fmt">▶ LOTTIE</span>${aiBadge}`;
   // Video and animated rasters (gif/apng/animated-webp) get a play glyph so their
   // motion reads at a glance (a still preview frame can look identical to a photo).
-  if (ref.type === 'video') return `<span class="asset-picker-fmt">▶ ${escapeHtml(String(ref.format ?? 'video').toUpperCase())}</span>`;
-  if (ref.meta?.animated && ref.format) return `<span class="asset-picker-fmt">▶ ${escapeHtml(String(ref.format).toUpperCase())}</span>`;
-  return ref.format ? `<span class="asset-picker-fmt">${escapeHtml(String(ref.format).toUpperCase())}</span>` : '';
+  if (ref.type === 'video') return `<span class="asset-picker-fmt">▶ ${escapeHtml(String(ref.format ?? 'video').toUpperCase())}</span>${aiBadge}`;
+  if (ref.meta?.animated && ref.format) return `<span class="asset-picker-fmt">▶ ${escapeHtml(String(ref.format).toUpperCase())}</span>${aiBadge}`;
+  return (ref.format ? `<span class="asset-picker-fmt">${escapeHtml(String(ref.format).toUpperCase())}</span>` : '') + aiBadge;
 }
 
 // A user image: a pick button plus a delete affordance (siblings, not nested —
@@ -1929,6 +1939,11 @@ function u8ToBase64(u8: Uint8Array): string {
 // trim/compress rather than letting the store throw QuotaExceededError mid-write.
 const MAX_VIDEO_BYTES = 15 * 1024 * 1024;         // 15 MB
 const MAX_ANIMATED_RASTER_BYTES = 20 * 1024 * 1024; // 20 MB
+// Audio is stored verbatim too (no re-encode), so it needs its own ceiling. A little
+// roomier than video — a few minutes of compressed music (opus/mp3/m4a) sits well
+// under this; an uncompressed wav/flac can blow past it, and the friendly error asks
+// the user to compress rather than the store throwing QuotaExceededError mid-write.
+const MAX_AUDIO_BYTES = 30 * 1024 * 1024;         // 30 MB
 // Credential preservation reads the ORIGINAL bytes whole (the only branch that
 // does — rasters otherwise stream through createImageBitmap without a JS-heap
 // copy). Skip the scan for outsized originals rather than buffer them: a real
@@ -1954,6 +1969,23 @@ function videoFormatOf(file: File): string {
   return ext === 'bin' ? 'mp4' : ext;
 }
 
+// The stored format string for an audio track. Prefer the extension (the OS-supplied
+// MIME for audio is often blank or generic), falling back to a MIME sniff. .oga → ogg.
+function audioFormatOf(file: File): string {
+  const n = file.name.toLowerCase(), t = file.type.toLowerCase();
+  const m = n.match(/\.(mp3|wav|ogg|oga|opus|m4a|aac|flac)$/);
+  if (m) return m[1] === 'oga' ? 'ogg' : m[1]!;
+  if (/mpeg|mp3/.test(t)) return 'mp3';
+  if (/wav/.test(t)) return 'wav';
+  if (/opus/.test(t)) return 'opus';
+  if (/ogg/.test(t)) return 'ogg';
+  if (/aac/.test(t)) return 'aac';
+  if (/flac/.test(t)) return 'flac';
+  if (/mp4|m4a/.test(t)) return 'm4a';
+  const ext = extFromMime(file.type);
+  return ext && ext !== 'bin' ? ext : 'mp3';
+}
+
 export async function storeUserUpload(host: PickerHost, file: File): Promise<AssetRef> {
   // Read the file as a blob, stash it in the user-assets IDB store, return
   // a `user/...` AssetRef. The bridge's assets.get() resolves these via the
@@ -1973,14 +2005,41 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // re-encode, which can't handle a video container at all). `let` because the byte
   // backstop below can promote a mislabelled clip to video.
   let isVideo = !isLottie && !isVector && (/^video\//i.test(file.type) || /\.(mp4|m4v|mov|webm)$/i.test(file.name));
+  // Music the browser can't decode from an <audio> element, handled before the
+  // verbatim-audio test below. MIDI is CONVERTED on the way in: a Standard MIDI File
+  // becomes a tiny ZzFXM song (engine midiToZzfxm) stored as a format:'zzfxm' asset —
+  // the same synthesised-on-device path as the catalog's generated tracks, so it
+  // plays and previews everywhere. A .mid commonly arrives as audio/midi, which would
+  // otherwise pass the generic audio test, so it's detected first (ext, MIME, or the
+  // 'MThd' header magic) and excluded from isAudio.
+  const head4 = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  const isMidi = !isLottie && !isVector && !isVideo
+    && (/\.midi?$/i.test(file.name) || /^audio\/(x-)?midi?$/i.test(file.type)
+        || (head4[0] === 0x4d && head4[1] === 0x54 && head4[2] === 0x68 && head4[3] === 0x64)); // 'MThd'
+  // Tracker modules (.mod/.xm/.it/.s3m) are sample-based — ZzFXM can't represent them
+  // and no browser <audio> plays them — so reject with a clear, user-ready message
+  // (the .code makes the caller surface it verbatim) instead of storing dead bytes
+  // that get mislabelled and fail to preview.
+  if (/\.(mod|xm|it|s3m|stm|mtm)$/i.test(file.name) || /audio\/(x-)?(mod|it|s3m|xm)/i.test(file.type)) {
+    const e: Error & { code?: string } = new Error('Tracker modules (.mod, .xm, .it, .s3m) aren’t playable in the browser yet — export the track to MP3, Opus or WAV, or upload a MIDI file instead.');
+    e.code = 'unsupported-format';
+    throw e;
+  }
+  // The user's own music (opus/mp3/wav/ogg/m4a/aac/flac) — stored verbatim as a
+  // type:'audio' asset (a canvas re-encode can't touch audio bytes). Detected by
+  // MIME or extension; .oga/.ogg both map to ogg. Checked after video so a container
+  // MIME collision (audio/mp4 vs video/mp4) can't misroute — .m4a carries audio/mp4
+  // but its extension isn't a video one, so the isVideo test above already excluded it.
+  const isAudio = !isLottie && !isVector && !isVideo && !isMidi
+    && (/^audio\//i.test(file.type) || /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac)$/i.test(file.name));
 
   // Classify animated rasters (gif/apng/animated-webp) and catch mislabelled video —
   // both from the HEADER BYTES, since an animated raster shares its MIME with the
   // still form and an OS can hand over a blank/wrong type or extension. The magic
   // bytes are the source of truth (that is the whole reason to byte-sniff); MIME/name
-  // only widen which files we bother to read.
+  // only widen which files we bother to read. (Audio is verbatim — nothing to sniff.)
   let animatedKind: 'gif' | 'apng' | 'webp' | null = null;
-  if (!isLottie && !isVector) {
+  if (!isLottie && !isVector && !isAudio && !isMidi) {
     const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
     // Byte-level video backstop: a real mp4/webm handed over with a wrong extension
     // AND a blank/non-video MIME would otherwise fall to downscaleRaster and be
@@ -2046,6 +2105,27 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     assertVerbatimSize(file, MAX_VIDEO_BYTES, 'video');
     format = videoFormatOf(file);
     ({ width, height } = await readVideoDimensions(file));
+  } else if (isMidi) {
+    // Convert the SMF to a ZzFXM song on device and store the JSON (a few KB) as a
+    // format:'zzfxm' audio asset — the browser can't play raw MIDI, but it renders
+    // ZzFXM to PCM (zzfxm.ts) for the player and the catalog preview. A file with no
+    // notes / an unsupported time division throws with a user-ready message.
+    assertVerbatimSize(file, MAX_AUDIO_BYTES, 'MIDI file');
+    try {
+      const song = midiToZzfxm(new Uint8Array(await file.arrayBuffer()), { name: file.name.replace(/\.midi?$/i, '') });
+      blob = new Blob([JSON.stringify(song)], { type: 'application/json' });
+    } catch {
+      const e: Error & { code?: string } = new Error('Couldn’t read that MIDI file — it may be empty, corrupt, or use an unsupported format.');
+      e.code = 'unsupported-format';
+      throw e;
+    }
+    format = 'zzfxm';
+  } else if (isAudio) {
+    // Verbatim: keep the original encoded bytes (there is no raster/canvas path for
+    // audio). Bounded by an explicit cap since downscaleRaster's implicit shrink is
+    // skipped. No dimensions — audio has none.
+    assertVerbatimSize(file, MAX_AUDIO_BYTES, 'audio track');
+    format = audioFormatOf(file);
   } else if (animatedKind) {
     // Verbatim: re-encoding an animated gif/apng/webp through a canvas flattens it
     // to a single frame, so store the original bytes. It stays type:'raster' — it
@@ -2056,31 +2136,99 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     format = animatedKind;
     ({ width, height } = await readDimensions(file).catch(() => ({}) as { width?: number; height?: number }));
   } else {
-    // Raster: downscale to the longest-edge cap and re-encode. This also bakes
-    // in EXIF orientation and strips metadata (incl. GPS) as a side effect.
-    const resized = await downscaleRaster(file);
-    ({ blob, format, width, height } = resized);
+    // Raster. A silent re-encode would break a C2PA hard binding, so a credentialed image (an
+    // AI render, a signed photo) that fits is stored VERBATIM — its credential stays intact and
+    // validates. The "strip metadata on upload" flag (default OFF) governs OTHER metadata: ON →
+    // scrub EXIF/XMP/GPS (in place for png/jpeg, preserving any C2PA store; via re-encode for
+    // other formats). OFF → keep the bytes exactly, skipping the WebP conversion entirely — so
+    // an uploaded file can be checked for valid credentials as-is. When an image is too big to
+    // keep verbatim (>20 MB or the longest edge >3840 px) and strip is off, we ASK (Keep original
+    // / Resize) rather than silently shrink; resizing a credentialed image re-signs it as a
+    // c2pa.resized derivative so its provenance still validates to its best extent.
+    const raw = new Uint8Array(await file.arrayBuffer());
+    // Scan for a credential structurally (no size cap — a large signed image can still
+    // preserve its chain on resize; `raw` is already read, so this parse is ~free).
+    const ex = extractC2paStore(raw);
+    // Opt-in privacy flag (default OFF — we keep uploads as they arrive unless asked).
+    const stripMeta = isFlagOn(await host.profile.get(), STRIP_UPLOAD_META_FLAG);
+    if (ex) format = ex.format;
+    const dims = await readDimensions(file).catch(() => ({}) as { width?: number; height?: number });
+    const longest = Math.max(dims.width ?? 0, dims.height ?? 0);
+    const tooLarge = file.size > MAX_ANIMATED_RASTER_BYTES || longest > MAX_LONGEST_EDGE;
+    // Keep the exact bytes — but honour the privacy flag: strip-on png/jpeg drops EXIF/XMP/GPS
+    // IN PLACE (no quality loss, C2PA store preserved so a credential still verifies).
+    const keepBytes = (): void => {
+      const out = stripMeta && (format === 'png' || format === 'jpeg') ? stripMetadata(raw, format) : raw;
+      blob = new Blob([out as BlobPart], { type: file.type || undefined });
+      width = dims.width; height = dims.height;
+    };
+    // Downscale + re-encode to WebP (the space-saver; also the only way to scrub metadata from a
+    // format stripMetadata can't touch). Re-signs a CREDENTIALED original as a c2pa.resized
+    // derivative — the original rides in as a preserved ingredient — so a good credential still
+    // validates to its best extent instead of just breaking.
+    const reencode = async (): Promise<void> => {
+      const resized = await downscaleRaster(file);
+      ({ format, width, height } = resized);
+      blob = resized.blob;
+      if (ex) {
+        try {
+          const { stampDerivedC2pa } = await import('../bridge/export.ts');
+          const ingredient = prepareC2paIngredientFromStore(ex.store, ex.format);
+          blob = await stampDerivedC2pa(host, resized.blob, format, {
+            title: file.name,
+            tool: 'Upload',
+            actions: [{ action: 'c2pa.resized', description: `Resized to ${width}×${height}px (from ${dims.width ?? '?'}×${dims.height ?? '?'}px) when added to your library` }],
+            ...(ingredient ? { ingredients: [ingredient] } : {}),
+            dimensions: `${width}×${height}`,
+          });
+        } catch { /* re-sign failed — ship the resized bytes; the record still preserves the original credential below */ }
+      }
+    };
+    const canStripInPlace = format === 'png' || format === 'jpeg';
+    if (ex && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
+      // Credentialed AND it fits → ALWAYS verbatim; the C2PA hard binding stays intact + validates.
+      keepBytes();
+    } else if (stripMeta) {
+      // Privacy strip requested (uncredentialed / credentialed >64 MB). png/jpeg strip in place;
+      // any other format can only be scrubbed by re-encoding — as can a too-large one.
+      if (canStripInPlace && !tooLarge) keepBytes();
+      else await reencode();
+    } else if (!tooLarge) {
+      // Strip off + fits → keep the exact bytes (skips the WebP conversion entirely).
+      keepBytes();
+    } else {
+      // Strip off + too large → ASK rather than silently shrink. Escape/Cancel keeps the original
+      // (non-destructive). "Keep original" stores verbatim with no size cap (device quota still applies).
+      const r = computeResize(dims.width ?? 0, dims.height ?? 0);
+      const picked = await choiceDialog({
+        title: 'Large image',
+        message: `“${file.name}” is ${fmtBytes(file.size)}${longest ? ` (${dims.width}×${dims.height}px)` : ''}. Keep the original — best for a Content Credential — or resize it${r.width ? ` to ${r.width}×${r.height}px` : ''} to save space?`,
+        choices: [{ id: 'resize', label: 'Resize' }, { id: 'keep', label: 'Keep original', primary: true }],
+      });
+      if (picked === 'resize') await reencode();
+      else keepBytes();
+    }
   }
 
-  // Preserve any Content Credentials the ORIGINAL carried, BEFORE the re-encode
-  // above discards them — the raw C2PA manifest store only (no pixels/EXIF), so a
-  // placed credentialed image (an AI render, a signed photo) keeps its provenance
-  // into an export without re-hoarding the metadata the upload strips. Applies to
-  // SVG too: sanitisation strips the in-file manifest, but the record carries the
-  // store so a re-uploaded signed SVG (e.g. a Lolly catalog recolour) keeps its
-  // chain. Lottie is JSON — nothing to scan. Best-effort: an unreadable or absent
-  // credential just means nothing to preserve.
+  // Content Credentials for the STORED bytes — the raw C2PA manifest store only (no
+  // pixels/EXIF), so `host.assets.credential(id)` can serve it as an export ingredient.
+  // Prefer the stored blob's own credential: a verbatim/stripped copy keeps the original's
+  // (the binding survives), and a resized upload was re-signed as a derivative that embeds a
+  // fresh one. Fall back to the ORIGINAL file when a plain re-encode dropped it — SVG
+  // sanitisation strips the in-file manifest, so the record still carries the original's
+  // chain. Lottie/audio/MIDI carry nothing to scan. Best-effort — absent = nothing to preserve.
   let credential: Uint8Array | undefined, credentialFormat: string | undefined;
-  if (!isLottie && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
+  if (!isLottie && !isAudio && !isMidi) {
     try {
-      const ex = extractC2paStore(new Uint8Array(await file.arrayBuffer()));
-      if (ex) { credential = ex.store; credentialFormat = ex.format; }
+      const fromBlob = blob.size <= MAX_CREDENTIAL_SCAN_BYTES ? extractC2paStore(new Uint8Array(await blob.arrayBuffer())) : null;
+      const src = fromBlob ?? (file.size <= MAX_CREDENTIAL_SCAN_BYTES ? extractC2paStore(new Uint8Array(await file.arrayBuffer())) : null);
+      if (src) { credential = src.store; credentialFormat = src.format; }
     } catch { /* nothing to preserve */ }
   }
 
   const record: UserAssetRecordInput = {
     id,
-    type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : 'raster',
+    type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : (isAudio || isMidi) ? 'audio' : 'raster',
     format,
     blob,
     width,
@@ -2090,8 +2238,14 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // Rasters get re-encoded (usually to WebP), so the original extension can
     // lie — a "photo.jpg" now holds WebP bytes. Show a name whose extension
     // matches what we actually stored so the filename and format badge agree.
-    // (Verbatim animated/video keep their real bytes, so the name stays true.)
-    meta: { name: renameExt(file.name, format), ...(animated ? { animated: true } : {}) },
+    // (Verbatim animated/video/audio keep their real bytes, so the name stays true.)
+    // Audio carries `tags` so it can surface as focus music — `neurospicy` is the
+    // loop-player's query tag, `audio` groups it with the music beds.
+    meta: {
+      name: renameExt(file.name, format),
+      ...(animated ? { animated: true } : {}),
+      ...(isAudio ? { tags: ['audio', 'neurospicy'] } : {}),
+    },
   };
 
   // Reach into the underlying IDB the bridge owns. The bridge exposes a
@@ -2118,13 +2272,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
  * tool-generated so a re-record can retire the PREVIOUS take (prevId) without
  * touching a clip the user picked from their own library. `meta.bytes` rides
  * along so the save/exit dialog can show the stored size without a re-read.
+ *
+ * `credential` (the C2PA manifest store extracted from the just-signed clip) is
+ * persisted on the record so host.assets.credential(id) serves it — `user/`
+ * lookups read the stored store, not the bytes — letting the take chain as an
+ * ingredient when composited, exactly like a credentialed upload.
  */
 export async function storeRecordingAsset(
   host: PickerHost, blob: Blob, ext: 'mp4' | 'webm', prevId?: string,
+  credential?: { store: Uint8Array; format: string },
 ): Promise<AssetRef> {
   const id = `user/recording/${Date.now()}.${ext}`;
   await host.assets._uploadUserAsset({
     id, type: 'video', format: ext, blob, version: '1.0.0',
+    ...(credential ? { credential: credential.store, credentialFormat: credential.format } : {}),
     meta: { name: `Recording.${ext}`, bytes: blob.size },
   });
   if (prevId && prevId.startsWith('user/recording/') && prevId !== id) {

@@ -1146,6 +1146,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }
     announce('Exporting…');
 
+    // A zzfxm music bed is rendered to a transient WAV blob URL below; revoke it once
+    // the export has consumed it (declared out here so the catch can free it too).
+    let wavBlobUrl: string | null = null;
     try {
       // Resolve the chosen catalog audio track (if any) to a plain fetchable
       // URL before the recording starts — the export bridge stays catalog-
@@ -1158,7 +1161,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           const ref = await host.assets.get(audioId);
           // A ZzFXM track has no audio file — render its song to a WAV blob URL so
           // the URL-driven muxer paths consume it exactly like an encoded loop.
-          const audioUrl = ref.format === 'zzfxm' ? await songUrlToWavBlobUrl(ref.url) : ref.url;
+          const audioUrl = ref.format === 'zzfxm' ? (wavBlobUrl = await songUrlToWavBlobUrl(ref.url)) : ref.url;
           const numCtl = (a: string, dflt: number): number => {
             const v = el!.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value;
             return v != null && v !== '' ? (Number(v) || 0) : dflt;
@@ -1276,6 +1279,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         const blob = await exportUnscaled(() => runtime.export(canvasEl, fmt, opts), { shutter: !isAnimated });
         await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
       }
+      if (wavBlobUrl) { URL.revokeObjectURL(wavBlobUrl); wavBlobUrl = null; }
       bumpMetric('filesRendered'); recordFormat(fmt); // local usage metric
       // Log the download to the export history (Dashboard "Latest exports"). Best-effort,
       // non-blocking: a thumbnail of what was exported + enough state to reopen it.
@@ -1287,6 +1291,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         } catch { /* history is best-effort */ }
       })();
     } catch (err) {
+      if (wavBlobUrl) { URL.revokeObjectURL(wavBlobUrl); wavBlobUrl = null; }
       console.error('Export failed:', err);
       btn.removeAttribute('aria-busy');
       // Surface WHY so users don't just retry the same doomed export.
