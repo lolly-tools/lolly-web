@@ -45,8 +45,7 @@
   pointer-events: auto;            /* the one part of the toast that takes clicks */
   flex: none;
   border: none;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  /* fill (background/color) + hover live in parts/buttons.css's .btn--primary alias list */
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -55,7 +54,6 @@
   border-radius: 999px;
   transition: filter 0.12s;
 }
-.toast-action:hover { filter: brightness(1.08); }
 .toast-action:active { filter: brightness(0.95); }
 
 /* Mobile: lift the toast above the bottom-centre Render FAB (z55), and cap its
@@ -963,38 +961,14 @@
   accent-color: hsl(var(--primary));
 }
 
-/* Action buttons — outline style by default */
-.btn,
-.tool-actions button {
-  text-decoration:none;
-  padding: 5px 14px;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--input));
-  border-radius: var(--radius);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow: inset 0 1px #fff3, 0 1px 3px #0002;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-  white-space: nowrap;
-}
-
-.tool-actions button:hover {
-  background: hsl(var(--accent));
-  border-color: hsl(var(--border));
-}
-
-.tool-actions button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* Action buttons — base recipe (.btn + .tool-actions button) now lives in
+   parts/buttons.css, imported globally from app.css. */
 
 /* Inline (i) help buttons (help-tip.js) sit inside the export popup's C2PA and
    audio cards, which live in #tool-actions. The generic `.tool-actions button`
-   pill rule above outranks `.help-tip-btn` on specificity, so without this reset
-   those info buttons render as bordered pills. Restore the transparent icon-only
-   affordance (and hover state) the sidebar's input helpers use. */
+   pill rule (parts/buttons.css) outranks `.help-tip-btn` on specificity, so
+   without this reset those info buttons render as bordered pills. Restore the
+   transparent icon-only affordance (and hover state) the sidebar's input helpers use. */
 .tool-actions .help-tip-btn {
   width: 16px;
   height: 16px;
@@ -1017,8 +991,7 @@
 /* Copy button armed by the ?copy URL action — pulses to invite the click that
    gives the clipboard write its required user gesture. */
 .tool-actions [data-action="copy"].copy-armed {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  /* fill (background/color) lives in parts/buttons.css's .btn--primary alias list */
   border-color: hsl(var(--primary));
   animation: copy-armed-pulse 1.2s ease-in-out infinite;
 }
@@ -1030,8 +1003,7 @@
 
 /* Download is the primary CTA — the biggest, easiest target in the row. */
 .tool-actions [data-action="download"] {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  /* fill (background/color) lives in parts/buttons.css's .btn--primary alias list */
   border-color: hsl(var(--primary));
   font-weight: 600;
   padding-block: 13px;

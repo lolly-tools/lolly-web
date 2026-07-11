@@ -58,8 +58,7 @@
   padding: 7px 16px;
   border: none;
   border-radius: var(--radius);
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  /* fill (background/color) lives in parts/buttons.css's .btn--primary alias list */
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -199,8 +198,7 @@
   padding: 6px 14px;
   border: none;
   border-radius: var(--radius);
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  /* fill (background/color) lives in parts/buttons.css's .btn--primary alias list */
   font: inherit;
   font-size: 13px;
   cursor: pointer;

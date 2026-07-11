@@ -1,0 +1,118 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* ── Button system (component audit rec 2) — the one shared `.btn` primitive
+      plus `.btn--primary` / `.btn--ghost` / `.btn--danger` / `.btn--sm` variants.
+      Imported from app.css on the critical path, so every route — including the
+      always-eager gallery/catalog/projects landing — gets a real base instead of
+      depending on a lazily-loaded view chunk to arrive first (previously the
+      `.btn` recipe lived only in tool-chrome.css, a lazy view sheet).
+
+      Several call-sites can't rename their markup this wave (a later wave composes
+      the classes onto existing elements), so they alias onto these rules via
+      selector lists instead of restating the same declarations locally — each
+      hand-rolled "primary fill" recipe below is textually declared exactly ONCE,
+      here. Every aliased selector keeps its own file for true deltas (shape,
+      size, unique hover treatment); only the shared background/color pair moves. */
+
+/* Base — outline/neutral button. Also covers any plain <button> inside
+   .tool-actions (the export panel), which predates the .btn class and still
+   needs the identical look without every call-site adding the class by hand. */
+.btn,
+.tool-actions button {
+  text-decoration: none;
+  padding: 5px 14px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: inset 0 1px #fff3, 0 1px 3px #0002;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+/* Hover/disabled stay scoped to .tool-actions button (its historical reach) —
+   many bare-.btn call-sites (gallery footer, catalog bulk bar, …) define their
+   own hover locally, so a blanket `.btn:hover` here would change their look. */
+.tool-actions button:hover {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--border));
+}
+.btn:disabled,
+.tool-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Small size — generalised from brand-studio's .be-btn--sm/.be-add--sm. */
+.btn--sm {
+  padding: .25rem .6rem;
+  font-size: .72rem;
+}
+
+/* Ghost — the target shape for brand-studio's .be-btn once it migrates onto this
+   primitive (a later wave; brand-studio.css is untouched by this one). */
+.btn--ghost {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border));
+}
+.btn--ghost:hover:not(:disabled) {
+  border-color: hsl(var(--primary) / .55);
+}
+
+/* Primary — the fill recipe that used to be re-typed with no base class in
+   ~10 places. This selector list is its ONLY declaration app-wide; every
+   call-site below keeps just its own delta (border, shape, unique hover) in
+   its own file. */
+.btn--primary,
+.toast-action,                                    /* tool-chrome.css */
+.tool-actions [data-action="copy"].copy-armed,    /* tool-chrome.css */
+.tool-actions [data-action="download"],           /* tool-chrome.css */
+.share-copy-btn,                                  /* dialogs.css */
+.unsaved-save,                                    /* dialogs.css */
+.projects-confirm .projects-confirm-primary,      /* projects.css */
+.projects-render.btn,                             /* projects.css */
+.profile-view .profile-btn-primary,               /* profile.css */
+.cropper-btn--primary,                            /* profile.css */
+.pro-btn--primary,                                /* pro/pro.css */
+.pro-addrow .pro-btn,                             /* pro/pro.css */
+.me-primary,                                      /* multi-edit.css */
+.cat-act-fav.is-fav {                             /* catalog.css */
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.btn--primary {
+  border: 1px solid hsl(var(--primary));
+}
+/* Identical `filter: brightness(1.08)` hover, folded the same way — call-sites
+   with a genuinely different hover (opacity fade, background-only, a different
+   brightness value) keep that locally instead of joining this list. */
+.btn--primary:hover:not(:disabled),
+.toast-action:hover,
+.projects-confirm .projects-confirm-primary:hover,
+.projects-render.btn:hover,
+.profile-view .profile-btn-primary:hover,
+.cropper-btn--primary:hover {
+  filter: brightness(1.08);
+}
+
+/* Danger — solid destructive fill (confirm-dialog "Delete", etc). The lighter
+   outline-style destructive buttons (.cat-bulk-danger, .projects-bulk-danger)
+   are a deliberately quieter treatment and stay local, not aliased here. */
+.btn--danger,
+.projects-confirm .projects-confirm-danger {   /* projects.css */
+  background: hsl(var(--destructive, 0 70% 50%));
+  color: #fff;
+}
+.btn--danger {
+  border: 1px solid hsl(var(--destructive, 0 70% 50%));
+}
+.btn--danger:hover:not(:disabled),
+.projects-confirm .projects-confirm-danger:hover {
+  filter: brightness(0.94);
+}

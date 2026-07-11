@@ -205,10 +205,11 @@ export function contrastText(hex: string): string {
 // generic group holds its channels as data-* on the group element and only
 // round-trips to hex on the way OUT, so a lossy space (CMYK↔RGB is many-to-one
 // on K) stays stable while dragging — same discipline as the OKLCH group.
-// 'hex' is a first-class tab too — it has no sliders of its own, so it BORROWS
-// the RGB slider group (sliderMode below maps hex→rgb) while its value field
-// speaks plain #rrggbb. It's the DEFAULT tab (familiar), with OKLCH offered as
-// the emphasised "advanced" perceptual space.
+// OKLCH is the DEFAULT tab — the perceptual dials + sliders make it the best
+// space to pick in. 'hex' is a first-class tab too — it has no sliders of its
+// own, so it BORROWS the RGB slider group (sliderMode below maps hex→rgb) while
+// its value field speaks plain #rrggbb. The active tab is the emphasised one
+// (bold pill), whichever space that is.
 export type ColorMode = 'hex' | 'oklch' | 'hsl' | 'rgb' | 'cmyk';
 /** The generic (non-OKLCH) spaces — those driven by MODE_AXES + gen* helpers. */
 type GenMode = 'hsl' | 'rgb' | 'cmyk';
@@ -348,7 +349,7 @@ function dialsHtml(dials: readonly DialSpec[], outHex: string): string {
         <button type="button" class="color-dial-act" data-dial-act="eyedropper"
                 title="Pick a colour from your screen" aria-label="Pick a colour from your screen">${EYEDROPPER_ICON}</button>
         <button type="button" class="color-dial-act" data-dial-act="native"
-                title="Open the system colour picker" aria-label="Open the system colour picker">${EDIT_ICON}</button>
+                title="More colours" aria-label="More colours">${EDIT_ICON}</button>
       </div>
     </div>`;
 }
@@ -388,23 +389,24 @@ function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean): string {
 }
 
 /**
- * The mode tab bar + all slider groups. HEX is the DEFAULT active tab — a
- * familiar #rrggbb value field riding the RGB sliders (HEX has none of its own,
- * so it borrows the RGB group). OKLCH is offered but not default, and carries
- * extra visual weight (dark + bold — .color-mode-tab--oklch) as the "advanced"
- * perceptual space. So the RGB group starts visible; OKLCH/HSL/CMYK start hidden.
+ * The mode tab bar + all slider groups. OKLCH is the DEFAULT active tab — its
+ * .color-lch group starts visible; HEX/HSL/RGB/CMYK start hidden. The active tab
+ * gets the bold pill (CSS aria-selected), whichever space it is. HEX has no
+ * sliders of its own, so when picked it borrows the RGB group.
  */
 function colorModesHtml(eid: string, rgbHex: string | null): string {
   const seed = rgbHex ?? '#4f83cc'; // generic groups need a real hex; OKLCH seeds itself
   const tab = (m: ColorMode, label: string, on: boolean): string =>
-    `<button type="button" class="color-mode-tab${m === 'oklch' ? ' color-mode-tab--oklch' : ''}" role="tab" data-mode="${m}" aria-selected="${on}">${label}</button>`;
-  return `<div class="color-modes" data-color-modes="${eid}" data-active-mode="hex">
+    `<button type="button" class="color-mode-tab" role="tab" data-mode="${m}" aria-selected="${on}">${label}</button>`;
+  // OKLCH is the default space now that the perceptual dials + sliders make it the
+  // best one to pick in. Its .color-lch group starts visible; the others hidden.
+  return `<div class="color-modes" data-color-modes="${eid}" data-active-mode="oklch">
       <div class="color-mode-tabs" role="tablist" aria-label="Colour space">
-        ${tab('hex', 'HEX', true)}${tab('oklch', 'OKLCH', false)}${tab('hsl', 'HSL', false)}${tab('rgb', 'RGB', false)}${tab('cmyk', 'CMYK', false)}
+        ${tab('hex', 'HEX', false)}${tab('oklch', 'OKLCH', true)}${tab('hsl', 'HSL', false)}${tab('rgb', 'RGB', false)}${tab('cmyk', 'CMYK', false)}
       </div>
-      ${lchSlidersHtml(eid, rgbHex, true)}
+      ${lchSlidersHtml(eid, rgbHex, false)}
       ${genGroupHtml('hsl', seed, true)}
-      ${genGroupHtml('rgb', seed, false)}
+      ${genGroupHtml('rgb', seed, true)}
       ${genGroupHtml('cmyk', seed, true)}
     </div>`;
 }
@@ -537,7 +539,12 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       </div>
       <input type="color" class="color-popover-native" data-input-id="${eid}" value="${escape(rgbHex)}" aria-label="Pick a custom colour">
       <button type="button" class="color-nearest" data-color-nearest="${eid}" hidden></button>`}
-      ${inline ? '' : '<div class="color-swatches"></div>'}
+      ${inline
+        // Inline has no always-open palette (the brand editor's own tiles ARE the
+        // palette). The swatch grid instead lives in a menu the result disc's edit
+        // action opens — "the swatch context menu" — so presets stay one click away.
+        ? '<div class="color-swatch-menu" data-swatch-menu hidden><div class="color-swatches"></div></div>'
+        : '<div class="color-swatches"></div>'}
     </div>
   </div>`;
 }
@@ -841,9 +848,48 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       box.dataset.wired = '1';
       box.addEventListener('click', (e) => {
         const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-swatch-value]');
-        if (btn) applySwatch(field, btn.dataset.swatchValue!, btn.dataset.swatchRef || null);
+        if (!btn) return;
+        applySwatch(field, btn.dataset.swatchValue!, btn.dataset.swatchRef || null);
+        // Picking from the disc's swatch menu closes it — a menu, not a panel.
+        closeSwatchMenu(field);
       });
     }
+  }
+
+  // ── The result disc's swatch menu (inline pickers) ───────────────────────────
+  // The disc's edit action opens the brand swatch grid as a floating menu below
+  // the disc, reusing buildSwatches/applySwatch. Anchored via offsetTop/Left, so
+  // the popover it lives in is the positioned ancestor (CSS makes it relative).
+  let swatchMenuOff: (() => void) | null = null;
+  function closeSwatchMenu(field: HTMLElement): void {
+    const menu = field.querySelector<HTMLElement>('[data-swatch-menu]');
+    if (!menu || menu.hidden) return;
+    menu.hidden = true;
+    field.querySelector('[data-dial-act="native"]')?.setAttribute('aria-expanded', 'false');
+    if (swatchMenuOff) { swatchMenuOff(); swatchMenuOff = null; }
+  }
+  function toggleSwatchMenu(field: HTMLElement, menu: HTMLElement, btn: HTMLElement): void {
+    if (!menu.hidden) { closeSwatchMenu(field); return; }
+    buildSwatches(field);
+    const disc = field.querySelector<HTMLElement>('[data-dial-out]');
+    if (disc) { menu.style.top = `${disc.offsetTop + disc.offsetHeight + 6}px`; menu.style.left = `${disc.offsetLeft}px`; }
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    // Close on Escape or a click outside the menu (not on the toggle, which handles
+    // its own toggle). Deferred so THIS opening click doesn't immediately close it.
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { closeSwatchMenu(field); e.stopPropagation(); } };
+    const onDown = (e: PointerEvent): void => {
+      const tgt = e.target as Node;
+      if (!menu.contains(tgt) && !btn.contains(tgt)) closeSwatchMenu(field);
+    };
+    setTimeout(() => {
+      document.addEventListener('pointerdown', onDown, true);
+      document.addEventListener('keydown', onKey, true);
+    }, 0);
+    swatchMenuOff = () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
   }
 
   // Inline fields have no trigger, so the on-open hooks above never fire — seed
@@ -1038,7 +1084,12 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
 
     row.querySelectorAll<HTMLElement>('.color-dial-act').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (btn.dataset.dialAct === 'eyedropper') field?.querySelector<HTMLButtonElement>('.color-eyedropper')?.click();
+        if (btn.dataset.dialAct === 'eyedropper') { field?.querySelector<HTMLButtonElement>('.color-eyedropper')?.click(); return; }
+        // The edit half opens the swatch context menu where one exists (inline),
+        // else falls back to the system colour picker (the trigger popover already
+        // shows its swatch grid, so it needs no menu).
+        const menu = field?.querySelector<HTMLElement>('[data-swatch-menu]');
+        if (menu && field) toggleSwatchMenu(field, menu, btn);
         else field?.querySelector<HTMLInputElement>('input.color-popover-native')?.click();
       });
     });

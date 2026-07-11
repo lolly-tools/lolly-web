@@ -56,8 +56,8 @@ import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
 import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex, brandRadiusValue } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
-import { COLOR_FORMATS, STORAGE_FORMATS, formatColor, parseColor, serializeColor, storageFormatOf } from './color-formats.ts';
-import type { ColorFormat, StorageFormat } from './color-formats.ts';
+import { STORAGE_FORMATS, formatColor, serializeColor, storageFormatOf } from './color-formats.ts';
+import type { StorageFormat } from './color-formats.ts';
 import {
   renderBrandWheel, wireBrandWheel, updateWheelDot, oklchToStored, oklchHex,
 } from './palette-wheel.ts';
@@ -422,90 +422,6 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   return { render };
 }
 
-// ── Print substitutes, compact (the swatch popover's folded variant) ──────────
-// Same PrintLockCtx contract as mountPrintLock, different clothes: two checkbox
-// rows ("check on" a CMYK build / a named spot ink) sized for the popover, where
-// the primary panel's fuller segmented control would crowd the card. Checking
-// CMYK seeds from the auto conversion so a lock never sits in a limbo state;
-// checking Spot opens the name field and commits once a name is typed.
-
-function printSubstHtml(): string {
-  return `
-    <div class="be-ps" data-be-ps>
-      <label class="be-ps-row">
-        <input type="checkbox" data-be-ps-on="cmyk">
-        <span class="be-ps-key">CMYK</span>
-        <code class="be-ps-val" data-be-ps-val="cmyk"></code>
-      </label>
-      <div class="be-ps-body be-cmyk-inputs" data-be-ps-body="cmyk" hidden>
-        ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-ps-c="${i}" aria-label="${l === 'K' ? t('Black') : l === 'C' ? t('Cyan') : l === 'M' ? t('Magenta') : t('Yellow')} %"></label>`).join('')}
-      </div>
-      <label class="be-ps-row">
-        <input type="checkbox" data-be-ps-on="spot">
-        <span class="be-ps-key">${t('Spot')}</span>
-        <code class="be-ps-val" data-be-ps-val="spot"></code>
-      </label>
-      <div class="be-ps-body be-ps-spot" data-be-ps-body="spot" hidden>
-        <label class="be-lock-field"><span>${t('Name')}</span><input type="text" data-be-ps-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
-        <label class="be-lock-field"><span>${t('Book')} <em>${t('(optional)')}</em></span><input type="text" data-be-ps-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
-      </div>
-    </div>`;
-}
-
-function mountPrintSubst(mount: HTMLElement, ctx: PrintLockCtx): { render: () => void } {
-  mount.innerHTML = printSubstHtml();
-  const on = (k: string): HTMLInputElement | null => mount.querySelector<HTMLInputElement>(`[data-be-ps-on="${k}"]`);
-  const val = (k: string): HTMLElement | null => mount.querySelector<HTMLElement>(`[data-be-ps-val="${k}"]`);
-  const body = (k: string): HTMLElement | null => mount.querySelector<HTMLElement>(`[data-be-ps-body="${k}"]`);
-  const cInputs = Array.from(mount.querySelectorAll<HTMLInputElement>('[data-be-ps-c]'));
-  const nameInput = mount.querySelector<HTMLInputElement>('[data-be-ps-name]');
-  const bookInput = mount.querySelector<HTMLInputElement>('[data-be-ps-book]');
-
-  const cmykFromInputs = (): [number, number, number, number] =>
-    cInputs.map(i => Math.min(100, Math.max(0, Math.round(parseFloat(i.value) || 0)))) as [number, number, number, number];
-
-  on('cmyk')?.addEventListener('change', () => {
-    ctx.setCmyk(on('cmyk')!.checked ? autoCmykOf(ctx.hex()) : null);
-    render();
-  });
-  cInputs.forEach(inp => inp.addEventListener('input', () => { ctx.setCmyk(cmykFromInputs()); renderCmyk(); }));
-
-  on('spot')?.addEventListener('change', () => {
-    if (!on('spot')!.checked) { ctx.setSpot(null); render(); return; }
-    // Opening only — a spot lock needs a name before anything commits.
-    if (body('spot')) body('spot')!.hidden = false;
-    nameInput?.focus();
-  });
-  const commitSpot = (): void => {
-    const name = nameInput?.value.trim();
-    if (!name) return;
-    const book = bookInput?.value.trim();
-    ctx.setSpot({ name, ...(book ? { book } : {}) });
-    renderSpot();
-  };
-  nameInput?.addEventListener('input', commitSpot);
-  bookInput?.addEventListener('input', () => { if (nameInput?.value.trim()) commitSpot(); });
-
-  function renderCmyk(): void {
-    const cmyk = ctx.getCmyk();
-    const eff = cmyk ?? autoCmykOf(ctx.hex());
-    if (val('cmyk')) val('cmyk')!.textContent = cmyk ? `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}` : t('auto');
-    if (on('cmyk')) on('cmyk')!.checked = !!cmyk;
-    if (body('cmyk')) body('cmyk')!.hidden = !cmyk;
-    cInputs.forEach((inp, i) => { if (document.activeElement !== inp) inp.value = String(eff[i]); });
-  }
-  function renderSpot(): void {
-    const spot = ctx.getSpot();
-    if (val('spot')) val('spot')!.textContent = spot ? spot.name : t('none');
-    if (on('spot')) on('spot')!.checked = !!spot;
-    if (body('spot')) body('spot')!.hidden = !spot && document.activeElement !== nameInput && document.activeElement !== bookInput;
-    if (nameInput && document.activeElement !== nameInput) nameInput.value = spot?.name ?? '';
-    if (bookInput && document.activeElement !== bookInput) bookInput.value = spot?.book ?? '';
-  }
-  function render(): void { renderCmyk(); renderSpot(); }
-  render();
-  return { render };
-}
 
 // ── Swatch tile + palette grid ────────────────────────────────────────────────
 
@@ -865,9 +781,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>
 
       <!-- Swatch editor popover (shared; positioned under the clicked tile).
-           Compact by design: identity row up top, the picker + value entry in a
-           scrolling middle, print substitutes folded, Delete/Save pinned to a
-           sticky footer — the two actions never scroll away. -->
+           The SAME pieces as the Colour panel's primary field, in a card: the
+           identity row up top, then the full picker (mode tabs — the value input
+           reads and writes hex/OKLCH/HSL/RGB/CMYK, so there's no separate "set by
+           value" row), the storage notation, and the shared print-lock control
+           folded away. Delete/Save are pinned to a sticky footer so the two
+           actions never scroll off.
+           The card grows with its folds and REPOSITIONS (see positionEditor) —
+           opening a section moves the card to where it fits rather than starting
+           an inner scroll. -->
       <div class="be-editor" data-be-editor hidden>
         <div class="be-editor-card" role="dialog" aria-label="${escape(t('Edit swatch'))}">
           <div class="be-editor-scroll">
@@ -877,15 +799,6 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
               <span class="be-swatch-lock be-editor-lockbadge" data-be-editor-lockbadge hidden>${t('LOCK')}</span>
             </div>
             <div class="be-editor-field"><div data-be-editor-color></div></div>
-            <div class="be-editor-field be-fmt">
-              <div class="be-fmt-row">
-                <select class="be-fmt-sel" data-be-fmt-sel aria-label="${escape(t('Colour space'))}">
-                  ${COLOR_FORMATS.map(f => `<option value="${f.id}">${escape(f.label)}</option>`).join('')}
-                </select>
-                <input type="text" class="be-fmt-input" data-be-fmt-input autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="${escape(t('Colour value'))}">
-              </div>
-              <code class="be-fmt-out" data-be-fmt-out aria-live="polite"></code>
-            </div>
             <div class="be-editor-field be-stored" data-be-stored-row>
               <span class="be-stored-label" id="be-stored-label">${t('Stored as')}</span>
               <div class="be-stored-seg" role="group" aria-labelledby="be-stored-label" data-be-stored>
@@ -909,6 +822,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const preview = $('[data-be-preview]') as HTMLElement | null;
   const palMount = $('[data-be-pal]') as HTMLElement | null;
   const editorEl = $('[data-be-editor]') as HTMLElement | null;
+  const editorCard = editorEl?.querySelector<HTMLElement>('.be-editor-card') ?? null;
   const cleanups: Array<() => void> = [];
 
   // ── Palette state + persistence ─────────────────────────────────────────────
@@ -1302,25 +1216,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   });
 
   // ── Palette: click a tile → open the shared swatch editor ───────────────────
-  // The popover carries TWO ways to set a colour that stay in lock-step: the
-  // visual colour field, and a "Set by value" row (Hex / RGB / RGBA / OKLCH /
-  // CMYK — see color-formats.ts) that lets a user type an exact value in any
-  // space and extrapolates the rest. Both funnel through applyEditedHex, which
-  // WRITES the doc in the swatch's storage format (the "Stored as" toggle —
-  // LCH by default, the notation already in the doc for older edits).
-  const fmtSel = editorEl?.querySelector<HTMLSelectElement>('[data-be-fmt-sel]') ?? null;
-  const fmtInput = editorEl?.querySelector<HTMLInputElement>('[data-be-fmt-input]') ?? null;
-  const fmtOut = editorEl?.querySelector<HTMLElement>('[data-be-fmt-out]') ?? null;
+  // One way to set a colour, not two: the popover's colour field is the full
+  // picker (`modes` — its value input reads AND writes hex / OKLCH / HSL / RGB /
+  // CMYK), so the old "Set by value" select+input row it duplicated is gone.
+  // Everything funnels through applyEditedHex, which WRITES the doc in the
+  // swatch's storage format (the "Stored as" toggle — LCH by default, or the
+  // notation already in the doc for older edits).
   const editorLockBadge = editorEl?.querySelector<HTMLElement>('[data-be-editor-lockbadge]') ?? null;
   const editorChip = editorEl?.querySelector<HTMLElement>('[data-be-editor-chip]') ?? null;
   const storedSeg = editorEl?.querySelector<HTMLElement>('[data-be-stored]') ?? null;
   const storedRow = editorEl?.querySelector<HTMLElement>('[data-be-stored-row]') ?? null;
   const substDetails = editorEl?.querySelector<HTMLDetailsElement>('[data-be-subst-details]') ?? null;
   const substChips = editorEl?.querySelector<HTMLElement>('[data-be-subst-chips]') ?? null;
-  let editFmt: ColorFormat = 'hex'; // sticky across swatch selections
-  // The open swatch's $value notation. Entering via the CMYK row keeps this and
-  // additionally pins the typed inks as the print CMYK (see commitFmt) — the
-  // "primary value was a CMYK one" case keeps its anchor rather than storing lch.
+  /** The open swatch's $value notation (the "Stored as" toggle). */
   let storedFmt: StorageFormat = 'lch';
 
   const renderStoredSeg = (): void => {
@@ -1374,7 +1282,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const anchorPath = primaryAnchorPath(doc);
     if (anchorPath && samePath(anchorPath, cur.path)) primaryLock?.render();
   };
-  const swatchSubst = substMount ? mountPrintSubst(substMount, {
+  const swatchSubst = substMount ? mountPrintLock(substMount, {
     hex: () => (selected >= 0 ? swatches[selected]!.hex : ''),
     getCmyk: () => (selected >= 0 ? getSwatchPrintOverride(doc, swatches[selected]!.path)?.cmyk ?? null : null),
     setCmyk: (cmyk) => { if (selected >= 0) { setSwatchCmykLock(doc, swatches[selected]!.path, cmyk); afterSwatchLockChange(); } },
@@ -1399,19 +1307,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     persist();
   });
 
-  const extrapolation = (hex: string): string =>
-    hex ? `${hex.toUpperCase()} · rgb(${formatColor('rgb', hex)})` : '';
-  /** Sync the value row to a hex — but never clobber the field the user is typing in. */
-  const syncFmtRow = (hex: string): void => {
-    if (fmtInput && document.activeElement !== fmtInput) fmtInput.value = formatColor(editFmt, hex);
-    if (fmtOut) fmtOut.textContent = extrapolation(hex);
-  };
   /** (Re)build the visual colour field on a hex, wiring its live onChange. */
   const renderEditField = (hex: string): void => {
     const mountEl = editorEl?.querySelector<HTMLElement>('[data-be-editor-color]'); if (!mountEl) return;
-    // Inline (not block): the sliders + swatches sit in the editor card's flow
-    // instead of a floating popover that overlapped the value/name rows below.
-    mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', { inline: true });
+    // The same field the primary gets: inline (it lays out in the card's flow
+    // rather than as a popover that would overlap the rows below) and `modes`,
+    // whose value input IS the typed-value entry — hex, OKLCH, HSL, RGB, CMYK.
+    mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', { inline: true, modes: true });
     wireColorField(mountEl, {
       onChange: (id, value) => {
         if (id !== 'be-edit-color') return;
@@ -1446,27 +1348,43 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       syncTileMeta(tile, cur);
     }
     if (editorChip) editorChip.style.setProperty('--sw', cur.hex);
-    syncFmtRow(cur.hex);
     if (opts.rerenderField) renderEditField(cur.hex);
     persist();
   }
 
-  /** Place the popover under `tile`, clamped to the editor box — the left
-   *  floor (8) must win over the right clamp so a viewport narrower than the
-   *  card never pushes it off the left edge. */
+  /**
+   * Place the popover against `tile`. The card is allowed to be tall — opening
+   * the print fold, or switching to CMYK's four sliders, grows it — and the
+   * answer to that is to MOVE it, not to scroll it: below the tile by default,
+   * flipped above when it would overhang and there's room up there, and only
+   * pinned to the viewport (letting the card's own max-height start an inner
+   * scroll) when it fits in neither direction.
+   *
+   * Coordinates are viewport-space until the last line, which converts into `.be`
+   * space (the popover is absolute within it). The left floor (8) must win over
+   * the right clamp, so a viewport narrower than the card never pushes it off the
+   * left edge. Needs the popover measurable — openEditor unhides it before calling.
+   */
+  const MARGIN = 8; // viewport breathing room, and the tile↔card gap
   const positionEditor = (tile: HTMLElement): void => {
     if (!editorEl) return;
     const r = tile.getBoundingClientRect(), pr = root.getBoundingClientRect();
-    editorEl.style.left = `${Math.max(8, Math.min(r.left - pr.left, pr.width - 308))}px`;
-    // Below the tile, but never past the viewport: the Colour tab's anchored
-    // layout has no page scroll to reveal an overhanging popover (scrolling
-    // the pane still slides tile + popover together). Needs the popover
-    // measurable — openEditor unhides it before calling here.
-    const h = editorEl.offsetHeight;
-    const topMost = 8 - pr.top; // viewport top + margin, in `.be` space
-    const maxTop = window.innerHeight - pr.top - h - 8;
-    editorEl.style.top = `${Math.min(r.bottom - pr.top + 8, Math.max(topMost, maxTop))}px`;
+    const w = editorEl.offsetWidth, h = editorEl.offsetHeight;
+    editorEl.style.left = `${Math.max(MARGIN, Math.min(r.left - pr.left, pr.width - w - MARGIN))}px`;
+
+    const below = r.bottom + MARGIN;
+    const above = r.top - MARGIN - h;
+    const fitsBelow = below + h <= window.innerHeight - MARGIN;
+    const fitsAbove = above >= MARGIN;
+    // Prefer below (it reads as "belonging to" the tile); flip up only when below
+    // overhangs AND above actually has the room.
+    let top = fitsBelow || !fitsAbove ? below : above;
+    // Taller than the viewport: pin it and let .be-editor-card's max-height scroll.
+    top = Math.max(MARGIN, Math.min(top, window.innerHeight - MARGIN - h));
+    editorEl.style.top = `${top - pr.top}px`;
   };
+  /** Re-place the open card against its anchor — after anything that resized it. */
+  const reposition = (): void => { if (editorAnchor && editorEl && !editorEl.hidden) positionEditor(editorAnchor); };
   const closeEditor = (): void => { if (editorEl) { editorEl.hidden = true; } selected = -1; editorAnchor = null; root.querySelectorAll('.be-swatch.is-selected').forEach(t => t.classList.remove('is-selected')); };
   const openEditor = (idx: number, tile: HTMLElement): void => {
     const s = swatches[idx]; if (!s || !editorEl) return;
@@ -1477,8 +1395,6 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const delBtn = editorEl.querySelector<HTMLButtonElement>('[data-be-editor-del]')!;
     renderEditField(s.hex);
     if (editorChip) editorChip.style.setProperty('--sw', s.hex || 'transparent');
-    if (fmtInput) fmtInput.value = formatColor(editFmt, s.hex);
-    if (fmtOut) fmtOut.textContent = extrapolation(s.hex);
     nameInput.value = s.name;
     // Everything is deletable: real removal for the user's own swatches, an
     // exclusion (hide) for derived ramp steps + roles — see the Delete handler.
@@ -1500,40 +1416,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     nameInput.focus();
   };
 
-  // "Set by value" row — bound ONCE (the select/input are static in the popover);
-  // both read the currently-`selected` swatch.
-  fmtSel?.addEventListener('change', () => {
-    editFmt = fmtSel.value as ColorFormat;
-    const cur = selected >= 0 ? swatches[selected] : null;
-    if (cur && fmtInput) fmtInput.value = formatColor(editFmt, cur.hex);
-    if (cur) syncFmtRow(cur.hex);
-  });
-  const commitFmt = (): void => {
-    if (!fmtInput) return;
-    const hex = parseColor(editFmt, fmtInput.value);
-    if (!hex) { if (fmtOut) fmtOut.textContent = t('unrecognised value'); return; }
-    applyEditedHex(hex, { rerenderField: true });
-    // A value ENTERED as CMYK is a print value: pin the typed inks as the
-    // swatch's CMYK substitute (the $value keeps only the sRGB approximation,
-    // so without the lock the exact build would be lost on export).
-    if (editFmt === 'cmyk' && selected >= 0) {
-      const nums = (fmtInput.value.match(/-?\d*\.?\d+/g) ?? []).map(Number);
-      if (nums.length >= 4) {
-        const cmyk = nums.slice(0, 4).map(n => Math.min(100, Math.max(0, Math.round(n)))) as [number, number, number, number];
-        setSwatchCmykLock(doc, swatches[selected]!.path, cmyk);
-        afterSwatchLockChange();
-        swatchSubst?.render();
-      }
-    }
-  };
-  // Live extrapolation as they type; commit (apply) on blur / Enter.
-  fmtInput?.addEventListener('input', () => {
-    if (!fmtInput || !fmtOut) return;
-    const hex = parseColor(editFmt, fmtInput.value);
-    fmtOut.textContent = hex ? extrapolation(hex) : t('unrecognised value');
-  });
-  fmtInput?.addEventListener('change', commitFmt);
-  fmtInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitFmt(); } });
+  // The card earns its height back by MOVING. Anything that resizes it — folding
+  // the print section open, switching the picker to CMYK's four sliders, a spot
+  // name field appearing — re-runs positionEditor, which flips the card above the
+  // tile when there's room up there. A ResizeObserver catches all of it, including
+  // the changes we don't own (the colour field's own internals), so this is one
+  // hook rather than a listener per control. Guarded: jsdom (the CLI shell's
+  // renderer, and the unit tests) has no ResizeObserver.
+  if (editorCard && typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => reposition());
+    ro.observe(editorCard);
+    cleanups.push(() => ro.disconnect());
+  }
+
   palMount?.addEventListener('click', (e) => {
     const add = (e.target as HTMLElement).closest<HTMLElement>('[data-be-add]');
     if (add) {
@@ -1680,7 +1575,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         cur.raw = stored; cur.hex = hex;
         updateWheelDot(wheelMount, idx, hex);
         liveTile(idx, hex);
-        if (selected === idx) syncFmtRow(hex); // keep an open editor's value row in step
+        if (selected === idx && editorChip) editorChip.style.setProperty('--sw', hex); // keep an open editor's chip in step
       },
       onCommit: () => persist(),
       onPick: (idx) => {

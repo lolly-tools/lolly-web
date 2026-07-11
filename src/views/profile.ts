@@ -25,6 +25,7 @@ import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts'
 import { BATCH_SLOT_PREFIX } from '../lib/batch-slots.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { escape } from '../utils.ts';
+import { icon } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
 import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
@@ -159,15 +160,18 @@ const CLEAR_CONFIRM_WORDS = ['lolly', 'open', 'free', 'privacy', 'choice', 'than
 const HOARD_CONFIRM_WORDS = ['hoard', 'mine', 'stash', 'vault', 'archive', 'homeward', 'liberate', 'agency', 'to the drive', 'own it', 'my data', 'keep it all'];
 
 // Chevron for a collapsible section's summary (rotates 90° when open via CSS).
-const COLLAPSE_CHEV = `<svg class="profile-collapse-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
-const INFO_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>`;
-// Shield-with-check — the same glyph the gallery's green Verify button uses.
-const VERIFY_SHIELD = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>`;
+// Path data lives in lib/icons.ts as 'chevronRight' — was a <polyline>, same shape as
+// the (deduped) <path> chevrons in gallery.ts/projects.ts (component-audit rec 5).
+const COLLAPSE_CHEV = icon('chevronRight', { size: 16, strokeWidth: 2.5, className: 'profile-collapse-chev' });
+const INFO_ICON = icon('info', { size: 14 });
+// Shield-with-check — the same glyph the gallery's green Verify button uses (deduped
+// against footer-nav.ts's identical NAV_ICONS.shield as 'shieldCheck').
+const VERIFY_SHIELD = icon('shieldCheck', { size: 18 });
 // Jump to the Verify view — styled to match the gallery's green Verify button.
 // A function (not a module const) so t() runs at render time, after the catalog loads.
 const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-link" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span>${t('Verify a file')}</span></a>`;
 // Compass/gauge glyph — the same one the gallery's Dashboard button uses, for the bottom toolbar.
-const DASHBOARD_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>`;
+const DASHBOARD_ICON = icon('dashboard', { size: 18 });
 
 // A small "i" badge with a hover/focus tooltip — used beside storage headings.
 // A real <button> (not a tabbable span) so its role + keyboard focus are native.
@@ -507,7 +511,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Tool display names + a glyph for sessions saved without a thumbnail.
   const toolNameById = new Map((window.__toolIndex?.tools ?? []).map(t => [t.id, t.name] as [string, string]));
   const toolNameOf = (id: string) => toolNameById.get(id) || id || t('Saved session');
-  const SESS_PLACEHOLDER = `<span class="store-sess-thumb is-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m21 15-4.5-4.5L7 21"/></svg></span>`;
+  // 'image' glyph — deduped against catalog-summary.ts's "raster" and valid.ts's
+  // ICONS.image (near-identical circle-radius/path-endpoint roundings of the same
+  // Lucide "image" icon; component-audit rec 5).
+  const SESS_PLACEHOLDER = `<span class="store-sess-thumb is-placeholder" aria-hidden="true">${icon('image', { strokeWidth: 1.8 })}</span>`;
   const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Approximate, theme-agnostic byte formatting (KB/MB/GB) shared by the meter.

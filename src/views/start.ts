@@ -119,7 +119,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       <!-- The persistent action row: Import/Export always on; Save & continue
            appears on change. One row, one place, whichever step is open. -->
       <div class="start-actions" role="toolbar" aria-label="${escape(t('Brand actions'))}">
-        <button type="button" class="be-btn" data-start-import aria-expanded="false">↓ ${t('Import…')}</button>
+        <button type="button" class="be-btn start-import-cta" data-start-import aria-expanded="false"><span class="start-import-cta-ic" aria-hidden="true">↓</span> ${t('Import…')}</button>
         <button type="button" class="be-btn" data-start-export data-sfx="whoosh">↑ ${t('Export')}</button>
         <span class="start-actions-note" data-start-note aria-live="polite"></span>
         <button type="button" class="be-cta start-save" data-start-save hidden></button>

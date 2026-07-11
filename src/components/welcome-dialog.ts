@@ -28,16 +28,12 @@
 import '../styles/parts/welcome.css';
 import { currentLang, langOptions, setActiveLang, t, LANG_ICON_SVG, flagEmoji } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
-import { escape } from '../utils.ts';
+import { escape, NAV_EVENTS } from '../utils.ts';
 import type { WebProfileAPI } from '../bridge/profile.ts';
 
 /** Persisted (localStorage, same tier as the theme) once the welcome is settled. */
 export const WELCOME_DISMISSED_KEY = 'lolly-welcome-dismissed';
 const TIPS_DISMISSED_KEY = 'lolly-tips-dismissed';
-
-// Route-change signals the shell fires (see main.ts) — any one tears down an
-// open welcome so it never outlives the gallery that spawned it.
-const NAV_EVENTS = ['hashchange', 'popstate', 'lolly:navigate'] as const;
 
 /** True once the user has settled the welcome (or when storage is unavailable —
  *  we'd re-prompt every visit otherwise, which is worse than never prompting). */

@@ -10,6 +10,7 @@
  * — the seam for the "detect when a tip is needed and flash it" follow-up — which opens
  * the panel and highlights that one tip; nothing drives it from the meter yet.
  */
+import { escape } from '../utils.ts';
 
 export type TipCue =
   | 'room' | 'distance' | 'aim' | 'project' | 'level' | 'wind' | 'fan'  // audio
@@ -48,10 +49,6 @@ export const RECORDING_TIPS: RecordingTip[] = [
     text: 'Keep bright windows and lamps out of the shot behind you — a bright background turns you into a dark silhouette. Face the light instead.',
     alert: 'Bright background — face the light, don’t sit in front of it.' },
 ];
-
-const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => (
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[c]!
-));
 
 // A Lucide-house-style glyph per cue, so each tip is scannable at a glance: home = the
 // room/space, ruler = mic distance, target = aiming the mic, megaphone = project, gauge =
@@ -97,7 +94,7 @@ export function mountRecordingHelp(stageEl: HTMLElement, opts: { video?: boolean
   const tips = RECORDING_TIPS.filter((t) => t.kind !== 'video' || video);
   const title = video ? 'Look &amp; sound your best' : 'Sound your best';
   const items = tips.map(
-    (t) => `<li class="crt-item" data-cue="${t.cue}">${iconSvg(t.cue)}<span>${esc(t.text)}</span></li>`,
+    (t) => `<li class="crt-item" data-cue="${t.cue}">${iconSvg(t.cue)}<span>${escape(t.text)}</span></li>`,
   ).join('');
   wrap.innerHTML =
     `<button type="button" class="crh-btn" aria-expanded="false" aria-controls="${panelId}" ` +
@@ -154,7 +151,7 @@ export function mountRecordingHelp(stageEl: HTMLElement, opts: { video?: boolean
       }
       // Panel closed → a transient single-tip nudge (punchier `alert` phrasing when the
       // tip has one) + a brief pulse on the "?".
-      nudge.innerHTML = `${iconSvg(cue)}<span>${esc(tip.alert ?? tip.text)}</span>`;
+      nudge.innerHTML = `${iconSvg(cue)}<span>${escape(tip.alert ?? tip.text)}</span>`;
       nudge.classList.add('is-shown');
       wrap.classList.remove('is-nudging');
       void wrap.offsetWidth;    // restart the button pulse on each nudge

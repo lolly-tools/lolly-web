@@ -177,12 +177,12 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-render svg { width: 15px; height: 15px; }
 /* Render is the primary action — fill it with the brand colour so it reads as the
    pronounced CTA (folder header, bulk bar, move-picker confirm all share this class).
-   Two-class `.projects-render.btn` to beat the generic `.btn` background defined LATER
-   in this file (equal specificity, later wins) — same trick as .projects-confirm-danger. */
+   Two-class `.projects-render.btn` beats the generic `.btn` base by specificity —
+   same trick as .projects-confirm-danger. Fill (background/color) + hover are
+   aliased in parts/buttons.css's .btn--primary list; only the border-color delta lives here. */
 .projects-render.btn {
-  background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
-.projects-render.btn:hover { filter: brightness(1.08); }
 .projects-render.btn svg { opacity: 1; }
 
 /* Uncategorised preview ribbon — the gallery's Featured strip (drift · Cover Flow ·
@@ -341,17 +341,17 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-confirm-title { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
 .projects-confirm-msg { margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
 .projects-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
-/* Scoped (two-class) so it beats the generic .btn background rule that comes later. */
+/* Scoped (two-class) so it beats the generic .btn base by specificity. Fill
+   (background/color) + hover are aliased in parts/buttons.css's .btn--danger list. */
 .projects-confirm .projects-confirm-danger {
-  background: hsl(var(--destructive, 0 70% 50%)); border-color: hsl(var(--destructive, 0 70% 50%)); color: #fff;
+  border-color: hsl(var(--destructive, 0 70% 50%));
 }
-.projects-confirm .projects-confirm-danger:hover { filter: brightness(0.94); }
 /* choiceDialog: the lead choice gets the brand fill (two-class scope beats the
-   generic .btn rule later in the file — same trick as .projects-confirm-danger). */
+   generic .btn base — same trick as .projects-confirm-danger). Fill + hover are
+   aliased in parts/buttons.css's .btn--primary list. */
 .projects-confirm .projects-confirm-primary {
-  background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
 }
-.projects-confirm .projects-confirm-primary:hover { filter: brightness(1.08); }
 /* Choice buttons can carry longer labels than OK/Cancel — let them wrap. */
 .projects-confirm-actions--choices { flex-wrap: wrap; }
 

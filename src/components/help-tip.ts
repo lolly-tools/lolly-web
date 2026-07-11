@@ -7,14 +7,12 @@
 //
 // Mirrors the colour-field popover lifecycle (Escape closes + refocuses the
 // trigger, outside-click disarms) so it matches the app's escape-to-close idiom.
+import { escape } from '../utils.ts';
 
 const INFO_ICON =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
   'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
-
-const esc = (s: unknown) => String(s).replace(/[&<>"]/g, (c) =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
 let _seq = 0;
 
@@ -44,11 +42,11 @@ export function helpTip(text: string, link: HelpTipLink | null = null): { id: st
   let linkHtml = '';
   if (link && link.href) {
     const external = /^https?:/i.test(link.href);
-    linkHtml = ` <a class="help-tip-link" href="${esc(link.href)}"` +
+    linkHtml = ` <a class="help-tip-link" href="${escape(link.href)}"` +
       (external ? ' target="_blank" rel="noopener"' : '') +
-      `>${esc(link.text || 'Learn more')}</a>`;
+      `>${escape(link.text || 'Learn more')}</a>`;
   }
-  const pop = `<span class="help-tip-pop" id="${id}" hidden>${esc(text)}${linkHtml}</span>`;
+  const pop = `<span class="help-tip-pop" id="${id}" hidden>${escape(text)}${linkHtml}</span>`;
   return { id, button, pop };
 }
 

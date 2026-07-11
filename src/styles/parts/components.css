@@ -335,9 +335,11 @@
   max-width: 7rem;
   aspect-ratio: 1 / 1;
 }
-/* Scale the dial furniture up with the dial. */
+/* Scale the dial furniture up with the dial. The result disc keeps BOTH halves
+   here too — dropper (top) picks off the screen, edit (bottom) opens the system
+   picker — same split as the trigger picker. */
 .color-field--inline .color-dial-hub { font-size: 12px; }
-.color-field--inline .color-dial-act svg { width: 1.9em; height: 1.9em; }
+.color-field--inline .color-dial-act svg { width: 1.6em; height: 1.6em; }
 
 /* ── Colour-space modes: tab bar + per-space slider groups ───────────────────
    The tabs are a segmented control; the active group's sliders reuse the OKLCH
@@ -354,15 +356,14 @@
   border-radius: 999px; transition: background .12s, color .12s;
 }
 .color-mode-tab:hover { color: hsl(var(--foreground)); }
+/* The ACTIVE tab is the bold one — the pill + dark text + weight mark whichever
+   space you're in (OKLCH by default). Bold belongs to the selection, not to any
+   one space. */
 .color-mode-tab[aria-selected="true"] {
-  background: hsl(var(--card)); color: hsl(var(--foreground));
+  background: hsl(var(--card)); color: hsl(var(--foreground)); font-weight: 700;
   box-shadow: 0 1px 2px hsl(0 0% 0% / .12);
 }
 .color-mode-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
-/* OKLCH isn't the default tab (HEX is) but it's the one we want power users to
-   notice — give it dark, bold weight so it reads as the "advanced" space even at
-   rest. Selected state (above) still layers its pill on top. */
-.color-mode-tab--oklch { color: hsl(var(--foreground)); font-weight: 700; }
 .color-modegroup { display: flex; flex-direction: column; gap: 8px; }
 .color-modegroup[hidden] { display: none; }
 /* .color-lch forces display:flex, which (author origin) beats the UA [hidden]
@@ -534,6 +535,7 @@
   overflow: hidden;
   background: var(--out, hsl(var(--muted)));
   color: var(--out-fg, hsl(var(--foreground)));
+  order: -1;                       /* the result swatch LEADS the channel dials */
 }
 .color-dial-act {
   flex: 1 1 50%;
@@ -684,6 +686,23 @@
   scrollbar-color: hsl(var(--border));
   padding:6px; 
 }
+
+/* The result disc's swatch context menu (inline pickers) — a floating card of the
+   brand swatch grid, anchored under the disc (color-field.ts sets top/left). The
+   inline popover is the positioned ancestor those offsets are measured against. */
+.color-field--inline .color-popover { position: relative; }
+.color-swatch-menu {
+  position: absolute;
+  z-index: 20;
+  width: max-content;
+  max-width: min(320px, 92%);
+  background: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 10px 28px hsl(var(--foreground) / .18);
+}
+.color-swatch-menu[hidden] { display: none; }
+.color-swatch-menu .color-swatches { max-height: 216px; }
 
 .color-popover-native::part{border-radius: var(--radius)}
 .color-swatch {

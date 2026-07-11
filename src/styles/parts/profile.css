@@ -262,8 +262,8 @@
   border-radius: var(--radius); border: 1px solid hsl(var(--border));
   cursor: pointer; text-decoration: none; text-align: center; line-height: 1.4;
 }
-.profile-view .profile-btn-primary { padding: 1em 2em;   border-radius: calc(var(--radius) *2);background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
-.profile-view .profile-btn-primary:hover { filter: brightness(1.08); }
+/* fill (background/color) + hover are aliased in parts/buttons.css's .btn--primary list */
+.profile-view .profile-btn-primary { padding: 1em 2em; border-radius: calc(var(--radius) *2); border-color: hsl(var(--primary)); }
 .headshot-heading{text-align:center;}
 
 /* ── Appearance card — theme preview cards (the picker moved here from the
@@ -532,11 +532,11 @@
 .profile-view .headshot-preview {
       box-shadow: 0 .2em 1em #0005;
   position: relative; width: 100%; height: 100%;
-  border-radius: calc(var(--radius) * 4);  overflow: hidden; border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 7);  overflow: hidden; border: 1px solid hsl(var(--border));
   background-color: hsl(var(--muted)); background-size: cover; background-position: center;
 }
 .profile-view .headshot-edit {
-  position: absolute; inset: 0; border: none; border-radius: calc(var(--radius) * 4); cursor: pointer;
+  position: absolute; inset: 0; border: none; border-radius: calc(var(--radius) * 7); cursor: pointer;
   display: flex; align-items: flex-end; justify-content: center; padding-bottom: 16px;
   font: inherit; font-size: .78rem; font-weight: 700; letter-spacing: .03em; color: #fff;
   background: linear-gradient(to top, rgba(0, 0, 0, .55), rgba(0, 0, 0, 0) 55%);
@@ -619,8 +619,8 @@
 }
 .cropper-btn--secondary { background: hsl(var(--card)); color: hsl(var(--foreground)); }
 .cropper-btn--secondary:hover { background: hsl(var(--accent)); }
-.cropper-btn--primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
-.cropper-btn--primary:hover { filter: brightness(1.08); }
+/* fill (background/color) + hover are aliased in parts/buttons.css's .btn--primary list */
+.cropper-btn--primary { border-color: hsl(var(--primary)); }
 
 /* "Verify a file" CTA in the Content Credentials section — matches the gallery's
    green Verify button (explicit green so it reads the same in every theme). */

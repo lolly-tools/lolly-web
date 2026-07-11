@@ -32,7 +32,6 @@
    it here so keyboard focus doesn't visually balloon these small fields into
    a rounder pill than their own border. */
 .be-editor-name:focus-visible,
-.be-fmt-sel:focus-visible,
 .be-fmt-input:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;

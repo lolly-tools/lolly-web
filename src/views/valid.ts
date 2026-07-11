@@ -28,6 +28,9 @@ import type { FileMetadata, MetaGroup, StripFormat } from '@lolly/engine';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
+// Aliased (not `icon`) — this file has function parameters named `icon` (fact(),
+// the change-history `section` builder) that would otherwise shadow the import.
+import { icon as glyph, type IconName } from '../lib/icons.ts';
 import { t } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -99,52 +102,17 @@ const VERIFY_OPTS: { trustAnchors: Uint8Array[] } = {
 // not an OOM'd tab.
 const MAX_VERIFY_BYTES = 256 * 1024 * 1024;
 
-const ICON_SHIELD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
-const ICON_CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+// Path data for all of these (including 'shield'/'chevronDown' below) lives in
+// lib/icons.ts — the shared registry (see plans/component-audit.md rec 5).
+// 'globe', 'calendar', 'package' and 'image' are deduped there against
+// near-identical glyphs from catalog-summary.ts/category-icons.ts/profile.ts.
+const ICON_SHIELD = glyph('shield');
+const ICON_CHEVRON = glyph('chevronDown');
 
 // Small line icons, wrapped consistently — shared by the hero check scorecard
-// and the per-fact <dt> labels. Values are the inner paths of a 24×24 glyph.
-const svgIcon = (paths: string): string => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
-const ICONS = {
-  document: '<path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>',
-  eye: '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
-  link: '<path d="M9 15 15 9"/><path d="M11 6l1-1a4 4 0 0 1 6 6l-1 1"/><path d="M13 18l-1 1a4 4 0 0 1-6-6l1-1"/>',
-  pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3.5 2"/>',
-  hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
-  userCheck: '<path d="M14 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="8" cy="8" r="4"/><path d="M15 11.5l2.2 2.2 4.3-4.3"/>',
-  sparkle: '<path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z"/>',
-  lollipop: '<circle cx="9" cy="9" r="7"/><path d="M9 5a4 4 0 0 1 0 8 2 2 0 0 1 0-4"/><path d="m14 14 6 6"/>',
-  tag: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
-  tool: '<path d="M14.7 6.3a4 4 0 0 0-5.2 5.2l-6.1 6.1a1.5 1.5 0 0 0 2.1 2.1l6.1-6.1a4 4 0 0 0 5.2-5.2l-2.4 2.4-2-2z"/>',
-  user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
-  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 3.8 5.7 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.7-3.8-9S9.5 5.5 12 3z"/>',
-  seal: '<circle cx="12" cy="9" r="6"/><path d="M9 14.2 8 22l4-2.5 4 2.5-1-7.8"/>',
-  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
-  building: '<path d="M4 22V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v18"/><path d="M15 9h4a1 1 0 0 1 1 1v12"/><path d="M8 7h2M8 11h2M8 15h2M4 22h16"/>',
-  cpu: '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',
-  calendar: '<rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',
-  package: '<path d="M16.5 9.4 7.5 4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
-  lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.2" r="1.1"/>',
-  mapPin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
-  camera: '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
-  // Big central sparkle + two small twinkles — the "auto / AI generated" glyph.
-  aiSpark: '<path d="M12 2.5l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 15v3.5M17.25 16.75h3.5"/><path d="M5 3.5v3M3.5 5h3"/>',
-  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.8"/><path d="m21 15-4.5-4.5L5 21"/>',
-  checklist: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1.3 1.3L6.5 5"/><path d="m3 12 1.3 1.3 2.2-2.3"/><path d="m3 18 1.3 1.3 2.2-2.3"/>',
-  // A framed ripple — the "in-pixel imprint" glyph.
-  imprint: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M6.5 13.5c1.8-3 3.6-3 5.5 0s3.7 3 5.5 0"/><path d="M6.5 9.5c1.8-2.4 3.6-2.4 5.5 0s3.7 2.4 5.5 0"/>',
-  // Per-operation change-history glyphs — a recognisable mark for each edit we log.
-  crop: '<path d="M6.13 1 6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13 16 6a2 2 0 0 1 2 2v15"/>',
-  droplet: '<path d="M12 2.7l5.3 5.3a7.5 7.5 0 1 1-10.6 0z"/>',
-  convert: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
-  resize: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>',
-  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>',
-  // Stacked planes — "composite of multiple elements".
-  layers: '<path d="M12 2 2 7l10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
-  // Microphone — "recorded live from the microphone".
-  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3M8 21h8"/>',
-};
+// and the per-fact <dt> labels. /valid's icons are a hair thinner (1.9) than
+// the registry default (2).
+const svgIcon = (name: IconName): string => glyph(name, { strokeWidth: 1.9 });
 const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'invalid', na: 'n/a' };
 
 const STATE_COPY = {
@@ -220,7 +188,7 @@ const isExpectedRow = (c: Check): boolean => c.code === 'signingCredential.untru
 // …); this collapses them onto a stable eight so the hero reads as a consistent
 // glance, with each pip's state (pass / fail / warn / not-applicable) derived
 // from the actual rows — never hard-coded.
-interface ScorecardItem { icon: keyof typeof ICONS; label: string; status: keyof typeof STATUS_WORD; hideStatus?: boolean; ash?: boolean; }
+interface ScorecardItem { icon: IconName; label: string; status: keyof typeof STATUS_WORD; hideStatus?: boolean; ash?: boolean; }
 function scorecardModel(report: VerifyReport): ScorecardItem[] {
   const cs = report.checks || [];
   const okRow = (code: string): boolean => cs.some((c) => c.ok && c.code === code);
@@ -270,7 +238,7 @@ function scorecardModel(report: VerifyReport): ScorecardItem[] {
 function scorecardHtml(report: VerifyReport): string {
   return `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${scorecardModel(report).map((it, i) =>
     `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" style="--i:${i}" aria-label="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(t(STATUS_WORD[it.status]))}`}">` +
-      `<span class="valid-score-ic" aria-hidden="true">${svgIcon(ICONS[it.icon])}</span>` +
+      `<span class="valid-score-ic" aria-hidden="true">${svgIcon(it.icon)}</span>` +
       `<span class="valid-score-label" aria-hidden="true">${escape(it.label)}</span>` +
       (it.hideStatus ? '' : `<span class="valid-score-status" aria-hidden="true">${escape(t(STATUS_WORD[it.status]))}</span>`) +
     `</li>`).join('')}</ul>`;
@@ -286,10 +254,9 @@ function checkRow(c: Check, i = 0): string {
     </li>`;
 }
 
-function fact(label: string, value: unknown, icon: keyof typeof ICONS): string {
+function fact(label: string, value: unknown, icon: IconName): string {
   if (value == null || value === '') return '';
-  const ic = icon && ICONS[icon] ? `<span class="valid-fact-ic" aria-hidden="true">${svgIcon(ICONS[icon])}</span>` : '';
-  return `<div class="valid-fact"><dt>${ic}<span>${escape(label)}</span></dt><dd>${escape(String(value))}</dd></div>`;
+  return `<div class="valid-fact"><dt><span class="valid-fact-ic" aria-hidden="true">${svgIcon(icon)}</span><span>${escape(label)}</span></dt><dd>${escape(String(value))}</dd></div>`;
 }
 
 // The scalar-input digest recorded by the writer's tools.lolly.export assertion
@@ -308,7 +275,7 @@ export function inputsDigestHtml(inputs: Record<string, string> | undefined): st
   }).join('');
   return `
     <div class="valid-inputs valid-panel">
-      <h3>${svgIcon(ICONS.sparkle)}<span>${t('Made from')}</span></h3>
+      <h3>${svgIcon('sparkle')}<span>${t('Made from')}</span></h3>
       <dl class="valid-input-list">${rows}</dl>
     </div>`;
 }
@@ -317,7 +284,7 @@ export function inputsDigestHtml(inputs: Record<string, string> | undefined): st
 // lock chip (privacy — nothing left the device) beside the explanatory prose.
 const deviceNote = (inner: string): string =>
   `<div class="valid-note">
-    <span class="valid-note-ic" aria-hidden="true">${svgIcon(ICONS.lock)}</span>
+    <span class="valid-note-ic" aria-hidden="true">${svgIcon('lock')}</span>
     <p class="valid-note-body">${inner}</p>
   </div>`;
 
@@ -391,7 +358,7 @@ function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none' {
 function miniScoreHtml(report: VerifyReport): string {
   if (!report.found) return '';
   return `<ul class="valid-score valid-score--mini" aria-hidden="true">${scorecardModel(report).map((it) =>
-    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(t(STATUS_WORD[it.status]))}`}"><span class="valid-score-ic">${svgIcon(ICONS[it.icon])}</span></li>`).join('')}</ul>`;
+    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(t(STATUS_WORD[it.status]))}`}"><span class="valid-score-ic">${svgIcon(it.icon)}</span></li>`).join('')}</ul>`;
 }
 
 // The always-visible summary row of a collapsible report: state badge, filename,
@@ -435,15 +402,15 @@ function summaryInner(fileName: string, report: VerifyReport): string {
     : `<span class="valid-item-badge is-${tone}">${escape(t(state.title))}</span>`;
   return `
     ${lead}
-    ${report.aiGenerated ? `<span class="valid-item-ai" title="${escape(t('Content Credential declares AI-generated content'))}">${svgIcon(ICONS.aiSpark)}<span>${t('AI')}</span></span>` : ''}
+    ${report.aiGenerated ? `<span class="valid-item-ai" title="${escape(t('Content Credential declares AI-generated content'))}">${svgIcon('aiSpark')}<span>${t('AI')}</span></span>` : ''}
     <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
-    ${who ? `<span class="valid-item-signer" title="${escape(t('Signed by {who}', { who }))}">${svgIcon(ICONS.mail)}<span>${escape(who)}</span></span>` : ''}
+    ${who ? `<span class="valid-item-signer" title="${escape(t('Signed by {who}', { who }))}">${svgIcon('mail')}<span>${escape(who)}</span></span>` : ''}
     ${miniScoreHtml(report)}
     <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>`;
 }
 
 // Which glyph heads each metadata section.
-const META_GROUP_ICON: Record<MetaGroup, keyof typeof ICONS> = {
+const META_GROUP_ICON: Record<MetaGroup, IconName> = {
   location: 'mapPin', device: 'cpu', capture: 'camera', software: 'tool',
   authorship: 'user', timestamps: 'calendar', description: 'document', technical: 'hash',
 };
@@ -477,16 +444,16 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
     .filter((x) => x.items.length);
   const sensitive = meta.fields.some((f) => f.sensitive);
   const n = meta.fields.length;
-  const section = (g: MetaGroup, label: string, icon: keyof typeof ICONS, rows: string): string => `
+  const section = (g: MetaGroup, label: string, icon: IconName, rows: string): string => `
     <section class="valid-meta-group${g === 'description' ? ' valid-meta-group--desc' : ''}">
-      <h4>${svgIcon(ICONS[icon])}<span>${escape(label)}</span></h4>
+      <h4>${svgIcon(icon)}<span>${escape(label)}</span></h4>
       <dl>${rows}</dl>
     </section>`;
   const row = (f: { label: string; value: string; sensitive?: boolean }): string =>
     `<div class="valid-meta-row${f.sensitive ? ' is-sensitive' : ''}"><dt>${escape(f.label)}</dt><dd>${escape(f.value)}</dd></div>`;
   const locationBlock = meta.gps ? `
     <section class="valid-meta-location">
-      <h4>${svgIcon(ICONS.mapPin)}<span>${t('Location')}</span></h4>
+      <h4>${svgIcon('mapPin')}<span>${t('Location')}</span></h4>
       ${renderLocator(meta.gps.lat, meta.gps.lon)}
       <div class="valid-meta-loc-read">
         ${loc.map((f) => `<span class="valid-meta-loc-item"><span class="k">${escape(f.label)}</span><span class="v">${escape(f.value)}</span></span>`).join('')}
@@ -496,7 +463,7 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
   return `
     <section class="valid-meta">
       <div class="valid-meta-head">
-        <h3>${svgIcon(ICONS.eye)}<span>${t('Embedded metadata')}</span></h3>
+        <h3>${svgIcon('eye')}<span>${t('Embedded metadata')}</span></h3>
         <span class="valid-meta-count">${n === 1 ? t('1 field') : t('{n} fields', { n })}${meta.format ? ` · ${escape(meta.format)}` : ''}</span>
       </div>
       ${mediaPreviewHtml(preview, 'sm')}
@@ -531,7 +498,7 @@ function aiFlagHtml(report: VerifyReport): string {
   const c = AI_FLAG_COPY[report.aiGenerated.kind];
   return `
     <div class="valid-ai-flag" role="alert">
-      <span class="valid-ai-flag-ic" aria-hidden="true">${svgIcon(ICONS.aiSpark)}</span>
+      <span class="valid-ai-flag-ic" aria-hidden="true">${svgIcon('aiSpark')}</span>
       <span class="valid-ai-flag-text">
         <strong>${escape(t(c.title))}</strong>
         <span>${escape(t(c.sub))}</span>
@@ -549,7 +516,7 @@ function watermarkNote(wm: Watermark | undefined): string {
   if (!wm?.present) return '';
   return `
     <div class="valid-wm" role="note">
-      <span class="valid-wm-ic" aria-hidden="true">${svgIcon(ICONS.imprint)}</span>
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
       <div class="valid-wm-text">
         <strong>${t('Lolly pixel watermark present')}</strong>
         <span>${t("An imperceptible mark Lolly can embed in the pixels of a raster export. Unlike the Content Credential — which travels in metadata and is lost to a re-save or strip — this rides in the image itself and survives recompression, so it's a durable hint that the image came from Lolly. A supporting signal, not a cryptographic guarantee.")}</span>
@@ -569,7 +536,7 @@ const ACTION_LABEL: Record<string, string> = {
   'c2pa.managed': 'Managed', 'c2pa.saved': 'Saved', 'c2pa.printed': 'Printed',
   'c2pa.unknown': 'Modified',
 };
-const ACTION_ICON: Record<string, keyof typeof ICONS> = {
+const ACTION_ICON: Record<string, IconName> = {
   'c2pa.created': 'sparkle', 'c2pa.edited': 'pen', 'c2pa.opened': 'eye',
   'c2pa.placed': 'package', 'c2pa.published': 'package', 'c2pa.drawing': 'pen',
   'c2pa.color_adjustments': 'droplet', 'c2pa.filtered': 'sliders', 'c2pa.cropped': 'crop',
@@ -578,7 +545,7 @@ const ACTION_ICON: Record<string, keyof typeof ICONS> = {
 // A composite source type reads as stacked layers regardless of the action code
 // carrying it (a created/opened step that merged multiple elements). Keyed on the
 // IPTC digitalSourceType slug — takes precedence over ACTION_ICON in stepsHtml().
-const SOURCE_ICON: Partial<Record<string, keyof typeof ICONS>> = {
+const SOURCE_ICON: Partial<Record<string, IconName>> = {
   composite: 'layers',
   compositeWithTrainedAlgorithmicMedia: 'layers',
   // Sensor origin — a live camera frame or a recording. A mic-only take is
@@ -659,7 +626,7 @@ export function stepsHtml(report: VerifyReport): string {
     ].filter(Boolean).join('<span class="valid-step-dot" aria-hidden="true">·</span>');
     // The source-type note (e.g. "Generated by AI") always gets its own line —
     // it's a distinct claim from the description/timestamp, not more list prose.
-    const srcLine = src ? `<span class="valid-step-src">${isAi ? `${svgIcon(ICONS.aiSpark)} ` : ''}${escape(src)}</span>` : '';
+    const srcLine = src ? `<span class="valid-step-src">${isAi ? `${svgIcon('aiSpark')} ` : ''}${escape(src)}</span>` : '';
     return { agent, agentCls, label, icon, meta, srcLine };
   });
   // The rail segment spanning the FIRST through LAST step credited to Lolly reads
@@ -674,7 +641,7 @@ export function stepsHtml(report: VerifyReport): string {
       <li class="valid-step is-${r.agentCls}${railLolly ? ' valid-step--rail-lolly' : ''}">
         <span class="valid-step-agent" title="${r.agent ? escape(r.agent) : escape(t('Unknown source'))}">${escape(r.agent ? shortAgent(r.agent) : '—')}</span>
         <div class="valid-step-main">
-          <span class="valid-step-label"><span class="valid-step-ic" aria-hidden="true">${svgIcon(ICONS[r.icon])}</span>${escape(r.label)}</span>
+          <span class="valid-step-label"><span class="valid-step-ic" aria-hidden="true">${svgIcon(r.icon)}</span>${escape(r.label)}</span>
           ${r.meta ? `<span class="valid-step-meta">${r.meta}</span>` : ''}
           ${r.srcLine}
         </div>
@@ -682,7 +649,7 @@ export function stepsHtml(report: VerifyReport): string {
   }).join('');
   return `
     <div class="valid-steps valid-panel">
-      <h3>${svgIcon(ICONS.clock)}<span>${t('Change history')}</span></h3>
+      <h3>${svgIcon('clock')}<span>${t('Change history')}</span></h3>
       <ol class="valid-steps-list">${rows}</ol>
     </div>`;
 }
@@ -696,7 +663,7 @@ function checksHtml(report: VerifyReport): string {
   if (!report.checks.length) return '';
   return `
     <div class="valid-checks-panel valid-panel">
-      <h3>${svgIcon(ICONS.checklist)}<span>${t('Assertion log')}</span></h3>
+      <h3>${svgIcon('checklist')}<span>${t('Assertion log')}</span></h3>
       <ul class="valid-checks">${report.checks.map(checkRow).join('')}</ul>
     </div>`;
 }
@@ -728,7 +695,7 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
     return `<figure class="${cls}"><embed src="${escape(p.url)}#toolbar=0&view=FitH" type="application/pdf"></figure>`;
   // Not inline-previewable at this size — a quiet labelled placeholder (large only).
   if (size === 'lg')
-    return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon(ICONS.image)}</span><figcaption>${t('No inline preview for {format}', { format: escape((p.format || t('this format')).toUpperCase()) })}</figcaption></figure>`;
+    return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon('image')}</span><figcaption>${t('No inline preview for {format}', { format: escape((p.format || t('this format')).toUpperCase()) })}</figcaption></figure>`;
   return '';
 }
 
@@ -796,8 +763,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const signedByCa = identity?.issuer || signer.organization || signer.commonName;
   const lollyValidationsHtml = state === STATE_COPY.lolly ? `
           <div class="valid-hero-vbadges">
-            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>${t('The credential is intact and records a Lolly export')}</span></div>
-            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>${t('This file has not changed since it was made')}</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('seal')}</span><span>${t('The credential is intact and records a Lolly export')}</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('hash')}</span><span>${t('This file has not changed since it was made')}</span></div>
           </div>
           <p class="valid-hero-signedby">${identity
     ? t('Signed with <strong>{ca}</strong> Certificate Authority.', { ca: escape(signedByCa ?? t('a Certificate Authority')) })
@@ -806,9 +773,9 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // verdict — three plain facts instead of one sentence to parse.
   const invalidBadgesHtml = state === STATE_COPY.invalid ? `
           <div class="valid-hero-vbadges">
-            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>${t('Content Credentials detected')}</span></div>
-            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>${t('Bytes no longer match')}</span></div>
-            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.pen)}</span><span>${t('Modified after signing')}</span></div>
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('seal')}</span><span>${t('Content Credentials detected')}</span></div>
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('hash')}</span><span>${t('Bytes no longer match')}</span></div>
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('pen')}</span><span>${t('Modified after signing')}</span></div>
           </div>` : '';
   // The middle-ground verdict: mixed tones in one badge group, unlike the pure
   // pass (lolly) or pure fail (invalid) groups above — two green facts about
@@ -816,9 +783,9 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // the FILE's current bytes (can't be vouched for).
   const likelyLollyBadgesHtml = state === STATE_COPY.likelyLolly ? `
           <div class="valid-hero-vbadges">
-            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>${t("The credential's own content checks out")}</span></div>
-            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.lollipop)}</span><span>${t('It records a Lolly creation')}</span></div>
-            <div class="valid-vbadge is-warn"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>${t("This file's bytes no longer match")}</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('seal')}</span><span>${t("The credential's own content checks out")}</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('lollipop')}</span><span>${t('It records a Lolly creation')}</span></div>
+            <div class="valid-vbadge is-warn"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('hash')}</span><span>${t("This file's bytes no longer match")}</span></div>
           </div>` : '';
   const verdictHtml = report.madeWithLolly
     ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(t(state.title))}</span>`

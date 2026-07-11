@@ -535,7 +535,8 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-details-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .cat-details-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
 .cat-details-actions .btn svg { width: 15px; height: 15px; }
-.cat-act-fav.is-fav { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
+/* fill (background/color) is aliased in parts/buttons.css's .btn--primary list */
+.cat-act-fav.is-fav { border-color: hsl(var(--primary)); }
 .cat-act-fav.is-fav svg { fill: currentColor; }
 .cat-act-danger { color: hsl(var(--destructive, 0 70% 50%)); }
 .cat-act-share.is-copied { color: hsl(var(--primary)); }

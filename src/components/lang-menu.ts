@@ -14,11 +14,7 @@
 import { LANGS, LANG_META, currentLang, switchLang, t, LANG_ICON_SVG, flagEmoji } from '../i18n.ts';
 import type { Lang, LangSwitchHost } from '../i18n.ts';
 import { escape } from '../utils.ts';
-import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
-
-// Route-change signals the web shell fires (see main.js) — any one dismisses an
-// open menu so it never outlives the view that spawned it.
-const NAV_EVENTS = ['hashchange', 'popstate', 'lolly:navigate'];
+import { mountBodyPopover } from './body-popover.ts';
 
 /** The trigger button markup — drop directly into a .gallery-topright cluster. */
 export function langFabHtml(): string {
@@ -29,29 +25,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
   if (!triggerEl) return () => {};
   const trigger = triggerEl; // const so closures see the narrowed (non-null) type
 
-  let menu: HTMLDivElement | null = null;
   let items: HTMLButtonElement[] = [];
-  let outside: ((e: PointerEvent) => void) | null = null;
-  let trap: FocusTrap | null = null;
-
-  function close(returnFocus = false): void {
-    if (!menu) return;
-    if (outside) document.removeEventListener('pointerdown', outside);
-    document.removeEventListener('keydown', onKey);
-    window.removeEventListener('resize', position);
-    NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNavAway));
-    outside = null;
-    trap?.release();
-    trap = null;
-    menu.remove();
-    menu = null;
-    items = [];
-    trigger.setAttribute('aria-expanded', 'false');
-    if (returnFocus) trigger.focus();
-  }
-
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(true); } };
-  const onNavAway = () => close();
 
   // Views like Tools/Catalog/Projects/Profile pin a fixed bottom bar
   // (.gallery-footer / .profile-footer, shared chrome); the tool view's export
@@ -72,17 +46,16 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
     return boundary;
   }
 
-  function position(): void {
-    if (!menu) return;
-    const r = trigger.getBoundingClientRect();
+  function position(el: HTMLDivElement, anchor: HTMLElement): void {
+    const r = anchor.getBoundingClientRect();
     const margin = 8;
     const vh = window.innerHeight;
-    menu.style.top = `${Math.round(r.bottom + margin)}px`;
-    menu.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
+    el.style.top = `${Math.round(r.bottom + margin)}px`;
+    el.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
     // As tall as the language list needs, capped at 90vh, and never crowding
     // into a fixed bottom bar below it.
     const available = bottomBoundary(vh) - r.bottom - margin * 2;
-    menu.style.maxHeight = `${Math.max(160, Math.min(available, vh * 0.9))}px`;
+    el.style.maxHeight = `${Math.max(160, Math.min(available, vh * 0.9))}px`;
   }
 
   function rove(active: HTMLElement, focus = true): void {
@@ -90,14 +63,8 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
     if (focus) active.focus();
   }
 
-  function open(): void {
-    if (menu) return;
+  const popover = mountBodyPopover(trigger, (el, pop) => {
     const active = currentLang();
-    const el = document.createElement('div');
-    menu = el;
-    el.className = 'lang-menu';
-    el.setAttribute('role', 'menu');
-    el.setAttribute('aria-label', escape(t('Language')));
     // Flags are decorative garnish (the nativeName is the accessible label), so the
     // flag cluster is aria-hidden. A fixed-width column keeps every name left-aligned
     // whether a language shows one flag or three.
@@ -109,9 +76,6 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
     el.innerHTML = `<div class="lang-menu-list" role="none">${LANGS.map(code =>
       `<button type="button" class="lang-menu-item" role="menuitemradio" data-lang="${code}" aria-checked="${code === active}">${flagsHtml(code)}<span class="lang-menu-name">${escape(LANG_META[code].nativeName)}</span></button>`,
     ).join('')}</div>`;
-    document.body.appendChild(el);
-    position();
-    trigger.setAttribute('aria-expanded', 'true');
 
     items = [...el.querySelectorAll<HTMLButtonElement>('.lang-menu-item')];
     const checked = items.find(b => b.getAttribute('aria-checked') === 'true') ?? items[0]!;
@@ -121,7 +85,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
       const btn = (e.target as Element).closest<HTMLButtonElement>('[data-lang]');
       if (!btn) return;
       const next = btn.dataset.lang as Lang;
-      close();
+      pop.close();
       void switchLang(host, next);
     });
     el.addEventListener('keydown', e => {
@@ -133,16 +97,11 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
       rove(items[(i + step + items.length) % items.length]!);
     });
 
-    outside = (e) => { if (menu && !menu.contains(e.target as Node) && !trigger.contains(e.target as Node)) close(); };
-    setTimeout(() => document.addEventListener('pointerdown', outside!), 0);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', position);
-    NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNavAway));
-    trap = trapFocus(el, { initialFocus: checked, inertBackground: false });
-  }
+    return checked;
+  }, { className: 'lang-menu', ariaLabel: escape(t('Language')), position });
 
-  const onClick = () => { menu ? close(true) : open(); };
+  const onClick = () => { popover.isOpen() ? popover.close(true) : popover.open(); };
   trigger.addEventListener('click', onClick);
 
-  return () => { close(); trigger.removeEventListener('click', onClick); };
+  return () => { popover.close(); trigger.removeEventListener('click', onClick); };
 }

@@ -23,7 +23,8 @@
 .me-title { margin: 0; font-size: 1.02rem; font-weight: 700; }
 .me-count { margin-inline-start: .5rem; font-size: .78rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
 .me-head-actions { margin-inline-start: auto; display: flex; gap: .5rem; }
-.me-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
+/* fill (background/color) is aliased in ../styles/parts/buttons.css's .btn--primary list */
+.me-primary { border-color: transparent; }
 .me-primary:hover { background: hsl(var(--primary) / .88); }
 [aria-busy="true"] { opacity: .6; pointer-events: none; }
 

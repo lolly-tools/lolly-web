@@ -12,6 +12,8 @@
  * canonical store, exactly like the theme (an undeclared `sfxMuted` field on the record).
  * Turning sound back ON plays a short confirming chirp; turning it off stays silent.
  */
+import { t } from '../i18n.ts';
+import { icon } from '../lib/icons.ts';
 import { isSfxMuted, setSfxMuted, playSfx } from '../lib/sfx.ts';
 import { getNeurospicy, setNeurospicyEnabled, applyNeurospicy } from '../lib/neurospicy.ts';
 import { syncNeuroDock, isNeuroDockCollapsed, reopenNeuroDock } from './neuro-dock.ts';
@@ -31,13 +33,11 @@ interface SoundToggleHost {
 /** The switch surface also drives Neurospicy Mode, which needs host.assets (loop list + bytes). */
 type NeuroHost = SoundToggleHost & Pick<HostV1, 'assets'>;
 
-// A heartbeat/waveform — the "beat" behind Neurospicy Mode's focus loop.
-const NEURO_ICON =
-  `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h3l2-7 4 18 3-14 2 7h6"/></svg>`;
-const ICON_ON =
-  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
-const ICON_OFF =
-  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/></svg>`;
+// A heartbeat/waveform — the "beat" behind Neurospicy Mode's focus loop. Path data
+// lives in lib/icons.ts as 'neuroBeat' — deduped against neuro-dock.ts's identical NOTE glyph.
+const NEURO_ICON = icon('neuroBeat', { size: 22 });
+const ICON_ON = icon('volumeOn', { size: 16 });
+const ICON_OFF = icon('volumeOff', { size: 16 });
 
 /**
  * Apply + persist a new mute state everywhere: the in-memory flag + localStorage mirror
@@ -68,7 +68,7 @@ export function createSoundToggle(host: SoundToggleHost): HTMLButtonElement {
     const on = !isSfxMuted();
     btn.innerHTML = on ? ICON_ON : ICON_OFF;
     btn.dataset.on = on ? 'true' : 'false';
-    const label = on ? 'Interface sounds: on — mute' : 'Interface sounds: off — unmute';
+    const label = on ? t('Interface sounds: on — mute') : t('Interface sounds: off — unmute');
     btn.setAttribute('aria-label', label);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     btn.title = label;
@@ -136,8 +136,8 @@ export function soundSwitchHtml(): string {
   const on = !isSfxMuted();
   return `<div class="sound-switch" data-sound-switch-root data-on="${on}">
       <span class="sound-switch-icon">${on ? ICON_ON : ICON_OFF}</span>
-      <span class="sound-switch-label">Sound:</span>
-      <button type="button" class="sound-switch-track" role="switch" aria-checked="${on}" aria-label="Interface sounds" data-sound-switch>
+      <span class="sound-switch-label">${t('Sound')}:</span>
+      <button type="button" class="sound-switch-track" role="switch" aria-checked="${on}" aria-label="${t('Interface sounds')}" data-sound-switch>
         <span class="sound-switch-knob"></span>
       </button>
     </div>${flagEnabledSync('neurospicy') ? neurospicyHtml() : ''}`;
@@ -154,12 +154,12 @@ function neurospicyHtml(): string {
   return `<div class="neurospicy${muted ? ' is-muted' : ''}" data-neurospicy-root>
       <div class="sound-switch" data-on="${on}">
         <span class="sound-switch-icon">${NEURO_ICON}</span>
-        <span class="sound-switch-label">Neurospicy:</span>
-        <button type="button" class="sound-switch-track" role="switch" aria-checked="${on}" aria-label="Neurospicy Mode — a looping focus beat" data-neurospicy-switch>
+        <span class="sound-switch-label">${t('Neurospicy')}:</span>
+        <button type="button" class="sound-switch-track" role="switch" aria-checked="${on}" aria-label="${t('Neurospicy Mode — a looping focus beat')}" data-neurospicy-switch>
           <span class="sound-switch-knob"></span>
         </button>
       </div>
-      ${on && isMobileViewport() && isNeuroDockCollapsed() ? `<button type="button" class="neuro-show-btn" data-neuro-show>Show player</button>` : ''}
+      ${on && isMobileViewport() && isNeuroDockCollapsed() ? `<button type="button" class="neuro-show-btn" data-neuro-show>${t('Show player')}</button>` : ''}
     </div>`;
 }
 

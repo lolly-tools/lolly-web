@@ -52,6 +52,24 @@
   }
 }
 
+/* ── In-between widths: nudge the tabs left, before they collapse to icons ──────
+   The pill is centred on the VIEWPORT while the action cluster is right-anchored,
+   so the two know nothing about each other. That's fine in English, but a language
+   with long labels (pt: "Ferramentas · Projetos · Catálogo") grows the pill until
+   its right edge runs under the cluster — "Catálogo" ends up beneath the filter and
+   history buttons. Above the 640px collapse there's still room, we're just centring
+   against the wrong box: centre the pill in the space to the LEFT of the cluster
+   instead of the whole viewport, and tighten the tab padding so long labels fit. */
+@media (min-width: 641px) and (max-width: 900px) {
+  .gallery-topbar .view-toggle-wrap {
+    left: .75em;
+    right: 19em;          /* the cluster's footprint: filter + history + lang + profile pill */
+    transform: none;      /* bounded box now, so the translateX(-50%) centring goes */
+    justify-content: center;
+  }
+  .gallery-topbar .view-toggle-opt { padding: 6px 12px; }
+}
+
 /* ── Consolidated profile menu (mobile) — opened by tapping the avatar. ─────────
    Gathers what the bar can't show at this width: theme switcher, saved sessions,
    and a link to the full Settings page. Body-mounted popover; matches the filter
@@ -148,7 +166,7 @@
   padding: 0;
   border: 1px solid hsl(var(--primary));
   border-radius: var(--radius);
-  background: hsl(var(--background) / 0.5);
+  background: hsl(var(--muted) / 0.5);
   color: hsl(var(--primary));
   cursor: pointer;
   -webkit-backdrop-filter: blur(2px);

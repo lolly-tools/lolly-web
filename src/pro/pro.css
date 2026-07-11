@@ -157,7 +157,8 @@
 }
 .pro-btn:hover:not(:disabled) { background: hsl(var(--accent)); }
 .pro-btn:disabled { opacity: .5; cursor: not-allowed; }
-.pro-btn--primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
+/* fill (background/color) is aliased in ../styles/parts/buttons.css's .btn--primary list */
+.pro-btn--primary { border-color: hsl(var(--primary)); }
 .pro-btn--primary:hover:not(:disabled) { filter: brightness(1.1); background: hsl(var(--primary)); }
 
 /* Grid */
@@ -418,10 +419,9 @@ body.pro-scrubbing, body.pro-scrubbing * { cursor: ew-resize !important; user-se
    2. .pro-cols-action (Hide/Show all) — secondary: outlined uppercase pill.
    3. .pro-collapsed-tag (restore a hidden column) — quietest: small ghost pill. */
 
-/* 1 — filled, leads the bar. */
+/* 1 — filled, leads the bar. Fill (background/color) is aliased in
+   ../styles/parts/buttons.css's .btn--primary list. */
 .pro-addrow .pro-btn {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
   border-color: hsl(var(--primary));
   border-top:none;
   font-weight: 700;

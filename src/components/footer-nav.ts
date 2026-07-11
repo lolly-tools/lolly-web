@@ -6,14 +6,17 @@
 // classes/behaviour differ), but the surrounding nav links are shared verbatim.
 import { escape } from '../utils.ts';
 import { t, docsHref } from '../i18n.ts';
+import { icon } from '../lib/icons.ts';
 
-/** The nav-bar glyphs (Lucide house style), shared so all three footers match. */
+/** The nav-bar glyphs (Lucide house style), shared so all three footers match.
+ *  Path data lives in lib/icons.ts — .shield is 'shieldCheck' there, deduped
+ *  against profile.ts's identical VERIFY_SHIELD (component-audit rec 5). */
 export const NAV_ICONS = {
-  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
-  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
-  zap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>',
-  help: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
-  dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>',
+  search: icon('search'),
+  shield: icon('shieldCheck'),
+  zap: icon('zap'),
+  help: icon('help'),
+  dashboard: icon('dashboard'),
 } as const;
 
 /** The standard `.gallery-search` field (Tools gallery + Catalogue use it verbatim). */

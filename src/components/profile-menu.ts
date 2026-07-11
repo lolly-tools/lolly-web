@@ -19,14 +19,11 @@
 import { THEMES, THEME_LABELS, currentTheme, applyTheme } from '../theme.ts';
 import { playThemeSfx } from '../lib/sfx.ts';
 import { escape } from '../utils.ts';
-import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
+import { mountBodyPopover } from './body-popover.ts';
 import { t } from '../i18n.ts';
 
 // Matches the gallery/projects mobile breakpoint (the chrome only collapses there).
 const MOBILE = '(max-width: 640px)';
-// Route-change signals the web shell fires (see main.js) — any one dismisses an
-// open menu so it never outlives the view that spawned it.
-const NAV_EVENTS = ['hashchange', 'popstate', 'lolly:navigate'];
 
 interface ProfileMenuHost {
   profile: {
@@ -48,49 +45,8 @@ export function attachProfileMenu(
   trigger.setAttribute('aria-haspopup', 'menu');
   trigger.setAttribute('aria-expanded', 'false');
 
-  let menu: HTMLDivElement | null = null;
-  let outside: ((e: PointerEvent) => void) | null = null;
-  let trap: FocusTrap | null = null;
-
-  function close(returnFocus = false): void {
-    if (!menu) return;
-    if (outside) document.removeEventListener('pointerdown', outside);
-    document.removeEventListener('keydown', onKey);
-    window.removeEventListener('resize', onResize);
-    NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNavAway));
-    outside = null;
-    trap?.release();   // restore inert siblings + drop the Tab-wrap listener
-    trap = null;
-    menu.remove();
-    menu = null;
-    trigger.setAttribute('aria-expanded', 'false');
-    if (returnFocus) trigger.focus();
-  }
-
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(true); } };
-  // A viewport resize past the breakpoint (rotate / desktop) makes the menu moot —
-  // the inline buttons take over again — so just dismiss it rather than reflow.
-  const onResize = () => { if (!window.matchMedia(MOBILE).matches) close(); };
-  // The menu lives on document.body, so a route change would otherwise leave it
-  // orphaned (the view's innerHTML swap can't reach it). Dismiss on any navigation.
-  const onNavAway = () => close();
-
-  function position(): void {
-    if (!menu) return;
-    const r = trigger.getBoundingClientRect();
-    menu.style.top = `${Math.round(r.bottom + 8)}px`;
-    // Right-align the panel with the avatar's right edge.
-    menu.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
-  }
-
-  function open(): void {
-    if (menu) return;
+  const popover = mountBodyPopover(trigger, (el, pop) => {
     const theme = currentTheme();
-    const el = document.createElement('div');
-    menu = el;
-    el.className = 'profile-menu';
-    el.setAttribute('role', 'menu');
-    el.setAttribute('aria-label', escape(t('Profile and settings')));
     el.innerHTML = `
       <div class="profile-menu-theme" role="group" aria-label="${escape(t('Theme'))}">
         ${THEMES.map(seg => `<button type="button" class="profile-menu-seg" role="menuitemradio" data-theme-seg="${seg}" aria-checked="${seg === theme}">${escape(t(THEME_LABELS[seg] ?? seg))}</button>`).join('')}
@@ -106,9 +62,6 @@ export function attachProfileMenu(
         <span>${t('Settings')}</span>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
       </a>`;
-    document.body.appendChild(el);
-    position();
-    trigger.setAttribute('aria-expanded', 'true');
 
     // Theme: apply immediately + persist to the profile (canonical store), like the
     // profile view's segmented control. Keep the menu open so it can be re-tried.
@@ -154,36 +107,36 @@ export function attachProfileMenu(
     });
 
     el.querySelector('[data-act="history"]')?.addEventListener('click', () => {
-      close();
+      pop.close();
       onHistory?.();
     });
     // Brand wizard + Settings are plain hash links; just let them navigate,
     // closing the menu first. The wizard entry shows always — a branded user
     // re-running it is a supported path (it overwrites the user tokens).
-    el.querySelector('[data-act="brand"]')?.addEventListener('click', () => close());
-    el.querySelector('[data-act="settings"]')?.addEventListener('click', () => close());
+    el.querySelector('[data-act="brand"]')?.addEventListener('click', () => pop.close());
+    el.querySelector('[data-act="settings"]')?.addEventListener('click', () => pop.close());
 
-    outside = (e) => { if (menu && !menu.contains(e.target as Node) && !trigger.contains(e.target as Node)) close(); };
-    setTimeout(() => document.addEventListener('pointerdown', outside!), 0);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onResize);
-    NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNavAway));
     // Contain keyboard focus: wrap Tab/Shift+Tab within the menu, moving initial
-    // focus to the checked theme segment. Escape is still handled by onKey above,
-    // so no onEscape is passed here. inertBackground is off — the avatar trigger
-    // lives in the branch that would get inerted, and inert cascades with no way
-    // for a descendant to opt back out, which would kill the trigger's
+    // focus to the checked theme segment. inertBackground is off — the avatar
+    // trigger lives in the branch that would get inerted, and inert cascades with
+    // no way for a descendant to opt back out, which would kill the trigger's
     // re-tap-to-close affordance (and looks like the whole page is stuck).
-    trap = trapFocus(el, { initialFocus: checkedSeg, inertBackground: false });
-  }
+    return checkedSeg;
+  }, {
+    className: 'profile-menu',
+    ariaLabel: escape(t('Profile and settings')),
+    // A viewport resize past the breakpoint (rotate / desktop) makes the menu moot —
+    // the inline buttons take over again — so just dismiss it rather than reflow.
+    onResize: (pop) => { if (!window.matchMedia(MOBILE).matches) pop.close(); },
+  });
 
   const onClick = (e: MouseEvent) => {
     // Desktop: leave the avatar as a direct link to the profile page.
     if (!window.matchMedia(MOBILE).matches) return;
     e.preventDefault();
-    menu ? close(true) : open();
+    popover.isOpen() ? popover.close(true) : popover.open();
   };
   trigger.addEventListener('click', onClick);
 
-  return () => { close(); trigger.removeEventListener('click', onClick); };
+  return () => { popover.close(); trigger.removeEventListener('click', onClick); };
 }

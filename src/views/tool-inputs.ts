@@ -275,7 +275,21 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const selStart     = (active as HTMLInputElement | null)?.selectionStart;
   const selEnd       = (active as HTMLInputElement | null)?.selectionEnd;
 
-  const renderOneInput = (input: InputModelItem): string => {
+  // A vector that carries the SAME trailing index as the colour right above it is
+  // that colour's sub-control, not its sibling — mesh-gradient's `color3` → `pos3`.
+  // Marked here (the row markup is the only place that can see both) so the sidebar
+  // can tuck the pair together; the shell CSS can't correlate two ids on its own.
+  // Deliberately narrow: filter-duotone's `colorBg` → `imageFraming` shares no index
+  // and stays an ordinary sibling, which is correct — its framing isn't the colour's.
+  const indexOf = (id: string): string | null => id.match(/(\d+)$/)?.[1] ?? null;
+  const isSubControl = (input: InputModelItem, prev: InputModelItem | null): boolean =>
+    !!prev
+    && input.control === 'vector'
+    && (prev.control === 'color-picker' || prev.control === 'palette-picker')
+    && indexOf(input.id) !== null
+    && indexOf(input.id) === indexOf(prev.id);
+
+  const renderOneInput = (input: InputModelItem, prev: InputModelItem | null): string => {
     const isCheckbox = input.control === 'checkbox';
     // The datetime field is a flatpickr (altInput) control, and the whole panel
     // re-renders on every keystroke — a floating label would re-animate from its
@@ -289,7 +303,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // `vector` input forwards to its first number field. Wrap these in a <div role=group>
     // instead: the caption still names them (aria-labelledby), but it never proxies clicks.
     const isComposite = ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker'].includes(input.control);
-    const cls = `input-row${isCheckbox ? ' input-row--checkbox' : ''}${isStaticLabel ? ' input-row--static-label' : ''}`;
+    const cls = `input-row${isCheckbox ? ' input-row--checkbox' : ''}${isStaticLabel ? ' input-row--static-label' : ''}${isSubControl(input, prev) ? ' input-row--sub' : ''}`;
     const valueTag = input.control === 'slider'
       ? ` <span class="input-value">${parseFloat(String(input.value ?? 0))}</span>`
       : '';
@@ -321,6 +335,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   const parts: string[] = [];
   let openSection: string | null = null;
+  let prevInput: InputModelItem | null = null;
   for (const input of panelModel) {
     const sec = input.section ?? null;
     if (sec !== openSection) {
@@ -330,8 +345,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         parts.push(`<details class="input-section"${wasOpen ? ' open' : ''}><summary class="input-section-summary">${escape(sec)}</summary><div class="input-section-body">`);
       }
       openSection = sec;
+      prevInput = null;   // a section break ends any pairing
     }
-    parts.push(renderOneInput(input));
+    parts.push(renderOneInput(input, prevInput));
+    prevInput = input;
   }
   if (openSection !== null) parts.push('</div></details>');
   // Destroy flatpickr instances on the outgoing markup so their body-level calendars +
