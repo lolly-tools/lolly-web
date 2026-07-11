@@ -28,7 +28,9 @@ import { coerceTokensDoc, summarizeTokensDoc, extractPenpotProject, extractSvgCo
 import { installUserTokens } from '../bridge/tokens.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
 import { mountBrandEditor, BRAND_TABS } from '../lib/brand-editor.ts';
-import type { BrandTabKey } from '../lib/brand-editor.ts';
+import type { BrandTabKey, BrandEditorHandle } from '../lib/brand-editor.ts';
+import { setupMobileSheet } from '../lib/mobile-sheet.ts';
+import type { MobileSheetHandle } from '../lib/mobile-sheet.ts';
 import { carryUserFontTokens } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
 import { unzipBrandBytes } from '../brand-transfer.ts';
@@ -110,8 +112,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       <!-- The persistent action row: Import/Export always on; Save & continue
            appears on change. One row, one place, whichever step is open. -->
       <div class="start-actions" role="toolbar" aria-label="Brand actions">
-        <button type="button" class="be-btn" data-start-import aria-expanded="false">Import&hellip;</button>
-        <button type="button" class="be-btn" data-start-export data-sfx="whoosh">Export</button>
+        <button type="button" class="be-btn" data-start-import aria-expanded="false">↓ Import&hellip;</button>
+        <button type="button" class="be-btn" data-start-export data-sfx="whoosh">↑ Export</button>
         <span class="start-actions-note" data-start-note aria-live="polite"></span>
         <button type="button" class="be-cta start-save" data-start-save hidden></button>
       </div>
@@ -207,11 +209,41 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     panel.setAttribute('aria-labelledby', `start-tab-${key}`);
   });
 
+  // Sticky geometry for the Colour tab's split side pane: the action row is
+  // sticky and its height GROWS (Save & continue appears, the note wraps), so
+  // the offset the pane sticks under can't be hard-coded — measure the row
+  // live and publish it as --be-split-top on the editor root (brand-studio.css
+  // reads it for the pane's top + max-height). Guarded on editorRoot: a locked
+  // build or a failed editor mount has no split pane to position.
+  const actionsRow = viewEl.querySelector<HTMLElement>('.start-actions');
+  let splitTopRO: ResizeObserver | null = null;
+  if (editorRoot && actionsRow && typeof ResizeObserver !== 'undefined') {
+    const setSplitTop = (): void => {
+      // The row's sticky top (10px) + its live height + 12px breathing room.
+      editorRoot.style.setProperty('--be-split-top', `${Math.round(actionsRow.getBoundingClientRect().height) + 22}px`);
+    };
+    splitTopRO = new ResizeObserver(setSplitTop);
+    splitTopRO.observe(actionsRow);
+    setSplitTop();
+  }
+
+  // ── Mobile palette sheet (≤640px) — mounted only while the Colour tab shows,
+  // and only when the editor actually mounted (a locked build renders no studio;
+  // a failed mount leaves editor null / editorRoot missing — nothing to mirror).
+  // Torn down on every tab switch away and on view unmount.
+  let paletteSheet: PaletteSheet | null = null;
+  const syncPaletteSheet = (): void => {
+    const want = activeTab === 'color' && editor !== null && !!editorRoot;
+    if (want && !paletteSheet) paletteSheet = mountPaletteSheet(shell, editor!, editorRoot!);
+    else if (!want && paletteSheet) { paletteSheet.teardown(); paletteSheet = null; }
+  };
+
   // ── Tabs ─────────────────────────────────────────────────────────────────────
   const selectTab = (key: BrandTabKey, { focus = false } = {}): void => {
     activeTab = key;
     editor?.closeOverlays(); // a popover anchored to the outgoing tab must not linger
     editorRoot?.setAttribute('data-active-tab', key);
+    syncPaletteSheet();
     viewEl.querySelectorAll<HTMLElement>('[data-start-tab]').forEach(btn => {
       const on = btn.dataset.startTab === key;
       btn.classList.toggle('is-active', on);
@@ -590,6 +622,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   //    the field, so they never reach this) ─────────────────────────────────────
   const onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape' || installing) return; // no Esc-teardown mid-install
+    // The Esc stack: floating popovers first (they close themselves and
+    // stopImmediatePropagation before this handler — the query is a
+    // belt-and-braces guard so the sheet never folds under a popover that
+    // somehow let the key through), then an expanded palette sheet folds to
+    // peek, then the import panel, then back to the gallery.
+    const popoverOpen = !!editorMount.querySelector(
+      '[data-be-editor]:not([hidden]), [data-grad-pop]:not([hidden]), .color-picker-field:not(.color-field--inline) .color-popover:not([hidden])');
+    if (!popoverOpen && paletteSheet?.collapse()) { e.preventDefault(); return; }
     e.preventDefault();
     // An open import panel folds first; a second Esc leaves.
     if (!importPanel.hidden) {
@@ -602,6 +642,133 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   document.addEventListener('keydown', onKey);
   (viewEl as ViewElement)._cleanup = () => {
     document.removeEventListener('keydown', onKey);
+    splitTopRO?.disconnect();
+    paletteSheet?.teardown();
+    paletteSheet = null;
     editor?.teardown();
+  };
+}
+
+// ── Mobile palette sheet (≤640px, Colour tab only) ───────────────────────────
+// A fixed bottom sheet + sibling grip (both DIRECT children of `.start`, which
+// the CSS specificity depends on — see brand-studio.css) mirroring the
+// COMMITTED palette so it stays visible while the derive/generate panels
+// scroll; the desktop split side pane serves ≥1100px, this serves phones. The
+// mirror is READ-ONLY and never reparents live tiles: tapping a chip snaps the
+// sheet to peek FIRST, then centres the real [data-be-tile] and forwards a
+// click, so the swatch editor opens on the real grid above the peek strip.
+// It re-renders off the palette-change seam (editor.onPalette — fired from
+// BOTH repaintPalette and persist(), double-fires included), by re-reading the
+// grid the editor just painted — the same walkSwatches output, same theme.
+interface PaletteSheet {
+  /** Fold an expanded sheet back to peek; true when the Esc was consumed. */
+  collapse: () => boolean;
+  teardown: () => void;
+}
+
+function mountPaletteSheet(shell: HTMLElement, editor: BrandEditorHandle, editorRoot: HTMLElement): PaletteSheet {
+  const sheet = document.createElement('div');
+  sheet.className = 'stu-sheet';
+  sheet.setAttribute('role', 'region');
+  sheet.setAttribute('aria-label', 'Your palette');
+  sheet.innerHTML = `
+    <div class="stu-sheet-head">
+      <div class="stu-sheet-strip" data-stu-strip aria-label="Brand palette"></div>
+    </div>
+    <div class="stu-sheet-body" data-stu-groups></div>`;
+  const grip = document.createElement('button');
+  grip.type = 'button';
+  grip.className = 'stu-sheet-grip';
+  grip.setAttribute('aria-label', 'Drag to resize the palette, tap to expand');
+  shell.append(sheet, grip);
+
+  const stripEl = sheet.querySelector<HTMLElement>('[data-stu-strip]')!;
+  const groupsEl = sheet.querySelector<HTMLElement>('[data-stu-groups]')!;
+  let handle: MobileSheetHandle | null = null;
+
+  const chipHtml = (t: HTMLElement): string => {
+    const sw = t.style.getPropertyValue('--sw').trim() || 'transparent';
+    const label = t.getAttribute('aria-label') ?? '';
+    return `<button type="button" class="stu-chip" data-stu-tile="${escape(t.dataset.beTile ?? '')}"
+      style="--sw:${escape(sw)}" aria-label="${escape(label)}" title="${escape(label)}"></button>`;
+  };
+  const render = (): void => {
+    let stripHtml = '', bodyHtml = '';
+    editorRoot.querySelectorAll<HTMLElement>('[data-be-pal] .be-pal-group').forEach(g => {
+      // The group label's first node is the name text (a count <span> follows).
+      const name = g.querySelector('.be-pal-group-label')?.firstChild?.textContent?.trim() ?? 'Colours';
+      const chips = [...g.querySelectorAll<HTMLElement>('[data-be-tile]')].map(chipHtml).join('');
+      if (!chips) return;
+      stripHtml += chips;
+      bodyHtml += `
+        <div class="stu-sheet-group">
+          <span class="stu-sheet-group-label">${escape(name)}</span>
+          <div class="stu-sheet-grid">${chips}</div>
+        </div>`;
+    });
+    stripEl.innerHTML = stripHtml;
+    groupsEl.innerHTML = bodyHtml;
+    handle?.refresh(); // the peek strip's height may have changed — re-measure
+  };
+  render(); // populate BEFORE the driver mounts so its first peek measure is real
+
+  handle = setupMobileSheet(shell, sheet, grip, {
+    anchor: 'bottom',
+    initial: 'peek', // the always-visible guarantee, without burying the page
+    names: {
+      heightVar: '--stu-sheet-h',
+      stateAttr: 'data-stu-sheet',
+      peekVar: '--stu-peek-h',
+      draggingClass: 'is-stu-sheet-dragging',
+      headerSel: '.stu-sheet-head',
+    },
+  });
+
+  // The driver's grip handling is pointer-only, so keyboard activation
+  // (Enter/Space — a click with detail 0 and no pointer sequence) would
+  // otherwise do nothing on a focusable button. Step through the stops with
+  // the same bounce as a tap; real pointer taps (detail ≥ 1) already went
+  // through the driver's pointerup, so they're ignored here.
+  let keyDir: 1 | -1 = 1;
+  grip.addEventListener('click', (e) => {
+    if (e.detail !== 0 || !handle) return;
+    const states = ['peek', 'half', 'full'] as const;
+    const idx = Math.max(0, states.indexOf(handle.state()));
+    if (idx === 0) keyDir = 1;
+    else if (idx === states.length - 1) keyDir = -1;
+    handle.setState(states[idx + keyDir]!);
+  });
+
+  const unsubPalette = editor.onPalette(render);
+  const refresh = (): void => handle?.refresh();
+  const mql = window.matchMedia('(max-width: 640px)');
+  window.addEventListener('orientationchange', refresh);
+  mql.addEventListener('change', refresh); // a display:none-at-mount head measures 0 — re-measure when the sheet appears
+
+  // Tap = navigate, not edit-in-place.
+  sheet.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-stu-tile]');
+    if (!chip) return;
+    handle?.setState('peek');
+    const tile = editorRoot.querySelector<HTMLElement>(`[data-be-tile="${chip.dataset.stuTile}"]`);
+    if (!tile) return;
+    tile.scrollIntoView({ block: 'center' });
+    tile.click();
+  });
+
+  return {
+    collapse: () => {
+      if (!mql.matches || !handle || handle.state() === 'peek') return false;
+      handle.setState('peek');
+      return true;
+    },
+    teardown: () => {
+      unsubPalette();
+      window.removeEventListener('orientationchange', refresh);
+      mql.removeEventListener('change', refresh);
+      handle?.teardown();
+      sheet.remove();
+      grip.remove();
+    },
   };
 }

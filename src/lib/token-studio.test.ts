@@ -18,7 +18,8 @@ import { TOKEN_EXT } from '@lolly/engine';
 import { leafAt } from './brand-doc.ts';
 import {
   listStudioTokens, addStudioToken, setStudioTokenValue, renameStudioToken,
-  deleteStudioToken, defaultValueFor, gradientCss, formatStudioValue,
+  deleteStudioToken, defaultValueFor, gradientCss, resolveStopHex, formatStudioValue,
+  gradientAliasRefCount, materializeGradientAliases,
 } from './token-studio.ts';
 import type { StudioKind, StudioToken, GradientStop } from './token-studio.ts';
 
@@ -322,6 +323,98 @@ test('gradientCss: a single surviving stop renders flat; none at all → empty s
   assert.equal(gradientCss([]), '');
   assert.equal(gradientCss('linear-gradient(red, blue)'), '', 'not a stop array');
   assert.equal(gradientCss(undefined), '');
+});
+
+// ── Alias stops (gradients that wear palette swatches) ───────────────────────
+
+test('gradient stops accept {alias} colours; an angle-only edit round-trips them unchanged', () => {
+  const doc = load();
+  const p = addStudioToken(doc, 'gradient', 'Hero', {
+    stops: [{ color: '{color.ramp.primary.1}', position: 0 }, { color: '#ffffff', position: 1 }],
+    angle: 135,
+  })!;
+  assert.deepEqual(leafAt(doc, p)!.$value, [
+    { color: '{color.ramp.primary.1}', position: 0 },
+    { color: '#ffffff', position: 1 },
+  ]);
+  // The write gate: an angle-only edit sends the STORED stops back through
+  // readGradientInput → normStops — aliases must survive verbatim.
+  const stored = leafAt(doc, p)!.$value as GradientStop[];
+  assert.equal(setStudioTokenValue(doc, p, { stops: stored, angle: 90 }), true);
+  assert.deepEqual(leafAt(doc, p)!.$value, [
+    { color: '{color.ramp.primary.1}', position: 0 },
+    { color: '#ffffff', position: 1 },
+  ]);
+  assert.equal((leafAt(doc, p)!.$extensions as Record<string, { angle?: number }>)[TOKEN_EXT]!.angle, 90);
+});
+
+test('legacy literal gradients round-trip the write gate byte-identically', () => {
+  const doc = load();
+  const p = addStudioToken(doc, 'gradient', 'Fade', {
+    stops: [{ color: '#102030', position: 0 }, { color: 'oklch(60% 0.1 250)', position: 1 }], angle: 30,
+  })!;
+  const before = JSON.stringify(leafAt(doc, p));
+  assert.equal(setStudioTokenValue(doc, p, { stops: leafAt(doc, p)!.$value }), true);
+  assert.equal(JSON.stringify(leafAt(doc, p)), before);
+});
+
+test('gradientCss resolves alias stops through opts.resolve; junk answers die at colorToHex', () => {
+  const stops = [
+    { color: '{color.brand.a}', position: 0 },
+    { color: '{color.missing}', position: 0.5 }, // resolver can't answer → dropped
+    { color: '#0000ff', position: 1 },
+  ];
+  const resolve = (ref: string): unknown =>
+    ref === '{color.brand.a}' ? '#ff0000'
+      : ref === '{color.evil}' ? 'red;background:url(//evil)'
+      : undefined;
+  assert.equal(gradientCss(stops, 90, { resolve }), 'linear-gradient(90deg, #ff0000 0%, #0000ff 100%)');
+  // No resolver at all: alias stops drop, literals still render.
+  assert.equal(gradientCss(stops, 90), 'linear-gradient(90deg, #0000ff 100%, #0000ff 100%)');
+  // A resolver answering with a CSS-injection string is re-validated away.
+  const evil = gradientCss([{ color: '{color.evil}', position: 0 }, { color: '#00ff00', position: 1 }], 90, { resolve });
+  assert.ok(!evil.includes('evil'));
+});
+
+test("gradientCss space:'oklch' emits perceptual interpolation; 'srgb' stays plain", () => {
+  const stops = [{ color: '#ff0000', position: 0 }, { color: '#0000ff', position: 1 }];
+  assert.equal(gradientCss(stops, 45, { space: 'oklch' }), 'linear-gradient(45deg in oklch, #ff0000 0%, #0000ff 100%)');
+  assert.match(gradientCss(stops, 45, { space: 'srgb' }), /^linear-gradient\(45deg, /);
+});
+
+test('resolveStopHex: literal, alias with/without resolver, junk resolver output', () => {
+  assert.equal(resolveStopHex({ color: '#123456', position: 0 }), '#123456');
+  assert.equal(resolveStopHex({ color: 'oklch(60% 0.1 250)', position: 0 })?.[0], '#');
+  assert.equal(resolveStopHex({ color: '{color.x}', position: 0 }), null, 'alias without a resolver');
+  assert.equal(resolveStopHex({ color: '{color.x}', position: 0 }, () => '#ff0000'), '#ff0000');
+  assert.equal(resolveStopHex({ color: '{color.x}', position: 0 }, () => 'red;background:url(//evil)'), null);
+  assert.equal(resolveStopHex({ color: '{color.x}', position: 0 }, () => ({ nope: 1 })), null, 'non-colour object');
+  assert.equal(resolveStopHex({ color: '{color.x}', position: 0 }, () => { throw new Error('boom'); }), null, 'thrown resolver contained');
+});
+
+test('materializeGradientAliases pins approved refs; gradientAliasRefCount counts them', () => {
+  const doc = load();
+  const p = addStudioToken(doc, 'gradient', 'Hero', {
+    stops: [
+      { color: '{color.custom.sun}', position: 0 },
+      { color: '{color.ramp.primary.5}', position: 0.5 },
+      { color: '#ffffff', position: 1 },
+    ], angle: 45,
+  })!;
+  assert.equal(gradientAliasRefCount(doc, 'color.custom.sun'), 1);
+  assert.equal(gradientAliasRefCount(doc, 'color.nope'), 0);
+  const n = materializeGradientAliases(doc, ref => ref === '{color.custom.sun}', () => '#ffcc00');
+  assert.equal(n, 1);
+  assert.deepEqual(leafAt(doc, p)!.$value, [
+    { color: '#ffcc00', position: 0 },
+    { color: '{color.ramp.primary.5}', position: 0.5 },
+    { color: '#ffffff', position: 1 },
+  ]);
+  // An unanswerable resolver leaves the stop alone (render guards handle it) …
+  assert.equal(materializeGradientAliases(doc, () => true, () => null), 0);
+  // … and so does one answering with something colorToHex can't read.
+  assert.equal(materializeGradientAliases(doc, () => true, () => 'not a colour!'), 0);
+  assert.equal(gradientAliasRefCount(doc, 'color.ramp.primary.5'), 1, 'the unpinned alias survives');
 });
 
 test('formatStudioValue: short display strings per kind', () => {

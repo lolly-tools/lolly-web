@@ -410,6 +410,17 @@ background-image:
   .be-editor { width: min(300px, calc(100vw - 3rem)); }
 }
 
+/* ── Colour tab muting — the quiet disclosures. Print & screen and Fine-tune
+      reuse the swatch popover's folded details pattern (.be-subst-details);
+      state chips keep a folded summary honest. */
+.be-print-details { margin-top: .45rem; }
+.be-print-details .be-subst { margin-top: .5rem; }
+.be-finetune-body { display: grid; gap: .8rem; padding-top: .7rem; }
+/* Download row — demoted below the palette itself, compact. */
+.be-pal-actions--dl { margin: 1.1rem 0 0; }
+/* Gradients list — folded with a count chip while unopened. */
+.be-grads-details .be-grad-list { margin-top: .7rem; }
+
 /* ── Tab panels — the host view (start.ts) sets data-active-tab on .be; every
       panel stays mounted (wiring intact) and CSS shows just the active one.
       Without the attribute (no tab bar) every panel shows, stacked. */
@@ -420,6 +431,60 @@ background-image:
 .be[data-active-tab="type"] > [data-be-tab-panel="type"],
 .be[data-active-tab="tokens"] > [data-be-tab-panel="tokens"],
 .be[data-active-tab="catalogue"] > [data-be-tab-panel="catalogue"] { display: grid; }
+
+/* ── Colour tab split (≥1100px) — main column | draggable divider | sticky
+      palette side pane (lib/studio-split.ts drives --be-side-w/.is-collapsed).
+      GUARD: the side pane must NEVER get a z-index, transform or contain — the
+      swatch popover (.be-editor, z-index 30) positions against `.be` and has
+      to keep beating the sticky action row (z-index 20); any of those would
+      trap it in a new stacking/containing context. Below 1100px the divider is
+      display:none and the side content simply follows the main column in flow.
+      (This block sits AFTER the .be-tab rules above — the column-gap override
+      relies on source order at equal specificity.) */
+.be-split-main, .be-split-side { display: grid; gap: 1.1rem; align-content: start; min-width: 0; }
+.be-split-divider { display: none; }
+@media (min-width: 1100px) {
+  .be-tab--split {
+    grid-template-columns: minmax(0, 1fr) 16px minmax(280px, var(--be-side-w, 400px));
+    column-gap: 0; /* the divider's 16px track IS the gutter */
+    align-items: start;
+  }
+  .be-tab--split.is-collapsed { grid-template-columns: minmax(0, 1fr) 16px 0; }
+  .be-tab--split.is-collapsed .be-split-side { overflow: hidden; }
+  .be-split-side {
+    position: sticky;
+    top: var(--be-split-top, 72px);
+    max-height: calc(100vh - var(--be-split-top, 72px) - 16px);
+    max-height: calc(100dvh - var(--be-split-top, 72px) - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* The pane is a narrow column — stack the wheel above the grid. */
+  .be-split-side .be-pal-split { grid-template-columns: 1fr; }
+  .be-split-divider {
+    display: block;
+    position: relative;
+    align-self: stretch;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  /* The visible grabber: a slim full-perimeter pill centred in the 16px track
+     (never a single-edge border). Quiet until hovered/focused/dragged. */
+  .be-split-divider::after {
+    content: "";
+    position: absolute;
+    inset: 0 6px;
+    border-radius: 999px;
+    background: hsl(var(--border) / .5);
+    transition: background 0.12s;
+  }
+  .be-split-divider:hover::after,
+  .be-split-divider:focus-visible::after,
+  .be-split-divider.is-dragging::after { background: hsl(var(--primary) / .45); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .be-split-divider::after { transition: none; }
+}
 
 /* ── Colour-from-logo suggestion (Colour tab, fed by the Logos tab). */
 .be-suggest { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: -.3rem 0 .8rem; }
@@ -536,18 +601,81 @@ background-image:
 .be-grad-meta { display: grid; gap: .3rem; min-width: 0; flex: 1 1 auto; }
 .be-grad-name { font-size: .78rem; font-weight: 600; }
 .be-grad-stops { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
-.be-grad-stop input[type="color"] { width: 26px; height: 22px; padding: 0; border: 1px solid hsl(var(--input)); border-radius: 5px; background: none; cursor: pointer; }
+/* Stop chips — each stop wears its (resolved) colour; an alias chip carries a
+   corner dot so "follows the swatch" is visible at a glance. */
+.be-grad-stopwrap { position: relative; display: inline-flex; }
+.be-grad-stop-chip {
+  position: relative; width: 26px; height: 22px; padding: 0; cursor: pointer;
+  border: 1px solid hsl(var(--input)); border-radius: 5px;
+  background:
+    linear-gradient(var(--sw, transparent), var(--sw, transparent)),
+    repeating-conic-gradient(hsl(var(--muted-foreground) / .28) 0% 25%, transparent 0% 50%) 0 0 / 8px 8px;
+}
+.be-grad-stop-chip:hover { border-color: hsl(var(--primary) / .55); }
+.be-grad-stop-chip.is-ref::after {
+  content: ''; position: absolute; right: 2px; bottom: 2px; width: 5px; height: 5px;
+  border-radius: 999px; background: hsl(var(--popover));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / .35);
+}
+/* Per-stop remove — a corner ✕ revealed on hover/focus (the stop-count stepper
+   covers shrink where hover doesn't exist). */
+.be-grad-stopdel {
+  position: absolute; top: -6px; right: -6px; width: 14px; height: 14px; padding: 0;
+  display: none; align-items: center; justify-content: center;
+  border: 1px solid hsl(var(--border)); border-radius: 999px;
+  background: hsl(var(--popover)); color: hsl(var(--muted-foreground));
+  font-size: .55rem; line-height: 1; cursor: pointer;
+}
+.be-grad-stopwrap:hover .be-grad-stopdel,
+.be-grad-stopwrap:focus-within .be-grad-stopdel { display: inline-flex; }
+.be-grad-stopdel:hover { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / .5); }
 .be-grad-addstop {
   width: 22px; height: 22px; border: 1px dashed hsl(var(--border)); border-radius: 5px;
   background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer; font-size: .8rem; line-height: 1;
 }
 .be-grad-addstop:hover { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
-.be-grad-angle { display: inline-flex; align-items: center; gap: .15rem; font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.be-grad-nstops, .be-grad-angle { display: inline-flex; align-items: center; gap: .15rem; font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.be-grad-nstops input,
 .be-grad-angle input {
   width: 3.6rem; padding: .22rem .3rem; font: inherit; font-size: .72rem; font-family: var(--font-mono); text-align: center;
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .4);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
+.be-grad-nstops input { width: 2.9rem; }
+/* Stop-colour popover — ONE shared instance, absolutely placed under the
+   clicked chip INSIDE the panel: the side pane's own scroll carries it with
+   its anchor, so there's no `.be`-space drift to chase (contrast the swatch
+   editor's onAnchorScroll). position:relative only — the pane must never gain
+   a z-index/transform/contain (see the split-side guard above). */
+.be-gradients { position: relative; }
+.be-grad-pop { position: absolute; z-index: 30; width: min(248px, 100%); }
+.be-grad-pop[hidden] { display: none; }
+.be-grad-pop-card {
+  display: grid; gap: .55rem; padding: .6rem;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--popover)); box-shadow: 0 12px 34px hsl(var(--foreground) / .18);
+}
+.be-grad-pop-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
+  gap: .3rem; max-height: 168px; overflow-y: auto; overscroll-behavior: contain;
+}
+.be-grad-pop-sw {
+  aspect-ratio: 1; width: 100%; padding: 0; cursor: pointer;
+  border: 1px solid hsl(var(--input)); border-radius: 6px; background: var(--sw, transparent);
+}
+.be-grad-pop-sw:hover { border-color: hsl(var(--primary) / .55); }
+.be-grad-pop-sw.is-active { box-shadow: 0 0 0 2px hsl(var(--ring)); }
+.be-grad-pop-custom summary {
+  cursor: pointer; list-style: none;
+  font-size: .64rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground));
+}
+.be-grad-pop-custom summary::-webkit-details-marker { display: none; }
+.be-grad-pop-customrow { display: flex; gap: .4rem; margin-top: .45rem; }
+.be-grad-pop-customrow input[type="color"] {
+  flex: 0 0 auto; width: 34px; height: 30px; padding: 0; cursor: pointer;
+  border: 1px solid hsl(var(--input)); border-radius: 5px; background: none;
+}
+.be-grad-pop-customrow .be-fmt-input { flex: 1 1 auto; min-width: 0; }
 
 /* ── Catalogue tab: dropzone + the sorted recap. */
 .be-cat-groups { display: grid; gap: .45rem; margin-top: .9rem; }
@@ -561,13 +689,145 @@ background-image:
 }
 .be-cat-more { font-size: .7rem; color: hsl(var(--muted-foreground)); align-self: center; }
 
+/* ── Mobile palette sheet (≤640px, Colour tab) — views/start.ts mounts
+      .stu-sheet + its sibling grip as DIRECT children of .start while the
+      Colour tab is active; lib/mobile-sheet.ts drives --stu-sheet-h /
+      data-stu-sheet / --stu-peek-h, all stamped on .start (the common parent,
+      so the grip — a sibling kept OUTSIDE the sheet's overflow clip — reads
+      the same vars). Sheet + grip rules are written at `.start > .stu-sheet`
+      specificity: start.css's `.start > *` (position:relative; z-index:1)
+      beats a bare class. Separation is SHADOW-ONLY on theme tokens — no
+      border at all (a rounded top edge + border-top single-edge stripe is a
+      banned construction), no black literals. */
+.stu-sheet, .stu-sheet-grip { display: none; }
+@media (max-width: 640px) {
+  .start { --stu-sheet-h: 45dvh; } /* pre-first-snap default; per-state below */
+  /* Peek = the measured strip row + the home-indicator inset (the sheet hugs
+     the viewport bottom, so the strip itself must clear it). */
+  .start[data-stu-sheet="peek"] { --stu-sheet-h: calc(var(--stu-peek-h, 64px) + env(safe-area-inset-bottom, 0px)); }
+  .start[data-stu-sheet="half"] { --stu-sheet-h: 50dvh; }
+  .start[data-stu-sheet="full"] { --stu-sheet-h: 88dvh; }
+
+  /* Page bottom clearance — the last panel must scroll clear of the peek strip. */
+  .start:has(> .stu-sheet) { padding-bottom: calc(96px + var(--stu-peek-h, 64px) + env(safe-area-inset-bottom, 0px)); }
+
+  .start > .stu-sheet {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: var(--stu-sheet-h);
+    max-height: 92dvh;
+    z-index: 50; /* over the sticky action row (20) and the swatch popover (30) — taps land at peek, where the popover sits above the strip */
+    background: hsl(var(--card));
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -10px 34px hsl(var(--foreground) / .18);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* Clip the body to the rounded edge; the grip is a SIBLING, never cropped. */
+    overflow: hidden;
+    transition: height .34s cubic-bezier(.32, .72, 0, 1); /* the tool sheet's settle */
+  }
+  .start.is-stu-sheet-dragging > .stu-sheet { transition: none; } /* 1:1 finger tracking */
+
+  /* Peek strip — the always-visible horizontal swatch row, and the sheet's wide
+     drag handle (the handle guard skips buttons, so chips stay tappable).
+     touch-action: the head takes vertical gestures for the drag; the strip
+     keeps pan-x so it still scrolls sideways under a finger. */
+  .stu-sheet-head {
+    flex: 0 0 auto;
+    padding: 12px 12px 8px;
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .start.is-stu-sheet-dragging .stu-sheet-head { cursor: grabbing; }
+  .stu-sheet-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    touch-action: pan-x;
+    scrollbar-width: none;
+  }
+  .stu-sheet-strip::-webkit-scrollbar { display: none; }
+
+  /* Grouped mirror grid — read-only; tapping navigates to the real tile. */
+  .stu-sheet-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 12px 14px;
+    display: grid;
+    gap: 14px;
+    align-content: start;
+  }
+  .stu-sheet-group { display: grid; gap: 6px; }
+  .stu-sheet-group-label {
+    font-size: .68rem; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: hsl(var(--muted-foreground));
+  }
+  .stu-sheet-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* Mirror chip — the colour over a checkerboard so translucent swatches read
+     as translucent, same treatment as the real .be-swatch-chip. */
+  .stu-chip {
+    flex: 0 0 auto;
+    width: 36px; height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--radius) * .6);
+    cursor: pointer;
+    background:
+      linear-gradient(var(--sw, transparent), var(--sw, transparent)),
+      repeating-conic-gradient(hsl(var(--muted-foreground) / .35) 0% 25%, hsl(var(--card)) 0% 50%) 50% / 8px 8px;
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12);
+  }
+
+  /* The grip — fixed on the sheet's top edge (a full-perimeter pill, like the
+     tool sheet's, but riding `bottom` since this sheet rises from below). */
+  .start > .stu-sheet-grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    left: 0; width: 100%;
+    bottom: var(--stu-sheet-h); /* tracks the sheet's free edge */
+    transform: translateY(50%);
+    height: 30px;               /* generous hit area straddling the edge */
+    z-index: 60;                /* above the sheet */
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: grab;
+    touch-action: none;
+    transition: bottom .34s cubic-bezier(.32, .72, 0, 1); /* match the sheet's settle */
+  }
+  .start.is-stu-sheet-dragging > .stu-sheet-grip { transition: none; cursor: grabbing; }
+  .start > .stu-sheet-grip::before {
+    content: "";
+    width: 44px;
+    height: 8px;
+    border-radius: 999px;
+    background: hsl(var(--primary));
+    border: 1px solid hsl(var(--background) / .35);
+    box-shadow: 0 1px 4px hsl(var(--foreground) / .25);
+  }
+}
+/* Reduced motion (Neurospicy): no sheet/grip settle animation — the snap is
+   instant. Studio surfaces only; the tool view's sheet is deliberately left
+   as-is. After the mobile block so equal-specificity rules lose to these. */
+@media (prefers-reduced-motion: reduce) {
+  .start > .stu-sheet, .start > .stu-sheet-grip { transition: none; }
+}
+
 /* Keyboard focus on the studio's own form fields — their base rules suppress the
    default outline (matching the app's mouse-focus treatment), which would ALSO
    beat base.css's global :focus-visible ring (this sheet loads later). Restore a
    real ring for keyboard users on every studio input in one place. */
 .be-tok-dim:focus-visible, .be-tok-num:focus-visible, .be-tok-add-kind:focus-visible,
 .be-tok-add-name:focus-visible, .be-tok-shadow-in input:focus-visible,
-.be-grad-angle input:focus-visible, .be-logo-addmark-name:focus-visible,
+.be-grad-angle input:focus-visible, .be-grad-nstops input:focus-visible, .be-logo-addmark-name:focus-visible,
 .be-logo-addidentity input:focus-visible, .be-lock-field input:focus-visible,
 .be-cmyk-in input:focus-visible, .be-editor-name:focus-visible,
 .be-fmt-sel:focus-visible, .be-fmt-input:focus-visible,

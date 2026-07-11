@@ -37,7 +37,7 @@
 }
 .cat-count { font-size: .85rem; color: hsl(var(--muted-foreground)); font-weight: 600; padding: 0 2px; white-space: nowrap; text-align: center; font-variant-numeric: tabular-nums; }
 /* Segmented filetype filter (image / vector / motion / all) — a pill-in-pill toggle. */
-.cat-typefilter { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: hsl(var(--muted) / .6); }
+.cat-typefilter { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--radius); background: hsl(var(--muted) / .6); }
 .cat-typefilter-opt {
   display: inline-flex; align-items: center; gap: 6px;
   font: inherit; font-size: 12.5px; font-weight: 600;

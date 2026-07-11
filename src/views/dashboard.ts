@@ -48,7 +48,7 @@ import type { PaletteEntry } from '../palette.ts';
 import { livePalette } from '../lib/live-palette.ts';
 import { groupPalette, swatch, isTransparent, inkText, isLockedInk } from '../lib/swatches.ts';
 import { currentTheme } from '../theme.ts';
-import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, hexToOklch, formatOklch } from '@lolly/engine';
+import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, hexToOklch, formatOklch, createTokenSet } from '@lolly/engine';
 import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { collectDevice, renderDeviceCards, renderDeviceStat, liveValue, fmtBytes } from '../lib/device-info.ts';
@@ -220,8 +220,9 @@ function tokenChip(o: { name: string; kind: string; value: string; preview: stri
 /** A studio token's tiny visual: bar / rule / translucency / needle / shadow /
  *  gradient. Values come from an untrusted imported doc and land in a style
  *  attribute, so every branch validates before it renders — a chip whose value
- *  can't be shown safely just shows none. */
-function studioPreview(t: StudioToken): string {
+ *  can't be shown safely just shows none. `resolve` answers gradient stops'
+ *  `{path}` alias colours (gradientCss re-validates whatever it returns). */
+function studioPreview(t: StudioToken, resolve?: (ref: string) => unknown): string {
   const raw = t.raw;
   const len = typeof raw === 'string' && TOKEN_LEN_RE.test(raw.trim()) ? raw.trim() : null;
   switch (t.kind) {
@@ -243,7 +244,7 @@ function studioPreview(t: StudioToken): string {
       return css ? `<span class="dash-token-shadow" style="box-shadow:${escape(css)}"></span>` : '';
     }
     case 'gradient': {
-      const css = gradientCss(raw, t.angle);
+      const css = gradientCss(raw, t.angle, { resolve, space: 'oklch' });
       return css ? `<span class="dash-token-grad" style="background:${escape(css)}"></span>` : '';
     }
     default:
@@ -869,16 +870,23 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     try {
       const radius = await tokensApi?.resolve?.('{shape.radius}').then(v => brandRadiusValue(v)).catch(() => null) ?? null;
       let studio: StudioToken[] = [];
+      let resolveTok: ((ref: string) => unknown) | undefined;
       try {
         const doc = await tokensApi?.raw?.();
-        if (doc) studio = listStudioTokens(doc);
+        if (doc) {
+          studio = listStudioTokens(doc);
+          // Gradient stops may alias palette swatches — resolve against the
+          // same doc, in the theme the page is showing.
+          const set = createTokenSet(doc, { theme: currentTheme() === 'dark' ? 'dark' : 'light' });
+          resolveTok = (ref: string) => set.resolve(ref);
+        }
       } catch { /* no readable doc — chips fall back to radius alone */ }
       const chips = [
         ...(radius ? [tokenChip({
           name: 'Corner radius', kind: 'shape', value: radius,
           preview: `<span class="dash-token-shape" style="border-radius:${escape(radius)}"></span>`,
         })] : []),
-        ...studio.map(t => tokenChip({ name: t.name, kind: t.kind, value: studioValue(t), preview: studioPreview(t) })),
+        ...studio.map(t => tokenChip({ name: t.name, kind: t.kind, value: studioValue(t), preview: studioPreview(t, resolveTok) })),
       ];
       const sec = viewEl.querySelector<HTMLElement>('#dash-tokens');
       const grid = sec?.querySelector<HTMLElement>('[data-token-grid]');
