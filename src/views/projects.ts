@@ -636,6 +636,7 @@ export async function mountProjects(
         <span class="projects-bulkbar-count" aria-live="polite"></span>
         <div class="projects-bulkbar-actions">
           <button type="button" class="btn projects-render projects-bulk-render" data-bulk="render">${RENDER_ICON}<span>Render selection</span></button>
+          <button type="button" class="btn" data-bulk="edit" hidden title="Open the selected sessions side by side with one combined sidebar">${EDIT_ICON}<span>Edit together</span></button>
           <button type="button" class="btn" data-bulk="move">${MOVE_ICON}<span>Move to…</span></button>
           <button type="button" class="btn" data-bulk="newfolder">${FOLDER_PLUS_ICON}<span>New folder</span></button>
           <button type="button" class="btn projects-bulk-danger" data-bulk="delete">${TRASH_ICON}<span>Delete</span></button>
@@ -655,6 +656,29 @@ export async function mountProjects(
     viewEl.querySelector('.projects')?.classList.toggle('has-selection', n > 0);
     const count = bar.querySelector('.projects-bulkbar-count');
     if (count) count.textContent = `${n} selected`;
+    // "Edit together" only when the selection is a manageable set of single-tool
+    // sessions (2–8, no folders/images/batch grids) — the multi-edit view mounts
+    // one live runtime per session, so the cap keeps it responsive.
+    const edit = bar.querySelector<HTMLElement>('[data-bulk="edit"]');
+    if (edit) edit.hidden = !editableSelection();
+  }
+
+  /** The selected slots IFF the whole selection is 2–8 single-tool sessions; else null. */
+  function editableSelection(): string[] | null {
+    if (selected.size < 2 || selected.size > 8) return null;
+    const slots: string[] = [];
+    for (const [ref, kind] of selected) {
+      if (kind !== 'session' || isBatchSlot(ref)) return null;
+      slots.push(ref);
+    }
+    return slots;
+  }
+
+  /** Open the selected sessions in the multi-edit view (#/multi?s=slot,slot…). */
+  function editSelection(): void {
+    const slots = editableSelection();
+    if (!slots) return;
+    window.location.hash = `#/multi?s=${slots.map(encodeURIComponent).join(',')}`;
   }
 
   // ── wiring ─────────────────────────────────────────────────────────────────
@@ -936,6 +960,7 @@ export async function mountProjects(
   function handleBulk(action: string): void {
     if (action === 'clear') { selected.clear(); render(); return; }
     if (action === 'render') { renderSelection(); return; }
+    if (action === 'edit') { editSelection(); return; }
     if (action === 'move') { moveSelection(); return; }
     if (action === 'newfolder') { newFolderFromSelection(); return; }
     if (action === 'delete') { deleteSelection(); return; }

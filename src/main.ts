@@ -29,7 +29,7 @@ import { announce } from './a11y.ts';
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start';
+type RouteName = 'gallery' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -41,6 +41,7 @@ type Route =
   | { name: 'projects'; folderId: string | null; params?: string }
   | { name: 'catalog'; params?: string }
   | { name: 'start'; params?: string }
+  | { name: 'multi'; params?: string }
   | { name: 'gallery' };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
@@ -63,7 +64,7 @@ let mountedRouteSig = '';
 // Announce client-side route changes (the view swaps via innerHTML, which
 // assistive tech wouldn't otherwise notice).
 function announceRoute(name: RouteName): void {
-  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup' };
+  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit' };
   announce(`${labels[name] ?? 'Page'} loaded`);
 }
 
@@ -94,6 +95,9 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     // The studio keys on ?tab= for the same reason — "Manage fonts" (#/start?tab=type)
     // clicked while already on #/start must switch steps, not dedupe to a no-op.
     : route.name === 'start'     ? `start:${route.params ?? ''}`
+    // Multi-edit keys on its selection (?s=slot,slot…) so editing a different
+    // selection re-mounts with the new set instead of deduping.
+    : route.name === 'multi'     ? `multi:${route.params ?? ''}`
     : route.name;
   if (!opts.force && routeSig === mountedRouteSig) return;
   mountedRouteSig = routeSig;
@@ -132,6 +136,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   view.classList.toggle('catalog-view', route.name === 'catalog');
   view.classList.toggle('verify-view', route.name === 'verify');
   view.classList.toggle('start-view', route.name === 'start');
+  view.classList.toggle('multi-view', route.name === 'multi');
   view.classList.toggle('is-returning', returning);
 
   // When the route NAME changes, the view-scoping class above changes with it
@@ -185,6 +190,13 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     case 'verify': {
       const { mountValid } = await import('./views/valid.ts');
       await mountValid(view, host);
+      break;
+    }
+    // --- Multi-edit: 2–8 saved sessions edited side by side (grid of live
+    // canvases + one combined sidebar). Reached from the Projects bulk bar. ---
+    case 'multi': {
+      const { mountMultiEdit } = await import('./views/multi-edit.ts');
+      await mountMultiEdit(view, host as unknown as Parameters<typeof mountMultiEdit>[1], route.params ?? '');
       break;
     }
     // --- /pro batch mode: isolated, lazy-loaded feature. Safe to remove by
@@ -546,6 +558,7 @@ function parseRoute(): Route {
     }
     if (parts[0] === 'verify' || parts[0] === 'valid' || parts[0] === 'v') return { name: 'verify', params: query || '' };
     if (parts[0] === 'start') return { name: 'start', params: query || '' }; // brand wizard
+    if (parts[0] === 'multi') return { name: 'multi', params: query || '' }; // multi-edit (?s=slot,slot…)
     if (parts[0] === 'pro') return { name: 'pro', params: query || '' }; // /pro batch mode
     if (parts[0] === 'p') return { name: 'projects', folderId: parts[1] || null, params: query || '' };
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };

@@ -1223,6 +1223,14 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   const svg = node.tagName?.toLowerCase() === 'svg' ? node : node.querySelector('svg');
   const clone = svg!.cloneNode(true) as Element;
   stripCommentNodes(clone);
+  // The clone is otherwise a VERBATIM copy of the tool's live <svg>, keeping its
+  // <text> runs as live text — a violation of the "vector output always outlines
+  // text" rule, and a real bug on guest brands: community SVG tools (chart-creator,
+  // d3) style text via an internal `font-family: var(--font-brand, 'SUSE', …)` rule,
+  // so a standalone file (where --font-brand is undefined) renders in the SUSE
+  // fallback, selectable, in the wrong font. Outline the runs into <path> shaped in
+  // the run's computed (brand-resolved) font before serialising.
+  await outlineSvgTextRuns(svg!, clone, opts.convertPaths !== false);
   // Apply the requested size in its native unit (e.g. "210mm") — SVG is
   // resolution-independent. Ensure a viewBox so the original coordinates scale
   // into the new physical size.
@@ -1238,6 +1246,97 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   await inlineBlobUrlsInEl(clone);
   const xml = injectSvgMeta(new XMLSerializer().serializeToString(clone), opts.meta);
   return new Blob(['<?xml version="1.0" standalone="no"?>\n' + xml], { type: 'image/svg+xml' });
+}
+
+// Convert the <text> runs of a tool's own <svg> (the renderSvg fast-path clone) into
+// outlined <path>s, so an exported SVG renders identically without the authoring
+// machine's fonts — the same guarantee the HTML path (emitInlineTextSvg) already gives.
+//
+// Styles are read from the LIVE element (`liveSvg`, still connected during render): its
+// computed `font-family` resolves the brand var — `var(--font-brand, 'SUSE', …)` becomes
+// the actual brand stack (Outfit, or a user's Google font) — which resolveVectorFont then
+// maps to a fetchable sfnt. The clone is a deep copy, so its <text> list is 1:1 with the
+// live one in document order; we shape each run and swap the clone's node for a <path>.
+//
+// Runs we can't faithfully outline — a run with <tspan> children, an unresolvable/icon
+// font, or one with a .notdef glyph — keep their <text>, but get the resolved family
+// baked as an INLINE style (which beats the tool's internal <style> rule; a presentation
+// attribute would not) so they never fall through to the 'SUSE' var fallback. When
+// `outline` is false (the "Convert paths" toggle off) every run is left as editable text
+// with only the family baked, honouring the user's request.
+async function outlineSvgTextRuns(liveSvg: Element, clone: Element, outline: boolean): Promise<void> {
+  const liveTexts = liveSvg.querySelectorAll('text');
+  const cloneTexts = clone.querySelectorAll('text');
+  // A deep clone keeps a 1:1, same-order <text> list; a mismatch means something
+  // rewrote the tree between clone and now — leave it rather than mis-map runs.
+  if (!liveTexts.length || liveTexts.length !== cloneTexts.length) return;
+  const textApi = _host?.text;
+  const NS = 'http://www.w3.org/2000/svg';
+  const num = (v: string | null): number => { const n = parseFloat(v ?? ''); return Number.isFinite(n) ? n : 0; };
+  const rel = (v: string | null, em: number): number => {
+    const s = (v ?? '').trim(); if (!s) return 0;
+    return s.endsWith('em') ? (parseFloat(s) || 0) * em : (parseFloat(s) || 0);
+  };
+
+  for (let i = 0; i < liveTexts.length; i++) {
+    const live = liveTexts[i] as SVGTextElement;
+    const cl = cloneTexts[i] as SVGElement;
+    const cs = window.getComputedStyle(live);
+    if (cs.display === 'none') continue;                         // hidden — leave as-is
+    const raw = applyTextTransform((live.textContent ?? '').replace(/\s+/g, ' ').trim(), cs.textTransform);
+    if (!raw) continue;
+
+    // Bake the brand-resolved family inline so a KEPT <text> can't inherit the SUSE
+    // var fallback. No-op cost on a run we go on to replace with a <path>.
+    const bakeFamily = () => { cl.style.fontFamily = cs.fontFamily; };
+
+    const simple = [...live.childNodes].every(n => n.nodeType === 3);   // no <tspan>
+    if (!outline || !simple || !textApi) { bakeFamily(); continue; }
+
+    const fontSizePx = parseFloat(cs.fontSize) || 16;
+    const styleSlice = { fontFamily: cs.fontFamily, fontWeight: cs.fontWeight, fontStyle: cs.fontStyle };
+    let vf: VectorFont | null = null;
+    try { vf = await resolveVectorFont(styleSlice, raw); } catch { vf = null; }
+    if (!vf?.url) { bakeFamily(); continue; }
+
+    const letterSpacing = letterSpacingPx(cs.letterSpacing);
+    const features = featureSettingsToHb(cs.fontFeatureSettings);
+    let d = '', adv = 0, notdef = 0;
+    try {
+      const r = await textApi.toPath({ text: raw, fontUrl: vf.url, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf.variations, fallbackFonts: vf.fallbacks });
+      d = r.d; adv = r.advanceWidth || 0; notdef = r.notdef ?? 0;
+    } catch (e) {
+      _host?.log?.('warn', `svg: SVG-text outline failed, keeping <text> — ${(e as Error).message}`);
+    }
+    if (!d || notdef) { bakeFamily(); continue; }
+
+    // toPath places the baseline at y=0 with the pen starting at x=0. SVG's own `y`
+    // IS the baseline for the default (auto/alphabetic) dominant-baseline; the other
+    // values shift it by font metrics. `x` (+ dx) with text-anchor and the shaped
+    // advance width give the left edge.
+    const x = num(live.getAttribute('x')) + rel(live.getAttribute('dx'), fontSizePx);
+    let y = num(live.getAttribute('y')) + rel(live.getAttribute('dy'), fontSizePx);
+    const db = live.getAttribute('dominant-baseline') || cs.dominantBaseline || 'auto';
+    if (db === 'middle' || db === 'central') {
+      const { ascent, descent } = fontMetricsPx(cs, fontSizePx); y += (ascent - descent) / 2;
+    } else if (db === 'hanging' || db === 'text-before-edge') {
+      y += fontMetricsPx(cs, fontSizePx).ascent;
+    } else if (db === 'text-after-edge' || db === 'ideographic') {
+      y -= fontMetricsPx(cs, fontSizePx).descent;
+    }
+    if (adv <= 0) { try { adv = live.getComputedTextLength(); } catch { adv = 0; } }
+    const anchor = live.getAttribute('text-anchor') || cs.textAnchor || 'start';
+    const xAdj = anchor === 'middle' ? x - adv / 2 : anchor === 'end' ? x - adv : x;
+
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    const own = live.getAttribute('transform');
+    path.setAttribute('transform', `${own ? own + ' ' : ''}translate(${n2(xAdj)},${n2(y)})`);
+    path.setAttribute('fill', cs.fill || live.getAttribute('fill') || '#000');
+    if (cs.fillOpacity && parseFloat(cs.fillOpacity) < 1) path.setAttribute('fill-opacity', cs.fillOpacity);
+    if (cs.opacity && parseFloat(cs.opacity) < 1) path.setAttribute('opacity', cs.opacity);
+    cl.replaceWith(path);
+  }
 }
 
 // ── EMF (Enhanced Metafile) — vector, always text-as-paths ──────────────────

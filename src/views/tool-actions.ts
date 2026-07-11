@@ -35,15 +35,11 @@ import type {
   ActionsApi, IdentityStatus, RunExportOpts, PrintMarks,
 } from './tool.ts';
 
-// Content Credentials (C2PA) are pre-checked by default on EVERY tool, EXCEPT:
-//  • on-device privacy utilities (privacy:'on-device') — a user's own file must
-//    never be stamped with provenance (validated invariant), and
-//  • a tool that explicitly opts out with render.c2pa:false.
-// A ?c2pa= link/save default still overrides this at the call sites. The C2PA card
-// only renders for C2PA-capable formats, so this is a no-op for graphic-less tools.
-function c2paDefaultOn(manifest: ToolManifest): boolean {
-  return (manifest.render as { c2pa?: boolean }).c2pa !== false && manifest.privacy !== 'on-device';
-}
+// Content Credentials default: the shared policy in lib/c2pa-policy.ts (also
+// applied by the offscreen batch/zip renderer, so zips sign like this button).
+// The C2PA card only renders for C2PA-capable formats, so it's a no-op for
+// graphic-less tools. Re-exported below for tool.ts.
+import { c2paDefaultOn } from '../lib/c2pa-policy.ts';
 
 // Human-readable labels and file extensions for format identifiers that differ
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").

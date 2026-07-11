@@ -209,24 +209,6 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     panel.setAttribute('aria-labelledby', `start-tab-${key}`);
   });
 
-  // Sticky geometry for the Colour tab's split side pane: the action row is
-  // sticky and its height GROWS (Save & continue appears, the note wraps), so
-  // the offset the pane sticks under can't be hard-coded — measure the row
-  // live and publish it as --be-split-top on the editor root (brand-studio.css
-  // reads it for the pane's top + max-height). Guarded on editorRoot: a locked
-  // build or a failed editor mount has no split pane to position.
-  const actionsRow = viewEl.querySelector<HTMLElement>('.start-actions');
-  let splitTopRO: ResizeObserver | null = null;
-  if (editorRoot && actionsRow && typeof ResizeObserver !== 'undefined') {
-    const setSplitTop = (): void => {
-      // The row's sticky top (10px) + its live height + 12px breathing room.
-      editorRoot.style.setProperty('--be-split-top', `${Math.round(actionsRow.getBoundingClientRect().height) + 22}px`);
-    };
-    splitTopRO = new ResizeObserver(setSplitTop);
-    splitTopRO.observe(actionsRow);
-    setSplitTop();
-  }
-
   // ── Mobile palette sheet (≤640px) — mounted only while the Colour tab shows,
   // and only when the editor actually mounted (a locked build renders no studio;
   // a failed mount leaves editor null / editorRoot missing — nothing to mirror).
@@ -642,7 +624,6 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   document.addEventListener('keydown', onKey);
   (viewEl as ViewElement)._cleanup = () => {
     document.removeEventListener('keydown', onKey);
-    splitTopRO?.disconnect();
     paletteSheet?.teardown();
     paletteSheet = null;
     editor?.teardown();
@@ -752,6 +733,10 @@ function mountPaletteSheet(shell: HTMLElement, editor: BrandEditorHandle, editor
     handle?.setState('peek');
     const tile = editorRoot.querySelector<HTMLElement>(`[data-be-tile="${chip.dataset.stuTile}"]`);
     if (!tile) return;
+    // The tile's palette group is a <details> the user may have folded — a
+    // hidden tile can't be scrolled to or anchor the editor popover, so unfold.
+    const group = tile.closest<HTMLDetailsElement>('details.be-pal-group');
+    if (group && !group.open) group.open = true;
     tile.scrollIntoView({ block: 'center' });
     tile.click();
   });

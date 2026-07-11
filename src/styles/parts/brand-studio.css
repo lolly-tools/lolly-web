@@ -122,7 +122,7 @@
 .be-swatch-lock {
   display: inline-block; margin-inline-start: .4rem; padding: .05rem .35rem;
   font-size: .58rem; font-weight: 700; letter-spacing: .05em; vertical-align: middle;
-  color: hsl(var(--primary)); border: 1px solid hsl(var(--primary) / .4); border-radius: 999px;
+  color: hsl(var(--primary)); border: 0; 
 }
 .be-derive-controls { display: grid; gap: .8rem; align-content: start; }
 .be-field { display: grid; gap: .35rem; }
@@ -185,47 +185,84 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-pv-art svg { display: block; width: 100%; height: auto; }
 .be-pv-cap { font-size: .68rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 
-/* Palette: the wheel view beside the grouped swatch grid (stacks when narrow). */
-.be-pal-actions { display: flex; align-items: flex-end; gap: .6rem; flex-wrap: wrap; margin-bottom: .9rem; }
-.be-pal-fmt-field { flex: 0 1 260px; }
-.be-pal-split { display: grid; gap: 1.2rem; }
-@media (min-width: 820px) { .be-pal-split { grid-template-columns: minmax(220px, 300px) 1fr; align-items: start; } }
-.be-pal-wheel { align-self: start; }
+/* Palette. The wheel lives in the folded "Colour chart" card below the grid. */
 .be-wheel-hint { margin: .55rem 0 0; font-size: .68rem; line-height: 1.4; color: hsl(var(--muted-foreground)); text-align: center; }
 /* Editable wheel affordances: crosshair over empty space (= add), grab on a dot. */
 .dash-wheel--edit { cursor: crosshair; touch-action: none; }
 .dash-wheel-dot--edit { cursor: grab; }
 .dash-wheel-dot--edit:active { cursor: grabbing; }
+/* Colour chart — the demoted wheel, folded by default (repainted on open: a
+   hidden mount measures 0×0). Reuses the .be-subst-details folding chrome. */
+.be-chart-details { margin-top: 1rem; }
+.be-chart-details .be-pal-wheel { max-width: 340px; margin: .8rem auto 0; }
 
-/* Palette: grouped, editable swatch tiles. */
+/* Palette: grouped shape-only swatch tiles — name + hex live in title/aria
+   (and in the editor popover a click opens), never on the tile itself. */
 .be-pal-top { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .9rem; }
 .be-pal-count { font-size: .74rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+/* Each group is a <details open>; the summary row is the group's header. */
 .be-pal-group + .be-pal-group { margin-top: 1rem; }
-.be-pal-group-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .45rem; }
+.be-pal-group-head {
+  display: flex; align-items: center; gap: .6rem; margin-bottom: .45rem;
+  cursor: pointer; list-style: none;
+}
+.be-pal-group-head::-webkit-details-marker { display: none; }
+.be-pal-group-head::after { content: '▸'; font-size: .7rem; color: hsl(var(--muted-foreground)); transition: rotate .12s; }
+.be-pal-group[open] > .be-pal-group-head::after { rotate: 90deg; }
+@media (prefers-reduced-motion: reduce) { .be-pal-group-head::after { transition: none; } }
+.be-pal-group-head .be-add { margin-inline-start: auto; }
 .be-pal-group-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .be-pal-group-n { margin-inline-start: .4rem; font-weight: 500; opacity: .7; }
-.be-pal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: .5rem; }
+/* Dense grid of pure swatches; corner rounding rides the brand radius token —
+   a full-radius brand rounds these into circles, and that's the intent. */
+.be-pal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: .45rem; }
 
 .be-swatch {
-  display: flex; align-items: center; gap: .55rem; text-align: start; cursor: pointer;
-  padding: .4rem .5rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * 2);
-  background: hsl(var(--background)); font: inherit;
+  position: relative; display: block; width: 100%; aspect-ratio: 1;
+  padding: 0; cursor: pointer; font: inherit; overflow: hidden;
+  border: 0; border-radius: var(--radius);
+  background: hsl(var(--background)); box-shadow: inset 0 1px #fff1, 0 .1rem .4rem #0002; border-radius: var(--radius);
 }
 .be-swatch:hover { border-color: hsl(var(--primary) / .55); }
 .be-swatch.is-selected { border-color: hsl(var(--ring)); box-shadow: 0 0 0 2px hsl(var(--ring) / .28); }
 .be-swatch.is-pinned:not(.is-selected) { border-color: hsl(var(--primary) / .4); }
 .be-swatch-chip {
-  flex: 0 0 auto; width: 48px; height: 48px; border-radius: var(--radius);
+  position: absolute; inset: 0; display: block;
   /* The colour rides OVER a checkerboard, so a translucent swatch shows its
      alpha (the checker peeks through) instead of reading as a solid colour. */
   background:
     linear-gradient(var(--sw, transparent), var(--sw, transparent)),
     repeating-conic-gradient(hsl(var(--muted-foreground) / .35) 0% 25%, hsl(var(--card)) 0% 50%) 50% / 8px 8px;
-  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12);
+
 }
-.be-swatch-meta { display: grid; gap: 1px; min-width: 0; }
-.be-swatch-name { font-size: .76rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.be-swatch-hex { font-size: .68rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+
+/* Download-all — the floating pill at the palette pane's bottom edge (the
+   catalog toolbar's exact clothes: catalog.css .cat-toolbar), so the palette
+   export never scrolls away while the pane shows. ≥1100px it simply SITS at
+   the pane's viewport-anchored bottom, outside the pane's scroller; below
+   that the pane is in page flow and the sticky bottom floats the pill. */
+.be-pal-dock {
+  position: sticky;
+  bottom: 8px;
+  z-index: 10; /* over the panels it floats past; well under the popovers (30) */
+  display: flex; align-items: center; gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 7px 9px;
+  border-radius: calc(var(--radius) * 2);
+  background: hsl(var(--background) / .82);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 3px 14px #0000001f;
+}
+.be-pal-fmt-sel {
+  min-width: 0; max-width: 15rem; padding: .35rem .5rem; font: inherit; font-size: .76rem; cursor: pointer;
+  border: 1px solid hsl(var(--input)); border-radius: var(--radius);
+  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
+}
+.be-pal-fmt-sel:focus { border-color: hsl(var(--ring) / .6); }
 
 /* Swatch editor popover — absolutely placed under the clicked tile by JS.
    The card is a flex column: everything scrolls in .be-editor-scroll while the
@@ -278,6 +315,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-subst-details summary::-webkit-details-marker { display: none; }
 .be-subst-details summary::after { content: '▸'; margin-inline-start: auto; font-size: .7rem; transition: rotate .12s; }
 .be-subst-details[open] summary::after { rotate: 90deg; }
+@media (prefers-reduced-motion: reduce) { .be-subst-details summary::after { transition: none; } }
 .be-subst-chips { display: inline-flex; gap: .3rem; }
 .be-ps-chip {
   font-family: var(--font-mono); font-size: .62rem; text-transform: none; letter-spacing: 0;
@@ -406,7 +444,7 @@ background-image:
 
 @media (max-width: 560px) {
   .be-panel { padding: .9rem; }
-  .be-pal-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .be-pal-grid { grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); }
   .be-editor { width: min(300px, calc(100vw - 3rem)); }
 }
 
@@ -416,8 +454,6 @@ background-image:
 .be-print-details { margin-top: .45rem; }
 .be-print-details .be-subst { margin-top: .5rem; }
 .be-finetune-body { display: grid; gap: .8rem; padding-top: .7rem; }
-/* Download row — demoted below the palette itself, compact. */
-.be-pal-actions--dl { margin: 1.1rem 0 0; }
 /* Gradients list — folded with a count chip while unopened. */
 .be-grads-details .be-grad-list { margin-top: .7rem; }
 
@@ -432,8 +468,11 @@ background-image:
 .be[data-active-tab="tokens"] > [data-be-tab-panel="tokens"],
 .be[data-active-tab="catalogue"] > [data-be-tab-panel="catalogue"] { display: grid; }
 
-/* ── Colour tab split (≥1100px) — main column | draggable divider | sticky
-      palette side pane (lib/studio-split.ts drives --be-side-w/.is-collapsed).
+/* ── Colour tab split (≥1100px) — main column | draggable divider | palette
+      side pane (lib/studio-split.ts drives --be-side-w/.is-collapsed). The
+      HOST bounds the split's height to the viewport (start.css hands 100dvh
+      down the chain), so both panes scroll INTERNALLY and their bottoms anchor
+      to the viewport — the page itself never scrolls on this tab.
       GUARD: the side pane must NEVER get a z-index, transform or contain — the
       swatch popover (.be-editor, z-index 30) positions against `.be` and has
       to keep beating the sticky action row (z-index 20); any of those would
@@ -441,26 +480,46 @@ background-image:
       display:none and the side content simply follows the main column in flow.
       (This block sits AFTER the .be-tab rules above — the column-gap override
       relies on source order at equal specificity.) */
-.be-split-main, .be-split-side { display: grid; gap: 1.1rem; align-content: start; min-width: 0; }
+.be-split-main { display: grid; gap: 1.1rem; align-content: start; min-width: 0; }
+/* The panels live in .be-split-scroll (the pane's internal scroller ≥1100px);
+   the download dock sits OUTSIDE it, so however far the palette scrolls the
+   dock keeps its seat at the pane's anchored bottom edge. Panel spacing is
+   margins, not gap — block flow below 1100px, and the ≥1100px flex column
+   reserves its gap-free layout for the scroller/dock split. */
+.be-split-side { display: block; min-width: 0; }
+.be-split-scroll { min-width: 0; }
+.be-split-scroll > * + * { margin-top: 1.1rem; }
+.be-split-side > .be-pal-dock { margin-top: .75rem; }
 .be-split-divider { display: none; }
 @media (min-width: 1100px) {
   .be-tab--split {
-    grid-template-columns: minmax(0, 1fr) 16px minmax(280px, var(--be-side-w, 400px));
+    /* Default = OPEN at half the studio's width (the 50% fallback carries it —
+       studio-split.ts only writes a px --be-side-w once the user drags/keys a
+       size, and only ever adds .is-collapsed on the user's own snap/Enter). */
+    grid-template-columns: minmax(0, 1fr) 16px minmax(280px, var(--be-side-w, 50%));
+    grid-template-rows: minmax(0, 1fr); /* clamp the row to the host-given height */
     column-gap: 0; /* the divider's 16px track IS the gutter */
-    align-items: start;
+    align-items: stretch; /* both panes run the full height — bottoms anchored */
   }
   .be-tab--split.is-collapsed { grid-template-columns: minmax(0, 1fr) 16px 0; }
   .be-tab--split.is-collapsed .be-split-side { overflow: hidden; }
+  .be-split-main {
+    overflow-y: auto;
+    min-height: 0;
+    overscroll-behavior: contain;
+  }
+  /* The side is a flex column: the scroller takes whatever the dock leaves. */
   .be-split-side {
-    position: sticky;
-    top: var(--be-split-top, 72px);
-    max-height: calc(100vh - var(--be-split-top, 72px) - 16px);
-    max-height: calc(100dvh - var(--be-split-top, 72px) - 16px);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .be-split-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  /* The pane is a narrow column — stack the wheel above the grid. */
-  .be-split-side .be-pal-split { grid-template-columns: 1fr; }
   .be-split-divider {
     display: block;
     position: relative;
@@ -710,6 +769,10 @@ background-image:
 
   /* Page bottom clearance — the last panel must scroll clear of the peek strip. */
   .start:has(> .stu-sheet) { padding-bottom: calc(96px + var(--stu-peek-h, 64px) + env(safe-area-inset-bottom, 0px)); }
+
+  /* The download pill sticks to the viewport bottom here (no pane scroller
+     below 1100px) — lifted clear of the palette sheet's peek strip. */
+  .be-pal-dock { bottom: calc(var(--stu-peek-h, 64px) + env(safe-area-inset-bottom, 0px) + 12px); }
 
   .start > .stu-sheet {
     display: flex;

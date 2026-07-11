@@ -15,9 +15,13 @@
  */
 
 const STORE_KEY = 'brandStudioPaneW';
-const SIDE_MIN = 220;      // narrowest useful pane
-const SNAP_COLLAPSE = 180; // dragging under this snaps the pane closed
-const SIDE_DEFAULT = 400;
+// MUST equal the CSS track floor — brand-studio.css's `minmax(280px, …)`. A
+// smaller clamp here would let keyboard End / a drag park the logical width in
+// a 220–279px dead zone the rendered track can't follow (aria-valuenow and the
+// persisted width would disagree with what's on screen).
+const SIDE_MIN = 280;
+const SNAP_COLLAPSE = 220; // dragging under this snaps the pane closed
+const SIDE_DEFAULT = 400;  // keyboard fallback when the pane can't be measured
 const KEY_STEP = 24;
 
 export function mountStudioSplit(el: HTMLElement): () => void {
@@ -27,22 +31,39 @@ export function mountStudioSplit(el: HTMLElement): () => void {
   const maxW = (): number => Math.round(el.getBoundingClientRect().width * 0.6);
   const clamp = (w: number): number => Math.max(SIDE_MIN, Math.min(w, maxW()));
 
-  // 0 persisted = collapsed (same convention as the tool sidebar's width key).
-  // A MISSING key must not read as that sentinel — Number(null) is 0, which
-  // would boot every fresh profile collapsed — so absent maps to NaN; anything
-  // unusable falls back to the default open width.
+  // Default = EXPANDED at the CSS track's own 50% (no inline var at all —
+  // brand-studio.css's `var(--be-side-w, 50%)` fallback carries it). Width goes
+  // pixel-explicit only once the user drags/keys a size, and stays persisted
+  // from then on. `0` persisted = collapsed — but ONLY an explicit stored '0'
+  // (a user's own snap/Enter) reads as that sentinel: a missing key maps to
+  // NaN (Number(null) is 0, which used to boot fresh profiles collapsed), and
+  // any unusable value falls back to the open 50% default.
   const raw = localStorage.getItem(STORE_KEY);
   const saved = raw == null ? NaN : Number(raw);
-  let width = Number.isFinite(saved) && saved >= SIDE_MIN ? saved : SIDE_DEFAULT;
-  let collapsed = saved === 0;
+  let width: number | null = Number.isFinite(saved) && saved >= SIDE_MIN ? saved : null;
+  let collapsed = raw != null && saved === 0;
+
+  /** The pane's effective width — the explicit px when set, else the live
+   *  rendered width of the 50% default track (for keyboard steps to build on). */
+  const currentWidth = (): number => {
+    if (width != null) return width;
+    const side = el.querySelector<HTMLElement>('.be-split-side');
+    const w = side ? Math.round(side.getBoundingClientRect().width) : 0;
+    return w >= SIDE_MIN ? w : SIDE_DEFAULT;
+  };
 
   const apply = (save = true): void => {
     el.classList.toggle('is-collapsed', collapsed);
-    el.style.setProperty('--be-side-w', `${width}px`);
+    if (width == null) el.style.removeProperty('--be-side-w'); // CSS 50% default
+    else el.style.setProperty('--be-side-w', `${width}px`);
     divider.setAttribute('aria-valuemin', String(SIDE_MIN));
     divider.setAttribute('aria-valuemax', String(maxW()));
-    divider.setAttribute('aria-valuenow', String(collapsed ? 0 : width));
-    if (save) localStorage.setItem(STORE_KEY, String(collapsed ? 0 : width));
+    divider.setAttribute('aria-valuenow', String(collapsed ? 0 : (width ?? currentWidth())));
+    if (save) {
+      if (collapsed) localStorage.setItem(STORE_KEY, '0');
+      else if (width != null) localStorage.setItem(STORE_KEY, String(width));
+      else localStorage.removeItem(STORE_KEY); // back to the percentage default
+    }
   };
   apply(false);
 
@@ -75,8 +96,8 @@ export function mountStudioSplit(el: HTMLElement): () => void {
 
   // ── Keyboard (Left grows the pane — the separator moves left) ─────────────
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === 'ArrowLeft') { collapsed = false; width = clamp(width + KEY_STEP); }
-    else if (e.key === 'ArrowRight') { if (!collapsed) width = clamp(width - KEY_STEP); }
+    if (e.key === 'ArrowLeft') { collapsed = false; width = clamp(currentWidth() + KEY_STEP); }
+    else if (e.key === 'ArrowRight') { if (!collapsed) width = clamp(currentWidth() - KEY_STEP); }
     else if (e.key === 'Home') { collapsed = false; width = maxW(); }
     else if (e.key === 'End') { collapsed = false; width = SIDE_MIN; }
     else if (e.key === 'Enter') collapsed = !collapsed;

@@ -49,6 +49,7 @@ import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
   isRec, prettify, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
+  getExcludedSwatches, setSwatchExcluded,
 } from './brand-doc.ts';
 import type { BrandSwatch, PrintLock } from './brand-doc.ts';
 import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
@@ -507,20 +508,20 @@ function mountPrintSubst(mount: HTMLElement, ctx: PrintLockCtx): { render: () =>
 
 // ── Swatch tile + palette grid ────────────────────────────────────────────────
 
+/** The tile's accessible name — the visible grid is shape-only, so name + hex
+ *  live in title/aria-label (and are kept fresh by the in-place recolour paths). */
+function tileLabel(name: string, hex: string, locked: boolean): string {
+  return `${name} — ${hex || 'unset'}${locked ? ' (print colour locked)' : ''}`;
+}
+
 function tileHtml(s: BrandSwatch, idx: number): string {
   const trans = !s.hex;
-  const lockTitle = s.lock?.spot
-    ? `Print colour locked to ${s.lock.spot.name}${s.lock.cmyk ? ' (with a CMYK fallback)' : ''}`
-    : s.lock?.cmyk ? 'Print colour locked (CMYK)' : '';
+  const label = tileLabel(s.name, s.hex, !!s.lock);
   return `
     <button type="button" class="be-swatch${trans ? ' is-empty' : ''}${s.lock ? ' is-pinned' : ''}" data-be-tile="${idx}"
       style="--sw:${escape(s.hex || 'transparent')}"
-      aria-label="${escape(`${s.name} — ${s.hex || 'unset'}${s.lock ? ' (print colour locked)' : ''}`)}">
+      title="${escape(label)}" aria-label="${escape(label)}">
       <span class="be-swatch-chip" aria-hidden="true"></span>
-      <span class="be-swatch-meta">
-        <span class="be-swatch-name">${escape(s.name)}${s.lock ? `<span class="be-swatch-lock" title="${escape(lockTitle)}">LOCK</span>` : ''}</span>
-        <code class="be-swatch-hex">${escape(s.hex || '—')}</code>
-      </span>
     </button>`;
 }
 
@@ -541,18 +542,28 @@ function paletteHtml(swatches: BrandSwatch[]): string {
       <span class="be-pal-count">${swatches.length} colour${swatches.length === 1 ? '' : 's'}</span>
       <button type="button" class="be-add" data-be-add="custom">+ Add swatch</button>
     </div>`;
+  // Every section is collapsible (<details>, open by default — no persistence)
+  // and carries its own "+ Add": Spectrum grows in place, Custom adds a custom
+  // swatch, and a derived section (Primary/Neutral/Roles…) adds a custom swatch
+  // TAGGED to render under that heading (addSwatch's displayGroup). Tiles stay
+  // in the DOM either way, so the delegated click/scroll wiring keeps working.
   const body = order.map(g => {
     const items = groups.get(g)!;
-    // Spectrum is an open-ended set of illustration hues, so it grows in place.
-    const addable = /spectrum/i.test(g);
+    // The displayGroup tag PERSISTS on the token, so store the theme-less base
+    // name ("Roles", not the "Roles · Light" heading) — walkSwatches files a
+    // "Roles" tag under whichever theme's Roles section is currently showing,
+    // so a theme switch never strands the swatch under a stale heading.
+    const addAttrs = /spectrum/i.test(g) ? 'data-be-add="spectrum"'
+      : /^custom$/i.test(g) ? 'data-be-add="custom"'
+      : `data-be-add="custom" data-be-add-group="${escape(g.replace(/\s*·.*$/, ''))}"`;
     return `
-      <div class="be-pal-group">
-        <div class="be-pal-group-head">
+      <details class="be-pal-group" data-be-group="${escape(g)}" open>
+        <summary class="be-pal-group-head">
           <span class="be-pal-group-label">${escape(g)}<span class="be-pal-group-n">${items.length}</span></span>
-          ${addable ? '<button type="button" class="be-add be-add--sm" data-be-add="spectrum">+ Add</button>' : ''}
-        </div>
+          <button type="button" class="be-add be-add--sm" ${addAttrs}>+ Add</button>
+        </summary>
         <div class="be-pal-grid">${items.map(s => tileHtml(s, idxOf.get(s)!)).join('')}</div>
-      </div>`;
+      </details>`;
   }).join('');
   return top + body;
 }
@@ -754,7 +765,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <div class="be-field">
           <span class="be-field-label">Harmony</span>
           <div class="view-seg be-seg be-schemekinds" role="group" aria-label="Colour harmony" data-be-schemekind>
-            ${SCHEME_KINDS.map(k => `<button type="button" class="view-seg-btn" data-kind="${escape(k.id)}" aria-pressed="${k.id === schemeKind}">${escape(k.label)}</button>`).join('')}
+            ${/* The free-N kinds are hidden UI-side only — the engine keeps them
+                  (stored docs may reference them) and the default stays adjacent-3. */''}
+            ${SCHEME_KINDS.filter(k => !k.id.startsWith('free-')).map(k => `<button type="button" class="view-seg-btn" data-kind="${escape(k.id)}" aria-pressed="${k.id === schemeKind}">${escape(k.label)}</button>`).join('')}
           </div>
         </div>
         <div class="be-candidates" data-be-candidates aria-live="polite"></div>
@@ -769,30 +782,40 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         aria-label="Resize the palette pane" title="Drag to resize · Enter collapses"></div>
 
       <aside class="be-split-side" data-be-split-side aria-label="Palette">
+      <!-- Inner scroller: the panels scroll in here (≥1100px, the pane's height
+           viewport-anchored by the host — see brand-studio.css) while the
+           download dock below stays OUTSIDE it, keeping its seat at the pane's
+           bottom edge however far the palette scrolls. -->
+      <div class="be-split-scroll" data-be-split-scroll>
       <div class="be-panel be-palette">
         <div class="be-panel-head"><h3 class="be-panel-title">Palette</h3>
-          <p class="be-panel-sub">Every colour your brand carries — as a list, or on the wheel (angle = hue, distance out = chroma). Click a swatch to recolour or rename it, drag a dot to recolour it, click empty space on the wheel to add one. Changes flow to every picker, tool and export.</p></div>
-        <div class="be-pal-split">
+          <p class="be-panel-sub">Every colour your brand carries. Click a swatch to recolour, rename or remove it; each section folds and grows with its own <strong>+ Add</strong>. The <strong>Colour chart</strong> below plots the same swatches by hue and chroma. Changes flow to every picker, tool and export.</p></div>
+        <div class="be-pal" data-be-pal></div>
+        <!-- The OKLCH wheel, demoted to a folded card — repainted on open, since
+             a hidden mount measures 0×0 (see the toggle wiring below). -->
+        <details class="be-subst-details be-chart-details" data-be-chart>
+          <summary><span class="be-subst-details-label">Colour chart</span></summary>
           <div class="be-pal-wheel" data-be-wheel-mount></div>
-          <div class="be-pal" data-be-pal></div>
-        </div>
-        <div class="be-pal-actions be-pal-actions--dl">
-          <label class="be-field be-pal-fmt-field">
-            <span class="be-field-label">Download all as</span>
-            <select class="be-pal-fmt-sel" data-be-pal-fmt aria-label="Download format">
-              <option value="tokens-json">Design tokens (JSON)</option>
-              <option value="css-vars">CSS variables</option>
-              <option value="css-classes">CSS classes</option>
-              <option value="gpl">GIMP palette (.gpl)</option>
-              <option value="ase">Adobe Swatch Exchange (.ase)</option>
-            </select>
-          </label>
-          <button type="button" class="be-btn be-btn--sm" data-be-pal-download data-sfx="whoosh">Download</button>
-        </div>
+        </details>
         <p class="be-err" data-be-pal-err hidden></p>
       </div>
 
       <div class="be-panel be-gradients" data-be-grads-mount></div>
+      </div>
+
+      <!-- Download-all — a floating pill (the catalog toolbar's clothes) at the
+           pane's anchored bottom edge, so exporting the palette never scrolls
+           away. Lives OUTSIDE .be-split-scroll — see above. -->
+      <div class="be-pal-dock" data-be-pal-dock>
+        <select class="be-pal-fmt-sel" data-be-pal-fmt aria-label="Download the palette as">
+          <option value="tokens-json">Design tokens (JSON)</option>
+          <option value="css-vars">CSS variables</option>
+          <option value="css-classes">CSS classes</option>
+          <option value="gpl">GIMP palette (.gpl)</option>
+          <option value="ase">Adobe Swatch Exchange (.ase)</option>
+        </select>
+        <button type="button" class="be-btn be-btn--sm" data-be-pal-download data-sfx="whoosh">Download</button>
+      </div>
       </aside>
       </div>
 
@@ -919,8 +942,26 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       const set = createTokenSet(doc, { theme: currentTheme === 'dark' ? 'dark' : 'light' });
       resolve = (key: string) => set.resolve(key);
     } catch { /* a malformed doc still lists its literal swatches */ }
-    swatches = walkSwatches(doc, currentTheme, resolve);
-    if (palMount) palMount.innerHTML = paletteHtml(swatches);
+    // Excluded keys (a "deleted" derived step/role — the token stays, the tile
+    // goes) are filtered here, so the grid, wheel, picker swatches and gradient
+    // stop grids all inherit the exclusion from this one seam.
+    const excluded = new Set(getExcludedSwatches(doc));
+    swatches = walkSwatches(doc, currentTheme, resolve).filter(s => !excluded.has(s.key));
+    if (palMount) {
+      // Keep user-folded sections folded across the innerHTML replace (every
+      // group renders `open` by default) — the same re-render/state guard the
+      // gradients panel's details carries. Session-only; no persistence.
+      const closed = new Set(
+        [...palMount.querySelectorAll<HTMLDetailsElement>('.be-pal-group:not([open])')]
+          .map(d => d.dataset.beGroup ?? '').filter(Boolean),
+      );
+      palMount.innerHTML = paletteHtml(swatches);
+      if (closed.size) {
+        palMount.querySelectorAll<HTMLDetailsElement>('.be-pal-group').forEach(d => {
+          if (closed.has(d.dataset.beGroup ?? '')) d.open = false;
+        });
+      }
+    }
     paintWheel();
     syncPickerSwatches();
     for (const fn of paletteHooks) fn();
@@ -1217,6 +1258,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         if (dstBase[g] === undefined && isRec(srcBase[g])) dstBase[g] = structuredClone(srcBase[g]);
       }
     }
+    // Carry the swatch exclusion list ("deleted" derived steps stay deleted) —
+    // but only entries whose swatch still exists in the fresh derive: a smaller
+    // shade count drops its stale ramp-step exclusions, per the delete contract.
+    {
+      const excluded = getExcludedSwatches(doc);
+      if (excluded.length) {
+        const keys = new Set(walkSwatches(next, currentTheme).map(s => s.key));
+        for (const k of excluded) if (keys.has(k)) setSwatchExcluded(next, k, true);
+      }
+    }
     // The carried gradients' stops alias ramp/spectrum/custom keys, and this
     // derive may have rebuilt or dropped their targets (fewer shades; custom
     // swatches go). Resolve every alias against the OLD doc now (`doc` hasn't
@@ -1278,6 +1329,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (cur?.lock?.cmyk) bits.push(`<span class="be-ps-chip">C${cur.lock.cmyk[0]} M${cur.lock.cmyk[1]} Y${cur.lock.cmyk[2]} K${cur.lock.cmyk[3]}</span>`);
     if (cur?.lock?.spot) bits.push(`<span class="be-ps-chip">${escape(cur.lock.spot.name)}</span>`);
     substChips.innerHTML = bits.length ? bits.join('') : '<span class="be-ps-chip be-ps-chip--auto">auto</span>';
+  };
+
+  /** Keep a shape-only tile's tooltip + accessible name (name — hex) fresh —
+   *  the grid shows no text, so every in-place recolour/rename re-stamps these. */
+  const syncTileMeta = (tile: HTMLElement, s: BrandSwatch): void => {
+    const label = tileLabel(s.name, s.hex, !!s.lock);
+    tile.title = label;
+    tile.setAttribute('aria-label', label);
   };
 
   /** Refresh a swatch's tile in place (lock badge + colour), without a full repaint —
@@ -1377,7 +1436,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (tile) {
       tile.style.setProperty('--sw', cur.hex);
       tile.classList.remove('is-empty');
-      const hx = tile.querySelector('.be-swatch-hex'); if (hx) hx.textContent = cur.hex;
+      syncTileMeta(tile, cur);
     }
     if (editorChip) editorChip.style.setProperty('--sw', cur.hex);
     syncFmtRow(cur.hex);
@@ -1392,7 +1451,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (!editorEl) return;
     const r = tile.getBoundingClientRect(), pr = root.getBoundingClientRect();
     editorEl.style.left = `${Math.max(8, Math.min(r.left - pr.left, pr.width - 308))}px`;
-    editorEl.style.top = `${r.bottom - pr.top + 8}px`;
+    // Below the tile, but never past the viewport: the Colour tab's anchored
+    // layout has no page scroll to reveal an overhanging popover (scrolling
+    // the pane still slides tile + popover together). Needs the popover
+    // measurable — openEditor unhides it before calling here.
+    const h = editorEl.offsetHeight;
+    const topMost = 8 - pr.top; // viewport top + margin, in `.be` space
+    const maxTop = window.innerHeight - pr.top - h - 8;
+    editorEl.style.top = `${Math.min(r.bottom - pr.top + 8, Math.max(topMost, maxTop))}px`;
   };
   const closeEditor = (): void => { if (editorEl) { editorEl.hidden = true; } selected = -1; editorAnchor = null; root.querySelectorAll('.be-swatch.is-selected').forEach(t => t.classList.remove('is-selected')); };
   const openEditor = (idx: number, tile: HTMLElement): void => {
@@ -1407,7 +1473,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (fmtInput) fmtInput.value = formatColor(editFmt, s.hex);
     if (fmtOut) fmtOut.textContent = extrapolation(s.hex);
     nameInput.value = s.name;
-    delBtn.hidden = !s.deletable;
+    // Everything is deletable: real removal for the user's own swatches, an
+    // exclusion (hide) for derived ramp steps + roles — see the Delete handler.
+    delBtn.hidden = !(s.deletable || s.kind === 'ramp' || s.kind === 'semantic');
     if (editorLockBadge) editorLockBadge.hidden = !s.lock;
     // Storage notation: respect what the doc already holds (an older hex edit
     // stays hex); the app default for everything else — aliases included, which
@@ -1420,8 +1488,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (substDetails) substDetails.open = false; // folded until asked — the lock chips say enough
     swatchSubst?.render();
     editorAnchor = tile;
+    editorEl.hidden = false; // before positioning — the clamp measures offsetHeight
     positionEditor(tile);
-    editorEl.hidden = false;
     nameInput.focus();
   };
 
@@ -1462,9 +1530,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   palMount?.addEventListener('click', (e) => {
     const add = (e.target as HTMLElement).closest<HTMLElement>('[data-be-add]');
     if (add) {
+      // Group Adds live inside a <summary> — swallow the default toggle so
+      // adding a swatch never folds the section it lands in.
+      e.preventDefault();
       const group = add.dataset.beAdd === 'spectrum' ? 'spectrum' : 'custom';
+      // A derived section's Add files the new custom swatch under ITS heading.
+      const displayGroup = add.dataset.beAddGroup;
       // A neutral new swatch the user immediately recolours — stored LCH, the default.
-      const path = addSwatch(doc, group, group === 'spectrum' ? 'New hue' : 'New swatch', serializeColor('#888888', 'lch'));
+      const path = addSwatch(doc, group, group === 'spectrum' ? 'New hue' : 'New swatch', serializeColor('#888888', 'lch'), displayGroup ? { displayGroup } : {});
       repaintPalette(); persist(true);
       // Select the leaf we just wrote (by JSON path — never "the last one", which
       // depends on key order after a repaint).
@@ -1481,13 +1554,26 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const cur = swatches[selected]; if (!cur) return;
     const val = (e.target as HTMLInputElement).value;
     setSwatchName(doc, cur.path, val); cur.name = val || cur.name;
-    const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${selected}"] .be-swatch-name`);
-    if (tile) tile.textContent = val;
+    const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${selected}"]`);
+    if (tile) syncTileMeta(tile, cur); // the grid is shape-only — the name lives in title/aria
     persist();
   });
   editorEl?.querySelector('[data-be-editor-del]')?.addEventListener('click', async () => {
     if (selected < 0) return;
-    const cur = swatches[selected]; if (!cur || !cur.deletable) return;
+    const cur = swatches[selected]; if (!cur) return;
+    // Derived leaves (ramp steps + the theme roles) are structural — "delete"
+    // HIDES them via the doc's exclusion list: the ramp stays derived and the
+    // token keeps resolving (so semantic roles and gradient aliases pointing at
+    // an excluded step never dangle — no materialisation needed), while the
+    // tile vanishes from the grid + picker swatches. A re-derive clears entries
+    // whose step no longer exists (see the derive flow above).
+    if (cur.kind === 'ramp' || cur.kind === 'semantic') {
+      setSwatchExcluded(doc, cur.key, true);
+      closeEditor(); repaintPalette(); persist(true);
+      announce(`${cur.name} removed from your palette`);
+      return;
+    }
+    if (!cur.deletable) return;
     // Gradient stops may wear this swatch by alias — pin them to its current
     // hex before it goes (the confirm says so), so the doc and any exported
     // pack never carry a dangling ref. An unreferenced swatch deletes silently,
@@ -1526,12 +1612,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // ── Desktop split pane (Colour tab): draggable divider + sticky side pane ───
   const splitTab = $('[data-be-tab-panel="color"]') as HTMLElement | null;
   if (splitTab) cleanups.push(mountStudioSplit(splitTab));
-  // The popover positions in `.be` space, but its anchors now live in a STICKY
-  // pane with its own overflow — both the pane's scroll and the document's
-  // (which translates a stuck pane relative to `.be`) drift an open popover
-  // off its tile. Capture-phase scroll catches both: follow the tile while it
-  // exists, close when it's gone. refreshTile swaps tiles via outerHTML, so a
-  // disconnected anchor is re-queried by index before giving up.
+  // The popover positions in `.be` space, but its anchors live inside the side
+  // pane's own scrollport (and below 1100px the page itself still scrolls) —
+  // either scroll drifts an open popover off its tile. Capture-phase scroll
+  // catches both: follow the tile while it exists, close when it's gone.
+  // refreshTile swaps tiles via outerHTML, so a disconnected anchor is
+  // re-queried by index before giving up.
   const onAnchorScroll = (e: Event): void => {
     if (!editorEl || editorEl.hidden) return;
     if (e.target instanceof Node && editorEl.contains(e.target)) return; // the popover's own body scrolling
@@ -1542,7 +1628,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // An anchor inside the side pane's clipped scrollport can scroll out from
     // under the popover — following it would float the popover over the derive
     // panel (and slide it under the sticky action row). Close once it leaves.
-    const pane = anchor.closest('.be-split-side');
+    const pane = anchor.closest('.be-split-scroll');
     if (pane) {
       const pr = pane.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
       if (ar.bottom < pr.top || ar.top > pr.bottom) { closeEditor(); return; }
@@ -1562,7 +1648,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (!tile) return;
     tile.style.setProperty('--sw', hex);
     tile.classList.remove('is-empty');
-    const hx = tile.querySelector('.be-swatch-hex'); if (hx) hx.textContent = hex;
+    const s = swatches[idx];
+    if (s) syncTileMeta(tile, s); // hex already updated on the swatch by the caller
   };
   paintWheel = (): void => {
     if (!wheelMount) return;
@@ -1587,7 +1674,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       },
       onCommit: () => persist(),
       onPick: (idx) => {
-        const anchor = palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`)
+        // The tile can hide inside a folded palette group (display:none —
+        // offsetParent null); a hidden anchor would place the popover at the
+        // panel origin, so fall back to the wheel dot itself.
+        const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`);
+        const anchor = (tile && tile.offsetParent !== null ? tile : null)
           ?? wheelMount.querySelector<HTMLElement>(`[data-be-widx="${idx}"]`);
         if (anchor) openEditor(idx, anchor);
       },
@@ -1604,6 +1695,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     });
   };
   cleanups.push(() => wheelTeardown?.());
+  // The Colour chart card folds closed by default, and a hidden mount measures
+  // 0×0 — repaint the wheel the moment the card opens so the first reveal (and
+  // any palette change that happened while it was folded) renders true.
+  const chartDetails = $('[data-be-chart]') as HTMLDetailsElement | null;
+  chartDetails?.addEventListener('toggle', () => { if (chartDetails.open) paintWheel(); });
 
   repaintPalette();
 

@@ -149,6 +149,36 @@ export const USER_ASSET_MILESTONES = [20, 100, 500] as const;
 // rather than letting IndexedDB throw a QuotaExceededError mid-write.
 const QUOTA_SAFETY_FRACTION = 0.9;
 
+// Monotonic disambiguator for duplicate ids: several copies minted inside one
+// synchronous burst (a bulk "Duplicate" over a multi-selection) share the same
+// Date.now(), so a per-mint counter is what keeps their ids unique — and, padded,
+// correctly ordered so newer copies still sort first in _listUserAssets.
+let duplicateSeq = 0;
+
+/**
+ * A fresh, collision-free id for a copy of `srcId`. Keeps the source's "kind"
+ * segment (upload / recording / …) so the copy reads like what it was cloned
+ * from, and leads with the wall clock + a padded counter so copies sort
+ * newest-first (id descending, as _listUserAssets orders) without ever clashing.
+ */
+function mintDuplicateId(srcId: string): string {
+  const kind = srcId.split('/')[1] || 'upload';
+  const seq = String(duplicateSeq++).padStart(4, '0');
+  return `user/${kind}/${Date.now()}-${seq}-copy`;
+}
+
+/**
+ * "<name> copy", or "<name> copy 2", "…3" when earlier copies already carry that
+ * name — Finder-style. A trailing " copy"/" copy N" is stripped from the source
+ * first, so duplicating a duplicate reads "photo copy 2", never "photo copy copy".
+ */
+function nextCopyName(srcName: string, taken: Set<string>): string {
+  const base = srcName.replace(/ copy( \d+)?$/i, '').trim() || srcName.trim() || 'image';
+  let name = `${base} copy`;
+  for (let n = 2; taken.has(name); n++) name = `${base} copy ${n}`;
+  return name;
+}
+
 export function createAssetsAPI(db: AssetsDb) {
   const api = {
     async get(id: string, opts: { format?: string; version?: string } = {}): Promise<AssetRef> {
@@ -362,6 +392,29 @@ export function createAssetsAPI(db: AssetsDb) {
         if (kind) record.aiGenerated = kind;
       }
       await db.put('user-assets', record);
+    },
+
+    /**
+     * Internal: duplicate one user upload — a byte-identical copy under a fresh
+     * id and a "… copy" name. Everything else rides along unchanged (the same
+     * blob, format, dimensions, preserved Content Credential and AI flag), so the
+     * copy verifies exactly like its source. The write goes through
+     * _uploadUserAsset, so a duplicate is quota-checked like any other addition —
+     * a copy is real bytes on the device, not a free alias. Returns the new id,
+     * or null if the source is already gone.
+     */
+    async _duplicateUserAsset(id: string): Promise<string | null> {
+      const src = await db.get('user-assets', id);
+      if (!src) return null;
+      const taken = new Set((await db.getAll('user-assets')).map(r => String(r.meta?.name ?? '')));
+      const srcName = String(src.meta?.name ?? id.split('/').pop() ?? 'image');
+      const record: UserAssetRecord = {
+        ...src,
+        id: mintDuplicateId(id),
+        meta: { ...src.meta, name: nextCopyName(srcName, taken) },
+      };
+      await api._uploadUserAsset(record);
+      return record.id;
     },
 
     /** Internal: list the user's saved images, newest first, as resolved AssetRefs. */

@@ -17,6 +17,7 @@ import { createTokenSet } from '@lolly/engine';
 import {
   walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, leafAt,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
+  getExcludedSwatches, setSwatchExcluded,
 } from './brand-doc.ts';
 
 const BRAND = fileURLToPath(
@@ -274,4 +275,59 @@ test('walkSwatches surfaces a swatch\'s print lock (cmyk and/or spot, or none)',
   setSwatchSpotLock(doc, path, { name: 'PANTONE 186 C' });
   const s = walkSwatches(doc, 'light').find(sw => sw.path.length === path.length && sw.path.every((seg, i) => seg === path[i]));
   assert.deepEqual(s?.lock, { cmyk: [0, 100, 79, 4], spot: { name: 'PANTONE 186 C' } });
+});
+
+test('swatch exclusions: hide (not remove) derived leaves; empty list cleans up', () => {
+  const doc = load();
+  assert.deepEqual(getExcludedSwatches(doc), []);
+
+  // Excluding a ramp step lists its key; the token itself stays in the doc, so
+  // roles + gradient aliases pointing at it keep resolving.
+  assert.equal(setSwatchExcluded(doc, 'color.ramp.primary.2', true), true);
+  assert.equal(setSwatchExcluded(doc, 'color.semantic.muted', true), true);
+  assert.deepEqual(getExcludedSwatches(doc), ['color.ramp.primary.2', 'color.semantic.muted']);
+  assert.ok(leafAt(doc, ['base', 'color', 'ramp', 'primary', '2']), 'the token survives its exclusion');
+  // Re-excluding is idempotent.
+  assert.equal(setSwatchExcluded(doc, 'color.ramp.primary.2', true), true);
+  assert.deepEqual(getExcludedSwatches(doc), ['color.ramp.primary.2', 'color.semantic.muted']);
+  // walkSwatches still lists it — filtering is the CALLER's seam (the editor's
+  // repaintPalette / the bridge's colors()), so other consumers stay whole.
+  assert.ok(walkSwatches(doc, 'light').some(s => s.key === 'color.ramp.primary.2'));
+
+  // Un-excluding both empties the list and cleans the vendor entry away.
+  assert.equal(setSwatchExcluded(doc, 'color.ramp.primary.2', false), true);
+  assert.equal(setSwatchExcluded(doc, 'color.semantic.muted', false), true);
+  assert.deepEqual(getExcludedSwatches(doc), []);
+  assert.equal((doc as Record<string, unknown>).$extensions, undefined, 'empty $extensions cleaned up');
+});
+
+test('addSwatch displayGroup files a custom swatch under a derived section heading', () => {
+  const doc = load();
+  const path = addSwatch(doc, 'custom', 'Brand blue', '#123456', { displayGroup: 'Primary' })!;
+  assert.ok(path);
+  const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'))
+    .find(x => x.path.length === path.length && x.path.every((seg, i) => seg === path[i]))!;
+  assert.equal(s.kind, 'custom', 'still a custom token — the tag only relabels the section');
+  assert.equal(s.group, 'Primary');
+  assert.equal(s.deletable, true);
+  // Without the tag the group stays the structural one.
+  const plain = addSwatch(doc, 'custom', 'Loose end', '#654321')!;
+  const p = walkSwatches(doc, 'light').find(x => x.path.join('.') === plain.join('.'))!;
+  assert.equal(p.group, 'Custom');
+});
+
+test('a "Roles" displayGroup tag follows the CURRENT theme’s Roles section', () => {
+  const doc = load();
+  // The editor stores the tag theme-less — it must merge into whichever
+  // theme's Roles heading is showing, never a phantom stale-theme section.
+  const path = addSwatch(doc, 'custom', 'Accent ink', '#224466', { displayGroup: 'Roles' })!;
+  const find = (theme: string) => walkSwatches(doc, theme, resolverFor(doc, theme))
+    .find(x => x.path.join('.') === path.join('.'))!;
+  assert.equal(find('light').group, 'Roles · Light');
+  assert.equal(find('dark').group, 'Roles · Dark');
+  // A legacy theme-suffixed tag (persisted before the tag went theme-less)
+  // maps to the live section too instead of stranding the swatch.
+  const legacy = addSwatch(doc, 'custom', 'Old tag', '#446622', { displayGroup: 'Roles · Light' })!;
+  const l = walkSwatches(doc, 'dark', resolverFor(doc, 'dark')).find(x => x.path.join('.') === legacy.join('.'))!;
+  assert.equal(l.group, 'Roles · Dark');
 });

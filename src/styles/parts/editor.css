@@ -24,10 +24,12 @@
    trigger them, and the Export popup still opens from the rail Export icon. */
 .tool-layout.is-editor .render-pill { display: none; }
 
-/* Left toolbar rail — reveal-dimmed at rest on desktop, always-on for touch.
-   Vertically centred by a flex DOCK wrapper — NOT a transform. The rail must not
-   carry `transform`/`backdrop-filter`, since either would become the containing
-   block for its colour-picker popover's `position:fixed` and knock it off-screen. */
+/* Left toolbar rail — auto-hidden at rest on desktop (revealed whenever the
+   pointer is over the editor stage, like the mesh-gradient tool's on-canvas
+   controls), always-on for touch. Vertically centred by a flex DOCK wrapper —
+   NOT a transform. The rail must not carry `transform`/`backdrop-filter`, since
+   either would become the containing block for its colour-picker popover's
+   `position:fixed` and knock it off-screen. */
 .fc-toolbar-dock {
   position: absolute;
   left: 0; top: 0; bottom: 0;
@@ -47,7 +49,7 @@
   background: hsl(var(--card) / 0.7);
   isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px hsl(var(--border));
-  opacity: 0.5;
+  opacity: 0;
   transition: opacity 0.18s ease;
 }
 .tool-stage:hover .fc-toolbar,
@@ -208,7 +210,15 @@
   isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.24), 0 0 0 1px hsl(var(--border));
   pointer-events: auto;
+  /* Auto-hide with the rail — gone at rest, revealed whenever the pointer is over
+     the editor stage, on the bar's own hover, or while it holds focus (so an open
+     colour popover keeps it up). Always-on for touch (see the coarse block below). */
+  opacity: 0;
+  transition: opacity 0.18s ease;
 }
+.tool-stage:hover .fc-ctxbar,
+.fc-ctxbar:hover,
+.fc-ctxbar:focus-within { opacity: 1; }
 .fc-cbtn {
   min-width: 32px; height: 32px; padding: 0 7px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -254,12 +264,13 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .tool-stage:has(.export-shutter.is-active) .fc-toolbar { opacity: 0; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .fc-toolbar { transition: none; }
+  .fc-toolbar, .fc-ctxbar { transition: none; }
 }
 
-/* Touch: always-visible toolbar + larger hit targets. */
+/* Touch: always-visible toolbar + object bar + larger hit targets (no hover to
+   reveal them on, so the auto-hide above would strand them off-screen). */
 @media (pointer: coarse) {
-  .fc-toolbar { opacity: 1; }
+  .fc-toolbar, .fc-ctxbar { opacity: 1; }
   .fc-btn { width: 44px; height: 44px; }
   .fc-handle { width: 16px; height: 16px; margin-left: -8px; margin-top: -8px; }
   .fc-h-rotate { width: 18px; height: 18px; margin-left: -9px; margin-top: -9px; }
