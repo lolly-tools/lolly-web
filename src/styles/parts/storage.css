@@ -345,43 +345,10 @@
 /* The .saved-* session-row component moved to parts/saved-list.css (always-loaded
    via app.css) — see the note by .session-size above. */
 
-/* ─── Segmented control ─────────────────────────────────────────────────── */
-
-.segmented-control {
-  display: inline-flex;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: hsl(var(--muted));
-}
-
-.segmented-btn {
-  flex: 1;
-  padding: 6px 16px;
-  border: none;
-  border-right: 1px solid hsl(var(--border));
-  background: transparent;
-  color: hsl(var(--muted-foreground));
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-  white-space: nowrap;
-  text-transform:uppercase;
-}
-
-.segmented-btn:last-child {
-  border-right: none;
-}
-
-.segmented-btn:hover:not([aria-pressed="true"]) {
-  background: hsl(var(--accent));
-  color: hsl(var(--accent-foreground));
-}
-
-.segmented-btn[aria-pressed="true"] {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font-weight: 600;
-}
+/* `.segmented-control`/`.segmented-btn` (component audit rec 1) used to live here —
+   a byte-for-byte duplicate of `.view-seg`/`.view-seg-btn` (styles/parts/gallery.css)
+   with nothing in shells/web/src ever minting the markup (verified: not one
+   .segmented-control/.segmented-btn call-site since the repo's initial extraction).
+   Deleted rather than migrated — there was no live control to re-skin. Any future
+   storage-manager segmented control should render via lib/seg.ts's `segHtml`. */
 

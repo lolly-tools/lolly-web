@@ -7,20 +7,32 @@
 
 .be { position: relative; display: grid; gap: 1.1rem; }
 .be-locked { margin: 0; font-size: .86rem; line-height: 1.6; color: hsl(var(--muted-foreground)); }
-.be-panel { border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 1.05rem 1.1rem; background: hsl(var(--card)); }
+/* Background/text colour compose .card (chips.css, same --card/--card-foreground
+   pair); border/radius/padding are real deltas — .be-panel is bordered and at
+   the plain 1x radius, unlike .plat-section's borderless 1.25x. */
+.be-panel { border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 1.05rem 1.1rem; }
+/* .be-panel-head/-title/-sub compose .section-header (chips.css) — only the
+   small uppercase panel-label sizing stays a local delta. */
 .be-panel-head { margin-bottom: .9rem; }
-.be-panel-title { margin: 0; font-size: .84rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: hsl(var(--foreground)); }
-.be-panel-sub { margin: .3rem 0 0; max-width: 74ch; font-size: .8rem; line-height: 1.55; color: hsl(var(--muted-foreground)); }
+.be-panel-title { font-size: .84rem; letter-spacing: .02em; text-transform: uppercase; color: hsl(var(--foreground)); }
+.be-panel-sub { margin: .3rem 0 0; max-width: 74ch; font-size: .8rem; line-height: 1.55; }
 .be-panel-sub strong { color: hsl(var(--foreground)); font-weight: 600; }
 .be-err { margin: .5rem 0 0; font-size: .78rem; color: hsl(var(--destructive)); }
 
+/* .be-btn/.be-cta/.be-add compose parts/buttons.css's `.btn` system (component
+   audit rec 2): the pressed/hover FILLS are declared once there (`.btn--primary`'s
+   and `.btn--ghost:hover`'s alias selector lists include `.be-cta` / `.be-btn`,
+   `.be-add` by name) — buttons.css is an eager sheet that always loads before this
+   lazy studio one, so these rules only need to carry what's left: the studio's own
+   tighter size/shape, and `.be-cta`'s genuinely different hover technique
+   (alpha-fade instead of `.btn--primary`'s brightness filter, since it has to sit
+   under the glossy `.is-active` gradient below without fighting it). */
 .be-btn, .be-cta, .be-add {
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6);
   background: hsl(var(--background)); color: hsl(var(--foreground));
   font: inherit; font-size: .78rem; font-weight: 600; padding: .45rem .85rem; cursor: pointer;
 }
-.be-btn:hover, .be-add:hover { border-color: hsl(var(--primary) / .55); }
-.be-cta { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
+.be-cta { border-color: transparent; }
 .be-cta:hover { background: hsl(var(--primary) / .88); }
 .be-btn:disabled, .be-cta:disabled { opacity: .55; cursor: default; }
 
@@ -51,7 +63,8 @@
   0%, 100% { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .4), 0 4px 13px -5px hsl(var(--primary) / .7); }
   50%      { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .4), 0 6px 19px -4px hsl(var(--primary) / .95); }
 }
-.be-add--sm, .be-btn--sm { padding: .25rem .6rem; font-size: .72rem; }
+/* .be-add--sm/.be-btn--sm's size now lives solely in parts/buttons.css's `.btn--sm`
+   alias list (component audit rec 2) — was a byte-identical duplicate here. */
 
 /* ── Corner style — the shape.radius slider, a .be-panel on the studio's
       Tokens tab (the Dashboard shows the value read-only, without this). */
@@ -313,6 +326,12 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-stored { display: flex; align-items: center; gap: .5rem; }
 .be-stored[hidden] { display: none; }
 .be-stored-label { font-size: .64rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+/* .be-stored-seg composes the shared `.view-seg` primitive (component audit rec 1 —
+   lib/seg.ts; the markup now carries both classes). Every declaration below is a
+   real delta from `.view-seg`'s gapped-pill look — a compact JOINED trough (no gap,
+   one shared border, dividers between buttons) — not a restated duplicate, so it
+   stays local. Same-specificity single-class selectors; gallery.css (`.view-seg`,
+   eager) always loads before this lazy studio sheet, so these win the cascade tie. */
 .be-stored-seg { display: inline-flex; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45); overflow: hidden; }
 .be-stored-seg button {
   border: 0; background: transparent; color: hsl(var(--muted-foreground));
@@ -332,9 +351,12 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-subst-details[open] summary::after { rotate: 90deg; }
 @media (prefers-reduced-motion: reduce) { .be-subst-details summary::after { transition: none; } }
 .be-subst-chips { display: inline-flex; gap: .3rem; }
+/* Font-weight/letter-spacing-base/radius compose .chip--flag (chips.css);
+   the mono value string needs its own font-family/size/case/spacing/padding
+   overrides since it displays exact print-substitute values, not a label. */
 .be-ps-chip {
   font-family: var(--font-mono); font-size: .62rem; text-transform: none; letter-spacing: 0;
-  padding: .1rem .4rem; border-radius: 999px;
+  padding: .1rem .4rem;
   background: hsl(var(--primary) / .12); color: hsl(var(--foreground));
 }
 .be-ps-chip--auto { background: hsl(var(--muted) / .6); color: hsl(var(--muted-foreground)); }

@@ -1335,6 +1335,15 @@ async function outlineSvgTextRuns(liveSvg: Element, clone: Element, outline: boo
     path.setAttribute('fill', cs.fill || live.getAttribute('fill') || '#000');
     if (cs.fillOpacity && parseFloat(cs.fillOpacity) < 1) path.setAttribute('fill-opacity', cs.fillOpacity);
     if (cs.opacity && parseFloat(cs.opacity) < 1) path.setAttribute('opacity', cs.opacity);
+    // Preserve text stroke/outline in vector export
+    const stroke = cs.stroke || live.getAttribute('stroke');
+    if (stroke) {
+      path.setAttribute('stroke', stroke);
+      const strokeWidth = cs.strokeWidth || live.getAttribute('stroke-width');
+      if (strokeWidth) path.setAttribute('stroke-width', strokeWidth);
+      const strokeOpacity = cs.strokeOpacity || live.getAttribute('stroke-opacity');
+      if (strokeOpacity) path.setAttribute('stroke-opacity', strokeOpacity);
+    }
     cl.replaceWith(path);
   }
 }
@@ -1999,6 +2008,10 @@ async function emitInlineTextSvg(
       const col = parseCssColorFull(nodeStyle.color);
       const fillAttr  = col ? `rgb(${col[0]},${col[1]},${col[2]})` : null;
       const alphaAttr = col && col[3] < 1 ? String(col[3]) : null;
+      const strokeCol = parseCssColorFull(nodeStyle.stroke);
+      const strokeAttr = strokeCol ? `rgb(${strokeCol[0]},${strokeCol[1]},${strokeCol[2]})` : null;
+      const strokeOpacityAttr = strokeCol && strokeCol[3] < 1 ? String(strokeCol[3]) : null;
+      const strokeWidthAttr = nodeStyle.strokeWidth ? nodeStyle.strokeWidth : null;
       const fontSizePx = parseFloat(nodeStyle.fontSize) || 16;
       // SUSE statics, a user's Google font (decompressed on demand) or the
       // platform face — whichever the family stack resolves to first.
@@ -2028,6 +2041,10 @@ async function emitInlineTextSvg(
               p.setAttribute('transform', `translate(${n2(x)},${n2(by)})`);
               if (fillAttr)  p.setAttribute('fill', fillAttr);
               if (alphaAttr) p.setAttribute('fill-opacity', alphaAttr);
+              // Preserve text stroke in vector export
+              if (strokeAttr) p.setAttribute('stroke', strokeAttr);
+              if (strokeWidthAttr) p.setAttribute('stroke-width', strokeWidthAttr);
+              if (strokeOpacityAttr) p.setAttribute('stroke-opacity', strokeOpacityAttr);
               parentG.appendChild(p);
               return;
             }
@@ -2048,6 +2065,10 @@ async function emitInlineTextSvg(
         }
         if (fillAttr)  t.setAttribute('fill',         fillAttr);
         if (alphaAttr) t.setAttribute('fill-opacity', alphaAttr);
+        // Preserve text stroke in fallback <text> element
+        if (strokeAttr) t.setAttribute('stroke', strokeAttr);
+        if (strokeWidthAttr) t.setAttribute('stroke-width', strokeWidthAttr);
+        if (strokeOpacityAttr) t.setAttribute('stroke-opacity', strokeOpacityAttr);
         t.textContent = lineText;
         parentG.appendChild(t);
       };

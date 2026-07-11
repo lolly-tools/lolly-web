@@ -25,6 +25,7 @@ import { PALETTE } from '../palette.ts';
 import { hexToRgba, rgbaToHex, rgbToHsl, hslToRgb, formatColor, parseColor } from '../lib/color-formats.ts';
 import type { ColorFormat } from '../lib/color-formats.ts';
 import { escape } from '../utils.ts';
+import { wireTabs } from '../lib/tabs.ts';
 
 /** One swatch as the picker renders it (see SWATCHES below). */
 export interface ColorSwatchOption {
@@ -1124,14 +1125,18 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const a = alpha ? parseInt(alpha.value, 10) : 255;
       return a < 255 ? rgb + a.toString(16).padStart(2, '0') : rgb;
     };
-    modes.querySelectorAll<HTMLElement>('.color-mode-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        const mode = tab.dataset.mode as ColorMode;
+    // lib/tabs.ts's shared roving-tabindex machinery (component audit rec 1) —
+    // was a hand-rolled click-only listener with no arrow-key nav despite the
+    // role="tablist"/role="tab" markup; wireTabs adds that (Left/Right/Home/End
+    // + one tab stop) for free. `onSelect` owns everything mode-switch-specific.
+    const selectMode = wireTabs(modes, {
+      key: 'mode',
+      onSelect: (modeValue) => {
+        const mode = modeValue as ColorMode;
         // HEX has no sliders of its own — it shows the RGB group. Every group-
         // visibility decision below keys off sliderMode so hex and rgb share it.
         const sliderMode = mode === 'hex' ? 'rgb' : mode;
         modes.dataset.activeMode = mode; // drives the value field's format (valueFmt)
-        modes.querySelectorAll<HTMLElement>('.color-mode-tab').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
         if (lchGroup) lchGroup.hidden = sliderMode !== 'oklch';
         genGroups.forEach(g => {
           const on = g.dataset.modeGroup === sliderMode;
@@ -1140,10 +1145,11 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
         });
         if (sliderMode === 'oklch' && field) seedLch(field, currentHex());
         writeValueField(id, field, currentFullHex()); // reformat the value field to the new space
-      });
+      },
     });
-    // Seed the value field in the initial (HEX) space on wire.
-    if (field) writeValueField(id, field, currentFullHex());
+    // Establish the roving tabindex for the server-rendered active mode, and
+    // seed the value field in that space on wire.
+    selectMode(modes.dataset.activeMode ?? 'oklch');
 
     genGroups.forEach(group => {
       const mode = group.dataset.modeGroup as GenMode;

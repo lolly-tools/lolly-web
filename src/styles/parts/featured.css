@@ -218,20 +218,19 @@
    so a missing/slow/errored image is never a blank or broken box, and a TRANSPARENT
    preview can't reveal the icon behind it. Mirrors the gallery tile's .gtile-iconfill: a
    muted ghost with a hairline stroke. z-index:-1 keeps it under the art (the stage
-   isolates, so it can't escape the stacking context — the frosted-menus z-index gotcha). */
+   isolates, so it can't escape the stacking context — the frosted-menus z-index gotcha).
+   Position box + svg width/height compose the merged declaration in gallery.css
+   (component audit rec 3, "one .gtile-iconfill ≡ .ftile-iconfill CSS block") —
+   everything below is this tile's own delta (no base/trace split; bigger max size). */
 .ftile-iconfill {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 18% 18% calc(18% + var(--art-floor));
   box-sizing: border-box;
-  pointer-events: none;
   color: hsl(var(--muted-foreground) / .22);   /* faint — never competes with real art */
 }
-.ftile-iconfill svg { width: 100%; height: 100%; max-width: 120px; max-height: 120px; stroke-width: 2px; }
+.ftile-iconfill svg { max-width: 120px; max-height: 120px; stroke-width: 2px; }
 /* A true hairline regardless of scale (vector-effect isn't inherited → put it on the shapes). */
 .ftile-iconfill svg :is(path, circle, rect, line, polyline, polygon, ellipse) { vector-effect: non-scaling-stroke; }
 /* Real art decoded → drop the icon so a transparent image never shows it through. */

@@ -35,5 +35,8 @@ export const GENAI_CLAIM = 'This asset is or contains AI-generated content';
  *  `kind` (full/partial) still gates whether the badge shows, but the wording stays the
  *  same honest claim regardless — we don't over-assert the degree from a badge. */
 export function genAiPill(_kind: AiKind, iconOnly = false): string {
-  return `<span class="genai-pill${iconOnly ? ' genai-pill--icon' : ''}" title="${GENAI_CLAIM}">${AI_SPARK_ICON}<span class="genai-pill-lbl">Gen AI</span></span>`;
+  // `.chip` (styles/parts/chips.css) supplies the base pill box (component
+  // audit rec 3); `.genai-pill`'s own rule keeps only its deltas — the fixed
+  // violet --vf-ai-* gradient, mono type, uppercase — which stay brand-independent.
+  return `<span class="chip genai-pill${iconOnly ? ' genai-pill--icon' : ''}" title="${GENAI_CLAIM}">${AI_SPARK_ICON}<span class="genai-pill-lbl">Gen AI</span></span>`;
 }

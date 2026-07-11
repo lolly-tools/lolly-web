@@ -84,6 +84,7 @@ import { confirmDialog } from '../components/confirm-dialog.ts';
 import { fmtBytes } from './device-info.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
+import { segHtml } from './seg.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
 
@@ -265,10 +266,10 @@ function broadcastDraft(doc: Record<string, unknown>): void {
   document.dispatchEvent(new CustomEvent<BrandDraftEventDetail>(BRAND_DRAFT_EVENT, { detail: { palette: draftPalette(doc) } }));
 }
 
-const segHtml = (name: string, opts: ReadonlyArray<{ id: string; label: string }>, active: string, label: string): string => `
-  <div class="view-seg be-seg" role="group" aria-label="${escape(label)}" data-be-seg="${escape(name)}">
-    ${opts.map(o => `<button type="button" class="view-seg-btn" data-val="${escape(o.id)}" aria-pressed="${o.id === active}">${escape(o.label)}</button>`).join('')}
-  </div>`;
+// `segHtml` moved to lib/seg.ts (component audit rec 1 — the one `.view-seg`
+// primitive, shared beyond the brand studio); re-exported here for compat with
+// anything still importing it from this module.
+export { segHtml };
 
 // ── Shared print-lock control (independent CMYK lock + Spot-colour lock) ─────
 // One control, two mounts: the Colour panel's primary field and the Palette
@@ -801,8 +802,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             <div class="be-editor-field"><div data-be-editor-color></div></div>
             <div class="be-editor-field be-stored" data-be-stored-row>
               <span class="be-stored-label" id="be-stored-label">${t('Stored as')}</span>
-              <div class="be-stored-seg" role="group" aria-labelledby="be-stored-label" data-be-stored>
-                ${STORAGE_FORMATS.map(f => `<button type="button" data-store-fmt="${f.id}" aria-pressed="false">${escape(f.label)}</button>`).join('')}
+              <!-- Composes the shared .view-seg primitive (lib/seg.ts) — .be-stored-seg
+                   keeps only its delta (a compact joined trough instead of .view-seg-btn's
+                   gapped pills; see brand-studio.css). role/aria-labelledby + the
+                   data-be-stored/data-store-fmt hooks are unchanged from before the merge. -->
+              <div class="view-seg be-stored-seg" role="group" aria-labelledby="be-stored-label" data-be-stored>
+                ${STORAGE_FORMATS.map(f => `<button type="button" class="view-seg-btn" data-store-fmt="${f.id}" aria-pressed="false">${escape(f.label)}</button>`).join('')}
               </div>
             </div>
             <details class="be-subst-details" data-be-subst-details>

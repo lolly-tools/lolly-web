@@ -129,10 +129,12 @@
 .dash-collapse-icon:empty { display: none; }
 .dash-collapse-icon svg { width: 100%; height: 100%; display: block; }
 .dash-collapse-chips { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
+/* Box composes .chip directly (chips.css) — font/padding/background alpha
+   are the only real deltas (see the note there on why it skips --status). */
 .dash-chip {
   font-family: var(--font-mono); font-size: .66rem; line-height: 1.4;
-  padding: .18rem .55rem; border-radius: 999px; white-space: nowrap;
-  background: hsl(var(--muted) / .7); color: hsl(var(--muted-foreground));
+  padding: .18rem .55rem;
+  background: hsl(var(--muted) / .7);
 }
 
 /* ── This device tab — "This device" and the Sound/Storage stack side by side

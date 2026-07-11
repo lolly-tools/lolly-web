@@ -520,9 +520,10 @@ stroke-width:.81;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .view-seg-btn:hover { border-color: hsl(var(--primary) / 0.5); }
+/* The pressed fill (background/color) is declared once in parts/buttons.css's
+   `.btn--primary` alias list (component audit rec 2) — this rule keeps only the
+   border delta, which that list doesn't restate. */
 .view-seg-btn[aria-pressed="true"] {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
   border-color: hsl(var(--primary));
 }
 /* Sort key select + a direction toggle on one row. */
@@ -828,8 +829,16 @@ stroke-width:.81;
    it under the in-flow preview <img>/track and the positioned chips (Continue/badge),
    above the tile's checkerboard background; the parent isolates so it can't escape the
    stacking context (the frosted-menus z-index:-1 gotcha). A loaded, aspect-matched
-   preview covers it completely. */
-.gtile-iconfill {
+   preview covers it completely.
+
+   .gtile-iconfill (here) and featured.css's .ftile-iconfill are the same concept
+   under two prefixes (component audit rec 3) — the positioning box they share is
+   declared ONCE here; featured.css keeps only its real deltas (no base/trace
+   split — the featured row's icon is a static fallback, not a loading tracer).
+   A full single-class merge also needs components/featured-row.ts (the ftile
+   markup's emitter), which is out of this pass's ownership — see followUps. */
+.gtile-iconfill,
+.ftile-iconfill {   /* featured.css */
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -849,7 +858,12 @@ stroke-width:.81;
   box-sizing: border-box;
 }
 .gtile-iconfill-base svg,
-.gtile-iconfill-trace svg { width: 100%; height: 100%; max-width: 96px; max-height: 96px; }
+.gtile-iconfill-trace svg,
+.ftile-iconfill svg {   /* featured.css — shared width/height; max-width/height differ, kept local */
+  width: 100%; height: 100%;
+}
+.gtile-iconfill-base svg,
+.gtile-iconfill-trace svg { max-width: 96px; max-height: 96px; }
 /* A true 2px hairline regardless of icon scale (vector-effect isn't inherited, so it
    must land on the drawn shapes, not just the <svg>). */
 .gtile-iconfill-base svg :is(path, circle, rect, line, polyline, polygon, ellipse),
