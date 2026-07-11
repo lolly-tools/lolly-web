@@ -19,7 +19,7 @@
  * scrolling container (the /pro grid). Regular sidebar fields use plain CSS
  * positioning; block-colour fields keep their sidebar-spanning behaviour.
  */
-import { hexToOklch, oklchToHex, rgbToCmyk, cmykToRgbApprox, contrastRatio } from '@lolly/engine';
+import { hexToOklch, oklchToHex, rgbToCmyk, cmykToRgbApprox, contrastRatio, deltaEOk } from '@lolly/engine';
 import type { Oklch } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
 import { hexToRgba, rgbaToHex, rgbToHsl, hslToRgb, formatColor, parseColor } from '../lib/color-formats.ts';
@@ -98,6 +98,28 @@ export function swatchName(value: unknown): string {
     if (sv && sv === v) return s.label || '';
   }
   return '';
+}
+
+/**
+ * The perceptually nearest swatch to a custom colour (ΔEOK over the active
+ * swatch list, alpha ignored) — the "snap back to the brand" hint. Returns the
+ * winning swatch + its distance; the caller decides whether the distance is
+ * close enough to be worth showing. Transparent and non-hex swatch values
+ * (token aliases mid-resolve) are skipped.
+ */
+function nearestSwatch(value: string): { value: string; ref: string | null; label: string; d: number } | null {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!/^#[0-9a-f]{6}([0-9a-f]{2})?$/.test(raw)) return null;
+  const rgb = raw.slice(0, 7);
+  let best: ColorSwatchOption | null = null;
+  let bestD = Infinity;
+  for (const s of SWATCHES) {
+    const sv = typeof s.value === 'string' ? s.value : '';
+    if (!/^#[0-9a-f]{6}$/i.test(sv)) continue;
+    const d = deltaEOk(rgb, sv);
+    if (Number.isFinite(d) && d < bestD) { bestD = d; best = s; }
+  }
+  return best ? { value: best.value, ref: best.ref ?? null, label: best.label || best.value, d: bestD } : null;
 }
 
 // A colour value is only interpolated into an inline `style="…"` attribute after
@@ -403,7 +425,8 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
                min="0" max="255" value="${alphaInt}" aria-label="Opacity">
         <span class="color-alpha-pct" data-alpha-pct="${eid}">${alphaPct}%</span>
       </div>
-      <input type="color" class="color-popover-native" data-input-id="${eid}" value="${escape(rgbHex)}" aria-label="Pick a custom colour">`}
+      <input type="color" class="color-popover-native" data-input-id="${eid}" value="${escape(rgbHex)}" aria-label="Pick a custom colour">
+      <button type="button" class="color-nearest" data-color-nearest="${eid}" hidden></button>`}
       <div class="color-swatches"></div>
     </div>
   </div>`;
@@ -594,6 +617,42 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     if (nameText) nameText.textContent = name;             // :empty CSS hides it for custom colours
     const trigger = field?.querySelector('.color-trigger');
     if (trigger) trigger.setAttribute('aria-label', `Colour: ${name ? name + ' ' : ''}${value || '#000000'}`);
+    updateNearest(field, value);
+  }
+
+  // ── Nearest-brand hint ("Snap to Jungle") ────────────────────────────────────
+  // A custom colour that lands NEAR a brand swatch is usually a drifted brand
+  // colour — offer the snap. Shown only when the value is not already a swatch
+  // (ΔEOK > a rounding hair) and the nearest one is close enough to be the
+  // intended colour (≤ 0.12 ≈ clearly-related); clicking re-emits through
+  // applySwatch, so a token-backed swatch RE-LINKS the value to its ref.
+  function updateNearest(field: HTMLElement | null, value: string): void {
+    const btn = field?.querySelector<HTMLElement>('.color-nearest');
+    if (!btn) return;
+    const near = value && value !== 'transparent' ? nearestSwatch(value) : null;
+    if (!near || near.d < 0.005 || near.d > 0.12) { btn.hidden = true; return; }
+    btn.hidden = false;
+    btn.dataset.nearValue = near.value;
+    btn.dataset.nearRef = near.ref ?? '';
+    const chip = safeCssColor(near.value) || '#c9ccd1';
+    btn.innerHTML = `<span class="color-nearest-chip" style="background:${escape(chip)}" aria-hidden="true"></span><span>Snap to ${escape(near.label)}</span>`;
+    btn.title = `Nearest brand colour (ΔE ${near.d.toFixed(3)}) — use ${near.label}`;
+  }
+
+  scope.querySelectorAll<HTMLElement>('.color-nearest').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const field = btn.closest<HTMLElement>('[data-color-field]');
+      const value = btn.dataset.nearValue;
+      if (field && value) applySwatch(field, value, btn.dataset.nearRef || null);
+    });
+  });
+
+  /** Seed the hint from the field's current colour (the canonical native input)
+   *  when the popover opens — updateTrigger only runs on later edits. */
+  function seedNearest(field: HTMLElement | null): void {
+    if (!field) return;
+    const hex = field.querySelector<HTMLInputElement>('input.color-popover-native')?.value || '';
+    updateNearest(field, hex);
   }
 
   // ── OKLCH sliders ────────────────────────────────────────────────────────────
@@ -611,6 +670,16 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const val = box.querySelector<HTMLElement>(`[data-lch-val="${axis}"]`);
       if (slider) { slider.value = String(value); slider.style.background = tracks[axis]; }
       if (val) val.textContent = axis === 'l' ? `${Math.round(value)}%` : axis === 'c' ? value.toFixed(3) : `${Math.round(value)}°`;
+    }
+    // Out-of-gamut flag: oklchToHex silently reduces chroma when the position
+    // leaves sRGB — surface it on the chroma readout instead of pretending the
+    // slider position is the emitted colour. 0.01 margin absorbs byte rounding.
+    const emitted = hexToOklch(oklchToHex({ l, c, h }));
+    const clamped = !!emitted && emitted.c < c - 0.01;
+    const cVal = box.querySelector<HTMLElement>('[data-lch-val="c"]');
+    if (cVal) {
+      cVal.classList.toggle('is-clamped', clamped);
+      cVal.title = clamped ? 'Outside sRGB — showing the nearest displayable colour (chroma reduced)' : '';
     }
   }
 
@@ -666,8 +735,9 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   }
 
   // Inline fields have no trigger and their popover is always open, so the
-  // lazy-on-open build above never fires — build their swatch grid up front.
-  scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(f => buildSwatches(f));
+  // lazy-on-open build above never fires — build their swatch grid (and seed
+  // the nearest-brand hint) up front.
+  scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(f => { buildSwatches(f); seedNearest(f); });
 
   // ── Trigger: open/close the popover ──────────────────────────────────────────
   scope.querySelectorAll<HTMLElement>('[data-color-trigger]').forEach(trigger => {
@@ -684,7 +754,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       popover.hidden = !popover.hidden;
       trigger.setAttribute('aria-expanded', String(!popover.hidden));
       if (popover.hidden) { popover.style.cssText = ''; disarmOutside(); }
-      else { buildSwatches(field!); positionPopover(field!, trigger, popover); }
+      else { buildSwatches(field!); seedNearest(field); positionPopover(field!, trigger, popover); }
     });
 
     // Escape closes this field's open popover and returns focus to the trigger.

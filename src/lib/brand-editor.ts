@@ -39,7 +39,7 @@
  */
 
 import '../styles/parts/brand-studio.css'; // every .be-* rule — rides this module's lazy chunk
-import { deriveBrandTokens, createTokenSet, colorToHex, contrastRatio, extractSvgColors, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
+import { deriveBrandTokens, createTokenSet, colorToHex, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
 import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
 import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
@@ -73,7 +73,8 @@ import {
 } from './brand-logos.ts';
 import type { LogoVariant, LogoSlot } from './brand-logos.ts';
 import { mountTokensPanel, mountGradientsPanel, mountCataloguePanel } from './brand-studio-tabs.ts';
-import { STUDIO_GROUPS } from './token-studio.ts';
+import { mountStudioSplit } from './studio-split.ts';
+import { STUDIO_GROUPS, gradientAliasRefCount, materializeGradientAliases } from './token-studio.ts';
 import { POPULAR_FAMILIES } from './google-fonts.ts';
 import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
 import type { BrandTransferHost } from '../brand-transfer.ts';
@@ -87,9 +88,10 @@ import { playSfx } from './sfx.ts';
 /**
  * Fired on `document` whenever the Colour panel's live draft changes (primary
  * drag, a neutral/secondary ramp pick, or "Use this colour") — `detail.palette`
- * is the draft's ramp + spectrum swatches (see draftPalette). Best-effort
- * listeners (the Dashboard's "Colour palette" ink bar) should treat this as
- * optional decoration, never a dependency.
+ * is the draft's ramp + spectrum swatches (see draftPalette). NOTHING listens
+ * today; any future subscriber must treat it as optional decoration, never a
+ * dependency. Consumers of the COMMITTED palette don't ride this — they
+ * subscribe via BrandEditorHandle.onPalette instead.
  */
 export const BRAND_DRAFT_EVENT = 'lolly:brand-draft';
 export interface BrandDraftEventDetail { palette: PaletteEntry[]; }
@@ -142,6 +144,17 @@ const ratioOf = (fg: string, bg: string): string => {
   try { const f = colorToHex(fg), b = colorToHex(bg); return f && b ? contrastRatio(f, b).toFixed(1) : ''; }
   catch { return ''; }
 };
+// APCA-W3 Lc, |rounded| — ADVISORY beside the WCAG number (it reads dark-mode
+// and mid-tone pairs honestly where WCAG 2.1 misjudges); the derive floors
+// stay WCAG-enforced. Rough anchors: 60 body text, 75 small text, 90 thin.
+const apcaOf = (fg: string, bg: string): string => {
+  try {
+    const f = colorToHex(fg), b = colorToHex(bg);
+    if (!f || !b) return '';
+    const lc = apcaContrast(f, b);
+    return Number.isFinite(lc) ? String(Math.round(Math.abs(lc))) : '';
+  } catch { return ''; }
+};
 /**
  * One ramp's 9 steps. When `selected` is given the cells become buttons the
  * user can pick a step from (data-be-ramp/data-be-step carry which); the
@@ -163,18 +176,37 @@ function rampRow(set: TokenSet, ramp: string, label: string, steps: number, sele
   }
   return `<div class="be-ramp-row"><span class="be-ramp-label">${escape(label)}</span><div class="be-ramp" role="${selected === undefined ? 'img' : 'group'}" aria-label="${escape(label)} ramp">${cells}</div></div>`;
 }
+/**
+ * The primary→secondary hue bridge: `rampOklab` through the two semantic
+ * anchors, perceptually even (lightness-corrected) — the in-between colours a
+ * gradient or chart can safely borrow. Display-only spans, mirroring the
+ * non-interactive Primary row's treatment.
+ */
+function blendRow(set: TokenSet, steps: number): string {
+  const a = set.resolve('color.semantic.primary');
+  const b = set.resolve('color.semantic.secondary');
+  if (typeof a !== 'string' || typeof b !== 'string') return '';
+  let hexes: string[];
+  try { hexes = rampOklab([a, b], steps, { correctLightness: true }); } catch { return ''; }
+  const cells = hexes.map((hex, i) =>
+    `<span class="be-ramp-cell" style="background:${escape(hex)}" title="${escape(`Blend ${i + 1} · ${hex}`)}"></span>`).join('');
+  return `<div class="be-ramp-row"><span class="be-ramp-label" title="Primary → Secondary, perceptually even (OKLab)">Blend</span><div class="be-ramp" role="img" aria-label="Primary to secondary blend">${cells}</div></div>`;
+}
 function specCard(name: 'Light' | 'Dark', set: TokenSet): string {
   const s = slot(set, 'surface'), text = slot(set, 'text'), muted = slot(set, 'muted');
   const edge = slot(set, 'edge'), prim = slot(set, 'primary'), on = slot(set, 'on-primary');
   const ratio = ratioOf(text, s);
+  const lc = apcaOf(text, s);
+  const btnTip = `Primary button — WCAG ${ratioOf(on, prim)}:1 · APCA Lc ${apcaOf(on, prim)} (advisory)`;
+  const ratioTip = `Text on surface — WCAG ${ratio}:1 · APCA Lc ${lc} (advisory: 60≈body, 75≈small text)`;
   return `
     <article class="be-spec" style="background:${escape(s)};border-color:${escape(edge)}">
       <span class="be-spec-name" style="color:${escape(muted)}">${name}</span>
       <h4 class="be-spec-h" style="color:${escape(text)}">The quick brown fox</h4>
       <p class="be-spec-b" style="color:${escape(muted)}">Body copy sits one step back — calm and unmistakably yours.</p>
       <div class="be-spec-row">
-        <span class="be-spec-btn" style="background:${escape(prim)};color:${escape(on)}">Primary</span>
-        ${ratio ? `<span class="be-spec-ratio" style="color:${escape(muted)}">${escape(ratio)}:1</span>` : ''}
+        <span class="be-spec-btn" style="background:${escape(prim)};color:${escape(on)}" title="${escape(btnTip)}">Primary</span>
+        ${ratio ? `<span class="be-spec-ratio" style="color:${escape(muted)}" title="${escape(ratioTip)}">${escape(ratio)}:1${lc ? ` · Lc ${escape(lc)}` : ''}</span>` : ''}
       </div>
     </article>`;
 }
@@ -186,7 +218,7 @@ function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secon
   const light = createTokenSet(doc, { theme: 'light' });
   const dark = createTokenSet(doc, { theme: 'dark' });
   return `
-    <div class="be-ramps">${rampRow(light, 'primary', 'Primary', sel.steps)}${rampRow(light, 'neutral', 'Neutral', sel.steps, sel.neutral)}${rampRow(light, 'secondary', 'Secondary', sel.steps, sel.secondary)}</div>
+    <div class="be-ramps">${rampRow(light, 'primary', 'Primary', sel.steps)}${rampRow(light, 'neutral', 'Neutral', sel.steps, sel.neutral)}${rampRow(light, 'secondary', 'Secondary', sel.steps, sel.secondary)}${blendRow(light, sel.steps)}</div>
     <div class="be-specs">${specCard('Light', light)}${specCard('Dark', dark)}</div>`;
 }
 
@@ -194,8 +226,8 @@ function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secon
  * The derived doc's ramp + spectrum swatches as PaletteEntry[] — the shape the
  * Dashboard's "Colour palette" ink-bar section (views/dashboard.ts) renders.
  * Semantic roles are left out (that section never shows them); cmyk is always
- * null (a draft has no measured ink). Broadcast on every draft change so that
- * section can track the picker live — see mount()'s draft-changed dispatch.
+ * null (a draft has no measured ink). Rides BRAND_DRAFT_EVENT (broadcastDraft),
+ * which nothing consumes today — see that constant's doc comment.
  */
 function draftPalette(doc: Record<string, unknown>): PaletteEntry[] {
   return walkSwatches(doc, 'light')
@@ -226,7 +258,7 @@ function applyDraftChrome(doc: Record<string, unknown>): void {
   );
 }
 
-/** Tell any listener (the Dashboard's ink-bar section) the draft just changed. */
+/** Broadcast the draft change — currently unheard (see BRAND_DRAFT_EVENT). */
 function broadcastDraft(doc: Record<string, unknown>): void {
   document.dispatchEvent(new CustomEvent<BrandDraftEventDetail>(BRAND_DRAFT_EVENT, { detail: { palette: draftPalette(doc) } }));
 }
@@ -294,6 +326,11 @@ interface PrintLockCtx {
   setCmyk: (cmyk: [number, number, number, number] | null) => void;
   getSpot: () => SpotColor | null;
   setSpot: (spot: SpotColor | null) => void;
+  /** Called after either block re-renders. The primary panel's folded
+   *  "Print & screen" summary chips hang off this so BOTH lock funnels — the
+   *  control's own toggles AND afterSwatchLockChange → primaryLock.render()
+   *  (the popover editing the primary anchor) — keep them in step. */
+  onRender?: () => void;
 }
 
 /**
@@ -366,6 +403,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
     setPressed(cmykSeg, cmyk ? 'locked' : 'auto');
     if (cmykBody) cmykBody.hidden = !cmyk;
     cInputs.forEach((inp, i) => { if (document.activeElement !== inp) inp.value = String(eff[i]); });
+    ctx.onRender?.();
   }
   function renderSpot(): void {
     const spot = ctx.getSpot();
@@ -375,6 +413,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
     if (spotBody) spotBody.hidden = !spot;
     if (nameInput && document.activeElement !== nameInput) nameInput.value = spot?.name ?? '';
     if (bookInput && document.activeElement !== bookInput) bookInput.value = spot?.book ?? '';
+    ctx.onRender?.();
   }
   function render(): void { renderCmyk(); renderSpot(); }
   render();
@@ -559,6 +598,11 @@ export interface BrandEditorHandle {
    *  on tab switches, where an open popover would otherwise outlive the tile
    *  it was anchored to (the popover sits outside the tab panels). */
   closeOverlays: () => void;
+  /** Subscribe to COMMITTED-palette changes. Fired from both repaintPalette
+   *  and persist() — in-place recolours (wheel drags, popover edits) bypass
+   *  repaintPalette and only funnel through persist(), so a single hook point
+   *  would miss one path. Returns an unsubscribe. */
+  onPalette: (cb: () => void) => () => void;
 }
 
 export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts: BrandEditorOptions = {}): Promise<BrandEditorHandle> {
@@ -576,6 +620,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       importPack: () => Promise.reject(new Error('This brand is fixed — imports are turned off.')),
       reload: () => Promise.resolve(),
       closeOverlays: () => {},
+      onPalette: () => () => {},
     };
   }
 
@@ -656,10 +701,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         </div>
       </div>
 
-      <div class="be-tab" data-be-tab-panel="color">
+      <div class="be-tab be-tab--split" data-be-tab-panel="color">
+      <div class="be-split-main">
       <div class="be-panel be-colour">
         <div class="be-panel-head"><h3 class="be-panel-title">Colour</h3>
-          <p class="be-panel-sub">Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette below — <strong>Save colour</strong> is what actually keeps it.</p></div>
+          <p class="be-panel-sub">Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette beside — <strong>Save colour</strong> is what actually keeps it.</p></div>
         <div class="be-suggest" data-be-suggest hidden></div>
         <div class="be-derive">
           <div class="be-colorpick">
@@ -667,25 +713,34 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             <div data-be-primary-field>${colorFieldHtml('be-primary', primary, { inline: true, modes: true })}</div>
             <!-- Screen / print: the primary is one colour; Lolly shows its on-screen
                  (sRGB) form and auto-converts it for print — UNLESS the shared print
-                 lock below pins an exact CMYK anchor or a named spot colour instead. -->
-            <div class="be-subst" data-be-subst>
-              <div class="be-subst-line">
-                <span class="be-subst-key">Screen</span>
-                <code class="be-subst-val" data-be-screen></code>
-                <span class="be-subst-tag">auto</span>
+                 lock inside pins an exact CMYK anchor or a named spot colour instead.
+                 Folded by default; the summary chips carry the lock state. -->
+            <details class="be-subst-details be-print-details" data-be-print-details>
+              <summary><span class="be-subst-details-label">Print &amp; screen</span><span class="be-subst-chips" data-be-print-chips></span></summary>
+              <div class="be-subst" data-be-subst>
+                <div class="be-subst-line">
+                  <span class="be-subst-key">Screen</span>
+                  <code class="be-subst-val" data-be-screen></code>
+                  <span class="be-subst-tag">auto</span>
+                </div>
+                <div data-be-lock-mount="primary"></div>
               </div>
-              <div data-be-lock-mount="primary"></div>
-            </div>
+            </details>
           </div>
           <div class="be-derive-controls">
             <label class="be-field"><span class="be-field-label">Scheme</span>${segHtml('scheme', SCHEMES, scheme, 'Colour scheme')}</label>
-            <label class="be-field"><span class="be-field-label">UI intensity</span>${segHtml('surface', INTENSITIES, surface, 'UI intensity')}</label>
-            <label class="be-field"><span class="be-field-label">Contrast</span>${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}</label>
-            <label class="be-field"><span class="be-field-label">Text on brand</span>${segHtml('foreground', FOREGROUNDS, foreground, 'Text colour on the brand colour')}</label>
             <div class="be-field be-steps-field">
               <span class="be-field-label">Shades <span class="be-steps-val" data-be-steps-val>${steps}</span></span>
               <input type="range" class="be-steps-slider" data-be-steps min="${RAMP_STEPS_MIN}" max="${RAMP_STEPS_MAX}" step="1" value="${steps}" aria-label="Shades per ramp">
             </div>
+            <details class="be-subst-details be-finetune" data-be-finetune>
+              <summary><span class="be-subst-details-label">Fine-tune</span></summary>
+              <div class="be-finetune-body">
+                <label class="be-field"><span class="be-field-label">UI intensity</span>${segHtml('surface', INTENSITIES, surface, 'UI intensity')}</label>
+                <label class="be-field"><span class="be-field-label">Contrast</span>${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}</label>
+                <label class="be-field"><span class="be-field-label">Text on brand</span>${segHtml('foreground', FOREGROUNDS, foreground, 'Text colour on the brand colour')}</label>
+              </div>
+            </details>
             <button type="button" class="be-cta" data-be-derive>Use this colour</button>
             <button type="button" class="be-cta" data-be-save hidden>Save colour</button>
           </div>
@@ -708,11 +763,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           <div class="be-previews" data-be-previews></div>
         </div>
       </div>
+      </div>
 
+      <div class="be-split-divider" data-be-split-divider role="separator" aria-orientation="vertical" tabindex="0"
+        aria-label="Resize the palette pane" title="Drag to resize · Enter collapses"></div>
+
+      <aside class="be-split-side" data-be-split-side aria-label="Palette">
       <div class="be-panel be-palette">
         <div class="be-panel-head"><h3 class="be-panel-title">Palette</h3>
           <p class="be-panel-sub">Every colour your brand carries — as a list, or on the wheel (angle = hue, distance out = chroma). Click a swatch to recolour or rename it, drag a dot to recolour it, click empty space on the wheel to add one. Changes flow to every picker, tool and export.</p></div>
-        <div class="be-pal-actions">
+        <div class="be-pal-split">
+          <div class="be-pal-wheel" data-be-wheel-mount></div>
+          <div class="be-pal" data-be-pal></div>
+        </div>
+        <div class="be-pal-actions be-pal-actions--dl">
           <label class="be-field be-pal-fmt-field">
             <span class="be-field-label">Download all as</span>
             <select class="be-pal-fmt-sel" data-be-pal-fmt aria-label="Download format">
@@ -723,16 +787,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
               <option value="ase">Adobe Swatch Exchange (.ase)</option>
             </select>
           </label>
-          <button type="button" class="be-btn" data-be-pal-download data-sfx="whoosh">Download</button>
+          <button type="button" class="be-btn be-btn--sm" data-be-pal-download data-sfx="whoosh">Download</button>
         </div>
         <p class="be-err" data-be-pal-err hidden></p>
-        <div class="be-pal-split">
-          <div class="be-pal-wheel" data-be-wheel-mount></div>
-          <div class="be-pal" data-be-pal></div>
-        </div>
       </div>
 
       <div class="be-panel be-gradients" data-be-grads-mount></div>
+      </aside>
       </div>
 
       <div class="be-tab" data-be-tab-panel="type">
@@ -823,6 +884,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // ── Palette state + persistence ─────────────────────────────────────────────
   let swatches: BrandSwatch[] = [];
   let selected = -1;
+  // The tile/dot the open swatch popover is anchored to — repositioning on
+  // side-pane scroll needs it (the popover positions in `.be` space, so the
+  // sticky pane's own scroll would otherwise drift it off its tile).
+  let editorAnchor: HTMLElement | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   // The wheel is a second view of the SAME swatches — assigned once the handlers
   // it needs (openEditor/applyEditedHex/addSwatch) exist, and called by every
@@ -836,6 +901,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // add / delete / re-derive — keeps them in sync). Declared as a mutable list
   // to sidestep the TDZ: the generator functions are defined further below.
   const paletteHooks: Array<() => void> = [];
+  // External observers of the COMMITTED palette (the handle's onPalette — the
+  // mobile mirror, gradient stop chips). Notified from BOTH repaintPalette and
+  // persist(): in-place recolours (wheel drags, popover edits) bypass
+  // repaintPalette and only reach persist(), so either seam alone would miss
+  // one path. Observers must tolerate double-fires (a repaint + its persist).
+  const paletteObservers = new Set<() => void>();
+  const notifyPaletteObservers = (): void => {
+    for (const fn of paletteObservers) { try { fn(); } catch { /* observer's problem */ } }
+  };
   const repaintPalette = (): void => {
     // Roles store `{alias}` refs, so hand the walker a resolver built from the
     // SAME doc + theme the tiles are describing — otherwise every role renders
@@ -850,6 +924,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     paintWheel();
     syncPickerSwatches();
     for (const fn of paletteHooks) fn();
+    notifyPaletteObservers();
   };
 
   // Feed the colour PICKER's swatch grid from the live (draft) brand palette, so
@@ -863,6 +938,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       .map(s => ({ value: s.hex, label: s.name, group: s.group, ref: s.isAlias ? null : `{${s.key}}` }));
     setSwatches([{ value: 'transparent', label: 'Transparent', group: null, ref: null }, ...opts]);
     refreshSwatches(root);
+  };
+
+  /** A `{path}` alias (or bare dotted path) → its current hex, or null. Reads
+   *  the `swatches` array first — kept fresh by BOTH repaintPalette and the
+   *  in-place recolour paths, so gradient chips resolve mid-drag values without
+   *  re-flattening the doc — falling back to a full token-set resolve for refs
+   *  that aren't palette swatches (hand-authored imports). */
+  const resolveTokenRef = (ref: string): string | null => {
+    const key = aliasPath(ref) ?? ref;
+    const hit = swatches.find(s => s.key === key && s.hex);
+    if (hit) return hit.hex;
+    try {
+      return colorToHex(createTokenSet(doc, { theme: currentTheme === 'dark' ? 'dark' : 'light' }).resolve(ref)) ?? null;
+    } catch { return null; }
   };
 
   // The Save-colour dirty flag — declared ahead of persist() below, which
@@ -896,6 +985,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     setDirty(false);
     notify('color');
     setDeriveActive(false); // saved — nothing pending to apply
+    notifyPaletteObservers(); // the doc is already mutated — mirrors repaint now, not post-debounce
     const run = async (): Promise<void> => {
       try {
         await installUserTokens(host as unknown as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
@@ -1050,6 +1140,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     };
     seg.addEventListener('click', on);
   });
+  // The "Print & screen" summary chips — rendered via mountPrintLock's own
+  // render (ctx.onRender), never by a caller directly, so both lock funnels
+  // (the control's toggles AND afterSwatchLockChange → primaryLock.render())
+  // update them without either knowing about the folded summary.
+  const printChips = $('[data-be-print-chips]') as HTMLElement | null;
+  const renderPrintChips = (): void => {
+    if (!printChips) return;
+    const lock = primaryPrintLock();
+    const bits: string[] = [];
+    if (lock?.cmyk) bits.push(`<span class="be-ps-chip">C${lock.cmyk[0]} M${lock.cmyk[1]} Y${lock.cmyk[2]} K${lock.cmyk[3]}</span>`);
+    if (lock?.spot) bits.push(`<span class="be-ps-chip">${escape(lock.spot.name)}</span>`);
+    printChips.innerHTML = bits.length ? bits.join('') : '<span class="be-ps-chip be-ps-chip--auto">auto</span>';
+  };
   // The primary's print lock — mounted only now, AFTER the generic [data-be-seg]
   // delegate above has taken its one-time querySelectorAll snapshot, so this
   // control's own Auto/Locked + Process/Spot segments (built on the same
@@ -1057,6 +1160,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // listener (see mountPrintLock's doc comment).
   const primaryLockMount = $('[data-be-lock-mount="primary"]') as HTMLElement | null;
   const primaryLock = primaryLockMount ? mountPrintLock(primaryLockMount, {
+    onRender: renderPrintChips,
     hex: () => primaryHex(),
     getCmyk: () => primaryPrintLock()?.cmyk ?? null,
     setCmyk: (cmyk) => {
@@ -1112,6 +1216,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       for (const g of [...STUDIO_GROUPS, 'font', 'asset', 'shape']) {
         if (dstBase[g] === undefined && isRec(srcBase[g])) dstBase[g] = structuredClone(srcBase[g]);
       }
+    }
+    // The carried gradients' stops alias ramp/spectrum/custom keys, and this
+    // derive may have rebuilt or dropped their targets (fewer shades; custom
+    // swatches go). Resolve every alias against the OLD doc now (`doc` hasn't
+    // swapped yet — resolveTokenRef still answers from it) and pin the ones the
+    // fresh doc can no longer answer, so an exported pack never carries a
+    // dangling ref. Aliases that still resolve keep tracking their swatch.
+    {
+      const nextSet = createTokenSet(next, { theme: currentTheme === 'dark' ? 'dark' : 'light' });
+      materializeGradientAliases(next, ref => colorToHex(nextSet.resolve(ref)) == null, resolveTokenRef);
     }
     const ok = swatches.some(s => s.kind === 'custom')
       ? await confirmDialog({ title: 'Re-derive the palette?', message: 'This rebuilds every swatch from your colour and drops the custom swatches you added.', confirmLabel: 'Re-derive' })
@@ -1271,7 +1385,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     persist();
   }
 
-  const closeEditor = (): void => { if (editorEl) { editorEl.hidden = true; } selected = -1; root.querySelectorAll('.be-swatch.is-selected').forEach(t => t.classList.remove('is-selected')); };
+  /** Place the popover under `tile`, clamped to the editor box — the left
+   *  floor (8) must win over the right clamp so a viewport narrower than the
+   *  card never pushes it off the left edge. */
+  const positionEditor = (tile: HTMLElement): void => {
+    if (!editorEl) return;
+    const r = tile.getBoundingClientRect(), pr = root.getBoundingClientRect();
+    editorEl.style.left = `${Math.max(8, Math.min(r.left - pr.left, pr.width - 308))}px`;
+    editorEl.style.top = `${r.bottom - pr.top + 8}px`;
+  };
+  const closeEditor = (): void => { if (editorEl) { editorEl.hidden = true; } selected = -1; editorAnchor = null; root.querySelectorAll('.be-swatch.is-selected').forEach(t => t.classList.remove('is-selected')); };
   const openEditor = (idx: number, tile: HTMLElement): void => {
     const s = swatches[idx]; if (!s || !editorEl) return;
     selected = idx;
@@ -1296,12 +1419,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     renderSubstChips();
     if (substDetails) substDetails.open = false; // folded until asked — the lock chips say enough
     swatchSubst?.render();
-    // Position the popover under the tile, clamped to the editor box — the
-    // left floor (8) must win over the right clamp so a viewport narrower
-    // than the card never pushes it off the left edge.
-    const r = tile.getBoundingClientRect(), pr = root.getBoundingClientRect();
-    editorEl.style.left = `${Math.max(8, Math.min(r.left - pr.left, pr.width - 308))}px`;
-    editorEl.style.top = `${r.bottom - pr.top + 8}px`;
+    editorAnchor = tile;
+    positionEditor(tile);
     editorEl.hidden = false;
     nameInput.focus();
   };
@@ -1366,9 +1485,23 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (tile) tile.textContent = val;
     persist();
   });
-  editorEl?.querySelector('[data-be-editor-del]')?.addEventListener('click', () => {
+  editorEl?.querySelector('[data-be-editor-del]')?.addEventListener('click', async () => {
     if (selected < 0) return;
     const cur = swatches[selected]; if (!cur || !cur.deletable) return;
+    // Gradient stops may wear this swatch by alias — pin them to its current
+    // hex before it goes (the confirm says so), so the doc and any exported
+    // pack never carry a dangling ref. An unreferenced swatch deletes silently,
+    // exactly as before.
+    const refs = gradientAliasRefCount(doc, cur.key);
+    if (refs) {
+      const ok = await confirmDialog({
+        title: `Delete ${cur.name}?`,
+        message: `${refs} gradient stop${refs === 1 ? ' wears' : 's wear'} this colour — ${refs === 1 ? 'it keeps' : 'they keep'} its current value as a fixed colour.`,
+        confirmLabel: 'Delete',
+      });
+      if (!ok || !root.isConnected || selected < 0 || swatches[selected] !== cur) return;
+      materializeGradientAliases(doc, ref => aliasPath(ref) === cur.key, () => cur.hex || null);
+    }
     deleteSwatch(doc, cur.path); closeEditor(); repaintPalette(); persist(true);
   });
   // Save = the affirmative close: edits already landed live (same contract as
@@ -1389,6 +1522,35 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   document.addEventListener('pointerdown', onDocPointer, true);
   document.addEventListener('keydown', onKey);
   cleanups.push(() => { document.removeEventListener('pointerdown', onDocPointer, true); document.removeEventListener('keydown', onKey); });
+
+  // ── Desktop split pane (Colour tab): draggable divider + sticky side pane ───
+  const splitTab = $('[data-be-tab-panel="color"]') as HTMLElement | null;
+  if (splitTab) cleanups.push(mountStudioSplit(splitTab));
+  // The popover positions in `.be` space, but its anchors now live in a STICKY
+  // pane with its own overflow — both the pane's scroll and the document's
+  // (which translates a stuck pane relative to `.be`) drift an open popover
+  // off its tile. Capture-phase scroll catches both: follow the tile while it
+  // exists, close when it's gone. refreshTile swaps tiles via outerHTML, so a
+  // disconnected anchor is re-queried by index before giving up.
+  const onAnchorScroll = (e: Event): void => {
+    if (!editorEl || editorEl.hidden) return;
+    if (e.target instanceof Node && editorEl.contains(e.target)) return; // the popover's own body scrolling
+    const anchor = editorAnchor?.isConnected
+      ? editorAnchor
+      : (selected >= 0 ? palMount?.querySelector<HTMLElement>(`[data-be-tile="${selected}"]`) ?? null : null);
+    if (!anchor) { closeEditor(); return; }
+    // An anchor inside the side pane's clipped scrollport can scroll out from
+    // under the popover — following it would float the popover over the derive
+    // panel (and slide it under the sticky action row). Close once it leaves.
+    const pane = anchor.closest('.be-split-side');
+    if (pane) {
+      const pr = pane.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+      if (ar.bottom < pr.top || ar.top > pr.bottom) { closeEditor(); return; }
+    }
+    editorAnchor = anchor; positionEditor(anchor);
+  };
+  document.addEventListener('scroll', onAnchorScroll, { capture: true, passive: true });
+  cleanups.push(() => document.removeEventListener('scroll', onAnchorScroll, true));
 
   // ── The wheel: a live OKLCH hue/chroma view of the SAME swatches ────────────
   // Drag a dot to recolour it (hue+chroma from where it lands, lightness kept),
@@ -1791,7 +1953,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const tokensMount = $('[data-be-tokens-mount]') as HTMLElement | null;
   const tokensPanel = tokensMount ? mountTokensPanel(tokensMount, { ...studioCtx, notify: () => notify('tokens') }) : null;
   const gradsMount = $('[data-be-grads-mount]') as HTMLElement | null;
-  const gradsPanel = gradsMount ? mountGradientsPanel(gradsMount, { ...studioCtx, notify: () => notify('color'), primaryHex, paletteHexes }) : null;
+  // The gradient stop picker's view of the palette: the same walkSwatches-fed
+  // `swatches` array the grid renders (kept fresh by both repaintPalette and
+  // the in-place recolour paths). Alias roles are excluded — a stop wearing a
+  // role would chain two aliases deep.
+  const gradSwatches = (): Array<{ ref: string; hex: string; label: string; group: string }> =>
+    swatches.filter(s => s.hex && !s.isAlias && s.kind !== 'semantic')
+      .map(s => ({ ref: `{${s.key}}`, hex: s.hex, label: s.name, group: s.group }));
+  const gradsPanel = gradsMount ? mountGradientsPanel(gradsMount, {
+    ...studioCtx, notify: () => notify('color'), primaryHex, paletteHexes,
+    paletteSwatches: gradSwatches,
+    resolveRef: resolveTokenRef,
+    onPalette: (cb) => { paletteObservers.add(cb); return () => { paletteObservers.delete(cb); }; },
+  }) : null;
   const catMount = $('[data-be-cat-mount]') as HTMLElement | null;
   const catPanel = catMount ? mountCataloguePanel(catMount, { host, notify: () => notify('catalogue') }) : null;
   cleanups.push(() => { tokensPanel?.teardown(); gradsPanel?.teardown(); catPanel?.teardown(); });
@@ -1851,6 +2025,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   return {
     teardown: () => {
       clearTimeout(saveTimer); cleanups.forEach(fn => fn());
+      paletteObservers.clear();
       // A live-previewed but unsaved colour draft must not outlive the editor —
       // restore the chrome accent from whatever's actually installed (unless
       // the caller already committed it via saveDraft() first).
@@ -1862,5 +2037,6 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     importPack,
     reload,
     closeOverlays: closeEditor,
+    onPalette: (cb) => { paletteObservers.add(cb); return () => { paletteObservers.delete(cb); }; },
   };
 }

@@ -14,10 +14,10 @@
  */
 
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
-import { colorToHex } from '@lolly/engine';
+import { colorToHex, isAlias } from '@lolly/engine';
 import {
   listStudioTokens, addStudioToken, setStudioTokenValue, deleteStudioToken,
-  defaultValueFor, gradientCss, formatStudioValue,
+  defaultValueFor, gradientCss, resolveStopHex, formatStudioValue,
 } from './token-studio.ts';
 import type { StudioKind, StudioToken, GradientStop } from './token-studio.ts';
 import { mountUploadDropzone } from './upload-dropzone.ts';
@@ -207,85 +207,282 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
 
 // ── Gradients panel (Colour tab) ──────────────────────────────────────────────
 
+/** One palette swatch as the gradient stop picker sees it — `ref` is the
+ *  canonical `{color.…}` alias a stop stores. Built by brand-editor.ts from
+ *  the same walkSwatches output the palette grid renders. */
+export interface GradientSwatch { ref: string; hex: string; label: string; group: string }
+
 export interface GradientsCtx extends StudioTabCtx {
   primaryHex: () => string;
   paletteHexes: () => string[];
+  /** The committed palette, in grid order (alias roles excluded). */
+  paletteSwatches: () => GradientSwatch[];
+  /** A `{path}` alias → resolved hex against the live doc, or null. */
+  resolveRef: (ref: string) => string | null;
+  /** The committed-palette seam (BrandEditorHandle.onPalette — fires from BOTH
+   *  repaintPalette and persist(); double-fires expected, so subscribers must
+   *  be idempotent). Returns an unsubscribe. */
+  onPalette: (cb: () => void) => () => void;
 }
 
-const stopHex = (s: GradientStop): string => (colorToHex(s.color) ?? '#888888').slice(0, 7);
+const GRAD_STOPS_MIN = 2;
+const GRAD_STOPS_MAX = 8;
 
 export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): StudioPanelHandle {
   mount.innerHTML = `
     <div class="be-panel-head"><h3 class="be-panel-title">Gradients</h3>
-      <p class="be-panel-sub">Optional colour tokens — blends of your palette for backgrounds and accents. Skip these entirely if your brand doesn't do gradients.</p></div>
-    <div class="be-grad-list" data-grad-list></div>
-    <button type="button" class="be-add" data-grad-add>+ Add gradient</button>
-    <p class="be-err" data-grad-err hidden></p>`;
+      <p class="be-panel-sub">Optional colour tokens — blends of your palette for backgrounds and accents. Stops wear your swatches, so they follow a recolour. Skip these entirely if your brand doesn't do gradients.</p></div>
+    <details class="be-subst-details be-grads-details" data-be-grads-details>
+      <summary><span class="be-subst-details-label">Your gradients</span><span class="be-subst-chips"><span class="be-ps-chip" data-grad-count></span></span></summary>
+      <div class="be-grad-list" data-grad-list></div>
+      <button type="button" class="be-add" data-grad-add>+ Add gradient</button>
+      <p class="be-err" data-grad-err hidden></p>
+    </details>
+    <div class="be-grad-pop" data-grad-pop hidden>
+      <div class="be-grad-pop-card" role="dialog" aria-label="Stop colour">
+        <div class="be-grad-pop-grid" data-grad-pop-grid></div>
+        <details class="be-grad-pop-custom" data-grad-pop-custom>
+          <summary>Custom value</summary>
+          <div class="be-grad-pop-customrow">
+            <input type="color" data-grad-pop-native aria-label="Custom stop colour">
+            <input type="text" class="be-fmt-input" data-grad-pop-hex placeholder="#rrggbb / oklch(…)" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Custom stop value">
+          </div>
+        </details>
+      </div>
+    </div>`;
 
   const list = mount.querySelector<HTMLElement>('[data-grad-list]')!;
+  const details = mount.querySelector<HTMLDetailsElement>('[data-be-grads-details]');
+  const countChip = mount.querySelector<HTMLElement>('[data-grad-count]');
   const err = mount.querySelector<HTMLElement>('[data-grad-err]');
   const showErr = (m: string): void => { if (err) { err.textContent = m; err.hidden = !m; } if (m) announce(m, { assertive: true }); };
   const grads = (): StudioToken[] => listStudioTokens(ctx.doc()).filter(t => t.kind === 'gradient');
 
+  const stopsOf = (t: StudioToken): GradientStop[] => (Array.isArray(t.raw) ? (t.raw as GradientStop[]) : []);
+  /** A stop's renderable colour ('transparent' when its alias can't answer). */
+  const stopCss = (s: GradientStop): string => resolveStopHex(s, ctx.resolveRef) ?? 'transparent';
+  const previewCss = (t: StudioToken): string => gradientCss(t.raw, t.angle, { resolve: ctx.resolveRef, space: 'oklch' });
+  /** The next palette swatch no stop already wears (by ref or resolved hex). */
+  const nextUnusedSwatch = (stops: GradientStop[]): GradientSwatch | undefined => {
+    const used = new Set<string>();
+    for (const s of stops) {
+      used.add(s.color);
+      const hex = resolveStopHex(s, ctx.resolveRef);
+      if (hex) used.add(hex.toLowerCase().slice(0, 7));
+    }
+    return ctx.paletteSwatches().find(w => !used.has(w.ref) && !used.has(w.hex.toLowerCase().slice(0, 7)));
+  };
+
+  const stopChipHtml = (t: StudioToken, s: GradientStop, i: number, removable: boolean): string => {
+    const p = pathAttr(t);
+    const isRef = isAlias(s.color);
+    const swName = isRef ? ctx.paletteSwatches().find(w => w.ref === s.color)?.label ?? s.color : s.color;
+    const label = `${t.name} stop ${i + 1} — ${swName}`;
+    return `<span class="be-grad-stopwrap">
+        <button type="button" class="be-grad-stop-chip${isRef ? ' is-ref' : ''}" data-grad-stop="${i}" data-grad-path="${p}"
+          style="--sw:${escape(stopCss(s))}" title="${escape(swName)}" aria-label="${escape(label)}" aria-haspopup="dialog"></button>
+        ${removable ? `<button type="button" class="be-grad-stopdel" data-grad-stopdel="${i}" data-grad-path="${p}" aria-label="Remove ${escape(label)}">&#x2715;</button>` : ''}
+      </span>`;
+  };
+  const rowHtml = (t: StudioToken): string => {
+    const stops = stopsOf(t);
+    const p = pathAttr(t);
+    const removable = stops.length > GRAD_STOPS_MIN;
+    return `
+      <div class="be-grad-row" data-grad-row data-grad-path="${p}">
+        <span class="be-grad-preview" style="background:${escape(previewCss(t))}" aria-hidden="true"></span>
+        <span class="be-grad-meta">
+          <span class="be-grad-name">${escape(t.name)}</span>
+          <span class="be-grad-stops">
+            ${stops.map((s, i) => stopChipHtml(t, s, i, removable)).join('')}
+            ${stops.length < GRAD_STOPS_MAX ? `<button type="button" class="be-grad-addstop" data-grad-addstop="${p}" aria-label="Add a stop to ${escape(t.name)}">+</button>` : ''}
+            <label class="be-grad-nstops"><input type="number" min="${GRAD_STOPS_MIN}" max="${GRAD_STOPS_MAX}" step="1" value="${stops.length}" data-grad-nstops data-grad-path="${p}" aria-label="${escape(t.name)} stop count">stops</label>
+            <label class="be-grad-angle"><input type="number" value="${t.angle ?? 180}" step="15" data-grad-angle data-grad-path="${p}" aria-label="${escape(t.name)} angle">°</label>
+          </span>
+        </span>
+        <button type="button" class="be-tok-del" data-grad-del="${p}" aria-label="Delete ${escape(t.name)}">&#x2715;</button>
+      </div>`;
+  };
+
+  // ── The ONE shared stop popover — swatch grid first, custom value folded ────
+  const pop = mount.querySelector<HTMLElement>('[data-grad-pop]')!;
+  const popGrid = mount.querySelector<HTMLElement>('[data-grad-pop-grid]')!;
+  const popCustom = mount.querySelector<HTMLDetailsElement>('[data-grad-pop-custom]')!;
+  const popNative = mount.querySelector<HTMLInputElement>('[data-grad-pop-native]')!;
+  const popHex = mount.querySelector<HTMLInputElement>('[data-grad-pop-hex]')!;
+  let popPath = ''; // pathAttr of the token whose stop is being edited ('' = closed)
+  let popStop = -1;
+
+  const closePop = (): void => { pop.hidden = true; popPath = ''; popStop = -1; };
+  const popTarget = (): { t: StudioToken; stops: GradientStop[] } | null => {
+    const t = tokenAt(popPath); if (!t) return null;
+    const stops = stopsOf(t);
+    return popStop >= 0 && popStop < stops.length ? { t, stops } : null;
+  };
+  const renderPopGrid = (): void => {
+    const curColor = popTarget()?.stops[popStop]?.color ?? '';
+    popGrid.innerHTML = ctx.paletteSwatches().map(w => `
+      <button type="button" class="be-grad-pop-sw${w.ref === curColor ? ' is-active' : ''}" data-pop-ref="${escape(w.ref)}"
+        style="--sw:${escape(w.hex)}" title="${escape(`${w.group} · ${w.label}`)}" aria-label="${escape(`${w.label} (${w.group})`)}" aria-pressed="${w.ref === curColor}"></button>`).join('');
+  };
+  const openPop = (chip: HTMLElement): void => {
+    popPath = chip.dataset.gradPath ?? '';
+    popStop = Number(chip.dataset.gradStop);
+    const cur = popTarget();
+    if (!cur) { closePop(); return; }
+    const stop = cur.stops[popStop]!;
+    renderPopGrid();
+    popNative.value = (resolveStopHex(stop, ctx.resolveRef) ?? '#888888').slice(0, 7);
+    popHex.value = isAlias(stop.color) ? '' : stop.color;
+    popCustom.open = !isAlias(stop.color); // a literal stop opens on the row that set it
+    pop.hidden = false;
+    // Position under the chip, clamped inside the panel; flipped above when
+    // the side pane's scrollport (or the viewport) would clip it below. The
+    // popover is absolute INSIDE the panel, so the pane's own scroll carries
+    // it with its anchor — no `.be`-space drift to chase.
+    const mr = mount.getBoundingClientRect(), cr = chip.getBoundingClientRect();
+    pop.style.left = `${Math.max(0, Math.min(cr.left - mr.left, mr.width - (pop.offsetWidth || 248)))}px`;
+    const h = pop.offsetHeight;
+    const scroller = mount.closest<HTMLElement>('.be-split-side');
+    const limit = scroller && scroller.clientHeight < scroller.scrollHeight
+      ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+    pop.style.top = cr.bottom + 6 + h <= limit
+      ? `${cr.bottom - mr.top + 6}px`
+      : `${Math.max(0, cr.top - mr.top - h - 6)}px`;
+  };
+  /** Write the open stop's colour (an alias ref or a literal) and repaint. */
+  const setStopColor = (color: string): void => {
+    const cur = popTarget(); if (!cur || !color) return;
+    const next = cur.stops.map((s, i) => (i === popStop ? { ...s, color } : s));
+    if (!setStudioTokenValue(ctx.doc(), cur.t.path, next)) return;
+    repaintRow(popPath);
+    renderPopGrid();
+    ctx.persist();
+    ctx.notify();
+  };
+
   const render = (): void => {
     const items = grads();
-    list.innerHTML = items.map(t => {
-      const stops = Array.isArray(t.raw) ? (t.raw as GradientStop[]) : [];
-      const p = pathAttr(t);
-      return `
-        <div class="be-grad-row" data-grad-row data-grad-path="${p}">
-          <span class="be-grad-preview" style="background:${escape(gradientCss(t.raw, t.angle))}" aria-hidden="true"></span>
-          <span class="be-grad-meta">
-            <span class="be-grad-name">${escape(t.name)}</span>
-            <span class="be-grad-stops">
-              ${stops.map((s, i) => `<label class="be-grad-stop"><input type="color" value="${stopHex(s)}" data-grad-stop="${i}" data-grad-path="${p}" aria-label="${escape(t.name)} stop ${i + 1}"></label>`).join('')}
-              ${stops.length < 5 ? `<button type="button" class="be-grad-addstop" data-grad-addstop="${p}" aria-label="Add a stop to ${escape(t.name)}">+</button>` : ''}
-              <label class="be-grad-angle"><input type="number" value="${t.angle ?? 180}" step="15" data-grad-angle data-grad-path="${p}" aria-label="${escape(t.name)} angle">°</label>
-            </span>
-          </span>
-          <button type="button" class="be-tok-del" data-grad-del="${p}" aria-label="Delete ${escape(t.name)}">&#x2715;</button>
-        </div>`;
-    }).join('');
+    // Count chip updates in place; the <details> open state is deliberately
+    // never touched here, so the repaintPalette-driven re-render (the editor's
+    // paletteHooks) can't fold an open panel shut.
+    if (countChip) {
+      countChip.textContent = items.length ? String(items.length) : 'none';
+      countChip.classList.toggle('be-ps-chip--auto', !items.length);
+    }
+    if (!pop.hidden) closePop(); // the chip it anchors to is about to be rebuilt
+    list.innerHTML = items.map(rowHtml).join('');
   };
+  // Default-collapsed only while the brand carries no gradients — a brand that
+  // has them shows them.
+  if (details) details.open = grads().length > 0;
   render();
 
   const tokenAt = (attr: string): StudioToken | undefined =>
     grads().find(t => t.path.join('␟') === attr);
+  /** In-place repaint of one row's preview + chips (no re-render — keeps the
+   *  popover and any focused control alive). */
   const repaintRow = (attr: string): void => {
     const t = tokenAt(attr);
-    const row = list.querySelector<HTMLElement>(`[data-grad-row][data-grad-path="${CSS.escape(attr)}"] .be-grad-preview`);
-    if (t && row) row.style.background = gradientCss(t.raw, t.angle);
+    const row = list.querySelector<HTMLElement>(`[data-grad-row][data-grad-path="${CSS.escape(attr)}"]`);
+    if (!t || !row) return;
+    const prev = row.querySelector<HTMLElement>('.be-grad-preview');
+    if (prev) prev.style.background = previewCss(t);
+    const stops = stopsOf(t);
+    row.querySelectorAll<HTMLElement>('[data-grad-stop]').forEach(chip => {
+      const s = stops[Number(chip.dataset.gradStop)];
+      if (!s) return;
+      chip.style.setProperty('--sw', stopCss(s));
+      chip.classList.toggle('is-ref', isAlias(s.color));
+    });
   };
+  // The committed-palette seam: an in-place recolour (wheel drag, popover edit)
+  // changes what alias stops resolve to with no structural edit — repaint every
+  // row (and an open stop popover's grid) in place.
+  const repaintAll = (): void => {
+    for (const t of grads()) repaintRow(t.path.join('␟'));
+    if (!pop.hidden) renderPopGrid();
+  };
+  const unsubPalette = ctx.onPalette(repaintAll);
 
   list.addEventListener('input', (e) => {
     const el = e.target as HTMLInputElement;
+    if (el.dataset.gradAngle === undefined) return;
     const attr = el.dataset.gradPath ?? '';
     const t = tokenAt(attr); if (!t) return;
-    const stops = Array.isArray(t.raw) ? [...(t.raw as GradientStop[])] : [];
-    if (el.dataset.gradStop !== undefined) {
-      const i = Number(el.dataset.gradStop);
-      if (!stops[i]) return;
-      stops[i] = { ...stops[i]!, color: el.value };
-      if (!setStudioTokenValue(ctx.doc(), t.path, stops)) return;
-    } else if (el.dataset.gradAngle !== undefined) {
-      if (el.value.trim() === '') return; // cleared field — Number('') would write 0
-      const angle = Number(el.value);
-      if (!Number.isFinite(angle)) return;
-      if (!setStudioTokenValue(ctx.doc(), t.path, { stops, angle })) return;
-    } else return;
+    if (el.value.trim() === '') return; // cleared field — Number('') would write 0
+    const angle = Number(el.value);
+    if (!Number.isFinite(angle)) return;
+    // Angle-only edit: the stored stops ride through the write gate untouched
+    // (alias refs included — normStops keeps them verbatim).
+    if (!setStudioTokenValue(ctx.doc(), t.path, { stops: stopsOf(t), angle })) return;
     repaintRow(attr);
     ctx.persist();
     ctx.notify();
   });
+  list.addEventListener('change', (e) => {
+    const el = e.target as HTMLInputElement;
+    if (el.dataset.gradNstops === undefined) return;
+    const attr = el.dataset.gradPath ?? '';
+    const t = tokenAt(attr); if (!t) return;
+    let stops = [...stopsOf(t)];
+    const n = Math.max(GRAD_STOPS_MIN, Math.min(GRAD_STOPS_MAX, Math.round(Number(el.value)) || stops.length));
+    if (n === stops.length) { el.value = String(stops.length); return; }
+    if (n > stops.length) {
+      if (stops.length < 2) {
+        // Degenerate stored run (imported doc) — rebuild it evenly.
+        while (stops.length < n) stops.push({ color: nextUnusedSwatch(stops)?.ref ?? '#888888', position: 1 });
+        stops = stops.map((s, i) => ({ ...s, position: i / (stops.length - 1) }));
+      } else {
+        // Grow: append the next palette swatches nothing wears yet, as
+        // aliases, spread evenly through the tail gap (between the last two
+        // stops) — a whole-run re-space would wipe positions the "+" flow
+        // hand-placed at the largest gap's midpoint.
+        const last = stops[stops.length - 1]!;
+        const from = stops[stops.length - 2]!.position;
+        const added = n - stops.length;
+        for (let i = 1; i <= added; i++) {
+          stops.splice(stops.length - 1, 0, {
+            color: nextUnusedSwatch(stops)?.ref ?? '#888888',
+            position: from + ((last.position - from) * i) / (added + 1),
+          });
+        }
+      }
+    } else {
+      // Shrink: drop from the end, keeping the first and last stops — and
+      // every survivor's position.
+      stops = [...stops.slice(0, n - 1), stops[stops.length - 1]!];
+    }
+    if (!setStudioTokenValue(ctx.doc(), t.path, stops)) return;
+    render(); ctx.persist(); ctx.notify();
+  });
   list.addEventListener('click', async (e) => {
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-grad-stop]');
+    if (chip) { openPop(chip); return; }
+    const delStop = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-grad-stopdel]');
+    if (delStop) {
+      const attr = delStop.dataset.gradPath ?? '';
+      const t = tokenAt(attr); if (!t) return;
+      const stops = [...stopsOf(t)];
+      if (stops.length <= GRAD_STOPS_MIN) return;
+      stops.splice(Number(delStop.dataset.gradStopdel), 1);
+      if (!setStudioTokenValue(ctx.doc(), t.path, stops)) return;
+      render(); ctx.persist(); ctx.notify();
+      return;
+    }
     const addStop = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-grad-addstop]');
     if (addStop) {
       const t = tokenAt(addStop.dataset.gradAddstop ?? ''); if (!t) return;
-      const stops = Array.isArray(t.raw) ? [...(t.raw as GradientStop[])] : [];
-      // A new stop lands mid-run in the palette's next unused colour.
-      const used = new Set(stops.map(stopHex));
-      const next = ctx.paletteHexes().find(h => !used.has(h.toLowerCase().slice(0, 7))) ?? '#888888';
-      stops.push({ color: next, position: 0.5 });
+      const stops = [...stopsOf(t)];
+      if (stops.length >= GRAD_STOPS_MAX) return;
+      // Seed at the midpoint of the largest gap, wearing the next unused
+      // palette swatch — as an alias, so it follows a recolour.
+      let gi = 0;
+      for (let i = 1; i + 1 < stops.length; i++) {
+        if (stops[i + 1]!.position - stops[i]!.position > stops[gi + 1]!.position - stops[gi]!.position) gi = i;
+      }
+      const pos = stops.length >= 2 ? (stops[gi]!.position + stops[gi + 1]!.position) / 2 : 0.5;
+      stops.splice(gi + 1, 0, { color: nextUnusedSwatch(stops)?.ref ?? '#888888', position: pos });
       if (setStudioTokenValue(ctx.doc(), t.path, stops)) { render(); ctx.persist(); ctx.notify(); }
       return;
     }
@@ -295,10 +492,45 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     if (!ok || !t) return;
     if (deleteStudioToken(ctx.doc(), t.path)) { render(); ctx.persist(true); ctx.notify(); }
   });
+
+  popGrid.addEventListener('click', (e) => {
+    const sw = (e.target as HTMLElement).closest<HTMLElement>('[data-pop-ref]');
+    if (sw) setStopColor(sw.dataset.popRef ?? '');
+  });
+  popNative.addEventListener('input', () => setStopColor(popNative.value));
+  const commitPopHex = (): void => {
+    const raw = popHex.value.trim();
+    if (!raw || colorToHex(raw) == null) return; // half-typed — leave the stored value alone
+    setStopColor(raw);
+    popNative.value = (colorToHex(raw) ?? '#888888').slice(0, 7);
+  };
+  popHex.addEventListener('change', commitPopHex);
+  popHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitPopHex(); } });
+
+  // Esc closes the stop popover FIRST and stops the event dead — registered
+  // here (during mountBrandEditor, so ahead of start.ts's sheet/back handler,
+  // and after the swatch editor's own — resolution: swatch editor wins when
+  // both are somehow open). Outside-pointerdown (capture, the swatch editor's
+  // pattern) closes it too.
+  const onPopKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && !pop.hidden) { e.stopImmediatePropagation(); closePop(); }
+  };
+  const onPopPointer = (e: PointerEvent): void => {
+    if (!pop.hidden && !pop.contains(e.target as Node) && !(e.target as HTMLElement).closest('[data-grad-stop]')) closePop();
+  };
+  document.addEventListener('keydown', onPopKey);
+  document.addEventListener('pointerdown', onPopPointer, true);
+
   mount.querySelector<HTMLButtonElement>('[data-grad-add]')?.addEventListener('click', () => {
     const n = grads().length + 1;
-    const pal = ctx.paletteHexes();
-    const from = ctx.primaryHex(), to = pal.find(h => h.toLowerCase() !== from.toLowerCase()) ?? '#ffffff';
+    // Seed from the palette AS ALIASES (the primary's swatch first) so the new
+    // gradient tracks recolours; literals only when the palette can't supply two.
+    const sws = ctx.paletteSwatches();
+    const primary = ctx.primaryHex().toLowerCase().slice(0, 7);
+    const first = sws.find(w => w.hex.toLowerCase().slice(0, 7) === primary) ?? sws[0];
+    const second = sws.find(w => w !== first && w.hex.toLowerCase() !== (first?.hex ?? '').toLowerCase());
+    const from = first?.ref ?? ctx.primaryHex();
+    const to = second?.ref ?? ctx.paletteHexes().find(h => h.toLowerCase() !== primary) ?? '#ffffff';
     const path = addStudioToken(ctx.doc(), 'gradient', `Gradient ${n}`, {
       stops: [{ color: from, position: 0 }, { color: to, position: 1 }], angle: 135,
     });
@@ -308,7 +540,14 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     announce(`Gradient ${n} added`);
   });
 
-  return { render, teardown: () => {} };
+  return {
+    render,
+    teardown: () => {
+      unsubPalette();
+      document.removeEventListener('keydown', onPopKey);
+      document.removeEventListener('pointerdown', onPopPointer, true);
+    },
+  };
 }
 
 // ── Catalogue panel ───────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@
  */
 
 import type { HostV1, AssetRef, AssetPickerOpts } from '../../../../engine/src/bridge/host-v1.ts';
+import { makeColorApi } from '@lolly/engine';
 import { createStateAPI } from './state.ts';
 import { createProfileAPI } from './profile.ts';
 import { createIdentityAPI } from './identity.ts';
@@ -131,6 +132,9 @@ export async function createBridge(): Promise<WebHost> {
   // because record() prompts for a grant; the meter/record affordances still
   // feature-detect host.recorder.isAvailable() at the point of use.
   host.recorder = createRecorderAPI();
+  // Perceptual colour tools (v1.40) — pure engine math, attached verbatim so
+  // web/CLI/Tauri can never drift.
+  host.color = makeColorApi();
 
   // pick is a bridge-level concern: it needs the full host (logging, assets.get,
   // assets._uploadUserAsset). Defined here after all sub-APIs are wired so the

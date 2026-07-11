@@ -37,6 +37,7 @@ import { applyBrandVars } from '../brand-vars.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
 import { createSoundToggle } from '../components/sound-toggle.ts';
 import { scopeCss } from '../lib/scope-css.ts';
+import { setupMobileSheet, flickDirection } from '../lib/mobile-sheet.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { exportSizeDriver } from './export-size.ts';
@@ -1180,8 +1181,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // most of the screen — re-fit there so the canvas grows into the freed space.
     // fitCanvas no-ops if the user has zoomed/panned, so this only fires at Fit.
     // Wait out the 0.34s height settle so it measures the final sheet position.
-    setupMobileSheet(layout, sidebarEl, sheetGrip, (snap) => {
-      if (snap === 'peek') setTimeout(fitCanvas, 360);
+    setupMobileSheet(layout, sidebarEl, sheetGrip, {
+      onChange: (snap) => { if (snap === 'peek') setTimeout(fitCanvas, 360); },
     });
   }
 
@@ -2653,136 +2654,6 @@ function isTextEditing(): boolean {
   if ((el as HTMLElement).isContentEditable || el.tagName === 'TEXTAREA') return true;
   if (el.tagName !== 'INPUT') return false;
   return ['text', 'search', 'url', 'tel', 'email', 'password'].includes(((el as HTMLInputElement).type || 'text').toLowerCase());
-}
-
-// Mobile only: drive the top-anchored controls panel via the grip on its bottom
-// edge. Dragging sets an inline --sheet-h on the layout (the panel height + grip
-// position read it live); the preview is a static full-screen backdrop the panel
-// slides over. Releasing snaps to the nearest of peek/half/full. A plain tap on the
-// grip steps through the stops with a bounce (peek↔half↔full), so half — both the
-// controls and the preview in view — is always one tap from either extreme.
-// Optional `onChange` fires on each move/snap (unused while the preview is static).
-// Classify a vertical swipe as a flick. A flick is either fast (high velocity)
-// or a long, decisive drag; small/slow moves are taps or jitter. Returns
-// 1 (down), -1 (up), or 0 (neither). Shared by the controls sheet and the
-// export popup so both surfaces feel the same.
-function flickDirection(dy: number, dt: number): number {
-  const FAST = 0.35; // px/ms — a quick flick
-  const FAR  = 48;   // px — a slow but decisive drag still counts
-  if (Math.abs(dy) < 18) return 0;
-  const v = dt > 0 ? Math.abs(dy) / dt : Infinity;
-  if (v < FAST && Math.abs(dy) < FAR) return 0;
-  return dy > 0 ? 1 : -1;
-}
-
-type SheetState = 'peek' | 'half' | 'full';
-
-function setupMobileSheet(layoutEl: HTMLElement, sidebarEl: HTMLElement, gripEl: HTMLElement, onChange: ((state?: SheetState) => void) | null | undefined): void {
-  const SNAPS: readonly SheetState[] = ['peek', 'half', 'full'];
-  const mq = window.matchMedia('(max-width: 640px)');
-  let state: SheetState = 'half';
-  let dragging = false, moved = false, tapMode = false, tapDir = 1, startY = 0, startH = 0;
-
-  const vh = () => window.innerHeight;
-  // Peek = the sheet's minimized height, which must equal the real header height
-  // so the whole header (centered Tools pill + title row) shows, not just row 1.
-  // Measured from headerEl below (it varies — e.g. 44px tap targets on touch);
-  // 56 is only the pre-measurement fallback.
-  let PEEK = 56;
-
-  function setState(s: SheetState): void {
-    state = s;
-    layoutEl.style.removeProperty('--sheet-h'); // drop any drag override; the per-state var animates in
-    layoutEl.dataset.sheet = s;
-    onChange?.(s);
-  }
-
-  const endDrag = () => {
-    if (!dragging) return;
-    dragging = false;
-    layoutEl.classList.remove('is-sheet-dragging');
-    // We just dropped `transition: none` (used for 1:1 tracking). Flush layout so
-    // the restored height/top transition is live at the CURRENT height before
-    // setState changes it — otherwise the class-removal + height change batch into
-    // one recalc and the snap jumps instead of animating.
-    void sidebarEl.offsetHeight;
-    if (!moved) {                                   // a press, not a drag
-      if (tapMode) {
-        // Tap walks the sheet through its stops with a bounce (peek↔half↔full),
-        // reversing at the ends. So half — both the controls AND the preview
-        // visible — is always one tap from either extreme, and you can always
-        // recentre the divider after moving it; the sheet never jumps the full
-        // span in a single tap.
-        const idx = Math.max(0, SNAPS.indexOf(state));
-        if (idx === 0) tapDir = 1;
-        else if (idx === SNAPS.length - 1) tapDir = -1;
-        setState(SNAPS[idx + tapDir]!);
-      } else {
-        layoutEl.style.removeProperty('--sheet-h'); // header tap: no-op
-      }
-      return;
-    }
-    // Positional zones, no velocity: where the divider comes to rest decides the
-    // dock. The screen splits into equal thirds and the divider's resting Y picks
-    // the stop — release in the TOP third → dock to the top (peek, controls
-    // minimised), the BOTTOM third → dock to the bottom (full, controls maximised),
-    // the MIDDLE third → the 50/50 split (half). So a drag to the middle from
-    // either extreme always lands on split, and a drag to the top stays at the top.
-    const dividerY = sidebarEl.getBoundingClientRect().bottom; // grip rides the sheet's bottom edge
-    const third = vh() / 3;
-    if (dividerY < third)     return setState('peek');
-    if (dividerY > third * 2) return setState('full');
-    setState('half');
-  };
-
-  // Turn an element into a drag handle: the sheet follows the finger and snaps on
-  // release. `tapToggles` gives the grip its tap-to-toggle; `guard` lets the
-  // header ignore presses that land on a real control (its Tools link / toggle).
-  function addDragHandle(handleEl: HTMLElement, { tapToggles = false, guard = null }: { tapToggles?: boolean; guard?: ((e: PointerEvent) => boolean) | null } = {}): void {
-    handleEl.addEventListener('pointerdown', e => {
-      if (!mq.matches || (guard && !guard(e))) return;
-      dragging = true; moved = false; tapMode = tapToggles;
-      startY = e.clientY;
-      startH = sidebarEl.getBoundingClientRect().height;
-      layoutEl.classList.add('is-sheet-dragging');
-      handleEl.setPointerCapture(e.pointerId);
-      e.preventDefault();
-    });
-    handleEl.addEventListener('pointermove', e => {
-      if (!dragging) return;
-      if (Math.abs(e.clientY - startY) > 4) moved = true;
-      const h = Math.min(vh() * 0.92, Math.max(PEEK, startH + (e.clientY - startY))); // never below peek → grip stays visible
-      layoutEl.style.setProperty('--sheet-h', h + 'px');
-      onChange?.();
-    });
-    handleEl.addEventListener('pointerup', endDrag);
-    handleEl.addEventListener('pointercancel', endDrag);
-  }
-
-  // The grip is the obvious handle; the header is the "wide blank area" the panel
-  // wanted — grab anywhere on the title bar that isn't an actual control and drag
-  // the sheet through its three stops.
-  addDragHandle(gripEl, { tapToggles: true });
-  const headerEl = sidebarEl.querySelector<HTMLElement>('.sidebar-header');
-  if (headerEl) {
-    addDragHandle(headerEl, {
-      guard: e => !(e.target as HTMLElement).closest('a, button, input, select, textarea, label'),
-    });
-    // Drive the peek height from the header's real height so the minimized sheet
-    // shows the full two-row header (pill + title). Header height is content-based
-    // and effectively constant per device, so a one-time measure suffices; --peek-h
-    // feeds the CSS peek/preview-top vars (see the mobile sheet block).
-    const h = Math.ceil(headerEl.getBoundingClientRect().height);
-    if (h > 0) { PEEK = h; layoutEl.style.setProperty('--peek-h', h + 'px'); }
-  }
-
-  // The body is for scrolling the controls — nothing else. It deliberately has NO
-  // drag/flick handler: a touch that lands on the inputs (or the gaps between them)
-  // must only ever scroll the list, never resize or dock the sheet. The grip and
-  // the header are the sole handles, so scrolling the controls can't collapse the
-  // split view out from under you. Resizing happens by dragging the grip/header.
-
-  layoutEl.dataset.sheet = state; // define the var; only consumed under the mobile media query
 }
 
 function makeFetchFile(toolId: string): (path: string) => Promise<string> {

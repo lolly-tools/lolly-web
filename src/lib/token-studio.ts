@@ -26,7 +26,7 @@
  * existing setBrandRadius path, and colour swatches stay brand-doc.ts's.
  */
 
-import { colorToHex, TOKEN_EXT } from '@lolly/engine';
+import { colorToHex, isAlias, aliasPath, TOKEN_EXT } from '@lolly/engine';
 import { isRec, leafAt, prettify } from './brand-doc.ts';
 
 type Rec = Record<string, unknown>;
@@ -135,16 +135,20 @@ function normShadow(v: unknown): ShadowValue | undefined {
   return { color, offsetX, offsetY, blur, spread };
 }
 
-/** Gradient stops: a stop whose colour colorToHex can't read (or whose position
- *  isn't numeric) is DROPPED, survivors are clamped to 0–1 and sorted. The
- *  stored colour string stays as authored (oklch() survives; hex is for CSS). */
+/** Gradient stops: a colour is either a literal colorToHex can read OR a
+ *  `{path}` alias into the palette (resolved at render time — resolveStopHex);
+ *  anything else, or a non-numeric position, DROPS the stop. Survivors are
+ *  clamped to 0–1 and sorted. The stored colour string stays as authored
+ *  (oklch() and alias refs survive verbatim; hex is for CSS) — this is the one
+ *  write gate every gradient edit funnels through, so an angle-only edit
+ *  round-trips alias stops unchanged. */
 function normStops(v: unknown): GradientStop[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const stops: GradientStop[] = [];
   for (const s of v) {
     if (!isRec(s) || typeof s.color !== 'string') continue;
     const color = s.color.trim();
-    if (!color || colorToHex(color) == null) continue;
+    if (!color || (!isAlias(color) && colorToHex(color) == null)) continue;
     const p = toNum(s.position);
     if (p === undefined) continue;
     stops.push({ color, position: Math.min(1, Math.max(0, p)) });
@@ -336,6 +340,51 @@ export function deleteStudioToken(doc: unknown, path: string[]): boolean {
   return true;
 }
 
+// ── Gradient alias integrity (write-time materialisation) ────────────────────
+// Stops prefer `{path}` aliases into the palette so a recoloured swatch flows
+// into every gradient — but a swatch DELETE, or a re-derive that rebuilds the
+// ramps, can orphan those refs, and an exported brand pack must never carry a
+// dangling alias. These run at the write chokepoints (brand-editor's swatch
+// delete / re-derive apply) to pin affected stops to their last-resolved hex;
+// gradientCss's render-time dropping stays only a last-resort guard.
+
+/** How many gradient stops alias the token at dotted path `key`. */
+export function gradientAliasRefCount(doc: unknown, key: string): number {
+  let n = 0;
+  for (const t of listStudioTokens(doc)) {
+    if (t.kind !== 'gradient' || !Array.isArray(t.raw)) continue;
+    for (const s of t.raw) if (isRec(s) && aliasPath(s.color) === key) n++;
+  }
+  return n;
+}
+
+/**
+ * Rewrite alias stop colours to concrete values: every alias `shouldPin`
+ * approves is replaced by `resolveTo(ref)`'s answer (a null or unreadable
+ * answer leaves the stop alone — the render guard still covers it). Returns
+ * how many stops were pinned.
+ */
+export function materializeGradientAliases(
+  doc: unknown,
+  shouldPin: (ref: string) => boolean,
+  resolveTo: (ref: string) => string | null,
+): number {
+  let n = 0;
+  for (const t of listStudioTokens(doc)) {
+    if (t.kind !== 'gradient' || !Array.isArray(t.raw)) continue;
+    let changed = false;
+    const next = (t.raw as unknown[]).map((s) => {
+      if (!isRec(s) || typeof s.color !== 'string' || !isAlias(s.color) || !shouldPin(s.color)) return s;
+      const hex = resolveTo(s.color);
+      if (!hex || colorToHex(hex) == null) return s;
+      changed = true; n++;
+      return { ...s, color: hex };
+    });
+    if (changed) setStudioTokenValue(doc, t.path, next);
+  }
+  return n;
+}
+
 // ── Presentation helpers ─────────────────────────────────────────────────────
 
 /** A sensible neutral seed value for a freshly added token of `kind`. */
@@ -359,22 +408,53 @@ export function defaultValueFor(kind: StudioKind): unknown {
 const fmtNum = (n: number): string => String(Math.round(n * 100) / 100);
 
 /**
+ * A stop's concrete CSS colour: a `{path}` alias goes through `resolve` (no
+ * resolver, or one that can't answer → null), a literal through colorToHex.
+ * EITHER WAY the output re-validates via colorToHex before it may reach a
+ * style attribute — the resolver is caller-supplied and the doc is untrusted,
+ * so junk/non-string answers must die here, not render.
+ */
+export function resolveStopHex(stop: GradientStop, resolve?: (ref: string) => unknown): string | null {
+  if (isAlias(stop.color)) {
+    if (!resolve) return null;
+    try { return colorToHex(resolve(stop.color)) ?? null; } catch { return null; }
+  }
+  return colorToHex(stop.color) ?? null;
+}
+
+export interface GradientCssOptions {
+  /** Answers `{path}` alias stop colours (a TokenSet.resolve or equivalent). */
+  resolve?: (ref: string) => unknown;
+  /** 'oklch' emits `linear-gradient(<angle>deg in oklch, …)` — perceptual
+   *  interpolation between the stops. Default 'srgb' (the plain form). */
+  space?: 'srgb' | 'oklch';
+}
+
+/**
  * A gradient token's stops as a CSS `linear-gradient(<angle>deg, …)`. Safe by
  * construction: every stop colour passes through colorToHex (token values come
  * from untrusted imported documents and this lands in inline styles), invalid
- * stops drop, and no valid stops at all → ''. Accepts the raw `$value` stop
- * array or the `{ stops, angle }` object; an explicit `angle` argument wins
- * over an embedded one, and the CSS default (180 = to bottom) fills in last.
- * A single surviving stop renders flat (duplicated to keep the CSS valid).
+ * stops drop — an alias stop the resolver can't answer drops too, the render-
+ * time last resort behind the write-time materialisation — and no renderable
+ * stops at all → ''. Accepts the raw `$value` stop array or the
+ * `{ stops, angle }` object; an explicit `angle` argument wins over an
+ * embedded one, and the CSS default (180 = to bottom) fills in last. A single
+ * surviving stop renders flat (duplicated to keep the CSS valid).
  */
-export function gradientCss(value: unknown, angle?: number): string {
+export function gradientCss(value: unknown, angle?: number, opts: GradientCssOptions = {}): string {
   const src = Array.isArray(value) ? value : isRec(value) && Array.isArray(value.stops) ? value.stops : undefined;
   const stops = src === undefined ? undefined : normStops(src);
   if (!stops) return '';
   const a = angle ?? (isRec(value) ? toNum(value.angle) : undefined) ?? 180;
-  const parts = stops.map(s => ({ hex: colorToHex(s.color) ?? '', pos: s.position }));
+  const parts: Array<{ hex: string; pos: number }> = [];
+  for (const s of stops) {
+    const hex = resolveStopHex(s, opts.resolve);
+    if (hex != null) parts.push({ hex, pos: s.position });
+  }
+  if (!parts.length) return '';
   if (parts.length === 1) parts.push({ hex: parts[0]!.hex, pos: 1 });
-  return `linear-gradient(${fmtNum(a)}deg, ${parts.map(p => `${p.hex} ${fmtNum(p.pos * 100)}%`).join(', ')})`;
+  const space = opts.space === 'oklch' ? ' in oklch' : '';
+  return `linear-gradient(${fmtNum(a)}deg${space}, ${parts.map(p => `${p.hex} ${fmtNum(p.pos * 100)}%`).join(', ')})`;
 }
 
 /** '0px'/'0.0rem'/'0' compress to '0' for the shorthand shadow display. */

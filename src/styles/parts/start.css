@@ -12,6 +12,11 @@
   padding: 40px 22px 96px;
   position: relative;
 }
+/* The Colour tab's split pane needs the room — widen the studio only there.
+   data-active-tab is stamped on the editor root by this view (selectTab). */
+@media (min-width: 1100px) {
+  .start:has(.be[data-active-tab="color"]) { max-width: min(1400px, 96vw); }
+}
 /* A soft brand-tinted wash behind the hero so a first-run page reads as crafted,
    not blank — the accent the user is about to define, hinted. Theme-aware via the
    primary token; pointer-events-through so it never blocks the controls. */
@@ -81,7 +86,7 @@
   gap: 8px;
   padding: 8px 14px;
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: calc(var(--radius) *1.5);
   background: hsl(var(--card));
   color: hsl(var(--muted-foreground));
   font: inherit;
@@ -247,6 +252,13 @@
    so the whole page reads as one column of evenly-spaced cards. */
 .start-editor-mount .be { gap: 22px; }
 .start-editor-mount .be-tab { gap: 22px; }
+.start-editor-mount .be-split-main,
+.start-editor-mount .be-split-side { gap: 22px; }
+/* The .be-tab gap above would re-widen the split's gutter — the divider's own
+   16px track is the whole gutter there (brand-studio.css). */
+@media (min-width: 1100px) {
+  .start-editor-mount .be-tab--split { column-gap: 0; }
+}
 
 /* ── Finish card — the three ways onward, revealed by the last step's save. ── */
 .start-finish {

@@ -17,6 +17,8 @@
  * Pure + deterministic: the same palette always yields the same three SVGs.
  */
 
+import { contrastRatio } from '@lolly/engine';
+
 export interface PalettePreview {
   /** Human name for the scene ("Poster", "Chart", "UI card"). */
   label: string;
@@ -50,17 +52,13 @@ function toRgb(hex: string): [number, number, number] | null {
   return [r, g, b].some(Number.isNaN) ? null : [r, g, b];
 }
 
-/** Relative luminance 0..1 (perceptual weights); 0.5 for anything unparseable. */
-function luminance(hex: string): number {
-  const rgb = toRgb(hex);
-  if (!rgb) return 0.5;
-  const [r, g, b] = rgb; // a fixed 3-tuple — divide inline (map() would widen to number[])
-  return 0.2126 * (r / 255) + 0.7152 * (g / 255) + 0.0722 * (b / 255);
-}
-
-/** A readable ink colour (near-black or white) for text/marks sitting on `bg`. */
+/** A readable ink colour (near-black or white) for text/marks sitting on `bg` —
+ *  whichever wins the engine's WCAG contrastRatio (one implementation of the
+ *  luminance math app-wide; this file used to carry its own approximation). */
 function ink(bg: string): string {
-  return luminance(col(bg)) > 0.58 ? '#141414' : '#ffffff';
+  const hex = col(bg);
+  if (hex === 'transparent') return '#141414';
+  return contrastRatio('#141414', hex) >= contrastRatio('#ffffff', hex) ? '#141414' : '#ffffff';
 }
 
 /** Mix a colour toward black (amt<0) or white (amt>0); returns valid #rrggbb. */
