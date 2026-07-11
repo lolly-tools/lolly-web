@@ -168,10 +168,13 @@ export function attachProfileMenu(
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', onResize);
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNavAway));
-    // Contain keyboard focus: inert the rest of the page and wrap Tab/Shift+Tab
-    // within the menu, moving initial focus to the checked theme segment. Escape is
-    // still handled by onKey above, so no onEscape is passed here.
-    trap = trapFocus(el, { initialFocus: checkedSeg });
+    // Contain keyboard focus: wrap Tab/Shift+Tab within the menu, moving initial
+    // focus to the checked theme segment. Escape is still handled by onKey above,
+    // so no onEscape is passed here. inertBackground is off — the avatar trigger
+    // lives in the branch that would get inerted, and inert cascades with no way
+    // for a descendant to opt back out, which would kill the trigger's
+    // re-tap-to-close affordance (and looks like the whole page is stuck).
+    trap = trapFocus(el, { initialFocus: checkedSeg, inertBackground: false });
   }
 
   const onClick = (e: MouseEvent) => {
