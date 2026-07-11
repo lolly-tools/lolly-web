@@ -2780,7 +2780,7 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
     if (input.urlKey) inputsByKey[input.urlKey] = input;
   }
 
-  const RESERVED_KEEP = new Set(['format', 'export', 'copy', 'slot', 'output', 'full', '_v', 'nostage']);
+  const RESERVED_KEEP = new Set(['format', 'export', 'copy', 'slot', 'output', 'full', '_v', 'nostage', 'lang']);
 
   const kept: string[] = [];
   for (const part of qs.split('&')) {

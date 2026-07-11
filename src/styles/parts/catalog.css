@@ -601,30 +601,44 @@ button.cat-download { font: inherit; cursor: pointer; }
 /* Crop dialog — the asset fitted into an aspect-matched stage with a drag/resize crop
    box (dialogs mount on document.body, so these are NOT scoped under .catalog). The stage
    matches the asset aspect so the image fills it edge-to-edge; the box is then a straight
-   fraction of the asset. */
+   fraction of the asset. The stage zooms (image + box together) inside a fixed clipping
+   viewport for pixel-precise framing; the zoom HUD is the details inspector's, floating
+   over the viewport from the relatively-positioned work wrapper (an absolute HUD INSIDE
+   the viewport would scroll away with the panned content). */
 .cat-crop {
   border: none; border-radius: calc(var(--radius) * 1.4); padding: 20px;
   width: max-content; max-width: calc(100vw - 32px); background: hsl(var(--card)); color: hsl(var(--foreground));
   box-shadow: 0 1.5rem 4rem #0007;
 }
 .cat-crop::backdrop { background: #0008; }
-.cat-crop-stage {
-  position: relative; margin: 0 auto 14px; max-width: 100%;
-  overflow: hidden; border-radius: var(--radius);
+.cat-crop-work { position: relative; width: max-content; max-width: 100%; margin: 0 auto 14px; }
+.cat-crop-viewport {
+  overflow: hidden; max-width: 100%; border-radius: var(--radius);
   touch-action: none; user-select: none; -webkit-user-select: none;
   background: repeating-conic-gradient(hsl(var(--muted) / .5) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
 }
+.cat-crop-viewport.is-zoomed { cursor: grab; }
+.cat-crop-viewport.is-panning { cursor: grabbing; }
+.cat-crop-stage { position: relative; }
 .cat-crop-img { display: block; width: 100%; height: 100%; pointer-events: none; -webkit-user-drag: none; }
 .cat-crop-box {
   position: absolute; box-sizing: border-box;
   border: 1.5px solid #fff; outline: 1px solid #0007; cursor: move;
-  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .5);   /* dim everything outside the crop (clipped by the stage) */
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .5);   /* dim everything outside the crop (clipped by the viewport) */
 }
 .cat-crop-h { position: absolute; width: 14px; height: 14px; background: #fff; border: 1px solid #0007; border-radius: 2px; }
 .cat-crop-h[data-h="nw"] { top: -7px; left: -7px; cursor: nwse-resize; }
 .cat-crop-h[data-h="ne"] { top: -7px; right: -7px; cursor: nesw-resize; }
 .cat-crop-h[data-h="sw"] { bottom: -7px; left: -7px; cursor: nesw-resize; }
 .cat-crop-h[data-h="se"] { bottom: -7px; right: -7px; cursor: nwse-resize; }
+/* Invisible full-length strips straddling each border, so an edge can be grabbed anywhere
+   along its run (no hunting for a handle while zoomed in). Inset 8px from each end to stay
+   clear of the 14px corner handles. */
+.cat-crop-e { position: absolute; }
+.cat-crop-e[data-h="n"] { top: -6px; left: 8px; right: 8px; height: 12px; cursor: ns-resize; }
+.cat-crop-e[data-h="s"] { bottom: -6px; left: 8px; right: 8px; height: 12px; cursor: ns-resize; }
+.cat-crop-e[data-h="w"] { left: -6px; top: 8px; bottom: 8px; width: 12px; cursor: ew-resize; }
+.cat-crop-e[data-h="e"] { right: -6px; top: 8px; bottom: 8px; width: 12px; cursor: ew-resize; }
 
 @media (max-width: 640px) {
   .catalog { padding: calc(4.2rem + env(safe-area-inset-top, 0px)) 12px calc(5.5rem + env(safe-area-inset-bottom)); }

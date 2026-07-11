@@ -343,7 +343,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     const mr = mount.getBoundingClientRect(), cr = chip.getBoundingClientRect();
     pop.style.left = `${Math.max(0, Math.min(cr.left - mr.left, mr.width - (pop.offsetWidth || 248)))}px`;
     const h = pop.offsetHeight;
-    const scroller = mount.closest<HTMLElement>('.be-split-side');
+    const scroller = mount.closest<HTMLElement>('.be-split-scroll');
     const limit = scroller && scroller.clientHeight < scroller.scrollHeight
       ? scroller.getBoundingClientRect().bottom : window.innerHeight;
     pop.style.top = cr.bottom + 6 + h <= limit

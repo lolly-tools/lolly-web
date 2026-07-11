@@ -43,6 +43,7 @@ import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { applyBrandVars } from '../brand-vars.ts';
 import { scopeCss } from '../lib/scope-css.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
+import { c2paDefaultOn } from '../lib/c2pa-policy.ts';
 import { MOTION_EXPORT_FORMATS } from './folder-rows.ts';
 
 // Re-exported for existing importers (pro/batch, pro/index, pro/sessions) that
@@ -87,6 +88,13 @@ interface RenderRowOpts {
   thumbAssets?: boolean;
   /** AES-256 lock applied to a pdf/pdf-cmyk output (ignored for other formats). */
   strongPassword?: string;
+  /**
+   * Content Credentials for THIS render. Unset → the shared default policy
+   * (lib/c2pa-policy.ts) — the same rule the tool view's Export button applies —
+   * so batch/zip members are signed like single exports. A compose/preview
+   * caller that passes embedMeta:false is never stamped regardless.
+   */
+  c2pa?: boolean;
 }
 
 /**
@@ -217,7 +225,7 @@ type ExportStage = HTMLDivElement & { _lottieCleanup?: () => void };
  *        in `unit` (px/mm/cm/in/pt); blank falls back to the tool's native size.
  *        `dpi` sets raster resolution for physical units.
  */
-export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, width, height, unit = 'px', dpi, composeStack, watermark, embedMeta, thumbnail, thumbAssets, strongPassword }: RenderRowOpts = {}): Promise<RenderRowResult> {
+export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, width, height, unit = 'px', dpi, composeStack, watermark, embedMeta, thumbnail, thumbAssets, strongPassword, c2pa }: RenderRowOpts = {}): Promise<RenderRowResult> {
   const tool = await getTool(row.toolId);
   if (!isExportable(tool.manifest)) {
     throw new Error(`"${tool.manifest.name}" is render-only and cannot be exported.`);
@@ -269,10 +277,16 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
     // watermark/embedMeta/thumbnail are forwarded only when set (compose passes
     // watermark:false + embedMeta:false so an embedded child isn't stamped); batch
     // rows leave them undefined so runtime.export keeps its normal defaults.
-    const exportOpts: { width?: string | number; height?: string | number; dpi?: number; watermark?: boolean; embedMeta?: boolean; thumbnail?: boolean; strongPassword?: string; wait?: number; duration?: number; fps?: number } = { width: outW, height: outH, dpi };
+    const exportOpts: { width?: string | number; height?: string | number; dpi?: number; watermark?: boolean; embedMeta?: boolean; thumbnail?: boolean; strongPassword?: string; wait?: number; duration?: number; fps?: number; c2pa?: boolean } = { width: outW, height: outH, dpi };
     if (watermark !== undefined) exportOpts.watermark = watermark;
     if (embedMeta !== undefined) exportOpts.embedMeta = embedMeta;
     if (thumbnail !== undefined) exportOpts.thumbnail = thumbnail;
+    // Content Credentials: a REAL batch/zip render signs by default under the same
+    // policy as the tool view's Export button (previously the whole batch pipeline
+    // silently skipped signing). Compose children (embedMeta:false) and thumbnails
+    // are intermediates — never stamped; an explicit opts.c2pa always wins.
+    const wantC2pa = c2pa ?? (embedMeta === false || thumbnail ? false : c2paDefaultOn(tool.manifest));
+    if (wantC2pa) exportOpts.c2pa = true;
     // Motion format → capture a short clip. Its settle time + length come from the
     // tool's own render.video declaration (the same values the single-tool export bar
     // uses), with the length clamped so a composed/embedded render stays bounded. The

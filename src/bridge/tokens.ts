@@ -28,8 +28,11 @@
  * that doesn't provide it just doesn't offer token-driven swatches.
  */
 
-import { createTokenSet } from '../../../../engine/src/tokens.ts';
+import { createTokenSet, aliasPath } from '../../../../engine/src/tokens.ts';
 import type { TokensAPI, TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
+// The exclusion read lives in its own leaf module (not lib/brand-doc.ts, whose
+// engine-barrel import would drag studio code into this bridge's boot graph).
+import { getExcludedSwatches } from '../lib/brand-exclusions.ts';
 
 /** The catalog-asset slice discovery needs: an id to read the cached blob by,
  *  the file URL to fall back to, and the `brandLock` flag (tokens assets only).
@@ -235,8 +238,24 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
   return {
     /** The resolved token set for the active (or named) theme. */
     get: (opts = {}) => ensure(opts.theme),
-    /** Colour tokens as picker-ready swatches ({ ref, value, name, group, cmyk }). */
-    colors: async (opts = {}) => (await ensure(opts.theme)).colors(),
+    /** Colour tokens as picker-ready swatches ({ ref, value, name, group, cmyk }).
+     *  Swatches on the doc's exclusion list (a "deleted" derived ramp step —
+     *  the studio hides it, the token keeps resolving) are filtered here so
+     *  every picker honours the exclusion without each caller re-reading it. */
+    colors: async (opts = {}) => {
+      const list = (await ensure(opts.theme)).colors();
+      const excluded = new Set(getExcludedSwatches(await doc()));
+      if (!excluded.size) return list;
+      // Exclusion keys are brand-doc keys, which ALWAYS carry a `color.` root
+      // (brand-doc.ts prepends one when a doc's colour leaves live under some
+      // other top-level group) — the engine's token paths for such docs don't.
+      // Match both forms so an exclusion written against the prefixed key
+      // still hides that swatch here.
+      return list.filter(c => {
+        const p = aliasPath(c.ref) ?? c.ref;
+        return !excluded.has(p) && !excluded.has(p.startsWith('color.') ? p : `color.${p}`);
+      });
+    },
     /** Resolve a `{path}` alias (or bare path) to its value. */
     resolve: async (ref, opts = {}) => (await ensure(opts.theme)).resolve(ref),
     /** The raw effective DTCG document (see WebTokensAPI.raw). */

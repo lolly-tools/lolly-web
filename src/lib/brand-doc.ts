@@ -21,6 +21,11 @@
 
 import { colorToHex, TOKEN_EXT } from '@lolly/engine';
 import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
+// The exclusion READ lives in a leaf module so the boot-path tokens bridge can
+// filter excluded swatches without importing this (engine-barrel-heavy) file;
+// re-exported here so studio callers keep their single brand-doc import.
+import { getExcludedSwatches } from './brand-exclusions.ts';
+export { getExcludedSwatches };
 
 type Rec = Record<string, unknown>;
 
@@ -100,10 +105,18 @@ export function walkSwatches(
   doc: unknown, theme = 'light', resolve?: (key: string) => unknown,
 ): BrandSwatch[] {
   const out: BrandSwatch[] = [];
+  const multiSet = isRec(doc) && [...SET_KEYS].some(k => k in doc);
+  const wantSet = theme === 'dark' ? 'dark' : 'light';
+  // Where a custom swatch tagged "Roles" files: the CURRENT theme's Roles
+  // section. The tag is stored theme-less by contract — a persisted
+  // "Roles · Light" would strand the swatch under a phantom stale-theme
+  // section the moment the app theme flips (toSwatch tolerates legacy
+  // suffixed tags by mapping them here too).
+  const rolesGroup = `Roles · ${multiSet ? prettify(wantSet) : 'Theme'}`;
   const walk = (node: unknown, path: string[]): void => {
     if (!isRec(node)) return;
     if (isColorString(node.$value)) {
-      out.push(toSwatch(path, node.$value, node.$description, node.$extensions, resolve));
+      out.push(toSwatch(path, node.$value, node.$description, node.$extensions, resolve, rolesGroup));
       return;
     }
     for (const k of Object.keys(node)) {
@@ -112,14 +125,13 @@ export function walkSwatches(
     }
   };
   walk(doc, []);
-  const multiSet = isRec(doc) && [...SET_KEYS].some(k => k in doc);
   if (!multiSet) return out;
-  const wantSet = theme === 'dark' ? 'dark' : 'light';
   return out.filter(s => s.kind !== 'semantic' || s.set === wantSet);
 }
 
 function toSwatch(
-  path: string[], raw: string, desc: unknown, extensions: unknown, resolve?: (key: string) => unknown,
+  path: string[], raw: string, desc: unknown, extensions: unknown,
+  resolve?: (key: string) => unknown, rolesGroup?: string,
 ): BrandSwatch {
   const set = SET_KEYS.has(path[0] ?? '') ? path[0]! : null;
   const rest = set ? path.slice(1) : path;
@@ -148,8 +160,18 @@ function toSwatch(
   if (!hex && isAlias && resolve) {
     try { hex = colorToHex(resolve(key)) ?? ''; } catch { /* unresolvable → blank chip */ }
   }
+  // A per-group "+ Add" on a derived section (Primary/Neutral/…) creates a
+  // CUSTOM swatch tagged with that section's heading (addSwatch's displayGroup)
+  // — the tag only relabels where the tile renders, never what the token is.
+  const extNs = isRec(extensions) ? (extensions as Rec)[TOKEN_EXT] : null;
+  let groupTag = isRec(extNs) && typeof (extNs as Rec).group === 'string' ? String((extNs as Rec).group) : null;
+  // A "Roles" tag means "the current theme's Roles section", never a section
+  // of its own — the walker passes the live label (a legacy theme-suffixed
+  // "Roles · Light" tag maps there too, instead of stranding the swatch under
+  // a stale-theme heading with its own duplicate + Add).
+  if (groupTag && /^roles(\s*·.*)?$/i.test(groupTag)) groupTag = rolesGroup ?? groupTag;
   return {
-    path, key, group,
+    path, key, group: groupTag || group,
     name: typeof desc === 'string' && desc ? desc : prettify(leaf),
     raw, hex, isAlias, kind, set, deletable,
     lock: readPrintLock({ $extensions: extensions } as Rec),
@@ -284,8 +306,16 @@ export function setSwatchSpotLock(doc: unknown, path: string[], spot: SpotColor 
  * (and `base.color`, on a multi-set doc) when absent so the very first custom
  * swatch has somewhere to live. Slugs collide-safely. Returns the new leaf's
  * JSON path so the caller can select it.
+ *
+ * `displayGroup` tags the new leaf's vendor extension with a section heading —
+ * how a per-group "+ Add" on a derived section (Primary/Neutral/Roles…) files a
+ * CUSTOM swatch under that heading in the palette grid without pretending it's
+ * a derived step (walkSwatches reads the tag back as the swatch's `group`).
  */
-export function addSwatch(doc: unknown, group: 'spectrum' | 'custom', name: string, hex: string): string[] | null {
+export function addSwatch(
+  doc: unknown, group: 'spectrum' | 'custom', name: string, hex: string,
+  opts: { displayGroup?: string } = {},
+): string[] | null {
   if (!isRec(doc)) return null;
   const multiSet = [...SET_KEYS].some(k => k in doc);
   const base = multiSet
@@ -298,6 +328,36 @@ export function addSwatch(doc: unknown, group: 'spectrum' | 'custom', name: stri
   const slugBase = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'swatch';
   let slug = slugBase;
   for (let i = 2; slug in bucket; i++) slug = `${slugBase}-${i}`;
-  bucket[slug] = { $value: hex, $description: name.trim() || prettify(slug), $type: 'color' };
+  bucket[slug] = {
+    $value: hex, $description: name.trim() || prettify(slug), $type: 'color',
+    ...(opts.displayGroup ? { $extensions: { [TOKEN_EXT]: { group: opts.displayGroup } } } : {}),
+  };
   return [...(multiSet ? ['base'] : []), 'color', group, slug];
+}
+
+// ── Swatch exclusions — "delete" for derived leaves ──────────────────────────
+// Derived ramp steps (and the theme roles) are structural: the ramp stays
+// derived, so deleting one from the palette means HIDING it, not removing the
+// token. The exclusion list is the doc-level `$extensions` vendor entry
+// `excluded` — an array of canonical swatch keys (`color.ramp.primary.2`).
+// Excluded swatches disappear from the palette grid + picker swatches, while
+// the tokens keep resolving (semantic roles and gradient aliases that point at
+// an excluded step never dangle). A re-derive carries the list forward but
+// clears entries whose step no longer exists (see the editor's derive flow).
+
+/** Add (or, with `excluded: false`, remove) a swatch key on the exclusion list.
+ *  An emptied list cleans its `$extensions` entry away entirely. */
+export function setSwatchExcluded(doc: unknown, key: string, excluded: boolean): boolean {
+  if (!isRec(doc)) return false;
+  const cur = getExcludedSwatches(doc);
+  const next = excluded ? (cur.includes(key) ? cur : [...cur, key]) : cur.filter(k => k !== key);
+  if (!next.length) {
+    const ext = isRec(doc.$extensions) ? (doc.$extensions as Rec) : null;
+    if (ext && isRec(ext[TOKEN_EXT])) { delete (ext[TOKEN_EXT] as Rec).excluded; cleanupExt(doc); }
+    return true;
+  }
+  const ext = (isRec(doc.$extensions) ? doc.$extensions : (doc.$extensions = {} as Rec)) as Rec;
+  const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
+  ns.excluded = next;
+  return true;
 }

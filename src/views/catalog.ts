@@ -142,6 +142,7 @@ interface CatalogHost extends HostV1 {
   assets: HostV1['assets'] & {
     _listUserAssets(): Promise<AssetRef[]>;
     _deleteUserAsset(id: string): Promise<void>;
+    _duplicateUserAsset(id: string): Promise<string | null>;
     _renameUserAsset(id: string, name: string): Promise<void>;
     _iconThemes?(): Promise<IconTheme[]>;
     _photoTreatments?(): Promise<PhotoTreatment[]>;
@@ -274,6 +275,7 @@ const PENCIL_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 const ZOOM_IN_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
 const ZOOM_OUT_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><line x1="8" y1="11" x2="14" y2="11"/></svg>';
 const CHECK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 // Filled play/pause glyphs for the details-modal Lottie playback overlay.
 const PLAY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 const PAUSE_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
@@ -1138,6 +1140,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       <div class="cat-bulkbar" role="region" aria-label="Selection actions" hidden>
         <span class="cat-bulkbar-count" aria-live="polite"></span>
         <div class="cat-bulkbar-actions">
+          <button type="button" class="btn" data-bulk="duplicate" title="Make a copy of each selected image — the copies are selected, ready to move or edit">${COPY_ICON}<span>Duplicate</span></button>
+          <button type="button" class="btn" data-bulk="download" title="Download the selection as one zip — Content Credentials checked and preserved">${DOWNLOAD_ICON}<span>Download</span></button>
           <button type="button" class="btn cat-bulk-danger" data-bulk="delete">${TRASH_ICON}<span>Delete</span></button>
         </div>
         <button type="button" class="cat-bulkbar-clear" data-bulk="clear" aria-label="Clear selection">✕</button>
@@ -1791,6 +1795,107 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       syncSelectAll();
       syncBulkBar();
     } else if (action === 'delete') void deleteSelection();
+    else if (action === 'download') void downloadSelection();
+    else if (action === 'duplicate') void duplicateSelection();
+  }
+
+  /**
+   * Bulk "Duplicate": a byte-identical copy of every selected upload, then move
+   * the selection onto the new copies — so the very next move / edit / download
+   * acts on THEM, while the originals stay put and untouched. Copies mint with a
+   * fresh, now-stamped id, so they sort to the top of "Your uploads" and land in
+   * view (we scroll the first into sight), already highlighted and ready to grab.
+   */
+  async function duplicateSelection(): Promise<void> {
+    const ids = [...selected];
+    if (!ids.length) return;
+    const newIds: string[] = [];
+    for (const id of ids) {
+      try {
+        const newId = await host.assets._duplicateUserAsset(id);
+        if (newId) newIds.push(newId);
+      } catch (err) {
+        host.log?.('warn', 'Catalog bulk duplicate: member skipped', { id, error: String(err) });
+      }
+    }
+    if (!mounted) return;
+    await reload();                     // pull the new copies into allAssets / assetById
+    if (!mounted) return;
+    // Hand the selection to the copies (not the originals). render()'s pruneSelection
+    // keeps only ids that are present + selectable, so a copy filtered out by an
+    // active search simply drops from the selection — the visible ones stay selected.
+    selected.clear();
+    for (const newId of newIds) selected.add(newId);
+    render();
+    // Bring the first new copy into view so "the copies appeared" is visible, not
+    // just a count in the bar — nearest, so it doesn't jump when already on screen.
+    viewEl.querySelector<HTMLElement>('.cat-tile.is-selected')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    announce(`${newIds.length} cop${newIds.length === 1 ? 'y' : 'ies'} made · selected`);
+  }
+
+  /**
+   * The byte payload a download of `ref` should carry — byte-exact, EXCEPT a user
+   * upload whose ingest captured a credential store: its stored bytes were
+   * re-encoded (credential no longer inside), so wrap them in a Lolly manifest
+   * that opens the original as an ingredient. Same rule as directDownload's
+   * single save — keep the two in step.
+   */
+  async function credentialedBytes(ref: AssetRef): Promise<Blob> {
+    const format = String(ref.format || 'bin');
+    if (ref.id.startsWith('user/') && STAMPABLE.has(format)) {
+      try {
+        const ingredients = await sourceIngredients(ref);
+        if (ingredients) {
+          const blob = await (await fetch(ref.url)).blob();
+          const { stampDerivedC2pa } = await import('../bridge/export.ts');
+          return await stampDerivedC2pa(host, blob, format, {
+            title: String(ref.meta?.name ?? ref.id),
+            actions: [{ action: 'c2pa.converted', description: `Re-encoded to ${format.toUpperCase()} when added to the device library` }],
+            ingredients,
+            inputs: { asset: ref.id },
+            ...(ref.width && ref.height ? { dimensions: `${ref.width}×${ref.height}` } : {}),
+          });
+        }
+      } catch { /* fall through to the byte-exact bytes */ }
+    }
+    return await (await fetch(ref.url)).blob();
+  }
+
+  // Bulk "Download": the whole selection in ONE zip (optionally password-locked,
+  // same prompt as every batch export), each member's Content Credentials checked
+  // with the engine verifier so the announcement is honest about what it carries.
+  async function downloadSelection(): Promise<void> {
+    const refs = [...selected].map(id => assetById.get(id)).filter((r): r is AssetRef => !!r);
+    if (!refs.length) return;
+    const { askExportLock } = await import('../lib/export-lock.ts');
+    const { ok, strongPassword, zipLock } = await askExportLock(`${refs.length} selected image${refs.length === 1 ? '' : 's'}`, true);
+    if (!ok || !mounted) return;
+    const files: { name: string; blob: Blob }[] = [];
+    const names = new Set<string>();
+    let credentialed = 0;
+    for (const ref of refs) {
+      try {
+        const blob = await credentialedBytes(ref);
+        try {
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          if (extractC2paStore(bytes) && (await verifyC2pa(bytes)).found) credentialed++;
+        } catch { /* the check is advisory — never blocks the zip */ }
+        const orig = downloadName(ref, String(ref.format || 'bin'));
+        let name = orig;
+        for (let n = 2; names.has(name); n++) {
+          name = orig.includes('.') ? orig.replace(/(\.[^.]+)$/, ` (${n})$1`) : `${orig} (${n})`;
+        }
+        names.add(name);
+        files.push({ name, blob });
+      } catch (err) {
+        host.log?.('warn', 'Catalog bulk download: member skipped', { id: ref.id, error: String(err) });
+      }
+    }
+    if (!files.length || !mounted) return;
+    const { buildZip, saveBlob } = await import('../pro/zip.ts');
+    const zip = await buildZip(files, { zipName: 'lolly-images', zipLock, password: strongPassword });
+    saveBlob(zip, 'lolly-images.zip');
+    announce(`${files.length} image${files.length === 1 ? '' : 's'} zipped · ${credentialed} with Content Credentials`);
   }
 
   async function deleteSelection(): Promise<void> {
@@ -1945,7 +2050,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // no width/height resize anywhere else) — you frame the region and download just that.
   // The stage matches the asset's aspect so the image fills it with no letterbox, which
   // makes the crop a straight fraction of the asset: box/stage → fraction → asset pixels
-  // (raster, canvas-crop) or a narrowed viewBox (vector, stays vector).
+  // (raster, canvas-crop) or a narrowed viewBox (vector, stays vector). For pixel-precise
+  // framing the stage zooms (same HUD/wheel controls as the details inspector) inside a
+  // fixed clipping viewport — the box scales with the stage, so the fraction math never
+  // changes — and the box's edges are draggable along their full length, not just at the
+  // corner handles.
   async function openCropDialog(ref: AssetRef, modifier?: string | null): Promise<void> {
     const vector = isVector(ref);
     let svgText: string | null = null;
@@ -1984,13 +2093,26 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     dlg.className = 'cat-crop';
     dlg.innerHTML = `
       <h2 class="cat-dl-title">Crop ${escape(name)}</h2>
-      <div class="cat-crop-stage">
-        <img class="cat-crop-img" alt="" src="${escape(vector ? svgTextToDataUrl(svgText!) : rasterSrc)}">
-        <div class="cat-crop-box">
-          <span class="cat-crop-h" data-h="nw"></span>
-          <span class="cat-crop-h" data-h="ne"></span>
-          <span class="cat-crop-h" data-h="sw"></span>
-          <span class="cat-crop-h" data-h="se"></span>
+      <div class="cat-crop-work">
+        <div class="cat-crop-viewport">
+          <div class="cat-crop-stage">
+            <img class="cat-crop-img" alt="" src="${escape(vector ? svgTextToDataUrl(svgText!) : rasterSrc)}">
+            <div class="cat-crop-box">
+              <span class="cat-crop-e" data-h="n"></span>
+              <span class="cat-crop-e" data-h="e"></span>
+              <span class="cat-crop-e" data-h="s"></span>
+              <span class="cat-crop-e" data-h="w"></span>
+              <span class="cat-crop-h" data-h="nw"></span>
+              <span class="cat-crop-h" data-h="ne"></span>
+              <span class="cat-crop-h" data-h="sw"></span>
+              <span class="cat-crop-h" data-h="se"></span>
+            </div>
+          </div>
+        </div>
+        <div class="cat-zoom-hud" role="group" aria-label="Zoom">
+          <button type="button" class="cat-zoom-btn" data-zoom="out" aria-label="Zoom out" title="Zoom out">${ZOOM_OUT_ICON}</button>
+          <button type="button" class="cat-zoom-btn cat-zoom-pct" data-zoom="reset" aria-label="Reset zoom" title="Reset zoom">100%</button>
+          <button type="button" class="cat-zoom-btn" data-zoom="in" aria-label="Zoom in" title="Zoom in">${ZOOM_IN_ICON}</button>
         </div>
       </div>
       <div class="cat-dl-section">
@@ -2004,11 +2126,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>`;
     document.body.appendChild(dlg);
     cropDialog = dlg;
+    // Open BEFORE measuring: a closed <dialog> is display:none, so clientWidth reads 0.
+    dlg.showModal();
 
+    const viewport = dlg.querySelector<HTMLElement>('.cat-crop-viewport')!;
     const stage = dlg.querySelector<HTMLElement>('.cat-crop-stage')!;
     const imgEl = dlg.querySelector<HTMLImageElement>('.cat-crop-img')!;
     const boxEl = dlg.querySelector<HTMLElement>('.cat-crop-box')!;
+    const pctEl = dlg.querySelector<HTMLElement>('.cat-zoom-pct')!;
     let bx = 0, by = 0, bw = 0, bh = 0;    // crop box in stage px
+    let fitW = 0, fitH = 0, zoom = 1;      // stage = fit × zoom, clipped by the fixed viewport
+    const ZMAX = 16;                       // 100%…1600%, same range as the details inspector
     const paintBox = (): void => {
       boxEl.style.left = `${bx}px`; boxEl.style.top = `${by}px`;
       boxEl.style.width = `${bw}px`; boxEl.style.height = `${bh}px`;
@@ -2019,36 +2147,79 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const maxH = Math.min(460, window.innerHeight * 0.5);
       let w = maxW, h = maxW / aspect;
       if (h > maxH) { h = maxH; w = maxH * aspect; }
-      stage.style.width = `${Math.round(w)}px`;
-      stage.style.height = `${Math.round(h)}px`;
+      fitW = Math.round(w); fitH = Math.round(h);
+      viewport.style.width = `${fitW}px`;
+      viewport.style.height = `${fitH}px`;
+      stage.style.width = `${fitW * zoom}px`;
+      stage.style.height = `${fitH * zoom}px`;
     };
     const initGeom = (): void => {
       sizeStage();
-      const sw = stage.clientWidth, sh = stage.clientHeight;   // default box: 80% centred
-      bx = sw * 0.1; by = sh * 0.1; bw = sw * 0.8; bh = sh * 0.8;
+      // Default box: 60% centred (20% in from each side) so every handle sits well
+      // clear of the stage edges and is easy to grab.
+      const sw = stage.clientWidth, sh = stage.clientHeight;
+      bx = sw * 0.2; by = sh * 0.2; bw = sw * 0.6; bh = sh * 0.6;
       paintBox();
     };
     if (vector) initGeom();
     else if (imgEl.complete && imgEl.naturalWidth) { aspect = imgEl.naturalWidth / imgEl.naturalHeight; initGeom(); }
     else imgEl.addEventListener('load', () => { aspect = imgEl.naturalWidth / imgEl.naturalHeight || 1; initGeom(); }, { once: true });
 
-    // Drag the box body to move; drag a corner handle to resize (opposite corner fixed).
+    // Zoom grows the stage (image AND box together) inside the fixed viewport, so the
+    // box stays the same fraction of the stage and the crop math below never changes.
+    // Pan is the viewport's scroll position (overflow:hidden still scrolls from JS).
+    // The cursor point is held fixed on wheel zoom, like the details inspector.
+    const setZoom = (next: number, fx?: number, fy?: number): void => {
+      const z2 = Math.min(ZMAX, Math.max(1, next));
+      if (z2 === zoom) return;
+      const r = z2 / zoom;
+      const px = fx ?? viewport.clientWidth / 2, py = fy ?? viewport.clientHeight / 2;
+      const sl = (viewport.scrollLeft + px) * r - px;
+      const st = (viewport.scrollTop + py) * r - py;
+      zoom = z2;
+      stage.style.width = `${fitW * zoom}px`;
+      stage.style.height = `${fitH * zoom}px`;
+      bx *= r; by *= r; bw *= r; bh *= r;
+      paintBox();
+      viewport.scrollLeft = sl; viewport.scrollTop = st;
+      pctEl.textContent = `${Math.round(zoom * 100)}%`;
+      viewport.classList.toggle('is-zoomed', zoom > 1.001);
+    };
+    dlg.querySelector<HTMLElement>('.cat-zoom-hud')?.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-zoom]');
+      if (!b) return;
+      if (b.dataset.zoom === 'in') setZoom(zoom * 1.5);
+      else if (b.dataset.zoom === 'out') setZoom(zoom / 1.5);
+      else setZoom(1);
+    });
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const r = viewport.getBoundingClientRect();
+      setZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+
+    // Drag the box body to move; drag a corner handle or an edge (its full length is a
+    // hit area) to resize (opposite side fixed); drag outside the box while zoomed to pan.
     const MIN = 16;
     let mode: string | null = null, sx = 0, sy = 0, ox = 0, oy = 0, ow = 0, oh = 0;
     stage.addEventListener('pointerdown', (e) => {
-      const handle = (e.target as HTMLElement).closest<HTMLElement>('.cat-crop-h');
+      const handle = (e.target as HTMLElement).closest<HTMLElement>('[data-h]');
       const onBox = (e.target as HTMLElement).closest('.cat-crop-box');
       if (handle) mode = handle.dataset.h!;
       else if (onBox) mode = 'move';
+      else if (zoom > 1) mode = 'pan';
       else return;
-      sx = e.clientX; sy = e.clientY; ox = bx; oy = by; ow = bw; oh = bh;
+      sx = e.clientX; sy = e.clientY;
+      if (mode === 'pan') { ox = viewport.scrollLeft; oy = viewport.scrollTop; viewport.classList.add('is-panning'); }
+      else { ox = bx; oy = by; ow = bw; oh = bh; }
       try { stage.setPointerCapture(e.pointerId); } catch { /* unsupported */ }
       e.preventDefault();
     });
     stage.addEventListener('pointermove', (e) => {
       if (!mode) return;
-      const sw = stage.clientWidth, sh = stage.clientHeight;
       const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (mode === 'pan') { viewport.scrollLeft = ox - dx; viewport.scrollTop = oy - dy; return; }
+      const sw = stage.clientWidth, sh = stage.clientHeight;
       if (mode === 'move') {
         bx = Math.min(sw - bw, Math.max(0, ox + dx));
         by = Math.min(sh - bh, Math.max(0, oy + dy));
@@ -2064,6 +2235,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     });
     const endDrag = (e: PointerEvent): void => {
       if (!mode) return; mode = null;
+      viewport.classList.remove('is-panning');
       try { stage.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     };
     stage.addEventListener('pointerup', endDrag);
@@ -2082,7 +2254,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       }
     });
     dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeCropDialog(); });
-    dlg.showModal();
   }
 
   // Render the framed region. Vector → a narrowed viewBox (SVG stays vector; PNG rasterises

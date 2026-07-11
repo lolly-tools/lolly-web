@@ -1,0 +1,140 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* ── Multi-edit (views/multi-edit.ts) — a grid of live canvases + ONE combined
+      sidebar for 2–8 saved sessions. Layout mirrors the tool view's sidebar/stage
+      split; the input controls themselves are styled by tool.css (.tool-inputs). */
+
+.me-layout { display: flex; flex-direction: column; min-height: 100dvh; }
+
+.me-head {
+  display: flex; align-items: center; gap: .9rem;
+  padding: .8rem 1.2rem;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / .9);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  position: sticky; top: 0; z-index: 20;
+}
+.me-back {
+  display: grid; place-items: center; width: 2rem; height: 2rem;
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .8);
+  color: hsl(var(--foreground)); text-decoration: none; font-size: 1rem;
+}
+.me-back:hover { border-color: hsl(var(--primary) / .55); }
+.me-title { margin: 0; font-size: 1.02rem; font-weight: 700; }
+.me-count { margin-inline-start: .5rem; font-size: .78rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
+.me-head-actions { margin-inline-start: auto; display: flex; gap: .5rem; }
+.me-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
+.me-primary:hover { background: hsl(var(--primary) / .88); }
+[aria-busy="true"] { opacity: .6; pointer-events: none; }
+
+.me-body { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: start; gap: 0; flex: 1; }
+@media (max-width: 900px) { .me-body { grid-template-columns: 1fr; } }
+
+/* ── Sidebar ── */
+.me-sidebar {
+  position: sticky; top: 56px;
+  max-height: calc(100dvh - 56px);
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: .9rem;
+  border-right: 1px solid hsl(var(--border));
+  display: grid; gap: .6rem; align-content: start;
+}
+@media (max-width: 900px) {
+  .me-sidebar { position: static; max-height: none; border-right: 0; border-bottom: 1px solid hsl(var(--border)); }
+}
+.me-search input {
+  width: 100%; padding: .5rem .7rem; font: inherit; font-size: .84rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .8);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.me-search input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
+
+.me-card {
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--card));
+}
+.me-card > summary {
+  display: flex; align-items: baseline; gap: .55rem;
+  padding: .65rem .8rem; cursor: pointer; list-style: none;
+  user-select: none;
+}
+.me-card > summary::-webkit-details-marker { display: none; }
+.me-card > summary::before {
+  content: ""; flex: 0 0 auto; align-self: center;
+  width: .45rem; height: .45rem;
+  border-right: 1.5px solid hsl(var(--muted-foreground));
+  border-bottom: 1.5px solid hsl(var(--muted-foreground));
+  transform: rotate(-45deg); transition: transform .15s ease;
+}
+.me-card[open] > summary::before { transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .me-card > summary::before { transition: none; } }
+.me-card-title { font-size: .84rem; font-weight: 700; }
+.me-card-count { font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.me-card--shared > summary .me-card-title { text-transform: uppercase; letter-spacing: .03em; font-size: .76rem; }
+.me-card--nomatch { opacity: .45; }
+.me-inputs { padding: .2rem .8rem .8rem; }
+/* Search filtering sets [hidden] on .input-row wrappers whose own display
+   (grid/flex from tool.css) would otherwise beat the UA's hidden rule. */
+.me-inputs .input-row[hidden] { display: none !important; }
+.me-card.me-flash { animation: me-flash .9s ease-out 1; }
+@keyframes me-flash {
+  0% { box-shadow: 0 0 0 2px hsl(var(--primary) / .8); }
+  100% { box-shadow: 0 0 0 2px transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .me-card.me-flash { animation: none; } }
+
+/* Condensed export block — one row of compact fields at each card's foot. */
+.me-export {
+  display: flex; flex-wrap: wrap; align-items: end; gap: .45rem;
+  padding: .6rem .8rem .75rem;
+  border-top: 1px solid hsl(var(--border) / .6);
+}
+.me-export-label {
+  flex: 1 0 100%; font-size: .64rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: hsl(var(--muted-foreground));
+}
+.me-exp-field {
+  display: grid; gap: .15rem;
+  font-size: .64rem; font-weight: 600; color: hsl(var(--muted-foreground));
+}
+.me-exp-field input, .me-exp-field select {
+  font: inherit; font-size: .76rem; padding: .3rem .4rem;
+  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.me-exp-field input { width: 4.6rem; }
+.me-exp-field input:focus, .me-exp-field select:focus { outline: none; border-color: hsl(var(--ring) / .6); }
+.me-exp-dpi[hidden] { display: none; }
+.me-download { margin-inline-start: auto; font-size: .76rem; }
+.me-export-note { margin: .4rem .8rem .7rem; font-size: .74rem; color: hsl(var(--muted-foreground)); }
+
+/* ── Canvas grid ── */
+.me-grid {
+  display: grid; gap: 1rem; padding: 1rem 1.2rem 2rem;
+  grid-template-columns: repeat(var(--me-cols, 2), minmax(0, 1fr));
+  align-content: start;
+}
+@media (max-width: 1200px) { .me-grid { grid-template-columns: repeat(min(var(--me-cols, 2), 2), minmax(0, 1fr)); } }
+@media (max-width: 640px) { .me-grid { grid-template-columns: 1fr; } }
+
+.me-cell {
+  margin: 0; cursor: pointer;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--card));
+  overflow: hidden;
+}
+.me-cell:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.me-cell.is-active { border-color: hsl(var(--primary) / .7); box-shadow: 0 0 0 1px hsl(var(--primary) / .7); }
+.me-stage { position: relative; overflow: hidden; background: hsl(var(--muted) / .3); contain: paint; }
+.me-scale { position: absolute; inset: 0 auto auto 0; transform-origin: top left; }
+.me-canvas { width: 100%; height: 100%; }
+.me-cap {
+  display: flex; align-items: baseline; gap: .5rem; justify-content: space-between;
+  padding: .5rem .7rem;
+  border-top: 1px solid hsl(var(--border) / .6);
+}
+.me-cap-label { font-size: .78rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-cap-tool { font-size: .68rem; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+
+/* Error card (bad selection / vanished session). */
+.me-error { max-width: 32rem; margin: 4rem auto; text-align: center; display: grid; gap: 1rem; justify-items: center; }
