@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES } from '@lolly/engine';
+import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef } from '@lolly/engine';
 import { escape } from '../utils.js';
 import { announce } from '../a11y.js';
 import { colorFieldHtml, wireColorField } from '../components/color-field.js';
@@ -570,6 +570,37 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
+  // A BAKED slot (meta.baked, no toolUrl) is inert by design; its ❄ row offers
+  // two ways back to the source when meta.bakedFrom survived baking: Edit re-opens
+  // the source tool's inputs (rebake: true — the apply re-freezes, never un-bakes),
+  // Re-bake re-renders the same URL and freezes it again in one click.
+  el.querySelectorAll<HTMLElement>('[data-baked-edit-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const editId    = btn.dataset.bakedEditId!;
+      const cur       = panelModel.find(i => i.id === editId);
+      const bakedFrom = asStr(asRow(asRow(cur?.value).meta).bakedFrom);
+      if (!bakedFrom || !host.compose?.renderUrl) return;
+      const ref = await openEmbedEditor(host, { editUrl: bakedFrom, slotLabel: cur!.label ?? editId, rebake: true });
+      if (ref) { runtime.setInput(editId, ref); onDirty?.(editId); }
+    });
+  });
+  el.querySelectorAll<HTMLButtonElement>('[data-rebake-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const editId    = btn.dataset.rebakeId!;
+      const cur       = panelModel.find(i => i.id === editId);
+      const bakedFrom = asStr(asRow(asRow(cur?.value).meta).bakedFrom);
+      if (!bakedFrom || !host.compose?.renderUrl) return;
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Re-baking…';
+      const ref = await rebakeFromUrl(host, bakedFrom);
+      btn.disabled = false;
+      btn.textContent = label;
+      if (ref) { runtime.setInput(editId, ref); onDirty?.(editId); }
+      else showRebakeError(btn);
+    });
+  });
+
   // ONE shared colour picker for every colour surface (OKLCH sliders, hex, alpha,
   // swatches, popover toggle). Top-level inputs commit via setInput(id); a block
   // field's composite id ("blockId:idx:fieldId" — ':' never appears in a real
@@ -900,6 +931,50 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
+  // Baked block image (same flows as the top-level data-baked-edit-id /
+  // data-rebake-id handlers, but writing back into the block array): ❄ Edit
+  // re-opens the source via meta.bakedFrom and commits a RE-baked ref; ↻ Re-bake
+  // re-renders + freezes in one click.
+  el.querySelectorAll<HTMLElement>('[data-block-baked-edit]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockBakedEdit ?? '').split(':');
+      const idx = parseInt(idxStr, 10);
+      const inp = panelModel.find(i => i.id === blockId);
+      if (!inp) return;
+      const cur       = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
+      const bakedFrom = asStr(asRow(asRow(cur).meta).bakedFrom);
+      if (!bakedFrom || !host.compose?.renderUrl) return;
+      const f: Partial<BlockFieldSpec> = (inp.fields ?? []).find(x => x.id === fId) ?? {};
+      const ref = await openEmbedEditor(host, { editUrl: bakedFrom, slotLabel: f.label ?? fId, rebake: true });
+      if (!ref) return;
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      const row = arr[idx] ?? (arr[idx] = {});
+      row[fId] = ref;
+      runtime.setInput(blockId, arr);
+      onDirty?.(blockId);
+    });
+  });
+  el.querySelectorAll<HTMLButtonElement>('[data-block-rebake]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockRebake ?? '').split(':');
+      const idx = parseInt(idxStr, 10);
+      const inp = panelModel.find(i => i.id === blockId);
+      if (!inp) return;
+      const cur       = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
+      const bakedFrom = asStr(asRow(asRow(cur).meta).bakedFrom);
+      if (!bakedFrom || !host.compose?.renderUrl) return;
+      btn.disabled = true;
+      const ref = await rebakeFromUrl(host, bakedFrom);
+      btn.disabled = false;
+      if (!ref) { showRebakeError(btn); return; }
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      const row = arr[idx] ?? (arr[idx] = {});
+      row[fId] = ref;
+      runtime.setInput(blockId, arr);
+      onDirty?.(blockId);
+    });
+  });
+
   // Block range sliders: hold the sidebar steady while dragging (the canvas
   // still updates live), exactly like the top-level custom slider / vector scrub.
   el.querySelectorAll<HTMLInputElement>('.block-range-input').forEach(r => {
@@ -1201,7 +1276,14 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // provenance and an Edit affordance that re-opens the source tool's own inputs
       // (openEmbedEditor) so the editor can tweak it and re-apply. Plain library /
       // uploaded assets have no toolUrl, so they show no badge.
-      const fromTool = asRow(v?.meta as InputValue | undefined).toolUrl ? (asRow(v?.meta as InputValue | undefined).name ?? 'a Lolly tool') : null;
+      const metaRow = asRow(v?.meta as InputValue | undefined);
+      const fromTool = metaRow.toolUrl ? (metaRow.name ?? 'a Lolly tool') : null;
+      // A BAKED ref (meta.baked — engine bakeAssetRef) is a frozen copy of a tool
+      // render: no meta.toolUrl, so the live ✦ path above ignores it by design.
+      // It gets its own ❄ provenance row instead; Edit (re-bakes on apply) and
+      // Re-bake appear only when the source URL (meta.bakedFrom) survived baking.
+      const bakedName = metaRow.baked === true ? (metaRow.name ?? 'a Lolly tool') : null;
+      const canRebake = bakedName !== null && typeof metaRow.bakedFrom === 'string';
       // A Lolly-backed slot reads differently at a glance (is-lolly: brand-tinted
       // border + a ✦ spark on the trigger) so "this image is live, not a file"
       // is visible before clicking — the click then offers edit-or-replace.
@@ -1212,6 +1294,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       </div>${fromTool ? `<div class="asset-from-tool">
         <span class="asset-from-tool-label"><span class="asset-from-tool-spark" aria-hidden="true">&#10022;</span> from <strong>${escape(fromTool)}</strong></span>
         <button type="button" class="asset-edit" data-edit-id="${id}">Edit</button>
+      </div>` : ''}${bakedName ? `<div class="asset-from-tool asset-from-tool--baked">
+        <span class="asset-from-tool-label"><span class="asset-from-tool-spark" aria-hidden="true">&#10052;</span> baked from <strong>${escape(bakedName)}</strong></span>
+        ${canRebake ? `<button type="button" class="asset-edit" data-baked-edit-id="${id}">Edit</button>
+        <button type="button" class="asset-edit" data-rebake-id="${id}">Re-bake</button>` : ''}
       </div>` : ''}`;
     }
     case 'file-picker': {
@@ -1358,6 +1444,11 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           // top-level asset-picker case): a ✦ Edit button keyed on the same field id
           // the picker/clear handlers use re-opens the source tool (openEmbedEditor).
           const fromTool = asRow(ref.meta).toolUrl ? (asRow(ref.meta).name ?? 'a Lolly tool') : null;
+          // A BAKED block image (meta.baked, no toolUrl — mirrors the top-level ❄
+          // row): ❄ Edit re-opens the source tool (re-baking on apply) and ↻
+          // Re-bake re-renders + freezes in place. Only when meta.bakedFrom survived.
+          const bakedName = asRow(ref.meta).baked === true ? (asRow(ref.meta).name ?? 'a Lolly tool') : null;
+          const canRebake = bakedName !== null && typeof asRow(ref.meta).bakedFrom === 'string';
           // A lottie ref's URL is JSON — show a play-glyph + name, not a dead <img>.
           const trigger = !has ? `<span>&#43; ${escape(f.label ?? 'Image')}</span>`
             : ref.type === 'lottie' ? `<span class="block-asset-lottie"><span aria-hidden="true">&#9654;</span> ${escape(asRow(ref.meta).name ?? ref.id)}</span>`
@@ -1367,6 +1458,8 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
               ${trigger}
             </button>
             ${fromTool ? `<button type="button" class="block-asset-edit" data-block-asset-edit="${fieldId}" title="Edit — from ${escape(fromTool)}" aria-label="Edit image, from ${escape(fromTool)}">&#10022;</button>` : ''}
+            ${canRebake ? `<button type="button" class="block-asset-edit block-asset-edit--baked" data-block-baked-edit="${fieldId}" title="Edit — baked from ${escape(bakedName)}" aria-label="Edit image, baked from ${escape(bakedName)}">&#10052;</button>
+            <button type="button" class="block-asset-edit block-asset-edit--baked" data-block-rebake="${fieldId}" title="Re-bake — from ${escape(bakedName)}" aria-label="Re-bake image from ${escape(bakedName)}">&#8635;</button>` : ''}
             ${has ? `<button type="button" class="block-asset-clear" data-block-asset-clear="${fieldId}" aria-label="Remove ${escape(f.label ?? 'image')}">&#x2715;</button>` : ''}
           </div>`, ' block-control--full');
         }
@@ -1544,6 +1637,29 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
   }
 }
 
+// Re-render a baked ref's source URL (meta.bakedFrom) and freeze the result
+// again — the one-click "Re-bake" path. Null on ANY failure (render or bake) so
+// the caller keeps the existing baked bytes and shows the inline error instead
+// of half-updating the slot.
+async function rebakeFromUrl(host: WebToolHost, bakedFrom: string): Promise<AssetRef | null> {
+  try {
+    const ref = await host.compose!.renderUrl!(bakedFrom);
+    return ref ? bakeAssetRef(ref) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Inline re-bake failure notice — the same error style the embed editor's
+// preview uses. Injected after the row that owns the button (top-level ❄ row or
+// block-asset), replaced on retry, cleared by the next successful rebuild.
+function showRebakeError(btn: HTMLElement): void {
+  const row = btn.closest('.asset-from-tool, .block-asset');
+  if (!row) return;
+  row.parentElement?.querySelector('.asset-rebake-error')?.remove();
+  row.insertAdjacentHTML('afterend', `<p class="asset-picker-error asset-rebake-error">Couldn't re-bake this image — the source render failed.</p>`);
+}
+
 /**
  * Edit a Lolly-sourced image in place → Promise<AssetRef | null>.
  *
@@ -1560,8 +1676,11 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
  * the SAME minting the paste flow uses. So the re-applied asset round-trips through
  * URL mode + saved sessions exactly like the original; provenance is just the URL
  * we already persist, nothing new is stored.
+ *
+ * `rebake` (a baked slot editing via its meta.bakedFrom): the commit wraps the
+ * fresh render with bakeAssetRef, so editing a frozen image never un-bakes it.
  */
-async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = 'edit' }: { editUrl?: string; slotLabel?: string; mode?: string } = {}): Promise<AssetRef | null> {
+async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = 'edit', rebake = false }: { editUrl?: string; slotLabel?: string; mode?: string; rebake?: boolean } = {}): Promise<AssetRef | null> {
   if (!host.compose?.renderUrl) return null;
   const parsed = parseToolUrl(editUrl);
   if (!parsed) return null;
@@ -1704,7 +1823,20 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
     overlay.querySelector('.embed-editor-backdrop')!.addEventListener('click', () => close(null));
     overlay.querySelector('.embed-editor-close')!.addEventListener('click', () => close(null));
     overlay.querySelector('.ee-cancel')!.addEventListener('click', () => close(null));
-    applyBtn.addEventListener('click', () => { if (pending) close(pending); });
+    applyBtn.addEventListener('click', () => {
+      if (!pending) return;
+      if (!rebake) { close(pending); return; }
+      // A baked slot keeps its baked-ness: freeze the fresh render before
+      // committing. A render the engine refuses to bake (grown past the size
+      // ceiling) keeps the dialog open with the failed-preview error style —
+      // shrink it and re-apply, or cancel to keep the current bytes.
+      try { close(bakeAssetRef(pending)); }
+      catch {
+        previewEl.innerHTML = `<p class="asset-picker-error">This render is too large to freeze — make it smaller, or cancel to keep the current image.</p>`;
+        applyBtn.disabled = true;
+        pending = null;
+      }
+    });
     fmtSel.addEventListener('change', renderPreview);
     wEl.addEventListener('input', schedulePreview);
     hEl.addEventListener('input', schedulePreview);

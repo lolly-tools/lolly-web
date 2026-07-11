@@ -17,7 +17,7 @@ import '../styles/parts/tool.css';
 import '../styles/parts/editor.css';
 import '../styles/parts/document.css';
 import '../styles/parts/tool-chrome.css';
-import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES } from '@lolly/engine';
+import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
 
 // Above this readable-query length the address bar and the Share dialog switch to
@@ -695,12 +695,19 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A saved design (or a shared URL) can reference an image the user has since
   // deleted from their device library. The runtime resolves those to null and
   // reports them here; tell the user the field was left blank rather than leaving
-  // a silent gap.
-  const dropped = runtime.droppedAssets ?? [];
-  const droppedLabels = dropped.map(d => d.label).join(', ');
-  const droppedNotice = dropped.length ? `
+  // a silent gap. Worded by DroppedAsset.reason: a frozen (baked) image whose
+  // stored data was missing reads differently from an image that no longer resolves.
+  const dropped    = runtime.droppedAssets ?? [];
+  const bakedLost  = dropped.filter(d => d.reason === 'baked-bytes-lost');
+  const unresolved = dropped.filter(d => d.reason !== 'baked-bytes-lost');
+  const fieldsWere = (n: number): string => (n > 1 ? 'fields were' : 'field was');
+  const droppedLines = [
+    unresolved.length ? `An image used in this saved design is no longer available, so the <strong>${escape(unresolved.map(d => d.label).join(', '))}</strong> ${fieldsWere(unresolved.length)} left blank.` : '',
+    bakedLost.length ? `A frozen image's data was missing from this saved design, so the <strong>${escape(bakedLost.map(d => d.label).join(', '))}</strong> ${fieldsWere(bakedLost.length)} left blank.` : '',
+  ].filter(Boolean);
+  const droppedNotice = droppedLines.length ? `
     <div class="tool-notice" role="status" id="dropped-assets-notice">
-      <span class="tool-notice-text">An image used in this saved design is no longer available, so the <strong>${escape(droppedLabels)}</strong> ${dropped.length > 1 ? 'fields were' : 'field was'} left blank.</span>
+      <span class="tool-notice-text">${droppedLines.join(' ')}</span>
       <button type="button" class="tool-notice-close" id="dropped-assets-dismiss" aria-label="Dismiss this message">✕</button>
     </div>` : '';
 
@@ -872,7 +879,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   // Removed-image notice: announce it (live region) and let the user dismiss it.
   if (dropped.length) {
-    announce(`An image used in this saved design is no longer available; the ${droppedLabels} ${dropped.length > 1 ? 'fields were' : 'field was'} left blank.`, { assertive: true });
+    announce([
+      unresolved.length ? `An image used in this saved design is no longer available; the ${unresolved.map(d => d.label).join(', ')} ${fieldsWere(unresolved.length)} left blank.` : '',
+      bakedLost.length ? `A frozen image's data was missing; the ${bakedLost.map(d => d.label).join(', ')} ${fieldsWere(bakedLost.length)} left blank.` : '',
+    ].filter(Boolean).join(' '), { assertive: true });
     viewEl.querySelector('#dropped-assets-dismiss')
       ?.addEventListener('click', () => viewEl.querySelector('#dropped-assets-notice')?.remove());
   }
@@ -1506,14 +1516,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // shareable URL form. Never write it (would otherwise serialise to junk).
       if (type === 'file') continue;
       if (type === 'asset') {
-        // Library assets are shareable by ID; user uploads are device-local.
-        const assetId = (value as AssetRef | null)?.id;
+        // Library assets are shareable by ID; user uploads are device-local. A
+        // baked ref's frozen bytes can't ride in the bar either: write its
+        // provenance (assetIdForUrl → bakedFrom) so a refresh degrades to a live
+        // re-render — but one WITHOUT provenance is skipped like a user upload
+        // (its dead 'baked/…' id could never re-resolve; a saved session is what
+        // restores the exact bytes).
+        const ref = value as AssetRef | null;
+        if (ref && isBakedRef(ref) && typeof ref.meta?.bakedFrom !== 'string') continue;
+        const assetId = ref ? assetIdForUrl(ref) : undefined;
         if (assetId && !assetId.startsWith('user/')) params.set(id, assetId);
         continue;
       }
       if (type === 'blocks') {
         if (Array.isArray(value) && value.length > 0) {
-          const json = JSON.stringify(value);
+          // blocksForUrl: a baked sub-field ref collapses to its provenance URL —
+          // its data: bytes would blow the 8000-char cap and silently drop the
+          // ENTIRE blocks param (every row) from the bar.
+          const json = JSON.stringify(blocksForUrl(value));
           if (json.length <= 8000) params.set(id, json);
         }
         continue;
@@ -2849,10 +2869,11 @@ function encodeBlocksCompact(items: InputValue, fields: BlockFieldSpec[]): strin
   const rowVals = items.map(item =>
     fields.map(f => {
       const raw = asRow(item)[f.id];
-      // Asset sub-fields hold an AssetRef object — its id (library assets only;
-      // uploaded user/ refs aren't shareable, same as top-level assets).
+      // Asset sub-fields hold an AssetRef object — its link-safe id via
+      // assetIdForUrl (a baked ref shares as its provenance URL, never its
+      // data: bytes); uploaded user/ refs aren't shareable, same as top-level.
       if (f.type === 'asset') {
-        const id = raw && typeof raw === 'object' ? asRow(raw).id : '';
+        const id = raw && typeof raw === 'object' ? assetIdForUrl(raw as AssetRef) : '';
         return id && !String(id).startsWith('user/') ? String(id) : '';
       }
       const v = String(raw ?? '');
@@ -2891,7 +2912,11 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
     if (group === 'export') continue;
 
     if (type === 'asset') {
-      const assetId = (value as AssetRef | null)?.id;
+      // assetIdForUrl (the engine's coerceToString rule): a baked ref shares as
+      // its provenance URL — the recipient re-renders live — never its frozen
+      // data: bytes or dead 'baked/…' id; any other ref shares by id.
+      const ref = value as AssetRef | null;
+      const assetId = ref ? assetIdForUrl(ref) : undefined;
       if (assetId && !assetId.startsWith('user/')) {
         parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(assetId)}`);
       }
@@ -2901,8 +2926,10 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
     if (type === 'blocks') {
       if (!Array.isArray(value) || value.length === 0) continue;
       const compact = encodeBlocksCompact(value, fields ?? []);
-      // Fall back to JSON if no fields defined (other tools)
-      const encoded = compact ?? JSON.stringify(value);
+      // Fall back to JSON if no fields defined (other tools). blocksForUrl
+      // collapses baked sub-field refs to their provenance URL first — the raw
+      // data: bytes would blow the 8000-char cap and drop every row.
+      const encoded = compact ?? JSON.stringify(blocksForUrl(value));
       if (encoded.length <= 8000) parts.push(`${key}=${compact ? encoded : encodeURIComponent(encoded)}`);
       continue;
     }

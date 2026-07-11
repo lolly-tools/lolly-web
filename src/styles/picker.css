@@ -575,6 +575,24 @@
   object-fit: contain;
 }
 
+/* "Freeze as a static image" — bake the committed render into a self-contained
+   static asset (engine bakeAssetRef): never live-re-renders, costs no nesting
+   depth. The help line tucks under the label, inside the card's 14px gap. */
+.asset-picker-toolcard-freeze {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: hsl(var(--card-foreground));
+  cursor: pointer;
+}
+.asset-picker-toolcard-freeze input { accent-color: hsl(var(--primary)); }
+.asset-picker-toolcard-freeze-help {
+  margin: -10px 0 0 20px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
 /* Tool tiles (the "Make an image from a tool" grid) — preview-forward like the
    gallery, with the inline icon as the fallback when a preview 404s. */
 .asset-picker-toolgrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
