@@ -164,7 +164,11 @@
   z-index: 100000;
   min-width: 180px;
   max-width: calc(100vw - 16px);
-  max-height: min(60vh, 420px);
+  /* Ceiling only — position() in lang-menu.ts sets the actual inline max-height
+     per-open, clamped to whatever room sits between the trigger and either the
+     viewport edge or a fixed bottom bar (.gallery-footer etc), so the full
+     language list shows uncropped whenever there's room for it. */
+  max-height: 90vh;
   overflow-y: auto;
   padding: 6px;
   display: flex;

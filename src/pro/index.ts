@@ -27,6 +27,9 @@ import { attachScrub } from './scrub.ts';
 import { controlHtml, readControlValue } from './controls.ts';
 import { openBlocksEditor, closeBlocksPanel } from './blocks-editor.ts';
 import { colorFieldHtml, wireColorField, type ColorFieldValue } from '../components/color-field.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { t } from '../i18n.ts';
+import { escape } from '../utils.ts';
 import { askExportLock } from '../lib/export-lock.ts';
 import { getTool, renderRowToBlob, isExportable } from './render-export.ts';
 import { planBatch } from './batch.ts';
@@ -177,12 +180,12 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // ── Static shell ───────────────────────────────────────────────────────────
   viewEl.innerHTML = `
     <div class="pro-wrap">
-      <a href="#/" class="tools-home home-full">Tools</a>
+      <a href="#/" class="tools-home home-full">${t('Tools')}</a>
 
       <div class="pro-toolbar">
-        <button type="button" class="pro-btn pro-hamburger" id="pro-menu" aria-label="Toolbar menu" aria-expanded="false" aria-controls="pro-toolbar-group">☰</button>
+        <button type="button" class="pro-btn pro-hamburger" id="pro-menu" aria-label="${escape(t('Toolbar menu'))}" aria-expanded="false" aria-controls="pro-toolbar-group">☰</button>
         <div class="pro-toolbar-group" id="pro-toolbar-group">
-          <label class="pro-format pro-zip" title="Name for the downloaded .zip">
+          <label class="pro-format pro-zip" title="${escape(t('Name for the downloaded .zip'))}">
             <input type="text" id="pro-zip-name" placeholder="lolly-batch" autocomplete="off" spellcheck="false">
             <span class="pro-zip-ext" aria-hidden="true">.zip</span>
           </label>
@@ -191,22 +194,23 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
           <input type="file" id="pro-csv-file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" hidden>
         </div>
         <span class="pro-spacer"></span>
-        <div class="pro-zoom" role="group" aria-label="Zoom interface">
-          <button type="button" class="pro-btn pro-zoom-btn" id="pro-zoom-out" title="Zoom out — shrink the whole interface" aria-label="Zoom out">−</button>
-          <button type="button" class="pro-btn pro-zoom-btn" id="pro-zoom-in" title="Zoom in — enlarge the whole interface" aria-label="Zoom in">+</button>
+        <div class="pro-zoom" role="group" aria-label="${escape(t('Zoom interface'))}">
+          <button type="button" class="pro-btn pro-zoom-btn" id="pro-zoom-out" title="${escape(t('Zoom out — shrink the whole interface'))}" aria-label="${escape(t('Zoom out'))}">−</button>
+          <button type="button" class="pro-btn pro-zoom-btn" id="pro-zoom-in" title="${escape(t('Zoom in — enlarge the whole interface'))}" aria-label="${escape(t('Zoom in'))}">+</button>
         </div>
-        <label class="pro-format pro-unit-field" id="pro-unit-field" title="Units for the Width & Height columns">
+        <label class="pro-format pro-unit-field" id="pro-unit-field" title="${escape(t('Units for the Width & Height columns'))}">
           <select id="pro-unit">${UNIT_OPTIONS.map(u => `<option value="${u}"${u === state.unit ? ' selected' : ''}>${u}</option>`).join('')}</select>
         </label>
-        <label class="pro-format pro-dpi-field" id="pro-dpi-field" title="Raster resolution for physical units (mm/cm/in/pt). Ignored for px and for vector formats.">
+        <label class="pro-format pro-dpi-field" id="pro-dpi-field" title="${escape(t('Raster resolution for physical units (mm/cm/in/pt). Ignored for px and for vector formats.'))}">
           <input type="number" id="pro-dpi" min="36" max="1200" step="1" value="${state.dpi}"${state.unit === 'px' ? ' disabled' : ''}>
           <span class="pro-dpi-suffix" aria-hidden="true">dpi</span>
         </label>
-        <label class="pro-format" id="pro-format-field" title="Output format for all rows (rows can override)">
+        <label class="pro-format" id="pro-format-field" title="${escape(t('Output format for all rows (rows can override)'))}">
           <select id="pro-format">${FORMAT_OPTIONS.map(f => `<option value="${f}"${f === state.format ? ' selected' : ''}>${f.toUpperCase()}</option>`).join('')}</select>
         </label>
-        <button type="button" class="pro-btn" id="pro-sessions" title="Save or load a snapshot of this whole batch">⛁ Sessions</button>
-        <button type="button" class="pro-btn pro-btn--primary" id="pro-render" title="Render the batch">Render</button>
+        <button type="button" class="pro-btn" id="pro-sessions" title="${escape(t('Save or load a snapshot of this whole batch'))}">⛁ ${t('Sessions')}</button>
+        <button type="button" class="pro-btn pro-btn--primary" id="pro-render" title="${escape(t('Render the batch'))}">${t('Render')}</button>
+        ${langFabHtml()}
       </div>
 
       <div id="pro-grid-host"></div>
@@ -222,6 +226,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   const unitSel = viewEl.querySelector<HTMLSelectElement>('#pro-unit')!;
   const dpiInput = viewEl.querySelector<HTMLInputElement>('#pro-dpi')!;
   const zipNameInput = viewEl.querySelector<HTMLInputElement>('#pro-zip-name')!;
+
+  const detachLangMenu = attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // Unit + DPI + Format + Sessions sit next to Render on desktop, but tuck into
   // the collapsible toolbar group (hamburger menu) on mobile. CSS can't reparent
@@ -1384,7 +1390,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   }
 
   // ── Cleanup (called by the router on navigation away) ───────────────────────
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { closeBulkPopover(); closeSessions(); closeTemplatePicker(); closeBlocksPanel(); nav.destroy(); detachResize(); detachReorder(); detachScrub(); zipRO.disconnect(); narrowMq.removeEventListener('change', placeFormat); narrowMq.removeEventListener('change', sizeZip); document.removeEventListener('pointerdown', onDocPointer); document.removeEventListener('keydown', onAddRowKey, true); };
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { detachLangMenu(); closeBulkPopover(); closeSessions(); closeTemplatePicker(); closeBlocksPanel(); nav.destroy(); detachResize(); detachReorder(); detachScrub(); zipRO.disconnect(); narrowMq.removeEventListener('change', placeFormat); narrowMq.removeEventListener('change', sizeZip); document.removeEventListener('pointerdown', onDocPointer); document.removeEventListener('keydown', onAddRowKey, true); };
 
   // Deep link: open a saved session if the route asked for one (#/pro?session=…),
   // e.g. resuming a batch from the gallery's Saved-sessions list. Otherwise drop

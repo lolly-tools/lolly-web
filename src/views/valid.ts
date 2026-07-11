@@ -28,6 +28,7 @@ import type { FileMetadata, MetaGroup, StripFormat } from '@lolly/engine';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { takePendingVerify } from '../lib/verify-handoff.ts';
@@ -247,31 +248,31 @@ function scorecardModel(report: VerifyReport): ScorecardItem[] {
     // applicable"/"invalid" would misword the amber and grey cases.
     {
       icon: 'lollipop',
-      label: lollyMade ? 'Made with Lolly' : lollyLikely ? 'Likely made with Lolly' : 'Not made with Lolly',
+      label: lollyMade ? t('Made with Lolly') : lollyLikely ? t('Likely made with Lolly') : t('Not made with Lolly'),
       status: lollyMade ? 'pass' : lollyLikely ? 'warn' : na,
       hideStatus: !lollyMade,
     },
-    { icon: 'document', label: 'Manifest found', status: found ? 'pass' : na },
-    { icon: 'eye', label: 'Manifest readable', status: readable },
-    { icon: 'link', label: 'Assertions bound to the claim', status: assertions },
-    { icon: 'pen', label: 'Claim signature valid', status: signature },
-    { icon: 'clock', label: 'Certificate within validity', status: validity },
-    { icon: 'hash', label: 'File bytes match (hard binding)', status: binding },
+    { icon: 'document', label: t('Manifest found'), status: found ? 'pass' : na },
+    { icon: 'eye', label: t('Manifest readable'), status: readable },
+    { icon: 'link', label: t('Assertions bound to the claim'), status: assertions },
+    { icon: 'pen', label: t('Claim signature valid'), status: signature },
+    { icon: 'clock', label: t('Certificate within validity'), status: validity },
+    { icon: 'hash', label: t('File bytes match (hard binding)'), status: binding },
     // "Signer identity" has no CA answer when the file was signed with a
     // self-signed on-device key — so say that plainly (dark-ash card) rather
     // than a bare "not applicable".
     (trust === 'na' && report.signer?.selfSigned
-      ? { icon: 'cpu', label: 'Signed with an on-device key', status: na, hideStatus: true, ash: true }
-      : { icon: 'userCheck', label: 'Signer identity (CA-verified)', status: trust }),
+      ? { icon: 'cpu', label: t('Signed with an on-device key'), status: na, hideStatus: true, ash: true }
+      : { icon: 'userCheck', label: t('Signer identity (CA-verified)'), status: trust }),
   ];
 }
 
 function scorecardHtml(report: VerifyReport): string {
-  return `<ul class="valid-score" aria-label="Verification checks at a glance">${scorecardModel(report).map((it, i) =>
-    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" style="--i:${i}" aria-label="${escape(it.label)}${it.hideStatus ? '' : `: ${STATUS_WORD[it.status]}`}">` +
+  return `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${scorecardModel(report).map((it, i) =>
+    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" style="--i:${i}" aria-label="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(t(STATUS_WORD[it.status]))}`}">` +
       `<span class="valid-score-ic" aria-hidden="true">${svgIcon(ICONS[it.icon])}</span>` +
       `<span class="valid-score-label" aria-hidden="true">${escape(it.label)}</span>` +
-      (it.hideStatus ? '' : `<span class="valid-score-status" aria-hidden="true">${STATUS_WORD[it.status]}</span>`) +
+      (it.hideStatus ? '' : `<span class="valid-score-status" aria-hidden="true">${escape(t(STATUS_WORD[it.status]))}</span>`) +
     `</li>`).join('')}</ul>`;
 }
 
@@ -307,7 +308,7 @@ export function inputsDigestHtml(inputs: Record<string, string> | undefined): st
   }).join('');
   return `
     <div class="valid-inputs valid-panel">
-      <h3>${svgIcon(ICONS.sparkle)}<span>Made from</span></h3>
+      <h3>${svgIcon(ICONS.sparkle)}<span>${t('Made from')}</span></h3>
       <dl class="valid-input-list">${rows}</dl>
     </div>`;
 }
@@ -362,12 +363,15 @@ function resolveState(report: VerifyReport): ResolvedState {
   // The static STATE_COPY subs carry no HTML metacharacters; any cert-derived value
   // interpolated here (issuer, signerOrg) MUST be escape()'d — it is attacker-controlled.
   const sub = state === STATE_COPY.lolly && report.trusted
-    ? 'The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim, signed under a CA-verified identity.)'
+    ? t('The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim, signed under a CA-verified identity.)')
     : state === STATE_COPY.expired && identity
-      ? 'The file still matches exactly what its credential signed — nothing was modified — but the short-lived signing certificate has expired, so the credential no longer validates. Without a trusted timestamp the time of signing cannot be proven.'
+      ? t('The file still matches exactly what its credential signed — nothing was modified — but the short-lived signing certificate has expired, so the credential no longer validates. Without a trusted timestamp the time of signing cannot be proven.')
       : state === STATE_COPY.trusted && thirdPartyRoot
-        ? `The file is exactly what its embedded credential signed, and the signing certificate chains to <strong>${escape(identity!.issuer!)}</strong> — a recognised C2PA trust anchor${signerOrg ? `, identifying the signer as <strong>${escape(signerOrg)}</strong>` : ''}. Integrity plus a CA-verified identity; what it records about how it was made is still the signer’s own claim.`
-        : state.sub;
+        ? t('The file is exactly what its embedded credential signed, and the signing certificate chains to <strong>{issuer}</strong> — a recognised C2PA trust anchor{signer}. Integrity plus a CA-verified identity; what it records about how it was made is still the signer’s own claim.', {
+            issuer: escape(identity!.issuer!),
+            signer: signerOrg ? t(', identifying the signer as <strong>{org}</strong>', { org: escape(signerOrg) }) : '',
+          })
+        : t(state.sub);
   return { state, sub, identity };
 }
 
@@ -387,7 +391,7 @@ function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none' {
 function miniScoreHtml(report: VerifyReport): string {
   if (!report.found) return '';
   return `<ul class="valid-score valid-score--mini" aria-hidden="true">${scorecardModel(report).map((it) =>
-    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${STATUS_WORD[it.status]}`}"><span class="valid-score-ic">${svgIcon(ICONS[it.icon])}</span></li>`).join('')}</ul>`;
+    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(t(STATUS_WORD[it.status]))}`}"><span class="valid-score-ic">${svgIcon(ICONS[it.icon])}</span></li>`).join('')}</ul>`;
 }
 
 // The always-visible summary row of a collapsible report: state badge, filename,
@@ -427,13 +431,13 @@ function summaryInner(fileName: string, report: VerifyReport): string {
   // credential file leads with the verdict badge instead: the problem is the
   // headline, and its maker isn't something to vouch for.
   const lead = (tone === 'good' && maker)
-    ? `<span class="valid-item-maker ${maker.lolly ? 'is-lolly' : 'is-other'}" title="${escape(state.title)}">Made with ${escape(maker.names.join(' · '))}</span>`
-    : `<span class="valid-item-badge is-${tone}">${escape(state.title)}</span>`;
+    ? `<span class="valid-item-maker ${maker.lolly ? 'is-lolly' : 'is-other'}" title="${escape(t(state.title))}">${t('Made with {names}', { names: escape(maker.names.join(' · ')) })}</span>`
+    : `<span class="valid-item-badge is-${tone}">${escape(t(state.title))}</span>`;
   return `
     ${lead}
-    ${report.aiGenerated ? `<span class="valid-item-ai" title="Content Credential declares AI-generated content">${svgIcon(ICONS.aiSpark)}<span>AI</span></span>` : ''}
+    ${report.aiGenerated ? `<span class="valid-item-ai" title="${escape(t('Content Credential declares AI-generated content'))}">${svgIcon(ICONS.aiSpark)}<span>${t('AI')}</span></span>` : ''}
     <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
-    ${who ? `<span class="valid-item-signer" title="Signed by ${escape(who)}">${svgIcon(ICONS.mail)}<span>${escape(who)}</span></span>` : ''}
+    ${who ? `<span class="valid-item-signer" title="${escape(t('Signed by {who}', { who }))}">${svgIcon(ICONS.mail)}<span>${escape(who)}</span></span>` : ''}
     ${miniScoreHtml(report)}
     <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>`;
 }
@@ -449,7 +453,7 @@ const META_GROUP_ICON: Record<MetaGroup, keyof typeof ICONS> = {
 // full-width above the sections when a file records a position.
 function renderLocator(lat: number, lon: number): string {
   const { x, y } = projectLatLon(lat, lon);
-  return `<svg class="valid-locator" viewBox="${WORLD_VIEWBOX}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="World map with a pin at the recorded location">
+  return `<svg class="valid-locator" viewBox="${WORLD_VIEWBOX}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escape(t('World map with a pin at the recorded location'))}">
       <rect class="valid-locator-sea" x="151.67" y="242.58" width="656.66" height="288.84" rx="7"/>
       <path class="valid-locator-land" d="${WORLD_LAND_PATH}"/>
       <g class="valid-locator-pin" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">
@@ -482,7 +486,7 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
     `<div class="valid-meta-row${f.sensitive ? ' is-sensitive' : ''}"><dt>${escape(f.label)}</dt><dd>${escape(f.value)}</dd></div>`;
   const locationBlock = meta.gps ? `
     <section class="valid-meta-location">
-      <h4>${svgIcon(ICONS.mapPin)}<span>Location</span></h4>
+      <h4>${svgIcon(ICONS.mapPin)}<span>${t('Location')}</span></h4>
       ${renderLocator(meta.gps.lat, meta.gps.lon)}
       <div class="valid-meta-loc-read">
         ${loc.map((f) => `<span class="valid-meta-loc-item"><span class="k">${escape(f.label)}</span><span class="v">${escape(f.value)}</span></span>`).join('')}
@@ -492,16 +496,19 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
   return `
     <section class="valid-meta">
       <div class="valid-meta-head">
-        <h3>${svgIcon(ICONS.eye)}<span>Embedded metadata</span></h3>
-        <span class="valid-meta-count">${n} field${n > 1 ? 's' : ''}${meta.format ? ` · ${escape(meta.format)}` : ''}</span>
+        <h3>${svgIcon(ICONS.eye)}<span>${t('Embedded metadata')}</span></h3>
+        <span class="valid-meta-count">${n === 1 ? t('1 field') : t('{n} fields', { n })}${meta.format ? ` · ${escape(meta.format)}` : ''}</span>
       </div>
       ${mediaPreviewHtml(preview, 'sm')}
-      <p class="valid-meta-note">Read on this device from the file's own bytes — the EXIF, XMP and container data it carries wherever it travels.${sensitive ? ' Values that can identify a person, place or device are marked.' : ''} ${isStrippableFormat(meta.format)
-    ? `<button type="button" class="valid-clean-link" data-clean-copy="${fileIndex}" data-clean-format="${escape(meta.format)}">Download a cleaned copy</button> or use the <a href="#/tool/strip-data">Hidden Data</a> tool for more control.`
-    : `Remove it with the <a href="#/tool/strip-data">Hidden Data</a> tool.`}</p>
+      <p class="valid-meta-note">${t("Read on this device from the file's own bytes — the EXIF, XMP and container data it carries wherever it travels.")}${sensitive ? ` ${t('Values that can identify a person, place or device are marked.')}` : ''} ${isStrippableFormat(meta.format)
+    ? t('{button} or use the {link} tool for more control.', {
+        button: `<button type="button" class="valid-clean-link" data-clean-copy="${fileIndex}" data-clean-format="${escape(meta.format)}">${t('Download a cleaned copy')}</button>`,
+        link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>`,
+      })
+    : t('Remove it with the {link} tool.', { link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>` })}</p>
       <div class="valid-meta-grid">
         ${locationBlock}
-        ${groups.map((x) => section(x.g, META_GROUP_LABEL[x.g], META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}
+        ${groups.map((x) => section(x.g, t(META_GROUP_LABEL[x.g]), META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}
       </div>
     </section>`;
 }
@@ -526,10 +533,10 @@ function aiFlagHtml(report: VerifyReport): string {
     <div class="valid-ai-flag" role="alert">
       <span class="valid-ai-flag-ic" aria-hidden="true">${svgIcon(ICONS.aiSpark)}</span>
       <span class="valid-ai-flag-text">
-        <strong>${escape(c.title)}</strong>
-        <span>${escape(c.sub)}</span>
+        <strong>${escape(t(c.title))}</strong>
+        <span>${escape(t(c.sub))}</span>
       </span>
-      <span class="valid-ai-flag-tag" aria-hidden="true">AI</span>
+      <span class="valid-ai-flag-tag" aria-hidden="true">${t('AI')}</span>
     </div>`;
 }
 
@@ -544,8 +551,8 @@ function watermarkNote(wm: Watermark | undefined): string {
     <div class="valid-wm" role="note">
       <span class="valid-wm-ic" aria-hidden="true">${svgIcon(ICONS.imprint)}</span>
       <div class="valid-wm-text">
-        <strong>Lolly pixel watermark present</strong>
-        <span>An imperceptible mark Lolly can embed in the pixels of a raster export. Unlike the Content Credential — which travels in metadata and is lost to a re-save or strip — this rides in the image itself and survives recompression, so it's a durable hint that the image came from Lolly. A supporting signal, not a cryptographic guarantee.</span>
+        <strong>${t('Lolly pixel watermark present')}</strong>
+        <span>${t("An imperceptible mark Lolly can embed in the pixels of a raster export. Unlike the Content Credential — which travels in metadata and is lost to a re-save or strip — this rides in the image itself and survives recompression, so it's a durable hint that the image came from Lolly. A supporting signal, not a cryptographic guarantee.")}</span>
       </div>
     </div>`;
 }
@@ -630,7 +637,7 @@ export function stepsHtml(report: VerifyReport): string {
   if (!acts.length) return '';
   const rowData = acts.map((a) => {
     const code = String(a.action ?? '');
-    const label = ACTION_LABEL[code] ?? (code.replace(/^c2pa\./, '') || 'Step');
+    const label = ACTION_LABEL[code] ? t(ACTION_LABEL[code]!) : (code.replace(/^c2pa\./, '') || t('Step'));
     const slug = sourceSlug(a);
     const isAi = !!AI_SOURCE_SLUGS[slug];
     const desc = a.description ? tidyStepDescription(String(a.description), label) : '';
@@ -639,7 +646,7 @@ export function stepsHtml(report: VerifyReport): string {
     // the description carry the wording instead of the camera source line.
     const isCapture = slug === 'digitalCapture' || slug === 'computationalCapture';
     const isMicCapture = isCapture && /microphone/i.test(desc) && !/camera/i.test(desc);
-    const src = isMicCapture ? undefined : SOURCE_TYPE_LABEL[slug];
+    const src = isMicCapture || !SOURCE_TYPE_LABEL[slug] ? undefined : t(SOURCE_TYPE_LABEL[slug]!);
     // A composite/capture source type wins the glyph; else the action's own icon.
     const icon = isMicCapture ? 'mic' : (SOURCE_ICON[slug] ?? ACTION_ICON[code] ?? 'clock');
     // Who did it → a left-side pill. Lolly reads bold green (mark our own edits
@@ -665,7 +672,7 @@ export function stepsHtml(report: VerifyReport): string {
     const railLolly = firstLolly !== undefined && i >= firstLolly && i < lastLolly!;
     return `
       <li class="valid-step is-${r.agentCls}${railLolly ? ' valid-step--rail-lolly' : ''}">
-        <span class="valid-step-agent" title="${r.agent ? escape(r.agent) : 'Unknown source'}">${escape(r.agent ? shortAgent(r.agent) : '—')}</span>
+        <span class="valid-step-agent" title="${r.agent ? escape(r.agent) : escape(t('Unknown source'))}">${escape(r.agent ? shortAgent(r.agent) : '—')}</span>
         <div class="valid-step-main">
           <span class="valid-step-label"><span class="valid-step-ic" aria-hidden="true">${svgIcon(ICONS[r.icon])}</span>${escape(r.label)}</span>
           ${r.meta ? `<span class="valid-step-meta">${r.meta}</span>` : ''}
@@ -675,7 +682,7 @@ export function stepsHtml(report: VerifyReport): string {
   }).join('');
   return `
     <div class="valid-steps valid-panel">
-      <h3>${svgIcon(ICONS.clock)}<span>Change history</span></h3>
+      <h3>${svgIcon(ICONS.clock)}<span>${t('Change history')}</span></h3>
       <ol class="valid-steps-list">${rows}</ol>
     </div>`;
 }
@@ -689,7 +696,7 @@ function checksHtml(report: VerifyReport): string {
   if (!report.checks.length) return '';
   return `
     <div class="valid-checks-panel valid-panel">
-      <h3>${svgIcon(ICONS.checklist)}<span>Assertion log</span></h3>
+      <h3>${svgIcon(ICONS.checklist)}<span>${t('Assertion log')}</span></h3>
       <ul class="valid-checks">${report.checks.map(checkRow).join('')}</ul>
     </div>`;
 }
@@ -714,14 +721,14 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
   if (!p) return '';
   const cls = `valid-preview valid-preview--${size} is-${p.kind}`;
   if (p.kind === 'image' && p.url)
-    return `<figure class="${cls}"><img src="${escape(p.url)}" alt="Preview of ${escape(p.name)}" decoding="async"></figure>`;
+    return `<figure class="${cls}"><img src="${escape(p.url)}" alt="${escape(t('Preview of {name}', { name: p.name }))}" decoding="async"></figure>`;
   if (p.kind === 'video' && p.url)
     return `<figure class="${cls}"><video src="${escape(p.url)}#t=0.1" preload="metadata" playsinline muted${size === 'lg' ? ' controls' : ''}></video></figure>`;
   if (p.kind === 'pdf' && p.url && size === 'lg')
     return `<figure class="${cls}"><embed src="${escape(p.url)}#toolbar=0&view=FitH" type="application/pdf"></figure>`;
   // Not inline-previewable at this size — a quiet labelled placeholder (large only).
   if (size === 'lg')
-    return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon(ICONS.image)}</span><figcaption>No inline preview for ${escape((p.format || 'this format').toUpperCase())}</figcaption></figure>`;
+    return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon(ICONS.image)}</span><figcaption>${t('No inline preview for {format}', { format: escape((p.format || t('this format')).toUpperCase()) })}</figcaption></figure>`;
   return '';
 }
 
@@ -741,8 +748,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const signerWho = identity ? (identity.email || signer.organization || signer.commonName) : null;
   const identityLine = (identity && signerWho) ? `
           <p class="valid-identity-line">${report.trusted
-    ? `Signed by <strong>${escape(signerWho)}</strong> — identity verified by <strong>${escape(identity!.issuer ?? 'a recognised C2PA root')}</strong>`
-    : `Signed by <strong>${escape(signerWho)}</strong> — identity was CA-verified; the certificate has since expired`}</p>` : '';
+    ? t('Signed by <strong>{who}</strong> — identity verified by <strong>{issuer}</strong>', { who: escape(signerWho), issuer: escape(identity!.issuer ?? t('a recognised C2PA root')) })
+    : t('Signed by <strong>{who}</strong> — identity was CA-verified; the certificate has since expired', { who: escape(signerWho) })}</p>` : '';
   // "Made from", "what happened" and "what was checked" — distinct boxed panels,
   // paired with the file/facts summary so they share one row wherever the page
   // has the room (see .valid-panels). madeFromBlock is placed ahead of stepsBlock
@@ -753,24 +760,24 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const checksBlock = checksHtml(report);
   const selfnoteBlock = report.found && report.claim && !report.madeWithLolly ? `
         <p class="valid-selfnote">${identity
-    ? 'As recorded in the credential — asserted by its CA-verified signer:'
-    : 'As recorded in the credential — self-asserted by whoever signed it:'}</p>` : '';
+    ? t('As recorded in the credential — asserted by its CA-verified signer:')
+    : t('As recorded in the credential — self-asserted by whoever signed it:')}</p>` : '';
   const factsBlock = report.found && report.claim ? `
         <dl class="valid-facts">
-          ${fact('Title', claim.title, 'tag')}
-          ${fact('Tool', env.tool, 'tool')}
-          ${fact('Produced by', report.author ? `${report.author.name}${report.author.email ? ` <${report.author.email}>` : ''}` : null, 'user')}
-          ${fact(report.delivered ? 'Delivered by' : 'Made with', generator, report.delivered ? 'package' : 'lollipop')}
-          ${fact('Signed', signedAt ? fmtDate(signedAt) : null, 'clock')}
-          ${fact('Where', [env.surface, env.engine, env.os].filter(Boolean).join(' · ') || null, 'globe')}
-          ${fact('Size', env.dimensions, 'image')}
-          ${fact('Signer', signer.commonName, 'seal')}
-          ${fact('Identity', identity?.email, 'mail')}
-          ${fact('Issuer', identity ? identity.issuer
-    : signer.organization ? `${signer.organization} ${signer.selfSigned ? '(self-signed, on-device)' : '(unverified — does not chain to a trust anchor)'}` : null, 'building')}
-          ${fact('Algorithm', signer.alg, 'cpu')}
-          ${fact('Certificate valid', signer.notBefore ? `${fmtDate(signer.notBefore)} → ${fmtDate(signer.notAfter)}` : null, 'calendar')}
-          ${fact('Manifest', claim.manifestLabel, 'document')}
+          ${fact(t('Title'), claim.title, 'tag')}
+          ${fact(t('Tool'), env.tool, 'tool')}
+          ${fact(t('Produced by'), report.author ? `${report.author.name}${report.author.email ? ` <${report.author.email}>` : ''}` : null, 'user')}
+          ${fact(report.delivered ? t('Delivered by') : t('Made with'), generator, report.delivered ? 'package' : 'lollipop')}
+          ${fact(t('Signed'), signedAt ? fmtDate(signedAt) : null, 'clock')}
+          ${fact(t('Where'), [env.surface, env.engine, env.os].filter(Boolean).join(' · ') || null, 'globe')}
+          ${fact(t('Size'), env.dimensions, 'image')}
+          ${fact(t('Signer'), signer.commonName, 'seal')}
+          ${fact(t('Identity'), identity?.email, 'mail')}
+          ${fact(t('Issuer'), identity ? identity.issuer
+    : signer.organization ? `${signer.organization} ${signer.selfSigned ? t('(self-signed, on-device)') : t('(unverified — does not chain to a trust anchor)')}` : null, 'building')}
+          ${fact(t('Algorithm'), signer.alg, 'cpu')}
+          ${fact(t('Certificate valid'), signer.notBefore ? `${fmtDate(signer.notBefore)} → ${fmtDate(signer.notAfter)}` : null, 'calendar')}
+          ${fact(t('Manifest'), claim.manifestLabel, 'document')}
         </dl>` : '';
   const summaryBlock = `
       <div class="valid-summary valid-panel">
@@ -789,19 +796,19 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const signedByCa = identity?.issuer || signer.organization || signer.commonName;
   const lollyValidationsHtml = state === STATE_COPY.lolly ? `
           <div class="valid-hero-vbadges">
-            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>The credential is intact and records a Lolly export</span></div>
-            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>This file has not changed since it was made</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>${t('The credential is intact and records a Lolly export')}</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>${t('This file has not changed since it was made')}</span></div>
           </div>
           <p class="valid-hero-signedby">${identity
-    ? `Signed with <strong>${escape(signedByCa ?? 'a Certificate Authority')}</strong> Certificate Authority.`
-    : 'Signed with an on-device key, not a CA identity.'}</p>` : '';
+    ? t('Signed with <strong>{ca}</strong> Certificate Authority.', { ca: escape(signedByCa ?? t('a Certificate Authority')) })
+    : t('Signed with an on-device key, not a CA identity.')}</p>` : '';
   // Mirrors lollyValidationsHtml's badge treatment for the broken-credential
   // verdict — three plain facts instead of one sentence to parse.
   const invalidBadgesHtml = state === STATE_COPY.invalid ? `
           <div class="valid-hero-vbadges">
-            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>Content Credentials detected</span></div>
-            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>Bytes no longer match</span></div>
-            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.pen)}</span><span>Modified after signing</span></div>
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>${t('Content Credentials detected')}</span></div>
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>${t('Bytes no longer match')}</span></div>
+            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.pen)}</span><span>${t('Modified after signing')}</span></div>
           </div>` : '';
   // The middle-ground verdict: mixed tones in one badge group, unlike the pure
   // pass (lolly) or pure fail (invalid) groups above — two green facts about
@@ -809,17 +816,17 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // the FILE's current bytes (can't be vouched for).
   const likelyLollyBadgesHtml = state === STATE_COPY.likelyLolly ? `
           <div class="valid-hero-vbadges">
-            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>The credential's own content checks out</span></div>
-            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.lollipop)}</span><span>It records a Lolly creation</span></div>
-            <div class="valid-vbadge is-warn"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>This file's bytes no longer match</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.seal)}</span><span>${t("The credential's own content checks out")}</span></div>
+            <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.lollipop)}</span><span>${t('It records a Lolly creation')}</span></div>
+            <div class="valid-vbadge is-warn"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon(ICONS.hash)}</span><span>${t("This file's bytes no longer match")}</span></div>
           </div>` : '';
   const verdictHtml = report.madeWithLolly
-    ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(state.title)}</span>`
+    ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(t(state.title))}</span>`
     : report.likelyMadeWithLolly
-      ? `<span class="valid-hero-pill valid-hero-pill--likely-lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(state.title)}</span>`
+      ? `<span class="valid-hero-pill valid-hero-pill--likely-lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(t(state.title))}</span>`
       : report.trusted
-        ? `<span class="valid-hero-pill valid-hero-pill--trusted"><span class="valid-trusted-badge" aria-hidden="true">✓</span>${escape(state.title)}</span>`
-        : `<span class="valid-hero-verdict">${escape(state.title)}</span>`;
+        ? `<span class="valid-hero-pill valid-hero-pill--trusted"><span class="valid-trusted-badge" aria-hidden="true">✓</span>${escape(t(state.title))}</span>`
+        : `<span class="valid-hero-verdict">${escape(t(state.title))}</span>`;
   return `
     <div class="valid-result ${state.cls}">
       <div class="valid-top">
@@ -842,19 +849,10 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       ${panelsBlock}
       ${watermarkNote(watermark)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
-    ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no
-        standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment:
-        only Lolly (here and via <code>lolly validate</code>) can read it — external C2PA viewers
-        don't support WebM at all.`
+    ? t("<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment: only Lolly (here and via <code>lolly validate</code>) can read it — external C2PA viewers don't support WebM at all.")
     : identity
-      ? `<strong>Checked entirely on this device</strong> — the file was not uploaded. The signer's identity
-        was verified against the Lolly CA root pinned in this app (the same root
-        <code>lolly validate --trust-anchor</code> uses). Validators that don't pin that root —
-        <a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>,
-        or <code>c2patool</code> without <code>--trust_anchors</code> — still show the signer as an unknown source.`
-      : `<strong>Checked entirely on this device</strong> — the file was not uploaded. The same file on
-        <a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>
-        reads the same, with the signer shown as an unknown source (there is no CA behind an on-device key — by design).`) : ''}
+      ? t("<strong>Checked entirely on this device</strong> — the file was not uploaded. The signer's identity was verified against the Lolly CA root pinned in this app (the same root <code>lolly validate --trust-anchor</code> uses). Validators that don't pin that root — {link}, or <code>c2patool</code> without <code>--trust_anchors</code> — still show the signer as an unknown source.", { link: '<a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>' })
+      : t('<strong>Checked entirely on this device</strong> — the file was not uploaded. The same file on {link} reads the same, with the signer shown as an unknown source (there is no CA behind an on-device key — by design).', { link: '<a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>' })) : ''}
     </div>`;
 }
 
@@ -932,21 +930,21 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   document.title = 'Verify — Lolly';
 
   viewEl.innerHTML = `
-    <a href="#/" class="tools-home home-full">Tools</a>
+    <a href="#/" class="tools-home home-full">${t('Tools')}</a>
     <div class="gallery-topright">${langFabHtml()}</div>
     <div class="platform-layout valid-layout">
       <header class="plat-header">
-        <h1 class="plat-title">Verify</h1>
+        <h1 class="plat-title">${t('Verify')}</h1>
         <div class="plat-header-text">
-          <p class="plat-sub">Check a file's Content Credentials — the signed C2PA manifest Lolly embeds on export. Answers whether it was genuinely made with Lolly, by whom, and where. On-device; nothing is uploaded.</p>
+          <p class="plat-sub">${t("Check a file's Content Credentials — the signed C2PA manifest Lolly embeds on export. Answers whether it was genuinely made with Lolly, by whom, and where. On-device; nothing is uploaded.")}</p>
         </div>
       </header>
 
-      <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="Choose or drop files to verify">
+      <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
         <input type="file" multiple accept=".pdf,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.mp4,.m4v,.mov,.webm,.mkv,application/pdf,image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,video/mp4,video/webm,video/x-matroska" hidden>
         <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
-        <strong>Drop files here</strong>
-        <span>pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm — check one or several at once</span>
+        <strong>${t('Drop files here')}</strong>
+        <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm — check one or several at once')}</span>
       </div>
 
       <div class="valid-report" data-report hidden></div>
@@ -967,7 +965,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark }> {
     try {
       if (file.size > MAX_VERIFY_BYTES) {
-        return { error: `File is too large to verify here (over ${Math.round(MAX_VERIFY_BYTES / 1024 / 1024)} MB).` };
+        return { error: t('File is too large to verify here (over {n} MB).', { n: Math.round(MAX_VERIFY_BYTES / 1024 / 1024) }) };
       }
       const bytes = new Uint8Array(await file.arrayBuffer());
       const report = await verifyC2pa(bytes, VERIFY_OPTS);
@@ -1035,11 +1033,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   // A collapsed report whose credential check failed to even run (unreadable bytes).
   function errorSummary(fileName: string, message: string): string {
     return `<summary class="valid-item-summary">
-        <span class="valid-item-badge is-bad">Error</span>
+        <span class="valid-item-badge is-bad">${t('Error')}</span>
         <span class="valid-item-name">${escape(fileName)}</span>
         <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>
       </summary>
-      <div class="valid-item-body"><p class="valid-busy">Could not check this file: ${escape(message)}</p></div>`;
+      <div class="valid-item-body"><p class="valid-busy">${t('Could not check this file: {message}', { message: escape(message) })}</p></div>`;
   }
 
   // Object URLs minted for the media previews. Revoked wholesale at the start of
@@ -1070,11 +1068,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     // One file reads exactly as before — the full report inline, no collapse chrome.
     if (list.length === 1) {
       const file = list[0]!;
-      reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">Checking ${escape(file.name)}…</p></div>`;
+      reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: escape(file.name) })}</p></div>`;
       const { report, error, meta, watermark } = await verifyFile(file);
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
         ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark)
-        : `<p class="valid-busy">Could not check this file: ${escape(error!)}</p>`;
+        : `<p class="valid-busy">${t('Could not check this file: {message}', { message: escape(error!) })}</p>`;
       const panels = reportEl.querySelector<HTMLElement>('.valid-panels');
       if (panels) layoutMasonry(panels);
       // Audible verdict, as two composable signals: the spooky ghost "hoooo" marks
@@ -1096,10 +1094,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     // batch reads as a column of highlight bars; expand any one for its full report.
     reportEl.innerHTML = `
       <div class="valid-reports-bar">
-        <span class="valid-reports-count">${list.length} files</span>
+        <span class="valid-reports-count">${t('{n} files', { n: list.length })}</span>
         <div class="valid-reports-actions">
-          <button type="button" class="btn valid-reports-toggle" data-expand>Expand all</button>
-          <button type="button" class="btn valid-reports-toggle" data-collapse>Collapse all</button>
+          <button type="button" class="btn valid-reports-toggle" data-expand>${t('Expand all')}</button>
+          <button type="button" class="btn valid-reports-toggle" data-collapse>${t('Collapse all')}</button>
         </div>
       </div>
       <div class="valid-reports-list"></div>`;
@@ -1115,11 +1113,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       const card = document.createElement('details');
       card.className = 'valid-item is-busy';
       card.innerHTML = `<summary class="valid-item-summary">
-          <span class="valid-item-badge is-busy">Checking…</span>
+          <span class="valid-item-badge is-busy">${t('Checking…')}</span>
           <span class="valid-item-name">${escape(file.name)}</span>
           <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>
         </summary>
-        <div class="valid-item-body"><p class="valid-busy">Checking ${escape(file.name)}…</p></div>`;
+        <div class="valid-item-body"><p class="valid-busy">${t('Checking {name}…', { name: escape(file.name) })}</p></div>`;
       listEl.appendChild(card);
       return card;
     });
@@ -1169,7 +1167,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     if (!file) return;
     const original = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'Cleaning…';
+    btn.textContent = t('Cleaning…');
     try {
       if (file.size > MAX_VERIFY_BYTES) throw new Error('File is too large to clean here.');
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -1184,9 +1182,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
         mime = CLEAN_MIME[fmt] || 'application/octet-stream';
       }
       await host.export.file(new Blob([outBytes as BlobPart], { type: mime }), { filename: cleanFileName(file.name) });
-      btn.textContent = 'Downloaded ✓';
+      btn.textContent = t('Downloaded ✓');
     } catch (err) {
-      btn.textContent = 'Couldn’t clean this file';
+      btn.textContent = t('Couldn’t clean this file');
       host.log('warn', 'valid: clean-copy failed', { error: (err as Error)?.message });
     } finally {
       setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 2000);

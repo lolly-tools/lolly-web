@@ -140,7 +140,7 @@
    anything narrower. Every header in here is a collapsible <details> (via
    collapse()), so mobile can fold each one independently. */
 .dash-device-grid { display: grid; gap: 1.1rem; grid-template-columns: 1fr; margin: 0 0 1.1rem; }
-@media (min-width: 900px) { .dash-device-grid { grid-template-columns: 1fr 1fr; align-items: start; } }
+@media (min-width: 900px) { .dash-device-grid { grid-template-columns: 1.618fr .7fr; align-items: start; } }
 .dash-device-col > .dash-collapse { margin: 0; }
 /* Sound stacked above Storage, not side by side — overrides the fan-and-wrap
    behaviour below, which is for the Design system tab's bento row. */

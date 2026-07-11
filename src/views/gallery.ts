@@ -15,6 +15,7 @@
  */
 
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
@@ -467,39 +468,39 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   viewEl.classList.add('has-masonry');
   viewEl.innerHTML = `
     <div class="gallery${featuredEntries.length ? ' has-featured' : ''}">
-      <h1 class="visually-hidden">Lolly — tools gallery</h1>
+      <h1 class="visually-hidden">${t('Lolly — tools gallery')}</h1>
       <div class="gallery-topbar">
         <div class="view-toggle-wrap">${viewToggle('tools')}</div>
         <div class="gallery-topright">
-          ${visibleCats.length ? `<button type="button" class="filter-fab" aria-label="Sort and filter tools" aria-haspopup="true" aria-expanded="false" aria-controls="filter-popover" title="Sort & filter">${FILTER_ICON}</button>` : ''}
-          ${sortedSaved.length ? `<button type="button" class="history-fab" title="Saved sessions" aria-label="Saved sessions (${sortedSaved.length})">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}
+          ${visibleCats.length ? `<button type="button" class="filter-fab" aria-label="${escape(t('Sort and filter tools'))}" aria-haspopup="true" aria-expanded="false" aria-controls="filter-popover" title="${escape(t('Sort & filter'))}">${FILTER_ICON}</button>` : ''}
+          ${sortedSaved.length ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: sortedSaved.length }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}
           ${langFabHtml()}
-          <a href="#/profile" class="profile-link" aria-label="Open your profile"><span class="profile-link-name">${escape(profile.firstname || 'Profile')}</span></a>
+          <a href="#/profile" class="profile-link" aria-label="${escape(t('Open your profile'))}"><span class="profile-link-name">${escape(profile.firstname || t('Profile'))}</span></a>
           ${visibleCats.length ? `
-          <div class="filter-popover" id="filter-popover" role="group" aria-label="Sort and filter tools" hidden>
+          <div class="filter-popover" id="filter-popover" role="group" aria-label="${escape(t('Sort and filter tools'))}" hidden>
             <div class="filter-pop-sort">${themeSegmentHtml()}</div>
             <div class="filter-pop-sort">${soundSegmentHtml()}</div>
             ${featuredEntries.length ? `
             <div class="filter-pop-sort">
-              <p class="filter-pop-head">Featured view</p>
-              <div class="view-seg" role="group" aria-label="Featured view">
-                ${FEATURED_VIEWS.map(v => `<button type="button" class="view-seg-btn" data-view="${v}" aria-pressed="${v === featuredView}">${escape(FEATURED_VIEW_LABELS[v])}</button>`).join('')}
+              <p class="filter-pop-head">${t('Featured view')}</p>
+              <div class="view-seg" role="group" aria-label="${escape(t('Featured view'))}">
+                ${FEATURED_VIEWS.map(v => `<button type="button" class="view-seg-btn" data-view="${v}" aria-pressed="${v === featuredView}">${escape(t(FEATURED_VIEW_LABELS[v]))}</button>`).join('')}
               </div>
             </div>` : ''}
             <div class="filter-pop-sort">
-              <label class="filter-pop-head" for="gallery-sort">Sort by</label>
+              <label class="filter-pop-head" for="gallery-sort">${t('Sort by')}</label>
               <div class="gallery-sort-row">
                 <select class="gallery-sort" id="gallery-sort">
-                  ${SORT_KEYS.map(k => `<option value="${k}">${escape(SORT_LABELS[k])}</option>`).join('')}
+                  ${SORT_KEYS.map(k => `<option value="${k}">${escape(t(SORT_LABELS[k]))}</option>`).join('')}
                 </select>
-                <button type="button" class="gallery-sort-dir" id="gallery-sort-dir" aria-pressed="false" aria-label="Sort direction: newest first" title="Reverse order">${SORT_DIR_ICON}</button>
+                <button type="button" class="gallery-sort-dir" id="gallery-sort-dir" aria-pressed="false" aria-label="${escape(t('Sort direction: newest first'))}" title="${escape(t('Reverse order'))}">${SORT_DIR_ICON}</button>
               </div>
             </div>
-            <p class="filter-pop-head">Filter</p>
-            <div class="filter-pop-pills" aria-label="Filter tools by category"></div>
+            <p class="filter-pop-head">${t('Filter')}</p>
+            <div class="filter-pop-pills" aria-label="${escape(t('Filter tools by category'))}"></div>
             <label class="filter-pop-check">
               <input type="checkbox" class="filter-hide-previews">
-              <span>Hide previews</span>
+              <span>${t('Hide previews')}</span>
             </label>
           </div>` : ''}
         </div>
@@ -508,13 +509,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
 
       ${visibleCats.length === 0 ? (index.tools.length === 0 ? `
         <div class="gallery-empty" role="status">
-          <p class="gallery-empty-title">Couldn't load the tools.</p>
-          <p class="gallery-empty-hint">Check your connection, then <button type="button" class="gallery-retry">retry</button>.</p>
+          <p class="gallery-empty-title">${t("Couldn't load the tools.")}</p>
+          <p class="gallery-empty-hint">${t('Check your connection, then {button}.', { button: `<button type="button" class="gallery-retry">${t('retry')}</button>` })}</p>
         </div>
       ` : `
         <div class="gallery-empty" role="status">
-          <p class="gallery-empty-title">It looks like there are no tools available.</p>
-          <p class="gallery-empty-hint">Try turning on categories in <a href="#/profile?focus=feature-flags">your feature flags</a>.</p>
+          <p class="gallery-empty-title">${t('It looks like there are no tools available.')}</p>
+          <p class="gallery-empty-hint">${t('Try turning on categories in {link}.', { link: `<a href="#/profile?focus=feature-flags">${t('your feature flags')}</a>` })}</p>
         </div>
       `) : `
         ${featuredEntries.length ? '<div class="featured-mount"></div>' : ''}
@@ -524,7 +525,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
 
       ${footerNav({
         proEnabled,
-        searchHtml: gallerySearchBox({ placeholder: 'Search tools…', ariaLabel: 'Search tools' }),
+        searchHtml: gallerySearchBox({ placeholder: t('Search tools…'), ariaLabel: t('Search tools') }),
       })}
       ${privacyNoticeMarkup()}
       ${personalizeNudgeMarkup(profile)}
@@ -561,7 +562,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   viewEl.querySelector('.gallery-retry')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
     btn.disabled = true;
-    btn.textContent = 'Retrying…';
+    btn.textContent = t('Retrying…');
     await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]);
     await mountGallery(viewEl, host);
   });
@@ -1009,15 +1010,15 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     if (!pillbar) return;
     const total = index.tools.filter(t => !hidden.has(t.category) && t.category !== 'utility').length;
     const allActive = activeCat === 'all' && !query;
-    let html = `<button class="gallery-pill${allActive ? ' active' : ''}" data-cat="all" type="button" aria-pressed="${allActive}">All<span class="ct">${total}</span></button>`;
+    let html = `<button class="gallery-pill${allActive ? ' active' : ''}" data-cat="all" type="button" aria-pressed="${allActive}">${t('All')}<span class="ct">${total}</span></button>`;
     // Favourites — the starred collection. Always shown (even at 0) so it's discoverable;
     // clicking into an empty one explains how to add.
     const favActive = activeCat === FAV_CAT && !query;
-    html += `<button class="gallery-pill gallery-pill--fav${favActive ? ' active' : ''}" data-cat="${FAV_CAT}" type="button" aria-pressed="${favActive}"><span class="pill-star" aria-hidden="true">★</span>Favourites<span class="ct">${favCount()}</span></button>`;
+    html += `<button class="gallery-pill gallery-pill--fav${favActive ? ' active' : ''}" data-cat="${FAV_CAT}" type="button" aria-pressed="${favActive}"><span class="pill-star" aria-hidden="true">★</span>${t('Favourites')}<span class="ct">${favCount()}</span></button>`;
     for (const cat of visibleCats) {
       const n = grouped[cat]!.length;
       const active = activeCat === cat && !query;
-      html += `<button class="gallery-pill${active ? ' active' : ''}" data-cat="${escape(cat)}" type="button" aria-pressed="${active}">${escape(catLabel(cat))}<span class="ct">${n}</span></button>`;
+      html += `<button class="gallery-pill${active ? ' active' : ''}" data-cat="${escape(cat)}" type="button" aria-pressed="${active}">${escape(t(catLabel(cat)))}<span class="ct">${n}</span></button>`;
     }
     pillbar.innerHTML = html;
   }
@@ -1088,14 +1089,14 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     }
     if (shown === 0) {
       noResults.innerHTML = query
-        ? `No tools match "<strong>${escape(query.trim())}</strong>" — <button type="button" class="gallery-retry" data-search-clear>clear search</button>`
+        ? t('No tools match "<strong>{query}</strong>" — {button}', { query: escape(query.trim()), button: `<button type="button" class="gallery-retry" data-search-clear>${t('clear search')}</button>` })
         : activeCat === FAV_CAT
-          ? 'No favourites yet — tap the <span class="star-inline" aria-hidden="true">★</span> on any tool to add it here.'
-          : 'No tools to show.';
+          ? t('No favourites yet — tap the <span class="star-inline" aria-hidden="true">★</span> on any tool to add it here.')
+          : t('No tools to show.');
     }
     noResults.hidden = shown > 0;
     if (searchStatus) {
-      searchStatus.textContent = query ? (shown === 1 ? '1 result' : `${shown} results`) : '';
+      searchStatus.textContent = query ? (shown === 1 ? t('1 result') : t('{n} results', { n: shown })) : '';
     }
   }
 
@@ -1127,9 +1128,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
         void saveFavourites(host, profile, favourites);
         el.classList.toggle('is-fav', on);
         el.setAttribute('aria-pressed', String(on));
-        const nm = toolById.get(id)?.name ?? 'tool';
-        el.setAttribute('aria-label', on ? `Remove ${nm} from favourites` : `Add ${nm} to favourites`);
-        el.title = on ? 'In favourites' : 'Add to favourites';
+        const nm = toolById.get(id)?.name ?? t('tool');
+        el.setAttribute('aria-label', on ? t('Remove {name} from favourites', { name: nm }) : t('Add {name} to favourites', { name: nm }));
+        el.title = on ? t('In favourites') : t('Add to favourites');
         // A favourited plain tool joins (or leaves) the featured hero strip; a manifest-
         // featured tool is already there, so skip the remount for it.
         if (!toolById.get(id)?.featured) refreshFeatured();
@@ -1259,8 +1260,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
       const asc = sortDir === 'asc';
       sortDirBtn.classList.toggle('is-asc', asc);
       sortDirBtn.setAttribute('aria-pressed', String(asc));
-      sortDirBtn.setAttribute('aria-label', `Sort direction: ${asc ? 'oldest / last first' : 'newest / first first'}`);
-      sortDirBtn.title = asc ? 'Showing last results first — click for the usual order' : 'Reverse — show the last results first';
+      sortDirBtn.setAttribute('aria-label', asc ? t('Sort direction: oldest / last first') : t('Sort direction: newest / first first'));
+      sortDirBtn.title = asc ? t('Showing last results first — click for the usual order') : t('Reverse — show the last results first');
     };
     syncDirBtn();
     sortDirBtn.addEventListener('click', () => {
@@ -1286,7 +1287,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   const searchClear = document.createElement('button');
   searchClear.type = 'button';
   searchClear.className = 'gallery-search-clear';
-  searchClear.setAttribute('aria-label', 'Clear search');
+  searchClear.setAttribute('aria-label', t('Clear search'));
   searchClear.textContent = '✕';
   searchClear.style.cssText = 'position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;align-items:center;justify-content:center;border:0;border-radius:50%;background:transparent;color:hsl(var(--muted-foreground));font-size:13px;line-height:1;cursor:pointer;display:none;';
   const searchBox = searchInput.closest<HTMLElement>('.gallery-search-box');
@@ -1478,10 +1479,10 @@ function cardMarkup(
   const unavailable = sup.status === 'unavailable';
 
   const statusBadge = unavailable
-    ? '<span class="badge badge-desktop">Desktop</span>'
+    ? `<span class="badge badge-desktop">${t('Desktop')}</span>`
     : sup.status === 'install'
-      ? '<span class="badge badge-install">Add&#8209;on</span>'
-      : (tool.status !== 'official' ? `<span class="badge badge-${tool.status}">${escape(tool.status)}</span>` : '');
+      ? `<span class="badge badge-install">${t('Add&#8209;on')}</span>`
+      : (tool.status !== 'official' ? `<span class="badge badge-${tool.status}">${escape(t(tool.status || ''))}</span>` : '');
 
   const iconSvg = tool.icon ? `<span class="tool-card-icon" aria-hidden="true">${tool.icon}</span>` : '';
   const openHref = `#/tool/${escape(tool.id)}`;
@@ -1513,7 +1514,7 @@ function cardMarkup(
   // session) when there's no session at all; else an "open to start" tile.
   let visual;
   if (unavailable) {
-    visual = `<span class="gtile-tile gtile-tile--static"><span class="gtile-tile-txt">Desktop&nbsp;app only</span></span>`;
+    visual = `<span class="gtile-tile gtile-tile--static"><span class="gtile-tile-txt">${t('Desktop&nbsp;app only')}</span></span>`;
   } else if (paged) {
     // Multi-page document: the strip scrolls through each PAGE. Page count is unknown
     // until the doc renders, so start with one skeleton slide; hydratePaged (mountGallery)
@@ -1537,10 +1538,10 @@ function cardMarkup(
     // (bag-video's animated Geeko) leads with the tool's real hero. Only one lead.
     const leadSlide = hasThumbHero
       ? `<li class="gcar-slide gcar-slide--lead">
-           <button class="gcar-open" type="button" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}" aria-label="Continue ${escape(latest!.filename || tool.name)}">
+           <button class="gcar-open" type="button" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}" aria-label="${escape(t('Continue {name}', { name: latest!.filename || tool.name }))}">
              <img class="gcar-img" src="${escape(latest!.thumb!)}" alt="" aria-hidden="true" decoding="async">
              <span class="gtile-stamp">${escape(relativeTime(latest!.updatedAt))}</span>
-             <span class="gtile-continue">Continue</span>
+             <span class="gtile-continue">${t('Continue')}</span>
            </button>
          </li>`
       : animCard
@@ -1563,8 +1564,8 @@ function cardMarkup(
           `<button class="gcar-dot${k === 0 ? ' is-active' : ''}" type="button" data-i="${k}" tabindex="-1" aria-hidden="true"></button>`).join('')}</div>`
       : '';
     const nav = slideCount >= 2
-      ? `<button class="gcar-nav gcar-prev" type="button" tabindex="-1" aria-hidden="true" title="Previous example">${CHEVRON_LEFT}</button>
-         <button class="gcar-nav gcar-next" type="button" tabindex="-1" aria-hidden="true" title="Next example">${CHEVRON_RIGHT}</button>`
+      ? `<button class="gcar-nav gcar-prev" type="button" tabindex="-1" aria-hidden="true" title="${escape(t('Previous example'))}">${CHEVRON_LEFT}</button>
+         <button class="gcar-nav gcar-next" type="button" tabindex="-1" aria-hidden="true" title="${escape(t('Next example'))}">${CHEVRON_RIGHT}</button>`
       : '';
     visual = `
       <div class="gcar${hasThumbHero ? ' has-art' : ''}" data-tool="${escape(tool.id)}">
@@ -1591,16 +1592,16 @@ function cardMarkup(
     ).join('');
     visual = `
       <button class="gtile-hero${rotate ? ' gtile-hero--rotate' : ''}" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}"
-              aria-label="Continue ${escape(latest!.filename || tool.name)}">
+              aria-label="${escape(t('Continue {name}', { name: latest!.filename || tool.name }))}">
         ${heroImgs}
         <span class="gtile-stamp">${escape(relativeTime(latest!.updatedAt))}</span>
-        <span class="gtile-continue">Continue</span>
+        <span class="gtile-continue">${t('Continue')}</span>
         ${statusBadge}
       </button>`;
   } else if (hasSession) {
     // Session exists but its preview failed to capture — still resumable from the card.
     visual = `<button class="gtile-tile gtile-tile--resume" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}"
-              aria-label="Continue ${escape(latest!.filename || tool.name)}"><span class="gtile-tile-txt">Continue · ${escape(relativeTime(latest!.updatedAt))}</span></button>`;
+              aria-label="${escape(t('Continue {name}', { name: latest!.filename || tool.name }))}"><span class="gtile-tile-txt">${t('Continue · {time}', { time: escape(relativeTime(latest!.updatedAt)) })}</span></button>`;
   } else if (hasPreview) {
     // No saved session, but a committed demo preview exists (npm run thumbs) — show
     // it as a hero that starts a NEW session. Decorative duplicate of the name link
@@ -1616,7 +1617,7 @@ function cardMarkup(
           // Fixed-square hero (gallery.css): the img/iframe fills it and contains within,
           // so no per-tool aspect is threaded through — every preview box is the same size.
           : previewMedia(tool.preview!, 'gtile-hero-img')}
-        <span class="gtile-continue">Open</span>
+        <span class="gtile-continue">${t('Open')}</span>
         ${statusBadge}
       </a>`;
   } else {
@@ -1624,14 +1625,14 @@ function cardMarkup(
     // a network fetch, so never broken) so the tile is a real, on-brand card rather
     // than a bare line of text. Decorative duplicate of the name link (tabindex/
     // aria-hidden so AT hears one link).
-    visual = `<a class="gtile-tile gtile-tile--iconled" href="${openHref}" data-new-tool="${escape(tool.id)}" tabindex="-1" aria-hidden="true">${tool.icon ? `<span class="gtile-tile-icon" aria-hidden="true">${tool.icon}</span>` : ''}<span class="gtile-tile-txt">Open to start</span></a>`;
+    visual = `<a class="gtile-tile gtile-tile--iconled" href="${openHref}" data-new-tool="${escape(tool.id)}" tabindex="-1" aria-hidden="true">${tool.icon ? `<span class="gtile-tile-icon" aria-hidden="true">${tool.icon}</span>` : ''}<span class="gtile-tile-txt">${t('Open to start')}</span></a>`;
   }
 
   // Caption sub-line: only the last-opened time, and only on resumable cards.
   // The category is deliberately omitted here — it's discoverable via the filter
   // pills and shown in the info dialog — so the card stays about this tool itself.
   const sub = hasSession
-    ? `Last opened · ${escape(relativeTime(latest!.updatedAt))}`
+    ? t('Last opened · {time}', { time: escape(relativeTime(latest!.updatedAt)) })
     : '';
 
   // Export formats no longer clutter the card — they live in the info (i) dialog now,
@@ -1644,10 +1645,10 @@ function cardMarkup(
   // reads as "new" against the hero's "Continue".
   const name = unavailable
     ? `<span class="gtile-name" aria-disabled="true">${escape(tool.name)}</span>`
-    : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${hasSession ? ` aria-label="Start a new ${escape(tool.name)} session"` : ''}>${escape(tool.name)}</a>`;
+    : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${hasSession ? ` aria-label="${escape(t('Start a new {name} session', { name: tool.name }))}"` : ''}>${escape(tool.name)}</a>`;
 
   const historyBtn = (!unavailable && sessionCount > 0)
-    ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="Saved sessions" aria-label="${sessionCount} saved session${sessionCount === 1 ? '' : 's'} for ${escape(tool.name)}">${HISTORY_ICON}</button>`
+    ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? t('1 saved session for {name}', { name: tool.name }) : t('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
     : '';
 
   return `
@@ -1657,22 +1658,22 @@ function cardMarkup(
         <div class="gtile-cap">
           ${iconSvg}
           <span class="gtile-meta">
-            ${isNew ? '<span class="gtile-newbadge">New</span>' : ''}
+            ${isNew ? `<span class="gtile-newbadge">${t('New')}</span>` : ''}
             ${name}
             ${sub ? `<span class="gtile-sub">${sub}</span>` : ''}
             <p class="gtile-desc">${escape(tool.description ?? '')}</p>
           </span>
-          ${hasSession ? '<span class="gtile-new" aria-hidden="true">+ New</span>' : ''}
+          ${hasSession ? `<span class="gtile-new" aria-hidden="true">${t('+ New')}</span>` : ''}
           ${hasImageHero
             // Badge moved onto the preview image (see the hero markup), but that
             // hero is aria-hidden / aria-labelled, so keep the status announced.
-            ? (statusBadge ? `<span class="visually-hidden">${escape(statusLabel(tool.status))}</span>` : '')
+            ? (statusBadge ? `<span class="visually-hidden">${escape(t(statusLabel(tool.status) || ''))}</span>` : '')
             : statusBadge}
         </div>
       </div>
       <div class="gtile-actions">
-        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${isFav ? 'In favourites' : 'Add to favourites'}" aria-label="${isFav ? `Remove ${escape(tool.name)} from favourites` : `Add ${escape(tool.name)} to favourites`}">${STAR_ICON}</button>
-        <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="About this tool" aria-label="About ${escape(tool.name)}">${INFO_ICON}</button>
+        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: tool.name }) : t('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
+        <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
         ${historyBtn}
       </div>
     </article>
@@ -1695,15 +1696,15 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
   const rawFormats = tool.exportable === false || !Array.isArray(tool.formats) ? [] : tool.formats;
   const defaultFmt = rawFormats[0];
   const fmtChip = (f: string): string =>
-    `<li class="meta-fmt${f === defaultFmt ? ' meta-fmt--default' : ''}"${f === defaultFmt ? ' title="Default format"' : ''}>${escape(fmtLabel(f))}${f === defaultFmt ? '<span class="visually-hidden"> (default)</span>' : ''}</li>`;
+    `<li class="meta-fmt${f === defaultFmt ? ' meta-fmt--default' : ''}"${f === defaultFmt ? ` title="${escape(t('Default format'))}"` : ''}>${escape(fmtLabel(f))}${f === defaultFmt ? `<span class="visually-hidden"> ${t('(default)')}</span>` : ''}</li>`;
   const fmtGroupsHtml = FMT_KIND_ORDER
     .map(kind => ({ kind, list: rawFormats.filter(f => fmtKind(f) === kind) }))
     .filter(g => g.list.length)
-    .map(g => `<div class="meta-fmt-grp"><span class="meta-fmt-kind">${FMT_KIND_LABEL[g.kind]}</span><ul class="meta-fmts">${g.list.map(fmtChip).join('')}</ul></div>`)
+    .map(g => `<div class="meta-fmt-grp"><span class="meta-fmt-kind">${t(FMT_KIND_LABEL[g.kind])}</span><ul class="meta-fmts">${g.list.map(fmtChip).join('')}</ul></div>`)
     .join('');
   const hasFmtChips = tool.exportable !== false && rawFormats.length > 0;
   const exportsDd = tool.exportable === false
-    ? 'On-device transform (no file export)'
+    ? t('On-device transform (no file export)')
     : hasFmtChips ? `<div class="meta-fmt-groups">${fmtGroupsHtml}</div>` : '—';
   // Intended canvas size — paired with the format list so the modal answers both
   // "what file" and "how big". Omitted for transforms (size isn't meaningful) and for
@@ -1723,25 +1724,25 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
         ${tool.icon ? `<span class="tool-card-icon meta-dialog-icon" aria-hidden="true">${tool.icon}</span>` : ''}
         <div>
           <h2 id="tool-info-title">${escape(tool.name)}</h2>
-          <p class="meta-dialog-sub">${escape(catLabel(tool.category))} · ${escape(statusLabel(tool.status))}</p>
+          <p class="meta-dialog-sub">${escape(t(catLabel(tool.category)))} · ${escape(t(statusLabel(tool.status) || ''))}</p>
         </div>
       </header>
       ${tool.preview ? `<div class="meta-dialog-preview"${previewAspect}>${previewMedia(tool.preview, 'meta-dialog-preview-img')}</div>` : ''}
       <p class="meta-dialog-desc">${escape(tool.description ?? '')}</p>
       <dl class="meta-dialog-facts">
-        <div${hasFmtChips ? ' class="meta-fmts-row"' : ''}><dt>Exports</dt><dd>${exportsDd}</dd></div>
-        ${dims ? `<div><dt>Size</dt><dd>${escape(dims)}</dd></div>` : ''}
-        ${caps.length ? `<div><dt>Uses</dt><dd>${caps.map(c => escape(capabilityLabel(c))).join(', ')}</dd></div>` : ''}
-        ${tool.privacy === 'on-device' ? `<div><dt>Privacy</dt><dd>Runs entirely on your device</dd></div>` : ''}
-        ${tool.version ? `<div><dt>Version</dt><dd>${escape(tool.version)}</dd></div>` : ''}
+        <div${hasFmtChips ? ' class="meta-fmts-row"' : ''}><dt>${t('Exports')}</dt><dd>${exportsDd}</dd></div>
+        ${dims ? `<div><dt>${t('Size')}</dt><dd>${escape(dims)}</dd></div>` : ''}
+        ${caps.length ? `<div><dt>${t('Uses')}</dt><dd>${caps.map(c => escape(capabilityLabel(c))).join(', ')}</dd></div>` : ''}
+        ${tool.privacy === 'on-device' ? `<div><dt>${t('Privacy')}</dt><dd>${t('Runs entirely on your device')}</dd></div>` : ''}
+        ${tool.version ? `<div><dt>${t('Version')}</dt><dd>${escape(tool.version)}</dd></div>` : ''}
       </dl>
-      <section class="meta-defaults" aria-label="Default settings" hidden>
-        <h3 class="meta-defaults-title">Defaults</h3>
+      <section class="meta-defaults" aria-label="${escape(t('Default settings'))}" hidden>
+        <h3 class="meta-defaults-title">${t('Defaults')}</h3>
         <dl class="meta-defaults-list"></dl>
       </section>
       <div class="meta-dialog-actions">
-        <a class="btn meta-dialog-open" href="#/tool/${escape(tool.id)}">Open tool</a>
-        <button type="button" class="btn meta-dialog-close">Close</button>
+        <a class="btn meta-dialog-open" href="#/tool/${escape(tool.id)}">${t('Open tool')}</a>
+        <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
       </div>
     </div>`;
   playSfx('whisper'); // airy elevation as the tool details rise in
@@ -1763,7 +1764,7 @@ function defaultText(input: Record<string, unknown>): { text: string; swatch?: s
   if (type === 'file') return null;                       // user-supplied by nature — no default exists
   if (d === undefined || d === null || d === '') return { text: '—' };
   switch (type) {
-    case 'boolean': return { text: d ? 'On' : 'Off' };
+    case 'boolean': return { text: d ? t('On') : t('Off') };
     case 'color': {
       const v = String(d);
       return { text: v, swatch: /^(#[0-9a-fA-F]{3,8}|transparent)$/.test(v) ? v : undefined };
@@ -1773,7 +1774,7 @@ function defaultText(input: Record<string, unknown>): { text: string; swatch?: s
       const hit = opts.find(o => (o && typeof o === 'object' ? o.value : o) === d);
       return { text: String((hit && typeof hit === 'object' && hit.label) || d) };
     }
-    case 'blocks': return { text: Array.isArray(d) ? `${d.length} item${d.length === 1 ? '' : 's'}` : '—' };
+    case 'blocks': return { text: Array.isArray(d) ? (d.length === 1 ? t('1 item') : t('{n} items', { n: d.length })) : '—' };
     case 'vector': return { text: Array.isArray(d) ? d.join(' × ') : String(d) };
     case 'number': return { text: String(d) + (input.unit ? ` ${input.unit}` : '') };
     default: {
@@ -1803,7 +1804,7 @@ async function fillDefaultsList(dialog: HTMLElement, toolId: string): Promise<vo
     if (!v) continue;
     const label = String(input.label ?? input.id ?? '');
     const fromProfile = typeof input.bindToProfile === 'string'
-      ? `<span class="meta-default-note">from profile</span>` : '';
+      ? `<span class="meta-default-note">${t('from profile')}</span>` : '';
     rows.push(`<div class="meta-default-row">
       <dt>${escape(label)}</dt>
       <dd>${v.swatch ? `<span class="meta-default-swatch${v.swatch === 'transparent' ? ' color-swatch--transparent' : ''}"${v.swatch !== 'transparent' ? ` style="background:${escape(v.swatch)}"` : ''} aria-hidden="true"></span>` : ''}<span class="meta-default-value">${escape(v.text)}</span>${fromProfile}</dd>
@@ -1812,7 +1813,7 @@ async function fillDefaultsList(dialog: HTMLElement, toolId: string): Promise<vo
   const skipped = inputs.filter(i => String(i.type) !== 'file').length - rows.length;
   if (!rows.length) return;
   list.innerHTML = rows.join('') +
-    (skipped > 0 ? `<div class="meta-default-row meta-default-more"><dt></dt><dd>+ ${skipped} more in the tool</dd></div>` : '');
+    (skipped > 0 ? `<div class="meta-default-row meta-default-more"><dt></dt><dd>${t('+ {n} more in the tool', { n: skipped })}</dd></div>` : '');
   section.hidden = false;
 }
 
@@ -1829,7 +1830,7 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
   dialog.className = 'tool-meta-dialog tool-history-dialog';
   dialog.setAttribute('aria-labelledby', 'tool-history-title');
 
-  const countText = (n: number) => `${n} saved session${n === 1 ? '' : 's'}`;
+  const countText = (n: number) => (n === 1 ? t('1 saved session') : t('{n} saved sessions', { n }));
   // Defer the gallery re-render until the dialog closes: rebuilding the masonry
   // (and the (h) trigger button) mid-dialog would break the UA's focus restore.
   let changed = false;
@@ -1846,7 +1847,7 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
         ${entries.map(e => savedItem(e, sizes[e.slot], '')).join('')}
       </ul>
       <div class="meta-dialog-actions">
-        <button type="button" class="btn meta-dialog-close">Close</button>
+        <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
       </div>
     </div>`;
   openDialog(dialog);
@@ -1864,16 +1865,16 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
       e.stopPropagation();
       const slot = el.dataset.delete!;
       const ok = await confirmDialog({
-        title: 'Delete session?',
-        message: 'Delete this saved session? This can’t be undone.',
-        confirmLabel: 'Delete',
+        title: t('Delete session?'),
+        message: t('Delete this saved session? This can’t be undone.'),
+        confirmLabel: t('Delete'),
       });
       if (!ok) return;
       await host.state.delete(slot);
       el.closest('.saved-row')?.remove();
       onDelete?.(slot);            // update in-memory state only — render happens on close
       changed = true;
-      announce('Session deleted');
+      announce(t('Session deleted'));
       const left = dialog.querySelectorAll('.saved-row').length;
       const countEl = dialog.querySelector('.history-count');
       if (countEl) countEl.textContent = countText(left);
@@ -1908,10 +1909,10 @@ function savedItem(entry: SavedEntry, bytes: number | undefined, toolName = ''):
       : `<span class="saved-thumb saved-thumb--empty"></span>`;
   const when = entry.updatedAt ? fmtDateTime(new Date(entry.updatedAt)) : '';
   const size = bytes ? `<small class="session-size">${fmtBytes(bytes)}</small>` : '';
-  const title = batch ? (entry.label || 'Batch session') : (entry.filename || toolName || entry.toolId);
+  const title = batch ? (entry.label || t('Batch session')) : (entry.filename || toolName || entry.toolId);
   // The tool name is the row's title (h4) just above, so the sub-line only needs
   // the timestamp — no need to repeat the name.
-  const subtitle = batch ? `Batch · ${when}` : when;
+  const subtitle = batch ? t('Batch · {when}', { when }) : when;
   const searchText = [title, entry.toolId, toolName, batch ? 'batch' : ''].filter(Boolean).join(' ').toLowerCase();
   // Tool sessions resume into #/tool; batch sessions resume into #/pro.
   const resumeAttrs = batch
@@ -1919,11 +1920,11 @@ function savedItem(entry: SavedEntry, bytes: number | undefined, toolName = ''):
     : `data-resume="${escape(entry.toolId)}" data-slot="${escape(entry.slot)}"`;
   return `
     <li class="saved-row${batch ? ' saved-row--batch' : ''}" data-search="${escape(searchText)}">
-      <button class="saved-resume" ${resumeAttrs} aria-label="${batch ? 'Open batch' : 'Resume'} ${escape(entry.label ?? entry.slot)}"></button>
+      <button class="saved-resume" ${resumeAttrs} aria-label="${escape(batch ? t('Open batch') : t('Resume'))} ${escape(entry.label ?? entry.slot)}"></button>
       ${thumb}
       <span class="saved-label"><h4>${escape(title)}</h4><small>${escape(subtitle)}</small>
       ${size}
-      <button class="saved-delete" data-delete="${escape(entry.slot)}" title="Delete" aria-label="Delete">&#x2715;</button>
+      <button class="saved-delete" data-delete="${escape(entry.slot)}" title="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">&#x2715;</button>
     </span></li>
   `;
 }
@@ -1946,10 +1947,10 @@ function relativeTime(iso: string): string {
   if (!iso) return '';
   const then = new Date(iso).getTime();
   const s = Math.max(0, (Date.now() - then) / 1000);
-  if (s < 60) return 'just now';
-  const m = s / 60; if (m < 60) return `${Math.round(m)}m ago`;
-  const h = m / 60; if (h < 24) return `${Math.round(h)}h ago`;
-  const d = h / 24; if (d < 7) return `${Math.round(d)}d ago`;
+  if (s < 60) return t('just now');
+  const m = s / 60; if (m < 60) return t('{n}m ago', { n: Math.round(m) });
+  const h = m / 60; if (h < 24) return t('{n}h ago', { n: Math.round(h) });
+  const d = h / 24; if (d < 7) return t('{n}d ago', { n: Math.round(d) });
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 

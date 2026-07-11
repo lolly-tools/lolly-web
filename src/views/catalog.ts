@@ -25,6 +25,7 @@
  */
 
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 import { genAiPill, assetAiKind, GENAI_CLAIM } from '../lib/genai-pill.ts';
 import { announce } from '../a11y.ts';
 import { viewToggle } from '../components/view-toggle.ts';
@@ -568,19 +569,19 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       seen.add(key);
       out.push({ family, role, stack, typeLine, downloads, onDevice });
     };
-    const tokenFonts: Array<[string, string]> = [['{font.brand}', 'Brand — UI & body'], ['{font.mono}', 'Brand — monospace']];
+    const tokenFonts: Array<[string, string]> = [['{font.brand}', t('Brand — UI & body')], ['{font.mono}', t('Brand — monospace')]];
     for (const [ref, role] of tokenFonts) {
       let family = '';
       try { family = familyFromTokenValue(await host.tokens?.resolve?.(ref)); } catch { /* unresolved */ }
       if (!family) continue;
       const spec = FONTS.find(f => f.family.toLowerCase() === family.toLowerCase());
-      if (spec) push(spec.family, role, spec.stack, `${spec.variable ? 'Variable' : 'Static'} · ${spec.weights}`, spec.downloads, false);
-      else push(family, role, `'${family}', var(--font-brand, ui-sans-serif, sans-serif)`, 'Brand font · on this device', [], true);
+      if (spec) push(spec.family, role, spec.stack, `${spec.variable ? t('Variable') : t('Static')} · ${spec.weights}`, spec.downloads, false);
+      else push(family, role, `'${family}', var(--font-brand, ui-sans-serif, sans-serif)`, t('Brand font · on this device'), [], true);
     }
     try {
       for (const uf of await listUserFonts(host as unknown as Parameters<typeof listUserFonts>[0])) {
-        push(uf.family, uf.primary ? 'Brand — primary' : 'Added font',
-          `'${uf.family}', ui-sans-serif, sans-serif`, `${uf.weights}${uf.italic ? ' · italic' : ''} · on this device`, [], true);
+        push(uf.family, uf.primary ? t('Brand — primary') : t('Added font'),
+          `'${uf.family}', ui-sans-serif, sans-serif`, `${uf.weights}${uf.italic ? ` · ${t('italic')}` : ''} · ${t('on this device')}`, [], true);
       }
     } catch { /* user fonts unavailable — brand tokens still stand */ }
     return out;
@@ -636,20 +637,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   function topRight(): string {
     return `
       <div class="gallery-topright">
-        <button type="button" class="filter-fab cat-viewopts-btn" aria-label="View options" aria-haspopup="true" aria-expanded="${viewOptsOpen}" title="View options">${SLIDERS_ICON}</button>
+        <button type="button" class="filter-fab cat-viewopts-btn" aria-label="${escape(t('View options'))}" aria-haspopup="true" aria-expanded="${viewOptsOpen}" title="${escape(t('View options'))}">${SLIDERS_ICON}</button>
         ${langFabHtml()}
-        <a href="#/profile" class="profile-link${headshotUrl ? ' has-avatar' : ''}" aria-label="Open your profile">${headshotUrl ? `<img class="profile-link-avatar" src="${escape(headshotUrl)}" alt="">` : ''}<span class="profile-link-name">${escape(profile?.firstname || 'Profile')}</span></a>
-        <div class="cat-viewopts filter-popover" role="group" aria-label="Catalog view options"${viewOptsOpen ? '' : ' hidden'}>
+        <a href="#/profile" class="profile-link${headshotUrl ? ' has-avatar' : ''}" aria-label="${escape(t('Open your profile'))}">${headshotUrl ? `<img class="profile-link-avatar" src="${escape(headshotUrl)}" alt="">` : ''}<span class="profile-link-name">${escape(profile?.firstname || t('Profile'))}</span></a>
+        <div class="cat-viewopts filter-popover" role="group" aria-label="${escape(t('Catalog view options'))}"${viewOptsOpen ? '' : ' hidden'}>
           ${themeSegmentHtml()}
           ${soundSegmentHtml()}
-          <p class="filter-pop-head">Favourites</p>
-          <div class="view-seg" role="group" aria-label="Favourites view mode">
-            <button type="button" class="view-seg-btn" data-favview="gallery" aria-pressed="${favView === 'gallery'}">Gallery</button>
-            <button type="button" class="view-seg-btn" data-favview="coverflow" aria-pressed="${favView === 'coverflow'}">Cover Flow</button>
+          <p class="filter-pop-head">${t('Favourites')}</p>
+          <div class="view-seg" role="group" aria-label="${escape(t('Favourites view mode'))}">
+            <button type="button" class="view-seg-btn" data-favview="gallery" aria-pressed="${favView === 'gallery'}">${t('Gallery')}</button>
+            <button type="button" class="view-seg-btn" data-favview="coverflow" aria-pressed="${favView === 'coverflow'}">${t('Cover Flow')}</button>
           </div>
           <label class="filter-pop-check">
             <input type="checkbox" class="cat-favstrip-toggle"${favStripOn ? ' checked' : ''}>
-            <span>Show favourites strip</span>
+            <span>${t('Show favourites strip')}</span>
           </label>
         </div>
       </div>`;
@@ -666,7 +667,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       <button type="button" class="cat-group-head" data-cat-toggle="${escape(key)}" aria-expanded="${!isCollapsed}">
         <span class="cat-group-chevron">${CHEVRON}</span>
         <span class="cat-group-icon">${categoryGlyph(key)}</span>
-        <span class="cat-group-title">${escape(label)}</span>
+        <span class="cat-group-title">${escape(t(label))}</span>
         ${count != null ? `<span class="cat-group-count">${count}</span>` : ''}
       </button>
       <div class="cat-group-body">${bodyHtml}</div>
@@ -739,8 +740,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // control. Reuses the download dialog's .cat-dl-theme / .cat-dl-duo chrome; `active` marks
   // the current pairing.
   const iconSwatchRow = (active: string | null): string =>
-    `<div class="cat-dl-themes" role="group" aria-label="Icon colours">${iconThemes.map(t =>
-      `<button type="button" class="cat-dl-theme${t.id === active ? ' is-active' : ''}" data-theme="${escape(t.id)}" data-sfx="shimmer" data-voice="${escape(t.label ?? t.id)}" aria-pressed="${t.id === active}" title="${escape(t.label ?? t.id)}"><span class="cat-dl-duo" style="background:${escape(t.previewBg ?? '#fff')}"><i style="background:${escape(String(t.c2 ?? '#888'))}"></i><i style="background:${escape(String(t.c1 ?? '#333'))}"></i></span></button>`).join('')}</div>`;
+    `<div class="cat-dl-themes" role="group" aria-label="${escape(t('Icon colours'))}">${iconThemes.map(th =>
+      `<button type="button" class="cat-dl-theme${th.id === active ? ' is-active' : ''}" data-theme="${escape(th.id)}" data-sfx="shimmer" data-voice="${escape(th.label ?? th.id)}" aria-pressed="${th.id === active}" title="${escape(th.label ?? th.id)}"><span class="cat-dl-duo" style="background:${escape(th.previewBg ?? '#fff')}"><i style="background:${escape(String(th.c2 ?? '#888'))}"></i><i style="background:${escape(String(th.c1 ?? '#333'))}"></i></span></button>`).join('')}</div>`;
 
   // The bitmap sibling of iconSwatchRow: a photo-treatment strip for raster groups. Leads
   // with an "Original" (no-treatment) button, then one gradient swatch per treatment
@@ -752,10 +753,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const stops = [t.shadow ?? '#333', t.mid, t.highlight ?? '#eee'].filter(Boolean).map(c => escape(String(c)));
       return `linear-gradient(135deg,${stops.join(',')})`;
     };
-    return `<div class="cat-dl-themes" role="group" aria-label="Photo colour treatment">`
-      + `<button type="button" class="cat-dl-theme cat-dl-treat${!active ? ' is-active' : ''}" data-treatment="" data-voice="Original" aria-pressed="${!active}" title="Original — no treatment" style="width:auto;padding:0 9px;font-size:11px;font-weight:600">Original</button>`
-      + photoTreatments.map(t =>
-        `<button type="button" class="cat-dl-theme cat-dl-treat${t.id === active ? ' is-active' : ''}" data-treatment="${escape(t.id)}" data-sfx="shimmer" data-voice="${escape(t.label ?? t.id)}" aria-pressed="${t.id === active}" title="${escape(t.label ?? t.id)}"><span class="cat-dl-duo" style="background:${swatch(t)}"></span></button>`).join('')
+    return `<div class="cat-dl-themes" role="group" aria-label="${escape(t('Photo colour treatment'))}">`
+      + `<button type="button" class="cat-dl-theme cat-dl-treat${!active ? ' is-active' : ''}" data-treatment="" data-voice="${escape(t('Original'))}" aria-pressed="${!active}" title="${escape(t('Original — no treatment'))}" style="width:auto;padding:0 9px;font-size:11px;font-weight:600">${t('Original')}</button>`
+      + photoTreatments.map(tr =>
+        `<button type="button" class="cat-dl-theme cat-dl-treat${tr.id === active ? ' is-active' : ''}" data-treatment="${escape(tr.id)}" data-sfx="shimmer" data-voice="${escape(tr.label ?? tr.id)}" aria-pressed="${tr.id === active}" title="${escape(tr.label ?? tr.id)}"><span class="cat-dl-duo" style="background:${swatch(tr)}"></span></button>`).join('')
       + `</div>`;
   };
 
@@ -766,7 +767,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const name = String(ref.meta?.name ?? ref.id);
     const fmt = ref.type === 'lottie' ? 'LOTTIE' : (ref.format ? String(ref.format).toUpperCase() : '');
     const isUser = ref.source === 'user';
-    const sourceLabel = isUser ? 'Yours' : 'Catalog';
+    const sourceLabel = isUser ? t('Yours') : t('Catalog');
     // Generative-AI disclosure — authored on a catalog entry OR auto-detected from an
     // upload's C2PA credential. Shows a violet GEN AI pill in the caption; collapses to a
     // sparkle circle on narrow tiles (see catalog.css).
@@ -776,15 +777,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const sel = isUser && selected.has(ref.id);
     return `
       <div class="cat-tile${fav ? ' is-fav' : ''}${hidden ? ' is-hidden-asset' : ''}${sel ? ' is-selected' : ''}" data-id="${escape(ref.id)}">
-        ${isUser ? `<button type="button" class="cat-check" data-select="${escape(ref.id)}" aria-pressed="${sel}" aria-label="Select ${escape(name)}" title="Select">${CHECK_ICON}</button>` : ''}
-        <button type="button" class="cat-tile-open" data-open="${escape(ref.id)}" aria-label="View ${escape(name)} details">
+        ${isUser ? `<button type="button" class="cat-check" data-select="${escape(ref.id)}" aria-pressed="${sel}" aria-label="${escape(t('Select {name}', { name }))}" title="${escape(t('Select'))}">${CHECK_ICON}</button>` : ''}
+        <button type="button" class="cat-tile-open" data-open="${escape(ref.id)}" aria-label="${escape(t('View {name} details', { name }))}">
           <span class="cat-tile-fig">${thumbHtml(ref, true)}</span>
           <span class="cat-tile-cap">
             <span class="cat-tile-name" title="${escape(name)}">${escape(name)}</span>
             <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}</span>
           </span>
         </button>
-        <button type="button" class="cat-star" data-star="${escape(ref.id)}" data-sfx="twinkle" aria-pressed="${fav}" title="${fav ? 'Remove from favourites' : 'Add to favourites'}" aria-label="${fav ? 'Remove' : 'Add'} ${escape(name)} ${fav ? 'from' : 'to'} favourites">${STAR_ICON}</button>
+        <button type="button" class="cat-star" data-star="${escape(ref.id)}" data-sfx="twinkle" aria-pressed="${fav}" title="${escape(fav ? t('Remove from favourites') : t('Add to favourites'))}" aria-label="${escape(fav ? t('Remove {name} from favourites', { name }) : t('Add {name} to favourites', { name }))}">${STAR_ICON}</button>
       </div>`;
   }
 
@@ -832,7 +833,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // in place (retreatGroup keys off tile type, not source, so it just works).
     const treatable = photoTreatments.length > 0 && items.some(a => a.type === 'raster');
     const colourRow = treatable
-      ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">Colour</span>${treatmentSwatchRow(catPhotoTreatment)}</div>`
+      ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">${t('Colour')}</span>${treatmentSwatchRow(catPhotoTreatment)}</div>`
       : '';
     // Drag files in or click to browse — the shared upload dropzone component
     // (lib/upload-dropzone.ts, extracted from this view so #/start can mount it too)
@@ -845,12 +846,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       <button type="button" class="cat-group-head" data-cat-toggle="${key}" aria-expanded="${!isCollapsed}">
         <span class="cat-group-chevron">${CHEVRON}</span>
         <span class="cat-group-icon">${categoryGlyph('uploads')}</span>
-        <span class="cat-group-title">Your uploads</span>
+        <span class="cat-group-title">${t('Your uploads')}</span>
         <span class="cat-group-count">${items.length}</span>
       </button>
       <div class="cat-group-body">
         ${dropzone}
-        ${items.length ? `<div class="cat-uploads-bar"><button type="button" class="cat-uploads-selectall" data-selectall aria-pressed="${allSel}">${allSel ? 'Deselect all' : 'Select all'}</button></div>` : ''}
+        ${items.length ? `<div class="cat-uploads-bar"><button type="button" class="cat-uploads-selectall" data-selectall aria-pressed="${allSel}">${allSel ? t('Deselect all') : t('Select all')}</button></div>` : ''}
         ${colourRow}
         ${items.length ? `<div class="cat-grid">${items.map(assetTile).join('')}</div>` : ''}
       </div>
@@ -871,15 +872,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // wire()). Uploads loading while the catalog query failed fall through to the grid.
     if (loadFailed && allAssets.length === 0) {
       return `<div class="cat-empty" role="alert">
-        <p>Couldn't load the catalogue. Check your connection, then retry.</p>
-        <button type="button" class="btn cat-retry" style="margin-top:1rem">Retry</button>
+        <p>${t("Couldn't load the catalogue. Check your connection, then retry.")}</p>
+        <button type="button" class="btn cat-retry" style="margin-top:1rem">${t('Retry')}</button>
       </div>`;
     }
 
     if (allAssets.length === 0) {
       // A genuinely empty library still leads with the uploads section — its drop area
       // is exactly what a brand-new profile needs first.
-      return uploadsSectionHtml([]) + `<p class="cat-empty" role="status">No catalogue assets found. Once the catalogue syncs they'll appear here — or drop your own images in above.</p>`;
+      return uploadsSectionHtml([]) + `<p class="cat-empty" role="status">${t("No catalogue assets found. Once the catalogue syncs they'll appear here — or drop your own images in above.")}</p>`;
     }
 
     // Favourites are presented as a cinematic strip (mounted after render, see
@@ -918,9 +919,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const themableGroup = iconThemes.length > 0 && items.some(isThemable);
       const treatableGroup = !themableGroup && photoTreatments.length > 0 && items.some(a => a.type === 'raster');
       const colourRow = themableGroup
-        ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">Colours</span>${iconSwatchRow(catIconTheme)}</div>`
+        ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">${t('Colours')}</span>${iconSwatchRow(catIconTheme)}</div>`
         : treatableGroup
-          ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">Colour</span>${treatmentSwatchRow(catPhotoTreatment)}</div>`
+          ? `<div class="cat-dl-section cat-group-colours"><span class="cat-dl-label">${t('Colour')}</span>${treatmentSwatchRow(catPhotoTreatment)}</div>`
           : '';
       parts.push(groupSection(g.key, g.label, items.length, colourRow + `<div class="cat-grid">${items.map(assetTile).join('')}</div>`));
     }
@@ -936,15 +937,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Keyed off the matched-asset count, not parts.length: the always-there uploads
     // section (drop area) doesn't count as a match.
     if (!visible.length && (query || typeFilter !== 'all')) {
-      const typeLabel = typeFilter === 'all' ? '' : (TYPE_FILTERS.find(f => f.key === typeFilter)?.label ?? '').toLowerCase();
+      const typeLabel = typeFilter === 'all' ? '' : t((TYPE_FILTERS.find(f => f.key === typeFilter)?.label ?? '')).toLowerCase();
       const msg = query && typeLabel
-        ? `No ${typeLabel} assets match “${escape(query)}”.`
+        ? t('No {type} assets match “{query}”.', { type: typeLabel, query: escape(query) })
         : query
-          ? `No assets match “${escape(query)}”.`
-          : `No ${typeLabel} assets in the catalogue.`;
+          ? t('No assets match “{query}”.', { query: escape(query) })
+          : t('No {type} assets in the catalogue.', { type: typeLabel });
       // A "clear search" button when a query is active (mirrors projects.ts) — routed to
       // clearSearch() via the body's delegated [data-search-clear] handler in wire().
-      const clearBtn = query ? ` <button type="button" class="projects-linkbtn" data-search-clear>Clear search</button>` : '';
+      const clearBtn = query ? ` <button type="button" class="projects-linkbtn" data-search-clear>${t('Clear search')}</button>` : '';
       parts.push(`<p class="cat-empty" role="status">${msg}${clearBtn}</p>`);
     }
 
@@ -967,11 +968,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // video/Lottie/audio assets never sees an always-empty Motion or Audio button.
     const shownFilters = TYPE_FILTERS.filter(f => f.key === 'all' || allAssets.some(a => TYPE_FILTER_TYPES[f.key as Exclude<TypeFilter, 'all'>].has(a.type)));
     const filterSeg = `
-      <div class="cat-typefilter" role="group" aria-label="Filter by file type">
-        ${shownFilters.map(f => `<button type="button" class="cat-typefilter-opt${typeFilter === f.key ? ' is-on' : ''}" data-typefilter="${f.key}"${f.sfx ? ` data-sfx="${f.sfx}"` : ''} data-voice="${escape(f.label)}" aria-pressed="${typeFilter === f.key}" aria-label="${f.label}" title="${f.label}">${f.icon}<span class="cat-btn-label">${f.label}</span></button>`).join('')}
+      <div class="cat-typefilter" role="group" aria-label="${escape(t('Filter by file type'))}">
+        ${shownFilters.map(f => `<button type="button" class="cat-typefilter-opt${typeFilter === f.key ? ' is-on' : ''}" data-typefilter="${f.key}"${f.sfx ? ` data-sfx="${f.sfx}"` : ''} data-voice="${escape(t(f.label))}" aria-pressed="${typeFilter === f.key}" aria-label="${escape(t(f.label))}" title="${escape(t(f.label))}">${f.icon}<span class="cat-btn-label">${t(f.label)}</span></button>`).join('')}
       </div>`;
-    const collapseLabel = anyExpanded ? 'Collapse all' : 'Expand all';
-    const showHiddenLabel = showHidden ? 'Hide hidden' : `Show hidden (${hiddenItems.length})`;
+    const collapseLabel = anyExpanded ? t('Collapse all') : t('Expand all');
+    const showHiddenLabel = showHidden ? t('Hide hidden') : t('Show hidden ({n})', { n: hiddenItems.length });
     // Reserve the counter's width for the widest string it can ever show, so switching filters
     // (which only ever shrink the number) never re-widths the centred toolbar pill and shifts the
     // filter buttons. Floor the digit count at 4 — a few thousand assets — so the reservation
@@ -983,9 +984,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const toolbar = `
       <div class="cat-toolbar">
         ${filterSeg}
-        <span class="cat-count" style="min-width:${countCh}ch">${visible.length} asset${visible.length === 1 ? '' : 's'}${query ? ' found' : ''}</span>
-        ${query ? '' : `<button type="button" class="cat-showhidden cat-collapse-all" aria-label="${collapseLabel}" title="${collapseLabel}">${anyExpanded ? CAT_ICONS.collapse : CAT_ICONS.expand}<span class="cat-btn-label">${collapseLabel}</span></button>`}
-        ${hiddenItems.length && !query ? `<button type="button" class="cat-showhidden${showHidden ? ' is-on' : ''}" aria-pressed="${showHidden}" aria-label="${showHiddenLabel}" title="${showHiddenLabel}">${showHidden ? CAT_ICONS.eyeOff : CAT_ICONS.eye}<span class="cat-btn-label">${showHiddenLabel}</span></button>` : ''}
+        <span class="cat-count" style="min-width:${countCh}ch">${query
+          ? (visible.length === 1 ? t('1 asset found') : t('{n} assets found', { n: visible.length }))
+          : (visible.length === 1 ? t('1 asset') : t('{n} assets', { n: visible.length }))}</span>
+        ${query ? '' : `<button type="button" class="cat-showhidden cat-collapse-all" aria-label="${escape(collapseLabel)}" title="${escape(collapseLabel)}">${anyExpanded ? CAT_ICONS.collapse : CAT_ICONS.expand}<span class="cat-btn-label">${collapseLabel}</span></button>`}
+        ${hiddenItems.length && !query ? `<button type="button" class="cat-showhidden${showHidden ? ' is-on' : ''}" aria-pressed="${showHidden}" aria-label="${escape(showHiddenLabel)}" title="${escape(showHiddenLabel)}">${showHidden ? CAT_ICONS.eyeOff : CAT_ICONS.eye}<span class="cat-btn-label">${showHiddenLabel}</span></button>` : ''}
       </div>`;
     return `
       <section class="cat-assets">
@@ -1017,8 +1020,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }));
     featuredHandle = mountFeaturedRow(mount, entries, host, {
       viewMode: favView,
-      label: 'Favourites',
-      ariaLabel: 'Favourite assets',
+      label: t('Favourites'),
+      ariaLabel: t('Favourite assets'),
       // Open the asset's details modal in place. The tiles' hrefs point at this same view
       // (#/c?asset=…), so a route navigation would be swallowed by the router's same-route
       // dedupe (→ "Open does nothing"); opening the modal directly also preserves the grid's
@@ -1061,8 +1064,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (!star) continue;
       const name = String(assetById.get(id)?.meta?.name ?? id);
       star.setAttribute('aria-pressed', String(on));
-      star.setAttribute('title', on ? 'Remove from favourites' : 'Add to favourites');
-      star.setAttribute('aria-label', `${on ? 'Remove' : 'Add'} ${name} ${on ? 'from' : 'to'} favourites`);
+      star.setAttribute('title', on ? t('Remove from favourites') : t('Add to favourites'));
+      star.setAttribute('aria-label', on ? t('Remove {name} from favourites', { name }) : t('Add {name} to favourites', { name }));
     }
   }
 
@@ -1089,12 +1092,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const rampBlocks = ramps.map(([fam, cols]) =>
       `<h3 class="cat-panel-subhead">${escape(fam)}</h3>${grid(cols)}`).join('');
     const downloads = `<div class="cat-font-downloads cat-swatch-downloads">${SWATCH_DOWNLOADS.map(d =>
-      `<button type="button" class="cat-download" data-swatch-dl="${d.fmt}" data-sfx="whoosh">${DOWNLOAD_ICON}<span>${escape(d.label)}</span></button>`).join('')}</div>`;
+      `<button type="button" class="cat-download" data-swatch-dl="${d.fmt}" data-sfx="whoosh">${DOWNLOAD_ICON}<span>${escape(t(d.label))}</span></button>`).join('')}</div>`;
     const body = `
       ${downloads}
-      <p class="cat-panel-desc">The brand palette. Click any chip to copy its hex. A <span class="plat-chip-flag is-static">CMYK</span> or <span class="plat-chip-flag is-static">SPOT</span> flag marks a locked ink value used directly in CMYK PDF exports.</p>
-      <h3 class="cat-panel-subhead">Brand</h3>${grid(brand)}
-      ${spectrum.length ? `<h3 class="cat-panel-subhead">Spectrum</h3>${grid(spectrum)}` : ''}
+      <p class="cat-panel-desc">${t('The brand palette. Click any chip to copy its hex. A <span class="plat-chip-flag is-static">CMYK</span> or <span class="plat-chip-flag is-static">SPOT</span> flag marks a locked ink value used directly in CMYK PDF exports.')}</p>
+      <h3 class="cat-panel-subhead">${t('Brand')}</h3>${grid(brand)}
+      ${spectrum.length ? `<h3 class="cat-panel-subhead">${t('Spectrum')}</h3>${grid(spectrum)}` : ''}
       ${rampBlocks}`;
     return groupSection('swatches', 'Swatches', total, body, 'cat-group--ref');
   }
@@ -1115,7 +1118,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           </div>
         </div>
         <dl class="plat-kv">
-          <div><dt>Type</dt><dd>${escape(f.typeLine)}</dd></div>
+          <div><dt>${t('Type')}</dt><dd>${escape(f.typeLine)}</dd></div>
         </dl>
         ${f.downloads.length ? `<div class="cat-font-downloads">
           ${f.downloads.map(d => `<a class="cat-download" href="${d.href}" download>${DOWNLOAD_ICON}<span>${escape(d.label)}</span></a>`).join('')}
@@ -1124,9 +1127,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Show the licence line only when a bundled (downloadable) face is present.
     const anyBundled = catFonts.some(f => f.downloads.length);
     const body = `
-      <p class="cat-panel-desc">The fonts your brand carries — available to every tool canvas and the app UI. Add more from the brand editor.</p>
+      <p class="cat-panel-desc">${t('The fonts your brand carries — available to every tool canvas and the app UI. Add more from the brand editor.')}</p>
       <div class="plat-font-grid cat-font-grid">${cards}</div>
-      ${anyBundled ? `<p class="cat-panel-foot">Bundled faces licensed under the <a href="${FONT_LICENSE.href}" target="_blank" rel="noopener">${escape(FONT_LICENSE.label)}</a>.</p>` : ''}`;
+      ${anyBundled ? `<p class="cat-panel-foot">${t('Bundled faces licensed under the {link}.', { link: `<a href="${FONT_LICENSE.href}" target="_blank" rel="noopener">${escape(FONT_LICENSE.label)}</a>` })}</p>` : ''}`;
     return groupSection('fonts', 'Fonts', catFonts.length, body);
   }
 
@@ -1139,14 +1142,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // view's bar). Rendered once per render(); shown/populated by syncBulkBar().
   function bulkBarHtml(): string {
     return `
-      <div class="cat-bulkbar" role="region" aria-label="Selection actions" hidden>
+      <div class="cat-bulkbar" role="region" aria-label="${escape(t('Selection actions'))}" hidden>
         <span class="cat-bulkbar-count" aria-live="polite"></span>
         <div class="cat-bulkbar-actions">
-          <button type="button" class="btn" data-bulk="duplicate" title="Make a copy of each selected image — the copies are selected, ready to move or edit">${COPY_ICON}<span>Duplicate</span></button>
-          <button type="button" class="btn" data-bulk="download" title="Download the selection as one zip — Content Credentials checked and preserved">${DOWNLOAD_ICON}<span>Download</span></button>
-          <button type="button" class="btn cat-bulk-danger" data-bulk="delete">${TRASH_ICON}<span>Delete</span></button>
+          <button type="button" class="btn" data-bulk="duplicate" title="${escape(t('Make a copy of each selected image — the copies are selected, ready to move or edit'))}">${COPY_ICON}<span>${t('Duplicate')}</span></button>
+          <button type="button" class="btn" data-bulk="download" title="${escape(t('Download the selection as one zip — Content Credentials checked and preserved'))}">${DOWNLOAD_ICON}<span>${t('Download')}</span></button>
+          <button type="button" class="btn cat-bulk-danger" data-bulk="delete">${TRASH_ICON}<span>${t('Delete')}</span></button>
         </div>
-        <button type="button" class="cat-bulkbar-clear" data-bulk="clear" aria-label="Clear selection">✕</button>
+        <button type="button" class="cat-bulkbar-clear" data-bulk="clear" aria-label="${escape(t('Clear selection'))}">✕</button>
       </div>`;
   }
 
@@ -1158,7 +1161,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div class="view-toggle-wrap">${viewToggle('catalog')}</div>
           ${topRight()}
         </div>
-        <h1 class="visually-hidden">Catalogue</h1>
+        <h1 class="visually-hidden">${t('Catalogue')}</h1>
         <div class="catalog-body">${bodyHtml()}</div>
         ${footerNav({
           proEnabled: flagEnabled(profile, PRO_FLAG.id),
@@ -1170,8 +1173,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             <div class="gallery-search-wrap">
               <div class="gallery-search-box">
                 <span class="gallery-search-icon" aria-hidden="true">${NAV_ICONS.search}</span>
-                <input class="gallery-search" type="text" placeholder="Search the catalogue…" autocomplete="off" spellcheck="false" aria-label="Search the catalogue" value="${escape(query)}" style="padding-right:32px">
-                <button type="button" class="projects-search-clear" data-search-clear aria-label="Clear search"${query ? '' : ' hidden'}>✕</button>
+                <input class="gallery-search" type="text" placeholder="${escape(t('Search the catalogue…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Search the catalogue'))}" value="${escape(query)}" style="padding-right:32px">
+                <button type="button" class="projects-search-clear" data-search-clear aria-label="${escape(t('Clear search'))}"${query ? '' : ' hidden'}>✕</button>
               </div>
             </div>`,
         })}
@@ -1279,7 +1282,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         if (cred?.store && C2PA_FORMATS.includes(fmt)) {
           try {
             bytes = attachC2paStore(bytes, fmt, cred.store);
-            note = 'This Content Credential was captured when the file was imported. Lolly re-encoded the image on import, so it no longer binds to the stored copy byte-for-byte — the credential reads as "modified", but the provenance claims below are intact.';
+            note = t('This Content Credential was captured when the file was imported. Lolly re-encoded the image on import, so it no longer binds to the stored copy byte-for-byte — the credential reads as "modified", but the provenance claims below are intact.');
           } catch { /* re-attach failed — hand over the plain bytes and let Verify report */ }
         }
       }
@@ -1287,7 +1290,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       setPendingVerify({ files: [file], note });
       location.hash = '#/verify';
     } catch {
-      announce('Could not open the credential checker for this asset.');
+      announce(t('Could not open the credential checker for this asset.'));
     }
   }
 
@@ -1363,49 +1366,49 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const dlg = document.createElement('dialog');
     dlg.className = 'cat-details';
     dlg.innerHTML = `
-      <button type="button" class="cat-details-close" data-act="close" aria-label="Close">×</button>
+      <button type="button" class="cat-details-close" data-act="close" aria-label="${escape(t('Close'))}">×</button>
       <div class="cat-details-preview${zoomable ? ' is-zoomable' : ''}">
-        ${nav.prev ? `<button type="button" class="cat-details-nav cat-details-prev" data-nav="prev" aria-label="Previous asset">${CHEVRON_LEFT}</button>` : ''}
-        ${nav.next ? `<button type="button" class="cat-details-nav cat-details-next" data-nav="next" aria-label="Next asset">${CHEVRON_RIGHT}</button>` : ''}
+        ${nav.prev ? `<button type="button" class="cat-details-nav cat-details-prev" data-nav="prev" aria-label="${escape(t('Previous asset'))}">${CHEVRON_LEFT}</button>` : ''}
+        ${nav.next ? `<button type="button" class="cat-details-nav cat-details-next" data-nav="next" aria-label="${escape(t('Next asset'))}">${CHEVRON_RIGHT}</button>` : ''}
         ${zoomable
           ? `<div class="cat-zoom-stage">${thumbHtml(ref, false, true)}</div>
-             ${isMotionLottie ? `<button type="button" class="cat-motion-toggle is-playing" data-act="motion-toggle" aria-label="Pause" title="Pause">${PAUSE_ICON}</button>` : ''}
-             <div class="cat-zoom-hud" role="group" aria-label="Zoom">
-               <button type="button" class="cat-zoom-btn" data-zoom="out" aria-label="Zoom out" title="Zoom out">${ZOOM_OUT_ICON}</button>
-               <button type="button" class="cat-zoom-btn cat-zoom-pct" data-zoom="reset" aria-label="Reset zoom" title="Reset zoom">100%</button>
-               <button type="button" class="cat-zoom-btn" data-zoom="in" aria-label="Zoom in" title="Zoom in">${ZOOM_IN_ICON}</button>
+             ${isMotionLottie ? `<button type="button" class="cat-motion-toggle is-playing" data-act="motion-toggle" aria-label="${escape(t('Pause'))}" title="${escape(t('Pause'))}">${PAUSE_ICON}</button>` : ''}
+             <div class="cat-zoom-hud" role="group" aria-label="${escape(t('Zoom'))}">
+               <button type="button" class="cat-zoom-btn" data-zoom="out" aria-label="${escape(t('Zoom out'))}" title="${escape(t('Zoom out'))}">${ZOOM_OUT_ICON}</button>
+               <button type="button" class="cat-zoom-btn cat-zoom-pct" data-zoom="reset" aria-label="${escape(t('Reset zoom'))}" title="${escape(t('Reset zoom'))}">100%</button>
+               <button type="button" class="cat-zoom-btn" data-zoom="in" aria-label="${escape(t('Zoom in'))}" title="${escape(t('Zoom in'))}">${ZOOM_IN_ICON}</button>
              </div>`
           : thumbHtml(ref, false, true)}
       </div>
       <div class="cat-details-body">
         <h2 class="cat-details-name">${escape(name)}</h2>
         <dl class="cat-details-meta">
-          <div><dt>Source</dt><dd>${isUser ? 'Your upload' : 'SUSE catalog'}</dd></div>
-          <div><dt>Category</dt><dd>${escape(categoryLabel(libCategory(ref, overrides)))}</dd></div>
-          <div><dt>Format</dt><dd>${escape(String(ref.format ?? ref.type).toUpperCase())}</dd></div>
-          ${aiKind ? `<div><dt>AI content</dt><dd class="cat-details-ai">${genAiPill(aiKind)}<span>Is or contains genAI content</span></dd></div>` : ''}
-          <div><dt>ID</dt><dd><code>${escape(ref.id)}</code></dd></div>
-          ${tags.length ? `<div><dt>Tags</dt><dd class="cat-details-tags">${tags.map(t => `<span class="cat-tag">${escape(String(t))}</span>`).join('')}</dd></div>` : ''}
+          <div><dt>${t('Source')}</dt><dd>${isUser ? t('Your upload') : t('SUSE catalog')}</dd></div>
+          <div><dt>${t('Category')}</dt><dd>${escape(t(categoryLabel(libCategory(ref, overrides))))}</dd></div>
+          <div><dt>${t('Format')}</dt><dd>${escape(String(ref.format ?? ref.type).toUpperCase())}</dd></div>
+          ${aiKind ? `<div><dt>${t('AI content')}</dt><dd class="cat-details-ai">${genAiPill(aiKind)}<span>${t('Is or contains genAI content')}</span></dd></div>` : ''}
+          <div><dt>${t('ID')}</dt><dd><code>${escape(ref.id)}</code></dd></div>
+          ${tags.length ? `<div><dt>${t('Tags')}</dt><dd class="cat-details-tags">${tags.map(tag => `<span class="cat-tag">${escape(String(tag))}</span>`).join('')}</dd></div>` : ''}
         </dl>
         ${showVerify ? `<div class="cat-details-cred">
-          <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">This file’s Content Credential records a Lolly export, intact.</span></div>
+          <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">${t('This file’s Content Credential records a Lolly export, intact.')}</span></div>
           <div class="cat-cred-panels" hidden></div>
-          <button type="button" class="btn cat-act-verify" data-act="verify">${SHIELD_ICON}<span>Check Content Credentials</span></button>
+          <button type="button" class="btn cat-act-verify" data-act="verify">${SHIELD_ICON}<span>${t('Check Content Credentials')}</span></button>
         </div>` : ''}
-        ${themable ? `<div class="cat-dl-section"><span class="cat-dl-label">Colours</span>${iconSwatchRow(dTheme)}</div>` : ''}
-        ${treatable ? `<div class="cat-dl-section"><span class="cat-dl-label">Colour</span>${treatmentSwatchRow(dTreatment)}</div>` : ''}
+        ${themable ? `<div class="cat-dl-section"><span class="cat-dl-label">${t('Colours')}</span>${iconSwatchRow(dTheme)}</div>` : ''}
+        ${treatable ? `<div class="cat-dl-section"><span class="cat-dl-label">${t('Colour')}</span>${treatmentSwatchRow(dTreatment)}</div>` : ''}
         <div class="cat-details-actions">
-          <button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? 'Favourited' : 'Favourite'}</span></button>
-          <button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? 'Download…' : 'Download'}</span></button>
-          ${croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>Crop…</span></button>` : ''}
-          <button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>Recategorise…</span></button>
-          <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>Copy link</span></button>
+          <button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? t('Favourited') : t('Favourite')}</span></button>
+          <button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? t('Download…') : t('Download')}</span></button>
+          ${croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
+          <button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>
+          <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>
           ${isUser
-            ? `<button type="button" class="btn" data-act="rename">${PENCIL_ICON}<span>Rename</span></button>
-               <button type="button" class="btn cat-act-danger" data-act="delete">${TRASH_ICON}<span>Delete</span></button>`
+            ? `<button type="button" class="btn" data-act="rename">${PENCIL_ICON}<span>${t('Rename')}</span></button>
+               <button type="button" class="btn cat-act-danger" data-act="delete">${TRASH_ICON}<span>${t('Delete')}</span></button>`
             : (hidden
-                ? `<button type="button" class="btn" data-act="unhide">${EYE_ICON}<span>Unhide</span></button>`
-                : `<button type="button" class="btn cat-act-danger" data-act="hide">${EYE_OFF_ICON}<span>Hide</span></button>`)}
+                ? `<button type="button" class="btn" data-act="unhide">${EYE_ICON}<span>${t('Unhide')}</span></button>`
+                : `<button type="button" class="btn cat-act-danger" data-act="hide">${EYE_OFF_ICON}<span>${t('Hide')}</span></button>`)}
         </div>
       </div>`;
     document.body.appendChild(dlg);
@@ -1466,15 +1469,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
 
     dlg.addEventListener('click', async (e) => {
-      const t = e.target as HTMLElement;
-      if (t === dlg) { closeDetails(); return; }   // backdrop
+      const target = e.target as HTMLElement;
+      if (target === dlg) { closeDetails(); return; }   // backdrop
       // Prev/next lightbox paging — reopen the modal on the neighbouring asset, carrying the
       // current colour choice so paging keeps the look.
-      const navBtn = t.closest<HTMLElement>('[data-nav]');
+      const navBtn = target.closest<HTMLElement>('[data-nav]');
       if (navBtn) { const r = navBtn.dataset.nav === 'prev' ? nav.prev : nav.next; if (r) openDetails(r, dTheme, dTreatment); return; }
       // Play/pause the Lottie preview. The player mounts a tick after open, so this is a no-op
       // until then (the marker still shows its resting poster, and the button reflects "playing").
-      const motionBtn = t.closest<HTMLElement>('[data-act="motion-toggle"]');
+      const motionBtn = target.closest<HTMLElement>('[data-act="motion-toggle"]');
       if (motionBtn) {
         const motionEl = dlg.querySelector<HTMLElement>('.cat-thumb-motion');
         const player = motionEl ? lottiePlayerFor(motionEl) : null;
@@ -1483,15 +1486,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           const playing = !player.isPaused;
           motionBtn.classList.toggle('is-playing', playing);
           motionBtn.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
-          motionBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-          motionBtn.title = playing ? 'Pause' : 'Play';
+          motionBtn.setAttribute('aria-label', playing ? t('Pause') : t('Play'));
+          motionBtn.title = playing ? t('Pause') : t('Play');
         }
         return;
       }
       // Colour treatment swatch (raster photos): wash the preview in place via the live CSS
       // filter, keep the modal open. Checked before the icon branch — treat buttons also carry
       // .cat-dl-theme, but this .cat-dl-treat branch owns them.
-      const treatSw = t.closest<HTMLElement>('.cat-dl-treat');
+      const treatSw = target.closest<HTMLElement>('.cat-dl-treat');
       if (treatSw && treatable) {
         dTreatment = treatSw.dataset.treatment || null;
         dlg.querySelectorAll<HTMLElement>('.cat-dl-treat').forEach(b => {
@@ -1503,7 +1506,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
       // Colour swatch (themable icons): recolour the preview in place, keep the modal open.
-      const sw = t.closest<HTMLElement>('.cat-dl-theme');
+      const sw = target.closest<HTMLElement>('.cat-dl-theme');
       if (sw && themable) {
         dTheme = sw.dataset.theme ?? dTheme;
         dlg.querySelectorAll<HTMLElement>('.cat-dl-theme').forEach(b => {
@@ -1517,7 +1520,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         } catch { /* recolour is best-effort — leaves the base preview */ }
         return;
       }
-      const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
+      const act = target.closest<HTMLElement>('[data-act]')?.dataset.act;
       if (!act) return;
       if (act === 'close') { closeDetails(); return; }
       if (act === 'fav') {
@@ -1526,15 +1529,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         const on = favSet.has(base);
         const btn = dlg.querySelector<HTMLElement>('.cat-act-fav');
         btn?.classList.toggle('is-fav', on); btn?.setAttribute('aria-pressed', String(on));
-        const lbl = btn?.querySelector('span'); if (lbl) lbl.textContent = on ? 'Favourited' : 'Favourite';
+        const lbl = btn?.querySelector('span'); if (lbl) lbl.textContent = on ? t('Favourited') : t('Favourite');
         // Reflect in the grid + favourites strip behind the modal, in place (no full
         // re-render — favouriting never moves a tile between buckets).
         if (mounted) { reflectFavInGrid(base, on); refreshFavStrip(); }
-        announce(on ? `Added ${name} to favourites` : `Removed ${name} from favourites`);
+        announce(on ? t('Added {name} to favourites', { name }) : t('Removed {name} from favourites', { name }));
         return;
       }
       if (act === 'share') {
-        const btn = t.closest<HTMLElement>('.cat-act-share');
+        const btn = target.closest<HTMLElement>('.cat-act-share');
         // Share the styled variant when a colour is picked, so the recipient reopens the same
         // look (the modifier rides in the asset id — buildThemedAssetId / buildTreatedAssetId).
         const link = themable && dTheme
@@ -1544,10 +1547,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             : assetLink(ref);
         try { await navigator.clipboard.writeText(link); } catch { /* clipboard blocked */ }
         const s = btn?.querySelector('span');
-        if (s) s.textContent = 'Copied!'; btn?.classList.add('is-copied');
+        if (s) s.textContent = t('Copied!'); btn?.classList.add('is-copied');
         // Restore to the fixed label (never the current text) so a rapid re-click can't
         // capture 'Copied!' and leave the button stuck.
-        setTimeout(() => { if (s) s.textContent = 'Copy link'; btn?.classList.remove('is-copied'); }, 1200);
+        setTimeout(() => { if (s) s.textContent = t('Copy link'); btn?.classList.remove('is-copied'); }, 1200);
         return;
       }
       // The remaining actions leave this asset's detail context, so close first.
@@ -1586,13 +1589,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (audioEl) {
       const note = audioEl.parentElement?.querySelector<HTMLElement>('.cat-audio-note');
       audioEl.addEventListener('error', () => {
-        if (note && !audioEl.dataset.wavBlob) { note.textContent = 'This audio format isn’t supported by your browser.'; note.hidden = false; }
+        if (note && !audioEl.dataset.wavBlob) { note.textContent = t('This audio format isn’t supported by your browser.'); note.hidden = false; }
       });
       const zzUrl = audioEl.dataset.zzfxmUrl;
       if (zzUrl) {
         void songUrlToWavBlobUrl(zzUrl)
           .then((wav) => { if (detailsDialog === dlg) { audioEl.dataset.wavBlob = wav; audioEl.src = wav; } else URL.revokeObjectURL(wav); })
-          .catch(() => { if (note) { note.textContent = 'Couldn’t render this track.'; note.hidden = false; } });
+          .catch(() => { if (note) { note.textContent = t('Couldn’t render this track.'); note.hidden = false; } });
       }
       // The big preview meter: attaches its analyser on first play (a gesture, so the
       // shared AudioContext may run) and is disposed with the modal (closeDetails).
@@ -1614,7 +1617,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     reflectFavInGrid(base, on);
     refreshFavStrip();
     const name = String(assetById.get(id)?.meta?.name ?? id);
-    announce(on ? `Added ${name} to favourites` : `Removed ${name} from favourites`);
+    announce(on ? t('Added {name} to favourites', { name }) : t('Removed {name} from favourites', { name }));
   }
 
   async function setHidden(base: string, hide: boolean): Promise<void> {
@@ -1622,7 +1625,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (profile) await saveHiddenAssets(host, profile, hiddenSet);
     if (!mounted) return;
     const hidName = String(assetById.get(base)?.meta?.name ?? base);
-    announce(`${hidName} ${hide ? 'hidden' : 'unhidden'}`);
+    announce(hide ? t('{name} hidden', { name: hidName }) : t('{name} unhidden', { name: hidName }));
     // Hiding relocates a tile between buckets (category grid ↔ Hidden section), so a naive
     // class-toggle isn't faithful. Try a minimal in-place DOM move for the common case and
     // fall back to a full re-render for the structural sub-cases where splicing a section
@@ -1658,9 +1661,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const hiddenCount = allAssets.filter(a => hiddenSet.has(assetBaseId(a.id))).length;
     // This path only runs while hidden assets are folded away (showHidden === false), so the
     // eye icon + "Show hidden (N)" is always the right pairing. Preserve the icon (setCatToggle).
-    setCatToggle(toggle, CAT_ICONS.eye, `Show hidden (${hiddenCount})`);
+    setCatToggle(toggle, CAT_ICONS.eye, t('Show hidden ({n})', { n: hiddenCount }));
     const count = assets.querySelector<HTMLElement>('.cat-count');
-    if (count) { const n = visibleAssets().length; count.textContent = `${n} asset${n === 1 ? '' : 's'}`; }
+    if (count) { const n = visibleAssets().length; count.textContent = n === 1 ? t('1 asset') : t('{n} assets', { n }); }
     if (favSet.has(base)) refreshFavStrip();   // a hidden favourite leaves the strip
     return true;
   }
@@ -1669,11 +1672,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const base = assetBaseId(ref.id);
     const current = libCategory(ref, overrides);
     const chosen = await choiceDialog({
-      title: 'Recategorise asset',
-      message: `Move “${String(ref.meta?.name ?? ref.id)}” into which group? (Currently ${categoryLabel(current)}.)`,
+      title: t('Recategorise asset'),
+      message: t('Move “{name}” into which group? (Currently {category}.)', { name: String(ref.meta?.name ?? ref.id), category: t(categoryLabel(current)) }),
       choices: [
-        ...LIB_GROUPS.map(g => ({ id: g.key, label: g.label, primary: g.key === current })),
-        { id: '__auto__', label: 'Auto (from tags)' },
+        ...LIB_GROUPS.map(g => ({ id: g.key, label: t(g.label), primary: g.key === current })),
+        { id: '__auto__', label: t('Auto (from tags)') },
       ],
     });
     if (!chosen || !mounted) return;
@@ -1681,16 +1684,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     setOverrides(loadAssetCategories(profile));
     // '__auto__' clears the override, so the resulting group is the tag-derived one.
     const newCat = chosen === '__auto__' ? libCategory(ref, overrides) : chosen;
-    announce(`Moved ${String(ref.meta?.name ?? ref.id)} to ${categoryLabel(newCat)}`);
+    announce(t('Moved {name} to {category}', { name: String(ref.meta?.name ?? ref.id), category: t(categoryLabel(newCat)) }));
     rerender();
   }
 
   async function deleteUserAsset(ref: AssetRef): Promise<void> {
     const base = assetBaseId(ref.id);
     const ok = await confirmDialog({
-      title: 'Delete this image?',
-      message: 'This permanently removes your uploaded image from this device. This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: t('Delete this image?'),
+      message: t('This permanently removes your uploaded image from this device. This cannot be undone.'),
+      confirmLabel: t('Delete'),
     });
     if (!ok || !mounted) return;
     // The bridge announces the delete ('lolly:user-asset-deleted', wired in main.ts),
@@ -1710,11 +1713,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   async function renameUserAsset(ref: AssetRef): Promise<void> {
     const current = String(ref.meta?.name ?? '');
     const name = await promptDialog({
-      title: 'Rename image',
-      message: 'Give this upload a new name.',
+      title: t('Rename image'),
+      message: t('Give this upload a new name.'),
       value: current,
-      placeholder: 'Image name',
-      confirmLabel: 'Rename',
+      placeholder: t('Image name'),
+      confirmLabel: t('Rename'),
     });
     if (name == null || !mounted) return;
     const trimmed = name.trim();
@@ -1773,7 +1776,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const ids = selectableIds();
     const allSel = ids.size > 0 && [...ids].every(id => selected.has(id));
     const btn = viewEl.querySelector<HTMLElement>('.cat-uploads-selectall');
-    if (btn) { btn.textContent = allSel ? 'Deselect all' : 'Select all'; btn.setAttribute('aria-pressed', String(allSel)); }
+    if (btn) { btn.textContent = allSel ? t('Deselect all') : t('Select all'); btn.setAttribute('aria-pressed', String(allSel)); }
   }
 
   function syncBulkBar(): void {
@@ -1782,7 +1785,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const n = selected.size;
     bar.hidden = n === 0;
     const count = bar.querySelector('.cat-bulkbar-count');
-    if (count) count.textContent = `${n} selected`;
+    if (count) count.textContent = t('{n} selected', { n });
     viewEl.querySelector('.catalog')?.classList.toggle('has-selection', n > 0);
   }
 
@@ -1832,7 +1835,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Bring the first new copy into view so "the copies appeared" is visible, not
     // just a count in the bar — nearest, so it doesn't jump when already on screen.
     viewEl.querySelector<HTMLElement>('.cat-tile.is-selected')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    announce(`${newIds.length} cop${newIds.length === 1 ? 'y' : 'ies'} made · selected`);
+    announce(newIds.length === 1 ? t('1 copy made · selected') : t('{n} copies made · selected', { n: newIds.length }));
   }
 
   /**
@@ -1870,7 +1873,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const refs = [...selected].map(id => assetById.get(id)).filter((r): r is AssetRef => !!r);
     if (!refs.length) return;
     const { askExportLock } = await import('../lib/export-lock.ts');
-    const { ok, strongPassword, zipLock } = await askExportLock(`${refs.length} selected image${refs.length === 1 ? '' : 's'}`, true);
+    const { ok, strongPassword, zipLock } = await askExportLock(refs.length === 1 ? t('1 selected image') : t('{n} selected images', { n: refs.length }), true);
     if (!ok || !mounted) return;
     const files: { name: string; blob: Blob }[] = [];
     const names = new Set<string>();
@@ -1897,16 +1900,18 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const { buildZip, saveBlob } = await import('../pro/zip.ts');
     const zip = await buildZip(files, { zipName: 'lolly-images', zipLock, password: strongPassword });
     saveBlob(zip, 'lolly-images.zip');
-    announce(`${files.length} image${files.length === 1 ? '' : 's'} zipped · ${credentialed} with Content Credentials`);
+    announce(files.length === 1
+      ? t('1 image zipped · {c} with Content Credentials', { c: credentialed })
+      : t('{n} images zipped · {c} with Content Credentials', { n: files.length, c: credentialed }));
   }
 
   async function deleteSelection(): Promise<void> {
     const ids = [...selected];
     if (!ids.length) return;
     const ok = await confirmDialog({
-      title: `Delete ${ids.length} selected image${ids.length === 1 ? '' : 's'}?`,
-      message: 'This permanently removes your uploaded images from this device. This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: ids.length === 1 ? t('Delete 1 selected image?') : t('Delete {n} selected images?', { n: ids.length }),
+      message: t('This permanently removes your uploaded images from this device. This cannot be undone.'),
+      confirmLabel: t('Delete'),
     });
     if (!ok || !mounted) return;
     for (const id of ids) {
@@ -2094,7 +2099,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const dlg = document.createElement('dialog');
     dlg.className = 'cat-crop';
     dlg.innerHTML = `
-      <h2 class="cat-dl-title">Crop ${escape(name)}</h2>
+      <h2 class="cat-dl-title">${t('Crop {name}', { name: escape(name) })}</h2>
       <div class="cat-crop-work">
         <div class="cat-crop-viewport">
           <div class="cat-crop-stage">
@@ -2111,20 +2116,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             </div>
           </div>
         </div>
-        <div class="cat-zoom-hud" role="group" aria-label="Zoom">
-          <button type="button" class="cat-zoom-btn" data-zoom="out" aria-label="Zoom out" title="Zoom out">${ZOOM_OUT_ICON}</button>
-          <button type="button" class="cat-zoom-btn cat-zoom-pct" data-zoom="reset" aria-label="Reset zoom" title="Reset zoom">100%</button>
-          <button type="button" class="cat-zoom-btn" data-zoom="in" aria-label="Zoom in" title="Zoom in">${ZOOM_IN_ICON}</button>
+        <div class="cat-zoom-hud" role="group" aria-label="${escape(t('Zoom'))}">
+          <button type="button" class="cat-zoom-btn" data-zoom="out" aria-label="${escape(t('Zoom out'))}" title="${escape(t('Zoom out'))}">${ZOOM_OUT_ICON}</button>
+          <button type="button" class="cat-zoom-btn cat-zoom-pct" data-zoom="reset" aria-label="${escape(t('Reset zoom'))}" title="${escape(t('Reset zoom'))}">100%</button>
+          <button type="button" class="cat-zoom-btn" data-zoom="in" aria-label="${escape(t('Zoom in'))}" title="${escape(t('Zoom in'))}">${ZOOM_IN_ICON}</button>
         </div>
       </div>
       <div class="cat-dl-section">
-        <span class="cat-dl-label">Format</span>
+        <span class="cat-dl-label">${t('Format')}</span>
         <div class="cat-dl-fmt cat-crop-fmt" role="radiogroup">${fmts.map(([v, l], i) =>
           `<label><input type="radio" name="cat-crop-fmt" value="${v}"${i === 0 ? ' checked' : ''}> ${l}</label>`).join('')}</div>
       </div>
       <div class="cat-dl-actions">
-        <button type="button" class="btn cat-crop-cancel">Cancel</button>
-        <button type="button" class="btn cat-crop-go projects-confirm-primary">Download crop</button>
+        <button type="button" class="btn cat-crop-cancel">${t('Cancel')}</button>
+        <button type="button" class="btn cat-crop-go projects-confirm-primary">${t('Download crop')}</button>
       </div>`;
     document.body.appendChild(dlg);
     cropDialog = dlg;
@@ -2365,29 +2370,29 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const dlg = document.createElement('dialog');
     dlg.className = 'cat-dl';
     dlg.innerHTML = `
-      <h2 class="cat-dl-title">Download ${escape(name)}</h2>
+      <h2 class="cat-dl-title">${t('Download {name}', { name: escape(name) })}</h2>
       <div class="cat-dl-preview"><img alt="" class="cat-dl-img"></div>
       ${themable ? `
       <div class="cat-dl-section">
-        <span class="cat-dl-label">Colours</span>
-        <div class="cat-dl-themes" role="group" aria-label="Icon colours">
-          <button type="button" class="cat-dl-theme${themeId === ORIGINAL_THEME ? ' is-active' : ''}" data-theme="${ORIGINAL_THEME}" aria-pressed="${themeId === ORIGINAL_THEME}" title="Original — unchanged; keeps its Content Credential" style="width:auto;padding:0 9px;font-size:11px;font-weight:600">Original</button>
-          ${iconThemes.map((t) => `
-            <button type="button" class="cat-dl-theme${t.id === themeId ? ' is-active' : ''}" data-theme="${escape(t.id)}" data-sfx="shimmer" aria-pressed="${t.id === themeId}" title="${escape(t.label ?? t.id)}">
-              <span class="cat-dl-duo" style="background:${escape(t.previewBg ?? '#fff')}"><i style="background:${escape(String(t.c2 ?? '#888'))}"></i><i style="background:${escape(String(t.c1 ?? '#333'))}"></i></span>
+        <span class="cat-dl-label">${t('Colours')}</span>
+        <div class="cat-dl-themes" role="group" aria-label="${escape(t('Icon colours'))}">
+          <button type="button" class="cat-dl-theme${themeId === ORIGINAL_THEME ? ' is-active' : ''}" data-theme="${ORIGINAL_THEME}" aria-pressed="${themeId === ORIGINAL_THEME}" title="${escape(t('Original — unchanged; keeps its Content Credential'))}" style="width:auto;padding:0 9px;font-size:11px;font-weight:600">${t('Original')}</button>
+          ${iconThemes.map((th) => `
+            <button type="button" class="cat-dl-theme${th.id === themeId ? ' is-active' : ''}" data-theme="${escape(th.id)}" data-sfx="shimmer" aria-pressed="${th.id === themeId}" title="${escape(th.label ?? th.id)}">
+              <span class="cat-dl-duo" style="background:${escape(th.previewBg ?? '#fff')}"><i style="background:${escape(String(th.c2 ?? '#888'))}"></i><i style="background:${escape(String(th.c1 ?? '#333'))}"></i></span>
             </button>`).join('')}
         </div>
       </div>` : ''}
       <div class="cat-dl-section">
-        <span class="cat-dl-label">Format</span>
+        <span class="cat-dl-label">${t('Format')}</span>
         <div class="cat-dl-fmt" role="radiogroup">
-          <label><input type="radio" name="cat-dl-fmt" value="svg" checked> SVG <span class="cat-dl-hint">vector</span></label>
-          <label><input type="radio" name="cat-dl-fmt" value="png"> PNG <span class="cat-dl-hint">raster</span></label>
+          <label><input type="radio" name="cat-dl-fmt" value="svg" checked> SVG <span class="cat-dl-hint">${t('vector')}</span></label>
+          <label><input type="radio" name="cat-dl-fmt" value="png"> PNG <span class="cat-dl-hint">${t('raster')}</span></label>
         </div>
       </div>
       <div class="cat-dl-actions">
-        <button type="button" class="btn cat-dl-cancel">Cancel</button>
-        <button type="button" class="btn cat-dl-go projects-confirm-primary">Download</button>
+        <button type="button" class="btn cat-dl-cancel">${t('Cancel')}</button>
+        <button type="button" class="btn cat-dl-go projects-confirm-primary">${t('Download')}</button>
       </div>`;
     document.body.appendChild(dlg);
     dlDialog = dlg;
@@ -2496,23 +2501,23 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const dlg = document.createElement('dialog');
     dlg.className = 'cat-dl';
     dlg.innerHTML = `
-      <h2 class="cat-dl-title">Download ${escape(name)}</h2>
+      <h2 class="cat-dl-title">${t('Download {name}', { name: escape(name) })}</h2>
       <div class="cat-dl-preview"><img alt="" class="cat-dl-img" src="${escape(ref.url)}"></div>
       <div class="cat-dl-section">
-        <span class="cat-dl-label">Colour</span>
+        <span class="cat-dl-label">${t('Colour')}</span>
         ${treatmentSwatchRow(treatmentId)}
       </div>
       <div class="cat-dl-section">
-        <span class="cat-dl-label">Format</span>
+        <span class="cat-dl-label">${t('Format')}</span>
         <div class="cat-dl-fmt" role="radiogroup">
-          <label><input type="radio" name="cat-dl-fmt" value="png" checked> PNG <span class="cat-dl-hint">lossless</span></label>
-          <label><input type="radio" name="cat-dl-fmt" value="jpg"> JPG <span class="cat-dl-hint">smaller</span></label>
-          <label><input type="radio" name="cat-dl-fmt" value="webp"> WebP <span class="cat-dl-hint">modern</span></label>
+          <label><input type="radio" name="cat-dl-fmt" value="png" checked> PNG <span class="cat-dl-hint">${t('lossless')}</span></label>
+          <label><input type="radio" name="cat-dl-fmt" value="jpg"> JPG <span class="cat-dl-hint">${t('smaller')}</span></label>
+          <label><input type="radio" name="cat-dl-fmt" value="webp"> WebP <span class="cat-dl-hint">${t('modern')}</span></label>
         </div>
       </div>
       <div class="cat-dl-actions">
-        <button type="button" class="btn cat-dl-cancel">Cancel</button>
-        <button type="button" class="btn cat-dl-go projects-confirm-primary">Download</button>
+        <button type="button" class="btn cat-dl-cancel">${t('Cancel')}</button>
+        <button type="button" class="btn cat-dl-go projects-confirm-primary">${t('Download')}</button>
       </div>`;
     document.body.appendChild(dlg);
     dlDialog = dlg;
@@ -2641,44 +2646,44 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     };
 
     body.addEventListener('click', async (e) => {
-      const t = e.target as HTMLElement;
+      const target = e.target as HTMLElement;
 
       // "Clear search" link in the no-results copy (the footer ✕ is wired separately).
-      const clr = t.closest<HTMLElement>('[data-search-clear]');
+      const clr = target.closest<HTMLElement>('[data-search-clear]');
       if (clr) { e.preventDefault(); clearSearch(); return; }
 
       // Swatches-section palette download — exports the palette exactly as shown.
-      const sdl = t.closest<HTMLElement>('[data-swatch-dl]');
+      const sdl = target.closest<HTMLElement>('[data-swatch-dl]');
       if (sdl) {
         try {
           const { blob, filename } = exportSwatches(paletteEntriesToSwatches(palette), sdl.dataset.swatchDl as SwatchExportFormat);
           await host.export.download(blob, filename);
-          announce(`Palette downloaded as ${filename}`);
-        } catch { announce('Couldn’t export the palette.'); }
+          announce(t('Palette downloaded as {filename}', { filename }));
+        } catch { announce(t('Couldn’t export the palette.')); }
         return;
       }
 
       // Retry the catalogue load after a total sync failure (the failed state's control).
-      const retry = t.closest<HTMLButtonElement>('.cat-retry');
+      const retry = target.closest<HTMLButtonElement>('.cat-retry');
       if (retry) {
-        retry.disabled = true; retry.textContent = 'Retrying…';
+        retry.disabled = true; retry.textContent = t('Retrying…');
         await reload();
         if (mounted) render();
         return;
       }
 
-      const check = t.closest<HTMLElement>('[data-select]');
+      const check = target.closest<HTMLElement>('[data-select]');
       if (check) { toggleSelect(check.dataset.select!); return; }
 
-      const selectAll = t.closest<HTMLElement>('[data-selectall]');
+      const selectAll = target.closest<HTMLElement>('[data-selectall]');
       if (selectAll) { selectAllUploads(); return; }
 
-      const star = t.closest<HTMLElement>('[data-star]');
+      const star = target.closest<HTMLElement>('[data-star]');
       if (star) { await toggleFavourite(star.dataset.star!); return; }
 
       // Category "Colour" treatment swatch — wash this group's raster photos in place
       // (checked before the icon branch: treatment buttons also carry .cat-dl-theme).
-      const treatSw = t.closest<HTMLElement>('.cat-dl-treat');
+      const treatSw = target.closest<HTMLElement>('.cat-dl-treat');
       const treatGroup = treatSw?.closest<HTMLElement>('.cat-group');
       if (treatSw && treatGroup) {
         catPhotoTreatment = treatSw.dataset.treatment || null;
@@ -2690,7 +2695,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       }
 
       // Category "Colours" swatch — recolour this group's themable icons in place.
-      const catSw = t.closest<HTMLElement>('.cat-dl-theme');
+      const catSw = target.closest<HTMLElement>('.cat-dl-theme');
       const catGroup = catSw?.closest<HTMLElement>('.cat-group');
       if (catSw && catGroup) {
         catIconTheme = catSw.dataset.theme ?? null;
@@ -2701,7 +2706,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
 
-      const openBtn = t.closest<HTMLElement>('[data-open]');
+      const openBtn = target.closest<HTMLElement>('[data-open]');
       if (openBtn) {
         const ref = assetById.get(openBtn.dataset.open!);
         // Carry the category grid's colour choice into the details modal — an icon opens on
@@ -2711,7 +2716,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
 
-      const toggle = t.closest<HTMLElement>('[data-cat-toggle]');
+      const toggle = target.closest<HTMLElement>('[data-cat-toggle]');
       if (toggle) {
         const key = toggle.dataset.catToggle!;
         const sec = toggle.closest('.cat-group')!;
@@ -2729,7 +2734,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // Collapse-all / Expand-all — fold or unfold every section in place (no re-render,
       // so scroll is kept). Checked BEFORE .cat-showhidden since it reuses that button
       // style. If anything is open we collapse all; once all are folded we expand all.
-      const collapseAll = t.closest<HTMLElement>('.cat-collapse-all');
+      const collapseAll = target.closest<HTMLElement>('.cat-collapse-all');
       if (collapseAll) {
         const groups = [...body.querySelectorAll<HTMLElement>('.cat-group')];
         const anyOpen = groups.some(g => !g.classList.contains('is-collapsed'));
@@ -2743,24 +2748,24 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         syncSectionUrl();
         // Just collapsed everything → the next action (and icon) is "Expand all", and vice
         // versa. Swap glyph + label together so the icon survives (setCatToggle, not textContent).
-        setCatToggle(collapseAll, anyOpen ? CAT_ICONS.expand : CAT_ICONS.collapse, anyOpen ? 'Expand all' : 'Collapse all');
+        setCatToggle(collapseAll, anyOpen ? CAT_ICONS.expand : CAT_ICONS.collapse, anyOpen ? t('Expand all') : t('Collapse all'));
         return;
       }
 
       // Filetype filter (sticky toolbar) — narrow the grid to image / vector / motion.
       // Body-only re-render keeps the footer search + its focus; the toolbar (rebuilt with
       // it) reflects the new pressed state.
-      const typeBtn = t.closest<HTMLElement>('[data-typefilter]');
+      const typeBtn = target.closest<HTMLElement>('[data-typefilter]');
       if (typeBtn) {
         const next = (typeBtn.dataset.typefilter || 'all') as TypeFilter;
         if (next !== typeFilter) { typeFilter = next; renderBody(); }
         return;
       }
 
-      if (t.closest('.cat-showhidden')) { showHidden = !showHidden; rerender(); return; }
+      if (target.closest('.cat-showhidden')) { showHidden = !showHidden; rerender(); return; }
 
       // Read-only convenience: click a swatch chip to copy its hex.
-      const chip = t.closest<HTMLElement>('.plat-swatch-chip[data-copy]');
+      const chip = target.closest<HTMLElement>('.plat-swatch-chip[data-copy]');
       if (chip) {
         const hex = chip.dataset.copy!;
         navigator.clipboard?.writeText(hex).then(() => {
@@ -2939,13 +2944,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // The deep-linked asset isn't in this user's catalogue (never synced, a deleted upload,
       // or an unknown id) — say so instead of a silent no-op: announce() for assistive tech,
       // plus a brief self-clearing line at the top of the grid so a sighted user sees it too.
-      announce('That asset isn’t in your catalogue');
+      announce(t('That asset isn’t in your catalogue'));
       const bodyEl = viewEl.querySelector<HTMLElement>('.catalog-body');
       if (bodyEl) {
         const note = document.createElement('p');
         note.className = 'cat-empty';
         note.style.cssText = 'padding:0.85rem 1rem';
-        note.textContent = 'That asset isn’t in your catalogue.';
+        note.textContent = t('That asset isn’t in your catalogue.');
         bodyEl.insertBefore(note, bodyEl.firstChild);
         setTimeout(() => note.remove(), 6000);
       }
