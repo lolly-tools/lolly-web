@@ -254,6 +254,26 @@
 .history-btn:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .history-btn:disabled { opacity: 0.3; cursor: default; }
 
+/* Lang-fab riding along in the same compact row — same trigger/popover as the
+   regular .lang-fab, sized to match .history-btn instead of the 2.9em box. */
+.lang-fab-sm {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: hsl(var(--foreground));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.lang-fab-sm svg { width: 15px; height: 15px; }
+.lang-fab-sm:hover,
+.lang-fab-sm[aria-expanded="true"] { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+@media (pointer: coarse) {
+  .lang-fab-sm { width: 40px; height: 40px; }
+  .lang-fab-sm svg { width: 17px; height: 17px; }
+}
+
 /* Touch: larger tap targets for the header undo/redo (44px guideline). */
 @media (pointer: coarse) {
   .history-btn { width: 40px; height: 40px; }

@@ -13,6 +13,9 @@
  *
  * `active` is 'tools', 'projects' or 'catalog'.
  */
+import { t } from '../i18n.ts';
+import { escape } from '../utils.ts';
+
 export type ViewToggleKey = 'tools' | 'projects' | 'catalog';
 
 // Lucide glyphs — wrench (Tools), folder (Projects), layout-grid (Catalog).
@@ -27,14 +30,14 @@ export function viewToggle(active: ViewToggleKey): string {
     `<a href="${href}" class="view-toggle-opt${active === key ? ' is-active' : ''}"` +
     // The active tab is a no-op navigation → stays silent; the others play the "navigate"
     // swish (data-sfx is read by the app-wide sfx delegation in lib/sfx.ts).
-    `${active === key ? ' aria-current="page"' : ' data-sfx="navigate"'} data-vt="${key}" aria-label="${label}">` +
+    `${active === key ? ' aria-current="page"' : ' data-sfx="navigate"'} data-vt="${key}" aria-label="${escape(label)}">` +
     `<span class="view-toggle-ic" aria-hidden="true">${ICONS[key]}</span>` +
-    `<span class="view-toggle-label">${label}</span>` +
+    `<span class="view-toggle-label">${escape(label)}</span>` +
     `</a>`;
   return `
-    <nav class="view-toggle" aria-label="Switch between tools, projects and catalog">
-      ${opt('tools', '#', 'Tools')}
-      ${opt('projects', '#/p', 'Projects')}
-      ${opt('catalog', '#/c', 'Catalog')}
+    <nav class="view-toggle" aria-label="${escape(t('Switch between tools, projects and catalog'))}">
+      ${opt('tools', '#', t('Tools'))}
+      ${opt('projects', '#/p', t('Projects'))}
+      ${opt('catalog', '#/c', t('Catalog'))}
     </nav>`;
 }

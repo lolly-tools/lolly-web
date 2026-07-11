@@ -130,28 +130,34 @@
   border-radius: var(--radius);
 }
 
-/* ── Language switcher — a bare 32×32 icon (deliberately NOT boxed like the
-   filter/history FABs) beside the profile pill in the top-right cluster, on
-   Tools, Catalog, and Projects alike. Opens a popover the same way the filter
-   FAB does; the popover itself reuses the mobile profile menu's surface. ── */
+/* ── Language switcher — a regular icon FAB, matching .filter-fab/.history-fab's
+   box chrome exactly (bordered, backdrop-blurred, primary-colour) even though
+   its mark is a solid fill rather than a stroked Lucide glyph like its
+   neighbours — it reads as "one of the set", not a bare exception. Lives in
+   the top-right cluster on Tools, Catalog, and Projects, and floats top-right
+   in the Dashboard/Verify .plat-header. Opens a popover the same way the
+   filter FAB does; the popover itself reuses the mobile profile menu's surface. ── */
 .lang-fab {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 2.9em;
+  height: 2.9em;
   padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--primary));
+  border-radius: var(--radius);
+  background: hsl(var(--background) / 0.5);
+  color: hsl(var(--primary));
   cursor: pointer;
-  transition: color 0.12s, background-color 0.12s;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  transition: background 0.12s, color 0.12s;
 }
-.lang-fab svg { width: 100%; height: 100%; }
+.lang-fab svg { width: 18px; height: 18px; }
 .lang-fab:hover,
-.lang-fab[aria-expanded="true"] { color: hsl(var(--primary)); background: hsl(var(--primary) / 0.12); }
+.lang-fab[aria-expanded="true"] { background: hsl(var(--primary) / 0.14); }
 
 .lang-menu {
   position: fixed;

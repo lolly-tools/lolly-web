@@ -53,5 +53,8 @@
   "Your profile": "Tu perfil",
   "Your tools, your rules": "Tus herramientas, tus reglas",
   "default": "predeterminado",
-  "opt-in": "activar"
+  "opt-in": "activar",
+  "Projects": "Proyectos",
+  "Catalog": "Catálogo",
+  "Switch between tools, projects and catalog": "Cambiar entre herramientas, proyectos y catálogo"
 }

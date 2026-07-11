@@ -53,5 +53,8 @@
   "Your profile": "あなたのプロフィール",
   "Your tools, your rules": "あなたのツール、あなたのルール",
   "default": "既定",
-  "opt-in": "有効にする"
+  "opt-in": "有効にする",
+  "Projects": "プロジェクト",
+  "Catalog": "カタログ",
+  "Switch between tools, projects and catalog": "ツール、プロジェクト、カタログを切り替えます"
 }
