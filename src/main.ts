@@ -25,6 +25,7 @@ import { installGlobalReveal } from './lib/reveal.ts';
 import { initSelectPreview } from './select-preview.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
 import { announce } from './a11y.ts';
+import { beginViewFade } from './view-fade.ts';
 
 /** The web capability bridge, as produced by createBridge. */
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
@@ -127,6 +128,21 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   if (prevRouteName === 'tool' && route.name !== 'tool') playSfx('leaveSession');
   const returning = _lastRouteName === 'tool' && route.name === 'gallery';
   _lastRouteName = route.name;
+
+  // Cross-view fade: snapshot the OUTGOING view now — before its scoping class
+  // flips (below) or its markup is torn down (the clear/incoming mount below) — so
+  // the blank frame while the next view mounts is hidden behind the old pixels,
+  // which fade out once the new view has painted underneath. Only on a genuine
+  // view-NAME change (never a same-view refresh, e.g. the gallery's post-sync
+  // re-render), and not on the tool→gallery "return" (that path keeps its own
+  // instant feel). beginViewFade MOVES #view's nodes into the overlay, so the
+  // clear/mount below fill an already-empty container; it returns null under
+  // reduced motion or on first boot, collapsing to today's instant swap. commit()
+  // (after the mount, or in the catch) starts the fade — or drops the snapshot if
+  // superseded by a newer navigation.
+  const fade = (prevRouteName && route.name !== prevRouteName && !returning)
+    ? beginViewFade(view)
+    : null;
 
   view.classList.toggle('tool-view', route.name === 'tool');
   view.classList.toggle('gallery-view', route.name === 'gallery');
@@ -253,6 +269,9 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   }
   } catch (err) {
     console.error('View mount failed:', err);
+    // Fade the outgoing snapshot out either way, so it can't linger over the
+    // reload card (or the fresh shell after a stale-chunk reload).
+    fade?.commit();
     if (import.meta.env.PROD && looksLikeChunkError(err)) { recoverFromStaleShell(); return; }
     showReloadCard('This view didn’t finish loading. Reload to try again.');
     return;
@@ -273,6 +292,10 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     window.scrollTo(0, 0);
     view.scrollTop = 0;
   }
+
+  // The incoming view is mounted and scrolled to top — fade the outgoing snapshot
+  // out over it. A no-op when there was no fade (same-view refresh, reduced motion).
+  fade?.commit();
 
   announceRoute(route.name);
   const af = document.activeElement;

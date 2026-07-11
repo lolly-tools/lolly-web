@@ -7,5 +7,5 @@
       "@lolly/engine": ["../../engine/src/index.ts"]
     }
   },
-  "include": ["src/**/*.test.ts", "src/**/*.test.js"]
+  "include": ["src/**/*.test.ts", "src/**/*.test.js", "src/jsdom.d.ts"]
 }

@@ -152,8 +152,32 @@ body {
   }
   
   .app-view {
-  
+
     min-height: 100vh;
+  }
+
+  /* Cross-view fade overlay (view-fade.ts). A pinned snapshot of the OUTGOING view
+     that fades out while the incoming view paints underneath at full opacity — so
+     the blank frame between the two is never seen, and chrome common to both views
+     (the tab bar, the language button) stays solid through the fade. The overlay
+     inherits #view's own classes, so it's styled exactly as the view it froze; only
+     these extras are needed. Positioning + the opacity transition are set inline by
+     the module (so the tunable vars below are the single place to retime it).
+     Under reduced motion the module never creates the overlay — the display:none is
+     belt-and-suspenders. */
+  :root {
+    --view-fade-dur: 480ms;
+    --view-fade-ease: cubic-bezier(.22, .61, .36, 1);
+  }
+  .view-fade {
+    /* No `contain` here on purpose: contain: layout/paint would make the overlay a
+       containing block for the fixed top bar and pull it out of viewport-fixed
+       positioning. will-change:opacity promotes the fade to its own compositor
+       layer (cheap GPU opacity) without that side effect — see view-fade.ts. */
+    will-change: opacity;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .view-fade { display: none; }
   }
   
   /* Tool view is full-bleed — the sidebar provides its own visual edge. */

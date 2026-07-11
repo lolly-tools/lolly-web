@@ -108,14 +108,49 @@
 .me-download { margin-inline-start: auto; font-size: .76rem; }
 .me-export-note { margin: .4rem .8rem .7rem; font-size: .74rem; color: hsl(var(--muted-foreground)); }
 
+/* ── Grid area + zoom toolbar ── */
+.me-gridwrap { min-width: 0; display: flex; flex-direction: column; }
+.me-gridbar {
+  position: sticky; top: 56px; z-index: 15;
+  display: flex; justify-content: flex-end; align-items: center;
+  padding: .55rem 1.2rem;
+  background: hsl(var(--background) / .9);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+/* Zoom cluster: [Fit] | [−] N across [+] */
+.me-zoom {
+  display: inline-flex; align-items: center; gap: .1rem;
+  padding: .2rem;
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .9);
+  background: hsl(var(--card));
+}
+.me-zoom-btn {
+  display: grid; place-items: center; width: 1.95rem; height: 1.95rem;
+  border: 0; border-radius: calc(var(--radius) * .6);
+  background: transparent; color: hsl(var(--foreground)); cursor: pointer;
+  transition: background .12s ease;
+}
+.me-zoom-btn svg { width: 16px; height: 16px; }
+.me-zoom-btn:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.me-zoom-btn:disabled { opacity: .38; cursor: default; }
+.me-zoom-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+/* Fit sits apart from the −/read/+ stepper. */
+.me-zoom-fit { border-inline-end: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6) 0 0 calc(var(--radius) * .6); margin-inline-end: .1rem; }
+.me-zoom-read {
+  min-width: 4.4rem; text-align: center;
+  font-size: .72rem; font-weight: 600; color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Canvas grid ── */
 .me-grid {
   display: grid; gap: 1rem; padding: 1rem 1.2rem 2rem;
-  grid-template-columns: repeat(var(--me-cols, 2), minmax(0, 1fr));
+  /* Auto-fill from a user-controlled card width (see the zoom control in
+     multi-edit.ts). min(…,100%) keeps a single wide card from overflowing a
+     narrow column; 1fr lets the row stretch to fill leftover space. */
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--me-card-w, 340px), 100%), 1fr));
   align-content: start;
 }
-@media (max-width: 1200px) { .me-grid { grid-template-columns: repeat(min(var(--me-cols, 2), 2), minmax(0, 1fr)); } }
-@media (max-width: 640px) { .me-grid { grid-template-columns: 1fr; } }
 
 .me-cell {
   margin: 0; cursor: pointer;

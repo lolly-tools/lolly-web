@@ -30,6 +30,8 @@ import { toCssPx } from '@lolly/engine';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import { askLollyIntent } from './picker.ts';
 import { announce } from '../a11y.ts';
+import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 import type { ColorFieldValue } from '../components/color-field.ts';
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
 import {
@@ -662,7 +664,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const emptyHint = document.createElement('div');
   emptyHint.className = 'fc-empty';
   emptyHint.hidden = true;
-  emptyHint.innerHTML = '<button type="button" class="fc-empty-add">+ Add your first card</button>';
+  emptyHint.innerHTML = `<button type="button" class="fc-empty-add">+ ${t('Add your first card')}</button>`;
   emptyHint.querySelector('button')!.addEventListener('click', () => {
     (toolbar.querySelector('.fc-btn-add') as HTMLElement | null)?.click();
   });
@@ -723,7 +725,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const toolbar = document.createElement('div');
   toolbar.className = 'fc-toolbar';
   toolbar.setAttribute('role', 'toolbar');
-  toolbar.setAttribute('aria-label', 'Editor tools');
+  toolbar.setAttribute('aria-label', t('Editor tools'));
   toolbarDock.appendChild(toolbar);
   stageEl.appendChild(toolbarDock);
 
@@ -753,9 +755,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // (see .tool-layout.is-editor .render-pill). Callbacks delegate to the tool's
     // existing handlers (opts.actions) so there's no duplicated export/save logic.
     if (actions) {
-      toolBtn('Export', SVG.exportUp, () => actions.export(), 'fc-action fc-action-primary');
+      toolBtn(t('Export'), SVG.exportUp, () => actions.export(), 'fc-action fc-action-primary');
       if (actions.canSave !== false) {
-        const saveBtn = toolBtn('Save to your library', SVG.save, () => actions.save(), 'fc-action fc-action-save');
+        const saveBtn = toolBtn(t('Save to your library'), SVG.save, () => actions.save(), 'fc-action fc-action-save');
         const ref = actions.dirtyRef;
         if (ref) {
           // Mirror the render pill's amber "unsaved" cue onto the rail Save icon.
@@ -779,7 +781,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const hist = document.createElement('div');
       hist.className = 'fc-history';
       hist.setAttribute('role', 'group');
-      hist.setAttribute('aria-label', 'History — go back or forward');
+      hist.setAttribute('aria-label', t('History — go back or forward'));
       hist.addEventListener('pointerdown', (e) => e.stopPropagation());
       const histBtn = (label: string, svg: string, run: () => void): HTMLButtonElement => {
         const b = document.createElement('button');
@@ -792,8 +794,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         hist.appendChild(b);
         return b;
       };
-      const undoBtn = histBtn('Undo — step back', SVG.undo, () => history.undo());
-      const redoBtn = histBtn('Redo — step forward', SVG.redo, () => history.redo());
+      const undoBtn = histBtn(t('Undo — step back'), SVG.undo, () => history.undo());
+      const redoBtn = histBtn(t('Redo — step forward'), SVG.redo, () => history.redo());
       history.register((canUndo, canRedo) => {
         // Same focus handoff as the header buttons: a half that disables itself
         // under focus hands off to its enabled sibling instead of dropping focus
@@ -807,22 +809,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       toolbar.appendChild(hist);
       const hsep = document.createElement('div'); hsep.className = 'fc-sep'; toolbar.appendChild(hsep);
     }
-    const add = toolBtn('Add a box', SVG.add, () => openAddMenu(add), 'fc-btn-add');
+    const add = toolBtn(t('Add a box'), SVG.add, () => openAddMenu(add), 'fc-btn-add');
     if (armedKind) add.classList.add('is-armed');
     // Connect mode (opt-in): link cards with routed connector lines. Click a source
     // card, then each target; click a card twice or hit Esc to stop.
     if (connectCfg) {
-      const cbtn = toolBtn('Connect cards — click a card, then the ones it links to', SVG.connect,
+      const cbtn = toolBtn(t('Connect cards — click a card, then the ones it links to'), SVG.connect,
         () => { armedConnect ? disarmConnect() : armConnect(); }, 'fc-btn-connect');
       if (armedConnect) cbtn.classList.add('is-armed');
-      toolBtn('Auto-arrange the connected cards', SVG.tidy, () => autoLayout());
+      toolBtn(t('Auto-arrange the connected cards'), SVG.tidy, () => autoLayout());
     }
     // One "Arrange" menu — align + distribute + stacking order + group + clip
     // (previously two separate rail buttons).
-    arrangeBtn = toolBtn('Arrange — align, distribute, order, group', SVG.align, () => openArrangeMenu());
+    arrangeBtn = toolBtn(t('Arrange — align, distribute, order, group'), SVG.align, () => openArrangeMenu());
     // Snap-to-grid toggle (opt-in).
     if (cv.grid) {
-      const gbtn = toolBtn('Snap to grid', SVG.grid, () => {
+      const gbtn = toolBtn(t('Snap to grid'), SVG.grid, () => {
         gridOn = !gridOn;
         gbtn.classList.toggle('is-armed', gridOn);
         gbtn.setAttribute('aria-pressed', String(gridOn));
@@ -830,28 +832,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       gbtn.setAttribute('aria-pressed', String(gridOn));
       if (gridOn) gbtn.classList.add('is-armed');
     }
-    if (pages) toolBtn('Pages & page size', SVG.pages, (b) => openPagesMenu(b));
-    else if (setCanvasSize) toolBtn('Canvas size', SVG.size, (b) => openSizeMenu(b));
+    if (pages) toolBtn(t('Pages & page size'), SVG.pages, (b) => openPagesMenu(b));
+    else if (setCanvasSize) toolBtn(t('Canvas size'), SVG.size, (b) => openSizeMenu(b));
     // Overflow "More" — the occasional items (copy, copy-link, document info, import)
     // collapse into one menu instead of a standalone icon each.
     let moreBtn: HTMLButtonElement | null = null;
     const openMore = (): void => {
       const items: PopItem[] = [];
       if (actions) {
-        items.push({ label: 'Copy image to clipboard', icon: icon(SVG.dup), run: () => actions.copy() });
-        items.push({ label: 'Copy a shareable link', icon: icon(SVG.shareLink), run: () => actions.share() });
+        items.push({ label: t('Copy image to clipboard'), icon: icon(SVG.dup), run: () => actions.copy() });
+        items.push({ label: t('Copy a shareable link'), icon: icon(SVG.shareLink), run: () => actions.share() });
       }
       if ((info || importCfg) && items.length) items.push({ sep: true });
-      if (info) items.push({ label: 'Document info', icon: icon(SVG.info), run: () => openInfoPanel(moreBtn!) });
-      if (importCfg) items.push({ label: 'Import a design', icon: icon(SVG.importFile), run: () => openImportPanel(moreBtn!) });
+      if (info) items.push({ label: t('Document info'), icon: icon(SVG.info), run: () => openInfoPanel(moreBtn!) });
+      if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), run: () => openImportPanel(moreBtn!) });
       if (items.length) spawnPopover(moreBtn!, items);
     };
-    if (actions || info || importCfg) moreBtn = toolBtn('More', SVG.more, () => openMore());
+    if (actions || info || importCfg) moreBtn = toolBtn(t('More'), SVG.more, () => openMore());
     const sep = document.createElement('div'); sep.className = 'fc-sep'; toolbar.appendChild(sep);
     // Canvas background — the app's shared colour picker (swatches + hex + alpha).
     const bgWrap = document.createElement('div');
     bgWrap.className = 'fc-btn fc-color-btn';
-    bgWrap.title = 'Canvas background';
+    bgWrap.title = t('Canvas background');
     bgWrap.innerHTML = colorFieldHtml('fc-bg', getBg(), { float: true });
     bgWrap.addEventListener('pointerdown', (e) => e.stopPropagation());
     toolbar.appendChild(bgWrap);
@@ -916,13 +918,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     panel.style.padding = '12px';
     panel.style.whiteSpace = 'normal';
     panel.innerHTML =
-      '<div style="font-weight:700;margin-bottom:6px;">Import a design</div>' +
+      `<div style="font-weight:700;margin-bottom:6px;">${t('Import a design')}</div>` +
       '<p style="margin:0 0 10px;font-size:12px;line-height:1.45;opacity:.82;">' +
-      'Drop a Figma <b>.fig</b> / SVG, a Penpot <b>.penpot</b>, an Illustrator <b>.ai</b> or <b>.pdf</b>, ' +
-      'or an InDesign <b>.idml</b> (File → Export → InDesign Markup). ' +
-      '(For editable text from a Figma <b>SVG</b>, uncheck “Outline text” on export.)</p>' +
+      t('Drop a Figma <b>.fig</b> / SVG, a Penpot <b>.penpot</b>, an Illustrator <b>.ai</b> or <b>.pdf</b>, or an InDesign <b>.idml</b> (File → Export → InDesign Markup). (For editable text from a Figma <b>SVG</b>, uncheck “Outline text” on export.)') +
+      '</p>' +
       '<button type="button" class="fc-import-choose" style="width:100%;padding:8px 12px;border:0;border-radius:8px;' +
-      'background:#30BA78;color:#0c322c;font-weight:700;font-size:13px;cursor:pointer;">Choose file…</button>' +
+      `background:#30BA78;color:#0c322c;font-weight:700;font-size:13px;cursor:pointer;">${t('Choose file…')}</button>` +
       '<div class="fc-import-status" role="status" aria-live="polite" style="margin-top:8px;font-size:12px;line-height:1.4;min-height:16px;"></div>';
     panel.addEventListener('pointerdown', (e) => e.stopPropagation());
     stageEl.appendChild(panel);
@@ -945,7 +946,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       fileEl.value = '';
       if (!f) return;
       status.style.color = '';
-      status.textContent = 'Importing…';
+      status.textContent = t('Importing…');
       chooseBtn.disabled = true;
       try {
         const { parseDesignFile } = await import('./design-import.ts');
@@ -953,16 +954,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // instead of silently importing the first.
         const res = await parseDesignFile(f, { host: host as any, log: (m: string) => { status.textContent = m; }, interactive: true });
         const boxes = (Array.isArray(res.boxes) ? res.boxes : []) as Box[];
-        if (!boxes.length) throw new Error('Nothing importable was found in that file.');
+        if (!boxes.length) throw new Error(t('Nothing importable was found in that file.'));
         selection = new Set<string>();
         commit(boxes);
         if (setCanvasSize && res.width > 0 && res.height > 0) setCanvasSize(res.width, res.height, 'px');
         status.style.color = '#128a5b';
-        status.textContent = `Imported ${boxes.length} object${boxes.length === 1 ? '' : 's'}.`;
+        status.textContent = boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length });
         setTimeout(() => { if (popover === panel) closePopover(); }, 1400);
       } catch (err) {
         status.style.color = '#c0362c';
-        status.textContent = ((err as any) && (err as any).message) || 'Import failed.';
+        status.textContent = ((err as any) && (err as any).message) || t('Import failed.');
       } finally {
         chooseBtn.disabled = false;
       }
@@ -975,37 +976,37 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const has = selection.size > 0;
     const multi = selection.size >= 2;
     const items: PopItem[] = [
-      { label: 'Duplicate', icon: icon(SVG.dup), run: () => duplicateSelection(), disabled: !has },
-      { label: 'Delete', icon: icon(SVG.trash), run: () => deleteSelection(), disabled: !has, danger: true },
+      { label: t('Duplicate'), icon: icon(SVG.dup), run: () => duplicateSelection(), disabled: !has },
+      { label: t('Delete'), icon: icon(SVG.trash), run: () => deleteSelection(), disabled: !has, danger: true },
       { sep: true },
       // Stacking order — icons only, 2×2: columns are magnitude (one step │ all the
       // way), rows are direction (up = forward/front, down = backward/back).
       { grid: [
-        { label: 'Bring forward', icon: icon(SVG.forward), run: () => applyZ('forward'), disabled: !has },
-        { label: 'Bring to front', icon: icon(SVG.front), run: () => applyZ('front'), disabled: !has },
-        { label: 'Send backward', icon: icon(SVG.backward), run: () => applyZ('backward'), disabled: !has },
-        { label: 'Send to back', icon: icon(SVG.back), run: () => applyZ('back'), disabled: !has },
+        { label: t('Bring forward'), icon: icon(SVG.forward), run: () => applyZ('forward'), disabled: !has },
+        { label: t('Bring to front'), icon: icon(SVG.front), run: () => applyZ('front'), disabled: !has },
+        { label: t('Send backward'), icon: icon(SVG.backward), run: () => applyZ('backward'), disabled: !has },
+        { label: t('Send to back'), icon: icon(SVG.back), run: () => applyZ('back'), disabled: !has },
       ], cols: 2 },
       { sep: true },
       // Align — icons only, 3 across × 2 rows (L/C/R then T/M/B).
       { grid: [
-        { label: 'Align left', icon: icon(SVG.alignL), run: () => applyAlign('left'), disabled: !has },
-        { label: 'Align centre', icon: icon(SVG.alignC), run: () => applyAlign('hcentre'), disabled: !has },
-        { label: 'Align right', icon: icon(SVG.alignR), run: () => applyAlign('right'), disabled: !has },
-        { label: 'Align top', icon: icon(SVG.alignT), run: () => applyAlign('top'), disabled: !has },
-        { label: 'Align middle', icon: icon(SVG.alignM), run: () => applyAlign('vcentre'), disabled: !has },
-        { label: 'Align bottom', icon: icon(SVG.alignB), run: () => applyAlign('bottom'), disabled: !has },
+        { label: t('Align left'), icon: icon(SVG.alignL), run: () => applyAlign('left'), disabled: !has },
+        { label: t('Align centre'), icon: icon(SVG.alignC), run: () => applyAlign('hcentre'), disabled: !has },
+        { label: t('Align right'), icon: icon(SVG.alignR), run: () => applyAlign('right'), disabled: !has },
+        { label: t('Align top'), icon: icon(SVG.alignT), run: () => applyAlign('top'), disabled: !has },
+        { label: t('Align middle'), icon: icon(SVG.alignM), run: () => applyAlign('vcentre'), disabled: !has },
+        { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => applyAlign('bottom'), disabled: !has },
       ], cols: 3 },
       // Distribute — icons only, one row of 2 (needs 3+ boxes).
       { grid: [
-        { label: 'Distribute horizontally', icon: icon(SVG.distH), run: () => applyDistribute('h'), disabled: selection.size < 3 },
-        { label: 'Distribute vertically', icon: icon(SVG.distV), run: () => applyDistribute('v'), disabled: selection.size < 3 },
+        { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => applyDistribute('h'), disabled: selection.size < 3 },
+        { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => applyDistribute('v'), disabled: selection.size < 3 },
       ], cols: 2 },
       { sep: true },
-      { label: 'Group', icon: icon(SVG.group), run: () => groupSelection(), disabled: !multi },
-      { label: 'Ungroup', icon: icon(SVG.ungroup), run: () => ungroupSelection(), disabled: !selHasGroup() },
-      { label: 'Clip to bottom shape', icon: icon(SVG.clip), run: () => clipSelection(), disabled: !multi },
-      { label: 'Release clip', icon: icon(SVG.unclip), run: () => releaseClip(), disabled: !selHasClip() },
+      { label: t('Group'), icon: icon(SVG.group), run: () => groupSelection(), disabled: !multi },
+      { label: t('Ungroup'), icon: icon(SVG.ungroup), run: () => ungroupSelection(), disabled: !selHasGroup() },
+      { label: t('Clip to bottom shape'), icon: icon(SVG.clip), run: () => clipSelection(), disabled: !multi },
+      { label: t('Release clip'), icon: icon(SVG.unclip), run: () => releaseClip(), disabled: !selHasClip() },
     ];
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
@@ -1034,7 +1035,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const ADD_KIND_ICON: Record<string, string> = { image: SVG.image, text: SVG.type, box: SVG.boxKind, lottie: SVG.anim, video: SVG.video };
   function openAddMenu(anchor: HTMLElement): void {
     spawnPopover(anchor, addKinds.map((k) => ({
-      label: k.label || k.id,
+      label: k.label ? t(k.label) : k.id,
       icon: icon(ADD_KIND_ICON[k.id] || SVG.add),
       run: () => armCreate(k),
     })));
@@ -1046,29 +1047,29 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     spawnPopover(arrangeBtn!, [
       // Align — a compact 3×2 icon grid (left/centre/right · top/middle/bottom).
       { cols: 3, grid: [
-        { label: 'Align left', icon: icon(SVG.alignL), run: () => applyAlign('left') },
-        { label: 'Align centre', icon: icon(SVG.alignC), run: () => applyAlign('hcentre') },
-        { label: 'Align right', icon: icon(SVG.alignR), run: () => applyAlign('right') },
-        { label: 'Align top', icon: icon(SVG.alignT), run: () => applyAlign('top') },
-        { label: 'Align middle', icon: icon(SVG.alignM), run: () => applyAlign('vcentre') },
-        { label: 'Align bottom', icon: icon(SVG.alignB), run: () => applyAlign('bottom') },
+        { label: t('Align left'), icon: icon(SVG.alignL), run: () => applyAlign('left') },
+        { label: t('Align centre'), icon: icon(SVG.alignC), run: () => applyAlign('hcentre') },
+        { label: t('Align right'), icon: icon(SVG.alignR), run: () => applyAlign('right') },
+        { label: t('Align top'), icon: icon(SVG.alignT), run: () => applyAlign('top') },
+        { label: t('Align middle'), icon: icon(SVG.alignM), run: () => applyAlign('vcentre') },
+        { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => applyAlign('bottom') },
       ] },
       // Distribute — needs 3+ selected, so disabled otherwise.
       { cols: 2, grid: [
-        { label: 'Distribute horizontally', icon: icon(SVG.distH), run: () => applyDistribute('h'), disabled: !canDist },
-        { label: 'Distribute vertically', icon: icon(SVG.distV), run: () => applyDistribute('v'), disabled: !canDist },
+        { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => applyDistribute('h'), disabled: !canDist },
+        { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => applyDistribute('v'), disabled: !canDist },
       ] },
       { sep: true },
-      { label: 'Bring to front', icon: icon(SVG.front), run: () => has && applyZ('front') },
-      { label: 'Bring forward', icon: icon(SVG.forward), run: () => has && applyZ('forward') },
-      { label: 'Send backward', icon: icon(SVG.backward), run: () => has && applyZ('backward') },
-      { label: 'Send to back', icon: icon(SVG.back), run: () => has && applyZ('back') },
+      { label: t('Bring to front'), icon: icon(SVG.front), run: () => has && applyZ('front') },
+      { label: t('Bring forward'), icon: icon(SVG.forward), run: () => has && applyZ('forward') },
+      { label: t('Send backward'), icon: icon(SVG.backward), run: () => has && applyZ('backward') },
+      { label: t('Send to back'), icon: icon(SVG.back), run: () => has && applyZ('back') },
       { sep: true },
-      { label: 'Group', icon: icon(SVG.group), run: () => multi && groupSelection() },
-      { label: 'Ungroup', icon: icon(SVG.ungroup), run: () => ungroupSelection() },
+      { label: t('Group'), icon: icon(SVG.group), run: () => multi && groupSelection() },
+      { label: t('Ungroup'), icon: icon(SVG.ungroup), run: () => ungroupSelection() },
       { sep: true },
-      { label: 'Clip to bottom shape', icon: icon(SVG.clip), run: () => multi && clipSelection() },
-      { label: 'Release clip', icon: icon(SVG.unclip), run: () => releaseClip() },
+      { label: t('Clip to bottom shape'), icon: icon(SVG.clip), run: () => multi && clipSelection() },
+      { label: t('Release clip'), icon: icon(SVG.unclip), run: () => releaseClip() },
     ]);
   }
 
@@ -1083,17 +1084,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const fillVal = cfg.fillField ? (first[cfg.fillField] || 'transparent') : '';
     const fgVal = cfg.textColorField ? (first[cfg.textColorField] || '#0c322c') : '#0c322c';
     ctxbar.innerHTML = `
-      ${cfg.fillField ? `<span class="fc-cfield" title="Fill">${colorFieldHtml('fc-fill', fillVal, { float: true })}</span>` : ''}
-      ${cfg.textColorField ? `<span class="fc-cfield" title="Text colour">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : ''}
-      <button type="button" class="fc-cbtn" data-cx="edit" title="Edit text (double-click)" aria-label="Edit text">${icon(SVG.pencil)}</button>
-      <button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" title="Text — size, font, weight, line height, kerning, ligatures, alignment" aria-label="Text options">Aa</button>
-      <button type="button" class="fc-cbtn" data-cx="setimg" title="Set image" aria-label="Set image">${icon(SVG.image)}</button>
-      <button type="button" class="fc-cbtn" data-cx="more" title="More — shape, radius, opacity, fit, blend, shadow" aria-label="More options">${icon(SVG.more)}</button>
+      ${cfg.fillField ? `<span class="fc-cfield" title="${escape(t('Fill'))}">${colorFieldHtml('fc-fill', fillVal, { float: true })}</span>` : ''}
+      ${cfg.textColorField ? `<span class="fc-cfield" title="${escape(t('Text colour'))}">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : ''}
+      <button type="button" class="fc-cbtn" data-cx="edit" title="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>
+      <button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" title="${escape(t('Text — size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>
+      <button type="button" class="fc-cbtn" data-cx="setimg" title="${escape(t('Set image'))}" aria-label="${escape(t('Set image'))}">${icon(SVG.image)}</button>
+      <button type="button" class="fc-cbtn" data-cx="more" title="${escape(t('More — shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>
       <span class="fc-sep fc-sep-v"></span>
-      <button type="button" class="fc-cbtn" data-cx="dup" title="Duplicate" aria-label="Duplicate">${icon(SVG.dup)}</button>
-      <button type="button" class="fc-cbtn fc-danger" data-cx="del" title="Delete" aria-label="Delete">${icon(SVG.trash)}</button>
-      ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" title="Select more — tap cards to add" aria-label="Select more cards">${icon(SVG.add)}</button>` : ''}
-      <button type="button" class="fc-readout" data-cx="dims" data-cx-readout title="Edit position & size" aria-label="Edit position and size"></button>`;
+      <button type="button" class="fc-cbtn" data-cx="dup" title="${escape(t('Duplicate'))}" aria-label="${escape(t('Duplicate'))}">${icon(SVG.dup)}</button>
+      <button type="button" class="fc-cbtn fc-danger" data-cx="del" title="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">${icon(SVG.trash)}</button>
+      ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" title="${escape(t('Select more — tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
+      <button type="button" class="fc-readout" data-cx="dims" data-cx-readout title="${escape(t('Edit position & size'))}" aria-label="${escape(t('Edit position and size'))}"></button>`;
     wireColorField(ctxbar, {
       onChange: (id, val) => {
         if (id === 'fc-fill') setField(cfg.fillField, unwrapColor(val));
@@ -1109,7 +1110,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       else if (cx === 'del') deleteSelection();
       else if (cx === 'setimg') pickImage();
       else if (cx === 'more') openMorePanel(b);
-      else if (cx === 'multi') { multiTapMode = !multiTapMode; b.classList.toggle('is-on', multiTapMode); b.setAttribute('aria-pressed', String(multiTapMode)); announce(multiTapMode ? 'Select more — tap cards to add them.' : 'Multi-select off.'); }
+      else if (cx === 'multi') { multiTapMode = !multiTapMode; b.classList.toggle('is-on', multiTapMode); b.setAttribute('aria-pressed', String(multiTapMode)); announce(multiTapMode ? t('Select more — tap cards to add them.') : t('Multi-select off.')); }
       else if (cx === 'dims') openDimsPanel(b);
     }));
   }
@@ -1155,15 +1156,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-size-panel fc-pages-panel';
     p.innerHTML =
-      '<div class="fc-panel-head">Pages</div>' +
+      `<div class="fc-panel-head">${t('Pages')}</div>` +
       '<div class="fc-row fc-pages-step">' +
-        `<button type="button" class="fc-step-btn" data-pg="dec" aria-label="Fewer pages"${cur <= pages.min ? ' disabled' : ''}>${icon(SVG.minus)}</button>` +
+        `<button type="button" class="fc-step-btn" data-pg="dec" aria-label="${escape(t('Fewer pages'))}"${cur <= pages.min ? ' disabled' : ''}>${icon(SVG.minus)}</button>` +
         `<b class="fc-pages-count" data-pg-count>${cur}</b>` +
-        `<button type="button" class="fc-step-btn" data-pg="inc" aria-label="More pages"${cur >= pages.max ? ' disabled' : ''}>${icon(SVG.add)}</button>` +
+        `<button type="button" class="fc-step-btn" data-pg="inc" aria-label="${escape(t('More pages'))}"${cur >= pages.max ? ' disabled' : ''}>${icon(SVG.add)}</button>` +
       '</div>' +
-      '<div class="fc-panel-head">Page size</div>' +
+      `<div class="fc-panel-head">${t('Page size')}</div>` +
       '<div class="fc-size-presets">' +
-        PAGE_PRESETS.map(([label, w, h]) => `<button type="button" class="fc-size-preset${w === pw && h === ph ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${label}</b><span>${w}×${h}</span></button>`).join('') +
+        PAGE_PRESETS.map(([label, w, h]) => `<button type="button" class="fc-size-preset${w === pw && h === ph ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${escape(t(label))}</b><span>${w}×${h}</span></button>`).join('') +
       '</div>';
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     const setCount = (n: number): void => {
@@ -1194,13 +1195,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-size-panel';
     p.innerHTML =
-      '<div class="fc-panel-head">Canvas size</div>' +
+      `<div class="fc-panel-head">${t('Canvas size')}</div>` +
       '<div class="fc-size-presets">' +
-      SIZE_PRESETS.map(([label, w, h]) => `<button type="button" class="fc-size-preset${sizeUnit === 'px' && w === d.w && h === d.h ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${label}</b><span>${w}×${h}</span></button>`).join('') +
+      SIZE_PRESETS.map(([label, w, h]) => `<button type="button" class="fc-size-preset${sizeUnit === 'px' && w === d.w && h === d.h ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${escape(t(label))}</b><span>${w}×${h}</span></button>`).join('') +
       '</div>' +
-      `<label class="fc-row"><span>Units</span><select data-sz="unit">${SIZE_UNITS.map((u) => `<option value="${u}"${u === sizeUnit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>` +
-      `<label class="fc-row"><span>Width</span><input type="number" min="1" max="30000" step="any" data-sz="w" value="${dispW}"><b data-sz-unit>${sizeUnit}</b></label>` +
-      `<label class="fc-row"><span>Height</span><input type="number" min="1" max="30000" step="any" data-sz="h" value="${dispH}"><b data-sz-unit>${sizeUnit}</b></label>`;
+      `<label class="fc-row"><span>${t('Units')}</span><select data-sz="unit">${SIZE_UNITS.map((u) => `<option value="${u}"${u === sizeUnit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>` +
+      `<label class="fc-row"><span>${t('Width')}</span><input type="number" min="1" max="30000" step="any" data-sz="w" value="${dispW}"><b data-sz-unit>${sizeUnit}</b></label>` +
+      `<label class="fc-row"><span>${t('Height')}</span><input type="number" min="1" max="30000" step="any" data-sz="h" value="${dispH}"><b data-sz-unit>${sizeUnit}</b></label>`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     const wIn = () => p.querySelector<HTMLInputElement>('[data-sz="w"]')!;
     const hIn = () => p.querySelector<HTMLInputElement>('[data-sz="h"]')!;
@@ -1258,25 +1259,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const shBlur = Math.round(clampN(parseFloat(String(b[cfg.shadowBlurField])), 10, 0, 300));
     // Row with a leading icon label (keeps the "clean up + use icons" intent while
     // staying legible). segRow hosts a segmented control; iconRow a slider/select.
-    const iconRow = (ic: string, lbl: string, ctrl: string): string => `<label class="fc-row"><span class="fc-row-lbl" title="${lbl}">${icon(ic)}<span>${lbl}</span></span>${ctrl}</label>`;
-    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" title="${lbl}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
+    const iconRow = (ic: string, lbl: string, ctrl: string): string => `<label class="fc-row"><span class="fc-row-lbl" title="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${ctrl}</label>`;
+    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" title="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
     const p = document.createElement('div');
     p.className = 'fc-panel fc-more-panel';
     p.innerHTML = `
-      ${cfg.shapeField ? segRow(SVG.shRounded, 'Shape', segHtml(cfg.shapeField, shapeCur, [['rect', 'Rectangle', SVG.shRect], ['rounded', 'Rounded', SVG.shRounded], ['pill', 'Pill', SVG.shPill], ['ellipse', 'Ellipse', SVG.shEllipse]])) : ''}
-      ${cfg.radiusField ? iconRow(SVG.radius, 'Corner radius', `<input type="range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
-      ${cfg.opacityField ? iconRow(SVG.opacity, 'Opacity', `<input type="range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
-      ${cfg.fitField ? segRow(SVG.fitContain, 'Image fit', segHtml(cfg.fitField, fitCur, [['contain', 'Contain', SVG.fitContain], ['cover', 'Cover (crop)', SVG.fitCover], ['fill', 'Stretch', SVG.fitFill]])) : ''}
-      ${cfg.imgPosField ? segRow(SVG.fitPos, 'Image position', posGridHtml(cfg.imgPosField, posCur)) : ''}
-      ${cfg.blendField ? iconRow(SVG.blend, 'Blend mode', `<select data-mp="blend">
-        ${['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'].map((m) => opt(m, m[0]!.toUpperCase() + m.slice(1).replace('-', ' '), blendCur)).join('')}
+      ${cfg.shapeField ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, [['rect', t('Rectangle'), SVG.shRect], ['rounded', t('Rounded'), SVG.shRounded], ['pill', t('Pill'), SVG.shPill], ['ellipse', t('Ellipse'), SVG.shEllipse]])) : ''}
+      ${cfg.radiusField ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
+      ${cfg.opacityField ? iconRow(SVG.opacity, t('Opacity'), `<input type="range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
+      ${cfg.fitField ? segRow(SVG.fitContain, t('Image fit'), segHtml(cfg.fitField, fitCur, [['contain', t('Contain'), SVG.fitContain], ['cover', t('Cover (crop)'), SVG.fitCover], ['fill', t('Stretch'), SVG.fitFill]])) : ''}
+      ${cfg.imgPosField ? segRow(SVG.fitPos, t('Image position'), posGridHtml(cfg.imgPosField, posCur)) : ''}
+      ${cfg.blendField ? iconRow(SVG.blend, t('Blend mode'), `<select data-mp="blend">
+        ${['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'].map((m) => opt(m, t(m[0]!.toUpperCase() + m.slice(1).replace('-', ' ')), blendCur)).join('')}
       </select>`) : ''}
-      ${cfg.shadowField ? `<div class="fc-panel-sub">Shadow</div>
-        ${segRow(SVG.shadowIc, 'Apply to', segHtml(cfg.shadowField, shadowCur, [['none', 'None'], ['box', 'Box'], ['text', 'Text'], ['content', 'Content']]))}
-        <label class="fc-row"><span class="fc-row-lbl">Colour</span><span class="fc-cfield">${colorFieldHtml('fc-shadow', shColor, { float: true })}</span></label>
-        <label class="fc-row"><span class="fc-row-lbl">X</span><input type="range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
-        <label class="fc-row"><span class="fc-row-lbl">Y</span><input type="range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
-        <label class="fc-row"><span class="fc-row-lbl">Blur</span><input type="range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}`;
+      ${cfg.shadowField ? `<div class="fc-panel-sub">${t('Shadow')}</div>
+        ${segRow(SVG.shadowIc, t('Apply to'), segHtml(cfg.shadowField, shadowCur, [['none', t('None')], ['box', t('Box')], ['text', t('Text')], ['content', t('Content')]]))}
+        <label class="fc-row"><span class="fc-row-lbl">${t('Colour')}</span><span class="fc-cfield">${colorFieldHtml('fc-shadow', shColor, { float: true })}</span></label>
+        <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
+        <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
+        <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     wireSegs(p);
     const MP_FIELD: Record<string, string> = { radius: cfg.radiusField, opacity: cfg.opacityField, shx: cfg.shadowXField, shy: cfg.shadowYField, shblur: cfg.shadowBlurField };
@@ -1321,14 +1322,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-dims-panel';
     p.innerHTML =
-      '<div class="fc-panel-head">Position &amp; size</div>' +
+      `<div class="fc-panel-head">${t('Position &amp; size')}</div>` +
       '<div class="fc-dims">' +
-        `<div class="fc-dims-row"><span class="fc-dims-ic" title="Position">${icon(SVG.move)}</span>${cell('X', cfg.xField, x)}${cell('Y', cfg.yField, y)}</div>` +
-        `<div class="fc-dims-row"><span class="fc-dims-ic" title="Size">${icon(SVG.size)}</span>${cell('W', cfg.wField, w, true)}${cell('H', cfg.hField, h, true)}</div>` +
+        `<div class="fc-dims-row"><span class="fc-dims-ic" title="${escape(t('Position'))}">${icon(SVG.move)}</span>${cell(t('X'), cfg.xField, x)}${cell(t('Y'), cfg.yField, y)}</div>` +
+        `<div class="fc-dims-row"><span class="fc-dims-ic" title="${escape(t('Size'))}">${icon(SVG.size)}</span>${cell(t('W'), cfg.wField, w, true)}${cell(t('H'), cfg.hField, h, true)}</div>` +
         (cfg.rotationField
-          ? `<div class="fc-dims-row fc-dims-rot"><span class="fc-dims-ic" title="Rotation">${icon(SVG.rotate)}</span>` +
+          ? `<div class="fc-dims-row fc-dims-rot"><span class="fc-dims-ic" title="${escape(t('Rotation'))}">${icon(SVG.rotate)}</span>` +
             `<label class="fc-dims-f"><input type="number" min="-180" max="180" data-dm="${cfg.rotationField}" value="${rot}"><i>°</i></label>` +
-            `<input type="range" class="fc-dims-slider" min="-180" max="180" value="${rot}" aria-label="Rotation" data-dm-slider></div>`
+            `<input type="range" class="fc-dims-slider" min="-180" max="180" value="${rot}" aria-label="${escape(t('Rotation'))}" data-dm-slider></div>`
           : '') +
       '</div>';
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -1368,24 +1369,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-info-panel';
     p.innerHTML =
-      '<div class="fc-panel-head">Document</div>' +
-      `<label class="fc-row"><span>Name</span><input type="text" data-info="filename" value="${escapeHtml(fname)}" placeholder="Untitled"></label>` +
+      `<div class="fc-panel-head">${t('Document')}</div>` +
+      `<label class="fc-row"><span>${t('Name')}</span><input type="text" data-info="filename" value="${escapeHtml(fname)}" placeholder="${escapeHtml(t('Untitled'))}"></label>` +
       '<div class="fc-info-meta">' +
-        '<div class="fc-info-line"><span>Last edited</span><b data-info-edited>…</b></div>' +
-        `<div class="fc-info-line"><span>Canvas</span><b>${d.w} × ${d.h} px</b></div>` +
-        (info?.name ? `<div class="fc-info-line"><span>Tool</span><b>${escapeHtml(info!.name)}${info!.version ? ' · v' + escapeHtml(info!.version) : ''}</b></div>` : '') +
-        (info?.status ? `<div class="fc-info-line"><span>Status</span><b>${escapeHtml(info!.status)}</b></div>` : '') +
-        (info?.formats?.length ? `<div class="fc-info-line"><span>Exports</span><b>${info!.formats!.map(escapeHtml).join(', ')}</b></div>` : '') +
+        `<div class="fc-info-line"><span>${t('Last edited')}</span><b data-info-edited>…</b></div>` +
+        `<div class="fc-info-line"><span>${t('Canvas')}</span><b>${d.w} × ${d.h} px</b></div>` +
+        (info?.name ? `<div class="fc-info-line"><span>${t('Tool')}</span><b>${escapeHtml(info!.name)}${info!.version ? ' · v' + escapeHtml(info!.version) : ''}</b></div>` : '') +
+        (info?.status ? `<div class="fc-info-line"><span>${t('Status')}</span><b>${escapeHtml(info!.status)}</b></div>` : '') +
+        (info?.formats?.length ? `<div class="fc-info-line"><span>${t('Exports')}</span><b>${info!.formats!.map(escapeHtml).join(', ')}</b></div>` : '') +
       '</div>' +
       // Provenance: what travels in the exported file's metadata. Read-only display +
       // an opt in/out toggle; the name/contact are edited in the profile.
       (info?.provenance ?
-        '<div class="fc-panel-head fc-info-sub">Embedded in exports</div>' +
-        '<label class="fc-row fc-row-toggle"><span>Credit me</span><input type="checkbox" data-info="optin" disabled></label>' +
+        `<div class="fc-panel-head fc-info-sub">${t('Embedded in exports')}</div>` +
+        `<label class="fc-row fc-row-toggle"><span>${t('Credit me')}</span><input type="checkbox" data-info="optin" disabled></label>` +
         '<div class="fc-info-meta">' +
-          '<div class="fc-info-line"><span>Made with</span><b>Lolly · lolly.tools</b></div>' +
-          '<div class="fc-info-line" data-prov="author" hidden><span>Name</span><b></b></div>' +
-          '<div class="fc-info-line" data-prov="contact" hidden><span>Contact</span><b></b></div>' +
+          `<div class="fc-info-line"><span>${t('Made with')}</span><b>Lolly · lolly.tools</b></div>` +
+          `<div class="fc-info-line" data-prov="author" hidden><span>${t('Name')}</span><b></b></div>` +
+          `<div class="fc-info-line" data-prov="contact" hidden><span>${t('Contact')}</span><b></b></div>` +
           '<div class="fc-info-note" data-prov="note"></div>' +
         '</div>'
       : '');
@@ -1398,7 +1399,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Last-edited resolves async (reads the saved session's timestamp).
     Promise.resolve(info?.lastEdited?.()).then((iso) => {
       const el = p.querySelector<HTMLElement>('[data-info-edited]');
-      if (el) el.textContent = iso ? fmtDate(iso) : 'Not saved yet';
+      if (el) el.textContent = iso ? fmtDate(iso) : t('Not saved yet');
     }).catch(() => {});
     // Provenance section fills async (reads the profile) then wires the opt-in toggle.
     const prov = info?.provenance;
@@ -1407,7 +1408,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const authorRow = p.querySelector<HTMLElement>('[data-prov="author"]');
       const contactRow = p.querySelector<HTMLElement>('[data-prov="contact"]');
       const note = p.querySelector<HTMLElement>('[data-prov="note"]');
-      const editLink = prov.editHref ? ` <a href="${escapeHtml(prov.editHref)}">Edit details</a>` : '';
+      const editLink = prov.editHref ? ` <a href="${escapeHtml(prov.editHref)}">${t('Edit details')}</a>` : '';
       const paint = (optedIn: boolean, author: string, contact: string): void => {
         if (optin) optin.checked = optedIn;
         if (authorRow) { authorRow.hidden = !(optedIn && author); authorRow.querySelector('b')!.textContent = author; }
@@ -1415,9 +1416,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (note) {
           note.innerHTML = optedIn
             ? (author || contact
-                ? 'Baked into your PNG, PDF & SVG file metadata.'
-                : `No name on file yet —${editLink || ' add your details in your profile'} to be credited.`)
-            : `Your name &amp; contact stay off your files.${editLink}`;
+                ? t('Baked into your PNG, PDF & SVG file metadata.')
+                : t('No name on file yet —{action} to be credited.', { action: editLink || ` ${t('add your details in your profile')}` }))
+            : t('Your name &amp; contact stay off your files.{link}', { link: editLink });
         }
       };
       prov.get().then(({ optedIn, author, contact }) => {
@@ -1459,7 +1460,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // label); otherwise the label text.
   function segHtml(field: string, cur: any, choices: Array<[string, string, string?]>): string {
     return `<div class="fc-seg" data-seg="${field}">` +
-      choices.map(([v, lbl, ic]) => `<button type="button" class="fc-seg-btn${String(cur) === String(v) ? ' is-on' : ''}${ic ? ' fc-seg-ic' : ''}" data-v="${v}" title="${lbl}" aria-label="${lbl}">${ic ? icon(ic) : lbl}</button>`).join('') +
+      choices.map(([v, lbl, ic]) => `<button type="button" class="fc-seg-btn${String(cur) === String(v) ? ' is-on' : ''}${ic ? ' fc-seg-ic' : ''}" data-v="${v}" title="${escape(lbl)}" aria-label="${escape(lbl)}">${ic ? icon(ic) : escape(lbl)}</button>`).join('') +
       '</div>';
   }
   // Image-position anchor picker — a 3×3 grid of the CSS `object-position` anchors,
@@ -1474,7 +1475,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   ];
   function posGridHtml(field: string, cur: string): string {
     return `<div class="fc-seg fc-posgrid" data-seg="${field}">` +
-      POS9.map(([v, lbl]) => `<button type="button" class="fc-seg-btn fc-pos-btn${cur === v ? ' is-on' : ''}" data-v="${v}" title="${lbl}" aria-label="Anchor image ${lbl.toLowerCase()}"><i></i></button>`).join('') +
+      POS9.map(([v, lbl]) => `<button type="button" class="fc-seg-btn fc-pos-btn${cur === v ? ' is-on' : ''}" data-v="${v}" title="${escape(t(lbl))}" aria-label="${escape(t('Anchor image {pos}', { pos: t(lbl).toLowerCase() }))}"><i></i></button>`).join('') +
       '</div>';
   }
   function wireSegs(panel: HTMLElement, onSet: (field: string | undefined, v: string | undefined) => void = (field, v) => setField(field, v)): void {
@@ -1512,22 +1513,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-text-panel';
     p.innerHTML =
-      '<div class="fc-panel-head">Text</div>' +
-      (cfg.fontField ? `<label class="fc-row"><span>Font</span><select data-tp="font">${fontOptionsHtml(fontCur)}</select></label>` : '') +
+      `<div class="fc-panel-head">${t('Text')}</div>` +
+      (cfg.fontField ? `<label class="fc-row"><span>${t('Font')}</span><select data-tp="font">${fontOptionsHtml(fontCur)}</select></label>` : '') +
       // Size row now carries the A−/A+ steppers (moved off the object bar) around the number.
-      (cfg.fontSizeField ? `<div class="fc-row"><span>Size</span><div class="fc-stepper">
-        <button type="button" class="fc-cbtn" data-tp="smaller" title="Smaller" aria-label="Smaller text">A−</button>
+      (cfg.fontSizeField ? `<div class="fc-row"><span>${t('Size')}</span><div class="fc-stepper">
+        <button type="button" class="fc-cbtn" data-tp="smaller" title="${escape(t('Smaller'))}" aria-label="${escape(t('Smaller text'))}">A−</button>
         <input type="number" min="4" max="2000" data-tp="size" value="${sizeCur}">
-        <button type="button" class="fc-cbtn" data-tp="bigger" title="Bigger" aria-label="Bigger text">A+</button>
+        <button type="button" class="fc-cbtn" data-tp="bigger" title="${escape(t('Bigger'))}" aria-label="${escape(t('Bigger text'))}">A+</button>
       </div></div>` : '') +
-      (cfg.weightField ? `<label class="fc-row"><span>Weight</span><select data-tp="weight">${weightChoicesFor(fontCur).map(([v, l]) => opt(v, l, weightCur)).join('')}</select></label>` : '') +
-      (cfg.lineHeightField ? `<label class="fc-row"><span>Line height</span><input type="range" min="0.7" max="3" step="0.01" data-tp="lh" value="${lhCur}"><b data-tp-val="lh">${lhCur.toFixed(2)}</b></label>` : '') +
-      (cfg.trackingField ? `<label class="fc-row"><span>Letter spacing</span><input type="range" min="-20" max="100" step="0.5" data-tp="tr" value="${trCur}"><b data-tp-val="tr">${trCur}</b></label>` : '') +
-      (cfg.ligaturesField ? `<label class="fc-row fc-row-toggle"><span>Ligatures</span><input type="checkbox" data-tp="lig"${ligCur ? ' checked' : ''}></label>` : '') +
-      (cfg.alternatesField ? `<label class="fc-row fc-row-toggle"><span>Alternates</span><input type="checkbox" data-tp="alt"${altCur ? ' checked' : ''}></label>` : '') +
-      (cfg.alignField ? `<div class="fc-row"><span>Align</span>${segHtml(cfg.alignField, alignCur, [['left', 'Align left', SVG.textL], ['center', 'Align centre', SVG.textC], ['right', 'Align right', SVG.textR]])}</div>` : '') +
-      (cfg.valignField ? `<div class="fc-row"><span>Vertical</span>${segHtml(cfg.valignField, valignCur, [['top', 'Align top', SVG.textT], ['middle', 'Centre vertically', SVG.textM], ['bottom', 'Align bottom', SVG.textB]])}</div>` : '') +
-      (cfg.padField ? `<label class="fc-row"><span>Padding</span><input type="range" min="0" max="200" data-tp="pad" value="${padCur}"><b data-tp-val="pad">${padCur}</b></label>` : '');
+      (cfg.weightField ? `<label class="fc-row"><span>${t('Weight')}</span><select data-tp="weight">${weightChoicesFor(fontCur).map(([v, l]) => opt(v, t(l), weightCur)).join('')}</select></label>` : '') +
+      (cfg.lineHeightField ? `<label class="fc-row"><span>${t('Line height')}</span><input type="range" min="0.7" max="3" step="0.01" data-tp="lh" value="${lhCur}"><b data-tp-val="lh">${lhCur.toFixed(2)}</b></label>` : '') +
+      (cfg.trackingField ? `<label class="fc-row"><span>${t('Letter spacing')}</span><input type="range" min="-20" max="100" step="0.5" data-tp="tr" value="${trCur}"><b data-tp-val="tr">${trCur}</b></label>` : '') +
+      (cfg.ligaturesField ? `<label class="fc-row fc-row-toggle"><span>${t('Ligatures')}</span><input type="checkbox" data-tp="lig"${ligCur ? ' checked' : ''}></label>` : '') +
+      (cfg.alternatesField ? `<label class="fc-row fc-row-toggle"><span>${t('Alternates')}</span><input type="checkbox" data-tp="alt"${altCur ? ' checked' : ''}></label>` : '') +
+      (cfg.alignField ? `<div class="fc-row"><span>${t('Align')}</span>${segHtml(cfg.alignField, alignCur, [['left', t('Align left'), SVG.textL], ['center', t('Align centre'), SVG.textC], ['right', t('Align right'), SVG.textR]])}</div>` : '') +
+      (cfg.valignField ? `<div class="fc-row"><span>${t('Vertical')}</span>${segHtml(cfg.valignField, valignCur, [['top', t('Align top'), SVG.textT], ['middle', t('Centre vertically'), SVG.textM], ['bottom', t('Align bottom'), SVG.textB]])}</div>` : '') +
+      (cfg.padField ? `<label class="fc-row"><span>${t('Padding')}</span><input type="range" min="0" max="200" data-tp="pad" value="${padCur}"><b data-tp-val="pad">${padCur}</b></label>` : '');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     p.querySelector<HTMLButtonElement>('[data-tp="smaller"]')?.addEventListener('click', () => { bumpFont(-6); const s = p.querySelector<HTMLInputElement>('[data-tp="size"]'); if (s) s.value = String(Math.max(4, (parseInt(s.value, 10) || 48) - 6)); });
     p.querySelector<HTMLButtonElement>('[data-tp="bigger"]')?.addEventListener('click', () => { bumpFont(6); const s = p.querySelector<HTMLInputElement>('[data-tp="size"]'); if (s) s.value = String((parseInt(s.value, 10) || 48) + 6); });
@@ -1547,7 +1548,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const wSel = p.querySelector<HTMLSelectElement>('select[data-tp="weight"]');
       if (wSel) {
         const cur = Math.min(parseInt(wSel.value, 10) || 700, maxWeightFor(font));
-        wSel.innerHTML = weightChoicesFor(font).map(([v, l]) => opt(v, l, String(cur))).join('');
+        wSel.innerHTML = weightChoicesFor(font).map(([v, l]) => opt(v, t(l), String(cur))).join('');
       }
     }));
     p.querySelectorAll<HTMLInputElement>('input[type="number"][data-tp]').forEach((inp) => inp.addEventListener('change', () => {
@@ -1598,7 +1599,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     try {
       const ref = await host.assets!.pick({
-        title: pickType === 'video' ? 'Choose a video' : pickType === 'lottie' ? 'Choose an animation' : 'Choose an image',
+        title: pickType === 'video' ? t('Choose a video') : pickType === 'lottie' ? t('Choose an animation') : t('Choose an image'),
         // No type constraint by default: boxes take rasters AND vectors — logos and
         // the themable two-colour icons (with the picker's theme strip) included, plus
         // animated rasters (gif/apng/webp, which are type:'raster'). The "Animation" /
@@ -1746,7 +1747,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     stageEl.classList.add('fc-connecting');
     toolbar.querySelector('.fc-btn-connect')?.classList.add('is-armed');
     setHoverEdge(null);
-    announce('Connect mode on — click a card, then the card to link it to. Esc to finish.');
+    announce(t('Connect mode on — click a card, then the card to link it to. Esc to finish.'));
     renderChrome();
   }
   function disarmConnect(): void {
@@ -1780,7 +1781,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       hasParent.add(to);
     }
     const roots = boxes.map((b, i) => idOf(b, i)).filter((id) => children.has(id) && !hasParent.has(id));
-    if (!roots.length) { announce('Connect some cards first, then Auto-arrange lays them out.'); return; }   // nothing connected → leave the canvas alone
+    if (!roots.length) { announce(t('Connect some cards first, then Auto-arrange lays them out.')); return; }   // nothing connected → leave the canvas alone
     const HGAP = 40, VGAP = 90;
     const cw = canvasWH();
     const placed = new Map<string, { x: number; y: number }>();
@@ -2047,7 +2048,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     boxEl?.classList.add('fc-box-editing');   // reveal overflow so typing stays visible
     el.setAttribute('contenteditable', 'true');
     el.setAttribute('role', 'textbox');
-    el.setAttribute('aria-label', 'Edit text');
+    el.setAttribute('aria-label', t('Edit text'));
     el.classList.add('fc-editing');
     el.focus();
     // Select-all when replacing a create-seed ("Text") so the first keystroke wins;
@@ -2416,8 +2417,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (cfg.fontField) {
       const fsel = document.createElement('select');
       fsel.className = 'fc-fmt-font';
-      fsel.title = 'Font';
-      fsel.setAttribute('aria-label', 'Font');
+      fsel.title = t('Font');
+      fsel.setAttribute('aria-label', t('Font'));
       fsel.innerHTML = fontOptionsHtml();
       fsel.addEventListener('pointerdown', (e) => e.stopPropagation());
       fsel.addEventListener('change', () => {
@@ -2429,8 +2430,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         }
         if (refs.weight) {   // the run-weight menu's choices depend on the font
           const cur = refs.weight.value;
-          refs.weight.innerHTML = '<option value="">Auto</option>' +
-            weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+          refs.weight.innerHTML = `<option value="">${t('Auto')}</option>` +
+            weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${escape(t(l))}</option>`).join('');
           refs.weight.value = weightChoicesFor(font).some(([v]) => v === cur) ? cur : '';
         }
       });
@@ -2443,10 +2444,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (cfg.weightField) {
       const sel = document.createElement('select');
       sel.className = 'fc-fmt-weight';
-      sel.title = 'Weight of the selected text';
-      sel.setAttribute('aria-label', 'Weight of the selected text');
+      sel.title = t('Weight of the selected text');
+      sel.setAttribute('aria-label', t('Weight of the selected text'));
       const font = String((cfg.fontField && box[cfg.fontField]) || defaultFont);
-      sel.innerHTML = '<option value="">Auto</option>' + weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+      sel.innerHTML = `<option value="">${t('Auto')}</option>` + weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${escape(t(l))}</option>`).join('');
       sel.value = '';
       // Stash the selection on engage (the select steals focus/selection when it
       // opens); no preventDefault — the select needs focus, and the onEditBlur guard
@@ -2475,41 +2476,41 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (typeGroup.childElementCount || cfg.textColorField) {
       const g = section();
       if (typeGroup.childElementCount) g.appendChild(typeGroup);
-      if (cfg.textColorField) refs.clear = mk('Reset text formatting', icon(SVG.resetColor), () => clearFormattingSelection());
+      if (cfg.textColorField) refs.clear = mk(t('Reset text formatting'), icon(SVG.resetColor), () => clearFormattingSelection());
     }
     // Character styles — bold / italic / bulleted + numbered lists.
     section();
-    refs.b = mk('Bold (⌘B)', '<b>B</b>', () => toggleInline('b'));
-    refs.i = mk('Italic (⌘I)', '<i style="font-family:serif">I</i>', () => toggleInline('i'));
-    refs.bullet = mk('Bulleted list', icon(SVG.bulletList), () => toggleBullet());
-    refs.numbers = mk('Numbered list', '<b style="font-size:11px">1.</b>', () => toggleNumber());
+    refs.b = mk(t('Bold (⌘B)'), '<b>B</b>', () => toggleInline('b'));
+    refs.i = mk(t('Italic (⌘I)'), '<i style="font-family:serif">I</i>', () => toggleInline('i'));
+    refs.bullet = mk(t('Bulleted list'), icon(SVG.bulletList), () => toggleBullet());
+    refs.numbers = mk(t('Numbered list'), '<b style="font-size:11px">1.</b>', () => toggleNumber());
     // How the copy sits in its box: horizontal alignment, then vertical — each its
     // own group so the two icon-runs read apart.
     if (cfg.alignField) {
       section();
       for (const [v, label, ic] of [['left', 'Align left', SVG.textL], ['center', 'Align centre', SVG.textC], ['right', 'Align right', SVG.textR]] as Array<[string, string, string]>) {
-        refs.align[v] = mk(label, icon(ic), () => applyPending(cfg.alignField, v));
+        refs.align[v] = mk(t(label), icon(ic), () => applyPending(cfg.alignField, v));
       }
     }
     if (cfg.valignField) {
       section();
       for (const [v, label, ic] of [['top', 'Align to top', SVG.textT], ['middle', 'Centre vertically', SVG.textM], ['bottom', 'Align to bottom', SVG.textB]] as Array<[string, string, string]>) {
-        refs.valign[v] = mk(label, icon(ic), () => applyPending(cfg.valignField, v));
+        refs.valign[v] = mk(t(label), icon(ic), () => applyPending(cfg.valignField, v));
       }
     }
     // Size steppers — the weight menu moved into the type pill, so this trailing
     // group is just the A− / A+ font-size nudges.
     if (cfg.fontSizeField) {
       section();
-      mk('Smaller text', 'A−', () => bumpPendingFont(-6));
-      mk('Bigger text', 'A+', () => bumpPendingFont(6));
+      mk(t('Smaller text'), 'A−', () => bumpPendingFont(-6));
+      mk(t('Bigger text'), 'A+', () => bumpPendingFont(6));
     }
     // OpenType features (whole-box, staged): ligatures + stylistic alternates, plus
     // the brand-ligature inserter.
     if (cfg.ligaturesField || cfg.alternatesField) {
       section();
-      if (cfg.ligaturesField) refs.lig = mk('Ligatures', '<span style="font-size:13px">fi</span>', () => toggleBoxBool(cfg.ligaturesField, true));
-      if (cfg.alternatesField) refs.alt = mk('Stylistic alternates', '<span style="font-size:13px">a͎</span>', () => toggleBoxBool(cfg.alternatesField, false));
+      if (cfg.ligaturesField) refs.lig = mk(t('Ligatures'), '<span style="font-size:13px">fi</span>', () => toggleBoxBool(cfg.ligaturesField, true));
+      if (cfg.alternatesField) refs.alt = mk(t('Stylistic alternates'), '<span style="font-size:13px">a͎</span>', () => toggleBoxBool(cfg.alternatesField, false));
       // Geeko 💚 Tux — drops the brand emoji trio at the caret and forces ligatures
       // on so the font can shape the three adjacent glyphs as one ligature. Plain
       // click inserts 🦎💚🐧; ⌥/Alt-click flips to penguin-first (🐧💚🦎). Gated on
@@ -2518,8 +2519,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const emo = document.createElement('button');
         emo.type = 'button';
         emo.className = 'fc-cbtn fc-fmt-emoji';
-        emo.title = 'Insert 🦎💚🐧 — turns ligatures on (⌥-click for 🐧💚🦎)';
-        emo.setAttribute('aria-label', 'Insert Geeko loves Tux');
+        emo.title = t('Insert 🦎💚🐧 — turns ligatures on (⌥-click for 🐧💚🦎)');
+        emo.setAttribute('aria-label', t('Insert Geeko loves Tux'));
         emo.textContent = '🦎💚🐧';
         emo.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
         emo.addEventListener('click', (e) => { e.stopPropagation(); insertBrandLigature(e.altKey ? '🐧💚🦎' : '🦎💚🐧'); });
@@ -3276,11 +3277,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const colorCur = String((colorF && e[colorF]) || connectCfg.defaultColor || '#94a3b8');
     // Arrowhead-shape glyphs for the segmented picker (a shaft + the head, pointing right).
     const HEAD_CHOICES: Array<[string, string, string]> = [
-      ['triangle', 'Triangle', '<line x1="3" y1="12" x2="13" y2="12"/><path d="M12 8l7 4-7 4Z" fill="currentColor" stroke="none"/>'],
-      ['open', 'Open', '<line x1="3" y1="12" x2="19" y2="12"/><path d="M14 7l6 5-6 5" fill="none"/>'],
-      ['circle', 'Circle', '<line x1="3" y1="12" x2="13" y2="12"/><path d="M20 12a3.3 3.3 0 1 1-6.6 0 3.3 3.3 0 0 1 6.6 0Z" fill="currentColor" stroke="none"/>'],
-      ['diamond', 'Diamond', '<line x1="3" y1="12" x2="11" y2="12"/><path d="M11 12l4.5-4 4.5 4-4.5 4Z" fill="currentColor" stroke="none"/>'],
-      ['bar', 'Bar', '<line x1="3" y1="12" x2="18" y2="12"/><line x1="18" y1="6" x2="18" y2="18"/>'],
+      ['triangle', t('Triangle'), '<line x1="3" y1="12" x2="13" y2="12"/><path d="M12 8l7 4-7 4Z" fill="currentColor" stroke="none"/>'],
+      ['open', t('Open'), '<line x1="3" y1="12" x2="19" y2="12"/><path d="M14 7l6 5-6 5" fill="none"/>'],
+      ['circle', t('Circle'), '<line x1="3" y1="12" x2="13" y2="12"/><path d="M20 12a3.3 3.3 0 1 1-6.6 0 3.3 3.3 0 0 1 6.6 0Z" fill="currentColor" stroke="none"/>'],
+      ['diamond', t('Diamond'), '<line x1="3" y1="12" x2="11" y2="12"/><path d="M11 12l4.5-4 4.5 4-4.5 4Z" fill="currentColor" stroke="none"/>'],
+      ['bar', t('Bar'), '<line x1="3" y1="12" x2="18" y2="12"/><line x1="18" y1="6" x2="18" y2="18"/>'],
     ];
     // Bend has many orthogonal flavours → a dropdown (kept in sync with tool.json's
     // `style` options + hooks.js waypoints()).
@@ -3290,19 +3291,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ['curved', 'Curved — auto'], ['curved-v', 'Curved — vertical'], ['curved-h', 'Curved — horizontal'],
       ['arc', 'Arc — bow'], ['arc-wide', 'Arc — wide bow'], ['arc-flip', 'Arc — reverse bow'], ['arc-flip-wide', 'Arc — wide reverse'],
     ];
-    const styleSelect = `<select data-ep="style">${STYLE_OPTS.map(([v, l]) => `<option value="${v}"${styleCur === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+    const styleSelect = `<select data-ep="style">${STYLE_OPTS.map(([v, l]) => `<option value="${v}"${styleCur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('')}</select>`;
     const row = (lbl: string, ctrl: string): string => `<div class="fc-row"><span class="fc-row-lbl"><span>${lbl}</span></span>${ctrl}</div>`;
     const p = document.createElement('div');
     p.className = 'fc-panel fc-edge-panel';
     p.innerHTML =
-      (nSel > 1 ? `<div class="fc-edge-count">${nSel} connectors — editing all</div>` : '') +
-      (styleF ? row('Bend', styleSelect) : '') +
-      (arrowF ? row('Arrow', segHtml(arrowF, arrowCur, [['none', 'None'], ['end', 'End'], ['both', 'Both']])) : '') +
-      (headF ? row('Head', segHtml(headF, headCur, HEAD_CHOICES)) : '') +
-      (dashF ? row('Line', segHtml(dashF, dashCur, [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']])) : '') +
-      (widthF ? `<label class="fc-row"><span class="fc-row-lbl"><span>Thickness</span></span><input type="range" data-ep="width" min="0.5" max="12" step="0.5" value="${widthCur}"><b data-ep-val="width">${widthCur}</b></label>` : '') +
-      (colorF ? `<label class="fc-row"><span class="fc-row-lbl"><span>Colour</span></span><span class="fc-cfield">${colorFieldHtml('fc-edge-color', colorCur, { float: true })}</span></label>` : '') +
-      `<div class="fc-row fc-edge-actions"><button type="button" class="fc-cbtn fc-danger" data-ep="del">${icon(SVG.trash)}<span>${nSel > 1 ? `Delete ${nSel} lines` : 'Delete line'}</span></button></div>`;
+      (nSel > 1 ? `<div class="fc-edge-count">${t('{n} connectors — editing all', { n: nSel })}</div>` : '') +
+      (styleF ? row(t('Bend'), styleSelect) : '') +
+      (arrowF ? row(t('Arrow'), segHtml(arrowF, arrowCur, [['none', t('None')], ['end', t('End')], ['both', t('Both')]])) : '') +
+      (headF ? row(t('Head'), segHtml(headF, headCur, HEAD_CHOICES)) : '') +
+      (dashF ? row(t('Line'), segHtml(dashF, dashCur, [['solid', t('Solid')], ['dashed', t('Dashed')], ['dotted', t('Dotted')]])) : '') +
+      (widthF ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Thickness')}</span></span><input type="range" data-ep="width" min="0.5" max="12" step="0.5" value="${widthCur}"><b data-ep-val="width">${widthCur}</b></label>` : '') +
+      (colorF ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Colour')}</span></span><span class="fc-cfield">${colorFieldHtml('fc-edge-color', colorCur, { float: true })}</span></label>` : '') +
+      `<div class="fc-row fc-edge-actions"><button type="button" class="fc-cbtn fc-danger" data-ep="del">${icon(SVG.trash)}<span>${nSel > 1 ? t('Delete {n} lines', { n: nSel }) : t('Delete line')}</span></button></div>`;
     p.addEventListener('pointerdown', (ev) => ev.stopPropagation());
     wireSegs(p, (field, v) => setEdgeField(field, v));
     if (styleF) {
@@ -3410,7 +3411,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         el.tabIndex = 0;
         el.setAttribute('role', 'button');
         const txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
-        el.setAttribute('aria-label', txt ? `Card: ${txt}` : 'Card');
+        el.setAttribute('aria-label', txt ? t('Card: {text}', { text: txt }) : t('Card'));
       }
       const on = selection.has(id);
       if ((el.getAttribute('aria-pressed') === 'true') !== on) el.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -3443,7 +3444,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       chrome.appendChild(stem);
       rot = document.createElement('div');
       rot.className = 'fc-handle fc-h-rotate';
-      rot.title = 'Rotate';
+      rot.title = t('Rotate');
       rot.addEventListener('pointerdown', (e) => onHandlePointerDown(e, 'rotate'));
       chrome.appendChild(rot);
     } else if (count > 1) {
@@ -3466,7 +3467,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       chrome.appendChild(stem);
       rot = document.createElement('div');
       rot.className = 'fc-handle fc-h-rotate';
-      rot.title = 'Rotate group';
+      rot.title = t('Rotate group');
       rot.addEventListener('pointerdown', (e) => onGroupHandleDown(e, 'rotate'));
       chrome.appendChild(rot);
     }
@@ -3622,7 +3623,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const r = liveRects?.get(idx[0]!) || boxRect(first, cfg);
     const read = ctxbar.querySelector('[data-cx-readout]');
     if (read) read.textContent = idx.length > 1
-      ? `${idx.length} selected`
+      ? t('{n} selected', { n: idx.length })
       : `${Math.round(r.x)}, ${Math.round(r.y)}  ·  ${Math.round(r.w)}×${Math.round(r.h)}${r.rot ? '  ·  ' + Math.round(r.rot) + '°' : ''}`;
   }
 

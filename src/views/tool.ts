@@ -28,7 +28,7 @@ const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
 import { navigateTo } from '../nav.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
-import { docsHref, currentLang } from '../i18n.ts';
+import { docsHref, currentLang, t } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
@@ -240,11 +240,11 @@ async function decryptEncryptedLink(query: string): Promise<string> {
     let error: string | undefined;
     for (;;) {
       const pw = await promptDialog({
-        title: 'Password-protected link',
-        message: 'This Lolly link is locked. Enter its password to open it here — nothing is sent to a server.',
-        confirmLabel: 'Open',
+        title: t('Password-protected link'),
+        message: t('This Lolly link is locked. Enter its password to open it here — nothing is sent to a server.'),
+        confirmLabel: t('Open'),
         inputType: 'password',
-        placeholder: 'Password',
+        placeholder: t('Password'),
         error,
       });
       if (pw == null) return query;                     // cancelled → load at defaults
@@ -257,7 +257,7 @@ async function decryptEncryptedLink(query: string): Promise<string> {
         });
         return extras.length ? `${decoded}&${extras.join('&')}` : decoded;
       }
-      error = 'Incorrect password — try again.';         // wrong → re-prompt
+      error = t('Incorrect password — try again.');         // wrong → re-prompt
     }
   })();
   zxInFlight.set(token, run);
@@ -277,7 +277,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // Defer the loading screen so prefetched tools don't flash the gallery out.
   // The gallery stays visible until the tool is ready (or 400ms passes).
   const loadingTimer = setTimeout(() => {
-    viewEl.innerHTML = `<p class="loading">Loading…</p>`;
+    viewEl.innerHTML = `<p class="loading">${t('Loading…')}</p>`;
   }, 400);
 
   let tool: LoadedTool;
@@ -314,10 +314,10 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     if (!err.validationErrors?.length && (offline || /fetch|network|load|failed to fetch/i.test(String(err.message || '')))) {
       // Offline-first PWA: a network load failure should be recoverable, not a raw dead-end.
       viewEl.innerHTML =
-        `<div class="error"><strong>${offline ? 'You’re offline' : 'Couldn’t load this tool'}</strong>` +
-        `<p>${offline ? 'Reconnect, then try again.' : 'Check your connection, then retry.'}</p>` +
+        `<div class="error"><strong>${offline ? t('You’re offline') : t('Couldn’t load this tool')}</strong>` +
+        `<p>${offline ? t('Reconnect, then try again.') : t('Check your connection, then retry.')}</p>` +
         `<div class="error-actions" style="margin-top:12px;display:flex;gap:8px;justify-content:center">` +
-        `<button class="btn" data-retry>Retry</button><a class="btn" href="#/">Browse all tools</a></div></div>`;
+        `<button class="btn" data-retry>${t('Retry')}</button><a class="btn" href="#/">${t('Browse all tools')}</a></div></div>`;
       viewEl.querySelector('[data-retry]')?.addEventListener('click', () => location.reload());
       return;
     }
@@ -349,7 +349,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // stores the modified source and hydrates it like any other template.
   const inputIds = (tool.manifest.inputs ?? []).map(i => i.id);
   tool.template = annotateTemplate(tool.template, inputIds);
-  document.title = `${tool.manifest.name} — Lolly`;
+  document.title = t('{name} — Lolly', { name: tool.manifest.name });
 
   // A password-gated link (`?zx=…`) carries the whole state ENCRYPTED. Prompt for
   // the password client-side (no server), decrypt to the readable query, and carry
@@ -423,7 +423,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // straight back into it — instead of dumping the user in the gallery.
   const fromFolder = returnTo !== '/';
   const backHref = fromFolder ? returnTo : '/';
-  const backLabel = fromFolder ? 'Back' : 'Tools';
+  const backLabel = fromFolder ? t('Back') : t('Tools');
 
   // Populate inputs from user profile if they match profile field names
   const profile = await host.profile.get();
@@ -552,12 +552,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     clearTimeout(historyToastTimer);
     if (empty) {
       el.classList.add('is-muted');
-      el.innerHTML = `<span class="toast-message">Nothing to ${empty}</span>`;
-      announce(`Nothing to ${empty}`);
+      const emptyMsg = empty === 'undo' ? t('Nothing to undo') : t('Nothing to redo');
+      el.innerHTML = `<span class="toast-message">${emptyMsg}</span>`;
+      announce(emptyMsg);
     } else {
       el.classList.remove('is-muted');
-      const verb = kind === 'undo' ? 'Undid' : 'Redid';
-      const counter = kind === 'undo' ? 'Redo' : 'Undo';
+      const verb = kind === 'undo' ? t('Undid') : t('Redid');
+      const counter = kind === 'undo' ? t('Redo') : t('Undo');
       el.innerHTML =
         `<span class="toast-icon" aria-hidden="true">${kind === 'undo' ? ICON_UNDO : ICON_REDO}</span>` +
         `<span class="toast-message">${verb}<span class="toast-label"> ${escape(String(label))}</span></span>` +
@@ -567,7 +568,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       el.querySelector('.toast-action')!.addEventListener('click', () => {
         kind === 'undo' ? redoHistory() : undoHistory();
       });
-      announce(`${verb} ${label}`);
+      announce(t('{verb} {label}', { verb, label: String(label) }));
     }
     // Animate the slide-in only when coming from hidden; if it's already showing
     // (rapid undo/redo), just swap the content and reset the timer — no flicker.
@@ -664,9 +665,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // most reassuring thing on screen for someone used to handing files to strangers.
   const onDevice = tool.manifest.privacy === 'on-device';
   const privacyBadge = onDevice
-    ? `<div class="on-device-badge" title="This tool runs entirely in your browser. Your file is never uploaded.">
+    ? `<div class="on-device-badge" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span>Runs on your device — nothing is uploaded</span>
+        <span>${t('Runs on your device — nothing is uploaded')}</span>
       </div>`
     : '';
 
@@ -675,13 +676,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // Authors can declare a live Handlebars summary (manifest.a11yLabel); otherwise
   // it's "<name> preview". Kept current in the render subscriber below.
   const canvasLabel = (): string => {
-    if (!tool.manifest.a11yLabel) return `${tool.manifest.name} preview`;
+    if (!tool.manifest.a11yLabel) return t('{name} preview', { name: tool.manifest.name });
     // Handlebars HTML-escapes {{values}}; an aria-label is plain text, so decode
     // the entities back (it's set via setAttribute, not innerHTML).
     const custom = runtime.getHydratedString(tool.manifest.a11yLabel)
       .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"').replace(/&#(?:39|x27);/g, "'").trim();
-    return custom || `${tool.manifest.name} preview`;
+    return custom || t('{name} preview', { name: tool.manifest.name });
   };
 
   const SIDEBAR_DEFAULT = 272;
@@ -700,15 +701,15 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const dropped    = runtime.droppedAssets ?? [];
   const bakedLost  = dropped.filter(d => d.reason === 'baked-bytes-lost');
   const unresolved = dropped.filter(d => d.reason !== 'baked-bytes-lost');
-  const fieldsWere = (n: number): string => (n > 1 ? 'fields were' : 'field was');
+  const fieldsWere = (n: number): string => (n > 1 ? t('fields were') : t('field was'));
   const droppedLines = [
-    unresolved.length ? `An image used in this saved design is no longer available, so the <strong>${escape(unresolved.map(d => d.label).join(', '))}</strong> ${fieldsWere(unresolved.length)} left blank.` : '',
-    bakedLost.length ? `A frozen image's data was missing from this saved design, so the <strong>${escape(bakedLost.map(d => d.label).join(', '))}</strong> ${fieldsWere(bakedLost.length)} left blank.` : '',
+    unresolved.length ? t('An image used in this saved design is no longer available, so the <strong>{fields}</strong> {were} left blank.', { fields: escape(unresolved.map(d => d.label).join(', ')), were: fieldsWere(unresolved.length) }) : '',
+    bakedLost.length ? t("A frozen image's data was missing from this saved design, so the <strong>{fields}</strong> {were} left blank.", { fields: escape(bakedLost.map(d => d.label).join(', ')), were: fieldsWere(bakedLost.length) }) : '',
   ].filter(Boolean);
   const droppedNotice = droppedLines.length ? `
     <div class="tool-notice" role="status" id="dropped-assets-notice">
       <span class="tool-notice-text">${droppedLines.join(' ')}</span>
-      <button type="button" class="tool-notice-close" id="dropped-assets-dismiss" aria-label="Dismiss this message">✕</button>
+      <button type="button" class="tool-notice-close" id="dropped-assets-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
     </div>` : '';
 
   viewEl.innerHTML = `
@@ -722,7 +723,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             </div>
             <div class="sidebar-header-row">
               <span class="sidebar-title">${escape(tool.manifest.name)}</span>
-              <button class="fullscreen-toggle" id="fullscreen-toggle" ${sidebarOpen ? 'open' : ''} aria-label="${sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}"></button>
+              <button class="fullscreen-toggle" id="fullscreen-toggle" ${sidebarOpen ? 'open' : ''} aria-label="${escape(sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar'))}"></button>
             </div>
           </div>
           <div class="sidebar-body">
@@ -731,7 +732,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             <div id="tool-inputs" class="tool-inputs"></div>
             ${hasInputs ? `
               <div class="sidebar-utils" id="sidebar-utils">
-                <button type="button" id="clear-inputs-btn" class="clear-inputs-btn" title="Reset all inputs to defaults">Clear changes</button>
+                <button type="button" id="clear-inputs-btn" class="clear-inputs-btn" title="${escape(t('Reset all inputs to defaults'))}">${t('Clear changes')}</button>
               </div>
             ` : ''}
             <div class="tool-actions" id="tool-actions"></div>
@@ -741,13 +742,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         <!-- Grip lives OUTSIDE the sheet (it's position:fixed): keeps it from being
              clipped by the sheet's overflow, which must stay hidden so the form
              can't spill past the sheet's rounded edge. -->
-        <button type="button" class="sheet-grip" id="sheet-grip" aria-label="Drag to resize controls, tap to expand"></button>
+        <button type="button" class="sheet-grip" id="sheet-grip" aria-label="${escape(t('Drag to resize controls, tap to expand'))}"></button>
       ` : (chromeless ? `<div class="tool-actions" id="tool-actions"></div>` : '')}
       <div class="tool-stage" id="tool-stage">
-        ${showAside ? `<button class="fullscreen-toggle-float" id="fullscreen-toggle-float" aria-label="Expand sidebar"></button>` : ''}
-        ${hideSidebar && onDevice ? `<div class="on-device-badge on-device-badge--float" title="This tool runs entirely in your browser. Your file is never uploaded.">
+        ${showAside ? `<button class="fullscreen-toggle-float" id="fullscreen-toggle-float" aria-label="${escape(t('Expand sidebar'))}"></button>` : ''}
+        ${hideSidebar && onDevice ? `<div class="on-device-badge on-device-badge--float" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <span>Runs on your device — nothing is uploaded</span>
+          <span>${t('Runs on your device — nothing is uploaded')}</span>
         </div>` : ''}
         ${hideSidebar ? `<div id="tool-content" role="img" aria-label="${escape(canvasLabel())}"></div>` : `
         <div class="tool-canvas-outer" id="tool-canvas-outer">
@@ -756,24 +757,24 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         </div>`}
       </div>
       ${!hideSidebar ? `
-        <div class="render-pill" id="render-pill" role="group" aria-label="Export and save">
-          <button type="button" class="render-pill-btn render-pill-get" id="render-fab" data-sfx="hydraulicOpen" aria-label="Export options">
+        <div class="render-pill" id="render-pill" role="group" aria-label="${escape(t('Export and save'))}">
+          <button type="button" class="render-pill-btn render-pill-get" id="render-fab" data-sfx="hydraulicOpen" aria-label="${escape(t('Export options'))}">
             <svg class="render-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-            <span>Export</span>
+            <span>${t('Export')}</span>
           </button>
           ${canSaveSession ? `
           <span class="render-pill-sep" aria-hidden="true"></span>
-          <button type="button" class="render-pill-btn render-pill-save" id="render-save" data-sfx="save" aria-label="Save to your library" title="Save to your library">
+          <button type="button" class="render-pill-btn render-pill-save" id="render-save" data-sfx="save" aria-label="${escape(t('Save to your library'))}" title="${escape(t('Save to your library'))}">
             <svg class="render-pill-icon render-pill-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-            <span data-save-label>Save</span>
+            <span data-save-label>${t('Save')}</span>
           </button>` : ''}
         </div>
         <div class="export-overlay" id="export-overlay">
           <div class="export-overlay-scrim" data-export-close></div>
-          <div class="export-popup" role="dialog" aria-modal="true" aria-label="Export">
+          <div class="export-popup" role="dialog" aria-modal="true" aria-label="${escape(t('Export'))}">
             <div class="export-popup-head">
-              <span class="export-popup-title">Export</span>
-              <button type="button" class="export-popup-close" data-export-close aria-label="Close">&#x2715;</button>
+              <span class="export-popup-title">${t('Export')}</span>
+              <button type="button" class="export-popup-close" data-export-close aria-label="${escape(t('Close'))}">&#x2715;</button>
             </div>
             <div class="export-popup-body" id="export-popup-body"></div>
           </div>
@@ -843,8 +844,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       group.appendChild(b);
       return b;
     };
-    const undoBtn = mkBtn('Undo', ICON_UNDO, undoHistory);
-    const redoBtn = mkBtn('Redo', ICON_REDO, redoHistory);
+    const undoBtn = mkBtn(t('Undo'), ICON_UNDO, undoHistory);
+    const redoBtn = mkBtn(t('Redo'), ICON_REDO, redoHistory);
     // Smaller lang-fab variant beside undo/redo — same trigger/popover as the
     // gallery/dashboard/verify one, just sized down (30px, no border) to match
     // .history-btn's compact icon-button chrome instead of the regular 2.9em box.
@@ -880,8 +881,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Removed-image notice: announce it (live region) and let the user dismiss it.
   if (dropped.length) {
     announce([
-      unresolved.length ? `An image used in this saved design is no longer available; the ${unresolved.map(d => d.label).join(', ')} ${fieldsWere(unresolved.length)} left blank.` : '',
-      bakedLost.length ? `A frozen image's data was missing; the ${bakedLost.map(d => d.label).join(', ')} ${fieldsWere(bakedLost.length)} left blank.` : '',
+      unresolved.length ? t('An image used in this saved design is no longer available; the {fields} {were} left blank.', { fields: unresolved.map(d => d.label).join(', '), were: fieldsWere(unresolved.length) }) : '',
+      bakedLost.length ? t("A frozen image's data was missing; the {fields} {were} left blank.", { fields: bakedLost.map(d => d.label).join(', '), were: fieldsWere(bakedLost.length) }) : '',
     ].filter(Boolean).join(' '), { assertive: true });
     viewEl.querySelector('#dropped-assets-dismiss')
       ?.addEventListener('click', () => viewEl.querySelector('#dropped-assets-notice')?.remove());
@@ -955,7 +956,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     layout.dataset.sidebar = isOpen ? 'open' : 'closed';
     if (fullscreenToggle) {
       fullscreenToggle.toggleAttribute('open', isOpen);
-      fullscreenToggle.setAttribute('aria-label', isOpen ? 'Collapse sidebar' : 'Expand sidebar');
+      fullscreenToggle.setAttribute('aria-label', isOpen ? t('Collapse sidebar') : t('Expand sidebar'));
     }
     if (save) localStorage.setItem('sidebarWidth', String(snapped));
   }
@@ -1724,7 +1725,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       markSessionSaved();                                 // drop the amber unsaved cue
       renderSaveBtn!.classList.add('is-just-saved');
       setTimeout(() => {
-        if (saveLabel) saveLabel.textContent = 'Save';
+        if (saveLabel) saveLabel.textContent = t('Save');
         renderSaveBtn!.classList.remove('is-just-saved');
       }, 1500);
     });
@@ -1736,7 +1737,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     sidebarUtilsEl.querySelector<HTMLButtonElement>('#shrink-url-btn')?.addEventListener('click', function (this: HTMLButtonElement) {
       shrinkUrl(runtime, tool.manifest, barSeq);
       const prev = this.textContent;
-      this.textContent = 'Shrunk!';
+      this.textContent = t('Shrunk!');
       setTimeout(() => { this.textContent = prev; }, 1500);
     });
   }
@@ -1832,7 +1833,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // Picking a Lolly link / saved session for a box image opens its inputs
         // first (configure → insert), same as the sidebar asset slots. The picker
         // passes mode 'edit' when re-opening the box's current Lolly render.
-        editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: 'image', mode }),
+        editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
         // The editor is chromeless (no sidebar header), so the free-canvas rail
         // hosts the visible undo/redo buttons — the only touch trigger for
         // history here. register() adopts them as THE history controls (the
@@ -1887,7 +1888,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         nativeW, nativeH,
         onDirty: markUserDirty,
         setCanvasSize,
-        editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: 'image', mode }),
+        editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
         history: {
           undo: undoHistory,
           redo: redoHistory,
@@ -1921,7 +1922,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         const heavy = runtime.getModel()
           .map(i => (i.value as { meta?: { bytes?: number } } | undefined)?.meta?.bytes)
           .find((b): b is number => typeof b === 'number' && b > 0);
-        const detail = heavy ? `Includes a ${fmtBytes(heavy)} video clip, stored on this device.` : undefined;
+        const detail = heavy ? t('Includes a {size} video clip, stored on this device.', { size: fmtBytes(heavy) }) : undefined;
         showUnsavedDialog(
           canSave ? async () => { if (await actionsApi!.save!()) navigateTo(backHref); } : null,
           () => { navigateTo(backHref); },
@@ -2045,7 +2046,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       }
     }
     const ref = await host.assets.pick({
-      title: `Choose ${input.label ?? input.id}`,
+      title: t('Choose {name}', { name: input.label ?? input.id }),
       type: input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
       tags: (input.filter?.tags as string[] | undefined),
       namespace: (input.filter?.namespace as string | undefined),
@@ -2122,28 +2123,41 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Wired by delegation on the canvas so it survives the innerHTML rebuild that the
   // runtime subscriber does on every input change.
   const previewCfg = tool.manifest.render.preview as { auto?: boolean; format?: string } | undefined;
-  async function runPreview(): Promise<void> {
-    const btn = contentEl.querySelector<HTMLElement>('[data-preview]');
-    if (btn) {
-      if (btn.dataset.busy) return;                  // re-entrancy guard
-      btn.dataset.busy = '1';
-      btn.dataset.idleLabel ??= (btn.textContent ?? '').trim();
-      btn.classList.remove('is-error');
-      btn.classList.add('is-busy');
-      btn.textContent = btn.dataset.busyLabel || 'Rendering…';
+  // Drive a [data-preview] control through a capture. `btn` is the control the user
+  // actually clicked (auto-preview passes none → the first control, the placeholder
+  // button). Busy/error land on THAT control, and a PERSISTENT control (e.g. a
+  // hover-revealed refresh button that outlives the placeholder) is reset to idle on
+  // success — a placeholder button, which is hidden with the placeholder, doesn't
+  // care. An icon-only control (data-icon-only) keeps its glyph; its state shows via
+  // the is-busy / is-error classes (a CSS spinner / colour), never a text swap.
+  async function runPreview(btn?: HTMLElement | null): Promise<void> {
+    const target = btn ?? contentEl.querySelector<HTMLElement>('[data-preview]');
+    const iconOnly = Boolean(target?.dataset.iconOnly);
+    if (target) {
+      if (target.dataset.busy) return;                  // re-entrancy guard
+      target.dataset.busy = '1';
+      target.dataset.idleLabel ??= (target.textContent ?? '').trim();
+      target.classList.remove('is-error');
+      target.classList.add('is-busy');
+      if (!iconOnly) target.textContent = target.dataset.busyLabel || t('Rendering…');
     }
     try {
       await actionsApi!.preview!();
-      // Success: the hook painted the capture and hid the placeholder (button
-      // included), so there's nothing to reset — it's gone from the DOM.
+      // Success: a placeholder button is gone with the placeholder; a persistent
+      // control survives and must be returned to its idle state so a later hover
+      // shows the affordance, not a stuck spinner.
+      if (target?.isConnected) {
+        target.classList.remove('is-busy');
+        if (!iconOnly && target.dataset.idleLabel) target.textContent = target.dataset.idleLabel;
+        delete target.dataset.busy;
+      }
     } catch (err) {
-      // Surface the failure in place; the placeholder stays so the user can retry.
-      // The next input change rebuilds a fresh button with its idle label.
-      const b = contentEl.querySelector<HTMLElement>('[data-preview]');
+      // Surface the failure in place; the control stays so the user can retry.
+      const b = target ?? contentEl.querySelector<HTMLElement>('[data-preview]');
       if (b) {
         b.classList.remove('is-busy');
         b.classList.add('is-error');
-        b.textContent = (err as { message?: string })?.message || 'Preview failed — tap to retry';
+        if (!b.dataset.iconOnly) b.textContent = (err as { message?: string })?.message || t('Preview failed — tap to retry');
         delete b.dataset.busy;
       }
       throw err;
@@ -2151,8 +2165,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
   if (previewCfg && canvasEl) {
     canvasEl.addEventListener('click', e => {
-      if (!(e.target as HTMLElement).closest('[data-preview]')) return;
-      runPreview().catch(err => console.error('Preview failed:', err));
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-preview]');
+      if (!b) return;
+      runPreview(b).catch(err => console.error('Preview failed:', err));
     });
   }
 
@@ -2170,7 +2185,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       btn.dataset.idleLabel ??= (btn.textContent ?? '').trim();
       btn.classList.remove('is-error');
       btn.classList.add('is-busy');
-      btn.textContent = btn.dataset.busyLabel || 'Working…';
+      btn.textContent = btn.dataset.busyLabel || t('Working…');
       try {
         const { bytes, mime, filename } = await runtime.exportFile();
         const blob = new Blob([bytes as BlobPart], { type: mime || 'application/octet-stream' });
@@ -2182,7 +2197,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         console.error('exportFile failed:', err);
         btn.classList.remove('is-busy');
         btn.classList.add('is-error');
-        btn.textContent = (err as { message?: string })?.message || 'Export failed — try again';
+        btn.textContent = (err as { message?: string })?.message || t('Export failed — try again');
         delete btn.dataset.busy;
       }
     });
@@ -2215,7 +2230,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const box = document.createElement('div');
     box.className = 'canvas-error';
     box.setAttribute('role', 'alert');
-    box.textContent = "Couldn't render this preview — check your inputs.";
+    box.textContent = t("Couldn't render this preview — check your inputs.");
     stage.appendChild(box);
   }
   function clearCanvasError(): void {
@@ -2426,23 +2441,23 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     liveBtn.type = 'button';
     liveBtn.className = 'canvas-live-toggle';
     liveBtn.setAttribute('aria-pressed', 'false');
-    liveBtn.title = 'React to your camera in real time';
-    liveBtn.innerHTML = '<span class="canvas-live-dot" aria-hidden="true"></span><span class="canvas-live-label">Go live</span>';
+    liveBtn.title = t('React to your camera in real time');
+    liveBtn.innerHTML = `<span class="canvas-live-dot" aria-hidden="true"></span><span class="canvas-live-label">${t('Go live')}</span>`;
     stageEl.appendChild(liveBtn);
     const setLiveUi = (on: boolean): void => {
       liveBtn.classList.toggle('is-live', on);
       liveBtn.setAttribute('aria-pressed', String(on));
-      liveBtn.querySelector('.canvas-live-label')!.textContent = on ? 'Live' : 'Go live';
+      liveBtn.querySelector('.canvas-live-label')!.textContent = on ? t('Live') : t('Go live');
     };
     liveBtn.addEventListener('click', async () => {
-      if (runtime.isLive()) { runtime.stopLive(); setLiveUi(false); announce('Live camera stopped'); return; }
+      if (runtime.isLive()) { runtime.stopLive(); setLiveUi(false); announce(t('Live camera stopped')); return; }
       liveBtn.disabled = true;
       try {
         await runtime.startLive();
         setLiveUi(true);
-        announce('Live camera started — the canvas now reacts to your camera');
+        announce(t('Live camera started — the canvas now reacts to your camera'));
       } catch (e) {
-        announce((e as { name?: string })?.name === 'NotAllowedError' ? 'Camera permission was declined.' : 'Couldn’t start the camera.', { assertive: true });
+        announce((e as { name?: string })?.name === 'NotAllowedError' ? t('Camera permission was declined.') : t('Couldn’t start the camera.'), { assertive: true });
         host.log('warn', 'startLive failed', { error: String(e) });
       } finally {
         liveBtn.disabled = false;
@@ -2537,8 +2552,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     clearBtn.addEventListener('click', () => {
       utils.classList.add('is-confirming');
       utils.innerHTML =
-        '<button type="button" class="clear-inputs-confirm">Reset to defaults</button>' +
-        '<button type="button" class="clear-inputs-cancel">Cancel</button>';
+        `<button type="button" class="clear-inputs-confirm">${t('Reset to defaults')}</button>` +
+        `<button type="button" class="clear-inputs-cancel">${t('Cancel')}</button>`;
       utils.querySelector('.clear-inputs-confirm')!.addEventListener('click', async () => { restore(); await resetToDefaults(); });
       utils.querySelector('.clear-inputs-cancel')!.addEventListener('click', restore);
       (utils.querySelector('.clear-inputs-cancel') as HTMLElement | null)?.focus();
@@ -2582,7 +2597,7 @@ function setupCanvasFileDrop({ viewEl, contentEl, runtime, input, onDirty }: {
     // Manifest cap when declared, engine backstop otherwise (see tool-inputs.ts).
     const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
     if (file.size > cap) {
-      announce(`That file is too large (max ${fmtBytes(cap)}).`, { assertive: true });
+      announce(t('That file is too large (max {size}).', { size: fmtBytes(cap) }), { assertive: true });
       return;
     }
     const ref = await fileToRef(file);
@@ -2698,14 +2713,14 @@ function makeFetchFile(toolId: string): (path: string) => Promise<string> {
 }
 
 function mount404(viewEl: HTMLElement, toolId: string): void {
-  document.title = 'Not Found — Lolly';
+  document.title = t('Not Found — Lolly');
   viewEl.innerHTML = `
     <div class="not-found">
       <div class="not-found-inner">
         <p class="not-found-code">404</p>
-        <h1 class="not-found-title">Tool not found</h1>
-        <p class="not-found-desc">There's no tool at <code>${escape(toolId)}</code>.</p>
-        <a href="/" class="not-found-home">Browse all tools</a>
+        <h1 class="not-found-title">${t('Tool not found')}</h1>
+        <p class="not-found-desc">${t('There\'s no tool at <code>{id}</code>.', { id: escape(toolId) })}</p>
+        <a href="/" class="not-found-home">${t('Browse all tools')}</a>
       </div>
     </div>
   `;
@@ -2714,15 +2729,15 @@ function mount404(viewEl: HTMLElement, toolId: string): void {
 // Shown when a tool is opened in a shell that can't fulfil its capabilities
 // (e.g. a 'capture' tool in the web PWA). Mirrors the 404 layout.
 function mountUnavailable(viewEl: HTMLElement, manifest: ToolManifest, unmet: readonly string[]): void {
-  document.title = `${manifest.name} — Desktop only`;
+  document.title = t('{name} — Desktop only', { name: manifest.name });
   const why = unmet.map(capabilityLabel).join(', ');
   viewEl.innerHTML = `
     <div class="not-found">
       <div class="not-found-inner">
-        <p class="not-found-code">Desktop</p>
-        <h1 class="not-found-title">${escape(manifest.name)} needs the desktop app</h1>
-        <p class="not-found-desc">This tool uses <strong>${escape(why)}</strong>, which the web app can’t provide — a browser can’t screenshot cross-origin pages. Open it in the Lolly desktop app.</p>
-        <a href="/" class="not-found-home">Browse all tools</a>
+        <p class="not-found-code">${t('Desktop')}</p>
+        <h1 class="not-found-title">${t('{name} needs the desktop app', { name: escape(manifest.name) })}</h1>
+        <p class="not-found-desc">${t('This tool uses <strong>{why}</strong>, which the web app can’t provide — a browser can’t screenshot cross-origin pages. Open it in the Lolly desktop app.', { why: escape(why) })}</p>
+        <a href="/" class="not-found-home">${t('Browse all tools')}</a>
       </div>
     </div>
   `;
@@ -2731,15 +2746,15 @@ function mountUnavailable(viewEl: HTMLElement, manifest: ToolManifest, unmet: re
 // Shown on a Chromium browser for a capture tool when the extension isn't
 // installed — the tool CAN run here once the free extension is added.
 function mountInstallPrompt(viewEl: HTMLElement, manifest: ToolManifest): void {
-  document.title = `${manifest.name} — Add the extension`;
+  document.title = t('{name} — Add the extension', { name: manifest.name });
   viewEl.innerHTML = `
     <div class="not-found">
       <div class="not-found-inner">
-        <p class="not-found-code">Add&#8209;on</p>
-        <h1 class="not-found-title">Enable ${escape(manifest.name)} in your browser</h1>
-        <p class="not-found-desc">Add the free Lolly screenshot extension and this tool captures pages right here — no desktop app needed. Install it, then reload this page.</p>
-        <a href="${escape(docsHref('extension'))}" class="not-found-home" target="_blank" rel="noopener">Get the extension</a>
-        <a href="#/" class="not-found-back">Back to all tools</a>
+        <p class="not-found-code">${t('Add&#8209;on')}</p>
+        <h1 class="not-found-title">${t('Enable {name} in your browser', { name: escape(manifest.name) })}</h1>
+        <p class="not-found-desc">${t('Add the free Lolly screenshot extension and this tool captures pages right here — no desktop app needed. Install it, then reload this page.')}</p>
+        <a href="${escape(docsHref('extension'))}" class="not-found-home" target="_blank" rel="noopener">${t('Get the extension')}</a>
+        <a href="#/" class="not-found-back">${t('Back to all tools')}</a>
       </div>
     </div>
   `;
@@ -3080,11 +3095,11 @@ function showClearDialog(onConfirm: () => void): void {
   dialog.className = 'unsaved-dialog';
   dialog.innerHTML = `
     <div class="unsaved-dialog-body">
-      <h2>Clear changes?</h2>
-      <p>This will reset every field to its default value.<br>This cannot be undone.</p>
+      <h2>${t('Clear changes?')}</h2>
+      <p>${t('This will reset every field to its default value.<br>This cannot be undone.')}</p>
       <div class="unsaved-dialog-actions">
-        <button class="unsaved-leave">Clear changes</button>
-        <button class="unsaved-cancel">Cancel</button>
+        <button class="unsaved-leave">${t('Clear changes')}</button>
+        <button class="unsaved-cancel">${t('Cancel')}</button>
       </div>
     </div>
   `;
@@ -3107,13 +3122,13 @@ function showUnsavedDialog(onSave: (() => Promise<void> | void) | null, onLeave:
   dialog.className = 'unsaved-dialog';
   dialog.innerHTML = `
     <div class="unsaved-dialog-body">
-      <h2>Unsaved changes</h2>
-      <p>You have unsaved changes. <br>Would you like to save before leaving?</p>
+      <h2>${t('Unsaved changes')}</h2>
+      <p>${t('You have unsaved changes. <br>Would you like to save before leaving?')}</p>
       ${detail ? `<p class="unsaved-dialog-detail">${detail}</p>` : ''}
       <div class="unsaved-dialog-actions">
-        ${onSave ? `<button class="unsaved-save">Save &amp; leave</button>` : ''}
-        <button class="unsaved-leave">Leave without saving</button>
-        <button class="unsaved-cancel">Cancel</button>
+        ${onSave ? `<button class="unsaved-save">${t('Save &amp; leave')}</button>` : ''}
+        <button class="unsaved-leave">${t('Leave without saving')}</button>
+        <button class="unsaved-cancel">${t('Cancel')}</button>
       </div>
     </div>
   `;
