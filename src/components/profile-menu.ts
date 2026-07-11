@@ -20,6 +20,7 @@ import { THEMES, THEME_LABELS, currentTheme, applyTheme } from '../theme.ts';
 import { playThemeSfx } from '../lib/sfx.ts';
 import { escape } from '../utils.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
+import { t } from '../i18n.ts';
 
 // Matches the gallery/projects mobile breakpoint (the chrome only collapses there).
 const MOBILE = '(max-width: 640px)';
@@ -89,20 +90,20 @@ export function attachProfileMenu(
     menu = el;
     el.className = 'profile-menu';
     el.setAttribute('role', 'menu');
-    el.setAttribute('aria-label', 'Profile and settings');
+    el.setAttribute('aria-label', escape(t('Profile and settings')));
     el.innerHTML = `
-      <div class="profile-menu-theme" role="group" aria-label="Theme">
-        ${THEMES.map(t => `<button type="button" class="profile-menu-seg" role="menuitemradio" data-theme-seg="${t}" aria-checked="${t === theme}">${escape(THEME_LABELS[t] ?? t)}</button>`).join('')}
+      <div class="profile-menu-theme" role="group" aria-label="${escape(t('Theme'))}">
+        ${THEMES.map(seg => `<button type="button" class="profile-menu-seg" role="menuitemradio" data-theme-seg="${seg}" aria-checked="${seg === theme}">${escape(t(THEME_LABELS[seg] ?? seg))}</button>`).join('')}
       </div>
       ${savedCount ? `<button type="button" class="profile-menu-item" role="menuitem" data-act="history">
-        <span>Saved sessions</span><span class="profile-menu-count">${savedCount}</span>
+        <span>${t('Saved sessions')}</span><span class="profile-menu-count">${savedCount}</span>
       </button>` : ''}
       <a class="profile-menu-item" role="menuitem" href="#/start" data-act="brand">
-        <span>Set up your brand</span>
+        <span>${t('Set up your brand')}</span>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
       </a>
       <a class="profile-menu-item" role="menuitem" href="#/profile" data-act="settings">
-        <span>Settings</span>
+        <span>${t('Settings')}</span>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
       </a>`;
     document.body.appendChild(el);

@@ -14,6 +14,7 @@ import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChang
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
+import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts } from './user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
@@ -371,6 +372,12 @@ async function boot(): Promise<void> {
   const profileTheme = (profile as { theme?: string }).theme;
   if (profileTheme) applyTheme(profileTheme, false);
 
+  // Language — same precedence chain as the theme, plus a session-only `lang`
+  // URL override (never written back to the profile — see i18n.ts). Awaited
+  // before the first navigate() below so every view renders in the resolved
+  // language from its very first paint, with no re-render pass.
+  await initI18n({ urlLang: peekUrlLang(), profileLang: (profile as { lang?: string }).lang });
+
   // Interface sounds: the profile is the canonical mute store (like the theme). Reconcile
   // the sfx layer's localStorage-derived flag with the profile's value once it has loaded,
   // then install the one set of app-wide, delegated cue listeners (idempotent).
@@ -529,6 +536,14 @@ async function boot(): Promise<void> {
       window.location.hash = r === 'gallery' ? '' : `#/${r}`;
     });
   });
+}
+
+// A `lang` override rides either routing form — #/tool/id?lang=de (hash) or
+// /t/id?lang=de (path) — so read both instead of depending on parseRoute()
+// (which runs later and, for some routes, redirects before boot resolves i18n).
+function peekUrlLang(): string | null {
+  const hashQuery = window.location.hash.split('?')[1] ?? '';
+  return new URLSearchParams(hashQuery).get('lang') ?? new URLSearchParams(window.location.search).get('lang');
 }
 
 function parseRoute(): Route {

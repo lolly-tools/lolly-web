@@ -26,6 +26,10 @@
  * over another view.
  */
 import '../styles/parts/welcome.css';
+import { currentLang, langOptions, setActiveLang, t } from '../i18n.ts';
+import type { Lang } from '../i18n.ts';
+import { escape } from '../utils.ts';
+import type { WebProfileAPI } from '../bridge/profile.ts';
 
 /** Persisted (localStorage, same tier as the theme) once the welcome is settled. */
 export const WELCOME_DISMISSED_KEY = 'lolly-welcome-dismissed';
@@ -54,34 +58,47 @@ let openPromise: Promise<WelcomeChoice> | null = null;
 // same path a route change does (resolve without persisting the flag).
 let settleOpen: ((choice: WelcomeChoice | null) => void) | null = null;
 
+// Renders the dialog's own copy through t() so a language-chip switch can
+// re-paint it in place, and the chip row itself (native names, active state
+// from the resolved boot-time language — see i18n.ts's initI18n).
+function renderWelcomeContent(): string {
+  return `
+    <div class="welcome-langs" role="group" aria-label="Language">
+      ${langOptions().map(o => `<button type="button" class="welcome-lang${o.code === currentLang() ? ' is-active' : ''}" data-lang="${o.code}" aria-pressed="${o.code === currentLang()}">${escape(o.nativeName)}</button>`).join('')}
+    </div>
+    <p class="welcome-eyebrow">${t('Welcome to Lolly')}</p>
+    <h2 class="welcome-title">${t('Your tools, your rules')}</h2>
+    <p class="welcome-sub">${t('Finished creative assets from simple inputs — pick a path, change your mind any time.')}</p>
+    <div class="welcome-cards">
+      <button type="button" class="welcome-card welcome-card--brand" data-choice="brand">
+        <span class="welcome-card-kicker">${t('Make it yours')}</span>
+        <span class="welcome-card-line">${t('Start from one colour or your design tokens — everything stays on this device.')}</span>
+        <span class="welcome-card-cta" aria-hidden="true">${t('Set up your brand →')}</span>
+      </button>
+      <button type="button" class="welcome-card" data-choice="explore">
+        <span class="welcome-card-kicker">${t('Explore the community tools')}</span>
+        <span class="welcome-card-line">${t('Jump straight in — QR codes, street maps, filters and more, no setup needed.')}</span>
+        <span class="welcome-card-cta" aria-hidden="true">${t('Browse the gallery →')}</span>
+      </button>
+    </div>`;
+}
+
 /**
  * Show the welcome (or return the already-open instance's promise). Resolves
  * with the user's choice; 'brand' has already navigated to #/start by the time
  * the promise settles, so callers typically don't need to act on it.
+ *
+ * `profileApi`, when given, lets the language chips persist a choice to the
+ * canonical profile record (mirrors the profile-card picker); without it the
+ * choice still applies for the session via i18n.ts's localStorage mirror.
  */
-export function showWelcomeDialog(): Promise<WelcomeChoice> {
+export function showWelcomeDialog(profileApi?: WebProfileAPI): Promise<WelcomeChoice> {
   if (openPromise) return openPromise;
   openPromise = new Promise((resolve) => {
     const dlg = document.createElement('dialog');
     dlg.className = 'welcome-dialog';
     dlg.setAttribute('aria-label', 'Welcome to Lolly');
-    // Static markup — no user-influenced strings, nothing to escape.
-    dlg.innerHTML = `
-      <p class="welcome-eyebrow">Welcome to Lolly</p>
-      <h2 class="welcome-title">Your tools, your rules</h2>
-      <p class="welcome-sub">Finished creative assets from simple inputs — pick a path, change your mind any time.</p>
-      <div class="welcome-cards">
-        <button type="button" class="welcome-card welcome-card--brand" data-choice="brand">
-          <span class="welcome-card-kicker">Make it yours</span>
-          <span class="welcome-card-line">Start from one colour or your design tokens — everything stays on this device.</span>
-          <span class="welcome-card-cta" aria-hidden="true">Set up your brand &rarr;</span>
-        </button>
-        <button type="button" class="welcome-card" data-choice="explore">
-          <span class="welcome-card-kicker">Explore the community tools</span>
-          <span class="welcome-card-line">Jump straight in — QR codes, street maps, filters and more, no setup needed.</span>
-          <span class="welcome-card-cta" aria-hidden="true">Browse the gallery &rarr;</span>
-        </button>
-      </div>`;
+    dlg.innerHTML = renderWelcomeContent();
     document.body.appendChild(dlg);
 
     let settled = false;
@@ -103,7 +120,33 @@ export function showWelcomeDialog(): Promise<WelcomeChoice> {
 
     dlg.addEventListener('cancel', (e) => { e.preventDefault(); settle('dismiss'); }); // Escape
     dlg.addEventListener('click', (e) => {
-      const card = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-choice]') : null;
+      const target = e.target instanceof Element ? e.target : null;
+
+      // Language chip — applies immediately (re-renders this dialog's own copy),
+      // persists to the profile (if we have write access) + localStorage, and
+      // deliberately does NOT settle the dialog: picking a language isn't a choice
+      // about brand vs. explore.
+      const langBtn = target?.closest<HTMLButtonElement>('[data-lang]');
+      if (langBtn) {
+        const lang = langBtn.dataset.lang as Lang;
+        void (async () => {
+          await setActiveLang(lang, { persist: true });
+          if (profileApi) {
+            try {
+              const current = await profileApi.get();
+              const { lang: _drop, ...rest } = current as Record<string, unknown>;
+              await profileApi.set(lang === 'en' ? rest : { ...rest, lang });
+            } catch { /* preference save is best-effort */ }
+          }
+          if (dlg.isConnected) {
+            dlg.innerHTML = renderWelcomeContent();
+            dlg.querySelector<HTMLButtonElement>(`[data-lang="${lang}"]`)?.focus();
+          }
+        })();
+        return;
+      }
+
+      const card = target?.closest<HTMLElement>('[data-choice]');
       if (card) {
         const choice = card.dataset.choice as WelcomeChoice;
         settle(choice);

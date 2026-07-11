@@ -16,6 +16,8 @@
 import '../styles/parts/profile.css';   // async CSS chunk (lazy view — not on the landing)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
+import { currentLang, langOptions, setActiveLang, t } from '../i18n.ts';
+import type { Lang } from '../i18n.ts';
 import { playThemeSfx, playSfx } from '../lib/sfx.ts';
 import { staggerReveal } from '../lib/reveal.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
@@ -207,40 +209,48 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     </li>`;
 
   viewEl.innerHTML = `
-    <a href="#/" class="tools-home home-full">Tools</a>
+    <a href="#/" class="tools-home home-full">${t('Tools')}</a>
     <div class="profile-layout">
-      <h1 class="visually-hidden">Your profile</h1>
+      <h1 class="visually-hidden">${t('Your profile')}</h1>
 
       <section class="profile-card">
-        <h2>Your details</h2>
+        <div class="profile-card-header">
+          <h2>${t('Your details')}</h2>
+          <label class="profile-lang-picker">
+            <span class="visually-hidden">${t('Language')}</span>
+            <select class="profile-lang-select" data-lang-pick aria-label="${escape(t('Language'))}">
+              ${langOptions().map(o => `<option value="${o.code}"${o.code === currentLang() ? ' selected' : ''}>${escape(o.nativeName)}</option>`).join('')}
+            </select>
+          </label>
+        </div>
         <form class="profile-form" id="profile-form">
           <div class="profile-details-grid">
             <div class="profile-details-main">
               <div class="profile-fields">
                 ${fields.map(f => `<label class="profile-field">
-                  <span class="profile-field-label">${escape(FIELD_LABELS[f] ?? f)}</span>
+                  <span class="profile-field-label">${escape(t(FIELD_LABELS[f] ?? f))}</span>
                   <input ${fieldAttrs(f)} name="${f}" value="${escape((profile as Record<string, unknown>)[f] ?? '')}" placeholder=" ">
                 </label>`).join('')}
               </div>
 
               <div class="profile-actions">
-                <button type="submit" class="profile-btn-primary">Save Profile</button>
+                <button type="submit" class="profile-btn-primary">${t('Save Profile')}</button>
                 <label class="profile-check">
-                  <span class="profile-check-tag">${profile.useDetails ? 'Opted-in' : 'opt-in'}</span>
+                  <span class="profile-check-tag">${t(profile.useDetails ? 'Opted-in' : 'opt-in')}</span>
                   <input type="checkbox" name="useDetails" ${profile.useDetails ? 'checked' : ''}>
-                  <span class="profile-check-text">${profile.useDetails ? 'Using my details' : 'Use my details to create'}</span>
+                  <span class="profile-check-text">${t(profile.useDetails ? 'Using my details' : 'Use my details to create')}</span>
                 </label>
               </div>
             </div>
 
             <aside class="profile-side">
               <div class="profile-field">
-                <span class="profile-field-label headshot-heading">Headshot</span>
+                <span class="profile-field-label headshot-heading">${t('Headshot')}</span>
                 <div class="headshot">
                   <div class="headshot-preview${headshotUrl ? '' : ' is-empty'}" id="headshot-preview"${headshotUrl ? ` style="background-image:url('${escape(headshotUrl)}')"` : ''}>
-                    <button type="button" class="headshot-edit" id="headshot-upload">${headshotUrl ? 'Edit' : 'Upload'}</button>
+                    <button type="button" class="headshot-edit" id="headshot-upload">${t(headshotUrl ? 'Edit' : 'Upload')}</button>
                   </div>
-                  <button type="button" class="headshot-remove" id="headshot-remove" aria-label="Remove headshot" title="Remove"${headshotUrl ? '' : ' hidden'}>&times;</button>
+                  <button type="button" class="headshot-remove" id="headshot-remove" aria-label="${escape(t('Remove headshot'))}" title="${escape(t('Remove'))}"${headshotUrl ? '' : ' hidden'}>&times;</button>
                   <input type="file" id="headshot-file" accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif" hidden>
                 </div>
                 <p class="profile-inline-error" id="headshot-error" style="color:hsl(var(--destructive));font-size:13px;margin:.4rem 0 0" hidden></p>
@@ -254,12 +264,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </section>
 
       <section class="profile-card profile-card--appearance">
-        <h2>Appearance</h2>
-        <p class="profile-appearance-sub">How the app dresses for you — your preference, separate from your brand. Applied instantly and remembered on this device.</p>
+        <h2>${t('Appearance')}</h2>
+        <p class="profile-appearance-sub">${t('How the app dresses for you — your preference, separate from your brand. Applied instantly and remembered on this device.')}</p>
         <div class="profile-theme-grid" data-theme-pick>
-          ${THEMES.map(t => `
-            <button type="button" class="profile-theme${t === activeTheme ? ' is-active' : ''}" data-theme-set="${escape(t)}" data-theme="${escape(t)}" aria-pressed="${t === activeTheme ? 'true' : 'false'}">
-              <div class="profile-theme-name">${escape(THEME_LABELS[t])}${t === 'light' ? '<span class="profile-theme-pill">default</span>' : ''}</div>
+          ${THEMES.map(theme => `
+            <button type="button" class="profile-theme${theme === activeTheme ? ' is-active' : ''}" data-theme-set="${escape(theme)}" data-theme="${escape(theme)}" aria-pressed="${theme === activeTheme ? 'true' : 'false'}">
+              <div class="profile-theme-name">${escape(t(THEME_LABELS[theme]))}${theme === 'light' ? `<span class="profile-theme-pill">${t('default')}</span>` : ''}</div>
               <div class="profile-theme-dots">
                 <span style="background:hsl(var(--primary))" title="primary"></span>
                 <span style="background:hsl(var(--card))" title="card"></span>
@@ -273,19 +283,19 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </section>
 
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
-        <summary class="profile-collapse-summary"><h2>Your activity</h2>${COLLAPSE_CHEV}</summary>
+        <summary class="profile-collapse-summary"><h2>${t('Your activity')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body">${renderActivity(getMetrics(), window.__toolIndex?.tools ?? [])}</div>
       </details>
 
       <details class="profile-card profile-collapse" id="storage-section"${startOpen('storage-section')}>
-        <summary class="profile-collapse-summary"><h2>Storage</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body" id="storage-body"><p class="storage-hint-text">Loading…</p></div>
+        <summary class="profile-collapse-summary"><h2>${t('Storage')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body" id="storage-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
       <details class="profile-card profile-collapse" id="feature-flags-section"${(openState['feature-flags-section'] || focusFlags) ? ' open' : ''}>
-        <summary class="profile-collapse-summary"><h2>Feature flags</h2>${COLLAPSE_CHEV}</summary>
+        <summary class="profile-collapse-summary"><h2>${t('Feature flags')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body">
-          <p class="storage-hint-text feature-hint-text">Self-governance, autonomy, choice. Enable or disable parts of the app here</p>
+          <p class="storage-hint-text feature-hint-text">${t('Self-governance, autonomy, choice. Enable or disable parts of the app here')}</p>
           <ul class="feature-flags" id="feature-flags">
             ${CATEGORY_FLAGS.map(f =>
               // Set the on-device Offline Utilities drawer apart from the creative
@@ -301,15 +311,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </details>
 
       <details class="profile-card profile-collapse" id="identity-section"${startOpen('identity-section')}>
-        <summary class="profile-collapse-summary"><h2>Content Credentials</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body" id="identity-body"><p class="storage-hint-text">Loading…</p></div>
+        <summary class="profile-collapse-summary"><h2>${t('Content Credentials')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body" id="identity-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
     </div>
 
-    <footer class="profile-footer" aria-label="More">
-      <a href="#/d" class="profile-nav-link btn" data-sfx="dashboard" aria-label="Dashboard — this device, the brand system &amp; the full feature set">${DASHBOARD_ICON}<span class="profile-nav-label">Dashboard</span></a>
-      <a href="#/verify" class="profile-nav-link profile-nav-link--verify btn" data-sfx="verify" aria-label="Verify Content Credentials — check any file on-device">${VERIFY_SHIELD}<span class="profile-nav-label">Verify</span></a>
+    <footer class="profile-footer" aria-label="${escape(t('More'))}">
+      <a href="#/d" class="profile-nav-link btn" data-sfx="dashboard" aria-label="${escape(t('Dashboard — this device, the brand system & the full feature set'))}">${DASHBOARD_ICON}<span class="profile-nav-label">${t('Dashboard')}</span></a>
+      <a href="#/verify" class="profile-nav-link profile-nav-link--verify btn" data-sfx="verify" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span class="profile-nav-label">${t('Verify')}</span></a>
     </footer>
   `;
 
@@ -375,6 +385,22 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const updated = { ...(await host.profile.get()), theme: next };
       await host.profile.set?.(updated);
     } catch { /* preference save is best-effort */ }
+  });
+
+  // Language — a permanent picker (not a one-time first-run prompt like the
+  // welcome dialog's chips). Saves to profile.lang + localStorage, then reloads
+  // so the whole app (not just this view's wave-1-wrapped strings) re-renders in
+  // the new language — the simplest correct option without a reactive framework.
+  viewEl.querySelector('[data-lang-pick]')?.addEventListener('change', async e => {
+    const next = (e.target as HTMLSelectElement).value as Lang;
+    if (next === currentLang()) return;
+    try {
+      const current = await host.profile.get();
+      const { lang: _drop, ...rest } = current as Record<string, unknown>;
+      await host.profile.set?.(next === 'en' ? rest : { ...rest, lang: next });
+    } catch { /* preference save is best-effort — the switch below still applies for this session */ }
+    await setActiveLang(next, { persist: true });
+    window.location.reload();
   });
 
   // Sound switch — the unified "Sound:" toggle (speaker indicator + sliding switch). Auto-saves

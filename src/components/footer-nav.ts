@@ -5,6 +5,7 @@
 // Catalogue). Each view supplies its own search-field markup + handler (the field's
 // classes/behaviour differ), but the surrounding nav links are shared verbatim.
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 
 /** The nav-bar glyphs (Lucide house style), shared so all three footers match. */
 export const NAV_ICONS = {
@@ -39,10 +40,10 @@ export interface FooterNavOpts {
 export function footerNav({ proEnabled, searchHtml, footerClass }: FooterNavOpts): string {
   return `
     <footer class="gallery-footer${footerClass ? ' ' + footerClass : ''}">
-      ${proEnabled ? `<a href="#/pro" class="gallery-batch-link btn" aria-label="Open Batch mode — for power users">${NAV_ICONS.zap}<span class="gallery-nav-label">Pro</span></a>` : ''}
-      <a href="#/d" class="gallery-nav-link btn" data-sfx="dashboard" aria-label="Dashboard — this device, the brand system &amp; the full feature set">${NAV_ICONS.dashboard}<span class="gallery-nav-label">Dashboard</span></a>
+      ${proEnabled ? `<a href="#/pro" class="gallery-batch-link btn" aria-label="${escape(t('Open Batch mode — for power users'))}">${NAV_ICONS.zap}<span class="gallery-nav-label">${t('Pro')}</span></a>` : ''}
+      <a href="#/d" class="gallery-nav-link btn" data-sfx="dashboard" aria-label="${escape(t('Dashboard — this device, the brand system & the full feature set'))}">${NAV_ICONS.dashboard}<span class="gallery-nav-label">${t('Dashboard')}</span></a>
       ${searchHtml}
-      <a href="#/verify" class="gallery-nav-link gallery-nav-link--verify btn" data-sfx="verify" aria-label="Verify Content Credentials — check any file on-device">${NAV_ICONS.shield}<span class="gallery-nav-label">Verify</span></a>
-      <a href="/info/" class="gallery-info-link btn" aria-label="What is Lolly? — about &amp; help">${NAV_ICONS.help}<span class="gallery-nav-label">What?</span></a>
+      <a href="#/verify" class="gallery-nav-link gallery-nav-link--verify btn" data-sfx="verify" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${NAV_ICONS.shield}<span class="gallery-nav-label">${t('Verify')}</span></a>
+      <a href="/info/" class="gallery-info-link btn" aria-label="${escape(t('What is Lolly? — about & help'))}">${NAV_ICONS.help}<span class="gallery-nav-label">${t('What?')}</span></a>
     </footer>`;
 }
