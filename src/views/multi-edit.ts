@@ -35,6 +35,8 @@ import { scopeCss } from '../lib/scope-css.ts';
 import { syncInputs } from './tool-inputs.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
+import { t } from '../i18n.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 
 import type { WebToolHost, PanelEl } from './tool.ts';
 import type { InputModelItem, InputValue, InputSpec } from '../../../../engine/src/inputs.js';
@@ -160,7 +162,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     const h = m.tool.manifest.render?.height ?? 600;
     return `
       <figure class="me-cell" data-me-cell="${i}" tabindex="0" role="button"
-        aria-label="Show the inputs for ${escape(m.label)}">
+        aria-label="${escape(t('Show the inputs for {label}', { label: m.label }))}">
         <div class="me-stage" style="aspect-ratio:${w} / ${h}">
           <div class="me-scale" data-me-scale="${i}" style="width:${w}px;height:${h}px">
             <div class="me-canvas" id="me-c${i}"></div>
@@ -180,40 +182,41 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     const h = String(m.data.__export_height ?? '');
     const unit = String(m.data.__export_unit ?? 'px');
     const dpi = String(m.data.__export_dpi ?? '');
-    if (!isExportable(m.tool.manifest)) return '<p class="me-export-note">This tool is render-only — it has no file export.</p>';
+    if (!isExportable(m.tool.manifest)) return `<p class="me-export-note">${t('This tool is render-only — it has no file export.')}</p>`;
     return `
       <div class="me-export" data-me-export="${i}">
-        <span class="me-export-label">Export</span>
-        <label class="me-exp-field">Format
+        <span class="me-export-label">${t('Export')}</span>
+        <label class="me-exp-field">${t('Format')}
           <select data-me-fmt="${i}">${formats.map(f => `<option value="${escape(f)}"${f === fmt ? ' selected' : ''}>${escape(f.toUpperCase())}</option>`).join('')}</select>
         </label>
-        <label class="me-exp-field">W <input type="number" min="1" inputmode="numeric" placeholder="auto" data-me-w="${i}" value="${escape(w)}"></label>
-        <label class="me-exp-field">H <input type="number" min="1" inputmode="numeric" placeholder="auto" data-me-h="${i}" value="${escape(h)}"></label>
-        <label class="me-exp-field">Unit
+        <label class="me-exp-field">${t('W')} <input type="number" min="1" inputmode="numeric" placeholder="${escape(t('auto'))}" data-me-w="${i}" value="${escape(w)}"></label>
+        <label class="me-exp-field">${t('H')} <input type="number" min="1" inputmode="numeric" placeholder="${escape(t('auto'))}" data-me-h="${i}" value="${escape(h)}"></label>
+        <label class="me-exp-field">${t('Unit')}
           <select data-me-unit="${i}">${UNITS.map(u => `<option value="${u}"${u === unit ? ' selected' : ''}>${u}</option>`).join('')}</select>
         </label>
-        <label class="me-exp-field me-exp-dpi" ${unit === 'px' ? 'hidden' : ''}>DPI <input type="number" min="1" inputmode="numeric" placeholder="300" data-me-dpi="${i}" value="${escape(dpi)}"></label>
-        <button type="button" class="btn me-download" data-me-download="${i}" data-sfx="whoosh">Download</button>
+        <label class="me-exp-field me-exp-dpi" ${unit === 'px' ? 'hidden' : ''}>${t('DPI')} <input type="number" min="1" inputmode="numeric" placeholder="300" data-me-dpi="${i}" value="${escape(dpi)}"></label>
+        <button type="button" class="btn me-download" data-me-download="${i}" data-sfx="whoosh">${t('Download')}</button>
       </div>`;
   };
 
   viewEl.innerHTML = `
     <div class="me-layout">
       <header class="me-head">
-        <a class="me-back" href="#/p" aria-label="Back to Projects">←</a>
-        <h1 class="me-title">Multi-edit <span class="me-count">${members.length} designs</span></h1>
+        <a class="me-back" href="#/p" aria-label="${escape(t('Back to Projects'))}">←</a>
+        <h1 class="me-title">${t('Multi-edit')} <span class="me-count">${t('{n} designs', { n: members.length })}</span></h1>
         <div class="me-head-actions">
-          <button type="button" class="btn" data-me-saveall data-sfx="save">Save all</button>
-          <button type="button" class="btn me-primary" data-me-downloadall data-sfx="whoosh">Download all</button>
+          <button type="button" class="btn" data-me-saveall data-sfx="save">${t('Save all')}</button>
+          <button type="button" class="btn me-primary" data-me-downloadall data-sfx="whoosh">${t('Download all')}</button>
+          ${langFabHtml()}
         </div>
       </header>
       <div class="me-body">
-        <aside class="me-sidebar" aria-label="Combined inputs">
+        <aside class="me-sidebar" aria-label="${escape(t('Combined inputs'))}">
           <div class="me-search">
-            <input type="search" placeholder="Filter inputs…" aria-label="Filter inputs" data-me-search>
+            <input type="search" placeholder="${escape(t('Filter inputs…'))}" aria-label="${escape(t('Filter inputs'))}" data-me-search>
           </div>
           <details class="me-card me-card--shared" data-me-shared-card ${shared.length ? 'open' : ''} ${shared.length ? '' : 'hidden'}>
-            <summary><span class="me-card-title">Shared</span><span class="me-card-count">${shared.length} input${shared.length === 1 ? '' : 's'} · applies to every design</span></summary>
+            <summary><span class="me-card-title">${t('Shared')}</span><span class="me-card-count">${shared.length === 1 ? t('1 input · applies to every design') : t('{n} inputs · applies to every design', { n: shared.length })}</span></summary>
             <div class="tool-inputs me-inputs" data-me-shared-panel></div>
           </details>
           ${members.map((m, i) => `
@@ -230,6 +233,8 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     </div>`;
 
   const cleanups: Array<() => void> = [];
+
+  cleanups.push(attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host));
 
   // Declared ahead of the cell loop: runtime.subscribe emits synchronously, so
   // scheduleSidebar (hoisted fn) runs before the sidebar block below is reached.
@@ -417,7 +422,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   function renderViaToast(run: (mount: HTMLElement) => unknown): void {
     const toast = document.createElement('div');
     toast.className = 'pro-toast projects-toast';
-    toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="Close">✕</button><div class="pro-toast-mount"></div>`;
+    toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="${escape(t('Close'))}">✕</button><div class="pro-toast-mount"></div>`;
     document.body.appendChild(toast);
     toasts.add(toast);
     const mount = toast.querySelector<HTMLElement>('.pro-toast-mount')!;
@@ -433,10 +438,10 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
 
   let exporting = false;
   viewEl.addEventListener('click', async (e) => {
-    const t = e.target as HTMLElement;
-    const one = t.closest<HTMLElement>('[data-me-download]');
-    const all = t.closest<HTMLElement>('[data-me-downloadall]');
-    const save = t.closest<HTMLElement>('[data-me-saveall]');
+    const target = e.target as HTMLElement; // not `t` — that's the i18n lookup
+    const one = target.closest<HTMLElement>('[data-me-download]');
+    const all = target.closest<HTMLElement>('[data-me-downloadall]');
+    const save = target.closest<HTMLElement>('[data-me-saveall]');
     if (!one && !all && !save) return;
     if (exporting) return;
     exporting = true;
@@ -471,11 +476,11 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         });
       } else if (save) {
         await saveAll();
-        announce(`Saved ${members.length} sessions`);
+        announce(t('Saved {n} sessions', { n: members.length }));
       }
     } catch (err) {
       console.warn('multi-edit action failed:', err);
-      announce('Something went wrong — see the console.');
+      announce(t('Something went wrong — see the console.'));
     } finally {
       busy.removeAttribute('aria-busy');
       exporting = false;

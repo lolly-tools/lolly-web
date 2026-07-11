@@ -91,13 +91,20 @@
             br: 'pt', 'pt-br': 'pt', pt_br: 'pt',
             tw: 'zh-hant', hk: 'zh-hant', 'zh-tw': 'zh-hant', 'zh-hk': 'zh-hant', 'zh-hant-tw': 'zh-hant', hant: 'zh-hant',
             my: 'ms', fil: 'tl',
+            'ar-sa': 'ar', 'ar-eg': 'ar', 'ar-ae': 'ar',
           };
           lg = LANG_ALIASES[lg] || lg;
           var HTML_LANG = {
             en: 'en', es: 'es', de: 'de', fr: 'fr', zh: 'zh-Hans', ja: 'ja', vi: 'vi',
             pt: 'pt-BR', 'zh-hant': 'zh-Hant', cs: 'cs', nl: 'nl', tl: 'tl', sv: 'sv', ms: 'ms',
+            ro: 'ro', ar: 'ar',
           };
-          if (HTML_LANG[lg]) document.documentElement.lang = HTML_LANG[lg];
+          if (HTML_LANG[lg]) {
+            document.documentElement.lang = HTML_LANG[lg];
+            // RTL mirror of LANG_META.dir — Arabic flips the document before paint
+            // so the first frame isn't a wrong-direction flash.
+            document.documentElement.dir = lg === 'ar' ? 'rtl' : 'ltr';
+          }
         }
       } catch (e) { /* corrupt cache — boot JS re-derives it */ }
     })();

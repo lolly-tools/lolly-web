@@ -1294,15 +1294,30 @@ async function render(
 
     let posterRef: AssetRef | null = null;   // the still shown in the card (a still pick commits this as-is)
     let renderSeq = 0;      // drop a stale render when controls change again
+    // A child whose preview ever took longer than this stops auto-rendering on
+    // control changes — the user triggers each render instead (click-to-render),
+    // so a heavy child (a 3D scene, a big PDF) can't make the card feel hung.
+    const SLOW_RENDER_MS = 1000;
+    let slowTool = false;
+    const renderingHtml =
+      `<button type="button" class="tc-render is-rendering" disabled><span class="tc-render-ring" aria-hidden="true"></span>Rendering…</button>`;
     const renderPreview = async (): Promise<void> => {
       const seq = ++renderSeq;
       posterRef = null;
       useBtn.disabled = true;
-      previewEl.innerHTML = `<div class="asset-picker-loading">Rendering…</div>`;
+      previewEl.innerHTML = slowTool ? renderingHtml : `<div class="asset-picker-loading">Rendering…</div>`;
+      // Crossing the threshold mid-render upgrades the plain loading text to the
+      // animated button in place and flips the card to click-to-render from then on.
+      const slowTimer = setTimeout(() => {
+        if (seq !== renderSeq || slowTool) return;
+        slowTool = true;
+        previewEl.innerHTML = renderingHtml;
+      }, SLOW_RENDER_MS);
       // The poster is always a still: the selected format when it's an image, else a
       // still stand-in for a motion pick (encoding the real clip per keystroke is too slow).
       const posterFmt = isMotion(fmtSel.value) ? stillFmt : fmtSel.value;
       const ref = await host.compose.renderUrl(url, { format: posterFmt as ExportFormat, ...size() }).catch(() => null);
+      clearTimeout(slowTimer);
       if (seq !== renderSeq) return; // a newer change supersedes this render
       if (!ref) { previewEl.innerHTML = `<p class="asset-picker-error">Couldn't render this link.</p>`; return; }
       posterRef = ref;
@@ -1311,6 +1326,16 @@ async function render(
         : '';
       previewEl.innerHTML = `<img class="asset-picker-toolcard-img" src="${escapeHtml(ref.url)}" alt="Preview of the ${escapeHtml(desc.name)} render">${note}`;
       useBtn.disabled = false;
+    };
+
+    // Idle click-to-render state (slow tools only). Entering it also invalidates
+    // any in-flight render — the controls just changed, so its poster is stale.
+    const showRenderButton = (): void => {
+      renderSeq++;
+      posterRef = null;
+      useBtn.disabled = true;
+      previewEl.innerHTML = `<button type="button" class="tc-render">Render preview</button>`;
+      previewEl.querySelector('.tc-render')!.addEventListener('click', () => { void renderPreview(); });
     };
 
     // Resolve the picker with the committed ref — frozen (baked into a static
@@ -1340,8 +1365,10 @@ async function render(
       if (!isMotion(fmt)) { if (posterRef) finish(posterRef); return; }
       const label = useBtn.textContent;
       useBtn.disabled = true;
+      useBtn.classList.add('is-rendering');
       useBtn.textContent = 'Rendering motion…';
       const ref = await host.compose.renderUrl(url, { format: fmt as ExportFormat, ...size() }).catch(() => null);
+      useBtn.classList.remove('is-rendering');
       if (ref) { finish(ref); return; }
       useBtn.textContent = label;
       useBtn.disabled = false;
@@ -1349,8 +1376,12 @@ async function render(
     };
 
     let debounce: ReturnType<typeof setTimeout> | undefined;
-    const onSize = (): void => { clearTimeout(debounce); debounce = setTimeout(renderPreview, 350); };
-    fmtSel.addEventListener('change', renderPreview);
+    const onSize = (): void => {
+      clearTimeout(debounce);
+      if (slowTool) { showRenderButton(); return; }
+      debounce = setTimeout(renderPreview, 350);
+    };
+    fmtSel.addEventListener('change', () => { if (slowTool) showRenderButton(); else void renderPreview(); });
     wEl.addEventListener('input', onSize);
     hEl.addEventListener('input', onSize);
     useBtn.addEventListener('click', commit);

@@ -163,7 +163,8 @@ const INFO_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 // Shield-with-check — the same glyph the gallery's green Verify button uses.
 const VERIFY_SHIELD = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>`;
 // Jump to the Verify view — styled to match the gallery's green Verify button.
-const VERIFY_LINK = `<a href="#/verify" class="btn identity-verify-link" aria-label="Verify Content Credentials — check any file on-device">${VERIFY_SHIELD}<span>Verify a file</span></a>`;
+// A function (not a module const) so t() runs at render time, after the catalog loads.
+const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-link" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span>${t('Verify a file')}</span></a>`;
 // Compass/gauge glyph — the same one the gallery's Dashboard button uses, for the bottom toolbar.
 const DASHBOARD_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>`;
 
@@ -200,8 +201,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   const flagRow = (f: FeatureFlag) => `
     <li>
       <label class="feature-flag">
-        <span class="feature-flag-label">${escape(f.label)}${f.pill ? `<span class="feature-flag-pill">${escape(f.pill)}</span>` : ''}${
-          f.info ? `<span class="feature-flag-info"><button type="button" class="feature-flag-info-btn" aria-label="About: ${escape(f.label)}">${INFO_ICON}</button><span class="feature-flag-info-pop" role="tooltip">${escape(f.info)}</span></span>` : ''
+        <span class="feature-flag-label">${escape(t(f.label))}${f.pill ? `<span class="feature-flag-pill">${escape(t(f.pill))}</span>` : ''}${
+          f.info ? `<span class="feature-flag-info"><button type="button" class="feature-flag-info-btn" aria-label="${escape(t('About: {label}', { label: t(f.label) }))}">${INFO_ICON}</button><span class="feature-flag-info-pop" role="tooltip">${escape(t(f.info))}</span></span>` : ''
         }</span>
         <input type="checkbox" class="feature-flag-input" data-flag="${escape(f.id)}" ${isFlagOn(profile, f) ? 'checked' : ''}>
         <span class="feature-flag-switch" aria-hidden="true"></span>
@@ -341,7 +342,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (!input.checked) stopNeurospicy();
       syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);
     }
-    announce(`${input.checked ? 'Enabled' : 'Disabled'}`);
+    announce(input.checked ? t('Enabled') : t('Disabled'));
   });
 
   // Deep-link target: the gallery's empty state links here (#/profile?focus=feature-flags)
@@ -408,8 +409,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   const optInText = viewEl.querySelector('.profile-check-text');
   useDetailsInput?.addEventListener('change', () => {
     const on = useDetailsInput!.checked;
-    if (optInTag) optInTag.textContent = on ? 'Opted-in' : 'opt-in';
-    if (optInText) optInText.textContent = on ? 'Using my details' : 'Use my details to create';
+    if (optInTag) optInTag.textContent = on ? t('Opted-in') : t('opt-in');
+    if (optInText) optInText.textContent = on ? t('Using my details') : t('Use my details to create');
     // Opting in is the app's most magical moment — a cascade up and back down; opting out is
     // genuinely sad. (The checkbox's press-tick already played via the global click cue.)
     playSfx(on ? 'optIn' : 'optOut');
@@ -427,7 +428,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       preview.style.backgroundImage = headshotUrl ? `url('${headshotUrl}')` : '';
     }
     const uploadBtn = viewEl.querySelector('#headshot-upload');
-    if (uploadBtn) uploadBtn.textContent = headshotUrl ? 'Edit' : 'Upload';
+    if (uploadBtn) uploadBtn.textContent = headshotUrl ? t('Edit') : t('Upload');
     const removeBtn = viewEl.querySelector<HTMLElement>('#headshot-remove');
     if (removeBtn) removeBtn.hidden = !headshotUrl;
   };
@@ -472,7 +473,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   viewEl.querySelector('#profile-form')!.addEventListener('submit', async e => {
     e.preventDefault();
     const btn = (e.target as HTMLFormElement).querySelector<HTMLButtonElement>('button[type="submit"]');
-    const label = btn?.textContent ?? 'Save';
+    const label = btn?.textContent ?? t('Save');
     if (btn) btn.disabled = true;
     const data = Object.fromEntries(new FormData(e.target as HTMLFormElement).entries());
     // Checkboxes aren't reliably in FormData (omitted when unchecked), so read it explicitly.
@@ -482,14 +483,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const current = await host.profile.get();
       // The FormData rows are dynamic string/File pairs; the merged record is a Profile.
       await host.profile.set!({ ...current, ...data, useDetails } as unknown as Profile);
-      if (btn) btn.textContent = 'Saved';
+      if (btn) btn.textContent = t('Saved');
       playSfx('saveProfile');   // a warm, lovely "all set" chime on a successful save
-      announce('Profile saved');
+      announce(t('Profile saved'));
       // Stay on the page; restore the button shortly after so users can keep editing.
       setTimeout(() => { if (btn) { btn.textContent = label; btn.disabled = false; } }, 1600);
     } catch {
       if (btn) { btn.textContent = label; btn.disabled = false; }
-      announce("Couldn't save — try again", { assertive: true });
+      announce(t("Couldn't save — try again"), { assertive: true });
     }
   });
 
@@ -510,7 +511,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   let storageLoaded = false;
   // Tool display names + a glyph for sessions saved without a thumbnail.
   const toolNameById = new Map((window.__toolIndex?.tools ?? []).map(t => [t.id, t.name] as [string, string]));
-  const toolNameOf = (id: string) => toolNameById.get(id) || id || 'Saved session';
+  const toolNameOf = (id: string) => toolNameById.get(id) || id || t('Saved session');
   const SESS_PLACEHOLDER = `<span class="store-sess-thumb is-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m21 15-4.5-4.5L7 21"/></svg></span>`;
   const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -597,14 +598,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ? `<img class="store-sess-thumb" src="${escape(s.thumb)}" alt="" loading="lazy">`
       : SESS_PLACEHOLDER;
     return `<li class="store-sess" data-slot="${escape(s.slot)}">
-      <input type="checkbox" class="store-sess-check" data-slot="${escape(s.slot)}" aria-label="Select ${escape(label)}">
+      <input type="checkbox" class="store-sess-check" data-slot="${escape(s.slot)}" aria-label="${escape(t('Select {name}', { name: label }))}">
       ${thumb}
       <span class="store-sess-meta">
-        <span class="store-sess-label">${escape(label)}${isBatch ? '<span class="store-sess-tag">batch</span>' : ''}</span>
+        <span class="store-sess-label">${escape(label)}${isBatch ? `<span class="store-sess-tag">${t('batch')}</span>` : ''}</span>
         <span class="store-sess-sub">${escape(toolNameOf(s.toolId))}${s.updatedAt ? ` · ${escape(relativeTime(s.updatedAt))}` : ''}</span>
       </span>
       <span class="session-size">${fmtBytes(bytes)}</span>
-      <button type="button" class="store-sess-del" data-del-session="${escape(s.slot)}" aria-label="Delete ${escape(label)}">&#x2715;</button>
+      <button type="button" class="store-sess-del" data-del-session="${escape(s.slot)}" aria-label="${escape(t('Delete {name}', { name: label }))}">&#x2715;</button>
     </li>`;
   }
   function sessionRowsHtml(m: StorageModel, sort: string) {
@@ -612,7 +613,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const rows = [...m.sessions.list];
     if (sort === 'recent') rows.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
     else rows.sort((a, b) => (sizes[b.slot] || 0) - (sizes[a.slot] || 0));
-    if (!rows.length) return `<li class="storage-empty">No saved sessions yet.</li>`;
+    if (!rows.length) return `<li class="storage-empty">${t('No saved sessions yet.')}</li>`;
     return rows.map(s => renderSessRow(s, sizes[s.slot] || 0)).join('');
   }
 
@@ -621,10 +622,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   function renderSection(m: StorageModel, sort: string) {
     const hasPrev = m.previews.available;
     return `
-      <section class="store-meter" aria-label="Storage on this device">
+      <section class="store-meter" aria-label="${escape(t('Storage on this device'))}">
         <header class="store-hero">
           <p class="store-hero-num" id="store-hero-num" data-bytes="0">0 KB</p>
-          <p class="store-hero-cap">On this device ${infoDot('The real total this origin uses on this device, measured by your browser. Everything below is on THIS device only — nothing is uploaded.')}</p>
+          <p class="store-hero-cap">${t('On this device')} ${infoDot(t('The real total this origin uses on this device, measured by your browser. Everything below is on THIS device only — nothing is uploaded.'))}</p>
           <p class="store-headroom" id="store-headroom" hidden></p>
         </header>
 
@@ -638,11 +639,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <p class="visually-hidden" id="store-aria-sentence"></p>
 
         <ul class="store-legend" role="list">
-          <li><button type="button" class="store-chip" data-cat="sessions"><span class="store-chip-sw" data-cat="sessions"></span><span class="store-chip-name">Saved sessions</span><span class="store-chip-val" data-size="sessions">—</span></button></li>
-          <li><button type="button" class="store-chip" data-cat="images"><span class="store-chip-sw" data-cat="images"></span><span class="store-chip-name">My images</span><span class="store-chip-val" data-size="images">—</span></button></li>
-          <li><button type="button" class="store-chip" data-cat="cache"><span class="store-chip-sw" data-cat="cache"></span><span class="store-chip-name">Asset cache</span><span class="store-chip-val" data-size="cache">—</span></button></li>
-          ${hasPrev ? `<li><button type="button" class="store-chip" data-cat="previews"><span class="store-chip-sw" data-cat="previews"></span><span class="store-chip-name">Tool previews</span><span class="store-chip-val" data-size="previews">—</span></button></li>` : ''}
-          ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">Other</span><span class="store-chip-val" data-size="other">—</span>${infoDot('Your profile, internal indexes, the offline app cache and storage overhead — everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.')}</span></li>` : ''}
+          <li><button type="button" class="store-chip" data-cat="sessions"><span class="store-chip-sw" data-cat="sessions"></span><span class="store-chip-name">${t('Saved sessions')}</span><span class="store-chip-val" data-size="sessions">—</span></button></li>
+          <li><button type="button" class="store-chip" data-cat="images"><span class="store-chip-sw" data-cat="images"></span><span class="store-chip-name">${t('My images')}</span><span class="store-chip-val" data-size="images">—</span></button></li>
+          <li><button type="button" class="store-chip" data-cat="cache"><span class="store-chip-sw" data-cat="cache"></span><span class="store-chip-name">${t('Asset cache')}</span><span class="store-chip-val" data-size="cache">—</span></button></li>
+          ${hasPrev ? `<li><button type="button" class="store-chip" data-cat="previews"><span class="store-chip-sw" data-cat="previews"></span><span class="store-chip-name">${t('Tool previews')}</span><span class="store-chip-val" data-size="previews">—</span></button></li>` : ''}
+          ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">${t('Other')}</span><span class="store-chip-val" data-size="other">—</span>${infoDot(t('Your profile, internal indexes, the offline app cache and storage overhead — everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.'))}</span></li>` : ''}
         </ul>
 
         <p class="store-quota" id="store-quota" hidden><span class="storage-bar-wrap"><span class="storage-bar-fill" id="store-quota-fill" style="width:0%"></span></span><span class="store-quota-text" id="store-quota-text"></span></p>
@@ -651,25 +652,25 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
         <div class="store-manages">
           <details class="store-manage" data-cat="sessions">
-            <summary class="store-manage-sum">${COLLAPSE_CHEV}<span>Saved sessions</span> <span class="storage-count" data-count="sessions">0</span> <span class="storage-hint" data-size-hint="sessions">0 KB</span></summary>
+            <summary class="store-manage-sum">${COLLAPSE_CHEV}<span>${t('Saved sessions')}</span> <span class="storage-count" data-count="sessions">0</span> <span class="storage-hint" data-size-hint="sessions">0 KB</span></summary>
             <div class="store-manage-body">
               <div class="store-sess-tools">
-                <label class="store-selall"><input type="checkbox" id="sess-selall"> Select all</label>
-                <button type="button" class="store-sort" data-sort="${sort}">${sort === 'recent' ? 'Recent ▾' : 'Largest first ▾'}</button>
+                <label class="store-selall"><input type="checkbox" id="sess-selall"> ${t('Select all')}</label>
+                <button type="button" class="store-sort" data-sort="${sort}">${sort === 'recent' ? t('Recent ▾') : t('Largest first ▾')}</button>
               </div>
               <ul class="store-sess-list" id="store-sess-list">${sessionRowsHtml(m, sort)}</ul>
-              <a class="store-manage-link" href="#/p">Organise in Projects →</a>
+              <a class="store-manage-link" href="#/p">${t('Organise in Projects')} →</a>
             </div>
           </details>
 
           <details class="store-manage" data-cat="images">
-            <summary class="store-manage-sum">${COLLAPSE_CHEV}<span>My images</span> <span class="storage-count" id="userimg-count">0</span> <span class="storage-hint" id="userimg-size">0 KB</span> ${infoDot('Images you save to reuse across tools. This size includes your profile photo and any brand fonts.')}</summary>
+            <summary class="store-manage-sum">${COLLAPSE_CHEV}<span>${t('My images')}</span> <span class="storage-count" id="userimg-count">0</span> <span class="storage-hint" id="userimg-size">0 KB</span> ${infoDot(t('Images you save to reuse across tools. This size includes your profile photo and any brand fonts.'))}</summary>
             <div class="store-manage-body">
               <div class="userimg-grid" id="userimg-grid">
                 ${m.images.list.map(userImageThumb).join('')}
-                <button type="button" class="userimg-add" id="userimg-add" aria-label="Add images">
+                <button type="button" class="userimg-add" id="userimg-add" aria-label="${escape(t('Add images'))}">
                   <span class="userimg-add-icon" aria-hidden="true">+</span>
-                  <span class="userimg-add-text">Add</span>
+                  <span class="userimg-add-text">${t('Add')}</span>
                 </button>
               </div>
               <input type="file" id="userimg-file" accept="image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov" multiple hidden>
@@ -678,37 +679,37 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           </details>
 
           <div class="store-manage store-manage--row" data-cat="cache">
-            <span class="store-manage-name">Asset cache ${infoDot('Downloaded catalog content; it re-downloads on demand. Safe to clear.')} <span class="storage-count" data-size-label="cache">0 KB</span></span>
-            <button type="button" id="clear-cache-btn" class="btn-link-danger">Clear cache</button>
+            <span class="store-manage-name">${t('Asset cache')} ${infoDot(t('Downloaded catalog content; it re-downloads on demand. Safe to clear.'))} <span class="storage-count" data-size-label="cache">0 KB</span></span>
+            <button type="button" id="clear-cache-btn" class="btn-link-danger">${t('Clear cache')}</button>
           </div>
 
           ${hasPrev ? `<div class="store-manage store-manage--row" data-cat="previews">
-            <span class="store-manage-name">Tool previews ${infoDot('Snapshots Lolly draws of personalised tool cards — they redraw when needed. Safe to clear.')} <span class="storage-count" data-size-label="previews">0 KB</span></span>
-            <button type="button" id="clear-previews-btn" class="btn-link-danger">Clear previews</button>
+            <span class="store-manage-name">${t('Tool previews')} ${infoDot(t('Snapshots Lolly draws of personalised tool cards — they redraw when needed. Safe to clear.'))} <span class="storage-count" data-size-label="previews">0 KB</span></span>
+            <button type="button" id="clear-previews-btn" class="btn-link-danger">${t('Clear previews')}</button>
           </div>` : ''}
         </div>
 
         <div class="storage-subsection">
           <div class="storage-subsection-header">
-            <span>Move to another device ${infoDot('Export everything — profile, saved sessions, uploaded images and preferences — as one file, then import it on another offline install to pick up exactly where you left off. Stays entirely on your devices.')}</span>
+            <span>${t('Move to another device')} ${infoDot(t('Export everything — profile, saved sessions, uploaded images and preferences — as one file, then import it on another offline install to pick up exactly where you left off. Stays entirely on your devices.'))}</span>
           </div>
           <div class="storage-actions">
-            <button type="button" id="export-data-btn" class="btn" data-sfx="whoosh">Export my data</button>
-            <button type="button" id="import-data-btn" class="btn">Import data…</button>
+            <button type="button" id="export-data-btn" class="btn" data-sfx="whoosh">${t('Export my data')}</button>
+            <button type="button" id="import-data-btn" class="btn">${t('Import data…')}</button>
             <input type="file" id="import-data-input" accept=".zip,application/zip" hidden>
           </div>
-          <button type="button" id="export-render-btn" class="btn storage-hoard-btn">📦 Export my data &amp; render everything</button>
-          <p class="storage-hoard-hint">The backup above, plus a second zip that <strong>renders every saved session</strong> to its output file — organised into folders that mirror your Projects. A complete offline archive; can be large and slow with many sessions.</p>
+          <button type="button" id="export-render-btn" class="btn storage-hoard-btn">📦 ${t('Export my data &amp; render everything')}</button>
+          <p class="storage-hoard-hint">${t('The backup above, plus a second zip that <strong>renders every saved session</strong> to its output file — organised into folders that mirror your Projects. A complete offline archive; can be large and slow with many sessions.')}</p>
         </div>
 
         <div class="storage-actions">
-          <button type="button" id="clear-storage-btn" class="btn btn-danger">Clear all my data</button>
+          <button type="button" id="clear-storage-btn" class="btn btn-danger">${t('Clear all my data')}</button>
         </div>
 
         <div class="store-selbar" id="store-selbar" role="region" aria-live="polite" hidden>
-          <span class="store-selbar-count">0 selected</span>
-          <button type="button" class="btn store-selbar-clear">Clear selection</button>
-          <button type="button" class="btn btn-danger store-selbar-del">Delete</button>
+          <span class="store-selbar-count">${t('0 selected')}</span>
+          <button type="button" class="btn store-selbar-clear">${t('Clear selection')}</button>
+          <button type="button" class="btn btn-danger store-selbar-del">${t('Delete')}</button>
         </div>
       </section>`;
   }
@@ -757,7 +758,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     };
     function updateReclaim(m: StorageModel) {
       const el = body.querySelector('#store-reclaim');
-      if (el) el.innerHTML = `Up to <strong>${fmtBytes(m.cache.bytes + m.previews.bytes + selectedSessionBytes())}</strong> can be freed here`;
+      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + selectedSessionBytes()) });
     }
 
     // Refresh ONLY the visualization (hero, segments, legend, quota, reclaim, aria,
@@ -768,23 +769,23 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (headroom) {
         if (m.hasEstimate && m.quota) {
           const used = m.usage! / m.quota;
-          const phrase = used < 0.5 ? 'lots of room left' : used < 0.8 ? 'plenty of room left' : used < 0.95 ? 'getting full' : 'almost full';
-          headroom.textContent = `Using ${fmtPct(m.usage!, m.quota)} of your ${fmtBytes(m.quota)} device budget · ${phrase}`;
+          const phrase = used < 0.5 ? t('lots of room left') : used < 0.8 ? t('plenty of room left') : used < 0.95 ? t('getting full') : t('almost full');
+          headroom.textContent = t('Using {pct} of your {quota} device budget · {phrase}', { pct: fmtPct(m.usage!, m.quota), quota: fmtBytes(m.quota), phrase });
           headroom.hidden = false;
         } else headroom.hidden = true;
       }
       const segs: Array<[string, number, string, boolean]> = [
-        ['sessions', m.sessions.bytes, 'Saved sessions', true],
-        ['images', m.images.bytes, 'My images', true],
-        ['cache', m.cache.bytes, 'Asset cache', true],
-        ['previews', m.previews.bytes, 'Tool previews', m.previews.available],
+        ['sessions', m.sessions.bytes, t('Saved sessions'), true],
+        ['images', m.images.bytes, t('My images'), true],
+        ['cache', m.cache.bytes, t('Asset cache'), true],
+        ['previews', m.previews.bytes, t('Tool previews'), m.previews.available],
       ];
       for (const [cat, bytes, label, avail] of segs) {
         const seg = bar?.querySelector<HTMLElement>(`.seg[data-cat="${cat}"]`);
         if (!seg) continue;
         seg.style.flexGrow = String(Math.max(0, bytes));
         seg.hidden = !avail || bytes <= 0;
-        seg.setAttribute('aria-label', `${label}, ${fmtBytes(bytes)} — manage`);
+        seg.setAttribute('aria-label', t('{label}, {size} — manage', { label, size: fmtBytes(bytes) }));
         seg.title = `${label} — ${fmtBytes(bytes)}`;
       }
       const otherSeg = bar?.querySelector<HTMLElement>('.seg--other');
@@ -809,14 +810,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const quotaText = body.querySelector('#store-quota-text');
       if (m.hasEstimate && m.quota) {
         if (fill) fill.style.width = `${Math.min(100, (m.usage! / m.quota) * 100)}%`;
-        if (quotaText) quotaText.innerHTML = `${fmtBytes(m.usage!)} of ${fmtBytes(m.quota)} device budget · <strong>${fmtPct(m.usage!, m.quota)}</strong> used`;
+        if (quotaText) quotaText.innerHTML = t('{used} of {quota} device budget · <strong>{pct}</strong> used', { used: fmtBytes(m.usage!), quota: fmtBytes(m.quota), pct: fmtPct(m.usage!, m.quota) });
         if (quotaRow) quotaRow.hidden = false;
       } else if (quotaRow) quotaRow.hidden = true;
 
       const note = body.querySelector<HTMLElement>('#store-footnote');
       if (note) {
-        if (!m.hasEstimate) { note.textContent = 'Device total unavailable — showing measured items only.'; note.hidden = false; }
-        else if (m.overshoot) { note.textContent = "Measured items meet or exceed the browser's estimate (estimates are approximate)."; note.hidden = false; }
+        if (!m.hasEstimate) { note.textContent = t('Device total unavailable — showing measured items only.'); note.hidden = false; }
+        else if (m.overshoot) { note.textContent = t("Measured items meet or exceed the browser's estimate (estimates are approximate)."); note.hidden = false; }
         else note.hidden = true;
       }
       const aria = body.querySelector('#store-aria-sentence');
@@ -843,7 +844,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     const ensureSessEmptyState = () => {
       const list = body.querySelector('#store-sess-list');
-      if (list && !list.querySelector('.store-sess')) list.innerHTML = `<li class="storage-empty">No saved sessions yet.</li>`;
+      if (list && !list.querySelector('.store-sess')) list.innerHTML = `<li class="storage-empty">${t('No saved sessions yet.')}</li>`;
     };
     function syncSelbar() {
       const checked = [...body.querySelectorAll<HTMLElement>('.store-sess-check:checked')];
@@ -851,7 +852,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         selbar.hidden = checked.length === 0;
         let bytes = 0; checked.forEach(c => bytes += model.sessions.sizes[c.dataset.slot!] || 0);
         const cnt = selbar.querySelector('.store-selbar-count');
-        if (cnt) cnt.textContent = `${checked.length} selected · ${fmtBytes(bytes)}`;
+        if (cnt) cnt.textContent = t('{n} selected · {size}', { n: checked.length, size: fmtBytes(bytes) });
       }
       // Reserve space so the fixed bar never covers the section's bottom controls (mobile).
       body.querySelector('.store-meter')?.classList.toggle('has-selbar', checked.length > 0);
@@ -877,11 +878,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     async function deleteOneSession(slot: string, btn: HTMLButtonElement) {
       const bytes = model.sessions.sizes[slot] || 0;
       const row = [...body.querySelectorAll<HTMLElement>('.store-sess')].find(r => r.dataset.slot === slot);
-      const label = row?.querySelector('.store-sess-label')?.textContent || 'this session';
+      const label = row?.querySelector('.store-sess-label')?.textContent || t('this session');
       const ok = await confirmDialog({
-        title: 'Delete this session?',
-        message: `"${label}" will be permanently removed from this device${bytes ? `, freeing about ${fmtBytes(bytes)}` : ''}. This cannot be undone.`,
-        confirmLabel: 'Delete',
+        title: t('Delete this session?'),
+        message: bytes
+          ? t('"{name}" will be permanently removed from this device, freeing about {size}. This cannot be undone.', { name: label, size: fmtBytes(bytes) })
+          : t('"{name}" will be permanently removed from this device. This cannot be undone.', { name: label }),
+        confirmLabel: t('Delete'),
       });
       if (!ok) return;
       // The next/previous row's delete button is the natural landing spot post-removal.
@@ -894,7 +897,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       syncSelbar();
       focusSurvivingSession(nextFocus);
       await refreshMeter();
-      announce(`Freed ${fmtBytes(bytes)} — ${fmtBytes(model.hasEstimate ? model.total : model.measured)} used`);
+      announce(t('Freed {freed} — {used} used', { freed: fmtBytes(bytes), used: fmtBytes(model.hasEstimate ? model.total : model.measured) }));
     }
 
     async function deleteSelectedSessions(btn: HTMLButtonElement) {
@@ -903,12 +906,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const slots = checked.map(c => c.dataset.slot!);
       let bytes = 0; slots.forEach(s => bytes += model.sessions.sizes[s] || 0);
       const ok = await confirmDialog({
-        title: `Delete ${slots.length} saved session${slots.length === 1 ? '' : 's'}?`,
-        message: `This permanently removes ${slots.length === 1 ? 'it' : 'them'} from this device, freeing about ${fmtBytes(bytes)}. This cannot be undone.`,
-        confirmLabel: `Delete ${slots.length}`,
+        title: slots.length === 1 ? t('Delete 1 saved session?') : t('Delete {n} saved sessions?', { n: slots.length }),
+        message: slots.length === 1
+          ? t('This permanently removes it from this device, freeing about {size}. This cannot be undone.', { size: fmtBytes(bytes) })
+          : t('This permanently removes them from this device, freeing about {size}. This cannot be undone.', { size: fmtBytes(bytes) }),
+        confirmLabel: t('Delete {n}', { n: slots.length }),
       });
       if (!ok) return;
-      const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Deleting…';
+      const prev = btn.textContent; btn.disabled = true; btn.textContent = t('Deleting…');
       // Only splice a row once its delete actually resolves — otherwise a rejected
       // delete leaves a ghost (row gone, but the session still counted by refreshMeter
       // and resurrected on the next sort). Freed bytes are summed from real successes.
@@ -925,14 +930,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       focusSurvivingSession();
       await refreshMeter();
       announce(done === slots.length
-        ? `Deleted ${done} session${done === 1 ? '' : 's'} — freed ${fmtBytes(freed)}`
-        : `Deleted ${done} of ${slots.length} — freed ${fmtBytes(freed)}; some could not be removed`);
+        ? (done === 1 ? t('Deleted 1 session — freed {size}', { size: fmtBytes(freed) }) : t('Deleted {n} sessions — freed {size}', { n: done, size: fmtBytes(freed) }))
+        : t('Deleted {done} of {total} — freed {size}; some could not be removed', { done, total: slots.length, size: fmtBytes(freed) }));
     }
 
     function toggleSort(btn: HTMLElement) {
       sessSort = sessSort === 'size' ? 'recent' : 'size';
       btn.dataset.sort = sessSort;
-      btn.textContent = sessSort === 'recent' ? 'Recent ▾' : 'Largest first ▾';
+      btn.textContent = sessSort === 'recent' ? t('Recent ▾') : t('Largest first ▾');
       const checked = new Set([...body.querySelectorAll<HTMLElement>('.store-sess-check:checked')].map(c => c.dataset.slot!));
       const list = body.querySelector('#store-sess-list');
       if (list) list.innerHTML = sessionRowsHtml(model, sessSort);
@@ -944,9 +949,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     }
 
     async function clearRegenerable(btn: HTMLButtonElement, fn: () => Promise<unknown>, doneMsg: string) {
-      const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Clearing…';
+      const prev = btn.textContent; btn.disabled = true; btn.textContent = t('Clearing…');
       try { await fn(); } catch (err) { host.log?.('error', doneMsg, { error: String(err) }); }
-      btn.textContent = 'Cleared';
+      btn.textContent = t('Cleared');
       setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 1500);
       await refreshMeter();
       announce(doneMsg);
@@ -964,10 +969,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (sortBtn) { toggleSort(sortBtn); return; }
 
       const cacheBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-cache-btn');
-      if (cacheBtn) { await clearRegenerable(cacheBtn, () => clearIdbStores(['asset-blob', 'asset-meta']), 'Cleared asset cache'); return; }
+      if (cacheBtn) { await clearRegenerable(cacheBtn, () => clearIdbStores(['asset-blob', 'asset-meta']), t('Cleared asset cache')); return; }
 
       const prevBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-previews-btn');
-      if (prevBtn) { await clearRegenerable(prevBtn, () => host.previews?.clear(), 'Cleared tool previews'); return; }
+      if (prevBtn) { await clearRegenerable(prevBtn, () => host.previews?.clear(), t('Cleared tool previews')); return; }
 
       if ((e.target as Element).closest('.store-selbar-clear')) { body.querySelectorAll<HTMLInputElement>('.store-sess-check').forEach(c => { c.checked = false; }); syncSelbar(); return; }
       const selDel = (e.target as Element).closest<HTMLButtonElement>('.store-selbar-del');
@@ -1046,15 +1051,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       overlay.className = 'clear-dialog-overlay';
       overlay.innerHTML = `
         <div class="clear-dialog" role="dialog" aria-modal="true" aria-labelledby="clear-dialog-title">
-          <h3 id="clear-dialog-title">Clear all my data?</h3>
-          <p>This removes your profile, all saved sessions, your uploaded images, and the asset cache. Cannot be undone.</p>
+          <h3 id="clear-dialog-title">${t('Clear all my data?')}</h3>
+          <p>${t('This removes your profile, all saved sessions, your uploaded images, and the asset cache. Cannot be undone.')}</p>
           <label class="clear-confirm">
-            <span class="clear-confirm-prompt">Type <strong>${word}</strong> to confirm</span>
-            <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Type ${word} to confirm">
+            <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word })}</span>
+            <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(t('Type {word} to confirm', { word }))}">
           </label>
           <div class="clear-dialog-actions">
-            <button class="btn btn-danger" data-scope="all" data-sfx="byebye" disabled>Clear everything</button>
-            <button class="btn" data-scope="cancel">Cancel</button>
+            <button class="btn btn-danger" data-scope="all" data-sfx="byebye" disabled>${t('Clear everything')}</button>
+            <button class="btn" data-scope="cancel">${t('Cancel')}</button>
           </div>
         </div>
       `;
@@ -1087,7 +1092,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
         const btns = overlay.querySelectorAll('button');
         btns.forEach(b => (b.disabled = true));
-        clearBtn.textContent = 'Clearing…';
+        clearBtn.textContent = t('Clearing…');
 
         localStorage.clear();
         sessionStorage.clear();
@@ -1114,17 +1119,20 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const btn = e.currentTarget as HTMLButtonElement;
       const prev = btn.textContent;
       btn.disabled = true;
-      btn.textContent = 'Exporting…';
+      btn.textContent = t('Exporting…');
       try {
         // host carries the web-only bridge methods exportBackup needs; its exact
         // BackupHost type isn't exported from data-transfer.
         const { blob, filename, summary } = await exportBackup({ host: host as unknown as Parameters<typeof exportBackup>[0]['host'], storage: localStorage });
         saveBlob(blob, filename);
-        announce(`Exported ${summary.sessions} session${summary.sessions === 1 ? '' : 's'} and ${summary.userAssets} image${summary.userAssets === 1 ? '' : 's'}`);
-        btn.textContent = 'Exported';
+        announce(t('Exported {sessions} and {images}', {
+          sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
+          images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
+        }));
+        btn.textContent = t('Exported');
       } catch (err) {
         host.log?.('error', 'Data export failed', { error: String(err) });
-        btn.textContent = 'Export failed';
+        btn.textContent = t('Export failed');
       }
       setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 1800);
     });
@@ -1139,15 +1147,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       overlay.className = 'clear-dialog-overlay';
       overlay.innerHTML = `
         <div class="clear-dialog clear-dialog--hoard" role="dialog" aria-modal="true" aria-labelledby="hoard-dialog-title">
-          <h3 id="hoard-dialog-title">Export everything — and render it all?</h3>
-          <p>Downloads a full <strong>backup</strong> of your data, then a <strong>rendered archive</strong> — every saved session output to its file, in folders that mirror your Projects. Nothing is deleted. A big library makes a big zip and can take a while.</p>
+          <h3 id="hoard-dialog-title">${t('Export everything — and render it all?')}</h3>
+          <p>${t('Downloads a full <strong>backup</strong> of your data, then a <strong>rendered archive</strong> — every saved session output to its file, in folders that mirror your Projects. Nothing is deleted. A big library makes a big zip and can take a while.')}</p>
           <label class="clear-confirm">
-            <span class="clear-confirm-prompt">Type <strong>${escape(word)}</strong> to confirm</span>
-            <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Type ${escape(word)} to confirm">
+            <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word: escape(word) })}</span>
+            <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(t('Type {word} to confirm', { word }))}">
           </label>
           <div class="clear-dialog-actions">
-            <button class="btn btn-go" data-scope="go" disabled>Hoard it all 📦</button>
-            <button class="btn" data-scope="cancel">Cancel</button>
+            <button class="btn btn-go" data-scope="go" disabled>${t('Hoard it all 📦')}</button>
+            <button class="btn" data-scope="cancel">${t('Cancel')}</button>
           </div>
         </div>`;
       document.body.appendChild(overlay);
@@ -1185,17 +1193,17 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // `behind` is dimmed while the choice is open so the progress toast doesn't distract.
     function askKeepTabActive(count: number, behind?: HTMLElement): Promise<'include' | 'skip' | 'cancel'> {
       return new Promise(resolve => {
-        const n = `${count} ${count === 1 ? 'creation is a video or animation' : 'of your creations are videos or animations'}`;
+        const n = count === 1 ? t('1 creation is a video or animation') : t('{n} of your creations are videos or animations', { n: count });
         const overlay = document.createElement('div');
         overlay.className = 'clear-dialog-overlay';
         overlay.innerHTML = `
           <div class="clear-dialog clear-dialog--hoard" role="dialog" aria-modal="true" aria-labelledby="keepactive-title">
-            <h3 id="keepactive-title">Keep this tab active?</h3>
-            <p>${escape(n)}. Those record in <strong>real time</strong>, so this browser tab must stay open and in front the whole time they render — switch away and they pause. Include them?</p>
+            <h3 id="keepactive-title">${t('Keep this tab active?')}</h3>
+            <p>${t('{n}. Those record in <strong>real time</strong>, so this browser tab must stay open and in front the whole time they render — switch away and they pause. Include them?', { n: escape(n) })}</p>
             <div class="clear-dialog-actions">
-              <button class="btn btn-go" data-choice="include">I'm willing to keep this tab active</button>
-              <button class="btn" data-choice="skip">Skip videos for now</button>
-              <button class="btn" data-choice="cancel">Cancel</button>
+              <button class="btn btn-go" data-choice="include">${t("I'm willing to keep this tab active")}</button>
+              <button class="btn" data-choice="skip">${t('Skip videos for now')}</button>
+              <button class="btn" data-choice="cancel">${t('Cancel')}</button>
             </div>
           </div>`;
         document.body.appendChild(overlay);
@@ -1232,7 +1240,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       // Top-right so the wait-time quips are readable while a big archive renders (the
       // bottom-right default can sit below the fold on a long, scrolled profile page).
       toast.className = 'pro-toast pro-toast--top';
-      toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="Close">✕</button><div class="pro-toast-mount"><p class="pro-progress-msg"><strong>Preparing your export…</strong></p></div>`;
+      toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="${escape(t('Close'))}">✕</button><div class="pro-toast-mount"><p class="pro-progress-msg"><strong>${t('Preparing your export…')}</strong></p></div>`;
       document.body.appendChild(toast);
       const mount = toast.querySelector<HTMLElement>('.pro-toast-mount')!;
       toast.querySelector('.pro-toast-close')!.addEventListener('click', () => toast.remove());
@@ -1244,11 +1252,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       try {
         const { blob, filename, summary } = await exportBackup({ host: host as unknown as Parameters<typeof exportBackup>[0]['host'], storage: localStorage });
         saveBlob(blob, filename);
-        mount.innerHTML = `<p class="pro-progress-msg"><strong>Saved your data backup.</strong> Now rendering every creation…</p>`;
-        announce(`Data backup saved: ${summary.sessions} session${summary.sessions === 1 ? '' : 's'}, ${summary.userAssets} image${summary.userAssets === 1 ? '' : 's'}`);
+        mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Saved your data backup.</strong> Now rendering every creation…')}</p>`;
+        announce(t('Data backup saved: {sessions}, {images}', {
+          sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
+          images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
+        }));
       } catch (err) {
         host.log?.('error', 'Data export failed', { error: String(err) });
-        mount.innerHTML = `<p class="pro-progress-msg pro-log-err">The data backup failed (${escape(String((err as { message?: unknown })?.message ?? err))}). Continuing to the render…</p>`;
+        mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('The data backup failed ({error}). Continuing to the render…', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
       }
 
       // 2) Render EVERYTHING into one nested zip mirroring the Projects tree: loose
@@ -1265,7 +1276,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         const looseSlots = entries.filter(e => !claimed.has(e.slot)).map(e => e.slot);
         const topLevelIds = childFolders(folders, null).map(f => f.id);
         if (!looseSlots.length && !topLevelIds.length) {
-          mount.innerHTML = `<p class="pro-progress-msg"><strong>Backup saved.</strong> You have no saved sessions to render yet — make something first, then come back.</p>`;
+          mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> You have no saved sessions to render yet — make something first, then come back.')}</p>`;
           return;
         }
         const result = await exportSelectionAsBatch(host as unknown as Parameters<typeof exportSelectionAsBatch>[0], {
@@ -1285,10 +1296,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         // A falsy result means the motion prompt was cancelled — the backup still went out,
         // but nothing was rendered, so say so rather than leaving a stale "rendering…".
         if (!result) {
-          mount.innerHTML = `<p class="pro-progress-msg"><strong>Backup saved.</strong> Render cancelled — nothing else was downloaded.</p>`;
+          mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> Render cancelled — nothing else was downloaded.')}</p>`;
         }
       } catch (err) {
-        mount.innerHTML = `<p class="pro-progress-msg pro-log-err">Render failed: ${escape(String((err as { message?: unknown })?.message ?? err))}</p>`;
+        mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('Render failed: {error}', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
         host.log?.('error', 'Render-everything failed', { error: String(err) });
       }
     }
@@ -1314,11 +1325,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         applyTheme(localStorage.getItem('theme') || 'light');
         // `skipped` > 0 means the bundle came from a newer app and carried parts this
         // build doesn't understand yet — surface it rather than pretend a full restore.
-        const skipNote = summary.skipped ? ` · ${summary.skipped} newer item${summary.skipped === 1 ? '' : 's'} skipped` : '';
+        const skipNote = summary.skipped ? ` · ${summary.skipped === 1 ? t('1 newer item skipped') : t('{n} newer items skipped', { n: summary.skipped })}` : '';
         // Failed restores are surfaced separately (and assertively) — a silently-dropped
         // image would be lost for good once the user discards the source backup.
-        const failNote = summary.failedAssets ? ` · ${summary.failedAssets} image${summary.failedAssets === 1 ? '' : 's'} couldn’t be restored (storage full?)` : '';
-        announce(`Imported ${summary.sessions} session${summary.sessions === 1 ? '' : 's'} and ${summary.userAssets} image${summary.userAssets === 1 ? '' : 's'}${skipNote}${failNote}`, summary.failedAssets ? { assertive: true } : undefined);
+        const failNote = summary.failedAssets ? ` · ${summary.failedAssets === 1 ? t('1 image couldn’t be restored (storage full?)') : t('{n} images couldn’t be restored (storage full?)', { n: summary.failedAssets })}` : '';
+        announce(t('Imported {sessions} and {images}', {
+          sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
+          images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
+        }) + skipNote + failNote, summary.failedAssets ? { assertive: true } : undefined);
         await mountProfile(viewEl, host);
       });
     });
@@ -1361,38 +1375,38 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ...(health?.devProvider === true ? ['dev'] : []),
     ];
     return `
-      <p class="identity-blurb">Sign exports with a verified identity — a short-lived certificate ties your email to files you export; the key never leaves this device. <a href="${docsHref('content-credentials-identity')}" target="_blank" rel="noopener">How it works</a></p>
-      <label class="identity-days-row">Verified for
-        <select class="identity-days-select" aria-label="Certificate lifetime">
-          <option value="7">7 days</option>
-          <option value="30" selected>30 days</option>
-          <option value="90">90 days</option>
-          <option value="365">365 days</option>
+      <p class="identity-blurb">${t('Sign exports with a verified identity — a short-lived certificate ties your email to files you export; the key never leaves this device.')} <a href="${docsHref('content-credentials-identity')}" target="_blank" rel="noopener">${t('How it works')}</a></p>
+      <label class="identity-days-row">${t('Verified for')}
+        <select class="identity-days-select" aria-label="${escape(t('Certificate lifetime'))}">
+          <option value="7">${t('7 days')}</option>
+          <option value="30" selected>${t('30 days')}</option>
+          <option value="90">${t('90 days')}</option>
+          <option value="365">${t('365 days')}</option>
         </select>
-        <span class="identity-days-hint">— longer keeps exports verified longer; shorter limits misuse if this device is lost. The CA has the final say.</span>
+        <span class="identity-days-hint">${t('— longer keeps exports verified longer; shorter limits misuse if this device is lost. The CA has the final say.')}</span>
       </label>
       <div class="identity-providers">
         ${providers.length
-    ? providers.map(p => `<button type="button" class="btn" data-identity-provider="${p}">${escape(PROVIDER_LABELS[p])}</button>`).join('')
-    : '<p class="storage-hint-text">No sign-in provider is configured on this deployment yet.</p>'}
+    ? providers.map(p => `<button type="button" class="btn" data-identity-provider="${p}">${escape(PROVIDER_LABELS[p] ?? p)}</button>`).join('')
+    : `<p class="storage-hint-text">${t('No sign-in provider is configured on this deployment yet.')}</p>`}
       </div>
-      ${VERIFY_LINK}
+      ${verifyLink()}
       <p class="identity-error" role="alert" hidden></p>`;
   }
 
   function renderIdentityStatus(s: IdentityStatus) {
     const provider = PROVIDER_LABELS[s.identity?.provider as string] ?? s.identity?.provider ?? '';
     const when = s.notAfter ? new Date(s.notAfter).toLocaleDateString() : '';
-    const life = s.expired ? (when ? `expired ${when}` : 'expired') : (when ? `renews ${when}` : '');
+    const life = s.expired ? (when ? t('expired {date}', { date: when }) : t('expired')) : (when ? t('renews {date}', { date: when }) : '');
     return `
       <div class="identity-status${s.expired ? ' is-expired' : ''}">
-        <p class="identity-signing">Signing as <strong>${escape(s.identity?.email ?? '')}</strong>${provider ? ` <span class="identity-via">via ${escape(provider)}</span>` : ''}</p>
+        <p class="identity-signing">${t('Signing as <strong>{email}</strong>', { email: escape(s.identity?.email ?? '') })}${provider ? ` <span class="identity-via">${t('via {provider}', { provider: escape(provider) })}</span>` : ''}</p>
         ${life ? `<p class="identity-life">${escape(life)}</p>` : ''}
         <div class="identity-actions">
-          <button type="button" class="btn" data-identity-act="renew">Renew</button>
-          <button type="button" class="btn" data-identity-act="forget">Forget this device</button>
+          <button type="button" class="btn" data-identity-act="renew">${t('Renew')}</button>
+          <button type="button" class="btn" data-identity-act="forget">${t('Forget this device')}</button>
         </div>
-        ${VERIFY_LINK}
+        ${verifyLink()}
         <p class="identity-error" role="alert" hidden></p>
       </div>`;
   }
@@ -1401,7 +1415,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const body = identityBody();
     if (!body) return;
     if (!host.identity) { // bridge feature-detected, like host.previews
-      body.innerHTML = `<p class="storage-hint-text">Signing identity isn't available in this build.</p>`;
+      body.innerHTML = `<p class="storage-hint-text">${t("Signing identity isn't available in this build.")}</p>`;
       return;
     }
     try { identityStatus = await host.identity.status(); }
@@ -1426,11 +1440,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     showIdentityError('');
     const label = btn.textContent;
     body.querySelectorAll('button').forEach(b => { b.disabled = true; });
-    btn.textContent = 'Waiting…';
+    btn.textContent = t('Waiting…');
     try {
       const s = await host.identity!.enroll(provider, { days });
       await paintIdentity();
-      announce(`Enrolled as ${s?.identity?.email ?? 'your account'}`);
+      announce(t('Enrolled as {who}', { who: s?.identity?.email ?? t('your account') }));
     } catch (err) {
       body.querySelectorAll('button').forEach(b => { b.disabled = false; });
       btn.textContent = label;
@@ -1468,12 +1482,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         // (it disarms itself after a moment, so a stray click can't linger armed).
         if (act.dataset.confirm !== '1') {
           act.dataset.confirm = '1';
-          act.textContent = 'Really forget?';
+          act.textContent = t('Really forget?');
           act.classList.add('is-confirm');
           setTimeout(() => {
             if (!document.contains(act)) return;
             delete act.dataset.confirm;
-            act.textContent = 'Forget this device';
+            act.textContent = t('Forget this device');
             act.classList.remove('is-confirm');
           }, 4000);
           return;
@@ -1482,7 +1496,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         try { await host.identity!.forget(); }
         catch (err) { act.disabled = false; showIdentityError(String((err as { message?: unknown })?.message ?? err)); return; }
         await paintIdentity();
-        announce('Forgotten — exports on this device sign anonymously again');
+        announce(t('Forgotten — exports on this device sign anonymously again'));
       }
     });
 
@@ -1498,7 +1512,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
 
 function userImageThumb(ref: AssetRef) {
-  const name = ref.meta?.name ?? 'Image';
+  const name = String(ref.meta?.name ?? t('Image'));
   // SVGs (logos/icons) shouldn't be cropped to fill — show the whole mark.
   const isVector = ref.type === 'vector' || ref.format === 'svg';
   // A lottie's url is JSON (no still image) — show a play-glyph stub, not a broken
@@ -1511,10 +1525,10 @@ function userImageThumb(ref: AssetRef) {
       : `<img class="userimg-thumb${isVector ? ' is-vector' : ''}" src="${escape(ref.url)}" alt="${escape(name)}" loading="lazy">`;
   return `
     <div class="userimg-item" data-userimg="${escape(ref.id)}">
-      <button type="button" class="userimg-view" data-view-userimg="${escape(ref.id)}" title="${escape(name)}" aria-label="View ${escape(name)}">
+      <button type="button" class="userimg-view" data-view-userimg="${escape(ref.id)}" title="${escape(name)}" aria-label="${escape(t('View {name}', { name }))}">
         ${media}
       </button>
-      <button type="button" class="userimg-delete" data-delete-userimg="${escape(ref.id)}" title="Delete" aria-label="Delete ${escape(name)}">&#x2715;</button>
+      <button type="button" class="userimg-delete" data-delete-userimg="${escape(ref.id)}" title="${escape(t('Delete'))}" aria-label="${escape(t('Delete {name}', { name }))}">&#x2715;</button>
     </div>
   `;
 }
@@ -1522,7 +1536,7 @@ function userImageThumb(ref: AssetRef) {
 // Full-size preview overlay for a user image. Closes on backdrop click, the ✕,
 // or Escape. Mirrors the simple overlay pattern used by the clear-data dialog.
 function openImageLightbox(ref: AssetRef) {
-  const name = ref.meta?.name ?? 'Image';
+  const name = ref.meta?.name ?? t('Image');
   const isVector = ref.type === 'vector' || ref.format === 'svg';
   const isLottie = ref.type === 'lottie';
   const isVideo = ref.type === 'video';
@@ -1542,7 +1556,7 @@ function openImageLightbox(ref: AssetRef) {
   overlay.className = 'userimg-lightbox-overlay';
   overlay.innerHTML = `
     <div class="userimg-lightbox" role="dialog" aria-modal="true" aria-label="${escape(name)}">
-      <button type="button" class="userimg-lightbox-close" aria-label="Close">&#x2715;</button>
+      <button type="button" class="userimg-lightbox-close" aria-label="${escape(t('Close'))}">&#x2715;</button>
       ${media}
       <div class="userimg-lightbox-caption">
         <span class="userimg-lightbox-name">${escape(name)}</span>
@@ -1600,12 +1614,12 @@ function showImportDialog(onConfirm: () => Promise<void>) {
   overlay.className = 'clear-dialog-overlay';
   overlay.innerHTML = `
     <div class="clear-dialog" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
-      <h3 id="import-dialog-title">Import data?</h3>
-      <p>This loads the profile, saved sessions, images and preferences from the file. Anything with the same name on this device is overwritten; everything else is kept.</p>
+      <h3 id="import-dialog-title">${t('Import data?')}</h3>
+      <p>${t('This loads the profile, saved sessions, images and preferences from the file. Anything with the same name on this device is overwritten; everything else is kept.')}</p>
       <p class="import-error" style="color:hsl(var(--destructive));font-size:13px;margin:0" hidden></p>
       <div class="clear-dialog-actions">
-        <button class="btn" data-scope="import">Import</button>
-        <button class="btn" data-scope="cancel">Cancel</button>
+        <button class="btn" data-scope="import">${t('Import')}</button>
+        <button class="btn" data-scope="cancel">${t('Cancel')}</button>
       </div>
     </div>
   `;
@@ -1633,16 +1647,16 @@ function showImportDialog(onConfirm: () => Promise<void>) {
     const btns = overlay.querySelectorAll('button');
     const errEl = overlay.querySelector<HTMLElement>('.import-error');
     btns.forEach(b => (b.disabled = true));
-    (e.target as HTMLElement).textContent = 'Importing…';
+    (e.target as HTMLElement).textContent = t('Importing…');
     try {
       await onConfirm();
       trap?.release();  // un-inert before the success re-mount
       document.removeEventListener('keydown', onKey);
       overlay.remove(); // success re-mounts the page; drop the (body-level) overlay
     } catch (err) {
-      if (errEl) { errEl.textContent = (err as { message?: string })?.message || 'Import failed.'; errEl.hidden = false; }
+      if (errEl) { errEl.textContent = (err as { message?: string })?.message || t('Import failed.'); errEl.hidden = false; }
       btns.forEach(b => (b.disabled = false));
-      (e.target as HTMLElement).textContent = 'Import';
+      (e.target as HTMLElement).textContent = t('Import');
     }
   });
 }

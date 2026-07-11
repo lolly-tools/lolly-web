@@ -37,6 +37,7 @@
 import '../styles/parts/platform.css'; // shared dashboard chrome (.plat-* / .cap-*)
 import '../styles/parts/dashboard.css'; // this view's layout + signature pieces
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
@@ -86,20 +87,20 @@ const DASH_TABS: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'caps', label: 'Capabilities' },
   { key: 'activity', label: 'Activity & stats' },
 ];
-const DASH_TAB_KEYS = new Set(DASH_TABS.map((t) => t.key));
+const DASH_TAB_KEYS = new Set(DASH_TABS.map((tab) => tab.key));
 
 // The tablist. Roving tabindex (only the active tab is focusable) + arrow-key nav
 // are wired in wireTabs; labels display uppercase via CSS while the DOM keeps a
 // clean accessible name.
 function tabBar(active: string): string {
   return `
-    <div class="dash-tabs" role="tablist" aria-label="Dashboard sections">
-      ${DASH_TABS.map((t) => `
-        <button type="button" role="tab" id="dtab-${t.key}" class="dash-tab${t.key === active ? ' is-active' : ''}"
-                data-dash-tab="${t.key}" aria-controls="dpanel-${t.key}" aria-selected="${t.key === active ? 'true' : 'false'}"
-                tabindex="${t.key === active ? '0' : '-1'}">
-          <span class="dash-tab-icon" aria-hidden="true">${TAB_ICON[t.key] ?? ''}</span>
-          <span class="dash-tab-label">${escape(t.label)}</span>
+    <div class="dash-tabs" role="tablist" aria-label="${escape(t('Dashboard sections'))}">
+      ${DASH_TABS.map((tab) => `
+        <button type="button" role="tab" id="dtab-${tab.key}" class="dash-tab${tab.key === active ? ' is-active' : ''}"
+                data-dash-tab="${tab.key}" aria-controls="dpanel-${tab.key}" aria-selected="${tab.key === active ? 'true' : 'false'}"
+                tabindex="${tab.key === active ? '0' : '-1'}">
+          <span class="dash-tab-icon" aria-hidden="true">${TAB_ICON[tab.key] ?? ''}</span>
+          <span class="dash-tab-label">${escape(t(tab.label))}</span>
         </button>`).join('')}
     </div>`;
 }
@@ -157,22 +158,22 @@ function sectionHead(title: string, id: string, desc = ''): string {
 function brandHero(): string {
   const { brand, mono } = loadedFaces();
   const faces = ([
-    brand ? { face: brand, cssVar: '--font-brand', role: 'Primary typeface' } : null,
-    mono ? { face: mono, cssVar: '--font-mono', role: 'Mono typeface' } : null,
+    brand ? { face: brand, cssVar: '--font-brand', role: t('Primary typeface') } : null,
+    mono ? { face: mono, cssVar: '--font-mono', role: t('Mono typeface') } : null,
   ] as Array<{ face: LiveFace; cssVar: string; role: string } | null>)
     .filter(Boolean) as Array<{ face: LiveFace; cssVar: string; role: string }>;
   return `
-    <section class="plat-section dash-section dash-hero" id="dash-brand" aria-label="Your brand" data-flag="brand logo colour colours palette fonts">
+    <section class="plat-section dash-section dash-hero" id="dash-brand" aria-label="${escape(t('Your brand'))}" data-flag="brand logo colour colours palette fonts">
       <div class="dash-hero-main">
         <div class="dash-hero-id">
-          <span class="dash-hero-eyebrow">The brand in force</span>
+          <span class="dash-hero-eyebrow">${t('The brand in force')}</span>
           <img class="dash-hero-logo" data-hero-logo alt="" hidden>
           <h2 class="dash-hero-name" id="dash-brand-h" data-hero-name>&nbsp;</h2>
-          <p class="dash-hero-status" id="dash-brand-status">Loading…</p>
-          <a class="dash-hero-cta" href="#/start" data-hero-cta hidden>Adjust your brand <span class="dash-hero-cta-arrow" aria-hidden="true">→</span></a>
+          <p class="dash-hero-status" id="dash-brand-status">${t('Loading…')}</p>
+          <a class="dash-hero-cta" href="#/start" data-hero-cta hidden>${t('Adjust your brand')} <span class="dash-hero-cta-arrow" aria-hidden="true">→</span></a>
         </div>
-        <button type="button" class="dash-hero-primary" data-hero-primary data-copy="" aria-label="Primary colour — click to copy its value">
-          <span class="dash-hero-primary-label">Primary</span>
+        <button type="button" class="dash-hero-primary" data-hero-primary data-copy="" aria-label="${escape(t('Primary colour — click to copy its value'))}">
+          <span class="dash-hero-primary-label">${t('Primary')}</span>
           <code class="dash-hero-primary-code" data-hero-primary-code></code>
         </button>
       </div>
@@ -195,7 +196,7 @@ function brandHero(): string {
 function tokensSection(): string {
   return `
     <section class="plat-section dash-section dash-tokens" id="dash-tokens" data-flag="tokens radius spacing shadow gradient" hidden>
-      ${sectionHead('Brand tokens', 'dash-tokens-h', 'The primitives the tokens document carries — shape, space, effects — exactly as tools consume them. Adjusted at <a href="#/start?tab=tokens">Start</a>.')}
+      ${sectionHead(t('Brand tokens'), 'dash-tokens-h', t('The primitives the tokens document carries — shape, space, effects — exactly as tools consume them. Adjusted at {link}.', { link: `<a href="#/start?tab=tokens">${t('Start')}</a>` }))}
       <ul class="dash-token-grid" data-token-grid></ul>
     </section>`;
 }
@@ -212,7 +213,7 @@ function tokenChip(o: { name: string; kind: string; value: string; preview: stri
       <span class="dash-token-preview" aria-hidden="true">${o.preview}</span>
       <span class="dash-token-text">
         <span class="dash-token-name">${escape(o.name)}</span>
-        <span class="dash-token-kind">${escape(o.kind)}</span>
+        <span class="dash-token-kind">${escape(t(o.kind))}</span>
       </span>
       ${o.value ? `<code class="dash-token-value">${escape(o.value)}</code>` : ''}
     </li>`;
@@ -223,10 +224,10 @@ function tokenChip(o: { name: string; kind: string; value: string; preview: stri
  *  attribute, so every branch validates before it renders — a chip whose value
  *  can't be shown safely just shows none. `resolve` answers gradient stops'
  *  `{path}` alias colours (gradientCss re-validates whatever it returns). */
-function studioPreview(t: StudioToken, resolve?: (ref: string) => unknown): string {
-  const raw = t.raw;
+function studioPreview(tok: StudioToken, resolve?: (ref: string) => unknown): string {
+  const raw = tok.raw;
   const len = typeof raw === 'string' && TOKEN_LEN_RE.test(raw.trim()) ? raw.trim() : null;
-  switch (t.kind) {
+  switch (tok.kind) {
     case 'spacing':
     case 'sizing':
       return len ? `<span class="dash-token-bar"><i style="width:${escape(len)}"></i></span>` : '';
@@ -245,7 +246,7 @@ function studioPreview(t: StudioToken, resolve?: (ref: string) => unknown): stri
       return css ? `<span class="dash-token-shadow" style="box-shadow:${escape(css)}"></span>` : '';
     }
     case 'gradient': {
-      const css = gradientCss(raw, t.angle, { resolve, space: 'oklch' });
+      const css = gradientCss(raw, tok.angle, { resolve, space: 'oklch' });
       return css ? `<span class="dash-token-grad" style="background:${escape(css)}"></span>` : '';
     }
     default:
@@ -267,10 +268,10 @@ function shadowCss(raw: unknown): string | null {
 
 /** A studio token's display value — the contract's formatter first, else the
  *  raw string/number itself (shadows/gradients read from their preview). */
-function studioValue(t: StudioToken): string {
-  const formatted = formatStudioValue(t);
+function studioValue(tok: StudioToken): string {
+  const formatted = formatStudioValue(tok);
   if (formatted) return formatted;
-  return typeof t.raw === 'string' ? t.raw : typeof t.raw === 'number' ? String(t.raw) : '';
+  return typeof tok.raw === 'string' ? tok.raw : typeof tok.raw === 'number' ? String(tok.raw) : '';
 }
 
 /** A computed `rgb()`/`rgba()` colour → #rrggbb (the hover-code fallback when
@@ -290,12 +291,12 @@ function inkBar(c: PaletteEntry): string {
   const trans = isTransparent(c.hex);
   const measured = isLockedInk(c);
   const hex = trans ? 'transparent' : c.hex;
-  const cmyk = trans ? 'no ink' : inkText(c);
+  const cmyk = trans ? t('no ink') : inkText(c);
   return `<button type="button" class="dash-ink${trans ? ' is-transparent' : ''}${measured ? ' is-measured' : ''}"${
     trans ? '' : ` style="--ink:${escape(c.hex)}"`
   } data-copy="${escape(hex)}" data-name="${escape(c.label)}" data-hex="${escape(hex)}" data-cmyk="${escape(cmyk)}"${
     measured ? ' data-measured="1"' : ''
-  } aria-label="${escape(c.label)} — ${escape(hex)}${measured ? ', exact CMYK ink' : ''} (click to copy)" title="${escape(c.label)} · ${escape(hex)}"></button>`;
+  } aria-label="${escape(c.label)} — ${escape(hex)}${measured ? `, ${escape(t('exact CMYK ink'))}` : ''} (${escape(t('click to copy'))})" title="${escape(c.label)} · ${escape(hex)}"></button>`;
 }
 
 function inkGroup(label: string, cols: readonly PaletteEntry[], count = false): string {
@@ -312,13 +313,13 @@ function paletteSection(palette: readonly PaletteEntry[]): string {
 
   const ribbon = `
     <div class="dash-ribbon" data-ribbon>
-      ${inkGroup('Brand', brand)}
-      ${spectrum.length ? inkGroup('Spectrum', spectrum, true) : ''}
+      ${inkGroup(t('Brand'), brand)}
+      ${spectrum.length ? inkGroup(t('Spectrum'), spectrum, true) : ''}
       ${ramps.map(([fam, cols]) => inkGroup(fam, cols, true)).join('')}
     </div>
     <div class="dash-readout" data-readout aria-live="polite">
       <span class="dash-readout-swatch" data-ro-swatch aria-hidden="true"></span>
-      <span class="dash-readout-name" data-ro-name>Hover or focus a colour</span>
+      <span class="dash-readout-name" data-ro-name>${t('Hover or focus a colour')}</span>
       <code class="dash-readout-hex" data-ro-hex></code>
       <span class="dash-readout-cmyk" data-ro-cmyk></span>
     </div>`;
@@ -327,17 +328,17 @@ function paletteSection(palette: readonly PaletteEntry[]): string {
   // hex / CMYK figure is ever hidden, only tucked away.
   const fullGrid = `
     <details class="dash-values">
-      <summary class="dash-values-summary">All values<span class="dash-values-n">${palette.length}</span>${COLLAPSE_CHEV}</summary>
+      <summary class="dash-values-summary">${t('All values')}<span class="dash-values-n">${palette.length}</span>${COLLAPSE_CHEV}</summary>
       <div class="dash-values-body">
         <div class="plat-legend">
-          <span class="plat-legend-item"><span class="plat-chip-flag is-static">CMYK</span> exact ink substitution</span>
-          <span class="plat-legend-item"><span class="plat-chip-flag is-static">SPOT</span> named spot colour, its CMYK equivalent substituted at export</span>
-          <span class="plat-legend-item"><span class="plat-swatch-cmyk is-generic">RGB→CMYK (generic)</span> generic conversion at export</span>
+          <span class="plat-legend-item"><span class="plat-chip-flag is-static">CMYK</span> ${t('exact ink substitution')}</span>
+          <span class="plat-legend-item"><span class="plat-chip-flag is-static">SPOT</span> ${t('named spot colour, its CMYK equivalent substituted at export')}</span>
+          <span class="plat-legend-item"><span class="plat-swatch-cmyk is-generic">${t('RGB→CMYK (generic)')}</span> ${t('generic conversion at export')}</span>
         </div>
-        <h3 class="plat-ramp-title">Brand colours</h3>
+        <h3 class="plat-ramp-title">${t('Brand colours')}</h3>
         <div class="plat-swatch-grid">${brand.map(swatch).join('')}</div>
-        ${spectrum.length ? `<h3 class="plat-ramp-title">Spectrum <span class="plat-ramp-count">${spectrum.length}</span></h3>
-        <p class="plat-ramp-note">Secondary palette for infographics, charts &amp; data viz — it expands the colour wheel but does <strong>not</strong> replace brand colours.</p>
+        ${spectrum.length ? `<h3 class="plat-ramp-title">${t('Spectrum')} <span class="plat-ramp-count">${spectrum.length}</span></h3>
+        <p class="plat-ramp-note">${t('Secondary palette for infographics, charts &amp; data viz — it expands the colour wheel but does <strong>not</strong> replace brand colours.')}</p>
         <div class="plat-swatch-grid">${spectrum.map(swatch).join('')}</div>` : ''}
         ${ramps.map(([fam, cols]) => `<h3 class="plat-ramp-title">${escape(fam)} <span class="plat-ramp-count">${cols.length}</span></h3>
         <div class="plat-swatch-grid">${cols.map(swatch).join('')}</div>`).join('')}
@@ -347,8 +348,8 @@ function paletteSection(palette: readonly PaletteEntry[]): string {
   return collapse({
     id: 'dash-palette',
     flag: 'color colour colours',
-    title: 'Colour palette',
-    desc: `Shown in every colour picker. <strong>${measuredCount} of ${palette.length}</strong> carry a locked ink value (CMYK or spot), substituted directly into CMYK PDF exports — the tick on a bar marks one.`,
+    title: t('Colour palette'),
+    desc: t('Shown in every colour picker. <strong>{n} of {total}</strong> carry a locked ink value (CMYK or spot), substituted directly into CMYK PDF exports — the tick on a bar marks one.', { n: measuredCount, total: palette.length }),
     body: `${ribbon}${fullGrid}`,
     half: true,
   });
@@ -387,7 +388,7 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
   return `
     <div class="dash-cap-item">
       <button type="button" class="dash-cap-card" data-cap-open aria-haspopup="dialog"
-              aria-label="${escape(card.title)} — ${card.features.length} detail${card.features.length === 1 ? '' : 's'}">
+              aria-label="${escape(card.features.length === 1 ? t('{title} — 1 detail', { title: card.title }) : t('{title} — {n} details', { title: card.title, n: card.features.length }))}"
         <span class="dash-cap-card-top">
           <span class="dash-cap-icon" aria-hidden="true">${card.icon}</span>
           <span class="dash-cap-title">${escape(card.title)}</span>
@@ -395,7 +396,7 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
         ${peek}
         <span class="dash-cap-foot">
           <span class="dash-cap-n">${card.features.length}</span>
-          <span class="dash-cap-more" aria-hidden="true">View →</span>
+          <span class="dash-cap-more" aria-hidden="true">${t('View')} →</span>
         </span>
       </button>
       <template class="dash-cap-detail">${feats}</template>
@@ -426,15 +427,15 @@ async function capabilitiesSection(): Promise<string> {
           <header class="dash-cap-modal-head">
             <span class="dash-cap-modal-icon" data-cap-modal-icon aria-hidden="true"></span>
             <h3 class="dash-cap-modal-title" data-cap-modal-title></h3>
-            <button type="button" class="dash-cap-modal-close" data-cap-modal-close aria-label="Close">✕</button>
+            <button type="button" class="dash-cap-modal-close" data-cap-modal-close aria-label="${escape(t('Close'))}">✕</button>
           </header>
           <div class="dash-cap-modal-body" data-cap-modal-body></div>
         </div>
       </dialog>`;
   return collapse({
     id: 'dash-caps',
-    title: 'What Lolly can do',
-    desc: 'The full feature set — what it makes, where it runs, how it is used. Pick any card to pop its detail open.',
+    title: t('What Lolly can do'),
+    desc: t('The full feature set — what it makes, where it runs, how it is used. Pick any card to pop its detail open.'),
     body: `${groups}${modal}`,
   });
 }
@@ -457,8 +458,8 @@ function typeFacts(): string {
   const { brand, mono } = loadedFaces();
   const rootStyle = getComputedStyle(document.documentElement);
   const rows = ([
-    brand ? { face: brand, role: 'Brand · UI & body', cssVar: '--font-brand' } : null,
-    mono ? { face: mono, role: 'Mono · code & data', cssVar: '--font-mono' } : null,
+    brand ? { face: brand, role: t('Brand · UI & body'), cssVar: '--font-brand' } : null,
+    mono ? { face: mono, role: t('Mono · code & data'), cssVar: '--font-mono' } : null,
   ] as Array<{ face: LiveFace; role: string; cssVar: string } | null>).filter(Boolean) as Array<{ face: LiveFace; role: string; cssVar: string }>;
   return `
     <ul class="dash-type-facts">
@@ -468,7 +469,7 @@ function typeFacts(): string {
           <span class="dash-type-meta">${escape(role)} · wght ${face.axis.min}–${face.axis.max}</span>
           <code class="dash-type-src">${escape(`${cssVar}: ${rootStyle.getPropertyValue(cssVar).trim()}`)}</code>
         </li>`).join('')}
-      <li class="dash-type-manage"><a href="#/start?tab=type">Manage fonts →</a></li>
+      <li class="dash-type-manage"><a href="#/start?tab=type">${t('Manage fonts')} →</a></li>
     </ul>`;
 }
 
@@ -478,17 +479,17 @@ function typeFacts(): string {
 function printBody(palette: readonly PaletteEntry[]): string {
   const locked = palette.filter((c) => isLockedInk(c) && !isTransparent(c.hex));
   return `
-    <p class="plat-section-desc">Brand colours locked to an exact ink value (CMYK or spot) — substituted directly into CMYK PDF exports instead of a generic sRGB→CMYK conversion.</p>
+    <p class="plat-section-desc">${t('Brand colours locked to an exact ink value (CMYK or spot) — substituted directly into CMYK PDF exports instead of a generic sRGB→CMYK conversion.')}</p>
     ${locked.length
       ? `<div class="plat-swatch-grid">${locked.map(swatch).join('')}</div>`
-      : `<p class="cat-empty">No brand colours are locked to an exact ink yet — pin one from a swatch's print lock in the Design system tab above.</p>`}
-    <p class="plat-section-desc">Press conditions a CMYK PDF can declare in its <code>OutputIntent</code>. Selected per-export via the <code>colorProfile</code> option; raster &amp; on-screen output stays sRGB.</p>
+      : `<p class="cat-empty">${t("No brand colours are locked to an exact ink yet — pin one from a swatch's print lock in the Design system tab above.")}</p>`}
+    <p class="plat-section-desc">${t('Press conditions a CMYK PDF can declare in its <code>OutputIntent</code>. Selected per-export via the <code>colorProfile</code> option; raster &amp; on-screen output stays sRGB.')}</p>
     <table class="plat-table">
-      <thead><tr><th>Profile key</th><th>Identifier</th><th>Condition</th></tr></thead>
+      <thead><tr><th>${t('Profile key')}</th><th>${t('Identifier')}</th><th>${t('Condition')}</th></tr></thead>
       <tbody>
         ${Object.entries(CMYK_CONDITIONS).map(([key, c]) => `
           <tr${key === DEFAULT_CMYK_CONDITION ? ' class="is-default"' : ''}>
-            <td><code>${escape(key)}</code>${key === DEFAULT_CMYK_CONDITION ? '<span class="plat-pill">default</span>' : ''}</td>
+            <td><code>${escape(key)}</code>${key === DEFAULT_CMYK_CONDITION ? `<span class="plat-pill">${t('default')}</span>` : ''}</td>
             <td>${escape(c.identifier)}</td>
             <td>${escape(c.info)}</td>
           </tr>`).join('')}
@@ -528,10 +529,10 @@ async function measureStorage(host: DashHost): Promise<StorageGlance> {
   ]);
   const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + (n || 0), 0);
   const slices: StorageSlice[] = [
-    { label: 'Saved sessions', bytes: sessBytes, key: 'sessions' },
-    { label: 'My images', bytes: imagesBytes, key: 'images' },
-    { label: 'Asset cache', bytes: cacheBytes, key: 'cache' },
-    { label: 'Tool previews', bytes: previewBytes, key: 'previews' },
+    { label: t('Saved sessions'), bytes: sessBytes, key: 'sessions' },
+    { label: t('My images'), bytes: imagesBytes, key: 'images' },
+    { label: t('Asset cache'), bytes: cacheBytes, key: 'cache' },
+    { label: t('Tool previews'), bytes: previewBytes, key: 'previews' },
   ].filter((s) => s.bytes > 0);
   const measured = slices.reduce((s, x) => s + x.bytes, 0);
   const hasEstimate = !!(estimate && estimate.usage != null);
@@ -558,7 +559,7 @@ function storeDonut(usedBytes: number, quotaBytes: number): string {
   const pct = quotaBytes > 0 ? (usedBytes / quotaBytes) * 100 : 0;
   const pctLabel = pct <= 0 ? '0%' : pct < 0.1 ? '<0.1%' : pct < 10 ? `${pct.toFixed(1)}%` : `${Math.round(pct)}%`;
   return `
-    <div class="dash-store-donut" role="img" aria-label="${escape(fmtBytes(usedBytes))} used of ${escape(fmtBytes(quotaBytes))} (${pctLabel})">
+    <div class="dash-store-donut" role="img" aria-label="${escape(t('{used} used of {quota} ({pct})', { used: fmtBytes(usedBytes), quota: fmtBytes(quotaBytes), pct: pctLabel }))}">
       <svg viewBox="0 0 120 120" aria-hidden="true">
         <circle class="dash-donut-track" cx="60" cy="60" r="${R}" fill="none" stroke-width="11"></circle>
         <circle class="dash-donut-arc" cx="60" cy="60" r="${R}" fill="none" stroke-width="11" stroke-linecap="round"
@@ -566,15 +567,15 @@ function storeDonut(usedBytes: number, quotaBytes: number): string {
       </svg>
       <div class="dash-store-donut-c">
         <strong>${escape(fmtBytes(usedBytes))}</strong>
-        <span>of ${escape(fmtBytes(quotaBytes))}</span>
-        <em>${pctLabel} used</em>
+        <span>${t('of {quota}', { quota: escape(fmtBytes(quotaBytes)) })}</span>
+        <em>${t('{pct} used', { pct: pctLabel })}</em>
       </div>
     </div>`;
 }
 
 function renderStorageGlance(m: StorageGlance): string {
   const segs = [...m.slices];
-  if (m.other > 0) segs.push({ label: 'Other app data', bytes: m.other, key: 'other' });
+  if (m.other > 0) segs.push({ label: t('Other app data'), bytes: m.other, key: 'other' });
   const denom = m.total || 1;
   const bar = segs.map((s) => `<span class="dash-store-seg dash-store-seg--${s.key}" style="flex:${Math.max(0.5, (s.bytes / denom) * 100)}" title="${escape(s.label)} — ${escape(fmtBytes(s.bytes))}"></span>`).join('');
   const legend = segs.map((s) => `<span class="dash-store-key"><span class="dash-store-dot dash-store-seg--${s.key}"></span>${escape(s.label)}<strong>${escape(fmtBytes(s.bytes))}</strong></span>`).join('');
@@ -582,12 +583,12 @@ function renderStorageGlance(m: StorageGlance): string {
   // measured line (some browsers withhold an estimate).
   const hero = m.usage != null && m.quota
     ? storeDonut(m.total, m.quota)
-    : `<p class="dash-store-headline"><strong>${escape(fmtBytes(m.total))}</strong> measured on this device</p>`;
+    : `<p class="dash-store-headline">${t('<strong>{n}</strong> measured on this device', { n: escape(fmtBytes(m.total)) })}</p>`;
   return `
     ${hero}
-    <div class="dash-store-bar" role="img" aria-label="Storage composition: ${escape(segs.map((s) => `${s.label} ${fmtBytes(s.bytes)}`).join(', '))}">${bar || '<span class="dash-store-seg dash-store-seg--other" style="flex:1"></span>'}</div>
+    <div class="dash-store-bar" role="img" aria-label="${escape(t('Storage composition: {list}', { list: segs.map((s) => `${s.label} ${fmtBytes(s.bytes)}`).join(', ') }))}">${bar || '<span class="dash-store-seg dash-store-seg--other" style="flex:1"></span>'}</div>
     <div class="dash-store-legend">${legend}</div>
-    <p class="dash-store-note">A read-only view — manage or clear it in your <a href="#/profile?focus=storage-section">Profile</a>. Nothing is uploaded.</p>`;
+    <p class="dash-store-note">${t('A read-only view — manage or clear it in your {link}. Nothing is uploaded.', { link: `<a href="#/profile?focus=storage-section">${t('Profile')}</a>` })}</p>`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -644,11 +645,11 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   const wheelColors = [...byHex.values()];
 
   viewEl.innerHTML = `
-    <a href="#/" class="tools-home home-full">Tools</a>
+    <a href="#/" class="tools-home home-full">${t('Tools')}</a>
     <div class="gallery-topright">${langFabHtml()}</div>
     <div class="dash-layout">
       <header class="plat-header dash-header">
-        <h1 class="plat-title">Dashboard</h1>
+        <h1 class="plat-title">${t('Dashboard')}</h1>
         <div class="plat-header-text">
 
         </div>
@@ -663,17 +664,17 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
               ${collapse({
                 id: 'dash-device',
                 flag: 'device',
-                title: 'This Machine',
+                title: t('This Machine'),
                 cls: 'dash-device',
                 open: false,
                 iconSlot: true,
                 chipsSlot: true,
-                desc: 'A live snapshot of the browser and machine this session runs on. Read on the fly; nothing is stored or sent anywhere.',
+                desc: t('A live snapshot of the browser and machine this session runs on. Read on the fly; nothing is stored or sent anywhere.'),
                 body: `
                   <div class="dash-dev-hero" data-dev-hero>
                     ${Array.from({ length: 6 }, () => `<div class="dash-dev-stat is-skeleton"></div>`).join('')}
                   </div>
-                  <div class="dash-dev-split"><span>Full readout</span></div>
+                  <div class="dash-dev-split"><span>${t('Full readout')}</span></div>
                   <div class="plat-client-grid dash-dev-cards" data-client-grid></div>`,
               })}
             </div>
@@ -681,18 +682,18 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
               ${collapse({
                 id: 'dash-sound',
                 flag: 'sound audio neurospicy focus volume',
-                title: 'Sound',
+                title: t('Sound'),
                 cls: 'dash-card dash-sound',
-                desc: 'Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.',
+                desc: t('Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.'),
                 body: `<div class="dash-sound-mount" data-sound-mount>${soundSwitchHtml()}</div>`,
               })}
               ${collapse({
                 id: 'dash-storage',
                 flag: 'storage',
-                title: 'Storage',
+                title: t('Storage'),
                 cls: 'dash-card',
-                desc: 'What Lolly is keeping on this device.',
-                body: `<div class="dash-store" data-store><p class="cat-empty">measuring…</p></div>`,
+                desc: t('What Lolly is keeping on this device.'),
+                body: `<div class="dash-store" data-store><p class="cat-empty">${t('measuring…')}</p></div>`,
               })}
             </div>
           </div>
@@ -702,20 +703,20 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           ${brandHero()}
           <div class="dash-bento">
             <section class="plat-section dash-section dash-card" id="dash-palette-wheel" data-flag="color colour colours palette wheel">
-              ${sectionHead('Palette on the wheel', 'dash-wheel-h', 'Every brand colour plotted by hue and lightness — shade ramps fan out dark-centre to bright-rim. Hover a dot to read it.')}
+              ${sectionHead(t('Palette on the wheel'), 'dash-wheel-h', t('Every brand colour plotted by hue and lightness — shade ramps fan out dark-centre to bright-rim. Hover a dot to read it.'))}
               ${renderPaletteWheel(wheelColors)}
             </section>
             <section class="plat-section dash-section dash-card dash-typedemo" id="dash-typedemo" data-flag="type typography font motion kinetic">
-              ${sectionHead('Type in motion', 'dash-typedemo-h', 'The faces in force — the fonts loaded on this device, live. The axes themselves are the animation.')}
+              ${sectionHead(t('Type in motion'), 'dash-typedemo-h', t('The faces in force — the fonts loaded on this device, live. The axes themselves are the animation.'))}
               ${renderTypeDemo()}
               ${typeFacts()}
             </section>
           </div>
           ${paletteSection(palette)}
           ${tokensSection()}
-          ${refPanel('print cmyk', false, 'dash-print', 'Print & CMYK', printBody(palette))}
+          ${refPanel('print cmyk', false, 'dash-print', t('Print & CMYK'), printBody(palette))}
           <p class="plat-note dash-foot" role="note">
-            <strong>This page is read-only</strong> — it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at <a href="#/start">Start</a>; personal preferences — theme and sound — live on your <a href="#/profile">Profile</a>.
+            ${t('<strong>This page is read-only</strong> — it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at {start}; personal preferences — theme and sound — live on your {profile}.', { start: `<a href="#/start">${t('Start')}</a>`, profile: `<a href="#/profile">${t('Profile')}</a>` })}
           </p>
         `)}
 
@@ -724,28 +725,28 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         ${panel('activity', initialTab, `
           <div class="dash-bento">
             <div class="plat-stats">
-              <span class="plat-stat" data-tool-count${toolCount ? '' : ' hidden'}><strong>${escape(String(toolCount || ''))}</strong>tools</span>
-              <span class="plat-stat"><strong>30</strong>export formats</span>
-              <span class="plat-stat"><strong>6</strong>surfaces</span>
-              <span class="plat-stat" data-asset-stat hidden><strong data-asset-stat-n></strong>brand assets</span>
+              <span class="plat-stat" data-tool-count${toolCount ? '' : ' hidden'}><strong>${escape(String(toolCount || ''))}</strong>${t('tools')}</span>
+              <span class="plat-stat"><strong>30</strong>${t('export formats')}</span>
+              <span class="plat-stat"><strong>6</strong>${t('surfaces')}</span>
+              <span class="plat-stat" data-asset-stat hidden><strong data-asset-stat-n></strong>${t('brand assets')}</span>
             </div>
             ${collapse({
               id: 'dash-catalogue',
               flag: 'catalog catalogue',
-              title: 'Catalogue',
-              desc: 'What ships in this build, synced to clients as data.',
+              title: t('Catalogue'),
+              desc: t('What ships in this build, synced to clients as data.'),
               body: catalogSummaryBody(tools),
             })}
             <section class="plat-section dash-section dash-card" id="dash-activity" data-flag="activity">
-              ${sectionHead('Your activity', 'dash-activity-h', 'Local-only counters — nothing here is recorded remotely.')}
+              ${sectionHead(t('Your activity'), 'dash-activity-h', t('Local-only counters — nothing here is recorded remotely.'))}
               <div class="dash-activity">${renderActivity(metrics, tools as Array<{ id: string } & Record<string, unknown>>)}</div>
             </section>
             <section class="plat-section dash-section dash-card dash-recent" id="dash-recent" data-flag="recent creations" hidden>
-              ${sectionHead('Recent creations', 'dash-recent-h', 'Your latest saved sessions — swipe the stack to browse, or use Open below.')}
+              ${sectionHead(t('Recent creations'), 'dash-recent-h', t('Your latest saved sessions — swipe the stack to browse, or use Open below.'))}
               <div class="dash-recent-mount" data-recent-stack></div>
             </section>
             <section class="plat-section dash-section dash-card dash-recent" id="dash-exports" data-flag="exports downloads latest" hidden>
-              ${sectionHead('Latest exports', 'dash-exports-h', 'Files you downloaded — swipe through, or use Open below to reopen one exactly as it was.')}
+              ${sectionHead(t('Latest exports'), 'dash-exports-h', t('Files you downloaded — swipe through, or use Open below to reopen one exactly as it was.'))}
               <div class="dash-recent-mount" data-exports-stack></div>
             </section>
           </div>
@@ -809,17 +810,17 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     const metaId = rec?.id ?? '';
     const metaName = typeof rec?.meta?.name === 'string' && rec.meta.name ? rec.meta.name : rec?.name ?? '';
     const nameEl = hero.querySelector<HTMLElement>('[data-hero-name]');
-    if (nameEl) nameEl.textContent = metaName.replace(/\s+(brand\s+)?(design\s+)?tokens$/i, '').trim() || 'Your brand';
+    if (nameEl) nameEl.textContent = metaName.replace(/\s+(brand\s+)?(design\s+)?tokens$/i, '').trim() || t('Your brand');
 
     const statusEl = hero.querySelector<HTMLElement>('#dash-brand-status');
     if (statusEl) {
       statusEl.innerHTML = locked
-        ? 'This build ships with a fixed brand — every tool, page and export already wears it.'
+        ? t('This build ships with a fixed brand — every tool, page and export already wears it.')
         : metaId === USER_TOKENS_ID
-          ? 'Your brand is installed — every tool, page and export wears it.'
+          ? t('Your brand is installed — every tool, page and export wears it.')
           : metaId
-            ? 'Running the catalogue’s built-in brand. Make it yours — pick a colour and Lolly derives the rest. It stays on this device.'
-            : 'This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.';
+            ? t('Running the catalogue’s built-in brand. Make it yours — pick a colour and Lolly derives the rest. It stays on this device.')
+            : t('This install is unbranded. Pick one colour and Lolly derives the ramps, themes and every semantic slot — <strong>make it yours</strong>.');
     }
     // The one action: adjust the brand at Start. A locked catalogue's brand is
     // part of its identity, so the CTA never shows there (the status line above
@@ -863,7 +864,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         const code = chip.querySelector<HTMLElement>('[data-hero-primary-code]');
         if (code) code.textContent = o ? `${hex} · ${formatOklch(o)}` : hex;
         chip.dataset.copy = hex;
-        chip.title = `Primary · ${hex} (click to copy)`;
+        chip.title = t('Primary · {hex} (click to copy)', { hex });
       }
     }
 
@@ -886,10 +887,10 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       } catch { /* no readable doc — chips fall back to radius alone */ }
       const chips = [
         ...(radius ? [tokenChip({
-          name: 'Corner radius', kind: 'shape', value: radius,
+          name: t('Corner radius'), kind: 'shape', value: radius,
           preview: `<span class="dash-token-shape" style="border-radius:${escape(radius)}"></span>`,
         })] : []),
-        ...studio.map(t => tokenChip({ name: t.name, kind: t.kind, value: studioValue(t), preview: studioPreview(t, resolveTok) })),
+        ...studio.map(tok => tokenChip({ name: tok.name, kind: tok.kind, value: studioValue(tok), preview: studioPreview(tok, resolveTok) })),
       ];
       const sec = viewEl.querySelector<HTMLElement>('#dash-tokens');
       const grid = sec?.querySelector<HTMLElement>('[data-token-grid]');
@@ -1058,7 +1059,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     })
     .catch(() => {
       const box = viewEl.querySelector<HTMLElement>('[data-store]');
-      if (isCurrent(box)) box.innerHTML = '<p class="cat-empty">unavailable</p>';
+      if (isCurrent(box)) box.innerHTML = `<p class="cat-empty">${t('unavailable')}</p>`;
     });
 
   if (mountEl._dashMount === myMount) {
@@ -1122,12 +1123,12 @@ function wireTabs(viewEl: HTMLElement, initial: string): (key: string) => void {
 
   const select = (key: string, opts: { focus?: boolean; sound?: boolean; updateUrl?: boolean } = {}): void => {
     if (!DASH_TAB_KEYS.has(key)) return;
-    for (const t of tabs) {
-      const on = t.dataset.dashTab === key;
-      t.classList.toggle('is-active', on);
-      t.setAttribute('aria-selected', String(on));
-      t.tabIndex = on ? 0 : -1;
-      if (on && opts.focus) t.focus();
+    for (const tabEl of tabs) {
+      const on = tabEl.dataset.dashTab === key;
+      tabEl.classList.toggle('is-active', on);
+      tabEl.setAttribute('aria-selected', String(on));
+      tabEl.tabIndex = on ? 0 : -1;
+      if (on && opts.focus) tabEl.focus();
     }
     for (const p of panels) p.hidden = p.dataset.dashPanel !== key;
     if (opts.sound) playSfx('toggle');

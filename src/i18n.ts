@@ -47,6 +47,7 @@ const LOADERS: Record<NonEnglishLang, () => Promise<{ default: Record<string, st
   sv: () => import('./locales/sv.json'),
   ms: () => import('./locales/ms.json'),
   ro: () => import('./locales/ro.json'),
+  ar: () => import('./locales/ar.json'),
 };
 
 let active: Lang = 'en';
@@ -80,6 +81,26 @@ export async function initI18n(opts: { urlLang?: string | null; profileLang?: st
 }
 
 /**
+ * Remove a `lang` URL override from the address bar — both places it can ride
+ * (the search string and the hash query; mirrors main.ts's peekUrlLang). An
+ * explicit picker choice supersedes the session override, which otherwise
+ * out-ranks the just-persisted preference on the next boot (initI18n's
+ * precedence chain) and makes the switch appear not to stick on any ?lang=
+ * link. String surgery rather than URLSearchParams re-serialization, so every
+ * other param's encoding (URL-mode compact forms) rides through byte-identical.
+ */
+function stripUrlLangOverride(): void {
+  const strip = (q: string) => q.split('&').filter(p => p && p !== 'lang' && !p.startsWith('lang=')).join('&');
+  const { pathname, search, hash } = window.location;
+  const cleanSearch = strip(search.replace(/^\?/, ''));
+  const qi = hash.indexOf('?');
+  const hashPath = qi === -1 ? hash : hash.slice(0, qi);
+  const hashQuery = qi === -1 ? '' : strip(hash.slice(qi + 1));
+  const next = pathname + (cleanSearch ? `?${cleanSearch}` : '') + hashPath + (hashQuery ? `?${hashQuery}` : '');
+  if (next !== pathname + search + hash) history.replaceState(history.state, '', next);
+}
+
+/**
  * Switch the active language: loads its catalog, updates <html lang>, and (from
  * a picker) mirrors to localStorage. Callers that also want to persist to the
  * profile do so themselves via host.profile.set — this module only owns the
@@ -89,7 +110,16 @@ export async function setActiveLang(lang: Lang, opts: { persist?: boolean } = {}
   active = lang;
   catalog = lang === 'en' ? {} : (await LOADERS[lang]().catch(() => ({ default: {} }))).default;
   document.documentElement.lang = LANG_META[lang].htmlLang;
-  if (opts.persist) localStorage.setItem('lang', lang);
+  // Stamp direction alongside lang (Arabic is rtl) — always set explicitly, so
+  // switching AWAY from an RTL language restores ltr rather than inheriting a
+  // stale dir from the previous choice.
+  document.documentElement.dir = LANG_META[lang].dir ?? 'ltr';
+  if (opts.persist) {
+    localStorage.setItem('lang', lang);
+    // persist ⇒ an explicit user choice — clear any session `lang` override
+    // from the URL so it can't out-rank this choice on the next (re)load.
+    stripUrlLangOverride();
+  }
   listeners.forEach(fn => { try { fn(lang); } catch (e) { console.error(e); } });
 }
 

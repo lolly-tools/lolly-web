@@ -27,3 +27,4 @@
 @import './parts/saved-list.css'; /* saved-session rows — history modal + drawer + /profile */
 @import './parts/notfound.css';
 @import './parts/a11y.css';
+@import './parts/rtl.css'; /* RTL correctness rules (Arabic) — tiny, chrome-wide, so it rides the base sheet */

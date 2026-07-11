@@ -40,14 +40,17 @@ import { applyTheme } from '../theme.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
+import type { LangSwitchHost } from '../i18n.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { strFromU8 } from 'fflate';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
 type ViewElement = HTMLElement & { _cleanup?: () => void };
 
-/** Whatever host installUserTokens needs — stays in lock-step with the bridge. */
-type StartHost = Parameters<typeof installUserTokens>[0];
+/** Whatever host installUserTokens needs — stays in lock-step with the bridge —
+ *  plus the profile slice the language switcher persists its choice through. */
+type StartHost = Parameters<typeof installUserTokens>[0] & LangSwitchHost;
 
 const TAB_KEYS = new Set<string>(BRAND_TABS.map(t => t.id));
 
@@ -77,6 +80,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     document.title = 'Brand · Lolly';
     viewEl.innerHTML = `
       <div class="start">
+        <div class="gallery-topright">${langFabHtml()}</div>
         <a class="start-back" href="#/">&larr; ${t('Tools')}</a>
         <header class="start-head">
           <p class="start-eyebrow">${t('Brand')}</p>
@@ -84,6 +88,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           <p class="start-sub">${t('This build ships with a fixed brand — its colours, fonts and tokens are what every tool and export use. Brand adjustment is turned off here, so there’s nothing to change.')}</p>
         </header>
       </div>`;
+    attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
     return;
   }
 
@@ -92,6 +97,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
 
   viewEl.innerHTML = `
     <div class="start start--studio">
+      <div class="gallery-topright">${langFabHtml()}</div>
       <a class="start-back" href="#/">&larr; ${t('Tools')}</a>
       <header class="start-head">
         <p class="start-eyebrow">${t('Brand setup')}</p>
@@ -155,6 +161,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         </div>
       </section>
     </div>`;
+
+  attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // Mount liveness: #view itself is the router's persistent container (it never
   // disconnects — navigation just replaces its innerHTML), so "are we still the

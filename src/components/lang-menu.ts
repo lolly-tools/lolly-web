@@ -53,11 +53,36 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(true); } };
   const onNavAway = () => close();
 
+  // Views like Tools/Catalog/Projects/Profile pin a fixed bottom bar
+  // (.gallery-footer / .profile-footer, shared chrome); the tool view's export
+  // sheet (.export-popup) does the same while open. Other views (Dashboard,
+  // Verify, the plain tool sidebar) have no such bar. Treat whichever one is
+  // actually pinned to the bottom edge right now as the floor the menu must
+  // clear, so "avoid the bottom bar" only kicks in on the views that have one.
+  function bottomBoundary(vh: number): number {
+    let boundary = vh;
+    document.querySelectorAll<HTMLElement>('.gallery-footer, .profile-footer, .export-popup').forEach(bar => {
+      const rect = bar.getBoundingClientRect();
+      if (rect.height <= 0 || rect.top >= boundary) return;
+      if (rect.bottom < vh - 4) return; // not actually pinned to the bottom edge right now
+      const style = getComputedStyle(bar);
+      if (style.visibility === 'hidden' || style.display === 'none') return;
+      boundary = rect.top;
+    });
+    return boundary;
+  }
+
   function position(): void {
     if (!menu) return;
     const r = trigger.getBoundingClientRect();
-    menu.style.top = `${Math.round(r.bottom + 8)}px`;
+    const margin = 8;
+    const vh = window.innerHeight;
+    menu.style.top = `${Math.round(r.bottom + margin)}px`;
     menu.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
+    // As tall as the language list needs, capped at 90vh, and never crowding
+    // into a fixed bottom bar below it.
+    const available = bottomBoundary(vh) - r.bottom - margin * 2;
+    menu.style.maxHeight = `${Math.max(160, Math.min(available, vh * 0.9))}px`;
   }
 
   function rove(active: HTMLElement, focus = true): void {

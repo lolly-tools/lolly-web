@@ -575,6 +575,54 @@
   object-fit: contain;
 }
 
+/* Click-to-render — a child whose preview crossed the slow threshold renders on
+   demand instead of per keystroke. While a render runs the button shows a
+   spinner ring and a sheen sweep (both stilled under reduced-motion). */
+.tc-render {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.tc-render:hover:not(:disabled) { filter: brightness(1.08); }
+.tc-render:focus-visible { outline: 2px solid hsl(var(--primary) / 0.5); outline-offset: 2px; }
+.tc-render.is-rendering { cursor: default; }
+.tc-render-ring {
+  width: 14px;
+  height: 14px;
+  border: 2px solid hsl(var(--primary-foreground) / 0.35);
+  border-top-color: hsl(var(--primary-foreground));
+  border-radius: 50%;
+  animation: tc-render-spin 0.8s linear infinite;
+}
+.tc-render.is-rendering::after,
+.tc-use.is-rendering::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, hsl(var(--primary-foreground) / 0.18) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: tc-render-sheen 1.4s ease-in-out infinite;
+}
+.tc-use.is-rendering { position: relative; overflow: hidden; }
+@keyframes tc-render-spin { to { transform: rotate(360deg); } }
+@keyframes tc-render-sheen { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .tc-render-ring,
+  .tc-render.is-rendering::after,
+  .tc-use.is-rendering::after { animation: none; }
+}
+
 /* "Freeze as a static image" — bake the committed render into a self-contained
    static asset (engine bakeAssetRef): never live-re-renders, costs no nesting
    depth. The help line tucks under the label, inside the card's 14px gap. */

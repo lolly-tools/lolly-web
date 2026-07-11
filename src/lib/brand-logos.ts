@@ -22,6 +22,7 @@
 
 import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
+import { t } from '../i18n.ts';
 
 /** Every logo asset id starts here (fixed namespace, like USER_FONT_PREFIX). */
 export const USER_LOGO_PREFIX = 'user/logo/';
@@ -52,14 +53,14 @@ export const LOGO_VARIANTS: readonly LogoVariant[] =
   LOGO_ORIENTATIONS.flatMap(o => LOGO_TREATMENTS.map(t => `${o}-${t}` as LogoVariant));
 
 export const ORIENTATION_META: Record<LogoOrientation, { label: string; hint: string }> = {
-  horizontal: { label: 'Horizontal', hint: 'Wordmark + symbol in a row — the default lockup.' },
-  vertical: { label: 'Vertical', hint: 'Stacked mark for square and tall spaces.' },
+  horizontal: { label: t('Horizontal'), hint: t('Wordmark + symbol in a row — the default lockup.') },
+  vertical: { label: t('Vertical'), hint: t('Stacked mark for square and tall spaces.') },
 };
 export const TREATMENT_META: Record<LogoTreatment, { label: string; hint: string }> = {
-  primary: { label: 'Primary', hint: 'Full-colour lockup.' },
-  'primary-reverse': { label: 'Primary reverse', hint: 'Full-colour, for dark backgrounds.' },
-  mono: { label: 'Mono', hint: 'One-colour mark.' },
-  'mono-reverse': { label: 'Mono reverse', hint: 'One-colour, for dark backgrounds.' },
+  primary: { label: t('Primary'), hint: t('Full-colour lockup.') },
+  'primary-reverse': { label: t('Primary reverse'), hint: t('Full-colour, for dark backgrounds.') },
+  mono: { label: t('Mono'), hint: t('One-colour mark.') },
+  'mono-reverse': { label: t('Mono reverse'), hint: t('One-colour, for dark backgrounds.') },
 };
 
 /** True when `v` is one of the 8 matrix slots (vs a user-named custom slug). */
@@ -233,26 +234,26 @@ export async function installLogo(
   opts: { identity?: string; label?: string } = {},
 ): Promise<void> {
   if (!LOGO_SLUG_RE.test(variant)) {
-    throw new Error('Name the variant in lowercase letters, numbers and dashes (up to 40 characters).');
+    throw new Error(t('Name the variant in lowercase letters, numbers and dashes (up to 40 characters).'));
   }
   const identity = opts.identity || LOGO_DEFAULT_IDENTITY;
   if (opts.identity === LOGO_DEFAULT_IDENTITY) {
     // 'default' is the UNNAMED identity's reserved key — naming a second logo
     // "default" would silently merge it into the primary one.
-    throw new Error('“default” is reserved — pick a different name for the identity.');
+    throw new Error(t('“default” is reserved — pick a different name for the identity.'));
   }
   if (identity !== LOGO_DEFAULT_IDENTITY) {
     if (!LOGO_SLUG_RE.test(identity)) {
-      throw new Error('Name the identity in lowercase letters, numbers and dashes (up to 40 characters).');
+      throw new Error(t('Name the identity in lowercase letters, numbers and dashes (up to 40 characters).'));
     }
     // An identity named after a matrix slot would shadow that slot's token
     // (asset.logo.<key> can't be a token AND a group).
     if (isCanonicalVariant(identity)) {
-      throw new Error(`“${identity}” is a variant name — pick a different name for the identity.`);
+      throw new Error(t('“{identity}” is a variant name — pick a different name for the identity.', { identity }));
     }
   }
-  if (!ACCEPT.test(file.type)) throw new Error('Use a PNG, JPEG, SVG or WebP image.');
-  if (file.size > MAX_BYTES) throw new Error(`That logo is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 4 MB.`);
+  if (!ACCEPT.test(file.type)) throw new Error(t('Use a PNG, JPEG, SVG or WebP image.'));
+  if (file.size > MAX_BYTES) throw new Error(t('That logo is {size} MB — the limit is 4 MB.', { size: (file.size / 1024 / 1024).toFixed(1) }));
   // asset.logo.<key> is ONE namespace shared by default-identity variants and
   // identity groups — refuse a write whose key currently holds the OTHER shape,
   // instead of letting withLogoToken silently destroy it.
@@ -260,10 +261,10 @@ export async function installLogo(
     const cur = logoGroupOf(await userDoc(host))?.[identity !== LOGO_DEFAULT_IDENTITY ? identity : variant];
     if (isRec(cur)) {
       if (identity !== LOGO_DEFAULT_IDENTITY && '$value' in cur) {
-        throw new Error(`“${identity}” is already a mark's name — pick a different name for the identity.`);
+        throw new Error(t('“{identity}” is already a mark’s name — pick a different name for the identity.', { identity }));
       }
       if (identity === LOGO_DEFAULT_IDENTITY && !('$value' in cur) && !isCanonicalVariant(variant)) {
-        throw new Error(`“${variant}” is already a logo's name — pick a different name for the mark.`);
+        throw new Error(t('“{variant}” is already a logo’s name — pick a different name for the mark.', { variant }));
       }
     }
   }
