@@ -31,6 +31,7 @@ import { viewToggle } from '../components/view-toggle.ts';
 import { mountFeaturedRow } from '../components/featured-row.ts';
 import type { FeaturedEntry, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { attachProfileMenu } from '../components/profile-menu.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { footerNav, NAV_ICONS } from '../components/footer-nav.ts';
 import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
@@ -636,6 +637,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     return `
       <div class="gallery-topright">
         <button type="button" class="filter-fab cat-viewopts-btn" aria-label="View options" aria-haspopup="true" aria-expanded="${viewOptsOpen}" title="View options">${SLIDERS_ICON}</button>
+        ${langFabHtml()}
         <a href="#/profile" class="profile-link${headshotUrl ? ' has-avatar' : ''}" aria-label="Open your profile">${headshotUrl ? `<img class="profile-link-avatar" src="${escape(headshotUrl)}" alt="">` : ''}<span class="profile-link-name">${escape(profile?.firstname || 'Profile')}</span></a>
         <div class="cat-viewopts filter-popover" role="group" aria-label="Catalog view options"${viewOptsOpen ? '' : ' hidden'}>
           ${themeSegmentHtml()}
@@ -2880,6 +2882,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Mobile: the avatar opens the shared profile menu (theme + settings); desktop
     // keeps it a plain link to /profile. Matches Tools + Projects.
     attachProfileMenu(viewEl.querySelector<HTMLElement>('.profile-link'), host);
+    attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
   }
 
   // ── mount ──────────────────────────────────────────────────────────────────────

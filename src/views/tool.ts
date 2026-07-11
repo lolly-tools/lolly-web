@@ -27,7 +27,8 @@ import { promptDialog } from '../components/confirm-dialog.ts';
 const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
 import { navigateTo } from '../nav.ts';
-import { toolSupport, capabilityLabel, CAPTURE_EXTENSION_URL } from '../capabilities.ts';
+import { toolSupport, capabilityLabel } from '../capabilities.ts';
+import { docsHref } from '../i18n.ts';
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
 import { livePalette } from '../lib/live-palette.ts';
@@ -2709,7 +2710,7 @@ function mountInstallPrompt(viewEl: HTMLElement, manifest: ToolManifest): void {
         <p class="not-found-code">Add&#8209;on</p>
         <h1 class="not-found-title">Enable ${escape(manifest.name)} in your browser</h1>
         <p class="not-found-desc">Add the free Lolly screenshot extension and this tool captures pages right here — no desktop app needed. Install it, then reload this page.</p>
-        <a href="${escape(CAPTURE_EXTENSION_URL)}" class="not-found-home" target="_blank" rel="noopener">Get the extension</a>
+        <a href="${escape(docsHref('extension'))}" class="not-found-home" target="_blank" rel="noopener">Get the extension</a>
         <a href="#/" class="not-found-back">Back to all tools</a>
       </div>
     </div>

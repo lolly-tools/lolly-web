@@ -34,6 +34,7 @@ import { playProjectsAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { mountFeaturedRow } from '../components/featured-row.ts';
 import type { FeaturedEntry, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { attachProfileMenu } from '../components/profile-menu.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { footerNav, NAV_ICONS } from '../components/footer-nav.ts';
 import { confirmDialog as baseConfirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import type { ConfirmDialogOpts } from '../components/confirm-dialog.ts';
@@ -582,6 +583,7 @@ export async function mountProjects(
       <div class="gallery-topright projects-topright">
         <button type="button" class="filter-fab projects-viewopts" aria-label="View and sort options" aria-haspopup="true" title="View &amp; sort">${FILTER_ICON}</button>
         ${saved ? `<button type="button" class="history-fab" title="Saved sessions" aria-label="Saved sessions (${saved})">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${saved}</span></button>` : ''}
+        ${langFabHtml()}
         <a href="#/profile" class="profile-link${headshotUrl ? ' has-avatar' : ''}" aria-label="Open your profile">${headshotUrl ? `<img class="profile-link-avatar" src="${escape(headshotUrl)}" alt="">` : ''}<span class="profile-link-name">${escape(profile?.firstname || 'Profile')}</span></a>
       </div>`;
   }
@@ -853,6 +855,7 @@ export async function mountProjects(
       savedCount: entries.length,
       onHistory: openHistory,
     });
+    attachLangMenu(root.querySelector<HTMLElement>('.lang-fab'), host as ProjectsHost);
 
     wireDrag(root);
     wireContextMenu(root);

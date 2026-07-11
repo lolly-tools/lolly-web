@@ -48,10 +48,6 @@ export function capabilityLabel(c: string): string {
   return labels[c] ?? c;
 }
 
-// Where to send Chromium users to install the capture extension. Points at the
-// info-site install page (load-unpacked steps now; a Web Store button later).
-export const CAPTURE_EXTENSION_URL = '/info/extension.html';
-
 /** True for Chromium-family browsers (Chrome, Edge, Brave, Arc, Opera, …). */
 export function isChromium(): boolean {
   if (typeof navigator === 'undefined') return false;

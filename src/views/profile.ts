@@ -16,7 +16,7 @@
 import '../styles/parts/profile.css';   // async CSS chunk (lazy view — not on the landing)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
-import { currentLang, langOptions, setActiveLang, t, LANG_ICON_SVG } from '../i18n.ts';
+import { currentLang, langOptions, switchLang, t, docsHref, LANG_ICON_SVG } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { playThemeSfx, playSfx } from '../lib/sfx.ts';
 import { staggerReveal } from '../lib/reveal.ts';
@@ -389,19 +389,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   });
 
   // Language — a permanent picker (not a one-time first-run prompt like the
-  // welcome dialog's chips). Saves to profile.lang + localStorage, then reloads
-  // so the whole app (not just this view's wave-1-wrapped strings) re-renders in
-  // the new language — the simplest correct option without a reactive framework.
-  viewEl.querySelector('[data-lang-pick]')?.addEventListener('change', async e => {
-    const next = (e.target as HTMLSelectElement).value as Lang;
-    if (next === currentLang()) return;
-    try {
-      const current = await host.profile.get();
-      const { lang: _drop, ...rest } = current as Record<string, unknown>;
-      await host.profile.set?.(next === 'en' ? rest : { ...rest, lang: next });
-    } catch { /* preference save is best-effort — the switch below still applies for this session */ }
-    await setActiveLang(next, { persist: true });
-    window.location.reload();
+  // welcome dialog's chips). switchLang saves to profile.lang + localStorage,
+  // then reloads so the whole app (not just this view's wave-1-wrapped strings)
+  // re-renders in the new language — the simplest correct option without a
+  // reactive framework.
+  viewEl.querySelector('[data-lang-pick]')?.addEventListener('change', e => {
+    void switchLang(host, (e.target as HTMLSelectElement).value as Lang);
   });
 
   // Sound switch — the unified "Sound:" toggle (speaker indicator + sliding switch). Auto-saves
@@ -1368,7 +1361,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ...(health?.devProvider === true ? ['dev'] : []),
     ];
     return `
-      <p class="identity-blurb">Sign exports with a verified identity — a short-lived certificate ties your email to files you export; the key never leaves this device. <a href="/info/content-credentials-identity.html" target="_blank" rel="noopener">How it works</a></p>
+      <p class="identity-blurb">Sign exports with a verified identity — a short-lived certificate ties your email to files you export; the key never leaves this device. <a href="${docsHref('content-credentials-identity')}" target="_blank" rel="noopener">How it works</a></p>
       <label class="identity-days-row">Verified for
         <select class="identity-days-select" aria-label="Certificate lifetime">
           <option value="7">7 days</option>
