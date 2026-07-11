@@ -53,5 +53,8 @@
   "Your profile": "你的个人资料",
   "Your tools, your rules": "你的工具,你做主",
   "default": "默认",
-  "opt-in": "启用"
+  "opt-in": "启用",
+  "Projects": "项目",
+  "Catalog": "目录",
+  "Switch between tools, projects and catalog": "在工具、项目和目录之间切换"
 }

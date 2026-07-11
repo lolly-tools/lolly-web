@@ -17,6 +17,7 @@
 
 import { verifyAssetChecksum } from '../bridge/assets.ts';
 import { assertToolIndexIntegrity } from './integrity.ts';
+import { currentLang } from '../i18n.ts';
 
 /** One resolvable file for a catalog asset (an entry in an asset's `formats`).
  *  Structurally matches the bridge's AssetFormat so it flows into
@@ -51,6 +52,33 @@ interface AssetIndex {
    *  see boot() in main.ts). SUSE-specific content, so it's authored here in the catalog
    *  data, not in shell code. */
   defaultFavourites?: string[];
+}
+
+/**
+ * Overlay a tool's translated name/description/featured.blurb (the `i18n` block
+ * scripts/build-catalog-index.ts folds into each index entry from the tool's own
+ * `i18n/<lang>.json` sidecar — see engine/src/loader.ts's applyManifestI18n for
+ * the full-manifest counterpart used when a tool is actually opened) onto the
+ * flat index entries every tool-listing view reads via window.__toolIndex.
+ * Mutates in place. Called at every point that assigns window.__toolIndex (below,
+ * and main.ts's synchronous cache-priming path) so gallery/catalog/projects/
+ * dashboard/picker all get the active language for free — no per-view changes.
+ * No-op for English (the index's own fields already are English) and for any
+ * tool whose sidecar doesn't cover the active language (English fallback).
+ */
+export function localizeToolIndex(index: ToolIndex): void {
+  const lang = currentLang();
+  if (lang === 'en') return;
+  for (const tool of index.tools) {
+    const i18n = tool.i18n as Record<string, { name?: string; description?: string; blurb?: string }> | undefined;
+    const overlay = i18n?.[lang];
+    if (!overlay) continue;
+    if (overlay.name) tool.name = overlay.name;
+    if (overlay.description) tool.description = overlay.description;
+    if (overlay.blurb && tool.featured && typeof tool.featured === 'object') {
+      (tool.featured as Record<string, unknown>).blurb = overlay.blurb;
+    }
+  }
 }
 
 declare global {
@@ -201,13 +229,18 @@ async function syncTools(host: SyncHost): Promise<void> {
       // (catalog/integrity.ts). Throwing lands in the retry/offline path below.
       await assertToolIndexIntegrity(text);
       const index = JSON.parse(text) as ToolIndex;
-      window.__toolIndex = index;
+      // Cache the PRISTINE (English-keyed, every locale's overlay intact) index —
+      // localizeToolIndex runs after, on the in-memory copy only, so a later
+      // language switch (or a different device/session) always re-derives from
+      // the untranslated source rather than a copy some other language baked in.
       const json = JSON.stringify(index);
       // Record whether the fetched bytes actually differ from the cached copy, reusing
       // this same stringify. boot()'s fast-path reads toolIndexChanged() instead of
       // re-stringifying the 131 KB index twice on the pre-paint critical path. Must be
       // a content compare, not 200-vs-304: ETag-less hosts serve identical 200s.
       try { toolIndexDidChange = localStorage.getItem('sbt-tool-index') !== json; localStorage.setItem('sbt-tool-index', json); } catch { /* quota */ }
+      localizeToolIndex(index);
+      window.__toolIndex = index;
       host.log('info', `Tool catalog: ${index.tools.length} tools`);
       return;
     } catch (e) {
@@ -219,7 +252,9 @@ async function syncTools(host: SyncHost): Promise<void> {
       setOffline(true);
       const cached = localStorage.getItem('sbt-tool-index');
       if (cached) {
-        window.__toolIndex = JSON.parse(cached) as ToolIndex;
+        const offlineIndex = JSON.parse(cached) as ToolIndex;
+        localizeToolIndex(offlineIndex);
+        window.__toolIndex = offlineIndex;
         host.log('info', 'Tool catalog loaded from cache (offline)');
       } else {
         host.log('warn', `Tool catalog fetch failed: ${(e as Error).message}`);

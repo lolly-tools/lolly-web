@@ -28,7 +28,8 @@ const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
 import { navigateTo } from '../nav.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
-import { docsHref } from '../i18n.ts';
+import { docsHref, currentLang } from '../i18n.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
 import { livePalette } from '../lib/live-palette.ts';
@@ -292,7 +293,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       loadTimer = setTimeout(() => reject(new Error('Failed to fetch tool — network timeout')), LOAD_TIMEOUT_MS);
     });
     try {
-      tool = await Promise.race([loadTool(toolId, fetchFile), timeout]);
+      tool = await Promise.race([loadTool(toolId, fetchFile, { lang: currentLang() }), timeout]);
     } finally {
       clearTimeout(loadTimer);
     }
@@ -837,6 +838,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     };
     const undoBtn = mkBtn('Undo', ICON_UNDO, undoHistory);
     const redoBtn = mkBtn('Redo', ICON_REDO, redoHistory);
+    // Smaller lang-fab variant beside undo/redo — same trigger/popover as the
+    // gallery/dashboard/verify one, just sized down (30px, no border) to match
+    // .history-btn's compact icon-button chrome instead of the regular 2.9em box.
+    group.insertAdjacentHTML('beforeend', langFabHtml());
+    const sidebarLangFab = group.querySelector<HTMLElement>('.lang-fab');
+    sidebarLangFab?.classList.add('lang-fab-sm');
+    attachLangMenu(sidebarLangFab, host);
     historyControls = {
       sync: (canUndo: boolean, canRedo: boolean) => {
         // If the button that ran the action is about to disable itself (e.g. the

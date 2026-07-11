@@ -53,5 +53,8 @@
   "Your profile": "Din profil",
   "Your tools, your rules": "Dina verktyg, dina regler",
   "default": "standard",
-  "opt-in": "aktivera"
+  "opt-in": "aktivera",
+  "Projects": "Projekt",
+  "Catalog": "Katalog",
+  "Switch between tools, projects and catalog": "Växla mellan verktyg, projekt och katalog"
 }

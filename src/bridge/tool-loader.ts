@@ -9,6 +9,7 @@
  */
 import { loadTool } from '@lolly/engine';
 import type { LoadedTool, ToolManifest } from '../../../../engine/src/loader.ts';
+import { currentLang } from '../i18n.ts';
 
 // Loaded tools are cached so selecting the same template across many rows — the
 // primary power-user workflow — loads each template only once.
@@ -26,10 +27,14 @@ function makeFetchFile(toolId: string): (path: string) => Promise<string> {
   };
 }
 
-/** Load (and cache) a tool definition. Used both to read inputs and to render. */
+/** Load (and cache) a tool definition. Used both to read inputs and to render.
+ *  Translates the manifest's name/description/input labels via its i18n/<lang>.json
+ *  sidecar when one exists (engine/src/loader.ts's applyManifestI18n) — the active
+ *  language never changes mid-session (switchLang reloads the page), so the cache
+ *  doesn't need lang in its key. */
 export async function getTool(toolId: string): Promise<LoadedTool> {
   if (toolCache.has(toolId)) return toolCache.get(toolId)!;
-  const promise = loadTool(toolId, makeFetchFile(toolId));
+  const promise = loadTool(toolId, makeFetchFile(toolId), { lang: currentLang() });
   toolCache.set(toolId, promise);
   try {
     const tool = await promise;

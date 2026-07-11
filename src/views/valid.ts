@@ -31,6 +31,7 @@ import { escape } from '../utils.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { takePendingVerify } from '../lib/verify-handoff.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 
 // Local mirror of the engine verifier's report shape (c2pa-verify's C2paReport
@@ -932,6 +933,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
 
   viewEl.innerHTML = `
     <a href="#/" class="tools-home home-full">Tools</a>
+    <div class="gallery-topright">${langFabHtml()}</div>
     <div class="platform-layout valid-layout">
       <header class="plat-header">
         <h1 class="plat-title">Verify</h1>
@@ -951,6 +953,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     </div>
   `;
   armViewEnter(viewEl, '.tools-home, .plat-header, .valid-drop');
+  attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;
   const input = drop.querySelector<HTMLInputElement>('input[type="file"]')!;

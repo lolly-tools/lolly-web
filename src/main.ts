@@ -10,7 +10,7 @@
  */
 
 import { createBridge } from './bridge/index.ts';
-import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChanged } from './catalog/sync.ts';
+import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChanged, localizeToolIndex } from './catalog/sync.ts';
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
@@ -410,11 +410,17 @@ async function boot(): Promise<void> {
   // Prime the in-memory tool index from the last cached copy so the gallery can
   // paint immediately, before the network catalog sync resolves. syncCatalog
   // overwrites window.__toolIndex with fresh data when it lands. (Mirrors the
-  // 'sbt-tool-index' fallback key written by catalog/sync.js.)
+  // 'sbt-tool-index' fallback key written by catalog/sync.js.) localizeToolIndex
+  // runs AFTER initI18n above has resolved the active language, so the very
+  // first paint already shows translated tool names/descriptions.
   if (!window.__toolIndex) {
     try {
       const cached = localStorage.getItem('sbt-tool-index');
-      if (cached) window.__toolIndex = JSON.parse(cached);
+      if (cached) {
+        const primed = JSON.parse(cached);
+        localizeToolIndex(primed);
+        window.__toolIndex = primed;
+      }
     } catch { /* ignore corrupt/oversized cache */ }
   }
 

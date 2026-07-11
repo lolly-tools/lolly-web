@@ -38,6 +38,7 @@ import '../styles/parts/platform.css'; // shared dashboard chrome (.plat-* / .ca
 import '../styles/parts/dashboard.css'; // this view's layout + signature pieces
 import { escape } from '../utils.ts';
 import { armViewEnter } from '../view-enter.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
 import { renderPaletteWheel, wirePaletteWheel } from '../lib/palette-wheel.ts';
 import { renderTypeDemo, wireTypeDemo, loadedFaces } from '../lib/type-demo.ts';
@@ -644,6 +645,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
   viewEl.innerHTML = `
     <a href="#/" class="tools-home home-full">Tools</a>
+    <div class="gallery-topright">${langFabHtml()}</div>
     <div class="dash-layout">
       <header class="plat-header dash-header">
         <h1 class="plat-title">Dashboard</h1>
@@ -755,6 +757,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   // reveal ladder so it settles in with that panel's other sections instead of
   // snapping in at full opacity beneath the cascade.
   armViewEnter(viewEl, '.tools-home, .plat-header, .dash-tabs, .plat-section, .dash-foot');
+  attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // "This device" starts collapsed (the server-rendered default, above) everywhere,
   // then opens itself right away when the tab actually lays out as two columns
