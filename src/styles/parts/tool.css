@@ -733,8 +733,12 @@
   color: hsl(var(--muted-foreground) / 0.4);
 }
 
-/* Shared control appearance */
-.input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]),
+/* Shared control appearance.
+   `.vec-num` opts OUT: the vector scrubbers are a segmented pill (collapsed inner
+   borders, square inner corners, compact height) and this rule — 4 classes/attrs
+   to their 1 — would otherwise win the cascade and hand them the full-size
+   floating-label box. See the .vec-num block below for their real styling. */
+.input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(.vec-num),
 .input-row textarea {
   width: 100%;
 
@@ -781,11 +785,12 @@
   -moz-appearance: none;
 }
 
-.input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]):hover,
+.input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(.vec-num):hover,
 .input-row textarea:hover,
 .input-row select:hover {
   border-color: hsl(var(--ring) / 0.4);
 }
+.vec-num:hover { border-color: hsl(var(--ring) / 0.4); }
 
 .input-row input:focus,
 .input-row textarea:focus,
@@ -1504,6 +1509,12 @@ background-color:hsl(var(--background) / 1);
    keeps its own aria-label, so the accessible name is unaffected. */
 .input-row:has(.vector-input) .input-label { display: none; }
 
+/* A sub-control belongs to the row above it (mesh-gradient: "Colour 3" then its X/Y
+   — see isSubControl in tool-inputs.ts). The 18px .tool-inputs grid gap gives them
+   equal spacing on both sides, so the pair doesn't read as a pair; pull it up until
+   it sits nearer its own colour (8px) than the next control (18px). */
+.input-row--sub { margin-top: -10px; }
+
 .vector-input {
   display: flex;
   margin-top: 2px;
@@ -1545,7 +1556,11 @@ background-color:hsl(var(--background) / 1);
 .vec-num {
   width: 100%;
   min-width: 0;
-  padding: 7px 6px 7px 19px;       /* left room for the scrub character */
+  /* Compact: a vector is a sub-property of the control above it, so it reads as a
+     tight numeric strip rather than a second full-size field. min-height keeps the
+     drag/tap target usable at 2px padding. */
+  padding: 2px 6px 2px 19px;       /* left room for the scrub character */
+  min-height: 26px;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   border: 1px solid hsl(var(--input));

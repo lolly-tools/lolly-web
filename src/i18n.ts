@@ -48,14 +48,62 @@ const LOADERS: Record<NonEnglishLang, () => Promise<{ default: Record<string, st
   ms: () => import('./locales/ms.json'),
   ro: () => import('./locales/ro.json'),
   ar: () => import('./locales/ar.json'),
+  bg: () => import('./locales/bg.json'),
   it: () => import('./locales/it.json'),
   no: () => import('./locales/no.json'),
   ko: () => import('./locales/ko.json'),
 };
 
+/**
+ * A body of copy big enough to keep OUT of the boot catalog, loaded only by the
+ * view that renders it. Today: `caps` — the ~300 prose strings of the capability
+ * map (lib/capabilities-data.ts), which only the #/d?tab=caps panel ever shows.
+ * At ~22 KB of English source it would be a fifth of every non-English user's
+ * boot-time catalog download, for a panel most of them never open.
+ *
+ * A namespace catalog is a plain flat { english: translated } file exactly like a
+ * locale catalog — same t(), same English-key-is-the-fallback contract — written
+ * by scripts/translate.ts's `caps` corpus into ./locales/<ns>/<lang>.json.
+ */
+export type Namespace = 'caps';
+
+// One loader per namespace, mirroring LOADERS above: a static path prefix with a
+// single `${lang}` segment, so Vite emits one analyzable chunk per (namespace,
+// language) and a locale only ever fetches its own. English never calls these.
+const NAMESPACE_LOADERS: Record<Namespace, (lang: NonEnglishLang) => Promise<{ default: Record<string, string> }>> = {
+  caps: (lang) => import(`./locales/caps/${lang}.json`),
+};
+
 let active: Lang = 'en';
 let catalog: Record<string, string> = {};
+/** Namespaces merged into `catalog`, keyed `<lang>:<ns>` — a language switch
+ *  rebuilds the catalog, so the same namespace must load again for the new one. */
+const loadedNamespaces = new Set<string>();
 const listeners = new Set<(lang: Lang) => void>();
+
+/**
+ * Merge a namespace's strings into the active catalog. Idempotent, and a no-op in
+ * English (where every key already IS its own value). Call it — and await it —
+ * before rendering the copy it carries; t() is unchanged either way, so a
+ * namespace that hasn't been translated into this language yet (or fails to load)
+ * simply leaves those strings in English, exactly like a missing key.
+ *
+ * Each namespace loads via its own analyzable per-language import (NAMESPACE_LOADERS),
+ * so a locale only ever fetches its own chunk.
+ */
+export async function loadNamespace(ns: Namespace): Promise<void> {
+  const key = `${active}:${ns}`;
+  if (active === 'en' || loadedNamespaces.has(key)) return;
+  loadedNamespaces.add(key);
+  try {
+    const mod = await NAMESPACE_LOADERS[ns](active);
+    // Chrome strings win a key collision — a namespace can never shadow the app's
+    // own UI copy, only add to it.
+    catalog = { ...mod.default, ...catalog };
+  } catch {
+    /* not translated into this language yet → English, same as any missing key */
+  }
+}
 
 /** The active language code. */
 export function currentLang(): Lang {
@@ -112,6 +160,8 @@ function stripUrlLangOverride(): void {
 export async function setActiveLang(lang: Lang, opts: { persist?: boolean } = {}): Promise<void> {
   active = lang;
   catalog = lang === 'en' ? {} : (await LOADERS[lang]().catch(() => ({ default: {} }))).default;
+  loadedNamespaces.clear(); // the catalog they were merged into is gone
+
   document.documentElement.lang = LANG_META[lang].htmlLang;
   // Stamp direction alongside lang (Arabic is rtl) — always set explicitly, so
   // switching AWAY from an RTL language restores ltr rather than inheriting a

@@ -24,23 +24,32 @@
 .be-cta:hover { background: hsl(var(--primary) / .88); }
 .be-btn:disabled, .be-cta:disabled { opacity: .55; cursor: default; }
 
-/* "Use this colour" lights up a bright, glossy green — the SAME vivid pass green
-   as the verify view's valid cards (--vf-pass* in valid.css, inlined here since
-   those are page-scoped) — the moment any derive input changes, so a fresh palette
-   is waiting to apply. Mirrors .valid-item-badge.is-good; rests again once applied. */
+/* "Use this colour" lights up glossy the moment any derive input changes, so a
+   fresh palette is waiting to apply — a raised, glowing version of the button. It
+   is struck in the BRAND'S OWN colour (--primary, set from the brand via
+   applyChromeBrandVars), not a fixed green: a glossy top-lit gradient (a touch
+   lighter at the top, darker at the foot, both mixed off --primary) with a glow
+   in the same hue. Rests again once applied. This is the house "glowing CTA" look;
+   the import button (start.css) reuses it. */
 .be-cta.is-active {
-  color: hsl(0 0% 100%);
+  color: hsl(var(--primary-foreground));
   border-color: hsl(0 0% 100% / .3);
-  background: linear-gradient(163deg, hsl(150 66% 51%), hsl(154 58% 33%));
-  box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 4px 12px -5px hsl(151 57% 40% / .7);
+  background: linear-gradient(163deg,
+    color-mix(in oklab, hsl(var(--primary)), white 14%),
+    color-mix(in oklab, hsl(var(--primary)), black 20%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / .4), 0 4px 13px -5px hsl(var(--primary) / .75);
 }
-.be-cta.is-active:hover { background: linear-gradient(163deg, hsl(150 70% 54%), hsl(154 60% 36%)); }
+.be-cta.is-active:hover {
+  background: linear-gradient(163deg,
+    color-mix(in oklab, hsl(var(--primary)), white 20%),
+    color-mix(in oklab, hsl(var(--primary)), black 14%));
+}
 @media (prefers-reduced-motion: no-preference) {
   .be-cta.is-active { animation: be-cta-pulse 2.4s ease-in-out infinite; }
 }
 @keyframes be-cta-pulse {
-  0%, 100% { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 4px 12px -5px hsl(151 57% 40% / .7); }
-  50%      { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 6px 18px -4px hsl(151 57% 40% / .95); }
+  0%, 100% { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .4), 0 4px 13px -5px hsl(var(--primary) / .7); }
+  50%      { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .4), 0 6px 19px -4px hsl(var(--primary) / .95); }
 }
 .be-add--sm, .be-btn--sm { padding: .25rem .6rem; font-size: .72rem; }
 
@@ -269,14 +278,18 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 /* Swatch editor popover — absolutely placed under the clicked tile by JS.
    The card is a flex column: everything scrolls in .be-editor-scroll while the
    Delete/Save footer stays pinned — the two actions never scroll away. */
-.be-editor { position: absolute; z-index: 30; width: 300px; }
+/* Wide enough for the full picker it now carries: five mode tabs, a row of dials,
+   and the print control's four CMYK inputs. */
+.be-editor { position: absolute; z-index: 30; width: 340px; }
 .be-editor[hidden] { display: none; }
 .be-editor-card {
   display: flex; flex-direction: column; border-radius: var(--radius);
   border: 1px solid hsl(var(--border)); background: hsl(var(--popover));
   box-shadow: 0 12px 34px hsl(var(--foreground) / .18);
-  /* The inline picker makes the card tall — keep it on-screen, scroll the body. */
-  max-height: min(72vh, 560px); overflow: hidden;
+  /* The card is free to grow with its folds — positionEditor MOVES it (flipping it
+     above the tile) to find the room, rather than scrolling the body. This is the
+     last resort only: a card genuinely taller than the viewport. */
+  max-height: calc(100dvh - 16px); overflow: hidden;
 }
 .be-editor-scroll { display: grid; gap: .6rem; padding: .7rem .7rem .6rem; overflow-y: auto; min-height: 0; }
 /* Identity row — the live chip anchors what's being edited; the name renames in place. */
@@ -325,21 +338,8 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   background: hsl(var(--primary) / .12); color: hsl(var(--foreground));
 }
 .be-ps-chip--auto { background: hsl(var(--muted) / .6); color: hsl(var(--muted-foreground)); }
-.be-ps { display: grid; gap: .45rem; margin-top: .5rem; font-size: .78rem; }
-.be-ps-row { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
-.be-ps-row input[type="checkbox"] { accent-color: hsl(var(--primary)); }
-.be-ps-key { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.be-ps-val { font-family: var(--font-mono); font-size: .72rem; color: hsl(var(--muted-foreground)); }
-.be-ps-body { margin-inline-start: 1.45rem; }
-.be-ps-spot { display: flex; gap: .5rem; flex-wrap: wrap; }
-/* "Set by value" — colour-space select + value input + the extrapolated readout. */
-.be-fmt-row { display: flex; gap: .4rem; }
-.be-fmt-sel {
-  flex: 0 0 auto; padding: .4rem .5rem; font: inherit; font-size: .76rem; cursor: pointer;
-  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
-  background: hsl(var(--background)); color: hsl(var(--foreground));
-  outline: none;
-}
+/* .be-fmt-input outlives the "Set by value" row it was written for — the gradient
+   stop popover (brand-studio-tabs.ts) still wears it as its custom-value input. */
 .be-fmt-input {
   flex: 1 1 auto; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .8rem;
   font-family: var(--font-mono); border: 1px solid hsl(var(--input));
@@ -350,9 +350,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
    tinted border, same treatment as .color-input, instead of the browser
    default. Real keyboard focus gets a proper ring back via a11y.css. */
 .be-editor-name:focus,
-.be-fmt-sel:focus,
 .be-fmt-input:focus { border-color: hsl(var(--ring) / .6); }
-.be-fmt-out { font-size: .68rem; color: hsl(var(--muted-foreground)); font-family: var(--font-mono); min-height: 1em; }
 /* Sticky footer — pinned by the card's flex column, never scrolls away. */
 .be-editor-actions {
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;

@@ -187,7 +187,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       ] },
       { icon: ICONS.film, title: 'Motion', features: [
         { name: 'MP4 · WebM · GIF · APNG · Animated WebP', desc: 'Animated tools record to video (the picker shows what your browser can encode), or to GIF, lossless animated PNG, and colour-plus-alpha animated WebP — all of which work everywhere.' },
-        { name: 'Animated SVG', desc: 'A self-contained vector animation — stacks vector snapshots with embedded CSS keyframes, so it scales to any size with no codec and loops in a browser tab or an <img>.' },
+        { name: 'Animated SVG', desc: 'A self-contained vector animation — stacks vector snapshots with embedded CSS keyframes, so it scales to any size with no codec and loops in a browser tab or an <code>&lt;img&gt;</code>.' },
       ] },
       { icon: ICONS.doc, title: 'Documents & data', features: [
         { name: 'PowerPoint (PPTX)', desc: 'Multi-page and layout tools export an editable deck — each page decomposed into native text boxes, real shapes, and extractable images and vectors (logos embedded as real SVG). Built to hand a colleague content they can edit and reuse, not a flat screenshot.' },

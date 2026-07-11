@@ -45,7 +45,7 @@ export interface DownloadedFontFace extends GoogleFontFace {
 }
 
 // The subsets worth carrying offline by default (see module header).
-const SUBSETS_KEPT = new Set(['latin', 'latin-ext']);
+const SUBSETS_KEPT = new Set(['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext']);
 
 const CSS2 = 'https://fonts.googleapis.com/css2';
 

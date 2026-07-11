@@ -1,0 +1,108 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* The browsable component library (#/components — views/components.ts). Its own
+   chrome only; every SAMPLE inside is styled by the real part sheets, which this
+   view imports so the specimens look exactly as they do in the app. */
+
+.cl-view { max-width: 1180px; margin: 0 auto; padding: 1rem 1.1rem 5rem; }
+
+/* Header — back affordance + title + a jump-nav of the sections. The back pill sits
+   in flow (not the app's fixed .home-full), on its own line above the title. */
+.cl-head { margin: .25rem 0 1.6rem; }
+.cl-back { border: 0; margin-bottom: 1.1rem; }
+.cl-title { margin: .6rem 0 .4rem; font-size: clamp(1.7rem, 3.4vw, 2.3rem); font-weight: 700; letter-spacing: -.02em; }
+.cl-sub { margin: 0 0 1rem; color: hsl(var(--muted-foreground)); max-width: 62ch; line-height: 1.5; }
+.cl-jump { display: flex; flex-wrap: wrap; gap: .4rem; }
+.cl-jump a {
+  font-size: .72rem; padding: .28rem .6rem; border-radius: 999px; text-decoration: none;
+  border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); background: hsl(var(--card));
+}
+.cl-jump a:hover { border-color: hsl(var(--ring) / .6); color: hsl(var(--foreground)); }
+
+/* Recommendations panel — the audit's headline, above the specimens. */
+.cl-recs {
+  margin: 0 0 2.4rem; padding: 1.1rem 1.2rem; border-radius: var(--radius);
+  border: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .35);
+}
+.cl-recs > h2 { margin: 0 0 .3rem; font-size: 1.05rem; }
+.cl-recs-lede { margin: 0 0 1rem; font-size: .82rem; color: hsl(var(--muted-foreground)); }
+.cl-rec { padding: .7rem 0; border-top: 1px solid hsl(var(--border) / .7); }
+.cl-rec:first-of-type { border-top: 0; }
+.cl-rec-top { display: flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
+.cl-rec-title { font-weight: 650; font-size: .9rem; }
+.cl-sev {
+  font-size: .6rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: .1rem .4rem; border-radius: 999px;
+}
+.cl-sev--high { background: hsl(var(--destructive) / .16); color: hsl(var(--destructive)); }
+.cl-sev--medium { background: hsl(38 92% 50% / .18); color: hsl(32 80% 42%); }
+.cl-sev--low { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
+.cl-rec-body { font-size: .82rem; line-height: 1.5; color: hsl(var(--foreground)); }
+.cl-rec-body b { font-weight: 650; }
+.cl-rec-fix { color: hsl(var(--muted-foreground)); }
+
+/* Section = one primitive family or one view. */
+.cl-section { margin: 0 0 2.6rem; scroll-margin-top: 1rem; }
+.cl-section-head { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 1rem; padding-bottom: .4rem; border-bottom: 2px solid hsl(var(--border)); }
+.cl-section-head h2 { margin: 0; font-size: 1.25rem; letter-spacing: -.01em; }
+.cl-section-kind { font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+
+/* The specimen grid — cards auto-fit, wide ones can opt to span. */
+.cl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+.cl-card {
+  display: flex; flex-direction: column; min-width: 0;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius); overflow: clip; background: hsl(var(--card));
+}
+.cl-card--wide { grid-column: 1 / -1; }
+.cl-card--tall { grid-row: span 2; }
+
+/* Specimen stage — a neutral, subtly-checkered field so translucency reads, with
+   the live sample centred. It is NOT the app background; it's a viewing surface. */
+.cl-stage {
+  position: relative; flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+  gap: .6rem; flex-wrap: wrap; min-height: 108px; padding: 1.1rem;
+  background:
+    repeating-conic-gradient(hsl(var(--muted) / .5) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+  /* Several specimens are overlays/toasts/sheets that use `position: fixed` — inside
+     the app they cover the viewport. `contain` makes each stage the containing block
+     for its fixed descendants (and clips them), so an overlay renders as a contained
+     mini-preview in its own card instead of escaping over the whole page. Same
+     fixed-escape fix used by the offscreen renderer. */
+  contain: layout paint;
+}
+.cl-stage > * { max-width: 100%; }
+/* A neutralized <dialog> (see neutralizeMarkup) lays out in flow rather than the
+   top layer, so its chrome previews inside the card. */
+.cl-stage [data-cl-dialog] { display: block; position: static; max-width: 100%; margin: 0; }
+/* A few samples want a plain surface, not the checker (e.g. cards on cards). */
+.cl-stage--plain { background: hsl(var(--muted) / .25); }
+/* Samples that lay out in a column rather than centred inline. */
+.cl-stage--stack { flex-direction: column; align-items: stretch; }
+
+/* A host-bound component can't render without the bridge — show its call instead. */
+.cl-code {
+  display: block; max-width: 100%; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: .68rem; line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Caption strip under each specimen. */
+.cl-meta { padding: .6rem .75rem; border-top: 1px solid hsl(var(--border)); }
+.cl-name { font-weight: 650; font-size: .82rem; display: flex; align-items: center; gap: .4rem; }
+/* Render-kind tag: live (green) / CSS-only (neutral) / host-bound (amber). */
+.cl-kind { flex: 0 0 auto; font-size: .58rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: .08rem .34rem; border-radius: 999px; }
+.cl-kind--live { background: hsl(150 60% 45% / .16); color: hsl(158 64% 32%); }
+.cl-kind--css { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
+.cl-kind--host { background: hsl(38 92% 50% / .18); color: hsl(32 80% 40%); }
+.cl-desc { margin: .15rem 0 0; font-size: .72rem; line-height: 1.45; color: hsl(var(--muted-foreground)); }
+.cl-src { margin: .35rem 0 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: .64rem; color: hsl(var(--muted-foreground)); word-break: break-all; }
+.cl-eg { margin: .3rem 0 0; display: flex; flex-wrap: wrap; gap: .3rem; }
+.cl-eg span {
+  font-size: .62rem; padding: .08rem .38rem; border-radius: 999px;
+  background: hsl(var(--muted) / .7); color: hsl(var(--muted-foreground));
+}
+/* Flag a sample whose render threw, rather than showing a silent empty stage. */
+.cl-broken { font-size: .72rem; color: hsl(var(--destructive)); font-family: var(--font-mono, monospace); }
+
+@media (max-width: 640px) {
+  .cl-grid { grid-template-columns: 1fr; }
+}

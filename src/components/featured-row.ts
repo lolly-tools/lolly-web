@@ -28,6 +28,7 @@ import { renderFeaturedVariant, displayFormatOf } from '../lib/featured-render.t
 import { toolSeedHref } from '../lib/seed-url.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { currentTheme } from '../theme.ts';
+import { icon } from '../lib/icons.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import type { PreviewsAPI } from '../bridge/previews.ts';
 
@@ -102,14 +103,16 @@ const SHUFFLE_TRAVEL_PX = 9;      // how far a manually-flipped example nudges v
 const SHUFFLE_MS = 260;           // brief — roughly the .is-shifting cross-fade pace
 
 // Lucide "arrow-right" — the Open affordance glyph.
-const ARROW = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
+const ARROW = icon('arrowRight', { size: 15, strokeWidth: 2.2 });
 
 // Lucide "circle-help" — the optional "(?)" glyph beside a strip's pull label (opts.labelHref).
-const HELP_ICON = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>';
+// Path data lives in lib/icons.ts as 'help' — deduped against footer-nav.ts's identical glyph
+// (component-audit rec 5; help-tip.ts's own copy is a separate agent's territory, see followups).
+const HELP_ICON = icon('help', { size: 12, strokeWidth: 2.4 });
 
 // Kebab "more actions" glyph — the optional per-tile ⋯ menu button (opts.tileMenu). The
 // consumer (e.g. Projects' Uncategorised ribbon) delegates the button's click to its own menu.
-const MENU_DOTS = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="12" cy="19" r="1.9"/></svg>';
+const MENU_DOTS = icon('menuDots', { size: 18, filled: true });
 
 const ric = (cb: () => void): number =>
   (typeof requestIdleCallback === 'function'

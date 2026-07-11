@@ -10,6 +10,7 @@
  * session has no single thumbnail, so it shows a package glyph plus metadata badges.
  */
 import { escape } from './utils.ts';
+import { icon } from './lib/icons.ts';
 
 // Batch-slot helpers are the shared, /pro-free lib module now (finding #13),
 // re-exported here so existing importers (folder-overlay, projects) are unchanged.
@@ -71,16 +72,18 @@ const FMT_LABEL: Record<string, string> = {
 export const fmtLabel = (f: string | null | undefined): string => (f != null ? FMT_LABEL[f] : undefined) ?? String(f ?? '').toUpperCase();
 
 // lucide "package" — placeholder thumbnail for batch sessions (no single render).
-export const PACKAGE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
+// Path data lives in lib/icons.ts as 'package' — also used by projects.ts/gallery.ts's
+// identical PACKAGE_ICON (component-audit rec 5).
+export const PACKAGE_ICON = icon('package');
 // lucide "folder"
-export const FOLDER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+export const FOLDER_ICON = icon('folder');
 // lucide "more-horizontal" — the per-tile overflow (move / rename / delete) trigger.
-export const MENU_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
+export const MENU_ICON = icon('menu');
 // lucide "check" — the tick shown inside a selected tile's selection toggle.
 // width/height are set on the SVG itself (not only via CSS) so the tick can never
 // balloon to the intrinsic SVG default if it's ever painted before/without the
 // `.tile-check svg` sizing rule (the cause of the "giant tick" flash during a batch render).
-export const CHECK_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+export const CHECK_ICON = icon('check', { size: 13, strokeWidth: 3 });
 
 /**
  * A multi-select toggle for a tile — a BUTTON that is a SIBLING of `.tile-primary`

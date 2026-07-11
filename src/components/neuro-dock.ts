@@ -15,13 +15,16 @@ import {
 } from './music-player.ts';
 import { getNeurospicy, setNeurospicyEnabled, stopNeurospicy, type NeurospicyHost } from '../lib/neurospicy.ts';
 import { flagEnabledSync } from '../feature-flags.ts';
+import { icon } from '../lib/icons.ts';
 
 const DOCK_ID = 'neuro-dock';
 const COLLAPSE_KEY = 'lolly:neuroDockCollapsed';
 
-const NOTE = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h3l2-7 4 18 3-14 2 7h6"/></svg>`;
-const MIN = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>`;
-const X = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+// Path data lives in lib/icons.ts as 'neuroBeat' — deduped against sound-toggle.ts's
+// identical NEURO_ICON glyph (component-audit rec 5).
+const NOTE = icon('neuroBeat', { size: 18 });
+const MIN = icon('minus', { size: 16, strokeWidth: 2.4 });
+const X = icon('close', { size: 16, strokeWidth: 2.4 });
 
 const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 

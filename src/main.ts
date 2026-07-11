@@ -31,7 +31,7 @@ import { beginViewFade } from './view-fade.ts';
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi';
+type RouteName = 'gallery' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -44,6 +44,7 @@ type Route =
   | { name: 'catalog'; params?: string }
   | { name: 'start'; params?: string }
   | { name: 'multi'; params?: string }
+  | { name: 'components' }
   | { name: 'gallery' };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
@@ -66,7 +67,7 @@ let mountedRouteSig = '';
 // Announce client-side route changes (the view swaps via innerHTML, which
 // assistive tech wouldn't otherwise notice).
 function announceRoute(name: RouteName): void {
-  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit' };
+  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit', components: 'Component library' };
   announce(`${labels[name] ?? 'Page'} loaded`);
 }
 
@@ -261,6 +262,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     case 'start': {
       const { mountStart } = await import('./views/start.ts');
       await mountStart(view, host as unknown as Parameters<typeof mountStart>[1], route.params ?? '');
+      break;
+    }
+    case 'components': {
+      // The browsable component library (#/components). Lazy — it's a dev/design
+      // surface, off every hot path. cameFromApp drives its back button: an in-app
+      // arrival (prevRouteName set) gets history.back(); a cold deep link → gallery.
+      const { mountComponents } = await import('./views/components.ts');
+      await mountComponents(view, host as unknown as Parameters<typeof mountComponents>[1], prevRouteName !== null);
       break;
     }
     case 'gallery':
@@ -612,6 +621,7 @@ function parseRoute(): Route {
     if (parts[0] === 'pro') return { name: 'pro', params: query || '' }; // /pro batch mode
     if (parts[0] === 'p') return { name: 'projects', folderId: parts[1] || null, params: query || '' };
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
+    if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
     return { name: 'gallery' };
   }
 

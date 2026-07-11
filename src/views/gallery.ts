@@ -16,6 +16,7 @@
 
 import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
+import { icon } from '../lib/icons.ts';
 import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
@@ -180,33 +181,35 @@ function dimText(tool: GalleryTool | undefined): string {
 import { BATCH_SLOT_PREFIX, isBatchSlot } from '../lib/batch-slots.ts';
 
 // Lucide "info" and "history" — per-card action icons (own stroke-width, so the
-// thin .tool-card-icon rule doesn't apply to them).
-const INFO_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
-const HISTORY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
+// thin .tool-card-icon rule doesn't apply to them). Path data lives in lib/icons.ts;
+// 'info' is deduped against profile.ts's identical INFO_ICON (component-audit rec 5).
+const INFO_ICON = icon('info');
+const HISTORY_ICON = icon('history');
 
 // Lucide "star" — the per-card favourite toggle. Filled via CSS when active (.is-fav).
-const STAR_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+const STAR_ICON = icon('star');
 // Sentinel category id for the starred-favourites filter (not a real catalog category).
 const FAV_CAT = 'favourites';
 
 // Lucide "sliders-horizontal" — the filter trigger (collapses the category pills).
-const FILTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>';
+const FILTER_ICON = icon('filterLines');
 
 // (Footer nav links + their glyphs live in components/footer-nav.ts, shared with
 // Projects and the Catalogue so all three bottom bars stay identical.)
 // Sort-direction toggle — paired up/down arrows. CSS emphasizes the .sd-up or
 // .sd-down group depending on the button's .is-asc state, so the lit arrow shows
 // which way the results run.
-const SORT_DIR_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="sd-up"><path d="M8 20V5"/><polyline points="4 9 8 5 12 9"/></g><g class="sd-down"><path d="M16 4v15"/><polyline points="12 15 16 19 20 15"/></g></svg>';
+const SORT_DIR_ICON = icon('sortDir');
 
 // lucide "package" — placeholder thumbnail for batch sessions, which have no
-// single render to show (they resume into #/pro).
-const PACKAGE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
+// single render to show (they resume into #/pro). Deduped against projects.ts's
+// and folder-tiles.ts's identical PACKAGE_ICON.
+const PACKAGE_ICON = icon('package');
 
 // Lucide "chevron-left/right" — the preview-strip's prev/next affordances (fine-pointer
 // only; touch just swipes). Decorative buttons, so aria-hidden.
-const CHEVRON_LEFT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
-const CHEVRON_RIGHT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+const CHEVRON_LEFT = icon('chevronLeft', { strokeWidth: 2.4 });
+const CHEVRON_RIGHT = icon('chevronRight', { strokeWidth: 2.4 });
 
 // Always-present backup art for a tile: the tool's own icon. The icon is INLINED into
 // the catalog index (never a network fetch), so unlike a committed preview PNG/SVG — a

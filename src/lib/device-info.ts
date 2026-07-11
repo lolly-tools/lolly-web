@@ -15,21 +15,25 @@
  */
 
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 
 const DASH = '—';
-const yesNo = (v: boolean | null | undefined): string => (v === true ? 'Yes' : v === false ? 'No' : DASH);
+const yesNo = (v: boolean | null | undefined): string => (v === true ? t('Yes') : v === false ? t('No') : DASH);
 
 // Values that can change while the session is live (window resize, device
 // rotation). Read on demand so the same code produces the initial render and
 // every real-time refresh — see the `live` rows and the listener wiring the
-// Dashboard attaches over [data-live].
+// Dashboard attaches over [data-live]. Reading (not caching) also means they
+// speak the active language: t() resolves at call time, not at module load.
 export const LIVE_VALUES: Record<string, () => string> = {
   viewport: () => `${window.innerWidth} × ${window.innerHeight}`,
   viewportOrientation: () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    return h > w ? 'Portrait' : w > h ? 'Landscape' : 'Square';
+    return h > w ? t('Portrait') : w > h ? t('Landscape') : t('Square');
   },
+  // The Screen Orientation API's own token ('landscape-primary') — a spec value
+  // like a UA string or a GPU renderer name, so it rides through verbatim.
   orientation: () => screen.orientation?.type || DASH,
 };
 export const liveValue = (key: string): string => LIVE_VALUES[key]?.() ?? DASH;
@@ -46,6 +50,26 @@ function matchPref(feature: string, options: string[]): string {
   return DASH;
 }
 
+// A media-feature keyword as a person reads it. The raw CSS tokens leak the spec
+// into the card ("Reduced motion: no-preference"), and a token that never reaches
+// t() can't be localised at all — so each one gets a human label, which is also
+// its translation key. Unknown keywords (a future value) pass through as-is.
+// Every label here is dynamically keyed, so it lives in scripts/i18n/extra-keys.spa.json.
+const PREF_LABELS: Record<string, string> = {
+  dark: 'Dark',
+  light: 'Light',
+  reduce: 'Reduce',
+  'no-preference': 'No preference',
+  more: 'More',
+  less: 'Less',
+  custom: 'Custom',
+  standalone: 'Standalone',
+  'minimal-ui': 'Minimal UI',
+  fullscreen: 'Fullscreen',
+  browser: 'Browser tab',
+};
+const prefLabel = (raw: string): string => (raw === DASH ? DASH : t(PREF_LABELS[raw] ?? raw));
+
 export function fmtBytes(n: number): string {
   if (!Number.isFinite(n)) return DASH;
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -59,10 +83,10 @@ export function fmtBytes(n: number): string {
 
 // ---------------------------------------------------------------------------
 // Heading icons for the device cards. Two-tier "kind-changing" logic: a generic
-// icon picked from the card *title* (TITLE_ICONS), overridden by a specific icon
-// when we can identify the browser brand or operating system. Everything is
-// monochrome `currentColor`. Brand glyphs are simplified, theme-tinted marks —
-// not the vendors' colour logos.
+// icon each card names for itself, overridden by a specific icon when we can
+// identify the browser brand or operating system. Everything is monochrome
+// `currentColor`. Brand glyphs are simplified, theme-tinted marks — not the
+// vendors' colour logos.
 const ICONS: Record<string, string> = {
   browser:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20"/><path d="M6 4v5"/><path d="M10 4v5"/></svg>',
@@ -102,19 +126,10 @@ const ICONS: Record<string, string> = {
     '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c-2.5 0-4 2-4 4.5v3.2c0 1.1-.5 1.9-1.3 2.9C5.3 14.3 4 16 4 17.8c0 .9.6 1.4 1.5 1.2.7-.2 1.3-.7 1.7-1.4-.1.8-.2 1.6-.2 2.2 0 1 .7 1.4 1.7 1.4h6.6c1 0 1.7-.4 1.7-1.4 0-.6-.1-1.4-.2-2.2.4.7 1 1.2 1.7 1.4.9.2 1.5-.3 1.5-1.2 0-1.8-1.3-3.5-2.7-5.2-.8-1-1.3-1.8-1.3-2.9V6.5C16 4 14.5 2 12 2z"/><circle cx="10.3" cy="7" r=".8" fill="hsl(var(--card))"/><circle cx="13.7" cy="7" r=".8" fill="hsl(var(--card))"/><path d="M11 8.7h2l-1 1.5z" fill="hsl(var(--card))"/></svg>',
 };
 
-// Card title → generic icon. The fallback when no brand/OS match is found.
-const TITLE_ICONS: Record<string, string> = {
-  Browser: ICONS.browser!,
-  System: ICONS.system!,
-  Display: ICONS.display!,
-  'Locale & preferences': ICONS.locale!,
-  'Capabilities & privacy': ICONS.capabilities!,
-  Network: ICONS.network!,
-  'Rendering stack': ICONS.render!,
-  'System Graphics': ICONS.graphics!,
-  'Browser Graphics': ICONS.layers!,
-};
-
+// Each card names its own generic icon at the push site (see collectDevice), so a
+// brand/OS-specific mark can override it and the fallback still resolves. It used
+// to be a title → icon Record, which quietly coupled the icon to the ENGLISH card
+// title — the moment the title became a t() call, every fallback icon vanished.
 function browserIcon(name: string): string | null {
   if (!name || name === DASH) return null;
   if (/edge/i.test(name)) return ICONS.edge!;
@@ -422,56 +437,57 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   const os = osFromHints || parseOS(ua);
 
   groups.push({
-    title: 'Browser',
-    icon: browserIcon(browser),
+    title: t('Browser'),
+    icon: browserIcon(browser) ?? ICONS.browser!,
     rows: [
-      { k: 'Browser', v: browserStr },
-      { k: 'Engine', v: engine },
+      { k: t('Browser'), v: browserStr },
+      { k: t('Engine'), v: engine },
       {
-        k: 'Mobile',
+        k: t('Mobile'),
         v: nav.userAgentData
           ? yesNo(nav.userAgentData.mobile)
-          : /(Mobi|Android|iPhone|iPad)/.test(ua) ? 'Yes' : 'No',
+          : yesNo(/(Mobi|Android|iPhone|iPad)/.test(ua)),
       },
-      { k: 'Languages', v: nav.languages?.join(', ') || nav.language || DASH },
-      { k: 'User agent', v: ua || DASH, mono: true, stacked: true },
+      { k: t('Languages'), v: nav.languages?.join(', ') || nav.language || DASH },
+      { k: t('User agent'), v: ua || DASH, mono: true, stacked: true },
     ],
   });
 
   const arch = hints?.architecture
-    ? `${hints.architecture}${hints.bitness ? ` · ${hints.bitness}-bit` : ''}`
+    ? `${hints.architecture}${hints.bitness ? ` · ${t('{n}-bit', { n: hints.bitness })}` : ''}`
     : DASH;
   groups.push({
-    title: 'System',
-    icon: osIcon(os),
+    title: t('System'),
+    icon: osIcon(os) ?? ICONS.system!,
     rows: [
-      { k: 'Operating system', v: os },
-      { k: 'Architecture', v: arch },
-      { k: 'Device model', v: hints?.model || DASH },
-      { k: 'CPU threads', v: nav.hardwareConcurrency ?? DASH },
-      { k: 'Device memory', v: nav.deviceMemory ? `${nav.deviceMemory} GB` : DASH },
-      { k: 'Touch points', v: Number.isFinite(nav.maxTouchPoints) ? nav.maxTouchPoints : DASH },
+      { k: t('Operating system'), v: os },
+      { k: t('Architecture'), v: arch },
+      { k: t('Device model'), v: hints?.model || DASH },
+      { k: t('CPU threads'), v: nav.hardwareConcurrency ?? DASH },
+      { k: t('Device memory'), v: nav.deviceMemory ? `${nav.deviceMemory} GB` : DASH },
+      { k: t('Touch points'), v: Number.isFinite(nav.maxTouchPoints) ? nav.maxTouchPoints : DASH },
     ],
   });
 
   const dpr = window.devicePixelRatio;
+  // Gamut names are proper nouns (sRGB, Display P3, Rec. 2020) — never translated.
   const gamut = GAMUT_LABELS[matchPref('color-gamut', ['rec2020', 'p3', 'srgb'])] || DASH;
+  const dynRangeRaw = matchPref('dynamic-range', ['high', 'standard']);
   const dynRange =
-    ({ high: 'High (HDR)', standard: 'Standard' } as Record<string, string>)[
-      matchPref('dynamic-range', ['high', 'standard'])
-    ] || DASH;
+    dynRangeRaw === 'high' ? t('High (HDR)') : dynRangeRaw === 'standard' ? t('Standard') : DASH;
   groups.push({
-    title: 'Display',
+    title: t('Display'),
+    icon: ICONS.display!,
     rows: [
-      { k: 'Screen', v: `${screen.width} × ${screen.height}` },
-      { k: 'Available', v: `${screen.availWidth} × ${screen.availHeight}` },
-      { k: 'Viewport', v: liveValue('viewport'), live: 'viewport' },
-      { k: 'Viewport orientation', v: liveValue('viewportOrientation'), live: 'viewportOrientation' },
-      { k: 'Pixel ratio', v: dpr ? `${Math.round(dpr * 100) / 100}×` : DASH },
-      { k: 'Colour depth', v: screen.colorDepth ? `${screen.colorDepth}-bit` : DASH },
-      { k: 'Colour gamut', v: gamut },
-      { k: 'Dynamic range', v: dynRange },
-      { k: 'Orientation', v: liveValue('orientation'), live: 'orientation' },
+      { k: t('Screen'), v: `${screen.width} × ${screen.height}` },
+      { k: t('Available'), v: `${screen.availWidth} × ${screen.availHeight}` },
+      { k: t('Viewport'), v: liveValue('viewport'), live: 'viewport' },
+      { k: t('Viewport orientation'), v: liveValue('viewportOrientation'), live: 'viewportOrientation' },
+      { k: t('Pixel ratio'), v: dpr ? `${Math.round(dpr * 100) / 100}×` : DASH },
+      { k: t('Colour depth'), v: screen.colorDepth ? t('{n}-bit', { n: screen.colorDepth }) : DASH },
+      { k: t('Colour gamut'), v: gamut },
+      { k: t('Dynamic range'), v: dynRange },
+      { k: t('Orientation'), v: liveValue('orientation'), live: 'orientation' },
     ],
   });
 
@@ -482,47 +498,47 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
     /* ignore */
   }
   groups.push({
-    title: 'Locale & preferences',
+    title: t('Locale & preferences'),
+    icon: ICONS.locale!,
     rows: [
-      { k: 'Locale', v: intl.locale || nav.language || DASH },
-      { k: 'Time zone', v: intl.timeZone || DASH },
-      { k: 'Colour scheme', v: matchPref('prefers-color-scheme', ['dark', 'light']) },
-      { k: 'Reduced motion', v: matchPref('prefers-reduced-motion', ['reduce', 'no-preference']) },
-      { k: 'Contrast', v: matchPref('prefers-contrast', ['more', 'less', 'custom', 'no-preference']) },
-      { k: 'Display mode', v: matchPref('display-mode', ['standalone', 'minimal-ui', 'fullscreen', 'browser']) },
+      { k: t('Locale'), v: intl.locale || nav.language || DASH },
+      { k: t('Time zone'), v: intl.timeZone || DASH },
+      { k: t('Colour scheme'), v: prefLabel(matchPref('prefers-color-scheme', ['dark', 'light'])) },
+      { k: t('Reduced motion'), v: prefLabel(matchPref('prefers-reduced-motion', ['reduce', 'no-preference'])) },
+      { k: t('Contrast'), v: prefLabel(matchPref('prefers-contrast', ['more', 'less', 'custom', 'no-preference'])) },
+      { k: t('Display mode'), v: prefLabel(matchPref('display-mode', ['standalone', 'minimal-ui', 'fullscreen', 'browser'])) },
     ],
   });
 
+  const onOff = (on: boolean): string => (on ? t('On') : t('Off'));
   const capRows: ClientRow[] = [
-    { k: 'Cookies', v: yesNo(nav.cookieEnabled), note: 'not in use' },
-    { k: 'Online', v: yesNo(nav.onLine) },
-    { k: 'Do Not Track', v: nav.doNotTrack === '1' ? 'On' : nav.doNotTrack === '0' ? 'Off' : DASH },
-    { k: 'Service worker', v: yesNo('serviceWorker' in nav) },
-    { k: 'PDF viewer', v: 'pdfViewerEnabled' in nav ? yesNo(nav.pdfViewerEnabled) : DASH },
+    { k: t('Cookies'), v: yesNo(nav.cookieEnabled), note: t('not in use') },
+    { k: t('Online'), v: yesNo(nav.onLine) },
+    { k: t('Do Not Track'), v: nav.doNotTrack === '1' ? t('On') : nav.doNotTrack === '0' ? t('Off') : DASH },
+    { k: t('Service worker'), v: yesNo('serviceWorker' in nav) },
+    { k: t('PDF viewer'), v: 'pdfViewerEnabled' in nav ? yesNo(nav.pdfViewerEnabled) : DASH },
   ];
-  let storageStr = DASH;
   try {
     const est = await nav.storage?.estimate?.();
     if (est && Number.isFinite(est.quota)) {
-      storageStr = `${fmtBytes(est.usage || 0)} of ${fmtBytes(est.quota!)}`;
-      capRows.push({ k: 'Storage', v: storageStr }); // Number.isFinite proves quota present
+      // Number.isFinite proves quota present.
+      capRows.push({ k: t('Storage'), v: t('{used} of {quota}', { used: fmtBytes(est.usage || 0), quota: fmtBytes(est.quota!) }) });
     }
   } catch {
     /* ignore */
   }
-  groups.push({ title: 'Capabilities & privacy', rows: capRows });
+  groups.push({ title: t('Capabilities & privacy'), icon: ICONS.capabilities!, rows: capRows });
 
   const conn = nav.connection || nav.mozConnection || nav.webkitConnection;
-  let netType = DASH;
   if (conn) {
-    netType = conn.effectiveType ? conn.effectiveType.toUpperCase() : DASH;
     groups.push({
-      title: 'Network',
+      title: t('Network'),
+      icon: ICONS.network!,
       rows: [
-        { k: 'Effective type', v: netType },
-        { k: 'Downlink', v: Number.isFinite(conn.downlink) ? `${conn.downlink} Mb/s` : DASH },
-        { k: 'Round trip', v: Number.isFinite(conn.rtt) ? `${conn.rtt} ms` : DASH },
-        { k: 'Data saver', v: 'saveData' in conn ? (conn.saveData ? 'On' : 'Off') : DASH },
+        { k: t('Effective type'), v: conn.effectiveType ? conn.effectiveType.toUpperCase() : DASH },
+        { k: t('Downlink'), v: Number.isFinite(conn.downlink) ? `${conn.downlink} Mb/s` : DASH },
+        { k: t('Round trip'), v: Number.isFinite(conn.rtt) ? `${conn.rtt} ms` : DASH },
+        { k: t('Data saver'), v: 'saveData' in conn ? onOff(!!conn.saveData) : DASH },
       ],
     });
   }
@@ -530,12 +546,14 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   const stack = renderStack(engine, os);
   if (stack) {
     groups.push({
-      title: 'Rendering stack',
-      note: 'The engine’s native 2D and text libraries — inferred from engine + OS, not reported by any web API.',
+      title: t('Rendering stack'),
+      icon: ICONS.render!,
+      note: t('The engine’s native 2D and text libraries — inferred from engine + OS, not reported by any web API.'),
       rows: [
-        { k: '2D rasteriser', v: stack.raster },
-        { k: 'Text shaping', v: stack.text },
-        { k: 'Compositor', v: stack.compositor },
+        // Library names (Skia, HarfBuzz, Core Text…) are proper nouns — untranslated.
+        { k: t('2D rasteriser'), v: stack.raster },
+        { k: t('Text shaping'), v: stack.text },
+        { k: t('Compositor'), v: stack.compositor },
       ],
     });
   }
@@ -550,20 +568,23 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
     hwVendor = g.hwVendor;
     gpuApi = g.api;
     groups.push({
-      title: 'System Graphics',
-      icon: gpuIcon(g.hwVendor),
-      rows: [{ k: 'GPU', v: g.chip, hero: true }],
+      title: t('System Graphics'),
+      icon: gpuIcon(g.hwVendor) ?? ICONS.graphics!,
+      rows: [{ k: t('GPU'), v: g.chip, hero: true }],
     });
     groups.push({
-      title: 'Browser Graphics',
+      title: t('Browser Graphics'),
+      icon: ICONS.layers!,
       rows: [
-        { k: 'Graphics API', v: g.api },
-        { k: 'Translation', v: g.translation },
-        { k: 'Vendor', v: g.glVendor },
-        { k: 'WebGL', v: gpu.webgl2 ? '2.0' : '1.0' },
-        { k: 'WebGPU', v: 'gpu' in navigator ? 'Supported' : DASH },
-        { k: 'Max texture', v: gpu.maxTexture ? `${gpu.maxTexture} px` : DASH },
-        { k: 'Reported', v: g.raw, mono: true, stacked: true },
+        // 'Native' is the only word here — API names (Metal, Vulkan, Direct3D) and
+        // the translation layer (ANGLE) are proper nouns, as is the raw report.
+        { k: t('Graphics API'), v: g.api },
+        { k: t('Translation'), v: g.translation === 'Native' ? t('Native') : g.translation },
+        { k: t('Vendor'), v: g.glVendor },
+        { k: t('WebGL'), v: gpu.webgl2 ? '2.0' : '1.0' },
+        { k: t('WebGPU'), v: 'gpu' in navigator ? t('Supported') : DASH },
+        { k: t('Max texture'), v: gpu.maxTexture ? `${gpu.maxTexture} px` : DASH },
+        { k: t('Reported'), v: g.raw, mono: true, stacked: true },
       ],
     });
   }
@@ -572,12 +593,12 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   // sized big. The GPU chip is the star (it names the actual machine), so it
   // leads. Everything degrades to '—' the same way the cards do.
   const headline: DeviceStat[] = [
-    { label: 'Machine', value: chip, sub: hwVendor !== DASH ? hwVendor : gpuApi !== DASH ? gpuApi : undefined, icon: gpuIcon(hwVendor) || ICONS.graphics!, mono: true },
-    { label: 'Operating system', value: os, sub: arch !== DASH ? arch : undefined, icon: osIcon(os) || ICONS.system! },
-    { label: 'Browser', value: browserName, sub: engine !== DASH ? `${engine} engine` : undefined, icon: browserIcon(browser) || ICONS.browser! },
-    { label: 'Display', value: `${screen.width} × ${screen.height}`, sub: dpr ? `${Math.round(dpr * 100) / 100}× density` : undefined, icon: ICONS.display! },
-    { label: 'Colour', value: gamut, sub: dynRange !== DASH ? dynRange : undefined, icon: ICONS.capabilities! },
-    { label: 'Viewport', value: liveValue('viewport'), sub: 'live', icon: ICONS.layers!, live: 'viewport' },
+    { label: t('Machine'), value: chip, sub: hwVendor !== DASH ? hwVendor : gpuApi !== DASH ? gpuApi : undefined, icon: gpuIcon(hwVendor) || ICONS.graphics!, mono: true },
+    { label: t('Operating system'), value: os, sub: arch !== DASH ? arch : undefined, icon: osIcon(os) || ICONS.system! },
+    { label: t('Browser'), value: browserName, sub: engine !== DASH ? t('{engine} engine', { engine }) : undefined, icon: browserIcon(browser) || ICONS.browser! },
+    { label: t('Display'), value: `${screen.width} × ${screen.height}`, sub: dpr ? t('{n}× density', { n: Math.round(dpr * 100) / 100 }) : undefined, icon: ICONS.display! },
+    { label: t('Colour'), value: gamut, sub: dynRange !== DASH ? dynRange : undefined, icon: ICONS.capabilities! },
+    { label: t('Viewport'), value: liveValue('viewport'), sub: t('live'), icon: ICONS.layers!, live: 'viewport' },
   ];
 
   // A single best-fit icon for the collapsed section header: the OS mark reads
@@ -614,7 +635,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
 
 /** Render one device card (all rows; a `hero` row is sized big by CSS). */
 function clientCard(group: ClientGroup): string {
-  const icon = group.icon || TITLE_ICONS[group.title] || '';
+  const icon = group.icon || '';
   return `
     <article class="plat-client-card">
       <h3 class="plat-client-title">${icon ? `<span class="plat-client-icon" aria-hidden="true">${icon}</span>` : ''}<span>${escape(group.title)}</span></h3>

@@ -16,6 +16,7 @@
 @import './tokens.css';
 @import './parts/base.css';
 @import './parts/utilities.css';
+@import './parts/buttons.css'; /* .btn/.btn--primary/.btn--ghost/.btn--danger primitives — before view parts so their aliasing wins pixel-parity */
 @import './parts/gallery.css';
 @import './parts/featured.css';
 @import './parts/topbar.css';

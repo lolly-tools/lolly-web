@@ -37,7 +37,7 @@
 import '../styles/parts/platform.css'; // shared dashboard chrome (.plat-* / .cap-*)
 import '../styles/parts/dashboard.css'; // this view's layout + signature pieces
 import { escape } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, loadNamespace } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
@@ -377,22 +377,28 @@ function wireCopyButtons(root: ParentNode): void {
 // A card is a button that opens the shared dialog with its feature list, rather than an
 // inline <details> that reflows the whole section as it expands. The detail markup rides
 // in a sibling <template> (inert until cloned into the popup on click).
+// Every string on a card comes from lib/capabilities-data.ts, so its t() keys are
+// DYNAMIC — they aren't picked up by scripts/translate.ts's literal-call-site scan.
+// They're translated by that script's own `caps` corpus (which reads the data module
+// directly) into the lazily-loaded `caps` namespace, merged into the catalog by the
+// loadNamespace('caps') below. A feature's `desc` carries authored inline HTML, so it
+// stays raw — its translation preserves the same tags (the pipeline validates that).
 function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }> }): string {
   // The modal detail (full feature list) rides in an inert <template>.
   const feats = `<dl class="cap-feat dash-cap-feat">${
-    card.features.map((f) => `<div><dt>${escape(f.name)}</dt><dd>${f.desc}</dd></div>`).join('')
+    card.features.map((f) => `<div><dt>${escape(t(f.name))}</dt><dd>${t(f.desc)}</dd></div>`).join('')
   }</dl>`;
   // A tiny SUSE-Mono sneak of the subheadings you'll see in the modal.
   const peek = `<ul class="dash-cap-peek" aria-hidden="true">${
-    card.features.map((f) => `<li>${escape(f.name)}</li>`).join('')
+    card.features.map((f) => `<li>${escape(t(f.name))}</li>`).join('')
   }</ul>`;
   return `
     <div class="dash-cap-item">
       <button type="button" class="dash-cap-card" data-cap-open aria-haspopup="dialog"
-              aria-label="${escape(card.features.length === 1 ? t('{title} — 1 detail', { title: card.title }) : t('{title} — {n} details', { title: card.title, n: card.features.length }))}"
+              aria-label="${escape(card.features.length === 1 ? t('{title} — 1 detail', { title: t(card.title) }) : t('{title} — {n} details', { title: t(card.title), n: card.features.length }))}"
         <span class="dash-cap-card-top">
           <span class="dash-cap-icon" aria-hidden="true">${card.icon}</span>
-          <span class="dash-cap-title">${escape(card.title)}</span>
+          <span class="dash-cap-title">${escape(t(card.title))}</span>
         </span>
         ${peek}
         <span class="dash-cap-foot">
@@ -405,7 +411,13 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
 }
 
 async function capabilitiesSection(): Promise<string> {
-  const { CAPABILITY_SECTIONS } = await import('../lib/capabilities-data.ts');
+  // The copy and its translations load together — the data module and the `caps`
+  // string namespace it's keyed by. Both are lazy: this panel is one tab of one
+  // view, and its ~300 prose strings have no business in the boot bundle.
+  const [{ CAPABILITY_SECTIONS }] = await Promise.all([
+    import('../lib/capabilities-data.ts'),
+    loadNamespace('caps'),
+  ]);
   // Each group is its own collapsible accordion panel — the section desc stays
   // visible in the summary as a table-of-contents, and the card grid expands below.
   // The first (Experiences) opens by default; the rest are folded so the whole map
@@ -415,8 +427,8 @@ async function capabilitiesSection(): Promise<string> {
       <summary class="dash-cap-group-head">
         <span class="dash-cap-group-icon" aria-hidden="true">${s.icon}</span>
         <div class="dash-cap-group-text">
-          <h3 class="dash-cap-group-title">${escape(s.title)}</h3>
-          <p class="dash-cap-group-desc">${escape(s.desc)}</p>
+          <h3 class="dash-cap-group-title">${escape(t(s.title))}</h3>
+          <p class="dash-cap-group-desc">${escape(t(s.desc))}</p>
         </div>
         ${COLLAPSE_CHEV}
       </summary>
@@ -595,7 +607,7 @@ function renderStorageGlance(m: StorageGlance): string {
 // ────────────────────────────────────────────────────────────────────────────
 
 export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise<void> {
-  document.title = 'Dashboard — Lolly';
+  document.title = t('Dashboard — Lolly');
 
   // Deep links: `#/d?print`, `#/d?formats`, … force-open a reference panel or a
   // capability group and scroll to it. Read straight off the hash — no router change.
