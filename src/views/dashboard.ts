@@ -42,6 +42,7 @@ import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
 import { renderPaletteWheel, wirePaletteWheel } from '../lib/palette-wheel.ts';
+import { renderBrandSeal, sealColors } from '../lib/brand-seal.ts';
 import { renderTypeDemo, wireTypeDemo, loadedFaces } from '../lib/type-demo.ts';
 import type { LiveFace } from '../lib/type-demo.ts';
 import { catalogSummaryBody, hydrateCatalogAssets } from '../lib/catalog-summary.ts';
@@ -701,9 +702,10 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
         ${panel('brand', initialTab, `
           ${brandHero()}
+          <section class="plat-section dash-section dash-lock" id="dash-lock" data-flag="lock locked fixed brand" hidden></section>
           <div class="dash-bento">
-            <section class="plat-section dash-section dash-card" id="dash-palette-wheel" data-flag="color colour colours palette wheel">
-              ${sectionHead(t('Palette on the wheel'), 'dash-wheel-h', t('Every brand colour plotted by hue and lightness — shade ramps fan out dark-centre to bright-rim. Hover a dot to read it.'))}
+            <section class="plat-section dash-section dash-card" id="dash-palette-wheel" data-flag="color colour colours palette wheel greys neutrals">
+              ${sectionHead(t('Palette on the wheel'), 'dash-wheel-h', t('Every brand colour plotted by hue (the angle) and chroma (distance out from the centre). Greys have no hue, so they ride the rail beside it, by lightness. Hover a dot to read it.'))}
               ${renderPaletteWheel(wheelColors)}
             </section>
             <section class="plat-section dash-section dash-card dash-typedemo" id="dash-typedemo" data-flag="type typography font motion kinetic">
@@ -827,6 +829,22 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     // is the fixed-brand note).
     const cta = hero.querySelector<HTMLElement>('[data-hero-cta]');
     if (cta) cta.hidden = locked;
+
+    // A locked brand gets a seal rather than a disabled-looking editor: a metal
+    // disc struck in the brand's own inks, padlocked. It only exists when the
+    // catalogue's tokens asset is authoritative (brandLock — see bridge/tokens.ts),
+    // which is also the only case where the editor at #/start refuses to open.
+    const lockEl = viewEl.querySelector<HTMLElement>('#dash-lock');
+    if (lockEl && locked) {
+      const brandLabel = nameEl?.textContent?.trim() || t('This brand');
+      lockEl.innerHTML = `
+        ${renderBrandSeal(sealColors(palette))}
+        <div class="dash-lock-text">
+          <h2 class="dash-lock-title">${escape(t('Brand locked'))}</h2>
+          <p class="dash-lock-desc">${t('<span class="dash-lock-brand">{brand}</span> ships with this build and is authoritative — its colours, type and tokens come from the catalogue and cannot be edited on this device. Every tool, page and export already wears it.', { brand: escape(brandLabel) })}</p>
+        </div>`;
+      lockEl.hidden = false;
+    }
 
     // The horizontal-primary logo, when the brand carries one — resolved from
     // its asset token to the stored asset's url and rendered via <img>, so an

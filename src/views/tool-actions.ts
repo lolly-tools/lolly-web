@@ -551,8 +551,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         o.textContent = String(t.meta?.name ?? t.id.split('/').pop() ?? '');
         return o;
       };
-      // Focus loops FIRST — the classic breaks (fools gold, amen brother, funky drummer)
-      // up top via loopRank — then the licensed music beds below.
+      // Focus loops FIRST — any FEATURED_LOOPS up top via loopRank, the rest alphabetical
+      // — then the licensed music beds below.
       const loops = tracks.filter(isLoop).sort((a, b) => loopRank(a.id) - loopRank(b.id) || byName(a, b));
       if (loops.length) {
         const grp = document.createElement('optgroup');

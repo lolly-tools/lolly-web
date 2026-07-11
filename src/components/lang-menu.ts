@@ -11,7 +11,7 @@
  * but — unlike that menu — is active at every viewport width, not folded behind
  * a mobile-only gate.
  */
-import { LANGS, LANG_META, currentLang, switchLang, t, LANG_ICON_SVG } from '../i18n.ts';
+import { LANGS, LANG_META, currentLang, switchLang, t, LANG_ICON_SVG, flagEmoji } from '../i18n.ts';
 import type { Lang, LangSwitchHost } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -98,8 +98,16 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
     el.className = 'lang-menu';
     el.setAttribute('role', 'menu');
     el.setAttribute('aria-label', escape(t('Language')));
+    // Flags are decorative garnish (the nativeName is the accessible label), so the
+    // flag cluster is aria-hidden. A fixed-width column keeps every name left-aligned
+    // whether a language shows one flag or three.
+    const flagsHtml = (code: Lang): string => {
+      const flags = LANG_META[code].flags ?? [];
+      if (!flags.length) return '';
+      return `<span class="lang-menu-flags" aria-hidden="true">${flags.map(flagEmoji).join('')}</span>`;
+    };
     el.innerHTML = `<div class="lang-menu-list" role="none">${LANGS.map(code =>
-      `<button type="button" class="lang-menu-item" role="menuitemradio" data-lang="${code}" aria-checked="${code === active}">${escape(LANG_META[code].nativeName)}</button>`,
+      `<button type="button" class="lang-menu-item" role="menuitemradio" data-lang="${code}" aria-checked="${code === active}">${flagsHtml(code)}<span class="lang-menu-name">${escape(LANG_META[code].nativeName)}</span></button>`,
     ).join('')}</div>`;
     document.body.appendChild(el);
     position();

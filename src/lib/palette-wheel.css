@@ -1,28 +1,41 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Palette color wheel (palette-wheel.ts). */
 
+/* Disc + rail, side by side. The disc takes the room, the rail is a fixed gutter. */
+.dash-wheel-plot {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+}
 .dash-wheel {
   position: relative;
-  width: 100%;
-  max-width: 340px;
-  margin: 0 auto;
+  flex: 1 1 auto;
   aspect-ratio: 1 / 1;
 }
-/* The hue ring — a true colour wheel, red at top, clockwise through the spectrum. */
+/* The wheel proper: hue around, saturation outward — the plane the dots are
+   plotted on, drawn underneath them. The conic is stepped in OKLCH at 30°, the
+   SAME hue angles oklchWheelXY() plots by, so a dot lands on its own colour;
+   an hsl() conic would be off by ~30° at the reds (sRGB red is oklch h≈29, not
+   0) and the plot would quietly lie. The core fades to the card colour rather
+   than to white — this is the desaturated end of the axis, and it has to read
+   as "no chroma" in both themes. */
 .dash-wheel-ring {
   position: absolute;
   inset: 0;
   border-radius: 50%;
   background:
-    radial-gradient(circle, hsl(var(--card)) 0 30%, transparent 31% 100%),
+    radial-gradient(circle, hsl(var(--card)) 0%, hsl(var(--card) / 0) 52%),
     conic-gradient(from 0deg,
-      hsl(0 90% 55%), hsl(60 90% 55%), hsl(120 70% 45%), hsl(180 70% 45%),
-      hsl(240 80% 60%), hsl(300 80% 60%), hsl(360 90% 55%));
-  opacity: 0.14;
-  -webkit-mask: radial-gradient(circle, transparent 0 29%, #000 30% 100%);
-  mask: radial-gradient(circle, transparent 0 29%, #000 30% 100%);
+      oklch(70% 0.19 0), oklch(70% 0.19 30), oklch(70% 0.19 60), oklch(70% 0.19 90),
+      oklch(70% 0.19 120), oklch(70% 0.19 150), oklch(70% 0.19 180), oklch(70% 0.19 210),
+      oklch(70% 0.19 240), oklch(70% 0.19 270), oklch(70% 0.19 300), oklch(70% 0.19 330),
+      oklch(70% 0.19 360));
+  opacity: 0.45;
 }
-/* Faint lightness rings so positions read as a plot, not a scatter. */
+/* Faint chroma rings so positions read as a plot, not a scatter. */
 .dash-wheel-grid {
   position: absolute;
   inset: 0;
@@ -30,6 +43,22 @@
   background:
     radial-gradient(circle, transparent 0 40.5%, hsl(var(--border)) 41% 41.6%, transparent 42%),
     radial-gradient(circle, transparent 0 27%, hsl(var(--border) / 0.6) 27.4% 28%, transparent 28.4%);
+}
+
+/* ── The neutral rail — greys, by lightness, light at the top. They have no hue
+   to plot by, so they don't belong on the disc at all (they'd pile into the hub
+   at an arbitrary angle). Here they get the one axis that separates them. */
+.dash-wheel-rail {
+  position: relative;
+  flex: 0 0 2.25rem;
+}
+.dash-wheel-rail-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: linear-gradient(to bottom, hsl(0 0% 100%), hsl(0 0% 0%));
+  opacity: 0.22;
 }
 .dash-wheel-dot {
   position: absolute;
@@ -67,6 +96,7 @@
   background: hsl(var(--muted) / 0.4);
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
+  place-content:center;
 }
 .dash-wheel-pv-swatch {
   flex: 0 0 auto; width: 3.25rem; height: 3.25rem; border-radius: calc(var(--radius) * 0.85);
