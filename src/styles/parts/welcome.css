@@ -25,7 +25,8 @@
 /* Language chips — a wrapping pill row, flush-left above the eyebrow. Each
    chip is a plain pill (no border-in-a-card trick); the active one gets a
    filled background, matching the segmented filter pattern (.cat-typefilter). */
-.welcome-langs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
+.welcome-langs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 16px; }
+.welcome-langs .lang-switch-icon { width: 15px; height: 15px; flex: none; color: hsl(var(--muted-foreground)); margin-right: 2px; }
 .welcome-lang {
   font: inherit;
   font-size: 12px;

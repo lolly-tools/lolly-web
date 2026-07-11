@@ -64,6 +64,12 @@
   gap: 1rem;
 }
 .profile-view .profile-card-header h2 { margin: 0 0 1rem; }
+.profile-lang-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.profile-lang-picker .lang-switch-icon { width: 32px; height: 32px; flex: none; color: hsl(var(--muted-foreground)); }
 .profile-lang-select {
   padding: 5px 26px 5px 10px;
   background-color: hsl(var(--muted) / .6);

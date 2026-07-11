@@ -16,7 +16,7 @@
 import '../styles/parts/profile.css';   // async CSS chunk (lazy view — not on the landing)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
-import { currentLang, langOptions, setActiveLang, t } from '../i18n.ts';
+import { currentLang, langOptions, setActiveLang, t, LANG_ICON_SVG } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { playThemeSfx, playSfx } from '../lib/sfx.ts';
 import { staggerReveal } from '../lib/reveal.ts';
@@ -218,6 +218,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <h2>${t('Your details')}</h2>
           <label class="profile-lang-picker">
             <span class="visually-hidden">${t('Language')}</span>
+            ${LANG_ICON_SVG}
             <select class="profile-lang-select" data-lang-pick aria-label="${escape(t('Language'))}">
               ${langOptions().map(o => `<option value="${o.code}"${o.code === currentLang() ? ' selected' : ''}>${escape(o.nativeName)}</option>`).join('')}
             </select>

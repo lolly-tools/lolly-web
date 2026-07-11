@@ -26,7 +26,7 @@
  * over another view.
  */
 import '../styles/parts/welcome.css';
-import { currentLang, langOptions, setActiveLang, t } from '../i18n.ts';
+import { currentLang, langOptions, setActiveLang, t, LANG_ICON_SVG } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import type { WebProfileAPI } from '../bridge/profile.ts';
@@ -64,6 +64,7 @@ let settleOpen: ((choice: WelcomeChoice | null) => void) | null = null;
 function renderWelcomeContent(): string {
   return `
     <div class="welcome-langs" role="group" aria-label="Language">
+      ${LANG_ICON_SVG}
       ${langOptions().map(o => `<button type="button" class="welcome-lang${o.code === currentLang() ? ' is-active' : ''}" data-lang="${o.code}" aria-pressed="${o.code === currentLang()}">${escape(o.nativeName)}</button>`).join('')}
     </div>
     <p class="welcome-eyebrow">${t('Welcome to Lolly')}</p>
