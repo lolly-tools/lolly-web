@@ -187,14 +187,16 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 
 /* Palette. The wheel lives in the folded "Colour chart" card below the grid. */
 .be-wheel-hint { margin: .55rem 0 0; font-size: .68rem; line-height: 1.4; color: hsl(var(--muted-foreground)); text-align: center; }
-/* Editable wheel affordances: crosshair over empty space (= add), grab on a dot. */
-.dash-wheel--edit { cursor: crosshair; touch-action: none; }
+/* Editable wheel affordances: crosshair over empty space (= add), grab on a dot.
+   Both surfaces — the hue disc and the neutral rail — take the same treatment. */
+.dash-wheel.is-editable,
+.dash-wheel-rail.is-editable { cursor: crosshair; touch-action: none; }
 .dash-wheel-dot--edit { cursor: grab; }
 .dash-wheel-dot--edit:active { cursor: grabbing; }
 /* Colour chart — the demoted wheel, folded by default (repainted on open: a
    hidden mount measures 0×0). Reuses the .be-subst-details folding chrome. */
 .be-chart-details { margin-top: 1rem; }
-.be-chart-details .be-pal-wheel { max-width: 340px; margin: .8rem auto 0; }
+.be-chart-details .be-pal-wheel { max-width: 380px; margin: .8rem auto 0; }
 
 /* Palette: grouped shape-only swatch tiles — name + hex live in title/aria
    (and in the editor popover a click opens), never on the tile itself. */

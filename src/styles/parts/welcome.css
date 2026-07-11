@@ -28,6 +28,9 @@
 .welcome-langs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 16px; }
 .welcome-langs .lang-switch-icon { width: 15px; height: 15px; flex: none; color: hsl(var(--muted-foreground)); margin-right: 2px; }
 .welcome-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -38,6 +41,16 @@
   padding: 5px 12px;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
+}
+/* Native emoji flags, lifted with a soft shadow — matches the language menu's
+   flag garnish. Decorative (aria-hidden); the native name is the label. */
+.welcome-lang-flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 14px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
 }
 .welcome-lang:hover { color: hsl(var(--foreground)); }
 .welcome-lang.is-active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }

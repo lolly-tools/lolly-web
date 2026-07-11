@@ -310,15 +310,14 @@ export async function setNeurospicyRepeat(host: NeurospicyHost, repeat: boolean)
 export function stopNeurospicy(): void { stopSource(); }
 
 // ── the track catalogue (every type:'audio' catalog asset) ──────────────────────
-// The classic breaks earn the top of the picker; the amen loops trail; the rest sit
-// between. Shared by BOTH the Neurospicy select and the video music picker (tool.ts).
-export const FEATURED_LOOPS = ['fools-gold', 'amen-brother', 'funky-drummer'];
+// Optional hand-picked slugs (no path prefix) to float to the top of the picker;
+// everything else sorts alphabetically. Shared by BOTH the Neurospicy select and the
+// video music picker (tool.ts). Empty by default — populate with real catalog ids.
+export const FEATURED_LOOPS: string[] = [];
 export function loopRank(id: string): number {
   const slug = id.split('/').pop() ?? '';
   const fi = FEATURED_LOOPS.indexOf(slug);
-  if (fi >= 0) return fi;                    // 0,1,2 — the named classics, up top
-  if (/^amen-\d+$/.test(slug)) return 2000;  // the amen loops trail
-  return 1000;                               // the other breaks, in between
+  return fi >= 0 ? fi : 1000;                // featured up top; the rest alphabetical
 }
 
 /** A track for the player: id + display name, plus tags (for a mood chip) and the
@@ -406,6 +405,36 @@ export async function dropNeurospicyTracks(host: NeurospicyHost, ids: string[]):
     } else {
       persistLocal(); void persistProfile(host);
     }
+  }
+  if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-tracks'));
+}
+
+/** Boot reconcile for a persisted selection that no longer exists. A loopId lives in the
+ *  PROFILE (+ localStorage mirror), so an asset RETIRED FROM THE CATALOG since the user
+ *  last picked it (they didn't delete it — we did) leaves a dangling id that nothing
+ *  self-heals: play() calls assets.get(), it throws, the catch silently returns, and the
+ *  mode sits enabled-but-silent with no row selected. Same cure as dropNeurospicyTracks:
+ *  clear it, and advance to the first real track if the mode was left on.
+ *  Call ONLY after the catalog sync resolves — see the empty-list guard below. */
+export async function reconcileNeurospicySelection(host: NeurospicyHost): Promise<void> {
+  const id = state.loopId;
+  if (!id || isRadioId(id)) return;              // nothing picked, or a station (always resolvable)
+  const loops = await listLoops(host);
+  // Local = catalog assets + the user's own uploads. Radio is appended fresh on every
+  // call and is present even offline, so it must NOT count as evidence the catalog loaded:
+  // on a cold/offline boot listLoops() legitimately returns radio-only, and treating that
+  // as "your track is gone" would wipe a perfectly good selection.
+  const local = loops.filter((t) => t.format !== 'stream' && !t.tags.includes('radio'));
+  if (!local.length) return;                     // catalog not loaded yet — never clear on no evidence
+  if (local.some((t) => t.id === id)) return;    // still there — nothing to do
+  const wasEnabled = state.enabled;
+  stopSource();
+  state.loopId = '';
+  const next = local[0];                         // never radio: an opt-in stream must not auto-start
+  if (next && wasEnabled) {
+    await setNeurospicyLoop(host, next.id);      // persists + plays
+  } else {
+    persistLocal(); void persistProfile(host);
   }
   if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-tracks'));
 }

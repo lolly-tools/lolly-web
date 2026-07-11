@@ -18,7 +18,7 @@ import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts } from './user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
-import { hydrateNeurospicy, armNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks } from './lib/neurospicy.ts';
+import { hydrateNeurospicy, armNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
 import { hydrateFeatureFlags, flagEnabledSync } from './feature-flags.ts';
 import { syncNeuroDock } from './components/neuro-dock.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
@@ -451,7 +451,13 @@ async function boot(): Promise<void> {
   catalogReady.then(() => syncCorePrefetch(host as unknown as Parameters<typeof syncCorePrefetch>[0])); // fire-and-forget after sync
   // The Neurospicy dock mounts ABOVE, before this sync starts — on a cold install its
   // track list would be built from a not-yet-synced catalog. Rebuild it once assets land.
-  catalogReady.then(() => { if (flagEnabledSync('neurospicy')) invalidateNeurospicyTracks(); }).catch(() => { /* offline boot — cache-skip above already re-queries */ });
+  catalogReady.then(async () => {
+    if (!flagEnabledSync('neurospicy')) return;
+    invalidateNeurospicyTracks();
+    // Now that the real track list has landed, heal a persisted selection pointing at an
+    // asset we've since retired from the catalog (it would otherwise sit enabled-but-silent).
+    await reconcileNeurospicySelection(host as unknown as Parameters<typeof reconcileNeurospicySelection>[0]);
+  }).catch(() => { /* offline boot — cache-skip above already re-queries */ });
 
   // First-run seed: give a brand-new user the catalog's curated default asset favourites
   // (see catalog/assets/index.json → defaultFavourites) so those headshots are pinned in

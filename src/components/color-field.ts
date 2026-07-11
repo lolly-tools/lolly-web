@@ -67,10 +67,10 @@ export function setSwatches(list: ColorSwatchOption[]): void {
  */
 export function refreshSwatches(scope: HTMLElement): void {
   scope.querySelectorAll<HTMLElement>('[data-color-field]').forEach(field => {
+    // No box = an inline field (they carry no palette) or one whose popover has
+    // never been opened; either way there's nothing built to refresh.
     const box = field.querySelector<HTMLElement>('.color-swatches');
-    if (box && (box.childElementCount || field.classList.contains('color-field--inline'))) {
-      box.innerHTML = swatchButtonsHtml(field.dataset.colorField!);
-    }
+    if (box && box.childElementCount) box.innerHTML = swatchButtonsHtml(field.dataset.colorField!);
   });
 }
 
@@ -156,22 +156,36 @@ export const LCH_MAX = { l: 100, c: 0.4, h: 360 } as const;
  * black sits at C=0 where the H slider does nothing, a dead-feeling start. */
 const LCH_SEED: Oklch = { l: 0.62, c: 0.11, h: 250 };
 
+// An axis's colour ramp is generated ONCE, as a list of stops, and then poured
+// into two shapes: a linear-gradient (the slider track) and a conic-gradient (the
+// dial). Same stops, same colours, so the dial can never disagree with the slider
+// beneath it.
+const linearStops = (stops: readonly string[]): string => `linear-gradient(to right, ${stops.join(', ')})`;
+/** `from 0deg` puts the range's start at 12 o'clock and sweeps it clockwise —
+ *  which is exactly how the needle angle (frac × 360°) is measured. */
+const conicStops = (stops: readonly string[]): string => `conic-gradient(from 0deg, ${stops.join(', ')})`;
+
 /**
- * The three slider-track gradients for the current colour, as CSS backgrounds.
- * Each axis sweeps its own range while holding the other two at the current
- * value, so the track previews exactly what dragging that thumb will do.
- * Stops are raw `oklch()` strings — the browser renders and gamut-maps them;
- * no per-stop JS conversion. Exported for tests.
+ * The three axis ramps for the current colour, as stop lists. Each axis sweeps
+ * its own range while holding the other two at the current value, so the ramp
+ * previews exactly what moving that axis will do. Stops are raw `oklch()`
+ * strings — the browser renders and gamut-maps them; no per-stop JS conversion.
  */
-export function lchTrackGradients(l: number, c: number, h: number): { l: string; c: string; h: string } {
-  const stops = (n: number, at: (t: number) => string) =>
-    `linear-gradient(to right, ${Array.from({ length: n }, (_, i) => at(i / (n - 1))).join(', ')})`;
+function lchTrackStops(l: number, c: number, h: number): { l: string[]; c: string[]; h: string[] } {
+  const ramp = (n: number, at: (t: number) => string): string[] =>
+    Array.from({ length: n }, (_, i) => at(i / (n - 1)));
   const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
   return {
-    l: stops(9, t => `oklch(${pct(t)} ${c} ${h})`),
-    c: stops(9, t => `oklch(${pct(l)} ${t * LCH_MAX.c} ${h})`),
-    h: stops(13, t => `oklch(${pct(l)} ${Math.max(c, 0.08)} ${t * 360})`), // floor C so the hue sweep stays visible near grey
+    l: ramp(9, t => `oklch(${pct(t)} ${c} ${h})`),
+    c: ramp(9, t => `oklch(${pct(l)} ${t * LCH_MAX.c} ${h})`),
+    h: ramp(13, t => `oklch(${pct(l)} ${Math.max(c, 0.08)} ${t * 360})`), // floor C so the hue sweep stays visible near grey
   };
+}
+
+/** The three slider-track gradients for the current colour. Exported for tests. */
+export function lchTrackGradients(l: number, c: number, h: number): { l: string; c: string; h: string } {
+  const s = lchTrackStops(l, c, h);
+  return { l: linearStops(s.l), c: linearStops(s.c), h: linearStops(s.h) };
 }
 
 /** Black or white — whichever reads on `hex`. Perceptual luminance threshold. */
@@ -237,26 +251,31 @@ function genToHex(mode: GenMode, st: Record<string, number>): string {
   return rgbaToHex(r * 255, g * 255, b * 255, 1);
 }
 
-/** Per-channel track gradient for a generic mode: each sweeps its axis, others held. */
-function genTracks(mode: GenMode, st: Record<string, number>): Record<string, string> {
-  const grad = (stops: string[]): string => `linear-gradient(to right, ${stops.join(', ')})`;
+/** Per-channel stop list for a generic mode: each sweeps its axis, others held. */
+function genTrackStops(mode: GenMode, st: Record<string, number>): Record<string, string[]> {
   if (mode === 'rgb') return {
-    r: grad([`rgb(0,${st.g},${st.b})`, `rgb(255,${st.g},${st.b})`]),
-    g: grad([`rgb(${st.r},0,${st.b})`, `rgb(${st.r},255,${st.b})`]),
-    b: grad([`rgb(${st.r},${st.g},0)`, `rgb(${st.r},${st.g},255)`]),
+    r: [`rgb(0,${st.g},${st.b})`, `rgb(255,${st.g},${st.b})`],
+    g: [`rgb(${st.r},0,${st.b})`, `rgb(${st.r},255,${st.b})`],
+    b: [`rgb(${st.r},${st.g},0)`, `rgb(${st.r},${st.g},255)`],
   };
   if (mode === 'hsl') return {
-    h: grad(Array.from({ length: 13 }, (_, i) => `hsl(${i / 12 * 360} ${st.s}% ${st.l}%)`)),
-    s: grad([`hsl(${st.h} 0% ${st.l}%)`, `hsl(${st.h} 100% ${st.l}%)`]),
-    l: grad([`hsl(${st.h} ${st.s}% 0%)`, `hsl(${st.h} ${st.s}% 50%)`, `hsl(${st.h} ${st.s}% 100%)`]),
+    h: Array.from({ length: 13 }, (_, i) => `hsl(${i / 12 * 360} ${st.s}% ${st.l}%)`),
+    s: [`hsl(${st.h} 0% ${st.l}%)`, `hsl(${st.h} 100% ${st.l}%)`],
+    l: [`hsl(${st.h} ${st.s}% 0%)`, `hsl(${st.h} ${st.s}% 50%)`, `hsl(${st.h} ${st.s}% 100%)`],
   };
   // CMYK: no CSS cmyk() — sample the approx conversion at 7 stops per axis.
-  const sample = (vary: 'c' | 'm' | 'y' | 'k'): string => grad(Array.from({ length: 7 }, (_, i) => {
+  const sample = (vary: 'c' | 'm' | 'y' | 'k'): string[] => Array.from({ length: 7 }, (_, i) => {
     const v = { ...st, [vary]: (i / 6) * 100 };
     const [r, g, b] = cmykToRgbApprox([v.c! / 100, v.m! / 100, v.y! / 100, v.k! / 100] as [number, number, number, number]);
     return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
-  }));
+  });
   return { c: sample('c'), m: sample('m'), y: sample('y'), k: sample('k') };
+}
+
+/** Per-channel track gradient for a generic mode. */
+function genTracks(mode: GenMode, st: Record<string, number>): Record<string, string> {
+  const stops = genTrackStops(mode, st);
+  return Object.fromEntries(Object.entries(stops).map(([ch, s]) => [ch, linearStops(s)]));
 }
 
 /** A generic channel's readout: hue in degrees, RGB as an integer, the rest as %. */
@@ -264,6 +283,90 @@ function genValText(mode: GenMode, ch: string, v: number): string {
   if (mode === 'rgb') return `${Math.round(v)}`;
   if (mode === 'hsl' && ch === 'h') return `${Math.round(v)}°`;
   return `${Math.round(v)}%`;
+}
+
+// ── Dials ────────────────────────────────────────────────────────────────────
+// A ring per channel, sitting above the sliders: the axis's ramp poured into a
+// conic gradient, with a needle at value → angle. Hue is genuinely circular, so
+// its dial is the real shape of that axis; the others are a sweep (the ramp's
+// start and end meet at 12 o'clock, which is why there's a visible seam there —
+// that's the range's edge, not an artefact).
+//
+// The dials are painted from the CURRENT colour, so they carry the context the
+// sliders do: with hue on green and saturation at zero, the S and L dials both
+// show their green-to-grey and black-to-white sweeps *for that hue*, and the
+// result disc reads mid-grey. Dragging one is a convenience — the slider under
+// it stays the control of record (it is the accessible one, and the precise one),
+// and a dial drag simply drives it.
+//
+// The fourth disc is the OUTPUT: the colour these three axes currently make. It's
+// split in half — the top picks a colour off the screen (eyedropper), the bottom
+// opens the system colour picker — with the glyphs struck through it in its own
+// contrast colour.
+
+interface DialSpec { ch: string; label: string; aria: string; frac: number; stops: string[] }
+
+const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+
+/** The needle's angle for a 0–1 position on the axis. Matches conicStops' `from 0deg`. */
+const needleDeg = (frac: number): string => `${(clamp01(frac) * 360).toFixed(1)}deg`;
+
+const EDIT_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+/** The OKLCH group's three dials, for the current state. */
+function lchDials(l: number, c: number, h: number): DialSpec[] {
+  const s = lchTrackStops(l, c, h);
+  return [
+    { ch: 'l', label: 'L', aria: 'Lightness', frac: l, stops: s.l },
+    { ch: 'c', label: 'C', aria: 'Chroma', frac: c / LCH_MAX.c, stops: s.c },
+    { ch: 'h', label: 'H', aria: 'Hue', frac: h / 360, stops: s.h },
+  ];
+}
+
+/** A generic group's dials (one per channel), for the current state. */
+function genDials(mode: GenMode, st: Record<string, number>): DialSpec[] {
+  const stops = genTrackStops(mode, st);
+  return MODE_AXES[mode].map(a => ({
+    ch: a.ch, label: a.label, aria: a.aria,
+    frac: (st[a.ch]! - a.min) / (a.max - a.min),
+    stops: stops[a.ch]!,
+  }));
+}
+
+/** The dial row: one ring per channel + the output disc. `outHex` is machine-made
+ *  (oklchToHex / genToHex), so it's always a safe `#rrggbb` for a CSS context. */
+function dialsHtml(dials: readonly DialSpec[], outHex: string): string {
+  const ring = (d: DialSpec): string => `
+      <button type="button" class="color-dial" data-dial-ch="${d.ch}" tabindex="-1"
+              style="background:${conicStops(d.stops)}" title="${d.aria}" aria-hidden="true">
+        <span class="color-dial-needle" style="transform:rotate(${needleDeg(d.frac)})"></span>
+        <span class="color-dial-hub">${d.label}</span>
+      </button>`;
+  return `<div class="color-dials">
+      ${dials.map(ring).join('')}
+      <div class="color-dial-out" data-dial-out style="--out:${outHex};--out-fg:${contrastText(outHex)}">
+        <button type="button" class="color-dial-act" data-dial-act="eyedropper"
+                title="Pick a colour from your screen" aria-label="Pick a colour from your screen">${EYEDROPPER_ICON}</button>
+        <button type="button" class="color-dial-act" data-dial-act="native"
+                title="Open the system colour picker" aria-label="Open the system colour picker">${EDIT_ICON}</button>
+      </div>
+    </div>`;
+}
+
+/** Repaint a group's dials + output disc from its current state. */
+function paintDials(group: HTMLElement, dials: readonly DialSpec[], outHex: string): void {
+  for (const d of dials) {
+    const dial = group.querySelector<HTMLElement>(`.color-dial[data-dial-ch="${d.ch}"]`);
+    if (!dial) continue;
+    dial.style.background = conicStops(d.stops);
+    const needle = dial.querySelector<HTMLElement>('.color-dial-needle');
+    if (needle) needle.style.transform = `rotate(${needleDeg(d.frac)})`;
+  }
+  const out = group.querySelector<HTMLElement>('[data-dial-out]');
+  if (out) {
+    out.style.setProperty('--out', outHex);
+    out.style.setProperty('--out-fg', contrastText(outHex));
+  }
 }
 
 /** One generic mode's slider group (channels as data-* on the wrapper). */
@@ -279,7 +382,9 @@ function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean): string {
         <span class="color-lch-val" data-mode-val="${a.ch}">${genValText(mode, a.ch, st[a.ch]!)}</span>
       </div>`).join('');
   const data = MODE_AXES[mode].map(a => `data-${a.ch}="${st[a.ch]}"`).join(' ');
-  return `<div class="color-modegroup" data-mode-group="${mode}" ${data}${hidden ? ' hidden' : ''}>${rows}</div>`;
+  return `<div class="color-modegroup" data-mode-group="${mode}" ${data}${hidden ? ' hidden' : ''}>${
+    dialsHtml(genDials(mode, st), genToHex(mode, st))
+  }${rows}</div>`;
 }
 
 /**
@@ -316,6 +421,7 @@ function paintGenGroup(group: HTMLElement): void {
     if (slider) { slider.value = String(Math.round(st[a.ch]!)); slider.style.background = tracks[a.ch]!; }
     if (val) val.textContent = genValText(mode, a.ch, st[a.ch]!);
   }
+  paintDials(group, genDials(mode, st), genToHex(mode, st));
 }
 
 /** Re-seed a generic group's channels from an sRGB hex (external colour change). */
@@ -402,9 +508,13 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   // `inline` drops the trigger entirely and keeps the popover always-open, laid
   // out in flow (no floating/positioning) — for hosts with room to spare that
   // want the picker as a spacious inline panel, not a click-to-open popover (the
-  // dashboard brand editor's Primary colour). CSS (.color-field--inline) turns
-  // the popover static + horizontal; wireColorField builds its swatches up front
-  // since the lazy-on-open path never fires without a trigger.
+  // brand editor's Primary colour and swatch editor). CSS (.color-field--inline)
+  // turns the popover static and gives the dials the full width.
+  //
+  // It carries NO swatch palette: every inline host is the brand editor, where
+  // the swatches would be the very palette being edited — offering the brand's
+  // own colours as presets for a brand colour is circular. Omitted rather than
+  // hidden: the grid is the heaviest part of the popover's DOM.
   const cls = `color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}${inline ? ' color-field--inline' : ''}`;
   return `<div class="${cls}" data-color-field="${eid}">
     ${inline ? '' : `<button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(name ? name + ' ' : '')}${escape(hexText)}">
@@ -427,7 +537,7 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       </div>
       <input type="color" class="color-popover-native" data-input-id="${eid}" value="${escape(rgbHex)}" aria-label="Pick a custom colour">
       <button type="button" class="color-nearest" data-color-nearest="${eid}" hidden></button>`}
-      <div class="color-swatches"></div>
+      ${inline ? '' : '<div class="color-swatches"></div>'}
     </div>
   </div>`;
 }
@@ -456,6 +566,7 @@ function lchSlidersHtml(eid: string, rgbHex: string | null, hidden = false): str
         <span class="color-lch-val" data-lch-val="${axis}">${lchValText(axis, value)}</span>
       </div>`;
   return `<div class="color-lch" data-color-lch="${eid}" data-l="${o.l}" data-c="${o.c}" data-h="${o.h}"${hidden ? ' hidden' : ''}>
+      ${dialsHtml(lchDials(o.l, o.c, o.h), oklchToHex(o))}
       ${row('l', 'L', 'Lightness', LCH_MAX.l, 0.5, Math.round(o.l * 1000) / 10)}
       ${row('c', 'C', 'Chroma', LCH_MAX.c, 0.004, Math.round(o.c * 1000) / 1000)}
       ${row('h', 'H', 'Hue', LCH_MAX.h, 1, Math.round(o.h))}
@@ -671,6 +782,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       if (slider) { slider.value = String(value); slider.style.background = tracks[axis]; }
       if (val) val.textContent = axis === 'l' ? `${Math.round(value)}%` : axis === 'c' ? value.toFixed(3) : `${Math.round(value)}°`;
     }
+    paintDials(box, lchDials(l, c, h), oklchToHex({ l, c, h }));
     // Out-of-gamut flag: oklchToHex silently reduces chroma when the position
     // leaves sRGB — surface it on the chroma readout instead of pretending the
     // slider position is the emitted colour. 0.01 margin absorbs byte rounding.
@@ -734,10 +846,9 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     }
   }
 
-  // Inline fields have no trigger and their popover is always open, so the
-  // lazy-on-open build above never fires — build their swatch grid (and seed
-  // the nearest-brand hint) up front.
-  scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(f => { buildSwatches(f); seedNearest(f); });
+  // Inline fields have no trigger, so the on-open hooks above never fire — seed
+  // their nearest-brand hint up front. (They carry no swatch grid to build.)
+  scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(f => seedNearest(f));
 
   // ── Trigger: open/close the popover ──────────────────────────────────────────
   scope.querySelectorAll<HTMLElement>('[data-color-trigger]').forEach(trigger => {
@@ -871,6 +982,64 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
         if (native) native.value = rgbHex;
         updateTrigger(field, fullHex);
         onChange(id, fullHex);
+      });
+    });
+  });
+
+  // ── Dials ────────────────────────────────────────────────────────────────────
+  // A dial never emits a colour itself: it converts the pointer's angle to a value
+  // and drives the slider for that axis, whose `input` handler already owns the
+  // whole emit path (state → gamut-mapped hex → value field → native input →
+  // trigger → onChange). One control of record per axis; the dial is a second way
+  // to move it. The output disc's two halves delegate to the eyedropper button and
+  // the native colour input that the popover already carries.
+  scope.querySelectorAll<HTMLElement>('.color-dials').forEach(row => {
+    const field = row.closest<HTMLElement>('[data-color-field]');
+    const group = row.closest<HTMLElement>('.color-lch, .color-modegroup');
+
+    row.querySelectorAll<HTMLElement>('.color-dial').forEach(dial => {
+      const ch = dial.dataset.dialCh!;
+      const slider = group?.querySelector<HTMLInputElement>(`[data-lch-axis="${ch}"], [data-mode-ch="${ch}"]`);
+      if (!slider) return;
+      const min = parseFloat(slider.min || '0');
+      const max = parseFloat(slider.max || '1');
+
+      // Angle → value, measured the same way the needle and the conic are: 0° at
+      // 12 o'clock, clockwise. The range's two ends meet at the top, so a drag
+      // across that seam jumps min↔max — inherent to putting a linear axis on a
+      // ring, and precisely why the slider stays.
+      const setFromPointer = (e: PointerEvent): void => {
+        const r = dial.getBoundingClientRect();
+        const dx = e.clientX - (r.left + r.width / 2);
+        const dy = e.clientY - (r.top + r.height / 2);
+        let ang = Math.atan2(dx, -dy) * 180 / Math.PI;
+        if (ang < 0) ang += 360;
+        slider.value = String(min + (ang / 360) * (max - min)); // the range input snaps to its own step
+        slider.dispatchEvent(new Event('input'));
+      };
+
+      dial.addEventListener('pointerdown', e => {
+        dial.setPointerCapture(e.pointerId);
+        interact(true);
+        setFromPointer(e);
+        e.preventDefault(); // don't take focus off the slider / start a text selection
+      });
+      dial.addEventListener('pointermove', e => {
+        if (dial.hasPointerCapture(e.pointerId)) setFromPointer(e);
+      });
+      const release = (e: PointerEvent): void => {
+        if (!dial.hasPointerCapture(e.pointerId)) return;
+        dial.releasePointerCapture(e.pointerId);
+        interact(false);
+      };
+      dial.addEventListener('pointerup', release);
+      dial.addEventListener('pointercancel', release);
+    });
+
+    row.querySelectorAll<HTMLElement>('.color-dial-act').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.dialAct === 'eyedropper') field?.querySelector<HTMLButtonElement>('.color-eyedropper')?.click();
+        else field?.querySelector<HTMLInputElement>('input.color-popover-native')?.click();
       });
     });
   });

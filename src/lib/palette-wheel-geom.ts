@@ -5,14 +5,17 @@
  * CSS-free and can be unit-tested under `node --test` (palette-wheel.test.ts).
  *
  * The disc is an OKLCH hue/chroma plane: angle = hue (0° straight up, clockwise),
- * distance from the centre = chroma (grey at the middle, vivid at the rim).
- * Lightness is the third axis and is NOT positional — it rides in the dot's colour.
+ * distance from the centre = chroma (desaturated at the middle, vivid at the rim).
+ * Lightness is not positional ON THE DISC — it rides in the dot's own colour.
+ *
+ * Neutrals are the exception: they come off the disc and plot on a lightness rail
+ * beside it (railY / isNeutral, below), because a grey has no hue to plot by.
  */
 
 // Disc geometry, in % of the square box. The rim is where the highest in-gamut
-// chroma lands; a small inner floor keeps near-greys off the exact centre so
-// they're still clickable. CMAX is a practical sRGB chroma ceiling — colours
-// past it (rare) just pin to the rim.
+// chroma lands; a small inner floor keeps the least-saturated colours off the
+// exact centre so they're still clickable. CMAX is a practical sRGB chroma
+// ceiling — colours past it (rare) just pin to the rim.
 export const WHEEL_R = 41;
 export const WHEEL_R_IN = 4;
 export const WHEEL_CMAX = 0.33;
@@ -34,4 +37,36 @@ export function wheelXYToChromaHue(x: number, y: number): { c: number; h: number
   let h = Math.atan2(dx, -dy) / DEG;
   if (h < 0) h += 360;
   return { c, h };
+}
+
+// ── The neutral rail ─────────────────────────────────────────────────────────
+// Greys do not belong on a hue wheel. A neutral has c ≈ 0, so the polar mapping
+// above collapses every one of them onto the centre — a stack of dots piled in
+// the hub, at an angle their (undefined) hue picked at random. Worse, the one
+// axis that actually separates them — lightness — isn't positional on the disc
+// at all.
+//
+// So they come off the disc entirely and plot on a rail beside it, ordered by
+// the axis that means something for a grey: light at the top, dark at the
+// bottom. The disc stays purely chromatic; the rail gives lightness the
+// positional axis it never had.
+
+/** Below this OKLCH chroma a colour is a neutral, and rides the rail. */
+export const WHEEL_NEUTRAL_C = 0.02;
+/** Rail padding, in % of the rail's box — keeps l=0 and l=1 dots off the ends. */
+const RAIL_PAD = 6;
+
+/** Is this a grey (or near-grey), i.e. a rail dot rather than a disc dot? */
+export function isNeutral(o: { c: number }): boolean {
+  return o.c < WHEEL_NEUTRAL_C;
+}
+
+/** OKLCH lightness → rail position (y in % of the rail's box). White at the top. */
+export function railY(l: number): number {
+  return RAIL_PAD + (1 - clamp(l, 0, 1)) * (100 - 2 * RAIL_PAD);
+}
+
+/** Rail position (y in % of the rail's box) → lightness. Inverse of railY. */
+export function railYToL(y: number): number {
+  return clamp(1 - (y - RAIL_PAD) / (100 - 2 * RAIL_PAD), 0, 1);
 }

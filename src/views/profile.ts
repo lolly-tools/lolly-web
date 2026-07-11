@@ -16,8 +16,9 @@
 import '../styles/parts/profile.css';   // async CSS chunk (lazy view — not on the landing)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
-import { currentLang, langOptions, switchLang, t, docsHref, LANG_ICON_SVG } from '../i18n.ts';
+import { currentLang, switchLang, t, docsHref } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playThemeSfx, playSfx } from '../lib/sfx.ts';
 import { staggerReveal } from '../lib/reveal.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
@@ -211,19 +212,17 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
   viewEl.innerHTML = `
     <a href="#/" class="tools-home home-full">${t('Tools')}</a>
+    <div class="gallery-topbar" style="justify-content:flex-end">
+      <div class="gallery-topright">
+        ${langFabHtml()}
+      </div>
+    </div>
     <div class="profile-layout">
       <h1 class="visually-hidden">${t('Your profile')}</h1>
 
       <section class="profile-card">
         <div class="profile-card-header">
           <h2>${t('Your details')}</h2>
-          <label class="profile-lang-picker">
-            <span class="visually-hidden">${t('Language')}</span>
-            ${LANG_ICON_SVG}
-            <select class="profile-lang-select" data-lang-pick aria-label="${escape(t('Language'))}">
-              ${langOptions().map(o => `<option value="${o.code}"${o.code === currentLang() ? ' selected' : ''}>${escape(o.nativeName)}</option>`).join('')}
-            </select>
-          </label>
         </div>
         <form class="profile-form" id="profile-form">
           <div class="profile-details-grid">
@@ -389,14 +388,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     } catch { /* preference save is best-effort */ }
   });
 
-  // Language — a permanent picker (not a one-time first-run prompt like the
-  // welcome dialog's chips). switchLang saves to profile.lang + localStorage,
-  // then reloads so the whole app (not just this view's wave-1-wrapped strings)
-  // re-renders in the new language — the simplest correct option without a
-  // reactive framework.
-  viewEl.querySelector('[data-lang-pick]')?.addEventListener('change', e => {
-    void switchLang(host, (e.target as HTMLSelectElement).value as Lang);
-  });
+  // Language FAB menu — same control as gallery/catalog/projects, so switching
+  // the language is consistent across views. switchLang saves to profile.lang +
+  // localStorage, then reloads so the whole app re-renders in the new language.
+  attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // Sound switch — the unified "Sound:" toggle (speaker indicator + sliding switch). Auto-saves
   // each flip to profile.sfxMuted + localStorage and chirps when re-enabled (via applySfxMuted,

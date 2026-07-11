@@ -49,6 +49,27 @@
 }
 .cat-group-count[hidden] { display: none; }
 
+/* ─── Tile-grid marquee (rubber-band) selection ──────────────────────────────
+   The box dragged through the gaps between cards in Projects and the Catalogue —
+   one class for both, drawn by the shared gesture module (lib/tile-select.ts), so
+   the two grids can't drift apart visually any more than they can behaviourally.
+   Body-mounted and position:fixed (the module sets left/top/width/height inline),
+   so it floats free of either view's stacking + overflow contexts.
+
+   Corners take HALF the global card radius: unmistakably of the same family as the
+   cards it's sweeping over, but tighter — a selection box reads as an instrument,
+   not a surface, and shouldn't look like another card laid on top of them. */
+.tile-marquee {
+  position: fixed; z-index: 8000; pointer-events: none;
+  border: 1px solid hsl(var(--primary));
+  background: hsl(var(--primary) / 0.12);
+  border-radius: calc(var(--radius) * 0.5);
+}
+/* Kill text selection while a box is live — otherwise the drag paints the page blue
+   as it crosses card captions. Scoped to the marqueeing view root (the module puts the
+   class on the view's mount element), and lifted the moment the drag ends. */
+.is-marqueeing, .is-marqueeing * { user-select: none; }
+
 .cat-grid {
   display: grid; gap: .6rem;
   grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
@@ -288,15 +309,11 @@
 }
 
 /* Inline mode — the picker as a spacious, always-open panel (no trigger, no
-   floating): the popover flows in place, sheds its own card chrome (the host
-   panel already is one), and lays the sliders/hex/alpha stack beside the swatch
-   palette so a roomy host (the dashboard brand editor) uses the width. Collapses
-   to a single column when narrow. */
-/* Query container: the sliders+swatches lay out two-up when the field is wide
-   (the dashboard/start primary) and stack when it's narrow (the swatch-editor
-   card) — keyed on the FIELD's own width, not the viewport, so a 300px popover
-   collapses even on a wide screen. */
-.color-field--inline { container: colorinline / inline-size; }
+   floating): the popover flows in place and sheds its own card chrome (the host
+   panel already is one). It carries no swatch palette (see colorFieldHtml: every
+   inline host is the brand editor, where the swatches ARE the palette being
+   edited), so it's a single column top-to-bottom — value field, dials + sliders,
+   alpha — and the dials get the host panel's whole width to spread across. */
 .color-field--inline .color-popover {
   position: static;
   z-index: auto;
@@ -304,33 +321,23 @@
   border: 0;
   background: none;
   box-shadow: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 240px);
-  column-gap: 20px;
-  row-gap: 12px;
-  align-items: start;
+  gap: 12px;
 }
-/* Left column, top-to-bottom: the value field, then the slider stack (.color-lch
-   or the tabbed .color-modes), then alpha. The hex/value input leads so it reads
-   as the headline of the picker. */
-.color-field--inline .color-input-wrap  { grid-column: 1; grid-row: 1; }
-.color-field--inline .color-lch,
-.color-field--inline .color-modes     { grid-column: 1; grid-row: 2; }
-.color-field--inline .color-alpha-row  { grid-column: 1; grid-row: 3; }
-.color-field--inline .color-popover-native { grid-column: 1; grid-row: 4; }
-.color-field--inline .color-swatches {
-  grid-column: 2;
-  grid-row: 1 / 5;               /* stand beside the whole left stack */
-  align-content: start;
+/* The dials share the full width equally instead of sitting at their fixed size:
+   flex-basis 0 + grow, with the aspect ratio holding them round. The cap stops a
+   very wide panel (or a 3-dial space where CMYK's 4 fit) blowing them up. */
+.color-field--inline .color-dials { gap: 0.9rem; }
+.color-field--inline .color-dial,
+.color-field--inline .color-dial-out {
+  flex: 1 1 0;
+  width: auto;
+  height: auto;
+  max-width: 7rem;
+  aspect-ratio: 1 / 1;
 }
-@container colorinline (max-width: 440px) {
-  .color-field--inline .color-popover { grid-template-columns: 1fr; }
-  .color-field--inline .color-lch,
-  .color-field--inline .color-modes,
-  .color-field--inline .color-input-wrap,
-  .color-field--inline .color-alpha-row,
-  .color-field--inline .color-swatches { grid-column: 1; grid-row: auto; }
-}
+/* Scale the dial furniture up with the dial. */
+.color-field--inline .color-dial-hub { font-size: 12px; }
+.color-field--inline .color-dial-act svg { width: 1.9em; height: 1.9em; }
 
 /* ── Colour-space modes: tab bar + per-space slider groups ───────────────────
    The tabs are a segmented control; the active group's sliders reuse the OKLCH
@@ -365,9 +372,10 @@
 .color-lch[hidden] { display: none; }
 /* Reserve the tallest group's height (CMYK = 4 rows) on EVERY mode group, so
    switching OKLCH/HSL/RGB (3 rows) ↔ CMYK (4 rows) never shifts the layout. One
-   row = the 18px thumb; 4 rows + 3 × 8px gaps. Rows stay top-aligned. */
+   row = the 18px thumb; 4 rows + 3 × 8px gaps, on top of the dial row every group
+   carries (3.25em + its 4px margin + the group's own 8px gap). Rows stay top-aligned. */
 .color-modes .color-lch,
-.color-modes .color-modegroup { min-height: calc(4 * 18px + 3 * 8px); justify-content: flex-start; }
+.color-modes .color-modegroup { min-height: calc(3.25em + 12px + 4 * 18px + 3 * 8px); justify-content: flex-start; }
 
 /* The value field is a live swatch of the current colour: the picker toggles
    .color-input--painted and sets --color-input-bg/-border to the colour (alpha
@@ -448,6 +456,109 @@
   color: hsl(var(--muted-foreground));
   min-width: 30px;
   text-align: right;
+}
+
+/* ── Dials — a ring per channel, above that channel's slider ─────────────────
+   The ring's background is the SAME stop list as the slider track under it,
+   poured into a conic gradient instead of a linear one (color-field.ts), and the
+   needle sits at value → angle. The hub covers the point where the conic's stops
+   converge (always a muddy pinch) and carries the channel's letter. Last in the
+   row is the output disc: the colour the axes currently make, split into an
+   eyedropper half and a system-picker half. */
+.color-dials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;              /* + the group's own 8px gap = 12px of air */
+}
+.color-dial,
+.color-dial-out {
+  position: relative;
+  flex: 0 0 auto;
+  width: 3.25em;
+  height: 3.25em;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px hsl(var(--border)), 0 1px 3px hsl(0 0% 0% / 0.18);
+}
+.color-dial {
+  padding: 0;
+  cursor: grab;
+  touch-action: none;              /* the dial owns the drag, not the scroller */
+}
+.color-dial:active { cursor: grabbing; }
+/* The needle rotates as a whole; the mark itself is a notch pinned at 12 o'clock. */
+.color-dial-needle {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: transform 0.08s linear;
+}
+.color-dial-needle::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 3px;
+  height: 30%;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px hsl(0 0% 0% / 0.55);
+}
+.color-dial-hub {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  width: 46%;
+  height: 46%;
+  border-radius: 50%;
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 1px hsl(var(--border));
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+/* The output disc — the picked colour, with its two actions struck through it in
+   whichever of black/white reads on that colour (--out-fg, set by color-field.ts). */
+.color-dial-out {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--out, hsl(var(--muted)));
+  color: var(--out-fg, hsl(var(--foreground)));
+}
+.color-dial-act {
+  flex: 1 1 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.color-dial-act svg {
+  width: 1.25em;
+  height: 1.25em;
+}
+.color-dial-act:hover,
+.color-dial-act:focus-visible {
+  opacity: 1;
+  background: color-mix(in oklab, currentColor 18%, transparent);
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .color-dial-needle, .color-dial-act { transition: none; }
 }
 
 /* ── OKLCH sliders — the LCH-first custom-colour surface ─────────────────────

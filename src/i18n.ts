@@ -14,10 +14,10 @@
  * inline script in index.html), reconciled from the profile in main.ts's boot().
  */
 
-import { LANGS, LANG_META, normalizeLang } from '@lolly/engine';
+import { LANGS, LANG_META, normalizeLang, flagEmoji } from '@lolly/engine';
 import type { Lang } from '@lolly/engine';
 
-export { LANGS, LANG_META, normalizeLang };
+export { LANGS, LANG_META, normalizeLang, flagEmoji };
 export type { Lang };
 
 /**
@@ -63,8 +63,8 @@ export function currentLang(): Lang {
 }
 
 /** Native-name options for a picker, English first. */
-export function langOptions(): Array<{ code: Lang; nativeName: string }> {
-  return LANGS.map(code => ({ code, nativeName: LANG_META[code].nativeName }));
+export function langOptions(): Array<{ code: Lang; nativeName: string; flags: readonly string[] }> {
+  return LANGS.map(code => ({ code, nativeName: LANG_META[code].nativeName, flags: LANG_META[code].flags ?? [] }));
 }
 
 /**

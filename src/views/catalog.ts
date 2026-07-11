@@ -50,6 +50,7 @@ import {
   loadHiddenAssets, saveHiddenAssets,
 } from '../lib/asset-favourites.ts';
 import { mountUploadDropzone } from '../lib/upload-dropzone.ts';
+import { wireTileSelect } from '../lib/tile-select.ts';
 import type { PickerHost } from './picker.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
@@ -515,6 +516,49 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // catalog assets can't be deleted (they're a permanent contract), only hidden. Mirrors
   // the projects view's checkbox + floating bulk-bar pattern.
   const selected = new Set<string>();
+
+  // ── multi-select gestures (marquee + Shift-range) ───────────────────────────
+  // Shared verbatim with Projects (lib/tile-select.ts) so the two grids behave the same:
+  // drag a box through the gaps between cards to select what it touches, Shift-click a dot
+  // to sweep up everything back to the anchor. Only the user's uploads carry a dot, so only
+  // they are ever caught — a box dragged across the library's own cards selects nothing,
+  // which is right: shared assets can't be bulk-acted on.
+  //
+  // Wired ONCE per mount against viewEl (the persistent element): render() replaces
+  // `.catalog` wholesale and renderBody() replaces the grid, so anything bound inside would
+  // be orphaned — and re-wiring per render would reset the Shift-anchor under the user.
+  const selectableTiles = (): HTMLElement[] =>
+    [...viewEl.querySelectorAll<HTMLElement>('.cat-tile .cat-check[data-select]')]
+      .map(dot => dot.closest<HTMLElement>('.cat-tile'))
+      .filter((tile): tile is HTMLElement => !!tile);
+
+  const tileSelect = wireTileSelect({
+    host: viewEl,
+    tiles: selectableTiles,
+    refOf: (tile) => tile.dataset.id!,
+    current: () => new Set(selected),
+    // Reconcile the Set to exactly `refs`, then repaint in place — called on every marquee
+    // frame, so a re-render here would drop scroll/focus and kill the drag.
+    setRefs: (refs) => {
+      selected.clear();
+      for (const id of refs) selected.add(id);
+      for (const tile of viewEl.querySelectorAll<HTMLElement>('.cat-tile')) {
+        const on = selected.has(tile.dataset.id ?? '');
+        tile.classList.toggle('is-selected', on);
+        tile.querySelector('.cat-check')?.setAttribute('aria-pressed', String(on));
+      }
+      syncSelectAll();
+      syncBulkBar();
+    },
+    clear: () => handleBulk('clear'),
+    // Never start a box on a card, control, bar, drop zone, or the favourites strip (it has
+    // its own drag-to-scroll) — only in a genuine gap. `.cat-toolbar` earns its place: it's a
+    // STICKY pill floating over the grid, so its padding and flex gaps read as empty canvas
+    // while actually sitting on top of the cards — a press there is aiming at the toolbar.
+    noStart: '.cat-tile, button, a, input, label, textarea, select, dialog, .cat-bulkbar, '
+      + '.cat-toolbar, .cat-fav-strip, .featured, .gallery-topbar, .gallery-footer, .updz, '
+      + '[data-dropzone-mount], .cat-dl-section, .cat-uploads-bar',
+  });
 
   // Favourites strip presentation — the same cinematic component as the Tools hero,
   // with a Gallery ↔ Cover Flow view mode and an on/off switch, both persisted. Kept
@@ -1730,9 +1774,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // ── selection (user uploads only) ───────────────────────────────────────────────
-  // The set of currently-selectable ids (visible, matches search, and a user upload).
+  // The set of currently-selectable ids — exactly the uploads the grid is SHOWING right now.
+  // The same three filters assetsSectionHtml() builds the uploads section from (visible +
+  // search + filetype), so "Select all" and pruneSelection() can never reach a tile that
+  // isn't on screen: an off-screen id in the selection would ride into a bulk delete
+  // invisibly. (The filetype filter belongs here for the same reason the search does.)
   const selectableIds = (): Set<string> =>
-    new Set(visibleAssets().filter(matchesQuery).filter(a => a.source === 'user').map(a => a.id));
+    new Set(visibleAssets().filter(matchesQuery).filter(matchesType).filter(a => a.source === 'user').map(a => a.id));
 
   // Drop selected ids that are gone (deleted, or filtered out by a search) so the count
   // stays honest. Runs at the top of every render().
@@ -1797,6 +1845,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         tile.querySelector('.cat-check')?.setAttribute('aria-pressed', 'false');
       }
       selected.clear();
+      // The anchor goes with the selection: left behind, it would silently become the far
+      // end of the next Shift-click's range, selecting a swathe the user never started.
+      tileSelect.resetAnchor();
       syncSelectAll();
       syncBulkBar();
     } else if (action === 'delete') void deleteSelection();
@@ -1830,6 +1881,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // keeps only ids that are present + selectable, so a copy filtered out by an
     // active search simply drops from the selection — the visible ones stay selected.
     selected.clear();
+    tileSelect.resetAnchor();           // the originals are no longer the selection's origin
     for (const newId of newIds) selected.add(newId);
     render();
     // Bring the first new copy into view so "the copies appeared" is visible, not
@@ -1925,6 +1977,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       assetById.delete(id);
     }
     selected.clear();
+    tileSelect.resetAnchor();           // the anchor was almost certainly one of the deleted
     if (!mounted) return;
     rerender();
   }
@@ -2672,8 +2725,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
 
+      // Selection dot. Shift-click extends from the anchor instead of toggling — see
+      // lib/tile-select.ts (the same gesture Projects uses).
       const check = target.closest<HTMLElement>('[data-select]');
-      if (check) { toggleSelect(check.dataset.select!); return; }
+      if (check) {
+        const id = check.dataset.select!;
+        tileSelect.onDotClick(id, e.shiftKey, () => toggleSelect(id));
+        return;
+      }
 
       const selectAll = target.closest<HTMLElement>('[data-selectall]');
       if (selectAll) { selectAllUploads(); return; }
@@ -2897,6 +2956,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   (viewEl as ViewElement)._cleanup = () => {
     mounted = false;
     cancelArrivalAah();
+    // Not optional: the marquee's mousedown is bound to viewEl (#view), which the router
+    // REUSES for every route — leave it bound and the next mount stacks another copy.
+    tileSelect.destroy();
     featuredHandle?.destroy();
     featuredHandle = null;
     lottieThumbs?.destroy();

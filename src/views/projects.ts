@@ -31,6 +31,7 @@ import {
   type MemberPreview,
 } from '../folder-tiles.ts';
 import { viewToggle } from '../components/view-toggle.ts';
+import { wireTileSelect } from '../lib/tile-select.ts';
 import { playProjectsAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { mountFeaturedRow } from '../components/featured-row.ts';
 import type { FeaturedEntry, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
@@ -762,9 +763,14 @@ export async function mountProjects(
         return;
       }
 
-      // Selection toggle (must beat the open-folder / open-session primary it neighbours)
+      // Selection toggle (must beat the open-folder / open-session primary it neighbours).
+      // Shift-click extends from the anchor instead of toggling — see lib/tile-select.ts.
       const selBtn = t.closest<HTMLElement>('[data-select]');
-      if (selBtn) { e.preventDefault(); e.stopPropagation(); toggleSelect(selBtn); return; }
+      if (selBtn) {
+        e.preventDefault(); e.stopPropagation();
+        tileSelect.onDotClick(selBtn.dataset.select!, e.shiftKey, () => toggleSelect(selBtn));
+        return;
+      }
 
       // Bulk-action bar
       const bulk = t.closest<HTMLElement>('[data-bulk]');
@@ -861,7 +867,6 @@ export async function mountProjects(
     wireDrag(root);
     wireContextMenu(root);
     mountUncatRibbon(root);
-    wireMarquee(root);
     syncBulkBar();   // reflect a selection that survived this re-render
   }
 
@@ -880,71 +885,48 @@ export async function mountProjects(
     });
   }
 
-  // ── desktop: click-drag marquee (rubber-band) selection ─────────────────────
-  // Press on empty canvas and drag a box; tiles it touches are selected live. A plain
-  // drag replaces the selection; holding Shift/Cmd/Ctrl adds to it. A plain click on
-  // empty canvas clears the selection. Fine-pointer only (touch uses the checkboxes).
-  function wireMarquee(root: HTMLElement): void {
-    if (!window.matchMedia?.('(pointer: fine)').matches) return;
-    let sx = 0, sy = 0, box: HTMLDivElement | null = null, base: Map<string, SelectKind> | null = null, additive = false, active = false;
+  // ── multi-select gestures (marquee + Shift-range) ───────────────────────────
+  // Both live in lib/tile-select.ts, shared verbatim with the Catalogue so the two
+  // grids behave identically: drag a box through the gaps between cards to select
+  // what it touches, Shift-click a dot to sweep up everything back to the anchor.
+  // Wired ONCE per mount against viewEl — render() replaces the `.projects` root,
+  // so a listener bound in wire() would be orphaned (and re-wiring per render would
+  // reset the Shift-anchor mid-gesture).
+  const selectableTiles = (): HTMLElement[] =>
+    [...viewEl.querySelectorAll<HTMLElement>('.folder-tile[data-ref][data-kind]')]
+      .filter(t => !t.classList.contains('folder-tile--uncat') && !t.classList.contains('folder-tile--create'));
 
-    const selectableTiles = (): HTMLElement[] =>
-      [...root.querySelectorAll<HTMLElement>('.folder-tile[data-ref][data-kind]')]
-        .filter(t => !t.classList.contains('folder-tile--uncat') && !t.classList.contains('folder-tile--create'));
-
-    // Reconcile the selection Map to `next`, then repaint every tile's state in place.
-    function applySelection(next: Map<string, SelectKind>): void {
+  const tileSelect = wireTileSelect({
+    host: viewEl,
+    tiles: selectableTiles,
+    refOf: (t) => t.dataset.ref!,
+    current: () => new Set(selected.keys()),
+    // Reconcile the Map to exactly `refs` (the kind is read back off each tile), then
+    // repaint every tile in place — a full render() would drop scroll/focus mid-drag.
+    setRefs: (refs) => {
       selected.clear();
-      for (const [ref, kind] of next) selected.set(ref, kind);
-      root.querySelectorAll<HTMLElement>('.folder-tile[data-ref]').forEach(t => {
+      for (const t of selectableTiles()) {
+        const ref = t.dataset.ref!;
+        if (refs.has(ref)) selected.set(ref, t.dataset.kind as SelectKind);
+      }
+      for (const t of viewEl.querySelectorAll<HTMLElement>('.folder-tile[data-ref]')) {
         const on = selected.has(t.dataset.ref!);
         t.classList.toggle('is-selected', on);
         t.querySelector('.tile-check')?.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
+      }
       syncBulkBar();
-    }
+    },
+    clear: () => { dropSelection(); render(); },
+    // Never start a box on a tile, control, chip, bar, breadcrumb, etc. — only in a gap.
+    noStart: '.folder-tile, button, a, input, label, dialog, .projects-bulkbar, .projects-rail, .projects-crumbs, .projects-head, .projects-search, .projects-footer, .gallery-topbar',
+  });
 
-    function onMove(e: MouseEvent): void {
-      const dx = e.clientX - sx, dy = e.clientY - sy;
-      if (!box) {
-        if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;   // ignore micro-jitter (it's a click)
-        box = document.createElement('div');
-        box.className = 'projects-marquee';
-        document.body.appendChild(box);
-        root.classList.add('is-marqueeing');
-      }
-      e.preventDefault();
-      const x = Math.min(sx, e.clientX), y = Math.min(sy, e.clientY);
-      const w = Math.abs(dx), h = Math.abs(dy);
-      box.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:${w}px;height:${h}px;`;
-      const next = new Map<string, SelectKind>(additive ? base! : []);
-      for (const tile of selectableTiles()) {
-        const r = tile.getBoundingClientRect();
-        const hit = !(r.right < x || r.left > x + w || r.bottom < y || r.top > y + h);
-        if (hit) next.set(tile.dataset.ref!, tile.dataset.kind as SelectKind);
-      }
-      applySelection(next);
-    }
-
-    function onUp(): void {
-      document.removeEventListener('mousemove', onMove, true);
-      document.removeEventListener('mouseup', onUp, true);
-      if (box) { box.remove(); box = null; root.classList.remove('is-marqueeing'); }
-      else if (!additive && selected.size) { selected.clear(); render(); }  // plain click on empty → deselect
-      active = false; base = null;
-    }
-
-    root.addEventListener('mousedown', (e) => {
-      if (active || e.button !== 0) return;
-      // Only start on empty canvas — never on a tile, control, chip, bar, breadcrumb, etc.
-      if ((e.target as HTMLElement).closest('.folder-tile, button, a, input, label, dialog, .projects-bulkbar, .projects-rail, .projects-crumbs, .projects-head, .projects-search, .projects-footer, .gallery-topbar')) return;
-      active = true;
-      sx = e.clientX; sy = e.clientY;
-      additive = e.shiftKey || e.metaKey || e.ctrlKey;
-      base = new Map(selected);
-      document.addEventListener('mousemove', onMove, true);
-      document.addEventListener('mouseup', onUp, true);
-    });
+  // Empty the selection AND forget the Shift-anchor together. They have to move as one:
+  // an anchor left behind by a cleared selection would silently become the far end of the
+  // next Shift-click's range, selecting a swathe the user never started.
+  function dropSelection(): void {
+    selected.clear();
+    tileSelect.resetAnchor();
   }
 
   // Toggle one tile's membership in `selected` and update just that tile + the bulk bar
@@ -962,7 +944,7 @@ export async function mountProjects(
   // Bulk-bar dispatch. Each action re-checks `mounted` after awaits and clears the
   // selection once applied.
   function handleBulk(action: string): void {
-    if (action === 'clear') { selected.clear(); render(); return; }
+    if (action === 'clear') { dropSelection(); render(); return; }
     if (action === 'render') { renderSelection(); return; }
     if (action === 'edit') { editSelection(); return; }
     if (action === 'move') { moveSelection(); return; }
@@ -1742,7 +1724,7 @@ export async function mountProjects(
     for (const ref of selectedByKind('session')) await store.moveItem(ref, dest, 'session');
     for (const ref of selectedByKind('image'))   await store.moveItem(ref, dest, 'image');
     for (const id of topLevelSelectedFolders())  await store.moveFolder(id, dest); // store guards cycles
-    selected.clear();
+    dropSelection();
   }
 
   function moveSelection(): void {
@@ -1771,7 +1753,7 @@ export async function mountProjects(
     for (const ref of selectedByKind('session')) await store.moveItem(ref, created.id, 'session');
     for (const ref of selectedByKind('image'))   await store.moveItem(ref, created.id, 'image');
     for (const id of topLevelSelectedFolders()) { if (id !== created.id) await store.moveFolder(id, created.id); }
-    selected.clear();
+    dropSelection();
     if (!mounted) return;
     await reload(); render();
   }
@@ -1805,7 +1787,7 @@ export async function mountProjects(
       }
       await store.removeSubtree(id);
     }
-    selected.clear();
+    dropSelection();
     if (!mounted) return;
     await reload(); render();
   }
@@ -1814,7 +1796,9 @@ export async function mountProjects(
   // Arriving at Projects means we're not mid-"+ New tool" creation, so disarm any
   // stale file-into / return-to markers left by an abandoned flow.
   try { sessionStorage.removeItem(FILE_INTO_KEY); sessionStorage.removeItem(RETURN_KEY); } catch { /* ignore */ }
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); toasts.forEach(t => t.remove()); toasts.clear(); toolPickerEl?.remove(); toolPickerEl = null; overlayEl?.close?.(); overlayEl?.remove(); overlayEl = null; };
+  // NB tileSelect.destroy() is not optional: its mousedown is bound to viewEl (#view), which
+  // the router REUSES for every route — leave it bound and the next mount stacks another.
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); toasts.forEach(t => t.remove()); toasts.clear(); toolPickerEl?.remove(); toolPickerEl = null; overlayEl?.close?.(); overlayEl?.remove(); overlayEl = null; };
   await reload();
   // A stale /p/<id> deep link to a deleted folder falls back to root.
   if (folderId && folderId !== UNCAT && !folders.some(f => f.id === folderId)) folderId = null;

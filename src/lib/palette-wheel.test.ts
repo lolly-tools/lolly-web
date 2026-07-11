@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   oklchWheelXY, wheelXYToChromaHue, WHEEL_R, WHEEL_R_IN, WHEEL_CMAX,
+  WHEEL_NEUTRAL_C, isNeutral, railY, railYToL,
 } from './palette-wheel-geom.ts';
 
 test('hue maps to angle: 0°=top, 90°=right, 180°=bottom, 270°=left', () => {
@@ -49,4 +50,28 @@ test('wheelXYToChromaHue clamps chroma to [0, CMAX] outside the disc', () => {
   assert.ok(Math.abs(beyond.h) < 1e-6, 'straight up is hue 0');
   const centre = wheelXYToChromaHue(50, 50);
   assert.equal(centre.c, 0);
+});
+
+// ── The neutral rail ─────────────────────────────────────────────────────────
+
+test('isNeutral splits greys off the disc at the chroma threshold', () => {
+  assert.ok(isNeutral({ c: 0 }), 'a pure grey is neutral');
+  assert.ok(isNeutral({ c: WHEEL_NEUTRAL_C - 0.001 }));
+  assert.ok(!isNeutral({ c: WHEEL_NEUTRAL_C }), 'the threshold itself stays on the disc');
+  assert.ok(!isNeutral({ c: 0.15 }), 'a real colour is never on the rail');
+});
+
+test('railY puts light at the top and dark at the bottom, ends inside the box', () => {
+  const white = railY(1), mid = railY(0.5), black = railY(0);
+  assert.ok(white < mid && mid < black, 'lightness descends down the rail');
+  assert.ok(Math.abs(mid - 50) < 1e-6, 'mid lightness sits at the rail centre');
+  assert.ok(white > 0 && black < 100, 'the extremes stay off the very ends (dots are round)');
+});
+
+test('railY ∘ railYToL round-trips lightness, and clamps past the ends', () => {
+  for (const l of [0, 0.13, 0.5, 0.87, 1]) {
+    assert.ok(Math.abs(railYToL(railY(l)) - l) < 1e-9, `lightness ${l}`);
+  }
+  assert.equal(railYToL(-40), 1, 'above the rail is white');
+  assert.equal(railYToL(140), 0, 'below the rail is black');
 });
