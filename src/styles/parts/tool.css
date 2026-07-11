@@ -1447,6 +1447,10 @@ background-color:hsl(var(--background) / 1);
   font-size: 12px; transition: background 0.12s, filter 0.12s;
 }
 .block-asset-edit:hover { background: hsl(var(--primary) / 0.1); filter: brightness(1.1); }
+/* ❄ Edit / ↻ Re-bake — a block image that's a baked (frozen) tool render.
+   Muted, not brand-tinted: the image is a static copy, not a live render. */
+.block-asset-edit--baked { color: hsl(var(--muted-foreground)); }
+.block-asset-edit--baked:hover { background: hsl(var(--muted-foreground) / 0.1); }
 /* Block image that's a live Lolly render — same is-lolly cue as the top-level slot
    (the dashed empty-state border goes solid + brand-tinted). */
 .block-asset.is-lolly .block-asset-trigger {
@@ -1761,6 +1765,14 @@ background-color:hsl(var(--background) / 1);
 }
 .asset-from-tool-label strong { color: hsl(var(--foreground)); font-weight: 600; }
 .asset-from-tool-spark { color: hsl(var(--primary)); }
+
+/* Baked (frozen) provenance row — the inert sibling of the live ✦ badge: a
+   "❄ baked from <tool>" line whose Edit/Re-bake buttons appear only when the
+   source URL (meta.bakedFrom) survived baking. Muted, not brand-tinted: this
+   image is a static copy, not a live render. */
+.asset-from-tool--baked .asset-from-tool-spark { color: hsl(var(--muted-foreground)); }
+/* Inline re-bake failure (shares the picker's .asset-picker-error colour). */
+.asset-rebake-error { margin: 4px 0 0; font-size: 11px; }
 
 /* A slot holding a live Lolly render (AssetRef carries meta.toolUrl) is marked
    is-lolly: brand-tinted border + ✦ spark on the trigger, so "this is a live

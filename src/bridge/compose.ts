@@ -10,20 +10,18 @@
  * and returned as an AssetRef, so the runtime can expose it via `{{asset <id>}}`
  * and every existing export seam (blob→data, SVG-inline-as-vector) handles it.
  *
- * Recursion guards (the engine has none): reject a cycle (the tool is already on
- * the stack) or a render deeper than MAX_COMPOSE_DEPTH. An LRU of rendered results
- * keyed by tool+inputs+format+size makes the per-keystroke preview re-render free
+ * Recursion guards live in the engine (assertComposeStack — one depth/cycle
+ * policy shared by every shell bridge). An LRU of rendered results keyed by
+ * tool+inputs+format+size makes the per-keystroke preview re-render free
  * and bounds object-URL memory (oldest URL revoked on eviction).
  */
 
-import { parseToolUrl, buildEmbedUrl, parseUrlState, expandQuery, RESERVED } from '@lolly/engine';
+import { parseToolUrl, buildEmbedUrl, parseUrlState, expandQuery, RESERVED, assertComposeStack } from '@lolly/engine';
 import type { HostV1, ComposeSpec, ComposeUrlOpts, AssetRef, ExportFormat } from '../../../../engine/src/bridge/host-v1.ts';
 import { renderRowToBlob } from '../pro/render-export.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import type { Unit } from '../../../../engine/src/units.ts';
 import { getTool } from './tool-loader.ts';
-
-const MAX_COMPOSE_DEPTH = 3;
 
 // Child render formats that make sense as an image dropped into a picker slot.
 // (Compose itself can also produce pdf, but a picker is choosing an *image*.)
@@ -66,9 +64,7 @@ export function createComposeAPI(host: HostV1) {
     const { toolId, inputs = {}, format, width, height, unit, dpi, _stack = [] } = spec ?? {};
     if (typeof toolId !== 'string' || !toolId) throw new Error('compose: missing toolId');
 
-    const path = [..._stack, toolId];
-    if (_stack.includes(toolId)) throw new Error(`cycle ${path.join(' → ')}`);
-    if (_stack.length >= MAX_COMPOSE_DEPTH) throw new Error(`max depth ${MAX_COMPOSE_DEPTH} (${path.join(' → ')})`);
+    assertComposeStack(_stack, toolId);
 
     const key = cacheKey(toolId, inputs, format, width, height, unit, dpi);
     const hit = cache.get(key);

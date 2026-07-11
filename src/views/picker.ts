@@ -31,7 +31,7 @@
 
 import '../styles/picker.css';   // async CSS chunk (lazy view — not on the landing)
 import DOMPurify from 'dompurify';
-import { createRuntime, serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm } from '@lolly/engine';
+import { createRuntime, serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef } from '@lolly/engine';
 import { fmtBytes } from '../lib/format.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -1256,6 +1256,8 @@ async function render(
           <label>Height <input type="number" class="tc-h" min="1" inputmode="numeric" placeholder="auto" value="${desc.height ?? ''}"></label>
         </div>
         <div class="asset-picker-toolcard-preview"><div class="asset-picker-loading">Rendering…</div></div>
+        <label class="asset-picker-toolcard-freeze"><input type="checkbox" class="tc-freeze"> Freeze as a static image</label>
+        <p class="asset-picker-toolcard-freeze-help">Won't update when the source tool changes, but doesn't count against nesting depth.</p>
         <div class="asset-picker-toolcard-actions">
           ${canEdit ? `<button type="button" class="tc-edit">Edit inputs…</button>` : ''}
           <button type="button" class="tc-use" disabled>Use this render</button>
@@ -1267,12 +1269,15 @@ async function render(
     const hEl       = cardEl.querySelector<HTMLInputElement>('.tc-h')!;
     const previewEl = cardEl.querySelector<HTMLElement>('.asset-picker-toolcard-preview')!;
     const useBtn    = cardEl.querySelector<HTMLButtonElement>('.tc-use')!;
+    const freezeEl  = cardEl.querySelector<HTMLInputElement>('.tc-freeze')!;
 
     cardEl.querySelector('.asset-picker-toolcard-back')?.addEventListener('click', dismissTakeover);
     if (canEdit) {
       cardEl.querySelector('.tc-edit')?.addEventListener('click', async () => {
         const ref = await opts.editTool!(editUrl!);
-        if (ref) close(ref);
+        // Through finish(), not close(): the freeze toggle applies to BOTH commit
+        // paths, so an edited render still bakes when the box is ticked.
+        if (ref) finish(ref);
       });
     }
 
@@ -1308,16 +1313,36 @@ async function render(
       useBtn.disabled = false;
     };
 
+    // Resolve the picker with the committed ref — frozen (baked into a static
+    // data: asset that never live-re-renders and consumes no nesting depth) when
+    // the toggle is on. A render the engine refuses to bake (too large / not
+    // self-contained) is placed LIVE instead, with a brief inline note so the
+    // fallback is visible before the picker closes.
+    const finish = (ref: AssetRef): void => {
+      if (!freezeEl.checked) { close(ref); return; }
+      try { close(bakeAssetRef(ref)); }
+      catch (e) {
+        host.log?.('warn', `freeze failed (${(e as { code?: string }).code ?? (e as Error).message}) — placing live`);
+        // Freeze the card while the note shows — a back/edit click here would
+        // race the delayed commit below.
+        cardEl.querySelectorAll<HTMLButtonElement>('button').forEach(b => { b.disabled = true; });
+        previewEl.insertAdjacentHTML('beforeend',
+          `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">Placed live — this render is too large to freeze.</p>`);
+        announce('Placed live — this render is too large to freeze.');
+        setTimeout(() => close(ref), 1500);
+      }
+    };
+
     // Commit: a still pick uses the already-rendered poster; a motion pick encodes the
     // real clip now (a few seconds) before resolving the picker.
     const commit = async (): Promise<void> => {
       const fmt = fmtSel.value;
-      if (!isMotion(fmt)) { if (posterRef) close(posterRef); return; }
+      if (!isMotion(fmt)) { if (posterRef) finish(posterRef); return; }
       const label = useBtn.textContent;
       useBtn.disabled = true;
       useBtn.textContent = 'Rendering motion…';
       const ref = await host.compose.renderUrl(url, { format: fmt as ExportFormat, ...size() }).catch(() => null);
-      if (ref) { close(ref); return; }
+      if (ref) { finish(ref); return; }
       useBtn.textContent = label;
       useBtn.disabled = false;
       previewEl.innerHTML = `<p class="asset-picker-error">Couldn't render the motion clip.</p>`;

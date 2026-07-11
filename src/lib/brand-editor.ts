@@ -82,6 +82,7 @@ import type { BrandTransferHost } from '../brand-transfer.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
 import { fmtBytes } from './device-info.ts';
+import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
@@ -108,8 +109,8 @@ type Contrast = NonNullable<BrandDeriveOptions['contrast']>;
 type Fg = NonNullable<BrandDeriveOptions['foreground']>;
 
 const SCHEMES: ReadonlyArray<{ id: Scheme; label: string }> = [
-  { id: 'mono', label: 'Mono' }, { id: 'complement', label: 'Complement' },
-  { id: 'analogous', label: 'Analogous' }, { id: 'triad', label: 'Triad' },
+  { id: 'mono', label: t('Mono') }, { id: 'complement', label: t('Complement') },
+  { id: 'analogous', label: t('Analogous') }, { id: 'triad', label: t('Triad') },
 ];
 // UI intensity — the surface look baked into the brand, collapsed from the old
 // Light / Dark / Deep-primary trio to a single Muted ↔ Deep toggle. Light vs dark
@@ -118,16 +119,16 @@ const SCHEMES: ReadonlyArray<{ id: Scheme; label: string }> = [
 // chroma-rich primary surface. The ids stay the engine's `surface` values so
 // deriveBrandTokens is unchanged (see engine/src/brand-derive.ts).
 const INTENSITIES: ReadonlyArray<{ id: Surface; label: string }> = [
-  { id: 'light', label: 'Muted' }, { id: 'primary', label: 'Deep' },
+  { id: 'light', label: t('Muted') }, { id: 'primary', label: t('Deep') },
 ];
 const CONTRASTS: ReadonlyArray<{ id: Contrast; label: string }> = [
-  { id: 'comfort', label: 'Comfort' }, { id: 'high', label: 'High' },
+  { id: 'comfort', label: t('Comfort') }, { id: 'high', label: t('High') },
 ];
 // What sits on top of the brand primary. Auto picks white/black by contrast;
 // Light/Dark force it — the fix for a mid-tone brand colour that "should" wear
 // white text but auto-flips to black for the higher ratio (see deriveBrandTokens).
 const FOREGROUNDS: ReadonlyArray<{ id: Fg; label: string }> = [
-  { id: 'auto', label: 'Auto' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' },
+  { id: 'auto', label: t('Auto') }, { id: 'light', label: t('Light') }, { id: 'dark', label: t('Dark') },
 ];
 const DEFAULT_PRIMARY = '#4f83cc';
 // The engine's own default for `secondary` (deriveBrandTokens hardcodes ramp
@@ -168,14 +169,14 @@ function rampRow(set: TokenSet, ramp: string, label: string, steps: number, sele
   for (let i = 1; i <= steps; i++) {
     const v = set.resolve(`color.ramp.${ramp}.${i}`);
     const css = typeof v === 'string' ? v : 'transparent';
-    const title = `${label} ${i} · ${css}`;
+    const title = t('{label} {step} · {value}', { label, step: i, value: css });
     cells += selected === undefined
       ? `<span class="be-ramp-cell" style="background:${escape(css)}" title="${escape(title)}"></span>`
       : `<button type="button" class="be-ramp-cell${i === selected ? ' is-selected' : ''}" style="background:${escape(css)}"
            title="${escape(title)}" data-be-ramp="${escape(ramp)}" data-be-step="${i}"
            aria-pressed="${i === selected}" aria-label="${escape(title)}"></button>`;
   }
-  return `<div class="be-ramp-row"><span class="be-ramp-label">${escape(label)}</span><div class="be-ramp" role="${selected === undefined ? 'img' : 'group'}" aria-label="${escape(label)} ramp">${cells}</div></div>`;
+  return `<div class="be-ramp-row"><span class="be-ramp-label">${escape(label)}</span><div class="be-ramp" role="${selected === undefined ? 'img' : 'group'}" aria-label="${escape(t('{label} ramp', { label }))}">${cells}</div></div>`;
 }
 /**
  * The primary→secondary hue bridge: `rampOklab` through the two semantic
@@ -190,23 +191,23 @@ function blendRow(set: TokenSet, steps: number): string {
   let hexes: string[];
   try { hexes = rampOklab([a, b], steps, { correctLightness: true }); } catch { return ''; }
   const cells = hexes.map((hex, i) =>
-    `<span class="be-ramp-cell" style="background:${escape(hex)}" title="${escape(`Blend ${i + 1} · ${hex}`)}"></span>`).join('');
-  return `<div class="be-ramp-row"><span class="be-ramp-label" title="Primary → Secondary, perceptually even (OKLab)">Blend</span><div class="be-ramp" role="img" aria-label="Primary to secondary blend">${cells}</div></div>`;
+    `<span class="be-ramp-cell" style="background:${escape(hex)}" title="${escape(t('Blend {step} · {value}', { step: i + 1, value: hex }))}"></span>`).join('');
+  return `<div class="be-ramp-row"><span class="be-ramp-label" title="${escape(t('Primary → Secondary, perceptually even (OKLab)'))}">${t('Blend')}</span><div class="be-ramp" role="img" aria-label="${escape(t('Primary to secondary blend'))}">${cells}</div></div>`;
 }
-function specCard(name: 'Light' | 'Dark', set: TokenSet): string {
+function specCard(name: string, set: TokenSet): string {
   const s = slot(set, 'surface'), text = slot(set, 'text'), muted = slot(set, 'muted');
   const edge = slot(set, 'edge'), prim = slot(set, 'primary'), on = slot(set, 'on-primary');
   const ratio = ratioOf(text, s);
   const lc = apcaOf(text, s);
-  const btnTip = `Primary button — WCAG ${ratioOf(on, prim)}:1 · APCA Lc ${apcaOf(on, prim)} (advisory)`;
-  const ratioTip = `Text on surface — WCAG ${ratio}:1 · APCA Lc ${lc} (advisory: 60≈body, 75≈small text)`;
+  const btnTip = t('Primary button — WCAG {ratio}:1 · APCA Lc {lc} (advisory)', { ratio: ratioOf(on, prim), lc: apcaOf(on, prim) });
+  const ratioTip = t('Text on surface — WCAG {ratio}:1 · APCA Lc {lc} (advisory: 60≈body, 75≈small text)', { ratio, lc });
   return `
     <article class="be-spec" style="background:${escape(s)};border-color:${escape(edge)}">
-      <span class="be-spec-name" style="color:${escape(muted)}">${name}</span>
-      <h4 class="be-spec-h" style="color:${escape(text)}">The quick brown fox</h4>
-      <p class="be-spec-b" style="color:${escape(muted)}">Body copy sits one step back — calm and unmistakably yours.</p>
+      <span class="be-spec-name" style="color:${escape(muted)}">${escape(name)}</span>
+      <h4 class="be-spec-h" style="color:${escape(text)}">${t('The quick brown fox')}</h4>
+      <p class="be-spec-b" style="color:${escape(muted)}">${t('Body copy sits one step back — calm and unmistakably yours.')}</p>
       <div class="be-spec-row">
-        <span class="be-spec-btn" style="background:${escape(prim)};color:${escape(on)}" title="${escape(btnTip)}">Primary</span>
+        <span class="be-spec-btn" style="background:${escape(prim)};color:${escape(on)}" title="${escape(btnTip)}">${t('Primary')}</span>
         ${ratio ? `<span class="be-spec-ratio" style="color:${escape(muted)}" title="${escape(ratioTip)}">${escape(ratio)}:1${lc ? ` · Lc ${escape(lc)}` : ''}</span>` : ''}
       </div>
     </article>`;
@@ -219,8 +220,8 @@ function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secon
   const light = createTokenSet(doc, { theme: 'light' });
   const dark = createTokenSet(doc, { theme: 'dark' });
   return `
-    <div class="be-ramps">${rampRow(light, 'primary', 'Primary', sel.steps)}${rampRow(light, 'neutral', 'Neutral', sel.steps, sel.neutral)}${rampRow(light, 'secondary', 'Secondary', sel.steps, sel.secondary)}${blendRow(light, sel.steps)}</div>
-    <div class="be-specs">${specCard('Light', light)}${specCard('Dark', dark)}</div>`;
+    <div class="be-ramps">${rampRow(light, 'primary', t('Primary'), sel.steps)}${rampRow(light, 'neutral', t('Neutral'), sel.steps, sel.neutral)}${rampRow(light, 'secondary', t('Secondary'), sel.steps, sel.secondary)}${blendRow(light, sel.steps)}</div>
+    <div class="be-specs">${specCard(t('Light'), light)}${specCard(t('Dark'), dark)}</div>`;
 }
 
 /**
@@ -299,22 +300,22 @@ function printLockHtml(): string {
           <span class="be-subst-key">CMYK</span>
           <code class="be-subst-val" data-be-lock-readout="cmyk"></code>
         </div>
-        ${segHtml('lock-cmyk', [{ id: 'auto', label: 'Auto' }, { id: 'locked', label: 'Locked' }], 'auto', 'CMYK print colour')}
+        ${segHtml('lock-cmyk', [{ id: 'auto', label: t('Auto') }, { id: 'locked', label: t('Locked') }], 'auto', t('CMYK print colour'))}
         <div class="be-lock-body" data-be-lock-cmyk-body hidden>
           <div class="be-cmyk-inputs">
-            ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-lock-c="${i}" aria-label="${l === 'K' ? 'Black' : l === 'C' ? 'Cyan' : l === 'M' ? 'Magenta' : 'Yellow'} %"></label>`).join('')}
+            ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-lock-c="${i}" aria-label="${l === 'K' ? t('Black') : l === 'C' ? t('Cyan') : l === 'M' ? t('Magenta') : t('Yellow')} %"></label>`).join('')}
           </div>
         </div>
       </div>
       <div class="be-lock-block" data-be-lock-block="spot">
         <div class="be-subst-line">
-          <span class="be-subst-key">Spot colour</span>
+          <span class="be-subst-key">${t('Spot colour')}</span>
           <code class="be-subst-val" data-be-lock-readout="spot"></code>
         </div>
-        ${segHtml('lock-spot', [{ id: 'none', label: 'None' }, { id: 'set', label: 'Set' }], 'none', 'Spot colour lock')}
+        ${segHtml('lock-spot', [{ id: 'none', label: t('None') }, { id: 'set', label: t('Set') }], 'none', t('Spot colour lock'))}
         <div class="be-lock-spot" data-be-lock-spot-body hidden>
-          <label class="be-lock-field"><span>Name</span><input type="text" data-be-lock-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
-          <label class="be-lock-field"><span>Book <em>(optional)</em></span><input type="text" data-be-lock-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
+          <label class="be-lock-field"><span>${t('Name')}</span><input type="text" data-be-lock-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
+          <label class="be-lock-field"><span>${t('Book')} <em>${t('(optional)')}</em></span><input type="text" data-be-lock-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
         </div>
       </div>
     </div>`;
@@ -408,7 +409,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   }
   function renderSpot(): void {
     const spot = ctx.getSpot();
-    if (spotReadout) spotReadout.textContent = spot ? spot.name : 'Not set';
+    if (spotReadout) spotReadout.textContent = spot ? spot.name : t('Not set');
     spotBlock?.classList.toggle('is-pinned', !!spot);
     setPressed(spotSeg, spot ? 'set' : 'none');
     if (spotBody) spotBody.hidden = !spot;
@@ -437,16 +438,16 @@ function printSubstHtml(): string {
         <code class="be-ps-val" data-be-ps-val="cmyk"></code>
       </label>
       <div class="be-ps-body be-cmyk-inputs" data-be-ps-body="cmyk" hidden>
-        ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-ps-c="${i}" aria-label="${l === 'K' ? 'Black' : l === 'C' ? 'Cyan' : l === 'M' ? 'Magenta' : 'Yellow'} %"></label>`).join('')}
+        ${['C', 'M', 'Y', 'K'].map((l, i) => `<label class="be-cmyk-in"><span>${l}</span><input type="number" min="0" max="100" step="1" inputmode="numeric" data-be-ps-c="${i}" aria-label="${l === 'K' ? t('Black') : l === 'C' ? t('Cyan') : l === 'M' ? t('Magenta') : t('Yellow')} %"></label>`).join('')}
       </div>
       <label class="be-ps-row">
         <input type="checkbox" data-be-ps-on="spot">
-        <span class="be-ps-key">Spot</span>
+        <span class="be-ps-key">${t('Spot')}</span>
         <code class="be-ps-val" data-be-ps-val="spot"></code>
       </label>
       <div class="be-ps-body be-ps-spot" data-be-ps-body="spot" hidden>
-        <label class="be-lock-field"><span>Name</span><input type="text" data-be-ps-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
-        <label class="be-lock-field"><span>Book <em>(optional)</em></span><input type="text" data-be-ps-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
+        <label class="be-lock-field"><span>${t('Name')}</span><input type="text" data-be-ps-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
+        <label class="be-lock-field"><span>${t('Book')} <em>${t('(optional)')}</em></span><input type="text" data-be-ps-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
       </div>
     </div>`;
 }
@@ -488,14 +489,14 @@ function mountPrintSubst(mount: HTMLElement, ctx: PrintLockCtx): { render: () =>
   function renderCmyk(): void {
     const cmyk = ctx.getCmyk();
     const eff = cmyk ?? autoCmykOf(ctx.hex());
-    if (val('cmyk')) val('cmyk')!.textContent = cmyk ? `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}` : 'auto';
+    if (val('cmyk')) val('cmyk')!.textContent = cmyk ? `C${eff[0]} M${eff[1]} Y${eff[2]} K${eff[3]}` : t('auto');
     if (on('cmyk')) on('cmyk')!.checked = !!cmyk;
     if (body('cmyk')) body('cmyk')!.hidden = !cmyk;
     cInputs.forEach((inp, i) => { if (document.activeElement !== inp) inp.value = String(eff[i]); });
   }
   function renderSpot(): void {
     const spot = ctx.getSpot();
-    if (val('spot')) val('spot')!.textContent = spot ? spot.name : 'none';
+    if (val('spot')) val('spot')!.textContent = spot ? spot.name : t('none');
     if (on('spot')) on('spot')!.checked = !!spot;
     if (body('spot')) body('spot')!.hidden = !spot && document.activeElement !== nameInput && document.activeElement !== bookInput;
     if (nameInput && document.activeElement !== nameInput) nameInput.value = spot?.name ?? '';
@@ -511,7 +512,10 @@ function mountPrintSubst(mount: HTMLElement, ctx: PrintLockCtx): { render: () =>
 /** The tile's accessible name — the visible grid is shape-only, so name + hex
  *  live in title/aria-label (and are kept fresh by the in-place recolour paths). */
 function tileLabel(name: string, hex: string, locked: boolean): string {
-  return `${name} — ${hex || 'unset'}${locked ? ' (print colour locked)' : ''}`;
+  const hexPart = hex || t('unset');
+  return locked
+    ? t('{name} — {hex} (print colour locked)', { name, hex: hexPart })
+    : t('{name} — {hex}', { name, hex: hexPart });
 }
 
 function tileHtml(s: BrandSwatch, idx: number): string {
@@ -537,10 +541,13 @@ function paletteHtml(swatches: BrandSwatch[]): string {
   const idxOf = new Map(swatches.map((s, i) => [s, i]));
   // A palette-level Add always shows — a brand with no `custom` group yet has no
   // Custom section to hang a per-group Add off, so the first swatch needs this.
+  const countLabel = swatches.length === 1
+    ? t('{n} colour', { n: swatches.length })
+    : t('{n} colours', { n: swatches.length });
   const top = `
     <div class="be-pal-top">
-      <span class="be-pal-count">${swatches.length} colour${swatches.length === 1 ? '' : 's'}</span>
-      <button type="button" class="be-add" data-be-add="custom">+ Add swatch</button>
+      <span class="be-pal-count">${countLabel}</span>
+      <button type="button" class="be-add" data-be-add="custom">${t('+ Add swatch')}</button>
     </div>`;
   // Every section is collapsible (<details>, open by default — no persistence)
   // and carries its own "+ Add": Spectrum grows in place, Custom adds a custom
@@ -560,7 +567,7 @@ function paletteHtml(swatches: BrandSwatch[]): string {
       <details class="be-pal-group" data-be-group="${escape(g)}" open>
         <summary class="be-pal-group-head">
           <span class="be-pal-group-label">${escape(g)}<span class="be-pal-group-n">${items.length}</span></span>
-          <button type="button" class="be-add be-add--sm" ${addAttrs}>+ Add</button>
+          <button type="button" class="be-add be-add--sm" ${addAttrs}>${t('+ Add')}</button>
         </summary>
         <div class="be-pal-grid">${items.map(s => tileHtml(s, idxOf.get(s)!)).join('')}</div>
       </details>`;
@@ -578,11 +585,11 @@ function paletteHtml(swatches: BrandSwatch[]): string {
  *  one shows by setting `data-active-tab` on the editor root. */
 export type BrandTabKey = 'logos' | 'color' | 'type' | 'tokens' | 'catalogue';
 export const BRAND_TABS: ReadonlyArray<{ id: BrandTabKey; label: string }> = [
-  { id: 'logos', label: 'Logos' },
-  { id: 'color', label: 'Colours' },
-  { id: 'type', label: 'Type' },
-  { id: 'tokens', label: 'Tokens' },
-  { id: 'catalogue', label: 'Catalogue' },
+  { id: 'logos', label: t('Logos') },
+  { id: 'color', label: t('Colours') },
+  { id: 'type', label: t('Type') },
+  { id: 'tokens', label: t('Tokens') },
+  { id: 'catalogue', label: t('Catalogue') },
 ];
 
 export interface BrandEditorOptions {
@@ -624,11 +631,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   let locked = false;
   try { locked = !!(await tokens?.isLocked?.()); } catch { /* treat as unlocked */ }
   if (locked) {
-    root.innerHTML = `<p class="be-locked">This build ships with a fixed brand — its colours, fonts and tokens are what the whole app, your tools and every export wear. Brand editing is turned off here.</p>`;
+    root.innerHTML = `<p class="be-locked">${t('This build ships with a fixed brand — its colours, fonts and tokens are what the whole app, your tools and every export wear. Brand editing is turned off here.')}</p>`;
     return {
       teardown: () => {}, saveDraft: () => {}, isDirty: () => false,
-      exportPack: () => Promise.reject(new Error('This brand is fixed — there is nothing of yours to export.')),
-      importPack: () => Promise.reject(new Error('This brand is fixed — imports are turned off.')),
+      exportPack: () => Promise.reject(new Error(t('This brand is fixed — there is nothing of yours to export.'))),
+      importPack: () => Promise.reject(new Error(t('This brand is fixed — imports are turned off.'))),
       reload: () => Promise.resolve(),
       closeOverlays: () => {},
       onPalette: () => () => {},
@@ -705,8 +712,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     <div class="be" data-brand-editor>
       <div class="be-tab" data-be-tab-panel="logos">
         <div class="be-panel be-logos">
-          <div class="be-panel-head"><h3 class="be-panel-title">Logos</h3>
-            <p class="be-panel-sub">Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way — an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.</p></div>
+          <div class="be-panel-head"><h3 class="be-panel-title">${t('Logos')}</h3>
+            <p class="be-panel-sub">${t('Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way — an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.')}</p></div>
           <div class="be-logo-grid" data-be-logos></div>
           <p class="be-err" data-be-logo-err hidden></p>
         </div>
@@ -715,56 +722,56 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <div class="be-tab be-tab--split" data-be-tab-panel="color">
       <div class="be-split-main">
       <div class="be-panel be-colour">
-        <div class="be-panel-head"><h3 class="be-panel-title">Colour</h3>
-          <p class="be-panel-sub">Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette beside — <strong>Save colour</strong> is what actually keeps it.</p></div>
+        <div class="be-panel-head"><h3 class="be-panel-title">${t('Colour')}</h3>
+          <p class="be-panel-sub">${t('Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette beside — <strong>Save colour</strong> is what actually keeps it.')}</p></div>
         <div class="be-suggest" data-be-suggest hidden></div>
         <div class="be-derive">
           <div class="be-colorpick">
-            <span class="be-field-label">Primary colour</span>
+            <span class="be-field-label">${t('Primary colour')}</span>
             <div data-be-primary-field>${colorFieldHtml('be-primary', primary, { inline: true, modes: true })}</div>
             <!-- Screen / print: the primary is one colour; Lolly shows its on-screen
                  (sRGB) form and auto-converts it for print — UNLESS the shared print
                  lock inside pins an exact CMYK anchor or a named spot colour instead.
                  Folded by default; the summary chips carry the lock state. -->
             <details class="be-subst-details be-print-details" data-be-print-details>
-              <summary><span class="be-subst-details-label">Print &amp; screen</span><span class="be-subst-chips" data-be-print-chips></span></summary>
+              <summary><span class="be-subst-details-label">${t('Print &amp; screen')}</span><span class="be-subst-chips" data-be-print-chips></span></summary>
               <div class="be-subst" data-be-subst>
                 <div class="be-subst-line">
-                  <span class="be-subst-key">Screen</span>
+                  <span class="be-subst-key">${t('Screen')}</span>
                   <code class="be-subst-val" data-be-screen></code>
-                  <span class="be-subst-tag">auto</span>
+                  <span class="be-subst-tag">${t('auto')}</span>
                 </div>
                 <div data-be-lock-mount="primary"></div>
               </div>
             </details>
           </div>
           <div class="be-derive-controls">
-            <label class="be-field"><span class="be-field-label">Scheme</span>${segHtml('scheme', SCHEMES, scheme, 'Colour scheme')}</label>
+            <label class="be-field"><span class="be-field-label">${t('Scheme')}</span>${segHtml('scheme', SCHEMES, scheme, t('Colour scheme'))}</label>
             <div class="be-field be-steps-field">
-              <span class="be-field-label">Shades <span class="be-steps-val" data-be-steps-val>${steps}</span></span>
-              <input type="range" class="be-steps-slider" data-be-steps min="${RAMP_STEPS_MIN}" max="${RAMP_STEPS_MAX}" step="1" value="${steps}" aria-label="Shades per ramp">
+              <span class="be-field-label">${t('Shades')} <span class="be-steps-val" data-be-steps-val>${steps}</span></span>
+              <input type="range" class="be-steps-slider" data-be-steps min="${RAMP_STEPS_MIN}" max="${RAMP_STEPS_MAX}" step="1" value="${steps}" aria-label="${escape(t('Shades per ramp'))}">
             </div>
             <details class="be-subst-details be-finetune" data-be-finetune>
-              <summary><span class="be-subst-details-label">Fine-tune</span></summary>
+              <summary><span class="be-subst-details-label">${t('Fine-tune')}</span></summary>
               <div class="be-finetune-body">
-                <label class="be-field"><span class="be-field-label">UI intensity</span>${segHtml('surface', INTENSITIES, surface, 'UI intensity')}</label>
-                <label class="be-field"><span class="be-field-label">Contrast</span>${segHtml('contrast', CONTRASTS, contrast, 'Contrast target')}</label>
-                <label class="be-field"><span class="be-field-label">Text on brand</span>${segHtml('foreground', FOREGROUNDS, foreground, 'Text colour on the brand colour')}</label>
+                <label class="be-field"><span class="be-field-label">${t('UI intensity')}</span>${segHtml('surface', INTENSITIES, surface, t('UI intensity'))}</label>
+                <label class="be-field"><span class="be-field-label">${t('Contrast')}</span>${segHtml('contrast', CONTRASTS, contrast, t('Contrast target'))}</label>
+                <label class="be-field"><span class="be-field-label">${t('Text on brand')}</span>${segHtml('foreground', FOREGROUNDS, foreground, t('Text colour on the brand colour'))}</label>
               </div>
             </details>
-            <button type="button" class="be-cta" data-be-derive>Use this colour</button>
-            <button type="button" class="be-cta" data-be-save hidden>Save colour</button>
+            <button type="button" class="be-cta" data-be-derive>${t('Use this colour')}</button>
+            <button type="button" class="be-cta" data-be-save hidden>${t('Save colour')}</button>
           </div>
           <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep, steps }) : ''}</div>
         </div>
       </div>
 
       <div class="be-panel be-generate">
-        <div class="be-panel-head"><h3 class="be-panel-title">Build your palette</h3>
-          <p class="be-panel-sub">Generate matching colours from your primary — pick a harmony, then <strong>+ Add</strong> the ones you want to your brand. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.</p></div>
+        <div class="be-panel-head"><h3 class="be-panel-title">${t('Build your palette')}</h3>
+          <p class="be-panel-sub">${t('Generate matching colours from your primary — pick a harmony, then <strong>+ Add</strong> the ones you want to your brand. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.')}</p></div>
         <div class="be-field">
-          <span class="be-field-label">Harmony</span>
-          <div class="view-seg be-seg be-schemekinds" role="group" aria-label="Colour harmony" data-be-schemekind>
+          <span class="be-field-label">${t('Harmony')}</span>
+          <div class="view-seg be-seg be-schemekinds" role="group" aria-label="${escape(t('Colour harmony'))}" data-be-schemekind>
             ${/* The free-N kinds are hidden UI-side only — the engine keeps them
                   (stored docs may reference them) and the default stays adjacent-3. */''}
             ${SCHEME_KINDS.filter(k => !k.id.startsWith('free-')).map(k => `<button type="button" class="view-seg-btn" data-kind="${escape(k.id)}" aria-pressed="${k.id === schemeKind}">${escape(k.label)}</button>`).join('')}
@@ -772,29 +779,29 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         </div>
         <div class="be-candidates" data-be-candidates aria-live="polite"></div>
         <div class="be-previews-wrap">
-          <span class="be-field-label">Your palette, applied</span>
+          <span class="be-field-label">${t('Your palette, applied')}</span>
           <div class="be-previews" data-be-previews></div>
         </div>
       </div>
       </div>
 
       <div class="be-split-divider" data-be-split-divider role="separator" aria-orientation="vertical" tabindex="0"
-        aria-label="Resize the palette pane" title="Drag to resize · Enter collapses"></div>
+        aria-label="${escape(t('Resize the palette pane'))}" title="${escape(t('Drag to resize · Enter collapses'))}"></div>
 
-      <aside class="be-split-side" data-be-split-side aria-label="Palette">
+      <aside class="be-split-side" data-be-split-side aria-label="${escape(t('Palette'))}">
       <!-- Inner scroller: the panels scroll in here (≥1100px, the pane's height
            viewport-anchored by the host — see brand-studio.css) while the
            download dock below stays OUTSIDE it, keeping its seat at the pane's
            bottom edge however far the palette scrolls. -->
       <div class="be-split-scroll" data-be-split-scroll>
       <div class="be-panel be-palette">
-        <div class="be-panel-head"><h3 class="be-panel-title">Palette</h3>
-          <p class="be-panel-sub">Every colour your brand carries. Click a swatch to recolour, rename or remove it; each section folds and grows with its own <strong>+ Add</strong>. The <strong>Colour chart</strong> below plots the same swatches by hue and chroma. Changes flow to every picker, tool and export.</p></div>
+        <div class="be-panel-head"><h3 class="be-panel-title">${t('Palette')}</h3>
+          <p class="be-panel-sub">${t('Every colour your brand carries. Click a swatch to recolour, rename or remove it; each section folds and grows with its own <strong>+ Add</strong>. The <strong>Colour chart</strong> below plots the same swatches by hue and chroma. Changes flow to every picker, tool and export.')}</p></div>
         <div class="be-pal" data-be-pal></div>
         <!-- The OKLCH wheel, demoted to a folded card — repainted on open, since
              a hidden mount measures 0×0 (see the toggle wiring below). -->
         <details class="be-subst-details be-chart-details" data-be-chart>
-          <summary><span class="be-subst-details-label">Colour chart</span></summary>
+          <summary><span class="be-subst-details-label">${t('Colour chart')}</span></summary>
           <div class="be-pal-wheel" data-be-wheel-mount></div>
         </details>
         <p class="be-err" data-be-pal-err hidden></p>
@@ -807,45 +814,45 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
            pane's anchored bottom edge, so exporting the palette never scrolls
            away. Lives OUTSIDE .be-split-scroll — see above. -->
       <div class="be-pal-dock" data-be-pal-dock>
-        <select class="be-pal-fmt-sel" data-be-pal-fmt aria-label="Download the palette as">
-          <option value="tokens-json">Design tokens (JSON)</option>
-          <option value="css-vars">CSS variables</option>
-          <option value="css-classes">CSS classes</option>
-          <option value="gpl">GIMP palette (.gpl)</option>
-          <option value="ase">Adobe Swatch Exchange (.ase)</option>
+        <select class="be-pal-fmt-sel" data-be-pal-fmt aria-label="${escape(t('Download the palette as'))}">
+          <option value="tokens-json">${t('Design tokens (JSON)')}</option>
+          <option value="css-vars">${t('CSS variables')}</option>
+          <option value="css-classes">${t('CSS classes')}</option>
+          <option value="gpl">${t('GIMP palette (.gpl)')}</option>
+          <option value="ase">${t('Adobe Swatch Exchange (.ase)')}</option>
         </select>
-        <button type="button" class="be-btn be-btn--sm" data-be-pal-download data-sfx="whoosh">Download</button>
+        <button type="button" class="be-btn be-btn--sm" data-be-pal-download data-sfx="whoosh">${t('Download')}</button>
       </div>
       </aside>
       </div>
 
       <div class="be-tab" data-be-tab-panel="type">
       <div class="be-panel be-fonts">
-        <div class="be-panel-head"><h3 class="be-panel-title">Fonts</h3>
-          <p class="be-panel-sub">Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>; another can serve as your <strong>code</strong> face.</p></div>
+        <div class="be-panel-head"><h3 class="be-panel-title">${t('Fonts')}</h3>
+          <p class="be-panel-sub">${t('Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>; another can serve as your <strong>code</strong> face.')}</p></div>
         <ul class="be-font-list" data-be-fonts role="list"></ul>
         <form class="be-font-add" data-be-font-add>
-          <input type="text" data-be-font-input list="be-google-fonts" placeholder="Search Google Fonts — Inter, Fraunces, Space Grotesk…" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Google Fonts family">
+          <input type="text" data-be-font-input list="be-google-fonts" placeholder="${escape(t('Search Google Fonts — Inter, Fraunces, Space Grotesk…'))}" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="${escape(t('Google Fonts family'))}">
           <datalist id="be-google-fonts">${POPULAR_FAMILIES.map(f => `<option value="${escape(f)}"></option>`).join('')}</datalist>
-          <button type="submit" class="be-btn" data-be-font-btn>Add font</button>
+          <button type="submit" class="be-btn" data-be-font-btn>${t('Add font')}</button>
         </form>
         <p class="be-err" data-be-font-err hidden></p>
       </div>
 
       <div class="be-panel be-typeroles">
-        <div class="be-panel-head"><h3 class="be-panel-title">Type roles</h3>
-          <p class="be-panel-sub">What each face is <em>for</em> — the roles tools and the app read. Headings, body and UI wear the primary; code and data wear the mono face.</p></div>
+        <div class="be-panel-head"><h3 class="be-panel-title">${t('Type roles')}</h3>
+          <p class="be-panel-sub">${t('What each face is <em>for</em> — the roles tools and the app read. Headings, body and UI wear the primary; code and data wear the mono face.')}</p></div>
         <div class="be-specimen" data-be-specimen aria-live="off"></div>
       </div>
       </div>
 
       <div class="be-tab" data-be-tab-panel="tokens">
       <div class="be-panel be-radius-panel">
-        <div class="be-panel-head"><h3 class="be-panel-title">Rounded corners</h3>
-          <p class="be-panel-sub">One radius token — cards, buttons and panels across the app (and the tools that opt in) follow it.</p></div>
+        <div class="be-panel-head"><h3 class="be-panel-title">${t('Rounded corners')}</h3>
+          <p class="be-panel-sub">${t('One radius token — cards, buttons and panels across the app (and the tools that opt in) follow it.')}</p></div>
         <div class="brand-radius-row">
           <span class="brand-radius-preview" data-be-radius-preview aria-hidden="true"></span>
-          <input type="range" class="brand-radius-slider" data-be-radius-slider min="0" max="1.5" step="0.05" aria-label="Corner radius">
+          <input type="range" class="brand-radius-slider" data-be-radius-slider min="0" max="1.5" step="0.05" aria-label="${escape(t('Corner radius'))}">
           <span class="brand-radius-value" data-be-radius-value></span>
         </div>
         <p class="be-err" data-be-radius-err role="alert" hidden></p>
@@ -862,37 +869,37 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
            scrolling middle, print substitutes folded, Delete/Save pinned to a
            sticky footer — the two actions never scroll away. -->
       <div class="be-editor" data-be-editor hidden>
-        <div class="be-editor-card" role="dialog" aria-label="Edit swatch">
+        <div class="be-editor-card" role="dialog" aria-label="${escape(t('Edit swatch'))}">
           <div class="be-editor-scroll">
             <div class="be-editor-id">
               <span class="be-editor-chip" data-be-editor-chip aria-hidden="true"></span>
-              <input type="text" class="be-editor-name" data-be-editor-name autocomplete="off" aria-label="Swatch name">
-              <span class="be-swatch-lock be-editor-lockbadge" data-be-editor-lockbadge hidden>LOCK</span>
+              <input type="text" class="be-editor-name" data-be-editor-name autocomplete="off" aria-label="${escape(t('Swatch name'))}">
+              <span class="be-swatch-lock be-editor-lockbadge" data-be-editor-lockbadge hidden>${t('LOCK')}</span>
             </div>
             <div class="be-editor-field"><div data-be-editor-color></div></div>
             <div class="be-editor-field be-fmt">
               <div class="be-fmt-row">
-                <select class="be-fmt-sel" data-be-fmt-sel aria-label="Colour space">
+                <select class="be-fmt-sel" data-be-fmt-sel aria-label="${escape(t('Colour space'))}">
                   ${COLOR_FORMATS.map(f => `<option value="${f.id}">${escape(f.label)}</option>`).join('')}
                 </select>
-                <input type="text" class="be-fmt-input" data-be-fmt-input autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Colour value">
+                <input type="text" class="be-fmt-input" data-be-fmt-input autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="${escape(t('Colour value'))}">
               </div>
               <code class="be-fmt-out" data-be-fmt-out aria-live="polite"></code>
             </div>
             <div class="be-editor-field be-stored" data-be-stored-row>
-              <span class="be-stored-label" id="be-stored-label">Stored as</span>
+              <span class="be-stored-label" id="be-stored-label">${t('Stored as')}</span>
               <div class="be-stored-seg" role="group" aria-labelledby="be-stored-label" data-be-stored>
                 ${STORAGE_FORMATS.map(f => `<button type="button" data-store-fmt="${f.id}" aria-pressed="false">${escape(f.label)}</button>`).join('')}
               </div>
             </div>
             <details class="be-subst-details" data-be-subst-details>
-              <summary><span class="be-subst-details-label">Print substitutes</span><span class="be-subst-chips" data-be-subst-chips></span></summary>
+              <summary><span class="be-subst-details-label">${t('Print substitutes')}</span><span class="be-subst-chips" data-be-subst-chips></span></summary>
               <div data-be-subst-mount></div>
             </details>
           </div>
           <div class="be-editor-actions">
-            <button type="button" class="be-editor-del" data-be-editor-del hidden>Delete</button>
-            <button type="button" class="be-cta be-editor-done" data-be-editor-done>Save</button>
+            <button type="button" class="be-editor-del" data-be-editor-del hidden>${t('Delete')}</button>
+            <button type="button" class="be-cta be-editor-done" data-be-editor-done>${t('Save')}</button>
           </div>
         </div>
       </div>
@@ -977,7 +984,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const opts = swatches
       .filter(s => s.hex && s.kind !== 'semantic')
       .map(s => ({ value: s.hex, label: s.name, group: s.group, ref: s.isAlias ? null : `{${s.key}}` }));
-    setSwatches([{ value: 'transparent', label: 'Transparent', group: null, ref: null }, ...opts]);
+    setSwatches([{ value: 'transparent', label: t('Transparent'), group: null, ref: null }, ...opts]);
     refreshSwatches(root);
   };
 
@@ -1037,7 +1044,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           setSwatches(cols.map(c => ({ value: c.value, label: c.name, group: c.group, ref: c.ref })));
         } catch { /* pickers refresh on next tool mount regardless */ }
       } catch (err) {
-        if (root.isConnected) announce(`Couldn't save the brand: ${String((err as { message?: unknown })?.message ?? err)}`, { assertive: true });
+        if (root.isConnected) announce(t("Couldn't save the brand: {error}", { error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true });
       }
     };
     if (immediate) void run(); else saveTimer = setTimeout(run, 300);
@@ -1132,7 +1139,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       return `<div class="be-cand${added ? ' is-added' : ''}">
           <span class="be-cand-sw" style="background:${escape(a.hex)}" aria-hidden="true"></span>
           <span class="be-cand-meta"><span class="be-cand-name">${escape(name)}</span><span class="be-cand-hex">${escape(a.hex)}</span></span>
-          <button type="button" class="be-cand-add" data-add-hex="${escape(a.hex)}" data-add-name="${escape(name)}"${added ? ' disabled aria-disabled="true"' : ''}>${added ? '✓ Added' : '+ Add'}</button>
+          <button type="button" class="be-cand-add" data-add-hex="${escape(a.hex)}" data-add-name="${escape(name)}"${added ? ' disabled aria-disabled="true"' : ''}>${added ? t('✓ Added') : t('+ Add')}</button>
         </div>`;
     }).join('');
   };
@@ -1156,7 +1163,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     repaintPalette();       // refreshes swatches + picker + wheel + (via hook) the generator
     persist(true);          // officiate: the accent is now part of the brand
     playSfx('click');
-    announce(`${name} added to your palette`);
+    announce(t('{name} added to your palette', { name }));
   });
   paletteHooks.push(renderGenerator); // keep candidates + previews in sync with the palette
   renderGenerator();                  // initial paint
@@ -1192,7 +1199,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const bits: string[] = [];
     if (lock?.cmyk) bits.push(`<span class="be-ps-chip">C${lock.cmyk[0]} M${lock.cmyk[1]} Y${lock.cmyk[2]} K${lock.cmyk[3]}</span>`);
     if (lock?.spot) bits.push(`<span class="be-ps-chip">${escape(lock.spot.name)}</span>`);
-    printChips.innerHTML = bits.length ? bits.join('') : '<span class="be-ps-chip be-ps-chip--auto">auto</span>';
+    printChips.innerHTML = bits.length ? bits.join('') : `<span class="be-ps-chip be-ps-chip--auto">${t('auto')}</span>`;
   };
   // The primary's print lock — mounted only now, AFTER the generic [data-be-seg]
   // delegate above has taken its one-time querySelectorAll snapshot, so this
@@ -1234,7 +1241,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   $('[data-be-derive]')?.addEventListener('click', async () => {
     let next: Record<string, unknown>;
     try { next = deriveBrandTokens({ primary, scheme, surface, contrast, steps, foreground, name: 'My brand' }) as Record<string, unknown>; }
-    catch (err) { announce(`Couldn't derive from ${primary}: ${String((err as { message?: unknown })?.message ?? err)}`, { assertive: true }); return; }
+    catch (err) { announce(t("Couldn't derive from {primary}: {error}", { primary, error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true }); return; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);
     // Read the lock LIVE off the pre-derive `doc` — whichever surface (Colour
@@ -1279,7 +1286,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       materializeGradientAliases(next, ref => colorToHex(nextSet.resolve(ref)) == null, resolveTokenRef);
     }
     const ok = swatches.some(s => s.kind === 'custom')
-      ? await confirmDialog({ title: 'Re-derive the palette?', message: 'This rebuilds every swatch from your colour and drops the custom swatches you added.', confirmLabel: 'Re-derive' })
+      ? await confirmDialog({ title: t('Re-derive the palette?'), message: t('This rebuilds every swatch from your colour and drops the custom swatches you added.'), confirmLabel: t('Re-derive') })
       : true;
     if (!ok || !root.isConnected) return;
     // Commits into the in-memory draft only — no persist() here; Save colour
@@ -1287,11 +1294,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     doc = next; repaintPalette(); applyDraftChrome(doc); broadcastDraft(doc); setDirty(true); notify('color');
     setDeriveActive(false); // applied — the button rests until the next change
     playSfx('click');
-    announce('Palette re-derived from your colour — click Save colour to keep it');
+    announce(t('Palette re-derived from your colour — click Save colour to keep it'));
   });
   saveBtn?.addEventListener('click', () => {
     persist(true); playSfx('saveProfile');
-    announce('Brand colour saved');
+    announce(t('Brand colour saved'));
   });
 
   // ── Palette: click a tile → open the shared swatch editor ───────────────────
@@ -1328,7 +1335,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const bits: string[] = [];
     if (cur?.lock?.cmyk) bits.push(`<span class="be-ps-chip">C${cur.lock.cmyk[0]} M${cur.lock.cmyk[1]} Y${cur.lock.cmyk[2]} K${cur.lock.cmyk[3]}</span>`);
     if (cur?.lock?.spot) bits.push(`<span class="be-ps-chip">${escape(cur.lock.spot.name)}</span>`);
-    substChips.innerHTML = bits.length ? bits.join('') : '<span class="be-ps-chip be-ps-chip--auto">auto</span>';
+    substChips.innerHTML = bits.length ? bits.join('') : `<span class="be-ps-chip be-ps-chip--auto">${t('auto')}</span>`;
   };
 
   /** Keep a shape-only tile's tooltip + accessible name (name — hex) fresh —
@@ -1504,7 +1511,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const commitFmt = (): void => {
     if (!fmtInput) return;
     const hex = parseColor(editFmt, fmtInput.value);
-    if (!hex) { if (fmtOut) fmtOut.textContent = 'unrecognised value'; return; }
+    if (!hex) { if (fmtOut) fmtOut.textContent = t('unrecognised value'); return; }
     applyEditedHex(hex, { rerenderField: true });
     // A value ENTERED as CMYK is a print value: pin the typed inks as the
     // swatch's CMYK substitute (the $value keeps only the sRGB approximation,
@@ -1523,7 +1530,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   fmtInput?.addEventListener('input', () => {
     if (!fmtInput || !fmtOut) return;
     const hex = parseColor(editFmt, fmtInput.value);
-    fmtOut.textContent = hex ? extrapolation(hex) : 'unrecognised value';
+    fmtOut.textContent = hex ? extrapolation(hex) : t('unrecognised value');
   });
   fmtInput?.addEventListener('change', commitFmt);
   fmtInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitFmt(); } });
@@ -1537,7 +1544,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       // A derived section's Add files the new custom swatch under ITS heading.
       const displayGroup = add.dataset.beAddGroup;
       // A neutral new swatch the user immediately recolours — stored LCH, the default.
-      const path = addSwatch(doc, group, group === 'spectrum' ? 'New hue' : 'New swatch', serializeColor('#888888', 'lch'), displayGroup ? { displayGroup } : {});
+      const path = addSwatch(doc, group, group === 'spectrum' ? t('New hue') : t('New swatch'), serializeColor('#888888', 'lch'), displayGroup ? { displayGroup } : {});
       repaintPalette(); persist(true);
       // Select the leaf we just wrote (by JSON path — never "the last one", which
       // depends on key order after a repaint).
@@ -1570,7 +1577,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (cur.kind === 'ramp' || cur.kind === 'semantic') {
       setSwatchExcluded(doc, cur.key, true);
       closeEditor(); repaintPalette(); persist(true);
-      announce(`${cur.name} removed from your palette`);
+      announce(t('{name} removed from your palette', { name: cur.name }));
       return;
     }
     if (!cur.deletable) return;
@@ -1580,10 +1587,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // exactly as before.
     const refs = gradientAliasRefCount(doc, cur.key);
     if (refs) {
+      const message = refs === 1
+        ? t('{refs} gradient stop wears this colour — it keeps its current value as a fixed colour.', { refs })
+        : t('{refs} gradient stops wear this colour — they keep their current value as a fixed colour.', { refs });
       const ok = await confirmDialog({
-        title: `Delete ${cur.name}?`,
-        message: `${refs} gradient stop${refs === 1 ? ' wears' : 's wear'} this colour — ${refs === 1 ? 'it keeps' : 'they keep'} its current value as a fixed colour.`,
-        confirmLabel: 'Delete',
+        title: t('Delete {name}?', { name: cur.name }),
+        message,
+        confirmLabel: t('Delete'),
       });
       if (!ok || !root.isConnected || selected < 0 || swatches[selected] !== cur) return;
       materializeGradientAliases(doc, ref => aliasPath(ref) === cur.key, () => cur.hex || null);
@@ -1683,7 +1693,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         if (anchor) openEditor(idx, anchor);
       },
       onAdd: (seed) => {
-        const path = addSwatch(doc, 'custom', 'New swatch', oklchHex(seed));
+        const path = addSwatch(doc, 'custom', t('New swatch'), oklchHex(seed));
         if (path) setSwatchValue(doc, path, oklchToStored(seed)); // sit exactly where dropped
         repaintPalette(); persist(true);
         const newIdx = path ? swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i])) : -1;
@@ -1715,33 +1725,33 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <span class="be-font-aa" style="font-family:'${escape(f.family)}'" aria-hidden="true">Aa</span>
       <span class="be-font-meta"><span class="be-font-name" style="font-family:'${escape(f.family)}'">${escape(f.family)}</span>
         <span class="be-font-sub">${escape(f.weights)} · ${fmtBytes(f.bytes)}</span></span>
-      ${f.primary ? '<span class="be-font-badge">Primary</span>'
-        : `<button type="button" class="be-btn be-font-mp" data-mp="${escape(f.family)}">Make primary</button>`}
-      ${isMono ? '<span class="be-font-badge be-font-badge--mono">Code</span>'
-        : `<button type="button" class="be-btn be-font-mono" data-mono="${escape(f.family)}" title="Use ${escape(f.family)} for code & data">Use for code</button>`}
-      <button type="button" class="be-font-del" data-del="${escape(f.family)}" aria-label="Remove ${escape(f.family)}">&#x2715;</button>
+      ${f.primary ? `<span class="be-font-badge">${t('Primary')}</span>`
+        : `<button type="button" class="be-btn be-font-mp" data-mp="${escape(f.family)}">${t('Make primary')}</button>`}
+      ${isMono ? `<span class="be-font-badge be-font-badge--mono">${t('Code')}</span>`
+        : `<button type="button" class="be-btn be-font-mono" data-mono="${escape(f.family)}" title="${escape(t('Use {family} for code & data', { family: f.family }))}">${t('Use for code')}</button>`}
+      <button type="button" class="be-font-del" data-del="${escape(f.family)}" aria-label="${escape(t('Remove {family}', { family: f.family }))}">&#x2715;</button>
     </li>`;
   };
   // The live specimen (Type roles panel): each role rendered in the face that
   // actually serves it — --font-brand / --font-mono, whatever set them.
   const paintSpecimen = async (): Promise<void> => {
     const mount = $('[data-be-specimen]') as HTMLElement | null; if (!mount) return;
-    const brandFace = await primaryFontFamily(fontsHost).catch(() => '') || 'Platform default';
-    const monoFace = monoFamily || 'Platform default';
+    const brandFace = await primaryFontFamily(fontsHost).catch(() => '') || t('Platform default');
+    const monoFace = monoFamily || t('Platform default');
     if (!root.isConnected) return;
     mount.innerHTML = `
       <div class="be-typerole">
-        <span class="be-typerole-role">Heading</span>
-        <span class="be-typerole-sample be-typerole-sample--h" style="font-family:var(--font-brand)">Pack my box with five dozen liqueur jugs</span>
+        <span class="be-typerole-role">${t('Heading')}</span>
+        <span class="be-typerole-sample be-typerole-sample--h" style="font-family:var(--font-brand)">${t('Pack my box with five dozen liqueur jugs')}</span>
         <span class="be-typerole-face">${escape(brandFace)}</span>
       </div>
       <div class="be-typerole">
-        <span class="be-typerole-role">Body</span>
-        <span class="be-typerole-sample" style="font-family:var(--font-brand)">Every tool, page and export follows the primary face — headings, body copy and UI alike. Sub-heading, call-to-action and italic roles arrive here as tokens tools can read.</span>
+        <span class="be-typerole-role">${t('Body')}</span>
+        <span class="be-typerole-sample" style="font-family:var(--font-brand)">${t('Every tool, page and export follows the primary face — headings, body copy and UI alike. Sub-heading, call-to-action and italic roles arrive here as tokens tools can read.')}</span>
         <span class="be-typerole-face">${escape(brandFace)}</span>
       </div>
       <div class="be-typerole">
-        <span class="be-typerole-role">Code &amp; data</span>
+        <span class="be-typerole-role">${t('Code &amp; data')}</span>
         <span class="be-typerole-sample be-typerole-sample--mono" style="font-family:var(--font-mono)">lolly qr-code --url=https://example.com --export=svg</span>
         <span class="be-typerole-face">${escape(monoFace)}</span>
       </div>`;
@@ -1754,11 +1764,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (!fontFamilies.some(f => f.primary)) {
       const builtin = await primaryFontFamily(fontsHost).catch(() => '');
       rows.push(`<li class="be-font-row is-primary is-builtin"><span class="be-font-aa" style="font-family:'${escape(builtin || 'Outfit')}'" aria-hidden="true">Aa</span>
-        <span class="be-font-meta"><span class="be-font-name">${escape(builtin || 'Outfit')}</span><span class="be-font-sub">${builtin ? 'built-in brand font' : 'platform default'}</span></span>
-        <span class="be-font-badge">Primary</span></li>`);
+        <span class="be-font-meta"><span class="be-font-name">${escape(builtin || 'Outfit')}</span><span class="be-font-sub">${builtin ? t('built-in brand font') : t('platform default')}</span></span>
+        <span class="be-font-badge">${t('Primary')}</span></li>`);
     }
     rows.push(...fontFamilies.map(fontRow));
-    if (!fontFamilies.length) rows.push('<li class="be-font-empty">No fonts added yet — pick any Google Font below.</li>');
+    if (!fontFamilies.length) rows.push(`<li class="be-font-empty">${t('No fonts added yet — pick any Google Font below.')}</li>`);
     if (root.isConnected) list.innerHTML = rows.join('');
     void paintSpecimen();
   };
@@ -1769,8 +1779,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const btn = $('[data-be-font-btn]') as HTMLButtonElement | null;
     const family = input?.value.trim(); if (!family || !btn || !input) return;
     showFontErr(''); const prev = btn.textContent;
-    btn.disabled = input.disabled = true; btn.textContent = 'Downloading…';
-    try { const fam = await installGoogleFont(fontsHost, family); input.value = ''; playSfx('saveProfile'); await paintFonts(); notify('type'); announce(`Added ${fam.family}${fam.primary ? ' as your primary font' : ''}`); }
+    btn.disabled = input.disabled = true; btn.textContent = t('Downloading…');
+    try {
+      const fam = await installGoogleFont(fontsHost, family); input.value = ''; playSfx('saveProfile'); await paintFonts(); notify('type');
+      announce(fam.primary ? t('Added {family} as your primary font', { family: fam.family }) : t('Added {family}', { family: fam.family }));
+    }
     // Clear on failure too — otherwise the failed attempt's text blocks searching
     // for a different font until manually cleared (matches the success path above).
     catch (err) { showFontErr(String((err as { message?: unknown })?.message ?? err)); input.value = ''; }
@@ -1778,12 +1791,18 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   });
   $('[data-be-fonts]')?.addEventListener('click', async (e) => {
     const mp = (e.target as Element).closest<HTMLButtonElement>('[data-mp]');
-    if (mp) { mp.disabled = true; try { await setPrimaryFont(fontsHost, mp.dataset.mp!); await paintFonts(); notify('type'); announce(`${mp.dataset.mp} is now your primary font`); } catch (err) { mp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    if (mp) { mp.disabled = true; try { await setPrimaryFont(fontsHost, mp.dataset.mp!); await paintFonts(); notify('type'); announce(t('{family} is now your primary font', { family: mp.dataset.mp ?? '' })); } catch (err) { mp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const mono = (e.target as Element).closest<HTMLButtonElement>('[data-mono]');
-    if (mono) { mono.disabled = true; try { await setMonoFont(fontsHost, mono.dataset.mono!); await paintFonts(); notify('type'); announce(`${mono.dataset.mono} now serves code & data`); } catch (err) { mono.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    if (mono) { mono.disabled = true; try { await setMonoFont(fontsHost, mono.dataset.mono!); await paintFonts(); notify('type'); announce(t('{family} now serves code & data', { family: mono.dataset.mono ?? '' })); } catch (err) { mono.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const del = (e.target as Element).closest<HTMLButtonElement>('[data-del]'); if (!del) return;
     const fam = fontFamilies.find(f => f.family === del.dataset.del); if (!fam) return;
-    const ok = await confirmDialog({ title: `Remove ${fam.family}?`, message: `Its font files (${fmtBytes(fam.bytes)}) are deleted from this device${fam.primary ? ' and the next font becomes primary' : ''}.`, confirmLabel: 'Remove' });
+    const ok = await confirmDialog({
+      title: t('Remove {family}?', { family: fam.family }),
+      message: fam.primary
+        ? t('Its font files ({size}) are deleted from this device and the next font becomes primary.', { size: fmtBytes(fam.bytes) })
+        : t('Its font files ({size}) are deleted from this device.', { size: fmtBytes(fam.bytes) }),
+      confirmLabel: t('Remove'),
+    });
     if (!ok) return; del.disabled = true;
     try {
       await removeUserFont(fontsHost, fam);
@@ -1806,18 +1825,18 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // only truly exists through its assets, so empty sections live here until the
   // first mark lands (and vanish on reload if none ever does; that's honest).
   const pendingIdentities: string[] = [];
-  const identityLabel = (id: string): string => (id === 'default' ? 'Your logo' : prettify(id));
+  const identityLabel = (id: string): string => (id === 'default' ? t('Your logo') : prettify(id));
   const logoTile = (v: string, identity: string, slot: LogoSlot | undefined, label?: string): string => {
     const { treatment } = splitVariant(v);
     const tm = treatment ? TREATMENT_META[treatment] : null;
     const name = label ?? slot?.label ?? (tm ? tm.label : prettify(v));
-    const hint = slot ? 'Click to replace' : (tm ? tm.hint : 'Your own named mark.');
+    const hint = slot ? t('Click to replace') : (tm ? tm.hint : t('Your own named mark.'));
     const body = slot
-      ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(name)} logo" loading="lazy"></span>`
+      ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(t('{name} logo', { name }))}" loading="lazy"></span>`
       : `<span class="be-logo-empty" aria-hidden="true">+</span>`;
     return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${escape(v)}" data-treatment="${treatment ?? 'custom'}">
         <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(name)}</span>
-          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${escape(v)}" data-identity="${escape(identity)}" aria-label="Remove the ${escape(name)} mark">&#x2715;</button>` : ''}</div>
+          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${escape(v)}" data-identity="${escape(identity)}" aria-label="${escape(t('Remove the {name} mark', { name }))}">&#x2715;</button>` : ''}</div>
         <label class="be-logo-drop">
           ${body}
           <input type="file" class="be-logo-file" data-logo-file="${escape(v)}" data-identity="${escape(identity)}" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
@@ -1853,12 +1872,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       const customs = mine.filter(s => s.custom);
       const customTiles = customs.map(s => logoTile(s.variant, identity, s)).join('');
       const customGroup = `<div class="be-logo-group be-logo-group--custom">
-          <div class="be-logo-group-head"><span class="be-logo-group-name">Custom marks</span>
-            <span class="be-logo-group-hint">Marks your brand names its own way — an icon, a crest, a favicon.</span></div>
+          <div class="be-logo-group-head"><span class="be-logo-group-name">${t('Custom marks')}</span>
+            <span class="be-logo-group-hint">${t('Marks your brand names its own way — an icon, a crest, a favicon.')}</span></div>
           <div class="be-logo-row">${customTiles}
             <form class="be-logo-addmark" data-logo-addmark data-identity="${escape(identity)}">
-              <input type="text" class="be-logo-addmark-name" data-addmark-name placeholder="Name it — Icon, Crest…" autocomplete="off" spellcheck="false" aria-label="Custom mark name">
-              <label class="be-btn be-logo-addmark-pick">Choose file…
+              <input type="text" class="be-logo-addmark-name" data-addmark-name placeholder="${escape(t('Name it — Icon, Crest…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Custom mark name'))}">
+              <label class="be-btn be-logo-addmark-pick">${t('Choose file…')}
                 <input type="file" data-addmark-file accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden></label>
             </form>
           </div>
@@ -1869,8 +1888,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         </section>`;
     }).join('');
     const addIdentity = `<form class="be-logo-addidentity" data-logo-addidentity>
-        <input type="text" data-addidentity-name placeholder="Another logo? Name it — Product, Event…" autocomplete="off" spellcheck="false" aria-label="New logo name">
-        <button type="submit" class="be-btn">+ Add another logo</button>
+        <input type="text" data-addidentity-name placeholder="${escape(t('Another logo? Name it — Product, Event…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('New logo name'))}">
+        <button type="submit" class="be-btn">${t('+ Add another logo')}</button>
       </form>`;
     if (root.isConnected) mount.innerHTML = sections + addIdentity;
   };
@@ -1894,15 +1913,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (!isUserBrand) {
       // Nothing of the user's to clobber yet — set it, say so, let Save keep it.
       setPrimaryTo(first);
-      suggestEl.innerHTML = `<span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>Primary set from your logo — <strong>Save colour</strong> keeps it.</span>`;
+      suggestEl.innerHTML = `<span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>${t('Primary set from your logo — <strong>Save colour</strong> keeps it.')}</span>`;
       suggestEl.hidden = false;
-      announce('Primary colour set from your logo');
+      announce(t('Primary colour set from your logo'));
       return;
     }
     suggestEl.innerHTML = `
-      <span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>Found in your logo: <code>${escape(first)}</code></span>
-      <button type="button" class="be-btn be-btn--sm" data-be-suggest-use="${escape(first)}">Use as primary</button>
-      <button type="button" class="be-suggest-dismiss" data-be-suggest-dismiss aria-label="Dismiss suggestion">&#x2715;</button>`;
+      <span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>${t('Found in your logo:')} <code>${escape(first)}</code></span>
+      <button type="button" class="be-btn be-btn--sm" data-be-suggest-use="${escape(first)}">${t('Use as primary')}</button>
+      <button type="button" class="be-suggest-dismiss" data-be-suggest-dismiss aria-label="${escape(t('Dismiss suggestion'))}">&#x2715;</button>`;
     suggestEl.hidden = false;
   };
   suggestEl?.addEventListener('click', (e) => {
@@ -1924,12 +1943,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       const file = addFile.files?.[0]; addFile.value = '';
       if (!file) return;
       showLogoErr('');
-      if (!slug || !LOGO_SLUG_RE.test(slug)) { showLogoErr('Name the mark first — letters and numbers, e.g. "Icon".'); nameInput?.focus(); return; }
+      if (!slug || !LOGO_SLUG_RE.test(slug)) { showLogoErr(t('Name the mark first — letters and numbers, e.g. "Icon".')); nameInput?.focus(); return; }
       try {
         await installLogo(fontsHost, slug, file, { identity, label });
         playSfx('saveProfile'); await paintLogos(); notify('logos');
         void suggestFromLogo(file);
-        announce(`${label} mark added`);
+        announce(t('{label} mark added', { label }));
       } catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
       return;
     }
@@ -1942,7 +1961,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       await installLogo(fontsHost, variant, file, identity === 'default' ? undefined : { identity });
       playSfx('saveProfile'); await paintLogos(); notify('logos');
       void suggestFromLogo(file);
-      announce(`${variantLabel(variant)} logo added`);
+      announce(t('{variant} logo added', { variant: variantLabel(variant) }));
     } catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
   });
   $('[data-be-logos]')?.addEventListener('submit', (e) => {
@@ -1961,8 +1980,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const nameInput = form.querySelector<HTMLInputElement>('[data-addidentity-name]');
     const slug = slugify(nameInput?.value ?? '');
     showLogoErr('');
-    if (!slug || !LOGO_SLUG_RE.test(slug)) { showLogoErr('Name the logo first — letters and numbers, e.g. "Product".'); nameInput?.focus(); return; }
-    if (slug === 'default') { showLogoErr('“Default” is the unnamed logo above — pick a different name.'); nameInput?.focus(); return; }
+    if (!slug || !LOGO_SLUG_RE.test(slug)) { showLogoErr(t('Name the logo first — letters and numbers, e.g. "Product".')); nameInput?.focus(); return; }
+    if (slug === 'default') { showLogoErr(t('“Default” is the unnamed logo above — pick a different name.')); nameInput?.focus(); return; }
     if (!pendingIdentities.includes(slug)) pendingIdentities.push(slug);
     void paintLogos().then(() => {
       // Land the user in the fresh section rather than leaving them at the form.
@@ -1974,7 +1993,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     e.preventDefault();
     const variant = del.dataset.logoDel!;
     const identity = del.dataset.identity || 'default';
-    const ok = await confirmDialog({ title: `Remove the ${variantLabel(variant).toLowerCase()} mark?`, message: 'It’s deleted from this device.', confirmLabel: 'Remove' });
+    const ok = await confirmDialog({ title: t('Remove the {variant} mark?', { variant: variantLabel(variant).toLowerCase() }), message: t('It’s deleted from this device.'), confirmLabel: t('Remove') });
     if (!ok) return; del.disabled = true;
     try {
       await removeLogo(fontsHost, variant, identity === 'default' ? undefined : identity);
@@ -1991,7 +2010,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       const format = (palFmtSel?.value ?? 'tokens-json') as SwatchExportFormat;
       const { blob, filename } = exportSwatches(swatches, format);
       saveBlob(blob, filename);
-      announce(`Palette downloaded as ${filename}`);
+      announce(t('Palette downloaded as {filename}', { filename }));
     } catch (err) {
       if (palErr) { palErr.textContent = String((err as { message?: unknown })?.message ?? err); palErr.hidden = false; }
     }
@@ -2074,7 +2093,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const exportPack = async (): Promise<{ filename: string }> => {
     const { blob, filename, summary } = await exportBrandPack(transferHost);
     saveBlob(blob, filename);
-    announce(`Brand exported — ${summary.fontFamilies} font ${summary.fontFamilies === 1 ? 'family' : 'families'}`);
+    announce(summary.fontFamilies === 1
+      ? t('Brand exported — {n} font family', { n: summary.fontFamilies })
+      : t('Brand exported — {n} font families', { n: summary.fontFamilies }));
     return { filename };
   };
   // Something replaced the installed tokens underneath us (a pack import, the
@@ -2115,7 +2136,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const importPack = async (file: File): Promise<void> => {
     await importBrandPack(transferHost, await file.arrayBuffer());
     await reload();
-    announce('Brand loaded');
+    announce(t('Brand loaded'));
   };
 
   return {

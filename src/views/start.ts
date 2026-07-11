@@ -39,6 +39,7 @@ import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-
 import { applyTheme } from '../theme.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { strFromU8 } from 'fflate';
 
@@ -76,11 +77,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     document.title = 'Brand · Lolly';
     viewEl.innerHTML = `
       <div class="start">
-        <a class="start-back" href="#/">&larr; Tools</a>
+        <a class="start-back" href="#/">&larr; ${t('Tools')}</a>
         <header class="start-head">
-          <p class="start-eyebrow">Brand</p>
-          <h1 class="start-title">This brand is set</h1>
-          <p class="start-sub">This build ships with a fixed brand — its colours, fonts and tokens are what every tool and export use. Brand adjustment is turned off here, so there’s nothing to change.</p>
+          <p class="start-eyebrow">${t('Brand')}</p>
+          <h1 class="start-title">${t('This brand is set')}</h1>
+          <p class="start-sub">${t('This build ships with a fixed brand — its colours, fonts and tokens are what every tool and export use. Brand adjustment is turned off here, so there’s nothing to change.')}</p>
         </header>
       </div>`;
     return;
@@ -91,29 +92,29 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
 
   viewEl.innerHTML = `
     <div class="start start--studio">
-      <a class="start-back" href="#/">&larr; Tools</a>
+      <a class="start-back" href="#/">&larr; ${t('Tools')}</a>
       <header class="start-head">
-        <p class="start-eyebrow">Brand setup</p>
-        <h1 class="start-title">Make it yours</h1>
-        <p class="start-sub">Work through the steps — logos, colours, type, the other tokens, your files. Everything stays on this device, and every tool, page and export follows it.</p>
+        <p class="start-eyebrow">${t('Brand setup')}</p>
+        <h1 class="start-title">${t('Make it yours')}</h1>
+        <p class="start-sub">${t('Work through the steps — logos, colours, type, the other tokens, your files. Everything stays on this device, and every tool, page and export follows it.')}</p>
       </header>
 
       <!-- Step tabs: numbered, in working order. The next step nudges once the
            current one has changes, so the path forward is always visible. -->
-      <nav class="start-tabs" role="tablist" aria-label="Brand setup steps">
-        ${BRAND_TABS.map((t, i) => `
-          <button type="button" class="start-tab${t.id === activeTab ? ' is-active' : ''}" role="tab"
-            aria-selected="${t.id === activeTab}" aria-controls="start-panel-${t.id}" tabindex="${t.id === activeTab ? 0 : -1}"
-            data-start-tab="${t.id}" id="start-tab-${t.id}">
-            <span class="start-tab-n">${i + 1}</span><span class="start-tab-label">${escape(t.label)}</span>
+      <nav class="start-tabs" role="tablist" aria-label="${escape(t('Brand setup steps'))}">
+        ${BRAND_TABS.map((tab, i) => `
+          <button type="button" class="start-tab${tab.id === activeTab ? ' is-active' : ''}" role="tab"
+            aria-selected="${tab.id === activeTab}" aria-controls="start-panel-${tab.id}" tabindex="${tab.id === activeTab ? 0 : -1}"
+            data-start-tab="${tab.id}" id="start-tab-${tab.id}">
+            <span class="start-tab-n">${i + 1}</span><span class="start-tab-label">${escape(tab.label)}</span>
           </button>`).join('')}
       </nav>
 
       <!-- The persistent action row: Import/Export always on; Save & continue
            appears on change. One row, one place, whichever step is open. -->
-      <div class="start-actions" role="toolbar" aria-label="Brand actions">
-        <button type="button" class="be-btn" data-start-import aria-expanded="false">↓ Import&hellip;</button>
-        <button type="button" class="be-btn" data-start-export data-sfx="whoosh">↑ Export</button>
+      <div class="start-actions" role="toolbar" aria-label="${escape(t('Brand actions'))}">
+        <button type="button" class="be-btn" data-start-import aria-expanded="false">↓ ${t('Import…')}</button>
+        <button type="button" class="be-btn" data-start-export data-sfx="whoosh">↑ ${t('Export')}</button>
         <span class="start-actions-note" data-start-note aria-live="polite"></span>
         <button type="button" class="be-cta start-save" data-start-save hidden></button>
       </div>
@@ -122,35 +123,35 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
              label) or drop a file on it. The format tiles lead so people
              recognise THEIR export at a glance, in preference order. -->
         <label class="start-import-drop" data-start-import-drop>
-          <input type="file" class="start-import-file visually-hidden" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip" aria-label="Choose a design or brand file">
-          <span class="start-import-formats" role="list" aria-label="Accepted formats, in preference order">
+          <input type="file" class="start-import-file visually-hidden" accept=".json,application/json,.penpot,.svg,image/svg+xml,.zip,application/zip" aria-label="${escape(t('Choose a design or brand file'))}">
+          <span class="start-import-formats" role="list" aria-label="${escape(t('Accepted formats, in preference order'))}">
             ${IMPORT_FORMATS.map(f => `
               <span class="start-import-fmt" role="listitem">
                 <span class="start-import-fmt-icon" aria-hidden="true">${f.icon}</span>
-                <span class="start-import-fmt-name">${escape(f.name)}</span>
+                <span class="start-import-fmt-name">${escape(t(f.name))}</span>
                 <span class="start-import-fmt-ext">${escape(f.ext)}</span>
               </span>`).join('')}
           </span>
-          <span class="be-btn start-import-btn" aria-hidden="true">Choose a design or brand file&hellip;</span>
-          <span class="start-import-drophint">or drag &amp; drop it here</span>
+          <span class="be-btn start-import-btn" aria-hidden="true">${t('Choose a design or brand file…')}</span>
+          <span class="start-import-drophint">${t('or drag & drop it here')}</span>
         </label>
         <div class="start-import-result" hidden></div>
       </div>
 
       <div class="start-editor-wrap">
-        <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">Loading your brand…</p></div>
+        <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">${t('Loading your brand…')}</p></div>
       </div>
 
       <!-- The way onward — revealed by finishing the last step. -->
-      <section class="start-finish" data-start-finish hidden aria-label="All set">
-        <h2 class="start-finish-title">Your brand is in force</h2>
-        <p class="start-finish-sub">Every tool, page and export now follows it. Where to next?</p>
+      <section class="start-finish" data-start-finish hidden aria-label="${escape(t('All set'))}">
+        <h2 class="start-finish-title">${t('Your brand is in force')}</h2>
+        <p class="start-finish-sub">${t('Every tool, page and export now follows it. Where to next?')}</p>
         <div class="start-finish-links">
-          <a class="be-cta start-finish-primary" href="#/profile" data-sfx="click">Set up your Profile &rarr;</a>
-          <span class="start-finish-or">or visit</span>
-          <a class="be-btn" href="#/">Tools</a>
-          <a class="be-btn" href="#/p">Projects</a>
-          <a class="be-btn" href="#/d" data-sfx="dashboard">Dashboard</a>
+          <a class="be-cta start-finish-primary" href="#/profile" data-sfx="click">${t('Set up your Profile')} &rarr;</a>
+          <span class="start-finish-or">${t('or visit')}</span>
+          <a class="be-btn" href="#/">${t('Tools')}</a>
+          <a class="be-btn" href="#/p">${t('Projects')}</a>
+          <a class="be-btn" href="#/d" data-sfx="dashboard">${t('Dashboard')}</a>
         </div>
       </section>
     </div>`;
@@ -179,7 +180,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const syncSaveBtn = (show?: boolean): void => {
     if (show !== undefined) saveBtn.hidden = !show;
     const next = nextTab(activeTab);
-    saveBtn.textContent = next ? 'Save & continue' : 'Save & finish';
+    saveBtn.textContent = next ? t('Save & continue') : t('Save & finish');
   };
   const nudge = (tab: BrandTabKey): void => {
     const next = nextTab(tab);
@@ -197,7 +198,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       },
     });
   } catch (err) {
-    editorMount.innerHTML = `<p class="be-err">Couldn't open the brand editor: ${escape(String((err as { message?: unknown })?.message ?? err))}</p>`;
+    editorMount.innerHTML = `<p class="be-err">${t('Couldn’t open the brand editor: {error}', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
   }
   const editorRoot = editorMount.querySelector<HTMLElement>('[data-brand-editor]');
   // Complete the ARIA tabs contract on the editor's panel wrappers (the editor
@@ -265,7 +266,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     finishEl.hidden = false;
     finishEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     playSfx('saveProfile');
-    announce('Brand saved — pick where to go next');
+    announce(t('Brand saved — pick where to go next'));
   };
   saveBtn.addEventListener('click', () => {
     editor?.saveDraft();
@@ -284,9 +285,9 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   };
   viewEl.querySelector<HTMLButtonElement>('[data-start-export]')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
-    if (!editor) { showNote("The brand editor didn't open — reload to export.", true); return; }
+    if (!editor) { showNote(t('The brand editor didn’t open — reload to export.'), true); return; }
     btn.disabled = true;
-    try { const { filename } = await editor.exportPack(); showNote(`Exported ${filename}`); }
+    try { const { filename } = await editor.exportPack(); showNote(t('Exported {filename}', { filename })); }
     catch (err) { showNote(String((err as { message?: unknown })?.message ?? err), true); }
     btn.disabled = false;
   });
@@ -310,7 +311,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     installing = true;
     btn.disabled = true;
     const prevLabel = btn.textContent;
-    btn.textContent = 'Installing…';
+    btn.textContent = t('Installing…');
     try {
       // A doc with no font group inherits the fonts already installed here, so an
       // import never silently undoes a chosen face.
@@ -330,13 +331,13 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       btn.disabled = false;
       btn.textContent = prevLabel;
       selectTab('color');
-      announce(`${label} installed — the studio now shows it`);
+      announce(t('{label} installed — the studio now shows it', { label }));
       playSfx('saveProfile');
     } catch (err) {
       installing = false;
       btn.disabled = false;
       btn.textContent = prevLabel;
-      const msg = `Couldn't install the brand: ${String((err as { message?: unknown })?.message ?? err)}`;
+      const msg = t('Couldn’t install the brand: {error}', { error: String((err as { message?: unknown })?.message ?? err) });
       showImportResult(`<p class="start-import-err">${escape(msg)}</p>`);
       announce(msg, { assertive: true });
     }
@@ -345,7 +346,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // ── Import path — a raw tokens JSON (W3C DTCG / Tokens Studio) or a .zip pack ─
   const importFile = viewEl.querySelector<HTMLInputElement>('.start-import-file')!;
   let importedDoc: Record<string, unknown> | null = null;
-  let importedLabel = 'My brand';
+  let importedLabel = t('My brand');
 
   // Shared "N sets · N themes · N tokens, N colours" blurb — every doc-shaped
   // import path (JSON tokens, Penpot tokens) shows the same stats before the
@@ -354,10 +355,10 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     try {
       const s = summarizeTokensDoc(doc);
       return [
-        s.sets.length ? `${s.sets.length} set${s.sets.length === 1 ? '' : 's'}` : null,
-        s.themes.length ? `${s.themes.length} theme${s.themes.length === 1 ? '' : 's'}` : null,
-        `${s.tokenCount} token${s.tokenCount === 1 ? '' : 's'}`,
-        `${s.colorCount} colour${s.colorCount === 1 ? '' : 's'}`,
+        s.sets.length ? t(s.sets.length === 1 ? '{n} set' : '{n} sets', { n: s.sets.length }) : null,
+        s.themes.length ? t(s.themes.length === 1 ? '{n} theme' : '{n} themes', { n: s.themes.length }) : null,
+        t(s.tokenCount === 1 ? '{n} token' : '{n} tokens', { n: s.tokenCount }),
+        t(s.colorCount === 1 ? '{n} colour' : '{n} colours', { n: s.colorCount }),
       ].filter(Boolean).join(' · ');
     } catch { return ''; } // stats are decorative — the install button still stands
   }
@@ -425,27 +426,30 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // fill as part of the brand.
     if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') {
       if (file.size > 10 * 1024 * 1024) {
-        showImportResult(`<p class="start-import-err">${escape(file.name)} is too large for an SVG scan (max 10 MB).</p>`);
+        showImportResult(`<p class="start-import-err">${t('{filename} is too large for an SVG scan (max 10 MB).', { filename: escape(file.name) })}</p>`);
         return;
       }
       let svgColors: string[] = [];
       try {
         svgColors = extractSvgColors(await file.text());
       } catch {
-        showImportResult(`<p class="start-import-err">Couldn't read ${escape(file.name)} as SVG.</p>`);
+        showImportResult(`<p class="start-import-err">${t('Couldn’t read {filename} as SVG.', { filename: escape(file.name) })}</p>`);
         return;
       }
       if (!svgColors.length) {
-        showImportResult(`<p class="start-import-err">No colours found in ${escape(file.name)}.</p>`);
+        showImportResult(`<p class="start-import-err">${t('No colours found in {filename}.', { filename: escape(file.name) })}</p>`);
         return;
       }
-      importedLabel = file.name.replace(/\.svg$/i, '') || 'My brand';
+      importedLabel = file.name.replace(/\.svg$/i, '') || t('My brand');
       showImportResult(`
-        <p class="start-import-name">${escape(file.name)}<span class="start-import-source">colours in use</span></p>
-        <p class="start-import-warn">Found ${svgColors.length} colour${svgColors.length === 1 ? '' : 's'} — none are linked to a design token, so review and drop any you don't want. The first one kept becomes your main brand colour.</p>
+        <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('colours in use')}</span></p>
+        <p class="start-import-warn">${t(svgColors.length === 1
+          ? 'Found {n} colour — none are linked to a design token, so review and drop any you don’t want. The first one kept becomes your main brand colour.'
+          : 'Found {n} colours — none are linked to a design token, so review and drop any you don’t want. The first one kept becomes your main brand colour.',
+          { n: svgColors.length })}</p>
         <div class="start-color-actions">
-          <button type="button" class="be-btn be-btn--sm" data-colors-all>Select all</button>
-          <button type="button" class="be-btn be-btn--sm" data-colors-none>Select none</button>
+          <button type="button" class="be-btn be-btn--sm" data-colors-all>${t('Select all')}</button>
+          <button type="button" class="be-btn be-btn--sm" data-colors-none>${t('Select none')}</button>
         </div>
         <ul class="start-color-grid" role="list">
           ${svgColors.map((hex, i) => `
@@ -457,7 +461,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
               </label>
             </li>`).join('')}
         </ul>
-        <button type="button" class="be-cta start-cta--import" data-install-colors disabled>Use these colours</button>`);
+        <button type="button" class="be-cta start-cta--import" data-install-colors disabled>${t('Use these colours')}</button>`);
       // The colour-review path builds its doc lazily from whichever boxes are
       // still checked at click time (see data-install-colors below) rather
       // than from importedDoc/data-install-import.
@@ -473,7 +477,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // zip archive under a different extension.
     if (/\.(zip|penpot)$/i.test(file.name) || file.type === 'application/zip') {
       if (file.size > 64 * 1024 * 1024) {
-        showImportResult(`<p class="start-import-err">${escape(file.name)} is too large (max 64 MB).</p>`);
+        showImportResult(`<p class="start-import-err">${t('{filename} is too large (max 64 MB).', { filename: escape(file.name) })}</p>`);
         return;
       }
       let files: Record<string, Uint8Array>;
@@ -487,10 +491,10 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
 
       if (manifest?.format === 'lolly-brand') {
         if (!editor) {
-          showImportResult('<p class="start-import-err">The brand editor didn\'t open — reload the page and try again.</p>');
+          showImportResult(`<p class="start-import-err">${t('The brand editor didn’t open — reload the page and try again.')}</p>`);
           return;
         }
-        showImportResult(`<p class="start-import-stats">Loading ${escape(file.name)}…</p>`);
+        showImportResult(`<p class="start-import-stats">${t('Loading {filename}…', { filename: escape(file.name) })}</p>`);
         try {
           await editor.importPack(file);
           // The pack carries its own theme preference (prefs.json → localStorage);
@@ -512,50 +516,53 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       if (manifest?.type === 'penpot/export-files') {
         const { doc, warnings } = extractPenpotProject(files);
         if (!doc) {
-          showImportResult(`<p class="start-import-err">No design tokens found in ${escape(file.name)}${warnings[0] ? ` — ${escape(warnings[0])}` : ''}. Try exporting an SVG instead so we can read its colours.</p>`);
+          showImportResult(`<p class="start-import-err">${t(warnings[0]
+            ? 'No design tokens found in {filename} — {warning}. Try exporting an SVG instead so we can read its colours.'
+            : 'No design tokens found in {filename}. Try exporting an SVG instead so we can read its colours.',
+            { filename: escape(file.name), warning: escape(warnings[0] ?? '') })}</p>`);
           return;
         }
         importedDoc = doc;
-        importedLabel = file.name.replace(/\.(penpot|zip)$/i, '') || 'My brand';
+        importedLabel = file.name.replace(/\.(penpot|zip)$/i, '') || t('My brand');
         const statLine = statLineFor(doc);
         showImportResult(`
-          <p class="start-import-name">${escape(file.name)}<span class="start-import-source">penpot tokens</span></p>
+          <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('penpot tokens')}</span></p>
           ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
           ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
-          <button type="button" class="be-cta start-cta--import" data-install-import>Install these tokens</button>`);
+          <button type="button" class="be-cta start-cta--import" data-install-import>${t('Install these tokens')}</button>`);
         return;
       }
 
-      showImportResult(`<p class="start-import-err">${escape(file.name)} isn't a brand file or a Penpot export we recognise.</p>`);
+      showImportResult(`<p class="start-import-err">${t('{filename} isn’t a brand file or a Penpot export we recognise.', { filename: escape(file.name) })}</p>`);
       return;
     }
 
     // Token documents are hand-authored JSON, a few KB to a few MB — bound the
     // read so a mispicked/hostile multi-GB file can't be parsed into memory.
     if (file.size > 10 * 1024 * 1024) {
-      showImportResult(`<p class="start-import-err">${escape(file.name)} is too large for a token file (max 10 MB).</p>`);
+      showImportResult(`<p class="start-import-err">${t('{filename} is too large for a token file (max 10 MB).', { filename: escape(file.name) })}</p>`);
       return;
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(await file.text());
     } catch {
-      showImportResult(`<p class="start-import-err">Couldn't read ${escape(file.name)} — is it valid JSON?</p>`);
+      showImportResult(`<p class="start-import-err">${t('Couldn’t read {filename} — is it valid JSON?', { filename: escape(file.name) })}</p>`);
       return;
     }
     const { doc, warnings, source } = coerceTokensDoc(parsed);
     if (!doc) {
-      showImportResult(`<p class="start-import-err">No tokens found: ${escape(warnings[0] ?? 'unrecognised document')}.</p>`);
+      showImportResult(`<p class="start-import-err">${t('No tokens found: {reason}.', { reason: escape(warnings[0] ?? t('unrecognised document')) })}</p>`);
       return;
     }
     importedDoc = doc;
-    importedLabel = file.name.replace(/\.json$/i, '') || 'My brand';
+    importedLabel = file.name.replace(/\.json$/i, '') || t('My brand');
     const statLine = statLineFor(doc);
     showImportResult(`
       <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${escape(source)}</span></p>
       ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
       ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
-      <button type="button" class="be-cta start-cta--import" data-install-import>Install these tokens</button>`);
+      <button type="button" class="be-cta start-cta--import" data-install-import>${t('Install these tokens')}</button>`);
   }
 
   // Colour-review checkboxes (the SVG path): select all/none, enable "Use
@@ -592,11 +599,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       if (cb?.checked && hex) kept.push(hex);
     });
     if (!kept.length) {
-      showImportResult('<p class="start-import-err">None of the kept colours could be used — try a different selection.</p>');
+      showImportResult(`<p class="start-import-err">${t('None of the kept colours could be used — try a different selection.')}</p>`);
       return;
     }
     const doc = deriveBrandTokens({ primary: kept[0]!, name: importedLabel });
-    kept.slice(1).forEach((hex, i) => addSwatch(doc, 'custom', `Extracted ${i + 2}`, hex));
+    kept.slice(1).forEach((hex, i) => addSwatch(doc, 'custom', t('Extracted {n}', { n: i + 2 }), hex));
     void install(doc, importedLabel, colorsBtn);
   });
 
@@ -651,16 +658,16 @@ function mountPaletteSheet(shell: HTMLElement, editor: BrandEditorHandle, editor
   const sheet = document.createElement('div');
   sheet.className = 'stu-sheet';
   sheet.setAttribute('role', 'region');
-  sheet.setAttribute('aria-label', 'Your palette');
+  sheet.setAttribute('aria-label', escape(t('Your palette')));
   sheet.innerHTML = `
     <div class="stu-sheet-head">
-      <div class="stu-sheet-strip" data-stu-strip aria-label="Brand palette"></div>
+      <div class="stu-sheet-strip" data-stu-strip aria-label="${escape(t('Brand palette'))}"></div>
     </div>
     <div class="stu-sheet-body" data-stu-groups></div>`;
   const grip = document.createElement('button');
   grip.type = 'button';
   grip.className = 'stu-sheet-grip';
-  grip.setAttribute('aria-label', 'Drag to resize the palette, tap to expand');
+  grip.setAttribute('aria-label', escape(t('Drag to resize the palette, tap to expand')));
   shell.append(sheet, grip);
 
   const stripEl = sheet.querySelector<HTMLElement>('[data-stu-strip]')!;
@@ -677,7 +684,7 @@ function mountPaletteSheet(shell: HTMLElement, editor: BrandEditorHandle, editor
     let stripHtml = '', bodyHtml = '';
     editorRoot.querySelectorAll<HTMLElement>('[data-be-pal] .be-pal-group').forEach(g => {
       // The group label's first node is the name text (a count <span> follows).
-      const name = g.querySelector('.be-pal-group-label')?.firstChild?.textContent?.trim() ?? 'Colours';
+      const name = g.querySelector('.be-pal-group-label')?.firstChild?.textContent?.trim() ?? t('Colours');
       const chips = [...g.querySelectorAll<HTMLElement>('[data-be-tile]')].map(chipHtml).join('');
       if (!chips) return;
       stripHtml += chips;
