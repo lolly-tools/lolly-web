@@ -30,6 +30,7 @@ import { applyChromeBrandVars } from '../brand-vars.ts';
 import { mountBrandEditor, BRAND_TABS } from '../lib/brand-editor.ts';
 import type { BrandTabKey, BrandEditorHandle } from '../lib/brand-editor.ts';
 import { setupMobileSheet } from '../lib/mobile-sheet.ts';
+import { wireTabs } from '../lib/tabs.ts';
 import type { MobileSheetHandle } from '../lib/mobile-sheet.ts';
 import { carryUserFontTokens } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
@@ -229,43 +230,26 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     else if (!want && paletteSheet) { paletteSheet.teardown(); paletteSheet = null; }
   };
 
-  // ── Tabs ─────────────────────────────────────────────────────────────────────
-  const selectTab = (key: BrandTabKey, { focus = false } = {}): void => {
-    activeTab = key;
-    editor?.closeOverlays(); // a popover anchored to the outgoing tab must not linger
-    editorRoot?.setAttribute('data-active-tab', key);
-    syncPaletteSheet();
-    viewEl.querySelectorAll<HTMLElement>('[data-start-tab]').forEach(btn => {
-      const on = btn.dataset.startTab === key;
-      btn.classList.toggle('is-active', on);
-      btn.setAttribute('aria-selected', String(on));
-      btn.tabIndex = on ? 0 : -1; // roving tabindex — one tab stop for the strip
-      if (on) btn.classList.remove('is-nudge');
-      if (on && focus) btn.focus();
-    });
-    syncSaveBtn();
-    // Keep the URL shareable without spamming history.
-    try { history.replaceState(null, '', `#/start?tab=${key}`); } catch { /* sandboxed */ }
-  };
-  selectTab(activeTab);
+  // ── Tabs — lib/tabs.ts's shared roving-tabindex machinery (component audit
+  // rec 1); `onSelect` owns everything view-specific (the editor's active panel,
+  // the mobile palette sheet, the nudge cue, Save-button label, URL mirroring,
+  // and — click only, matching the pre-extraction behaviour — the click sfx). ──
   const tabsNav = viewEl.querySelector<HTMLElement>('.start-tabs');
-  tabsNav?.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-start-tab]');
-    if (btn) { selectTab(btn.dataset.startTab as BrandTabKey); playSfx('click'); }
-  });
-  // Arrow-key navigation, per the ARIA tabs pattern (Left/Right wrap, Home/End).
-  tabsNav?.addEventListener('keydown', (e) => {
-    const keys = BRAND_TABS.map(t => t.id);
-    const i = keys.indexOf(activeTab);
-    let next: BrandTabKey | undefined;
-    if (e.key === 'ArrowRight') next = keys[(i + 1) % keys.length];
-    else if (e.key === 'ArrowLeft') next = keys[(i - 1 + keys.length) % keys.length];
-    else if (e.key === 'Home') next = keys[0];
-    else if (e.key === 'End') next = keys[keys.length - 1];
-    if (!next) return;
-    e.preventDefault();
-    selectTab(next, { focus: true });
-  });
+  const selectTab = tabsNav ? wireTabs(tabsNav, {
+    key: 'startTab',
+    onSelect: (key, { reason }) => {
+      activeTab = key as BrandTabKey;
+      editor?.closeOverlays(); // a popover anchored to the outgoing tab must not linger
+      editorRoot?.setAttribute('data-active-tab', key);
+      syncPaletteSheet();
+      tabsNav.querySelector<HTMLElement>(`[data-start-tab="${key}"]`)?.classList.remove('is-nudge');
+      syncSaveBtn();
+      // Keep the URL shareable without spamming history.
+      try { history.replaceState(null, '', `#/start?tab=${key}`); } catch { /* sandboxed */ }
+      if (reason === 'click') playSfx('click');
+    },
+  }) : ((key: string, _opts?: { focus?: boolean }) => { activeTab = key as BrandTabKey; });
+  selectTab(activeTab);
 
   // ── Save & continue / finish ─────────────────────────────────────────────────
   const finish = (): void => {

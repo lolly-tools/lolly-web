@@ -42,12 +42,8 @@
   margin: 0 ; font-size: .78rem; font-weight: 650;
   text-transform: uppercase; letter-spacing: .07em; color: hsl(var(--muted-foreground));
 }
-.cat-group-count {
-  font-size: .7rem; font-weight: 600; letter-spacing: 0;
-  padding: .05rem .45rem; border-radius: 999px;
-  background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
-}
-.cat-group-count[hidden] { display: none; }
+/* Box + [hidden] reassert merged into .chip--count (chips.css, byte-identical
+   to .plat-ramp-count) — nothing left to restate here. */
 
 /* ─── Tile-grid marquee (rubber-band) selection ──────────────────────────────
    The box dragged through the gaps between cards in Projects and the Catalogue —
@@ -74,23 +70,27 @@
   display: grid; gap: .6rem;
   grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
 }
-/* Icon tile: glyph, then a big count, then the type label. */
+/* Icon tile: glyph, then a big count, then the type label. Surface composes
+   .card--sub (chips.css) — layout + padding are local deltas. NOTE this name
+   collides with catalog.ts's OWN .cat-tile asset card (scoped there under
+   `.catalog .cat-tile` to defeat it) — the rename this calls for touches
+   lib/catalog-summary.ts, out of scope for this pass; see followUps. */
 .cat-tile {
   display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
-  padding: .85rem .9rem; border-radius: var(--radius);
-  background: hsl(var(--background)); border: 1px solid hsl(var(--border));
+  padding: .85rem .9rem;
 }
 .cat-tile-icon { color: hsl(var(--muted-foreground)); margin-bottom: .45rem; }
 .cat-tile-icon svg { display: block; width: 22px; height: 22px; }
 .cat-tile-num { font-size: 1.45rem; font-weight: 700; line-height: 1; }
 .cat-tile-label { font-size: .78rem; color: hsl(var(--muted-foreground)); }
 
-/* Secondary "by status" row — compact icon chips beneath the tool tiles. */
+/* Secondary "by status" row — compact icon chips beneath the tool tiles.
+   Capitalize composes .chip--status (chips.css); the rest (gap, padding,
+   background alpha, font-size) are real local deltas. */
 .cat-tags { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 .cat-tag {
-  display: inline-flex; align-items: center; gap: .35rem;
-  padding: .3rem .65rem .3rem .5rem; border-radius: 999px;
-  background: hsl(var(--muted) / .6); font-size: .78rem; text-transform: capitalize;
+  padding: .3rem .65rem .3rem .5rem;
+  background: hsl(var(--muted) / .6); font-size: .78rem;
 }
 .cat-tag-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
 .cat-tag-icon svg { display: block; width: 15px; height: 15px; }

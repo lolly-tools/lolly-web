@@ -48,20 +48,23 @@
   outline-offset: 2px;
 }
 
-/* Small size — generalised from brand-studio's .be-btn--sm/.be-add--sm. */
-.btn--sm {
+/* Small size — folds brand-studio's .be-btn--sm/.be-add--sm, a byte-identical
+   duplicate (this was previously just a comment claiming the generalisation;
+   the declaration itself hadn't actually been merged). */
+.btn--sm,
+.be-btn--sm, .be-add--sm {                        /* brand-studio.css */
   padding: .25rem .6rem;
   font-size: .72rem;
 }
 
-/* Ghost — the target shape for brand-studio's .be-btn once it migrates onto this
-   primitive (a later wave; brand-studio.css is untouched by this one). */
+/* Ghost — the shape brand-studio's .be-btn composes onto (component audit rec 1). */
 .btn--ghost {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   border-color: hsl(var(--border));
 }
-.btn--ghost:hover:not(:disabled) {
+.btn--ghost:hover:not(:disabled),
+.be-btn:hover:not(:disabled), .be-add:hover:not(:disabled) {   /* brand-studio.css — identical hover */
   border-color: hsl(var(--primary) / .55);
 }
 
@@ -82,7 +85,9 @@
 .pro-btn--primary,                                /* pro/pro.css */
 .pro-addrow .pro-btn,                             /* pro/pro.css */
 .me-primary,                                      /* multi-edit.css */
-.cat-act-fav.is-fav {                             /* catalog.css */
+.cat-act-fav.is-fav,                              /* catalog.css */
+.view-seg-btn[aria-pressed="true"],               /* gallery.css — canonical segmented control */
+.be-cta {                                         /* brand-studio.css */
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
 }

@@ -447,7 +447,20 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     }));
     if (!subpaths.length) return;
 
-    prims.push({ type: 'path', subpaths, fill: rgbObj(rgb), stroke: null, fillRule: 'nonzero' });
+    // Capture text stroke (outline) just like regular paths do.
+    const strokeStr = prop(el, style, 'stroke', null);
+    const strokeRgb = strokeStr ? parseColor(strokeStr) : null;
+    const strokeOpacity = m.elemOpacity * parseFloat(prop(el, style, 'stroke-opacity', null) ?? prop(el, style, 'opacity', null) ?? '1');
+    let stroke: { r: number; g: number; b: number; width: number } | null = null;
+    if (strokeRgb && strokeOpacity >= 0.01) {
+      const flatStroke = flatten(strokeRgb, strokeOpacity, bg);
+      const nonScaling = (prop(el, style, 'vector-effect', null)) === 'non-scaling-stroke';
+      const strokeMul = (nonScaling ? 1 : m.gAvg) * m.rAvg;
+      const strokeWidth = parseFloat(prop(el, style, 'stroke-width', null) ?? cs?.strokeWidth ?? '1') * strokeMul;
+      stroke = flatStroke ? { ...rgbObj(flatStroke), width: Math.max(1, strokeWidth) } : null;
+    }
+
+    prims.push({ type: 'path', subpaths, fill: rgbObj(rgb), stroke, fillRule: 'nonzero' });
   }
 
   await visit(svgEl, { tx: 0, ty: 0, sX: 1, sY: 1 }, null);

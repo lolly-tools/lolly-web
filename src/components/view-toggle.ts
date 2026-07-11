@@ -12,6 +12,15 @@
  * name in both modes (the icon is aria-hidden, the label may be display:none).
  *
  * `active` is 'tools', 'projects' or 'catalog'.
+ *
+ * This is router-driven navigation (real `<a href>`s), not a value-picker or a
+ * `role="tablist"` — so it's neither `.view-seg` (lib/seg.ts, `aria-pressed`)
+ * nor a tab bar (lib/tabs.ts, `aria-selected`). It already lines up with both,
+ * though: `.is-active` is the same purely-presentational class every tab bar
+ * carries (component audit rec 1's one active-state convention), and
+ * `aria-current="page"` is the correct semantic marker for a nav landmark's
+ * current link — the equivalent of `aria-selected` for this widget, not a
+ * fourth convention.
  */
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';

@@ -17,5 +17,9 @@ export const LOLLY_ICON = (px = 16): string =>
 /** The "Made with Lolly" lockup — icon + wordmark. `size:'lg'` is the prominent
  *  catalog-details treatment; `sm` (default) is an inline pill. */
 export function lollyBadge(size: 'sm' | 'lg' = 'sm'): string {
-  return `<span class="lolly-badge lolly-badge--${size}">${LOLLY_ICON(size === 'lg' ? 22 : 15)}<span class="lolly-badge-lbl">Made with Lolly</span></span>`;
+  // `.chip` (styles/parts/chips.css) supplies the shared inline-flex/gap layout
+  // (component audit rec 3); `.lolly-badge` explicitly zeroes the pill's
+  // padding/background/radius back out — this is a plain icon+wordmark
+  // lockup, not a boxed pill, and its --lolly-accent stays its own.
+  return `<span class="chip lolly-badge lolly-badge--${size}">${LOLLY_ICON(size === 'lg' ? 22 : 15)}<span class="lolly-badge-lbl">Made with Lolly</span></span>`;
 }

@@ -56,6 +56,7 @@ import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { collectDevice, renderDeviceCards, renderDeviceStat, liveValue, fmtBytes } from '../lib/device-info.ts';
 import { playSfx } from '../lib/sfx.ts';
+import { wireTabs } from '../lib/tabs.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
 import { USER_TOKENS_ID } from '../bridge/tokens.ts';
 import { applyBrandVars, brandRadiusValue, tokenValueToHex } from '../brand-vars.ts';
@@ -783,10 +784,28 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   const deviceDetails = viewEl.querySelector<HTMLDetailsElement>('#dash-device');
   if (deviceDetails && window.matchMedia('(min-width: 900px)').matches) deviceDetails.open = true;
 
-  // Primary tabs. Returns a `selectTab(key)` so the deep-link handler can jump to
-  // the panel that owns a flagged section. Wiring the tabs before the deep link
-  // means a `?print`/`?formats` link both switches to the right tab AND scrolls.
-  const selectTab = wireTabs(viewEl, initialTab);
+  // Primary tabs (lib/tabs.ts's shared roving-tabindex machinery — component
+  // audit rec 1). Returns a `selectTab(key)` so the deep-link handler can jump
+  // to the panel that owns a flagged section. Wiring the tabs before the deep
+  // link means a `?print`/`?formats` link both switches to the right tab AND
+  // scrolls. `onSelect` owns everything view-specific: showing the matching
+  // panel, and — for a live click/arrow-key selection, not the initial paint
+  // or a deep link — the toggle sound + mirroring the tab into the URL
+  // (replaceState, so it fires no hashchange and doesn't re-mount the view).
+  const dashPanels = [...viewEl.querySelectorAll<HTMLElement>('[data-dash-panel]')];
+  const dashTabsEl = viewEl.querySelector<HTMLElement>('.dash-tabs');
+  const selectTab = dashTabsEl ? wireTabs(dashTabsEl, {
+    key: 'dashTab',
+    onSelect: (key, { reason }) => {
+      for (const p of dashPanels) p.hidden = p.dataset.dashPanel !== key;
+      if (reason !== 'programmatic') {
+        playSfx('toggle');
+        try { history.replaceState(history.state, '', `#/d?tab=${key}`); } catch { /* history unavailable */ }
+      }
+    },
+  }) : (() => {});
+  // Establish the initial state without rewriting the URL (aliases already set it).
+  selectTab(initialTab);
 
   // The brand hero + token chips, hydrated just after first paint rather than
   // blocking it (IDB reads: brand discovery, tokens, the raw doc). Everything
@@ -1138,53 +1157,6 @@ function applyDeepLink(viewEl: HTMLElement, flags: Set<string>, selectTab?: (key
     const again = (): void => { land(); if (++n < 12) setTimeout(again, 130); };
     setTimeout(again, 130);
   }
-}
-
-// Primary tabs: show one panel at a time, ARIA tab semantics + roving tabindex,
-// arrow/Home/End keyboard nav. Switching is client-side only — the active tab is
-// mirrored into the hash via replaceState (which fires NO hashchange), so a copied
-// link reopens on the same tab without the router re-mounting the whole view.
-// Returns a `selectTab(key)` the deep-link handler calls to jump tabs.
-function wireTabs(viewEl: HTMLElement, initial: string): (key: string) => void {
-  const tabs = [...viewEl.querySelectorAll<HTMLButtonElement>('[data-dash-tab]')];
-  const panels = [...viewEl.querySelectorAll<HTMLElement>('[data-dash-panel]')];
-  const noop = (): void => {};
-  if (!tabs.length || !panels.length) return noop;
-
-  const select = (key: string, opts: { focus?: boolean; sound?: boolean; updateUrl?: boolean } = {}): void => {
-    if (!DASH_TAB_KEYS.has(key)) return;
-    for (const tabEl of tabs) {
-      const on = tabEl.dataset.dashTab === key;
-      tabEl.classList.toggle('is-active', on);
-      tabEl.setAttribute('aria-selected', String(on));
-      tabEl.tabIndex = on ? 0 : -1;
-      if (on && opts.focus) tabEl.focus();
-    }
-    for (const p of panels) p.hidden = p.dataset.dashPanel !== key;
-    if (opts.sound) playSfx('toggle');
-    if (opts.updateUrl) {
-      // Reflect the tab in the URL without re-navigating (replaceState → no hashchange).
-      try { history.replaceState(history.state, '', `#/d?tab=${key}`); } catch { /* history unavailable */ }
-    }
-  };
-
-  tabs.forEach((tab, i) => {
-    tab.addEventListener('click', () => select(tab.dataset.dashTab!, { sound: true, updateUrl: true }));
-    tab.addEventListener('keydown', (e) => {
-      let next = -1;
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (i - 1 + tabs.length) % tabs.length;
-      else if (e.key === 'Home') next = 0;
-      else if (e.key === 'End') next = tabs.length - 1;
-      if (next < 0) return;
-      e.preventDefault();
-      select(tabs[next]!.dataset.dashTab!, { focus: true, sound: true, updateUrl: true });
-    });
-  });
-
-  // Establish the initial state without rewriting the URL (aliases already set it).
-  select(initial);
-  return (key: string) => select(key, { sound: false });
 }
 
 // Palette readout instrument — one shared mono line driven by whichever ink bar

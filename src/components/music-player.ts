@@ -167,12 +167,12 @@ function hideWarnTip(delay = 140): void {
 }
 
 // Track-list groups, in display order. Tracks sort alphabetically WITHIN each group.
-// `collapsed` seeds the group folded (it still expands on click, and while searching).
-const CATEGORIES: { key: string; label: string; icon: string; warn?: string; collapsed?: boolean }[] = [
+// Every group starts folded (it still expands on click, and while searching).
+const CATEGORIES: { key: string; label: string; icon: string; warn?: string }[] = [
   // The brand catalog's OTHER audio (not the built-in focus sets) — e.g. the licensed
-  // music beds. Leads the list, folded by default: it can be large, and it's only
-  // rendered at all when the catalog actually ships such audio.
-  { key: 'catalog', label: 'Catalog', icon: '🗂️', collapsed: true },
+  // music beds. Leads the list; it's only rendered at all when the catalog actually
+  // ships such audio.
+  { key: 'catalog', label: 'Catalog', icon: '🗂️' },
   { key: 'uploads', label: 'Uploads', icon: '📤' },
   { key: 'lolly', label: 'Lolly Sings', icon: '🍭' },
   { key: 'ambient', label: 'Ambient', icon: '🌊' },
@@ -483,7 +483,7 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
           list.innerHTML = CATEGORIES.map((cat) => {
             const items = (byCat.get(cat.key) ?? []).sort((a, b) => a.name.localeCompare(b.name));
             if (!items.length) return '';
-            const folded = prevFold.get(cat.key) ?? !!cat.collapsed;
+            const folded = prevFold.get(cat.key) ?? true;
             return `<li class="neuro-cat${folded ? ' is-collapsed' : ''}" data-cat="${cat.key}">` +
               `<button type="button" class="neuro-cat-head" data-cat-toggle aria-expanded="${!folded}">` +
               `<span class="neuro-cat-caret">${CARET}</span><span class="neuro-cat-emoji" aria-hidden="true">${cat.icon}</span><span>${escape(cat.label)}</span>` +

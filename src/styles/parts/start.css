@@ -46,18 +46,14 @@
 }
 .start-back:hover { color: hsl(var(--foreground)); }
 
-/* ── Header ──────────────────────────────────────────────────────────────── */
+/* ── Header — .start-head/-eyebrow/-title/-sub compose .section-header
+      (chips.css); every value below is a real local delta (this hero header
+      runs bigger than the shared default). ─────────────────────────────── */
 .start-head { margin-bottom: 26px; max-width: 660px; }
 .start-eyebrow {
-  display: inline-block;
   margin: 0 0 12px;
   padding: 4px 11px;
-  border-radius: var(--radius);
-  background: hsl(var(--primary) / 0.12);
-  color: hsl(var(--primary));
   font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 .start-title {
@@ -68,10 +64,8 @@
   line-height: 1.03;
 }
 .start-sub {
-  margin: 0;
   font-size: 15.5px;
   line-height: 1.62;
-  color: hsl(var(--muted-foreground));
 }
 
 /* ── Colour tab: the workbench. The hero folds to one quiet line — the split

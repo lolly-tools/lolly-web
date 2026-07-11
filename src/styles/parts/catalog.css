@@ -195,16 +195,19 @@
 .cat-src--user { background: hsl(var(--primary) / .15); color: hsl(var(--primary)); }
 .cat-src--lib  { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
 
-/* Generative-AI provenance pill. Reuses the /verify AI violet (var(--vf-ai-*) in
-   tokens.css) so it reads identically in every brand — deliberately NOT brand-tinted.
-   SUSE Mono, uppercase. The sparkle <svg> is hidden by default (text says it all);
-   the compact form (narrow tiles, below) collapses to just the sparkle in a circle. */
+/* Generative-AI provenance pill. Box (inline-flex/gap/radius) composes .chip
+   (chips.css, lib/genai-pill.ts's markup carries both classes); everything
+   below is a real delta — reuses the /verify AI violet (var(--vf-ai-*) in
+   tokens.css) so it reads identically in every brand, deliberately NOT
+   brand-tinted. SUSE Mono, uppercase. The sparkle <svg> is hidden by default
+   (text says it all); the compact form (narrow tiles, below) collapses to
+   just the sparkle in a circle. */
 .genai-pill {
-  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  flex: 0 0 auto; gap: 4px;
   font-family: var(--font-mono);
   font-size: .58rem; font-weight: 700; letter-spacing: .06em; line-height: 1;
-  text-transform: uppercase; white-space: nowrap;
-  padding: 2px 6px; border-radius: 999px; color: #fff;
+  text-transform: uppercase;
+  padding: 2px 6px; color: #fff;
   background: linear-gradient(120deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
   box-shadow: 0 2px 8px -3px hsl(var(--vf-ai) / .7);
 }
@@ -548,8 +551,15 @@ button.cat-download { font: inherit; cursor: pointer; }
 
 /* Shared "Made with Lolly" badge (lib/lolly-badge.ts). Green = the same verified /
    made-with-Lolly semantics as the Verify coin, a fixed accent independent of the
-   active brand (like the genai pill's fixed violet). */
-.lolly-badge { --lolly-accent: 145 58% 34%; display: inline-flex; align-items: center; gap: 6px; color: hsl(var(--lolly-accent)); font-weight: 700; }
+   active brand (like the genai pill's fixed violet). Layout (inline-flex/gap)
+   composes .chip (chips.css, the markup carries both classes) — but this is a
+   plain icon+wordmark lockup, not a boxed pill, so the pill paint is zeroed
+   back out explicitly rather than restyled. */
+.lolly-badge {
+  --lolly-accent: 145 58% 34%;
+  gap: 6px; padding: 0; background: none; border-radius: 0;
+  color: hsl(var(--lolly-accent)); font-weight: 700;
+}
 .lolly-badge svg { flex: none; }
 .lolly-badge--sm { font-size: .78rem; }
 .lolly-badge--lg { font-size: 1.12rem; letter-spacing: -.01em; }
