@@ -48,6 +48,7 @@ import { loadFavouriteAssets, loadHiddenAssets, assetBaseId } from '../lib/asset
 import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
+import { t } from '../i18n.ts';
 import { genAiPill, assetAiKind } from '../lib/genai-pill.ts';
 import { isFlagOn, STRIP_UPLOAD_META_FLAG } from '../feature-flags.ts';
 import type { AssetRef, AssetPickerOpts, ComposeUrlOpts, ExportFormat, HostV1, Profile } from '../../../../engine/src/bridge/host-v1.ts';
@@ -189,11 +190,11 @@ let modalEl: HTMLDivElement | null = null;
  */
 export function askLollyIntent(toolName?: string): Promise<string | null> {
   return choiceDialog({
-    title: 'This image is a Lolly',
-    message: `It's a live render from ${toolName ?? 'a Lolly tool'}. Tweak its inputs, or put a different image in this slot?`,
+    title: t('This image is a Lolly'),
+    message: t("It's a live render from {toolName}. Tweak its inputs, or put a different image in this slot?", { toolName: toolName ?? t('a Lolly tool') }),
     choices: [
-      { id: 'edit', label: '✦ Edit this Lolly', primary: true },
-      { id: 'pick', label: 'Select another asset' },
+      { id: 'edit', label: `✦ ${t('Edit this Lolly')}`, primary: true },
+      { id: 'pick', label: t('Select another asset') },
     ],
   });
 }
@@ -337,11 +338,11 @@ async function render(
   let activeTab: TabId = 'library';
 
   const placeholderFor = (id: TabId): string =>
-    id === 'tools'    ? 'Search tools…'
-    : id === 'sessions' ? 'Search your saved creations…'
-    : id === 'projects' ? 'Search your projects…'
-    : allowToolUrl    ? 'Search, or paste a Lolly link…'
-    : 'Search…';
+    id === 'tools'    ? t('Search tools…')
+    : id === 'sessions' ? t('Search your saved creations…')
+    : id === 'projects' ? t('Search your projects…')
+    : allowToolUrl    ? t('Search, or paste a Lolly link…')
+    : t('Search…');
 
   // A real ARIA tab widget only when there's an actual tab strip (>1 source): each
   // source pane becomes its tab's panel, wired back to the tab that labels it. With a
@@ -354,22 +355,22 @@ async function render(
     <div class="asset-picker-backdrop" aria-hidden="true"></div>
     <div class="asset-picker-panel" role="dialog" aria-modal="true" aria-labelledby="asset-picker-title">
       <header class="asset-picker-header">
-        <h2 id="asset-picker-title">${escapeHtml(opts.title ?? 'Choose an asset')}</h2>
-        <input type="search" class="asset-picker-search" placeholder="${escapeHtml(placeholderFor('library'))}" autocomplete="off" spellcheck="false" aria-label="Search assets">
-        <button type="button" class="asset-picker-close" aria-label="Close">×</button>
+        <h2 id="asset-picker-title">${escapeHtml(opts.title ?? t('Choose an asset'))}</h2>
+        <input type="search" class="asset-picker-search" placeholder="${escapeHtml(placeholderFor('library'))}" autocomplete="off" spellcheck="false" aria-label="${escapeHtml(t('Search assets'))}">
+        <button type="button" class="asset-picker-close" aria-label="${escapeHtml(t('Close'))}">×</button>
       </header>
-      ${tabs.length > 1 ? `<div class="asset-picker-tabs" role="tablist" aria-label="Asset sources">${tabs.map(tabBtn).join('')}</div>` : ''}
+      ${tabs.length > 1 ? `<div class="asset-picker-tabs" role="tablist" aria-label="${escapeHtml(t('Asset sources'))}">${tabs.map(tabBtn).join('')}</div>` : ''}
       ${currentToolUrl ? `<div class="asset-picker-current">
-        <span class="asset-picker-current-label"><span class="asset-picker-current-spark" aria-hidden="true">✦</span> Current image is from <strong>${escapeHtml(opts.currentToolName ?? 'a Lolly tool')}</strong> — tweak it, or pick a different image below</span>
-        <button type="button" class="asset-picker-current-edit">Edit inputs…</button>
+        <span class="asset-picker-current-label"><span class="asset-picker-current-spark" aria-hidden="true">✦</span> ${t('Current image is from <strong>{name}</strong> — tweak it, or pick a different image below', { name: escapeHtml(opts.currentToolName ?? t('a Lolly tool')) })}</span>
+        <button type="button" class="asset-picker-current-edit">${t('Edit inputs…')}</button>
       </div>` : ''}
       <div class="asset-picker-body">
         <section class="asset-picker-pane"${paneAria('library')} data-pane="library">
-          <div class="asset-picker-catbar" role="group" aria-label="Filter by category" hidden></div>
+          <div class="asset-picker-catbar" role="group" aria-label="${escapeHtml(t('Filter by category'))}" hidden></div>
           <section class="asset-picker-favourites" hidden></section>
           ${showUserAssets ? `<section class="asset-picker-userassets" hidden></section>` : ''}
           <section class="asset-picker-library">
-            <div class="asset-picker-loading">Loading…</div>
+            <div class="asset-picker-loading">${t('Loading…')}</div>
           </section>
         </section>
         ${allowToolUrl ? `<section class="asset-picker-pane"${paneAria('sessions')} data-pane="sessions" hidden></section>` : ''}
@@ -381,9 +382,9 @@ async function render(
         <footer class="asset-picker-footer">
           <label class="asset-picker-upload">
             <input type="file" accept="${UPLOAD_ACCEPT}" hidden />
-            <span class="asset-picker-upload-label">Upload your own…</span>
+            <span class="asset-picker-upload-label">${t('Upload your own…')}</span>
           </label>
-          ${canWebcam ? `<button type="button" class="asset-picker-webcam">${cameraGlyph} Take a photo</button>` : ''}
+          ${canWebcam ? `<button type="button" class="asset-picker-webcam">${cameraGlyph} ${t('Take a photo')}</button>` : ''}
         </footer>
       ` : ''}
     </div>
@@ -393,7 +394,7 @@ async function render(
     const on = tab.id === activeTab;
     // Roving tabindex: only the selected tab is in the page Tab sequence; the rest
     // are reached with Arrow keys (see the tablist keydown handler below).
-    return `<button type="button" id="asset-picker-tab-${tab.id}" class="asset-picker-tab${on ? ' is-active' : ''}" role="tab" data-tab="${tab.id}" aria-selected="${on}" aria-controls="asset-picker-pane-${tab.id}" tabindex="${on ? '0' : '-1'}">${escapeHtml(tab.label)}</button>`;
+    return `<button type="button" id="asset-picker-tab-${tab.id}" class="asset-picker-tab${on ? ' is-active' : ''}" role="tab" data-tab="${tab.id}" aria-selected="${on}" aria-controls="asset-picker-pane-${tab.id}" tabindex="${on ? '0' : '-1'}">${escapeHtml(t(tab.label))}</button>`;
   }
 
   // Return focus to whatever opened the picker (the asset-picker trigger button)
@@ -604,12 +605,12 @@ async function render(
     const del = (e.target as HTMLElement).closest<HTMLElement>('[data-delete-id]');
     if (del) {
       const id = del.dataset.deleteId!;
-      const name = (userAssets.find(a => a.id === id)?.meta?.name as string | undefined) ?? 'this image';
+      const name = (userAssets.find(a => a.id === id)?.meta?.name as string | undefined) ?? t('this image');
       // Deleting a user image is destructive and can't be undone — confirm first
       // (shared modal, matching the Catalog/Projects delete flows).
       const ok = await confirmDialog({
-        title: 'Delete this image?',
-        message: `“${name}” will be permanently removed from your images. This can’t be undone.`,
+        title: t('Delete this image?'),
+        message: t('“{name}” will be permanently removed from your images. This can’t be undone.', { name }),
       });
       if (!ok) return;
       const card = del.closest<HTMLElement>('.asset-picker-card');
@@ -622,7 +623,7 @@ async function render(
         renderUserAssets();
         renderFavourites();
         updateUploadAffordance();
-        announce(`Deleted ${name}.`);
+        announce(t('Deleted {name}.', { name }));
       } catch (err) {
         host.log('error', 'Failed to delete user image', { id, error: String(err) });
         // The card is still on screen (the delete threw) — surface the failure beside
@@ -632,7 +633,7 @@ async function render(
           msg.className = 'asset-picker-card-error';
           msg.setAttribute('role', 'alert');
           msg.style.cssText = 'margin:4px 0 0;font-size:11px;color:hsl(var(--destructive));text-align:center';
-          msg.textContent = 'Couldn’t delete — try again.';
+          msg.textContent = t('Couldn’t delete — try again.');
           card.appendChild(msg);
         }
       }
@@ -658,7 +659,7 @@ async function render(
         close(resolved);
       } catch (err) {
         host.log('error', 'Failed to resolve asset', { id: pickId, error: String(err) });
-        announce(`Could not resolve asset: ${(err as Error).message}`, { assertive: true });
+        announce(t('Could not resolve asset: {message}', { message: (err as Error).message }), { assertive: true });
         // The picked card is still on screen — surface the failure beside it rather than
         // blocking on a native alert (same inline note as the delete path above).
         const card = pick.closest<HTMLElement>('.asset-picker-card');
@@ -668,7 +669,7 @@ async function render(
           msg.className = 'asset-picker-card-error';
           msg.setAttribute('role', 'alert');
           msg.style.cssText = 'margin:4px 0 0;font-size:11px;color:hsl(var(--destructive));text-align:center';
-          msg.textContent = 'Couldn’t load — try again.';
+          msg.textContent = t('Couldn’t load — try again.');
           card.appendChild(msg);
         }
       }
@@ -743,7 +744,7 @@ async function render(
       inner += `<div class="asset-picker-grid">${g.items.map(userCard).join('')}</div>`;
     }
     if (ungrouped.length) {
-      if (groups.size) inner += `<div class="asset-picker-folder-head">Ungrouped</div>`;
+      if (groups.size) inner += `<div class="asset-picker-folder-head">${t('Ungrouped')}</div>`;
       inner += `<div class="asset-picker-grid">${ungrouped.map(userCard).join('')}</div>`;
     }
     // Same collapsible section chrome as the library groups (one delegated toggle
@@ -764,7 +765,7 @@ async function render(
     const fileInput = root.querySelector<HTMLInputElement>('.asset-picker-upload input[type="file"]');
     if (fileInput) fileInput.disabled = false;
     root.querySelector('.asset-picker-upload')?.classList.remove('is-disabled');
-    if (labelEl) labelEl.textContent = 'Upload your own…';
+    if (labelEl) labelEl.textContent = t('Upload your own…');
   }
 
   if (opts.allowUpload) {
@@ -790,7 +791,7 @@ async function render(
       } catch (e) {
         host.log('error', 'Upload failed', { error: String(e) });
         // Cap/quota errors carry a user-ready message; prefix only the rest.
-        announce((e as { code?: unknown }).code ? (e as Error).message : `Upload failed: ${(e as Error).message}`, { assertive: true });
+        announce((e as { code?: unknown }).code ? (e as Error).message : t('Upload failed: {message}', { message: (e as Error).message }), { assertive: true });
       } finally {
         fileInput.value = ''; // allow re-selecting the same file after an error
       }
@@ -831,7 +832,7 @@ async function render(
         <button type="button" class="asset-picker-group-toggle" data-group-toggle="${escapeHtml(g.key)}" aria-expanded="${!collapsed}">
           <span class="asset-picker-group-chevron">${CHEVRON}</span>
           <span class="asset-picker-group-icon">${categoryGlyph(g.key)}</span>
-          <span class="asset-picker-group-title">${escapeHtml(g.label)}</span>
+          <span class="asset-picker-group-title">${escapeHtml(t(g.label))}</span>
           <span class="asset-picker-count">${count}</span>
         </button>
         ${strip}
@@ -850,7 +851,7 @@ async function render(
     catbarEl.hidden = false;
     catbarEl.innerHTML = libraryGroupKeys.map(key => {
       const on = !collapsedGroups.has(key);
-      const label = categoryLabel(key);
+      const label = t(categoryLabel(key));
       return `<button type="button" class="asset-picker-catbtn${on ? ' is-active' : ''}" data-cat-filter="${escapeHtml(key)}" aria-pressed="${on}" aria-label="${escapeHtml(label)}" data-tip="${escapeHtml(label)}">
         <span class="asset-picker-catbtn-glyph">${categoryGlyph(key)}</span>
       </button>`;
@@ -896,7 +897,7 @@ async function render(
 
   function renderLibrary(candidates: AssetRef[]): void {
     if (candidates.length === 0) {
-      libraryEl.innerHTML = `<p class="asset-picker-empty" role="status">No assets match.${opts.allowUpload ? ' Upload one below.' : ''}</p>`;
+      libraryEl.innerHTML = `<p class="asset-picker-empty" role="status">${opts.allowUpload ? t('No assets match. Upload one below.') : t('No assets match.')}</p>`;
       libraryGroupKeys = [];
       renderCatbar(); // nothing to filter → hide the row (esp. on a zero-result search)
       return;
@@ -948,8 +949,8 @@ async function render(
   // renderLibrary (search / tab return); the active pairing lives in `activeTheme`
   // and clicks are handled by the delegated body listener, so no per-render wiring.
   function themeStripHtml(): string {
-    return `<div class="asset-picker-themes" role="group" aria-label="Colour theme">`
-      + `<span class="asset-picker-themes-label">Colours</span>`
+    return `<div class="asset-picker-themes" role="group" aria-label="${escapeHtml(t('Colour theme'))}">`
+      + `<span class="asset-picker-themes-label">${t('Colours')}</span>`
       + iconThemes.map((t, i) => {
           const on = activeTheme ? t.id === activeTheme : i === 0;
           return `<button type="button" class="asset-picker-theme${on ? ' is-active' : ''}" data-theme-id="${escapeHtml(t.id)}" data-sfx="shimmer" data-voice="${escapeHtml(t.label ?? t.id)}" aria-pressed="${on}">
@@ -1012,9 +1013,9 @@ async function render(
     const btn = (id: string, label: string, swClass: string, swStyle: string, on: boolean): string =>
       `<button type="button" class="asset-picker-theme asset-picker-treat${on ? ' is-active' : ''}" data-treatment-id="${escapeHtml(id)}" aria-pressed="${on}">`
       + `<span class="asset-picker-treat-sw${swClass}"${swStyle ? ` style="${swStyle}"` : ''}></span><span>${escapeHtml(label)}</span></button>`;
-    return `<div class="asset-picker-treatments" role="group" aria-label="Photo colour treatment">`
-      + `<span class="asset-picker-themes-label">Colour</span>`
-      + btn('', 'None', ' is-none', '', !activeTreatment)
+    return `<div class="asset-picker-treatments" role="group" aria-label="${escapeHtml(t('Photo colour treatment'))}">`
+      + `<span class="asset-picker-themes-label">${t('Colour')}</span>`
+      + btn('', t('None'), ' is-none', '', !activeTreatment)
       + photoTreatments.map(t => btn(t.id, t.label ?? t.id, '', `background:${swatch(t)}`, t.id === activeTreatment)).join('')
       + `</div>`;
   }
@@ -1056,7 +1057,7 @@ async function render(
   let libraryLoaded = false;
   function restoreLibrary(q: string): void {
     renderUserAssets();
-    if (!libraryLoaded) { libraryEl.innerHTML = `<div class="asset-picker-loading">Loading…</div>`; return; }
+    if (!libraryLoaded) { libraryEl.innerHTML = `<div class="asset-picker-loading">${t('Loading…')}</div>`; return; }
     if (!q) { renderLibrary(libraryCandidates); return; }
     renderLibrary(libraryCandidates.filter(c =>
       ((c.meta?.name ?? c.id) as string).toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
@@ -1097,19 +1098,19 @@ async function render(
   // ── Saved creations (previous single-tool sessions) ────────────────────────
   function renderSessions(q: string): void {
     if (!sessionsPane) return;
-    if (sessions === null) { sessionsPane.innerHTML = `<div class="asset-picker-loading">Loading…</div>`; return; }
+    if (sessions === null) { sessionsPane.innerHTML = `<div class="asset-picker-loading">${t('Loading…')}</div>`; return; }
     const list = q
       ? sessions.filter(s => (s.toolName ?? '').toLowerCase().includes(q)
           || (s.label ?? '').toLowerCase().includes(q) || s.toolId.includes(q))
       : sessions;
     if (list.length === 0) {
       sessionsPane.innerHTML = `<p class="asset-picker-empty">${sessions.length
-        ? 'No saved creations match.'
-        : 'No saved creations yet — save a tool you’ve made, then embed it here as an image.'}</p>`;
+        ? t('No saved creations match.')
+        : t('No saved creations yet — save a tool you’ve made, then embed it here as an image.')}</p>`;
       return;
     }
     sessionsPane.innerHTML =
-      `<div class="asset-picker-section-head">Your saved creations <span class="asset-picker-count">${sessions.length}</span></div>` +
+      `<div class="asset-picker-section-head">${t('Your saved creations')} <span class="asset-picker-count">${sessions.length}</span></div>` +
       `<div class="asset-picker-grid">${list.map(sessionCard).join('')}</div>`;
   }
 
@@ -1127,20 +1128,20 @@ async function render(
     const subs  = childFolders(folders, f.id).length;
     const items = pickableFolderItems(f).length;
     const bits: string[] = [];
-    if (subs)  bits.push(`${subs} folder${subs === 1 ? '' : 's'}`);
-    if (items) bits.push(`${items} item${items === 1 ? '' : 's'}`);
+    if (subs)  bits.push(subs === 1 ? t('1 folder') : t('{n} folders', { n: subs }));
+    if (items) bits.push(items === 1 ? t('1 item') : t('{n} items', { n: items }));
     return `
       <button type="button" class="asset-picker-card asset-picker-folderitem" data-folder-open="${escapeHtml(f.id)}" title="${escapeHtml(f.name)}">
         <span class="asset-picker-thumb asset-picker-folder-thumb" aria-hidden="true">${folderGlyph}</span>
         <span class="asset-picker-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
-        <span class="asset-picker-sessitem-when">${escapeHtml(bits.join(' · ') || 'Empty')}</span>
+        <span class="asset-picker-sessitem-when">${escapeHtml(bits.join(' · ') || t('Empty'))}</span>
       </button>`;
   }
 
   // An image inside a folder — a plain pick tile (no delete affordance; deletion
   // lives in the Your images list). Picking routes through the shared [data-asset-id] handler.
   function projectImageCard(ref: AssetRef): string {
-    const name = String(ref.meta?.name ?? 'Image');
+    const name = String(ref.meta?.name ?? t('Image'));
     const thumb = ref.type === 'lottie'
       ? (lottieThumb(ref, 'asset-picker-thumb') ?? `<span class="asset-picker-thumb asset-picker-thumb-stub" aria-hidden="true">▶</span>`)
       : ref.type === 'video'
@@ -1156,13 +1157,13 @@ async function render(
 
   function renderProjects(q: string): void {
     if (!projectsPane) return;
-    if (!foldersLoaded) { projectsPane.innerHTML = `<div class="asset-picker-loading">Loading…</div>`; return; }
+    if (!foldersLoaded) { projectsPane.innerHTML = `<div class="asset-picker-loading">${t('Loading…')}</div>`; return; }
     // A folder that vanished (deleted elsewhere / synced-away) drops us back to the top.
     if (projectFolder && !folders.some(f => f.id === projectFolder)) projectFolder = null;
 
     const path = projectFolder ? folderPath(folders, projectFolder) : [];
-    const crumbs = `<nav class="asset-picker-crumbs" aria-label="Folder path">`
-      + `<button type="button" class="asset-picker-crumb" data-folder-open="">Projects</button>`
+    const crumbs = `<nav class="asset-picker-crumbs" aria-label="${escapeHtml(t('Folder path'))}">`
+      + `<button type="button" class="asset-picker-crumb" data-folder-open="">${t('Projects')}</button>`
       + path.map((f, i) => {
           const last = i === path.length - 1;
           return `<span class="asset-picker-crumb-sep" aria-hidden="true">›</span>`
@@ -1174,7 +1175,7 @@ async function render(
 
     if (!folders.length) {
       projectsPane.innerHTML = crumbs
-        + `<p class="asset-picker-empty">No projects yet — group your saved creations and images into folders to browse them here.</p>`;
+        + `<p class="asset-picker-empty">${t('No projects yet — group your saved creations and images into folders to browse them here.')}</p>`;
       return;
     }
 
@@ -1200,7 +1201,7 @@ async function render(
     if (itemCards.length) parts.push(`<div class="asset-picker-grid">${itemCards.join('')}</div>`);
     projectsPane.innerHTML = crumbs + (parts.length
       ? parts.join('')
-      : `<p class="asset-picker-empty">${q ? 'Nothing here matches.' : (cur ? 'This folder is empty.' : 'No folders yet.')}</p>`);
+      : `<p class="asset-picker-empty">${q ? t('Nothing here matches.') : (cur ? t('This folder is empty.') : t('No folders yet.'))}</p>`);
   }
 
   // ── Tools (configure first, then insert) ───────────────────────────────────
@@ -1210,9 +1211,9 @@ async function render(
       ? embedTools.filter(t => t.name.toLowerCase().includes(q)
           || (t.description ?? '').toLowerCase().includes(q) || t.id.includes(q))
       : embedTools;
-    if (list.length === 0) { toolsPane.innerHTML = `<p class="asset-picker-empty">No tools match.</p>`; return; }
+    if (list.length === 0) { toolsPane.innerHTML = `<p class="asset-picker-empty">${t('No tools match.')}</p>`; return; }
     toolsPane.innerHTML =
-      `<div class="asset-picker-section-head">Make an image from a tool <span class="asset-picker-count">${embedTools.length}</span></div>` +
+      `<div class="asset-picker-section-head">${t('Make an image from a tool')} <span class="asset-picker-count">${embedTools.length}</span></div>` +
       `<div class="asset-picker-grid asset-picker-toolgrid">${list.map(toolCard).join('')}</div>`;
   }
 
@@ -1246,21 +1247,21 @@ async function render(
     showTakeover(`
       <div class="asset-picker-toolcard">
         <div class="asset-picker-toolcard-head">
-          <button type="button" class="asset-picker-toolcard-back" aria-label="Back to list">←</button>
+          <button type="button" class="asset-picker-toolcard-back" aria-label="${escapeHtml(t('Back to list'))}">←</button>
           <span class="asset-picker-toolcard-spark" aria-hidden="true">✦</span>
-          <span>Render the <strong>${escapeHtml(desc.name)}</strong> tool as your image</span>
+          <span>${t('Render the <strong>{name}</strong> tool as your image', { name: escapeHtml(desc.name) })}</span>
         </div>
         <div class="asset-picker-toolcard-controls">
-          <label>Format <select class="tc-format" aria-label="Render format">${fmtOptions}</select></label>
-          <label>Width <input type="number" class="tc-w" min="1" inputmode="numeric" placeholder="auto" value="${desc.width ?? ''}"></label>
-          <label>Height <input type="number" class="tc-h" min="1" inputmode="numeric" placeholder="auto" value="${desc.height ?? ''}"></label>
+          <label>${t('Format')} <select class="tc-format" aria-label="${escapeHtml(t('Render format'))}">${fmtOptions}</select></label>
+          <label>${t('Width')} <input type="number" class="tc-w" min="1" inputmode="numeric" placeholder="${escapeHtml(t('auto'))}" value="${desc.width ?? ''}"></label>
+          <label>${t('Height')} <input type="number" class="tc-h" min="1" inputmode="numeric" placeholder="${escapeHtml(t('auto'))}" value="${desc.height ?? ''}"></label>
         </div>
-        <div class="asset-picker-toolcard-preview"><div class="asset-picker-loading">Rendering…</div></div>
-        <label class="asset-picker-toolcard-freeze"><input type="checkbox" class="tc-freeze"> Freeze as a static image</label>
-        <p class="asset-picker-toolcard-freeze-help">Won't update when the source tool changes, but doesn't count against nesting depth.</p>
+        <div class="asset-picker-toolcard-preview"><div class="asset-picker-loading">${t('Rendering…')}</div></div>
+        <label class="asset-picker-toolcard-freeze"><input type="checkbox" class="tc-freeze"> ${t('Freeze as a static image')}</label>
+        <p class="asset-picker-toolcard-freeze-help">${t("Won't update when the source tool changes, but doesn't count against nesting depth.")}</p>
         <div class="asset-picker-toolcard-actions">
-          ${canEdit ? `<button type="button" class="tc-edit">Edit inputs…</button>` : ''}
-          <button type="button" class="tc-use" disabled>Use this render</button>
+          ${canEdit ? `<button type="button" class="tc-edit">${t('Edit inputs…')}</button>` : ''}
+          <button type="button" class="tc-use" disabled>${t('Use this render')}</button>
         </div>
       </div>`);
     const cardEl    = toolcardHost.querySelector('.asset-picker-toolcard')!;
@@ -1300,12 +1301,12 @@ async function render(
     const SLOW_RENDER_MS = 1000;
     let slowTool = false;
     const renderingHtml =
-      `<button type="button" class="tc-render is-rendering" disabled><span class="tc-render-ring" aria-hidden="true"></span>Rendering…</button>`;
+      `<button type="button" class="tc-render is-rendering" disabled><span class="tc-render-ring" aria-hidden="true"></span>${t('Rendering…')}</button>`;
     const renderPreview = async (): Promise<void> => {
       const seq = ++renderSeq;
       posterRef = null;
       useBtn.disabled = true;
-      previewEl.innerHTML = slowTool ? renderingHtml : `<div class="asset-picker-loading">Rendering…</div>`;
+      previewEl.innerHTML = slowTool ? renderingHtml : `<div class="asset-picker-loading">${t('Rendering…')}</div>`;
       // Crossing the threshold mid-render upgrades the plain loading text to the
       // animated button in place and flips the card to click-to-render from then on.
       const slowTimer = setTimeout(() => {
@@ -1319,12 +1320,12 @@ async function render(
       const ref = await host.compose.renderUrl(url, { format: posterFmt as ExportFormat, ...size() }).catch(() => null);
       clearTimeout(slowTimer);
       if (seq !== renderSeq) return; // a newer change supersedes this render
-      if (!ref) { previewEl.innerHTML = `<p class="asset-picker-error">Couldn't render this link.</p>`; return; }
+      if (!ref) { previewEl.innerHTML = `<p class="asset-picker-error">${t("Couldn't render this link.")}</p>`; return; }
       posterRef = ref;
       const note = isMotion(fmtSel.value)
-        ? `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">▶ Placed as a moving ${escapeHtml(fmtSel.value.toUpperCase())} — the clip renders when you add it.</p>`
+        ? `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">▶ ${t('Placed as a moving {format} — the clip renders when you add it.', { format: escapeHtml(fmtSel.value.toUpperCase()) })}</p>`
         : '';
-      previewEl.innerHTML = `<img class="asset-picker-toolcard-img" src="${escapeHtml(ref.url)}" alt="Preview of the ${escapeHtml(desc.name)} render">${note}`;
+      previewEl.innerHTML = `<img class="asset-picker-toolcard-img" src="${escapeHtml(ref.url)}" alt="${escapeHtml(t('Preview of the {name} render', { name: desc.name }))}">${note}`;
       useBtn.disabled = false;
     };
 
@@ -1334,7 +1335,7 @@ async function render(
       renderSeq++;
       posterRef = null;
       useBtn.disabled = true;
-      previewEl.innerHTML = `<button type="button" class="tc-render">Render preview</button>`;
+      previewEl.innerHTML = `<button type="button" class="tc-render">${t('Render preview')}</button>`;
       previewEl.querySelector('.tc-render')!.addEventListener('click', () => { void renderPreview(); });
     };
 
@@ -1352,8 +1353,8 @@ async function render(
         // race the delayed commit below.
         cardEl.querySelectorAll<HTMLButtonElement>('button').forEach(b => { b.disabled = true; });
         previewEl.insertAdjacentHTML('beforeend',
-          `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">Placed live — this render is too large to freeze.</p>`);
-        announce('Placed live — this render is too large to freeze.');
+          `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">${t('Placed live — this render is too large to freeze.')}</p>`);
+        announce(t('Placed live — this render is too large to freeze.'));
         setTimeout(() => close(ref), 1500);
       }
     };
@@ -1366,13 +1367,13 @@ async function render(
       const label = useBtn.textContent;
       useBtn.disabled = true;
       useBtn.classList.add('is-rendering');
-      useBtn.textContent = 'Rendering motion…';
+      useBtn.textContent = t('Rendering motion…');
       const ref = await host.compose.renderUrl(url, { format: fmt as ExportFormat, ...size() }).catch(() => null);
       useBtn.classList.remove('is-rendering');
       if (ref) { finish(ref); return; }
       useBtn.textContent = label;
       useBtn.disabled = false;
-      previewEl.innerHTML = `<p class="asset-picker-error">Couldn't render the motion clip.</p>`;
+      previewEl.innerHTML = `<p class="asset-picker-error">${t("Couldn't render the motion clip.")}</p>`;
     };
 
     let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -1395,7 +1396,7 @@ async function render(
   async function embedSession(slot: string): Promise<void> {
     const entry = (sessions ?? []).find(s => s.slot === slot);
     if (!entry) return;
-    showTakeover(`<div class="asset-picker-loading">Opening “${escapeHtml(entry.toolName)}”…</div>`);
+    showTakeover(`<div class="asset-picker-loading">${t('Opening “{name}”…', { name: escapeHtml(entry.toolName) })}</div>`);
     try {
       const data = await host.state.load(slot);
       if (!data) throw new Error('empty session');
@@ -1408,7 +1409,7 @@ async function render(
       showToolCard(desc, url, { editUrl: url });
     } catch (e) {
       host.log('warn', 'Embed saved session failed', { slot, error: String(e) });
-      showTakeover(`<p class="asset-picker-error">Couldn't open this saved creation.</p><div class="asset-picker-toolcard-actions"><button type="button" class="tc-back">← Back</button></div>`);
+      showTakeover(`<p class="asset-picker-error">${t("Couldn't open this saved creation.")}</p><div class="asset-picker-toolcard-actions"><button type="button" class="tc-back">← ${t('Back')}</button></div>`);
       toolcardHost.querySelector('.tc-back')?.addEventListener('click', dismissTakeover);
     }
   }
@@ -1417,7 +1418,7 @@ async function render(
   // block asset slots do), configure it FIRST then insert; otherwise fall back to the
   // inline format/size render card on the tool's defaults.
   async function embedTool(toolId: string): Promise<void> {
-    const t = toolById.get(toolId);
+    const tool = toolById.get(toolId);
     const url = buildEmbedUrl({ toolId, format: 'svg', query: '' });
     if (!url) return;
     if (opts.editTool) {
@@ -1425,11 +1426,11 @@ async function render(
       if (ref) close(ref);
       return; // cancelled → stay on the Tools tab
     }
-    showTakeover(`<div class="asset-picker-loading">Opening ${escapeHtml(t?.name ?? toolId)}…</div>`);
+    showTakeover(`<div class="asset-picker-loading">${t('Opening {name}…', { name: escapeHtml(tool?.name ?? toolId) })}</div>`);
     const desc = await host.compose._describeUrl(url).catch(() => null);
     if (desc) showToolCard(desc, url, { editUrl: url });
     else {
-      showTakeover(`<p class="asset-picker-error">Couldn't open this tool.</p><div class="asset-picker-toolcard-actions"><button type="button" class="tc-back">← Back</button></div>`);
+      showTakeover(`<p class="asset-picker-error">${t("Couldn't open this tool.")}</p><div class="asset-picker-toolcard-actions"><button type="button" class="tc-back">← ${t('Back')}</button></div>`);
       toolcardHost.querySelector('.tc-back')?.addEventListener('click', dismissTakeover);
     }
   }
@@ -1542,11 +1543,11 @@ async function render(
       const raw = searchInput.value.trim();
       if (allowToolUrl && /^https?:\/\//i.test(raw)) {
         const seq = ++detectSeq;
-        showTakeover(`<div class="asset-picker-loading">Checking link…</div>`);
+        showTakeover(`<div class="asset-picker-loading">${t('Checking link…')}</div>`);
         const desc = await host.compose._describeUrl(raw).catch(() => null);
         if (seq !== detectSeq) return; // superseded by a newer keystroke
         if (desc) showToolCard(desc, raw, { editUrl: raw });
-        else showTakeover(`<p class="asset-picker-empty">That isn't a Lolly tool link this app can open.</p>`);
+        else showTakeover(`<p class="asset-picker-empty">${t("That isn't a Lolly tool link this app can open.")}</p>`);
         return;
       }
       detectSeq++; // invalidate any in-flight detection now that it's not a URL
@@ -1573,7 +1574,7 @@ async function render(
       }, 120);
     });
   } catch (e) {
-    libraryEl.innerHTML = `<p class="asset-picker-error">Failed to load: ${escapeHtml((e as Error).message)}</p>`;
+    libraryEl.innerHTML = `<p class="asset-picker-error">${t('Failed to load: {message}', { message: escapeHtml((e as Error).message) })}</p>`;
   }
 }
 
@@ -1626,16 +1627,16 @@ function imageFormatSeed(fmt: unknown): string | undefined {
 
 // Compact relative time for a saved session ("3d ago"). Browser-only (Date.now).
 function relTime(iso: string | undefined): string {
-  const t = iso ? Date.parse(iso) : NaN;
-  if (Number.isNaN(t)) return '';
-  const s = Math.max(0, (Date.now() - t) / 1000);
-  if (s < 60) return 'just now';
-  const m = s / 60; if (m < 60) return `${Math.floor(m)}m ago`;
-  const h = m / 60; if (h < 24) return `${Math.floor(h)}h ago`;
-  const d = h / 24; if (d < 7)  return `${Math.floor(d)}d ago`;
-  const w = d / 7;  if (w < 5)  return `${Math.floor(w)}w ago`;
-  const mo = d / 30; if (mo < 12) return `${Math.floor(mo)}mo ago`;
-  return `${Math.floor(d / 365)}y ago`;
+  const ts = iso ? Date.parse(iso) : NaN;
+  if (Number.isNaN(ts)) return '';
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 60) return t('just now');
+  const m = s / 60; if (m < 60) return t('{n}m ago', { n: Math.floor(m) });
+  const h = m / 60; if (h < 24) return t('{n}h ago', { n: Math.floor(h) });
+  const d = h / 24; if (d < 7)  return t('{n}d ago', { n: Math.floor(d) });
+  const w = d / 7;  if (w < 5)  return t('{n}w ago', { n: Math.floor(w) });
+  const mo = d / 30; if (mo < 12) return t('{n}mo ago', { n: Math.floor(mo) });
+  return t('{n}y ago', { n: Math.floor(d / 365) });
 }
 
 // A muted, looping, autoplaying <video> thumbnail. muted + playsinline are
@@ -1758,7 +1759,7 @@ function formatBadge(ref: AssetRef): string {
 // A user image: a pick button plus a delete affordance (siblings, not nested —
 // nested buttons are invalid HTML and break the delegated click handler).
 function userCard(ref: AssetRef): string {
-  const name = ref.meta?.name ?? 'Image';
+  const name = ref.meta?.name ?? t('Image');
   // A user-uploaded lottie's url is the JSON itself, so it plays as a looping motion marker
   // (autoplayLottieThumbs mounts it on screen); the ▶ stub is only the pre-mount resting frame.
   const thumb = ref.type === 'lottie'
@@ -1772,7 +1773,7 @@ function userCard(ref: AssetRef): string {
         ${thumb}
         <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
       </button>
-      <button type="button" class="asset-picker-card-delete" data-delete-id="${escapeHtml(ref.id)}" title="Delete" aria-label="Delete ${escapeHtml(name)}">×</button>
+      <button type="button" class="asset-picker-card-delete" data-delete-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Delete'))}" aria-label="${escapeHtml(t('Delete {name}', { name: String(name) }))}">×</button>
       ${formatBadge(ref)}
     </div>
   `;
@@ -1851,18 +1852,18 @@ function openWebcamCapture(host: PickerHost): Promise<AssetRef | null> {
     overlay.className = 'webcam-capture-overlay';
     overlay.innerHTML = `
       <div class="webcam-capture-backdrop" aria-hidden="true"></div>
-      <div class="webcam-capture-panel" role="dialog" aria-modal="true" aria-label="Take a photo">
+      <div class="webcam-capture-panel" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Take a photo'))}">
         <header class="webcam-capture-head">
-          <span>Take a photo</span>
-          <button type="button" class="webcam-capture-close" aria-label="Close">&times;</button>
+          <span>${t('Take a photo')}</span>
+          <button type="button" class="webcam-capture-close" aria-label="${escapeHtml(t('Close'))}">&times;</button>
         </header>
         <div class="webcam-capture-stage">
           <video class="webcam-capture-video" autoplay playsinline muted></video>
-          <div class="webcam-capture-status">Starting camera…</div>
+          <div class="webcam-capture-status">${t('Starting camera…')}</div>
         </div>
         <footer class="webcam-capture-actions">
-          <button type="button" class="webcam-capture-cancel">Cancel</button>
-          <button type="button" class="webcam-capture-shoot" disabled>Capture</button>
+          <button type="button" class="webcam-capture-cancel">${t('Cancel')}</button>
+          <button type="button" class="webcam-capture-shoot" disabled>${t('Capture')}</button>
         </footer>
       </div>`;
     document.body.appendChild(overlay);
@@ -1903,14 +1904,14 @@ function openWebcamCapture(host: PickerHost): Promise<AssetRef | null> {
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d')!.drawImage(videoEl, 0, 0, w, h);
       const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
-      if (!blob) { showError('Couldn’t capture the frame.'); return; }
+      if (!blob) { showError(t('Couldn’t capture the frame.')); return; }
       const file = new File([blob], `webcam-${Date.now()}.png`, { type: 'image/png' });
       try {
         const ref = await storeUserUpload(host, file);
         done(ref);
       } catch (e) {
         host.log?.('error', 'Webcam capture store failed', { error: String(e) });
-        showError('Couldn’t save the photo.');
+        showError(t('Couldn’t save the photo.'));
       }
     });
 
@@ -1929,8 +1930,8 @@ function openWebcamCapture(host: PickerHost): Promise<AssetRef | null> {
       } catch (e) {
         host.log?.('warn', 'Webcam start failed', { error: String(e) });
         showError((e as Error | null)?.name === 'NotAllowedError'
-          ? 'Camera permission was declined. Allow camera access, then try again.'
-          : 'Couldn’t start the camera on this device.');
+          ? t('Camera permission was declined. Allow camera access, then try again.')
+          : t('Couldn’t start the camera on this device.'));
       }
     })();
   });
@@ -1947,7 +1948,7 @@ async function dotLottieToJson(file: File): Promise<string> {
   try {
     entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
   } catch {
-    throw new Error('That .lottie file couldn’t be opened (not a valid dotLottie archive).');
+    throw new Error(t('That .lottie file couldn’t be opened (not a valid dotLottie archive).'));
   }
   const names = Object.keys(entries);
   let animPath: string | undefined;
@@ -1959,7 +1960,7 @@ async function dotLottieToJson(file: File): Promise<string> {
     } catch { /* fall through to a filename scan */ }
   }
   animPath ??= names.find(n => /^animations\/.+\.json$/i.test(n)) ?? names.find(n => /\.json$/i.test(n) && n !== 'manifest.json');
-  if (!animPath) throw new Error('That .lottie file has no animation inside.');
+  if (!animPath) throw new Error(t('That .lottie file has no animation inside.'));
   const data = JSON.parse(strFromU8(entries[animPath]!)) as { assets?: Array<Record<string, unknown>> };
   // Inline embedded images (assets with e:0 that reference a file inside the zip) so
   // the animation renders once stored — otherwise those image refs would 404.
@@ -2017,7 +2018,9 @@ const HUGE_UPLOAD_BYTES = 40 * 1024 * 1024;         // 40 MB
 function assertVerbatimSize(file: File, max: number, kind: string): void {
   if (file.size > max) {
     throw Object.assign(
-      new Error(`This ${kind} is ${(file.size / 1e6).toFixed(1)} MB — over the ${Math.round(max / 1e6)} MB limit. Trim or compress it and try again.`),
+      new Error(t('This {kind} is {size} MB — over the {max} MB limit. Trim or compress it and try again.', {
+        kind, size: (file.size / 1e6).toFixed(1), max: Math.round(max / 1e6),
+      })),
       { code: 'FILE_TOO_LARGE' },
     );
   }
@@ -2085,7 +2088,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // (the .code makes the caller surface it verbatim) instead of storing dead bytes
   // that get mislabelled and fail to preview.
   if (/\.(mod|xm|it|s3m|stm|mtm)$/i.test(file.name) || /audio\/(x-)?(mod|it|s3m|xm)/i.test(file.type)) {
-    const e: Error & { code?: string } = new Error('Tracker modules (.mod, .xm, .it, .s3m) aren’t playable in the browser yet — export the track to MP3, Opus or WAV, or upload a MIDI file instead.');
+    const e: Error & { code?: string } = new Error(t('Tracker modules (.mod, .xm, .it, .s3m) aren’t playable in the browser yet — export the track to MP3, Opus or WAV, or upload a MIDI file instead.'));
     e.code = 'unsupported-format';
     throw e;
   }
@@ -2138,13 +2141,13 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     try {
       raw = JSON.parse(text);
     } catch {
-      throw new Error('That file isn’t valid JSON, so it can’t be a Lottie animation.');
+      throw new Error(t('That file isn’t valid JSON, so it can’t be a Lottie animation.'));
     }
     // A Lottie/Bodymovin document has a `layers` array, or the version + timing
     // fields (`v` plus `op`/`fr`). Guard so a random .json can't masquerade as one.
     const data = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
     const looksLottie = !!data && (Array.isArray(data.layers) || ('v' in data && ('op' in data || 'fr' in data)));
-    if (!looksLottie) throw new Error('That JSON doesn’t look like a Lottie animation.');
+    if (!looksLottie) throw new Error(t('That JSON doesn’t look like a Lottie animation.'));
     blob = new Blob([text], { type: 'application/json' });
     format = 'json';
     if (typeof data!.w === 'number') width = data!.w;
@@ -2166,7 +2169,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // Verbatim: keep the original container bytes (a canvas re-encode can't carry
     // video). Bounded by an explicit cap since downscaleRaster's implicit shrink is
     // skipped. Dimensions come from a <video>, not <img> (naturalWidth is 0 for video).
-    assertVerbatimSize(file, MAX_VIDEO_BYTES, 'video');
+    assertVerbatimSize(file, MAX_VIDEO_BYTES, t('video'));
     format = videoFormatOf(file);
     ({ width, height } = await readVideoDimensions(file));
   } else if (isMidi) {
@@ -2174,12 +2177,12 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // format:'zzfxm' audio asset — the browser can't play raw MIDI, but it renders
     // ZzFXM to PCM (zzfxm.ts) for the player and the catalog preview. A file with no
     // notes / an unsupported time division throws with a user-ready message.
-    assertVerbatimSize(file, MAX_AUDIO_BYTES, 'MIDI file');
+    assertVerbatimSize(file, MAX_AUDIO_BYTES, t('MIDI file'));
     try {
       const song = midiToZzfxm(new Uint8Array(await file.arrayBuffer()), { name: file.name.replace(/\.midi?$/i, '') });
       blob = new Blob([JSON.stringify(song)], { type: 'application/json' });
     } catch {
-      const e: Error & { code?: string } = new Error('Couldn’t read that MIDI file — it may be empty, corrupt, or use an unsupported format.');
+      const e: Error & { code?: string } = new Error(t('Couldn’t read that MIDI file — it may be empty, corrupt, or use an unsupported format.'));
       e.code = 'unsupported-format';
       throw e;
     }
@@ -2188,14 +2191,14 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // Verbatim: keep the original encoded bytes (there is no raster/canvas path for
     // audio). Bounded by an explicit cap since downscaleRaster's implicit shrink is
     // skipped. No dimensions — audio has none.
-    assertVerbatimSize(file, MAX_AUDIO_BYTES, 'audio track');
+    assertVerbatimSize(file, MAX_AUDIO_BYTES, t('audio track'));
     format = audioFormatOf(file);
   } else if (animatedKind) {
     // Verbatim: re-encoding an animated gif/apng/webp through a canvas flattens it
     // to a single frame, so store the original bytes. It stays type:'raster' — it
     // animates natively in <img> and can fill any image slot — but is marked
     // `animated` so the UI badges the motion (and export knows it flattens to a still).
-    assertVerbatimSize(file, MAX_ANIMATED_RASTER_BYTES, 'animation');
+    assertVerbatimSize(file, MAX_ANIMATED_RASTER_BYTES, t('animation'));
     animated = true;
     format = animatedKind;
     ({ width, height } = await readDimensions(file).catch(() => ({}) as { width?: number; height?: number }));
@@ -2262,10 +2265,14 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       // verbatim (device quota still applies); "Resize" re-encodes (re-signing a credentialed
       // original as a c2pa.resized derivative).
       const r = computeResize(dims.width ?? 0, dims.height ?? 0);
+      const dimsPart = longest ? ` (${dims.width}×${dims.height}px)` : '';
+      const resizePart = r.width ? ` to ${r.width}×${r.height}px` : '';
       const picked = await choiceDialog({
-        title: 'Very large image',
-        message: `“${file.name}” is ${fmtBytes(file.size)}${longest ? ` (${dims.width}×${dims.height}px)` : ''}. Keep the original — best for a Content Credential — or resize it${r.width ? ` to ${r.width}×${r.height}px` : ''} to save space?`,
-        choices: [{ id: 'resize', label: 'Resize' }, { id: 'keep', label: 'Keep original', primary: true }],
+        title: t('Very large image'),
+        message: t('“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?', {
+          name: file.name, size: fmtBytes(file.size), dims: dimsPart, resize: resizePart,
+        }),
+        choices: [{ id: 'resize', label: t('Resize') }, { id: 'keep', label: t('Keep original'), primary: true }],
       });
       if (picked === 'resize') await reencode();
       else keepBytes();

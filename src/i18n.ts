@@ -48,6 +48,9 @@ const LOADERS: Record<NonEnglishLang, () => Promise<{ default: Record<string, st
   ms: () => import('./locales/ms.json'),
   ro: () => import('./locales/ro.json'),
   ar: () => import('./locales/ar.json'),
+  it: () => import('./locales/it.json'),
+  no: () => import('./locales/no.json'),
+  ko: () => import('./locales/ko.json'),
 };
 
 let active: Lang = 'en';

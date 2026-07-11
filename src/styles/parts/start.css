@@ -6,16 +6,15 @@
  * the import panel and the finish card. Chrome colours flow through tokens.css.
  */
 
+/* Full-viewport on EVERY tab: the hero wash (.start::before) paints on this
+   container, so any narrower cap visibly clips the gradient at the container
+   edge — and the studio panels want the room. The 2650px ceiling only kicks in
+   on ultra-wide monitors, where margin:auto recenters the page. */
 .start {
-  max-width: 1040px;
+  max-width: 2650px;
   margin: 0 auto;
   padding: 40px 22px 96px;
   position: relative;
-}
-/* The Colour tab's split pane needs the room — widen the studio only there.
-   data-active-tab is stamped on the editor root by this view (selectTab). */
-@media (min-width: 1100px) {
-  .start:has(.be[data-active-tab="color"]) { max-width: min(1400px, 96vw); }
 }
 /* A soft brand-tinted wash behind the hero so a first-run page reads as crafted,
    not blank — the accent the user is about to define, hinted. Theme-aware via the

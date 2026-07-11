@@ -68,6 +68,21 @@ interface Member {
 const MIN_SEL = 2;
 const MAX_SEL = 8;
 
+// Preview-zoom bounds. Card width is a single CSS var on the grid; auto-fill
+// reflows the columns to fit. Each press multiplies/divides by ZOOM_STEP ("a few
+// factors"); "Fit" jumps to the largest size at which every design still fits the
+// viewport. Persisted per-browser so a chosen size survives revisits.
+const ZOOM_MIN = 160;
+const ZOOM_MAX = 1100;
+const ZOOM_STEP = 1.25;
+const ZOOM_KEY = 'me-zoom-cardw';
+
+const svg = (inner: string): string =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const ZOOM_OUT_ICON = svg('<line x1="5" y1="12" x2="19" y2="12"/>');
+const ZOOM_IN_ICON = svg('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>');
+const FIT_ICON = svg('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>');
+
 /** Current values of a runtime's model as a plain map (what a session persists). */
 function modelValues(runtime: Runtime): Record<string, InputValue> {
   return Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
@@ -226,8 +241,18 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
             ${exportBlockHtml(m, i)}
           </details>`).join('')}
         </aside>
-        <div class="me-grid" data-me-grid style="--me-cols:${members.length <= 2 ? 1 : members.length <= 6 ? 2 : 3}">
-          ${members.map(cellHtml).join('')}
+        <div class="me-gridwrap">
+          <div class="me-gridbar">
+            <div class="me-zoom" role="group" aria-label="${escape(t('Preview size'))}">
+              <button type="button" class="me-zoom-btn me-zoom-fit" data-me-zoom="fit" title="${escape(t('Fit all on screen'))}" aria-label="${escape(t('Fit all on screen'))}">${FIT_ICON}</button>
+              <button type="button" class="me-zoom-btn" data-me-zoom="out" aria-label="${escape(t('Smaller previews'))}">${ZOOM_OUT_ICON}</button>
+              <span class="me-zoom-read" data-me-zoom-read aria-live="polite"></span>
+              <button type="button" class="me-zoom-btn" data-me-zoom="in" aria-label="${escape(t('Larger previews'))}">${ZOOM_IN_ICON}</button>
+            </div>
+          </div>
+          <div class="me-grid" data-me-grid>
+            ${members.map(cellHtml).join('')}
+          </div>
         </div>
       </div>
     </div>`;
@@ -346,6 +371,75 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     cell.addEventListener('click', () => activateCell(i));
     cell.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activateCell(i); } });
   });
+
+  // ── Preview zoom: scale every card up (scroll to inspect) or down (fit more on
+  //    screen). One --me-card-w on the grid drives an auto-fill layout; each cell's
+  //    ResizeObserver (above) rescales its canvas to whatever width results. ───────
+  const gridEl = viewEl.querySelector<HTMLElement>('[data-me-grid]')!;
+  const zoomRead = viewEl.querySelector<HTMLElement>('[data-me-zoom-read]');
+  const zoomOutBtn = viewEl.querySelector<HTMLButtonElement>('[data-me-zoom="out"]');
+  const zoomInBtn = viewEl.querySelector<HTMLButtonElement>('[data-me-zoom="in"]');
+  const clampZoom = (w: number): number => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(w)));
+  // Native aspect ratio per member — the fit calc needs each card's real height.
+  const aspects = members.map(m => (m.tool.manifest.render?.width ?? 800) / (m.tool.manifest.render?.height ?? 600));
+
+  // Live column count (auto-fill resolves 1fr tracks to px, space-separated).
+  const gridCols = (): number => getComputedStyle(gridEl).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
+
+  /** The largest card width at which every design still clears the viewport height
+   *  — i.e. the fewest columns whose stacked rows fit without scrolling. */
+  function fitCardW(): number {
+    const cs = getComputedStyle(gridEl);
+    const innerW = gridEl.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    const gap = parseFloat(cs.rowGap) || 16;
+    const availH = window.innerHeight - gridEl.getBoundingClientRect().top - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+    if (!(innerW > 0) || !(availH > 0)) return clampZoom(340); // pre-layout fallback
+    const CAP = 44; // caption strip + borders, approx px
+    for (let cols = 1; cols <= members.length; cols++) {
+      const colW = (innerW - (cols - 1) * gap) / cols;
+      if (colW <= 0) continue;
+      let total = 0;
+      for (let r = 0; r * cols < members.length; r++) {
+        let rowH = 0;
+        for (let c = 0; c < cols && r * cols + c < members.length; c++) rowH = Math.max(rowH, colW / aspects[r * cols + c]! + CAP);
+        total += rowH;
+      }
+      total += (Math.ceil(members.length / cols) - 1) * gap;
+      // fewest cols that fits → biggest cards. The −1px bias keeps auto-fill from
+      // rounding a hair down to one FEWER column (which would overflow the fit).
+      if (total <= availH) return clampZoom(Math.floor(colW) - 1);
+    }
+    // Even at max columns the rows overflow — use the tightest (smallest) width.
+    return clampZoom(Math.floor((innerW - (members.length - 1) * gap) / members.length) - 1);
+  }
+
+  let cardW: number;
+  try { const saved = Number(localStorage.getItem(ZOOM_KEY)); cardW = saved >= ZOOM_MIN && saved <= ZOOM_MAX ? saved : fitCardW(); }
+  catch { cardW = fitCardW(); }
+
+  const updateReadout = (): void => { if (zoomRead) zoomRead.textContent = t('{n} across', { n: gridCols() }); };
+  function applyZoom(): void {
+    cardW = clampZoom(cardW);
+    gridEl.style.setProperty('--me-card-w', `${cardW}px`);
+    try { localStorage.setItem(ZOOM_KEY, String(cardW)); } catch { /* private mode */ }
+    if (zoomOutBtn) zoomOutBtn.disabled = cardW <= ZOOM_MIN;
+    if (zoomInBtn) zoomInBtn.disabled = cardW >= ZOOM_MAX;
+    updateReadout();
+  }
+  applyZoom();
+
+  viewEl.querySelectorAll<HTMLButtonElement>('[data-me-zoom]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const kind = btn.dataset.meZoom;
+      cardW = kind === 'in' ? cardW * ZOOM_STEP : kind === 'out' ? cardW / ZOOM_STEP : fitCardW();
+      applyZoom();
+    });
+  });
+
+  // Keep "N across" honest as the window resizes (auto-fill reflows columns).
+  const zoomRO = new ResizeObserver(() => updateReadout());
+  zoomRO.observe(gridEl);
+  cleanups.push(() => zoomRO.disconnect());
 
   // ── Search: filter controls across every card ───────────────────────────────
   const searchEl = viewEl.querySelector<HTMLInputElement>('[data-me-search]');
