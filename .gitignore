@@ -5,6 +5,8 @@ dist/
 coverage
 public/_testlogos/
 public/info/*.html
+public/info/**/*.html
+public/info/sitemap.xml
 public/info/logos/
 public/info/og/
 public/t/

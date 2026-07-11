@@ -1417,7 +1417,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     const welcome = await import('../components/welcome-dialog.ts');
     if (!galleryRoot.isConnected) return; // navigated away while the chunk loaded
     welcome.mountBrandTips(viewEl.querySelector<HTMLElement>('.tool-masonry'));
-    if (!welcome.isWelcomeDismissed()) void welcome.showWelcomeDialog(); // 'brand' navigates itself
+    if (!welcome.isWelcomeDismissed()) void welcome.showWelcomeDialog(host.profile); // 'brand' navigates itself
   })();
 
   // Profile-personalized previews: once the user has opted in to "use my details",

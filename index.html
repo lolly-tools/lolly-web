@@ -77,6 +77,21 @@
         var r = localStorage.getItem('brand-radius');
         if (r) document.documentElement.style.setProperty('--radius', r);
       } catch (e) { /* corrupt cache — boot JS rewrites it */ }
+      // Apply the saved language's <html lang> before paint (glyph fallback/Han
+      // unification depends on it) — the FOUC-mirror half of i18n.ts's canonical
+      // profile.lang store. A hand-inlined alias map + LANG_META.htmlLang mirror
+      // (kept tiny — this script can't import engine/src/lang.ts). The i18n
+      // catalog itself loads async in main.ts's boot(); this only sets the attr.
+      try {
+        var lg = localStorage.getItem('lang');
+        if (lg) {
+          lg = String(lg).trim().toLowerCase();
+          var LANG_ALIASES = { cn: 'zh', 'zh-cn': 'zh', 'zh-hans': 'zh', jp: 'ja' };
+          lg = LANG_ALIASES[lg] || lg;
+          var KNOWN_LANGS = { en: 1, es: 1, de: 1, fr: 1, zh: 1, ja: 1, vi: 1 };
+          if (KNOWN_LANGS[lg]) document.documentElement.lang = lg === 'zh' ? 'zh-Hans' : lg;
+        }
+      } catch (e) { /* corrupt cache — boot JS re-derives it */ }
     })();
   </script>
 
