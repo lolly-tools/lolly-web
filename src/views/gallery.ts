@@ -24,6 +24,7 @@ import { personalizeNudgeMarkup, mountPersonalizeNudge } from './personalize-nud
 import { profileSignature, canPersonalize, regeneratePreviews } from '../personalize-previews.ts';
 import { viewToggle } from '../components/view-toggle.ts';
 import { attachProfileMenu } from '../components/profile-menu.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountFeaturedRow, resolveExamples } from '../components/featured-row.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { renderFeaturedVariant, renderFeaturedPages, displayFormatOf } from '../lib/featured-render.ts';
@@ -472,6 +473,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
         <div class="gallery-topright">
           ${visibleCats.length ? `<button type="button" class="filter-fab" aria-label="Sort and filter tools" aria-haspopup="true" aria-expanded="false" aria-controls="filter-popover" title="Sort & filter">${FILTER_ICON}</button>` : ''}
           ${sortedSaved.length ? `<button type="button" class="history-fab" title="Saved sessions" aria-label="Saved sessions (${sortedSaved.length})">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}
+          ${langFabHtml()}
           <a href="#/profile" class="profile-link" aria-label="Open your profile"><span class="profile-link-name">${escape(profile.firstname || 'Profile')}</span></a>
           ${visibleCats.length ? `
           <div class="filter-popover" id="filter-popover" role="group" aria-label="Sort and filter tools" hidden>
@@ -1367,6 +1369,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     savedCount: sortedSaved.length,
     onHistory: openHistoryOverlay,
   });
+  attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // Focus the search box on fine-pointer devices for type-to-find (skip touch so
   // the keyboard doesn't pop over the gallery).

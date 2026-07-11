@@ -5,7 +5,7 @@
 // Catalogue). Each view supplies its own search-field markup + handler (the field's
 // classes/behaviour differ), but the surrounding nav links are shared verbatim.
 import { escape } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, docsHref } from '../i18n.ts';
 
 /** The nav-bar glyphs (Lucide house style), shared so all three footers match. */
 export const NAV_ICONS = {
@@ -44,6 +44,6 @@ export function footerNav({ proEnabled, searchHtml, footerClass }: FooterNavOpts
       <a href="#/d" class="gallery-nav-link btn" data-sfx="dashboard" aria-label="${escape(t('Dashboard — this device, the brand system & the full feature set'))}">${NAV_ICONS.dashboard}<span class="gallery-nav-label">${t('Dashboard')}</span></a>
       ${searchHtml}
       <a href="#/verify" class="gallery-nav-link gallery-nav-link--verify btn" data-sfx="verify" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${NAV_ICONS.shield}<span class="gallery-nav-label">${t('Verify')}</span></a>
-      <a href="/info/" class="gallery-info-link btn" aria-label="${escape(t('What is Lolly? — about & help'))}">${NAV_ICONS.help}<span class="gallery-nav-label">${t('What?')}</span></a>
+      <a href="${escape(docsHref('index'))}" class="gallery-info-link btn" aria-label="${escape(t('What is Lolly? — about & help'))}">${NAV_ICONS.help}<span class="gallery-nav-label">${t('What?')}</span></a>
     </footer>`;
 }

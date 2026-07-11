@@ -86,10 +86,18 @@
         var lg = localStorage.getItem('lang');
         if (lg) {
           lg = String(lg).trim().toLowerCase();
-          var LANG_ALIASES = { cn: 'zh', 'zh-cn': 'zh', 'zh-hans': 'zh', jp: 'ja' };
+          var LANG_ALIASES = {
+            cn: 'zh', 'zh-cn': 'zh', 'zh-hans': 'zh', jp: 'ja',
+            br: 'pt', 'pt-br': 'pt', pt_br: 'pt',
+            tw: 'zh-hant', hk: 'zh-hant', 'zh-tw': 'zh-hant', 'zh-hk': 'zh-hant', 'zh-hant-tw': 'zh-hant', hant: 'zh-hant',
+            my: 'ms', fil: 'tl',
+          };
           lg = LANG_ALIASES[lg] || lg;
-          var KNOWN_LANGS = { en: 1, es: 1, de: 1, fr: 1, zh: 1, ja: 1, vi: 1 };
-          if (KNOWN_LANGS[lg]) document.documentElement.lang = lg === 'zh' ? 'zh-Hans' : lg;
+          var HTML_LANG = {
+            en: 'en', es: 'es', de: 'de', fr: 'fr', zh: 'zh-Hans', ja: 'ja', vi: 'vi',
+            pt: 'pt-BR', 'zh-hant': 'zh-Hant', cs: 'cs', nl: 'nl', tl: 'tl', sv: 'sv', ms: 'ms',
+          };
+          if (HTML_LANG[lg]) document.documentElement.lang = HTML_LANG[lg];
         }
       } catch (e) { /* corrupt cache — boot JS re-derives it */ }
     })();

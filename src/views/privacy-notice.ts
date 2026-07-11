@@ -20,6 +20,8 @@
  * same strictly-necessary preference storage. See docs/privacy.md.
  */
 
+import { docsHref } from '../i18n.ts';
+
 const ACK_KEY = 'lolly-privacy-ack';
 
 /** True once the user has dismissed the notice (or if storage is unavailable —
@@ -37,7 +39,7 @@ export function privacyNoticeMarkup(): string {
     <aside class="privacy-notice" role="note" aria-label="Privacy">
       <p class="privacy-notice-text">
         Everything stays on your device — no tracking, no accounts.
-        <a href="/info/privacy.html" class="privacy-notice-link">What we store</a>
+        <a href="${docsHref('privacy')}" class="privacy-notice-link">What we store</a>
       </p>
       <button type="button" class="privacy-notice-dismiss btn">Got it</button>
     </aside>

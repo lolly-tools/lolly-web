@@ -39,6 +39,13 @@ const LOADERS: Record<NonEnglishLang, () => Promise<{ default: Record<string, st
   zh: () => import('./locales/zh.json'),
   ja: () => import('./locales/ja.json'),
   vi: () => import('./locales/vi.json'),
+  pt: () => import('./locales/pt.json'),
+  'zh-hant': () => import('./locales/zh-hant.json'),
+  cs: () => import('./locales/cs.json'),
+  nl: () => import('./locales/nl.json'),
+  tl: () => import('./locales/tl.json'),
+  sv: () => import('./locales/sv.json'),
+  ms: () => import('./locales/ms.json'),
 };
 
 let active: Lang = 'en';
@@ -89,6 +96,43 @@ export async function setActiveLang(lang: Lang, opts: { persist?: boolean } = {}
 export function onLangChange(fn: (lang: Lang) => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
+}
+
+/** The slice of the host bridge a language picker needs to persist its choice. */
+export interface LangSwitchHost {
+  profile: { get(): Promise<object>; set?(profile: object): Promise<unknown> };
+}
+
+/**
+ * Switch the active language from a picker: persists to profile.lang (dropped
+ * entirely for 'en', matching the profile view's original behaviour), then
+ * reloads so the whole app — not just the caller's own wave-1-wrapped strings —
+ * re-renders in the new language. Shared by the profile card's picker and the
+ * gallery/catalog/projects lang-fab menu.
+ */
+export async function switchLang(host: LangSwitchHost, next: Lang): Promise<void> {
+  if (next === currentLang()) return;
+  try {
+    const current = await host.profile.get();
+    const { lang: _drop, ...rest } = current as Record<string, unknown>;
+    await host.profile.set?.(next === 'en' ? rest : { ...rest, lang: next });
+  } catch { /* preference save is best-effort — the switch below still applies for this session */ }
+  await setActiveLang(next, { persist: true });
+  window.location.reload();
+}
+
+/**
+ * URL for a docs (/info) page in the currently active app language. English is
+ * unprefixed (`/info/<slug>.html`); every other locale lives under
+ * `/info/<lang>/` — mirrors docs/build.ts's localeHref exactly (duplicated, not
+ * imported: that's a static-site generator with no shared module boundary with
+ * this SPA — see its own copy right next to LANG_ICON_SVG). `slug` is 'index'
+ * for the docs homepage.
+ */
+export function docsHref(slug: string): string {
+  const lang = currentLang();
+  const file = slug === 'index' ? '' : `${slug}.html`;
+  return lang === 'en' ? `/info/${file}` : `/info/${lang}/${file}`;
 }
 
 /**
