@@ -105,7 +105,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', position);
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNavAway));
-    trap = trapFocus(el, { initialFocus: checked });
+    trap = trapFocus(el, { initialFocus: checked, inertBackground: false });
   }
 
   const onClick = () => { menu ? close(true) : open(); };

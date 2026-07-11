@@ -124,14 +124,20 @@ export async function switchLang(host: LangSwitchHost, next: Lang): Promise<void
 /**
  * URL for a docs (/info) page in the currently active app language. English is
  * unprefixed (`/info/<slug>.html`); every other locale lives under
- * `/info/<lang>/` — mirrors docs/build.ts's localeHref exactly (duplicated, not
- * imported: that's a static-site generator with no shared module boundary with
- * this SPA — see its own copy right next to LANG_ICON_SVG). `slug` is 'index'
- * for the docs homepage.
+ * `/info/<lang>/<slug>.html` — mirrors docs/build.ts's localeHref exactly
+ * (duplicated, not imported: that's a static-site generator with no shared
+ * module boundary with this SPA — see its own copy right next to
+ * LANG_ICON_SVG). `slug` is 'index' for the docs homepage — ALWAYS keep the
+ * explicit `index.html` filename here (never shorten to a bare `/info/` or
+ * `/info/<lang>/` directory URL): the dev server's static-file middleware
+ * (shells/web/vite.config.js's serveRepoStatic) only resolves a bare
+ * directory to index.html for the literal `/info`/`/info/` root, not for a
+ * `/info/<lang>/` subpath — an omitted filename there 404s through to the
+ * SPA fallback instead of the docs page.
  */
 export function docsHref(slug: string): string {
   const lang = currentLang();
-  const file = slug === 'index' ? '' : `${slug}.html`;
+  const file = slug === 'index' ? 'index.html' : `${slug}.html`;
   return lang === 'en' ? `/info/${file}` : `/info/${lang}/${file}`;
 }
 

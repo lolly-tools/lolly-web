@@ -7,9 +7,18 @@
  *   1. INERT the background — walking up from the overlay, every sibling at each
  *      ancestor level is marked `inert`, so pointer events and the accessibility
  *      tree skip everything behind the modal, wherever the overlay is mounted
- *      (document.body or a view container).
+ *      (document.body or a view container). Pass `inertBackground: false` to skip
+ *      this guard — required for any overlay whose OWN trigger lives inside the
+ *      branch that would get inerted (a body-mounted anchored dropdown, e.g. the
+ *      profile/lang menus): `inert` cascades to descendants with no way for a
+ *      child to opt back out, so inerting the app root would inert the trigger
+ *      button too, killing its re-click-to-close affordance and, since the whole
+ *      viewport is then non-hit-testable, making the page look entirely unresponsive
+ *      until Escape is pressed. Reserve `inertBackground: true` (the default) for
+ *      TRUE modals — the trigger that opened them is not meant to stay reachable.
  *   2. WRAP Tab/Shift+Tab within the overlay's focusables — inert alone can still
- *      let Tab graze the browser chrome between the last and first stop.
+ *      let Tab graze the browser chrome between the last and first stop. Runs
+ *      regardless of `inertBackground`.
  *
  * Callers keep their own Escape/close + focus-restore (most dialogs already have it);
  * pass `onEscape` only if the dialog has none. `release()` restores inert + listeners.
@@ -26,6 +35,9 @@ export interface FocusTrapOptions {
   initialFocus?: HTMLElement | null | (() => HTMLElement | null);
   /** Only pass this if the overlay does NOT already handle Escape itself. */
   onEscape?: () => void;
+  /** False for a lightweight anchored dropdown whose trigger lives in the branch
+   *  that would otherwise get inerted (see the module doc). Default true. */
+  inertBackground?: boolean;
 }
 
 export function trapFocus(overlay: HTMLElement, opts: FocusTrapOptions = {}): FocusTrap {
@@ -41,7 +53,7 @@ export function trapFocus(overlay: HTMLElement, opts: FocusTrapOptions = {}): Fo
   //    Skip already-inert nodes so a nested trap doesn't clobber an outer one on release.
   const inerted: HTMLElement[] = [];
   let node: HTMLElement | null = overlay;
-  while (node && node.parentElement && node !== document.body) {
+  while (opts.inertBackground !== false && node && node.parentElement && node !== document.body) {
     for (const sib of node.parentElement.children) {
       const el = sib as HTMLElement;
       if (el !== node && !el.inert) { el.inert = true; inerted.push(el); }
