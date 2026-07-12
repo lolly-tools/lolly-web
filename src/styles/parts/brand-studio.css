@@ -123,10 +123,13 @@
 .be-lock-spot { display: flex; gap: .5rem; flex-wrap: wrap; }
 .be-lock-field { display: grid; gap: .12rem; flex: 1 1 10rem; font-size: .68rem; color: hsl(var(--muted-foreground)); }
 .be-lock-field em { font-style: normal; opacity: .75; }
+/* color + font: inherit come from the shared .field-input alias list
+   (components.css, component audit rec 13); the rest (sizing/token deltas)
+   stays local. */
 .be-lock-field input {
-  padding: .32rem .5rem; font: inherit; font-size: .78rem;
+  padding: .32rem .5rem; font-size: .78rem;
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
-  background: hsl(var(--background)); color: hsl(var(--foreground));
+  background: hsl(var(--background));
 }
 .be-lock-field input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
 .be-cmyk-inputs { display: flex; gap: .35rem; }
@@ -134,10 +137,12 @@
 .be-cmyk-in span {
   font-family: var(--font-mono); font-size: .62rem; font-weight: 700; color: hsl(var(--muted-foreground));
 }
+/* color + font: inherit come from the shared .field-input alias list
+   (components.css, component audit rec 13); the rest stays local. */
 .be-cmyk-in input {
-  width: 3.1rem; padding: .28rem .35rem; text-align: center; font: inherit; font-size: .76rem;
+  width: 3.1rem; padding: .28rem .35rem; text-align: center; font-size: .76rem;
   font-family: var(--font-mono); border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
-  background: hsl(var(--background)); color: hsl(var(--foreground));
+  background: hsl(var(--background));
 }
 .be-cmyk-in input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
 /* A locked swatch's small tag — reused on the tile, the popover header + here. */
@@ -367,11 +372,13 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 }
 .be-ps-chip--auto { background: hsl(var(--muted) / .6); color: hsl(var(--muted-foreground)); }
 /* .be-fmt-input outlives the "Set by value" row it was written for — the gradient
-   stop popover (brand-studio-tabs.ts) still wears it as its custom-value input. */
+   stop popover (brand-studio-tabs.ts) still wears it as its custom-value input.
+   color + font: inherit come from the shared .field-input alias list
+   (components.css, component audit rec 13); the rest stays local. */
 .be-fmt-input {
-  flex: 1 1 auto; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .8rem;
+  flex: 1 1 auto; min-width: 0; padding: .4rem .55rem; font-size: .8rem;
   font-family: var(--font-mono); border: 1px solid hsl(var(--input));
-  border-radius: calc(var(--radius) * .5); background: hsl(var(--background)); color: hsl(var(--foreground));
+  border-radius: calc(var(--radius) * .5); background: hsl(var(--background));
   outline: none;
 }
 /* Mouse/programmatic focus (openEditor() auto-focuses Name on open) — a subtle
@@ -962,7 +969,7 @@ background-image:
   padding: 2rem 1.5rem;
   border: 2px dashed hsl(var(--border));
   border-radius: var(--radius);
-  background-color: hsl(var(--muted) / 0.3);
+
   text-align: center;
   transition: all .15s ease;
 }

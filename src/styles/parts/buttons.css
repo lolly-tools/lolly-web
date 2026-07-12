@@ -90,6 +90,7 @@
 .gallery-pill.active,                             /* gallery.css — category/sort pill */
 .plat-pill,                                       /* platform.css — inline qualifier badge */
 .skip-link:focus,                                 /* base.css — a11y skip-nav, revealed on focus */
+.not-found-home,                                  /* notfound.css — 404 "Browse all tools" CTA */
 .be-cta {                                         /* brand-studio.css */
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
@@ -136,6 +137,8 @@
 .profile-link,                                    /* components.css — top-right profile pill */
 .filter-fab,                                      /* gallery.css — sort/filter & view-options FAB */
 .history-fab,                                     /* utilities.css/topbar.css — saved-sessions FAB */
+.projects-back,                                   /* projects.css — folder breadcrumb back square */
+.me-back,                                         /* multi-edit.css — multi-edit header back square */
 .lang-fab {                                       /* topbar.css — language FAB */
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);

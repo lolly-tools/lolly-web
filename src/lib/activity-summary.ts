@@ -5,9 +5,12 @@
  * Profile view so the Dashboard (#/d) can show the same figures without the two
  * drifting. Data comes from metrics.ts (getMetrics); this module only renders.
  *
- * The markup uses `.activity-*` / `.fmt-*` classes; each host view provides the
- * matching scoped CSS (Profile in profile.css, Dashboard in dashboard.css), so
- * the same fragment reads correctly wherever it's dropped.
+ * The markup uses `.activity-*` / `.fmt-*` classes. The declarations that were
+ * byte-identical between the two hosts now live once in components.css, scoped
+ * to both `.profile-view`/`.dashboard-view` roots in one selector list
+ * (component audit rec 13); each host's own CSS file (profile.css / dashboard.css)
+ * keeps only its real size/spacing deltas, so the same fragment still reads
+ * correctly wherever it's dropped, without the two copies drifting apart again.
  */
 
 import { escape } from '../utils.ts';

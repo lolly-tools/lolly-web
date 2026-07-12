@@ -78,17 +78,11 @@
   display: flex;
   gap: 8px;
 }
+/* Box + color/font come from the shared .field-input alias (components.css,
+   component audit rec 13) — this keeps only its own row-item layout. */
 .share-link-field {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 7px 10px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: hsl(var(--muted) / 0.4);
-  color: hsl(var(--foreground));
-  font: inherit;
-  font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .share-copy-btn {
   flex: 0 0 auto;

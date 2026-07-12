@@ -83,7 +83,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     viewEl.innerHTML = `
       <div class="start">
         <div class="gallery-topright">${langFabHtml()}</div>
-        <a class="start-back" href="#/">&larr; ${t('Tools')}</a>
+        <a class="tools-home start-back" href="#/">${t('Tools')}</a>
         <header class="start-head">
           <p class="start-eyebrow">${t('Brand')}</p>
           <h1 class="start-title">${t('This brand is set')}</h1>
@@ -100,7 +100,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   viewEl.innerHTML = `
     <div class="start start--studio">
       <div class="gallery-topright">${langFabHtml()}</div>
-      <a class="start-back" href="#/">&larr; ${t('Tools')}</a>
+      <a class="tools-home start-back" href="#/">${t('Tools')}</a>
       <header class="start-head">
         <p class="start-eyebrow">${t('Brand setup')}</p>
         <h1 class="start-title">${t('Make it yours')}</h1>

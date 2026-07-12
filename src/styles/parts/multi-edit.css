@@ -16,8 +16,9 @@
 }
 .me-back {
   display: grid; place-items: center; width: 2rem; height: 2rem;
+  /* paint comes from buttons.css's .btn--glass alias list */
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .8);
-  color: hsl(var(--foreground)); text-decoration: none; font-size: 1rem;
+  text-decoration: none; font-size: 1rem;
 }
 .me-back:hover { border-color: hsl(var(--primary) / .55); }
 .me-title { margin: 0; font-size: 1.02rem; font-weight: 700; }

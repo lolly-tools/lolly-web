@@ -138,10 +138,12 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
    .folder-menu, just one level deeper. */
 .projects-menu .folder-menu-list { display: flex; flex-direction: column; gap: 1px; }
 
-/* "Render folder" progress toast — pin to the TOP (under the profile/history row, not the
-   default bottom) and span the full screen length so the rotating quip + per-render log read
-   at a glance. Two classes outrank the base .pro-toast positioning from run-overlay.css. */
-.pro-toast.projects-toast { top: 56px; left: 2em; right: 2em; bottom: auto; }
+/* "Render folder" progress toast — the .pro-toast family's BAR variant (projects +
+   multi-edit): pin to the TOP (under the profile/history row, not the default bottom)
+   and span the full screen length so the rotating quip + per-render log read at a
+   glance. Two classes outrank the base .pro-toast positioning from run-overlay.css.
+   (Distinct from .pro-toast--top, profile's compact corner variant.) */
+.pro-toast.pro-toast--bar { top: 56px; left: 2em; right: 2em; bottom: auto; }
 
 /* "Create new" tiles (dashed, + icon) — kept deliberately muted so they read as
    affordances, not content. Unlike a real tile, the icon area has NO preview fill and
@@ -170,7 +172,8 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-head { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; }
 .projects-back {
   display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex: none;
-  border: 1px solid hsl(var(--border)); border-radius: var(--radius); color: hsl(var(--foreground)); text-decoration: none;
+  /* paint comes from buttons.css's .btn--glass alias list */
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius); text-decoration: none;
 }
 .projects-back:hover { background: hsl(var(--muted)); }
 .projects-back svg { width: 18px; height: 18px; }

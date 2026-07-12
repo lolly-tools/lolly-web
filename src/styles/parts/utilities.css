@@ -73,8 +73,8 @@
   padding: 0;
   border: 1px solid hsl(var(--primary));
   border-radius: var(--radius);
-  background: hsl(var(--background) / 0.5);
-  color: hsl(var(--primary));
+  /* Paint (background/color/blur/transition) comes from buttons.css's .btn--glass
+     alias list — it imports after this sheet, so its single declaration wins. */
   cursor: pointer;
 }
 
