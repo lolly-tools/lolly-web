@@ -52,13 +52,21 @@ export interface PopoverAnchor {
 /** A virtual anchor at a viewport point (a right-click, a kebab button's computed
  *  corner) rather than a live element — mutate `.x`/`.y` before each `open()` to
  *  reposition it. `contains()` always reports false: nothing IS the point, so the
- *  outside-click check never carves out an exception for it. */
-export interface PointAnchor extends PopoverAnchor { x: number; y: number; }
+ *  outside-click check never carves out an exception for it.
+ *  When the point comes FROM a real control (a kebab button that's recreated every
+ *  render, so it can't be the anchor itself), set `.delegate` to it before `open()`:
+ *  the point keeps supplying geometry while the delegate receives the focus restore
+ *  on close and the aria-expanded toggling a keyboard user needs. Leave it null for
+ *  true pointer opens (a right-click has nothing to focus back to). */
+export interface PointAnchor extends PopoverAnchor { x: number; y: number; delegate: HTMLElement | null; }
 export function pointAnchor(x = 0, y = 0): PointAnchor {
   return {
     x, y,
+    delegate: null,
     getBoundingClientRect() { return { top: this.y, left: this.x, right: this.x, bottom: this.y, width: 0, height: 0 }; },
     contains: () => false,
+    focus() { this.delegate?.focus(); },
+    setAttribute(name: string, value: string) { this.delegate?.setAttribute(name, value); },
   };
 }
 

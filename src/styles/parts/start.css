@@ -36,15 +36,10 @@
    later sheet) and drops the selector into flow. */
 .start > *:not(.gallery-topright) { position: relative; z-index: 1; }
 
-.start-back {
-  display: inline-block;
-  margin-bottom: 26px;
-  font-size: 13px;
-  font-weight: 600;
-  color: hsl(var(--muted-foreground));
-  text-decoration: none;
-}
-.start-back:hover { color: hsl(var(--foreground)); }
+/* The studio's "← Tools" return is a real .tools-home glass pill now (the arrow
+   comes from its :before; pill + paint from components.css/buttons.css) — this
+   keeps only the studio's own placement. */
+.start-back { margin-bottom: 26px; }
 
 /* ── Header — .start-head/-eyebrow/-title/-sub compose .section-header
       (chips.css); every value below is a real local delta (this hero header

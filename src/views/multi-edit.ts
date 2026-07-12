@@ -523,7 +523,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   cleanups.push(() => toasts.forEach(t => t.remove()));
   function renderViaToast(run: (mount: HTMLElement) => unknown): void {
     const toast = document.createElement('div');
-    toast.className = 'pro-toast projects-toast';
+    toast.className = 'pro-toast pro-toast--bar';
     toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="${escape(t('Close'))}">✕</button><div class="pro-toast-mount"></div>`;
     document.body.appendChild(toast);
     toasts.add(toast);

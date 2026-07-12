@@ -716,7 +716,9 @@ export async function mountProjects(
   // Both open at a POINTER position rather than off a live trigger element (the kebab
   // button is recreated on every render()), so they share one mountBodyPopover instance
   // anchored to a mutable point (see body-popover.ts's pointAnchor) instead of a real
-  // element — `menuPoint`/`pendingMenu` are set right before each `.open()`.
+  // element — `menuPoint`/`pendingMenu` are set right before each `.open()`. Kebab
+  // opens also set `menuPoint.delegate` to the button so Escape/close restores focus
+  // to it and its aria-expanded tracks the menu; right-click opens leave it null.
   const menuPoint = pointAnchor();
   type PendingTileMenu = { kind: 'tile'; ref: string; menuKind: string; tileEl: HTMLElement | null } | { kind: 'bulk' };
   let pendingMenu: PendingTileMenu | null = null;
@@ -788,7 +790,7 @@ export async function mountProjects(
       if (menuBtn) {
         e.preventDefault(); e.stopPropagation();
         const r = menuBtn.getBoundingClientRect();
-        openMenu({ ref: menuBtn.dataset.menu!, kind: menuBtn.dataset.menuKind!, tileEl: menuBtn.closest<HTMLElement>('.folder-tile'), x: r.left, y: r.bottom + 6 });
+        openMenu({ ref: menuBtn.dataset.menu!, kind: menuBtn.dataset.menuKind!, tileEl: menuBtn.closest<HTMLElement>('.folder-tile'), anchorEl: menuBtn, x: r.left, y: r.bottom + 6 });
         return;
       }
 
@@ -1133,17 +1135,17 @@ export async function mountProjects(
   // Open the per-tile context menu. `ctx` = { ref, kind, tileEl, x, y } — from the ⋯
   // button (anchored below it) OR a right-click (anchored at the cursor). tileEl is the
   // enclosing .folder-tile (null for the folder-view header ⋯, which falls back to <h2>).
-  function openMenu({ ref, kind, tileEl = null, x, y }: { ref: string; kind: string; tileEl?: HTMLElement | null; x: number; y: number }): void {
+  function openMenu({ ref, kind, tileEl = null, anchorEl = null, x, y }: { ref: string; kind: string; tileEl?: HTMLElement | null; anchorEl?: HTMLElement | null; x: number; y: number }): void {
     closeMenu();
     pendingMenu = { kind: 'tile', ref, menuKind: kind, tileEl };
-    menuPoint.x = x; menuPoint.y = y;
+    menuPoint.x = x; menuPoint.y = y; menuPoint.delegate = anchorEl;
     tileMenuPopover.open();
   }
 
   function openBulkMenu(x: number, y: number): void {
     closeMenu();
     pendingMenu = { kind: 'bulk' };
-    menuPoint.x = x; menuPoint.y = y;
+    menuPoint.x = x; menuPoint.y = y; menuPoint.delegate = null;
     tileMenuPopover.open();
   }
 
@@ -1564,7 +1566,7 @@ export async function mountProjects(
       const slot = tile?.dataset.tool;
       if (!slot) return;
       const r = btn.getBoundingClientRect();
-      openMenu({ ref: slot, kind: 'session', tileEl: tile, x: r.left, y: r.bottom + 6 });
+      openMenu({ ref: slot, kind: 'session', tileEl: tile, anchorEl: btn, x: r.left, y: r.bottom + 6 });
     });
     // Each ribbon preview is also a drag source for the "Move to" rail (desktop) — same payload
     // a grid session tile carries (wireDrag), so the shared drop targets move it with no extra
@@ -1639,7 +1641,7 @@ export async function mountProjects(
   function renderViaToast(run: (mount: HTMLElement) => unknown): void {
     closeMenu();
     const toast = document.createElement('div');
-    toast.className = 'pro-toast projects-toast'; // top-right under the profile row (see app.css)
+    toast.className = 'pro-toast pro-toast--bar'; // full-width bar under the profile row (projects.css)
     toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="${escape(t('Close'))}">✕</button><div class="pro-toast-mount"></div>`;
     document.body.appendChild(toast);
     toasts.add(toast);

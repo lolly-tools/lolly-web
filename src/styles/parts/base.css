@@ -24,8 +24,8 @@
   height: auto;
   clip-path: none;
   padding: 8px 16px;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  /* Fill (background/color) comes from buttons.css's .btn--primary alias list —
+     it imports after this sheet, so its single declaration wins. */
   z-index: 9999;
   font-size: 14px;
   font-weight: 600;

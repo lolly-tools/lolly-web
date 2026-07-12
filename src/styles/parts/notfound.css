@@ -45,8 +45,7 @@
 .not-found-home {
   display: inline-block;
   padding: 8px 20px;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  /* fill comes from buttons.css's .btn--primary alias list */
   border-radius: var(--radius);
   text-decoration: none;
   font-weight: 500;

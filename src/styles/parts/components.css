@@ -303,15 +303,14 @@
 }
 
 /* On mobile the gallery scrolls under it, so pin the profile button to the
-   viewport and blur what passes behind for legibility. */
+   viewport; the legibility blur comes from the shared .btn--glass recipe
+   (buttons.css) — no local backdrop-filter, so the canonical blur(4px) applies. */
 @media (max-width: 640px) {
   .profile-link {
     position: fixed;
     /* Re-pin to the visible top-right while the page is pinch-zoomed. */
     top: calc(1.25em + var(--vv-top, 0px));
     right: calc(2em + var(--vv-right, 0px));
-    -webkit-backdrop-filter: blur(2px);
-    backdrop-filter: blur(2px);
   }
 }
 
@@ -470,22 +469,35 @@
    previews its alpha. The un-painted fallbacks are the neutral chrome for
    valueless states (transparent, mid-edit junk). */
 /* ── Mono field-input primitive (component audit rec 13) — the "bordered
-   monospace value box" recipe repeated across the app: .share-link-field
-   (dialogs.css), .be-fmt-input/.be-lock-field/.be-cmyk-in (brand-studio.css).
-   Neither file is owned this pass, so those copies aren't wired onto this
-   class yet (see follow-ups) — this establishes the target shape for that
-   migration. .color-input just below is the SAME concept again (a mono value
-   field) but its box is a distinct oversized/painted variant with no
-   property textually identical to this recipe, so merging it here would
-   nudge its own padding/font-size/radius — a visual change this pass avoids;
-   it stays its own full ruleset. */
-.field-input {
+   monospace value box" recipe repeated across the app. .share-link-field
+   (dialogs.css) turned out byte-identical (bar its own flex/min-width layout),
+   so it fully composes the box below. .be-fmt-input/.be-lock-field input/
+   .be-cmyk-in input (brand-studio.css) are the SAME idea at the studio's own
+   tighter scale — different padding/border-radius/background/font-size/
+   font-family (brand-studio.css's `--font-mono` token, not this recipe's
+   literal stack), so only their two genuinely byte-identical declarations
+   (`color`, `font: inherit`) move into the second selector list; the rest
+   stays local rather than nudging the studio's own pixel values. .color-input
+   just below is the SAME concept again (a mono value field) but its box is a
+   distinct oversized/painted variant with no property textually identical to
+   either list, so it stays its own full ruleset. */
+.field-input,
+.be-fmt-input,           /* brand-studio.css */
+.be-lock-field input,    /* brand-studio.css */
+.be-cmyk-in input,       /* brand-studio.css */
+.share-link-field {      /* dialogs.css */
+  color: hsl(var(--foreground));
+  font: inherit;
+}
+/* MUST come after the `font: inherit` shorthand above — same specificity, so
+   source order is what lets the mono face/size win for the full .field-input box
+   (the be-* fields above keep inherit only; their mono comes from their context). */
+.field-input,
+.share-link-field {         /* dialogs.css — byte-identical box */
   padding: 7px 10px;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.4);
-  color: hsl(var(--foreground));
-  font: inherit;
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
