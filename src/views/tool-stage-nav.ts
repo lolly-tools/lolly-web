@@ -5,7 +5,13 @@
  * all layered on top of the fitCanvas scale via a transform on the OUTER wrapper.
  * Extracted verbatim from views/tool.ts (was a standalone module-level factory
  * there); `isTyping` moved with it because it was used only by this controller.
+ * The HUD widget itself (markup/click-delegation/disabled-state) now lives in
+ * components/zoom-hud.ts, shared with multi-edit and the catalog inspector/crop
+ * dialog — this module keeps the pinch/pan/wheel/keyboard math, which is real
+ * per-canvas behaviour, not accidental duplication.
  */
+import { mountZoomHud } from '../components/zoom-hud.ts';
+import type { ZoomHud } from '../components/zoom-hud.ts';
 
 /** A client-space point. */
 export interface Point { x: number; y: number; }
@@ -230,11 +236,11 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
 
   // ── Desktop: trackpad-native zoom/pan + a Fit/% HUD + keyboard shortcuts ──────
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
-  let hud: HTMLDivElement | null = null, pctEl: HTMLElement | null = null;
+  let hud: ZoomHud | null = null;
 
   function syncHud(): void {
-    if (pctEl) pctEl.textContent = pct() + '%';
-    if (hud)   hud.dataset.zoomed = isZoomed() ? '1' : '';
+    hud?.setReadout(pct() + '%');
+    hud?.setZoomed(isZoomed());
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -253,37 +259,30 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   // primary way to snap to exact zoom levels and Fit (a pinch is imprecise); on
   // desktop it complements the trackpad/keyboard. The desktop-only wheel, mouse-pan
   // and keyboard wiring stays gated behind !isTouch further below.
-  hud = document.createElement('div');
-  hud.className = 'stage-nav';
-  hud.innerHTML =
-    '<button type="button" class="stage-nav-btn" data-nav="out" aria-label="Zoom out">−</button>' +
-    '<button type="button" class="stage-nav-pct" data-nav="pct" aria-label="Toggle Fit and 100%"><span class="stage-nav-pct-val">100%</span></button>' +
-    '<button type="button" class="stage-nav-btn" data-nav="in" aria-label="Zoom in">+</button>' +
-    '<button type="button" class="stage-nav-btn stage-nav-fit" data-nav="fit" aria-label="Fit to window">Fit</button>';
-  // Dock the theme cycle toggle at the end of the HUD (a hairline separator sets
-  // it apart from the zoom controls), so every canvas tool carries a theme
-  // switcher without cluttering the sidebar. Icon-only with a tooltip; it has no
-  // data-nav attr, so the HUD's zoom click delegation ignores it.
-  if (themeToggle || soundToggle) {
-    const sep = document.createElement('span');
-    sep.className = 'stage-nav-sep';
-    sep.setAttribute('aria-hidden', 'true');
-    hud.append(sep);
-    if (themeToggle) hud.append(themeToggle);
-    if (soundToggle) hud.append(soundToggle);
-  }
-  stageEl.appendChild(hud);
-  pctEl = hud.querySelector<HTMLElement>('.stage-nav-pct-val');
-  // Keep taps on the pill from reaching the stage's pinch / double-tap-to-fit logic.
-  hud.addEventListener('pointerdown', e => e.stopPropagation());
-  hud.addEventListener('click', e => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-nav]');
-    if (!b) return;
-    const c = stageCentre();
-    if (b.dataset.nav === 'in')       zoomAbout(1.25, c.x, c.y);
-    else if (b.dataset.nav === 'out') zoomAbout(0.8,  c.x, c.y);
-    else if (b.dataset.nav === 'fit') fit();
-    else if (b.dataset.nav === 'pct') { if (isZoomed()) fit(); else actual(); }
+  const hudEl = document.createElement('div');
+  hudEl.className = 'stage-nav';
+  stageEl.appendChild(hudEl);
+  // Dock the theme cycle + sound toggles at the end of the HUD (a hairline
+  // separator sets them apart from the zoom controls), so every canvas tool
+  // carries a theme switcher without cluttering the sidebar.
+  const extras = [themeToggle, soundToggle].filter((el): el is HTMLElement => !!el);
+  hud = mountZoomHud(hudEl, {
+    ariaLabel: 'Zoom',
+    // editor.css's mobile stacked-order rules key off the literal `data-nav`
+    // attribute (`.stage-nav [data-nav="in"]` etc.) — opt into it explicitly;
+    // every other caller gets the component's private, collision-proof default.
+    navAttr: 'data-nav',
+    classes: { btn: 'stage-nav-btn', pct: 'stage-nav-pct', fit: 'stage-nav-fit', sep: 'stage-nav-sep' },
+    onZoom: (dir) => { const c = stageCentre(); zoomAbout(dir > 0 ? 1.25 : 0.8, c.x, c.y); },
+    onFit: fit,
+    onPct: () => { if (isZoomed()) fit(); else actual(); },
+    outAriaLabel: 'Zoom out',
+    inAriaLabel: 'Zoom in',
+    pctAriaLabel: 'Toggle Fit and 100%',
+    fitAriaLabel: 'Fit to window',
+    fitContent: 'Fit',
+    initialReadout: '100%',
+    extras,
   });
 
   if (!isTouch) {
@@ -338,7 +337,8 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   function destroy(): void {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
-    hud?.remove();
+    hud?.destroy();
+    hudEl.remove();
   }
 
   return { reset, isZoomed, sync: syncHud, destroy };

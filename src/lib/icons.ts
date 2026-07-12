@@ -177,6 +177,10 @@ const PATHS = {
 
 export type IconName = keyof typeof PATHS;
 
+/** Every registered glyph name, derived from `PATHS` so callers (e.g. the
+ *  #/components specimen gallery) never hand-sync a duplicate list. */
+export const iconNames = Object.keys(PATHS) as IconName[];
+
 /** True when `name` has a registry entry — lets a caller feed an untrusted/dynamic key
  *  through without a TS cast (mirrors the old maps' `?? fallback` pattern). */
 export function hasIcon(name: string): name is IconName {

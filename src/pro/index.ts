@@ -28,6 +28,8 @@ import { controlHtml, readControlValue } from './controls.ts';
 import { openBlocksEditor, closeBlocksPanel } from './blocks-editor.ts';
 import { colorFieldHtml, wireColorField, type ColorFieldValue } from '../components/color-field.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { mountZoomHud } from '../components/zoom-hud.ts';
+import { mountModal } from '../components/modal.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { askExportLock } from '../lib/export-lock.ts';
@@ -194,10 +196,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
           <input type="file" id="pro-csv-file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" hidden>
         </div>
         <span class="pro-spacer"></span>
-        <div class="pro-zoom" role="group" aria-label="${escape(t('Zoom interface'))}">
-          <button type="button" class="pro-btn pro-zoom-btn" id="pro-zoom-out" title="${escape(t('Zoom out — shrink the whole interface'))}" aria-label="${escape(t('Zoom out'))}">−</button>
-          <button type="button" class="pro-btn pro-zoom-btn" id="pro-zoom-in" title="${escape(t('Zoom in — enlarge the whole interface'))}" aria-label="${escape(t('Zoom in'))}">+</button>
-        </div>
+        <div class="pro-zoom" data-pro-zoom></div>
         <label class="pro-format pro-unit-field" id="pro-unit-field" title="${escape(t('Units for the Width & Height columns'))}">
           <select id="pro-unit">${UNIT_OPTIONS.map(u => `<option value="${u}"${u === state.unit ? ' selected' : ''}>${u}</option>`).join('')}</select>
         </label>
@@ -270,25 +269,44 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   zipRO.observe(zipField);
   narrowMq.addEventListener('change', sizeZip);
 
-  // UI zoom (the −/+ buttons): emulate Cmd +/− using the CSS `zoom` property,
-  // which reflows the whole page like native zoom. Works on desktop AND lets a
-  // zoomed mobile display be shrunk back down. Applied to <html> so it affects
-  // the entire UI, and persisted across the session.
+  // UI zoom (the −/+ pair, on the shared zoom HUD): emulate Cmd +/− using the
+  // CSS `zoom` property, which reflows the whole page like native zoom. Works
+  // on desktop AND lets a zoomed mobile display be shrunk back down. Applied
+  // to <html> so it affects the entire UI, and persisted across the session.
+  // This is an INTERFACE scale, not a canvas zoom — there's no "Fit" concept
+  // (nothing to fit to), so the HUD renders no Fit button; its readout is a
+  // real control instead (clicking it resets to 100%, same job Fit does
+  // elsewhere), which is what onFit maps to here.
   const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
   const ZOOM_KEY = 'ct-ui-zoom';
   const readZoom = () => { const z = parseFloat(localStorage.getItem(ZOOM_KEY) as string); return Number.isFinite(z) && z > 0 ? z : 1; };
-  const applyZoom = (z: number) => {
+  function applyZoom(z: number) {
     document.documentElement.style.zoom = z === 1 ? '' : String(z);
     try { localStorage.setItem(ZOOM_KEY, String(z)); } catch { /* storage may be blocked */ }
-  };
-  const stepZoom = (dir: number) => {
+    zoomHud.setReadout(`${Math.round(z * 100)}%`);
+    zoomHud.setValue(z);
+  }
+  function stepZoom(dir: number) {
     const cur = readZoom();
     const i = ZOOM_STEPS.reduce((best, s, idx) => Math.abs(s - cur) < Math.abs(ZOOM_STEPS[best]! - cur) ? idx : best, 0);
     applyZoom(ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + dir))]!);
-  };
+  }
+  const zoomHud = mountZoomHud(viewEl.querySelector<HTMLElement>('[data-pro-zoom]')!, {
+    ariaLabel: t('Zoom interface'),
+    classes: { btn: 'pro-zoom-btn', pct: 'pro-zoom-pct' },
+    onZoom: (dir) => stepZoom(dir),
+    onFit: () => applyZoom(1), // the readout's own click — "reset to 100%", this HUD's stand-in for Fit
+    outAriaLabel: t('Zoom out'),
+    inAriaLabel: t('Zoom in'),
+    pctAriaLabel: t('Reset zoom to 100%'),
+    outTitle: t('Zoom out — shrink the whole interface'),
+    inTitle: t('Zoom in — enlarge the whole interface'),
+    pctTitle: t('Reset zoom to 100%'),
+    min: ZOOM_STEPS[0],
+    max: ZOOM_STEPS[ZOOM_STEPS.length - 1],
+    initialReadout: `${Math.round(readZoom() * 100)}%`,
+  });
   applyZoom(readZoom()); // restore any prior zoom on entry
-  viewEl.querySelector('#pro-zoom-out')!.addEventListener('click', () => stepZoom(-1));
-  viewEl.querySelector('#pro-zoom-in')!.addEventListener('click', () => stepZoom(1));
 
   // Saved batch sessions (snapshot the whole grid; persisted via host.state).
   const sessions = createSessionStore(host);
@@ -1390,7 +1408,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   }
 
   // ── Cleanup (called by the router on navigation away) ───────────────────────
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { detachLangMenu(); closeBulkPopover(); closeSessions(); closeTemplatePicker(); closeBlocksPanel(); nav.destroy(); detachResize(); detachReorder(); detachScrub(); zipRO.disconnect(); narrowMq.removeEventListener('change', placeFormat); narrowMq.removeEventListener('change', sizeZip); document.removeEventListener('pointerdown', onDocPointer); document.removeEventListener('keydown', onAddRowKey, true); };
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { detachLangMenu(); closeBulkPopover(); closeSessions(); closeTemplatePicker(); closeBlocksPanel(); nav.destroy(); detachResize(); detachReorder(); detachScrub(); zipRO.disconnect(); zoomHud.destroy(); narrowMq.removeEventListener('change', placeFormat); narrowMq.removeEventListener('change', sizeZip); document.removeEventListener('pointerdown', onDocPointer); document.removeEventListener('keydown', onAddRowKey, true); };
 
   // Deep link: open a saved session if the route asked for one (#/pro?session=…),
   // e.g. resuming a batch from the gallery's Saved-sessions list. Otherwise drop
@@ -1420,28 +1438,31 @@ function escapeHtml(s: unknown) {
 }
 
 // Unsaved-changes guard for leaving /pro. Reuses the shared `.unsaved-dialog`
-// styling (app.css). Mirrors the single-tool dialog in views/tool.js but stays
-// in the pro module so the whole feature remains removable in one folder.
+// styling (app.css) and the shared mountModal lifecycle (components/modal.ts)
+// — Escape and a backdrop click now dismiss like every other app dialog (the
+// hand-rolled version only wired the three buttons + a bare Escape-remove).
+// Mirrors the single-tool dialog in views/tool.js but stays in the pro module
+// so the whole feature remains removable in one folder.
 function showSaveSessionDialog({ onSave, onLeave }: { onSave: () => void; onLeave: () => void }) {
-  const dialog = document.createElement('dialog');
-  dialog.className = 'unsaved-dialog';
-  dialog.innerHTML = `
+  const content = `
     <div class="unsaved-dialog-body">
       <h2>Unsaved batch</h2>
       <p>You've made changes to this batch.<br>Save it as a session before leaving?</p>
       <div class="unsaved-dialog-actions">
-        <button class="unsaved-save">Save &amp; leave…</button>
-        <button class="unsaved-leave">Leave without saving</button>
-        <button class="unsaved-cancel">Cancel</button>
+        <button type="button" class="unsaved-save" data-act="save">Save &amp; leave…</button>
+        <button type="button" class="unsaved-leave" data-act="leave">Leave without saving</button>
+        <button type="button" class="unsaved-cancel" data-act="cancel">Cancel</button>
       </div>
     </div>
   `;
-  document.body.appendChild(dialog);
-  dialog.showModal();
-
-  const cleanup = () => { dialog.close(); dialog.remove(); };
-  dialog.querySelector('.unsaved-save')!.addEventListener('click', () => { cleanup(); onSave(); });
-  dialog.querySelector('.unsaved-leave')!.addEventListener('click', () => { cleanup(); onLeave(); });
-  dialog.querySelector('.unsaved-cancel')!.addEventListener('click', cleanup);
-  dialog.addEventListener('cancel', () => dialog.remove());
+  const modal = mountModal<'save' | 'leave' | undefined>(content, {
+    className: 'unsaved-dialog',
+    onClose: (result) => { if (result === 'save') onSave(); else if (result === 'leave') onLeave(); },
+  });
+  modal.el.addEventListener('click', (e) => {
+    const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
+    if (act === 'save') modal.close('save');
+    else if (act === 'leave') modal.close('leave');
+    else if (act === 'cancel') modal.close(undefined);
+  });
 }

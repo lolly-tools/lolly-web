@@ -19,13 +19,21 @@ export const NAV_ICONS = {
   dashboard: icon('dashboard'),
 } as const;
 
-/** The standard `.gallery-search` field (Tools gallery + Catalogue use it verbatim). */
-export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string; value?: string; className?: string }): string {
+/** The standard `.gallery-search` field + its ✕ clear button (Tools gallery + Catalogue
+ *  use it verbatim, component-audit rec 11 — previously the gallery minted its own
+ *  `.gallery-search-clear` with inline JS styles while the catalog borrowed projects'
+ *  `.projects-search-clear`). `type="text"` (not "search") so the browser's own native
+ *  cancel button doesn't double up with ours. The ✕ starts `hidden` unless `value` is
+ *  already non-empty (a restored query) — each view toggles the `hidden` attribute as
+ *  the field's content changes. */
+export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string; value?: string; className?: string; clearLabel?: string }): string {
   const cls = opts.className ?? 'gallery-search';
+  const value = opts.value ?? '';
   return `<div class="gallery-search-wrap">
     <div class="gallery-search-box">
       <span class="gallery-search-icon" aria-hidden="true">${NAV_ICONS.search}</span>
-      <input class="${cls}" type="search" placeholder="${escape(opts.placeholder)}" autocomplete="off" spellcheck="false" aria-label="${escape(opts.ariaLabel)}"${opts.value ? ` value="${escape(opts.value)}"` : ''}>
+      <input class="${cls}" type="text" placeholder="${escape(opts.placeholder)}" autocomplete="off" spellcheck="false" aria-label="${escape(opts.ariaLabel)}"${value ? ` value="${escape(value)}"` : ''}>
+      <button type="button" class="gallery-search-clear" data-search-clear aria-label="${escape(opts.clearLabel ?? t('Clear search'))}"${value ? '' : ' hidden'}>✕</button>
     </div>
   </div>`;
 }

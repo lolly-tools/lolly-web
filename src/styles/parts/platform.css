@@ -11,10 +11,14 @@
 .plat-sub { margin: 0 0 1rem; max-width: 62ch; font-size: 1rem; line-height: 1.55; }
 .plat-header-text { min-width: 0; }
 .plat-header-text > :last-child { margin-bottom: 0; }
+/* .plat-note's border + border-radius are the literally-identical lines
+   folded into the shared `.note`/`.plat-note`/`.valid-note` selectors in
+   components.css (component audit rec 13) — only this view's own spacing
+   stays here. */
 .plat-note {
   margin: 0; max-width: 72ch; padding: .75rem .9rem;
   font-size: .85rem; line-height: 1.55; color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / .5); border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--muted) / .5);
 }
 .plat-note strong { color: hsl(var(--foreground)); }
 
@@ -68,22 +72,12 @@
 /* Collapsible sections are profile-style cards: card chrome lives on the
    <details>, the title is its <summary>, and an SVG chevron rotates 90° on open. */
 /* Surface (background/color/radius) composes the shared .card primitive
-   (chips.css, the merged declaration) — only the page-layout margin is a
-   real local delta. */
-.plat-section {
-  margin: 0 0 1.1rem;
-  border: 0;
-}
-/* Section headings match the profile cards: small uppercase muted labels
-   (nothing in either view is case-sensitive, so uppercasing is safe). */
-.plat-section-title {
-  margin: 0;
-  font-size: .72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .07em;
-  color: hsl(var(--muted-foreground));
-}
+   (chips.css, the merged declaration); the disclosure anatomy itself — the
+   page-layout margin, plus the summary/title/chevron/body rules that used to
+   sit here below the "Collapsible sections" heading further down — composes
+   the shared `.section-card` fold primitive (disclosure.css, component audit
+   rec 7). Both merges keep `.plat-section*` as the live class names in
+   markup (dashboard.ts) so nothing there needs to change. */
 .plat-section-desc { margin: .55rem 0 0; max-width: 74ch; color: hsl(var(--muted-foreground)); font-size: .9rem; line-height: 1.5; }
 .plat-section-desc code, .plat-note code,
 .plat-swatch-hex, .plat-swatch-cmyk, .plat-table td code {
@@ -148,12 +142,12 @@
 .plat-table td code { font-size: .85em; }
 .plat-table tr.is-default td:first-child { font-weight: 600; }
 /* Box (font-size/weight/letter-spacing/padding/radius) merged into
-   .chip--flag (chips.css) — only the inline-qualifier layout + colour stay
-   local deltas. */
+   .chip--flag (chips.css) — only the inline-qualifier layout stays a local
+   delta; the fill (background/color) is aliased in buttons.css's .btn--primary
+   list. */
 .plat-pill {
   display: inline-block; margin-left: .4rem;
   text-transform: uppercase; vertical-align: middle;
-  background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
 }
 /* Informational, not a highlight — used to qualify a value (e.g. cookies are
    available but never set). Muted so it reads as a footnote, not a badge. */
@@ -176,23 +170,11 @@
 .plat-kv dt { flex: 0 0 4.25rem; color: hsl(var(--muted-foreground)); }
 .plat-kv dd { margin: 0; min-width: 0; }
 
-/* Collapsible sections — every platform section is a <details>; the title is its
-   <summary>, with an SVG chevron that rotates 90° when open. Mirrors the profile
-   page's collapsible cards (style + .15s ease transition). */
-.plat-section-summary {
-  list-style: none; cursor: pointer;
-  display: flex; align-items: center; gap: 1rem;border-radius: var(--radius);
-  padding: 1.1rem 1.4rem;
-}
-.plat-section-summary::-webkit-details-marker { display: none; }
-.plat-section-summary .plat-section-title { flex: 1 1 auto; margin: 0; text-align: left; }
-.plat-section-chev { flex: 0 0 auto; color: hsl(var(--muted-foreground)); transition: transform .15s ease; }
-.plat-section-summary:hover .plat-section-title,
-.plat-section-summary:hover .plat-section-chev { color: hsl(var(--foreground)); }
-.plat-section[open] .plat-section-summary .plat-section-chev { transform: rotate(90deg); }
-.plat-section-summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -3px; border-radius: calc(var(--radius) * 1.25); }
-.plat-section-body { padding: 0 1.4rem 1.4rem; }
-@media (prefers-reduced-motion: reduce) { .plat-section-chev { transition: none; } }
+/* Collapsible sections — every platform section is a <details>; the title is
+   its <summary>, with an SVG chevron that rotates 90° when open. The full
+   disclosure anatomy (box margin, summary/title/chevron/body) now lives in
+   the shared `.section-card` fold primitive (disclosure.css, component audit
+   rec 7), merged onto these same `.plat-section*` class names. */
 
 /* "This device" runtime snapshot — a grid of grouped key/value cards. Cards sit
    at their natural height (`start`, not `stretch`) so a short card like the

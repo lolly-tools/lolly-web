@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "“{name}” ialah {size}{dims}. Kekalkan yang asal — terbaik untuk Content Credential — atau saiz semulakannya{resize} untuk menjimatkan ruang?",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "“{name}” akan dialih keluar secara kekal daripada imej anda. Ini tidak boleh dibuat asal.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "“{variant}” sudah menjadi nama logo — pilih nama lain untuk tanda.",
-  "✓ Added": "✓ Ditambah"
+  "✓ Added": "✓ Ditambah",
+  "Theme: {name} — switch theme": "Tema: {name} — tukar tema",
+  "Speakers": "Penutur",
+  "Sort languages": "Isih bahasa"
 }

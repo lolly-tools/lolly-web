@@ -170,27 +170,30 @@
 .userimg-add-icon { font-size: 20px; line-height: 1; font-weight: 300; }
 .userimg-add-text { font-size: 10px; letter-spacing: 0.02em; }
 
-/* My images — full-size preview lightbox */
-.userimg-lightbox-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6vh 6vw;
-  background: rgba(0, 0, 0, 0.7);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
-}
+/* My images — full-size preview lightbox. A native <dialog class="userimg-lightbox">
+   mounted via mountModal (profile.ts openImageLightbox); it carries the retired
+   body-overlay wrapper's flex-centering + dark backdrop itself (::backdrop below). */
 .userimg-lightbox {
-  position: relative;
+  /* Reset the <dialog> UA defaults (border/padding/background) — this is a
+     transparent frame around the media, not a card. */
+  border: 0;
+  padding: 0;
+  background: transparent;
+  margin: auto;   /* dialog:modal centring — reasserted per the .modal convention
+                      (dialogs.css) in case a scoped reset leaks in */
+  /* was .userimg-lightbox-overlay's 6vw/6vh padding — the dialog is now its own
+     positioned box, so the old inset becomes a size cap instead. */
+  max-width: 88vw;
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  max-width: 100%;
-  max-height: 100%;
+}
+.userimg-lightbox::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 .userimg-lightbox-img {
   max-width: 100%;
@@ -250,18 +253,12 @@
 }
 .btn-danger:hover { background: hsl(0 72% 42%); }
 
-/* ─── Clear-data confirmation dialog ────────────────────────────────────── */
-
-.clear-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: hsl(0 0% 0% / 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
+/* ─── Clear-data / hoard / keep-active / import confirmation dialog ────────
+   Native <dialog class="clear-dialog[ clear-dialog--hoard]"> mounted via
+   mountModal (profile.ts: clear-storage, export-render, askKeepTabActive,
+   showImportDialog); the card styling applies straight to the <dialog> box,
+   dialog:modal's own fixed+auto-margin centring replaces the retired overlay
+   wrapper's flex-centring, and `::backdrop` replaces its background. */
 .clear-dialog {
   background: hsl(var(--background));
   border: 1px solid hsl(var(--border));
@@ -270,7 +267,11 @@
   max-width: 360px;
   width: 90%;
   box-shadow: 0 8px 32px hsl(0 0% 0% / 0.2);
+  /* dialog:modal centring — reasserted per the .modal convention (dialogs.css)
+     in case a scoped reset leaks in. */
+  margin: auto;
 }
+.clear-dialog::backdrop { background: hsl(0 0% 0% / 0.5); }
 
 .clear-dialog h3 {
   margin: 0 0 8px;

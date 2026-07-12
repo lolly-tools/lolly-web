@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "「{name}」は{size}{dims}です。オリジナルのまま保持します（Content Credentialに最適）か、容量を節約するために{resize}にリサイズしますか？",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "「{name}」は画像から完全に削除されます。この操作は元に戻せません。",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "“{variant}”はすでにロゴの名前です——マークには別の名前を選んでください。",
-  "✓ Added": "✓ 追加しました"
+  "✓ Added": "✓ 追加しました",
+  "Theme: {name} — switch theme": "テーマ: {name} — テーマを切り替え",
+  "Speakers": "話者",
+  "Sort languages": "言語の並べ替え"
 }

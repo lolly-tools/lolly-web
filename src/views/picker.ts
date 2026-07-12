@@ -65,7 +65,7 @@ import type { WebStateAPI } from '../bridge/state.ts';
  *  type:'audio' asset. PDF/.ai don't go through storeUserUpload itself: callers
  *  route them to pdf-import.ts's ingestPdfAsSvgAssets (page(s) → stored SVG) via
  *  isPdfUpload. */
-export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai';
+export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai';
 
 /** A PDF — or an Illustrator .ai, which saved PDF-compatible IS a PDF — that upload
  *  surfaces must hand to the page→SVG converter instead of storeUserUpload. Sync and
@@ -2083,21 +2083,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   const isMidi = !isLottie && !isVector && !isVideo
     && (/\.midi?$/i.test(file.name) || /^audio\/(x-)?midi?$/i.test(file.type)
         || (head4[0] === 0x4d && head4[1] === 0x54 && head4[2] === 0x68 && head4[3] === 0x64)); // 'MThd'
-  // Tracker modules (.mod/.xm/.it/.s3m) are sample-based — ZzFXM can't represent them
-  // and no browser <audio> plays them — so reject with a clear, user-ready message
-  // (the .code makes the caller surface it verbatim) instead of storing dead bytes
-  // that get mislabelled and fail to preview.
-  if (/\.(mod|xm|it|s3m|stm|mtm)$/i.test(file.name) || /audio\/(x-)?(mod|it|s3m|xm)/i.test(file.type)) {
-    const e: Error & { code?: string } = new Error(t('Tracker modules (.mod, .xm, .it, .s3m) aren’t playable in the browser yet — export the track to MP3, Opus or WAV, or upload a MIDI file instead.'));
-    e.code = 'unsupported-format';
-    throw e;
-  }
+  // Tracker modules (.mod/.xm/.it/.s3m/…) are tiny sample-based songs no browser
+  // <audio> can decode — but libopenmpt (WASM) renders them to PCM for the player and
+  // video exports (mod-render.ts), so they're stored VERBATIM as a format:'mod'
+  // type:'audio' asset (the decoder sniffs the real format from the bytes; the tiny
+  // original is kept, not a bloated transcode). Detected before isAudio because a .mod
+  // can arrive as audio/x-mod, which would otherwise match the generic audio test.
+  const isModule = !isLottie && !isVector && !isVideo && !isMidi
+    && (/\.(mod|xm|it|s3m|stm|mtm)$/i.test(file.name) || /audio\/(x-)?(mod|it|s3m|xm)/i.test(file.type));
   // The user's own music (opus/mp3/wav/ogg/m4a/aac/flac) — stored verbatim as a
   // type:'audio' asset (a canvas re-encode can't touch audio bytes). Detected by
   // MIME or extension; .oga/.ogg both map to ogg. Checked after video so a container
   // MIME collision (audio/mp4 vs video/mp4) can't misroute — .m4a carries audio/mp4
   // but its extension isn't a video one, so the isVideo test above already excluded it.
-  const isAudio = !isLottie && !isVector && !isVideo && !isMidi
+  const isAudio = !isLottie && !isVector && !isVideo && !isMidi && !isModule
     && (/^audio\//i.test(file.type) || /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac)$/i.test(file.name));
 
   // Classify animated rasters (gif/apng/animated-webp) and catch mislabelled video —
@@ -2106,7 +2105,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // bytes are the source of truth (that is the whole reason to byte-sniff); MIME/name
   // only widen which files we bother to read. (Audio is verbatim — nothing to sniff.)
   let animatedKind: 'gif' | 'apng' | 'webp' | null = null;
-  if (!isLottie && !isVector && !isAudio && !isMidi) {
+  if (!isLottie && !isVector && !isAudio && !isMidi && !isModule) {
     const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
     // Byte-level video backstop: a real mp4/webm handed over with a wrong extension
     // AND a blank/non-video MIME would otherwise fall to downscaleRaster and be
@@ -2187,6 +2186,16 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       throw e;
     }
     format = 'zzfxm';
+  } else if (isModule) {
+    // Verbatim: a tracker module is already tiny (sample-based song data) and no
+    // canvas/audio re-encode applies — libopenmpt decodes the original bytes on demand
+    // (mod-render.ts). Stored as format:'mod' so the player and video exporter route it
+    // through the WASM decoder. No dimensions — audio has none.
+    assertVerbatimSize(file, MAX_AUDIO_BYTES, t('audio track'));
+    // Keep the real tracker extension (mod/xm/s3m/it/…) so the badge and filename stay
+    // honest; libopenmpt sniffs the actual format from the bytes regardless. A
+    // MIME-only detection (audio/x-mod, no known extension) defaults to 'mod'.
+    format = file.name.toLowerCase().match(/\.(mod|xm|it|s3m|stm|mtm)$/)?.[1] ?? 'mod';
   } else if (isAudio) {
     // Verbatim: keep the original encoded bytes (there is no raster/canvas path for
     // audio). Bounded by an explicit cap since downscaleRaster's implicit shrink is
@@ -2301,7 +2310,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 
   const record: UserAssetRecordInput = {
     id,
-    type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : (isAudio || isMidi) ? 'audio' : 'raster',
+    type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : (isAudio || isMidi || isModule) ? 'audio' : 'raster',
     format,
     blob,
     width,
@@ -2319,7 +2328,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     meta: {
       name: renameExt(file.name, format),
       ...(animated ? { animated: true } : {}),
-      ...(isAudio || isMidi ? { tags: ['audio', 'neurospicy'] } : {}),
+      ...(isAudio || isMidi || isModule ? { tags: ['audio', 'neurospicy'] } : {}),
     },
   };
 

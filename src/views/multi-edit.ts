@@ -37,6 +37,7 @@ import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { t } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { mountZoomHud } from '../components/zoom-hud.ts';
 
 import type { WebToolHost, PanelEl } from './tool.ts';
 import type { InputModelItem, InputValue, InputSpec } from '../../../../engine/src/inputs.js';
@@ -243,12 +244,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         </aside>
         <div class="me-gridwrap">
           <div class="me-gridbar">
-            <div class="me-zoom" role="group" aria-label="${escape(t('Preview size'))}">
-              <button type="button" class="me-zoom-btn me-zoom-fit" data-me-zoom="fit" title="${escape(t('Fit all on screen'))}" aria-label="${escape(t('Fit all on screen'))}">${FIT_ICON}</button>
-              <button type="button" class="me-zoom-btn" data-me-zoom="out" aria-label="${escape(t('Smaller previews'))}">${ZOOM_OUT_ICON}</button>
-              <span class="me-zoom-read" data-me-zoom-read aria-live="polite"></span>
-              <button type="button" class="me-zoom-btn" data-me-zoom="in" aria-label="${escape(t('Larger previews'))}">${ZOOM_IN_ICON}</button>
-            </div>
+            <div class="me-zoom" data-me-zoom></div>
           </div>
           <div class="me-grid" data-me-grid>
             ${members.map(cellHtml).join('')}
@@ -376,9 +372,6 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   //    screen). One --me-card-w on the grid drives an auto-fill layout; each cell's
   //    ResizeObserver (above) rescales its canvas to whatever width results. ───────
   const gridEl = viewEl.querySelector<HTMLElement>('[data-me-grid]')!;
-  const zoomRead = viewEl.querySelector<HTMLElement>('[data-me-zoom-read]');
-  const zoomOutBtn = viewEl.querySelector<HTMLButtonElement>('[data-me-zoom="out"]');
-  const zoomInBtn = viewEl.querySelector<HTMLButtonElement>('[data-me-zoom="in"]');
   const clampZoom = (w: number): number => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(w)));
   // Native aspect ratio per member — the fit calc needs each card's real height.
   const aspects = members.map(m => (m.tool.manifest.render?.width ?? 800) / (m.tool.manifest.render?.height ?? 600));
@@ -417,24 +410,39 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   try { const saved = Number(localStorage.getItem(ZOOM_KEY)); cardW = saved >= ZOOM_MIN && saved <= ZOOM_MAX ? saved : fitCardW(); }
   catch { cardW = fitCardW(); }
 
-  const updateReadout = (): void => { if (zoomRead) zoomRead.textContent = t('{n} across', { n: gridCols() }); };
+  // The zoom HUD: Fit first, then −/read/+ (multi-edit's long-standing order —
+  // unlike the tool stage's Fit-last stage-nav). The readout stays a plain,
+  // announced-only span (never a control) — clicking a card's readout to fit
+  // isn't a gesture anyone's asked for here, so parity keeps it inert.
+  const zoomHud = mountZoomHud(viewEl.querySelector<HTMLElement>('[data-me-zoom]')!, {
+    ariaLabel: t('Preview size'),
+    classes: { btn: 'me-zoom-btn', pct: 'me-zoom-read', fit: 'me-zoom-fit' },
+    fitPosition: 'start',
+    pctInteractive: false,
+    pctAriaLive: 'polite',
+    onZoom: (dir) => { cardW = dir > 0 ? cardW * ZOOM_STEP : cardW / ZOOM_STEP; applyZoom(); },
+    onFit: () => { cardW = fitCardW(); applyZoom(); },
+    outContent: ZOOM_OUT_ICON,
+    inContent: ZOOM_IN_ICON,
+    fitContent: FIT_ICON,
+    outAriaLabel: t('Smaller previews'),
+    inAriaLabel: t('Larger previews'),
+    fitAriaLabel: t('Fit all on screen'),
+    fitTitle: t('Fit all on screen'),
+    min: ZOOM_MIN,
+    max: ZOOM_MAX,
+  });
+  cleanups.push(() => zoomHud.destroy());
+
+  const updateReadout = (): void => zoomHud.setReadout(t('{n} across', { n: gridCols() }));
   function applyZoom(): void {
     cardW = clampZoom(cardW);
     gridEl.style.setProperty('--me-card-w', `${cardW}px`);
     try { localStorage.setItem(ZOOM_KEY, String(cardW)); } catch { /* private mode */ }
-    if (zoomOutBtn) zoomOutBtn.disabled = cardW <= ZOOM_MIN;
-    if (zoomInBtn) zoomInBtn.disabled = cardW >= ZOOM_MAX;
+    zoomHud.setValue(cardW);
     updateReadout();
   }
   applyZoom();
-
-  viewEl.querySelectorAll<HTMLButtonElement>('[data-me-zoom]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const kind = btn.dataset.meZoom;
-      cardW = kind === 'in' ? cardW * ZOOM_STEP : kind === 'out' ? cardW / ZOOM_STEP : fitCardW();
-      applyZoom();
-    });
-  });
 
   // Keep "N across" honest as the window resizes (auto-fill reflows columns).
   const zoomRO = new ResizeObserver(() => updateReadout());

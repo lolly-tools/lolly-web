@@ -13,12 +13,50 @@
   text-align: center;
 }
 
+/* ── Note / callout primitive (component audit rec 13) — the shared "bordered
+   muted-background paragraph" shape that .plat-note (platform.css) and
+   .valid-note (valid.css) restate with their own spacing; this pass owns both
+   of those blocks too, so their literally-identical `border-radius`/`border`
+   lines move into the combined selectors below instead of being retyped —
+   their own padding/font-size/background stay local (folding those in would
+   nudge existing pixel values, a visual change this pass avoids).
+   .share-note/.share-warning (dialogs.css) are the same shape again but that
+   file isn't owned this pass — see follow-ups. `.note--error`/`.note--warning`
+   are ready-made variants for markup that adopts `.note` directly later; today
+   only `.error` below uses the error tone, kept as its own full ruleset since
+   nothing in the DOM applies `.note` to it. */
+.note,
+.error,
+.plat-note {              /* platform.css */
+  border-radius: var(--radius);
+}
+.note,
+.plat-note,                /* platform.css */
+.valid-note {               /* valid.css */
+  border: 1px solid hsl(var(--border));
+}
+.note {
+  margin: 0; max-width: 72ch; padding: .75rem .9rem;
+  font-size: .85rem; line-height: 1.55; color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / .5);
+}
+.note strong { color: hsl(var(--foreground)); }
+.note--error {
+  color: hsl(var(--destructive));
+  border-color: hsl(var(--destructive) / 0.4);
+  background: hsl(var(--destructive) / 0.06);
+}
+.note--warning {
+  color: hsl(38 92% 30%);
+  border-color: hsl(38 92% 50% / 0.55);
+  background: hsl(38 92% 50% / 0.1);
+}
+
 .error {
   color: hsl(var(--destructive));
   padding: 12px 16px;
   border: 1px solid hsl(var(--destructive) / 0.4);
   background: hsl(var(--destructive) / 0.06);
-  border-radius: var(--radius);
   font-size: 13px;
 }
 
@@ -71,18 +109,18 @@
   grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
 }
 /* Icon tile: glyph, then a big count, then the type label. Surface composes
-   .card--sub (chips.css) — layout + padding are local deltas. NOTE this name
-   collides with catalog.ts's OWN .cat-tile asset card (scoped there under
-   `.catalog .cat-tile` to defeat it) — the rename this calls for touches
-   lib/catalog-summary.ts, out of scope for this pass; see followUps. */
-.cat-tile {
+   .card--sub (chips.css) — layout + padding are local deltas. Named
+   .cat-stat-tile (component audit rec 10 follow-up) — it used to be plain
+   .cat-tile, which collided with catalog.ts's OWN unrelated .cat-tile asset
+   card (that one stays put; this is the renamed side). */
+.cat-stat-tile {
   display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
   padding: .85rem .9rem;
 }
-.cat-tile-icon { color: hsl(var(--muted-foreground)); margin-bottom: .45rem; }
-.cat-tile-icon svg { display: block; width: 22px; height: 22px; }
-.cat-tile-num { font-size: 1.45rem; font-weight: 700; line-height: 1; }
-.cat-tile-label { font-size: .78rem; color: hsl(var(--muted-foreground)); }
+.cat-stat-tile-icon { color: hsl(var(--muted-foreground)); margin-bottom: .45rem; }
+.cat-stat-tile-icon svg { display: block; width: 22px; height: 22px; }
+.cat-stat-tile-num { font-size: 1.45rem; font-weight: 700; line-height: 1; }
+.cat-stat-tile-label { font-size: .78rem; color: hsl(var(--muted-foreground)); }
 
 /* Secondary "by status" row — compact icon chips beneath the tool tiles.
    Capitalize composes .chip--status (chips.css); the rest (gap, padding,
@@ -97,6 +135,54 @@
 .cat-tag strong { font-weight: 700; }
 
 .cat-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: .85rem; font-style: italic; }
+
+/* ─── Activity summary (lib/activity-summary.ts) ───────────────────────────────
+   Same story as Catalogue summary above: one source, rendered on BOTH the
+   Profile page and the Dashboard's "This device" tab, each hosting it at a
+   different size (Profile's cards run larger). Previously EVERY `.activity-*`/
+   `.fmt-*` rule was retyped whole in profile.css AND dashboard.css — a drift
+   risk (component audit rec 13). The declarations that were already
+   byte-identical between the two views move here, scoped to both view roots
+   in one selector list so they can't drift apart again; each view's own file
+   keeps only its real size/spacing deltas. */
+.profile-view .activity-split .activity-grid, .profile-view .activity-split .activity-block,
+.dashboard-view .activity-split .activity-grid, .dashboard-view .activity-split .activity-block {
+  margin: 0;
+}
+.profile-view .activity-grid, .dashboard-view .activity-grid { display: grid; gap: .7rem; }
+.profile-view .activity-stat, .dashboard-view .activity-stat {
+  text-align: center; display: flex; flex-direction: column; gap: .25rem;
+}
+.profile-view .activity-num, .dashboard-view .activity-num {
+  font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
+}
+.profile-view .activity-label, .dashboard-view .activity-label {
+  text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground));
+}
+.profile-view .activity-h3, .dashboard-view .activity-h3 {
+  text-transform: uppercase; letter-spacing: .06em; color: hsl(var(--muted-foreground)); font-weight: 700;
+}
+.profile-view .fmt-bars, .dashboard-view .fmt-bars {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem;
+}
+.profile-view .fmt-row, .dashboard-view .fmt-row { display: grid; align-items: center; }
+.profile-view .fmt-name, .dashboard-view .fmt-name { font-weight: 700; letter-spacing: .03em; }
+.profile-view .fmt-track, .dashboard-view .fmt-track { background: hsl(var(--muted)); overflow: hidden; }
+.profile-view .fmt-fill, .dashboard-view .fmt-fill {
+  display: block; height: 100%; background: hsl(var(--primary) / .5);
+}
+.profile-view .fmt-row.is-top .fmt-fill, .dashboard-view .fmt-row.is-top .fmt-fill { background: hsl(var(--primary)); }
+.profile-view .fmt-count, .dashboard-view .fmt-count {
+  text-align: right; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums;
+}
+.profile-view .activity-meta, .dashboard-view .activity-meta {
+  line-height: 1.7; color: hsl(var(--muted-foreground));
+}
+.profile-view .activity-meta strong, .dashboard-view .activity-meta strong {
+  color: hsl(var(--foreground)); font-weight: 700;
+}
+.profile-view .activity-meta .dot, .dashboard-view .activity-meta .dot { opacity: .45; margin: 0 .15rem; }
+.profile-view .activity-meta .activity-fav, .dashboard-view .activity-meta .activity-fav { text-decoration: none; }
 
 /* The brand-asset tiles land after a fetch; fade them in rather than pop. */
 @keyframes cat-fade { from { opacity: 0; } to { opacity: 1; } }
@@ -132,6 +218,9 @@
   font-size: 12px;
 }
 
+/* background/color/text-shadow/backdrop-filter/transition come from the shared
+   .btn--glass alias (buttons.css) — every back pill, including this base rule
+   and the .sidebar-back variant below, now gets the same glass treatment. */
 .tools-home {
   display: inline-flex;
   align-items: center;
@@ -140,9 +229,7 @@
   font-size: 13px;
   cursor: pointer;
   z-index: 9;
- 
-  background-color: hsl(var(--primary) / 0.1);
-  color: hsl(var(--primary));
+
   box-shadow: inset 0 -.1em 1em 1px hsl(var(--primary) / 0.22), 0 .1em .3em #0002;
 
   top: 2em;
@@ -150,7 +237,6 @@
   padding: 8px 18px;
   border-radius:calc(var(--radius)*1.5);            /* pill */
   text-decoration: none;
-  transition: background 0.12s, box-shadow 0.12s;
 }
 .tools-home:hover {
   background-color: hsl(var(--primary) / 0.16);
@@ -170,21 +256,19 @@
   flex: none;
 }
 
+/* background/color/text-shadow/backdrop-filter/transition come from the shared
+   .btn--glass alias (buttons.css) — matches the top-right FAB cluster. */
 .profile-link {
-    position: absolute;    background: hsl(var(--muted) / 0.65);
+    position: absolute;
     z-index:99999;
     right: 2em;
     top: 1.25em;
-    color: currentcolor;
     text-decoration: none;
     font-weight: 600;
     font-size: 13px;
     border: 1px solid hsl(var(--primary));
     padding: 12px 10px 12px 3em;
     border-radius: calc(var(--radius)*1.5);
-    text-shadow: 0 1px hsl(var(--secondary) / .35);
-    backdrop-filter: blur(2px);
-    transition: background 0.12s, color 0.12s;
   }
 
 /* Pin the profile link to the viewport on the gallery so it stays put while the
@@ -385,6 +469,27 @@
    checkerboard the transparent swatch chip uses, so a translucent value
    previews its alpha. The un-painted fallbacks are the neutral chrome for
    valueless states (transparent, mid-edit junk). */
+/* ── Mono field-input primitive (component audit rec 13) — the "bordered
+   monospace value box" recipe repeated across the app: .share-link-field
+   (dialogs.css), .be-fmt-input/.be-lock-field/.be-cmyk-in (brand-studio.css).
+   Neither file is owned this pass, so those copies aren't wired onto this
+   class yet (see follow-ups) — this establishes the target shape for that
+   migration. .color-input just below is the SAME concept again (a mono value
+   field) but its box is a distinct oversized/painted variant with no
+   property textually identical to this recipe, so merging it here would
+   nudge its own padding/font-size/radius — a visual change this pass avoids;
+   it stays its own full ruleset. */
+.field-input {
+  padding: 7px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.4);
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 /* Wrap = positioning context for the eyedropper button inside the field. */
 .color-input-wrap { position: relative; }
 .color-input {

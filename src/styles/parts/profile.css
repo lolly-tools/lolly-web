@@ -207,30 +207,10 @@
   color: hsl(var(--primary));
   font-size: .7rem; font-weight: 600; letter-spacing: .02em;
 }
-/* Small (i) explainer beside a flag label. The button is interactive, so a click inside
-   the <label> doesn't toggle the checkbox; the popover shows on hover/focus. */
+/* Small (i) explainer beside a flag label — the shared help-tip button now
+   (component audit rec 13); .feature-flag-info stays as its positioning host
+   (see profile.ts's flagRow), its own .help-tip-btn/-pop styling lives in tool.css. */
 .profile-view .feature-flag-info { position: relative; display: inline-flex; vertical-align: middle; margin-left: .35rem; }
-.profile-view .feature-flag-info-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 1.15rem; height: 1.15rem; padding: 0; border: none; border-radius: 999px;
-  background: none; color: hsl(var(--muted-foreground)); cursor: help;
-}
-.profile-view .feature-flag-info-btn:hover { color: hsl(var(--primary)); }
-.profile-view .feature-flag-info-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
-.profile-view .feature-flag-info-pop {
-  position: absolute; left: 50%; bottom: calc(100% + .4rem); transform: translateX(-50%);
-  width: max-content; max-width: 16rem; z-index: 5;
-  padding: .5rem .65rem; border-radius: var(--radius);
-  background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
-  border: 1px solid hsl(var(--border)); box-shadow: 0 8px 24px -8px #0007;
-  font-size: .74rem; font-weight: 400; line-height: 1.4; letter-spacing: 0; text-transform: none;
-  white-space: normal; text-align: left; opacity: 0; visibility: hidden; transition: opacity .12s;
-  /* A tooltip must never intercept clicks (it overhangs the row + the switch when shown) —
-     matching .info-tip. Without this the strip-metadata explainer ate clicks on the toggle. */
-  pointer-events: none;
-}
-.profile-view .feature-flag-info:hover .feature-flag-info-pop,
-.profile-view .feature-flag-info:focus-within .feature-flag-info-pop { opacity: 1; visibility: visible; }
 .profile-view .feature-flag-input { position: absolute; opacity: 0; width: 0; height: 0; }
 .profile-view .feature-flag-switch {
   flex: none; position: relative;
@@ -303,51 +283,43 @@
 .profile-view .profile-theme-sample { font-size: 1.6rem; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .profile-view .profile-theme { transition: none; } }
 
-/* Activity — stat tiles, a format leaderboard (proportional bars), meta line */
+/* Activity — stat tiles, a format leaderboard (proportional bars), meta line.
+   The declarations byte-identical with the Dashboard's copy of this same
+   component (lib/activity-summary.ts) now live once in components.css,
+   scoped to both view roots (component audit rec 13) — only this view's own
+   sizing stays here. */
 /* On desktop the stat tiles sit beside the format leaderboard; they stack below. */
 .profile-view .activity-split {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.75rem; align-items: start; margin: 0 0 1.25rem;
 }
-.profile-view .activity-split .activity-grid,
-.profile-view .activity-split .activity-block { margin: 0; }
 .profile-view .activity-grid {
   /* Cap at ~4 columns (a higher min stops auto-fit cramming 6 narrow ones); the
      1fr lets the tiles stretch to fill the row. */
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: .7rem; margin: 0 0 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  margin: 0 0 1.25rem;
 }
-.profile-view .activity-stat {text-align: center;
-  display: flex; flex-direction: column; gap: .25rem;
+.profile-view .activity-stat {
   padding: .85rem .9rem; border-radius: calc(var(--radius) * 1.1);
   background: hsl(var(--muted) / .45);
   border: 1px solid hsl(var(--border) / .6);
 }
-.profile-view .activity-num { font-size: 1.75rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-.profile-view .activity-label { font-size: .64rem; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); }
+.profile-view .activity-num { font-size: 1.75rem; }
+.profile-view .activity-label { font-size: .64rem; }
 
 .profile-view .activity-block { margin: 0 0 1.1rem; }
-.profile-view .activity-h3 {
-  margin: 0 0 .55rem; font-size: .64rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .06em; color: hsl(var(--muted-foreground));
-}
-.profile-view .fmt-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
-.profile-view .fmt-row { display: grid; grid-template-columns: 5rem 1fr 2.75rem; text-align:right;align-items: center; gap: .65rem; font-size: .8rem; }
-.profile-view .fmt-name { font-weight: 700; letter-spacing: .03em; }
-.profile-view .fmt-track { height: .55rem; background: hsl(var(--muted)); border-radius: var(--radius); overflow: hidden; }
-.profile-view .fmt-fill { display: block; height: 100%; border-radius: var(--radius); background: hsl(var(--primary) / .5); }
-.profile-view .fmt-row.is-top .fmt-fill { background: hsl(var(--primary)); }
-.profile-view .fmt-count { text-align: right; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.profile-view .activity-h3 { margin: 0 0 .55rem; font-size: .64rem; }
+.profile-view .fmt-row { grid-template-columns: 5rem 1fr 2.75rem; text-align: right; gap: .65rem; font-size: .8rem; }
+.profile-view .fmt-track { height: .55rem; border-radius: var(--radius); }
+.profile-view .fmt-fill { border-radius: var(--radius); }
 
-.profile-view .activity-meta { font-size: .82rem; line-height: 1.7; margin: 0; color: hsl(var(--muted-foreground)); }
-.profile-view .activity-meta strong { color: hsl(var(--foreground)); font-weight: 700; }
-.profile-view .activity-meta .dot { opacity: .45; margin: 0 .15rem; }
+.profile-view .activity-meta { font-size: .82rem; margin: 0; }
 /* Favourite tool: a pill button in the meta line that opens that tool. */
 .profile-view .activity-meta .activity-fav {
   display: inline-flex; align-items: center; gap: .25rem;
   padding: .05rem .5rem;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  color: hsl(var(--foreground)); font-weight: 700; text-decoration: none;
+  color: hsl(var(--foreground)); font-weight: 700;
   transition: background .12s, border-color .12s, color .12s;
 }
 .profile-view .activity-meta .activity-fav::after { content: "→"; font-weight: 600; opacity: .55; }
@@ -497,31 +469,9 @@
   .profile-view .store-bar .seg, .profile-view .store-manage-sum .profile-collapse-chev { transition: none; }
 }
 
-/* "i" badge beside a heading — hover/focus reveals the description as a tooltip. */
-.profile-view .info-dot {
-  position: relative;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 14px; height: 14px; margin: 0 .15rem; vertical-align: middle;
-  border: 1px solid currentColor; border-radius: 50%;
-  font-size: 9px; font-weight: 700; font-style: normal; line-height: 1;
-  opacity: .55; cursor: help; outline: none;
-  /* Reset native <button> chrome so the badge looks identical. */
-  appearance: none; -webkit-appearance: none;
-  background: none; padding: 0; color: inherit; font-family: inherit;
-}
-.profile-view .info-dot:hover, .profile-view .info-dot:focus-visible { opacity: 1; }
-.profile-view .info-tip {
-  position: absolute; top: calc(100% + 7px); left: 0;
-  width: max-content; max-width: 230px;
-  padding: .45rem .6rem; border-radius: var(--radius);
-  background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
-  border: 1px solid hsl(var(--border)); box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
-  font-size: .72rem; font-weight: 400; line-height: 1.45;
-  text-transform: none; letter-spacing: 0; white-space: normal; text-align: left;
-  opacity: 0; visibility: hidden; transition: opacity .12s; pointer-events: none; z-index: 5;
-}
-.profile-view .info-dot:hover .info-tip,
-.profile-view .info-dot:focus-visible .info-tip { opacity: 1; visibility: visible; }
+/* The "i" badge beside a heading (.info-dot/.info-tip) moved onto the shared
+   help-tip component (component audit rec 13) — infoDot() in profile.ts now
+   emits .help-tip-host/.help-tip-btn/.help-tip-pop (tool.css) instead. */
 
 /* Headshot widget — a large circle; "Edit" overlays it (on hover, or always
    when empty), and a small ✕ badge top-right removes it. */

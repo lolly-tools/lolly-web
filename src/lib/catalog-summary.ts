@@ -82,12 +82,14 @@ function countBy<T>(items: readonly T[], key: (t: T) => string): Array<[string, 
 }
 
 // One icon tile: big count, glyph, label. Used for tool categories & asset types.
+// Named .cat-stat-tile (component audit rec 10 follow-up) — .cat-tile alone
+// collided with catalog.ts's unrelated asset card of the same name.
 function tile(icon: string, count: number, name: string): string {
   return `
-    <div class="cat-tile">
-      <span class="cat-tile-icon">${icon}</span>
-      <span class="cat-tile-num">${count}</span>
-      <span class="cat-tile-label">${escape(name)}</span>
+    <div class="cat-stat-tile">
+      <span class="cat-stat-tile-icon">${icon}</span>
+      <span class="cat-stat-tile-num">${count}</span>
+      <span class="cat-stat-tile-label">${escape(name)}</span>
     </div>`;
 }
 

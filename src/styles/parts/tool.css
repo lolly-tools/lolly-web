@@ -221,7 +221,9 @@
 
 /* Top row of the sidebar header: the Tools back pill (left) + undo/redo (right).
    The theme toggle now lives in the canvas zoom HUD (.stage-nav-theme), not here,
-   so every canvas tool carries it and the header stays uncluttered. */
+   so every canvas tool carries it and the header stays uncluttered. (The HUD's own
+   rules — .stage-nav/.stage-nav-btn/-pct/-fit/-sep — live in editor.css, not here;
+   its markup/click-wiring/disabled-state come from components/zoom-hud.ts.) */
 .sidebar-back-row {
   display: flex;
   align-items: center;
@@ -490,15 +492,16 @@
 /* Shared "← Tools" return pill — fixed top-left corner. Used identically on the
    profile page, /pro batch mode, and full-screen utility tools (color-palette,
    countdown-timer). Combined selector beats the single-class .tools-home/.home-full
-   rules so the fixed positioning always wins regardless of source order. */
+   rules so the fixed positioning always wins regardless of source order.
+   The glass look itself (background/backdrop-filter/text-shadow) now lives on
+   the base .tools-home rule (components.css, via the .btn--glass alias in
+   buttons.css) — every back pill gets it, not just this fixed variant — so this
+   combined selector is left with ONLY its positioning job. */
 .tools-home.home-full {
   position: fixed;
   top: 1.25rem;
   left: 1.25rem;
   z-index: 100;
-  backdrop-filter: blur(4px);
-  background: hsl(var(--muted) / 0.45);
-  text-shadow: 0 1px hsl(var(--secondary) / .5);
 }
 
 .input-row {
@@ -1043,6 +1046,17 @@ span.flatpickr-weekday {
 }
 
 /* ─── Collapsible input section ─────────────────────────────────────────── */
+/* Same disclosure family as the shared `.section-card` fold primitive
+   (disclosure.css, component audit rec 7) — a <details>/<summary> that folds
+   a body — but every rule below is a real, deliberate local delta: the
+   summary's height matches a sidebar <select> (so a collapsed section lines
+   up with the dropdowns beside it), its own CSS-triangle chevron (not the
+   shared SVG one), and `overflow: clip` + the `:has()` focus-ring promotion
+   just below are hard-won fixes for bugs specific to this dense, nested
+   sidebar context (see the comments on each). Composing them onto the shared
+   primitive would either lose one of those fixes or force a visual parity
+   this dense a context never asked for, so `.input-section` keeps its own
+   rules rather than taking the literal `section-card` class. */
 
 .input-section {
   border: 0; box-shadow: 0 .06rem .3rem #0001;

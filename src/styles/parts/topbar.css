@@ -126,11 +126,9 @@
   font-size: 11px; font-weight: 700; line-height: 1;
   color: hsl(var(--primary-foreground)); background: hsl(var(--primary)); border-radius: var(--radius);
 }
-.history-fab {
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
-  transition: background 0.12s, color 0.12s;
-}
+/* box shape (utilities.css) stays as-is; background/color/backdrop-filter/
+   transition come from the shared .btn--glass alias (buttons.css), which loads
+   after utilities.css so it wins the cascade without needing an edit there. */
 .history-fab:hover { background: hsl(var(--primary) / 0.12); }
 .history-fab svg { width: 18px; height: 18px; }
 .history-fab-count {
@@ -155,6 +153,8 @@
    the top-right cluster on Tools, Catalog, and Projects, and floats top-right
    in the Dashboard/Verify .plat-header. Opens a popover the same way the
    filter FAB does; the popover itself reuses the mobile profile menu's surface. ── */
+/* background/color/backdrop-filter/transition come from the shared .btn--glass
+   alias (buttons.css) — matches .filter-fab/.history-fab/.profile-link. */
 .lang-fab {
   position: relative;
   display: inline-flex;
@@ -166,12 +166,7 @@
   padding: 0;
   border: 1px solid hsl(var(--primary));
   border-radius: var(--radius);
-  background: hsl(var(--muted) / 0.5);
-  color: hsl(var(--primary));
   cursor: pointer;
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
-  transition: background 0.12s, color 0.12s;
 }
 .lang-fab svg { width: 18px; height: 18px; }
 .lang-fab:hover,
@@ -187,7 +182,10 @@
      viewport edge or a fixed bottom bar (.gallery-footer etc), so the full
      language list shows uncropped whenever there's room for it. */
   max-height: 90vh;
-  overflow-y: auto;
+  /* The LIST scrolls, not the menu — keeps the sort tabs pinned at the top on
+     height-capped opens (small viewports / pinned bottom bars), matching the
+     /info site's menu. */
+  overflow: hidden;
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -201,7 +199,7 @@
 @media (prefers-reduced-motion: no-preference) {
   .lang-menu { animation: profile-menu-in .14s ease both; transform-origin: top right; }
 }
-.lang-menu-list { display: flex; flex-direction: column; gap: 2px; }
+.lang-menu-list { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .lang-menu-item {
   display: flex; align-items: center; gap: 10px;
   width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius);
@@ -214,8 +212,8 @@
    single-flag row and English's three-flag row line up. */
 .lang-menu-flags {
   flex: 0 0 auto;
-  display: inline-flex; align-items: center; gap: 3px;
-  min-width: 58px;
+  display: inline-flex; align-items: center;     place-content: flex-end; gap: 3px;
+  min-width: 4em;
   font-size: 16px; line-height: 1;
   filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
 }
@@ -227,3 +225,24 @@
   color: hsl(var(--primary));
   font-weight: 700;
 }
+/* Sort toggle at the top of the menu — Speakers (default) vs A–Z. Styles
+   mirror the colour picker's space tabs (.color-mode-tabs / .color-mode-tab in
+   components.css); the menu's own padding/gap handles spacing beyond the 4px. */
+.lang-sort-tabs {
+  display: flex; gap: 2px; padding: 3px; margin-bottom: 4px; flex: none;
+  background: hsl(var(--muted) / .5); border-radius: 999px;
+}
+/* nowrap + auto basis (vs the colour tabs' 1 1 0) so a long translated
+   "Speakers" widens its pill instead of wrapping or clipping. */
+.lang-sort-tab {
+  flex: 1 1 auto; white-space: nowrap; padding: 4px 8px; border: 0; cursor: pointer;
+  background: transparent; color: hsl(var(--muted-foreground));
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em;
+  border-radius: 999px; transition: background .12s, color .12s;
+}
+.lang-sort-tab:hover { color: hsl(var(--foreground)); }
+.lang-sort-tab[aria-selected="true"] {
+  background: hsl(var(--card)); color: hsl(var(--foreground)); font-weight: 700;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / .12);
+}
+.lang-sort-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }

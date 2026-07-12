@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "«{name}» er {size}{dims}. Behold originalen — best for en Content Credential — eller endre størrelsen{resize} for å spare plass?",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "«{name}» blir permanent fjernet fra bildene dine. Dette kan ikke angres.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "«{variant}» er allerede navnet på en logo — velg et annet navn for merket.",
-  "✓ Added": "✓ Lagt til"
+  "✓ Added": "✓ Lagt til",
+  "Theme: {name} — switch theme": "Tema: {name} — bytt tema",
+  "Speakers": "Talere",
+  "Sort languages": "Sorter språk"
 }

@@ -21,8 +21,7 @@
 .export-filename:focus-visible,
 .tool-actions select:focus-visible,
 .profile-view .profile-field input:focus-visible,
-.color-input:focus-visible,
-.profile-view .info-dot:focus-visible {
+.color-input:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }

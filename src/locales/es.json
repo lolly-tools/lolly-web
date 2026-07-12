@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "“{name}” pesa {size}{dims}. ¿Mantener el original — lo mejor para un Content Credential — o redimensionarlo{resize} para ahorrar espacio?",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "“{name}” se eliminará permanentemente de tus imágenes. Esto no se puede deshacer.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "“{variant}” ya es el nombre de un logotipo — elige otro nombre para la marca.",
-  "✓ Added": "✓ Añadido"
+  "✓ Added": "✓ Añadido",
+  "Theme: {name} — switch theme": "Tema: {name} — cambiar tema",
+  "Speakers": "Hablantes",
+  "Sort languages": "Ordenar idiomas"
 }

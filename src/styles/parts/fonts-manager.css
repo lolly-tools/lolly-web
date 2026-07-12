@@ -1,0 +1,172 @@
+/* Font manager component */
+
+.fonts-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 1.5rem;
+}
+
+.fonts-upload-drop {
+  display: block;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.fonts-upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem 1.5rem;
+  border: 2px dashed var(--border-color, #ccc);
+  border-radius: 0.5rem;
+  background-color: var(--bg-secondary, #f9f9f9);
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.fonts-upload-drop.is-dragging .fonts-upload-area {
+  border-color: var(--brand-color, #0066cc);
+  background-color: var(--brand-alpha, rgba(0, 102, 204, 0.05));
+}
+
+.fonts-upload-drop.is-uploading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.fonts-upload-icon {
+  font-size: 2rem;
+}
+
+.fonts-upload-text {
+  line-height: 1.5;
+}
+
+.fonts-upload-text strong {
+  display: block;
+  font-weight: 600;
+}
+
+.fonts-upload-btn {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link-color, #0066cc);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}
+
+.fonts-upload-btn:hover {
+  opacity: 0.8;
+}
+
+.fonts-upload-hint {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #666);
+}
+
+.fonts-list {
+  min-height: 2rem;
+}
+
+.fonts-empty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-secondary, #999);
+  font-style: italic;
+}
+
+.fonts-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.fonts-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 0.4rem;
+  background-color: var(--bg-primary, #fff);
+  position: relative;
+}
+
+.fonts-item:hover {
+  border-color: var(--border-hover, #999);
+  background-color: var(--bg-hover, #f5f5f5);
+}
+
+.fonts-item-name {
+  font-weight: 600;
+  color: var(--text-primary, #000);
+  word-break: break-word;
+}
+
+.fonts-item-meta {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #666);
+}
+
+.fonts-item-weight,
+.fonts-item-style,
+.fonts-item-size {
+  display: inline-flex;
+  align-items: center;
+}
+
+.fonts-item-weight::before {
+  content: 'w:';
+  margin-right: 0.25rem;
+}
+
+.fonts-item-style::before {
+  content: 'style:';
+  margin-right: 0.25rem;
+}
+
+.fonts-item-size::before {
+  content: 'size:';
+  margin-right: 0.25rem;
+}
+
+.fonts-item-delete {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background-color: var(--bg-danger, #f0f0f0);
+  color: var(--text-primary, #000);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 0.2rem;
+  transition: all 0.2s ease;
+  opacity: 0;
+}
+
+.fonts-item:hover .fonts-item-delete {
+  opacity: 1;
+}
+
+.fonts-item-delete:hover {
+  background-color: var(--bg-danger-hover, #e0e0e0);
+}
+
+.fonts-loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary, #999);
+}

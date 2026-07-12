@@ -14,16 +14,22 @@
  */
 
 import '../styles/parts/profile.css';   // async CSS chunk (lazy view — not on the landing)
+import '../styles/parts/tool.css';      // .help-tip-btn/-pop/-host styles — shared chunk with the
+                                         // tool view, same reuse the .tool-inputs sheet already gets
+                                         // from multi-edit.ts (component audit rec 13)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
+import { setTheme } from '../lib/set-theme.ts';
 import { currentLang, switchLang, t, docsHref } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
-import { playThemeSfx, playSfx } from '../lib/sfx.ts';
+import { playSfx } from '../lib/sfx.ts';
 import { staggerReveal } from '../lib/reveal.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
 import { BATCH_SLOT_PREFIX } from '../lib/batch-slots.ts';
-import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
+import { mountModal } from '../components/modal.ts';
+import type { ModalHandle } from '../components/modal.ts';
+import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
@@ -42,7 +48,7 @@ import { registerUserFonts } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
 import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
-import { relativeTime } from '../folder-tiles.ts';
+import { relativeTime, fmtBytes, sessionRow } from '../folder-tiles.ts';
 import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
 import type { FeatureFlag } from '../feature-flags.ts';
 
@@ -149,6 +155,13 @@ const fieldAttrs = (f: string): string => {
 // of the "My images" library list.
 const HEADSHOT_ID = 'user/headshot';
 
+// The Storage manager's own ad-hoc mountModal dialogs (clear/hoard/keep-active/import
+// gates + the user-image lightbox) — tracked here, mirroring confirm-dialog.ts's
+// openDialogs, so mountProfile's _cleanup can close them on a view swap. A real
+// <dialog> sits in the top layer, so an orphan left open would block the next view
+// (unlike the body-level overlay divs these replaced).
+const openProfileModals = new Set<ModalHandle<any>>();
+
 // Randomised word the user must type to confirm the irreversible "clear all my
 // data" action — a deliberate speed-bump against an accidental wipe.
 const CLEAR_CONFIRM_WORDS = ['lolly', 'open', 'free', 'privacy', 'choice', 'thank you', 'security', 'goodbye'];
@@ -162,8 +175,13 @@ const HOARD_CONFIRM_WORDS = ['hoard', 'mine', 'stash', 'vault', 'archive', 'home
 // Chevron for a collapsible section's summary (rotates 90° when open via CSS).
 // Path data lives in lib/icons.ts as 'chevronRight' — was a <polyline>, same shape as
 // the (deduped) <path> chevrons in gallery.ts/projects.ts (component-audit rec 5).
-const COLLAPSE_CHEV = icon('chevronRight', { size: 16, strokeWidth: 2.5, className: 'profile-collapse-chev' });
-const INFO_ICON = icon('info', { size: 14 });
+// `section-card-chev`/`-summary`/`-title`/`-body` ride alongside every
+// `profile-collapse-*` class below — the shared fold primitive's sub-part
+// names (disclosure.css, component audit rec 7). profile.css's own, more
+// specific `.profile-view .profile-collapse …` rules still govern every
+// pixel (this is prep for a later pass that thins profile.css onto the
+// primitive, not a visual change today).
+const COLLAPSE_CHEV = icon('chevronRight', { size: 16, strokeWidth: 2.5, className: 'profile-collapse-chev section-card-chev' });
 // Shield-with-check — the same glyph the gallery's green Verify button uses (deduped
 // against footer-nav.ts's identical NAV_ICONS.shield as 'shieldCheck').
 const VERIFY_SHIELD = icon('shieldCheck', { size: 18 });
@@ -174,9 +192,21 @@ const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-
 const DASHBOARD_ICON = icon('dashboard', { size: 18 });
 
 // A small "i" badge with a hover/focus tooltip — used beside storage headings.
-// A real <button> (not a tabbable span) so its role + keyboard focus are native.
-const infoDot = (text: string): string =>
-  `<button type="button" class="info-dot" aria-label="${escape(text)}">i<span class="info-tip" aria-hidden="true">${escape(text)}</span></button>`;
+// Was a bespoke .info-dot/.info-tip pair; now the shared help-tip button
+// (component audit rec 13), wrapped in its own positioning host so the pop
+// anchors to the badge rather than stretching to match a page-width row —
+// `.help-tip-host`'s default (`left:0;right:0`, sized to the host) assumes a
+// wide host like a sidebar `.input-row`, so the pop gets an inline auto-width
+// override here (same recipe as tool.css's `.block-control > .help-tip-pop`)
+// to keep it exactly the compact, left-anchored badge tooltip it always was.
+const infoDot = (text: string): string => {
+  const tip = helpTip(text);
+  const pop = tip.pop.replace(
+    'class="help-tip-pop"',
+    'class="help-tip-pop" style="right:auto;width:max-content;min-width:140px;max-width:230px"',
+  );
+  return `<span class="help-tip-host" style="display:inline-flex;vertical-align:middle">${tip.button}${pop}</span>`;
+};
 
 export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, params: string = ''): Promise<void> {
   document.title = 'Profile — Lolly';
@@ -203,16 +233,30 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
   // One toggle row for a feature flag (closes over `profile` for its checked state). Honours
   // a flag's `default` (opt-in flags start off) and shows an (i) explainer when it has `info`.
-  const flagRow = (f: FeatureFlag) => `
+  // The explainer is the shared help-tip button too (component audit rec 13) — kept on
+  // `.feature-flag-info` as its positioning host (it already carries the right
+  // position:relative/margin) with `help-tip-host` added alongside so the shared
+  // hover/focus-reveal CSS (tool.css) recognises it. The pop's placement is a real,
+  // deliberate delta worth keeping: this row sits at the *bottom* of a long list, so
+  // it opens upward/centred (inline style override) rather than help-tip-pop's default
+  // "drop below, span the host" — which here would spill past the list, off-screen.
+  const flagRow = (f: FeatureFlag) => {
+    const info = f.info ? helpTip(t(f.info)) : null;
+    const infoPop = info ? info.pop.replace(
+      'class="help-tip-pop"',
+      'class="help-tip-pop" style="left:50%;right:auto;top:auto;bottom:calc(100% + .4rem);transform:translateX(-50%);width:max-content;max-width:16rem"',
+    ) : '';
+    return `
     <li>
       <label class="feature-flag">
         <span class="feature-flag-label">${escape(t(f.label))}${f.pill ? `<span class="feature-flag-pill">${escape(t(f.pill))}</span>` : ''}${
-          f.info ? `<span class="feature-flag-info"><button type="button" class="feature-flag-info-btn" aria-label="${escape(t('About: {label}', { label: t(f.label) }))}">${INFO_ICON}</button><span class="feature-flag-info-pop" role="tooltip">${escape(t(f.info))}</span></span>` : ''
+          info ? `<span class="feature-flag-info help-tip-host">${info.button}${infoPop}</span>` : ''
         }</span>
         <input type="checkbox" class="feature-flag-input" data-flag="${escape(f.id)}" ${isFlagOn(profile, f) ? 'checked' : ''}>
         <span class="feature-flag-switch" aria-hidden="true"></span>
       </label>
     </li>`;
+  };
 
   viewEl.innerHTML = `
     <a href="#/" class="tools-home home-full">${t('Tools')}</a>
@@ -288,18 +332,18 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </section>
 
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
-        <summary class="profile-collapse-summary"><h2>${t('Your activity')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body">${renderActivity(getMetrics(), window.__toolIndex?.tools ?? [])}</div>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Your activity')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body">${renderActivity(getMetrics(), window.__toolIndex?.tools ?? [])}</div>
       </details>
 
       <details class="profile-card profile-collapse" id="storage-section"${startOpen('storage-section')}>
-        <summary class="profile-collapse-summary"><h2>${t('Storage')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body" id="storage-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Storage')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body" id="storage-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
       <details class="profile-card profile-collapse" id="feature-flags-section"${(openState['feature-flags-section'] || focusFlags) ? ' open' : ''}>
-        <summary class="profile-collapse-summary"><h2>${t('Feature flags')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body">
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Feature flags')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body">
           <p class="storage-hint-text feature-hint-text">${t('Self-governance, autonomy, choice. Enable or disable parts of the app here')}</p>
           <ul class="feature-flags" id="feature-flags">
             ${CATEGORY_FLAGS.map(f =>
@@ -316,8 +360,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </details>
 
       <details class="profile-card profile-collapse" id="identity-section"${startOpen('identity-section')}>
-        <summary class="profile-collapse-summary"><h2>${t('Content Credentials')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body" id="identity-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Content Credentials')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body" id="identity-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
     </div>
@@ -378,18 +422,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     if (!btn) return;
     const next = btn.dataset.themeSet;
     if (!next || next === currentTheme()) return;
-    applyTheme(next);
-    playThemeSfx(next);
     // Reflect the new active state across the picker.
     themePick.querySelectorAll<HTMLButtonElement>('[data-theme-set]').forEach(b => {
       const on = b.dataset.themeSet === next;
       b.classList.toggle('is-active', on);
       b.setAttribute('aria-pressed', String(on));
     });
-    try {
-      const updated = { ...(await host.profile.get()), theme: next };
-      await host.profile.set?.(updated);
-    } catch { /* preference save is best-effort */ }
+    await setTheme(host, next);
   });
 
   // Language FAB menu — same control as gallery/catalog/projects, so switching
@@ -401,6 +440,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // each flip to profile.sfxMuted + localStorage and chirps when re-enabled (via applySfxMuted,
   // inside wireSoundSwitch), a preference like the theme picker.
   wireSoundSwitch(viewEl, host as unknown as Parameters<typeof wireSoundSwitch>[1]);
+
+  // Every info-dot + feature-flag explainer on the page is a shared help-tip now
+  // (component audit rec 13) — one delegated wiring on the view root handles all
+  // of them (click/tap toggle, Escape, outside-click dismiss), and survives the
+  // per-section innerHTML rebuilds below since it's attached to viewEl itself.
+  wireHelpTips(viewEl);
+  linkHelpDescriptions(viewEl);
 
   // Opt-in pill reflects the checkbox state (saved on form submit).
   const useDetailsInput = viewEl.querySelector<HTMLInputElement>('[name="useDetails"]');
@@ -514,7 +560,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // 'image' glyph — deduped against catalog-summary.ts's "raster" and valid.ts's
   // ICONS.image (near-identical circle-radius/path-endpoint roundings of the same
   // Lucide "image" icon; component-audit rec 5).
-  const SESS_PLACEHOLDER = `<span class="store-sess-thumb is-placeholder" aria-hidden="true">${icon('image', { strokeWidth: 1.8 })}</span>`;
+  const SESS_PLACEHOLDER_ICON = icon('image', { strokeWidth: 1.8 });
   const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Approximate, theme-agnostic byte formatting (KB/MB/GB) shared by the meter.
@@ -592,23 +638,36 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     return s;
   }
 
-  // One selectable, deletable session row. Largest-first by default.
+  // One selectable, deletable session row. Largest-first by default. Built on
+  // folder-tiles.ts's sessionRow() — the shared row primitive behind this
+  // Storage manager list AND the gallery's per-tool history list
+  // (component-audit rec 6). Only this view's chrome (the select checkbox, the
+  // inline "batch" tag, the classes its own stylesheet keys off) lives here.
   function renderSessRow(s: SessionEntry, bytes: number) {
     const isBatch = String(s.slot).startsWith(BATCH_SLOT_PREFIX);
     const label = s.label || s.filename || toolNameOf(s.toolId);
-    const thumb = s.thumb
-      ? `<img class="store-sess-thumb" src="${escape(s.thumb)}" alt="" loading="lazy">`
-      : SESS_PLACEHOLDER;
-    return `<li class="store-sess" data-slot="${escape(s.slot)}">
-      <input type="checkbox" class="store-sess-check" data-slot="${escape(s.slot)}" aria-label="${escape(t('Select {name}', { name: label }))}">
-      ${thumb}
-      <span class="store-sess-meta">
-        <span class="store-sess-label">${escape(label)}${isBatch ? `<span class="store-sess-tag">${t('batch')}</span>` : ''}</span>
-        <span class="store-sess-sub">${escape(toolNameOf(s.toolId))}${s.updatedAt ? ` · ${escape(relativeTime(s.updatedAt))}` : ''}</span>
-      </span>
-      <span class="session-size">${fmtBytes(bytes)}</span>
-      <button type="button" class="store-sess-del" data-del-session="${escape(s.slot)}" aria-label="${escape(t('Delete {name}', { name: label }))}">&#x2715;</button>
-    </li>`;
+    const subtitle = toolNameOf(s.toolId) + (s.updatedAt ? ` · ${relativeTime(s.updatedAt)}` : '');
+    return sessionRow(s, {
+      rowClass: 'store-sess',
+      rowAttrs: `data-slot="${escape(s.slot)}"`,
+      thumbClass: 'store-sess-thumb',
+      thumbImgAttrs: 'loading="lazy"',
+      emptyThumbContent: SESS_PLACEHOLDER_ICON,
+      emptyThumbClass: 'is-placeholder',
+      selectClass: 'store-sess-check',
+      selectLabel: t('Select {name}', { name: label }),
+      metaClass: 'store-sess-meta',
+      titleClass: 'store-sess-label',
+      title: label,
+      batchTag: isBatch ? t('batch') : undefined,
+      batchTagClass: 'store-sess-tag',
+      subClass: 'store-sess-sub',
+      subtitle,
+      sizeBytes: bytes,
+      deleteAttr: `data-del-session="${escape(s.slot)}"`,
+      deleteClass: 'store-sess-del',
+      deleteLabel: t('Delete {name}', { name: label }),
+    });
   }
   function sessionRowsHtml(m: StorageModel, sort: string) {
     const sizes = m.sessions.sizes;
@@ -1049,50 +1108,37 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // irreversible wipe can't be fired by reflex (or a stray double-click).
     viewEl.querySelector('#clear-storage-btn')?.addEventListener('click', () => {
       const word = CLEAR_CONFIRM_WORDS[Math.floor(Math.random() * CLEAR_CONFIRM_WORDS.length)]!;
-      const overlay = document.createElement('div');
-      overlay.className = 'clear-dialog-overlay';
-      overlay.innerHTML = `
-        <div class="clear-dialog" role="dialog" aria-modal="true" aria-labelledby="clear-dialog-title">
-          <h3 id="clear-dialog-title">${t('Clear all my data?')}</h3>
-          <p>${t('This removes your profile, all saved sessions, your uploaded images, and the asset cache. Cannot be undone.')}</p>
-          <label class="clear-confirm">
-            <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word })}</span>
-            <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(t('Type {word} to confirm', { word }))}">
-          </label>
-          <div class="clear-dialog-actions">
-            <button class="btn btn-danger" data-scope="all" data-sfx="byebye" disabled>${t('Clear everything')}</button>
-            <button class="btn" data-scope="cancel">${t('Cancel')}</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(overlay);
+      const content = `
+        <h3 id="clear-dialog-title">${t('Clear all my data?')}</h3>
+        <p>${t('This removes your profile, all saved sessions, your uploaded images, and the asset cache. Cannot be undone.')}</p>
+        <label class="clear-confirm">
+          <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word })}</span>
+          <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(t('Type {word} to confirm', { word }))}">
+        </label>
+        <div class="clear-dialog-actions">
+          <button class="btn btn-danger" data-scope="all" data-sfx="byebye" disabled>${t('Clear everything')}</button>
+          <button class="btn" data-scope="cancel">${t('Cancel')}</button>
+        </div>`;
+      const modal = mountModal<void>(content, {
+        className: 'clear-dialog',
+        initialFocus: (el) => el.querySelector<HTMLElement>('.clear-confirm-input'),
+        onClose: () => openProfileModals.delete(modal),
+      });
+      modal.el.setAttribute('aria-labelledby', 'clear-dialog-title');
+      openProfileModals.add(modal);
 
-      // Escape-to-dismiss + focus-restore + Tab focus-trap (inert the page behind).
-      const opener = document.activeElement;
-      let trap: FocusTrap | undefined;
-      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); dismiss(); } };
-      const dismiss = () => {
-        trap?.release();
-        document.removeEventListener('keydown', onKey);
-        overlay.remove();
-        if (opener instanceof HTMLElement) opener.focus();
-      };
-      document.addEventListener('keydown', onKey);
-
-      const confirmInput = overlay.querySelector<HTMLInputElement>('.clear-confirm-input')!;
-      const clearBtn = overlay.querySelector<HTMLButtonElement>('[data-scope="all"]')!;
+      const confirmInput = modal.el.querySelector<HTMLInputElement>('.clear-confirm-input')!;
+      const clearBtn = modal.el.querySelector<HTMLButtonElement>('[data-scope="all"]')!;
       const matches = () => confirmInput.value.trim().toLowerCase() === word;
       confirmInput.addEventListener('input', () => { clearBtn.disabled = !matches(); });
       confirmInput.addEventListener('keydown', e => { if (e.key === 'Enter' && matches()) { e.preventDefault(); clearBtn.click(); } });
-      confirmInput.focus();
-      trap = trapFocus(overlay);
 
-      overlay.addEventListener('click', async e => {
+      modal.el.addEventListener('click', async e => {
         const scope = (e.target as Element).closest<HTMLElement>('[data-scope]')?.dataset.scope;
-        if (!scope || scope === 'cancel') { dismiss(); return; }
+        if (!scope || scope === 'cancel') { modal.close(); return; }
         if (scope === 'all' && !matches()) return; // guard: the word must match
 
-        const btns = overlay.querySelectorAll('button');
+        const btns = modal.el.querySelectorAll('button');
         btns.forEach(b => (b.disabled = true));
         clearBtn.textContent = t('Clearing…');
 
@@ -1101,9 +1147,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         await clearIdbStores(['state', 'profile', 'user-assets', 'asset-blob', 'asset-meta']);
         host.profile.bust!();
         applyTheme('light');
-        trap?.release();
-        document.removeEventListener('keydown', onKey);
-        overlay.remove();
+        modal.close();
         // The bye-bye song is already playing (data-sfx on the confirm button). Land
         // back on the gallery: with the dismissed flag just wiped, the first-run
         // "Welcome to Lolly" greets the clean slate there (unbranded installs only —
@@ -1145,43 +1189,37 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // celebratory type-a-word confirm (a distinct, upbeat word pool from the clear-data gate).
     viewEl.querySelector('#export-render-btn')?.addEventListener('click', () => {
       const word = HOARD_CONFIRM_WORDS[Math.floor(Math.random() * HOARD_CONFIRM_WORDS.length)]!;
-      const overlay = document.createElement('div');
-      overlay.className = 'clear-dialog-overlay';
-      overlay.innerHTML = `
-        <div class="clear-dialog clear-dialog--hoard" role="dialog" aria-modal="true" aria-labelledby="hoard-dialog-title">
-          <h3 id="hoard-dialog-title">${t('Export everything — and render it all?')}</h3>
-          <p>${t('Downloads a full <strong>backup</strong> of your data, then a <strong>rendered archive</strong> — every saved session output to its file, in folders that mirror your Projects. Nothing is deleted. A big library makes a big zip and can take a while.')}</p>
-          <label class="clear-confirm">
-            <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word: escape(word) })}</span>
-            <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(t('Type {word} to confirm', { word }))}">
-          </label>
-          <div class="clear-dialog-actions">
-            <button class="btn btn-go" data-scope="go" disabled>${t('Hoard it all 📦')}</button>
-            <button class="btn" data-scope="cancel">${t('Cancel')}</button>
-          </div>
+      const content = `
+        <h3 id="hoard-dialog-title">${t('Export everything — and render it all?')}</h3>
+        <p>${t('Downloads a full <strong>backup</strong> of your data, then a <strong>rendered archive</strong> — every saved session output to its file, in folders that mirror your Projects. Nothing is deleted. A big library makes a big zip and can take a while.')}</p>
+        <label class="clear-confirm">
+          <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word: escape(word) })}</span>
+          <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(t('Type {word} to confirm', { word }))}">
+        </label>
+        <div class="clear-dialog-actions">
+          <button class="btn btn-go" data-scope="go" disabled>${t('Hoard it all 📦')}</button>
+          <button class="btn" data-scope="cancel">${t('Cancel')}</button>
         </div>`;
-      document.body.appendChild(overlay);
+      // Mirrors the clear-all dialog above; celebratory `--hoard` modifier only changes copy/colour.
+      const modal = mountModal<void>(content, {
+        className: 'clear-dialog clear-dialog--hoard',
+        initialFocus: (el) => el.querySelector<HTMLElement>('.clear-confirm-input'),
+        onClose: () => openProfileModals.delete(modal),
+      });
+      modal.el.setAttribute('aria-labelledby', 'hoard-dialog-title');
+      openProfileModals.add(modal);
 
-      // Escape-to-dismiss + focus-restore + Tab focus-trap, mirroring the clear-all dialog above.
-      const opener = document.activeElement;
-      let trap: FocusTrap | undefined;
-      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); dismiss(); } };
-      const dismiss = () => { trap?.release(); document.removeEventListener('keydown', onKey); overlay.remove(); if (opener instanceof HTMLElement) opener.focus(); };
-      document.addEventListener('keydown', onKey);
-
-      const confirmInput = overlay.querySelector<HTMLInputElement>('.clear-confirm-input')!;
-      const goBtn = overlay.querySelector<HTMLButtonElement>('[data-scope="go"]')!;
+      const confirmInput = modal.el.querySelector<HTMLInputElement>('.clear-confirm-input')!;
+      const goBtn = modal.el.querySelector<HTMLButtonElement>('[data-scope="go"]')!;
       const matches = () => confirmInput.value.trim().toLowerCase() === word;
       confirmInput.addEventListener('input', () => { goBtn.disabled = !matches(); });
       confirmInput.addEventListener('keydown', e => { if (e.key === 'Enter' && matches()) { e.preventDefault(); goBtn.click(); } });
-      confirmInput.focus();
-      trap = trapFocus(overlay);
 
-      overlay.addEventListener('click', async e => {
+      modal.el.addEventListener('click', async e => {
         const scope = (e.target as Element).closest<HTMLElement>('[data-scope]')?.dataset.scope;
-        if (!scope || scope === 'cancel') { dismiss(); return; }
+        if (!scope || scope === 'cancel') { modal.close(); return; }
         if (scope === 'go' && !matches()) return; // guard: the word must match
-        dismiss();
+        modal.close();
         await exportAndRenderEverything();
       });
     });
@@ -1196,40 +1234,27 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     function askKeepTabActive(count: number, behind?: HTMLElement): Promise<'include' | 'skip' | 'cancel'> {
       return new Promise(resolve => {
         const n = count === 1 ? t('1 creation is a video or animation') : t('{n} of your creations are videos or animations', { n: count });
-        const overlay = document.createElement('div');
-        overlay.className = 'clear-dialog-overlay';
-        overlay.innerHTML = `
-          <div class="clear-dialog clear-dialog--hoard" role="dialog" aria-modal="true" aria-labelledby="keepactive-title">
-            <h3 id="keepactive-title">${t('Keep this tab active?')}</h3>
-            <p>${t('{n}. Those record in <strong>real time</strong>, so this browser tab must stay open and in front the whole time they render — switch away and they pause. Include them?', { n: escape(n) })}</p>
-            <div class="clear-dialog-actions">
-              <button class="btn btn-go" data-choice="include">${t("I'm willing to keep this tab active")}</button>
-              <button class="btn" data-choice="skip">${t('Skip videos for now')}</button>
-              <button class="btn" data-choice="cancel">${t('Cancel')}</button>
-            </div>
+        const content = `
+          <h3 id="keepactive-title">${t('Keep this tab active?')}</h3>
+          <p>${t('{n}. Those record in <strong>real time</strong>, so this browser tab must stay open and in front the whole time they render — switch away and they pause. Include them?', { n: escape(n) })}</p>
+          <div class="clear-dialog-actions">
+            <button class="btn btn-go" data-choice="include">${t("I'm willing to keep this tab active")}</button>
+            <button class="btn" data-choice="skip">${t('Skip videos for now')}</button>
+            <button class="btn" data-choice="cancel">${t('Cancel')}</button>
           </div>`;
-        document.body.appendChild(overlay);
         behind?.classList.add('is-dimmed');
-        const opener = document.activeElement;
-        let settled = false;
-        let trap: FocusTrap | undefined;
-        const finish = (choice: 'include' | 'skip' | 'cancel'): void => {
-          if (settled) return; settled = true;
-          trap?.release();
-          document.removeEventListener('keydown', onKey);
-          overlay.remove();
-          behind?.classList.remove('is-dimmed');
-          if (opener instanceof HTMLElement) opener.focus();
-          resolve(choice);
-        };
-        const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); finish('cancel'); } };
-        document.addEventListener('keydown', onKey);
-        overlay.addEventListener('click', e => {
-          const choice = (e.target as Element).closest<HTMLElement>('[data-choice]')?.dataset.choice;
-          if (choice === 'include' || choice === 'skip' || choice === 'cancel') { finish(choice); return; }
-          if (e.target === overlay) finish('cancel');   // backdrop
+        const modal = mountModal<'include' | 'skip' | 'cancel'>(content, {
+          className: 'clear-dialog clear-dialog--hoard',
+          cancelValue: 'cancel',
+          initialFocus: (el) => el.querySelector<HTMLElement>('[data-choice="include"]'),
+          onClose: (result) => { openProfileModals.delete(modal); behind?.classList.remove('is-dimmed'); resolve(result ?? 'cancel'); },
         });
-        trap = trapFocus(overlay, { initialFocus: overlay.querySelector<HTMLElement>('[data-choice="include"]') });
+        modal.el.setAttribute('aria-labelledby', 'keepactive-title');
+        openProfileModals.add(modal);
+        modal.el.addEventListener('click', e => {
+          const choice = (e.target as Element).closest<HTMLElement>('[data-choice]')?.dataset.choice;
+          if (choice === 'include' || choice === 'skip' || choice === 'cancel') modal.close(choice);
+        });
       });
     }
 
@@ -1506,10 +1531,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   identityDetails?.addEventListener('toggle', () => { if (identityDetails!.open) loadIdentity(); });
   if (identityDetails?.open) loadIdentity();
 
-  // The Storage manager opens body-level modals (the shared confirmDialog); tear any
-  // down when the router swaps this view out (main.js calls _cleanup) so an orphaned
-  // top-layer <dialog> can't block the next view.
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => closeConfirmDialogs();
+  // The Storage manager opens body-level modals (the shared confirmDialog, plus its own
+  // clear/hoard/keep-active/import/lightbox mountModal dialogs — see openProfileModals);
+  // tear any down when the router swaps this view out (main.js calls _cleanup) so an
+  // orphaned top-layer <dialog> can't block the next view.
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
+    closeConfirmDialogs();
+    openProfileModals.forEach(m => m.close());
+    openProfileModals.clear();
+  };
 }
 
 
@@ -1538,7 +1568,7 @@ function userImageThumb(ref: AssetRef) {
 // Full-size preview overlay for a user image. Closes on backdrop click, the ✕,
 // or Escape. Mirrors the simple overlay pattern used by the clear-data dialog.
 function openImageLightbox(ref: AssetRef) {
-  const name = ref.meta?.name ?? t('Image');
+  const name = String(ref.meta?.name ?? t('Image'));
   const isVector = ref.type === 'vector' || ref.format === 'svg';
   const isLottie = ref.type === 'lottie';
   const isVideo = ref.type === 'video';
@@ -1554,35 +1584,25 @@ function openImageLightbox(ref: AssetRef) {
       ? `<video class="userimg-lightbox-img" src="${escape(ref.url)}" muted loop autoplay playsinline controls></video>`
       : `<img class="userimg-lightbox-img${isVector ? ' is-vector' : ''}" src="${escape(ref.url)}" alt="${escape(name)}">`;
 
-  const overlay = document.createElement('div');
-  overlay.className = 'userimg-lightbox-overlay';
-  overlay.innerHTML = `
-    <div class="userimg-lightbox" role="dialog" aria-modal="true" aria-label="${escape(name)}">
-      <button type="button" class="userimg-lightbox-close" aria-label="${escape(t('Close'))}">&#x2715;</button>
-      ${media}
-      <div class="userimg-lightbox-caption">
-        <span class="userimg-lightbox-name">${escape(name)}</span>
-        ${dims ? `<span class="userimg-lightbox-dims">${escape(dims)}</span>` : ''}
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  // Return focus to whatever opened the lightbox when it closes.
-  const opener = document.activeElement;
-  const close = () => {
-    document.removeEventListener('keydown', onKey);
-    overlay.remove();
-    if (opener instanceof HTMLElement) opener.focus();
-  };
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-
-  overlay.addEventListener('click', (e) => {
-    // Close when clicking the backdrop or the ✕; ignore clicks on the image itself.
-    if (e.target === overlay || (e.target as Element).closest('.userimg-lightbox-close')) close();
+  const content = `
+    <button type="button" class="userimg-lightbox-close" aria-label="${escape(t('Close'))}">&#x2715;</button>
+    ${media}
+    <div class="userimg-lightbox-caption">
+      <span class="userimg-lightbox-name">${escape(name)}</span>
+      ${dims ? `<span class="userimg-lightbox-dims">${escape(dims)}</span>` : ''}
+    </div>`;
+  const modal = mountModal<void>(content, {
+    className: 'userimg-lightbox',
+    ariaLabel: name,
+    initialFocus: (el) => el.querySelector<HTMLElement>('.userimg-lightbox-close'),
+    onClose: () => openProfileModals.delete(modal),
   });
-  document.addEventListener('keydown', onKey);
-  overlay.querySelector<HTMLElement>('.userimg-lightbox-close')?.focus();
+  openProfileModals.add(modal);
+  // Close on the ✕; a click on the backdrop is already handled by mountModal's own
+  // hit-test (clicks on the image/caption itself land inside the dialog's box and don't).
+  modal.el.addEventListener('click', (e) => {
+    if ((e.target as Element).closest('.userimg-lightbox-close')) modal.close();
+  });
 }
 
 function clearIdbStores(storeNames: string[]) {
@@ -1601,60 +1621,38 @@ function clearIdbStores(storeNames: string[]) {
   });
 }
 
-function fmtBytes(bytes: number) {
-  if (!bytes) return '0 KB';
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
-}
-
 // Confirm + run a data import. The action may throw (not a backup, wrong format,
 // quota); surface the reason in place and keep the dialog open rather than
 // leaving the user guessing.
 function showImportDialog(onConfirm: () => Promise<void>) {
-  const overlay = document.createElement('div');
-  overlay.className = 'clear-dialog-overlay';
-  overlay.innerHTML = `
-    <div class="clear-dialog" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
-      <h3 id="import-dialog-title">${t('Import data?')}</h3>
-      <p>${t('This loads the profile, saved sessions, images and preferences from the file. Anything with the same name on this device is overwritten; everything else is kept.')}</p>
-      <p class="import-error" style="color:hsl(var(--destructive));font-size:13px;margin:0" hidden></p>
-      <div class="clear-dialog-actions">
-        <button class="btn" data-scope="import">${t('Import')}</button>
-        <button class="btn" data-scope="cancel">${t('Cancel')}</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
+  const content = `
+    <h3 id="import-dialog-title">${t('Import data?')}</h3>
+    <p>${t('This loads the profile, saved sessions, images and preferences from the file. Anything with the same name on this device is overwritten; everything else is kept.')}</p>
+    <p class="import-error" style="color:hsl(var(--destructive));font-size:13px;margin:0" hidden></p>
+    <div class="clear-dialog-actions">
+      <button class="btn" data-scope="import">${t('Import')}</button>
+      <button class="btn" data-scope="cancel">${t('Cancel')}</button>
+    </div>`;
+  const modal = mountModal<void>(content, {
+    className: 'clear-dialog',
+    initialFocus: (el) => el.querySelector<HTMLElement>('[data-scope="import"]'),
+    onClose: () => openProfileModals.delete(modal),
+  });
+  modal.el.setAttribute('aria-labelledby', 'import-dialog-title');
+  openProfileModals.add(modal);
 
-  // Escape-to-dismiss + focus-restore + Tab focus-trap (inert the page behind).
-  const opener = document.activeElement;
-  let trap: FocusTrap | undefined;
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); dismiss(); } };
-  const dismiss = () => {
-    trap?.release();
-    document.removeEventListener('keydown', onKey);
-    overlay.remove();
-    if (opener instanceof HTMLElement) opener.focus();
-  };
-  document.addEventListener('keydown', onKey);
-  overlay.querySelector<HTMLElement>('[data-scope="import"]')?.focus();
-  trap = trapFocus(overlay);
-
-  overlay.addEventListener('click', async e => {
+  modal.el.addEventListener('click', async e => {
     const scope = (e.target as Element).closest<HTMLElement>('[data-scope]')?.dataset.scope;
     if (!scope) return;
-    if (scope === 'cancel') { dismiss(); return; }
+    if (scope === 'cancel') { modal.close(); return; }
 
-    const btns = overlay.querySelectorAll('button');
-    const errEl = overlay.querySelector<HTMLElement>('.import-error');
+    const btns = modal.el.querySelectorAll('button');
+    const errEl = modal.el.querySelector<HTMLElement>('.import-error');
     btns.forEach(b => (b.disabled = true));
     (e.target as HTMLElement).textContent = t('Importing…');
     try {
       await onConfirm();
-      trap?.release();  // un-inert before the success re-mount
-      document.removeEventListener('keydown', onKey);
-      overlay.remove(); // success re-mounts the page; drop the (body-level) overlay
+      modal.close(); // success re-mounts the page; drop the dialog
     } catch (err) {
       if (errEl) { errEl.textContent = (err as { message?: string })?.message || t('Import failed.'); errEl.hidden = false; }
       btns.forEach(b => (b.disabled = false));

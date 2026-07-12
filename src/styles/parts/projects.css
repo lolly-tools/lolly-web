@@ -129,6 +129,15 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 /* Active option in the view-options popover. */
 .projects-viewmenu .folder-menu-item.is-on { font-weight: 700; }
 
+/* The per-tile/bulk-selection context menu (mountBodyPopover) is body-mounted and
+   viewport-relative, unlike the base .folder-menu (still page-absolute, for the
+   view-options popover above). */
+.projects-menu { position: fixed; }
+/* The bulk menu's "{n} selected" head sits outside its nested role="menu" (see
+   views/projects.ts bulkMenuHtml) — same flex-column list layout as the outer
+   .folder-menu, just one level deeper. */
+.projects-menu .folder-menu-list { display: flex; flex-direction: column; gap: 1px; }
+
 /* "Render folder" progress toast — pin to the TOP (under the profile/history row, not the
    default bottom) and span the full screen length so the rotating quip + per-render log read
    at a glance. Two classes outrank the base .pro-toast positioning from run-overlay.css. */
@@ -178,7 +187,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 /* Render is the primary action — fill it with the brand colour so it reads as the
    pronounced CTA (folder header, bulk bar, move-picker confirm all share this class).
    Two-class `.projects-render.btn` beats the generic `.btn` base by specificity —
-   same trick as .projects-confirm-danger. Fill (background/color) + hover are
+   same trick as .modal-danger. Fill (background/color) + hover are
    aliased in parts/buttons.css's .btn--primary list; only the border-color delta lives here. */
 .projects-render.btn {
   border-color: hsl(var(--primary));
@@ -326,36 +335,12 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
    It's not inside a .folder-tile, so undo the tile-menu's absolute, hover-to-reveal styling. */
 .projects-head-menu { position: static; opacity: 1; flex: none; width: 32px; height: 32px; }
 
-/* Confirmation modal for destructive actions (delete folder + contents, delete session). */
-.projects-confirm {
-  border: 0; padding: 22px; width: min(420px, 92vw);
-  /* Centring is normally the UA's `dialog:modal { margin: auto }` — but a mounted
-     tool's template <style> is injected unscoped and may carry a universal
-     `* { margin: 0 }` reset (e.g. event-name-badge), which pins the modal to the
-     top-left. Re-assert at class specificity so it stays centred inside tools. */
-  margin: auto;
-  border-radius: calc(var(--radius) * 1.2); background: hsl(var(--card)); color: hsl(var(--foreground));
-  box-shadow: 0 24px 64px hsl(0 0% 0% / 0.4);
-}
-.projects-confirm::backdrop { background: hsl(0 0% 0% / 0.42); }
-.projects-confirm-title { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
-.projects-confirm-msg { margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
-.projects-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
-/* Scoped (two-class) so it beats the generic .btn base by specificity. Fill
-   (background/color) + hover are aliased in parts/buttons.css's .btn--danger list. */
-.projects-confirm .projects-confirm-danger {
-  border-color: hsl(var(--destructive, 0 70% 50%));
-}
-/* choiceDialog: the lead choice gets the brand fill (two-class scope beats the
-   generic .btn base — same trick as .projects-confirm-danger). Fill + hover are
-   aliased in parts/buttons.css's .btn--primary list. */
-.projects-confirm .projects-confirm-primary {
-  border-color: hsl(var(--primary));
-}
-/* Choice buttons can carry longer labels than OK/Cancel — let them wrap. */
-.projects-confirm-actions--choices { flex-wrap: wrap; }
+/* The shared modal chrome (.modal / .modal-title / .modal-actions / …) used by the
+   confirm/choice/notice/prompt dialogs, the New-folder name prompt below, and the
+   password/lock prompts elsewhere now lives in dialogs.css (component audit rec 4) —
+   moved out of this file since it long outgrew being a Projects-only thing. */
 
-/* New-folder-from-selection name prompt (reuses .projects-confirm chrome). */
+/* New-folder-from-selection name prompt (reuses .modal chrome). */
 .projects-prompt-input { width: 100%; margin: 0 0 16px; }
 
 /* The desktop click-drag marquee box now lives in components.css (.tile-marquee) — it is
@@ -378,7 +363,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-bulkbar-actions .btn svg { width: 15px; height: 15px; }
 /* Two-class so the destructive red beats the generic `.btn { color: foreground }`
    defined later in the file (equal specificity, later wins) — same trick as
-   .projects-render.btn / .projects-confirm-danger. */
+   .projects-render.btn / .modal-danger. */
 .projects-bulk-danger.btn { color: hsl(var(--destructive, 0 70% 50%)); }
 .projects-bulk-danger.btn:hover { background: hsl(var(--destructive, 0 70% 50%) / 0.1); }
 .projects-bulkbar-clear {

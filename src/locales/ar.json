@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "“{name}” حجمه {size}{dims}. احتفظ بالأصل — الأفضل من أجل Content Credential — أو غيّر حجمه{resize} لتوفير المساحة؟",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "“{name}” ستُحذف نهائيا من صورك. لا يمكن التراجع عن هذا.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "«{variant}» هو اسم شعار بالفعل — اختر اسما مختلفا للرمز.",
-  "✓ Added": "✓ تمت الإضافة"
+  "✓ Added": "✓ تمت الإضافة",
+  "Theme: {name} — switch theme": "السمة: {name} — تبديل السمة",
+  "Speakers": "المتحدثون",
+  "Sort languages": "ترتيب اللغات"
 }

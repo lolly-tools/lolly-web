@@ -18,6 +18,7 @@
 @import './parts/utilities.css';
 @import './parts/buttons.css'; /* .btn/.btn--primary/.btn--ghost/.btn--danger primitives — before view parts so their aliasing wins pixel-parity */
 @import './parts/chips.css'; /* .chip/.card/.section-header primitives — same reasoning as buttons.css */
+@import './parts/disclosure.css'; /* .section-card fold primitive (rec 7) — before view parts so their .plat-section / .export- aliasing wins pixel-parity */
 @import './parts/gallery.css';
 @import './parts/featured.css';
 @import './parts/topbar.css';

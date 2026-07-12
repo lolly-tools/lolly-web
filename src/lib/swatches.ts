@@ -7,8 +7,17 @@
  * The markup keeps the `.plat-swatch*` class contract (global CSS), so a `swatch()` reads
  * the same wherever it's dropped. Copy-to-clipboard is wired by the host view over the
  * `.plat-swatch-chip[data-copy]` buttons.
+ *
+ * `swatchTile()` is a second, smaller markup factory (component-audit rec 12) for the
+ * two SHAPE-ONLY tiles — the brand studio's editable grid (`.be-swatch`) and the mobile
+ * palette sheet's read-only mirror chip (`.stu-chip`) — which show no visible text, only
+ * a colour + title/aria-label. It's deliberately separate from `swatch()` above: that one
+ * renders a full read-only card (name + hex + CMYK row) and its three call sites
+ * (dashboard.ts, catalog.ts) are outside this refactor. The palette-wheel dot stays its
+ * own thing too — it's geometry (positioned on a hue/lightness disc), not a tile.
  */
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 import type { PaletteEntry } from '../palette.ts';
 
 export const isTransparent = (hex: string): boolean => !hex || hex.toLowerCase() === 'transparent';
@@ -88,4 +97,65 @@ export function swatch(c: PaletteEntry): string {
       <code class="plat-swatch-hex">${trans ? 'transparent' : escape(c.hex)}</code>
       <span class="plat-swatch-cmyk${measured || trans ? '' : ' is-generic'}">${cmykLabel}</span>
     </div>`;
+}
+
+// ── Shape-only swatch tile (.be-swatch / .stu-chip) — rec 12 ────────────────────
+
+/** Minimal data a shape-only tile needs — a subset any palette source (a
+ *  brand-editor `BrandSwatch`, or a scraped-DOM mirror) can supply. */
+export interface SwatchTileEntry {
+  /** `size:'md'`: the raw swatch name, composed into the accessible label below.
+   *  `size:'sm'`: the FULL accessible label already, verbatim — a mirror chip
+   *  scrapes it pre-formatted off the tile it mirrors, so it's passed through
+   *  as-is rather than re-composed (re-composing would need the raw name and
+   *  lock state back out of a locale-formatted string). */
+  label: string;
+  /** '' or the literal string 'transparent' both render the checkerboard. */
+  hex: string;
+  /** Print-locked swatches (CMYK/spot) get `.is-pinned`; `size:'sm'` never sets it
+   *  (the mirror doesn't recompute the label, so there's nothing to flag). */
+  locked?: boolean;
+}
+
+export interface SwatchTileOptions {
+  /** 'md' (default) = the brand studio's interactive grid tile (`.be-swatch`);
+   *  'sm' = the mobile palette sheet's read-only mirror chip (`.stu-chip`). */
+  size?: 'md' | 'sm';
+  /** Grid index, wired as `data-be-tile` (md) / `data-stu-tile` (sm) so click
+   *  delegation can look the swatch back up. Always rendered when given, even
+   *  as `""` — callers that always expect the attribute rely on that. */
+  idx?: number | string;
+  /** md only: whether to show the locked/empty state classes. Default true —
+   *  the brand studio's own grid always wants them; a caller reusing the 'md'
+   *  shape purely for layout (none currently) can opt out. */
+  editable?: boolean;
+}
+
+/** The tile's accessible name — the visible grid is shape-only, so name + hex
+ *  live in title/aria-label (and are kept fresh by the in-place recolour paths). */
+export function tileLabel(name: string, hex: string, locked: boolean): string {
+  const hexPart = hex || t('unset');
+  return locked
+    ? t('{name} — {hex} (print colour locked)', { name, hex: hexPart })
+    : t('{name} — {hex}', { name, hex: hexPart });
+}
+
+export function swatchTile(entry: SwatchTileEntry, opts: SwatchTileOptions = {}): string {
+  const { size = 'md', idx, editable = true } = opts;
+  const trans = !entry.hex || entry.hex === 'transparent';
+  const sw = escape(trans ? 'transparent' : entry.hex);
+  if (size === 'sm') {
+    const idxAttr = idx != null ? ` data-stu-tile="${escape(String(idx))}"` : '';
+    return `<button type="button" class="stu-chip"${idxAttr}
+      style="--sw:${sw}" aria-label="${escape(entry.label)}" title="${escape(entry.label)}"></button>`;
+  }
+  const label = tileLabel(entry.label, entry.hex, !!entry.locked);
+  const idxAttr = idx != null ? ` data-be-tile="${escape(String(idx))}"` : '';
+  const stateCls = editable ? `${trans ? ' is-empty' : ''}${entry.locked ? ' is-pinned' : ''}` : '';
+  return `
+    <button type="button" class="be-swatch${stateCls}"${idxAttr}
+      style="--sw:${sw}"
+      title="${escape(label)}" aria-label="${escape(label)}">
+      <span class="be-swatch-chip" aria-hidden="true"></span>
+    </button>`;
 }

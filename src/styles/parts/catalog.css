@@ -459,7 +459,8 @@ button.cat-download { font: inherit; cursor: pointer; }
 
 /* ── Zoom inspector (the preview when it's a real image) ──
    A stage that clips the scaled art, plus a floating HUD. attachZoom() in catalog.ts
-   drives the transform. */
+   drives the transform; the HUD itself (.cat-zoom-hud, shared with the crop dialog)
+   is mounted by components/zoom-hud.ts (mountZoomHud) — this file only skins it. */
 .cat-details-preview.is-zoomable { padding: 0; }
 /* A DEFINITE height on the mobile layout, so `.cat-zoom-stage`'s `height: 100%` resolves and
    the stage becomes a fixed-size clip viewport (the media overflows it and is clipped) instead

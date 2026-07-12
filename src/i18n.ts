@@ -14,11 +14,11 @@
  * inline script in index.html), reconciled from the profile in main.ts's boot().
  */
 
-import { LANGS, LANG_META, normalizeLang, flagEmoji } from '@lolly/engine';
-import type { Lang } from '@lolly/engine';
+import { LANGS, LANG_META, normalizeLang, flagEmoji, sortedLangs } from '@lolly/engine';
+import type { Lang, LangSort } from '@lolly/engine';
 
-export { LANGS, LANG_META, normalizeLang, flagEmoji };
-export type { Lang };
+export { LANGS, LANG_META, normalizeLang, flagEmoji, sortedLangs };
+export type { Lang, LangSort };
 
 /**
  * The language-switcher indicator icon (~/Build/language-icon.svg), inlined so
@@ -47,6 +47,10 @@ const LOADERS: Record<NonEnglishLang, () => Promise<{ default: Record<string, st
   sv: () => import('./locales/sv.json'),
   ms: () => import('./locales/ms.json'),
   ro: () => import('./locales/ro.json'),
+  hi: () => import('./locales/hi.json'),
+  bn: () => import('./locales/bn.json'),
+  ur: () => import('./locales/ur.json'),
+  id: () => import('./locales/id.json'),
   ar: () => import('./locales/ar.json'),
   bg: () => import('./locales/bg.json'),
   it: () => import('./locales/it.json'),

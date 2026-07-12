@@ -38,9 +38,13 @@ import { mountFeaturedRow } from '../components/featured-row.ts';
 import type { FeaturedEntry, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { attachProfileMenu } from '../components/profile-menu.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { mountBodyPopover, pointAnchor } from '../components/body-popover.ts';
+import type { PopoverAnchor } from '../components/body-popover.ts';
 import { footerNav, NAV_ICONS } from '../components/footer-nav.ts';
 import { confirmDialog as baseConfirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import type { ConfirmDialogOpts } from '../components/confirm-dialog.ts';
+import { mountModal } from '../components/modal.ts';
+import type { ModalHandle } from '../components/modal.ts';
 import { announce } from '../a11y.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
@@ -179,8 +183,8 @@ export async function mountProjects(
   let headshotUrl = '';
   let mounted = true;        // false after the view is swapped out (guards async renders)
   const toasts = new Set<HTMLDivElement>();  // live "Render folder" toasts, torn down on navigate-away
-  let toolPickerEl: HTMLDialogElement | null = null;   // the "New from a tool" chooser dialog, if open
-  let overlayEl: HTMLDialogElement | null = null;      // the move-picker / new-folder-name dialog, if open
+  let toolPickerModal: ModalHandle<any> | null = null;   // the "New from a tool" chooser dialog, if open
+  let overlayModal: ModalHandle<any> | null = null;      // the move-picker / new-folder-name dialog, if open
   let featuredHandle: FeaturedRowHandle | null = null; // the Uncategorised preview ribbon (drift/coverflow/grip), if mounted
   // Multi-select: ref → 'folder' | 'session'. A closure var (NOT the DOM) because
   // render() wipes viewEl.innerHTML — the selection is re-emitted from this Map each
@@ -696,26 +700,50 @@ export async function mountProjects(
     el.focus({ preventScroll: true });
     if (caretToEnd) { const n = el.value.length; try { el.setSelectionRange(n, n); } catch { /* unsupported */ } }
   }
+  // The view-options (filter) popover is still this hand-rolled body-absolute one —
+  // only the two CONTEXT menus (below) moved onto mountBodyPopover, rec 9's remainder.
   let openPopover: HTMLElement | null = null;
-  function closeMenu(): void { openPopover?.remove(); openPopover = null; document.removeEventListener('pointerdown', onDocDown, true); document.removeEventListener('keydown', onMenuKey, true); }
+  function closeMenu(): void {
+    openPopover?.remove(); openPopover = null;
+    document.removeEventListener('pointerdown', onDocDown, true); document.removeEventListener('keydown', onMenuKey, true);
+    tileMenuPopover.close();
+  }
   function onDocDown(e: PointerEvent): void { if (openPopover && !openPopover.contains(e.target as Node)) closeMenu(); }
   // Escape closes an open popover menu — matching the app-wide dialog convention (see confirm-dialog).
   function onMenuKey(e: KeyboardEvent): void { if (e.key === 'Escape' && openPopover) { e.preventDefault(); e.stopPropagation(); closeMenu(); } }
 
-  // Mount a popover at a viewport point (x,y) — a menu button's bottom-left, or the
-  // cursor for a right-click — clamped to stay on-screen (flips up near the bottom edge).
-  // The `.folder-menu` is position:absolute, so document coords add the scroll offset.
-  function placePopoverAt(pop: HTMLElement, x: number, y: number): void {
-    document.body.appendChild(pop);
-    openPopover = pop;
-    const pw = pop.offsetWidth, ph = pop.offsetHeight;
-    const left = Math.max(8, Math.min(x, window.innerWidth - pw - 12));
-    const top  = (y + ph > window.innerHeight - 8) ? Math.max(8, y - ph - 12) : y;
-    pop.style.left = `${Math.round(left + window.scrollX)}px`;
-    pop.style.top  = `${Math.round(top + window.scrollY)}px`;
-    document.addEventListener('pointerdown', onDocDown, true);
-    document.addEventListener('keydown', onMenuKey, true);
+  // ── per-tile / bulk-selection context menu (kebab button OR right-click) ────────
+  // Both open at a POINTER position rather than off a live trigger element (the kebab
+  // button is recreated on every render()), so they share one mountBodyPopover instance
+  // anchored to a mutable point (see body-popover.ts's pointAnchor) instead of a real
+  // element — `menuPoint`/`pendingMenu` are set right before each `.open()`.
+  const menuPoint = pointAnchor();
+  type PendingTileMenu = { kind: 'tile'; ref: string; menuKind: string; tileEl: HTMLElement | null } | { kind: 'bulk' };
+  let pendingMenu: PendingTileMenu | null = null;
+
+  // Clamped to stay on-screen (flips up near the bottom edge) — same math the old
+  // per-menu placePopoverAt used, minus the scroll offset: `.projects-menu` is
+  // position:fixed (mountBodyPopover's convention), unlike the base `.folder-menu`
+  // (still position:absolute, page-relative, for the view-options popover above).
+  function menuPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
+    const r = anchor.getBoundingClientRect();
+    const pw = el.offsetWidth, ph = el.offsetHeight;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 12));
+    const top  = (r.top + ph > window.innerHeight - 8) ? Math.max(8, r.top - ph - 12) : r.top;
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top  = `${Math.round(top)}px`;
   }
+
+  const tileMenuPopover = mountBodyPopover(menuPoint, (el) => {
+    if (!pendingMenu) return null;
+    // A tile menu's items ARE the whole popover (role="menu" default fits); the bulk
+    // menu prefixes a plain-text "{n} selected" head, so ITS role="menu" has to live on
+    // an inner wrapper (see bulkMenuHtml) and this outer div demotes to a plain group.
+    el.setAttribute('role', pendingMenu.kind === 'bulk' ? 'group' : 'menu');
+    el.innerHTML = pendingMenu.kind === 'bulk' ? bulkMenuHtml() : tileMenuHtml(pendingMenu.menuKind, pendingMenu.ref);
+    el.addEventListener('click', onMenuClick);
+    return el.querySelector<HTMLElement>('[data-act]');
+  }, { className: 'folder-menu projects-menu', position: menuPosition });
 
   // Destructive actions (delete a folder + its contents, delete a saved session) use
   // the shared styled confirm modal — close any open tile menu first so it doesn't
@@ -1012,102 +1040,111 @@ export async function mountProjects(
   // ── per-tile menu ────────────────────────────────────────────────────────
   // One row of the context menu, icon + label. `render`/`danger` tint it.
   const menuItem = (act: string, icon: string, label: string, { render = false, danger = false }: { render?: boolean; danger?: boolean } = {}): string =>
-    `<button type="button" class="folder-menu-item${render ? ' folder-menu-item--render' : ''}${danger ? ' folder-menu-item--danger' : ''}" data-act="${act}">${icon}<span>${escape(label)}</span></button>`;
+    `<button type="button" class="folder-menu-item${render ? ' folder-menu-item--render' : ''}${danger ? ' folder-menu-item--danger' : ''}" role="menuitem" data-act="${act}">${icon}<span>${escape(label)}</span></button>`;
 
-  // Open the per-tile context menu. `ctx` = { ref, kind, tileEl, x, y } — from the ⋯
-  // button (anchored below it) OR a right-click (anchored at the cursor). tileEl is the
-  // enclosing .folder-tile (null for the folder-view header ⋯, which falls back to <h2>).
-  function openMenu({ ref, kind, tileEl = null, x, y }: { ref: string; kind: string; tileEl?: HTMLElement | null; x: number; y: number }): void {
-    closeMenu();
-    const pop = document.createElement('div');
-    pop.className = 'folder-menu projects-menu';
-    // "Move to…" opens the drill-down picker (no more flat all-folders-at-once list).
+  // Content for the per-tile context menu — folder actions or session actions. `kind`/
+  // `ref` come off `pendingMenu` (see the mountBodyPopover call above): folder or session,
+  // "Move to…" opens the drill-down picker (no more flat all-folders-at-once list).
+  function tileMenuHtml(kind: string, ref: string): string {
     if (kind === 'folder') {
-      pop.innerHTML = [
+      return [
         menuItem('open-folder', OPEN_ICON, t('Open')),
         menuItem('rename', EDIT_ICON, t('Rename folder')),
         menuItem('move-folder', MOVE_ICON, t('Move to…')),
         menuItem('render', RENDER_ICON, t('Render folder'), { render: true }),
         menuItem('delete', TRASH_ICON, t('Delete folder'), { danger: true }),
       ].join('');
-    } else {
-      // A batch session is a multi-row group with no single tool URL, so it can't be
-      // shared as a link — offer Share only for single-tool sessions.
-      const canShare = !isBatchSlot(ref);
-      pop.innerHTML = [
-        menuItem('open', OPEN_ICON, t('Open')),
-        menuItem('rename-session', EDIT_ICON, t('Rename')),
-        menuItem('move', MOVE_ICON, t('Move to…')),
-        canShare ? menuItem('share', SHARE_ICON, t('Share link')) : '',
-        menuItem('render-session', RENDER_ICON, t('Render'), { render: true }),
-        menuItem('delete-session', TRASH_ICON, t('Delete'), { danger: true }),
-      ].join('');
     }
-    placePopoverAt(pop, x, y);
-    // Land keyboard focus on the first action so opening the menu doesn't strand the user on
-    // the trigger tile — arrow/Tab then walk the items (Escape closes; see onMenuKey).
-    pop.querySelector<HTMLElement>('[data-act]')?.focus({ preventScroll: true });
-
-    pop.addEventListener('click', async (e) => {
-      const item = (e.target as HTMLElement).closest<HTMLElement>('[data-act]'); if (!item) return;
-      const act = item.dataset.act;
-      closeMenu();
-      // Rename can fire from a folder TILE (root view) or the folder-view header menu
-      // button (no enclosing tile) — fall back to the header <h2> in that case.
-      if (act === 'rename') startRename(tileEl || viewEl.querySelector<HTMLElement>('.projects-title[data-rename-folder]'), ref);
-      else if (act === 'render') renderFolder(ref);
-      else if (act === 'delete') deleteFolderCascade(ref);
-      else if (act === 'open-folder') { window.location.hash = '#/p/' + ref; }
-      else if (act === 'move-folder') {
-        // A folder can't move into itself or its own subtree — block those targets.
-        const blocked = new Set([ref, ...descendantFolderIds(folders, ref)]);
-        openMovePicker({
-          title: t('Move folder to…'), blocked,
-          onPick: async (dest) => { await store.moveFolder(ref, dest); await reload(); render(); announce(t('Folder moved')); },
-        });
-      }
-      else if (act === 'open') resumeSession(ref);
-      else if (act === 'rename-session') startRenameSession(tileEl, ref);
-      else if (act === 'move') {
-        openMovePicker({
-          title: t('Move to…'),
-          onPick: async (dest) => { await store.moveItem(ref, dest, 'session'); await reload(); render(); announce(t('Session moved')); },
-        });
-      }
-      else if (act === 'render-session') renderSession(ref);
-      else if (act === 'share') shareSession(ref);
-      else if (act === 'delete-session') {
-        const ok = await confirmDialog({
-          title: t('Delete this saved session?'),
-          message: t('This permanently deletes the saved session and its preview. This cannot be undone.'),
-          confirmLabel: t('Delete'),
-        });
-        if (ok && mounted) { await host.state.delete(ref).catch(() => {}); await reload(); render(); announce(t('Session deleted')); }
-      }
-    });
+    // A batch session is a multi-row group with no single tool URL, so it can't be
+    // shared as a link — offer Share only for single-tool sessions.
+    const canShare = !isBatchSlot(ref);
+    return [
+      menuItem('open', OPEN_ICON, t('Open')),
+      menuItem('rename-session', EDIT_ICON, t('Rename')),
+      menuItem('move', MOVE_ICON, t('Move to…')),
+      canShare ? menuItem('share', SHARE_ICON, t('Share link')) : '',
+      menuItem('render-session', RENDER_ICON, t('Render'), { render: true }),
+      menuItem('delete-session', TRASH_ICON, t('Delete'), { danger: true }),
+    ].join('');
   }
 
   // The context menu for a MULTI-selection (right-clicking a tile that's part of the
-  // current selection) — the same actions as the bulk bar, at the cursor.
+  // current selection) — the same actions as the bulk bar, at the cursor. The "{n}
+  // selected" head is plain text, not a menuitem — nested in its own role="menu" (see
+  // the mountBodyPopover render callback below, which demotes the OUTER div to a plain
+  // group for this case) so it's a valid sibling instead of an invalid child of the
+  // menu — the same reasoning lang-menu.ts's sort-tabs-above-the-list split documents.
+  function bulkMenuHtml(): string {
+    return `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`
+      + `<div class="folder-menu-list" role="menu" aria-label="${escape(t('Selection actions'))}">${[
+        menuItem('render', RENDER_ICON, t('Render selection'), { render: true }),
+        menuItem('move', MOVE_ICON, t('Move to…')),
+        menuItem('newfolder', FOLDER_PLUS_ICON, t('New folder from selection')),
+        menuItem('delete', TRASH_ICON, t('Delete'), { danger: true }),
+      ].join('')}</div>`;
+  }
+
+  // Dispatch a click inside the currently-open tile/bulk context menu against
+  // `pendingMenu` — the request still live for this popover instance (cleared by the
+  // next openMenu/openBulkMenu, but a stale click can't land: closeMenu() removes the
+  // menu from the DOM before this ever fires again).
+  async function onMenuClick(e: MouseEvent): Promise<void> {
+    const item = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
+    const menu = pendingMenu; // snapshot — a plain local narrows cleanly, unlike the closed-over `let`
+    if (!item || !menu) return;
+    const act = item.dataset.act;
+    if (menu.kind === 'bulk') { closeMenu(); handleBulk(act!); return; }
+    const { ref, tileEl } = menu;
+    closeMenu();
+    // Rename can fire from a folder TILE (root view) or the folder-view header menu
+    // button (no enclosing tile) — fall back to the header <h2> in that case.
+    if (act === 'rename') startRename(tileEl || viewEl.querySelector<HTMLElement>('.projects-title[data-rename-folder]'), ref);
+    else if (act === 'render') renderFolder(ref);
+    else if (act === 'delete') deleteFolderCascade(ref);
+    else if (act === 'open-folder') { window.location.hash = '#/p/' + ref; }
+    else if (act === 'move-folder') {
+      // A folder can't move into itself or its own subtree — block those targets.
+      const blocked = new Set([ref, ...descendantFolderIds(folders, ref)]);
+      openMovePicker({
+        title: t('Move folder to…'), blocked,
+        onPick: async (dest) => { await store.moveFolder(ref, dest); await reload(); render(); announce(t('Folder moved')); },
+      });
+    }
+    else if (act === 'open') resumeSession(ref);
+    else if (act === 'rename-session') startRenameSession(tileEl, ref);
+    else if (act === 'move') {
+      openMovePicker({
+        title: t('Move to…'),
+        onPick: async (dest) => { await store.moveItem(ref, dest, 'session'); await reload(); render(); announce(t('Session moved')); },
+      });
+    }
+    else if (act === 'render-session') renderSession(ref);
+    else if (act === 'share') shareSession(ref);
+    else if (act === 'delete-session') {
+      const ok = await confirmDialog({
+        title: t('Delete this saved session?'),
+        message: t('This permanently deletes the saved session and its preview. This cannot be undone.'),
+        confirmLabel: t('Delete'),
+      });
+      if (ok && mounted) { await host.state.delete(ref).catch(() => {}); await reload(); render(); announce(t('Session deleted')); }
+    }
+  }
+
+  // Open the per-tile context menu. `ctx` = { ref, kind, tileEl, x, y } — from the ⋯
+  // button (anchored below it) OR a right-click (anchored at the cursor). tileEl is the
+  // enclosing .folder-tile (null for the folder-view header ⋯, which falls back to <h2>).
+  function openMenu({ ref, kind, tileEl = null, x, y }: { ref: string; kind: string; tileEl?: HTMLElement | null; x: number; y: number }): void {
+    closeMenu();
+    pendingMenu = { kind: 'tile', ref, menuKind: kind, tileEl };
+    menuPoint.x = x; menuPoint.y = y;
+    tileMenuPopover.open();
+  }
+
   function openBulkMenu(x: number, y: number): void {
     closeMenu();
-    const pop = document.createElement('div');
-    pop.className = 'folder-menu projects-menu';
-    pop.innerHTML = [
-      `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`,
-      menuItem('render', RENDER_ICON, t('Render selection'), { render: true }),
-      menuItem('move', MOVE_ICON, t('Move to…')),
-      menuItem('newfolder', FOLDER_PLUS_ICON, t('New folder from selection')),
-      menuItem('delete', TRASH_ICON, t('Delete'), { danger: true }),
-    ].join('');
-    placePopoverAt(pop, x, y);
-    // Focus the first action so the bulk menu opens onto a control, not <body>.
-    pop.querySelector<HTMLElement>('[data-act]')?.focus({ preventScroll: true });
-    pop.addEventListener('click', (e) => {
-      const item = (e.target as HTMLElement).closest<HTMLElement>('[data-act]'); if (!item) return;
-      closeMenu();
-      handleBulk(item.dataset.act!);
-    });
+    pendingMenu = { kind: 'bulk' };
+    menuPoint.x = x; menuPoint.y = y;
+    tileMenuPopover.open();
   }
 
   // ── drill-down "Move to" picker ─────────────────────────────────────────────
@@ -1118,26 +1155,13 @@ export async function mountProjects(
   function openMovePicker({ title, blocked = new Set<string>(), onPick }: { title: string; blocked?: Set<string>; onPick: (dest: string | null) => void }): void {
     closeMenu();
     let cursor: string | null = null; // current folder id (null = top level)
-    const dlg = document.createElement('dialog');
-    dlg.className = 'projects-movepicker';
-    dlg.tabIndex = -1;   // focus fallback target so keyboard users land IN the picker on open
-    document.body.appendChild(dlg);
-    overlayEl = dlg;
 
-    // Focus the first meaningful control so keyboard users don't land on <body> or the ✕:
-    // a folder to drill into, else the "Move to …" confirm, else the dialog shell itself.
-    const focusFirst = (): void => {
-      (dlg.querySelector<HTMLElement>('.movepicker-row:not([disabled])')
-        ?? dlg.querySelector<HTMLElement>('.movepicker-confirm:not([disabled])')
-        ?? dlg).focus({ preventScroll: true });
-    };
-
-    const draw = (): void => {
+    const render = (): string => {
       const kids = sortFolders(childFolders(folders, cursor));
       const path = cursor ? folderPath(folders, cursor) : [];
       const curName = cursor ? (path[path.length - 1]?.name ?? t('Folder')) : t('Top level');
       const canDropHere = cursor == null || !blocked.has(cursor);
-      dlg.innerHTML = `
+      return `
         <div class="movepicker-head">
           <h2 class="movepicker-title">${escape(title)}</h2>
           <button type="button" class="movepicker-close" aria-label="${escape(t('Close'))}">✕</button>
@@ -1161,67 +1185,67 @@ export async function mountProjects(
           <button type="button" class="btn movepicker-cancel">${t('Cancel')}</button>
           <button type="button" class="btn projects-render movepicker-confirm"${canDropHere ? '' : ' disabled'}>${t('Move to {name}', { name: escape(curName) })}</button>
         </div>`;
-      // Keep keyboard focus inside the picker after a redraw (drill-in / crumb climb); the
-      // initial open focuses post-showModal below (the dialog isn't modal-focusable yet here).
-      if (dlg.open) focusFirst();
     };
-    draw();
 
-    dlg.addEventListener('click', (e) => {
-      const crumb = (e.target as HTMLElement).closest<HTMLElement>('[data-cursor]');
-      if (crumb) { cursor = crumb.dataset.cursor || null; draw(); return; }
-      const into = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-into]');
-      if (into && !into.disabled) { cursor = into.dataset.into!; draw(); return; }
-      if ((e.target as HTMLElement).closest('.movepicker-close, .movepicker-cancel')) { dlg.close(); return; }
-      if ((e.target as HTMLElement).closest('.movepicker-confirm:not([disabled])')) { const dest = cursor; dlg.close(); onPick(dest); return; }
-      // backdrop click
-      const r = dlg.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dlg.close();
+    // Focus the first meaningful control so keyboard users don't land on <body> or the ✕:
+    // a folder to drill into, else the "Move to …" confirm, else the dialog shell itself
+    // (kept tabbable via tabIndex=-1, set once on mount below).
+    const focusFirst = (el: HTMLDialogElement): HTMLElement =>
+      el.querySelector<HTMLElement>('.movepicker-row:not([disabled])')
+        ?? el.querySelector<HTMLElement>('.movepicker-confirm:not([disabled])')
+        ?? el;
+
+    const modal = mountModal<void>(render(), {
+      className: 'projects-movepicker',
+      initialFocus: (el) => { el.tabIndex = -1; return focusFirst(el); },
+      onClose: () => { if (overlayModal === modal) overlayModal = null; },
     });
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); dlg.close(); }); // Escape
-    dlg.addEventListener('close', () => { dlg.remove(); if (overlayEl === dlg) overlayEl = null; });
-    dlg.showModal();
-    focusFirst();   // land keyboard focus on the first meaningful control (see focusFirst)
+    overlayModal = modal;
+
+    const redraw = (): void => {
+      modal.el.innerHTML = render();
+      // Keep keyboard focus inside the picker after a redraw (drill-in / crumb climb).
+      if (modal.el.open) focusFirst(modal.el).focus({ preventScroll: true });
+    };
+
+    modal.el.addEventListener('click', (e) => {
+      const crumb = (e.target as HTMLElement).closest<HTMLElement>('[data-cursor]');
+      if (crumb) { cursor = crumb.dataset.cursor || null; redraw(); return; }
+      const into = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-into]');
+      if (into && !into.disabled) { cursor = into.dataset.into!; redraw(); return; }
+      if ((e.target as HTMLElement).closest('.movepicker-close, .movepicker-cancel')) { modal.close(); return; }
+      if ((e.target as HTMLElement).closest('.movepicker-confirm:not([disabled])')) { const dest = cursor; modal.close(); onPick(dest); return; }
+    });
   }
 
   // A tiny name prompt (New folder from selection). Resolves the trimmed name, or null.
   function promptFolderName(): Promise<string | null> {
     return new Promise((resolve) => {
       closeMenu();
-      const dlg = document.createElement('dialog');
-      dlg.className = 'projects-confirm projects-prompt';
-      dlg.innerHTML = `
-        <h2 class="projects-confirm-title">${t('New folder')}</h2>
+      const content = `
+        <h2 class="modal-title">${t('New folder')}</h2>
         <input class="projects-name-input projects-prompt-input" type="text" placeholder="${escape(t('Folder name'))}" maxlength="60" aria-label="${escape(t('Folder name'))}">
-        <div class="projects-confirm-actions">
+        <div class="modal-actions">
           <button type="button" class="btn" data-act="cancel">${t('Cancel')}</button>
           <button type="button" class="btn projects-render" data-act="ok">${t('Create')}</button>
         </div>`;
-      document.body.appendChild(dlg);
-      overlayEl = dlg;
-      const input = dlg.querySelector('input')!;
-      let settled = false;
-      const finish = (val: string | null): void => {
-        if (settled) return; settled = true;
-        if (overlayEl === dlg) overlayEl = null;
-        if (dlg.open) dlg.close();
-        dlg.remove();
-        resolve(val || null);
-      };
-      dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
-      // Resolve if the dialog is closed any other way (incl. _cleanup calling .close() on
-      // navigate-away) so the awaiting newFolderFromSelection() never hangs.
-      dlg.addEventListener('close', () => finish(null));
-      dlg.addEventListener('click', (e) => {
-        const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
-        if (act === 'ok') return finish(input.value.trim());
-        if (act === 'cancel') return finish(null);
-        const r = dlg.getBoundingClientRect();
-        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) finish(null);
+      // Resolves null however the dialog closes (Cancel, Escape, backdrop, or _cleanup
+      // calling modal.close() on navigate-away) so the awaiting newFolderFromSelection()
+      // never hangs — cancelValue + onClose cover every path, mountModal is idempotent.
+      const modal = mountModal<string | null>(content, {
+        className: 'modal projects-prompt',
+        cancelValue: null,
+        initialFocus: (el) => el.querySelector<HTMLElement>('input'),
+        onClose: (result) => { if (overlayModal === modal) overlayModal = null; resolve(result || null); },
       });
-      input.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') finish(input.value.trim()); });
-      dlg.showModal();
-      input.focus();
+      overlayModal = modal;
+      const input = modal.el.querySelector('input')!;
+      modal.el.addEventListener('click', (e) => {
+        const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+        if (act === 'ok') return modal.close(input.value.trim());
+        if (act === 'cancel') return modal.close(null);
+      });
+      input.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') modal.close(input.value.trim()); });
     });
   }
 
@@ -1370,10 +1394,7 @@ export async function mountProjects(
     // Projects are creative sessions you file in a folder, so the "new tool" chooser
     // omits utilities (on-device transforms, pickers, etc. — category 'utility').
     const tools = ((w.__toolIndex?.tools ?? []) as unknown as ProjectsTool[]).filter(x => x.category !== 'utility');
-    const dlg = document.createElement('dialog');
-    dlg.className = 'projects-toolpicker';
-    dlg.setAttribute('aria-label', t('New from a tool'));   // accessible name (title text removed)
-    dlg.innerHTML = `
+    const content = `
       <div class="toolpicker-head">
         <input class="toolpicker-search" type="search" placeholder="${escape(t('Search tools…'))}" aria-label="${escape(t('Search tools'))}" autocomplete="off" spellcheck="false">
         <button type="button" class="toolpicker-close" aria-label="${escape(t('Close'))}">✕</button>
@@ -1389,12 +1410,15 @@ export async function mountProjects(
             <button type="button" class="toolpicker-add" data-add-tool="${escape(tool.id)}" title="${escape(t('Add to this folder with default settings — without opening the editor'))}" aria-label="${escape(t('Add {name} to this folder without opening', { name: tool.name }))}"><span class="toolpicker-add-label">${t('+ Add')}</span></button>
           </div>`).join('')}
       </div>`;
-    document.body.appendChild(dlg);
-    toolPickerEl = dlg;
-    dlg.addEventListener('close', () => { dlg.remove(); if (toolPickerEl === dlg) toolPickerEl = null; });
-    dlg.showModal();
+    const modal = mountModal<void>(content, {
+      className: 'projects-toolpicker',
+      ariaLabel: t('New from a tool'),   // accessible name (title text removed)
+      initialFocus: (el) => el.querySelector<HTMLElement>('.toolpicker-search'),
+      onClose: () => { if (toolPickerModal === modal) toolPickerModal = null; },
+    });
+    toolPickerModal = modal;
+    const dlg = modal.el;
     const search = dlg.querySelector<HTMLInputElement>('.toolpicker-search')!;
-    setTimeout(() => search.focus(), 0);
     search.addEventListener('input', () => {
       const q = search.value.trim().toLowerCase();
       // Match on the tile's own text (name + description), hide the whole CELL so the
@@ -1404,7 +1428,7 @@ export async function mountProjects(
         cell.hidden = !!(q && !tile!.textContent!.toLowerCase().includes(q));
       });
     });
-    dlg.querySelector('.toolpicker-close')!.addEventListener('click', () => dlg.close());
+    dlg.querySelector('.toolpicker-close')!.addEventListener('click', () => modal.close());
     dlg.querySelector('.toolpicker-grid')!.addEventListener('click', (e) => {
       // "+ Add": file a default-settings session into this folder WITHOUT opening the
       // editor, and leave the picker open so several tools can be added in a row.
@@ -1416,7 +1440,7 @@ export async function mountProjects(
       const target = (folderId && folderId !== UNCAT) ? folderId : '';
       try { sessionStorage.setItem(FILE_INTO_KEY, target); } catch { /* private mode */ }
       armReturn();
-      dlg.close();
+      modal.close();
       window.location.hash = '#/tool/' + openBtn.dataset.openTool;
     });
   }
@@ -1799,7 +1823,7 @@ export async function mountProjects(
   try { sessionStorage.removeItem(FILE_INTO_KEY); sessionStorage.removeItem(RETURN_KEY); } catch { /* ignore */ }
   // NB tileSelect.destroy() is not optional: its mousedown is bound to viewEl (#view), which
   // the router REUSES for every route — leave it bound and the next mount stacks another.
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); toasts.forEach(t => t.remove()); toasts.clear(); toolPickerEl?.remove(); toolPickerEl = null; overlayEl?.close?.(); overlayEl?.remove(); overlayEl = null; };
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); toasts.forEach(t => t.remove()); toasts.clear(); toolPickerModal?.close(); overlayModal?.close(); };
   await reload();
   // A stale /p/<id> deep link to a deleted folder falls back to root.
   if (folderId && folderId !== UNCAT && !folders.some(f => f.id === folderId)) folderId = null;

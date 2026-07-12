@@ -118,7 +118,8 @@
   background: hsl(var(--background) / .9);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
-/* Zoom cluster: [Fit] | [−] N across [+] */
+/* Zoom cluster: [Fit] | [−] N across [+] — markup/click-wiring/disabled-state
+   come from components/zoom-hud.ts (mountZoomHud); this file only skins it. */
 .me-zoom {
   display: inline-flex; align-items: center; gap: .1rem;
   padding: .2rem;

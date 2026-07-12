@@ -108,12 +108,10 @@
 .plat-client-card,   /* platform.css — "This device" grouped cards */
 .plat-font,          /* platform.css — font specimen card */
 .plat-theme,         /* platform.css — theme swatch card */
-.cat-tile {          /* components.css — catalogue-summary icon/count tile;
-                         collides in name with catalog.ts's OWN .cat-tile asset
-                         card (scoped there under `.catalog .cat-tile` to defeat
-                         this exact collision) — the rename this calls for
-                         touches lib/catalog-summary.ts, out of scope; see
-                         followUps */
+.cat-stat-tile {     /* components.css — catalogue-summary icon/count tile;
+                         renamed from .cat-tile (component audit rec 10
+                         follow-up) — that bare name collided with catalog.ts's
+                         OWN unrelated asset card, which keeps `.cat-tile`. */
   background: hsl(var(--background));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);

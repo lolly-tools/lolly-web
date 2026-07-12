@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "「{name}」大小為 {size}{dims}。要保留原始檔案 — 最適合搭配 Content Credential — 還是調整大小{resize}以節省空間？",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "「{name}」將從你的圖片中永久移除。此操作無法復原。",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "“{variant}” 已是某個標誌的名稱 — 請為標記選擇其他名稱。",
-  "✓ Added": "✓ 已新增"
+  "✓ Added": "✓ 已新增",
+  "Theme: {name} — switch theme": "主題：{name} — 切換主題",
+  "Speakers": "使用者",
+  "Sort languages": "語言排序"
 }

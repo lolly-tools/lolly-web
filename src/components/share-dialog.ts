@@ -14,6 +14,7 @@ import { escape } from '../utils.ts';
 import { bumpMetric } from '../metrics.ts';
 import { announce } from '../a11y.ts';
 import { packQuery, isPackAvailable, PACK_PARAM, packEncrypted, isEncryptAvailable, ENC_PARAM } from '@lolly/engine';
+import { mountModal } from './modal.ts';
 
 // Above this readable-query length the Share dialog auto-adopts the packed form.
 const AUTO_PACK_MIN = 1800;
@@ -128,9 +129,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   // Offer password-protection only when there's state to encrypt and WebCrypto is present.
   const encryptable = isEncryptAvailable() && !!baseQuery;
 
-  const dialog = document.createElement('dialog');
-  dialog.className = 'share-dialog';
-  dialog.innerHTML = `
+  const content = `
     <div class="share-dialog-body">
       <h2>${escape(title)}</h2>
       <div class="share-link-row">
@@ -175,8 +174,8 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
       </div>
     </div>
   `;
-  document.body.appendChild(dialog);
-  dialog.showModal();
+  const modal = mountModal<void>(content, { className: 'share-dialog' });
+  const dialog = modal.el;
 
   const field       = dialog.querySelector<HTMLInputElement>('.share-link-field')!;
   const fullCb      = dialog.querySelector<HTMLInputElement>('[data-flag="full"]');
@@ -303,10 +302,8 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     setTimeout(() => { this.textContent = prev; }, 1500);
   });
 
-  const cleanup = () => { dialog.close(); dialog.remove(); };
-  dialog.querySelector('.share-done')!.addEventListener('click', cleanup);
-  dialog.addEventListener('cancel', () => dialog.remove());            // Esc
-  dialog.addEventListener('click', e => { if (e.target === dialog) cleanup(); }); // click backdrop
+  dialog.querySelector('.share-done')!.addEventListener('click', () => modal.close());
+  // Escape and a backdrop click are handled by mountModal (both close with no value).
 
   syncFullWins();
   refresh();

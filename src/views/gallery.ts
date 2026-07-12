@@ -24,9 +24,7 @@ import { syncCatalog } from '../catalog/sync.ts';
 import { privacyNoticeMarkup, mountPrivacyNotice } from './privacy-notice.ts';
 import { personalizeNudgeMarkup, mountPersonalizeNudge } from './personalize-nudge.ts';
 import { profileSignature, canPersonalize, regeneratePreviews } from '../personalize-previews.ts';
-import { viewToggle } from '../components/view-toggle.ts';
-import { attachProfileMenu } from '../components/profile-menu.ts';
-import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { viewTopbarHtml, mountViewTopbar } from '../components/view-topbar.ts';
 import { mountFeaturedRow, resolveExamples } from '../components/featured-row.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { renderFeaturedVariant, renderFeaturedPages, displayFormatOf } from '../lib/featured-render.ts';
@@ -36,8 +34,10 @@ import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.t
 import type { FeaturedEntry, FeaturedManifest, FeaturedVariant, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { loadFavourites, saveFavourites } from '../lib/favourites.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
+import { mountModal } from '../components/modal.ts';
 import { announce } from '../a11y.ts';
 import { playSfx, playGalleryAah, cancelArrivalAah } from '../lib/sfx.ts';
+import { sessionRow } from '../folder-tiles.ts';
 
 import type { HostV1, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
 import { toolSeedHref } from '../lib/seed-url.ts';
@@ -472,14 +472,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   viewEl.innerHTML = `
     <div class="gallery${featuredEntries.length ? ' has-featured' : ''}">
       <h1 class="visually-hidden">${t('Lolly — tools gallery')}</h1>
-      <div class="gallery-topbar">
-        <div class="view-toggle-wrap">${viewToggle('tools')}</div>
-        <div class="gallery-topright">
+      ${viewTopbarHtml({
+        active: 'tools',
+        right: `
           ${visibleCats.length ? `<button type="button" class="filter-fab" aria-label="${escape(t('Sort and filter tools'))}" aria-haspopup="true" aria-expanded="false" aria-controls="filter-popover" title="${escape(t('Sort & filter'))}">${FILTER_ICON}</button>` : ''}
-          ${sortedSaved.length ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: sortedSaved.length }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}
-          ${langFabHtml()}
-          <a href="#/profile" class="profile-link" aria-label="${escape(t('Open your profile'))}"><span class="profile-link-name">${escape(profile.firstname || t('Profile'))}</span></a>
-          ${visibleCats.length ? `
+          ${sortedSaved.length ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: sortedSaved.length }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}`,
+        popover: visibleCats.length ? `
           <div class="filter-popover" id="filter-popover" role="group" aria-label="${escape(t('Sort and filter tools'))}" hidden>
             <div class="filter-pop-sort">${themeSegmentHtml()}</div>
             <div class="filter-pop-sort">${soundSegmentHtml()}</div>
@@ -505,9 +503,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
               <input type="checkbox" class="filter-hide-previews">
               <span>${t('Hide previews')}</span>
             </label>
-          </div>` : ''}
-        </div>
-      </div>
+          </div>` : '',
+        profile: { firstname: profile.firstname },
+      })}
       ${visibleCats.length ? `<div class="filter-backdrop" hidden></div>` : ''}
 
       ${visibleCats.length === 0 ? (index.tools.length === 0 ? `
@@ -538,28 +536,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   mountPrivacyNotice(viewEl);
   mountPersonalizeNudge(viewEl, host);
 
-  // Profile-pill avatar, resolved OFF the first-paint path: the headshot is a blob
+  // Wires the language menu + the profile pill's mobile menu, and (via `headshotId`)
+  // resolves the profile-pill avatar OFF the first-paint path — the headshot is a blob
   // fetch + createObjectURL (and the stored object URL goes stale across reloads, so
   // it must be re-fetched by id) — awaiting it before the initial innerHTML delayed
   // the whole gallery. The pill renders name-only immediately; once the headshot
-  // resolves we swap the <img> in. Fire-and-forget; a failure just leaves the wordmark.
-  if (profile.headshot?.id) {
-    void host.assets.get(profile.headshot.id).then(res => {
-      const url = res?.url;
-      if (!url) return;
-      const link = viewEl.querySelector<HTMLElement>('.profile-link');
-      if (!link || !link.isConnected) return;
-      let img = link.querySelector<HTMLImageElement>('.profile-link-avatar');
-      if (!img) {
-        img = document.createElement('img');
-        img.className = 'profile-link-avatar';
-        img.alt = '';
-        link.prepend(img);
-      }
-      img.src = url;
-      link.classList.add('has-avatar');
-    }).catch(() => { /* no avatar — the name-only pill stands */ });
-  }
+  // resolves the <img> swaps in. `openHistoryOverlay` is a hoisted function
+  // declaration, so referencing it here (before its textual definition) is safe.
+  mountViewTopbar(viewEl, host, {
+    profileMenu: { savedCount: sortedSaved.length, onHistory: openHistoryOverlay },
+    headshotId: profile.headshot?.id,
+  });
 
   // Empty catalog: offer a re-sync without a full reload.
   viewEl.querySelector('.gallery-retry')?.addEventListener('click', async (e) => {
@@ -1282,22 +1269,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     searchDebounce = setTimeout(() => { query = searchInput.value.toLowerCase(); applyView(); }, 120);
   });
 
-  // ── Search clear affordances (match Projects / Catalogue) ──────────────────────
-  // The field markup is the shared gallerySearchBox, so the ✕ is created here and slotted
-  // into the (relatively-positioned) box. Visibility is driven by inline display: the global
-  // `[hidden]{display:none}` rule can't beat an inline `display`, so we flip display directly
-  // rather than toggle the hidden attribute.
-  const searchClear = document.createElement('button');
-  searchClear.type = 'button';
-  searchClear.className = 'gallery-search-clear';
-  searchClear.setAttribute('aria-label', t('Clear search'));
-  searchClear.textContent = '✕';
-  searchClear.style.cssText = 'position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;align-items:center;justify-content:center;border:0;border-radius:50%;background:transparent;color:hsl(var(--muted-foreground));font-size:13px;line-height:1;cursor:pointer;display:none;';
-  const searchBox = searchInput.closest<HTMLElement>('.gallery-search-box');
-  if (searchBox) { searchBox.appendChild(searchClear); searchInput.style.paddingRight = '34px'; }   // leave room for the ✕
+  // ── Search clear affordance (shared with Catalogue — component-audit rec 11) ────
+  // The ✕ is part of the shared gallerySearchBox markup now; just wire it up.
+  const searchClear = viewEl.querySelector<HTMLButtonElement>('.gallery-search-clear')!;
 
   // The ✕ is present only while there's text to clear.
-  function syncSearchClear(): void { searchClear.style.display = searchInput.value ? 'inline-flex' : 'none'; }
+  function syncSearchClear(): void { searchClear.toggleAttribute('hidden', !searchInput.value); }
 
   // Empty the field and re-run the filter immediately (no debounce), then re-focus so the
   // user keeps typing. Shared verbatim by the ✕ button, Escape, and the no-results "clear
@@ -1365,15 +1342,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     });
   }
   historyFab?.addEventListener('click', openHistoryOverlay);
-
-  // Mobile: tapping the avatar opens a single menu gathering the theme switcher,
-  // saved sessions and a Settings link (the history button + "Profile" wordmark
-  // are hidden by CSS at that width). On desktop the avatar stays a plain link.
-  attachProfileMenu(viewEl.querySelector<HTMLElement>('.profile-link'), host, {
-    savedCount: sortedSaved.length,
-    onHistory: openHistoryOverlay,
-  });
-  attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // Focus the search box on fine-pointer devices for type-to-find (skip touch so
   // the keyboard doesn't pop over the gallery).
@@ -1714,14 +1682,11 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
   // any tool that declares no render size.
   const dims = tool.exportable === false ? '' : dimText(tool);
 
-  const dialog = document.createElement('dialog');
-  dialog.className = 'tool-meta-dialog';
-  dialog.setAttribute('aria-labelledby', 'tool-info-title');
   // The same preview the tile shows (previewMedia handles img vs the sandboxed
   // card.html iframe), sized by the tool's declared aspect when it has one.
   const previewAspect = typeof tool.width === 'number' && typeof tool.height === 'number'
     ? ` style="aspect-ratio:${tool.width}/${tool.height}"` : '';
-  dialog.innerHTML = `
+  const content = `
     <div class="meta-dialog-body">
       <header class="meta-dialog-head">
         ${tool.icon ? `<span class="tool-card-icon meta-dialog-icon" aria-hidden="true">${tool.icon}</span>` : ''}
@@ -1749,9 +1714,11 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
       </div>
     </div>`;
   playSfx('whisper'); // airy elevation as the tool details rise in
-  openDialog(dialog);
-  dialog.querySelector('.meta-dialog-open')?.addEventListener('click', () => closeDialog(dialog));
-  void fillDefaultsList(dialog, tool.id);
+  const modal = mountModal(content, { className: 'tool-meta-dialog' });
+  modal.el.setAttribute('aria-labelledby', 'tool-info-title');
+  modal.el.querySelectorAll('.meta-dialog-close').forEach(b => b.addEventListener('click', () => modal.close()));
+  modal.el.querySelector('.meta-dialog-open')?.addEventListener('click', () => modal.close());
+  void fillDefaultsList(modal.el, tool.id);
 }
 
 // ── Info dialog: the defaults spec list ──────────────────────────────────────
@@ -1829,15 +1796,11 @@ interface ShowHistoryDialogOpts {
 
 function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[], sizes: Record<string, number>, host: GalleryHost, { onDelete, onClose }: ShowHistoryDialogOpts = {}): void {
   if (!tool) return;
-  const dialog = document.createElement('dialog');
-  dialog.className = 'tool-meta-dialog tool-history-dialog';
-  dialog.setAttribute('aria-labelledby', 'tool-history-title');
-
   const countText = (n: number) => (n === 1 ? t('1 saved session') : t('{n} saved sessions', { n }));
   // Defer the gallery re-render until the dialog closes: rebuilding the masonry
   // (and the (h) trigger button) mid-dialog would break the UA's focus restore.
   let changed = false;
-  dialog.innerHTML = `
+  const content = `
     <div class="meta-dialog-body">
       <header class="meta-dialog-head">
         ${tool.icon ? `<span class="tool-card-icon meta-dialog-icon" aria-hidden="true">${tool.icon}</span>` : ''}
@@ -1847,23 +1810,27 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
         </div>
       </header>
       <ul class="saved-list history-list">
-        ${entries.map(e => savedItem(e, sizes[e.slot], '')).join('')}
+        ${entries.map(e => savedItem(e, sizes[e.slot])).join('')}
       </ul>
       <div class="meta-dialog-actions">
         <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
       </div>
     </div>`;
-  openDialog(dialog);
-  dialog.addEventListener('close', () => { if (changed) onClose?.(); });
+  const modal = mountModal(content, {
+    className: 'tool-meta-dialog tool-history-dialog',
+    onClose: () => { if (changed) onClose?.(); },
+  });
+  modal.el.setAttribute('aria-labelledby', 'tool-history-title');
+  modal.el.querySelectorAll('.meta-dialog-close').forEach(b => b.addEventListener('click', () => modal.close()));
 
-  dialog.querySelectorAll<HTMLElement>('[data-resume]').forEach(el => {
+  modal.el.querySelectorAll<HTMLElement>('[data-resume]').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      closeDialog(dialog);
+      modal.close();
       window.location.hash = `#/tool/${el.dataset.resume}?slot=${encodeURIComponent(el.dataset.slot!)}`;
     });
   });
-  dialog.querySelectorAll<HTMLElement>('[data-delete]').forEach(el => {
+  modal.el.querySelectorAll<HTMLElement>('[data-delete]').forEach(el => {
     el.addEventListener('click', async (e) => {
       e.stopPropagation();
       const slot = el.dataset.delete!;
@@ -1878,58 +1845,53 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
       onDelete?.(slot);            // update in-memory state only — render happens on close
       changed = true;
       announce(t('Session deleted'));
-      const left = dialog.querySelectorAll('.saved-row').length;
-      const countEl = dialog.querySelector('.history-count');
+      const left = modal.el.querySelectorAll('.saved-row').length;
+      const countEl = modal.el.querySelector('.history-count');
       if (countEl) countEl.textContent = countText(left);
-      if (left === 0) closeDialog(dialog);
+      if (left === 0) modal.close();
     });
   });
 }
 
-// ── Native <dialog> helpers (Esc + backdrop click come free) ────────────────
-
-function openDialog(dialog: HTMLDialogElement): void {
-  document.body.appendChild(dialog);
-  dialog.showModal();
-  // Esc → close() (not bare remove()) so the UA restores focus to the opener.
-  dialog.addEventListener('cancel', (e) => { e.preventDefault(); closeDialog(dialog); }); // Esc
-  dialog.addEventListener('click', (e) => { if (e.target === dialog) closeDialog(dialog); }); // backdrop
-  dialog.querySelectorAll('.meta-dialog-close').forEach(b => b.addEventListener('click', () => closeDialog(dialog)));
-}
-function closeDialog(dialog: HTMLDialogElement): void {
-  dialog.close();
-  dialog.remove();
-}
-
 // ── Saved-session row (shared by the history modal) ─────────────────────────
+// Builds on folder-tiles.ts's sessionRow() — the shared row primitive behind
+// this history list AND the profile Storage manager's session list
+// (component-audit rec 6). Only this view's chrome (a full-row resume trigger,
+// the search-filter attribute, the h4/small tags its own stylesheets key off)
+// lives here; the batch/thumb/size resolution is shared.
 
-function savedItem(entry: SavedEntry, bytes: number | undefined, toolName = ''): string {
+function savedItem(entry: SavedEntry, bytes: number | undefined): string {
   const batch = isBatchSlot(entry.slot);
-  const thumb = batch
-    ? `<span class="saved-thumb saved-thumb--batch" aria-hidden="true">${PACKAGE_ICON}</span>`
-    : entry.thumb
-      ? `<img class="saved-thumb" src="${escape(entry.thumb)}" alt="" aria-hidden="true">`
-      : `<span class="saved-thumb saved-thumb--empty"></span>`;
   const when = entry.updatedAt ? fmtDateTime(new Date(entry.updatedAt)) : '';
-  const size = bytes ? `<small class="session-size">${fmtBytes(bytes)}</small>` : '';
-  const title = batch ? (entry.label || t('Batch session')) : (entry.filename || toolName || entry.toolId);
+  const title = batch ? (entry.label || t('Batch session')) : (entry.filename || entry.toolId);
   // The tool name is the row's title (h4) just above, so the sub-line only needs
   // the timestamp — no need to repeat the name.
   const subtitle = batch ? t('Batch · {when}', { when }) : when;
-  const searchText = [title, entry.toolId, toolName, batch ? 'batch' : ''].filter(Boolean).join(' ').toLowerCase();
+  const searchText = [title, entry.toolId, batch ? 'batch' : ''].filter(Boolean).join(' ').toLowerCase();
   // Tool sessions resume into #/tool; batch sessions resume into #/pro.
   const resumeAttrs = batch
     ? `data-batch data-slot="${escape(entry.slot)}"`
     : `data-resume="${escape(entry.toolId)}" data-slot="${escape(entry.slot)}"`;
-  return `
-    <li class="saved-row${batch ? ' saved-row--batch' : ''}" data-search="${escape(searchText)}">
-      <button class="saved-resume" ${resumeAttrs} aria-label="${escape(batch ? t('Open batch') : t('Resume'))} ${escape(entry.label ?? entry.slot)}"></button>
-      ${thumb}
-      <span class="saved-label"><h4>${escape(title)}</h4><small>${escape(subtitle)}</small>
-      ${size}
-      <button class="saved-delete" data-delete="${escape(entry.slot)}" title="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">&#x2715;</button>
-    </span></li>
-  `;
+  return sessionRow(entry, {
+    rowClass: `saved-row${batch ? ' saved-row--batch' : ''}`,
+    rowAttrs: `data-search="${escape(searchText)}"`,
+    thumbClass: 'saved-thumb',
+    thumbImgAttrs: 'aria-hidden="true"',
+    batchIcon: PACKAGE_ICON,
+    openClass: 'saved-resume',
+    openAttrs: resumeAttrs,
+    openLabel: `${batch ? t('Open batch') : t('Resume')} ${entry.label ?? entry.slot}`,
+    metaClass: 'saved-label',
+    titleTag: 'h4',
+    title,
+    subTag: 'small',
+    subtitle,
+    sizeBytes: bytes,
+    deleteAttr: `data-delete="${escape(entry.slot)}"`,
+    deleteClass: 'saved-delete',
+    deleteTitle: t('Delete'),
+    deleteLabel: t('Delete'),
+  });
 }
 
 // ── Misc helpers ────────────────────────────────────────────────────────────
@@ -1961,10 +1923,4 @@ function fmtDateTime(d: Date): string {
   const date = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   return `${date} ${time}`;
-}
-
-function fmtBytes(bytes: number | undefined): string {
-  if (!bytes) return '';
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "“{name}” ay {size}{dims}. Panatilihin ang orihinal — pinakamainam para sa Content Credential — o i-resize ito{resize} para makatipid ng space?",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "Permanenteng aalisin ang “{name}” sa iyong mga imahe. Hindi na ito mababawi.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "Ang “{variant}” ay pangalan na ng isang logo — pumili ng ibang pangalan para sa mark.",
-  "✓ Added": "✓ Naidagdag"
+  "✓ Added": "✓ Naidagdag",
+  "Theme: {name} — switch theme": "Tema: {name} — magpalit ng tema",
+  "Speakers": "Mga nagsasalita",
+  "Sort languages": "Ayusin ang mga wika"
 }

@@ -4,11 +4,14 @@
  *
  * Returns a Promise<boolean>: true on confirm, false on Cancel / Escape / a
  * backdrop click. One shared component (the Projects view + the profile Storage
- * manager) so every destructive flow looks and behaves identically. Reuses the
- * `.projects-confirm` <dialog> CSS already in app.css. Escape-to-close is an
- * app-wide convention; the safe Cancel button takes default focus.
+ * manager) so every destructive flow looks and behaves identically. Built on
+ * mountModal (components/modal.ts) — this file supplies content + wiring only,
+ * the open/Escape/backdrop/teardown lifecycle lives there. Reuses the `.modal`
+ * <dialog> CSS already in app.css. Escape-to-close is an app-wide convention;
+ * the safe Cancel button takes default focus.
  */
 import { escape } from '../utils.ts';
+import { mountModal } from './modal.ts';
 
 // Open dialogs live on <body>, so a view unmount can't remove them by clearing
 // its own container — track them here and tear any down via closeConfirmDialogs().
@@ -23,35 +26,24 @@ export interface ConfirmDialogOpts {
 
 export function confirmDialog({ title, message, confirmLabel = 'Delete', danger = true }: ConfirmDialogOpts): Promise<boolean> {
   return new Promise((resolve) => {
-    const dlg = document.createElement('dialog');
-    dlg.className = 'projects-confirm';
-    dlg.innerHTML = `
-      <h2 class="projects-confirm-title">${escape(title)}</h2>
-      <p class="projects-confirm-msg">${escape(message)}</p>
-      <div class="projects-confirm-actions">
-        <button type="button" class="btn projects-confirm-cancel" data-act="cancel">Cancel</button>
-        <button type="button" class="btn${danger ? ' projects-confirm-danger' : ''}" data-act="ok">${escape(confirmLabel)}</button>
+    const content = `
+      <h2 class="modal-title">${escape(title)}</h2>
+      <p class="modal-msg">${escape(message)}</p>
+      <div class="modal-actions">
+        <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>
+        <button type="button" class="btn${danger ? ' modal-danger' : ''}" data-act="ok">${escape(confirmLabel)}</button>
       </div>`;
-    document.body.appendChild(dlg);
-    openDialogs.add(dlg);
-    let settled = false;
-    const finish = (val: boolean) => {
-      if (settled) return; settled = true;
-      openDialogs.delete(dlg);
-      if (dlg.open) dlg.close();
-      dlg.remove();
-      resolve(val);
-    };
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(false); }); // Escape
-    dlg.addEventListener('click', (e) => {
-      const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
-      if (act) { finish(act === 'ok'); return; }
-      // Click outside the content box (on the backdrop) dismisses.
-      const r = dlg.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) finish(false);
+    const modal = mountModal<boolean>(content, {
+      className: 'modal',
+      cancelValue: false,
+      initialFocus: (el) => el.querySelector<HTMLElement>('.modal-cancel'), // default focus on the safe choice
+      onClose: (result) => { openDialogs.delete(modal.el); resolve(result ?? false); },
     });
-    dlg.showModal();
-    dlg.querySelector<HTMLButtonElement>('.projects-confirm-cancel')?.focus(); // default focus on the safe choice
+    openDialogs.add(modal.el);
+    modal.el.addEventListener('click', (e) => {
+      const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
+      if (act) modal.close(act === 'ok');
+    });
   });
 }
 
@@ -75,35 +67,25 @@ export interface ChoiceDialogOpts {
  */
 export function choiceDialog({ title, message, choices = [] }: ChoiceDialogOpts): Promise<string | null> {
   return new Promise((resolve) => {
-    const dlg = document.createElement('dialog');
-    dlg.className = 'projects-confirm';
-    dlg.innerHTML = `
-      <h2 class="projects-confirm-title">${escape(title)}</h2>
-      <p class="projects-confirm-msg">${escape(message)}</p>
-      <div class="projects-confirm-actions projects-confirm-actions--choices">
-        <button type="button" class="btn projects-confirm-cancel" data-act="cancel">Cancel</button>
-        ${choices.map(c => `<button type="button" class="btn${c.primary ? ' projects-confirm-primary' : ''}" data-choice="${escape(c.id)}">${escape(c.label)}</button>`).join('')}
+    const content = `
+      <h2 class="modal-title">${escape(title)}</h2>
+      <p class="modal-msg">${escape(message)}</p>
+      <div class="modal-actions modal-actions--choices">
+        <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>
+        ${choices.map(c => `<button type="button" class="btn${c.primary ? ' modal-primary' : ''}" data-choice="${escape(c.id)}">${escape(c.label)}</button>`).join('')}
       </div>`;
-    document.body.appendChild(dlg);
-    openDialogs.add(dlg);
-    let settled = false;
-    const finish = (val: string | null) => {
-      if (settled) return; settled = true;
-      openDialogs.delete(dlg);
-      if (dlg.open) dlg.close();
-      dlg.remove();
-      resolve(val);
-    };
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); }); // Escape
-    dlg.addEventListener('click', (e) => {
-      const chosen = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-choice]') : null;
-      if (chosen) { finish(chosen.dataset.choice!); return; }
-      if (e.target instanceof Element && e.target.closest('[data-act]')) { finish(null); return; }
-      const r = dlg.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) finish(null);
+    const modal = mountModal<string | null>(content, {
+      className: 'modal',
+      cancelValue: null,
+      initialFocus: (el) => el.querySelector<HTMLElement>('.modal-primary, [data-choice]'), // default focus on the lead choice
+      onClose: (result) => { openDialogs.delete(modal.el); resolve(result ?? null); },
     });
-    dlg.showModal();
-    dlg.querySelector<HTMLButtonElement>('.projects-confirm-primary, [data-choice]')?.focus(); // default focus on the lead choice
+    openDialogs.add(modal.el);
+    modal.el.addEventListener('click', (e) => {
+      const chosen = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-choice]') : null;
+      if (chosen) { modal.close(chosen.dataset.choice!); return; }
+      if (e.target instanceof Element && e.target.closest('[data-act]')) modal.close(null);
+    });
   });
 }
 
@@ -121,34 +103,23 @@ export interface NoticeDialogOpts {
  */
 export function noticeDialog({ title, message, okLabel = 'Got it' }: NoticeDialogOpts): Promise<void> {
   return new Promise((resolve) => {
-    const dlg = document.createElement('dialog');
-    dlg.className = 'projects-confirm';
     const paras = (Array.isArray(message) ? message : [message])
-      .map(m => `<p class="projects-confirm-msg">${escape(m)}</p>`).join('');
-    dlg.innerHTML = `
-      <h2 class="projects-confirm-title">${escape(title)}</h2>
+      .map(m => `<p class="modal-msg">${escape(m)}</p>`).join('');
+    const content = `
+      <h2 class="modal-title">${escape(title)}</h2>
       ${paras}
-      <div class="projects-confirm-actions">
-        <button type="button" class="btn projects-confirm-primary" data-act="ok">${escape(okLabel)}</button>
+      <div class="modal-actions">
+        <button type="button" class="btn modal-primary" data-act="ok">${escape(okLabel)}</button>
       </div>`;
-    document.body.appendChild(dlg);
-    openDialogs.add(dlg);
-    let settled = false;
-    const finish = () => {
-      if (settled) return; settled = true;
-      openDialogs.delete(dlg);
-      if (dlg.open) dlg.close();
-      dlg.remove();
-      resolve();
-    };
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(); }); // Escape
-    dlg.addEventListener('click', (e) => {
-      if (e.target instanceof Element && e.target.closest('[data-act]')) { finish(); return; }
-      const r = dlg.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) finish();
+    const modal = mountModal<void>(content, {
+      className: 'modal',
+      initialFocus: (el) => el.querySelector<HTMLElement>('[data-act="ok"]'),
+      onClose: () => { openDialogs.delete(modal.el); resolve(); },
     });
-    dlg.showModal();
-    dlg.querySelector<HTMLButtonElement>('[data-act="ok"]')?.focus();
+    openDialogs.add(modal.el);
+    modal.el.addEventListener('click', (e) => {
+      if (e.target instanceof Element && e.target.closest('[data-act]')) modal.close();
+    });
   });
 }
 
@@ -171,43 +142,33 @@ export interface PromptDialogOpts {
  */
 export function promptDialog({ title, message, confirmLabel = 'OK', placeholder = '', value = '', inputType = 'text', error }: PromptDialogOpts): Promise<string | null> {
   return new Promise((resolve) => {
-    const dlg = document.createElement('dialog');
-    dlg.className = 'projects-confirm';
-    const errHtml = error ? `<p class="projects-confirm-msg" style="color:hsl(var(--destructive));font-weight:600">${escape(error)}</p>` : '';
-    dlg.innerHTML = `
-      <h2 class="projects-confirm-title">${escape(title)}</h2>
-      <p class="projects-confirm-msg">${escape(message)}</p>
+    const errHtml = error ? `<p class="modal-msg" style="color:hsl(var(--destructive));font-weight:600">${escape(error)}</p>` : '';
+    const content = `
+      <h2 class="modal-title">${escape(title)}</h2>
+      <p class="modal-msg">${escape(message)}</p>
       ${errHtml}
-      <input type="${inputType === 'password' ? 'password' : 'text'}" class="projects-confirm-input"
+      <input type="${inputType === 'password' ? 'password' : 'text'}" class="modal-input"
              aria-label="${escape(message)}"
              autocomplete="${inputType === 'password' ? 'off' : 'on'}" spellcheck="false" placeholder="${escape(placeholder)}"
              style="width:100%;box-sizing:border-box;padding:9px 12px;margin:.1rem 0 .3rem;font-size:14px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))">
-      <div class="projects-confirm-actions">
-        <button type="button" class="btn projects-confirm-cancel" data-act="cancel">Cancel</button>
-        <button type="button" class="btn projects-confirm-primary" data-act="ok">${escape(confirmLabel)}</button>
+      <div class="modal-actions">
+        <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>
+        <button type="button" class="btn modal-primary" data-act="ok">${escape(confirmLabel)}</button>
       </div>`;
-    document.body.appendChild(dlg);
-    openDialogs.add(dlg);
-    const input = dlg.querySelector<HTMLInputElement>('.projects-confirm-input')!;
-    let settled = false;
-    const finish = (val: string | null) => {
-      if (settled) return; settled = true;
-      openDialogs.delete(dlg);
-      if (dlg.open) dlg.close();
-      dlg.remove();
-      resolve(val);
-    };
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); }); // Escape
-    dlg.addEventListener('click', (e) => {
-      const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
-      if (act === 'ok') { finish(input.value); return; }
-      if (act === 'cancel') { finish(null); return; }
-      const r = dlg.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) finish(null);
+    const modal = mountModal<string | null>(content, {
+      className: 'modal',
+      cancelValue: null,
+      initialFocus: (el) => el.querySelector<HTMLElement>('.modal-input'),
+      onClose: (result) => { openDialogs.delete(modal.el); resolve(result ?? null); },
     });
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(input.value); } });
-    dlg.showModal();
-    input.focus();
+    openDialogs.add(modal.el);
+    const input = modal.el.querySelector<HTMLInputElement>('.modal-input')!;
+    modal.el.addEventListener('click', (e) => {
+      const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
+      if (act === 'ok') { modal.close(input.value); return; }
+      if (act === 'cancel') modal.close(null);
+    });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); modal.close(input.value); } });
     if (value) { input.value = value; input.select(); }
   });
 }
