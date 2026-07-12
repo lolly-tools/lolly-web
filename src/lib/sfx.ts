@@ -1122,7 +1122,7 @@ function cueForTarget(el: Element): SfxName {
   if (tagged && isSfxName(tagged.dataset.sfx)) return tagged.dataset.sfx as SfxName;
   // The shared confirm dialog's destructive button (confirm-dialog.ts, danger:true) —
   // fires the "gone" cue at the moment of confirmation, everywhere it's used.
-  if (el.closest('.projects-confirm-danger')) return 'delete';
+  if (el.closest('.modal-danger')) return 'delete';
   return 'click';
 }
 

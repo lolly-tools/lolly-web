@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "“{name}” có kích thước {size}{dims}. Giữ nguyên bản gốc — tốt nhất cho Content Credential — hay đổi kích thước{resize} để tiết kiệm dung lượng?",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "“{name}” sẽ bị xóa vĩnh viễn khỏi hình ảnh của bạn. Không thể hoàn tác.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "“{variant}” đã là tên của một logo — hãy chọn tên khác cho biểu trưng.",
-  "✓ Added": "✓ Đã thêm"
+  "✓ Added": "✓ Đã thêm",
+  "Theme: {name} — switch theme": "Chủ đề: {name} — đổi chủ đề",
+  "Speakers": "Người nói",
+  "Sort languages": "Sắp xếp ngôn ngữ"
 }

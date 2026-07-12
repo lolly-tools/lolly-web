@@ -16,6 +16,7 @@ import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
 import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
+import { loadUserFonts } from './lib/load-user-fonts.ts';
 import { registerUserFonts } from './user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateNeurospicy, armNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
@@ -396,6 +397,7 @@ async function boot(): Promise<void> {
   // FontFaces should be in document.fonts by the time the stack applies (both are
   // async and best-effort — worst case the face pops in a beat later).
   void registerUserFonts(host as unknown as Parameters<typeof registerUserFonts>[0])
+    .then(() => loadUserFonts(host))
     .finally(() => { void applyChromeBrandVars(host); });
 
   // Profile is the canonical theme store. Apply it now so the theme is correct

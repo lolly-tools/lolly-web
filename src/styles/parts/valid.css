@@ -862,10 +862,14 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 
 /* On-device footnote — a professional callout: a lock chip (nothing was
    uploaded) beside the explanatory prose. */
+/* .valid-note's border is the literally-identical line folded into the shared
+   `.note`/`.plat-note`/`.valid-note` selector in components.css (component
+   audit rec 13) — border-radius stays local (a different calc() than the
+   shared `.note`'s var(--radius); folding it in would nudge this pixel
+   value, a visual change this pass avoids). */
 .valid-note {
   display: flex; gap: 0.75rem; align-items: flex-start;
   margin: 0; padding: 0.8rem 0.95rem;
-  border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 0.9rem);
   background: hsl(var(--muted) / 0.4);
 }

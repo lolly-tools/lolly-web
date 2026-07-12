@@ -109,9 +109,13 @@
 /* Touch devices have no hover — keep the toggle visible so selection is discoverable. */
 @media (pointer: coarse) { .tile-check { opacity: 1; } }
 
-/* Per-tile action popover (move / rename / delete). Appended to <body> and z-indexed
-   ABOVE the fixed chrome (top bar 99999, bulk bar 9000) so it's never painted behind
-   them — on mobile the menu can open over the bottom bulk bar. */
+/* Per-tile action popover (move / rename / delete) — mountBodyPopover-mounted (see
+   components/body-popover.ts). Appended to <body> (projects.ts) and z-indexed ABOVE
+   the fixed chrome (top bar 99999, bulk bar 9000) so it's never painted behind them —
+   on mobile the menu can open over the bottom bulk bar. folder-overlay.ts's OWN item
+   menu instead mounts inside its host <dialog> (only a modal dialog's own subtree
+   paints above its ::backdrop) — position:absolute there resolves against the dialog
+   itself, which the UA promotes to position:fixed while showing modally. */
 .folder-menu {
   position: absolute; z-index: 100001; min-width: 180px; padding: 5px;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);

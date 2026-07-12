@@ -1,4 +1,41 @@
+/* ─── Modal primitive (components/modal.ts) ─────────────────────────────────
+   The shared chrome for confirm/choice/notice/prompt (confirm-dialog.ts) plus
+   any other mountModal() caller reusing the plain chrome (e.g. the New-folder
+   name prompt in projects.ts, the export-lock password prompt). Named `.modal-*`
+   — it long ago outgrew being Projects-only (component audit rec 4), so it moved
+   here out of parts/projects.css rather than staying under that view's sheet. */
+.modal {
+  border: 0; padding: 22px; width: min(420px, 92vw);
+  /* Centring is normally the UA's `dialog:modal { margin: auto }` — but a mounted
+     tool's template <style> is injected unscoped and may carry a universal
+     `* { margin: 0 }` reset (e.g. event-name-badge), which pins the modal to the
+     top-left. Re-assert at class specificity so it stays centred inside tools. */
+  margin: auto;
+  border-radius: calc(var(--radius) * 1.2); background: hsl(var(--card)); color: hsl(var(--foreground));
+  box-shadow: 0 24px 64px hsl(0 0% 0% / 0.4);
+}
+.modal::backdrop { background: hsl(0 0% 0% / 0.42); }
+.modal-title { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
+.modal-msg { margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Scoped (two-class) so it beats the generic .btn base by specificity. Fill
+   (background/color) + hover are aliased in parts/buttons.css's .btn--danger list. */
+.modal .modal-danger {
+  border-color: hsl(var(--destructive, 0 70% 50%));
+}
+/* choiceDialog: the lead choice gets the brand fill (two-class scope beats the
+   generic .btn base — same trick as .modal-danger). Fill + hover are
+   aliased in parts/buttons.css's .btn--primary list. */
+.modal .modal-primary {
+  border-color: hsl(var(--primary));
+}
+/* Choice buttons can carry longer labels than OK/Cancel — let them wrap. */
+.modal-actions--choices { flex-wrap: wrap; }
+
 /* ─── Unsaved changes dialog ─────────────────────────────────────────────── */
+/* pro/index.ts's leave-guard is mountModal-built (className: 'unsaved-dialog');
+   views/tool.ts still hand-rolls its own pair of .unsaved-dialogs. Same class
+   names either way, so this chrome serves both without a fork. */
 
 .unsaved-dialog,
 .share-dialog {

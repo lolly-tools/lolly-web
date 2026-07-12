@@ -340,7 +340,13 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 }
 .be-stored-seg button + button { border-inline-start: 1px solid hsl(var(--border) / .6); }
 .be-stored-seg button[aria-pressed="true"] { background: hsl(var(--primary) / .14); color: hsl(var(--foreground)); }
-/* Print substitutes — folded until asked; the summary chips carry the state. */
+/* Print substitutes — folded until asked; the summary chips carry the state.
+   Same disclosure family as the shared `.section-card` fold primitive
+   (disclosure.css, component audit rec 7) — a <summary> that carries a
+   rotating indicator and folds a body — but at the studio's own compact
+   scale (an unclassed, glyph-chevron summary nested inside a colour field,
+   not a page-level card), so it keeps its own rules rather than a literal
+   `section-card` class. */
 .be-subst-details { border-top: 1px solid hsl(var(--border) / .6); padding-top: .5rem; }
 .be-subst-details summary {
   display: flex; align-items: center; gap: .5rem; cursor: pointer; list-style: none;
@@ -489,6 +495,19 @@ background-image:
 .be[data-active-tab="type"] > [data-be-tab-panel="type"],
 .be[data-active-tab="tokens"] > [data-be-tab-panel="tokens"],
 .be[data-active-tab="catalogue"] > [data-be-tab-panel="catalogue"] { display: grid; }
+
+/* ── Type tab (≥1100px) — the two font panels (upload + Google list) share the
+      left column with the Type roles specimen alongside on the right, so picking
+      a face and seeing what it's for happen in one glance. The right panel spans
+      both left rows and top-aligns; below 1100px everything keeps the tab's
+      single-column stack. (Same breakpoint as the Colour tab's split, but plain
+      grid placement — no divider/scroller machinery for three small panels.) */
+@media (min-width: 1100px) {
+  [data-be-tab-panel="type"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  [data-be-tab-panel="type"] > .be-custom-fonts,
+  [data-be-tab-panel="type"] > .be-fonts { grid-column: 1; }
+  [data-be-tab-panel="type"] > .be-typeroles { grid-column: 2; grid-row: 1 / span 2; }
+}
 
 /* ── Colour tab split (≥1100px) — main column | draggable divider | palette
       side pane (lib/studio-split.ts drives --be-side-w/.is-collapsed). The
@@ -919,4 +938,197 @@ background-image:
 .be-stored-seg button:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 1px;
+}
+
+/* ── Font manager component (.fonts-*) ────────────────────────────────────── */
+.fonts-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.fonts-upload-drop {
+  display: block;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.fonts-upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 1.5rem;
+  border: 2px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  background-color: hsl(var(--muted) / 0.3);
+  text-align: center;
+  transition: all .15s ease;
+}
+
+.fonts-upload-drop.is-dragging .fonts-upload-area {
+  border-color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.08);
+}
+
+.fonts-upload-drop.is-uploading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.fonts-upload-icon {
+  font-size: 1.5rem;
+}
+
+.fonts-upload-text {
+  font-size: .9rem;
+  line-height: 1.4;
+  color: hsl(var(--foreground));
+}
+
+.fonts-upload-text strong {
+  display: block;
+  font-weight: 600;
+  margin-bottom: .25rem;
+}
+
+.fonts-upload-btn {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+  font-weight: 500;
+}
+
+.fonts-upload-btn:hover {
+  opacity: 0.8;
+}
+
+.fonts-upload-hint {
+  display: block;
+  font-size: .75rem;
+  color: hsl(var(--muted-foreground));
+  margin-top: .25rem;
+}
+
+.fonts-list {
+  min-height: 2rem;
+}
+
+.fonts-empty {
+  padding: 1rem;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  font-size: .85rem;
+  font-style: italic;
+}
+
+.fonts-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: .75rem;
+}
+
+.fonts-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: .75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * .8);
+  background-color: hsl(var(--card));
+  position: relative;
+  transition: all .15s ease;
+}
+
+.fonts-item:hover {
+  border-color: hsl(var(--border) / 0.7);
+  background-color: hsl(var(--muted) / 0.3);
+}
+
+.fonts-item-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fonts-item-btn {
+  flex: 1;
+  min-width: 50px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid hsl(var(--primary) / 0.3);
+  border-radius: calc(var(--radius) * 0.6);
+  background-color: hsl(var(--primary) / 0.08);
+  color: hsl(var(--primary));
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.fonts-item-btn:hover {
+  background-color: hsl(var(--primary) / 0.15);
+  border-color: hsl(var(--primary) / 0.5);
+}
+
+.fonts-item-name {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  word-break: break-word;
+  font-size: .85rem;
+}
+
+.fonts-item-meta {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: .7rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.fonts-item-weight,
+.fonts-item-style,
+.fonts-item-size {
+  display: inline-flex;
+  align-items: center;
+}
+
+.fonts-item-delete {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: hsl(var(--destructive));
+  font-size: .9rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all .15s ease;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fonts-item:hover .fonts-item-delete {
+  opacity: 1;
+}
+
+.fonts-item-delete:hover {
+  background-color: hsl(var(--destructive) / 0.1);
+}
+
+.fonts-loading {
+  padding: 1rem;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  font-size: .85rem;
 }

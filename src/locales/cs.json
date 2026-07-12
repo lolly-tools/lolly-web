@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "„{name}“ má {size}{dims}. Ponechat originál — nejlepší pro Content Credential — nebo ho zmenšit{resize}, aby se ušetřilo místo?",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "„{name}“ bude natrvalo odstraněno z tvých obrázků. Tuto akci nelze vrátit zpět.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "“{variant}” je už název loga — vyber pro znak jiný název.",
-  "✓ Added": "✓ Přidáno"
+  "✓ Added": "✓ Přidáno",
+  "Theme: {name} — switch theme": "Motiv: {name} — přepnout motiv",
+  "Speakers": "Mluvčí",
+  "Sort languages": "Seřadit jazyky"
 }

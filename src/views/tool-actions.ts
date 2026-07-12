@@ -21,6 +21,7 @@ import { runTemplateScripts } from '../lib/render-lifecycle.ts';
 import { playScrubTick } from '../lib/sfx.ts';
 import { loopRank } from '../lib/neurospicy.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
+import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { aspectWarning } from './export-size.js';
 import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, cmykTiffSupport, tiffSupport } from '../bridge/format-support.js';
@@ -295,7 +296,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     .map(([key, c]) => `<option value="${escape(key)}" ${key === initProfile ? 'selected' : ''}>${escape((c as { info?: string }).info)}</option>`)
     .join('');
   const cmykRow = hasCmyk ? `
-      <div class="export-cmyk" data-cmyk-only style="display:${isCmykFmt(initialFmt) ? 'flex' : 'none'}">
+      <div class="section-card export-cmyk" data-cmyk-only style="display:${isCmykFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="cmyk-head">${ICON_DROP}<span>Color profile</span></span>
         <select data-action="cmyk-profile" aria-label="CMYK press profile"
                 title="The CMYK press condition your printer targets — embedded as the Print PDF's output intent, recorded in the Print TIFF's metadata.">
@@ -327,7 +328,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const hasZip = formats.includes('zip');
   const pdfPassInitOpen = Boolean(exportDefaults.password);
   const pdfPassRow = (hasPdf || hasZip) ? `
-      <div class="export-pdfpass${pdfPassInitOpen ? ' is-open' : ''}" data-pdf-only style="display:${(initialFmt === 'pdf' || initialFmt === 'zip') ? 'flex' : 'none'}">
+      <div class="section-card export-pdfpass${pdfPassInitOpen ? ' is-open' : ''}" data-pdf-only style="display:${(initialFmt === 'pdf' || initialFmt === 'zip') ? 'flex' : 'none'}">
         <button type="button" class="pdfpass-head" data-action="pdfpass-toggle" aria-expanded="${pdfPassInitOpen}">${ICON_LOCK}<span>Password protect</span></button>
         <div class="pdfpass-body" data-pdfpass-body style="display:${pdfPassInitOpen ? 'flex' : 'none'}">
           <input type="password" data-action="pdf-password" autocomplete="new-password" spellcheck="false"
@@ -365,7 +366,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     { href: '#/verify', text: 'Check a file →' }
   ) : null;
   const c2paRow = c2paFormats.length ? `
-      <div class="export-c2pa" data-c2pa-only style="display:${isC2paFmt(initialFmt) || initialFmt === 'zip' ? 'flex' : 'none'}">
+      <div class="section-card export-c2pa" data-c2pa-only style="display:${isC2paFmt(initialFmt) || initialFmt === 'zip' ? 'flex' : 'none'}">
         <label class="c2pa-enable help-tip-host">
           <input type="checkbox" data-action="pdf-c2pa" ${c2paInitOn ? 'checked' : ''}>
           <span class="c2pa-head">${ICON_CRED}<span>C2PA Credentials</span></span>
@@ -400,7 +401,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // marks state. The other marks still restore from saved/linked defaults.
   const pim          = { ...DEFAULT_PRINT_MARKS, colorBars: isCmykFmt(initialFmt), ...(exportDefaults.marks || {}), provenance: true };
   const printRow = hasPrint ? `
-      <div class="export-print" data-printmarks-only style="display:${isPrintFmt(initialFmt) ? 'flex' : 'none'}">
+      <div class="section-card export-print" data-printmarks-only style="display:${isPrintFmt(initialFmt) ? 'flex' : 'none'}">
         <label class="print-enable">
           <input type="checkbox" data-action="print-enable" ${printInitOn ? 'checked' : ''}>
           <span class="print-head">${ICON_CROP}<span>Print marks &amp; bleed</span></span>
@@ -1155,9 +1156,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         const audioId = el!.querySelector<HTMLSelectElement>('[data-action="video-audio"]')?.value;
         if (audioId) {
           const ref = await host.assets.get(audioId);
-          // A ZzFXM track has no audio file — render its song to a WAV blob URL so
-          // the URL-driven muxer paths consume it exactly like an encoded loop.
-          const audioUrl = ref.format === 'zzfxm' ? (wavBlobUrl = await songUrlToWavBlobUrl(ref.url)) : ref.url;
+          // ZzFXM songs and tracker modules have no playable audio file — render them
+          // to a transient WAV blob URL so the URL-driven muxer paths consume them
+          // exactly like an encoded loop. (mod → libopenmpt, zzfxm → the synth.)
+          const audioUrl = ref.format === 'zzfxm' ? (wavBlobUrl = await songUrlToWavBlobUrl(ref.url))
+            : isModuleFormat(ref.format) ? (wavBlobUrl = await modUrlToWavBlobUrl(ref.url))
+            : ref.url;
           const numCtl = (a: string, dflt: number): number => {
             const v = el!.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value;
             return v != null && v !== '' ? (Number(v) || 0) : dflt;

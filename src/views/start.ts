@@ -40,6 +40,7 @@ import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-
 import { applyTheme } from '../theme.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
+import { swatchTile } from '../lib/swatches.ts';
 import { t } from '../i18n.ts';
 import type { LangSwitchHost } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
@@ -113,7 +114,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           <button type="button" class="start-tab${tab.id === activeTab ? ' is-active' : ''}" role="tab"
             aria-selected="${tab.id === activeTab}" aria-controls="start-panel-${tab.id}" tabindex="${tab.id === activeTab ? 0 : -1}"
             data-start-tab="${tab.id}" id="start-tab-${tab.id}">
-            <span class="start-tab-n">${i + 1}</span><span class="start-tab-label">${escape(tab.label)}</span>
+            <span class="start-tab-icon" aria-hidden="true">${tab.icon}</span>
+            <span class="start-tab-content">
+              <span class="start-tab-n">${i + 1}</span>
+              <span class="start-tab-label">${escape(tab.label)}</span>
+            </span>
           </button>`).join('')}
       </nav>
 
@@ -666,11 +671,10 @@ function mountPaletteSheet(shell: HTMLElement, editor: BrandEditorHandle, editor
   const groupsEl = sheet.querySelector<HTMLElement>('[data-stu-groups]')!;
   let handle: MobileSheetHandle | null = null;
 
-  const chipHtml = (t: HTMLElement): string => {
-    const sw = t.style.getPropertyValue('--sw').trim() || 'transparent';
-    const label = t.getAttribute('aria-label') ?? '';
-    return `<button type="button" class="stu-chip" data-stu-tile="${escape(t.dataset.beTile ?? '')}"
-      style="--sw:${escape(sw)}" aria-label="${escape(label)}" title="${escape(label)}"></button>`;
+  const chipHtml = (tile: HTMLElement): string => {
+    const sw = tile.style.getPropertyValue('--sw').trim() || 'transparent';
+    const label = tile.getAttribute('aria-label') ?? '';
+    return swatchTile({ label, hex: sw }, { size: 'sm', idx: tile.dataset.beTile ?? '' });
   };
   const render = (): void => {
     let stripHtml = '', bodyHtml = '';

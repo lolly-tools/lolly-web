@@ -614,53 +614,15 @@
 }
 .export-settings:empty { display: none; }
 
-.export-cmyk,
-.export-audio,
-.export-pdfpass,
-.export-c2pa{
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: hsl(var(--muted) / 0.45);
-}
-.cmyk-head,
-.audio-head,
-.c2pa-head,
-.print-head{
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: hsl(var(--muted-foreground));
-}
-.cmyk-icon,
-.audio-icon,
-.pdfpass-icon,
-.c2pa-icon,
-.print-icon{
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  color: hsl(var(--primary));
-}
+/* .export-cmyk/.export-audio/.export-pdfpass/.export-c2pa/.export-print all
+   carry the literal `section-card` class now (component audit rec 7) — the
+   box, icon-head and hint-line anatomy they used to restate here four times
+   over live once as `.section-card`/`.section-card-head`/`.section-card-icon`/
+   `.section-card__hint` in disclosure.css. Only what's genuinely unique to a
+   given card stays below under its own name. */
 .export-cmyk select[data-action="cmyk-profile"] {
   width: 100%;
   font-variant-numeric: tabular-nums;
-}
-.cmyk-hint,
-.pdfpass-hint,
-.c2pa-hint,
-.print-hint{
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: hsl(var(--muted-foreground));
 }
 .audio-pick {
   display: flex;
@@ -740,23 +702,16 @@
   margin-top: 1px;
   color: hsl(var(--aspect-warn));
 }
-/* Clickable disclosure header — resets the button chrome, and carries a CSS caret
-   (same idiom as .input-section-summary) that rotates when the card is open. */
+/* Clickable disclosure header — the visual treatment (icon-head anatomy) is
+   shared via disclosure.css's `.section-card-head` merge; this is just the
+   <button> reset it needs on top, plus a CSS caret (same idiom as
+   .input-section-summary) that rotates when the card is open. */
 .pdfpass-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
   width: 100%;
   margin: 0;
   padding: 0;
   background: none;
   border: 0;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: hsl(var(--muted-foreground));
   cursor: pointer;
 }
 .pdfpass-head:hover { color: hsl(var(--primary)); }
@@ -813,17 +768,10 @@
 .c2pa-enable input[type="checkbox"] { flex: 0 0 auto; }
 .c2pa-enable:has(input:disabled) { cursor: default; opacity: 0.55; }
 
-/* Print marks & bleed card — mirrors .export-cmyk; revealed for pdf / pdf-cmyk.
-   A master checkbox (.print-enable) reveals the body so ordinary PDFs stay plain. */
-.export-print {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: hsl(var(--muted) / 0.45);
-}
+/* Print marks & bleed card — the box is the shared .section-card (disclosure.css,
+   rec 7); a master checkbox (.print-enable) reveals the body so ordinary PDFs
+   stay plain. Its row gap is wider than the other three cards' — a real delta. */
+.export-print { gap: 10px; }
 .print-enable input[type="checkbox"] { flex: 0 0 auto; }
 .print-body {
   display: flex;

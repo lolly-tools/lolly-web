@@ -5,13 +5,23 @@
 
 .cl-view { max-width: 1180px; margin: 0 auto; padding: 1rem 1.1rem 5rem; }
 
-/* Header — back affordance + title + a jump-nav of the sections. The back pill sits
-   in flow (not the app's fixed .home-full), on its own line above the title. */
-.cl-head { margin: .25rem 0 1.6rem; }
-.cl-back { border: 0; margin-bottom: 1.1rem; }
-.cl-title { margin: .6rem 0 .4rem; font-size: clamp(1.7rem, 3.4vw, 2.3rem); font-weight: 700; letter-spacing: -.02em; }
+/* Header — the back affordance is the app's shared fixed corner pill
+   (.tools-home.home-full, as on /profile, /pro and /valid); title + sub share one
+   baseline row (same layout as the brand studio's Colour-tab header), jump-nav on
+   its own row. The top margin clears the fixed pill on narrow viewports. */
+.cl-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 2.6rem 0 1.6rem;
+}
+.cl-back { border: 0; }
+.cl-title { margin: 0; font-size: clamp(1.7rem, 3.4vw, 2.3rem); font-weight: 700; letter-spacing: -.02em; }
 .cl-sub { margin: 0 0 1rem; color: hsl(var(--muted-foreground)); max-width: 62ch; line-height: 1.5; }
+.cl-head .cl-sub { margin: 0; }
 .cl-jump { display: flex; flex-wrap: wrap; gap: .4rem; }
+.cl-head .cl-jump { flex-basis: 100%; }
 .cl-jump a {
   font-size: .72rem; padding: .28rem .6rem; border-radius: 999px; text-decoration: none;
   border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); background: hsl(var(--card));
@@ -36,9 +46,19 @@
 .cl-sev--high { background: hsl(var(--destructive) / .16); color: hsl(var(--destructive)); }
 .cl-sev--medium { background: hsl(38 92% 50% / .18); color: hsl(32 80% 42%); }
 .cl-sev--low { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
+/* Shipped-status pill — a multi-wave refactor has since executed the 13 recs
+   below; this marks which landed clean vs. which still has a documented gap. */
+.cl-status {
+  margin-inline-start: auto;
+  font-size: .62rem; font-weight: 700; letter-spacing: .02em;
+  padding: .1rem .5rem; border-radius: 999px; white-space: nowrap;
+}
+.cl-status--executed { background: hsl(150 60% 45% / .16); color: hsl(158 64% 30%); }
+.cl-status--partial { background: hsl(38 92% 50% / .18); color: hsl(32 80% 40%); }
 .cl-rec-body { font-size: .82rem; line-height: 1.5; color: hsl(var(--foreground)); }
 .cl-rec-body b { font-weight: 650; }
 .cl-rec-fix { color: hsl(var(--muted-foreground)); }
+.cl-rec-status { margin: .4rem 0 0; font-size: .76rem; line-height: 1.5; color: hsl(var(--muted-foreground)); padding-inline-start: .1rem; }
 
 /* Section = one primitive family or one view. */
 .cl-section { margin: 0 0 2.6rem; scroll-margin-top: 1rem; }
@@ -102,6 +122,48 @@
 }
 /* Flag a sample whose render threw, rather than showing a silent empty stage. */
 .cl-broken { font-size: .72rem; color: hsl(var(--destructive)); font-family: var(--font-mono, monospace); }
+
+/* ── Primitives-section live-specimen scaffolding — the app CSS these borrow
+   (lib/icons.ts glyphs, .stage-nav, mountBodyPopover content) has no opinion on
+   how a DEMO grid/anchor should lay out, so that little bit is local to the
+   library itself. */
+
+/* Icon registry grid (lib/icons.ts) — every registered glyph + its name. */
+.cl-icon-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: .3rem;
+  width: 100%;
+}
+.cl-icon-cell {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  padding: .6rem .3rem; border-radius: var(--radius); color: hsl(var(--foreground));
+}
+.cl-icon-cell:hover { background: hsl(var(--muted) / .6); }
+.cl-icon-cell svg { color: hsl(var(--muted-foreground)); }
+.cl-icon-cell span { font-size: .6rem; color: hsl(var(--muted-foreground)); text-align: center; word-break: break-word; }
+
+/* Zoom HUD live demo — .stage-nav positions itself absolute bottom/right, so
+   the specimen needs a sized, positioned host to dock into (normally the tool
+   canvas stage). */
+.cl-zoomhud-demo {
+  position: relative; width: 100%; max-width: 260px; height: 64px;
+  border-radius: calc(var(--radius) * 1.2); background: hsl(var(--muted) / .35);
+}
+.cl-zoomhud-demo .stage-nav { opacity: 1; }
+
+/* Body-popover live demo — mountBodyPopover only owns lifecycle, not a look;
+   this is a minimal stand-in for a caller's real menu chrome (contrast
+   lang-menu.css's fuller .lang-menu, the real thing this primitive backs). */
+.cl-popover-demo {
+  position: fixed; z-index: 100000; min-width: 160px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: hsl(var(--card)); color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * 1.2);
+  box-shadow: 0 12px 32px hsl(0 0% 0% / .24);
+}
+.cl-popover-demo-item {
+  padding: 7px 10px; border-radius: var(--radius); font-size: .78rem; cursor: pointer;
+}
+.cl-popover-demo-item:hover, .cl-popover-demo-item:focus-visible { background: hsl(var(--accent)); outline: none; }
 
 @media (max-width: 640px) {
   .cl-grid { grid-template-columns: 1fr; }

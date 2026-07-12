@@ -111,7 +111,7 @@ async function registerFace(
     ...(desc.unicodeRange ? { unicodeRange: desc.unicodeRange } : {}),
   });
   await face.load();
-  document.fonts.add(face);
+  (document.fonts as any).add(face);
   REGISTERED.set(assetId, face);
 }
 
@@ -421,7 +421,7 @@ export async function removeUserFont(host: UserFontsHost, family: UserFontFamily
   for (const id of family.assetIds) {
     await host.assets._deleteUserAsset(id);
     const face = REGISTERED.get(id);
-    if (face) { document.fonts.delete(face); REGISTERED.delete(id); }
+    if (face) { (document.fonts as any).delete(face); REGISTERED.delete(id); }
   }
   bustFontRegistry();   // the family is gone — exports must stop resolving it
   if (family.primary) {

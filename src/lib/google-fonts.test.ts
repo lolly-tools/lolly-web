@@ -66,9 +66,9 @@ test('parses the italic block with font-style: italic', () => {
   assert.equal(italic.url, 'https://fonts.gstatic.com/s/inter/v13/lat-italic.woff2');
 });
 
-test('keepFaces keeps latin + latin-ext (both slants), drops other subsets', () => {
+test('keepFaces keeps latin + latin-ext + cyrillic (both slants), drops other subsets', () => {
   const kept = keepFaces(parseGoogleFontCss(CSS_VARIABLE));
-  assert.deepEqual(kept.map(f => f.subset).sort(), ['latin', 'latin', 'latin-ext']);
+  assert.deepEqual(kept.map(f => f.subset).sort(), ['cyrillic', 'latin', 'latin', 'latin-ext']);
   assert.equal(kept.filter(f => f.style === 'italic').length, 1);
 });
 

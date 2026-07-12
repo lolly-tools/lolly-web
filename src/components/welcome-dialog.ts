@@ -5,9 +5,9 @@
  *
  * The gallery decides WHEN to show these (token discovery still resolves the
  * `lolly/tokens/brand` placeholder — see mountGallery); this module owns the
- * dialog/strip themselves. The welcome is a native <dialog> following the
- * confirm-dialog conventions (Escape via the `cancel` event, backdrop-box click
- * test, mounted on <body>), offering two paths:
+ * dialog/strip themselves. The welcome is built on mountModal (components/modal.ts,
+ * Escape via the `cancel` event, backdrop-box click test, mounted on <body>),
+ * offering two paths:
  *
  *   "Make it yours"          → the #/start brand wizard. Deliberately does NOT
  *                              set the dismissed flag — installing a brand (or
@@ -30,6 +30,7 @@ import { currentLang, langOptions, setActiveLang, t, LANG_ICON_SVG, flagEmoji } 
 import type { Lang } from '../i18n.ts';
 import { escape, NAV_EVENTS } from '../utils.ts';
 import type { WebProfileAPI } from '../bridge/profile.ts';
+import { mountModal } from './modal.ts';
 
 /** Persisted (localStorage, same tier as the theme) once the welcome is settled. */
 export const WELCOME_DISMISSED_KEY = 'lolly-welcome-dismissed';
@@ -95,31 +96,25 @@ function renderWelcomeContent(): string {
 export function showWelcomeDialog(profileApi?: WebProfileAPI): Promise<WelcomeChoice> {
   if (openPromise) return openPromise;
   openPromise = new Promise((resolve) => {
-    const dlg = document.createElement('dialog');
-    dlg.className = 'welcome-dialog';
-    dlg.setAttribute('aria-label', 'Welcome to Lolly');
-    dlg.innerHTML = renderWelcomeContent();
-    document.body.appendChild(dlg);
+    const modal = mountModal<WelcomeChoice | null>(renderWelcomeContent(), {
+      className: 'welcome-dialog',
+      ariaLabel: 'Welcome to Lolly',
+      cancelValue: 'dismiss', // Escape / backdrop click
+      initialFocus: (el) => el.querySelector<HTMLElement>('.welcome-card--brand'), // lead with the brand path
+      // `result` null = programmatic teardown (a navigation) — resolve without
+      // persisting; every USER dismissal except the wizard path sets the flag.
+      onClose: (result) => {
+        if (result === 'explore' || result === 'dismiss') markWelcomeDismissed();
+        NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
+        settleOpen = null;
+        openPromise = null;
+        resolve(result ?? 'dismiss');
+      },
+    });
+    settleOpen = (choice) => modal.close(choice);
+    const onNav = (): void => modal.close(null);
 
-    let settled = false;
-    // `choice` null = programmatic teardown (a navigation) — resolve without
-    // persisting; every USER dismissal except the wizard path sets the flag.
-    const settle = (choice: WelcomeChoice | null): void => {
-      if (settled) return;
-      settled = true;
-      if (choice === 'explore' || choice === 'dismiss') markWelcomeDismissed();
-      NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
-      if (dlg.open) dlg.close();
-      dlg.remove();
-      settleOpen = null;
-      openPromise = null;
-      resolve(choice ?? 'dismiss');
-    };
-    settleOpen = settle;
-    const onNav = (): void => settle(null);
-
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); settle('dismiss'); }); // Escape
-    dlg.addEventListener('click', (e) => {
+    modal.el.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
 
       // Language chip — applies immediately (re-renders this dialog's own copy),
@@ -138,9 +133,9 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI): Promise<WelcomeCh
               await profileApi.set(lang === 'en' ? rest : { ...rest, lang });
             } catch { /* preference save is best-effort */ }
           }
-          if (dlg.isConnected) {
-            dlg.innerHTML = renderWelcomeContent();
-            dlg.querySelector<HTMLButtonElement>(`[data-lang="${lang}"]`)?.focus();
+          if (modal.el.isConnected) {
+            modal.el.innerHTML = renderWelcomeContent();
+            modal.el.querySelector<HTMLButtonElement>(`[data-lang="${lang}"]`)?.focus();
           }
         })();
         return;
@@ -149,18 +144,12 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI): Promise<WelcomeCh
       const card = target?.closest<HTMLElement>('[data-choice]');
       if (card) {
         const choice = card.dataset.choice as WelcomeChoice;
-        settle(choice);
+        modal.close(choice);
         if (choice === 'brand') window.location.hash = '#/start';
-        return;
       }
-      // Click outside the content box (on the backdrop) dismisses.
-      const r = dlg.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) settle('dismiss');
+      // Backdrop dismissal is handled by mountModal (cancelValue: 'dismiss').
     });
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
-
-    dlg.showModal();
-    dlg.querySelector<HTMLButtonElement>('.welcome-card--brand')?.focus(); // lead with the brand path
   });
   return openPromise;
 }

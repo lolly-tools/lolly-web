@@ -10,7 +10,7 @@
   border: 1px solid hsl(var(--border));
   padding: 28px;
   width: min(600px, 94vw);
-  margin: auto; /* re-assert centring at class specificity (see .projects-confirm) */
+  margin: auto; /* re-assert centring at class specificity (see .modal) */
   border-radius: calc(var(--radius) * 2);
   background: hsl(var(--card));
   color: hsl(var(--foreground));

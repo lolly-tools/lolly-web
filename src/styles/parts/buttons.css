@@ -78,7 +78,7 @@
 .tool-actions [data-action="download"],           /* tool-chrome.css */
 .share-copy-btn,                                  /* dialogs.css */
 .unsaved-save,                                    /* dialogs.css */
-.projects-confirm .projects-confirm-primary,      /* projects.css */
+.modal .modal-primary,                            /* dialogs.css */
 .projects-render.btn,                             /* projects.css */
 .profile-view .profile-btn-primary,               /* profile.css */
 .cropper-btn--primary,                            /* profile.css */
@@ -87,6 +87,9 @@
 .me-primary,                                      /* multi-edit.css */
 .cat-act-fav.is-fav,                              /* catalog.css */
 .view-seg-btn[aria-pressed="true"],               /* gallery.css — canonical segmented control */
+.gallery-pill.active,                             /* gallery.css — category/sort pill */
+.plat-pill,                                       /* platform.css — inline qualifier badge */
+.skip-link:focus,                                 /* base.css — a11y skip-nav, revealed on focus */
 .be-cta {                                         /* brand-studio.css */
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
@@ -99,7 +102,7 @@
    brightness value) keep that locally instead of joining this list. */
 .btn--primary:hover:not(:disabled),
 .toast-action:hover,
-.projects-confirm .projects-confirm-primary:hover,
+.modal .modal-primary:hover,
 .projects-render.btn:hover,
 .profile-view .profile-btn-primary:hover,
 .cropper-btn--primary:hover {
@@ -110,7 +113,7 @@
    outline-style destructive buttons (.cat-bulk-danger, .projects-bulk-danger)
    are a deliberately quieter treatment and stay local, not aliased here. */
 .btn--danger,
-.projects-confirm .projects-confirm-danger {   /* projects.css */
+.modal .modal-danger {   /* dialogs.css */
   background: hsl(var(--destructive, 0 70% 50%));
   color: #fff;
 }
@@ -118,6 +121,26 @@
   border: 1px solid hsl(var(--destructive, 0 70% 50%));
 }
 .btn--danger:hover:not(:disabled),
-.projects-confirm .projects-confirm-danger:hover {
+.modal .modal-danger:hover {
   filter: brightness(0.94);
+}
+
+/* Glass — the translucent "glass pill" recipe. Used to live ONLY on the combined
+   .tools-home.home-full selector (tool.css); every other back/topbar pill either
+   hand-typed its own approximation or had no blur at all. Andy's exact recipe,
+   textually declared once here — composable with .btn or standalone via this
+   selector list, same pattern as .btn--primary above. Call-sites keep only real
+   shape deltas (box size, border, hover tint) in their own file. */
+.btn--glass,
+.tools-home,                                      /* components.css — "← Tools" back pill */
+.profile-link,                                    /* components.css — top-right profile pill */
+.filter-fab,                                      /* gallery.css — sort/filter & view-options FAB */
+.history-fab,                                     /* utilities.css/topbar.css — saved-sessions FAB */
+.lang-fab {                                       /* topbar.css — language FAB */
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  background: hsl(var(--muted) / 0.45);
+  text-shadow: 0 1px hsl(var(--secondary) / .5);
+  color: hsl(var(--primary));
+  transition: background 0.12s, box-shadow 0.12s;
 }

@@ -11,6 +11,7 @@
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 import { renderSongToAudioBuffer } from './zzfxm-render.ts';
+import { renderModToAudioBuffer, isModuleFormat } from './mod-render.ts';
 import { RADIO_STATIONS, radioStation, isRadioId, radioAvailable, resolveStreamUrl } from './radio.ts';
 import { isSfxMuted } from './sfx.ts';
 
@@ -198,6 +199,12 @@ async function loadBuffer(id: string, url: string, format: string | undefined): 
       // A ZzFXM song: a few KB of nested-array data, synthesised to PCM in a worker.
       const song = (await (await fetch(url)).json()) as ZzfxSong;
       buf = await renderSongToAudioBuffer(a.ctx, song);
+    } else if (isModuleFormat(format)) {
+      // A tracker module (.mod/.xm/.s3m/.it/…): tiny sample-based song data no browser
+      // <audio> can play. libopenmpt (WASM) decodes it to PCM in a worker, one pass, so
+      // it flows through this same buffer path — meter, seek, loop all come for free.
+      const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+      buf = await renderModToAudioBuffer(a.ctx, bytes);
     } else {
       const bytes = await (await fetch(url)).arrayBuffer();
       buf = await a.ctx.decodeAudioData(bytes);

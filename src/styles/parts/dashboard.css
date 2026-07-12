@@ -163,7 +163,10 @@
    below outranks the UA [hidden] rule, so without this they'd reserve an empty tile-sized
    gap in the flow — force them out until unhidden. */
 .dash-bento > .plat-section[hidden] { display: none; }
-/* The instrument tiles read as cards — a hair more presence than a bare section. */
+/* The instrument tiles read as cards — a hair more presence than a bare section.
+   .dash-card always co-applies with .plat-section/.card in markup, so it only
+   ever adds this flex layout + shadow, never restates the surface (component
+   audit rec 10). */
 .dash-bento .dash-card { display: flex; flex-direction: column; box-shadow: 0 1px 3px hsl(0 0% 0% / 0.05); }
 .dash-bento .dash-card .dash-sec-head { margin-bottom: 0.7rem; }
 
@@ -201,7 +204,12 @@
 }
 .dash-hero-status { margin: 0; max-width: 52ch; font-size: .86rem; line-height: 1.6; color: var(--brand-muted, hsl(var(--muted-foreground))); }
 .dash-hero-status strong { color: var(--brand-text, hsl(var(--foreground))); }
-/* The one action on the whole tab — dressed in the brand's own primary. */
+/* The one action on the whole tab — dressed in the brand's own primary. NOT
+   aliased onto buttons.css's .btn--primary list (component audit rec 2): the
+   fill here is `var(--brand-primary, hsl(var(--primary)))`, a real delta (the
+   brand-var indirection the rest of the shared list doesn't carry), not just
+   duplicated decoration — folding it in would drop brand-var override on the
+   dashboard's one hero CTA. */
 .dash-hero-cta {
   display: inline-flex; align-items: center; gap: .5rem;
   margin-top: .45rem; padding: .62rem 1.1rem;
@@ -356,29 +364,23 @@
 .dash-dev-split::after { content: ''; flex: 1 1 auto; height: 1px; background: hsl(var(--border)); }
 
 /* ── Your activity (mirrors the Profile card; scoped so the shared markup reads
-   correctly here). In this narrow card the stats stack above the leaderboard. */
+   correctly here). In this narrow card the stats stack above the leaderboard.
+   The declarations byte-identical with the Profile page's copy of this same
+   component (lib/activity-summary.ts) now live once in components.css,
+   scoped to both view roots (component audit rec 13) — only this card's own
+   sizing stays here. */
 .dashboard-view .activity-split { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
-.dashboard-view .activity-split .activity-grid, .dashboard-view .activity-split .activity-block { margin: 0; }
-.dashboard-view .activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: .7rem; }
-.dashboard-view .activity-stat {
-  text-align: center; padding: .7rem .4rem; border-radius: var(--radius);
-  background: hsl(var(--muted) / .5); display: flex; flex-direction: column; gap: .25rem;
-}
-.dashboard-view .activity-num { font-size: 1.5rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-.dashboard-view .activity-label { font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); }
+.dashboard-view .activity-grid { grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); }
+.dashboard-view .activity-stat { padding: .7rem .4rem; border-radius: var(--radius); background: hsl(var(--muted) / .5); }
+.dashboard-view .activity-num { font-size: 1.5rem; }
+.dashboard-view .activity-label { font-size: .6rem; }
 .dashboard-view .activity-block { margin: 0; }
-.dashboard-view .activity-h3 { margin: 0 0 .6rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: hsl(var(--muted-foreground)); font-weight: 700; }
-.dashboard-view .fmt-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
-.dashboard-view .fmt-row { display: grid; grid-template-columns: 4.5rem 1fr 2.5rem; align-items: center; gap: .6rem; font-size: .78rem; }
-.dashboard-view .fmt-name { font-weight: 700; letter-spacing: .03em; }
-.dashboard-view .fmt-track { height: .5rem; background: hsl(var(--muted)); border-radius: 999px; overflow: hidden; }
-.dashboard-view .fmt-fill { display: block; height: 100%; border-radius: 999px; background: hsl(var(--primary) / .5); }
-.dashboard-view .fmt-row.is-top .fmt-fill { background: hsl(var(--primary)); }
-.dashboard-view .fmt-count { text-align: right; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
-.dashboard-view .activity-meta { font-size: .8rem; line-height: 1.7; margin: 1rem 0 0; color: hsl(var(--muted-foreground)); }
-.dashboard-view .activity-meta strong { color: hsl(var(--foreground)); font-weight: 700; }
-.dashboard-view .activity-meta .dot { opacity: .45; margin: 0 .15rem; }
-.dashboard-view .activity-meta .activity-fav { color: hsl(var(--primary)); font-weight: 650; text-decoration: none; }
+.dashboard-view .activity-h3 { margin: 0 0 .6rem; font-size: .72rem; }
+.dashboard-view .fmt-row { grid-template-columns: 4.5rem 1fr 2.5rem; gap: .6rem; font-size: .78rem; }
+.dashboard-view .fmt-track { height: .5rem; border-radius: 999px; }
+.dashboard-view .fmt-fill { border-radius: 999px; }
+.dashboard-view .activity-meta { font-size: .8rem; margin: 1rem 0 0; }
+.dashboard-view .activity-meta .activity-fav { color: hsl(var(--primary)); font-weight: 650; }
 .dashboard-view .activity-meta .activity-fav::after { content: " →"; opacity: .6; }
 .dashboard-view .storage-hint-text { margin: 0; color: hsl(var(--muted-foreground)); font-size: .85rem; line-height: 1.6; }
 

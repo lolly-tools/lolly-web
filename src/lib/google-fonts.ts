@@ -9,8 +9,9 @@
  * travels in the data backup like any user asset.
  *
  * Scope decisions (deliberate):
- *   - latin + latin-ext subsets only — matches the shell's own Outfit build
- *     (shells/web/public/fonts/) and keeps a family to a few hundred KB.
+ *   - latin + latin-ext, plus the non-Latin scripts of shipped UI languages
+ *     (cyrillic for bg, devanagari for hi) — close to the shell's own Outfit
+ *     build (shells/web/public/fonts/) while keeping a family to a few hundred KB.
  *   - Upright AND italic (`ital@0;1`). A family with no italic simply returns
  *     upright faces — css2 ignores the slant rather than erroring — so asking
  *     always is free. Without the real italic face an italic run cannot be
@@ -45,7 +46,9 @@ export interface DownloadedFontFace extends GoogleFontFace {
 }
 
 // The subsets worth carrying offline by default (see module header).
-const SUBSETS_KEPT = new Set(['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext']);
+// cyrillic/cyrillic-ext cover the bg UI language; devanagari covers hi; bengali
+// covers bn; arabic covers both ar and ur (Urdu uses the Arabic script).
+const SUBSETS_KEPT = new Set(['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'devanagari', 'bengali', 'arabic']);
 
 const CSS2 = 'https://fonts.googleapis.com/css2';
 

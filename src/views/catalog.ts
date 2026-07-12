@@ -28,15 +28,16 @@ import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
 import { genAiPill, assetAiKind, GENAI_CLAIM } from '../lib/genai-pill.ts';
 import { announce } from '../a11y.ts';
-import { viewToggle } from '../components/view-toggle.ts';
+import { mountModal } from '../components/modal.ts';
+import type { ModalHandle } from '../components/modal.ts';
 import { mountFeaturedRow } from '../components/featured-row.ts';
 import type { FeaturedEntry, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
-import { attachProfileMenu } from '../components/profile-menu.ts';
-import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
-import { footerNav, NAV_ICONS } from '../components/footer-nav.ts';
+import { viewTopbarHtml, mountViewTopbar } from '../components/view-topbar.ts';
+import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
 import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
+import { mountZoomHud } from '../components/zoom-hud.ts';
 import { playSfx, playCatalogAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { autoplayLottieThumbs, mountLottieMarker, destroyLottiePlayers, lottiePlayerFor } from './lottie-mount.ts';
 import { confirmDialog, choiceDialog, promptDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
@@ -53,6 +54,7 @@ import { mountUploadDropzone } from '../lib/upload-dropzone.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
 import type { PickerHost } from './picker.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
+import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
 import { exportSwatches, paletteEntriesToSwatches, type SwatchExportFormat } from '../lib/swatch-export.ts';
 import { groupPalette, swatch } from '../lib/swatches.ts';
@@ -310,7 +312,7 @@ const isVerifiableAsset = (ref: AssetRef): boolean =>
 function attachZoom(dlg: HTMLDialogElement): void {
   const stage = dlg.querySelector<HTMLElement>('.cat-zoom-stage');
   const media = stage?.querySelector<HTMLElement>('.cat-thumb') ?? null;
-  const pct = dlg.querySelector<HTMLElement>('.cat-zoom-pct');
+  const hudEl = dlg.querySelector<HTMLElement>('.cat-zoom-hud');
   if (!stage || !media) return;
   const img = media as HTMLImageElement;
   // A Lottie preview is a mounted <svg> player (data-lottie-src marker), not an <img>: it has no
@@ -377,7 +379,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
     // the top-left, which broke focal zoom — see the .cat-zoom-stage CSS note. Order is irrelevant for
     // pure translations, but the -50% must be present so the art's centre = stage centre + (tx,ty).
     media.style.transform = `translate(-50%, -50%) translate(${tx}px, ${ty}px)`;
-    if (pct) pct.textContent = `${Math.round(s * 100)}%`;
+    hud?.setReadout(`${Math.round(s * 100)}%`);
     stage.classList.toggle('is-zoomed', s > MIN + 0.001);
   };
   const zoomTo = (next: number, ox = 0, oy = 0): void => {
@@ -395,14 +397,20 @@ function attachZoom(dlg: HTMLDialogElement): void {
     const r = stage.getBoundingClientRect();
     return [e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)];
   };
-  dlg.querySelector<HTMLElement>('.cat-zoom-hud')?.addEventListener('click', (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-zoom]');
-    if (!b) return;
-    const act = b.dataset.zoom;
-    if (act === 'in') zoomTo(s * 1.5);
-    else if (act === 'out') zoomTo(s / 1.5);
-    else { s = MIN; tx = 0; ty = 0; apply(); }
-  });
+  // No dedicated Fit button here (unlike the tool stage) — the readout itself
+  // IS the reset control, since MIN (100%) already means "fit".
+  const hud = hudEl ? mountZoomHud(hudEl, {
+    ariaLabel: t('Zoom'),
+    classes: { btn: 'cat-zoom-btn', pct: 'cat-zoom-pct' },
+    initialReadout: '100%',
+    onZoom: (dir) => zoomTo(s * (dir > 0 ? 1.5 : 1 / 1.5)),
+    onFit: () => { s = MIN; tx = 0; ty = 0; apply(); },
+    outContent: ZOOM_OUT_ICON,
+    inContent: ZOOM_IN_ICON,
+    outAriaLabel: t('Zoom out'), outTitle: t('Zoom out'),
+    inAriaLabel: t('Zoom in'), inTitle: t('Zoom in'),
+    pctAriaLabel: t('Reset zoom'), pctTitle: t('Reset zoom'),
+  }) : null;
   stage.addEventListener('wheel', (e) => {
     e.preventDefault();
     const [ox, oy] = offsetFrom(e);
@@ -501,8 +509,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let mounted = true;                        // false after the view swaps out (guards async)
   let firstPaint = true;                     // arm the entrance cascade only on the first render
   let dlDialog: HTMLDialogElement | null = null;        // the download dialog, if open
+  let dlModal: ModalHandle<void> | null = null;
   let detailsDialog: HTMLDialogElement | null = null;   // the asset details modal, if open
+  let detailsModal: ModalHandle<void> | null = null;
   let cropDialog: HTMLDialogElement | null = null;      // the crop dialog, if open
+  let cropModal: ModalHandle<void> | null = null;
   // The active brand's palette (host.tokens, cached) — set once in reload() before
   // the first render; swatchesSectionHtml() reads this closure var synchronously.
   let palette: readonly PaletteEntry[] = PALETTE;
@@ -678,12 +689,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   // ── markup ───────────────────────────────────────────────────────────────────
-  function topRight(): string {
-    return `
-      <div class="gallery-topright">
-        <button type="button" class="filter-fab cat-viewopts-btn" aria-label="${escape(t('View options'))}" aria-haspopup="true" aria-expanded="${viewOptsOpen}" title="${escape(t('View options'))}">${SLIDERS_ICON}</button>
-        ${langFabHtml()}
-        <a href="#/profile" class="profile-link${headshotUrl ? ' has-avatar' : ''}" aria-label="${escape(t('Open your profile'))}">${headshotUrl ? `<img class="profile-link-avatar" src="${escape(headshotUrl)}" alt="">` : ''}<span class="profile-link-name">${escape(profile?.firstname || t('Profile'))}</span></a>
+  // The shared .gallery-topbar shell (component-audit rec 11) — the view-toggle + the
+  // language FAB + profile pill are unified in view-topbar.ts; only the "view options"
+  // button (`right`) and its popover are catalog's own.
+  function catalogTopbarHtml(): string {
+    return viewTopbarHtml({
+      active: 'catalog',
+      right: `<button type="button" class="filter-fab cat-viewopts-btn" aria-label="${escape(t('View options'))}" aria-haspopup="true" aria-expanded="${viewOptsOpen}" title="${escape(t('View options'))}">${SLIDERS_ICON}</button>`,
+      popover: `
         <div class="cat-viewopts filter-popover" role="group" aria-label="${escape(t('Catalog view options'))}"${viewOptsOpen ? '' : ' hidden'}>
           ${themeSegmentHtml()}
           ${soundSegmentHtml()}
@@ -696,8 +709,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             <input type="checkbox" class="cat-favstrip-toggle"${favStripOn ? ' checked' : ''}>
             <span>${t('Show favourites strip')}</span>
           </label>
-        </div>
-      </div>`;
+        </div>`,
+      profile: { firstname: profile?.firstname, headshotUrl },
+    });
   }
 
   // One collapsible section shell — the category, hidden, Swatches and Fonts groups all
@@ -760,15 +774,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // button). Both use `tag` (span inside a button, div in the modal).
     if (ref.type === 'audio') {
       if (full) {
-        // zzfxm songs are JSON, not an audio file — mark them so openDetails renders them
-        // to a WAV blob (plays in ANY browser, no codec dependency). Encoded audio plays
-        // directly; an onerror surfaces an unsupported-format note instead of failing quietly.
+        // zzfxm songs and tracker modules are song data, not a playable audio file —
+        // mark them so openDetails renders them to a WAV blob (plays in ANY browser, no
+        // codec dependency). Encoded audio plays directly; an onerror surfaces an
+        // unsupported-format note instead of failing quietly.
         const zz = ref.format === 'zzfxm';
+        const mod = isModuleFormat(ref.format);
+        const srcAttr = zz ? `data-zzfxm-url="${escape(ref.url)}"`
+          : mod ? `data-mod-url="${escape(ref.url)}"`
+          : `src="${escape(ref.url)}"`;
         // A big live level meter above the controls (same bar look + theming as the
         // Neurospicy player's — lib/audio-meter.ts draws both). Wired in openDetails.
         return `<${tag} class="cat-thumb cat-thumb-audio">`
           + `<canvas class="cat-audio-meter" data-audio-meter width="640" height="160" aria-hidden="true"></canvas>`
-          + `<audio ${zz ? `data-zzfxm-url="${escape(ref.url)}"` : `src="${escape(ref.url)}"`} controls preload="metadata" data-audio-preview></audio>`
+          + `<audio ${srcAttr} controls preload="metadata" data-audio-preview></audio>`
           + `<p class="cat-audio-note" role="status" hidden></p></${tag}>`;
       }
       return `<${tag} class="cat-thumb cat-thumb-stub cat-thumb-audio" aria-hidden="true">${AUDIO_GLYPH}</${tag}>`;
@@ -1201,26 +1220,18 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     pruneSelection();
     viewEl.innerHTML = `
       <div class="catalog">
-        <div class="gallery-topbar">
-          <div class="view-toggle-wrap">${viewToggle('catalog')}</div>
-          ${topRight()}
-        </div>
+        ${catalogTopbarHtml()}
         <h1 class="visually-hidden">${t('Catalogue')}</h1>
         <div class="catalog-body">${bodyHtml()}</div>
         ${footerNav({
           proEnabled: flagEnabled(profile, PRO_FLAG.id),
-          // The gallery's search field + a visible ✕ clear button (shown only while there's
-          // a query) — like the Tools box but with the clear affordance projects.ts carries.
-          // type="text" (not "search") so the browser's own cancel button doesn't double up
-          // with ours; the ✕ reuses projects' fully-styled .projects-search-clear chrome.
-          searchHtml: `
-            <div class="gallery-search-wrap">
-              <div class="gallery-search-box">
-                <span class="gallery-search-icon" aria-hidden="true">${NAV_ICONS.search}</span>
-                <input class="gallery-search" type="text" placeholder="${escape(t('Search the catalogue…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Search the catalogue'))}" value="${escape(query)}" style="padding-right:32px">
-                <button type="button" class="projects-search-clear" data-search-clear aria-label="${escape(t('Clear search'))}"${query ? '' : ' hidden'}>✕</button>
-              </div>
-            </div>`,
+          // The shared gallery search field + ✕ clear button (component-audit rec 11 —
+          // previously a hand-rolled field borrowing projects' .projects-search-clear chrome).
+          searchHtml: gallerySearchBox({
+            placeholder: t('Search the catalogue…'),
+            ariaLabel: t('Search the catalogue'),
+            value: query,
+          }),
         })}
         ${bulkBarHtml()}
       </div>`;
@@ -1294,17 +1305,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // always closeDetails()-es first — including ←/→ paging — so this can't leak.
   let detailsMeterDispose: (() => void) | null = null;
   function closeDetails(): void {
-    if (detailsDialog) {
-      detailsMeterDispose?.();
-      detailsMeterDispose = null;
-      // Destroy any Lottie player mounted in the preview — lottie-web ticks every mounted player
-      // from one global rAF and won't stop on removal alone, so an un-reaped modal player leaks a loop.
-      destroyLottiePlayers(detailsDialog);
-      // Free a zzfxm→WAV preview blob (only the one we minted; user-upload URLs are managed).
-      const wav = detailsDialog.querySelector<HTMLAudioElement>('[data-audio-preview]')?.dataset.wavBlob;
-      if (wav) URL.revokeObjectURL(wav);
-      if (detailsDialog.open) detailsDialog.close(); detailsDialog.remove(); detailsDialog = null;
-    }
+    detailsModal?.close(); // cleanup (meter/lottie/wav dispose + nulling the refs) runs in its onClose
   }
   // Open the Verify checker (#/verify) on this asset and auto-run the on-device C2PA
   // check — the authoritative source for the AI provenance the badge summarises. The
@@ -1407,9 +1408,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const croppable = zoomable && !isMotionLottie;
     const wasOpen = !!detailsDialog; // paging (←/→) replaces an open modal — cue only a FRESH open
     closeDetails();
-    const dlg = document.createElement('dialog');
-    dlg.className = 'cat-details';
-    dlg.innerHTML = `
+    const content = `
       <button type="button" class="cat-details-close" data-act="close" aria-label="${escape(t('Close'))}">×</button>
       <div class="cat-details-preview${zoomable ? ' is-zoomable' : ''}">
         ${nav.prev ? `<button type="button" class="cat-details-nav cat-details-prev" data-nav="prev" aria-label="${escape(t('Previous asset'))}">${CHEVRON_LEFT}</button>` : ''}
@@ -1417,11 +1416,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         ${zoomable
           ? `<div class="cat-zoom-stage">${thumbHtml(ref, false, true)}</div>
              ${isMotionLottie ? `<button type="button" class="cat-motion-toggle is-playing" data-act="motion-toggle" aria-label="${escape(t('Pause'))}" title="${escape(t('Pause'))}">${PAUSE_ICON}</button>` : ''}
-             <div class="cat-zoom-hud" role="group" aria-label="${escape(t('Zoom'))}">
-               <button type="button" class="cat-zoom-btn" data-zoom="out" aria-label="${escape(t('Zoom out'))}" title="${escape(t('Zoom out'))}">${ZOOM_OUT_ICON}</button>
-               <button type="button" class="cat-zoom-btn cat-zoom-pct" data-zoom="reset" aria-label="${escape(t('Reset zoom'))}" title="${escape(t('Reset zoom'))}">100%</button>
-               <button type="button" class="cat-zoom-btn" data-zoom="in" aria-label="${escape(t('Zoom in'))}" title="${escape(t('Zoom in'))}">${ZOOM_IN_ICON}</button>
-             </div>`
+             <div class="cat-zoom-hud"></div>`
           : thumbHtml(ref, false, true)}
       </div>
       <div class="cat-details-body">
@@ -1455,8 +1450,26 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
                 : `<button type="button" class="btn cat-act-danger" data-act="hide">${EYE_OFF_ICON}<span>${t('Hide')}</span></button>`)}
         </div>
       </div>`;
-    document.body.appendChild(dlg);
+    const modal = mountModal(content, {
+      className: 'cat-details',
+      initialFocus: (el) => el.querySelector<HTMLElement>('.cat-details-close'),
+      onClose: () => {
+        detailsMeterDispose?.();
+        detailsMeterDispose = null;
+        // Destroy any Lottie player mounted in the preview — lottie-web ticks every mounted player
+        // from one global rAF and won't stop on removal alone, so an un-reaped modal player leaks a loop.
+        destroyLottiePlayers(modal.el);
+        // Free a zzfxm→WAV preview blob (only the one we minted; user-upload URLs are managed).
+        const wav = modal.el.querySelector<HTMLAudioElement>('[data-audio-preview]')?.dataset.wavBlob;
+        if (wav) URL.revokeObjectURL(wav);
+        detailsDialog = null;
+        detailsModal = null;
+      },
+    });
+    const dlg = modal.el;
     detailsDialog = dlg;
+    detailsModal = modal;
+    if (!wasOpen) playSfx('whisper'); // airy elevation as the asset details rise in (silent on ←/→ paging)
 
     // "Made with Lolly" is only honest when the stored file genuinely carries an intact
     // Lolly credential, so reveal the lockup lazily off the authoritative verifier rather
@@ -1514,7 +1527,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
     dlg.addEventListener('click', async (e) => {
       const target = e.target as HTMLElement;
-      if (target === dlg) { closeDetails(); return; }   // backdrop
       // Prev/next lightbox paging — reopen the modal on the neighbouring asset, carrying the
       // current colour choice so paging keeps the look.
       const navBtn = target.closest<HTMLElement>('[data-nav]');
@@ -1612,14 +1624,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       else if (act === 'delete') await deleteUserAsset(ref);
       else if (act === 'verify' || act === 'verify-ai') await checkCredentials(ref);
     });
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeDetails(); });
     // ← / → page through assets (lightbox style), like the on-screen prev/next buttons.
     dlg.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowLeft' && nav.prev) { e.preventDefault(); openDetails(nav.prev, dTheme, dTreatment); }
       else if (e.key === 'ArrowRight' && nav.next) { e.preventDefault(); openDetails(nav.next, dTheme, dTreatment); }
     });
-    dlg.showModal();
-    if (!wasOpen) playSfx('whisper'); // airy elevation as the asset details rise in (silent on ←/→ paging)
     if (zoomable) attachZoom(dlg);
     // Mount the looping Lottie player over the poster (autoplays). Guarded so a mount that resolves
     // after the modal was paged/closed doesn't attach to a stale node; closeDetails reaps it.
@@ -1635,9 +1644,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       audioEl.addEventListener('error', () => {
         if (note && !audioEl.dataset.wavBlob) { note.textContent = t('This audio format isn’t supported by your browser.'); note.hidden = false; }
       });
+      // zzfxm songs and tracker modules both render to a WAV blob (codec-independent);
+      // the only difference is which renderer decodes the source.
       const zzUrl = audioEl.dataset.zzfxmUrl;
-      if (zzUrl) {
-        void songUrlToWavBlobUrl(zzUrl)
+      const modUrl = audioEl.dataset.modUrl;
+      const render = zzUrl ? songUrlToWavBlobUrl(zzUrl) : modUrl ? modUrlToWavBlobUrl(modUrl) : null;
+      if (render) {
+        void render
           .then((wav) => { if (detailsDialog === dlg) { audioEl.dataset.wavBlob = wav; audioEl.src = wav; } else URL.revokeObjectURL(wav); })
           .catch(() => { if (note) { note.textContent = t('Couldn’t render this track.'); note.hidden = false; } });
       }
@@ -1646,7 +1659,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const meterEl = dlg.querySelector<HTMLCanvasElement>('[data-audio-meter]');
       if (meterEl) detailsMeterDispose = attachAudioMeter(meterEl, audioEl);
     }
-    dlg.querySelector<HTMLButtonElement>('.cat-details-close')?.focus();
   }
 
   // ── actions ──────────────────────────────────────────────────────────────────
@@ -2098,11 +2110,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   function closeDownloadDialog(): void {
-    if (dlDialog) { if (dlDialog.open) dlDialog.close(); dlDialog.remove(); dlDialog = null; }
+    dlModal?.close(); // nulls dlDialog/dlModal in its onClose
   }
 
   function closeCropDialog(): void {
-    if (cropDialog) { if (cropDialog.open) cropDialog.close(); cropDialog.remove(); cropDialog = null; }
+    cropModal?.close(); // nulls cropDialog/cropModal in its onClose
   }
 
   // Crop-before-download: a dialog with the asset fitted into an aspect-matched stage and
@@ -2149,9 +2161,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
     const name = String(ref.meta?.name ?? ref.id);
     const fmts: [string, string][] = vector ? [['svg', 'SVG'], ['png', 'PNG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['webp', 'WebP']];
-    const dlg = document.createElement('dialog');
-    dlg.className = 'cat-crop';
-    dlg.innerHTML = `
+    const content = `
       <h2 class="cat-dl-title">${t('Crop {name}', { name: escape(name) })}</h2>
       <div class="cat-crop-work">
         <div class="cat-crop-viewport">
@@ -2169,11 +2179,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             </div>
           </div>
         </div>
-        <div class="cat-zoom-hud" role="group" aria-label="${escape(t('Zoom'))}">
-          <button type="button" class="cat-zoom-btn" data-zoom="out" aria-label="${escape(t('Zoom out'))}" title="${escape(t('Zoom out'))}">${ZOOM_OUT_ICON}</button>
-          <button type="button" class="cat-zoom-btn cat-zoom-pct" data-zoom="reset" aria-label="${escape(t('Reset zoom'))}" title="${escape(t('Reset zoom'))}">100%</button>
-          <button type="button" class="cat-zoom-btn" data-zoom="in" aria-label="${escape(t('Zoom in'))}" title="${escape(t('Zoom in'))}">${ZOOM_IN_ICON}</button>
-        </div>
+        <div class="cat-zoom-hud"></div>
       </div>
       <div class="cat-dl-section">
         <span class="cat-dl-label">${t('Format')}</span>
@@ -2182,18 +2188,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>
       <div class="cat-dl-actions">
         <button type="button" class="btn cat-crop-cancel">${t('Cancel')}</button>
-        <button type="button" class="btn cat-crop-go projects-confirm-primary">${t('Download crop')}</button>
+        <button type="button" class="btn cat-crop-go modal-primary">${t('Download crop')}</button>
       </div>`;
-    document.body.appendChild(dlg);
+    // mountModal opens (showModal) synchronously on mount — BEFORE the measurements below,
+    // since a closed <dialog> is display:none and would read clientWidth 0.
+    const modal = mountModal(content, {
+      className: 'cat-crop',
+      onClose: () => { cropDialog = null; cropModal = null; },
+    });
+    const dlg = modal.el;
     cropDialog = dlg;
-    // Open BEFORE measuring: a closed <dialog> is display:none, so clientWidth reads 0.
-    dlg.showModal();
+    cropModal = modal;
 
     const viewport = dlg.querySelector<HTMLElement>('.cat-crop-viewport')!;
     const stage = dlg.querySelector<HTMLElement>('.cat-crop-stage')!;
     const imgEl = dlg.querySelector<HTMLImageElement>('.cat-crop-img')!;
     const boxEl = dlg.querySelector<HTMLElement>('.cat-crop-box')!;
-    const pctEl = dlg.querySelector<HTMLElement>('.cat-zoom-pct')!;
     let bx = 0, by = 0, bw = 0, bh = 0;    // crop box in stage px
     let fitW = 0, fitH = 0, zoom = 1;      // stage = fit × zoom, clipped by the fixed viewport
     const ZMAX = 16;                       // 100%…1600%, same range as the details inspector
@@ -2242,16 +2252,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       bx *= r; by *= r; bw *= r; bh *= r;
       paintBox();
       viewport.scrollLeft = sl; viewport.scrollTop = st;
-      pctEl.textContent = `${Math.round(zoom * 100)}%`;
+      hud?.setReadout(`${Math.round(zoom * 100)}%`);
       viewport.classList.toggle('is-zoomed', zoom > 1.001);
     };
-    dlg.querySelector<HTMLElement>('.cat-zoom-hud')?.addEventListener('click', (e) => {
-      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-zoom]');
-      if (!b) return;
-      if (b.dataset.zoom === 'in') setZoom(zoom * 1.5);
-      else if (b.dataset.zoom === 'out') setZoom(zoom / 1.5);
-      else setZoom(1);
-    });
+    const cropHudEl = dlg.querySelector<HTMLElement>('.cat-zoom-hud');
+    const hud = cropHudEl ? mountZoomHud(cropHudEl, {
+      ariaLabel: t('Zoom'),
+      classes: { btn: 'cat-zoom-btn', pct: 'cat-zoom-pct' },
+      initialReadout: '100%',
+      onZoom: (dir) => setZoom(zoom * (dir > 0 ? 1.5 : 1 / 1.5)),
+      onFit: () => setZoom(1),
+      outContent: ZOOM_OUT_ICON,
+      inContent: ZOOM_IN_ICON,
+      outAriaLabel: t('Zoom out'), outTitle: t('Zoom out'),
+      inAriaLabel: t('Zoom in'), inTitle: t('Zoom in'),
+      pctAriaLabel: t('Reset zoom'), pctTitle: t('Reset zoom'),
+    }) : null;
     viewport.addEventListener('wheel', (e) => {
       e.preventDefault();
       const r = viewport.getBoundingClientRect();
@@ -2313,7 +2329,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         closeCropDialog();
       }
     });
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeCropDialog(); });
   }
 
   // Render the framed region. Vector → a narrowed viewBox (SVG stays vector; PNG rasterises
@@ -2420,9 +2435,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     };
 
     closeDownloadDialog();
-    const dlg = document.createElement('dialog');
-    dlg.className = 'cat-dl';
-    dlg.innerHTML = `
+    const content = `
       <h2 class="cat-dl-title">${t('Download {name}', { name: escape(name) })}</h2>
       <div class="cat-dl-preview"><img alt="" class="cat-dl-img"></div>
       ${themable ? `
@@ -2445,10 +2458,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>
       <div class="cat-dl-actions">
         <button type="button" class="btn cat-dl-cancel">${t('Cancel')}</button>
-        <button type="button" class="btn cat-dl-go projects-confirm-primary">${t('Download')}</button>
+        <button type="button" class="btn cat-dl-go modal-primary">${t('Download')}</button>
       </div>`;
-    document.body.appendChild(dlg);
+    const modal = mountModal(content, {
+      className: 'cat-dl',
+      initialFocus: (el) => el.querySelector<HTMLElement>('.cat-dl-go'),
+      onClose: () => { dlDialog = null; dlModal = null; },
+    });
+    const dlg = modal.el;
     dlDialog = dlg;
+    dlModal = modal;
 
     const imgEl = dlg.querySelector<HTMLImageElement>('.cat-dl-img')!;
     const paintPreview = (): void => { imgEl.src = svgTextToDataUrl(currentSvg()); };
@@ -2517,9 +2536,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         closeDownloadDialog();
       }
     });
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeDownloadDialog(); });
-    dlg.showModal();
-    dlg.querySelector<HTMLButtonElement>('.cat-dl-go')?.focus();
   }
 
   // Bake a photo treatment into a self-contained SVG wrapper (the source photo inlined as a
@@ -2551,9 +2567,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const name = String(ref.meta?.name ?? ref.id);
 
     closeDownloadDialog();
-    const dlg = document.createElement('dialog');
-    dlg.className = 'cat-dl';
-    dlg.innerHTML = `
+    const content = `
       <h2 class="cat-dl-title">${t('Download {name}', { name: escape(name) })}</h2>
       <div class="cat-dl-preview"><img alt="" class="cat-dl-img" src="${escape(ref.url)}"></div>
       <div class="cat-dl-section">
@@ -2570,10 +2584,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>
       <div class="cat-dl-actions">
         <button type="button" class="btn cat-dl-cancel">${t('Cancel')}</button>
-        <button type="button" class="btn cat-dl-go projects-confirm-primary">${t('Download')}</button>
+        <button type="button" class="btn cat-dl-go modal-primary">${t('Download')}</button>
       </div>`;
-    document.body.appendChild(dlg);
+    const modal = mountModal(content, {
+      className: 'cat-dl',
+      initialFocus: (el) => el.querySelector<HTMLElement>('.cat-dl-go'),
+      onClose: () => { dlDialog = null; dlModal = null; },
+    });
+    const dlg = modal.el;
     dlDialog = dlg;
+    dlModal = modal;
 
     const imgEl = dlg.querySelector<HTMLImageElement>('.cat-dl-img')!;
     const applyPreview = (): void => { imgEl.style.filter = treatmentId ? `url(#${TREATMENT_FILTER_PREFIX}${treatmentId})` : ''; };
@@ -2619,9 +2639,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         closeDownloadDialog();
       }
     });
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeDownloadDialog(); });
-    dlg.showModal();
-    dlg.querySelector<HTMLButtonElement>('.cat-dl-go')?.focus();
   }
 
   // ── wiring ───────────────────────────────────────────────────────────────────
@@ -2693,7 +2710,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const clearSearch = (): void => {
       const input = viewEl.querySelector<HTMLInputElement>('.gallery-search');
       if (input) input.value = '';
-      viewEl.querySelector<HTMLElement>('.projects-search-clear')?.setAttribute('hidden', '');
+      viewEl.querySelector<HTMLElement>('.gallery-search-clear')?.setAttribute('hidden', '');
       if (query) { query = ''; renderBody(); }
       input?.focus();
     };
@@ -2864,7 +2881,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Lives in the fixed footer, OUTSIDE .catalog-body, so a search re-renders only the
     // body (renderBody) and this input keeps its focus + caret between keystrokes.
     const searchInput = viewEl.querySelector<HTMLInputElement>('.gallery-search');
-    const clearBtn = viewEl.querySelector<HTMLButtonElement>('.projects-search-clear');
+    const clearBtn = viewEl.querySelector<HTMLButtonElement>('.gallery-search-clear');
     let searchDebounce: ReturnType<typeof setTimeout>;
     searchInput?.addEventListener('input', () => {
       // Reflect the field state on the ✕ immediately (before the debounce): the footer isn't
@@ -2878,7 +2895,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         renderBody();
       }, 120);
     });
-    // The ✕ clears + re-filters (mirrors projects.ts); Esc does the same for an active query.
+    // The ✕ clears + re-filters; Esc does the same for an active query.
     clearBtn?.addEventListener('click', clearSearch);
     searchInput?.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && (query || searchInput.value)) { e.stopPropagation(); clearSearch(); }
@@ -2944,9 +2961,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     });
 
     // Mobile: the avatar opens the shared profile menu (theme + settings); desktop
-    // keeps it a plain link to /profile. Matches Tools + Projects.
-    attachProfileMenu(viewEl.querySelector<HTMLElement>('.profile-link'), host);
-    attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
+    // keeps it a plain link to /profile. Matches Tools + Projects. `headshotUrl` is
+    // already resolved (in reload(), before the first render) so no deferred fetch here.
+    mountViewTopbar(viewEl, host);
   }
 
   // ── mount ──────────────────────────────────────────────────────────────────────

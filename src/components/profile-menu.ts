@@ -16,8 +16,8 @@
  * Mirrors the filter popover's conventions: Escape + outside-pointerdown close,
  * focus returns to the trigger.
  */
-import { THEMES, THEME_LABELS, currentTheme, applyTheme } from '../theme.ts';
-import { playThemeSfx } from '../lib/sfx.ts';
+import { THEMES, THEME_LABELS, currentTheme } from '../theme.ts';
+import { setTheme, type SetThemeHost } from '../lib/set-theme.ts';
 import { escape } from '../utils.ts';
 import { mountBodyPopover } from './body-popover.ts';
 import { t } from '../i18n.ts';
@@ -25,15 +25,9 @@ import { t } from '../i18n.ts';
 // Matches the gallery/projects mobile breakpoint (the chrome only collapses there).
 const MOBILE = '(max-width: 640px)';
 
-interface ProfileMenuHost {
-  profile: {
-    // No index signature: a real Profile (no index signature of its own) can
-    // never structurally satisfy one. This module only spreads the value, so
-    // `object` is enough — see folders.ts FolderProfile for the same pattern.
-    get(): Promise<object>;
-    set(profile: object): Promise<unknown>;
-  };
-}
+// Same weak slice setTheme takes (an opaque profile record this module only
+// spreads) — see folders.ts FolderProfile for the same no-index-signature pattern.
+type ProfileMenuHost = SetThemeHost;
 
 export function attachProfileMenu(
   triggerEl: HTMLElement | null,
@@ -87,14 +81,9 @@ export function attachProfileMenu(
       const btn = (e.target as Element).closest<HTMLElement>('[data-theme-seg]');
       if (!btn) return;
       const next = btn.dataset.themeSeg!;
-      applyTheme(next);
-      playThemeSfx(next);   // theme switch always sings — including this mobile profile-menu path
       segs.forEach(b => b.setAttribute('aria-checked', String(b.dataset.themeSeg === next)));
       rove(btn, false);   // the newly-checked segment becomes the group's single tab stop
-      try {
-        const profile = await host.profile.get();
-        await host.profile.set({ ...profile, theme: next });
-      } catch { /* preference save is best-effort */ }
+      await setTheme(host, next);   // theme switch always sings — including this mobile profile-menu path
     });
     // Roving arrow-key navigation between the radio segments (Up/Left ←, Down/Right →), wrapping.
     themeGroup?.addEventListener('keydown', (e) => {

@@ -12,6 +12,7 @@
  *     lock), so a PDF stays locked even after the zip is extracted.
  */
 import { confirmDialog } from '../components/confirm-dialog.ts';
+import { mountModal } from '../components/modal.ts';
 import { escape } from '../utils.ts';
 import type { ZipTier } from '@lolly/engine';
 
@@ -37,43 +38,34 @@ export async function askExportLock(what: string, offerPassword: boolean): Promi
     return { ok };
   }
   return new Promise<ExportLockResult>((resolve) => {
-    const dlg = document.createElement('dialog');
-    dlg.className = 'projects-confirm';
-    dlg.innerHTML = `
-      <h2 class="projects-confirm-title">${escape(`Render ${what}?`)}</h2>
-      <p class="projects-confirm-msg">Renders into a zip. Optionally set a password to lock the whole download (blank = no lock). Any PDFs inside are also individually AES-256-locked, so they stay locked after the zip is extracted.</p>
+    const content = `
+      <h2 class="modal-title">${escape(`Render ${what}?`)}</h2>
+      <p class="modal-msg">Renders into a zip. Optionally set a password to lock the whole download (blank = no lock). Any PDFs inside are also individually AES-256-locked, so they stay locked after the zip is extracted.</p>
       <input type="password" class="export-lock-pw" autocomplete="off" spellcheck="false" placeholder="Password (optional)" style="${INPUT_STYLE}">
       <select class="pdfpass-tier export-lock-tier" aria-label="Zip lock strength" style="${INPUT_STYLE}">
         <option value="strong">Strong · AES-256 — needs 7-Zip / WinZip / macOS (not Windows Explorer) ⓘ</option>
         <option value="standard">Standard · opens anywhere incl. Windows Explorer — weaker</option>
       </select>
-      <div class="projects-confirm-actions">
-        <button type="button" class="btn projects-confirm-cancel" data-act="cancel">Cancel</button>
-        <button type="button" class="btn projects-confirm-primary" data-act="ok">Render</button>
+      <div class="modal-actions">
+        <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>
+        <button type="button" class="btn modal-primary" data-act="ok">Render</button>
       </div>`;
-    document.body.appendChild(dlg);
-    const pwEl = dlg.querySelector<HTMLInputElement>('.export-lock-pw')!;
-    const tierEl = dlg.querySelector<HTMLSelectElement>('.export-lock-tier')!;
-    let settled = false;
-    const finish = (result: ExportLockResult) => {
-      if (settled) return; settled = true;
-      if (dlg.open) dlg.close();
-      dlg.remove();
-      resolve(result);
-    };
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish({ ok: false }); });
-    dlg.addEventListener('click', (e) => {
+    const modal = mountModal<ExportLockResult>(content, {
+      className: 'modal',
+      cancelValue: { ok: false },
+      initialFocus: (el) => el.querySelector<HTMLElement>('.export-lock-pw'),
+      onClose: (result) => resolve(result ?? { ok: false }),
+    });
+    const pwEl = modal.el.querySelector<HTMLInputElement>('.export-lock-pw')!;
+    const tierEl = modal.el.querySelector<HTMLSelectElement>('.export-lock-tier')!;
+    modal.el.addEventListener('click', (e) => {
       const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
       if (act === 'ok') {
         const pw = pwEl.value;
-        finish({ ok: true, strongPassword: pw || undefined, zipLock: pw ? (tierEl.value as ZipTier) : undefined });
+        modal.close({ ok: true, strongPassword: pw || undefined, zipLock: pw ? (tierEl.value as ZipTier) : undefined });
         return;
       }
-      if (act === 'cancel') { finish({ ok: false }); return; }
-      const r = dlg.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) finish({ ok: false });
+      if (act === 'cancel') modal.close({ ok: false });
     });
-    dlg.showModal();
-    pwEl.focus();
   });
 }

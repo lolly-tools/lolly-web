@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "“{name}”은(는) {size}{dims}예요. 원본을 유지할까요 — Content Credential에 가장 적합해요 — 아니면 공간 절약을 위해 크기를 조절{resize}할까요?",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "“{name}”이(가) 이미지에서 영구적으로 삭제돼요. 이 작업은 되돌릴 수 없어요.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "“{variant}”는 이미 로고 이름으로 사용 중이에요 — 마크에 다른 이름을 지정하세요.",
-  "✓ Added": "✓ 추가됨"
+  "✓ Added": "✓ 추가됨",
+  "Theme: {name} — switch theme": "테마: {name} — 테마 전환",
+  "Speakers": "화자",
+  "Sort languages": "언어 정렬"
 }

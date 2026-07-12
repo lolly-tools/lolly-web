@@ -1462,5 +1462,8 @@
   "“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?": "„{name}” are {size}{dims}. Păstrezi originalul — cel mai bun pentru un Content Credential — sau îl redimensionezi{resize} ca să economisești spațiu?",
   "“{name}” will be permanently removed from your images. This can’t be undone.": "„{name}” va fi eliminat definitiv din imaginile tale. Aceasta nu poate fi anulată.",
   "“{variant}” is already a logo’s name — pick a different name for the mark.": "“{variant}” este deja numele unui logo — alege alt nume pentru semn.",
-  "✓ Added": "✓ Adăugat"
+  "✓ Added": "✓ Adăugat",
+  "Theme: {name} — switch theme": "Temă: {name} — schimbă tema",
+  "Speakers": "Vorbitori",
+  "Sort languages": "Sortează limbile"
 }

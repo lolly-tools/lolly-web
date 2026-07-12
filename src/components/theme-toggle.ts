@@ -16,17 +16,9 @@
  *
  * createThemeToggle(host) → HTMLButtonElement
  */
-import { THEMES, THEME_LABELS, THEME_ICONS, nextTheme, currentTheme, applyTheme } from '../theme.ts';
-import { playThemeSfx } from '../lib/sfx.ts';
-
-interface ThemeToggleHost {
-  profile: {
-    // The stored theme rides the profile record; treat the record as opaque here
-    // (an object we spread), so any host Profile type satisfies this weak slice.
-    get(): Promise<object>;
-    set(profile: object): Promise<unknown>;
-  };
-}
+import { THEMES, THEME_LABELS, THEME_ICONS, nextTheme, currentTheme } from '../theme.ts';
+import { setTheme, type SetThemeHost as ThemeToggleHost } from '../lib/set-theme.ts';
+import { t } from '../i18n.ts';
 
 export function createThemeToggle(host: ThemeToggleHost): HTMLButtonElement {
   const btn = document.createElement('button');
@@ -42,7 +34,7 @@ export function createThemeToggle(host: ThemeToggleHost): HTMLButtonElement {
   const paint = (theme: string) => {
     btn.dataset.theme = theme;
     btn.innerHTML = icons[theme] ?? '';
-    const label = `Theme: ${labels[theme] ?? theme} — switch theme`;
+    const label = t('Theme: {name} — switch theme', { name: t(labels[theme] ?? theme) });
     btn.setAttribute('aria-label', label);
     btn.title = label;
   };
@@ -50,15 +42,8 @@ export function createThemeToggle(host: ThemeToggleHost): HTMLButtonElement {
 
   btn.addEventListener('click', async () => {
     const theme = nextTheme(currentTheme());
-    applyTheme(theme);
     paint(theme);
-    playThemeSfx(theme);   // a little magic per theme (user-initiated, so never on boot)
-    // Persist to the profile (canonical store); best-effort — a failed write
-    // still leaves the theme applied + mirrored to localStorage by applyTheme.
-    try {
-      const profile = await host.profile.get();
-      await host.profile.set({ ...profile, theme });
-    } catch { /* preference save is best-effort */ }
+    await setTheme(host, theme);
   });
 
   return btn;
@@ -74,9 +59,11 @@ export function createThemeToggle(host: ThemeToggleHost): HTMLButtonElement {
  */
 export function themeSegmentHtml(headClass = 'filter-pop-head'): string {
   const cur = currentTheme();
-  return `<p class="${headClass}">Theme</p>
-      <div class="view-seg" role="group" aria-label="Theme">
-        ${THEMES.map(t => `<button type="button" class="view-seg-btn" data-theme-seg="${t}" aria-pressed="${t === cur}">${THEME_LABELS[t]}</button>`).join('')}
+  // Label text goes through t() — safe to inline raw: the translation pipeline's
+  // tag-parity validator guarantees a tagless English source stays tagless.
+  return `<p class="${headClass}">${t('Theme')}</p>
+      <div class="view-seg" role="group" aria-label="${t('Theme')}">
+        ${THEMES.map(th => `<button type="button" class="view-seg-btn" data-theme-seg="${th}" aria-pressed="${th === cur}">${t(THEME_LABELS[th])}</button>`).join('')}
       </div>`;
 }
 
@@ -92,13 +79,8 @@ export function wireThemeSegment(root: ParentNode, host: ThemeToggleHost): void 
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const theme = btn.dataset.themeSeg!;
-      applyTheme(theme);
-      playThemeSfx(theme);
       btns.forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
-      try {
-        const profile = await host.profile.get();
-        await host.profile.set({ ...profile, theme });
-      } catch { /* preference save is best-effort */ }
+      await setTheme(host, theme);
     });
   });
 }

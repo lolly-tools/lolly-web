@@ -25,29 +25,30 @@
   border-bottom: 0;
   font-size: 13px;
   transition: background 0.12s;
-  display: grid !important;
-  grid-template-columns: 3.5em 4fr;
+  display: flex !important;
   border-radius: 1.05em;
 }
 
 /* Collapsed/filtered rows must leave the layout entirely (not just go invisible)
    so a long saved list can't push the page tall. `.saved-row` sets
-   `display:grid !important` and the global `[hidden]` only adds visibility:hidden,
+   `display:flex !important` and the global `[hidden]` only adds visibility:hidden,
    so the hide needs `!important` + higher specificity to win and pull the row
    out of flow completely. */
 .gallery-view .saved-list > [hidden] { display: none !important; }
 
+/* Title over subtitle — the row's shared "meta" block (sessionRow()'s
+   metaClass), sharing this stacked layout with the profile Storage manager's
+   .store-sess-meta (component-audit rec 6). */
 .saved-label {
-  display: grid;
-  grid-template-columns: 4fr 1fr 1fr 2em;
-  place-items: inherit;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
-  width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.saved-label h4, .saved-label small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .saved-row .muted { display: block; }
 
@@ -80,9 +81,13 @@
 
 .saved-row:hover { background: hsl(var(--accent)); }
 
-/* date-time + size stamps: dim at rest, full on hover. */
-.saved-row:hover .saved-label { opacity: 1; }
-.saved-row:not(:hover) .saved-label { opacity: .5; }
+/* date-time + size stamp + delete icon: dim at rest, full on hover. .session-size
+   and .saved-delete are now siblings of .saved-label (not nested inside it —
+   sessionRow()'s shared shape puts them after the meta block; they used to
+   inherit this fade for free by nesting), so all three need the rule now;
+   scoped to .saved-row so it doesn't touch the profile Storage manager's rows. */
+.saved-row:hover .saved-label, .saved-row:hover .session-size, .saved-row:hover .saved-delete { opacity: 1; }
+.saved-row:not(:hover) .saved-label, .saved-row:not(:hover) .session-size, .saved-row:not(:hover) .saved-delete { opacity: .5; }
 
 .session-size {
   font-size: 11px;

@@ -248,6 +248,116 @@ export function folderTile(folder: { id: string; name: string; items?: readonly 
     </div>`;
 }
 
+// ── Rows ──────────────────────────────────────────────────────────────────
+// A row is the same domain object as sessionTile() (thumb + title + subtitle +
+// bytes, plus a batch variant) laid out as a compact list row instead of a grid
+// tile — the gallery's per-tool history list and the profile Storage manager's
+// session list (component-audit rec 6). The two callers differ in chrome (a
+// full-row open/resume trigger vs a leading select checkbox; an inline "batch"
+// pill vs folding it into the subtitle text; which HTML tag carries the title,
+// since each view's own stylesheet still keys off that tag) — kept as slots/opts
+// here rather than forked implementations. `rowClass`/`thumbClass`/etc. are each
+// view's own CSS hook so their existing stylesheets keep matching unchanged.
+function clsAttr(c: string | undefined): string {
+  return c ? ` class="${c}"` : '';
+}
+
+/** Options for {@link sessionRow}. */
+export interface SessionRowOpts {
+  /** Class(es) on the <li> — each view's own CSS hook (e.g. 'saved-row saved-row--batch' / 'store-sess'). */
+  rowClass: string;
+  /** Extra raw (already-escaped) attribute(s) on the <li>, e.g. `data-search="…"`. */
+  rowAttrs?: string;
+  /** Base thumb class — a plain <img> gets exactly this. */
+  thumbClass: string;
+  /** Extra raw attrs on the <img> thumb (views differ: aria-hidden vs loading="lazy"). */
+  thumbImgAttrs?: string;
+  /** Batch-session thumbnail glyph; omit to fall through to the normal empty-thumb
+   *  placeholder (profile's rows don't special-case batch thumbnails). */
+  batchIcon?: string;
+  /** Class appended (after thumbClass) for the batch glyph state; defaults to `${thumbClass}--batch`. */
+  batchThumbClass?: string;
+  /** Inner content of the no-thumbnail placeholder (profile's grey "image" glyph; gallery's is empty). */
+  emptyThumbContent?: string;
+  /** Class appended (after thumbClass) for the empty state; defaults to `${thumbClass}--empty`. */
+  emptyThumbClass?: string;
+  /** Wraps the row in a full-bleed open/resume trigger (gallery's history list;
+   *  profile's Storage manager has no open action). Raw already-escaped attrs
+   *  besides aria-label. */
+  openClass?: string;
+  openAttrs?: string;
+  openLabel?: string;
+  /** Leading multi-select checkbox (profile's Storage manager; gallery has none). */
+  selectClass?: string;
+  selectLabel?: string;
+  /** Meta block (title + subtitle). */
+  metaClass: string;
+  titleTag?: string;
+  titleClass?: string;
+  title: string;
+  /** Inline pill right after the title (profile's "batch" tag); leave unset and
+   *  fold batch wording into `subtitle` yourself instead (gallery's style). */
+  batchTag?: string;
+  batchTagClass?: string;
+  subTag?: string;
+  subClass?: string;
+  subtitle: string;
+  /** Size chip; only rendered when there are bytes to show (matches both views). */
+  sizeBytes?: number;
+  sizeClass?: string;
+  /** Delete button; only rendered when an attribute is supplied. */
+  deleteAttr?: string;
+  deleteClass?: string;
+  deleteLabel?: string;
+  deleteTitle?: string;
+}
+
+/**
+ * One saved-session ROW (as opposed to {@link sessionTile}'s grid tile) — the
+ * shared shape behind the gallery's per-tool history list and the profile
+ * Storage manager's session list. Resolves the batch/thumb/size fallback chain
+ * once; each caller supplies its own CSS-hook classes and opts into the
+ * affordances it needs (selection, an open trigger, delete) as slots.
+ */
+export function sessionRow(entry: SessionEntry, opts: SessionRowOpts): string {
+  const batch = isBatchSlot(entry.slot);
+  const TTag = opts.titleTag ?? 'span';
+  const STag = opts.subTag ?? 'span';
+
+  const thumb = (batch && opts.batchIcon)
+    ? `<span class="${opts.thumbClass} ${opts.batchThumbClass ?? `${opts.thumbClass}--batch`}" aria-hidden="true">${opts.batchIcon}</span>`
+    : entry.thumb
+      ? `<img class="${opts.thumbClass}" src="${escape(entry.thumb)}" alt=""${opts.thumbImgAttrs ? ` ${opts.thumbImgAttrs}` : ''}>`
+      : `<span class="${opts.thumbClass} ${opts.emptyThumbClass ?? `${opts.thumbClass}--empty`}" aria-hidden="true">${opts.emptyThumbContent ?? ''}</span>`;
+
+  const openBtn = opts.openAttrs
+    ? `<button type="button"${clsAttr(opts.openClass)} ${opts.openAttrs} aria-label="${escape(opts.openLabel ?? '')}"></button>`
+    : '';
+  const checkbox = opts.selectClass
+    ? `<input type="checkbox" class="${opts.selectClass}" data-slot="${escape(entry.slot)}" aria-label="${escape(opts.selectLabel ?? '')}">`
+    : '';
+  const batchTagEl = opts.batchTag
+    ? `<span${clsAttr(opts.batchTagClass)}>${escape(opts.batchTag)}</span>`
+    : '';
+  const sizeEl = opts.sizeBytes
+    ? `<span class="${opts.sizeClass ?? 'session-size'}">${fmtBytes(opts.sizeBytes)}</span>`
+    : '';
+  const deleteBtn = opts.deleteAttr
+    ? `<button type="button"${clsAttr(opts.deleteClass)} ${opts.deleteAttr}${opts.deleteTitle ? ` title="${escape(opts.deleteTitle)}"` : ''} aria-label="${escape(opts.deleteLabel ?? '')}">&#x2715;</button>`
+    : '';
+
+  return `
+    <li class="${opts.rowClass}"${opts.rowAttrs ? ` ${opts.rowAttrs}` : ''}>
+      ${openBtn}${checkbox}${thumb}
+      <span class="${opts.metaClass}">
+        <${TTag}${clsAttr(opts.titleClass)}>${escape(opts.title)}${batchTagEl}</${TTag}>
+        <${STag}${clsAttr(opts.subClass)}>${escape(opts.subtitle)}</${STag}>
+      </span>
+      ${sizeEl}
+      ${deleteBtn}
+    </li>`;
+}
+
 // Shared wrapper for session/image tiles.
 interface TileShellOpts {
   ref: string;

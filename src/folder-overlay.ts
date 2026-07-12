@@ -14,6 +14,8 @@
  */
 import { escape } from './utils.ts';
 import { confirmDialog } from './components/confirm-dialog.ts';
+import { mountBodyPopover } from './components/body-popover.ts';
+import type { BodyPopoverHandle } from './components/body-popover.ts';
 import { announce } from './a11y.ts';
 import { createFolderStore } from './folders.ts';
 import type { Folder, FolderItem } from './folders.ts';
@@ -104,6 +106,11 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
   dialog.setAttribute('aria-labelledby', 'folder-overlay-title');
   dialog.innerHTML = `<div class="folder-overlay-body"><div class="folder-overlay-loading">Loading…</div></div>`;
   openDialog(dialog);
+  // The item menu mounts INSIDE this dialog (see openMenu below) so its window/document
+  // listeners (Escape, outside-click, resize, route-change) need tearing down before the
+  // dialog itself is torn down — a bare dialog.remove() (closeDialog, native Escape/
+  // backdrop) would otherwise leak them. closeMenu is a hoisted function declaration.
+  dialog.addEventListener('close', () => closeMenu());
 
   // ── Data helpers ───────────────────────────────────────────────────────────
 
@@ -280,75 +287,82 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     announce(`Folder “${folder.name}” deleted`);
   }
 
-  // ── Item menu (move / rename / delete) ─────────────────────────────────────
+  // ── Item menu (move / rename / delete) ──────────────────────────────────────
+  // A body-mounted popover (mountBodyPopover) rather than a hand-rolled one — but
+  // mounted INSIDE `dialog` (the `container` option), not document.body: this overlay
+  // is a native <dialog> shown via showModal(), so only ITS OWN subtree paints above
+  // its ::backdrop (a body-appended popover would render invisibly behind it). The
+  // position callback below replicates the anchor-relative math a plain body mount
+  // wouldn't need (mountBodyPopover's own default assumes position:fixed off the
+  // viewport; `.folder-menu` stays position:absolute, relative to `dialog` itself,
+  // which the UA promotes to position:fixed while showing modally).
 
-  type MenuEl = HTMLDivElement & { _outside(e: PointerEvent): void };
-  let menuEl: MenuEl | null = null;
-  function closeMenu() {
-    if (menuEl) { document.removeEventListener('pointerdown', menuEl._outside, true); menuEl.remove(); menuEl = null; }
-  }
+  let itemMenu: BodyPopoverHandle | null = null;
+  function closeMenu(): void { itemMenu?.close(); itemMenu = null; }
 
-  function openMenu(btn: HTMLElement) {
+  function openMenu(btn: HTMLElement): void {
     closeMenu();
     const ref = btn.dataset.menu!;
     const kind = btn.dataset.menuKind as 'session' | 'image' | 'folder';   // 'session' | 'image' | 'folder'
     const isBatch = kind === 'session' && isBatchSlot(ref);
 
-    let html = '';
-    if (kind === 'folder') {
-      html = `
-        <button type="button" class="folder-menu-item" data-act="rename">Rename folder</button>
-        <button type="button" class="folder-menu-item folder-menu-item--danger" data-act="delete">Delete folder</button>`;
-    } else {
-      const canRename = kind === 'session';   // images keep their upload name
-      const targets = folders.filter(f => f.id !== viewFolderId);
-      const moveNew = folders.length === 0 && showCreateFolder;
-      const moveOpts = [
-        viewFolderId ? `<button type="button" class="folder-menu-item" data-move-to="">Main list (root)</button>` : '',
-        ...targets.map(f => `<button type="button" class="folder-menu-item" data-move-to="${escape(f.id)}">${escape(f.name)}</button>`),
-        moveNew ? `<button type="button" class="folder-menu-item" data-move-new>＋ New folder…</button>` : '',
-      ].filter(Boolean).join('');
-      html = `
-        ${canRename ? `<button type="button" class="folder-menu-item" data-act="rename">Rename${isBatch ? ' session' : ''}</button>` : ''}
-        <button type="button" class="folder-menu-item folder-menu-item--danger" data-act="delete">Delete</button>
-        ${moveOpts ? `<div class="folder-menu-sep">Move to</div>${moveOpts}` : ''}`;
-    }
-
-    menuEl = document.createElement('div') as MenuEl;
-    menuEl.className = 'folder-menu';
-    menuEl.innerHTML = html;
-    dialog.appendChild(menuEl);
-    const r = btn.getBoundingClientRect();
-    const dr = dialog.getBoundingClientRect();
-    menuEl.style.top = `${Math.round(r.bottom - dr.top + 4)}px`;
-    menuEl.style.left = `${Math.round(Math.min(r.left - dr.left, dialog.clientWidth - 200))}px`;
-
-    menuEl.addEventListener('click', async (e) => {
-      const act = (e.target as Element).closest<HTMLElement>('[data-act]')?.dataset.act;
-      const moveTo = (e.target as Element).closest<HTMLElement>('[data-move-to]');
-      const moveNew = (e.target as Element).closest('[data-move-new]');
-      closeMenu();
-      if (act === 'rename') return kind === 'folder' ? renameFolder(ref) : renameItem(ref);
-      if (act === 'delete') return kind === 'folder' ? deleteFolder(ref) : deleteItem(ref, kind);
-      if (moveNew) {
-        const name = await askName('New folder', '');
-        if (!name) return;
-        const folder = await store.create(name);
-        await store.moveItem(ref, folder.id, kind as 'session' | 'image');
-        folders = await store.list();
-        render();
-        return;
+    const popover = mountBodyPopover(btn, (el) => {
+      let html = '';
+      if (kind === 'folder') {
+        html = `
+          <button type="button" class="folder-menu-item" role="menuitem" data-act="rename">Rename folder</button>
+          <button type="button" class="folder-menu-item folder-menu-item--danger" role="menuitem" data-act="delete">Delete folder</button>`;
+      } else {
+        const canRename = kind === 'session';   // images keep their upload name
+        const targets = folders.filter(f => f.id !== viewFolderId);
+        const moveNew = folders.length === 0 && showCreateFolder;
+        const moveOpts = [
+          viewFolderId ? `<button type="button" class="folder-menu-item" role="menuitem" data-move-to="">Main list (root)</button>` : '',
+          ...targets.map(f => `<button type="button" class="folder-menu-item" role="menuitem" data-move-to="${escape(f.id)}">${escape(f.name)}</button>`),
+          moveNew ? `<button type="button" class="folder-menu-item" role="menuitem" data-move-new>＋ New folder…</button>` : '',
+        ].filter(Boolean).join('');
+        html = `
+          ${canRename ? `<button type="button" class="folder-menu-item" role="menuitem" data-act="rename">Rename${isBatch ? ' session' : ''}</button>` : ''}
+          <button type="button" class="folder-menu-item folder-menu-item--danger" role="menuitem" data-act="delete">Delete</button>
+          ${moveOpts ? `<div class="folder-menu-sep" role="separator">Move to</div>${moveOpts}` : ''}`;
       }
-      if (moveTo) {
-        const target = moveTo.dataset.moveTo || null;
-        await store.moveItem(ref, target, kind as 'session' | 'image');
-        folders = await store.list();
-        render();
-      }
+      el.innerHTML = html;
+
+      el.addEventListener('click', async (e) => {
+        const act = (e.target as Element).closest<HTMLElement>('[data-act]')?.dataset.act;
+        const moveTo = (e.target as Element).closest<HTMLElement>('[data-move-to]');
+        const moveNew = (e.target as Element).closest('[data-move-new]');
+        closeMenu();
+        if (act === 'rename') return kind === 'folder' ? renameFolder(ref) : renameItem(ref);
+        if (act === 'delete') return kind === 'folder' ? deleteFolder(ref) : deleteItem(ref, kind);
+        if (moveNew) {
+          const name = await askName('New folder', '');
+          if (!name) return;
+          const folder = await store.create(name);
+          await store.moveItem(ref, folder.id, kind as 'session' | 'image');
+          folders = await store.list();
+          render();
+          return;
+        }
+        if (moveTo) {
+          const target = moveTo.dataset.moveTo || null;
+          await store.moveItem(ref, target, kind as 'session' | 'image');
+          folders = await store.list();
+          render();
+        }
+      });
+    }, {
+      className: 'folder-menu',
+      container: dialog,
+      position: (el, anchor) => {
+        const r = anchor.getBoundingClientRect();
+        const dr = dialog.getBoundingClientRect();
+        el.style.top = `${Math.round(r.bottom - dr.top + 4)}px`;
+        el.style.left = `${Math.round(Math.min(r.left - dr.left, dialog.clientWidth - 200))}px`;
+      },
     });
-
-    menuEl._outside = (e) => { if (!menuEl!.contains(e.target as Node | null) && e.target !== btn) closeMenu(); };
-    setTimeout(() => document.addEventListener('pointerdown', menuEl!._outside, true), 0);
+    itemMenu = popover;
+    popover.open();
   }
 
   // ── Item rename / delete ───────────────────────────────────────────────────

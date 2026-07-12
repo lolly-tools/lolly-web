@@ -90,9 +90,36 @@
 }
 .pro-format { font-size: .8rem; color: hsl(var(--muted-foreground)); display: inline-flex; align-items: center; gap: .4rem; }
 
-/* UI zoom stepper (−/+), left of the format select. */
-.pro-zoom { display: inline-flex; gap: .25rem; flex: none; }
-.pro-zoom-btn { padding: .4rem .55rem; font-size: 1.05rem; font-weight: 700; line-height: 1; }
+/* UI zoom (the −/100%/+ pill), left of the format select. Markup/click-wiring/
+   disabled-state come from components/zoom-hud.ts (mountZoomHud), same as the
+   tool stage/multi-edit/catalog HUDs — this skins it. It's an interface scale
+   (CSS `zoom` on <html>, see pro/index.ts), not a canvas zoom, so there's no
+   Fit button; the readout is the interactive control instead (click → 100%). */
+.pro-zoom {
+  display: inline-flex; align-items: center; gap: .1rem; flex: none;
+  padding: .2rem;
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .9);
+  background: hsl(var(--card));
+}
+.pro-zoom-btn {
+  display: grid; place-items: center; width: 1.95rem; height: 1.95rem;
+  border: 0; border-radius: calc(var(--radius) * .6);
+  background: transparent; color: hsl(var(--foreground)); cursor: pointer;
+  font-size: 1.05rem; font-weight: 700; line-height: 1;
+  transition: background .12s ease;
+}
+.pro-zoom-btn:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.pro-zoom-btn:disabled { opacity: .38; cursor: default; }
+.pro-zoom-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.pro-zoom-pct {
+  min-width: 3rem; padding: .3rem .2rem; text-align: center;
+  border: 0; border-radius: calc(var(--radius) * .6);
+  background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer;
+  font: inherit; font-size: .72rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  transition: background .12s ease;
+}
+.pro-zoom-pct:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.pro-zoom-pct:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .pro-format select,
 .pro-format input,
 .pro-control {
@@ -633,6 +660,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   overflow: auto;
   margin: .6rem 1.25rem 0;
   border: 1px solid hsl(var(--border));
+  min-height:5em;
   border-radius: calc(var(--radius) * .5);
   padding: 1rem;
   background: hsl(var(--card));

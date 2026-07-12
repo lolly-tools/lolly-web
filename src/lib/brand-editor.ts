@@ -63,11 +63,13 @@ import {
 } from './palette-wheel.ts';
 import type { WheelDot } from './palette-wheel.ts';
 import type { PaletteEntry } from '../palette.ts';
+import { swatchTile, tileLabel } from './swatches.ts';
 import {
   listUserFonts, installGoogleFont, setPrimaryFont, setMonoFont, removeUserFont,
   primaryFontFamily, monoFontFamily, setBrandRadius,
 } from '../user-fonts.ts';
 import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
+import { mountFontsManager } from '../components/fonts-manager.ts';
 import {
   LOGO_ORIENTATIONS, LOGO_TREATMENTS, ORIENTATION_META, TREATMENT_META, LOGO_SLUG_RE,
   splitVariant, variantLabel, listLogos, installLogo, removeLogo,
@@ -425,25 +427,12 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
 
 
 // ── Swatch tile + palette grid ────────────────────────────────────────────────
-
-/** The tile's accessible name — the visible grid is shape-only, so name + hex
- *  live in title/aria-label (and are kept fresh by the in-place recolour paths). */
-function tileLabel(name: string, hex: string, locked: boolean): string {
-  const hexPart = hex || t('unset');
-  return locked
-    ? t('{name} — {hex} (print colour locked)', { name, hex: hexPart })
-    : t('{name} — {hex}', { name, hex: hexPart });
-}
+// The tile markup itself is the shared factory in swatches.ts (component-audit
+// rec 12 — swatchTile), so the grid, mobile mirror and this file's in-place
+// recolour paths (syncTileMeta) all compose the same accessible-name string.
 
 function tileHtml(s: BrandSwatch, idx: number): string {
-  const trans = !s.hex;
-  const label = tileLabel(s.name, s.hex, !!s.lock);
-  return `
-    <button type="button" class="be-swatch${trans ? ' is-empty' : ''}${s.lock ? ' is-pinned' : ''}" data-be-tile="${idx}"
-      style="--sw:${escape(s.hex || 'transparent')}"
-      title="${escape(label)}" aria-label="${escape(label)}">
-      <span class="be-swatch-chip" aria-hidden="true"></span>
-    </button>`;
+  return swatchTile({ label: s.name, hex: s.hex, locked: !!s.lock }, { idx });
 }
 
 function paletteHtml(swatches: BrandSwatch[]): string {
@@ -501,12 +490,21 @@ function paletteHtml(swatches: BrandSwatch[]): string {
 /** The five step tabs the studio renders — the host view's tab bar drives which
  *  one shows by setting `data-active-tab` on the editor root. */
 export type BrandTabKey = 'logos' | 'color' | 'type' | 'tokens' | 'catalogue';
-export const BRAND_TABS: ReadonlyArray<{ id: BrandTabKey; label: string }> = [
-  { id: 'logos', label: t('Logos') },
-  { id: 'color', label: t('Colours') },
-  { id: 'type', label: t('Type') },
-  { id: 'tokens', label: t('Tokens') },
-  { id: 'catalogue', label: t('Catalogue') },
+
+const TAB_ICONS: Record<BrandTabKey, string> = {
+  logos: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6"/><circle cx="15" cy="6" r="3"/><polygon points="3,21 9,15 12,18 21,9 21,21 3,21"/></svg>`,
+  color: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16" stroke="none" fill="currentColor"/><circle cx="12" cy="8" r="1.5" fill="currentColor"/><circle cx="12" cy="16" r="1.5" fill="currentColor"/><circle cx="8" cy="12" r="1.5" fill="currentColor"/><circle cx="16" cy="12" r="1.5" fill="currentColor"/></svg>`,
+  type: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h12v16H6z"/><path d="M9 9h6M9 14h4"/></svg>`,
+  tokens: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8h10M7 12h10M7 16h6M4 6v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2z"/></svg>`,
+  catalogue: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
+};
+
+export const BRAND_TABS: ReadonlyArray<{ id: BrandTabKey; label: string; icon: string }> = [
+  { id: 'logos', label: t('Logos'), icon: TAB_ICONS.logos },
+  { id: 'color', label: t('Colours'), icon: TAB_ICONS.color },
+  { id: 'type', label: t('Type'), icon: TAB_ICONS.type },
+  { id: 'tokens', label: t('Tokens'), icon: TAB_ICONS.tokens },
+  { id: 'catalogue', label: t('Catalogue'), icon: TAB_ICONS.catalogue },
 ];
 
 export interface BrandEditorOptions {
@@ -744,6 +742,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>
 
       <div class="be-tab" data-be-tab-panel="type">
+      <div class="be-panel be-custom-fonts">
+        <div class="be-panel-head"><h3 class="be-panel-title">${t('Your fonts')}</h3>
+          <p class="be-panel-sub">${t('Upload TTF, OTF, or WOFF font files — they stay on this device and are available to all tools and exports.')}</p></div>
+        <div data-be-font-file-mount></div>
+      </div>
+
       <div class="be-panel be-fonts">
         <div class="be-panel-head"><h3 class="be-panel-title">${t('Fonts')}</h3>
           <p class="be-panel-sub">${t('Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>; another can serve as your <strong>code</strong> face.')}</p></div>
@@ -1965,6 +1969,18 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     doc: () => doc as Record<string, unknown>,
     persist: (immediate?: boolean) => persist(immediate),
   };
+  const fontFileMount = $('[data-be-font-file-mount]') as HTMLElement | null;
+  if (fontFileMount) {
+    void mountFontsManager(fontFileMount, {
+      host: host as unknown as HostV1,
+      onFontInstalled: () => {
+        // Refresh the font list and apply chrome brand vars
+        repaintPalette();
+        void applyChromeBrandVars(host);
+      },
+    });
+  }
+
   const tokensMount = $('[data-be-tokens-mount]') as HTMLElement | null;
   const tokensPanel = tokensMount ? mountTokensPanel(tokensMount, { ...studioCtx, notify: () => notify('tokens') }) : null;
   const gradsMount = $('[data-be-grads-mount]') as HTMLElement | null;
