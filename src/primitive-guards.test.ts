@@ -107,15 +107,9 @@ const SHOW_MODAL = /\.showModal\(/;
 // Allowlist reasons (counts are exact — a second hit in an allowed file still fails):
 const DIALOG_CREATE_ALLOWED: Record<string, number> = {
   'components/modal.ts': 1,  // the primitive itself — the one place allowed to mint a <dialog>
-  // Known pre-mountModal holdout: local openDialog()/closeDialog() lifecycle whose
-  // inner item context-menu teardown couples to the dialog's 'close' event (see the
-  // comment above its dialog.addEventListener('close', …)). Migration is a follow-up;
-  // frozen at one instance until then.
-  'folder-overlay.ts': 1,
 };
 const SHOW_MODAL_ALLOWED: Record<string, number> = {
   'components/modal.ts': 1,  // the primitive itself
-  'folder-overlay.ts': 1,    // same holdout as above — its openDialog() calls showModal()
   // Progressive-enhancement open of a STATIC markup dialog (<dialog class="dash-cap-modal">
   // in the view template) with a setAttribute('open') fallback for no-dialog engines.
   // It doesn't mint a dialog or re-implement focus/teardown, so it isn't a lifecycle fork.
