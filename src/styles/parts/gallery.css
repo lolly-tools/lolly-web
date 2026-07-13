@@ -451,8 +451,8 @@ stroke-width:.81;
   border-radius: var(--radius);
   cursor: pointer;
 }
-.filter-fab:hover,
-.filter-fab[aria-expanded="true"] { background: hsl(var(--primary) / 0.14); }
+/* hover + open (aria-expanded) tint is centralised with the rest of the top-right
+   cluster in components.css (the tools-home glass treatment). */
 .filter-fab svg { width: 18px; height: 18px; }
 /* Dot marking a non-default category filter. */
 .filter-fab.has-active::after {

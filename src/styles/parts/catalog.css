@@ -185,7 +185,7 @@
    resting poster + ▶ glyph: the Lottie <svg> is transparent, so a still poster left behind it
    ghosts through the moving animation (looks like duplicated shapes). The class is removed when
    the player is destroyed, so the resting frame returns for off-screen/un-mounted tiles. */
-.cat-thumb-motion.is-lottie-live { background-image: none; color: transparent; }
+.cat-thumb-motion.is-lottie-live { background-image: none !important; color: transparent; }
 
 .cat-tile-cap { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .cat-tile-name {

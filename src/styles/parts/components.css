@@ -279,6 +279,41 @@
     border-radius: calc(var(--radius)*1.5);
   }
 
+/* ── Top-right chrome cluster — the .tools-home surface, no border ─────────────
+   The view FABs (.filter-fab / .history-fab — catalog's "View options" and the
+   projects view-sort button both reuse the .filter-fab class), the language FAB,
+   and the profile pill all wear the same soft glowing glass as the .tools-home
+   back pill above: the primary bottom-glow gives the filled "contrast" look, and
+   the 1px primary border each one declares in its own file is dropped to
+   transparent (kept 1px wide so nothing reflows). This block lives in
+   components.css — the last-loaded part (app.css @import order) — so it overrides
+   the borders and the lighter hover tints those earlier files (gallery.css,
+   topbar.css, utilities.css) set. Because .lang-fab and .profile-link are shared
+   chrome, this reaches every view the top-right cluster appears in — Tools,
+   Catalog, Projects, the Dashboard/Verify .plat-header, /start, /profile, /valid,
+   /pro, multi-edit — not just the three gallery-style pages. (The tool page's own
+   language switcher is the compact .lang-fab-sm variant, excluded below.) */
+/* :not(.lang-fab-sm) — the tool sidebar's compact language switcher deliberately
+   strips the glass look (tool.css: border/background/backdrop-filter:none, a plain
+   30px control in a button group), so it opts OUT of the glow here. Every other
+   .lang-fab is a real top-right FAB and opts in. */
+.filter-fab,
+.history-fab,
+.lang-fab:not(.lang-fab-sm),
+.profile-link {
+  border-color: transparent;
+  box-shadow: inset 0 -.1em 1em 1px hsl(var(--primary) / 0.22), 0 .1em .3em #0002;
+}
+.filter-fab:hover,
+.filter-fab[aria-expanded="true"],
+.history-fab:hover,
+.lang-fab:not(.lang-fab-sm):hover,
+.lang-fab:not(.lang-fab-sm)[aria-expanded="true"],
+.profile-link:hover {
+  background: hsl(var(--primary) / 0.16);
+  box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.34);
+}
+
 /* Pin the profile link to the viewport on the gallery so it stays put while the
    tool list scrolls (mobile already does this below; this covers desktop too). */
  
