@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ─── Dashboard chrome (.plat-* / .cap-*) — shared card, section, swatch, table,
    font, theme and device-card styles, loaded by the Dashboard view (#/d). The
    live dashboard is `.dashboard-view` (see dashboard.css); the verify view (#/valid)
@@ -239,4 +244,4 @@
 .cap-feat dt { margin: 0 0 .12rem; font-size: .82rem; font-weight: 650; color: hsl(var(--foreground)); }
 .cap-feat dd { margin: 0; font-size: .8rem; line-height: 1.5; color: hsl(var(--muted-foreground)); }
 .cap-feat dd code { font-family: var(--font-mono); font-size: .92em; }
-
+}

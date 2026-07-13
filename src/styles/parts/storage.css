@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ─── Saved section (gallery page) ─────────────────────────────────────── */
 
 .section-title {
@@ -352,4 +357,4 @@
    .segmented-control/.segmented-btn call-site since the repo's initial extraction).
    Deleted rather than migrated — there was no live control to re-skin. Any future
    storage-manager segmented control should render via lib/seg.ts's `segHtml`. */
-
+}

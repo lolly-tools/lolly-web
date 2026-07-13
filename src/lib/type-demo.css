@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* Variable-type demonstrator (type-demo.ts) — the WEIGHT axis is the animation.
    Each face's weight rides a CSS var (--td-w-mono / --td-w-brand) that the rAF loop
    sweeps 100↔900 by default and the slider scrubs on demand. font-variation-settings
@@ -166,4 +171,5 @@
   .td-auto.is-on .td-auto-dot { animation: none; }
   /* No auto animation under reduced motion — the sliders still work; hide the Auto pill. */
   .td-auto { display: none; }
+}
 }

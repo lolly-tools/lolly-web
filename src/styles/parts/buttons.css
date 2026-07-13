@@ -152,6 +152,6 @@
   backdrop-filter: blur(4px);
   background: hsl(var(--muted) / 0.45);
   text-shadow: 0 1px hsl(var(--secondary) / .5);
-  color: hsl(var(--primary));
+  color: hsl(var(--on-primary));
   transition: background 0.12s, box-shadow 0.12s;
 }

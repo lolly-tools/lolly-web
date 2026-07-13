@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* Interactive recent-creations card stack (see recent-stack.ts). */
 
 .dash-stack {
@@ -106,3 +111,4 @@
   max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .dash-stack-open-label::before { content: '— '; }
+}

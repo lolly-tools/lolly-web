@@ -129,7 +129,7 @@
 /* box shape (utilities.css) stays as-is; background/color/backdrop-filter/
    transition come from the shared .btn--glass alias (buttons.css), which loads
    after utilities.css so it wins the cascade without needing an edit there. */
-/* hover tint centralised with the top-right cluster in components.css. */
+/* hover tint centralised with the top-right cluster in overrides.css (@layer overrides). */
 .history-fab svg { width: 18px; height: 18px; }
 .history-fab-count {
   position: absolute;
@@ -168,9 +168,9 @@
   border-radius: var(--radius);
   cursor: pointer;
 }
-.lang-fab svg { width: 18px; height: 18px; }
+.lang-fab svg { width: 24px; height: 24px;  }
 /* hover + open (aria-expanded) tint centralised with the top-right cluster in
-   components.css (the tools-home glass treatment). */
+   overrides.css (@layer overrides — the tools-home glass treatment). */
 
 .lang-menu {
   position: fixed;

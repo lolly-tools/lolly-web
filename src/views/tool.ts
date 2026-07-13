@@ -46,7 +46,7 @@ import { playSfx } from '../lib/sfx.ts';
 import { exportSizeDriver } from './export-size.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
-import 'flatpickr/dist/flatpickr.min.css';
+import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
 
 // Type-only imports (erased at build). The `@lolly/engine` barrel re-exports
 // values but not these type-only names, so they come straight from the engine

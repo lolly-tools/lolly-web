@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ─── WYSIWYG editor layout (render.layout:'editor') ──────────────────────────
    A chromeless free-canvas surface: no input sidebar, but the fixed render canvas,
    pan/zoom and full export UI are kept. The direct-manipulation overlay + left
@@ -725,4 +730,4 @@ button.fc-readout:empty { display: none; }
 }
 
 /* On touch the HUD is the primary zoom control; the canvas also keeps pinch/drag. */
-
+}

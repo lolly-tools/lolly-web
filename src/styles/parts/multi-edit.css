@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ── Multi-edit (views/multi-edit.ts) — a grid of live canvases + ONE combined
       sidebar for 2–8 saved sessions. Layout mirrors the tool view's sidebar/stage
       split; the input controls themselves are styled by tool.css (.tool-inputs). */
@@ -176,3 +181,4 @@
 
 /* Error card (bad selection / vanished session). */
 .me-error { max-width: 32rem; margin: 4rem auto; text-align: center; display: grid; gap: 1rem; justify-items: center; }
+}
