@@ -67,11 +67,11 @@
 
 /* --status — a capitalised status/tag label. */
 .chip--status,
-.plat-chip,   /* platform.css — low-emphasis secondary chip */
-.cat-tag {    /* components.css — catalogue-summary "by status" tags (NOT
-                 catalog.css's unscoped .cat-tag on the details-modal tag list,
-                 a pre-existing same-name collision this task doesn't resolve —
-                 see followUps) */
+.plat-chip,        /* platform.css — low-emphasis secondary chip */
+.cat-stat-tag {    /* components.css — catalogue-summary "by status" tags;
+                      renamed from .cat-tag (component audit M1.2) so it no
+                      longer collides with catalog.css's unrelated .cat-tag
+                      on the details-modal tag list */
   text-transform: capitalize;
 }
 /* .dash-chip (dashboard.css) composes this same base box directly (it's

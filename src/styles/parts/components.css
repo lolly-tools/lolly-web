@@ -20,19 +20,24 @@
    lines move into the combined selectors below instead of being retyped —
    their own padding/font-size/background stay local (folding those in would
    nudge existing pixel values, a visual change this pass avoids).
-   .share-note/.share-warning (dialogs.css) are the same shape again but that
-   file isn't owned this pass — see follow-ups. `.note--error`/`.note--warning`
-   are ready-made variants for markup that adopts `.note` directly later; today
-   only `.error` below uses the error tone, kept as its own full ruleset since
-   nothing in the DOM applies `.note` to it. */
+   .share-note/.share-warning (dialogs.css) alias here too (component audit
+   M1.3): both share the radius, .share-note the border as well —
+   .share-warning's amber border is a true delta that stays in dialogs.css.
+   `.note--error`/`.note--warning` are ready-made variants for markup that
+   adopts `.note` directly later; today only `.error` below uses the error
+   tone, kept as its own full ruleset since nothing in the DOM applies
+   `.note` to it. */
 .note,
 .error,
-.plat-note {              /* platform.css */
+.plat-note,               /* platform.css */
+.share-note,              /* dialogs.css */
+.share-warning {          /* dialogs.css */
   border-radius: var(--radius);
 }
 .note,
 .plat-note,                /* platform.css */
-.valid-note {               /* valid.css */
+.valid-note,               /* valid.css */
+.share-note {              /* dialogs.css */
   border: 1px solid hsl(var(--border));
 }
 .note {
@@ -124,15 +129,18 @@
 
 /* Secondary "by status" row — compact icon chips beneath the tool tiles.
    Capitalize composes .chip--status (chips.css); the rest (gap, padding,
-   background alpha, font-size) are real local deltas. */
-.cat-tags { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
-.cat-tag {
+   background alpha, font-size) are real local deltas. Named
+   .cat-stat-tag (component audit M1.2 follow-up) — it used to be plain
+   .cat-tag, which collided with catalog.ts's OWN unrelated .cat-tag on the
+   details-modal tag list (that one stays put; this is the renamed side). */
+.cat-stat-tags { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.cat-stat-tag {
   padding: .3rem .65rem .3rem .5rem;
   background: hsl(var(--muted) / .6); font-size: .78rem;
 }
-.cat-tag-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
-.cat-tag-icon svg { display: block; width: 15px; height: 15px; }
-.cat-tag strong { font-weight: 700; }
+.cat-stat-tag-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
+.cat-stat-tag-icon svg { display: block; width: 15px; height: 15px; }
+.cat-stat-tag strong { font-weight: 700; }
 
 .cat-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: .85rem; font-style: italic; }
 

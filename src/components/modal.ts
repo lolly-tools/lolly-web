@@ -66,6 +66,13 @@ export function mountModal<T = void>(content: string, opts: ModalOptions<T>): Mo
     // click target is the dialog element itself whether the hit lands on its padding
     // or the backdrop, so a plain bounding-rect test is what actually distinguishes
     // them — works regardless of whether the content wraps itself in an inner div.
+    // Only rect-test clicks that target the dialog itself: keyboard activation
+    // (Enter/Space) of an inner button fires a UA-synthetic click at clientX/Y =
+    // 0,0 — outside any centered card — which the bare rect test would misread as
+    // a backdrop hit and dismiss as Cancel before the caller's data-act listener
+    // (registered after this one) ever sees it. A true backdrop or padding click
+    // always targets the <dialog> element, never an inner node.
+    if (e.target !== dlg) return;
     const r = dlg.getBoundingClientRect();
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) close(cancelResult());
   });

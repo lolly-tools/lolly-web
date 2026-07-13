@@ -29,6 +29,7 @@ import {
   parsePenpotContent,
   penpotShapeToNode,
   figmaNodesToNodes,
+  type DesignMapOptions,
 } from '@lolly/engine';
 import { unzip, unzipSync, strFromU8, type UnzipFileInfo } from 'fflate';
 // Figma .fig decode: a canvas.fig is a Kiwi binary (self-describing schema + data).
@@ -97,15 +98,19 @@ const PENPOT_NS_CANDIDATES = [
 /**
  * Parse a design file into a Layout Studio boxes array.
  * @param {File|Blob} file
- * @param {{ host: object, log?: (msg: string) => void, interactive?: boolean }} ctx —
+ * @param {{ host: object, log?: (msg: string) => void, interactive?: boolean, map?: object }} ctx —
  *   `interactive` lets a multi-page PDF/.ai ask which page via the shared page-picker
  *   dialog (cancelling throws 'Import cancelled.'); without it the first page imports
- *   with a warn, the headless-safe default.
+ *   with a warn, the headless-safe default. `map` is the engine's DesignMapOptions —
+ *   the target tool's font vocabulary + seed colours (see free-canvas openImportPanel);
+ *   omitted, the engine's neutral (lolly-start) defaults apply.
  * @returns {Promise<{ boxes: object[], width: number, height: number, background: string }>}
  */
 export async function parseDesignFile(
   file: File | Blob,
-  { host, log, interactive }: { host?: HostV1; log?: (msg: string) => void; interactive?: boolean } = {},
+  { host, log, interactive, map }: {
+    host?: HostV1; log?: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions;
+  } = {},
 ): Promise<DesignImportResult> {
   const warn: (msg: string) => void = typeof log === 'function' ? log : () => {};
   if (file.size > MAX_IMPORT_BYTES) {
@@ -117,7 +122,7 @@ export async function parseDesignFile(
   // PDF, so both route to the PDF interpreter. The heavy pdf-lib parser is its own lazy chunk.
   if (isPdf(buf)) {
     const { parsePdfFile } = await import('./pdf-import.ts');
-    return parsePdfFile(file, { host: host as HostV1, warn, interactive });
+    return parsePdfFile(file, { host: host as HostV1, warn, interactive, map });
   }
 
   // Raw InDesign .indd is a proprietary binary database with no open parser — guide the
@@ -133,10 +138,10 @@ export async function parseDesignFile(
     const files = await unzipAsync(buf);
     if (isIdml(files)) {
       const { parseIdmlZip } = await import('./idml-import.ts');
-      return parseIdmlZip(files, { host, warn });
+      return parseIdmlZip(files, { host, warn, map });
     }
-    if (files['canvas.fig']) return parseFig(files, { host, warn });
-    return parsePenpotZip(files, { host, warn });
+    if (files['canvas.fig']) return parseFig(files, { host, warn, map });
+    return parsePenpotZip(files, { host, warn, map });
   }
 
   // Otherwise treat the bytes as SVG text.
@@ -145,7 +150,7 @@ export async function parseDesignFile(
   if (!svgEl) throw new Error('This file isn’t a readable SVG. Export your design as SVG and try again.');
 
   const { nodes, width, height } = await svgToNodes(svgEl, { host, warn });
-  return { boxes: finalizeBoxes(nodes), width, height, background: '#ffffff' };
+  return { boxes: finalizeBoxes(nodes, map), width, height, background: '#ffffff' };
 }
 
 // ---------------------------------------------------------------------------
@@ -531,14 +536,14 @@ async function storeZipImage(host: HostV1 | undefined, zipFiles: Record<string, 
 // Penpot ZIP
 // ---------------------------------------------------------------------------
 
-async function parsePenpotZip(files: Record<string, Uint8Array>, { host, warn }: { host: HostV1 | undefined; warn: (msg: string) => void }): Promise<DesignImportResult> {
+async function parsePenpotZip(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignImportResult> {
   // The current Penpot `.penpot` export (binfile-v3) is a ZIP of per-shape JSON — no
   // page SVGs. Detect it by its manifest and shape-file layout and parse the JSON.
   const manifest = files['manifest.json'] ? safeJsonParse(strFromU8(files['manifest.json'])) : null;
   const isExportFiles = manifest && typeof manifest.type === 'string' && /export-files/.test(manifest.type);
   const hasShapeJson = Object.keys(files).some((p) => /\/pages\/[^/]+\/[^/]+\.json$/i.test(p));
   if (isExportFiles && hasShapeJson) {
-    return parsePenpotBinfile(files, manifest, { host, warn });
+    return parsePenpotBinfile(files, manifest, { host, warn, map });
   }
 
   // Legacy path: the standard SVG export (a ZIP of page SVGs with penpot: metadata),
@@ -558,7 +563,7 @@ async function parsePenpotZip(files: Record<string, Uint8Array>, { host, warn }:
       width = Math.max(width, w); height = Math.max(height, h);
     }
     if (!allNodes.length) throw new Error('This Penpot file didn’t contain any importable pages.');
-    return { boxes: finalizeBoxes(allNodes), width: width || 1080, height: height || 1080, background: '#ffffff' };
+    return { boxes: finalizeBoxes(allNodes, map), width: width || 1080, height: height || 1080, background: '#ffffff' };
   }
 
   throw new Error('Could not read this Penpot file. In Penpot use “Export as .penpot” (or export the board as SVG) and import that.');
@@ -568,7 +573,7 @@ async function parsePenpotZip(files: Record<string, Uint8Array>, { host, warn }:
 // data (selrect + rotation), so the pure engine mapper (penpotShapeToNode) does the
 // shape→box work; here we only walk the file structure, order shapes, load embedded
 // media, and frame the result.
-async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: any, { host, warn }: { host: HostV1 | undefined; warn: (msg: string) => void }): Promise<DesignImportResult> {
+async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: any, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignImportResult> {
   const fileId = Array.isArray(manifest.files) && manifest.files[0] ? manifest.files[0].id : null;
   if (!fileId) throw new Error('This Penpot file has no importable file.');
 
@@ -613,7 +618,7 @@ async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: a
   if (!nodes.length) throw new Error('This Penpot file has no importable shapes on its first page.');
 
   const { width, height } = shiftToOrigin(nodes);
-  return { boxes: finalizeBoxes(nodes), width, height, background: '#ffffff' };
+  return { boxes: finalizeBoxes(nodes, map), width, height, background: '#ffffff' };
 }
 
 function safeJsonParse(text: string): any {
@@ -685,7 +690,7 @@ function shiftToOrigin(nodes: any[]): { width: number; height: number } {
 //   "fig-kiwi"(8) | version u32le(4) | schemaLen u32le | schema(deflate-raw) | dataLen u32le | data(zstd)
 // The Kiwi schema is embedded (self-describing) so it decodes any file version — but Figma
 // calls the format an unstable internal detail, so this may break on future format changes.
-async function parseFig(files: Record<string, Uint8Array>, { host, warn }: { host: HostV1 | undefined; warn: (msg: string) => void }): Promise<DesignImportResult> {
+async function parseFig(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignImportResult> {
   const canvasFig = files['canvas.fig'];
   if (!canvasFig || !canvasFig.length) throw new Error('This .fig has no canvas data.');
   let doc: any;
@@ -714,7 +719,7 @@ async function parseFig(files: Record<string, Uint8Array>, { host, warn }: { hos
   }
 
   const { width, height } = shiftToOrigin(nodes);
-  return { boxes: finalizeBoxes(nodes, { prefix: 'f' }), width, height, background: '#ffffff' };
+  return { boxes: finalizeBoxes(nodes, { prefix: 'f', ...map }), width, height, background: '#ffffff' };
 }
 
 async function decodeCanvasFig(bytes: Uint8Array): Promise<any> {

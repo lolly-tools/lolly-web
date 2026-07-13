@@ -48,6 +48,7 @@ import { loadFavouriteAssets, loadHiddenAssets, assetBaseId } from '../lib/asset
 import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
+import { NAV_EVENTS } from '../utils.ts';
 import { t } from '../i18n.ts';
 import { genAiPill, assetAiKind } from '../lib/genai-pill.ts';
 import { isFlagOn, STRIP_UPLOAD_META_FLAG } from '../feature-flags.ts';
@@ -75,7 +76,7 @@ export const isPdfUpload = (file: File): boolean =>
 
 /** The window.__toolIndex tool slice the picker reads (a denormalised catalog/sync
  *  projection, not an engine domain type). */
-interface PickerTool {
+export interface PickerTool {
   id: string;
   name: string;
   description?: string;
@@ -138,6 +139,32 @@ interface UserAssetRecordInput {
   credentialFormat?: string;
 }
 
+/** Outcome of a collect-mode add, driving the transient per-tile feedback. A bare
+ *  boolean is shorthand for `{ ok }`. */
+export interface CollectResult { ok: boolean; label?: string }
+
+/**
+ * "Collect into a folder" mode. When present, the picker stops being a fill-one-slot
+ * chooser and becomes an ADD surface: a pick files the chosen thing into the caller's
+ * folder and the dialog STAYS OPEN (multi-add) with a transient "✓ Added" on the tile,
+ * closing only on × / Escape / backdrop. Each callback returns whether the add stuck.
+ * The four callbacks map to the four things a folder can gain:
+ *   - onAsset       library / your-images / upload / webcam / a rendered Lolly link → an image item
+ *   - onSession     a saved single-tool session → filed in as an (editable) session item
+ *   - onOpenTool    open a tool's editor (navigates away; the picker tears down)
+ *   - onQuickAddTool  a default-settings session for a tool, no editor step
+ */
+export interface CollectOpts {
+  folderName: string;
+  /** Tools to list in the Tools tab. Projects passes every non-utility creative tool —
+   *  a superset of the image-embeddable set the slot picker uses. */
+  tools?: PickerTool[];
+  onAsset(ref: AssetRef): Promise<CollectResult | boolean>;
+  onSession(slot: string): Promise<CollectResult | boolean>;
+  onOpenTool(toolId: string): void;
+  onQuickAddTool(toolId: string): Promise<CollectResult | boolean>;
+}
+
 /** The picker's option bag: AssetPickerOpts (title/allowUpload/current/type/…)
  *  widened with the web-only `type: 'image'` slot value and the editTool /
  *  current-tool banner hooks the caller (views/tool.js's openEmbedEditor) wires in. */
@@ -152,6 +179,8 @@ interface PickerOpts {
   editTool?: (toolUrl: string, mode?: string) => Promise<AssetRef | null>;
   currentToolUrl?: string;
   currentToolName?: string;
+  /** Present → "collect into a folder" mode (see {@link CollectOpts}). */
+  collect?: CollectOpts;
 }
 
 /** The web compose surface the picker uses: the v1 ComposeAPI plus the web-only
@@ -222,6 +251,9 @@ async function render(
   opts: PickerOpts,
   resolve: (value: AssetRef | null) => void,
 ): Promise<void> {
+  // "Collect into a folder" mode (see CollectOpts): a pick ADDS to the caller's folder
+  // and the dialog stays open, instead of resolving one asset into a tool slot.
+  const collect = opts.collect;
   // The personal-image library is offered only when this input accepts uploads.
   const showUserAssets = opts.allowUpload === true;
   let userAssets: AssetRef[] = [];
@@ -285,9 +317,14 @@ async function render(
   // and, for a vector slot, SVG specifically.
   const toolIndex = ((typeof window !== 'undefined' && (window as WindowWithToolIndex).__toolIndex?.tools) || []) as PickerTool[];
   const toolById  = new Map(toolIndex.map((t): [string, PickerTool] => [t.id, t]));
-  const embedTools = allowToolUrl
-    ? toolIndex.filter(t => isEmbeddable(t, needsSvg)).sort((a, b) => a.name.localeCompare(b.name))
-    : [];
+  // In collect mode the Tools tab starts a SESSION (open editor or quick-add), not an
+  // image render — so it lists whatever creative tools the caller passed (Projects sends
+  // every non-utility tool), not just the image-embeddable subset the slot picker needs.
+  const embedTools = collect?.tools
+    ? [...collect.tools].sort((a, b) => a.name.localeCompare(b.name))
+    : allowToolUrl
+      ? toolIndex.filter(t => isEmbeddable(t, needsSvg)).sort((a, b) => a.name.localeCompare(b.name))
+      : [];
 
   // The slot's current image may itself be a Lolly render (meta.toolUrl on the
   // AssetRef). Offer an edit path back into that tool's own inputs — pre-filled
@@ -355,7 +392,7 @@ async function render(
     <div class="asset-picker-backdrop" aria-hidden="true"></div>
     <div class="asset-picker-panel" role="dialog" aria-modal="true" aria-labelledby="asset-picker-title">
       <header class="asset-picker-header">
-        <h2 id="asset-picker-title">${escapeHtml(opts.title ?? t('Choose an asset'))}</h2>
+        <h2 id="asset-picker-title">${escapeHtml(opts.title ?? (collect ? t('Add to {name}', { name: collect.folderName }) : t('Choose an asset')))}</h2>
         <input type="search" class="asset-picker-search" placeholder="${escapeHtml(placeholderFor('library'))}" autocomplete="off" spellcheck="false" aria-label="${escapeHtml(t('Search assets'))}">
         <button type="button" class="asset-picker-close" aria-label="${escapeHtml(t('Close'))}">×</button>
       </header>
@@ -405,12 +442,19 @@ async function render(
   let lottieThumbs: { destroy(): void } | null = null;
   let trap: FocusTrap | undefined;
   const close = (value: AssetRef | null): void => {
+    NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
     trap?.release();
     lottieThumbs?.destroy();
     root.innerHTML = '';
     if (opener instanceof HTMLElement) opener.focus();
     resolve(value);
   };
+  // A route change under the open dialog (browser Back, an in-app link elsewhere)
+  // closes it: the picker is body-mounted, so it would otherwise keep covering —
+  // and, via trapFocus's inert background, keep unusable — the freshly-mounted
+  // view, with the openPicker promise never settling (NAV_EVENTS contract, utils.ts).
+  const onNav = (): void => close(null);
+  NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
 
   root.querySelector('.asset-picker-close')?.addEventListener('click', () => close(null));
   root.querySelector('.asset-picker-backdrop')?.addEventListener('click', () => close(null));
@@ -438,6 +482,43 @@ async function render(
   const projectsPane = root.querySelector<HTMLElement>('.asset-picker-pane[data-pane="projects"]');
   const toolsPane    = root.querySelector<HTMLElement>('.asset-picker-pane[data-pane="tools"]');
   const catbarEl     = root.querySelector<HTMLElement>('.asset-picker-catbar');
+
+  // ── collect-mode feedback ────────────────────────────────────────────────────
+  const collectOk = (r: CollectResult | boolean): boolean => typeof r === 'boolean' ? r : r.ok;
+  const collectLabel = (r: CollectResult | boolean): string =>
+    (typeof r === 'object' && r.label) || (collectOk(r) ? t('Added') : t('Couldn’t add'));
+  // Flash a tile as added (green ✓ overlay) or failed, then restore — the dialog stays
+  // open so several items can be gathered in a row. The card owns `position:relative`
+  // already (the format badge sits on it), so the overlay pins cleanly.
+  function flashCard(el: HTMLElement, r: CollectResult | boolean): void {
+    const ok = collectOk(r), label = collectLabel(r);
+    const card = el.closest<HTMLElement>('.asset-picker-toolcell, .asset-picker-card, .asset-picker-toolitem') ?? el;
+    card.classList.add(ok ? 'is-added' : 'is-addfail');
+    const badge = document.createElement('span');
+    badge.className = 'asset-picker-added';
+    badge.textContent = (ok ? '✓ ' : '') + label;
+    card.appendChild(badge);
+    announce(label);
+    setTimeout(() => { badge.remove(); card.classList.remove('is-added', 'is-addfail'); }, 1200);
+  }
+  // A transient toast (upload / webcam / pasted-link adds have no tile to flash).
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  function collectToast(r: CollectResult | boolean): void {
+    const ok = collectOk(r), label = collectLabel(r);
+    let toast = root.querySelector<HTMLElement>('.asset-picker-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.className = 'asset-picker-toast';
+      toast.setAttribute('role', 'status');
+      root.querySelector('.asset-picker-panel')?.appendChild(toast);
+    }
+    toast.textContent = (ok ? '✓ ' : '') + label;
+    toast.classList.toggle('is-fail', !ok);
+    toast.classList.add('is-shown');
+    announce(label);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast?.classList.remove('is-shown'), 1600);
+  }
 
   // "Edit the tool you're already using": re-open the source tool's inputs seeded
   // from the slot's current embed URL (mode 'edit' → "Re-apply to slot"). A commit
@@ -639,10 +720,27 @@ async function render(
       }
       return;
     }
+    // Collect mode: a tool tile's "+ Add" quick-adds a default session (no editor). Must
+    // beat the [data-tool-id] primary it sits inside.
+    const quick = (e.target as HTMLElement).closest<HTMLElement>('[data-quickadd-tool]');
+    if (quick && collect) {
+      e.preventDefault(); e.stopPropagation();
+      flashCard(quick, await collect.onQuickAddTool(quick.dataset.quickaddTool!));
+      return;
+    }
     const sess = (e.target as HTMLElement).closest<HTMLElement>('[data-session-slot]');
-    if (sess) { embedSession(sess.dataset.sessionSlot!); return; }
+    if (sess) {
+      // Collect mode files the editable session into the folder; slot mode renders it as an image.
+      if (collect) { flashCard(sess, await collect.onSession(sess.dataset.sessionSlot!)); return; }
+      embedSession(sess.dataset.sessionSlot!); return;
+    }
     const tool = (e.target as HTMLElement).closest<HTMLElement>('[data-tool-id]');
-    if (tool) { embedTool(tool.dataset.toolId!); return; }
+    if (tool) {
+      // Collect mode opens the tool's editor (files in on first save) and tears down;
+      // slot mode configures a render inline.
+      if (collect) { collect.onOpenTool(tool.dataset.toolId!); close(null); return; }
+      embedTool(tool.dataset.toolId!); return;
+    }
     const pick = (e.target as HTMLElement).closest<HTMLElement>('[data-asset-id]');
     if (pick) {
       // A non-default icon theme / photo treatment rides in the picked id so it
@@ -656,6 +754,7 @@ async function render(
       }
       try {
         const resolved = await host.assets.get(pickId);
+        if (collect) { flashCard(pick, await collect.onAsset(resolved)); return; }
         close(resolved);
       } catch (err) {
         host.log('error', 'Failed to resolve asset', { id: pickId, error: String(err) });
@@ -778,15 +877,19 @@ async function render(
         // slot, so single-select). The converter is a lazy chunk — pdf-lib only loads
         // when a PDF actually arrives. A cancelled page pick returns no refs: stay open.
         if (isPdfUpload(file)) {
+          // Collect mode can file every chosen page into the folder (multi-select);
+          // slot mode fills the single slot with the first page.
           const { ingestPdfAsSvgAssets } = await import('./pdf-import.ts');
           const refs = await ingestPdfAsSvgAssets(host, file, {
-            mode: 'single',
+            mode: collect ? 'multi' : 'single',
             warn: (m) => announce(m, { assertive: true }),
           });
+          if (collect) { for (const r of refs) await collect.onAsset(r); if (refs.length) collectToast(true); return; }
           if (refs[0]) close(refs[0]);
           return;
         }
         const ref = await storeUserUpload(host, file);
+        if (collect) { collectToast(await collect.onAsset(ref)); return; }
         close(ref);
       } catch (e) {
         host.log('error', 'Upload failed', { error: String(e) });
@@ -803,7 +906,9 @@ async function render(
   // handled inside openWebcamCapture so no track outlives the dialog.
   root.querySelector('.asset-picker-webcam')?.addEventListener('click', async () => {
     const ref = await openWebcamCapture(host);
-    if (ref) close(ref);
+    if (!ref) return;
+    if (collect) { collectToast(await collect.onAsset(ref)); return; }
+    close(ref);
   });
 
   // Library sections + bucketing live in lib/asset-category.ts (shared with the Catalog
@@ -1212,9 +1317,10 @@ async function render(
           || (t.description ?? '').toLowerCase().includes(q) || t.id.includes(q))
       : embedTools;
     if (list.length === 0) { toolsPane.innerHTML = `<p class="asset-picker-empty">${t('No tools match.')}</p>`; return; }
+    const head = collect ? t('Start a new creation from a tool') : t('Make an image from a tool');
     toolsPane.innerHTML =
-      `<div class="asset-picker-section-head">${t('Make an image from a tool')} <span class="asset-picker-count">${embedTools.length}</span></div>` +
-      `<div class="asset-picker-grid asset-picker-toolgrid">${list.map(toolCard).join('')}</div>`;
+      `<div class="asset-picker-section-head">${head} <span class="asset-picker-count">${embedTools.length}</span></div>` +
+      `<div class="asset-picker-grid asset-picker-toolgrid">${list.map(t => toolCard(t, !!collect)).join('')}</div>`;
   }
 
   // Take over the body with the tool-render card / a status message (back returns
@@ -1344,9 +1450,15 @@ async function render(
     // the toggle is on. A render the engine refuses to bake (too large / not
     // self-contained) is placed LIVE instead, with a brief inline note so the
     // fallback is visible before the picker closes.
+    // In collect mode a committed render is ADDED to the folder (dialog stays open, back
+    // to the list + toast); in slot mode it resolves the picker.
+    const deliver = (ref: AssetRef): void => {
+      if (!collect) { close(ref); return; }
+      void collect.onAsset(ref).then(res => { dismissTakeover(); collectToast(res); });
+    };
     const finish = (ref: AssetRef): void => {
-      if (!freezeEl.checked) { close(ref); return; }
-      try { close(bakeAssetRef(ref)); }
+      if (!freezeEl.checked) { deliver(ref); return; }
+      try { deliver(bakeAssetRef(ref)); }
       catch (e) {
         host.log?.('warn', `freeze failed (${(e as { code?: string }).code ?? (e as Error).message}) — placing live`);
         // Freeze the card while the note shows — a back/edit click here would
@@ -1355,7 +1467,7 @@ async function render(
         previewEl.insertAdjacentHTML('beforeend',
           `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">${t('Placed live — this render is too large to freeze.')}</p>`);
         announce(t('Placed live — this render is too large to freeze.'));
-        setTimeout(() => close(ref), 1500);
+        setTimeout(() => deliver(ref), 1500);
       }
     };
 
@@ -1470,7 +1582,9 @@ async function render(
       .then(list => {
         sessions = (list ?? [])
           .filter(e => e.slot && !e.slot.startsWith('__batch__:')) // single-tool only (see pro/sessions.js)
-          .filter(e => e.toolId && isEmbeddable(toolById.get(e.toolId), needsSvg))
+          // Collect mode files the SESSION itself (kept editable), so any single-tool
+          // session whose tool still ships qualifies — it needn't render to an image.
+          .filter(e => e.toolId && (collect ? toolById.has(e.toolId) : isEmbeddable(toolById.get(e.toolId), needsSvg)))
           .map(e => {
             const t = toolById.get(e.toolId);
             return {
@@ -1690,7 +1804,7 @@ function card(ref: AssetRef): string {
 // after index drift) that can still 404 — so the icon is always rendered too, revealed
 // by a capture-phase error handler (see render). The index ships the icon as trusted
 // inline SVG (built from tools/<id>/icon.svg) — inlined so it themes via currentColor.
-function toolCard(t: PickerTool): string {
+function toolCard(t: PickerTool, quickAdd = false): string {
   const hasPreview = Boolean(t.preview);
   // The preview slot is a fixed 84px-tall box (picker.css). A card.html banner renders in
   // a sandboxed iframe fitted to that height at the tool's aspect (so a square ad isn't
@@ -1700,13 +1814,16 @@ function toolCard(t: PickerTool): string {
   const iframeSize = (t.width && t.height)
     ? `aspect-ratio:${t.width} / ${t.height};width:auto;margin-inline:auto`
     : 'width:100%;height:100%';
-  return `
-    <button type="button" class="asset-picker-card asset-picker-toolitem${hasPreview ? '' : ' no-preview'}" data-tool-id="${escapeHtml(t.id)}" title="${escapeHtml(t.description ?? t.name)}">
+  // A `<div>` wrapper (not a bare <button>) when the quick-add affordance is present:
+  // the "+ Add" control is a SIBLING of the open-primary, never nested (nested buttons
+  // are invalid HTML and break the delegated handler — same reasoning as userCard).
+  const openBtn = `<button type="button" class="asset-picker-card asset-picker-toolitem${hasPreview ? '' : ' no-preview'}${quickAdd ? ' asset-picker-toolitem--collect' : ''}" data-tool-id="${escapeHtml(t.id)}" title="${escapeHtml(t.description ?? t.name)}">
       ${hasPreview ? previewMedia(t.preview!, 'asset-picker-toolitem-preview', iframeSize) : ''}
       <span class="asset-picker-toolitem-icon" aria-hidden="true">${t.icon ?? ''}</span>
       <span class="asset-picker-name">${escapeHtml(t.name)}</span>
-    </button>
-  `;
+    </button>`;
+  if (!quickAdd) return openBtn;
+  return `<div class="asset-picker-toolcell">${openBtn}<button type="button" class="asset-picker-toolquick" data-quickadd-tool="${escapeHtml(t.id)}" title="${escapeHtml('Add to this folder with default settings — without opening the editor')}" aria-label="${escapeHtml(`Add ${t.name} to this folder without opening`)}">+ Add</button></div>`;
 }
 
 // A previous saved creation. Its thumbnail is a PNG data-URL (raster tools) or raw SVG
@@ -1878,12 +1995,17 @@ function openWebcamCapture(host: PickerHost): Promise<AssetRef | null> {
       if (stream) stream.getTracks().forEach(t => { try { t.stop(); } catch { /* already stopped */ } });
       stream = null;
       document.removeEventListener('keydown', onKey);
+      NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
       overlay.remove();
       if (opener instanceof HTMLElement) opener.focus();
     };
     const done = (val: AssetRef | null): void => { cleanup(); resolve(val); };
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
     document.addEventListener('keydown', onKey);
+    // A route change cancels the sheet like Escape/backdrop — camera torn down, the
+    // trap's inert released (the picker beneath nav-closes on the same events).
+    const onNav = (): void => done(null);
+    NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
     overlay.querySelector('.webcam-capture-backdrop')?.addEventListener('click', () => done(null));
     overlay.querySelector('.webcam-capture-close')?.addEventListener('click', () => done(null));
     overlay.querySelector('.webcam-capture-cancel')?.addEventListener('click', () => done(null));

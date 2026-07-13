@@ -456,6 +456,16 @@ export function createAssetsAPI(db: AssetsDb) {
       return (await db.getAllKeys('user-assets')).length;
     },
 
+    /**
+     * Internal: every catalog asset's BASE id (the 'asset-meta' keys). Used by the
+     * folder reconciler (folders.ts prune) so a catalog asset REFERENCED into a
+     * project folder — a pointer, not a user-owned copy — isn't mistaken for a
+     * dangling image ref and pruned away. Cheap: a key-only read, no blobs.
+     */
+    async _listCatalogAssetIds(): Promise<string[]> {
+      return (await db.getAllKeys('asset-meta')).map(String);
+    },
+
     /** Internal: total bytes the user's images occupy (for the storage UI). */
     async _userAssetsSize(): Promise<number> {
       const all = await db.getAll('user-assets');

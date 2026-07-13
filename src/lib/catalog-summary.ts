@@ -94,8 +94,10 @@ function tile(icon: string, count: number, name: string): string {
 }
 
 // A compact icon chip for the secondary "by status" row.
+// Named .cat-stat-tag (component audit M1.2 follow-up) — .cat-tag alone
+// collided with catalog.ts's unrelated details-modal tag of the same name.
 function tag(icon: string, count: number, name: string): string {
-  return `<span class="cat-tag"><span class="cat-tag-icon">${icon}</span><strong>${count}</strong>${escape(name)}</span>`;
+  return `<span class="cat-stat-tag"><span class="cat-stat-tag-icon">${icon}</span><strong>${count}</strong>${escape(name)}</span>`;
 }
 
 /**
@@ -114,7 +116,7 @@ export function catalogSummaryBody(tools: readonly CatalogTool[]): string {
         <div class="cat-grid">
           ${byCategory.map(([k, n]) => tile(categoryIcon(k), n, label(k))).join('') || '<p class="cat-empty">none loaded</p>'}
         </div>
-        ${byStatus.length ? `<div class="cat-tags">${byStatus.map(([k, n]) => tag(statusIcon(k), n, label(k))).join('')}</div>` : ''}
+        ${byStatus.length ? `<div class="cat-stat-tags">${byStatus.map(([k, n]) => tag(statusIcon(k), n, label(k))).join('')}</div>` : ''}
       </section>
 
       <section class="cat-group" data-asset-block>

@@ -19,6 +19,7 @@ import '../styles/parts/document.css';
 import '../styles/parts/tool-chrome.css';
 import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
+import { mountModal } from '../components/modal.ts';
 
 // Above this readable-query length the address bar and the Share dialog switch to
 // the packed `z=` form (when it's actually shorter). Kept well under the ~2000-char
@@ -124,6 +125,10 @@ export interface PanelEl extends HTMLElement {
   _colorPopoverDismiss?: (e: MouseEvent) => void;
   _blockMenuDismiss?: (e: MouseEvent) => void;
   _helpTipDismiss?: (e: MouseEvent) => void;
+  /** Aggregate disposer renderInputs maintains: removes the document-level capture
+   *  dismissers above and destroys the panel's flatpickr instances. The ONE call
+   *  every consumer's teardown makes (tool view, embed editor, multi-edit). */
+  _inputsDispose?: () => void;
 }
 /** A flatpickr-enhanced input carries its instance for teardown. */
 export interface FlatpickrHost extends HTMLInputElement { _flatpickr?: { destroy(): void; altInput?: HTMLInputElement }; }
@@ -1352,17 +1357,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     window.removeEventListener('keydown', onHistoryKey);
     clearTimeout(historyToastTimer); historyToastEl?.remove();
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
-    // Document-level capture listeners added per renderInputs — drop them so a
-    // detached sidebar tree isn't pinned alive across tool navigation.
-    if (inputsEl?._colorPopoverDismiss) document.removeEventListener('click', inputsEl._colorPopoverDismiss, true);
-    if (inputsEl?._blockMenuDismiss)    document.removeEventListener('click', inputsEl._blockMenuDismiss, true);
-    if (inputsEl?._helpTipDismiss)      document.removeEventListener('click', inputsEl._helpTipDismiss, true);
-    // The export popup (actionsEl) wires its own help tip for the C2PA card.
+    // Everything renderInputs parked outside the sidebar's subtree — the document-
+    // level capture dismissers + body-mounted flatpickr calendars — in one call, so
+    // a detached sidebar tree isn't pinned alive across tool navigation.
+    inputsEl?._inputsDispose?.();
+    // The export popup (actionsEl) wires its own help tip for the C2PA card
+    // (renderActions, not renderInputs — outside the disposer's remit).
     if (actionsEl?._helpTipDismiss)     document.removeEventListener('click', actionsEl._helpTipDismiss, true);
-    // A datetime input's flatpickr appends its calendar to <body> and registers its own
-    // document/window listeners, released only by destroy() — orphaned otherwise (the
-    // datetime tools would leak a body-level calendar + listener roots every navigation).
-    inputsEl?.querySelectorAll<FlatpickrHost>('.fp-datetime').forEach(c => c._flatpickr?.destroy());
   };
 
   // Temporarily remove the CSS scale so dom-to-image sees native dimensions.
@@ -3090,61 +3091,66 @@ function resolveCanvasAnnotations(canvasEl: HTMLElement): void {
   }
 }
 
+// Reset-confirm dialog. Shares the `.unsaved-dialog` chrome and the shared
+// mountModal lifecycle (components/modal.ts) — Escape and a backdrop click
+// dismiss like every other app dialog.
 function showClearDialog(onConfirm: () => void): void {
-  const dialog = document.createElement('dialog');
-  dialog.className = 'unsaved-dialog';
-  dialog.innerHTML = `
+  const content = `
     <div class="unsaved-dialog-body">
       <h2>${t('Clear changes?')}</h2>
       <p>${t('This will reset every field to its default value.<br>This cannot be undone.')}</p>
       <div class="unsaved-dialog-actions">
-        <button class="unsaved-leave">${t('Clear changes')}</button>
-        <button class="unsaved-cancel">${t('Cancel')}</button>
+        <button type="button" class="unsaved-leave" data-act="confirm">${t('Clear changes')}</button>
+        <button type="button" class="unsaved-cancel" data-act="cancel">${t('Cancel')}</button>
       </div>
     </div>
   `;
-  document.body.appendChild(dialog);
-  dialog.showModal();
-
-  const cleanup = () => { dialog.close(); dialog.remove(); };
-
-  dialog.querySelector('.unsaved-leave')!.addEventListener('click', () => { cleanup(); onConfirm(); });
-  dialog.querySelector('.unsaved-cancel')!.addEventListener('click', cleanup);
-  dialog.addEventListener('cancel', () => dialog.remove());
+  const modal = mountModal<'confirm' | undefined>(content, {
+    className: 'unsaved-dialog',
+    onClose: (result) => { if (result === 'confirm') onConfirm(); },
+  });
+  modal.el.addEventListener('click', (e) => {
+    const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
+    if (act === 'confirm') modal.close('confirm');
+    else if (act === 'cancel') modal.close(undefined);
+  });
 }
 
 // onSave: optional async () => void that performs the save and navigates on
-// success (the caller owns both). We await it rather than firing a button click,
-// so "Save & leave" reliably saves *then* leaves instead of trusting a
-// fire-and-forget click + timer.
+// success (the caller owns both). We invoke and await it directly (from the
+// modal's onClose, after the dialog has been dismissed) rather than firing a
+// button click, so "Save & leave" reliably saves *then* leaves instead of
+// trusting a fire-and-forget click + timer. Built on the shared mountModal
+// lifecycle (components/modal.ts) — Escape and a backdrop click dismiss as
+// Cancel like every other app dialog.
 function showUnsavedDialog(onSave: (() => Promise<void> | void) | null, onLeave: () => void, detail?: string): void {
-  const dialog = document.createElement('dialog');
-  dialog.className = 'unsaved-dialog';
-  dialog.innerHTML = `
+  const content = `
     <div class="unsaved-dialog-body">
       <h2>${t('Unsaved changes')}</h2>
       <p>${t('You have unsaved changes. <br>Would you like to save before leaving?')}</p>
       ${detail ? `<p class="unsaved-dialog-detail">${detail}</p>` : ''}
       <div class="unsaved-dialog-actions">
-        ${onSave ? `<button class="unsaved-save">${t('Save &amp; leave')}</button>` : ''}
-        <button class="unsaved-leave">${t('Leave without saving')}</button>
-        <button class="unsaved-cancel">${t('Cancel')}</button>
+        ${onSave ? `<button type="button" class="unsaved-save" data-act="save">${t('Save &amp; leave')}</button>` : ''}
+        <button type="button" class="unsaved-leave" data-act="leave">${t('Leave without saving')}</button>
+        <button type="button" class="unsaved-cancel" data-act="cancel">${t('Cancel')}</button>
       </div>
     </div>
   `;
-  dialog.dataset.sfxClose = 'off'; // this dialog owns its dismiss cue ('land' on Cancel), not the generic shoo
-  document.body.appendChild(dialog);
-  dialog.showModal();
-  playSfx('crystal'); // a light glass-elevator lift as the save decision rises up
-
-  const cleanup = () => { dialog.close(); dialog.remove(); };
-
-  onSave && dialog.querySelector('.unsaved-save')?.addEventListener('click', async () => {
-    cleanup();
-    await onSave!();
+  const modal = mountModal<'save' | 'leave' | undefined>(content, {
+    className: 'unsaved-dialog',
+    onClose: async (result) => {
+      if (result === 'save') await onSave?.();
+      else if (result === 'leave') onLeave();
+      else playSfx('land'); // Cancel / Escape / backdrop — reverse-liftoff settle
+    },
   });
-  dialog.querySelector('.unsaved-leave')!.addEventListener('click', () => { cleanup(); onLeave(); });
-  dialog.querySelector('.unsaved-cancel')!.addEventListener('click', () => { playSfx('land'); cleanup(); }); // reverse-liftoff settle
-  dialog.addEventListener('cancel', () => { playSfx('land'); dialog.remove(); }); // Escape = Cancel
+  modal.el.dataset.sfxClose = 'off'; // this dialog owns its dismiss cue ('land' on Cancel), not the generic shoo
+  playSfx('crystal'); // a light glass-elevator lift as the save decision rises up
+  modal.el.addEventListener('click', (e) => {
+    const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
+    if (act === 'save') modal.close('save');
+    else if (act === 'leave') modal.close('leave');
+    else if (act === 'cancel') modal.close(undefined);
+  });
 }
 

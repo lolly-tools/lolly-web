@@ -48,8 +48,21 @@ export interface FolderHost {
     set(profile: FolderProfile): Promise<unknown>;
   };
   state: { list(): Promise<ReadonlyArray<{ slot: string }>> };
-  assets: { _listUserAssets(): Promise<ReadonlyArray<{ id: string }>> };
+  assets: {
+    _listUserAssets(): Promise<ReadonlyArray<{ id: string }>>;
+    /** Catalog asset base ids — optional so minimal hosts (tests, CLI) still satisfy
+     *  the shape; when absent, a folder can only hold user-owned image refs. Present
+     *  on the web host so catalog assets referenced (not copied) into a folder survive
+     *  reconciliation. */
+    _listCatalogAssetIds?(): Promise<ReadonlyArray<string>>;
+  };
 }
+
+/** A catalog reference stored in a folder may carry image modifiers (?theme=…,
+ *  ?treatment=…); its persistence is decided by the plain catalog base id, so strip
+ *  any modifier before comparing against the catalog set. Kept engine-free (a bare
+ *  `?`/`#` cut) so this module stays importable from the pro-free surfaces. */
+const catalogBaseId = (ref: string): string => ref.split('?')[0]!.split('#')[0]!;
 
 // ── Tree helpers (pure; operate on a plain folders array) ───────────────────
 // A folder's parent is `parentId` (absent/undefined === top-level). These are exported
@@ -279,18 +292,24 @@ export function createFolderStore(host: FolderHost) {
      * needless profile writes / subscriber churn. Returns { removed }.
      */
     async prune(): Promise<{ removed: number }> {
-      const [stateList, userAssets] = await Promise.all([
+      const [stateList, userAssets, catalogIds] = await Promise.all([
         host.state.list(),
         host.assets._listUserAssets(),
+        host.assets._listCatalogAssetIds?.() ?? Promise.resolve([] as ReadonlyArray<string>),
       ]);
       const slots = new Set(stateList.map(e => e.slot));
       const images = new Set(userAssets.map(a => a.id));
+      const catalog = new Set(catalogIds);   // catalog base ids referenced into folders
 
       let removed = 0;
       const profile = await host.profile.get();
       const folders = (profile.folders ?? []).map(f => {
         const items = f.items.filter(it =>
-          it.type === 'session' ? slots.has(it.ref) : images.has(it.ref),
+          it.type === 'session'
+            ? slots.has(it.ref)
+            // An image item is either a user-owned upload (its id in `images`) or a
+            // catalog asset referenced by id (its base id in `catalog`).
+            : (images.has(it.ref) || catalog.has(catalogBaseId(it.ref))),
         );
         removed += f.items.length - items.length;
         return items.length === f.items.length ? f : { ...f, items, updatedAt: now() };

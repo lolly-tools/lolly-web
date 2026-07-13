@@ -474,6 +474,32 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Opt-in design-file import (Figma SVG / Penpot). Falsy for Layout Studio, whose
   // canvas config has no `import` key — so its toolbar is unchanged.
   const importCfg = cv.import || null;
+  // Brand vocabulary for the importer (engine DesignMapOptions): imported text maps
+  // onto the tool's OWN font select values (SUSE: 'SUSE'/'SUSE Mono'; lolly-start:
+  // 'sans'/'mono'), and box seed colours come from its addKinds seeds — so an import
+  // is indistinguishable from natively-authored boxes under any profile. Fields the
+  // manifest doesn't declare stay undefined → the engine's neutral defaults apply.
+  const importMap = (() => {
+    const monoOpt = fontOptions.find((o) => isMonoFont(o.value));
+    // '' is a real seed value (transparent fill — e.g. record's image seed), so only
+    // a missing/non-string seed defers to the engine default.
+    const seedColor = (kindId: string, field: string): string | undefined => {
+      const seed = addKinds.find((k) => k.id === kindId)?.seed;
+      const v = seed ? seed[field] : undefined;
+      return typeof v === 'string' ? v : undefined;
+    };
+    return {
+      fonts: {
+        defaultFamily: defaultFont,
+        ...(monoOpt ? { monoFamily: monoOpt.value, monoMaxWeight: maxWeightFor(monoOpt.value) } : {}),
+      },
+      seedColors: {
+        boxBg: seedColor('box', cfg.fillField || 'bg'),
+        textFg: seedColor('text', cfg.textColorField || 'fg') || undefined, // text ink must be a colour
+        imageBg: seedColor('image', cfg.fillField || 'bg'),
+      },
+    };
+  })();
   // Opt-in connector authoring (Org Chart). The connect config names a SECOND blocks
   // input that stores {from,to} edges; the overlay authors them and draws a live
   // preview, but the tool's hooks.js owns the actual routed line geometry. Falsy for
@@ -951,8 +977,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       try {
         const { parseDesignFile } = await import('./design-import.ts');
         // interactive: a multi-page PDF/.ai asks which page (shared page-picker dialog)
-        // instead of silently importing the first.
-        const res = await parseDesignFile(f, { host: host as any, log: (m: string) => { status.textContent = m; }, interactive: true });
+        // instead of silently importing the first. `map` carries this tool's font
+        // vocabulary + seed colours (importMap above) into the engine's box mapper.
+        const res = await parseDesignFile(f, { host: host as any, log: (m: string) => { status.textContent = m; }, interactive: true, map: importMap });
         const boxes = (Array.isArray(res.boxes) ? res.boxes : []) as Box[];
         if (!boxes.length) throw new Error(t('Nothing importable was found in that file.'));
         selection = new Set<string>();

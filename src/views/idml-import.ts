@@ -17,7 +17,7 @@
 // groups flatten to the tightest one, since the box model's `group` is a single flat id).
 // Imported groups can be moved or ungrouped as a unit in the editor.
 
-import { boxGeomFromBBox, safeColor, mapAlign, finalizeBoxes } from '@lolly/engine';
+import { boxGeomFromBBox, safeColor, mapAlign, finalizeBoxes, type DesignMapOptions } from '@lolly/engine';
 import { strFromU8 } from 'fflate';
 
 interface M { a: number; b: number; c: number; d: number; e: number; f: number; }
@@ -53,7 +53,7 @@ const ITEM_TAGS = new Set(['Rectangle', 'Oval', 'Polygon', 'GraphicLine', 'TextF
  */
 export async function parseIdmlZip(
   files: Record<string, Uint8Array>,
-  { warn = () => {} }: { host?: unknown; warn?: (msg: string) => void } = {},
+  { warn = () => {}, map }: { host?: unknown; warn?: (msg: string) => void; map?: DesignMapOptions } = {},
 ): Promise<ImportResult> {
   const parser = new DOMParser();
   const xml = (path: string): Document | null => {
@@ -90,7 +90,7 @@ export async function parseIdmlZip(
   if (!ctx.nodes.length) throw new Error('This .idml spread had no importable page items.');
 
   const { width, height } = shiftToOrigin(ctx.nodes);
-  const boxes = finalizeBoxes(ctx.nodes, { prefix: 'd' });
+  const boxes = finalizeBoxes(ctx.nodes, { prefix: 'd', ...map });
   return { boxes, width, height, background: '#ffffff' };
 }
 

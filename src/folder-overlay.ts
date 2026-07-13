@@ -166,7 +166,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     })).join('');
     const looseTiles = [
       ...sessions.map(e => sessionTile(e, { toolName: nameById.get(e.toolId) ?? '', sizeBytes: sessionSizes[e.slot] ?? 0, tool: toolById.get(e.toolId) })),
-      ...images.map(imageTile),
+      ...images.map(r => imageTile(r)),
     ].join('');
     const empty = !folders.length && !sessions.length && !images.length;
 

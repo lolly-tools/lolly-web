@@ -714,6 +714,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   const darkTheme = currentTheme() !== 'light';
   let firstPaint = true;
   let revealObserver: IntersectionObserver | null = null;
+  cleanups.push(() => revealObserver?.disconnect());   // render() replaces it; unmount drops the last one
 
   // Ambient cross-fade for tiles with several saved sessions — the tile cycles
   // through that tool's recent session previews (the same dissolve the featured

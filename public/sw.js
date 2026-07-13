@@ -38,7 +38,7 @@
  * entries on activate (a one-time clear of anything already gone stale).
  */
 
-const CACHE = 'lolly-v9';
+const CACHE = 'lolly-v10';
 
 // Stable key the app-shell document is cached under for the offline fallback.
 // Every navigation (/, /pro, /tool/...) resolves to the same SPA index.html, so
@@ -76,8 +76,7 @@ const PREVIEW_PATTERN = /^\/catalog\/previews\//;
 // before CACHE_PATTERNS so fonts under /tools/ take this path, not network-first.
 const IMMUTABLE_PATTERNS = [
   /^\/assets\//,
-  /^\/tools\/lockup\/src\/fonts\//,
-  // The app UI fonts (SUSE variable woff2) live under /catalog/fonts/ and are
+  // The app UI fonts (variable woff2) live under /catalog/fonts/ and are
   // preloaded on every page. Stable filenames → cache-first (refreshed by a CACHE
   // bump). Must be matched BEFORE the /catalog/ bypass below, so this list is
   // checked first in the fetch handler.

@@ -346,6 +346,15 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   function scheduleSidebar(): void { if (!sidebarRaf) sidebarRaf = requestAnimationFrame(syncSidebar); }
   syncSidebar();
   cleanups.push(() => { if (sidebarRaf) cancelAnimationFrame(sidebarRaf); });
+  // renderInputs parks document-level capture dismissers (+ any flatpickr calendars)
+  // on EVERY panel it renders — the shared card and each session card. Without these
+  // disposer calls every visit to /multi stacked up to three document listeners per
+  // panel for the life of the app. Lazily-skipped panels never rendered simply have
+  // no disposer to call.
+  cleanups.push(() => {
+    sharedPanel?._inputsDispose?.();
+    members.forEach(m => m.panelEl._inputsDispose?.());
+  });
 
   // Opening a collapsed card renders its (lazily-skipped) panel.
   viewEl.querySelectorAll<HTMLDetailsElement>('details[data-me-card]').forEach(card => {
