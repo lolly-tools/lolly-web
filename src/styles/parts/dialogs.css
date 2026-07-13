@@ -98,12 +98,14 @@
 .share-copy-btn:hover { opacity: 0.88; }
 /* Complexity caution — shown (JS toggles [hidden]) when even the shortest achievable
    link is too long to paste reliably, so the user knows to trim elements. Amber, kept
-   distinct from the accented "Shortest link" pack row below. */
+   distinct from the accented "Shortest link" pack row below.
+   border-radius is the literally-identical line folded into the shared `.note`
+   selector list in components.css (component audit M1.3) — the amber border is a
+   true delta and stays here. */
 .share-warning {
   margin: 0;
   padding: 9px 12px;
   border: 1px solid hsl(38 92% 50% / 0.55);
-  border-radius: var(--radius);
   background: hsl(38 92% 50% / 0.1);
   color: hsl(var(--foreground));
   font-size: 12.5px;
@@ -113,14 +115,15 @@
 /* Local-image caveat — persistent (no [hidden] toggle), shown only for tools that
    accept images. Catalog image refs ride in the link, but device-local images
    never leave this browser, so the recipient won't get them. Calm/neutral, so it
-   reads as a standing heads-up distinct from the amber complexity warning above. */
+   reads as a standing heads-up distinct from the amber complexity warning above.
+   border + border-radius are the literally-identical lines folded into the shared
+   `.note` selector lists in components.css (component audit M1.3) — only this
+   dialog's own layout/spacing/tint stays here. */
 .share-note {
   margin: 0;
   display: flex;
   gap: 9px;
   padding: 9px 12px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
   background: hsl(var(--muted) / 0.4);
   color: hsl(var(--muted-foreground));
   font-size: 12.5px;

@@ -186,11 +186,21 @@ export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0,
   });
 }
 
+/** Options for {@link imageTile} — the Projects grid opts in to selection; the folder
+ *  overlay / picker leave both false (unchanged). */
+export interface ImageTileOpts {
+  selectable?: boolean;
+  selected?: boolean;
+  /** Sub-line under the name; defaults to "Image". The Projects grid passes "Catalog
+   *  image" for a referenced catalog asset so it reads distinctly from an upload. */
+  sub?: string;
+}
+
 /**
- * A user image tile.
- * @param ref  user AssetRef: { id, url, format, meta:{ name } }
+ * A user (or referenced catalog) image tile.
+ * @param ref  AssetRef: { id, url, format, meta:{ name } }
  */
-export function imageTile(ref: ImageTileRef): string {
+export function imageTile(ref: ImageTileRef, { selectable = false, selected = false, sub = 'Image' }: ImageTileOpts = {}): string {
   const name = ref.meta?.name || 'Image';
   const cover = ref.url
     ? `<img class="tile-cover" src="${escape(ref.url)}" alt="" loading="lazy" decoding="async">`
@@ -198,10 +208,11 @@ export function imageTile(ref: ImageTileRef): string {
   return tileShell({
     ref: ref.id, kind: 'image', batch: false,
     cover, title: name,
-    sub: 'Image',
+    sub,
     badges: fmtBadge(ref.format),
     openAttr: 'data-open-image',
     openLabel: `Use image ${name}`,
+    selectable, selected,
   });
 }
 

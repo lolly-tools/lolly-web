@@ -27,10 +27,11 @@ import { icon } from '../lib/icons.ts';
 import { createFolderStore, childFolders, folderPath, descendantFolderIds } from '../folders.ts';
 import type { Folder } from '../folders.ts';
 import {
-  folderTile, sessionTile, FOLDER_ICON, PACKAGE_ICON, MENU_ICON,
+  folderTile, sessionTile, imageTile, FOLDER_ICON, PACKAGE_ICON, MENU_ICON,
   isBatchSlot, BATCH_SLOT_PREFIX,
   type MemberPreview,
 } from '../folder-tiles.ts';
+import type { PickerHost } from './picker.ts';   // type-only (erased); the value is lazy-imported in openAddPicker
 import { viewToggle } from '../components/view-toggle.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
 import { playProjectsAah, cancelArrivalAah } from '../lib/sfx.ts';
@@ -53,7 +54,7 @@ import { openFolderOverlay } from '../folder-overlay.ts';
 import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { createRuntime, serializeUrlState } from '@lolly/engine';
 import { getTool } from '../bridge/tool-loader.ts';
-import type { HostV1, Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, Profile, AssetRef } from '../../../../engine/src/bridge/host-v1.ts';
 import type { WebStateAPI } from '../bridge/state.ts';
 import type { BatchFile } from '../pro/batch.ts';
 
@@ -176,14 +177,18 @@ export async function mountProjects(
   // below from O(entries)/O(folders×items) rebuilds-per-call into O(1) map hits — the
   // difference between linear and quadratic work when a project holds thousands of sessions.
   let entryMap = new Map<string, Entry>();       // slot → row
-  let ownerByRef = new Map<string, Folder>();    // session ref → the folder that holds it
+  let ownerByRef = new Map<string, Folder>();    // item ref (session OR image) → the folder that holds it
   let searchIndex = new Map<string, string>();   // slot → lowercased search haystack
   let uncatCache: Entry[] = [];                  // sessions filed into no folder
+  // Folder IMAGE items resolved to AssetRefs (url/format/name) so their tiles + folder
+  // mosaics can render. Keyed by the item ref: a user upload (`user/…`) or a catalog asset
+  // referenced by id. Resolved once per reload() — folders hold few images relative to a
+  // whole library, and get() is a local (offline) lookup for both id shapes.
+  let imageRefs = new Map<string, AssetRef>();
   let profile: Profile | null = null;
   let headshotUrl = '';
   let mounted = true;        // false after the view is swapped out (guards async renders)
   const toasts = new Set<HTMLDivElement>();  // live "Render folder" toasts, torn down on navigate-away
-  let toolPickerModal: ModalHandle<any> | null = null;   // the "New from a tool" chooser dialog, if open
   let overlayModal: ModalHandle<any> | null = null;      // the move-picker / new-folder-name dialog, if open
   let featuredHandle: FeaturedRowHandle | null = null; // the Uncategorised preview ribbon (drift/coverflow/grip), if mounted
   // Multi-select: ref → 'folder' | 'session'. A closure var (NOT the DOM) because
@@ -220,6 +225,17 @@ export async function mountProjects(
     await store.prune().catch(() => {});
     folders = await store.list();
     reindex();
+    await resolveImages();
+  }
+
+  // Resolve every folder's IMAGE items to AssetRefs so their tiles / mosaics can paint.
+  // A ref get() may fail (a race with a delete elsewhere) — those drop out and prune
+  // reconciles the membership on the next pass.
+  async function resolveImages(): Promise<void> {
+    const refs = [...new Set(folders.flatMap(f => f.items.filter(i => i.type === 'image').map(i => i.ref)))];
+    const resolved = await Promise.all(refs.map(ref =>
+      host.assets.get(ref).then(r => [ref, r] as const).catch(() => null)));
+    imageRefs = new Map(resolved.filter(Boolean) as [string, AssetRef][]);
   }
 
   // Rebuild the derived indices from the freshly-loaded folders/entries. One linear pass
@@ -230,9 +246,10 @@ export async function mountProjects(
     const claimed = new Set<string>();
     for (const f of folders) {
       for (const it of f.items) {
-        if (it.type !== 'session') continue;
-        claimed.add(it.ref);
-        ownerByRef.set(it.ref, f);   // a session lives in at most one folder (store invariant)
+        // Every item (session OR image) lives in at most one folder (store invariant);
+        // map it to its owner so a per-tile "remove"/"move" can find its home in O(1).
+        ownerByRef.set(it.ref, f);
+        if (it.type === 'session') claimed.add(it.ref);   // only sessions gate the Uncategorised bucket
       }
     }
     uncatCache = entries.filter(e => !claimed.has(e.slot));
@@ -243,11 +260,13 @@ export async function mountProjects(
   const entryBySlot = (): Map<string, Entry> => entryMap;
   const uncategorised = (): Entry[] => uncatCache;
 
-  // Resolve a session ref → a mosaic preview cell ({thumb}|{batch}) for folder tiles.
+  // Resolve an item ref → a mosaic preview cell ({thumb}|{url}|{batch}) for folder tiles.
+  // Sessions resolve via the state index; images via the resolved AssetRef map.
   function previewForRef(ref: string): MemberPreview | null {
     const e = entryMap.get(ref);
-    if (!e) return null;
-    return isBatchSlot(e.slot) ? { batch: true } : { thumb: e.thumb || null };
+    if (e) return isBatchSlot(e.slot) ? { batch: true } : { thumb: e.thumb || null };
+    const img = imageRefs.get(ref);
+    return img?.url ? { url: img.url } : null;
   }
   function sessionsInFolder(f: Folder | null | undefined): Entry[] {
     return (f?.items ?? []).filter(i => i.type === 'session').map(i => entryMap.get(i.ref)).filter(Boolean) as Entry[];
@@ -295,6 +314,7 @@ export async function mountProjects(
       const folder = folders.find(f => f.id === folderId);
       for (const f of childFolders(folders, folderId)) visible.add(f.id);
       for (const e of sessionsInFolder(folder)) visible.add(e.slot);
+      for (const it of folder?.items ?? []) if (it.type === 'image') visible.add(it.ref);
     }
     for (const ref of [...selected.keys()]) if (!visible.has(ref)) selected.delete(ref);
   }
@@ -369,7 +389,7 @@ export async function mountProjects(
     // Only TOP-LEVEL folders at the root; nested folders show inside their parent.
     const topFolders = sortFolders(childFolders(folders, null));
     const folderTiles = topFolders.map(f => folderTile(f, {
-      memberPreviews: f.items.map(i => i.type === 'session' ? previewForRef(i.ref) : null).filter(Boolean) as MemberPreview[],
+      memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
       count: tileItemCount(f),
       selectable: true, selected: isSelected(f.id),
     })).join('');
@@ -446,15 +466,26 @@ export async function mountProjects(
     // inside the synthetic Uncategorised bucket (it isn't a real folder to nest under).
     const createFolder = isUncat ? '' : createTile('folder', FOLDER_PLUS_ICON, t('New folder'), t('Group inside {title}', { title }));
     const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), isUncat ? t('New saved session') : t('Add to {title}', { title }));
+    // Image items in this folder (never in Uncategorised — an image needs a folder to
+    // live in), resolved to AssetRefs so their tiles render. Kept in store order after
+    // the sessions.
+    const images = isUncat ? [] : (folder!.items
+      .filter(i => i.type === 'image')
+      .map(i => imageRefs.get(i.ref))
+      .filter(Boolean) as AssetRef[]);
     const tiles = [
       ...subfolders.map(f => folderTile(f, {
-        memberPreviews: f.items.map(i => i.type === 'session' ? previewForRef(i.ref) : null).filter(Boolean) as MemberPreview[],
+        memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
         count: tileItemCount(f),
         selectable: true, selected: isSelected(f.id),
       })),
       ...sessions.map(e => sessionTile(e, {
         toolName: toolName(e.toolId), sizeBytes: sizes[e.slot] || 0, tool: toolById.get(e.toolId),
         selectable: true, selected: isSelected(e.slot),
+      })),
+      ...images.map(a => imageTile(a, {
+        selectable: true, selected: isSelected(a.id),
+        sub: a.id.startsWith('user/') ? t('Image') : t('Catalog image'),
       })),
     ].join('');
 
@@ -482,7 +513,7 @@ export async function mountProjects(
     // subtree file count: an empty sub-folder is a real tile the user needs to see, but
     // contributes 0 to `count` (tileItemCount ignores folders), so keying off `count`
     // would hide a freshly-created empty sub-folder.
-    const hasTiles = subfolders.length > 0 || sessions.length > 0;
+    const hasTiles = subfolders.length > 0 || sessions.length > 0 || images.length > 0;
     const body = hasTiles
       ? `<div class="${gridClass}">${tiles}${createFolder}${createTool}</div>`
       : `<div class="${gridClass}">${createFolder}${createTool}</div><p class="projects-empty">${isUncat ? t('No saved sessions are uncategorised yet.') : t('This folder is empty — add a tool or a sub-folder.')}</p>`;
@@ -518,7 +549,7 @@ export async function mountProjects(
   // folderTile/sessionTile keeps open / select / drag / menu working with no extra wiring.
   function folderResultTile(f: Folder): string {
     const tile = folderTile(f, {
-      memberPreviews: f.items.map(i => i.type === 'session' ? previewForRef(i.ref) : null).filter(Boolean) as MemberPreview[],
+      memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
       count: tileItemCount(f), selectable: true, selected: isSelected(f.id),
     });
     const anc = folderPath(folders, f.id).slice(0, -1);   // this folder's ancestors
@@ -830,6 +861,10 @@ export async function mountProjects(
       const os = t.closest<HTMLElement>('[data-open-session]');
       if (os) { resumeSession(os.dataset.openSession!); return; }
 
+      // Open a folder image (catalog reference or your upload) in a lightbox preview.
+      const oi = t.closest<HTMLElement>('[data-open-image]');
+      if (oi) { openImagePreview(oi.dataset.openImage!); return; }
+
       // A tap on a preview-ribbon tile resumes that session. The Featured strip's own
       // capture-phase handler has already swallowed a drag / a Cover-Flow re-centre before
       // this bubbles, so reaching here means a clean open — route it through resumeSession
@@ -1057,6 +1092,16 @@ export async function mountProjects(
         menuItem('delete', TRASH_ICON, t('Delete folder'), { danger: true }),
       ].join('');
     }
+    if (kind === 'image') {
+      // A catalog reference can be REMOVED from the folder (it's a pointer, never deleted);
+      // your own upload is permanently DELETED. deleteImage() picks the right one by ref.
+      const isUpload = ref.startsWith('user/');
+      return [
+        menuItem('open-image', OPEN_ICON, t('Preview')),
+        menuItem('move-image', MOVE_ICON, t('Move to…')),
+        menuItem('delete-image', TRASH_ICON, isUpload ? t('Delete image') : t('Remove from folder'), { danger: true }),
+      ].join('');
+    }
     // A batch session is a multi-row group with no single tool URL, so it can't be
     // shared as a link — offer Share only for single-tool sessions.
     const canShare = !isBatchSlot(ref);
@@ -1130,6 +1175,45 @@ export async function mountProjects(
       });
       if (ok && mounted) { await host.state.delete(ref).catch(() => {}); await reload(); render(); announce(t('Session deleted')); }
     }
+    else if (act === 'open-image') openImagePreview(ref);
+    else if (act === 'move-image') {
+      openMovePicker({
+        title: t('Move to…'),
+        onPick: async (dest) => { await store.moveItem(ref, dest, 'image'); await reload(); render(); announce(t('Image moved')); },
+      });
+    }
+    else if (act === 'delete-image') { await deleteImage(ref); }
+  }
+
+  // Remove a folder image: a catalog REFERENCE just leaves the folder (the shared asset is
+  // never deleted); your own upload is permanently deleted (matching the picker / gallery).
+  async function deleteImage(ref: string): Promise<void> {
+    const isUpload = ref.startsWith('user/');
+    const ok = await confirmDialog(isUpload
+      ? { title: t('Delete this image?'), message: t('This permanently deletes the saved image. This cannot be undone.'), confirmLabel: t('Delete') }
+      : { title: t('Remove from folder?'), message: t('This removes the catalog asset from this folder. The asset itself is unchanged.'), confirmLabel: t('Remove') });
+    if (!ok || !mounted) return;
+    if (isUpload) await (host as ProjectsHost).assets._deleteUserAsset(ref).catch(() => {});
+    else { const owner = ownerByRef.get(ref); if (owner) await store.removeItem(owner.id, ref); }
+    await reload(); render();
+    announce(isUpload ? t('Image deleted') : t('Removed from folder'));
+  }
+
+  // A lightbox preview for a folder image — the resolved AssetRef carries the url + name.
+  // Modal chrome + Escape-to-close come from mountModal (matching the app-wide convention).
+  function openImagePreview(ref: string): void {
+    const a = imageRefs.get(ref);
+    if (!a?.url) return;
+    const name = String(a.meta?.name ?? '');
+    const modal = mountModal<void>(
+      `<figure class="projects-imgpreview">
+        <img src="${escape(a.url)}" alt="${escape(name)}" decoding="async">
+        ${name ? `<figcaption>${escape(name)}</figcaption>` : ''}
+      </figure>`,
+      { className: 'projects-imgpreview-modal', ariaLabel: name || t('Image preview') },
+    );
+    overlayModal = modal;
+    modal.el.querySelector('.projects-imgpreview')?.addEventListener('click', () => modal.close());
   }
 
   // Open the per-tile context menu. `ctx` = { ref, kind, tileEl, x, y } — from the ⋯
@@ -1386,98 +1470,69 @@ export async function mountProjects(
     } catch (e) { if (host.log) host.log('warn', 'projects: rename failed', { error: String(e) }); }
   }
 
-  // "+ New tool": open an in-place tool chooser (a file-style selector) rather than
-  // jumping to the gallery. Picking a tool opens it; inside a real folder we leave the
-  // file-into marker so the tool view files the first saved session here (claimed on a
-  // fresh open — see tool.js). Stays in the Projects flow.
-  function startCreateTool(): void { openToolPicker(); }
+  // "+ New asset": open the shared, host-owned asset picker (the SAME Library / Saved
+  // creations / Projects / Tools dialog that fills a tool image slot) in "collect into
+  // this folder" mode. Every pick ADDS to the current folder and the dialog stays open
+  // for several in a row: a Library/your-images/uploaded/rendered image is filed as an
+  // image item (catalog assets by reference — no duplicate bytes), a saved creation is
+  // filed as an editable session, and a tool either opens its editor (files in on first
+  // save) or "+ Add"s a default-settings session. Standardised in one component, so the
+  // UX improves everywhere at once (replaces the old bespoke tools-only chooser).
+  function startCreateTool(): void { void openAddPicker(); }
 
-  function openToolPicker(): void {
-    // Projects are creative sessions you file in a folder, so the "new tool" chooser
-    // omits utilities (on-device transforms, pickers, etc. — category 'utility').
+  async function openAddPicker(): Promise<void> {
+    // A real folder is the drop target; at the root / the synthetic Uncategorised bucket
+    // there's no folder to hold an image (catalog references especially have nowhere to
+    // live loose), so image adds are declined there with a nudge while tool + saved-
+    // creation adds still work (they file loose = Uncategorised).
+    const target = (folderId && folderId !== UNCAT) ? folderId : null;
+    const folderName = target ? (folders.find(f => f.id === target)?.name || t('this folder'))
+      : folderId === UNCAT ? t('Uncategorised') : t('Projects');
+    // Projects are creations you file, not on-device transforms — offer every non-utility
+    // tool (a superset of the picker's image-embeddable set, so audio/video tools show too).
     const tools = ((w.__toolIndex?.tools ?? []) as unknown as ProjectsTool[]).filter(x => x.category !== 'utility');
-    const content = `
-      <div class="toolpicker-head">
-        <input class="toolpicker-search" type="search" placeholder="${escape(t('Search tools…'))}" aria-label="${escape(t('Search tools'))}" autocomplete="off" spellcheck="false">
-        <button type="button" class="toolpicker-close" aria-label="${escape(t('Close'))}">✕</button>
-      </div>
-      <div class="toolpicker-grid">
-        ${tools.map(tool => `
-          <div class="toolpicker-cell" data-tool="${escape(tool.id)}">
-            <button type="button" class="toolpicker-tile" data-open-tool="${escape(tool.id)}">
-              <span class="toolpicker-icon" aria-hidden="true">${tool.icon || ''}</span>
-              <span class="toolpicker-name">${escape(tool.name)}</span>
-              ${tool.description ? `<span class="toolpicker-desc">${escape(tool.description)}</span>` : ''}
-            </button>
-            <button type="button" class="toolpicker-add" data-add-tool="${escape(tool.id)}" title="${escape(t('Add to this folder with default settings — without opening the editor'))}" aria-label="${escape(t('Add {name} to this folder without opening', { name: tool.name }))}"><span class="toolpicker-add-label">${t('+ Add')}</span></button>
-          </div>`).join('')}
-      </div>`;
-    const modal = mountModal<void>(content, {
-      className: 'projects-toolpicker',
-      ariaLabel: t('New from a tool'),   // accessible name (title text removed)
-      initialFocus: (el) => el.querySelector<HTMLElement>('.toolpicker-search'),
-      onClose: () => { if (toolPickerModal === modal) toolPickerModal = null; },
+    // Lazy chunk — the shared picker (DOMPurify, engine, its own CSS) stays out of the
+    // Projects boot chunk, loaded only when the add flow actually opens (matches how the
+    // bridge's host.assets.pick and this view's other heavy actions import on demand).
+    const { openPicker } = await import('./picker.ts');
+    await openPicker(host as unknown as PickerHost, {
+      allowUpload: true,
+      collect: {
+        folderName,
+        tools,
+        onAsset: async (ref) => {
+          // Images (catalog references especially) need a real folder to live in — the
+          // root and the synthetic Uncategorised bucket can't hold one. Decline with a nudge.
+          if (!target) return { ok: false, label: t('Open a folder to add images') };
+          // A user upload (user/…) is owned bytes; a catalog id is a reference. Both are
+          // stored as the folder's image item by id — reconciliation keeps either kind.
+          await store.addItem(target, { type: 'image', ref: ref.id });
+          return { ok: true };
+        },
+        onSession: async (slot) => {
+          await store.moveItem(slot, target, 'session');   // target null → filed loose (Uncategorised)
+          return { ok: true };
+        },
+        onOpenTool: (toolId) => {
+          try { sessionStorage.setItem(FILE_INTO_KEY, target ?? ''); } catch { /* private mode */ }
+          armReturn();
+          window.location.hash = '#/tool/' + toolId;
+        },
+        onQuickAddTool: async (toolId) => {
+          try { await addDefaultSession(toolId); return { ok: true }; }
+          catch (err) { host.log?.('warn', 'projects: quick-add failed', { tool: toolId, error: String(err) }); return { ok: false }; }
+        },
+      },
     });
-    toolPickerModal = modal;
-    const dlg = modal.el;
-    const search = dlg.querySelector<HTMLInputElement>('.toolpicker-search')!;
-    search.addEventListener('input', () => {
-      const q = search.value.trim().toLowerCase();
-      // Match on the tile's own text (name + description), hide the whole CELL so the
-      // grid collapses — and so the "+ Add" button's label never pollutes the search.
-      dlg.querySelectorAll<HTMLElement>('.toolpicker-cell').forEach(cell => {
-        const tile = cell.querySelector('.toolpicker-tile');
-        cell.hidden = !!(q && !tile!.textContent!.toLowerCase().includes(q));
-      });
-    });
-    dlg.querySelector('.toolpicker-close')!.addEventListener('click', () => modal.close());
-    dlg.querySelector('.toolpicker-grid')!.addEventListener('click', (e) => {
-      // "+ Add": file a default-settings session into this folder WITHOUT opening the
-      // editor, and leave the picker open so several tools can be added in a row.
-      const addBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-add-tool]');
-      if (addBtn) { e.stopPropagation(); queueAddOnly(addBtn); return; }
-      // Default action: open the tool in the editor (files into this folder on first save).
-      const openBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-open-tool]');
-      if (!openBtn) return;
-      const target = (folderId && folderId !== UNCAT) ? folderId : '';
-      try { sessionStorage.setItem(FILE_INTO_KEY, target); } catch { /* private mode */ }
-      armReturn();
-      modal.close();
-      window.location.hash = '#/tool/' + openBtn.dataset.openTool;
-    });
-  }
-
-  // Serialise "+ Add" clicks — each files a fresh default-settings session into the
-  // current folder. Chained so a rapid burst can't race store.moveItem's read-modify-
-  // write of the profile's folder list (a concurrent add could otherwise drop a sibling).
-  let addChain = Promise.resolve();
-  function queueAddOnly(btn: HTMLButtonElement): void {
-    if (btn.dataset.busy) return;
-    btn.dataset.busy = '1';
-    btn.disabled = true;
-    setAddLabel(btn, t('Adding…'));
-    addChain = addChain.then(async () => {
-      let ok = false;
-      try { await addDefaultSession(btn.dataset.addTool!); ok = true; }
-      catch (err) { host.log?.('warn', 'projects: add-only failed', { tool: btn.dataset.addTool, error: String(err) }); }
-      if (!btn.isConnected) return;
-      setAddLabel(btn, ok ? t('✓ Added') : t('Failed'));
-      btn.classList.toggle('is-added', ok);
-      // Reset a moment later, fire-and-forget so it never stalls the next queued add.
-      setTimeout(() => {
-        if (!btn.isConnected) return;
-        setAddLabel(btn, t('+ Add')); btn.classList.remove('is-added'); btn.disabled = false; delete btn.dataset.busy;
-      }, 1300);
-    });
-  }
-  function setAddLabel(btn: HTMLElement, text: string): void {
-    const l = btn.querySelector('.toolpicker-add-label'); if (l) l.textContent = text;
+    // The picker closed (× / Escape / a tool that navigated away) — reflect everything
+    // added under it in one pass.
+    if (mounted) { await reload(); render(); }
   }
 
   // Create a saved session for `toolId` seeded with its RESOLVED defaults (createRuntime
-  // alone runs onInit + profile binding — no offscreen render), file it into the current
-  // folder, and refresh the grid under the still-open picker. No thumbnail: a fresh
-  // default session shows the standard placeholder cover until it's opened and saved.
+  // alone runs onInit + profile binding — no offscreen render) and file it into the
+  // current folder. No thumbnail: a fresh default session shows the standard placeholder
+  // cover until it's opened and saved. The caller re-renders once the picker closes.
   async function addDefaultSession(toolId: string): Promise<void> {
     const tool = await getTool(toolId);
     const runtime = await createRuntime(tool, host, {});
@@ -1491,7 +1546,6 @@ export async function mountProjects(
     }, '');
     const target = (folderId && folderId !== UNCAT) ? folderId : null;
     if (target) await store.moveItem(slot, target, 'session');
-    if (mounted) { await reload(); render(); }
   }
 
   // Arm the return target so the tool's Save button lands back on this exact page —
@@ -1615,7 +1669,9 @@ export async function mountProjects(
     if (!ok || !mounted) return;
     for (const it of items) {
       try {
-        if (it.type === 'image') await (host as ProjectsHost).assets._deleteUserAsset(it.ref);
+        // A catalog reference owns no bytes — removeSubtree drops its folder membership;
+        // only an uploaded image (user/…) is a real asset to delete.
+        if (it.type === 'image') { if (it.ref.startsWith('user/')) await (host as ProjectsHost).assets._deleteUserAsset(it.ref); }
         else await host.state.delete(it.ref);
       } catch (err) { host.log?.('warn', 'projects: folder item delete failed', { ref: it.ref, error: String(err) }); }
     }
@@ -1787,13 +1843,15 @@ export async function mountProjects(
 
   async function deleteSelection(): Promise<void> {
     const sessionRefs = selectedByKind('session');
+    const imageSelRefs = selectedByKind('image');   // standalone-selected folder images
     const folderIds = topLevelSelectedFolders();
-    if (!sessionRefs.length && !folderIds.length) return;
-    // Count everything the delete will remove (subtree items across selected folders).
+    if (!sessionRefs.length && !imageSelRefs.length && !folderIds.length) return;
+    // Count everything the delete will remove (subtree items across selected folders +
+    // the directly-selected sessions/images).
     const subtreeIds = folderIds.flatMap(id => [id, ...descendantFolderIds(folders, id)]);
     const folderItems = folders.filter(f => subtreeIds.includes(f.id)).flatMap(f => f.items ?? []);
     const totalSessions = sessionRefs.length + folderItems.filter(i => i.type !== 'image').length;
-    const totalImages = folderItems.filter(i => i.type === 'image').length;
+    const totalImages = imageSelRefs.length + folderItems.filter(i => i.type === 'image').length;
     const bits: string[] = [];
     if (folderIds.length) bits.push((folderIds.length === 1 ? t('1 folder') : t('{n} folders', { n: folderIds.length })) + (subtreeIds.length > folderIds.length ? ` ${t('(and everything inside)')}` : ''));
     if (totalSessions) bits.push(totalSessions === 1 ? t('1 saved session') : t('{n} saved sessions', { n: totalSessions }));
@@ -1806,10 +1864,20 @@ export async function mountProjects(
     if (!ok || !mounted) return;
     announce(selected.size === 1 ? t('1 item deleted') : t('{n} items deleted', { n: selected.size }));
     for (const slot of sessionRefs) await host.state.delete(slot).catch(() => {});
+    // A standalone image: an upload is deleted; a catalog reference just leaves its folder.
+    for (const ref of imageSelRefs) {
+      try {
+        if (ref.startsWith('user/')) await (host as ProjectsHost).assets._deleteUserAsset(ref);
+        else { const owner = ownerByRef.get(ref); if (owner) await store.removeItem(owner.id, ref); }
+      } catch (err) { host.log?.('warn', 'projects: bulk image delete failed', { ref, error: String(err) }); }
+    }
     for (const id of folderIds) {
       const items = folders.filter(f => [id, ...descendantFolderIds(folders, id)].includes(f.id)).flatMap(f => f.items ?? []);
       for (const it of items) {
-        try { if (it.type === 'image') await (host as ProjectsHost).assets._deleteUserAsset(it.ref); else await host.state.delete(it.ref); }
+        try {
+          if (it.type === 'image') { if (it.ref.startsWith('user/')) await (host as ProjectsHost).assets._deleteUserAsset(it.ref); }
+          else await host.state.delete(it.ref);
+        }
         catch (err) { host.log?.('warn', 'projects: bulk delete item failed', { ref: it.ref, error: String(err) }); }
       }
       await store.removeSubtree(id);
@@ -1825,7 +1893,7 @@ export async function mountProjects(
   try { sessionStorage.removeItem(FILE_INTO_KEY); sessionStorage.removeItem(RETURN_KEY); } catch { /* ignore */ }
   // NB tileSelect.destroy() is not optional: its mousedown is bound to viewEl (#view), which
   // the router REUSES for every route — leave it bound and the next mount stacks another.
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); toasts.forEach(t => t.remove()); toasts.clear(); toolPickerModal?.close(); overlayModal?.close(); };
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); toasts.forEach(t => t.remove()); toasts.clear(); overlayModal?.close(); };
   await reload();
   // A stale /p/<id> deep link to a deleted folder falls back to root.
   if (folderId && folderId !== UNCAT && !folders.some(f => f.id === folderId)) folderId = null;

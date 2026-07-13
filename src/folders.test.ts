@@ -9,7 +9,7 @@ import { createFolderStore } from './folders.ts';
 
 // Minimal in-memory host: a single profile record plus the two backing stores
 // prune() reconciles against.
-function makeHost({ slots = [], images = [] }: { slots?: string[]; images?: string[] } = {}) {
+function makeHost({ slots = [], images = [], catalog }: { slots?: string[]; images?: string[]; catalog?: string[] } = {}) {
   let profile: any = {};
   return {
     profile: {
@@ -17,7 +17,12 @@ function makeHost({ slots = [], images = [] }: { slots?: string[]; images?: stri
       async set(p: any) { profile = p; },
     },
     state: { async list() { return slots.map(slot => ({ slot })); } },
-    assets: { async _listUserAssets() { return images.map(id => ({ id })); } },
+    assets: {
+      async _listUserAssets() { return images.map(id => ({ id })); },
+      // Only present when the test opts in — mirrors the optional web-host method, so
+      // a host without it still prunes (catalog references simply aren't recognised).
+      ...(catalog ? { async _listCatalogAssetIds() { return catalog; } } : {}),
+    },
     _profile: () => profile,
   };
 }
@@ -99,6 +104,33 @@ test('prune drops refs missing from both backing stores', async () => {
   assert.equal(removed, 2);
   const refs = (await store.get(a.id))!.items.map(i => i.ref).sort();
   assert.deepEqual(refs, ['__batch__:keep', 'user/keep']);
+});
+
+test('prune keeps catalog references (by base id) and drops unknown image refs', async () => {
+  const host = makeHost({ catalog: ['suse/logo/primary'] });
+  const store = createFolderStore(host);
+  const a = await store.create('A');
+  await store.addItem(a.id, { type: 'image', ref: 'suse/logo/primary' });          // referenced catalog asset → kept
+  await store.addItem(a.id, { type: 'image', ref: 'suse/logo/primary?treatment=x' }); // modifier stripped → same base → kept
+  await store.addItem(a.id, { type: 'image', ref: 'suse/removed/asset' });          // not in catalog, not a user asset → dropped
+
+  const { removed } = await store.prune();
+  assert.equal(removed, 1);
+  const refs = (await store.get(a.id))!.items.map(i => i.ref).sort();
+  assert.deepEqual(refs, ['suse/logo/primary', 'suse/logo/primary?treatment=x']);
+});
+
+test('prune drops a catalog-style ref when the host cannot list catalog ids', async () => {
+  // No _listCatalogAssetIds on the host → the old behaviour: only user assets survive.
+  const host = makeHost({ images: ['user/keep'] });
+  const store = createFolderStore(host);
+  const a = await store.create('A');
+  await store.addItem(a.id, { type: 'image', ref: 'user/keep' });
+  await store.addItem(a.id, { type: 'image', ref: 'suse/logo/primary' });
+
+  const { removed } = await store.prune();
+  assert.equal(removed, 1);
+  assert.deepEqual((await store.get(a.id))!.items.map(i => i.ref), ['user/keep']);
 });
 
 test('prune is a no-op (no write) when everything still exists', async () => {

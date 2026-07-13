@@ -535,6 +535,8 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-details-meta dd.cat-details-ai { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cat-details-meta code { font-family: var(--font-mono); font-size: .8rem; }
 .cat-details-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Now the SOLE .cat-tag — catalogue-summary's same-named status chip was
+   renamed to .cat-stat-tag (components.css, component audit M1.2). */
 .cat-tag { font-size: .7rem; padding: 1px 7px; border-radius: 999px; background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
 .cat-details-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .cat-details-actions .btn { display: inline-flex; align-items: center; gap: 6px; }

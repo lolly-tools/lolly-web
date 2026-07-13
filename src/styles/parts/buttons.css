@@ -11,7 +11,15 @@
       selector lists instead of restating the same declarations locally — each
       hand-rolled "primary fill" recipe below is textually declared exactly ONCE,
       here. Every aliased selector keeps its own file for true deltas (shape,
-      size, unique hover treatment); only the shared background/color pair moves. */
+      size, unique hover treatment); only the shared background/color pair moves.
+
+      Policy (component audit M2, 2026-07-13): new buttons use `.btn` + its
+      variants (--primary / --ghost / --danger / --sm / --glass). The legacy
+      per-view families — .pro-btn, .save-btn, .copy-btn, .copy-url-btn,
+      .render-pill-save, .pro-sess-save, [data-me-saveall] — are FROZEN: no new
+      members, no new modifiers, no new call-sites. Their primary-fill recipes
+      already alias .btn--primary below; migrate a family to `.btn` only when
+      its view gets rewritten wholesale. */
 
 /* Base — outline/neutral button. Also covers any plain <button> inside
    .tool-actions (the export panel), which predates the .btn class and still

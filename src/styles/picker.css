@@ -667,6 +667,68 @@
 }
 .asset-picker-toolitem-icon svg { width: 26px; height: 26px; }
 
+/* Collect mode ("Add to a folder"): a tool tile pairs its open-primary with a
+   "+ Add" quick-add (default-settings session, no editor), stacked as one grid cell. */
+.asset-picker-toolcell { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.asset-picker-toolcell .asset-picker-toolitem { flex: 1; }
+.asset-picker-toolquick {
+  align-self: stretch;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
+  border: 1px solid hsl(var(--primary) / 0.35);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.asset-picker-toolquick:hover { background: hsl(var(--primary) / 0.16); }
+.asset-picker-toolquick:focus-visible { outline: 2px solid hsl(var(--primary) / 0.5); outline-offset: 1px; }
+
+/* Added-to-folder feedback: a ✓ overlay flashes on the picked tile (the dialog stays
+   open for multi-add); a toast covers upload / webcam / pasted-link adds with no tile. */
+.asset-picker-card.is-added, .asset-picker-toolitem.is-added { border-color: hsl(var(--primary)); }
+.asset-picker-card.is-addfail, .asset-picker-toolitem.is-addfail { border-color: hsl(var(--destructive)); }
+.asset-picker-added {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: hsl(var(--primary) / 0.86);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: asset-picker-pop 0.16s ease;
+}
+.is-addfail > .asset-picker-added { background: hsl(var(--destructive) / 0.9); }
+@keyframes asset-picker-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+
+.asset-picker-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translate(-50%, 12px);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: hsl(var(--primary));
+  border-radius: 999px;
+  box-shadow: 0 6px 20px hsl(var(--foreground) / 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s, transform 0.18s;
+  z-index: 5;
+}
+.asset-picker-toast.is-shown { opacity: 1; transform: translate(-50%, 0); }
+.asset-picker-toast.is-fail { background: hsl(var(--destructive)); }
+
 /* Saved-creation tiles reuse the asset card; just the relative-time line is new. */
 .asset-picker-sessitem-when {
   font-size: 10px;

@@ -28,37 +28,20 @@
 }
 .cl-jump a:hover { border-color: hsl(var(--ring) / .6); color: hsl(var(--foreground)); }
 
-/* Recommendations panel — the audit's headline, above the specimens. */
+/* "Still open" panel — the audit is executed; this is the short list of what
+   remains (full per-recommendation history: plans/component-audit.md). */
 .cl-recs {
   margin: 0 0 2.4rem; padding: 1.1rem 1.2rem; border-radius: var(--radius);
   border: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .35);
 }
 .cl-recs > h2 { margin: 0 0 .3rem; font-size: 1.05rem; }
-.cl-recs-lede { margin: 0 0 1rem; font-size: .82rem; color: hsl(var(--muted-foreground)); }
-.cl-rec { padding: .7rem 0; border-top: 1px solid hsl(var(--border) / .7); }
-.cl-rec:first-of-type { border-top: 0; }
-.cl-rec-top { display: flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
-.cl-rec-title { font-weight: 650; font-size: .9rem; }
-.cl-sev {
-  font-size: .6rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-  padding: .1rem .4rem; border-radius: 999px;
+.cl-recs-lede { margin: 0 0 .7rem; font-size: .82rem; color: hsl(var(--muted-foreground)); }
+.cl-open { margin: 0; padding-inline-start: 1.1rem; display: flex; flex-direction: column; gap: .35rem; }
+.cl-open li { font-size: .8rem; line-height: 1.5; }
+.cl-open code {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: .72rem;
+  background: hsl(var(--muted) / .6); padding: .05rem .3rem; border-radius: 4px;
 }
-.cl-sev--high { background: hsl(var(--destructive) / .16); color: hsl(var(--destructive)); }
-.cl-sev--medium { background: hsl(38 92% 50% / .18); color: hsl(32 80% 42%); }
-.cl-sev--low { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
-/* Shipped-status pill — a multi-wave refactor has since executed the 13 recs
-   below; this marks which landed clean vs. which still has a documented gap. */
-.cl-status {
-  margin-inline-start: auto;
-  font-size: .62rem; font-weight: 700; letter-spacing: .02em;
-  padding: .1rem .5rem; border-radius: 999px; white-space: nowrap;
-}
-.cl-status--executed { background: hsl(150 60% 45% / .16); color: hsl(158 64% 30%); }
-.cl-status--partial { background: hsl(38 92% 50% / .18); color: hsl(32 80% 40%); }
-.cl-rec-body { font-size: .82rem; line-height: 1.5; color: hsl(var(--foreground)); }
-.cl-rec-body b { font-weight: 650; }
-.cl-rec-fix { color: hsl(var(--muted-foreground)); }
-.cl-rec-status { margin: .4rem 0 0; font-size: .76rem; line-height: 1.5; color: hsl(var(--muted-foreground)); padding-inline-start: .1rem; }
 
 /* Section = one primitive family or one view. */
 .cl-section { margin: 0 0 2.6rem; scroll-margin-top: 1rem; }

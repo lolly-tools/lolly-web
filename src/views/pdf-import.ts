@@ -31,12 +31,14 @@ import {
 import type { PDFContext, PDFObject } from 'pdf-lib';
 import {
   interpretPdfPage, parseToUnicode, toUnicodeDecoder, finalizeBoxes, safeColor, pdfNodesToSvg,
+  type DesignMapOptions,
 } from '@lolly/engine';
 import type { PdfNode, PdfFontInfo, PdfXObject } from '../../../../engine/src/pdf-map.ts';
 import type { AssetRef, HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import { storeUserUpload } from './picker.ts';
 import { trapFocus } from '../lib/focus-trap.ts';
 import type { FocusTrap } from '../lib/focus-trap.ts';
+import { NAV_EVENTS } from '../utils.ts';
 
 // A pdf-lib lookup key — a value we can hand to `ctx.lookup(...)`. We also let `null`
 // through (some helpers pass a `dictOf(...) → PDFDict | null` result straight back in),
@@ -121,8 +123,8 @@ function interpretPage(doc: PDFDocument, pageIndex: number): InterpretedPage {
  */
 export async function parsePdfFile(
   file: File | Blob,
-  { host, warn = () => {}, page, interactive }: {
-    host: HostV1; warn?: (msg: string) => void; page?: number; interactive?: boolean;
+  { host, warn = () => {}, page, interactive, map }: {
+    host: HostV1; warn?: (msg: string) => void; page?: number; interactive?: boolean; map?: DesignMapOptions;
   } = {} as { host: HostV1; warn?: (msg: string) => void },
 ) {
   const doc = await loadDoc(file);
@@ -163,7 +165,7 @@ export async function parsePdfFile(
     }
   }
 
-  const boxes = finalizeBoxes(nodes, { prefix: 'p' });
+  const boxes = finalizeBoxes(nodes, { prefix: 'p', ...map });
   if (!boxes.length) throw new Error('Couldn’t find any importable artwork on that page.');
   return { boxes, width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)), background: '#ffffff' };
 }
@@ -504,12 +506,18 @@ export function pickPdfPages(
     const done = (val: number[] | null): void => {
       trap?.release();
       document.removeEventListener('keydown', onKey);
+      NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
       overlay.remove();
       if (opener instanceof HTMLElement) opener.focus();
       resolve(val);
     };
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
     document.addEventListener('keydown', onKey);
+    // A route change cancels the dialog exactly like Escape/backdrop (resolve null) —
+    // the body-mounted overlay must not outlive the view that spawned it, and the
+    // trap's inert background must be released (NAV_EVENTS contract, utils.ts).
+    const onNav = (): void => done(null);
+    NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
     overlay.querySelector('.pdfpick-backdrop')?.addEventListener('click', () => done(null));
     overlay.querySelector('.pdfpick-close')?.addEventListener('click', () => done(null));
     overlay.querySelector('.pdfpick-cancel')?.addEventListener('click', () => done(null));

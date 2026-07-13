@@ -11,7 +11,7 @@
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
 import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef } from '@lolly/engine';
-import { escape } from '../utils.js';
+import { escape, NAV_EVENTS } from '../utils.js';
 import { announce } from '../a11y.js';
 import { colorFieldHtml, wireColorField } from '../components/color-field.js';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
@@ -1188,6 +1188,25 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     }
   };
   document.addEventListener('click', el._blockMenuDismiss, true);
+
+  // Aggregate disposer — the ONE teardown call for everything this render parked
+  // outside the panel's own subtree: the document-level capture dismissers above
+  // (colour popover, block add-menu, help tips) and the body-mounted flatpickr
+  // calendars. Consumers (tool view teardown, the embed editor, multi-edit) call
+  // this instead of re-listing the expandos, so a new leak source added here can
+  // never be missed at a call site. Reads the live expandos/instances at dispose
+  // time, so the latest render's listeners are always the ones removed.
+  el._inputsDispose = () => {
+    if (el._colorPopoverDismiss) document.removeEventListener('click', el._colorPopoverDismiss, true);
+    if (el._blockMenuDismiss)    document.removeEventListener('click', el._blockMenuDismiss, true);
+    if (el._helpTipDismiss)      document.removeEventListener('click', el._helpTipDismiss, true);
+    // flatpickr appends its calendar to <body> and registers document/window
+    // listeners released only by destroy(). Deferred to a microtask (same nuance
+    // as the re-render path above): a dispose reachable from flatpickr's own
+    // onClose must not nuke the closing instance mid-callback.
+    const fps = [...el.querySelectorAll<FlatpickrHost>('.fp-datetime')].map(c => c._flatpickr).filter(Boolean);
+    if (fps.length) queueMicrotask(() => fps.forEach(fp => fp!.destroy()));
+  };
 }
 
 // Starting value for a freshly-added block field. An explicit `default` wins;
@@ -1818,24 +1837,22 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
       clearTimeout(debounce);
       renderSeq++; // invalidate any in-flight preview render so it can't write to the detached overlay
       document.removeEventListener('keydown', onKey);
-      // renderInputs registers two document-level capture listeners on the panel
-      // (colour-popover + block add-menu dismissers); drop them so the detached
-      // overlay tree isn't pinned alive (mirrors mountTool's _cleanup).
-      if (inputsEl._colorPopoverDismiss) document.removeEventListener('click', inputsEl._colorPopoverDismiss, true);
-      if (inputsEl._blockMenuDismiss)    document.removeEventListener('click', inputsEl._blockMenuDismiss, true);
-      if (inputsEl._helpTipDismiss)      document.removeEventListener('click', inputsEl._helpTipDismiss, true);
-      // A child datetime input's flatpickr appends its calendar to <body> and registers
-      // its own document/window listeners — removed only by destroy(). overlay.remove()
-      // detaches the input but not the body-level calendar, so tear them down explicitly
-      // (else repeated edits of a date-bearing source tool orphan calendars + retain the
-      // child runtime via flatpickr's listener roots).
-      inputsEl.querySelectorAll<FlatpickrHost>('.fp-datetime').forEach(c => c._flatpickr?.destroy());
+      NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
+      // Everything renderInputs parked outside the panel's subtree — the document-
+      // level capture dismissers + the child flatpickrs' body-level calendars —
+      // in one aggregate call (mirrors mountTool's _cleanup).
+      inputsEl._inputsDispose?.();
       overlay.remove();
       if (opener instanceof HTMLElement) opener.focus();
       resolve(value);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(null); } };
     document.addEventListener('keydown', onKey);
+    // A route change under the open editor (browser Back, an in-app link) cancels it —
+    // the body-mounted overlay must never outlive the view that spawned it, and the
+    // trap's inert background must be released (NAV_EVENTS contract, utils.ts).
+    const onNav = (): void => close(null);
+    NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
 
     overlay.querySelector('.embed-editor-backdrop')!.addEventListener('click', () => close(null));
     overlay.querySelector('.embed-editor-close')!.addEventListener('click', () => close(null));
