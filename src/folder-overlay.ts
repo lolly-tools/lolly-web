@@ -13,6 +13,7 @@
  * static graph stays /pro-free and the overlay loads from the (pro-free) gallery.
  */
 import { escape } from './utils.ts';
+import { mountModal } from './components/modal.ts';
 import { confirmDialog } from './components/confirm-dialog.ts';
 import { mountBodyPopover } from './components/body-popover.ts';
 import type { BodyPopoverHandle } from './components/body-popover.ts';
@@ -101,16 +102,23 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
   let folders: Folder[] = [];
   let viewFolderId: string | null = null;   // null → root view
 
-  const dialog = document.createElement('dialog');
-  dialog.className = 'tool-meta-dialog folder-overlay';
+  // The item menu mounts INSIDE this dialog (see openMenu below) and registers
+  // window/document listeners (Escape, outside-click, resize, route-change) that must
+  // tear down with the dialog or they leak. onClose is their home: mountModal fires it
+  // exactly once on EVERY dismissal path (Escape, backdrop, the ✕ button, programmatic
+  // close()). A 'close' listener on the element would also fire — mountModal closes the
+  // same native dialog — but at whatever point the UA dispatches that event (the spec
+  // queues it as a task, after the node is already removed), so the explicit hook is
+  // the dependable ordering. closeMenu is a hoisted function declaration.
+  const modal = mountModal(
+    `<div class="folder-overlay-body"><div class="folder-overlay-loading">Loading…</div></div>`,
+    {
+      className: 'tool-meta-dialog folder-overlay',
+      onClose: () => closeMenu(),
+    },
+  );
+  const dialog = modal.el;
   dialog.setAttribute('aria-labelledby', 'folder-overlay-title');
-  dialog.innerHTML = `<div class="folder-overlay-body"><div class="folder-overlay-loading">Loading…</div></div>`;
-  openDialog(dialog);
-  // The item menu mounts INSIDE this dialog (see openMenu below) so its window/document
-  // listeners (Escape, outside-click, resize, route-change) need tearing down before the
-  // dialog itself is torn down — a bare dialog.remove() (closeDialog, native Escape/
-  // backdrop) would otherwise leak them. closeMenu is a hoisted function declaration.
-  dialog.addEventListener('close', () => closeMenu());
 
   // ── Data helpers ───────────────────────────────────────────────────────────
 
@@ -212,6 +220,9 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
 
   dialog.addEventListener('click', async (e) => {
     const t = e.target as Element;
+    // The ✕ close button is re-rendered by every render() pass, so it's dismissed by
+    // delegation here (a per-button listener would be lost on the next re-render).
+    if (t.closest('.meta-dialog-close')) { modal.close(); return; }
     if (t.closest('[data-back]')) { viewFolderId = null; render(); return; }
     if (t.closest('[data-new-folder]')) { await createFolder(); return; }
 
@@ -221,7 +232,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     const openSession = t.closest<HTMLElement>('[data-open-session]');
     if (openSession) {
       const entry = sessionByRef.get(openSession.dataset.openSession!);
-      closeDialog(dialog);
+      modal.close();
       if (entry) onResume?.(entry);
       return;
     }
@@ -229,7 +240,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     const openImage = t.closest<HTMLElement>('[data-open-image]');
     if (openImage) {
       const ref = imageByRef.get(openImage.dataset.openImage!);
-      closeDialog(dialog);
+      modal.close();
       if (ref) onPickImage?.(ref);
       return;
     }
@@ -237,7 +248,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     const openGroup = t.closest('[data-open-group]');
     if (openGroup) {
       const folder = folders.find(f => f.id === viewFolderId);
-      closeDialog(dialog);
+      modal.close();
       if (folder) onOpenGroup?.(folder);
       return;
     }
@@ -485,7 +496,9 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
         e.preventDefault();
         finish(input.value.trim() || null);
       });
-      ask.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); finish(null); } });
+      // preventDefault suppresses the UA's dialog close-request, so Escape cancels
+      // only this prompt — not the whole overlay (same pattern as body-popover's menu).
+      ask.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(null); } });
     });
   }
 
@@ -496,20 +509,4 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     folders = await store.list();
     render();
   })();
-}
-
-// ── Native <dialog> helpers (Esc + backdrop click come free) ──────────────────
-
-function openDialog(dialog: HTMLDialogElement) {
-  document.body.appendChild(dialog);
-  dialog.showModal();
-  dialog.addEventListener('cancel', (e) => { e.preventDefault(); closeDialog(dialog); });
-  dialog.addEventListener('click', (e) => { if (e.target === dialog) closeDialog(dialog); });
-  dialog.addEventListener('click', (e) => {
-    if ((e.target as Element).closest('.meta-dialog-close')) closeDialog(dialog);
-  });
-}
-function closeDialog(dialog: HTMLDialogElement) {
-  dialog.close();
-  dialog.remove();
 }
