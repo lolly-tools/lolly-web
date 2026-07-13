@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /*
  * #/start — the brand studio shell (views/start.ts). Async CSS chunk, loaded
  * with the view. The heart of the page is the brand studio (lib/brand-editor.ts,
@@ -433,4 +438,5 @@
 @media (max-width: 640px) {
   .start-actions { top: 6px; flex-wrap: wrap; }
   .start-save { flex: 1 1 100%; margin-inline-start: 0; }
+}
 }

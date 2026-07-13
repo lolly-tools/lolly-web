@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ─── /verify — Content Credentials check ─────────────────────────────────────
    Shares the platform/capabilities chrome (.platform-layout/.plat-header); these
    rules cover only the drop zone and the verification report. The entrance wave
@@ -1046,4 +1051,5 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   .valid-ai-flag::after { display: none; }
   .valid-check { opacity: 1; translate: none; }
   .valid-check::after { display: none; }
+}
 }

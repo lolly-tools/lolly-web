@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* Asset Picker Modal — host-owned chrome */
 
 .asset-picker-modal:empty { display: none; }
@@ -1195,4 +1200,5 @@
 .asset-picker-card-delete:hover {
   color: hsl(var(--destructive));
   background: hsl(var(--accent));
+}
 }

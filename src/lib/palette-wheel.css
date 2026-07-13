@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* Palette color wheel (palette-wheel.ts). */
 
 /* Disc + rail, side by side. The disc takes the room, the rail is a fixed gutter. */
@@ -111,3 +116,4 @@
 .dash-wheel-preview:not(.is-active) .dash-wheel-pv-name { font-size: 1rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
 
 @media (prefers-reduced-motion: reduce) { .dash-wheel-dot, .dash-wheel-pv-swatch { transition: none; } }
+}

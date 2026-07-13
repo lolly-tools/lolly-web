@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* The locked-brand seal (brand-seal.ts) — a turned-metal disc struck in the
    brand's own darkest/lightest inks, with a padlock over it. */
 
@@ -52,4 +57,5 @@
   height: 38%;
   color: var(--seal-light, #fff);
   filter: drop-shadow(0 1px 2px hsl(0 0% 0% / 0.55));
+}
 }

@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ─── Dashboard view (#/d) — the read-only instrument panel ──────────────────
    Layout + the pieces unique to this view (device hero, palette ink-ribbon,
    storage glance, capability disclosure). The card/section chrome (.plat-*,
@@ -681,4 +686,5 @@
   .dash-dev-hero { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   .dash-hero-primary { min-height: 112px; }
   .dash-hero-logo { max-height: 40px; }
+}
 }

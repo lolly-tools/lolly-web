@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ─── Tool view layout ──────────────────────────────────────────────────── */
 
 .tool-layout {
@@ -2619,4 +2624,4 @@ background-color:hsl(var(--background) / 1);
   width: 100%;
   min-height: 100%;
 }
-
+}

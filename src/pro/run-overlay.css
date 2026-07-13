@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /*
  * Styles for the mount-agnostic batch-progress shell (run-overlay.js).
  *
@@ -249,3 +254,4 @@
 }
 @keyframes pro-tc-grow { from { transform: scaleX(0); transform-origin: left; } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .pro-tc-fill { animation: none; } }
+}

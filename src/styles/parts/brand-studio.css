@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ── Brand studio (lib/brand-editor.ts) — every .be-* rule for the editor the
       #/start brand studio mounts. Extracted from dashboard.css when the editor
       became start-exclusive; imported by brand-editor.ts so whichever view mounts
@@ -1138,4 +1143,5 @@ background-image:
   text-align: center;
   color: hsl(var(--muted-foreground));
   font-size: .85rem;
+}
 }

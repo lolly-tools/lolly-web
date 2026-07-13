@@ -1,3 +1,8 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ─── Document layout (render.layout:'document') ──────────────────────────────
    A chromeless multi-page rich-text editor (shells/web/src/views/doc-editor.js).
    Reuses the editor rail (.fc-toolbar / .fc-btn / .fc-popover / .fc-panel) from
@@ -251,3 +256,4 @@
   flex-wrap: nowrap; max-width: none;
 }
 .doc-imgbar-lbl { font-size: 11px; color: hsl(var(--muted-foreground)); padding: 0 2px; align-self: center; }
+}

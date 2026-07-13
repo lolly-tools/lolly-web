@@ -1,0 +1,39 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* ── Cross-cutting overrides (@layer overrides) ───────────────────────────────
+   The home for the rare rule that must win over view chrome regardless of which
+   view is mounted. It sits in the `overrides` layer — above `views`, below
+   `a11y` (order declared in app.css) — so it beats every earlier layer by layer
+   rank, not by load order. Keep this sheet small; most styling belongs in a
+   view or a primitive, not here. */
+
+/* Top-right chrome cluster — the .tools-home surface, no border.
+   The view FABs (.filter-fab / .history-fab — catalog's "View options" and the
+   projects view-sort button both reuse the .filter-fab class), the language FAB,
+   and the profile pill all wear the same soft glowing glass as the .tools-home
+   back pill: the primary bottom-glow gives the filled "contrast" look, and the
+   1px primary border each one declares in its own view/chrome file is dropped to
+   transparent (kept 1px wide so nothing reflows). Because this lives in the
+   `overrides` layer it beats those borders and the lighter hover tints without
+   depending on file load order. Since .lang-fab and .profile-link are shared
+   chrome, it reaches every view the cluster appears in — Tools, Catalog,
+   Projects, the Dashboard/Verify .plat-header, /start, /profile, /valid, /pro,
+   multi-edit.
+   :not(.lang-fab-sm) — the tool sidebar's compact language switcher deliberately
+   strips the glass look (tool.css: border/background/backdrop-filter:none, a plain
+   30px control in a button group), so it opts OUT of the glow here. */
+.filter-fab,
+.history-fab,
+.lang-fab:not(.lang-fab-sm),
+.profile-link {
+  border-color: transparent;
+  box-shadow: inset 0 -.1em 1em 1px hsl(var(--primary) / 0.22), 0 .1em .3em #0002;
+}
+.filter-fab:hover,
+.filter-fab[aria-expanded="true"],
+.history-fab:hover,
+.lang-fab:not(.lang-fab-sm):hover,
+.lang-fab:not(.lang-fab-sm)[aria-expanded="true"],
+.profile-link:hover {
+  background: hsl(var(--primary) / 0.16);
+  box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.34);
+}

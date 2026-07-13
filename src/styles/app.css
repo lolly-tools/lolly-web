@@ -12,22 +12,43 @@
  * sheets (tool, editor, profile, picker, platform, valid, storage) are imported
  * from their own lazy view modules instead — Vite emits them as async CSS chunks
  * loaded with the view, keeping ~60% of the old bundle off the critical path. */
+
+/* ── Cascade layers ───────────────────────────────────────────────────────────
+ * Declared ONCE, here, before any layered import — this single line fixes the
+ * priority order for the whole app. A sheet's weight now comes from its LAYER,
+ * not from when it happens to load, so adding/reordering an @import (or a lazy
+ * view chunk injecting its own `@layer views {}` at runtime) can no longer flip
+ * which rule wins. Priority low → high:
+ *   vendor     — third-party stylesheets (flatpickr…) so app CSS always overrides
+ *   base       — element resets/defaults + low-priority helpers (base, utilities)
+ *   primitives — shared .btn/.chip/.card/.section-card bases meant to be extended
+ *   chrome     — the render-blocking landing/chrome sheets below
+ *   views      — every lazy per-view chunk (each wraps itself in `@layer views`)
+ *   overrides  — rare cross-cutting rules that must beat any view (overrides.css)
+ *   a11y       — focus rings + RTL correctness; accessibility wins over everything
+ * fonts.css + tokens.css stay UNLAYERED on purpose: @font-face + the design-token
+ * variables are consumed everywhere and never competed over, and unlayered
+ * declarations outrank every layer — exactly what tokens want. */
+@layer vendor, base, primitives, chrome, views, overrides, a11y;
+
 @import './fonts.css';
 @import './tokens.css';
-@import './parts/base.css';
-@import './parts/utilities.css';
-@import './parts/buttons.css'; /* .btn/.btn--primary/.btn--ghost/.btn--danger primitives — before view parts so their aliasing wins pixel-parity */
-@import './parts/chips.css'; /* .chip/.card/.section-header primitives — same reasoning as buttons.css */
-@import './parts/disclosure.css'; /* .section-card fold primitive (rec 7) — before view parts so their .plat-section / .export- aliasing wins pixel-parity */
-@import './parts/gallery.css';
-@import './parts/featured.css';
-@import './parts/topbar.css';
-@import './parts/folders.css';
-@import './parts/projects.css';
-@import './parts/catalog.css'; /* Catalog view (a primary tab; kept on the landing sheet) */
-@import './parts/components.css';
-@import './parts/dialogs.css';
-@import './parts/saved-list.css'; /* saved-session rows — history modal + drawer + /profile */
-@import './parts/notfound.css';
-@import './parts/a11y.css';
-@import './parts/rtl.css'; /* RTL correctness rules (Arabic) — tiny, chrome-wide, so it rides the base sheet */
+
+@import './parts/base.css'         layer(base);
+@import './parts/utilities.css'    layer(base);
+@import './parts/buttons.css'      layer(primitives); /* .btn/.btn--primary/.btn--glass — primitives layer, so view rules extend them */
+@import './parts/chips.css'        layer(primitives); /* .chip/.card/.section-header */
+@import './parts/disclosure.css'   layer(primitives); /* .section-card fold primitive (rec 7) */
+@import './parts/gallery.css'      layer(chrome);
+@import './parts/featured.css'     layer(chrome);
+@import './parts/topbar.css'       layer(chrome);
+@import './parts/folders.css'      layer(chrome);
+@import './parts/projects.css'     layer(chrome);
+@import './parts/catalog.css'      layer(chrome); /* Catalog view (a primary tab; kept on the landing sheet) */
+@import './parts/components.css'   layer(chrome);
+@import './parts/dialogs.css'      layer(chrome);
+@import './parts/saved-list.css'   layer(chrome); /* saved-session rows — history modal + drawer + /profile */
+@import './parts/notfound.css'     layer(chrome);
+@import './parts/overrides.css'    layer(overrides); /* cross-cutting overrides (top-right FAB/profile cluster) */
+@import './parts/a11y.css'         layer(a11y);
+@import './parts/rtl.css'          layer(a11y); /* RTL correctness rules (Arabic) — accessibility layer, wins over views */

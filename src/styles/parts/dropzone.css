@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
 /* ── Shared upload dropzone (lib/upload-dropzone.ts) ── Neutral `.updz*` classes so any
    surface can mount it (the catalogue's "Your uploads" section, the #/start Catalogue
    tab); visual treatment ported from the catalogue's old .cat-dropzone. A <label> over
@@ -27,3 +32,4 @@
 .updz.is-dragover { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .08); color: hsl(var(--foreground)); }
 .updz.is-busy { opacity: .6; pointer-events: none; }
 .updz-browse { color: hsl(var(--primary)); font-weight: 600; text-decoration: underline; }
+}
