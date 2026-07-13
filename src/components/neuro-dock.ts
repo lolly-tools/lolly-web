@@ -11,7 +11,7 @@
  * actual player. Reuses the music-player component for its body.
  */
 import {
-  musicPlayerBodyHtml, wireMusicPlayerBody, refreshMusicPlayer,
+  musicPlayerBodyHtml, trackPickerHtml, wireMusicPlayerBody, refreshMusicPlayer, closeTrackPicker,
 } from './music-player.ts';
 import { getNeurospicy, setNeurospicyEnabled, stopNeurospicy, type NeurospicyHost } from '../lib/neurospicy.ts';
 import { flagEnabledSync } from '../feature-flags.ts';
@@ -40,9 +40,10 @@ const CSS = `
 /* Entrance: springs up from the corner with a slight overshoot when the mode is switched on. */
 @keyframes neuro-dock-in { from { transform: translateY(28px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
 .neuro-dock.is-entering { animation: neuro-dock-in .36s cubic-bezier(.6,.2,.1,1.2); transform-origin: bottom right; }
-.neuro-dock-head { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; cursor: default; }
-.neuro-dock-grip { display: inline-flex; color: hsl(var(--primary)); }
-.neuro-dock-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: .85rem; }
+/* One compact row: grip · track picker · minimize · close. position:relative so the
+   picker's panel (music-player.ts) anchors here and opens full-width above the head. */
+.neuro-dock-head { position: relative; display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; cursor: default; }
+.neuro-dock-grip { flex: 0 0 auto; display: inline-flex; color: hsl(var(--primary)); }
 .neuro-dock-btn { flex: 0 0 auto; width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s ease, color .12s ease; }
 .neuro-dock-btn:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .neuro-dock-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
@@ -54,6 +55,12 @@ const CSS = `
 .neuro-dock[data-collapsed="true"] .neuro-dock-head { border-bottom: none; cursor: pointer; }
 .neuro-dock[data-collapsed="true"] .neuro-dock-body { display: none; }
 .neuro-dock[data-collapsed="true"] [data-dock-close] { display: none; }
+/* In the pill the track picker becomes a plain now-playing label: no border/caret,
+   pointer-events off so a click falls through to the head and expands the dock. */
+.neuro-dock[data-collapsed="true"] .neuro-picker { flex: 0 1 auto; pointer-events: none; }
+.neuro-dock[data-collapsed="true"] .neuro-picker-btn { border-color: transparent; background: transparent; padding: 2px 0; }
+.neuro-dock[data-collapsed="true"] .neuro-picker-caret,
+.neuro-dock[data-collapsed="true"] .neuro-chip { display: none; }
 @media (prefers-reduced-motion: reduce) { .neuro-dock { transition: none; } .neuro-dock.is-entering { animation: none; } }
 @media (max-width: 520px) {
   .neuro-dock { right: 8px; left: 8px; width: auto; bottom: calc(6rem + env(safe-area-inset-bottom, 0px)); }
@@ -86,10 +93,13 @@ function build(host: NeurospicyHost): HTMLElement {
   el.className = 'neuro-dock is-hidden';
   el.dataset.collapsed = String(isCollapsed());
   el.setAttribute('aria-label', 'Neurospicy music player');
+  // [data-music-player] sits on the section so the header's track picker and the
+  // body's transport/volume controls share one wiring scope (music-player.ts).
+  el.setAttribute('data-music-player', '');
   el.innerHTML = `
     <header class="neuro-dock-head" data-dock-head>
       <span class="neuro-dock-grip">${NOTE}</span>
-      <span class="neuro-dock-title">Neurospicy</span>
+      ${trackPickerHtml()}
       <button type="button" class="neuro-dock-btn" data-dock-min aria-label="Minimize player">${MIN}</button>
       <button type="button" class="neuro-dock-btn" data-dock-close aria-label="Close player">${X}</button>
     </header>
@@ -101,7 +111,8 @@ function build(host: NeurospicyHost): HTMLElement {
     el.dataset.collapsed = String(v);
     setCollapsedPref(v);
     el.querySelector<HTMLButtonElement>('[data-dock-min]')?.setAttribute('aria-label', v ? 'Expand player' : 'Minimize player');
-    if (!v) refreshMusicPlayer(el);
+    if (v) closeTrackPicker(el);   // header picker stays visible when collapsed — don't strand its open panel
+    else refreshMusicPlayer(el);
   };
   el.querySelector<HTMLButtonElement>('[data-dock-min]')?.addEventListener('click', (e) => {
     e.stopPropagation();

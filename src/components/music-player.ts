@@ -58,8 +58,8 @@ const CSS = `
 .neuro-tbtn.neuro-mode { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; }
 .neuro-tbtn.neuro-mode:active { transform: translateY(-50%) scale(.9); }
 .neuro-tbtn.neuro-mode.is-active { color: hsl(var(--primary)); }
-/* searchable track picker */
-.neuro-picker { position: relative; }
+/* searchable track picker — a flex item in the dock header row (grip · picker · min · close) */
+.neuro-picker { flex: 1; min-width: 0; }
 .neuro-picker-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: .85rem; cursor: pointer; text-align: left; }
 .neuro-picker-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 .neuro-picker-cur { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
@@ -222,14 +222,12 @@ function paintModeButton(root: ParentNode): void {
   btn.setAttribute('title', label);
 }
 
-/** The player body markup (no enable switch — that lives with the Sound switch). */
-export function musicPlayerBodyHtml(): string {
+/** The searchable track picker. Mounted in the dock header row (neuro-dock.ts) so
+ *  the now-playing track name doubles as the player's title — no separate label. */
+export function trackPickerHtml(): string {
   ensureStyles();
-  const playing = isNeurospicyPlaying();
-  // Track selector first — you read what's playing before the controls.
-  return `<div class="neuro-player" data-music-player>
-      <div class="neuro-picker" data-mp-picker data-open="false">
-        <button type="button" class="neuro-picker-btn" data-mp-picker-btn aria-haspopup="true" aria-expanded="false">
+  return `<div class="neuro-picker" data-mp-picker data-open="false">
+        <button type="button" class="neuro-picker-btn" data-mp-picker-btn aria-haspopup="true" aria-expanded="false" aria-label="Choose track">
           <span class="neuro-picker-cur" data-mp-current>Loading beats…</span>
           <span class="neuro-chip" data-mp-mood hidden></span>
           <span class="neuro-picker-caret">${CARET}</span>
@@ -241,7 +239,16 @@ export function musicPlayerBodyHtml(): string {
           <ul class="neuro-list" data-mp-list aria-label="Tracks"><li class="neuro-empty">Loading…</li></ul>
           <input type="search" class="neuro-search" data-mp-search placeholder="Search tracks…" aria-label="Search tracks">
         </div>
-      </div>
+      </div>`;
+}
+
+/** The player body (meter, transport, volumes). The track picker is rendered
+ *  separately (trackPickerHtml) up in the dock header row; both live under the
+ *  same [data-music-player] scope (the dock <section>) so wiring finds them. */
+export function musicPlayerBodyHtml(): string {
+  ensureStyles();
+  const playing = isNeurospicyPlaying();
+  return `<div class="neuro-player">
       <canvas class="neuro-meter" data-mp-meter width="260" height="24" aria-hidden="true"></canvas>
       <div class="neuro-progress" data-mp-progress role="slider" tabindex="0" aria-label="Seek within track" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <span class="neuro-progress-fill" data-mp-progress-fill></span>
@@ -257,11 +264,18 @@ export function musicPlayerBodyHtml(): string {
     </div>`;
 }
 
+/** Resolve the element carrying [data-music-player] — the dock <section> hosts it,
+ *  so the header's track picker and the body's controls share one query scope. */
+function playerRoot(root: ParentNode): HTMLElement | null {
+  if (root instanceof HTMLElement && root.matches('[data-music-player]')) return root;
+  return root.querySelector<HTMLElement>('[data-music-player]');
+}
+
 let tracksCache: NeuroTrack[] = [];
 
 /** Sync transport icon, current-track label + mood, and the highlighted list row. */
 export function paintMusicPlayer(root: ParentNode): void {
-  const wrap = root.querySelector<HTMLElement>('[data-music-player]');
+  const wrap = playerRoot(root);
   if (!wrap) return;
   const playing = isNeurospicyPlaying();
   const play = wrap.querySelector<HTMLButtonElement>('[data-mp-play]');
@@ -310,6 +324,13 @@ export function refreshMusicPlayer(root: ParentNode): void {
   startMeter(root);
 }
 
+/** Force the track dropdown shut — used when the dock minimizes (the picker now
+ *  lives in the header, so collapsing the body wouldn't otherwise hide an open panel). */
+export function closeTrackPicker(root: ParentNode): void {
+  const wrap = playerRoot(root);
+  if (wrap) openPanel(wrap, false);
+}
+
 function openPanel(wrap: HTMLElement, open: boolean): void {
   const picker = wrap.querySelector<HTMLElement>('[data-mp-picker]');
   const btn = wrap.querySelector<HTMLButtonElement>('[data-mp-picker-btn]');
@@ -328,7 +349,7 @@ function openPanel(wrap: HTMLElement, open: boolean): void {
  */
 export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): void {
   ensureStyles();
-  const wrap = root.querySelector<HTMLElement>('[data-music-player]');
+  const wrap = playerRoot(root);
   if (!wrap) return;
   const list = wrap.querySelector<HTMLUListElement>('[data-mp-list]');
   const search = wrap.querySelector<HTMLInputElement>('[data-mp-search]');

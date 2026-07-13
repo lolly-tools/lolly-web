@@ -27,10 +27,11 @@
   backdrop-filter: blur(2px);
 }
 
-/* Language chips — a wrapping pill row, flush-left above the eyebrow. Each
-   chip is a plain pill (no border-in-a-card trick); the active one gets a
-   filled background, matching the segmented filter pattern (.cat-typefilter). */
-.welcome-langs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 16px; }
+/* Language chips — a wrapping pill row that sits at the FOOT of the dialog, under
+   the two choice cards, set off by a hairline. Each chip is a plain pill (no
+   border-in-a-card trick); the active one gets a filled background, matching the
+   segmented filter pattern (.cat-typefilter). */
+.welcome-langs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 20px 0 0; padding: 18px 0 0; border-top: 1px solid hsl(var(--border)); }
 .welcome-langs .lang-switch-icon { width: 15px; height: 15px; flex: none; color: hsl(var(--muted-foreground)); margin-right: 2px; }
 .welcome-lang {
   display: inline-flex;
@@ -103,6 +104,10 @@
   border-color: hsl(var(--primary) / 0.45);
   background: hsl(var(--primary) / 0.06);
 }
+/* Icon leading each choice card — heart (make it yours) / eye (explore). Brand
+   card picks up the primary accent; the explore card stays muted. */
+.welcome-card-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
+.welcome-card--brand .welcome-card-icon { color: hsl(var(--primary)); }
 .welcome-card-kicker { font-size: 15px; font-weight: 700; }
 .welcome-card-line { font-size: 12.5px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
 .welcome-card-cta { margin-top: auto; padding-top: 4px; font-size: 12.5px; font-weight: 650; color: hsl(var(--primary)); }
