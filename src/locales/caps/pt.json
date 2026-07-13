@@ -77,7 +77,7 @@
   "Desktop": "Desktop",
   "macOS & Linux": "macOS e Linux",
   "Native packages via Tauri — the same engine in a desktop shell.": "Pacotes nativos via Tauri — o mesmo motor em um shell de desktop.",
-  "Mobile": "Mobile",
+  "Mobile": "Celular",
   "iOS & Android": "iOS e Android",
   "Installable mobile packages via Tauri, with the touch-first UI.": "Pacotes móveis instaláveis via Tauri, com a interface priorizando o toque.",
   "Command line": "Linha de comando",

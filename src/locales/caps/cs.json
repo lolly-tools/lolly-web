@@ -294,7 +294,7 @@
   "Stable asset IDs": "Stabilní ID assetů",
   "Permanent contracts": "Trvalé smlouvy",
   "An asset id is forever — never reused or renamed; versioning lives in the manifest, never the path.": "ID assetu je navždy — nikdy znovu použito ani přejmenováno; verzování žije v manifestu, nikdy v cestě.",
-  "Open-source engine": "Open-source engine",
+  "Open-source engine": "Open-source jádro",
   "MPL-licensed core": "Jádro pod licencí MPL",
   "The engine, shells, schemas and docs are designed to be open-sourceable; brand content stays separate.": "Engine, obaly, schémata a dokumentace jsou navrženy tak, aby byly open-sourcovatelné; obsah značky zůstává oddělený."
 }

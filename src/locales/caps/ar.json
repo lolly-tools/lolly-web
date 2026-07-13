@@ -108,7 +108,7 @@
   "PNG · JPG · WebP · AVIF · ICO": "PNG · JPG · WebP · AVIF · ICO",
   "Lossless or compact, alpha where supported, with the real DPI and an embedded sRGB ICC profile so colour reproduces faithfully.": "بلا فقدان أو مضغوط، مع ألفا حيث يُدعَم، بدقة DPI حقيقية وملف تعريف sRGB ICC مضمَّن فيُعاد إنتاج اللون بأمانة.",
   "Print": "الطباعة",
-  "PDF · Print PDF (CMYK) · CMYK TIFF": "PDF · Print PDF (CMYK) · CMYK TIFF",
+  "PDF · Print PDF (CMYK) · CMYK TIFF": "PDF · PDF للطباعة (CMYK) · TIFF بصيغة CMYK",
   "True page sizes and DeviceCMYK output for the press — see Print production below.": "أحجام صفحات حقيقية ومخرجات DeviceCMYK للمطبعة — انظر إنتاج الطباعة أدناه.",
   "Motion": "الحركة",
   "MP4 · WebM · GIF · APNG · Animated WebP": "MP4 · WebM · GIF · APNG · Animated WebP",
