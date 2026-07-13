@@ -33,14 +33,14 @@ const CSS = `
 /* Sits ABOVE the fixed bottom cluster (search bar + footer nav, ~5.5rem) so it
    never covers the footer's "Valid" / info-site links; z above those bars too. */
 .neuro-dock { position: fixed; right: 16px; bottom: calc(6rem + env(safe-area-inset-bottom, 0px)); z-index: 9002; width: 300px; max-width: calc(100vw - 32px);
-  display: flex; flex-direction: column; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) + 4px);
-  background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 12px 40px rgb(0 0 0 / .35);
+  display: flex; flex-direction: column; border:0; border-radius: calc(var(--radius) + 4px);
+  background: hsla(var(--card) / .7); color: hsl(var(--foreground));     backdrop-filter: blur(5px);box-shadow: 0 12px 40px rgb(0 0 0 / .35);
   transition: transform .2s cubic-bezier(.2,.7,.3,1), opacity .2s ease; }
 .neuro-dock.is-hidden { display: none; }
 /* Entrance: springs up from the corner with a slight overshoot when the mode is switched on. */
 @keyframes neuro-dock-in { from { transform: translateY(28px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
 .neuro-dock.is-entering { animation: neuro-dock-in .36s cubic-bezier(.6,.2,.1,1.2); transform-origin: bottom right; }
-.neuro-dock-head { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; cursor: default; border-bottom: 1px solid hsl(var(--border)); }
+.neuro-dock-head { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; cursor: default; }
 .neuro-dock-grip { display: inline-flex; color: hsl(var(--primary)); }
 .neuro-dock-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: .85rem; }
 .neuro-dock-btn { flex: 0 0 auto; width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s ease, color .12s ease; }
