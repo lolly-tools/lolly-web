@@ -33,9 +33,9 @@
 .modal-actions--choices { flex-wrap: wrap; }
 
 /* ─── Unsaved changes dialog ─────────────────────────────────────────────── */
-/* pro/index.ts's leave-guard is mountModal-built (className: 'unsaved-dialog');
-   views/tool.ts still hand-rolls its own pair of .unsaved-dialogs. Same class
-   names either way, so this chrome serves both without a fork. */
+/* pro/index.ts's leave-guard and views/tool.ts's clear/unsaved pair are all
+   mountModal-built (className: 'unsaved-dialog') — same class names everywhere,
+   so this chrome serves every leave-guard without a fork. */
 
 .unsaved-dialog,
 .share-dialog {
