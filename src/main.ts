@@ -661,6 +661,9 @@ function parseRoute(): Route {
     if (pathParts[0] === 'verify' || pathParts[0] === 'valid' || pathParts[0] === 'v') { window.location.replace('/#/verify'); return { name: 'verify' }; }
     // /start is the brand wizard, not a tool shortcut.
     if (pathParts[0] === 'start') { window.location.replace('/#/start'); return { name: 'start' }; }
+    // /components is the browsable component library, not a tool shortcut — a bare
+    // /components would otherwise fall through to /#/tool/components and 404.
+    if (pathParts[0] === 'components') { window.location.replace('/#/components'); return { name: 'components' }; }
     // /b and /brand → the Dashboard's Design System tab (shortlinks, not tools).
     if (pathParts[0] === 'b' || pathParts[0] === 'brand') {
       const q = window.location.search ? `${window.location.search.slice(1)}&tab=brand` : 'tab=brand';

@@ -732,6 +732,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           ${refPanel('print cmyk', false, 'dash-print', t('Print & CMYK'), printBody(palette))}
           <p class="plat-note dash-foot" role="note">
             ${t('<strong>This page is read-only</strong> — it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at {start}; personal preferences — theme and sound — live on your {profile}.', { start: `<a href="#/start">${t('Start')}</a>`, profile: `<a href="#/profile">${t('Profile')}</a>` })}
+            ${' '}${t('Building the UI? Browse the shell’s primitives & views in the {link}.', { link: `<a href="#/components">${t('Component library')}</a>` })}
           </p>
         `)}
 
