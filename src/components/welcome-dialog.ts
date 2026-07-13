@@ -29,6 +29,7 @@ import '../styles/parts/welcome.css';
 import { currentLang, langOptions, setActiveLang, t, LANG_ICON_SVG, flagEmoji } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { escape, NAV_EVENTS } from '../utils.ts';
+import { icon } from '../lib/icons.ts';
 import type { WebProfileAPI } from '../bridge/profile.ts';
 import { mountModal } from './modal.ts';
 
@@ -60,27 +61,29 @@ let settleOpen: ((choice: WelcomeChoice | null) => void) | null = null;
 // from the resolved boot-time language — see i18n.ts's initI18n).
 function renderWelcomeContent(): string {
   return `
+    <p class="welcome-eyebrow">${t('Welcome to Lolly')}</p>
+    <h2 class="welcome-title">${t('Your tools, your rules')}</h2>
+    <p class="welcome-sub">${t('Finished creative assets from simple inputs — pick a path, change your mind any time.')}</p>
+    <div class="welcome-cards">
+      <button type="button" class="welcome-card welcome-card--brand" data-choice="brand">
+        <span class="welcome-card-icon">${icon('heart', { size: 22 })}</span>
+        <span class="welcome-card-kicker">${t('Make it yours')}</span>
+        <span class="welcome-card-line">${t('Start from one colour or your design tokens — everything stays on this device.')}</span>
+        <span class="welcome-card-cta" aria-hidden="true">${t('Set up your brand →')}</span>
+      </button>
+      <button type="button" class="welcome-card" data-choice="explore">
+        <span class="welcome-card-icon">${icon('eye', { size: 22 })}</span>
+        <span class="welcome-card-kicker">${t('Explore the community tools')}</span>
+        <span class="welcome-card-line">${t('Jump straight in — QR codes, street maps, filters and more, no setup needed.')}</span>
+        <span class="welcome-card-cta" aria-hidden="true">${t('Browse the gallery →')}</span>
+      </button>
+    </div>
     <div class="welcome-langs" role="group" aria-label="Language">
       ${LANG_ICON_SVG}
       ${langOptions().map(o => {
         const flags = o.flags.length ? `<span class="welcome-lang-flags" aria-hidden="true">${o.flags.map(flagEmoji).join('')}</span>` : '';
         return `<button type="button" class="welcome-lang${o.code === currentLang() ? ' is-active' : ''}" data-lang="${o.code}" aria-pressed="${o.code === currentLang()}">${flags}${escape(o.nativeName)}</button>`;
       }).join('')}
-    </div>
-    <p class="welcome-eyebrow">${t('Welcome to Lolly')}</p>
-    <h2 class="welcome-title">${t('Your tools, your rules')}</h2>
-    <p class="welcome-sub">${t('Finished creative assets from simple inputs — pick a path, change your mind any time.')}</p>
-    <div class="welcome-cards">
-      <button type="button" class="welcome-card welcome-card--brand" data-choice="brand">
-        <span class="welcome-card-kicker">${t('Make it yours')}</span>
-        <span class="welcome-card-line">${t('Start from one colour or your design tokens — everything stays on this device.')}</span>
-        <span class="welcome-card-cta" aria-hidden="true">${t('Set up your brand →')}</span>
-      </button>
-      <button type="button" class="welcome-card" data-choice="explore">
-        <span class="welcome-card-kicker">${t('Explore the community tools')}</span>
-        <span class="welcome-card-line">${t('Jump straight in — QR codes, street maps, filters and more, no setup needed.')}</span>
-        <span class="welcome-card-cta" aria-hidden="true">${t('Browse the gallery →')}</span>
-      </button>
     </div>`;
 }
 

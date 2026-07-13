@@ -31,6 +31,7 @@ import { createRuntime, UNITS } from '@lolly/engine';
 import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
+import { attachCanvasCommit } from '../lib/canvas-commit.ts';
 import { scopeCss } from '../lib/scope-css.ts';
 import { syncInputs } from './tool-inputs.ts';
 import { escape } from '../utils.ts';
@@ -264,6 +265,10 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   // ── Canvas cells: scoped styles + rAF-coalesced live paint per runtime ─────
   members.forEach((m, i) => {
     m.canvasEl = viewEl.querySelector<HTMLElement>(`#me-c${i}`)!;
+    // Bind this canvas to ITS OWN runtime: an interactive tool (mesh-gradient
+    // dots, street-map pan) commits 1:1 to this session, never through the
+    // shared/fan sidebar control that a global data-input-id query would hit.
+    attachCanvasCommit(m.canvasEl, m.runtime);
     m.panelEl = viewEl.querySelector<PanelEl>(`[data-me-panel="${i}"]`)!;
     if (m.tool.styles) {
       const styleEl = document.createElement('style');

@@ -45,6 +45,7 @@ import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.t
 import { playSfx } from '../lib/sfx.ts';
 import { exportSizeDriver } from './export-size.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
+import { attachCanvasCommit } from '../lib/canvas-commit.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
 import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
 
@@ -807,6 +808,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const canvasEl  = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas');
   const outerEl   = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas-outer');
   const contentEl = (hideSidebar ? viewEl.querySelector<HTMLElement>('#tool-content') : canvasEl)!;
+  // Interactive tools (mesh-gradient, street-map) commit canvas edits through
+  // this per-canvas channel bound to the one runtime; the marker persists across
+  // every innerHTML paint. (The legacy global-sidebar-poke path stays as their
+  // fallback for offscreen export, where no canvas is mounted.)
+  attachCanvasCommit(contentEl, runtime);
   // Inject the brand's semantic colour slots (--brand-primary, --brand-surface,
   // …) from the active tokens onto the canvas root, so templates can consume
   // `var(--brand-primary, <fallback>)`. Like the token-sourced swatches above
