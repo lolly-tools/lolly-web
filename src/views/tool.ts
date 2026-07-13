@@ -3091,31 +3091,6 @@ function resolveCanvasAnnotations(canvasEl: HTMLElement): void {
   }
 }
 
-// Reset-confirm dialog. Shares the `.unsaved-dialog` chrome and the shared
-// mountModal lifecycle (components/modal.ts) — Escape and a backdrop click
-// dismiss like every other app dialog.
-function showClearDialog(onConfirm: () => void): void {
-  const content = `
-    <div class="unsaved-dialog-body">
-      <h2>${t('Clear changes?')}</h2>
-      <p>${t('This will reset every field to its default value.<br>This cannot be undone.')}</p>
-      <div class="unsaved-dialog-actions">
-        <button type="button" class="unsaved-leave" data-act="confirm">${t('Clear changes')}</button>
-        <button type="button" class="unsaved-cancel" data-act="cancel">${t('Cancel')}</button>
-      </div>
-    </div>
-  `;
-  const modal = mountModal<'confirm' | undefined>(content, {
-    className: 'unsaved-dialog',
-    onClose: (result) => { if (result === 'confirm') onConfirm(); },
-  });
-  modal.el.addEventListener('click', (e) => {
-    const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
-    if (act === 'confirm') modal.close('confirm');
-    else if (act === 'cancel') modal.close(undefined);
-  });
-}
-
 // onSave: optional async () => void that performs the save and navigates on
 // success (the caller owns both). We invoke and await it directly (from the
 // modal's onClose, after the dialog has been dismissed) rather than firing a
