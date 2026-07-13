@@ -83,6 +83,10 @@ function entryFor(el: Element): Entry | null {
 
 function destroyEntry(entry: Entry): void {
   registry.delete(entry);
+  // Drop the "live" marker so a host's resting poster/placeholder (shown behind the
+  // transparent player) reappears once no player is rendering here — e.g. a grid tile
+  // that scrolled off screen, or a closed details modal.
+  entry.el.classList.remove('is-lottie-live');
   try {
     entry.anim.destroy(); // unregisters from lottie's global animationManager
   } catch {
@@ -145,6 +149,16 @@ async function mountOne(el: Element, lottie: LottiePlayer, isCurrent: () => bool
   });
   const speed = parseFloat(el.getAttribute('data-lottie-speed') as string);
   if (Number.isFinite(speed)) anim.setSpeed(speed);
+
+  // Flag the marker "live" once the SVG has actually painted its first frame, so a host
+  // that shows a resting poster/placeholder behind this element (a still `background-image`
+  // or a ▶ glyph) can hide it — otherwise the still poster ghosts through the transparent
+  // playing SVG (the catalog details modal + grid tiles). Reverted in destroyEntry so the
+  // resting frame returns when the player is reaped. Gated on DOMLoaded (not whenLoaded,
+  // which also resolves on failure/timeout) so a broken asset keeps its poster.
+  const markLive = () => { if (el.isConnected) el.classList.add('is-lottie-live'); };
+  if (anim.isLoaded) markLive();
+  else anim.addEventListener('DOMLoaded', markLive);
 
   registry.add({ el, anim, src });
   await whenLoaded(anim);

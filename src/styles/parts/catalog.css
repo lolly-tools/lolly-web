@@ -181,6 +181,11 @@
   color: hsl(var(--muted-foreground));
 }
 .cat-thumb-motion > svg { width: 100%; height: 100%; display: block; }
+/* Once the live player has painted (lottie-mount adds `is-lottie-live` on DOMLoaded), drop the
+   resting poster + ▶ glyph: the Lottie <svg> is transparent, so a still poster left behind it
+   ghosts through the moving animation (looks like duplicated shapes). The class is removed when
+   the player is destroyed, so the resting frame returns for off-screen/un-mounted tiles. */
+.cat-thumb-motion.is-lottie-live { background-image: none; color: transparent; }
 
 .cat-tile-cap { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .cat-tile-name {
