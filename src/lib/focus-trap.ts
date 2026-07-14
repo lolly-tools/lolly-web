@@ -28,6 +28,16 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
   'textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
+/**
+ * Set by a11y.ts on its shared screen-reader live regions. They mount as <body>
+ * children, so for a body-mounted overlay they're siblings and the inert walk below
+ * would hit them — and `inert` drops a subtree from the accessibility tree, so every
+ * announce() raised while the modal was open would be silently lost. They're
+ * visually-hidden and hold no focusables, so leaving them live can't leak a Tab stop
+ * or a hit-testable target into the inerted background.
+ */
+const LIVE_REGION_ATTR = 'data-a11y-live';
+
 export interface FocusTrap { release(): void; }
 
 export interface FocusTrapOptions {
@@ -50,13 +60,16 @@ export function trapFocus(overlay: HTMLElement, opts: FocusTrapOptions = {}): Fo
     [...overlay.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => visible(el) && el.tabIndex !== -1);
 
   // 1. Inert everything outside the overlay's branch (siblings up the ancestor chain).
-  //    Skip already-inert nodes so a nested trap doesn't clobber an outer one on release.
+  //    Skip already-inert nodes so a nested trap doesn't clobber an outer one on release,
+  //    and the shared live regions so announcements still land (see LIVE_REGION_ATTR).
   const inerted: HTMLElement[] = [];
   let node: HTMLElement | null = overlay;
   while (opts.inertBackground !== false && node && node.parentElement && node !== document.body) {
     for (const sib of node.parentElement.children) {
       const el = sib as HTMLElement;
-      if (el !== node && !el.inert) { el.inert = true; inerted.push(el); }
+      if (el === node || el.inert || el.hasAttribute(LIVE_REGION_ATTR)) continue;
+      el.inert = true;
+      inerted.push(el);
     }
     node = node.parentElement;
   }
