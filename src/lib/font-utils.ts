@@ -92,30 +92,42 @@ function extractFamilyName(view: DataView, nameTableOffset: number): string {
 
     let offset = nameTableOffset + 6;
 
-    // Search for name ID 1 (Family name) or ID 16 (Typographic Family)
+    // Name ID 16 (Typographic Family) preferred, fallback to 1 (Family Name).
+    // Both must be collected before choosing: name records are ordered by nameId,
+    // so 1 is always encountered first and returning on first match would make the
+    // preference unreachable. It matters for variable fonts — Outfit[wght].ttf has
+    // nameId 1 = "Outfit Thin" (legacy, tied to the default instance) but nameId 16
+    // = "Outfit", and only the latter groups every weight under one family. Getting
+    // this wrong mislabels the Fonts tab, slugs the asset id "outfit-thin", and makes
+    // font-registry miss a `font-family: Outfit` stack.
+    let preferred = '';
+    let legacy = '';
+
     for (let i = 0; i < count && offset + 12 <= view.byteLength; i++) {
       const platformId = view.getUint16(offset, false);
       const encodingId = view.getUint16(offset + 2, false);
-      const languageId = view.getUint16(offset + 4, false);
       const nameId = view.getUint16(offset + 6, false);
       const length = view.getUint16(offset + 8, false);
       const stringOffset_ = view.getUint16(offset + 10, false);
 
       offset += 12;
 
-      // Name ID 16 (Typographic Family) preferred, fallback to 1 (Family Name)
-      if (nameId === 16 || nameId === 1) {
-        const strOffset = nameTableOffset + stringOffset + stringOffset_;
+      if (nameId !== 16 && nameId !== 1) continue;
 
-        // Support Unicode (platformId 3, encodingId 1) and Mac (platformId 1, encodingId 0)
-        if ((platformId === 3 && encodingId === 1) || (platformId === 1 && encodingId === 0)) {
-          const str = readString(view, strOffset, length, platformId === 3);
-          if (str) return str;
-        }
+      const strOffset = nameTableOffset + stringOffset + stringOffset_;
+
+      // Support Unicode (platformId 3, encodingId 1) and Mac (platformId 1, encodingId 0)
+      if ((platformId === 3 && encodingId === 1) || (platformId === 1 && encodingId === 0)) {
+        const str = readString(view, strOffset, length, platformId === 3);
+        if (!str) continue;
+        // First record wins per id, so the Windows/Unicode entry (which sorts ahead
+        // of Mac) keeps the precedence the old first-match loop gave it.
+        if (nameId === 16) { if (!preferred) preferred = str; }
+        else if (!legacy) legacy = str;
       }
     }
 
-    return 'Unknown';
+    return preferred || legacy || 'Unknown';
   } catch {
     return 'Unknown';
   }

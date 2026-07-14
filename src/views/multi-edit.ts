@@ -32,7 +32,7 @@ import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
-import { scopeCss } from '../lib/scope-css.ts';
+import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { syncInputs } from './tool-inputs.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
@@ -294,6 +294,9 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       const gen = ++m.renderGen;
       try {
         m.canvasEl.innerHTML = neutralizeEmbeds(hydrated);
+        // Same containment as the single-tool view: a template <style> is unscoped and
+        // unlayered as authored, so it would beat every app layer and leak across panes.
+        scopeTemplateStyles(m.canvasEl, `#me-c${i}`);
         runTemplateScripts(m.canvasEl);
         void hydrateEmbeds(m.canvasEl, { host, isCurrent: () => gen === m.renderGen });
         m.lastPainted = hydrated;

@@ -808,24 +808,6 @@
   box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
 }
 
-/* Filter box shown above a long option list (>10) — narrows the native select. */
-.select-search { display: grid; gap: 6px; }
-.select-search-input {
-  width: 100%;
-  padding: 7px 10px;
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  font: inherit;
-  font-size: 12px;
-  transition: border-color 0.12s;
-}
-.select-search-input:focus {
-  border-color: hsl(var(--ring));
-  outline: none;
-  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
-}
 
 .input-row textarea {
   resize: vertical;

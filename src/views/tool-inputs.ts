@@ -538,20 +538,6 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // (Excel/Sheets/Numbers) instead of the delimiter-guessing plain-text form.
     if (control.tagName === 'TEXTAREA') installTablePaste(control as HTMLTextAreaElement);
 
-    // Long select: the sibling filter box hides non-matching options (keeps the
-    // currently-selected one visible so the display never blanks).
-    if (control.tagName === 'SELECT') {
-      const search = control.closest('.select-search')?.querySelector<HTMLInputElement>('.select-search-input');
-      const sel = control as HTMLSelectElement;
-      search?.addEventListener('input', () => {
-        const q = search.value.trim().toLowerCase();
-        for (const o of Array.from(sel.options)) {
-          const hit = !q || o.textContent!.toLowerCase().includes(q) || o.value.toLowerCase().includes(q);
-          o.hidden = !hit && o.value !== sel.value;
-        }
-      });
-    }
-
     control.addEventListener('input', (e) => {
       if (e.target !== control) return; // block fields bubble up — ignore them here
       const ctl = control as HTMLInputElement;
@@ -1334,15 +1320,15 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       </div>`;
     }
     case 'select': {
-      const sel = `<select data-input-id="${id}">${(input.options ?? []).map(o =>
+      // No filter box for long lists: a native select already type-aheads, and the
+      // extra text input read as the field itself (an empty box wearing the row's
+      // label, because `.input-row:has(input…)` switches the row to the floating
+      // label meant for text fields) while only narrowing a dropdown you had to open
+      // first. It sat above every 11-16 option select — blend mode, language,
+      // transition, motion — where there was nothing to filter.
+      return `<select data-input-id="${id}">${(input.options ?? []).map(o =>
         `<option value="${escape(o.value)}" ${o.value === input.value ? 'selected' : ''}>${escape(o.label ?? o.value)}</option>`
       ).join('')}</select>`;
-      // A long option list gets a filter box that narrows the native dropdown by
-      // substring — the native select still owns the value / URL / keyboard.
-      if ((input.options?.length ?? 0) > 10) {
-        return `<div class="select-search"><input type="text" class="select-search-input" placeholder="Search…" aria-label="Filter ${escape(input.label ?? id)}" autocomplete="off">${sel}</div>`;
-      }
-      return sel;
     }
     case 'checkbox':
       return `<input type="checkbox" data-input-id="${id}" ${input.value ? 'checked' : ''}>`;
