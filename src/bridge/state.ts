@@ -9,6 +9,7 @@
  */
 
 import { stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
+import { sessionVersionStamp, migrateSessionRecord } from '../../../../engine/src/session-record.ts';
 import type { StateAPI, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
 
 /** The saved payload: input values plus the runtime's `__`-prefixed markers. */
@@ -29,6 +30,15 @@ interface StateRecord {
   data: SavedStateData;
   thumb: string | null;
   updatedAt: string;
+  /** Record-layout version + the engine that wrote it (see engine/session-record.ts).
+   *  Optional so records written before versioning still type-check on read. */
+  formatVersion?: number;
+  engineVersion?: string;
+}
+
+/** Where migrateSessionRecord reports a record from a newer app build. */
+function stateLog(level: 'warn' | 'info', message: string, meta?: Record<string, unknown>): void {
+  (level === 'warn' ? console.warn : console.info)(`[lolly:state] ${message}`, meta ?? '');
 }
 
 /** The slice of the idb database this API touches (the 'state' object store). */
@@ -62,13 +72,18 @@ export function createStateAPI(db: StateDb): WebStateAPI {
         data,
         thumb,
         updatedAt: new Date().toISOString(),
+        ...sessionVersionStamp(),
       };
       await db.put('state', record);
     },
 
     async load(slot) {
       const record = await db.get('state', slot);
-      return record?.data ?? null;
+      // Read the record's version stamps through the shared migrate-or-warn
+      // branch (engine/session-record.ts) rather than reaching for `.data`
+      // directly — records predating versioning migrate as v0 (a no-op today),
+      // and a record written by a newer app is read as-is but reported.
+      return migrateSessionRecord(record, stateLog) as SavedStateData | null;
     },
 
     async list() {
