@@ -20,6 +20,7 @@ import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { installTablePaste } from '../lib/table-paste.ts';
 import { splitMarkdownIntoBlocks } from '../lib/markdown.ts';
 import { playSliderTick, playScrubTick } from '../lib/sfx.ts';
+import { icon, hasIcon } from '../lib/icons.ts';
 import {
   nestingActive, nestingConfig, deriveBlockKeys, blockParentIndex,
   blockTreeOrder, blockReparentMove, buildRefOptions, materializeRefTarget,
@@ -263,6 +264,21 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       Array.isArray(v) ? v.includes(modelValues[k] as InputValue) : modelValues[k] === v);
   });
 
+  // `attachTo` (schema): an input whose control rides INSIDE a sibling's row
+  // rather than taking its own labelled row — a compact modifier that belongs to
+  // another control (e.g. a fit toggle on an asset slot). Resolved against
+  // panelModel, not model, so a target hidden by its own showIf releases its
+  // attachments back into ordinary rows rather than silently swallowing them.
+  const attachedTo = (i: InputModelItem): string | null =>
+    i.attachTo && panelModel.some(t => t.id === i.attachTo && t.id !== i.id) ? i.attachTo : null;
+  const attachments = new Map<string, InputModelItem[]>();
+  for (const i of panelModel) {
+    const target = attachedTo(i);
+    if (!target) continue;
+    attachments.set(target, [...(attachments.get(target) ?? []), i]);
+  }
+  const rowModel = panelModel.filter(i => !attachedTo(i));
+
   const active       = document.activeElement as HTMLElement | null;
   const focusId      = active?.dataset?.inputId;
   const blockFocusId = active?.dataset?.fieldId;
@@ -313,7 +329,14 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     const ht = input.help ? helpTip(input.help) : null;
     const labelText = `<span class="input-label-text"${isComposite ? ` id="${labelId}"` : ''}>${escape(input.label ?? input.id)}${valueTag}</span>`;
     const label = `<span class="input-label">${labelText}${ht ? ht.button : ''}</span>`;
-    const control = controlHtml(input, modelValues);
+    // Anything attached to this input leads its control, wrapped in a flex row.
+    // Wrapping (rather than splicing markup into the target's own control) keeps
+    // this agnostic about what the target control IS — no asset-picker internals
+    // here, so any control can host an attachment.
+    const lead = (attachments.get(input.id) ?? []).map(attachedControlHtml).join('');
+    const control = lead
+      ? `<div class="input-attached">${lead}${controlHtml(input, modelValues)}</div>`
+      : controlHtml(input, modelValues);
     const help = ht ? ht.pop : '';
     if (isCheckbox) return `<label class="${cls}">${control}${label}${help}</label>`;
     if (isComposite) return `<div class="${cls}" role="group" aria-labelledby="${labelId}">${label}${control}${help}</div>`;
@@ -336,7 +359,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const parts: string[] = [];
   let openSection: string | null = null;
   let prevInput: InputModelItem | null = null;
-  for (const input of panelModel) {
+  for (const input of rowModel) {
     const sec = input.section ?? null;
     if (sec !== openSection) {
       if (openSection !== null) parts.push('</div></details>');
@@ -570,6 +593,20 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const clearId = btn.dataset.clearId!;
       runtime.setInput(clearId, null);
       onDirty?.(clearId);
+    });
+  });
+
+  // icon-toggle: one button that CYCLES its select's options (see the schema's
+  // select branch). Two options make it a toggle, which is the intended use.
+  el.querySelectorAll<HTMLElement>('[data-toggle-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const toggleId = btn.dataset.toggleId!;
+      const item = model.find(i => i.id === toggleId);
+      const opts = item?.options ?? [];
+      if (!opts.length) return;
+      const at = opts.findIndex(o => o.value === item!.value);
+      runtime.setInput(toggleId, opts[(at + 1) % opts.length]!.value);
+      onDirty?.(toggleId);
     });
   });
 
@@ -1230,6 +1267,28 @@ function fmtBytes(n: number): string {
   const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
   const v = n / 1024 ** i;
   return `${i === 0 ? v : v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
+}
+
+/**
+ * The control for an `attachTo` input — one compact button riding inside its
+ * target's row (see renderInputs). Only `display: 'icon-toggle'` has a compact
+ * form; anything else falls back to its normal control, which still reads fine
+ * inline because the wrapper is just a flex row.
+ *
+ * The button shows the CURRENT option's icon and is labelled with the option it
+ * will switch TO, so a screen-reader user gets the action rather than the state
+ * (the state is already in the row's own label).
+ */
+function attachedControlHtml(input: InputModelItem): string {
+  if (input.display !== 'icon-toggle') return controlHtml(input);
+  const opts = input.options ?? [];
+  if (!opts.length) return '';
+  const at = Math.max(0, opts.findIndex(o => o.value === input.value));
+  const cur = opts[at]!;
+  const next = opts[(at + 1) % opts.length]!;
+  const glyph = cur.icon && hasIcon(cur.icon) ? icon(cur.icon, { size: 16 }) : escape(cur.label ?? cur.value);
+  const title = `${input.label ?? input.id}: ${cur.label ?? cur.value} — switch to ${next.label ?? next.value}`;
+  return `<button type="button" class="icon-toggle" data-toggle-id="${escape(input.id)}" title="${escape(title)}" aria-label="${escape(title)}">${glyph}</button>`;
 }
 
 function controlHtml(input: InputModelItem, modelValues: Record<string, InputValue> = {}): string {

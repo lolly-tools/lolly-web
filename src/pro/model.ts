@@ -64,7 +64,9 @@ interface ConstraintSig {
   min?: number | null;
   max?: number | null;
   step?: number | null;
-  display?: 'input' | 'slider' | null;
+  /** Tracks InputSpec's own union rather than restating it, so widening the
+   *  manifest's display variants can't silently drift from this signature. */
+  display?: InputSpec['display'] | null;
   maxLength?: number | null;
   options?: string[];
   palette?: string | null;
