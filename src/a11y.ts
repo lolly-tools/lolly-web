@@ -20,6 +20,12 @@ function region(assertive: boolean): HTMLDivElement {
   el.className = 'visually-hidden';
   el.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
   el.setAttribute('aria-atomic', 'true');
+  // Marks this as a live region that must survive a modal's background `inert`
+  // sweep — see lib/focus-trap.ts, which skips it. Without the marker, every
+  // body-mounted overlay would inert these (they're <body> children, i.e. the
+  // overlay's own siblings) and silently drop every announcement made while it
+  // was open. Keep the attribute in sync with LIVE_REGION_ATTR there.
+  el.setAttribute('data-a11y-live', '');
   document.body.appendChild(el);
   if (assertive) _assertive = el; else _polite = el;
   return el;
