@@ -162,3 +162,40 @@ test('corpus: scoping every tool styles.css never leaks the token into parens or
 test('empty input returns empty', () => {
   assert.equal(scopeCss('', S), '');
 });
+
+// ─── Containment of a template's own <style> (see scopeTemplateStyles) ────────
+// A tool's template.html may open with a global reset. Injected verbatim it lands
+// unscoped AND unlayered, which beats every @layer in styles/app.css regardless of
+// specificity and strips the padding off the whole app chrome. Scoping is what stops
+// tool data from reaching outside its canvas.
+
+test('a universal reset is confined to the scope', () => {
+  assert.equal(
+    norm(scopeCss('*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }', S)),
+    '#c *, #c *::before, #c *::after { box-sizing: border-box; margin: 0; padding: 0; }'
+  );
+});
+
+test(':root maps onto the scope rather than nesting under it', () => {
+  // `#c :root` could never match — :root is <html>, which is never inside the canvas —
+  // so the rule would vanish and take the tool's custom properties with it.
+  assert.equal(norm(scopeCss(':root{--brand:red}', S)), '#c {--brand:red}');
+});
+
+test('html and body map onto the scope too', () => {
+  assert.equal(norm(scopeCss('html{margin:0}', S)), '#c {margin:0}');
+  assert.equal(norm(scopeCss('body{margin:0}', S)), '#c {margin:0}');
+});
+
+test('a root selector in a list collapses without emitting the scope twice', () => {
+  assert.equal(norm(scopeCss(':root, body{--x:1}', S)), '#c {--x:1}');
+  assert.equal(norm(scopeCss(':root, .a{--x:1}', S)), '#c, #c .a {--x:1}');
+});
+
+test('root mapping does not touch selectors that merely start with a root name', () => {
+  // `body.dark` / `html[dir]` still describe the document root, but they carry extra
+  // qualifiers, so they are NOT bare root selectors — prefixing keeps today's behaviour
+  // rather than silently widening the rule to the whole canvas.
+  assert.equal(norm(scopeCss('.body{margin:0}', S)), '#c .body {margin:0}');
+  assert.equal(norm(scopeCss('body .a{margin:0}', S)), '#c body .a {margin:0}');
+});

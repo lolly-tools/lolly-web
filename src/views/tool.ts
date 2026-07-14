@@ -39,7 +39,7 @@ import { askLollyIntent } from './picker.ts';
 import { applyBrandVars } from '../brand-vars.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
 import { createSoundToggle } from '../components/sound-toggle.ts';
-import { scopeCss } from '../lib/scope-css.ts';
+import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { setupMobileSheet, flickDirection } from '../lib/mobile-sheet.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -2294,6 +2294,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // renders (blob URLs) just after the template's own scripts run. The
         // generation guard stops a slow embed render from overwriting a newer one.
         contentEl.innerHTML = neutralizeEmbeds(hydrated);
+        // A <style> inside template.html would otherwise apply unscoped and unlayered,
+        // beating every app layer — one tool's `*` reset strips the chrome's padding.
+        scopeTemplateStyles(contentEl, canvasScope);
         if (!hideSidebar) resolveCanvasAnnotations(contentEl);
         // Keep the canvas's accessible summary current when it's a live a11yLabel.
         if (tool.manifest.a11yLabel) contentEl.setAttribute('aria-label', canvasLabel());

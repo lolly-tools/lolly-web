@@ -109,12 +109,24 @@ function splitSelectorList(selectors: string): string[] {
   return parts;
 }
 
+/**
+ * Selectors naming the document root. Inside a scope there IS no document root, so
+ * prefixing them (`#tool-canvas :root`) yields a selector that can never match and
+ * silently drops the rule — which matters because authors put custom properties on
+ * `:root` and expect them to cascade into their own subtree. Map them onto the scope
+ * element itself instead, which is the tool's root as far as the tool can observe.
+ */
+const ROOT_SELECTOR = /^(?::root|html|body)$/i;
+
 /** Prefix every top-level comma-separated selector in a list with the scope. */
 function scopeSelectorList(selectors: string, scope: string): string {
+  const seen = new Set<string>();
   return splitSelectorList(selectors)
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((s) => `${scope} ${s}`)
+    .map((s) => (ROOT_SELECTOR.test(s) ? scope : `${scope} ${s}`))
+    // `:root, body { … }` would otherwise emit the scope twice in one list.
+    .filter((s) => !seen.has(s) && seen.add(s))
     .join(', ');
 }
 
@@ -188,4 +200,26 @@ export function scopeCss(css: string, scope: string): string {
     i++;
   }
   return out + buf;
+}
+
+/**
+ * Scope every `<style>` a tool's TEMPLATE injected into `container`.
+ *
+ * A tool's styles.css is scoped by its caller before it ever reaches the document,
+ * but a `<style>` block inside template.html rides in on the hydrated innerHTML and
+ * used to land in the page verbatim — unscoped AND unlayered. Unlayered CSS wins over
+ * every layer regardless of specificity (see the @layer roster in styles/app.css), so
+ * one tool's `*, *::before, *::after { margin: 0; padding: 0 }` reset silently
+ * stripped the padding from the whole app chrome the moment that tool mounted. 12 of
+ * the shipped templates open with a reset like that; tools are data, so the shell has
+ * to contain them rather than trusting each one to scope itself.
+ *
+ * Call this immediately after the innerHTML swap and before anything measures layout.
+ * It is safe to re-run: each render rebuilds the subtree, so the styles are fresh.
+ */
+export function scopeTemplateStyles(container: ParentNode, scope: string): void {
+  for (const el of container.querySelectorAll('style')) {
+    const css = el.textContent;
+    if (css) el.textContent = scopeCss(css, scope);
+  }
 }
