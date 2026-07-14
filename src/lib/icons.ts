@@ -164,6 +164,12 @@ const PATHS = {
   convert: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
   resize: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>',
   sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>',
+  // Image fit modes — a deliberately symmetric pair: the same frame, with the
+  // artwork drawn OVERFLOWING it (fill/crop) or INSET within it (fit whole). The
+  // difference between the two glyphs is the whole message, so they only read
+  // side by side or as a toggle that swaps between them.
+  fitCover: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="6" y="1" width="12" height="22" rx="1"/>',
+  fitContain: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="6" y="8" width="12" height="8" rx="1"/>',
   // Stacked planes — "composite of multiple elements".
   layers: '<path d="M12 2 2 7l10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
   // Microphone — "recorded live from the microphone".

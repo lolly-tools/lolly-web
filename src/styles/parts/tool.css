@@ -1726,6 +1726,43 @@ background-color:hsl(var(--background) / 1);
     font-family: var(--font-mono);
 }
 
+/* `attachTo` (see tool-inputs.ts renderInputs): a compact modifier riding at the
+   head of the control it belongs to, instead of taking a labelled row of its own.
+   min-width:0 on the hosted control so a long asset name still ellipsises rather
+   than widening the sidebar (same reason as .asset-picker-row). */
+.input-attached {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.input-attached > :not(.icon-toggle) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.icon-toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background-color .12s;
+}
+.icon-toggle:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--primary) / 0.55);
+  background: hsl(var(--primary) / 0.07);
+}
+.icon-toggle svg { display: block; }
+
 .asset-picker-thumb-inline {
   flex: none;
   width: 32px;
