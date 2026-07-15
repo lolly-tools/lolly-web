@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { scopeCss } from './scope-css.ts';
+import { JSDOM } from 'jsdom';
+import { scopeCss, unscopeCss, scopeTemplateStyles, unscopeStyleEls } from './scope-css.ts';
 
 const S = '#c';
 const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
@@ -198,4 +199,64 @@ test('root mapping does not touch selectors that merely start with a root name',
   // rather than silently widening the rule to the whole canvas.
   assert.equal(norm(scopeCss('.body{margin:0}', S)), '#c .body {margin:0}');
   assert.equal(norm(scopeCss('body .a{margin:0}', S)), '#c body .a {margin:0}');
+});
+
+// ── unscoping (export path) ───────────────────────────────────────────────────
+// An SVG export clones the tool's inline <svg> into a STANDALONE file, where no
+// canvas ancestor exists — so a scoped rule inside it can never match and the
+// artwork's paths lose their fill (they render BLACK). unscopeStyleEls releases
+// exactly what scopeTemplateStyles pinned. Regression: pose-geeko's legs.
+
+test('unscopeCss reverses scopeCss for the same scope', () => {
+  // scopeCss re-emits `sel {` with a space, so the round-trip is semantic, not
+  // byte-exact — normalise the brace spacing before comparing.
+  const nb = (s: string) => norm(s).replace(/\s*\{\s*/g, '{');
+  for (const css of [
+    '.a{color:red}',
+    '.a, .b .c{color:red}',
+    '@media (max-width:600px){.a{color:red}.b{color:blue}}',
+    '@keyframes spin{from{opacity:0}50%{opacity:.5}to{opacity:1}}',
+    ':is(.a, .b) span{color:red}',
+    '.cls-18{fill:#32b678}',
+  ]) {
+    assert.equal(nb(unscopeCss(scopeCss(css, S), S)), nb(css), `round-trip failed for: ${css}`);
+  }
+});
+
+test('unscopeCss leaves selectors it did not scope alone', () => {
+  assert.equal(norm(unscopeCss('.a {color:red}', S)), '.a {color:red}');
+  // A selector that merely mentions the scope elsewhere is not a prefix match.
+  assert.equal(norm(unscopeCss('.x #c .a {color:red}', S)), '.x #c .a {color:red}');
+});
+
+test('a root selector survives the scope round-trip as :root', () => {
+  // scopeSelectorList collapses :root/html/body onto the scope element itself;
+  // unscoping maps it back to :root — the root of a standalone SVG document.
+  assert.equal(norm(unscopeCss(scopeCss(':root{--x:1}', S), S)).replace(/\s*\{\s*/g, '{'), ':root{--x:1}');
+});
+
+test('scopeTemplateStyles records its scope and unscopeStyleEls releases it', () => {
+  const doc = new JSDOM('<div id="c"><svg><style>.cls-18{fill:#32b678}</style></svg></div>').window.document;
+  const container = doc.getElementById('c')!;
+  scopeTemplateStyles(container, S);
+  const styleEl = container.querySelector('style')!;
+  assert.equal(norm(styleEl.textContent!), '#c .cls-18 {fill:#32b678}');
+  assert.equal(styleEl.getAttribute('data-lolly-scope'), S);
+
+  // The export clones the <svg> out of the canvas, then releases the scope.
+  const clone = container.querySelector('svg')!.cloneNode(true) as Element;
+  unscopeStyleEls(clone);
+  const cloned = clone.querySelector('style')!;
+  assert.equal(norm(cloned.textContent!), '.cls-18 {fill:#32b678}');
+  // The marker is an internal detail — it must not ride into the exported file.
+  assert.equal(cloned.hasAttribute('data-lolly-scope'), false);
+  // The live node keeps its scoping (the clone is what leaves).
+  assert.equal(norm(styleEl.textContent!), '#c .cls-18 {fill:#32b678}');
+});
+
+test('unscopeStyleEls ignores a <style> it never scoped', () => {
+  const doc = new JSDOM('<svg><style>.a{fill:red}</style></svg>').window.document;
+  const svg = doc.querySelector('svg')!;
+  unscopeStyleEls(svg);
+  assert.equal(norm(svg.querySelector('style')!.textContent!), '.a{fill:red}');
 });

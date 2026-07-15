@@ -69,6 +69,7 @@ const IMPORT_FORMATS: ReadonlyArray<{ icon: string; name: string; ext: string }>
   { icon: `<img src="/icons/icon-192.png" alt="" width="26" height="26" decoding="async">`, name: 'LollyBrand', ext: '.zip' },
   { icon: PENPOT_ICON, name: 'Penpot', ext: '.penpot' },
   { icon: TOKENS_ICON, name: 'Design Tokens', ext: '.json' },
+  { icon: TOKENS_ICON, name: 'Token Studio', ext: '.json' },
   { icon: SVG_ICON, name: 'Plain SVG', ext: '.svg' },
 ];
 
