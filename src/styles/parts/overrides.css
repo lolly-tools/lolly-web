@@ -6,6 +6,25 @@
    rank, not by load order. Keep this sheet small; most styling belongs in a
    view or a primitive, not here. */
 
+/* dom-to-image-more's decode wrapper — park it off-screen.
+   makeImage() builds `<svg><img src="data:image/svg+xml,…"></svg>` and appends it
+   to <body> to force the snapshot to decode. Its own comment says "(invisible)"
+   but it sets no styles, so the UA default sizing (width:100%, height:auto→150px)
+   paints a full-width band of the half-decoded page snapshot across the bottom of
+   <body> for the frame or two before onload removes it — the FOUC of giant icons
+   seen on any view that rasterises (personalize-previews at boot, thumbnails,
+   /pro batch). Off-screen positioning doesn't affect it: onload fires on resource
+   load and the caller reads naturalWidth/drawImage, neither of which needs layout.
+   :not([style]) targets the bare wrapper only — our own body-level scratch <svg>s
+   (bridge/export.ts) always set an inline style — and self-disables if a future
+   version of the library styles it itself. */
+body > svg:not([style]) {
+  position: fixed;
+  left: -99999px;
+  top: 0;
+  pointer-events: none;
+}
+
 /* Top-right chrome cluster — the .tools-home surface, no border.
    The view FABs (.filter-fab / .history-fab — catalog's "View options" and the
    projects view-sort button both reuse the .filter-fab class), the language FAB,

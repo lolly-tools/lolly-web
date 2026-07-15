@@ -32,6 +32,10 @@
 
 type Ctx = 'scope' | 'keyframes' | 'raw';
 
+/** Marks a <style> scopeTemplateStyles rewrote, recording the prefix it applied so
+ *  the transform is reversible (unscopeStyleEls). */
+const SCOPE_ATTR = 'data-lolly-scope';
+
 // At-rules whose block contains style rules whose selectors must be scoped.
 const CONDITIONAL_GROUP = new Set(['media', 'supports', 'container', 'layer', 'document', 'scope']);
 // At-rules whose block contains keyframe selectors (from/to/%) — never scoped.
@@ -130,7 +134,31 @@ function scopeSelectorList(selectors: string, scope: string): string {
     .join(', ');
 }
 
+/** Strip the scope prefix back off every top-level selector in a list — the inverse
+ *  of scopeSelectorList, for exporters that lift scoped markup out of the canvas. A
+ *  bare `scope` selector is what scopeSelectorList collapsed `:root`/`html`/`body`
+ *  into; map it back to `:root`, which in a standalone SVG document IS the <svg>. */
+function unscopeSelectorList(selectors: string, scope: string): string {
+  const seen = new Set<string>();
+  return splitSelectorList(selectors)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => (s === scope ? ':root' : s.startsWith(`${scope} `) ? s.slice(scope.length + 1) : s))
+    .filter((s) => !seen.has(s) && seen.add(s))
+    .join(', ');
+}
+
 export function scopeCss(css: string, scope: string): string {
+  return transformCss(css, scope, scopeSelectorList);
+}
+
+/** Reverse scopeCss for the same `scope`. Only selectors the scoping actually added
+ *  a prefix to are changed; anything else is copied through untouched. */
+export function unscopeCss(css: string, scope: string): string {
+  return transformCss(css, scope, unscopeSelectorList);
+}
+
+function transformCss(css: string, scope: string, mapSelectors: (selectors: string, scope: string) => string): string {
   if (!css) return '';
   const stack: Ctx[] = ['scope'];
   const ctx = (): Ctx => stack[stack.length - 1]!;
@@ -174,7 +202,7 @@ export function scopeCss(css: string, scope: string): string {
         );
       } else if (ctx() === 'scope' && trimmed) {         // a real style-rule selector list
         const [lead, rest] = peelLeadingTrivia(prelude);
-        out += lead + scopeSelectorList(rest, scope) + ' {';
+        out += lead + mapSelectors(rest, scope) + ' {';
         stack.push('raw');                               // its body is declarations
       } else {                                           // keyframe stop, or nested (relative) rule
         out += prelude + '{';
@@ -220,6 +248,28 @@ export function scopeCss(css: string, scope: string): string {
 export function scopeTemplateStyles(container: ParentNode, scope: string): void {
   for (const el of container.querySelectorAll('style')) {
     const css = el.textContent;
-    if (css) el.textContent = scopeCss(css, scope);
+    if (!css) continue;
+    el.textContent = scopeCss(css, scope);
+    // Record what we prefixed so an exporter lifting this markup OUT of the canvas
+    // can put it back (unscopeStyleEls). Load-bearing for a <style> inside an inline
+    // <svg>: the SVG export clones that <svg> verbatim into a standalone file where
+    // no `scope` ancestor exists, so a scoped rule can never match — the artwork's
+    // paths lose their fill and render BLACK (pose-geeko's legs), and svgo then drops
+    // the never-matching rule as unused, erasing the evidence.
+    el.setAttribute(SCOPE_ATTR, scope);
+  }
+}
+
+/**
+ * Undo scopeTemplateStyles inside `root` (typically an export clone), using each
+ * <style>'s own recorded scope. Safe to call on any tree: a <style> with no marker
+ * was never scoped by us and is left alone.
+ */
+export function unscopeStyleEls(root: ParentNode): void {
+  for (const el of root.querySelectorAll(`style[${SCOPE_ATTR}]`)) {
+    const scope = el.getAttribute(SCOPE_ATTR)!;
+    const css = el.textContent;
+    if (css) el.textContent = unscopeCss(css, scope);
+    el.removeAttribute(SCOPE_ATTR);
   }
 }

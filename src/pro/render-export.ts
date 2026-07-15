@@ -41,7 +41,7 @@ async function preferCompactQuery(query: string): Promise<string> {
 import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { applyBrandVars } from '../brand-vars.ts';
-import { scopeCss } from '../lib/scope-css.ts';
+import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { c2paDefaultOn } from '../lib/c2pa-policy.ts';
 import { MOTION_EXPORT_FORMATS } from './folder-rows.ts';
@@ -159,6 +159,18 @@ async function mountToolCanvas(
   // (batch row / composed child / single export) never fires a network request for
   // them — the live-preview wiring in views/tool.ts isn't on this path.
   canvas.innerHTML = neutralizeEmbeds(hydrated);
+  // Contain the template's OWN <style> blocks, exactly as views/tool.ts and multi-edit.ts
+  // do after their innerHTML swap. This stage is mounted in the LIVE document, so an
+  // unscoped template <style> is not merely untidy — it is UNLAYERED, and unlayered CSS
+  // beats every @layer in styles/app.css regardless of specificity. 14 shipped templates
+  // open with `*, *::before, *::after { margin:0; padding:0 }` and two (bag-video,
+  // pose-geeko) declare a bare `svg { width:100%; height:100% }`, so for the ~350ms a
+  // stage was mounted those rules repainted the WHOLE app: chrome padding stripped (the
+  // tab bar's pill flattens to plain text) and every icon in the page ballooned to 100%
+  // of its button. Visible as a flash on a cold gallery→tool navigation, because
+  // personalize-previews drives this path at boot. Must run BEFORE the stage is inserted
+  // and before anything measures layout.
+  scopeTemplateStyles(canvas, `.${CANVAS_CLASS}`);
   stage.appendChild(canvas);
   document.body.appendChild(stage);
 

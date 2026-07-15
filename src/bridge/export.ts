@@ -34,6 +34,7 @@ import {
 import { resolveVectorFont } from './font-registry.ts';
 import type { VectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
+import { unscopeStyleEls } from '../lib/scope-css.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { videoMimeCandidates } from './video-mime.ts';
 // Capability probes live in format-support.ts so the tool view can import them
@@ -1223,6 +1224,9 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   const svg = node.tagName?.toLowerCase() === 'svg' ? node : node.querySelector('svg');
   const clone = svg!.cloneNode(true) as Element;
   stripCommentNodes(clone);
+  // The clone leaves the canvas, so any rule scopeTemplateStyles pinned under the
+  // canvas selector has to be released or it matches nothing in the standalone file.
+  unscopeStyleEls(clone);
   // The clone is otherwise a VERBATIM copy of the tool's live <svg>, keeping its
   // <text> runs as live text — a violation of the "vector output always outlines
   // text" rule, and a real bug on guest brands: community SVG tools (chart-creator,
@@ -1843,6 +1847,7 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     if (tag === 'svg') {
       const clone = el.cloneNode(true) as Element;
       stripCommentNodes(clone);
+      unscopeStyleEls(clone);
       clone.setAttribute('x',      String(x));
       clone.setAttribute('y',      String(y));
       clone.setAttribute('width',  String(w));
