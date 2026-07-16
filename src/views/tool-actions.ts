@@ -265,6 +265,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           <input type="number" data-action="export-height" data-scrub aria-label="Height"
                  value="${exportDefaults.height ?? manifest.render.height}" min="1" max="100000" step="any">
         </div>
+        ${manifest.render.units === false ? '' : `
         <select class="dim-unit" data-action="export-unit" aria-label="Units"
                 title="Units for width & height. Physical units (mm/cm/in/pt) export at the right size for print — PDF as a true page, raster at the chosen DPI.">
           ${UNITS.map(u => `<option value="${u}" ${u === initUnit ? 'selected' : ''}>${u}</option>`).join('')}
@@ -273,7 +274,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
                title="Raster resolution for physical units (ignored for vector formats).">
           <input type="number" data-action="export-dpi" value="${initDpi}" min="36" max="1200" step="1" aria-label="DPI">
           <span>DPI</span>
-        </label>
+        </label>`}
       </div>` : '';
 
   // Editor-only aspect-ratio guard (manifest.render.aspectWarning). A hidden alert
@@ -819,7 +820,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     lifeEl.innerHTML = `<p class="c2pa-life-signed">Signed as <strong>${escape(s.identity?.email ?? '')}</strong>${until ? ` · verified until ${escape(until)}` : ''}${renew}</p>`;
   })();
 
-  const dimUnit = (): string => el!.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value || 'px';
+  // A px-only tool (render.units:false) has no unit selector, so an on-screen pixel
+  // is an exported pixel — the token-cost readout can't drift from the real raster
+  // resolution the way a physical unit + DPI would. Force px explicitly, not just by
+  // the selector's absence, so the invariant holds regardless of DOM state.
+  const dimUnit = (): string => manifest.render.units === false
+    ? 'px'
+    : (el!.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value || 'px');
   const dimDpi  = (): number => { const n = parseInt(el!.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '', 10); return n > 0 ? n : 300; };
   // Ephemeral-credential lifetime pick; null when an enrolled identity replaced
   // the select (the cert window rules then) — export.js defaults absent to 30.

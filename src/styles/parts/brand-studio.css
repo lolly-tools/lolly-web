@@ -684,7 +684,10 @@ background-image:
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .4);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
-.be-tok-shadow-col { width: 30px; height: 26px; padding: 0; border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .4); background: none; cursor: pointer; }
+/* Our colour picker in the shadow row — narrow enough that the trigger's
+   container query drops the colour name and leaves just the swatch. */
+.be-tok-shadow-cf { flex: 0 0 auto; width: 34px; display: inline-flex; }
+.be-tok-shadow-cf .color-picker-field, .be-tok-shadow-cf .color-trigger { width: 100%; }
 .be-tok-del {
   margin-inline-start: auto; border: 0; background: transparent; cursor: pointer;
   color: hsl(var(--muted-foreground)); font-size: .78rem; padding: .2rem .35rem;
@@ -783,10 +786,6 @@ background-image:
 }
 .be-grad-pop-custom summary::-webkit-details-marker { display: none; }
 .be-grad-pop-customrow { display: flex; gap: .4rem; margin-top: .45rem; }
-.be-grad-pop-customrow input[type="color"] {
-  flex: 0 0 auto; width: 34px; height: 30px; padding: 0; cursor: pointer;
-  border: 1px solid hsl(var(--input)); border-radius: 5px; background: none;
-}
 .be-grad-pop-customrow .be-fmt-input { flex: 1 1 auto; min-width: 0; }
 
 /* ── Catalogue tab: dropzone + the sorted recap. */

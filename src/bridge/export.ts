@@ -18,7 +18,7 @@ import {
   parseClipShape, parseRadialGradient, parseDropShadowFilter,
   splitCssArgs, parseGradientAngle, parseGradientStop,
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
-  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
+  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
   buildExportMeta,
   embedWatermark,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
@@ -92,7 +92,7 @@ export interface ExportOpts {
   meta?: ExportMeta;
   ingredients?: IngredientCredential[];  // preserved source-asset credentials → C2PA
   c2paInputs?: Record<string, string>;   // scalar-input digest → tools.lolly.export assertion (runtime-supplied)
-  c2paCapture?: { camera?: boolean; microphone?: boolean }; // sensor origin → created step = digitalCapture (runtime-supplied)
+  c2paCapture?: { camera?: boolean; microphone?: boolean; screen?: boolean }; // sensor/screen origin → created step = digitalCapture/screenCapture (runtime-supplied)
   c2paTextAdded?: { sample?: string };   // text over an opened asset → a c2pa.edited "Added text" step (runtime-supplied)
   colorProfile?: string;
   thumbnail?: boolean;
@@ -2887,29 +2887,40 @@ export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string,
 
 /**
  * Content Credentials for a freshly CAPTURED clip — a recorder tool's live camera
- * or microphone take (added engine v1.35). Signs the raw clip bytes so the file
- * self-asserts (the created step is IPTC `digitalCapture`, on-device Lolly) and,
- * placed into a composition, chains as a credentialed ingredient. Returns the
- * stamped blob PLUS the extracted manifest store, because a `user/` asset's
- * credential lookup reads the STORED store, not the file's bytes — the caller
- * persists it on the asset record (mirroring the upload-ingest path). Only mp4 /
- * webm containers are C2PA-stampable (so webm/m4a audio works, mp3/wav/ogg don't).
- * Never throws — a stamping failure returns the original blob + a null credential,
- * so a take is never lost to a provenance hiccup.
+ * or microphone take (added engine v1.35), or a screenshot / screen recording
+ * (v1.54). Signs the raw bytes so the file self-asserts (the created step is IPTC
+ * `digitalCapture` for a sensor, `screenCapture` for a display — never the wrong one
+ * of the two; on-device Lolly either way) and, placed into a composition, chains as a
+ * credentialed ingredient. Returns the stamped blob PLUS the extracted manifest
+ * store, because a `user/` asset's credential lookup reads the STORED store, not the
+ * file's bytes — the caller persists it on the asset record (mirroring the
+ * upload-ingest path). Only png / mp4 / webm are C2PA-stampable here (so webm/m4a
+ * audio works, mp3/wav/ogg don't). Never throws — a stamping failure returns the
+ * original blob + a null credential, so a take is never lost to a provenance hiccup.
  */
-export async function stampCaptureClip(host: HostV1, blob: Blob, format: 'mp4' | 'webm', o: {
+export async function stampCaptureClip(host: HostV1, blob: Blob, format: 'mp4' | 'webm' | 'png', o: {
   camera?: boolean;
   microphone?: boolean;
+  /** A display was captured, not a sensor — swaps the created step to IPTC screenCapture. */
+  screen?: boolean;
   dimensions?: string;
 }): Promise<{ blob: Blob; credential: { store: Uint8Array; format: string } | null }> {
-  const description = o.camera && o.microphone ? 'Recorded live from the camera and microphone'
+  // Screen first: a narrated screen recording is a screen capture WITH a mic track, not
+  // a microphone recording — claiming the latter would say the file is a record of the
+  // room. The mic is still named, since it did capture the room's sound.
+  const description = o.screen ? (o.microphone ? 'Captured from the screen with microphone narration' : 'Captured from the screen')
+    : o.camera && o.microphone ? 'Recorded live from the camera and microphone'
     : o.camera ? 'Captured live from the camera'
     : 'Recorded live from the microphone';
   try {
     // A fresh recording has no ingredients → it honestly claims c2pa.created.
     const stamped = await stampDerivedC2pa(host, blob, format, {
-      tool: 'Recording',
-      actions: [{ action: 'c2pa.created', digitalSourceType: CAPTURE_SOURCE_TYPE, description }],
+      tool: o.screen ? 'Screen capture' : 'Recording',
+      actions: [{
+        action: 'c2pa.created',
+        digitalSourceType: o.screen ? SCREEN_SOURCE_TYPE : CAPTURE_SOURCE_TYPE,
+        description,
+      }],
       dimensions: o.dimensions,
     });
     const ex = extractC2paStore(new Uint8Array(await stamped.arrayBuffer()));
@@ -3308,8 +3319,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
     // this brings the PDF sink to parity.) Returns null when nothing is paintable.
     const shapePaint = (e: any): { fillRgb: Rgb | null; strokeRgb: Rgb | null; lw: number } | null => {
       let fillRgb = resolveColor(e);                 // own-attr → inline style → computed
-      let strokeStr = e.getAttribute('stroke') ?? resolveStyleProp(e, 'stroke') ?? 'none';
-      if (strokeStr === 'currentColor') strokeStr = computedPaint(e, 'stroke') || 'none';
+      const strokeStr = strokeOf(e);                 // same three-way resolution
       let strokeRgb = (strokeStr && strokeStr !== 'none') ? parseSvgColor(strokeStr) : null;
       const elemOp = parseFloat(e.getAttribute('opacity') ?? '1');
       const fillOp = elemOp * parseFloat(e.getAttribute('fill-opacity') ?? '1');
@@ -3319,7 +3329,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       if (!fillRgb && !strokeRgb) return null;
       if (fillRgb   && fillOp < 0.999) fillRgb   = blendSvgWithWhite(fillRgb,   fillOp);
       if (strokeRgb && strkOp < 0.999) strokeRgb = blendSvgWithWhite(strokeRgb, strkOp);
-      const lw = Math.max(0.1, parseFloat(e.getAttribute('stroke-width') ?? '1') * strokeMul(e));
+      const lw = Math.max(0.1, strokeWidthOf(e) * strokeMul(e));
       return { fillRgb, strokeRgb, lw };
     };
 
@@ -3331,8 +3341,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       if (!d.trim()) return;
       let fillStr = e.getAttribute('fill') ?? resolveStyleProp(e, 'fill');
       if (!fillStr || fillStr === 'currentColor') fillStr = computedPaint(e, 'fill') || 'black';
-      let strokeStr = e.getAttribute('stroke') ?? resolveStyleProp(e, 'stroke') ?? 'none';
-      if (strokeStr === 'currentColor') strokeStr = computedPaint(e, 'stroke') || 'none';
+      const strokeStr = strokeOf(e);
       const elemOp  = parseFloat(e.getAttribute('opacity') ?? '1');
       const fillOp  = elemOp * parseFloat(e.getAttribute('fill-opacity')   ?? '1');
       const strkOp  = elemOp * parseFloat(e.getAttribute('stroke-opacity') ?? '1');
@@ -3346,7 +3355,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       if (fillRgb)   pdf.setFillColor(fillRgb[0], fillRgb[1], fillRgb[2]);
       if (strokeRgb) {
         pdf.setDrawColor(strokeRgb[0], strokeRgb[1], strokeRgb[2]);
-        const lw = parseFloat(e.getAttribute('stroke-width') ?? '1') * strokeMul(e);
+        const lw = strokeWidthOf(e) * strokeMul(e);
         pdf.setLineWidth(Math.max(0.1, lw));
       }
       drawSvgPathToPdf(pdf, d, PX, PY);
@@ -3414,7 +3423,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       const ly1 = PY(svgLen(el.getAttribute('y1'), vbH));
       const lx2 = PX(svgLen(el.getAttribute('x2'), vbW));
       const ly2 = PY(svgLen(el.getAttribute('y2'), vbH));
-      const lw  = parseFloat(el.getAttribute('stroke-width') ?? '1') * strokeMul(el);
+      const lw  = strokeWidthOf(el) * strokeMul(el);
       pdf.setDrawColor(rgb[0], rgb[1], rgb[2]);
       pdf.setLineWidth(Math.max(0.1, lw));
       pdf.line(lx1, ly1, lx2, ly2, 'S');
@@ -5019,9 +5028,9 @@ function svgLen(val: string | number | null | undefined, total: number): number 
 // callers keep their own literal fallback.
 function computedPaint(el: Element, prop: string): string {
   try {
-    // Every caller passes a single-word property ('fill'/'stroke'), whose CSS name ==
-    // its IDL name, so getPropertyValue returns the identical computed string without
-    // the `as any` index. (Not valid for multi-word IDL props like strokeWidth.)
+    // getPropertyValue takes the CSS property NAME, so hyphenated props ('stroke-width')
+    // are read here exactly like single-word ones ('fill'/'stroke') — no `as any` index,
+    // and none of the camelCase IDL spelling this would need via the property accessor.
     return (typeof window !== 'undefined' && el.isConnected) ? (window.getComputedStyle(el).getPropertyValue(prop) || '') : '';
   } catch { return ''; }
 }
@@ -5037,6 +5046,39 @@ function preserveAspectRatioAlign(objectPosition: string | null | undefined): st
   const xa = px <= 0.25 ? 'xMin' : px >= 0.75 ? 'xMax' : 'xMid';
   const ya = py <= 0.25 ? 'YMin' : py >= 0.75 ? 'YMax' : 'YMid';
   return xa + ya;
+}
+
+/**
+ * Resolve an element's stroke paint the way the browser does — the counterpart to
+ * resolveColor() below, which has always done this for fill.
+ *
+ * A presentation attribute and an inline style are only two of the three ways a stroke
+ * arrives. Illustrator/Figma SVGs — which is every SUSE catalog illustration — carry
+ * theirs in a CSS CLASS instead: `.cls-7{stroke:#003e37;stroke-width:4px}`, with no
+ * stroke attribute on any node. Neither of the first two reads can see that, so without
+ * the computed fallback every such stroke resolved to 'none' and the artwork exported to
+ * PDF as flat fills with EVERY outline missing — while fill came through, because
+ * resolveColor already fell back to getComputedStyle. That asymmetry was the bug.
+ *
+ * Returns 'none' (the SVG initial value for stroke) when nothing paints, where the fill
+ * side defaults to black. Detached nodes yield '' from computedPaint → 'none'.
+ */
+export function strokeOf(el: Element): string {
+  const s = el.getAttribute('stroke') ?? resolveStyleProp(el, 'stroke') ?? '';
+  return (!s || s === 'currentColor') ? (computedPaint(el, 'stroke') || 'none') : s;
+}
+
+/**
+ * Stroke width under the same three-way resolution, in SVG user units. A class-declared
+ * `stroke-width:4px` is invisible to getAttribute, so this otherwise fell back to 1 and
+ * hairlined artwork whose real width was 4. Non-finite/negative input → 1 (the SVG initial
+ * value); getComputedStyle reports a resolved px length ("4px"), which parseFloat takes.
+ */
+export function strokeWidthOf(el: Element): number {
+  const raw = el.getAttribute('stroke-width') ?? resolveStyleProp(el, 'stroke-width') ??
+              computedPaint(el, 'stroke-width');
+  const v = parseFloat(raw || '');
+  return Number.isFinite(v) && v >= 0 ? v : 1;
 }
 
 function resolveColor(el: any): Rgb | null {

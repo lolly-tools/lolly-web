@@ -46,6 +46,7 @@ import { playSfx } from '../lib/sfx.ts';
 import { exportSizeDriver } from './export-size.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
+import { mountFilmstrip, type Filmstrip } from '../lib/page-filmstrip.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
 import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
 
@@ -808,6 +809,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const canvasEl  = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas');
   const outerEl   = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas-outer');
   const contentEl = (hideSidebar ? viewEl.querySelector<HTMLElement>('#tool-content') : canvasEl)!;
+  // Slide-sorter filmstrip for paged tools — mounted lazily on the first paint (below),
+  // refreshed on each re-render, and torn down with the view. See lib/page-filmstrip.ts.
+  let filmstrip: Filmstrip | null = null;
   // Interactive tools (mesh-gradient, street-map) commit canvas edits through
   // this per-canvas channel bound to the one runtime; the marker persists across
   // every innerHTML paint. (The legacy global-sidebar-poke path stays as their
@@ -1360,6 +1364,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     lottieModule?.destroyLottiePlayers(); // else animationManager ticks detached trees
     videoModule?.destroyVideoPlayers();   // drop remembered <video> positions
     styleEl.remove(); shutterEl?.remove(); ro.disconnect(); stageZoom?.destroy(); exportTeardown?.();
+    filmstrip?.destroy();
     window.removeEventListener('keydown', onHistoryKey);
     clearTimeout(historyToastTimer); historyToastEl?.remove();
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
@@ -2326,6 +2331,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         lastPainted = hydrated;
         // Keep the reader where they were scrolled to (paged docs only).
         if (pagedDoc && outerEl && prevScrollTop) outerEl.scrollTop = prevScrollTop;
+        // Slide-sorter filmstrip: mount on the first paged paint, refresh thereafter.
+        if (pagedDoc && outerEl && canvasEl) {
+          if (!filmstrip) filmstrip = mountFilmstrip(outerEl, canvasEl, inputsEl);
+          else filmstrip.refresh();
+        }
       } catch (err) {
         // A throwing template script (charts, QR, fetch-backed tools run in page
         // context — unlike the sandboxed hooks) would otherwise leave a stale or
@@ -2481,8 +2491,22 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // tools get a host.media framing viewfinder, then the clip feeds the top-&-tail
   // compositor. The runtime owns startMeter/startRecording/stopRecording; here we only
   // drive the UI and route the finished blob.
-  const captureMode = (runtime.manifest.render as { capture?: 'audio' | 'video' | 'av' } | undefined)?.capture;
-  if (stageEl && captureMode && host.recorder?.isAvailable?.(captureMode === 'audio' ? 'audio' : 'video')) {
+  const captureMode = (runtime.manifest.render as { capture?: 'audio' | 'video' | 'av' | 'screen' } | undefined)?.capture;
+  if (stageEl && captureMode === 'screen') {
+    // Display capture (v1.54) has its own control: the browser's picker replaces the
+    // viewfinder + framing + level coaching a camera take needs, so none of that applies.
+    // isAvailable('screen') feature-detects getDisplayMedia — where it's absent (an
+    // insecure context, an older browser) the tool still mounts and keeps its upload
+    // path, rather than showing a Screenshot button that can only fail.
+    if (host.recorder?.isAvailable?.('screen')) {
+      const { setupScreenCaptureControl } = await import('./screen-capture-control.ts');
+      setupScreenCaptureControl({
+        stageEl, runtime, host, markSessionDirty,
+        canvasEl, actionsApi,
+        sizeExplicit: Boolean(urlWidth || urlHeight),
+      });
+    }
+  } else if (stageEl && captureMode && captureMode !== 'screen' && host.recorder?.isAvailable?.(captureMode === 'audio' ? 'audio' : 'video')) {
     setupRecordControl({ stageEl, runtime, host, mode: captureMode, markSessionDirty });
   }
 

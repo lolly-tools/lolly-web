@@ -30,6 +30,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import DOMPurify from 'dompurify';
 import { PageBreak, mountPageGuides } from './doc-pages.ts';
 import { looksLikeMarkdown, mdToHtml } from '../lib/markdown.ts';
+import { mountColorField } from '../components/color-field.ts';
 
 // Border / padding presets (shared by the DocTable decoration and the table-bar cycle).
 const TABLE_BORDERS = ['grid', 'rows', 'none'];
@@ -395,9 +396,16 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   const bUl = btn('fc-cbtn', IC.ul, 'Bulleted list');
   const bOl = btn('fc-cbtn', IC.ol, 'Numbered list');
   const bQuote = btn('fc-cbtn', IC.quote, 'Quote');
-  const colorWrap = el('label', 'fc-cbtn doc-color');
-  const colorInput = el('input') as HTMLInputElement; colorInput.type = 'color'; colorInput.value = '#30ba78'; colorInput.setAttribute('aria-label', 'Text colour');
-  colorWrap.appendChild(colorInput); colorWrap.title = 'Text colour';
+  // Text colour: our own picker, mounted invisibly over the button (the visible
+  // face is the ::after "A"). No focus() on apply — the popover is in-page, so
+  // stealing focus would break a slider drag; ProseMirror keeps its selection
+  // while blurred, so setColor still lands on the right run.
+  const colorWrap = el('span', 'fc-cbtn doc-color');
+  colorWrap.title = 'Text colour'; colorWrap.style.setProperty('--sw', '#30ba78');
+  mountColorField(colorWrap, 'doc-textcolor', {
+    value: '#30ba78', float: true,
+    onChange: (v) => { colorWrap.style.setProperty('--sw', v); editor.chain().setColor(v).run(); },
+  });
   const bClear = btn('fc-cbtn', IC.clear, 'Clear formatting');
   const bAlignL = btn('fc-cbtn', IC.alignL, 'Align left');
   const bAlignC = btn('fc-cbtn', IC.alignC, 'Align centre');
@@ -421,9 +429,14 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   const bDelCol = btn('fc-cbtn', IC.delCol, 'Delete column');
   const bTblHead = btn('fc-cbtn', 'H', 'Toggle header row');
   // Cell fill — applies to the whole current cell selection (shift-click / drag a range).
-  const fillWrap = el('label', 'fc-cbtn doc-color doc-cellfill');
-  const fillInput = el('input') as HTMLInputElement; fillInput.type = 'color'; fillInput.value = '#e8f6ee'; fillInput.setAttribute('aria-label', 'Cell fill');
-  fillWrap.appendChild(fillInput); fillWrap.title = 'Cell fill';
+  const fillWrap = el('span', 'fc-cbtn doc-color doc-cellfill');
+  fillWrap.title = 'Cell fill'; fillWrap.style.setProperty('--sw', '#e8f6ee');
+  mountColorField(fillWrap, 'doc-cellfill', {
+    value: '#e8f6ee', float: true,
+    // setCellAttribute lands on the whole CellSelection, preserved while blurred.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    onChange: (v) => { fillWrap.style.setProperty('--sw', v); (editor.chain() as any).setCellAttribute('backgroundColor', v).run(); },
+  });
   const bFillClear = btn('fc-cbtn', IC.clear, 'Clear cell fill');
   const bBorder = btn('fc-cbtn', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>', 'Border: grid / rows / none');
   const bPad = btn('fc-cbtn', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>', 'Cell padding: tight / normal / roomy');
@@ -454,8 +467,6 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   on(bAlignL, 'click', () => chain().setTextAlign('left').run());
   on(bAlignC, 'click', () => chain().setTextAlign('center').run());
   on(bAlignR, 'click', () => chain().setTextAlign('right').run());
-  // Colour: native picker steals focus; restore the stored selection on input.
-  on(colorInput, 'input', () => editor.chain().focus().setColor(colorInput.value).run());
   on(styleSel, 'change', () => {
     const v = styleSel.value;
     if (v === 'p') chain().setParagraph().run();
@@ -491,7 +502,6 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   // "just works".
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const setCellAttr = (name: string, value: unknown): void => { (chain() as any).setCellAttribute(name, value).run(); };
-  on(fillInput, 'input', () => setCellAttr('backgroundColor', fillInput.value));
   on(bFillClear, 'click', () => setCellAttr('backgroundColor', null));
   // Border + padding are whole-table presets cycled on each click.
   const cycleTableAttr = (name: string, order: string[], cur: unknown): void => {
@@ -547,7 +557,9 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
     const model = runtime.getModel();
     const val = (id: string): unknown => model.find((m) => m.id === id)?.value;
     setupInputs.forEach((spec) => {
-      const row = el('label', 'doc-setup-row');
+      // A colour row can't be a <label>: it would forward clicks to the picker's
+      // hidden native <input type=color> and pop the OS picker. Use a div.
+      const row = el(spec.type === 'color' ? 'div' : 'label', 'doc-setup-row');
       row.appendChild(el('span', undefined, spec.label || spec.id));
       let ctrl: HTMLElement;
       if (spec.type === 'select') {
@@ -557,8 +569,11 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
         on(s, 'change', () => { runtime.setInput(spec.id, s.value); const o = (spec.options || []).find((x) => x.value === s.value); if (o?.width && o?.height) opts.setCanvasSize?.(o.width, o.height, o.unit || 'mm'); });
         ctrl = s;
       } else if (spec.type === 'color') {
-        const c = doc.createElement('input'); c.type = 'color'; c.value = String(val(spec.id) ?? spec.default ?? '#30ba78');
-        on(c, 'input', () => runtime.setInput(spec.id, c.value)); ctrl = c;
+        ctrl = el('span', 'doc-setup-color');
+        mountColorField(ctrl, `doc-setup-${spec.id}`, {
+          value: String(val(spec.id) ?? spec.default ?? '#30ba78'), float: true,
+          onChange: (v) => runtime.setInput(spec.id, v),
+        });
       } else if (spec.type === 'boolean') {
         const c = doc.createElement('input'); c.type = 'checkbox'; c.checked = val(spec.id) !== false;
         on(c, 'change', () => runtime.setInput(spec.id, c.checked)); ctrl = c;
