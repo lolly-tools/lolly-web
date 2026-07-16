@@ -273,6 +273,75 @@ export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string, d
 ${v('background', t(0.29, 1))}${v('foreground', t(0.95, 0.35))}${v('card', t(0.35, 1.18))}${v('card-foreground', t(0.95, 0.35))}${v('popover', t(0.35, 1.18))}${v('popover-foreground', t(0.95, 0.35))}${v('primary', accent)}${v('primary-foreground', accentFg)}${v('secondary', t(0.39, 1.27))}${v('secondary-foreground', t(0.95, 0.35))}${v('muted', t(0.38, 1.2))}${v('muted-foreground', t(0.84, 0.55))}${v('accent', t(0.40, 1.3))}${v('accent-foreground', t(0.95, 0.35))}${v('border', t(0.51, 1.45))}${v('input', t(0.51, 1.45))}${v('ring', accent)}${v('store-1', t(0.65, 0.75, acc.h))}${v('store-2', t(0.70, 0.75, acc.h))}${v('store-3', t(0.74, 0.75, acc.h))}${v('store-4', t(0.79, 0.75, acc.h))}${v('store-other', t(0.62, 0.4))}}`;
 }
 
+// ── Lolly's own mark, recoloured to the guest brand ──────────────────────────
+// Lolly's IDENTITY (the green-and-white lollipop) is not a verdict — so when a
+// guest brand is active it takes on the brand's hue. The mark exists as a raster
+// bitmap (the app icon / Verify hero / favicon) and as a line-glyph + wordmark
+// (the "Made with Lolly" badge):
+//  • BITMAP  — the actual /icons/icon-192.png swirl is recoloured PROPERLY by a
+//    canvas hue-remap (tintLogo): each green pixel takes the brand hue but keeps
+//    its own saturation/lightness, the white swirl stays white. One data URL
+//    drives the Verify hero (via --lolly-logo) AND the browser favicon.
+//  • GLYPH/TEXT — the badge glyph + wordmark + the medallion's outer glow wear
+//    --lolly-mark, Lolly's identity-green TONE hue-shifted to the brand.
+// Everything falls back to Lolly green (bitmap: the plain swirl) when no brand is
+// active, so an unbranded Lolly is unchanged. The green VERDICT signals (the
+// "Credential intact" pill, the scorecard pips) deliberately stay green.
+
+/** Lolly's identity-green tone in OKLCH, measured from the two `.lolly-badge`
+ * greens (hsl 145 58% 34% / 145 52% 60%). The mark keeps this L/C and takes the
+ * brand's hue. */
+const LOLLY_TONE = { light: { l: 0.5586, c: 0.1286 }, dark: { l: 0.772, c: 0.1338 } } as const;
+// Below this OKLCH chroma a "primary" has no hue worth adopting — a greyscale or
+// near-black ink (the blank starter's ink, ~0.012) reads as no brand colour at
+// all, so we leave Lolly its own green rather than tint it an arbitrary hue.
+const MARK_MIN_CHROMA = 0.03;
+
+/**
+ * The chosen brand primary for the mark: the MORE CHROMATIC of the two primaries
+ * wins, because a dark near-neutral ink has an unstable hue (SUSE's near-black
+ * Pine measures teal ~181°, while its vivid Jungle green is the true ~157°). Null
+ * when neither primary is chromatic enough to read as a real brand colour.
+ */
+export function brandMarkPrimary(lightHex: string | null, darkHex: string | null): string | null {
+  const best = [lightHex, darkHex]
+    .map((hex) => (hex ? { hex, o: hexToOklch(hex) } : null))
+    .filter((x): x is { hex: string; o: { l: number; c: number; h: number } } =>
+      !!x && !!x.o && x.o.c >= MARK_MIN_CHROMA)
+    .sort((a, b) => b.o.c - a.o.c)[0];
+  return best ? best.hex : null;
+}
+
+/** The brand's dominant OKLCH hue (for the tinted glyph/text tone), or null. */
+export function brandMarkHue(lightHex: string | null, darkHex: string | null): number | null {
+  const hex = brandMarkPrimary(lightHex, darkHex);
+  const o = hex ? hexToOklch(hex) : null;
+  return o ? o.h : null;
+}
+
+/** The brand-hued Lolly mark hex for one theme (Lolly's tone at the brand hue). */
+export function lollyMarkHex(hue: number, theme: 'light' | 'dark'): string {
+  return oklchToHex({ ...LOLLY_TONE[theme], h: hue });
+}
+
+/**
+ * The `--lolly-*` block for the GLYPH/TEXT surfaces: `--lolly-mark` (the badge
+ * glyph + wordmark, theme-adaptive) and `--lolly-coin-glow` (the made-with-Lolly
+ * medallion's outer glow, so it matches the recoloured logo swirl filling it).
+ * '' when the brand has no real hue, so the green fallbacks in valid.css /
+ * catalog.css stand. The bitmap recolour (`--lolly-logo`) is handled separately
+ * by applyBrandLogo, since it needs a canvas at runtime.
+ */
+export function lollyMarkCss(lightHex: string | null, darkHex: string | null): string {
+  const hue = brandMarkHue(lightHex, darkHex);
+  if (hue == null) return '';
+  const markLight = lollyMarkHex(hue, 'light');
+  return [
+    `:root, [data-theme="light"] {\n  --lolly-mark: ${markLight};\n  --lolly-coin-glow: ${markLight}45;\n}`,
+    `[data-theme="dark"], [data-theme="brand"] {\n  --lolly-mark: ${lollyMarkHex(hue, 'dark')};\n}`,
+  ].join('\n');
+}
+
 /** The full injected stylesheet text. Exported for tests. Under the suse
  * PROFILE no semantic slots resolve, nothing is emitted, and the static
  * tokens.css blocks (including the brand theme's SUSE-palette defaults)
@@ -287,6 +356,8 @@ export function chromeBrandCss(
     // The brand theme is CONSTRUCTED, not accent-patched: surfaces from the
     // light primary's hue, accent from the dark primary (see brandThemeCss).
     light.primary && dark.primary ? brandThemeCss(light.primary, dark.primary, dark.onPrimary) : '',
+    // Lolly's own mark follows the brand hue (identity, not verdict).
+    lollyMarkCss(light.primary, dark.primary),
   ].filter(Boolean).join('\n');
 }
 
@@ -311,6 +382,98 @@ export function applyChromeAccent(
     document.head.appendChild(styleEl);
   }
   styleEl.textContent = css;
+}
+
+const FAVICON_ID = 'brand-favicon';
+const LOGO_SRC = '/icons/icon-192.png'; // the green-and-white Lolly swirl (same origin)
+
+/** HSL hue (degrees) of a #rrggbb, or null. Reuses the shell's hex→"H S% L%". */
+function hexHslHue(hex: string): number | null {
+  const triple = hexToHslTriple(hex);
+  if (!triple) return null;
+  const h = parseFloat(triple);
+  return Number.isFinite(h) ? h : null;
+}
+
+/** HSL (h∈0..360, s,l∈0..1) → [r,g,b] each 0..255. */
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+}
+
+/**
+ * Recolour the green-and-white Lolly logo bitmap to `hue` (HSL degrees, the
+ * brand's main colour): every chromatic pixel keeps its OWN saturation &
+ * lightness but takes the brand hue, so the swirl still reads as a glossy candy
+ * in the brand colour; the white half and its anti-aliased edges are left
+ * untouched. Returns a PNG data URL usable as an <img>/background AND a favicon,
+ * or null if the canvas/image is unavailable. Best-effort: never throws.
+ */
+async function tintLogo(hue: number): Promise<string | null> {
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
+  try {
+    const img = new Image();
+    img.src = LOGO_SRC;
+    await img.decode();
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, w, h); // same-origin → not tainted
+    const px = data.data;
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] === 0) continue; // transparent
+      const r = (px[i] ?? 0) / 255, g = (px[i + 1] ?? 0) / 255, b = (px[i + 2] ?? 0) / 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+      if (d < 0.08) continue; // white / near-grey → keep it white
+      const l = (max + min) / 2;
+      const s = d / (1 - Math.abs(2 * l - 1));
+      const [nr, ng, nb] = hslToRgb(hue, s, l);
+      px[i] = nr; px[i + 1] = ng; px[i + 2] = nb;
+    }
+    ctx.putImageData(data, 0, 0);
+    return canvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Paint the brand-recoloured logo everywhere it's a bitmap: the `--lolly-logo`
+ * var (the Verify hero, via background-image) and the browser tab favicon (a
+ * PNG <link rel=icon>, preferred over the static .ico). Null → the override is
+ * removed and the default green swirl / .ico stand. Best-effort: never throws.
+ */
+function applyBrandLogo(dataUrl: string | null): void {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement.style;
+  let link = document.getElementById(FAVICON_ID) as HTMLLinkElement | null;
+  if (!dataUrl) {
+    root.removeProperty('--lolly-logo');
+    link?.remove();
+    return;
+  }
+  root.setProperty('--lolly-logo', `url("${dataUrl}")`);
+  if (!link) {
+    link = document.createElement('link');
+    link.id = FAVICON_ID;
+    link.rel = 'icon';
+    link.type = 'image/png';
+    document.head.appendChild(link);
+  }
+  link.href = dataUrl;
 }
 
 /**
@@ -370,6 +533,14 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
     // fallback stays in charge.
     if (lp) root.setProperty('--brand-primary', lp);
     else root.removeProperty('--brand-primary');
+    // Recolour the actual Lolly logo bitmap to the brand's MAIN colour (the
+    // chosen primary's HSL hue) and use it for the Verify hero + tab favicon.
+    // Async (canvas + image load) and fire-and-forget: the chrome accent above
+    // is already applied, and a null result just restores the plain green swirl.
+    const primary = brandMarkPrimary(lp, dp);
+    const hslHue = primary ? hexHslHue(primary) : null;
+    if (hslHue == null) applyBrandLogo(null);
+    else void tintLogo(hslHue).then(applyBrandLogo).catch(() => applyBrandLogo(null));
   } catch { /* cosmetic only — never break boot */ }
 }
 

@@ -566,7 +566,9 @@ button.cat-download { font: inherit; cursor: pointer; }
 .lolly-badge {
   --lolly-accent: 145 58% 34%;
   gap: 6px; padding: 0; background: none; border-radius: 0;
-  color: hsl(var(--lolly-accent)); font-weight: 700;
+  /* Lolly's identity green by default; wears the guest brand's hue when one is
+     active (--lolly-mark, injected by brand-vars.ts / lollyMarkCss). */
+  color: var(--lolly-mark, hsl(var(--lolly-accent))); font-weight: 700;
 }
 .lolly-badge svg { flex: none; }
 .lolly-badge--sm { font-size: .78rem; }

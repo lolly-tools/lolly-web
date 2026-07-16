@@ -804,7 +804,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
         <div class="valid-hero">
           <div class="valid-hero-title">
             <span class="valid-hero-icon">${report.madeWithLolly
-    ? '<img class="valid-hero-logo" src="/icons/icon-192.png" width="192" height="192" alt="" aria-hidden="true" decoding="async">'
+    ? '<span class="valid-hero-logo" aria-hidden="true"></span>'
     : ICON_SHIELD}</span>
             <h2><span class="valid-hero-filename">${escape(fileName)}</span> ${verdictHtml}</h2>
           </div>

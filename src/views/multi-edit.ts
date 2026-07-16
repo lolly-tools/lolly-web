@@ -55,8 +55,11 @@ interface Member {
   label: string;
   toolName: string;
   tool: LoadedTool;
+  /** Assigned AFTER the grid paints — see the hydrate loop in mountMultiEdit. */
   runtime: Runtime;
   data: SavedStateData;
+  /** The session's saved input values, held so the runtime can be created later. */
+  values: Record<string, InputValue>;
   thumb: string | null;
   canvasEl: HTMLElement;
   panelEl: PanelEl;
@@ -111,9 +114,16 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     return;
   }
 
-  // ── Load sessions + tools, one runtime each ────────────────────────────────
+  // ── Load sessions + tools (NO runtimes yet) ────────────────────────────────
   // The web shell's state surface (list() with thumbs, typed load()) — HostV1's
   // StateAPI is the narrow portable contract, this view is web-only.
+  //
+  // Deliberately cheap: this resolves each session's record + tool manifest only.
+  // createRuntime is the expensive half (it runs the tool's onInit hook and resolves
+  // its asset refs — real network for photos/logos), so it's deferred until AFTER the
+  // grid is on screen; doing it here left the whole view blank for the length of the
+  // loop, which scales with the selection (up to 8). Each session's stored thumbnail
+  // carries first paint instead — see cellHtml + the hydrate loop below.
   const state = host.state as unknown as WebStateAPI;
   const entries = await state.list();
   const bySlot = new Map(entries.map(e => [e.slot, e]));
@@ -128,12 +138,13 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     catch { fail(`The tool "${toolId}" for one session isn't in this catalog.`); return; }
     const values: Record<string, InputValue> = {};
     for (const [k, v] of Object.entries(data)) if (!k.startsWith('__')) values[k] = v as InputValue;
-    const runtime = await createRuntime(tool, host, values);
     members.push({
       slot,
       label: String(entry.label || data.__label || tool.manifest.name || toolId),
       toolName: tool.manifest.name ?? toolId,
-      tool, runtime, data,
+      tool, data, values,
+      // Hydrated after the grid paints (same late-bind idiom as canvasEl/panelEl below).
+      runtime: null as unknown as Runtime,
       thumb: entry.thumb ?? null,
       canvasEl: null as unknown as HTMLElement,
       panelEl: null as unknown as PanelEl,
@@ -181,6 +192,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       <figure class="me-cell" data-me-cell="${i}" tabindex="0" role="button"
         aria-label="${escape(t('Show the inputs for {label}', { label: m.label }))}">
         <div class="me-stage" style="aspect-ratio:${w} / ${h}">
+          ${m.thumb ? `<img class="me-thumb" data-me-thumb="${i}" src="${escape(m.thumb)}" alt="" aria-hidden="true">` : ''}
           <div class="me-scale" data-me-scale="${i}" style="width:${w}px;height:${h}px">
             <div class="me-canvas" id="me-c${i}"></div>
           </div>
@@ -258,6 +270,15 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
 
   cleanups.push(attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host));
 
+  // ── Hydrate the runtimes ────────────────────────────────────────────────────
+  // Deferred to HERE, after the grid markup is in the DOM, so each session's stored
+  // thumbnail is the first paint and the live canvas swaps in behind it. createRuntime
+  // runs the tool's onInit and resolves its asset refs (real network), so running this
+  // before the markup — as this view used to — left the grid blank for the whole loop,
+  // scaling with the selection (up to 8 sessions). Live canvases are still the point of
+  // this view; they're just the enhancement now, not the first frame.
+  for (const m of members) m.runtime = await createRuntime(m.tool, host, m.values);
+
   // Declared ahead of the cell loop: runtime.subscribe emits synchronously, so
   // scheduleSidebar (hoisted fn) runs before the sidebar block below is reached.
   let sidebarRaf = 0;
@@ -287,6 +308,11 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     ro.observe(stage);
     cleanups.push(() => ro.disconnect());
 
+    // The stored thumbnail that carried this cell's first paint (cellHtml), retired
+    // once the live canvas has real content below. Left in place on a paint failure —
+    // a pre-rendered still beats an empty cell.
+    let thumbEl = viewEl.querySelector<HTMLElement>(`[data-me-thumb="${i}"]`);
+
     const paint = (): void => {
       m.paintRaf = 0;
       const hydrated = m.runtime.getHydrated();
@@ -300,6 +326,8 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         runTemplateScripts(m.canvasEl);
         void hydrateEmbeds(m.canvasEl, { host, isCurrent: () => gen === m.renderGen });
         m.lastPainted = hydrated;
+        thumbEl?.remove();
+        thumbEl = null;
       } catch (err) {
         console.warn('multi-edit paint failed:', err);
       }

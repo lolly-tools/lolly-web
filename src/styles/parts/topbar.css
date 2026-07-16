@@ -175,7 +175,12 @@
 .lang-menu {
   position: fixed;
   z-index: 100000;
-  min-width: 180px;
+  /* A DEFINED, capped width (not the screen) drives the layout: a comfortable single column of
+     flag+name on desktop, shrinking with the viewport, and — only in a genuinely tiny context —
+     collapsing to a flags-only strip via the @container rule below. container-type needs this
+     explicit width or the popover has no size to measure and collapses to nothing. */
+  container-type: inline-size;
+  width: clamp(76px, 272px, calc(100vw - 16px));   /* reasonable min (a clean flags strip) → full names */
   max-width: calc(100vw - 16px);
   /* Ceiling only — position() in lang-menu.ts sets the actual inline max-height
      per-open, clamped to whatever room sits between the trigger and either the
@@ -247,18 +252,17 @@
 }
 
 
-@media (min-width:500px){
-.lang-menu-list {
-    display: grid;
-    grid-template-columns: 1fr 1fr ;
-    }
+/* Columns track the MENU's OWN width (container query), capped at TWO — never the old 3-column
+   screen-width sprawl. One column below the 2-col threshold; when it's really narrow (a
+   collapsed sidebar) the names drop away and only the flags remain. */
+@container (min-width: 300px) {
+  .lang-menu-list { display: grid; grid-template-columns: 1fr 1fr; align-content: start; }
+}
+@container (max-width: 118px) {
+  .lang-menu-name { display: none; }
+  .lang-menu-flags { min-width: 0; justify-content: center; }
+  .lang-menu-item { justify-content: center; gap: 0; padding: 8px 6px; }
 }
 
 .lang-sort-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
-@media (min-width:800px){
-.lang-menu-list {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    }
-}
 

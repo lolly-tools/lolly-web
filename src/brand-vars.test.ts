@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hexToHslTriple, chromeBrandCss, brandThemeCss, brandFontStack, brandRadiusValue } from './brand-vars.ts';
+import { hexToHslTriple, chromeBrandCss, brandThemeCss, brandFontStack, brandRadiusValue, brandMarkHue, brandMarkPrimary, lollyMarkCss } from './brand-vars.ts';
 
 const SANS_TAIL = "'Outfit', ui-sans-serif, system-ui, sans-serif";
 
@@ -114,4 +114,31 @@ test('an unresolvable primary yields no block; both missing yields empty css', (
   assert.ok(darkOnly.includes('[data-theme="dark"]'));
   assert.ok(!darkOnly.includes('--primary-foreground:'), 'missing on-primary leaves the foreground override out');
   assert.equal(chromeBrandCss({ primary: null, onPrimary: null }, { primary: null, onPrimary: null }), '');
+});
+
+test('brandMarkPrimary/Hue picks the more chromatic primary and ignores near-neutral inks', () => {
+  // SUSE: near-black Pine measures teal (~181°) because it is so dark; the vivid
+  // Jungle green (~157°) is the true brand colour and must win.
+  assert.equal(brandMarkPrimary('#0c322c', '#30ba78'), '#30ba78');
+  const hue = brandMarkHue('#0c322c', '#30ba78');
+  assert.ok(hue != null && Math.abs(hue - 157) < 8, `SUSE mark hue ≈ Jungle 157° (got ${hue})`);
+  // A greyscale/ink "brand" (the blank starter) has no hue worth adopting.
+  assert.equal(brandMarkPrimary('#1c1c22', '#f7f7f5'), null);
+  assert.equal(brandMarkHue(null, null), null);
+});
+
+test('lollyMarkCss emits the brand-hued glyph/text tone + coin glow, or nothing for a neutral brand', () => {
+  const css = lollyMarkCss('#7b3fe4', '#a678ff'); // a purple brand
+  assert.ok(css.includes(':root, [data-theme="light"]'));
+  assert.ok(css.includes('--lolly-mark:'));
+  assert.ok(css.includes('--lolly-coin-glow:'));
+  // Dark/brand chrome re-points the mark to Lolly's lighter dark tone.
+  assert.ok(css.includes('[data-theme="dark"], [data-theme="brand"]'));
+  // Two distinct --lolly-mark values (light tone vs dark tone).
+  const marks = [...css.matchAll(/--lolly-mark: (#[0-9a-f]{6})/g)].map((m) => m[1]);
+  assert.equal(marks.length, 2);
+  assert.notEqual(marks[0], marks[1]);
+  // No brand hue → nothing, so the CSS green fallbacks stand.
+  assert.equal(lollyMarkCss('#1c1c22', '#f7f7f5'), '');
+  assert.equal(lollyMarkCss(null, null), '');
 });

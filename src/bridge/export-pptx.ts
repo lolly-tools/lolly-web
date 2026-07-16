@@ -9,8 +9,8 @@
  * time, never at module init, so resolution order is safe. (To remove the cycle
  * later, lift those shared helpers into a common render-util module.)
  */
-import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs } from "@lolly/engine";
-import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from "../../../../engine/src/pptx.ts";
+import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs, svgToCustGeomPaths } from "@lolly/engine";
+import type { PptxSlide, PptxShape, PptxFill, PptxMedia, PptxPath } from "../../../../engine/src/pptx.ts";
 import { parseCssColorFull } from "./export-css.ts";
 import { asStr, deckBox, deckFill, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
 import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, stripCommentNodes, _host, type ExportOpts } from "./export.ts";
@@ -213,6 +213,18 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
   const boxOf = (r: DOMRect) => ({ x: Math.round((r.left - rootRect.left) * E), y: Math.round((r.top - rootRect.top) * E), cx: Math.round(r.width * E), cy: Math.round(r.height * E) });
   const full = () => shapes.length >= MAX_PPTX_SHAPES;
 
+  // NATIVE-vector fast path: lower a FLAT stroke/fill SVG (the user's own line-art)
+  // into real, editable PowerPoint custGeom shapes at `box`, killing the round-trip
+  // (EMF → Google Drawings → Slides → PPTX) users otherwise do to keep art vector.
+  // Returns true when it emitted native shapes; false → the caller keeps its existing
+  // raster (svgBlip pic) path, so a gradient/filter/opacity/blend SVG never regresses.
+  function tryNativeSvg(svgText: string, box: { x: number; y: number; cx: number; cy: number }): boolean {
+    const native: PptxPath[] | null = svgToCustGeomPaths(svgText, box.cx, box.cy);
+    if (!native || !native.length) return false;
+    for (const s of native) { if (full()) break; shapes.push({ ...s, x: box.x, y: box.y }); }
+    return true;
+  }
+
   async function rasterPic(el: HTMLElement, r: DOMRect, name?: string, hiRes = false): Promise<void> {
     let scale = PPTX_RASTER_SCALE;
     if (hiRes) {
@@ -229,6 +241,9 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     const clone = el.cloneNode(true) as Element;
     stripCommentNodes(clone);
     if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    // NATIVE first: a flat SVG becomes editable custGeom shapes (no blob-url inline
+    // needed — the lowering bails on <image>/anything raster). Rich SVG → raster below.
+    if (tryNativeSvg(new XMLSerializer().serializeToString(clone), boxOf(r))) return;
     await inlineBlobUrlsInEl(clone);
     const svgBytes = new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + new XMLSerializer().serializeToString(clone));
     const png = await svgBytesToPng(svgBytes, r.width * 2, r.height * 2);
@@ -246,6 +261,8 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
       const ext = sniffImgExt(buf, m[2]!);
       if (ext === 'png' || ext === 'jpeg') { shapes.push({ kind: 'pic', ...boxOf(r), media: addMedia(buf, ext), name: 'background' }); return; }
       if (ext === 'svg') {
+        // NATIVE first (flat art fills the element box); else the raster svgBlip.
+        if (tryNativeSvg(new TextDecoder().decode(buf), boxOf(r))) return;
         const png = await svgBytesToPng(buf, r.width * 2, r.height * 2);
         if (png) shapes.push({ kind: 'pic', ...boxOf(r), media: addMedia(png, 'png'), svg: addMedia(buf, 'svg'), name: 'background' });
       }
@@ -267,6 +284,8 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
           // Keep it a real vector; place it contain-fitted (logos use object-fit:contain).
           const asp = pptxSvgAspect(buf);
           const placed = asp ? pptxFitInto(boxOf(r), asp[0], asp[1], style) : boxOf(r);
+          // NATIVE first: a flat logo lowers to editable custGeom at the fitted box.
+          if (tryNativeSvg(new TextDecoder().decode(buf), placed)) return;
           const png = await svgBytesToPng(buf, (placed.cx / E) * 2, (placed.cy / E) * 2);
           if (png) { shapes.push({ kind: 'pic', ...placed, media: addMedia(png, 'png'), svg: addMedia(buf, 'svg'), name: 'vector' }); return; }
         } else if (ext === 'png' || ext === 'jpeg') {
