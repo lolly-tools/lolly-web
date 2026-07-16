@@ -224,15 +224,15 @@
     0 8px 20px -10px hsl(0 0% 0% / 0.4);
 }
 .valid-hero-icon svg { position: relative; z-index: 2; width: 2.1rem; height: 2.1rem; }
-/* The Lolly app icon, filling the whole medallion (not a small badge struck
-   into its centre) — the crown highlight and conic sheen (both z-index 1,
-   painted before/after this in tree order) still show through and sweep over
-   it, so the "radar" flourish rides on top of the full logo. */
+/* The Lolly logo fills the whole medallion (not a small badge struck into its
+   centre) — the crown highlight + conic sheen (z-index 1 / 5) still sweep over
+   it. It's a bitmap, recoloured to the brand's main colour via a canvas hue-remap
+   exposed as --lolly-logo (brand-vars.ts); unbranded it's the plain green swirl. */
 .valid-hero-logo {
   position: relative; z-index: 1;
   width: 100%; height: 100%;
   border-radius: 50%;
-  object-fit: cover;
+  background: var(--lolly-logo, url("/icons/icon-192.png")) center / cover no-repeat;
   box-shadow: 0 0 0 2px hsl(0 0% 100% / 0.55), 0 3px 7px hsl(0 0% 0% / 0.4);
 }
 /* Wet-glass crown highlight over the top third of every medallion. */
@@ -283,8 +283,21 @@
 .valid-result.is-trusted .valid-hero-icon svg,
 .valid-result.is-lolly .valid-hero-icon svg,
 .valid-result.is-delivered .valid-hero-icon svg { width: 2.5rem; height: 2.5rem; }
-/* .valid-hero-logo has no per-state size rule — it always fills .valid-hero-icon
-   at 100%/100%, so it grows with the medallion automatically. */
+
+/* The made-with-Lolly medallion's OUTER GLOW follows the brand's main colour
+   (via --lolly-coin-glow, injected by brand-vars.ts) so the drop-shadow matches
+   the recoloured logo swirl filling the coin. The coin body stays green (it's
+   covered by the logo) and unbranded it falls back to the --vf-pass green, so
+   the default look is unchanged. Placed AFTER the shared green block so it wins
+   at equal specificity; the green "Credential intact" pill + scorecard pips are
+   left untouched and keep carrying the pass verdict. */
+.valid-result.is-lolly .valid-hero-icon {
+  box-shadow:
+    inset 0 2px 4px hsl(0 0% 100% / 0.55),
+    inset 0 -9px 16px hsl(154 70% 16% / 0.55),
+    0 14px 20px -7px var(--lolly-coin-glow, hsl(var(--vf-pass) / 0.27)),
+    0 4px 12px -4px hsl(0 0% 0% / 0.24);
+}
 
 /* Silver medallion — the credential verifies, but it was NOT made with Lolly.
    The animated green coin above is reserved for the branded "Made with Lolly"

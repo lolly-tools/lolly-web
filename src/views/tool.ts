@@ -16,6 +16,7 @@
 import '../styles/parts/tool.css';
 import '../styles/parts/editor.css';
 import '../styles/parts/document.css';
+import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
 import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
@@ -635,8 +636,19 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const docEditInput = documentLayout
     ? (tool.manifest.inputs?.find(i => i.id === 'content') ?? tool.manifest.inputs?.find(i => i.type === 'blocks'))
     : null;
+  // The slide-deck editor layout (render.layout:'deck', e.g. Deck Builder). UNLIKE
+  // editor/document it is deliberately NOT chromeless: the input sidebar stays as the home
+  // for the long-tail fields (per-slide layout / media slots / notes, deck-level timing),
+  // and the on-canvas overlay (deck-editor.ts) is mounted ON TOP of the live canvas for the
+  // primary flow (edit text/colour/images in place, thumbnail-rail navigation). It edits a
+  // `blocks` input whose rows are slides.
+  const deckLayout = tool.manifest.render.layout === 'deck';
+  const deckEditInput = deckLayout
+    ? tool.manifest.inputs?.find(i => i.type === 'blocks')
+    : null;
   // Both chromeless full-canvas layouts drop the input aside but keep the fixed render
-  // canvas + export controls; the on-canvas overlay replaces the sidebar.
+  // canvas + export controls; the on-canvas overlay replaces the sidebar. The 'deck' layout
+  // is intentionally excluded — it keeps the sidebar.
   const chromeless = editorLayout || documentLayout;
   // Hide the sidebar for pure-canvas utilities: either no inputs at all, or an
   // explicit canvas layout — where the tool's single file input becomes a
@@ -1916,6 +1928,37 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       const prevCleanup = viewEl._cleanup;
       viewEl._cleanup = () => { try { dc.destroy(); } catch (e) { console.error(e); } prevCleanup?.(); };
     }).catch((err: unknown) => console.error('[doc-studio] document editor failed to load:', err));
+  }
+
+  // Slide-deck editor (render.layout:'deck', e.g. Deck Builder). Mounts an on-canvas overlay
+  // into the stage subtree (a sibling region of #tool-canvas — survives the canvas repaint)
+  // that decorates the live deck for in-place editing + thumbnail-rail navigation. Dynamically
+  // imported so it's only pulled in for deck-layout tools. The sidebar stays (deck is NOT
+  // chromeless), so this ADDS to the sidebar rather than replacing it.
+  if (deckLayout && deckEditInput && canvasEl && stageEl) {
+    import('./deck-editor.ts').then(({ initDeckEditor }) => {
+      if (!viewEl.isConnected) return;   // navigated away before the chunk loaded
+      const de = initDeckEditor({
+        viewEl, stageEl, canvasEl, runtime, host,
+        input: deckEditInput, inputs: tool.manifest.inputs ?? [],
+        nativeW, nativeH,
+        onDirty: markUserDirty,
+        editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
+        history: {
+          undo: undoHistory,
+          redo: redoHistory,
+          register: (sync: (canUndo: boolean, canRedo: boolean) => void) => { historyControls = { sync }; refreshHistoryUI(); },
+        },
+        actions: {
+          export: () => renderFab?.click(),
+          save: () => renderSaveBtn?.click(),
+          canSave: canSaveSession,
+          dirtyRef: renderSaveBtn,
+        },
+      } as Parameters<typeof initDeckEditor>[0]);
+      const prevCleanup = viewEl._cleanup;
+      viewEl._cleanup = () => { try { de.destroy(); } catch (e) { console.error(e); } prevCleanup?.(); };
+    }).catch((err: unknown) => console.error('[deck-builder] deck editor failed to load:', err));
   }
 
   // Intercept back / home nav clicks — offer save dialog if inputs have changed. Leaving
