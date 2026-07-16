@@ -288,6 +288,11 @@ function genValText(mode: GenMode, ch: string, v: number): string {
 }
 
 // ── Dials ────────────────────────────────────────────────────────────────────
+// INLINE HOSTS ONLY (the brand editor's spacious always-open panel). The trigger
+// popover is a narrow floating column where the rings cost a lot of height to
+// restate axes the sliders under them already show, and its result disc would
+// duplicate the eyedropper in the value field above — so it renders sliders only.
+//
 // A ring per channel, sitting above the sliders: the axis's ramp poured into a
 // conic gradient, with a needle at value → angle. Hue is genuinely circular, so
 // its dial is the real shape of that axis; the others are a sweep (the ramp's
@@ -303,8 +308,8 @@ function genValText(mode: GenMode, ch: string, v: number): string {
 //
 // The fourth disc is the OUTPUT: the colour these three axes currently make. It's
 // split in half — the top picks a colour off the screen (eyedropper), the bottom
-// opens the system colour picker — with the glyphs struck through it in its own
-// contrast colour.
+// opens the swatch menu — with the glyphs struck through it in its own contrast
+// colour.
 
 interface DialSpec { ch: string; label: string; aria: string; frac: number; stops: string[] }
 
@@ -372,7 +377,7 @@ function paintDials(group: HTMLElement, dials: readonly DialSpec[], outHex: stri
 }
 
 /** One generic mode's slider group (channels as data-* on the wrapper). */
-function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean): string {
+function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean, dials: boolean): string {
   const st = genFromHex(mode, rgbHex);
   const tracks = genTracks(mode, st);
   const rows = MODE_AXES[mode].map(a => `
@@ -385,7 +390,7 @@ function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean): string {
       </div>`).join('');
   const data = MODE_AXES[mode].map(a => `data-${a.ch}="${st[a.ch]}"`).join(' ');
   return `<div class="color-modegroup" data-mode-group="${mode}" ${data}${hidden ? ' hidden' : ''}>${
-    dialsHtml(genDials(mode, st), genToHex(mode, st))
+    dials ? dialsHtml(genDials(mode, st), genToHex(mode, st)) : ''
   }${rows}</div>`;
 }
 
@@ -395,7 +400,7 @@ function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean): string {
  * gets the bold pill (CSS aria-selected), whichever space it is. HEX has no
  * sliders of its own, so when picked it borrows the RGB group.
  */
-function colorModesHtml(eid: string, rgbHex: string | null): string {
+function colorModesHtml(eid: string, rgbHex: string | null, dials: boolean): string {
   const seed = rgbHex ?? '#4f83cc'; // generic groups need a real hex; OKLCH seeds itself
   const tab = (m: ColorMode, label: string, on: boolean): string =>
     `<button type="button" class="color-mode-tab" role="tab" data-mode="${m}" aria-selected="${on}">${label}</button>`;
@@ -405,10 +410,10 @@ function colorModesHtml(eid: string, rgbHex: string | null): string {
       <div class="color-mode-tabs" role="tablist" aria-label="Colour space">
         ${tab('hex', 'HEX', false)}${tab('oklch', 'OKLCH', true)}${tab('hsl', 'HSL', false)}${tab('rgb', 'RGB', false)}${tab('cmyk', 'CMYK', false)}
       </div>
-      ${lchSlidersHtml(eid, rgbHex, false)}
-      ${genGroupHtml('hsl', seed, true)}
-      ${genGroupHtml('rgb', seed, true)}
-      ${genGroupHtml('cmyk', seed, true)}
+      ${lchSlidersHtml(eid, rgbHex, false, dials)}
+      ${genGroupHtml('hsl', seed, true, dials)}
+      ${genGroupHtml('rgb', seed, true, dials)}
+      ${genGroupHtml('cmyk', seed, true, dials)}
     </div>`;
 }
 
@@ -512,7 +517,9 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   // out in flow (no floating/positioning) — for hosts with room to spare that
   // want the picker as a spacious inline panel, not a click-to-open popover (the
   // brand editor's Primary colour and swatch editor). CSS (.color-field--inline)
-  // turns the popover static and gives the dials the full width.
+  // turns the popover static and gives the dials the full width. It is also what
+  // gates the dials on at all: they're a panel affordance, and the narrow trigger
+  // popover shows sliders alone.
   //
   // It carries NO swatch palette: every inline host is the brand editor, where
   // the swatches would be the very palette being edited — offering the brand's
@@ -531,7 +538,9 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
              ${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
       <button type="button" class="color-eyedropper" data-color-eyedropper="${eid}" aria-label="Pick a colour from your screen" title="Pick a colour from your screen">${EYEDROPPER_ICON}</button>
       </div>
-      ${modes ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null) : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null)}
+      ${modes
+        ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null, inline)
+        : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null, false, inline)}
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
         <input type="range" class="color-alpha-slider" data-color-alpha="${eid}"
@@ -562,7 +571,7 @@ function lchValText(axis: 'l' | 'c' | 'h', v: number): string {
  * and slider drags mutate the state directly (never a hex round-trip, which
  * would drift hue at low chroma).
  */
-function lchSlidersHtml(eid: string, rgbHex: string | null, hidden = false): string {
+function lchSlidersHtml(eid: string, rgbHex: string | null, hidden = false, dials = false): string {
   const o = (rgbHex ? hexToOklch(rgbHex) : null) ?? LCH_SEED;
   const tracks = lchTrackGradients(o.l, o.c, o.h);
   const row = (axis: 'l' | 'c' | 'h', label: string, aria: string, max: number, step: number, value: number) => `
@@ -574,7 +583,7 @@ function lchSlidersHtml(eid: string, rgbHex: string | null, hidden = false): str
         <span class="color-lch-val" data-lch-val="${axis}">${lchValText(axis, value)}</span>
       </div>`;
   return `<div class="color-lch" data-color-lch="${eid}" data-l="${o.l}" data-c="${o.c}" data-h="${o.h}"${hidden ? ' hidden' : ''}>
-      ${dialsHtml(lchDials(o.l, o.c, o.h), oklchToHex(o))}
+      ${dials ? dialsHtml(lchDials(o.l, o.c, o.h), oklchToHex(o)) : ''}
       ${row('l', 'L', 'Lightness', LCH_MAX.l, 0.5, Math.round(o.l * 1000) / 10)}
       ${row('c', 'C', 'Chroma', LCH_MAX.c, 0.004, Math.round(o.c * 1000) / 1000)}
       ${row('h', 'H', 'Hue', LCH_MAX.h, 1, Math.round(o.h))}
@@ -1038,8 +1047,9 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // and drives the slider for that axis, whose `input` handler already owns the
   // whole emit path (state → gamut-mapped hex → value field → native input →
   // trigger → onChange). One control of record per axis; the dial is a second way
-  // to move it. The output disc's two halves delegate to the eyedropper button and
-  // the native colour input that the popover already carries.
+  // to move it. The output disc's two halves delegate to the eyedropper button the
+  // popover already carries and to the swatch menu. No-ops where no dials render
+  // (the trigger popover) — the row simply isn't there.
   scope.querySelectorAll<HTMLElement>('.color-dials').forEach(row => {
     const field = row.closest<HTMLElement>('[data-color-field]');
     const group = row.closest<HTMLElement>('.color-lch, .color-modegroup');
@@ -1086,12 +1096,11 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     row.querySelectorAll<HTMLElement>('.color-dial-act').forEach(btn => {
       btn.addEventListener('click', () => {
         if (btn.dataset.dialAct === 'eyedropper') { field?.querySelector<HTMLButtonElement>('.color-eyedropper')?.click(); return; }
-        // The edit half opens the swatch context menu where one exists (inline),
-        // else falls back to the system colour picker (the trigger popover already
-        // shows its swatch grid, so it needs no menu).
+        // The edit half opens the swatch context menu. Dials render only on inline
+        // fields, and those are exactly the ones carrying that menu in place of an
+        // always-open grid — so there is no other case to fall back to.
         const menu = field?.querySelector<HTMLElement>('[data-swatch-menu]');
         if (menu && field) toggleSwatchMenu(field, menu, btn);
-        else field?.querySelector<HTMLInputElement>('input.color-popover-native')?.click();
       });
     });
   });
@@ -1274,4 +1283,38 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       onChange(id, fullHex);
     });
   });
+}
+
+export interface MountColorFieldOpts {
+  /** Initial colour (#rrggbb / #rrggbbaa / 'transparent' / token value). */
+  value?: unknown;
+  /** Called with the canonical value string on every change. */
+  onChange(value: string): void;
+  float?: boolean;
+  swatchesOnly?: boolean;
+  inline?: boolean;
+  modes?: boolean;
+  onInteractStart?(): void;
+  onInteractEnd?(): void;
+}
+
+/**
+ * Mount our colour picker into `container`, in place of a native
+ * `<input type=color>` — the shell never opens the OS colour picker, so every
+ * colour surface routes through this one component. Fills the container with a
+ * single field and wires it; `onChange` gets the canonical value string
+ * (#rrggbb / #rrggbbaa / 'transparent'). Returns the field element so callers
+ * can find its trigger for styling. Safe to call again on the same container to
+ * re-seed (it replaces the contents).
+ */
+export function mountColorField(container: HTMLElement, id: string, opts: MountColorFieldOpts): HTMLElement {
+  container.innerHTML = colorFieldHtml(id, opts.value ?? '', {
+    float: opts.float, swatchesOnly: opts.swatchesOnly, inline: opts.inline, modes: opts.modes,
+  });
+  wireColorField(container, {
+    onChange: (_id, value) => opts.onChange(String(value)),
+    onInteractStart: opts.onInteractStart,
+    onInteractEnd: opts.onInteractEnd,
+  });
+  return container.querySelector<HTMLElement>('[data-color-field]') ?? container;
 }

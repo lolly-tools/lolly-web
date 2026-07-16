@@ -124,9 +124,11 @@ export function createGridNav(container: HTMLElement, opts: GridNavOptions = {})
         else c.select();
       } catch { /* number inputs don't support selection ranges */ }
     }
-    // Pop the native picker open for date/time/colour cells. Requires user
-    // activation in some browsers, so it's best-effort (guarded).
-    if (openPicker && c instanceof HTMLInputElement && ['date', 'time', 'datetime-local', 'color'].includes(c.type)) {
+    // Pop the native picker open for date/time cells. NOT colour — the shell
+    // never opens the OS colour picker (colour cells are our own color-field, a
+    // button, so they never reach this branch anyway). Requires user activation
+    // in some browsers, so it's best-effort (guarded).
+    if (openPicker && c instanceof HTMLInputElement && ['date', 'time', 'datetime-local'].includes(c.type)) {
       try { c.showPicker?.(); } catch { /* needs activation; the field is still focused */ }
     }
     return true;

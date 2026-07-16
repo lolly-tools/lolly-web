@@ -174,6 +174,9 @@ const PATHS = {
   layers: '<path d="M12 2 2 7l10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
   // Microphone — "recorded live from the microphone".
   mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3M8 21h8"/>',
+  // A screen on a stand — "captured from the screen" (IPTC screenCapture). Deliberately
+  // NOT the camera glyph: a screenshot is a different claim from a photograph.
+  monitor: '<rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 16v5"/>',
 
   // ---- sound-toggle.ts / neuro-dock.ts ----
   // merged: sound-toggle.ts NEURO_ICON === neuro-dock.ts NOTE (a heartbeat/waveform), byte-identical

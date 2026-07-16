@@ -12,6 +12,7 @@
 import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs } from "@lolly/engine";
 import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from "../../../../engine/src/pptx.ts";
 import { parseCssColorFull } from "./export-css.ts";
+import { asStr, deckBox, deckFill, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
 import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, stripCommentNodes, _host, type ExportOpts } from "./export.ts";
 
 type Rgba = [number, number, number, number];
@@ -287,6 +288,10 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     if (full() || el.nodeType !== 1) return;
     const tag = el.tagName.toLowerCase();
     if (tag === 'style' || tag === 'script') return;
+    // Speaker notes travel as slide.notes (read below), never as a shape. The
+    // display:none guard underneath already drops them, but that leans on the
+    // tool's CSS surviving — this makes it structural.
+    if (el.hasAttribute('data-slide-notes')) return;
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') === 0) return;
     const rect = el.getBoundingClientRect();
@@ -339,7 +344,101 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
   return { shapes, media };
 }
 
+function pptxMeta(opts: ExportOpts): PptxBuildOptsMeta {
+  return opts.meta ? { title: opts.meta.tool, description: opts.meta.description, source: opts.meta.source, contact: opts.meta.contact } : null;
+}
+type PptxBuildOptsMeta = { title?: string; description?: string; source?: string; contact?: string } | null;
+
+async function zipPptxParts(parts: Record<string, string | Uint8Array>): Promise<Blob> {
+  const { zipSync } = await import('fflate');
+  const enc = new TextEncoder();
+  const files: Record<string, Uint8Array> = {};
+  for (const [path, content] of Object.entries(parts)) {
+    files[path] = typeof content === 'string' ? enc.encode(content) : content;
+  }
+  return new Blob([zipSync(files) as BlobPart], { type: PPTX_MIME });
+}
+
+// ─── authored deck model (tool-driven NATIVE pptx) ───────────────────────────
+// A tool may emit its OWN deck as inline JSON — <script type="application/json"
+// data-pptx-deck>{…}</script> — instead of relying on the DOM walk above. That is how a
+// tool gets NATIVE tables + precise editable text/theme into PowerPoint. The PURE lowering
+// (css→hex, px→EMU, native tables, defensive coercion of the untrusted tool JSON) lives in
+// ./pptx-deck.ts (node-tested); this file keeps only the async image fetch + orchestration.
+// A malformed/absent model falls back to the DOM walk. See engine PptxSlide/PptxShape.
+const PPTX_DECK_SEL = '[data-pptx-deck]';
+const MAX_DECK_SLIDES = 500;         // upper bound on an authored deck
+const MAX_DECK_ELEMENTS = MAX_PPTX_SHAPES; // elements processed per slide (bounds the fetch storm)
+const MAX_DECK_IMG_BYTES = 32 * 1024 * 1024; // 32 MB per embedded image (`src` is tool-controlled)
+
+// An image element — the sole async lowering (it fetches bytes). SVG rides in as a real
+// vector (svgBlip + PNG fallback); raster embeds its original bytes; an unreachable/oversized
+// asset drops the element but keeps the deck.
+async function deckImageShape(el: Record<string, unknown>, box: DeckBox, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number): Promise<PptxShape | null> {
+  const src = asStr(el?.src); if (!src) return null;
+  try {
+    const res = await fetch(src);
+    if (!res.ok) return null;
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.byteLength > MAX_DECK_IMG_BYTES) return null;
+    const ext = sniffImgExt(buf, src);
+    if (ext === 'png' || ext === 'jpeg') return { kind: 'pic', ...box, media: addMedia(buf, ext), srcRect: deckSrcRect(el?.srcRect) };
+    if (ext === 'svg') {
+      const png = await svgBytesToPng(buf, (box.cx / EMU_PER_PX) * 2, (box.cy / EMU_PER_PX) * 2);
+      if (png) return { kind: 'pic', ...box, media: addMedia(png, 'png'), svg: addMedia(buf, 'svg') };
+    }
+  } catch { /* asset unreachable — drop the element, keep the deck */ }
+  return null;
+}
+
+async function deckElementToShape(el: Record<string, unknown>, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number): Promise<PptxShape | null> {
+  if (!el || typeof el !== 'object') return null;
+  if (el.t === 'image') return await deckImageShape(el, deckBox(el), addMedia);
+  return deckSyncShape(el); // rect / text / table (pure)
+}
+
+// Read + validate a tool-authored deck model off the export node, or null to DOM-walk.
+function readDeckModel(node: Element): Record<string, unknown> | null {
+  const el = node.querySelector?.(PPTX_DECK_SEL) ?? (node.matches?.(PPTX_DECK_SEL) ? node : null);
+  return parseDeckModel(el?.textContent);
+}
+
+async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpts): Promise<Blob> {
+  const size = deck.size as { w?: unknown; h?: unknown } | undefined;
+  const emuW = Math.max(1, emuOf(size?.w, 1280));
+  const emuH = Math.max(1, emuOf(size?.h, 720));
+  const slidesIn = (deck.slides as Array<Record<string, unknown>>).slice(0, MAX_DECK_SLIDES);
+  const slides: PptxSlide[] = [];
+  for (const s of slidesIn) {
+    const shapes: PptxShape[] = [];
+    const media: PptxMedia[] = [];
+    const addMedia = (bytes: Uint8Array, ext: PptxMedia['ext']): number => (media.push({ bytes, ext }), media.length - 1);
+    const bg = deckFill(s?.bg);
+    if (bg) shapes.push({ kind: 'rect', x: 0, y: 0, cx: emuW, cy: emuH, fill: bg });
+    // Bound by elements PROCESSED (not shapes produced): a slide of 100k {t:'image'}
+    // elements would otherwise fire 100k fetches even though each returns null.
+    const els = (Array.isArray(s?.elements) ? s.elements : []).slice(0, MAX_DECK_ELEMENTS);
+    for (const el of els) {
+      if (shapes.length >= MAX_PPTX_SHAPES) { _host?.log?.('warn', `pptx: slide hit the ${MAX_PPTX_SHAPES}-object cap; some elements were dropped.`); break; }
+      const shape = await deckElementToShape(el, addMedia);
+      if (shape) shapes.push(shape);
+    }
+    const slide: PptxSlide = { shapes, media };
+    const notes = asStr(s?.notes)?.trim();
+    if (notes) slide.notes = notes;
+    slides.push(slide);
+    opts.onProgress?.(slides.length, slidesIn.length);
+  }
+  const parts = buildPptxParts(slides, { emuW, emuH, theme: deckTheme(deck.theme), meta: pptxMeta(opts), now: new Date().toISOString() });
+  return zipPptxParts(parts);
+}
+
 export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob> {
+  // Fast path: a tool that authored its own native deck model (tables, precise text,
+  // brand theme) drives the OOXML directly; the DOM walk below is the general fallback.
+  const deck = readDeckModel(node);
+  if (deck) return renderPptxFromDeck(deck, opts);
+
   const pages = node.querySelectorAll ? [...node.querySelectorAll('[data-pdf-page]')] : [];
   const pageEls: Element[] = pages.length ? pages : [node];
 
@@ -350,20 +449,17 @@ export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob>
 
   const slides: PptxSlide[] = [];
   for (const el of pageEls) {
-    slides.push(await pptxSlideFromPage(el, opts));
+    const slide = await pptxSlideFromPage(el, opts);
+    // Speaker notes: a display:none [data-slide-notes] node inside the page (the
+    // convention any tool can emit). Hidden from the shape walk above and from
+    // every rasteriser, but readable here — and it is NOT [data-export-hide], so
+    // detachExportHidden can't have pulled it out from under us.
+    const note = (el.querySelector?.('[data-slide-notes]')?.textContent ?? '').trim();
+    if (note) slide.notes = note;
+    slides.push(slide);
     opts.onProgress?.(slides.length, pageEls.length);
   }
 
-  const parts = buildPptxParts(slides, {
-    emuW, emuH,
-    meta: opts.meta ? { title: opts.meta.tool, description: opts.meta.description, source: opts.meta.source, contact: opts.meta.contact } : null,
-    now: new Date().toISOString(),
-  });
-  const { zipSync } = await import('fflate');
-  const enc = new TextEncoder();
-  const files: Record<string, Uint8Array> = {};
-  for (const [path, content] of Object.entries(parts)) {
-    files[path] = typeof content === 'string' ? enc.encode(content) : content;
-  }
-  return new Blob([zipSync(files) as BlobPart], { type: PPTX_MIME });
+  const parts = buildPptxParts(slides, { emuW, emuH, meta: pptxMeta(opts), now: new Date().toISOString() });
+  return zipPptxParts(parts);
 }

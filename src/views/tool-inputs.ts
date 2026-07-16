@@ -12,6 +12,7 @@
  */
 import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef } from '@lolly/engine';
 import { escape, NAV_EVENTS } from '../utils.js';
+import { mountModal } from '../components/modal.ts';
 import { announce } from '../a11y.js';
 import { colorFieldHtml, wireColorField } from '../components/color-field.js';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
@@ -720,37 +721,145 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
-  // "Paste Markdown" (mdPaste inputs) — read the clipboard, split it into one block
-  // per heading (lib/markdown.splitMarkdownIntoBlocks), and append editable blocks.
-  el.querySelectorAll<HTMLButtonElement>('[data-blocks-md-paste]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const blockId = btn.dataset.blocksMdPaste!;
-      const inp = panelModel.find(i => i.id === blockId);
-      if (!inp) return;
-      let md = '';
-      try { md = await navigator.clipboard.readText(); } catch { /* denied / unsupported */ }
-      const flash = (cls: string): void => { btn.classList.add(cls); window.setTimeout(() => btn.classList.remove(cls), 1100); };
-      if (!md.trim()) { flash('is-empty'); return; }               // nothing on the clipboard / blocked
-      const sections = splitMarkdownIntoBlocks(md);
-      if (!sections.length) { flash('is-empty'); return; }
-      const has = (fid: string): boolean => (inp.fields ?? []).some(f => f.id === fid);
-      // The block must have somewhere to put the prose — a `body` (or at least a
-      // `heading`) field. Without it the paste would silently vanish; bail loudly.
-      if (!has('body') && !has('heading')) { flash('is-empty'); return; }
-      const made = sections.map(sec => {
-        const block: Record<string, InputValue> = {};
-        for (const f of inp.fields ?? []) block[f.id] = blockFieldDefault(f);
-        if (has('kind')) block.kind = 'text';
-        if (has('heading')) block.heading = sec.heading;
-        if (has('body')) block.body = sec.body;
-        return block;
+  // When pasting Markdown over an existing list, ask whether to replace or append.
+  function askPasteMode(count: number): Promise<'replace' | 'add' | null> {
+    const content =
+      `<h2 class="modal-title">Paste Markdown</h2>` +
+      `<p class="modal-msg">You have ${count} slide${count === 1 ? '' : 's'} already. Replace them with the pasted deck, or add the pasted slides to the end?</p>` +
+      `<div class="modal-actions">` +
+        `<button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>` +
+        `<button type="button" class="btn" data-act="add">Add to slides</button>` +
+        `<button type="button" class="btn modal-primary" data-act="replace">Replace slides</button>` +
+      `</div>`;
+    return new Promise<'replace' | 'add' | null>(resolve => {
+      const modal = mountModal<'replace' | 'add' | null>(content, {
+        className: 'modal',
+        ariaLabel: 'Paste Markdown',
+        cancelValue: null,
+        initialFocus: dlg => dlg.querySelector<HTMLElement>('[data-act="replace"]'),
+        onClose: r => resolve(r ?? null),
       });
-      // Re-read the live array so a concurrent edit isn't clobbered.
-      const cur = runtime.getModel().find(i => i.id === blockId)?.value;
-      const base = Array.isArray(cur) ? cur : (Array.isArray(inp.value) ? inp.value : []);
-      runtime.setInput(blockId, [...base, ...made]);
-      onDirty?.(blockId);
-      flash('is-ok');
+      modal.el.querySelectorAll<HTMLButtonElement>('[data-act]').forEach(b =>
+        b.addEventListener('click', () => modal.close(b.dataset.act === 'cancel' ? null : (b.dataset.act as 'replace' | 'add'))));
+    });
+  }
+
+  // Markdown → slides, shared by the "Paste" (clipboard) and "Use File" (.md/.txt)
+  // actions: split into one block per heading (lib/markdown.splitMarkdownIntoBlocks),
+  // then replace or append (asking when the list isn't empty). Returns a status the
+  // caller flashes on the control.
+  async function applyMarkdown(md: string, blockId: string, inp: InputModelItem): Promise<'ok' | 'empty' | 'cancel'> {
+    if (!md.trim()) return 'empty';
+    const sections = splitMarkdownIntoBlocks(md);
+    if (!sections.length) return 'empty';
+    const has = (fid: string): boolean => (inp.fields ?? []).some(f => f.id === fid);
+    // The block must have somewhere to put the prose — a `body` (or at least a `heading`).
+    if (!has('body') && !has('heading')) return 'empty';
+    const made = sections.map(sec => {
+      const block: Record<string, InputValue> = {};
+      for (const f of inp.fields ?? []) block[f.id] = blockFieldDefault(f);
+      if (has('kind')) block.kind = 'text';
+      if (has('heading')) block.heading = sec.heading;
+      if (has('body')) block.body = sec.body;
+      return block;
+    });
+    const cur = runtime.getModel().find(i => i.id === blockId)?.value;
+    const base = Array.isArray(cur) ? cur : (Array.isArray(inp.value) ? inp.value : []);
+    let mode: 'replace' | 'add' = 'replace';
+    if (base.length) { const choice = await askPasteMode(base.length); if (!choice) return 'cancel'; mode = choice; }
+    runtime.setInput(blockId, mode === 'add' ? [...base, ...made] : made);
+    onDirty?.(blockId);
+    return 'ok';
+  }
+  // CSV / JSON → block rows via the engine's parseDataRows (column→field mapping), then
+  // replace or append. The importData counterpart to applyMarkdown.
+  async function applyData(text: string, inp: InputModelItem, format?: 'csv' | 'json'): Promise<'ok' | 'empty' | 'cancel'> {
+    const cfg = (inp as { importData?: { columns?: Record<string, unknown> } }).importData ?? {};
+    const fields = inp.fields ?? [];
+    try {
+      const { rows, truncated } = parseDataRows(text, { fields, format, columns: cfg.columns as Record<string, string> | undefined });
+      if (!rows.length) return 'empty';
+      const filled = rows.map(r => {
+        const b: Record<string, InputValue> = {};
+        for (const f of fields) { const v = (r as Record<string, InputValue>)[f.id]; b[f.id] = (v === '' || v == null) ? blockFieldDefault(f) : v; }
+        return b;
+      });
+      const live = runtime.getModel().find(i => i.id === inp.id)?.value;
+      const base = Array.isArray(live) ? live : [];
+      let mode: 'replace' | 'add' = 'replace';
+      if (base.length) { const choice = await askPasteMode(base.length); if (!choice) return 'cancel'; mode = choice; }
+      runtime.setInput(inp.id, mode === 'add' ? [...base, ...filled] : filled);
+      onDirty?.(inp.id);
+      const n = filled.length;
+      announce(`Imported ${n} ${n === 1 ? 'row' : 'rows'}${truncated ? ' (capped to the first ' + n + ')' : ''}.`);
+      return 'ok';
+    } catch (e) {
+      host.log?.('warn', 'data import failed', { error: String(e) });
+      announce((e as { message?: string })?.message || 'Could not read that.', { assertive: true });
+      return 'empty';
+    }
+  }
+
+  // Detect what the pasted/uploaded text IS (Markdown vs CSV vs JSON) among the importers
+  // this input enables, and route it. A file's extension wins; otherwise the content is
+  // sniffed (`{`/`[` → JSON; headings/`---`/bullets/pipes → Markdown; commas → CSV).
+  async function routeImport(text: string, inp: InputModelItem, filename?: string): Promise<'ok' | 'empty' | 'cancel'> {
+    const s = text.trim();
+    if (!s) return 'empty';
+    const canMd = (inp as { mdPaste?: boolean }).mdPaste === true;
+    const canData = !!(inp as { importData?: unknown }).importData;
+    const ext = (filename ?? '').toLowerCase();
+    if (canData && /\.csv$/.test(ext)) return applyData(s, inp, 'csv');
+    if (canData && /\.json$/.test(ext)) return applyData(s, inp, 'json');
+    if (canMd && /\.(md|markdown|mdown|txt|text)$/.test(ext)) return applyMarkdown(s, inp.id, inp);
+    if (canData && (s[0] === '{' || s[0] === '[')) return applyData(s, inp, 'json');
+    const looksMd = /(^|\n)#{1,6}\s|\n-{3,}[ \t]*(\n|$)|(^|\n)\s*[-*]\s+|\|[^\n]*\|/.test(s);
+    if (canMd && looksMd) return applyMarkdown(s, inp.id, inp);
+    if (canData && /,/.test(s) && /\n/.test(s)) return applyData(s, inp, undefined);
+    if (canMd) return applyMarkdown(s, inp.id, inp);
+    if (canData) return applyData(s, inp, undefined);
+    return 'empty';
+  }
+
+  const ioFlash = (btn: HTMLElement, status: 'ok' | 'empty' | 'cancel'): void => {
+    if (status === 'cancel') return;
+    const cls = status === 'ok' ? 'is-ok' : 'is-empty';
+    btn.classList.add(cls); window.setTimeout(() => btn.classList.remove(cls), 1100);
+  };
+  const uploadAccept = (inp: InputModelItem): string => {
+    const parts: string[] = [];
+    if ((inp as { mdPaste?: boolean }).mdPaste === true) parts.push('.md', '.markdown', '.mdown', '.txt', '.text', 'text/markdown', 'text/plain');
+    if ((inp as { importData?: unknown }).importData) parts.push('.csv', '.json', 'text/csv', 'application/json');
+    return parts.join(',');
+  };
+
+  // "Paste" — read the clipboard, detect its format, route it.
+  el.querySelectorAll<HTMLButtonElement>('[data-blocks-io-paste]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const inp = panelModel.find(i => i.id === btn.dataset.blocksIoPaste);
+      if (!inp) return;
+      let text = '';
+      try { text = await navigator.clipboard.readText(); } catch { /* denied / unsupported */ }
+      ioFlash(btn, await routeImport(text, inp));
+    });
+  });
+  // "Upload" — pick a Markdown / CSV / JSON file, detect its format, route it.
+  el.querySelectorAll<HTMLButtonElement>('[data-blocks-io-upload]').forEach(btn => {
+    const inp = panelModel.find(i => i.id === btn.dataset.blocksIoUpload);
+    if (!inp) return;
+    const native = document.createElement('input');
+    native.type = 'file';
+    native.accept = uploadAccept(inp);
+    native.style.display = 'none';
+    btn.parentElement?.appendChild(native);
+    btn.addEventListener('click', () => native.click());
+    native.addEventListener('change', async () => {
+      const file = native.files?.[0];
+      native.value = '';
+      if (!file) return;
+      let text = '';
+      try { text = await file.text(); } catch { /* unreadable */ }
+      ioFlash(btn, await routeImport(text, inp, file.name));
     });
   });
 
@@ -805,73 +914,6 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     list.addEventListener('drop', (e) => { e.preventDefault(); depth = 0; setDrag(false); addFiles(e.dataTransfer?.files); });
   });
 
-  // Import data: a blocks input that declares `importData` gets an "Import data"
-  // button that populates the whole list from a CSV or JSON file — the ingest
-  // counterpart to CSV/JSON export. Column→field mapping + parsing live in the
-  // engine (parseDataRows) so any shell can reuse them; here we read the file text,
-  // set the input value through the ordinary path (URL/save-safe), and re-render.
-  panelModel.filter(i => i.control === 'blocks' && (i as { importData?: unknown }).importData).forEach(input => {
-    const blockId = input.id;
-    const cfg = (input as { importData?: { formats?: string[]; mode?: string; columns?: Record<string, unknown> } }).importData || {};
-    const wrap = el.querySelector<HTMLElement>(`.blocks-input[data-input-id="${CSS.escape(blockId)}"]`);
-    const list = wrap?.querySelector<HTMLElement>('.blocks-list');
-    if (!wrap || !list) return;
-
-    const fmts = Array.isArray(cfg.formats) && cfg.formats.length ? cfg.formats : ['csv', 'json'];
-    const acceptParts: string[] = [];
-    if (fmts.includes('csv'))  acceptParts.push('.csv', 'text/csv');
-    if (fmts.includes('json')) acceptParts.push('.json', 'application/json');
-    const mode = cfg.mode === 'append' ? 'append' : 'replace';
-
-    const native = document.createElement('input');
-    native.type = 'file';
-    native.accept = acceptParts.join(',');
-    native.style.display = 'none';
-    wrap.appendChild(native);
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'blocks-import-btn';
-    btn.textContent = `Import ${fmts.map(f => f.toUpperCase()).join(' / ')}…`;
-    btn.addEventListener('click', () => native.click());
-    list.appendChild(btn);
-
-    native.addEventListener('change', async () => {
-      const file = native.files?.[0];
-      native.value = '';
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const name = (file.name || '').toLowerCase();
-        const type = (file.type || '').toLowerCase();
-        const format = /\.json$/.test(name) || type.includes('json') ? 'json'
-          : /\.csv$/.test(name) || type.includes('csv') ? 'csv'
-          : undefined;                                    // let the engine sniff it
-        const fields = input.fields ?? [];
-        const { rows, truncated } = parseDataRows(text, { fields, format, columns: cfg.columns as Record<string, string> | undefined });
-        // Fill any field a row didn't get from the file with that field's default
-        // (e.g. an unmapped colour column → the declared default), so an imported
-        // block is as complete as a freshly-added one.
-        const filled = rows.map(r => {
-          const b: Record<string, InputValue> = {};
-          for (const f of fields) {
-            const v = (r as Record<string, InputValue>)[f.id];
-            b[f.id] = (v === '' || v == null) ? blockFieldDefault(f) : v;
-          }
-          return b;
-        });
-        const live = runtime.getModel().find(i => i.id === blockId)?.value;
-        const base = Array.isArray(live) ? live : [];
-        runtime.setInput(blockId, mode === 'append' ? [...base, ...filled] : filled);
-        onDirty?.(blockId);
-        const n = filled.length;
-        announce(`Imported ${n} ${n === 1 ? 'row' : 'rows'}${truncated ? ' (capped to the first ' + n + ')' : ''}.`);
-      } catch (e) {
-        host.log?.('warn', 'data import failed', { error: String(e) });
-        announce((e as { message?: string })?.message || 'Could not import that file.', { assertive: true });   // actionable — must be seen
-      }
-    });
-  });
 
   // Typed add-menu: toggle the option list; one open at a time.
   el.querySelectorAll<HTMLElement>('[data-block-add-toggle]').forEach(btn => {
@@ -1674,17 +1716,25 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         adder = `<button type="button" class="block-add" data-block-add="${id}">+ Add</button>`;
       }
 
-      // "Paste Markdown" (opt-in via manifest mdPaste) + "Collapse all / Expand all"
-      // pill (only worth showing once there are several blocks to fold — its label is
-      // kept in sync with the live fold state in renderInputs/syncCollapseAllPills).
-      const mdPasteBtn = input.mdPaste
-        ? `<button type="button" class="blocks-md-paste" data-blocks-md-paste="${id}" aria-label="Paste Markdown from the clipboard as blocks" title="Paste Markdown — one block per heading">&#182; Paste Markdown</button>`
+      // Quick-start group: "Paste" + "Upload" — the fast ways to fill the whole list, so
+      // they lead as the first, most prominent offer (before hand-adding blocks). Each
+      // DETECTS what it's given — Markdown (mdPaste) or CSV/JSON (importData) — and routes
+      // accordingly (see the paste/upload handlers). Shown when the input enables either.
+      // The "Collapse all" pill is a quiet tidy-up affordance and stays right.
+      const canMd = input.mdPaste === true;
+      const canData = !!(input as { importData?: unknown }).importData;
+      const kinds = [canMd ? 'Markdown' : '', canData ? 'CSV/JSON' : ''].filter(Boolean).join(' or ');
+      const quickGroup = (canMd || canData)
+        ? `<div class="blocks-quick-group">` +
+            `<button type="button" class="blocks-quick blocks-io" data-blocks-io-paste="${id}" aria-label="Paste ${kinds} from the clipboard" title="Paste ${kinds} from the clipboard"><span class="blocks-quick-ic" aria-hidden="true">&#182;</span> Paste</button>` +
+            `<button type="button" class="blocks-quick blocks-io" data-blocks-io-upload="${id}" aria-label="Upload a ${kinds} file" title="Upload a ${kinds} file from your device"><span class="blocks-quick-ic" aria-hidden="true">&#8615;</span> Upload</button>` +
+          `</div>`
         : '';
       const collapsePill = items.length > 1
         ? `<button type="button" class="blocks-collapse-all" data-blocks-collapse-all="${id}" data-mode="collapse" aria-label="Collapse all blocks">Collapse all</button>`
         : '';
-      const toolbar = (mdPasteBtn || collapsePill)
-        ? `<div class="blocks-toolbar">${mdPasteBtn}${collapsePill}</div>` : '';
+      const toolbar = (quickGroup || collapsePill)
+        ? `<div class="blocks-toolbar${quickGroup ? ' blocks-toolbar--quick' : ''}">${quickGroup}${collapsePill}</div>` : '';
       return `<div class="blocks-input blocks-input--cards${addMenu ? ' blocks-input--typed' : ''}${nesting ? ' blocks-input--tree' : ''}" data-input-id="${id}">
         ${toolbar}
         <div class="blocks-list">${itemsHtml}</div>

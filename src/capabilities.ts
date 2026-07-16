@@ -18,6 +18,7 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   compose: 'tool composition',
   camera: 'camera access',
   microphone: 'microphone access',
+  screen: 'screen capture',
   ffmpeg: 'video encoding',
   filesystem: 'file-system access',
   network: 'network access',

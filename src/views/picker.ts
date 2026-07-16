@@ -2471,32 +2471,45 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 }
 
 /**
- * Persist a freshly-recorded clip (the Record tool's camera take) as a durable
- * user asset, so a SAVED session restores its footage after a reload — a blob:
- * URL dies on navigation and a bare `recording.mp4` id can't be re-resolved.
+ * Persist a freshly-captured asset — the Record tool's camera take, or a screencap
+ * screenshot (png, v1.54) — as a durable user asset, so a SAVED session restores it
+ * after a reload: a blob: URL dies on navigation and a bare `recording.mp4` id can't
+ * be re-resolved.
  *
  * Deliberately NOT storeUserUpload: a full-length take can exceed that path's
- * 15 MB verbatim cap, and these are always a finished video container (no
+ * 15 MB verbatim cap, and these are always a finished container we produced (no
  * raster/animation sniffing needed). The only guard is _uploadUserAsset's
  * device-quota check. The `user/recording/*` id namespace marks these as
- * tool-generated so a re-record can retire the PREVIOUS take (prevId) without
- * touching a clip the user picked from their own library. `meta.bytes` rides
- * along so the save/exit dialog can show the stored size without a re-read.
+ * tool-generated so a re-capture can retire the PREVIOUS one (prevId) without
+ * touching an asset the user picked from their own library — it reads as
+ * "tool-generated capture", which a screenshot is, so stills share it rather than
+ * forking a parallel namespace the manage-uploads UI would have to learn.
+ * `meta.bytes` rides along so the save/exit dialog can show the stored size
+ * without a re-read.
  *
- * `credential` (the C2PA manifest store extracted from the just-signed clip) is
+ * A still also stores its pixel dimensions: the AssetRef carries them to the tool,
+ * whose crop maths needs the shot's true size (it has no other way to learn it — a
+ * hook is DOM-free and can't measure an image).
+ *
+ * `credential` (the C2PA manifest store extracted from the just-signed asset) is
  * persisted on the record so host.assets.credential(id) serves it — `user/`
- * lookups read the stored store, not the bytes — letting the take chain as an
+ * lookups read the stored store, not the bytes — letting the capture chain as an
  * ingredient when composited, exactly like a credentialed upload.
  */
 export async function storeRecordingAsset(
-  host: PickerHost, blob: Blob, ext: 'mp4' | 'webm', prevId?: string,
+  host: PickerHost, blob: Blob, ext: 'mp4' | 'webm' | 'png', prevId?: string,
   credential?: { store: Uint8Array; format: string },
 ): Promise<AssetRef> {
+  const isStill = ext === 'png';
   const id = `user/recording/${Date.now()}.${ext}`;
+  // Measuring is best-effort: a shot that won't decode is still worth keeping (the
+  // tool falls back to the rendered size), so never fail the capture over dimensions.
+  const dims = isStill ? await readDimensions(blob).catch(() => ({} as { width?: number; height?: number })) : {};
   await host.assets._uploadUserAsset({
-    id, type: 'video', format: ext, blob, version: '1.0.0',
+    id, type: isStill ? 'raster' : 'video', format: ext, blob, version: '1.0.0',
+    ...(dims.width && dims.height ? { width: dims.width, height: dims.height } : {}),
     ...(credential ? { credential: credential.store, credentialFormat: credential.format } : {}),
-    meta: { name: `Recording.${ext}`, bytes: blob.size },
+    meta: { name: isStill ? `Screenshot.${ext}` : `Recording.${ext}`, bytes: blob.size },
   });
   if (prevId && prevId.startsWith('user/recording/') && prevId !== id) {
     try { await host.assets._deleteUserAsset(prevId); } catch { /* orphan take is harmless */ }

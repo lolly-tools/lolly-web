@@ -552,6 +552,8 @@ const SOURCE_ICON: Partial<Record<string, IconName>> = {
   // re-pointed to the mic glyph in stepsHtml() from its description.
   digitalCapture: 'camera',
   computationalCapture: 'camera',
+  // A display capture is its own origin — a screen, never a camera.
+  screenCapture: 'monitor',
 };
 // Friendly wording for an action's IPTC DigitalSourceType (the last path segment).
 const SOURCE_TYPE_LABEL: Record<string, string> = {
@@ -561,6 +563,7 @@ const SOURCE_TYPE_LABEL: Record<string, string> = {
   digitalCreation: 'Created in software',
   digitalCapture: 'Captured by a camera',
   computationalCapture: 'Computational capture',
+  screenCapture: 'Captured from a screen',
   digitalArt: 'Digital art',
   minorHumanEdits: 'Minor human edits',
   composite: 'Composite of multiple elements',

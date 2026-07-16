@@ -18,7 +18,7 @@
  */
 
 import type {
-  RecorderAPI, MeterAPI, RecordOpts, RecordSession, AudioLevel,
+  RecorderAPI, MeterAPI, RecordOpts, RecordSession, AudioLevel, StillOpts,
 } from '../../../../engine/src/bridge/host-v1.ts';
 // Import the tiny mime-candidate list directly (NOT videoMimeType from export.ts) —
 // recorder.ts is wired into the bridge at boot, and pulling in export.ts (the whole
@@ -100,6 +100,8 @@ function spectralCues(freqDb: Float32Array, humBins: Set<number>, loBin: number,
 
 const hasGetUserMedia = (): boolean =>
   typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+const hasGetDisplayMedia = (): boolean =>
+  typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia);
 const hasRecorder = (): boolean =>
   typeof MediaRecorder !== 'undefined';
 
@@ -287,7 +289,105 @@ function createMeter(): MeterAPI {
   return { start, stop, subscribe };
 }
 
-async function openSession(opts: RecordOpts): Promise<RecordSession> {
+/**
+ * One capture source, opened and ready to record: the stream handed to MediaRecorder
+ * plus the teardown for EVERYTHING behind it. A mixed screen+mic stream's tracks are
+ * new objects, so stopping them would leave the real mic and the display share live —
+ * hence release() rather than the caller stopping stream.getTracks() itself.
+ */
+interface OpenSource {
+  stream: MediaStream;
+  release: () => void;
+  /** Whether a microphone track was actually acquired (a granted mic, not a
+   *  requested-but-denied one). Surfaced on the RecordSession so provenance + UX
+   *  reflect what was recorded, never what was asked for. */
+  micActive: boolean;
+  /** Fires when the SOURCE ends on its own — the user hitting the browser's own
+   *  "Stop sharing" bar. Undefined for device capture, which has no such control. */
+  onSourceEnded?: (cb: () => void) => void;
+}
+
+/**
+ * Mix N audio streams down to a single track (screen/tab audio + the mic narration).
+ * MediaRecorder takes one audio track, and two separate tracks would leave the mic
+ * silently dropped — the failure users report as "my voiceover didn't record".
+ */
+function mixAudioTracks(streams: MediaStream[]): { track: MediaStreamTrack | null; close: () => void } {
+  const withAudio = streams.filter(s => s.getAudioTracks().length > 0);
+  if (!withAudio.length) return { track: null, close: () => {} };
+  // One source needs no mixing graph — hand its track straight through (cheaper, and
+  // it keeps the original track's own constraints/processing intact).
+  if (withAudio.length === 1) return { track: withAudio[0]!.getAudioTracks()[0]!, close: () => {} };
+  const AC = audioContextCtor();
+  if (!AC) return { track: withAudio[0]!.getAudioTracks()[0]!, close: () => {} };
+  const ctx = new AC();
+  const dest = ctx.createMediaStreamDestination();
+  for (const s of withAudio) {
+    try { ctx.createMediaStreamSource(s).connect(dest); } catch { /* a source with no live track — skip it */ }
+  }
+  ctx.resume?.().catch(() => {});
+  return { track: dest.stream.getAudioTracks()[0] ?? null, close: () => { ctx.close().catch(() => {}); } };
+}
+
+/**
+ * Display capture (v1.54). The browser's picker IS the selection UI — we pass no
+ * hint about what to share and cannot enumerate the user's screens, so what comes
+ * back is exactly what they chose to hand over, nothing more.
+ *
+ * System audio is requested in the SAME picker as the video (there's no second
+ * prompt), and the user can withhold it, so `systemAudio: true` is a request, never a
+ * guarantee — we mix whatever actually arrives.
+ */
+async function openDisplaySource(opts: RecordOpts): Promise<OpenSource> {
+  const wantMic = opts.audio !== false;
+  const display = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    // Asking for audio here is what puts the "Also share tab audio" checkbox in the
+    // picker. Chromium-on-Windows/ChromeOS can grant true system audio; elsewhere this
+    // yields tab audio or simply nothing — either way the video still records.
+    audio: opts.systemAudio === true,
+  });
+  // The mic is a SEPARATE prompt, and it must come after the picker: asking first
+  // would make the user grant a microphone before they've agreed to share anything.
+  let mic: MediaStream | null = null;
+  if (wantMic) {
+    try {
+      mic = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+    } catch {
+      // Mic denied/missing: record the screen anyway rather than losing the whole take.
+      // The control surfaces this; a silent recording beats no recording.
+      mic = null;
+    }
+  }
+  const { track: audioTrack, close: closeMix } = mixAudioTracks([...(mic ? [mic] : []), display]);
+  const stream = new MediaStream([...display.getVideoTracks(), ...(audioTrack ? [audioTrack] : [])]);
+  return {
+    stream,
+    // Only true when a mic stream was genuinely acquired — a denied/absent mic left it null.
+    micActive: mic !== null,
+    release: () => {
+      closeMix();
+      // Stop the SOURCE streams, not `stream` — its audio track may be the mix's
+      // output, whose stop() would leave the real mic and the share running.
+      display.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+      mic?.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+      stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+    },
+    onSourceEnded: (cb) => {
+      // The browser's floating "Stop sharing" bar ends the track without telling us
+      // otherwise. Without this the recorder keeps running against a dead track and
+      // the take is only finished when the user thinks to press Stop in the page.
+      const v = display.getVideoTracks()[0];
+      if (v) v.addEventListener('ended', cb, { once: true });
+    },
+  };
+}
+
+/** Camera/mic capture — the pre-1.54 path, unchanged. */
+async function openDeviceSource(opts: RecordOpts): Promise<OpenSource> {
   const wantAudio = opts.audio !== false;
   const wantVideo = opts.video === true;
   const edge = opts.maxEdge && opts.maxEdge > 0 ? Math.round(opts.maxEdge) : 1280;
@@ -300,9 +400,28 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
       : false,
   };
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  // getUserMedia is all-or-nothing: a denied mic rejects the whole call, so a resolved
+  // stream that asked for audio genuinely has a mic track.
+  return {
+    stream, micActive: wantAudio,
+    release: () => stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } }),
+  };
+}
+
+async function openSession(opts: RecordOpts): Promise<RecordSession> {
+  const isScreen = opts.source === 'screen' && opts.video === true;
+  const wantAudio = opts.audio !== false;
+  // A screen take always has a video track; a device take only when asked.
+  const wantVideo = isScreen || opts.video === true;
+  const source = isScreen ? await openDisplaySource(opts) : await openDeviceSource(opts);
+  const { stream } = source;
+  // A screen recording's audio is opportunistic — the picker's system-audio checkbox
+  // and the mic prompt can both come back empty. Record what actually arrived, so the
+  // mime hint never claims a track the stream doesn't have.
+  const haveAudio = isScreen ? stream.getAudioTracks().length > 0 : wantAudio;
 
   const mimeType = wantVideo
-    ? (videoMimeType(opts.format ?? 'mp4', { audio: wantAudio }) ?? videoMimeType(opts.format ?? 'mp4') ?? '')
+    ? (videoMimeType(opts.format ?? 'mp4', { audio: haveAudio }) ?? videoMimeType(opts.format ?? 'mp4') ?? '')
     : audioMimeType(opts.format);
   let recorder: MediaRecorder;
   try {
@@ -313,9 +432,10 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
     }
   } catch (e) {
     // Even the browser-default MediaRecorder can't encode this stream (no supported format):
-    // release the camera/mic we just acquired so the hardware indicator never stays lit with
-    // no recording running, then surface the failure to the caller.
-    stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+    // release the camera/mic/display we just acquired so the hardware indicator (or the
+    // "sharing your screen" bar) never stays lit with no recording running, then surface
+    // the failure to the caller.
+    source.release();
     throw e;
   }
   const chunks: Blob[] = [];
@@ -327,7 +447,7 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
 
   // Live levels during the take (only meaningful with an audio track).
   const subscribers = new Set<LevelCallback>();
-  const stopAnalyse = wantAudio
+  const stopAnalyse = haveAudio
     ? analyseStream(stream, (l) => { for (const cb of [...subscribers]) { try { cb(l); } catch { /* ignore */ } } })
     : () => {};
 
@@ -339,7 +459,7 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
     if (maxTimer) { clearTimeout(maxTimer); maxTimer = 0; }
     stopAnalyse();
     if (wantVideo) publishRecordPreview(null);
-    stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+    source.release();
   };
 
   recorder.onstop = () => {
@@ -351,13 +471,29 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
     settle?.(new Blob(chunks, { type: container }));
   };
 
-  recorder.start();
+  // recorder.start() can throw synchronously (a codec surfacing only at start, a track
+  // ending between construct and start). The construction catch above is the only place
+  // source.release() runs on failure, so a throw here would orphan the LIVE display + mic
+  // (and leave the preview published) with no in-app way to stop them — the runtime never
+  // assigns recordSession, so the Stop button is a no-op. Tear the source down before
+  // rethrowing, exactly as construction does.
+  try {
+    recorder.start();
+  } catch (e) {
+    releaseDevices();
+    throw e;
+  }
   if (opts.maxMs && opts.maxMs > 0) {
     maxTimer = window.setTimeout(() => { try { recorder.stop(); } catch { /* already stopped */ } }, opts.maxMs);
   }
+  // Ending the share from the browser's own "Stop sharing" bar must finish the take, not
+  // strand it: the track dies either way, so the only question is whether the user gets
+  // the footage they already recorded. onstop runs the normal path, so they do.
+  source.onSourceEnded?.(() => { try { recorder.stop(); } catch { /* already stopped */ } });
 
   let stopping = false;
   return {
+    micActive: source.micActive,
     subscribe(cb: LevelCallback): () => void {
       subscribers.add(cb);
       return () => subscribers.delete(cb);
@@ -378,15 +514,80 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
   };
 }
 
+/**
+ * One still frame from a live stream, encoded (v1.54). Waits for a frame to actually
+ * arrive before drawing: a display stream's first frames can be blank while the
+ * compositor warms up, and a screenshot of nothing looks like a broken tool.
+ */
+async function grabFrame(stream: MediaStream, opts: StillOpts): Promise<Blob> {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+  try {
+    await video.play().catch(() => { /* a muted inline video should always play */ });
+    // Wait for real dimensions + a decoded frame. requestVideoFrameCallback is exact
+    // where it exists; elsewhere loadeddata + a rAF is close enough for a static screen.
+    await new Promise<void>((resolve) => {
+      const done = (): void => { clearTimeout(to); resolve(); };
+      const to = setTimeout(done, 3000);   // never hang the UI on a source that won't paint
+      type RVFC = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
+      const v = video as RVFC;
+      if (typeof v.requestVideoFrameCallback === 'function') v.requestVideoFrameCallback(done);
+      else if (video.readyState >= 2) requestAnimationFrame(() => done());
+      else video.addEventListener('loadeddata', () => requestAnimationFrame(() => done()), { once: true });
+    });
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) throw new Error('no frame available from the capture source');
+    // Native resolution by default — a screenshot is read, not glanced at, so downscaling
+    // it by default would blur the very text the user is capturing.
+    const scale = opts.maxEdge && opts.maxEdge > 0 ? Math.min(1, opts.maxEdge / Math.max(vw, vh)) : 1;
+    const w = Math.max(1, Math.round(vw * scale)), h = Math.max(1, Math.round(vh * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('no 2d context for the still');
+    ctx.drawImage(video, 0, 0, w, h);
+    const type = opts.type ?? 'image/png';
+    const quality = opts.quality ?? 0.92;
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, type, quality));
+    // toBlob nulls on an unsupported type — fall back to PNG rather than failing the grab.
+    if (!blob) {
+      const png = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+      if (!png) throw new Error('could not encode the still');
+      return png;
+    }
+    return blob;
+  } finally {
+    video.srcObject = null;
+    try { video.remove(); } catch { /* never mounted */ }
+  }
+}
+
 export function createRecorderAPI(): RecorderAPI {
   const meter = createMeter();
   return {
-    isAvailable(_kind?: 'audio' | 'video'): boolean {
+    isAvailable(kind?: 'audio' | 'video' | 'screen'): boolean {
+      // A screenshot needs no MediaRecorder — only a display stream to grab a frame from.
+      if (kind === 'screen') return hasGetDisplayMedia();
       return hasGetUserMedia() && hasRecorder();
     },
     meter,
     record(opts: RecordOpts = {}): Promise<RecordSession> {
       return openSession(opts);
+    },
+    async still(opts: StillOpts = {}): Promise<Blob> {
+      const source = opts.source ?? 'screen';
+      const stream = source === 'screen'
+        ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+        : await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      try {
+        return await grabFrame(stream, opts);
+      } finally {
+        // A screenshot is one frame: release the share immediately, so the "sharing your
+        // screen" bar never lingers over a capture that already finished.
+        stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+      }
     },
   };
 }

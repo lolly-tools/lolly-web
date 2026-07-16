@@ -23,6 +23,7 @@ import type { StudioKind, StudioToken, GradientStop } from './token-studio.ts';
 import { mountUploadDropzone } from './upload-dropzone.ts';
 import type { PickerHost } from '../views/picker.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
+import { mountColorField } from '../components/color-field.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
@@ -76,7 +77,8 @@ function tokenValueEditor(tok: StudioToken): string {
       return `<span class="be-tok-shadow-chip" style="box-shadow:${escape(formatStudioValue(tok))}" aria-hidden="true"></span>
         ${(['offsetX', 'offsetY', 'blur', 'spread'] as const).map(k =>
           `<label class="be-tok-shadow-in"><span>${k === 'offsetX' ? t('x') : k === 'offsetY' ? t('y') : k === 'blur' ? t('blur') : t('spread')}</span><input type="text" value="${f(k)}" data-tok-input="shadow" data-tok-field="${k}" data-tok-path="${p}" size="5" aria-label="${escape(t('{name} {field}', { name: tok.name, field: k === 'offsetX' ? t('x') : k === 'offsetY' ? t('y') : k === 'blur' ? t('blur') : t('spread') }))}"></label>`).join('')}
-        <input type="color" class="be-tok-shadow-col" value="${escape((colorToHex(String(raw.color ?? '')) ?? '#000000').slice(0, 7))}" data-tok-input="shadow" data-tok-field="color" data-tok-path="${p}" aria-label="${escape(t('{name} colour', { name: tok.name }))}">`;
+        <span class="be-tok-shadow-cf" data-shadow-cf data-tok-path="${p}" aria-label="${escape(t('{name} colour', { name: tok.name }))}"></span>
+        <input type="hidden" data-tok-input="shadow" data-tok-field="color" data-tok-path="${p}" value="${escape((colorToHex(String(raw.color ?? '')) ?? '#000000').slice(0, 7))}">`;
     }
     default: // the dimension kinds: spacing / sizing / stroke
       return `<input type="text" class="be-tok-dim" value="${escape(String(tok.raw ?? ''))}" data-tok-input="dimension" data-tok-path="${p}" size="7" inputmode="decimal" aria-label="${escape(t('{name} value', { name: tok.name }))}" placeholder="8px">`;
@@ -116,6 +118,25 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
   const err = mount.querySelector<HTMLElement>('[data-tok-err]');
   const showErr = (m: string): void => { if (err) { err.textContent = m; err.hidden = !m; } if (m) announce(m, { assertive: true }); };
 
+  // A shadow token's colour uses our own picker (never the OS one) — mounted over
+  // a hidden holder input that carries the #rrggbb so the delegated shadow commit
+  // (which reads [data-tok-field="color"] and fires on `change`) keeps working
+  // untouched. Re-run after every render(), which replaces the list's markup.
+  const wireShadowFields = (): void => {
+    list.querySelectorAll<HTMLElement>('[data-shadow-cf]').forEach(span => {
+      const row = span.closest<HTMLElement>('[data-tok-row]');
+      const holder = row?.querySelector<HTMLInputElement>('input[data-tok-field="color"]');
+      mountColorField(span, `shadow-${span.dataset.tokPath ?? ''}`, {
+        value: holder?.value || '#000000', float: true,
+        onChange: (v) => {
+          if (!holder) return;
+          holder.value = v; // canonical #rrggbb / #rrggbbaa — the shadow may carry alpha now
+          holder.dispatchEvent(new Event('change', { bubbles: true }));
+        },
+      });
+    });
+  };
+
   const render = (): void => {
     const all = listStudioTokens(ctx.doc()).filter(t => t.kind !== 'gradient');
     if (!all.length) {
@@ -134,6 +155,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
             <button type="button" class="be-tok-del" data-tok-del="${pathAttr(tok)}" aria-label="${escape(t('Delete {name}', { name: tok.name }))}">&#x2715;</button>
           </div>`).join('')}
       </div>`).join('');
+    wireShadowFields();
   };
   render();
 
@@ -245,7 +267,6 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
         <details class="be-grad-pop-custom" data-grad-pop-custom>
           <summary>${t('Custom value')}</summary>
           <div class="be-grad-pop-customrow">
-            <input type="color" data-grad-pop-native aria-label="${escape(t('Custom stop colour'))}">
             <input type="text" class="be-fmt-input" data-grad-pop-hex placeholder="#rrggbb / oklch(…)" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="${escape(t('Custom stop value'))}">
           </div>
         </details>
@@ -309,7 +330,6 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
   const pop = mount.querySelector<HTMLElement>('[data-grad-pop]')!;
   const popGrid = mount.querySelector<HTMLElement>('[data-grad-pop-grid]')!;
   const popCustom = mount.querySelector<HTMLDetailsElement>('[data-grad-pop-custom]')!;
-  const popNative = mount.querySelector<HTMLInputElement>('[data-grad-pop-native]')!;
   const popHex = mount.querySelector<HTMLInputElement>('[data-grad-pop-hex]')!;
   let popPath = ''; // pathAttr of the token whose stop is being edited ('' = closed)
   let popStop = -1;
@@ -333,7 +353,6 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     if (!cur) { closePop(); return; }
     const stop = cur.stops[popStop]!;
     renderPopGrid();
-    popNative.value = (resolveStopHex(stop, ctx.resolveRef) ?? '#888888').slice(0, 7);
     popHex.value = isAlias(stop.color) ? '' : stop.color;
     popCustom.open = !isAlias(stop.color); // a literal stop opens on the row that set it
     pop.hidden = false;
@@ -498,12 +517,10 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     const sw = (e.target as HTMLElement).closest<HTMLElement>('[data-pop-ref]');
     if (sw) setStopColor(sw.dataset.popRef ?? '');
   });
-  popNative.addEventListener('input', () => setStopColor(popNative.value));
   const commitPopHex = (): void => {
     const raw = popHex.value.trim();
     if (!raw || colorToHex(raw) == null) return; // half-typed — leave the stored value alone
     setStopColor(raw);
-    popNative.value = (colorToHex(raw) ?? '#888888').slice(0, 7);
   };
   popHex.addEventListener('change', commitPopHex);
   popHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitPopHex(); } });

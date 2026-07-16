@@ -431,9 +431,9 @@
   max-width: 7rem;
   aspect-ratio: 1 / 1;
 }
-/* Scale the dial furniture up with the dial. The result disc keeps BOTH halves
-   here too — dropper (top) picks off the screen, edit (bottom) opens the system
-   picker — same split as the trigger picker. */
+/* Scale the dial furniture up with the dial. Inline is the ONLY host with dials:
+   the trigger popover is too narrow to spend the height on rings that restate the
+   sliders under them, so it renders the slider stack alone. */
 .color-field--inline .color-dial-hub { font-size: 12px; }
 .color-field--inline .color-dial-act svg { width: 1.6em; height: 1.6em; }
 
@@ -590,12 +590,13 @@
 }
 
 /* ── Dials — a ring per channel, above that channel's slider ─────────────────
+   Inline (brand-editor) pickers only — see .color-field--inline above.
    The ring's background is the SAME stop list as the slider track under it,
    poured into a conic gradient instead of a linear one (color-field.ts), and the
    needle sits at value → angle. The hub covers the point where the conic's stops
-   converge (always a muddy pinch) and carries the channel's letter. Last in the
+   converge (always a muddy pinch) and carries the channel's letter. Leading the
    row is the output disc: the colour the axes currently make, split into an
-   eyedropper half and a system-picker half. */
+   eyedropper half and a swatch-menu half. */
 .color-dials {
   display: flex;
   align-items: center;

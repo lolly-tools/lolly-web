@@ -71,7 +71,11 @@
 .doc-ribbon .fc-cbtn i { font-style: italic; }
 /* Text-colour swatch trigger in the ribbon. */
 .doc-color { position: relative; overflow: hidden; }
-.doc-color input[type="color"] {
+/* Our own colour picker fills the button invisibly (the visible face is the
+   ::after glyph); clicking anywhere opens our popover — never the OS picker. The
+   field collapses to zero box so it doesn't push the glyph around. */
+.doc-color .color-picker-field { position: static; }
+.doc-color .color-trigger {
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; cursor: pointer; border: none; padding: 0; margin: 0;
 }
@@ -118,7 +122,7 @@
   border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
 }
 .doc-setup-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: hsl(var(--primary)); cursor: pointer; }
-.doc-setup-row input[type="color"] { width: 34px; height: 26px; padding: 0; border: 1px solid hsl(var(--input)); border-radius: 6px; background: none; cursor: pointer; }
+.doc-setup-row .doc-setup-color { flex: 1; min-width: 0; display: flex; }
 
 /* Touch: keep the ribbon compact and always visible. */
 @media (pointer: coarse) {
@@ -219,7 +223,7 @@
 /* Table controls — a second ribbon row, shown only when the caret is in a table. */
 .doc-tablebar-dock { top: 56px; }
 /* Cell-fill swatch reads as a filled square (not the text-colour "A"). */
-.doc-cellfill::after { content: ""; width: 15px; height: 12px; border: 1px solid hsl(var(--border)); border-radius: 2px; background: #e8f6ee; padding: 0; }
+.doc-cellfill::after { content: ""; width: 15px; height: 12px; border: 1px solid hsl(var(--border)); border-radius: 2px; background: var(--sw, #e8f6ee); padding: 0; }
 
 /* ── Pages: soft page-boundary guides + explicit page break (views/doc-pages.js) ──── */
 .doc-tt-paper { position: relative; }

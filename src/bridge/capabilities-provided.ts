@@ -11,4 +11,8 @@
  */
 import type { Capability } from '../../../../engine/src/bridge/host-v1.ts';
 
-export const PROVIDED_CAPABILITIES: readonly Capability[] = ['network', 'clipboard', 'wasm', 'compose', 'camera', 'microphone'];
+// 'screen' is listed unconditionally rather than feature-detected here: this module is a
+// static declaration read at boot, and getDisplayMedia's absence (an insecure context, an
+// old browser) is already handled where it matters — recorder.isAvailable('screen') gates
+// the control, so the tool degrades to its upload path instead of vanishing from the gallery.
+export const PROVIDED_CAPABILITIES: readonly Capability[] = ['network', 'clipboard', 'wasm', 'compose', 'camera', 'microphone', 'screen'];

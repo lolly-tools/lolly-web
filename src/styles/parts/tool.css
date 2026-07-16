@@ -1179,7 +1179,6 @@ background-color:hsl(var(--background) / 1);
 }
 .block-add:hover,
 .blocks-drop-hint:hover,
-.blocks-import-btn:hover,
 .blocks-collapse-all:hover,
 .block-asset-trigger:hover{ border-color: hsl(var(--ring)); color: hsl(var(--foreground)); }
 
@@ -1197,19 +1196,24 @@ background-color:hsl(var(--background) / 1);
   font: inherit; font-size: 13px; text-align: center; cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
-/* "Import data" — a quiet inline button below a blocks list that fills the whole
-   list from a CSV/JSON file (see blocks.importData). Distinct from the dashed
-   drop-hint: this is a discrete action, not a drop target. */
-.blocks-import-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  margin: 6px 0 2px; padding: 5px 12px;
-  background: hsl(var(--muted));
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 12px; cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
+/* Quick-start group — "Paste Markdown" + "Import CSV/JSON" paired at the TOP of a
+   blocks list: the fastest ways to fill the whole deck, so they lead as the first,
+   most prominent offer before hand-adding blocks. Both share the prominent .blocks-quick
+   look; the group is pushed left so the quiet "Collapse all" pill stays right. */
+.blocks-quick-group { display: flex; align-items: center; gap: 8px; margin-right: auto; flex-wrap: wrap; }
+.blocks-quick {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px;
+  background: hsl(var(--primary) / 0.1);
+  border: 1px solid hsl(var(--primary) / 0.35);
+  border-radius: 999px;
+  color: hsl(var(--primary));
+  font: inherit; font-size: 13px; font-weight: 600; line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s, box-shadow 0.12s;
 }
+.blocks-quick:hover { background: hsl(var(--primary) / 0.18); box-shadow: 0 1px 3px hsl(var(--primary) / 0.18); }
+.blocks-quick-ic { font-size: 1.1em; opacity: 0.85; }
 .blocks-input--droppable.is-file-dragover .blocks-list,
 .blocks-input--droppable.is-file-dragover .blocks-drop-hint {
   outline: 2px dashed hsl(var(--primary));
@@ -1220,7 +1224,8 @@ background-color:hsl(var(--background) / 1);
 /* "Collapse all / Expand all" — a small pill above a multi-block list so a long
    stack of opened blocks folds back in one tap. Right-aligned, deliberately quiet
    (it's a tidy-up affordance, not a primary action like the brand-fill Add pill). */
-.blocks-toolbar { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 6px; }
+.blocks-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-bottom: 6px; }
+.blocks-toolbar--quick { margin-bottom: 10px; }
 .blocks-collapse-all {
   padding: 3px 10px;
   background: hsl(var(--muted));
@@ -1231,22 +1236,10 @@ background-color:hsl(var(--background) / 1);
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
-/* "Paste Markdown" — pushed to the left of the toolbar (collapse pill stays right);
-   a quiet accent affordance that briefly flashes green (ok) / amber (nothing to paste). */
-.blocks-md-paste {
-  margin-right: auto;
-  padding: 3px 10px;
-  background: hsl(var(--primary) / 0.1);
-  border: 1px solid hsl(var(--primary) / 0.35);
-  border-radius: 999px;
-  color: hsl(var(--primary));
-  font: inherit; font-size: 11px; font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
-}
-.blocks-md-paste:hover { background: hsl(var(--primary) / 0.18); }
-.blocks-md-paste.is-ok { background: hsl(140 60% 45% / 0.9); color: #fff; border-color: transparent; }
-.blocks-md-paste.is-empty { background: hsl(38 92% 50% / 0.9); color: #fff; border-color: transparent; }
+/* Paste / Upload flash states — the base look is .blocks-quick; these tint the clicked
+   button green (ok) / amber (nothing usable) briefly after a click. */
+.blocks-io.is-ok { background: hsl(140 60% 45% / 0.9); color: #fff; border-color: transparent; }
+.blocks-io.is-empty { background: hsl(38 92% 50% / 0.9); color: #fff; border-color: transparent; }
 
 /* ── Typed blocks (addMenu) ──────────────────────────────────────────────────
    Each block is a self-contained card with a type label + remove in its head and
@@ -2121,8 +2114,11 @@ background-color:hsl(var(--background) / 1);
 .canvas-input-popover-opt.is-current { font-weight: 600; color: hsl(var(--primary)); }
 
 /* Device recording (engine v1.17): a Record button centred at the foot of the stage,
-   for tools declaring render.capture. */
-.canvas-record-btn {
+   for tools declaring render.capture.
+   The pill is shared with the display-capture Screenshot button (engine v1.54,
+   render.capture:"screen") — see .canvas-screen-bar below, which re-anchors both. */
+.canvas-record-btn,
+.canvas-screen-btn {
   position: absolute;
   bottom: 14px;
   left: 50%;
@@ -2484,6 +2480,64 @@ background-color:hsl(var(--background) / 1);
   .tool-stage.is-recording::after { animation: none; }
 }
 
+/* Display capture (engine v1.54): tools declaring render.capture:"screen" mount a
+   Screenshot + Record pair on the stage instead of the single centred record button.
+   The bar is the absolutely-positioned, centred flow container at the foot of the
+   stage; the pill look of each button is inherited from .canvas-record-btn /
+   .canvas-screen-btn above, so this only re-anchors them side by side. */
+.canvas-screen-bar {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* Return the two pills to normal flow inside the bar — the shared .canvas-record-btn
+   base absolutely-centres a lone button, which would stack them on top of each other. */
+.canvas-screen-bar > .canvas-screen-btn,
+.canvas-screen-bar > .canvas-record-btn {
+  position: static;
+  inset: auto;
+  transform: none;
+}
+/* Live preview of the shared surface. It reuses the video viewfinder for its fill +
+   black backdrop, but a screen is not a selfie: undo the mirror, and let it letterbox
+   (object-fit:contain is set inline) so a captured display is never cropped. The
+   compound selector outranks the .canvas-record-viewfinder mirror regardless of order. */
+.canvas-record-viewfinder.canvas-screen-preview {
+  transform: none;
+  background: #000;
+}
+/* Free-form crop overlay for a screen capture (screencap tool). Shell-owned, laid
+   over the canvas by screen-capture-control.ts on every pointerdown/resize; sized
+   and positioned inline from the canvas's visual rect. data-export-hide keeps it
+   out of the capture. Non-destructive: it only drives the `crop` input. */
+.canvas-crop-layer {
+  position: absolute;
+  z-index: 5;                /* under the .canvas-screen-bar (z 6), over the canvas */
+  cursor: crosshair;
+  touch-action: none;        /* let pointer drags draw a box instead of scrolling */
+}
+.canvas-crop-box {
+  position: absolute;
+  outline: 1px dashed currentColor;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  pointer-events: none;
+}
+
+/* The screen clip is offered in the same post-capture bar as a voice take, but the
+   player is a <video>, not <audio> — give it the same full-width, letterboxed frame. */
+.canvas-audio-dl video {
+  width: 100%;
+  max-height: min(46vh, 320px);
+  border-radius: 8px;
+  background: #000;
+  object-fit: contain;
+}
+
 /* Clips the canvas to its visual (scaled) size so the stage doesn't leave
    a gap when transform: scale() reduces the canvas below its DOM dimensions. */
 .tool-canvas-outer {
@@ -2560,6 +2614,74 @@ background-color:hsl(var(--background) / 1);
   height: auto !important;
   min-height: 0 !important;
   overflow: visible !important;
+}
+
+/* ── Slide-sorter filmstrip (paged tools) ────────────────────────────────────
+   A vertical rail of thumbnails down the left of the canvas: click one to jump to
+   its slide (and, when the page carries data-block-index, to the sidebar block that
+   authors it); the ← → / ↑ ↓ keys step. Lives in #tool-stage OUTSIDE the scaled
+   #tool-canvas, so it stays a fixed size. Mounted by lib/page-filmstrip.ts; the
+   .has-pagestrip class on #tool-stage gates it (single-page tools show nothing). */
+#tool-stage { --pagestrip-w: 172px; }
+.pagestrip { display: none; }
+#tool-stage.has-pagestrip .pagestrip {
+  display: flex; flex-direction: column; gap: 10px;
+  position: absolute; left: 0; top: 0; bottom: 0; width: var(--pagestrip-w);
+  box-sizing: border-box; padding: 14px 12px;
+  overflow-y: auto; overflow-x: hidden;
+  background: hsl(var(--muted) / 0.5);
+  border-right: 1px solid hsl(var(--border));
+  z-index: 6;
+  scrollbar-width: thin;
+}
+/* Shift the scrolling page surface right to clear the rail. The #tool-stage id beats
+   the `.tool-layout.is-paged .tool-canvas-outer { inset: 0 }` rule for `left`. */
+#tool-stage.has-pagestrip .tool-canvas-outer { left: var(--pagestrip-w); }
+
+.pagestrip-thumb { position: relative; width: 100%; }
+.pagestrip-open {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 0; border: 0; background: none; cursor: pointer;
+  width: 100%; text-align: left;
+}
+/* Per-slide delete — a small × in the thumbnail's top-right, revealed on hover/focus. */
+.pagestrip-del {
+  position: absolute; top: 4px; right: 4px;
+  width: 20px; height: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55); color: #fff;
+  font-size: 15px; line-height: 1; cursor: pointer;
+  opacity: 0; transition: opacity 0.12s, background 0.12s;
+}
+.pagestrip-thumb:hover .pagestrip-del,
+.pagestrip-del:focus-visible { opacity: 1; }
+.pagestrip-del:hover { background: hsl(0 72% 48%); }
+.pagestrip-frame {
+  position: relative; width: 100%; display: block;
+  border-radius: 5px; overflow: hidden;
+  border: 2px solid transparent;
+  background: #fff;                        /* shows through if a page has no bg of its own */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.08s;
+}
+/* The cloned page inside is a decorative mini-render — never interactive. */
+.pagestrip-frame > * { pointer-events: none; }
+.pagestrip-thumb:hover .pagestrip-frame { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22); }
+.pagestrip-thumb.is-active .pagestrip-frame { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
+.pagestrip-num {
+  font-size: 10px; font-weight: 600; color: hsl(var(--muted-foreground));
+  padding-left: 2px;
+}
+.pagestrip-thumb.is-active .pagestrip-num { color: hsl(var(--primary)); }
+
+/* A sidebar block briefly flagged when its slide (or thumbnail) was jumped to. */
+.block-item.is-slide-linked {
+  animation: block-slide-linked 0.9s ease-out;
+}
+@keyframes block-slide-linked {
+  0%, 40% { box-shadow: 0 0 0 2px hsl(var(--primary) / 0.55); }
+  100% { box-shadow: 0 0 0 2px hsl(var(--primary) / 0); }
 }
 
 /* Export shutter — a CSS camera-iris that sweeps in to COVER the whole stage
