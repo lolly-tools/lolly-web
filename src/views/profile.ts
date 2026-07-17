@@ -43,6 +43,9 @@ import { syncNeuroDock } from '../components/neuro-dock.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
 import { pinnedToolBytes, unpinAll } from '../lib/offline-pins.ts';
+import { getInstanceBase, setInstanceBase } from '../lib/instance.ts';
+import { openInstanceSheet } from '../components/instance-sheet.ts';
+import { syncCatalog } from '../catalog/sync.ts';
 // Colour / palette / fonts / brand-pack / corner radius all live in the
 // Dashboard's "Your brand" editor now (and the #/start wizard).
 import { registerUserFonts } from '../user-fonts.ts';
@@ -221,6 +224,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // The theme in force right now (applied at boot from the profile; localStorage
   // is only its FOUC mirror) — seeds the Appearance card's active preview.
   const activeTheme = currentTheme();
+  // '' = bundled with this app (the default everywhere but a Tauri shell that
+  // connected elsewhere) — see components/instance-sheet.ts + lib/instance.ts.
+  const instanceBase = getInstanceBase();
   // The headshot is a user asset; re-resolve it (the stored object URL goes stale
   // across reloads).
   const headshotRef = profile.headshot?.id ? await host.assets.get(profile.headshot!.id).catch(() => null) : null;
@@ -335,6 +341,18 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </div>
       </section>
 
+      <section class="profile-card">
+        <h2>${t('Lolly instance')}</h2>
+        <p class="profile-appearance-sub">${t('Where this install gets its tools and catalogue from.')}</p>
+        <div class="store-manage--row">
+          <span class="store-manage-name">${escape(instanceBase || t('Bundled with this app'))}</span>
+          <span style="display:flex;gap:8px">
+            <button type="button" class="btn" id="instance-change-btn">${t('Change')}</button>
+            <button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Disconnect')}</button>
+          </span>
+        </div>
+      </section>
+
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
         <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Your activity')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body section-card-body">${renderActivity(getMetrics(), window.__toolIndex?.tools ?? [])}</div>
@@ -433,6 +451,28 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       b.setAttribute('aria-pressed', String(on));
     });
     await setTheme(host, next);
+  });
+
+  // Lolly instance — "Change" re-opens the sheet (views/profile.ts is one of
+  // its two callers; see components/instance-sheet.ts's header). "Disconnect"
+  // skips the sheet (there's nothing to choose) but takes the same
+  // setInstanceBase → resync → remount path as a successful connect, so the
+  // catalogue swap happens identically either way.
+  viewEl.querySelector('#instance-change-btn')?.addEventListener('click', async () => {
+    await openInstanceSheet(host);
+    await mountProfile(viewEl, host); // re-read getInstanceBase() into the row
+  });
+  viewEl.querySelector('#instance-disconnect-btn')?.addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: t('Disconnect from this instance?'),
+      message: t('Lolly switches back to what is bundled with this app. Nothing saved on this device is affected.'),
+      confirmLabel: t('Disconnect'),
+      danger: false,
+    });
+    if (!ok) return;
+    await setInstanceBase(null);
+    await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]).catch(() => { /* offline — falls back to cache */ });
+    window.dispatchEvent(new Event('lolly:remount')); // re-navigates the current route with the fresh (bundled) catalogue
   });
 
   // Language FAB menu — same control as gallery/catalog/projects, so switching

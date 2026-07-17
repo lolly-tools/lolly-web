@@ -710,8 +710,11 @@
 /* Clickable disclosure header — the visual treatment (icon-head anatomy) is
    shared via disclosure.css's `.section-card-head` merge; this is just the
    <button> reset it needs on top, plus a CSS caret (same idiom as
-   .input-section-summary) that rotates when the card is open. */
-.pdfpass-head {
+   .input-section-summary) that rotates when the card is open. `.protection-head`
+   (the "Content protection" wrapper folding password/C2PA/imprint/print marks —
+   see tool-actions.ts) is the identical button + caret idiom under its own name. */
+.pdfpass-head,
+.protection-head {
   width: 100%;
   margin: 0;
   padding: 0;
@@ -719,8 +722,10 @@
   border: 0;
   cursor: pointer;
 }
-.pdfpass-head:hover { color: hsl(var(--primary)); }
-.pdfpass-head::after {
+.pdfpass-head:hover,
+.protection-head:hover { color: hsl(var(--primary)); }
+.pdfpass-head::after,
+.protection-head::after {
   content: '';
   display: block;
   width: 8px;
@@ -732,8 +737,10 @@
   transition: transform 0.15s ease;
   flex-shrink: 0;
 }
-.export-pdfpass.is-open .pdfpass-head::after { transform: rotate(45deg); }
-.pdfpass-body {
+.export-pdfpass.is-open .pdfpass-head::after,
+.export-protection.is-open .protection-head::after { transform: rotate(45deg); }
+.pdfpass-body,
+.protection-body {
   display: flex;
   flex-direction: column;
   gap: 8px;

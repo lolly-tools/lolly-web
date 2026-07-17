@@ -30,6 +30,7 @@
 
 import { openDB } from '../bridge/db.ts';
 import { currentLang } from '../i18n.ts';
+import { instanceFetch, instancePath } from './instance.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 
 /** The Cache Storage bucket pinned tool files live in. Mirrored by sw.js
@@ -132,19 +133,25 @@ export function collectManifestAssetIds(manifest: ToolManifest): string[] {
 }
 
 /** Fetch one tool file into the pin cache. Returns its byte size; 0 when the
- *  file doesn't exist (optional files); throws when a `required` file fails. */
+ *  file doesn't exist (optional files); throws when a `required` file fails.
+ *  With a remote instance base set (lib/instance.ts) both the fetch AND the
+ *  cache key go through instancePath: a remote pin caches the remote bytes
+ *  under the remote URL, never poisoning the same-origin keys sw.js serves as
+ *  its PIN_CACHE fallback — the trade-off being that remote pins are not
+ *  offline-servable (the SW ignores cross-origin requests entirely). */
 async function pinFile(cache: Cache, url: string, required: boolean): Promise<number> {
+  const fetchUrl = instancePath(url);
   let resp: Response | null = null;
-  try { resp = await fetch(url); } catch { /* network failure — treated as missing below */ }
+  try { resp = await instanceFetch(fetchUrl); } catch { /* network failure — treated as missing below */ }
   // SPA-fallback guard (same as the tool loader's fetchFile): an HTML body for a
   // non-.html path means the server served the app shell for a missing file.
   const ct = resp?.headers.get('content-type') ?? '';
   if (!resp || !resp.ok || (ct.includes('text/html') && !url.endsWith('.html'))) {
-    if (required) throw new Error(`offline pin: failed to fetch ${url}`);
+    if (required) throw new Error(`offline pin: failed to fetch ${fetchUrl}`);
     return 0;
   }
   const blob = await resp.blob();
-  await cache.put(url, new Response(blob, { status: resp.status, statusText: resp.statusText, headers: resp.headers }));
+  await cache.put(fetchUrl, new Response(blob, { status: resp.status, statusText: resp.statusText, headers: resp.headers }));
   return blob.size;
 }
 
@@ -172,12 +179,12 @@ export async function pinTool(toolId: string, prefetchAssets?: PrefetchAssets): 
   const base = `/tools/${toolId}`;
 
   // Manifest first — it names every other file the tool can load.
-  const resp = await fetch(`${base}/tool.json`);
+  const resp = await instanceFetch(instancePath(`${base}/tool.json`));
   if (!resp.ok || (resp.headers.get('content-type') ?? '').includes('text/html')) {
     throw new Error(`offline pin: no manifest for "${toolId}"`);
   }
   const manifestBlob = await resp.blob();
-  await cache.put(`${base}/tool.json`, new Response(manifestBlob, { status: resp.status, statusText: resp.statusText, headers: resp.headers }));
+  await cache.put(instancePath(`${base}/tool.json`), new Response(manifestBlob, { status: resp.status, statusText: resp.statusText, headers: resp.headers }));
   const manifest = JSON.parse(await manifestBlob.text()) as ToolManifest;
 
   const declared = manifest.render?.formats ?? [];
@@ -200,7 +207,7 @@ export async function pinTool(toolId: string, prefetchAssets?: PrefetchAssets): 
 
   // Tool-local assets referenced literally from the just-pinned sources.
   const readBack = async (path: string): Promise<string | null> => {
-    const r = await cache.match(`${base}/${path}`);
+    const r = await cache.match(instancePath(`${base}/${path}`));
     return r ? r.text() : null;
   };
   const sources = await Promise.all([readBack('template.html'), readBack('styles.css'), readBack('hooks.js')]);
@@ -277,7 +284,9 @@ export async function pinnedRenderLayouts(): Promise<Set<string>> {
   const cache = await caches.open(PIN_CACHE);
   for (const id of Object.keys(pins)) {
     try {
-      const resp = await cache.match(`/tools/${id}/tool.json`);
+      // Match under the ACTIVE base — a pin made in remote mode is keyed by its
+      // remote URL; a miss (e.g. after switching base) just skips the warm-up.
+      const resp = await cache.match(instancePath(`/tools/${id}/tool.json`));
       if (!resp) continue;
       const manifest = JSON.parse(await resp.text()) as ToolManifest;
       if (manifest.render?.layout) out.add(manifest.render.layout);

@@ -21,6 +21,7 @@ import '../styles/parts/tool-chrome.css';
 import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
+import { instanceFetch, instancePath } from '../lib/instance.ts';
 
 // Above this readable-query length the address bar and the Share dialog switch to
 // the packed `z=` form (when it's actually shorter). Kept well under the ~2000-char
@@ -171,7 +172,6 @@ export interface ActionsApi {
   save?: (btn?: HTMLElement | null) => Promise<boolean>;
   setDims?: (dims?: { width?: number; height?: number; unit?: string }) => void;
   stopAudioPreview?: () => void;
-  refreshRecentExports?: () => Promise<void>;
 }
 
 /** A shared monotonic bar-write guard (a holder object so shrinkUrl can share it). */
@@ -1119,12 +1119,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const padPx = topPad ? `${topPad}px` : '';
     if (stageEl.style.paddingTop !== padPx) stageEl.style.paddingTop = padPx; // guard the ResizeObserver
 
+    // A view can reserve top/bottom chrome bands (via --stage-reserve-* on the stage) so the
+    // fitted canvas sits BETWEEN its docked toolbars instead of under them — the deck editor
+    // uses this to lift its freeform toolbars out of the canvas. Default 0 → wholly inert for
+    // every other tool. Reserved as flex MARGINS on the centred outer (not stage padding — the
+    // overlay is inset to the stage's padding box, so padding would drag the toolbars in with
+    // it); justify-content:center then honours the margins, floating the canvas into the band.
+    const cs = getComputedStyle(stageEl);
+    const reserveTop    = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-top'))    || 0);
+    const reserveBottom = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-bottom')) || 0);
+
     const availW    = Math.max(40, stageRect.width  - 32);
-    const availH    = Math.max(40, stageRect.height - topPad - 32);
+    const availH    = Math.max(40, stageRect.height - topPad - reserveTop - reserveBottom - 32);
     const scale     = Math.min(1, availW / canvasW, availH / canvasH);
     canvasEl.style.transform = scale < 1 ? `scale(${scale.toFixed(4)})` : '';
     outerEl.style.width  = Math.round(canvasW * scale) + 'px';
     outerEl.style.height = Math.round(canvasH * scale) + 'px';
+    outerEl.style.marginTop    = reserveTop    ? `${reserveTop}px`    : '';
+    outerEl.style.marginBottom = reserveBottom ? `${reserveBottom}px` : '';
     stageZoom?.sync(); // refresh the zoom % readout after a re-fit
   }
 
@@ -1258,10 +1270,6 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // so the dirty-state helpers (markSessionDirty / markSessionSaved, defined later)
   // can flash and clear it from the input-change chokepoint.
   let renderSaveBtn: HTMLButtonElement | null = null;
-  // openExport can fire before `actionsApi` below is initialized (?options auto-open
-  // runs synchronously mid-mount, and the const would be in its TDZ), so the popup's
-  // recent-exports refresh goes through this indirection, assigned after renderActions.
-  let refreshRecentOnOpen: (() => void) | null = null;
   const renderPill    = viewEl.querySelector<HTMLElement>('#render-pill');
   const renderFab     = viewEl.querySelector<HTMLButtonElement>('#render-fab');   // the "Export" half (opens export)
   renderSaveBtn       = viewEl.querySelector<HTMLButtonElement>('#render-save');  // the "Save" half (outer-scoped)
@@ -1305,7 +1313,6 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       layout.classList.add('export-open');
       renderFab.setAttribute('aria-expanded', 'true');
       applyModality();
-      refreshRecentOnOpen?.();   // re-read the downloads log — it can grow in another tab
       // Move focus into the dialog (its close button) for keyboard/SR users — but
       // not when auto-opened from ?options on load, where grabbing focus is jarring.
       if (focus) exportOverlay.querySelector<HTMLElement>('.export-popup-close')?.focus();
@@ -1711,7 +1718,6 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
 
   const actionsApi = renderActions(actionsEl, tool.manifest, runtime, canvasEl, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot);
-  refreshRecentOnOpen = () => void actionsApi?.refreshRecentExports?.();
 
   // Preview-generation hook — scripts/build-previews.ts calls this to grab a VECTOR
   // SCREENSHOT (SVG) of the mounted canvas for ANY tool, even an export:false utility
@@ -2807,7 +2813,7 @@ function isTextEditing(): boolean {
 
 function makeFetchFile(toolId: string): (path: string) => Promise<string> {
   return async (path: string) => {
-    const resp = await fetch(`/tools/${path}`);
+    const resp = await instanceFetch(instancePath(`/tools/${path}`));
     if (resp.status === 404) throw new Error('tool-not-found');
     // SPA servers return index.html for unknown paths with a 200. Detect that.
     const ct = resp.headers.get('content-type') ?? '';

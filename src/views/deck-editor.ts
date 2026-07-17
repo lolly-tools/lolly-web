@@ -1061,6 +1061,16 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
   free.hidden = true;
   overlay.appendChild(free);
 
+  // The freeform toolbar + inspector live HERE, docked to the stage below the slide bar —
+  // NOT inside `free` (which overlays the canvas), so they never cover the content being
+  // edited. renderFree reserves matching stage space (--stage-reserve-*) so the fitted canvas
+  // sits BELOW them. Empty + zero-reserve in layout mode, so that path is unchanged.
+  const freeChrome = document.createElement('div');
+  freeChrome.className = 'deck-free-chrome';
+  freeChrome.setAttribute('data-export-hide', '');
+  freeChrome.hidden = true;
+  overlay.appendChild(freeChrome);
+
   // ── slide toolbar (step 7) ────────────────────────────────────────────────────
   const DECK_THEMES = ['auto', 'light', 'dark', 'primary', 'accent'];
   const SLIDE_LOGOS = ['auto', 'mono', 'off'];
@@ -1693,32 +1703,41 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     const isFree = asText(activeSlide()?.mode) === 'freeform';
     free.hidden = !isFree;
     free.textContent = '';
+    freeChrome.textContent = '';
+    freeChrome.hidden = !isFree;
     boxEls = []; guidesLayer = null; marqueeEl = null;
     // Box indices are PER-SLIDE, so a stale selection carried across a slide change would
     // highlight — and drive Delete/align/nudge on — the wrong boxes. Reset it whenever the
     // active slide changes (navigation), not just when the deck shrinks under it.
     const ai = clampedActive();
     if (ai !== lastActiveIdx) { selection = new Set(); primary = -1; lastActiveIdx = ai; }
-    if (!isFree) { selection = new Set(); primary = -1; return; }
-    const m = canvasMetrics();
-    free.style.left = (m.cr.left - m.sr.left) + 'px';
-    free.style.top = (m.cr.top - m.sr.top) + 'px';
-    free.style.width = m.cr.width + 'px';
-    free.style.height = m.cr.height + 'px';
+    if (!isFree) { selection = new Set(); primary = -1; syncFreeReserve(); return; }
 
     const boxes = activeBoxes();
     // Drop any stale selection indices (a load/undo can shrink the deck), then re-derive primary.
     selection = new Set(selIndices().filter(i => i < boxes.length));
     primary = selection.size === 1 ? selIndices()[0]! : -1;
 
+    // The arrange toolbar + (when something's selected) the inspector dock OUTSIDE the canvas,
+    // in the stage band above it — see freeChrome. Reserve that band FIRST: it re-fits the
+    // canvas, so every metric below must be read AFTER it or the box layer lands on the
+    // pre-fit rect.
+    freeChrome.appendChild(buildToolbar());
+    const insp = buildInspector();
+    if (insp) freeChrome.appendChild(insp);
+    syncFreeReserve();
+
+    const m = canvasMetrics();
+    free.style.left = (m.cr.left - m.sr.left) + 'px';
+    free.style.top = (m.cr.top - m.sr.top) + 'px';
+    free.style.width = m.cr.width + 'px';
+    free.style.height = m.cr.height + 'px';
+
     // A full-cover background BELOW the boxes catches empty-canvas marquee-drags + deselect.
     const bg = document.createElement('div');
     bg.className = 'deck-free__bg';
     bg.addEventListener('pointerdown', (e) => startMarquee(e as PointerEvent));
     free.appendChild(bg);
-    free.appendChild(buildToolbar());
-    const insp = buildInspector();
-    if (insp) free.appendChild(insp);
 
     boxes.forEach((box, i) => { const el = buildBoxEl(box, i); free.appendChild(el); boxEls[i] = el; });
 
@@ -1746,6 +1765,55 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     free.appendChild(guidesLayer);
 
     positionBoxEls(boxes, m.scaleX, m.scaleY);
+  }
+
+  // Reserve the stage band the freeform chrome occupies — the slide bar + arrange toolbar +
+  // inspector across the top — so fitCanvas fits the canvas BELOW them (--stage-reserve-*, read
+  // by tool.ts). Layout mode reserves nothing (the bars keep floating over the canvas edges as
+  // before). Only re-fits when the reservation actually CHANGES, so its own canvas-resize
+  // dispatch can't loop against the ResizeObserver that dispatch wakes. Freeform docks the bar
+  // stack from the top and leaves the filmstrip floating, so only a top band is reserved.
+  function syncFreeReserve(): void {
+    let top = '', bottom = '';
+    if (!freeChrome.hidden) {
+      const barH = bar.getBoundingClientRect().height || 0;
+      freeChrome.style.top = Math.round(barH) + 'px';   // dock the toolbars just under the slide bar
+      const chromeH = freeChrome.getBoundingClientRect().height || 0;
+      top = Math.round(barH + chromeH + 12) + 'px';
+      // The canvas shifts down into the band; reserve the filmstrip too so its bottom doesn't
+      // slide under it.
+      bottom = Math.round((strip.getBoundingClientRect().height || 0) + 6) + 'px';
+    }
+    if (stageEl.style.getPropertyValue('--stage-reserve-top') === top &&
+        stageEl.style.getPropertyValue('--stage-reserve-bottom') === bottom) return;
+    stageEl.style.setProperty('--stage-reserve-top', top);
+    stageEl.style.setProperty('--stage-reserve-bottom', bottom);
+    opts.canvasEl.dispatchEvent(new Event('canvas-resize'));   // → tool.ts fitCanvas re-fits
+  }
+
+  // Keep the box-overlay layer aligned to the (re-fitted / resized) canvas WITHOUT rebuilding
+  // it — so a window/sidebar resize, or our own reserve-driven re-fit, never tears an open
+  // colour popover or the box under a live gesture. Full rebuilds stay in renderFree.
+  function repositionFree(): void {
+    syncFreeReserve();   // chrome may have reflowed (bar wrap on resize) → re-fit before reading rects
+    if (free.hidden) return;
+    const m = canvasMetrics();
+    free.style.left = (m.cr.left - m.sr.left) + 'px';
+    free.style.top = (m.cr.top - m.sr.top) + 'px';
+    free.style.width = m.cr.width + 'px';
+    free.style.height = m.cr.height + 'px';
+    positionBoxEls(activeBoxes(), m.scaleX, m.scaleY);
+    const bbox = free.querySelector<HTMLElement>('.deck-free-bbox');
+    if (bbox && selection.size > 1) {
+      const aabb = selectionAABB(activeBoxes(), selIndices(), BOX_CFG);
+      if (aabb) {
+        bbox.style.left = (aabb.minX * m.scaleX) + 'px';
+        bbox.style.top = (aabb.minY * m.scaleY) + 'px';
+        bbox.style.width = (aabb.w * m.scaleX) + 'px';
+        bbox.style.height = (aabb.h * m.scaleY) + 'px';
+      }
+    }
+    syncFreeReserve();
   }
 
   function addBox(kind: 'text' | 'image' | 'box'): void {
@@ -1972,6 +2040,27 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     } catch { /* user cancelled */ }
   }
 
+  // Layout-mode counterpart of pickBoxImage: click a slot on the canvas → the picker → set the
+  // slide's matching media field. The clicked slot's position among its `.sl-slot` siblings maps
+  // to SLOTS_FOR[layout][i] (the same order the hook renders them), so it works for any layout.
+  async function pickSlot(slotEl: HTMLElement): Promise<void> {
+    const pick = opts.host?.assets?.pick;
+    if (typeof pick !== 'function') return;
+    const slide = activeSlide();
+    if (!slide) return;
+    const fields = SLOTS_FOR[clampLayout(slide.layout)] ?? [];
+    const grid = slotEl.parentElement;
+    const i = grid ? Array.prototype.indexOf.call(grid.children, slotEl) : -1;
+    const field = fields[i];
+    if (!field) return;
+    const cur = refUrl((slide as Record<string, unknown>)[field]);
+    try {
+      const ref = await pick({ title: 'Choose an image', allowUpload: true, current: cur, editTool: opts.editTool }) as (Record<string, unknown> & { url?: string }) | null;
+      if (!ref || typeof ref.url !== 'string' || !ref.url) return;
+      commitSlide({ [field]: toMediaRef(ref) } as Partial<Slide>);
+    } catch { /* user cancelled */ }
+  }
+
   function startMove(e: PointerEvent, idx: number): void {
     // Right-click is the context menu, never a gesture — a move begun on button 2 would
     // collapse a multi-selection (or hang) on the pointerup the native menu swallows.
@@ -2129,6 +2218,17 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
       // to just that box; otherwise there is nothing to commit — restore any sub-threshold
       // nudge and skip the commit so resize/rotate/move clicks never push a no-op undo entry.
       if (g.type === 'move' && g.plainClick && selection.size > 1) { selection = new Set([g.idx]); primary = g.idx; renderFree(); return; }
+      // A plain click on an EMPTY image box opens the picker straight away — filling it is the
+      // only thing an empty box is for, so it shouldn't need the double-click a filled box uses
+      // to REPLACE its picture. (A drag still moves it; right-click still deletes it.)
+      if (g.type === 'move' && g.plainClick) {
+        const box = activeBoxes()[g.idx];
+        if (box?.kind === 'image' && !(typeof box.src === 'string' ? box.src : refUrl(box.src))) {
+          lastDown = { idx: -1, t: 0 };   // consume the double-click candidate this click seeded
+          void pickBoxImage(g.idx);
+          return;
+        }
+      }
       positionBoxEls(activeBoxes(), g.scaleX, g.scaleY);
       return;
     }
@@ -2471,8 +2571,12 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     if (asText(activeSlide()?.mode) === 'freeform') return;   // freeform owns its canvas
     const t = e.target as Element | null;
     if (!t?.closest) return;
-    // A photo, the brand logo or the page number is not a text click.
-    if (t.closest('.sl-slot, .sl-logo, .sl-pageno')) return;
+    // A slot (filled or empty) is an image target: clicking it opens the picker straight away —
+    // the primary way to fill a layout slide's media without hunting for the sidebar field.
+    const slotEl = t.closest<HTMLElement>('.sl-slot');
+    if (slotEl) { void pickSlot(slotEl); return; }
+    // The brand logo or the page number is furniture, not a text click.
+    if (t.closest('.sl-logo, .sl-pageno')) return;
     // The text bands, or the bare slide — the latter so a slide with no text yet can still
     // be clicked into, rather than being the one slide you can't start typing on.
     if (!t.closest('.sl-head, .sl-body, .sl-slide')) return;
@@ -2511,16 +2615,30 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     // out of the DOM after a single increment. The field keeps its own trigger swatch in
     // sync and the tool repaints the canvas regardless; lastSig stays stale, so the overlay
     // catches up on the first commit or selection change after the popover closes.
-    if (free.querySelector('.color-popover:not([hidden])')) return;
+    if (overlay.querySelector('.color-popover:not([hidden])')) return;   // inspector lives in freeChrome
     const sig = sigOf();
     if (sig === lastSig) return;
     lastSig = sig;
     renderAll();
   });
 
+  // Keep the freeform overlay glued to the canvas as the stage resizes (window / sidebar
+  // toggle) or our own reserve-driven re-fit moves it. repositionFree is a lightweight
+  // reposition (no rebuild), so an open colour popover survives. A live gesture owns the DOM.
+  // (Tauri's older WebView, the CLI's jsdom renderer, and the unit tests have no ResizeObserver.)
+  const stageRO = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => { if (overlay.isConnected && !gesture) repositionFree(); })
+    : null;
+  stageRO?.observe(stageEl);
+
   return {
     destroy(): void {
       try { unsubscribe(); } catch { /* already gone */ }
+      try { stageRO?.disconnect(); } catch { /* already gone */ }
+      // Release the reserved stage bands so a non-deck tool mounted next fits the whole stage.
+      stageEl.style.removeProperty('--stage-reserve-top');
+      stageEl.style.removeProperty('--stage-reserve-bottom');
+      opts.canvasEl.dispatchEvent(new Event('canvas-resize'));
       detachGesture();
       closeCtxMenu();   // the menu lives on stageEl (not the overlay) + holds document listeners
       opts.canvasEl.removeEventListener('click', onCanvasClick);

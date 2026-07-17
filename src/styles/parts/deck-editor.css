@@ -420,24 +420,45 @@
   position: absolute;
   z-index: 4;
 }
-.deck-free__tools {
-  pointer-events: auto;
+/* The freeform chrome band — the arrange toolbar + inspector, docked to the STAGE below the
+   slide bar (deck-editor.ts sets `top` to the slide bar's measured height), NOT over the
+   canvas. fitCanvas reserves this band (--stage-reserve-top) + the filmstrip band so the
+   fitted canvas sits between them — the toolbars never cover the content being edited.
+   pointer-events:none keeps the band's empty space click-through to the stage; the bars
+   opt back in. */
+.deck-free-chrome {
+  pointer-events: none;
   position: absolute;
-  left: 8px;
-  top: 44px;   /* clears the top bar (z 12) that sits over the canvas on a tall/square deck */
+  left: 0;
+  right: 0;
+  top: 0;                     /* deck-editor.ts overrides to the slide bar's height */
+  z-index: 13;                /* over the free layer (z 4) AND the slide bar (z 12), so the
+                                 inspector's colour popover (fixed, inside here) is never covered */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 0;
+}
+.deck-free__tools,
+.deck-free__insp {
+  pointer-events: auto;
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 4px 6px;
-  z-index: 10;
-  max-width: calc(100% - 16px);
+  max-width: 100%;
 }
 .deck-free__grp {
   display: flex;
   gap: 2px;
   padding: 2px;
   border-radius: 9px;
-  background: color-mix(in oklab, hsl(var(--card, 0 0% 100%)) 82%, transparent);
-  backdrop-filter: blur(6px);
+  /* A near-opaque card fill, NO backdrop-filter: blur on the group made it the containing
+     block + stacking context for the inspector's position:fixed colour popover, which
+     mispositioned it and dropped it behind the sibling bars ("[object]"/see-through picker).
+     The 92%-opaque fill reads as a solid pill without needing the blur. */
+  background: color-mix(in oklab, hsl(var(--card, 0 0% 100%)) 92%, transparent);
   box-shadow: 0 1px 3px hsl(220 20% 10% / 0.14);
 }
 .deck-free__btn {
@@ -462,17 +483,14 @@
    so it reads as the same toolbar family, but carries LABELLED fields rather than icons:
    its controls set what's inside a box, while the row above aligns boxes to each other,
    and icon-for-icon the two would look identical. */
-.deck-free__insp {
-  pointer-events: auto;
-  position: absolute;
-  left: 8px;
-  top: 82px;                       /* clears the top bar + the arrange row above */
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  z-index: 10;
-  max-width: calc(100% - 16px);
-}
+/* .deck-free__insp shares the flow layout with .deck-free__tools (see the rule above); it
+   only needs its own cell/field styling below. */
+
+/* Layout-mode slots are click-to-fill on the FROZEN (focused/editable) slide — deck-editor.ts
+   opens the picker for them. Only the frozen slide takes the click (styles.css / buildAnimCss
+   gate pointer-events), so only its slots advertise it. `sl-frozen` is an editor-only state
+   (exports are sl-static), so this never leaks a cursor into a rendered deck. */
+.slides.sl-frozen .sl-slot { cursor: pointer; }
 .deck-free__cell {
   display: inline-flex;
   align-items: center;

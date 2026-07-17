@@ -17,6 +17,7 @@
 import { parseThemedAssetId, applyIconTheme, parseIconThemesDoc } from '../../../../engine/src/icon-theme.ts';
 import { parseTreatedAssetId, parsePhotoTreatmentsDoc, wrapRasterWithTreatment, stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
 import { extractC2paStore, prepareC2paIngredientFromStore, aiKind } from '../../../../engine/src/c2pa-verify.ts';
+import { instanceFetch } from '../lib/instance.ts';
 import type { AssetRef, AssetQuery } from '../../../../engine/src/bridge/host-v1.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
@@ -842,7 +843,10 @@ function matchesFilter(meta: AssetMetaRecord, filter: AssetQuery): boolean {
 }
 
 async function fetchAndCache(meta: AssetMetaRecord, format: AssetFormat, blobKey: string, db: AssetsDb): Promise<Blob> {
-  const resp = await fetch(format.url);
+  // format.url comes from the synced asset-meta record — already absolutized to
+  // the instance base when one is set (catalog/sync.ts absolutizeAssetUrls), so
+  // only the CORS routing (instanceFetch) is needed here.
+  const resp = await instanceFetch(format.url);
   if (!resp.ok) throw new Error(`Failed to fetch asset: ${resp.status}`);
   const blob = await resp.blob();
   await verifyAssetChecksum(blob, format);

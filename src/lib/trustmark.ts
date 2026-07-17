@@ -26,32 +26,42 @@
  * bit-for-bit against Adobe's own unmodified reference implementation — a
  * decoded, ECC-valid payload really is a real detection, not a guess.
  *
- * What is UNVERIFIED (nothing in this file has ever been run): the ONNX
- * model fetch, onnxruntime-web session creation, the WebGPU/wasm execution
- * providers, and — the highest-risk piece — `resizeToModelInput`'s
- * canvas-based crop/resize. Adobe's own reference (js/tm_watermark.js) does
- * this resize via a DEDICATED antialiased resizer ONNX model
- * (`resizer.onnx`, run through onnxruntime); this module uses a plain
- * <canvas> `drawImage` instead (documented deviation — porting a SECOND
- * neural model felt like the wrong tradeoff for a first cut). Canvas 2D
- * downscaling quality is browser-dependent and not guaranteed pixel-
- * equivalent to Adobe's resizer, and TrustMark's decoder was trained against
- * ITS OWN resize path — a quality mismatch here could suppress real
- * detections (false negatives) even though it cannot fabricate a false
- * positive (the BCH check downstream still has to pass). This needs
- * real-image, real-browser testing against Adobe's own `images/` sample set
- * before this pip should be trusted operationally. See the PR/commit
- * description for the full pending list.
+ * What is UNVERIFIED (nothing in this file has ever been run — there is no
+ * ONNX runtime, model, or browser in the dev environment): the ONNX model
+ * fetch, onnxruntime-web session creation, the WebGPU/wasm execution
+ * providers, and the whole pixel-preprocessing path. This file ports Adobe's
+ * reference (js/tm_watermark.js) FAITHFULLY — same input resolutions (Q 256 /
+ * P 224), the same NCHW [1,3,H,W] R/G/B plane order, the same 0..1 (/255)
+ * normalization with NO mean/std and NO ×2−1 (the ×2−1 belongs only to the
+ * separate PyTorch decoder, not these ONNX models), the same crop rule, the
+ * same `image` input name, the same `output` tensor read (raw logits,
+ * thresholded `v >= 0`, no sigmoid) — but "faithful port" is NOT "verified
+ * to detect": only a real-browser run against Adobe's own images/ samples
+ * proves the pixels→bits step end-to-end.
  *
- * Every failure mode here — missing models, a WASM/WebGPU init failure, an
- * insecure context, a malformed image — resolves to `{ present: false }` and
- * NEVER throws: a failed deep scan must look identical to "nothing found",
- * never surface as an error the user has to parse, and (per the hard
- * project rule) absence is NEVER shown as a verdict either way.
+ * Preprocessing parity: Adobe resizes via a DEDICATED antialiased Resize
+ * graph, `resizer.onnx` (a 454-byte Resize(antialias, cubic, half_pixel) +
+ * Clip node, run on the wasm EP because WebGPU lacks antialias), which the
+ * decoders were TRAINED against. We now run that same `resizer.onnx` when it
+ * is installed (getResizerSession + the resizer path in `preprocess`), and
+ * fall back to a high-quality (`imageSmoothingQuality:'high'`) canvas
+ * downscale when it is absent or its run faults, or when the source is larger
+ * than MAX_RESIZER_PIXELS. The canvas fallback is a documented deviation: its
+ * kernel is browser-dependent and NOT pixel-equivalent to resizer.onnx, and a
+ * mismatch there can SUPPRESS a real detection (false negative) even though it
+ * can never fabricate a false positive (the BCH check downstream still has to
+ * pass). Install resizer.onnx (the fetch script grabs it) for parity.
+ *
+ * Every failure mode here resolves to a discriminated `TrustmarkDetection`
+ * status and NEVER throws — but note the distinction the UI depends on:
+ * 'not-installed' (no model bytes on device) is NOT the same as 'no-signal'
+ * (a decoder ran and found nothing), and absence is NEVER shown as a verdict
+ * either way. See TrustmarkDetection below and valid.ts's runDeepScan.
  */
 
 import { decodeTrustmarkPayload, TRUSTMARK_PAYLOAD_BITS } from '@lolly/engine';
 import { openDB } from '../bridge/db.ts';
+import { loadOrt, readResponseWithProgress, serializeSessionCreate, type FetchProgress } from './ort.ts';
 
 /** One of TrustMark's two published decoder variants (js/tm_watermark.js's
  *  `modelConfigs`) — Q first (matches upstream's own ordering; the search
@@ -66,109 +76,282 @@ const MODEL_CONFIGS: TrustmarkModelConfig[] = [
   { variantCode: 'Q', fileName: 'decoder_Q.onnx', resolution: 256, squareCrop: false },
   { variantCode: 'P', fileName: 'decoder_P.onnx', resolution: 224, squareCrop: true },
 ];
+/** The antialiased Resize graph Adobe's decoders were trained against — an
+ *  OPTIONAL third model. Absent → we fall back to a canvas resize (see
+ *  `preprocess`). Fetched by scripts/fetch-trustmark-models.ts alongside the
+ *  decoders. */
+const RESIZER_FILE = 'resizer.onnx';
+
+/** onnxruntime-web execution providers for the DECODERS, in preference order.
+ *  WebGPU matches Adobe's reference; the runtime falls back to wasm on its own
+ *  when webgpu can't initialize (no adapter, insecure context, old browser). */
+const DECODER_PROVIDERS = ['wasm'] as const;
+
+/** Above this many source pixels we skip resizer.onnx and use the canvas
+ *  fallback: the resizer consumes a full-resolution NCHW float32 tensor
+ *  (12 bytes/pixel), so an unbounded source could allocate hundreds of MB.
+ *  12 MP ≈ 144 MB for the tensor alone — a deliberate memory ceiling, not a
+ *  quality choice. */
+const MAX_RESIZER_PIXELS = 12_000_000;
 
 /** Bump when the vendored .onnx files are replaced with a different release
  *  (e.g. Adobe ships a retrained decoder) — invalidates the IndexedDB cache
  *  so stale model bytes are never reused. */
-const MODEL_CACHE_VERSION = 1;
+// Bump to invalidate poisoned cache entries. v1→v2: earlier builds cached the
+// dev server's SPA-fallback index.html (a 200 for a not-yet-downloaded model)
+// as if it were the model, so ORT then failed with "protobuf parsing failed";
+// v2 both busts those entries and adds the HTML-response guard in fetchModelBytes.
+const MODEL_CACHE_VERSION = 2;
+
+/** The four real outcomes of a deep scan — see TrustmarkDetection.status. */
+export type TrustmarkStatus = 'not-installed' | 'no-signal' | 'detected' | 'error';
 
 export interface TrustmarkDetection {
-  /** True ONLY on a real, ECC-validated decode. Never a verdict of absence —
-   *  callers must not render `present: false` as "no watermark found". */
-  present: boolean;
-  /** Lowercase hex of the recovered, error-corrected payload bits. */
+  /** Discriminates the outcomes so the UI can say the RIGHT thing (see
+   *  shells/web/src/views/valid.ts's runDeepScan) — the crucial fix for
+   *  "model not installed" reading as "no watermark found":
+   *   - 'detected'      a real, ECC-validated TrustMark read (payloadHex/schema set).
+   *   - 'no-signal'     a decoder RAN but no variant's output passed the BCH
+   *                     check — checks ONE watermark, rules out nothing else.
+   *   - 'not-installed' no decoder model bytes on device (the fetch script
+   *                     hasn't been run) — NEVER means the image is clean.
+   *   - 'error'         onnxruntime/session/inference faulted unexpectedly.
+   *  Only 'detected' is ever rendered as a positive verdict; absence is never
+   *  a verdict either way. */
+  status: TrustmarkStatus;
+  /** Lowercase hex of the recovered, error-corrected payload bits ('detected' only). */
   payloadHex?: string;
-  /** The BCH schema that validated (e.g. 'BCH_5') — informational. */
+  /** The BCH schema that validated (e.g. 'BCH_5') — 'detected' only, informational. */
   schema?: string;
   /** Which decoder model produced the hit ('Q' or 'P' — see MODEL_CONFIGS). */
   variant?: 'Q' | 'P';
+}
+
+// ── Terse, opt-in diagnostics ───────────────────────────────────────────────
+// `host.log` isn't in scope in this lazy module, so trace via console.debug —
+// GATED so a normal deep scan is silent. Turn on in DevTools with either
+//   localStorage.setItem('lolly:trustmark:debug', '1')
+//   window.__TRUSTMARK_DEBUG__ = true
+// to see WHERE a scan falls off: model fetch (ok/404 + url), session created
+// (+ requested providers), inference done (+ output name/shape/sample logits),
+// decoded bit count, and the BCH pass/fail.
+function dbgEnabled(): boolean {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('lolly:trustmark:debug') === '1') return true;
+  } catch {
+    // localStorage can throw in a sandboxed/partitioned context — ignore.
+  }
+  return typeof globalThis !== 'undefined' && (globalThis as { __TRUSTMARK_DEBUG__?: boolean }).__TRUSTMARK_DEBUG__ === true;
+}
+function dbg(stage: string, ctx?: object): void {
+  if (dbgEnabled()) console.debug(`[trustmark] ${stage}`, ctx ?? '');
 }
 
 // ── Model bytes: fetch-once, IndexedDB-forever (mirrors lib/google-fonts.ts) ──
 
 interface CachedModel { bytes: ArrayBuffer; version: number; cachedAt: number }
 
-async function fetchModelBytes(fileName: string): Promise<ArrayBuffer | null> {
+async function fetchModelBytes(fileName: string, cacheOnly = false, onProgress?: (p: FetchProgress) => void): Promise<ArrayBuffer | null> {
   try {
     const db = await openDB();
     const cached = await db.get('trustmark-models', fileName) as CachedModel | undefined;
     if (cached && cached.version === MODEL_CACHE_VERSION && cached.bytes?.byteLength) {
+      dbg('fetch', { file: fileName, source: 'idb-cache', bytes: cached.bytes.byteLength });
       return cached.bytes;
     }
   } catch {
     // IDB unavailable — fall through to a network-only (uncached) fetch below.
   }
 
+  // cacheOnly (the passive background scan): never hit the network — a ~45 MB
+  // decoder download is opt-in, gated behind the explicit "Deep scan" button.
+  // Not in cache ⇒ report absent so the button stays offered.
+  if (cacheOnly) { dbg('fetch', { file: fileName, source: 'cache-only-miss' }); return null; }
+
+  const url = `/models/trustmark/${fileName}`;
   let resp: Response;
   try {
-    resp = await fetch(`/models/trustmark/${fileName}`);
-  } catch {
+    resp = await fetch(url);
+  } catch (err) {
+    dbg('fetch', { file: fileName, url, status: 'network-error', error: (err as Error)?.message });
     return null; // offline, or the dev server has nothing mounted at /models/
   }
   // Not vendored yet (Andy hasn't run scripts/fetch-trustmark-models.ts) —
   // a plain 404, never an error surfaced to the user.
-  if (!resp.ok) return null;
-  const bytes = await resp.arrayBuffer();
+  if (!resp.ok) {
+    dbg('fetch', { file: fileName, url, status: resp.status });
+    return null;
+  }
+  const bytes = await readResponseWithProgress(resp, onProgress);
+  // Vite's dev server answers a MISSING model with the SPA fallback index.html —
+  // a 200, so resp.ok above is true. Handing that HTML to ORT yields "protobuf
+  // parsing failed"; caching it poisons every later run. Reject anything that
+  // isn't the binary model: an HTML content-type, or a body that starts with '<'
+  // ('<!doctype…'). A real ONNX protobuf never begins with 0x3c. (The 454-byte
+  // resizer is legit-small, so there is NO minimum-size check here.)
+  const contentType = resp.headers.get('content-type') || '';
+  const head = bytes.byteLength ? new Uint8Array(bytes, 0, 1)[0] : 0;
+  if (contentType.includes('text/html') || head === 0x3c /* '<' */) {
+    dbg('fetch', { file: fileName, url, status: 'not-a-model (SPA fallback?)', contentType, bytes: bytes.byteLength });
+    return null; // treated as not-installed, never cached
+  }
+  dbg('fetch', { file: fileName, url, status: 200, bytes: bytes.byteLength });
 
   try {
     const db = await openDB();
     await db.put('trustmark-models', { bytes, version: MODEL_CACHE_VERSION, cachedAt: Date.now() }, fileName);
+    // Once a DECODER is cached the passive background scan can run offline — set
+    // the tiny readiness marker the /verify header reads to decide auto-scan vs.
+    // show the one-time download banner (see trustmarkModelsReady).
+    if (/^decoder_/.test(fileName)) {
+      await db.put('trustmark-models', { ready: true, version: MODEL_CACHE_VERSION } as unknown as CachedModel, READY_KEY);
+    }
   } catch {
     // Best-effort cache write — a failed put just means re-fetching next time.
   }
   return bytes;
 }
 
+// A tiny non-model record under this reserved key records "a decoder is cached at
+// the current version" so readiness can be checked WITHOUT loading a 45 MB blob.
+// getSession/fetchModelBytes only ever read specific decoder_* / resizer keys, so
+// this marker is inert to them.
+const READY_KEY = '__ready__';
+
+/** True when a TrustMark decoder is cached on-device at the current version, so a
+ *  scan needs NO download. The /verify header uses this to run the deep scan
+ *  automatically (ready) vs. offer a one-time download banner (not ready). */
+export async function trustmarkModelsReady(): Promise<boolean> {
+  try {
+    const db = await openDB();
+    const rec = await db.get('trustmark-models', READY_KEY) as { version?: number } | undefined;
+    return rec?.version === MODEL_CACHE_VERSION;
+  } catch { return false; }
+}
+
+/** Download + cache the decoders (and resizer) once — the header "enable deep
+ *  scan" action, so a whole batch benefits from one consented fetch. Returns
+ *  true when at least one decoder is now cached. Network-allowed (NOT cacheOnly).
+ *  Best-effort; never throws.
+ *
+ *  `onProgress`, if given, reports a RUNNING TOTAL across all three files (Q,
+ *  P, resizer) as one combined {loaded,total} — a cache hit or a 404/network
+ *  failure folds that file's final (or zero) size in without ever calling
+ *  onProgress for it, so the bar only reflects bytes actually observed. `total`
+ *  goes (and stays) null the moment any file in the sequence never reports a
+ *  Content-Length — an honest indeterminate state rather than a guessed number. */
+export async function prefetchTrustmarkModels(opts: { onProgress?: (p: FetchProgress) => void } = {}): Promise<boolean> {
+  const { onProgress } = opts;
+  let doneBytes = 0, doneTotal = 0, unknownTotal = false;
+  const onFileProgress = onProgress
+    ? (p: FetchProgress): void => {
+        if (p.total == null) unknownTotal = true;
+        onProgress({ loaded: doneBytes + p.loaded, total: unknownTotal ? null : doneTotal + (p.total ?? 0) });
+      }
+    : undefined;
+  // Folds one file's FINAL size into the running total once its fetch settles —
+  // covers the cache-hit / cacheOnly-miss / 404 paths, none of which ever call
+  // onFileProgress, so without this the bar would silently omit that file.
+  const settle = (bytes: ArrayBuffer | null): void => {
+    if (bytes) { doneBytes += bytes.byteLength; doneTotal += bytes.byteLength; }
+    else unknownTotal = true; // not installed / offline — size never learned
+  };
+
+  const q = await fetchModelBytes(MODEL_CONFIGS[0]!.fileName, false, onFileProgress).catch(() => null);
+  settle(q);
+  // P and the resizer are best-effort — fetch them so P-variant images and the
+  // antialiased resize path also work, but a failure there doesn't block Q.
+  for (const c of MODEL_CONFIGS.slice(1)) {
+    const bytes = await fetchModelBytes(c.fileName, false, onFileProgress).catch(() => null);
+    settle(bytes);
+  }
+  const resizerBytes = await fetchModelBytes(RESIZER_FILE, false, onFileProgress).catch(() => null);
+  settle(resizerBytes);
+  return !!q;
+}
+
 // ── onnxruntime-web: lazy import, one session per model, memoised ───────────
 
 type OrtModule = typeof import('onnxruntime-web');
 type InferenceSession = Awaited<ReturnType<OrtModule['InferenceSession']['create']>>;
+/** The ORT Tensor type, derived structurally so this module needs NO static
+ *  (even type-only) import of onnxruntime-web that a bundler might trip over. */
+type OrtTensor = Awaited<ReturnType<InferenceSession['run']>>[string];
 
-let ortPromise: Promise<OrtModule> | null = null;
-async function loadOrt(): Promise<OrtModule> {
-  if (!ortPromise) {
-    ortPromise = import('onnxruntime-web').then((ort) => {
-      // Same-origin WASM runtime binaries — see shells/web/public/ort/ (Andy
-      // must populate this once from node_modules/onnxruntime-web/dist/*.{wasm,mjs}
-      // after `npm install`; documented in scripts/fetch-trustmark-models.ts).
-      // NEVER point this at a CDN: offline-first is a hard project rule, and a
-      // page-context fetch to a third-party origin is exactly what this app's
-      // CSP and the service worker's same-origin posture are built to refuse.
-      ort.env.wasm.wasmPaths = '/ort/';
-      return ort;
-    });
-  }
-  return ortPromise;
-}
+// ORT module + wasm init are shared with the other deep-scan detectors (see
+// lib/ort.ts) so concurrent scans can't race ORT's one-time initWasm().
 
-const sessionCache = new Map<string, Promise<InferenceSession | null>>();
-function getSession(ort: OrtModule, config: TrustmarkModelConfig): Promise<InferenceSession | null> {
-  let pending = sessionCache.get(config.fileName);
-  if (!pending) {
-    pending = (async () => {
-      try {
-        const bytes = await fetchModelBytes(config.fileName);
-        if (!bytes) return null;
-        // Prefer WebGPU (matches Adobe's own reference); onnxruntime-web tries
-        // providers in order and falls back automatically if webgpu can't
-        // initialize (no adapter, insecure context, unsupported browser).
-        return await ort.InferenceSession.create(new Uint8Array(bytes), {
-          executionProviders: ['webgpu', 'wasm'],
-        });
-      } catch (err) {
-        console.warn(`[trustmark] could not load ${config.fileName}`, err);
-        return null;
-      }
-    })();
-    sessionCache.set(config.fileName, pending);
-  }
+/** getSession's tri-state result — the distinction the UI's 'not-installed'
+ *  vs 'error' vs 'no-signal' messaging rests on: no bytes on device is a very
+ *  different thing from bytes that failed to load. */
+type SessionOutcome =
+  | { kind: 'ok'; session: InferenceSession }
+  | { kind: 'not-installed' }
+  | { kind: 'error'; error: unknown };
+
+const sessionCache = new Map<string, Promise<SessionOutcome>>();
+function getSession(ort: OrtModule, config: TrustmarkModelConfig, cacheOnly = false): Promise<SessionOutcome> {
+  const existing = sessionCache.get(config.fileName);
+  if (existing) return existing;
+  const pending = (async (): Promise<SessionOutcome> => {
+    const bytes = await fetchModelBytes(config.fileName, cacheOnly);
+    if (!bytes) return { kind: 'not-installed' }; // 404 / offline / cacheOnly miss / never vendored
+    try {
+      const session = await serializeSessionCreate(() => ort.InferenceSession.create(new Uint8Array(bytes), {
+        executionProviders: [...DECODER_PROVIDERS],
+        // Force CPU-backed output tensors so `.data` is populated and readable
+        // synchronously even under the WebGPU EP (a gpu-buffer output's `.data`
+        // getter throws — see runDecoder's defensive read).
+        preferredOutputLocation: 'cpu',
+      }));
+      return { kind: 'ok', session };
+    } catch (err) {
+      // Bytes present but the runtime couldn't build a session (corrupt model,
+      // unsupported opset, no EP could init) — an ERROR, not "not installed".
+      console.warn(`[trustmark] could not create session for ${config.fileName}`, err);
+      return { kind: 'error', error: err };
+    }
+  })();
+  sessionCache.set(config.fileName, pending);
+  // Keep the memo ONLY for a live session. A miss (e.g. a passive cacheOnly scan
+  // before the models are downloaded) must not be sticky, or the scan that runs
+  // right after the header download would still see "not-installed".
+  void pending.then((o) => { if (o.kind !== 'ok') sessionCache.delete(config.fileName); }, () => sessionCache.delete(config.fileName));
   return pending;
 }
 
-// ── Pixel preprocessing: crop-to-square (when needed) + resize to the model's
-// input, mirroring js/tm_watermark.js's runResizeModelSquare — via a plain
-// <canvas> instead of Adobe's dedicated resizer.onnx model (see the module
-// header's honesty ledger for why this is the biggest unverified risk here).
+/** The optional antialiased resizer session (wasm EP — WebGPU lacks antialias,
+ *  matching Adobe's own choice). Null when resizer.onnx isn't installed or its
+ *  load faults; callers then fall back to a canvas resize. Memoised. */
+let resizerPromise: Promise<InferenceSession | null> | null = null;
+function getResizerSession(ort: OrtModule, cacheOnly = false): Promise<InferenceSession | null> {
+  if (!resizerPromise) {
+    const p = (async (): Promise<InferenceSession | null> => {
+      const bytes = await fetchModelBytes(RESIZER_FILE, cacheOnly);
+      if (!bytes) { dbg('resizer', { status: 'not-installed', file: RESIZER_FILE }); return null; }
+      try {
+        const session = await serializeSessionCreate(() => ort.InferenceSession.create(new Uint8Array(bytes), {
+          executionProviders: ['wasm'],
+        }));
+        dbg('resizer', { status: 'loaded', providers: ['wasm'] });
+        return session;
+      } catch (err) {
+        dbg('resizer', { status: 'load-error', error: (err as Error)?.message });
+        return null;
+      }
+    })();
+    resizerPromise = p;
+    // Don't make a null (missing/failed) resizer sticky — a later run after the
+    // header download should pick up the freshly-cached resizer.onnx.
+    void p.then((s) => { if (!s) resizerPromise = null; }, () => { resizerPromise = null; });
+  }
+  return resizerPromise;
+}
+
+// ── Pixel preprocessing (mirrors js/tm_watermark.js) ────────────────────────
+// crop-to-square (when needed) → resize to the model's input → NCHW [1,3,H,W]
+// float32 in [0,1]. Preferred resize is Adobe's resizer.onnx; canvas is the
+// documented fallback (see the module header's honesty ledger).
 
 function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
@@ -177,12 +360,69 @@ function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement {
   return c;
 }
 
-/** RGBA pixels (already decoded — the caller owns getting there, e.g. via
- *  createImageBitmap + canvas getImageData, same as valid.ts's existing
- *  Lolly-Imprint pixel decode) → a [1,3,size,size] CHW float32 tensor. */
-function rgbaToModelTensor(
+/** Adobe's runResizeModelSquare crop rule: only crop when the aspect ratio is
+ *  extreme (>2 or <0.5) or the variant demands a square input (P); a moderate
+ *  aspect ratio is left uncropped and gets anisotropically resized straight to
+ *  size×size. Upstream writes it as two mutually-exclusive ifs (landscape vs
+ *  portrait); this else-if is equivalent. */
+function cropRect(width: number, height: number, config: TrustmarkModelConfig): { x: number; y: number; w: number; h: number } {
+  const aspectRatio = width / height;
+  const landscape = aspectRatio >= 1;
+  let x = 0, y = 0, w = width, h = height;
+  if (landscape && (aspectRatio > 2 || config.squareCrop)) {
+    w = height;
+    x = Math.floor((width - w) / 2);
+  } else if (!landscape && (aspectRatio < 0.5 || config.squareCrop)) {
+    h = width;
+    y = Math.floor((height - h) / 2);
+  }
+  return { x, y, w, h };
+}
+
+/** RGBA → NCHW [1,3,h,w] float32 in [0,1]: R plane, G plane, B plane; alpha
+ *  dropped. Verbatim layout of loadImageAsTensor's `imageTensor` packing. */
+function packNchw01(rgba: ArrayLike<number>, w: number, h: number): Float32Array {
+  const total = w * h;
+  const tensor = new Float32Array(total * 3);
+  const page = total, twopage = 2 * total;
+  for (let i = 0; i < total; i++) {
+    const idx = i * 4;
+    tensor[i] = (rgba[idx] as number) / 255;
+    tensor[i + page] = (rgba[idx + 1] as number) / 255;
+    tensor[i + twopage] = (rgba[idx + 2] as number) / 255;
+  }
+  return tensor;
+}
+
+/** Verbatim port of js/tm_watermark.js's computeScalesFixed: bisects, per
+ *  axis, the float scale whose floor(originalSize·scale) lands exactly on the
+ *  target — the exact `scales` Adobe feeds resizer.onnx's Resize node. Returns
+ *  NCHW scales [1, 1, scaleH, scaleW] (target is square, so both use `size`). */
+function computeScalesFixed(size: number, srcH: number, srcW: number): Float32Array {
+  const solve = (originalSize: number, targetSize: number): number => {
+    let minScale = targetSize / originalSize;
+    let maxScale = (targetSize + 1) / originalSize;
+    let scale = minScale;
+    const tolerance = 1e-12;
+    for (let it = 0; it < 100; it++) {
+      scale = (minScale + maxScale) / 2;
+      const adjusted = Math.floor(originalSize * scale + tolerance);
+      if (adjusted < targetSize) minScale = scale;
+      else if (adjusted > targetSize) maxScale = scale;
+      else break;
+    }
+    return scale;
+  };
+  return new Float32Array([1, 1, solve(srcH, size), solve(srcW, size)]);
+}
+
+/** Produces the decoder's `image` input tensor from already-decoded RGBA.
+ *  Prefers resizer.onnx (training-distribution parity); falls back to a
+ *  high-quality canvas downscale. */
+async function preprocess(
+  ort: OrtModule, resizerSession: InferenceSession | null,
   rgba: Uint8ClampedArray | Uint8Array, width: number, height: number, config: TrustmarkModelConfig,
-): Float32Array {
+): Promise<OrtTensor> {
   const src = makeCanvas(width, height);
   const sctx = src.getContext('2d') as CanvasRenderingContext2D;
   // Always copy into a fresh, plain-ArrayBuffer-backed Uint8ClampedArray: the
@@ -192,85 +432,138 @@ function rgbaToModelTensor(
   clamped.set(rgba);
   sctx.putImageData(new ImageData(clamped, width, height), 0, 0);
 
-  // Mirrors runResizeModelSquare's crop rule: only crop when the aspect ratio
-  // is extreme (>2 or <0.5) or the variant demands a square input (P); a
-  // moderate aspect ratio is left uncropped and gets anisotropically resized
-  // straight to size×size by the drawImage call below (matches upstream).
-  const aspectRatio = width / height;
-  const landscape = aspectRatio >= 1;
-  let cropX = 0, cropY = 0, cropW = width, cropH = height;
-  if (landscape && (aspectRatio > 2 || config.squareCrop)) {
-    cropW = height;
-    cropX = Math.floor((width - cropW) / 2);
-  } else if (!landscape && (aspectRatio < 0.5 || config.squareCrop)) {
-    cropH = width;
-    cropY = Math.floor((height - cropH) / 2);
+  const { x: cropX, y: cropY, w: cropW, h: cropH } = cropRect(width, height, config);
+  const size = config.resolution;
+
+  // Preferred: Adobe's antialiased resizer.onnx (cubic, half_pixel), the exact
+  // resize decoder_Q/P were TRAINED against. Bounded by memory + fully
+  // fallback-guarded, so a fault here can never break the scan.  [UNVERIFIED]
+  if (resizerSession && cropW * cropH <= MAX_RESIZER_PIXELS) {
+    try {
+      const cropData = sctx.getImageData(cropX, cropY, cropW, cropH).data;
+      const X = new ort.Tensor('float32', packNchw01(cropData, cropW, cropH), [1, 3, cropH, cropW]);
+      const scales = new ort.Tensor('float32', computeScalesFixed(size, cropH, cropW), [4]);
+      const targetSize = new ort.Tensor('int64', new BigInt64Array([BigInt(size)]), [1]);
+      const res = await resizerSession.run({ X, scales, target_size: targetSize });
+      const y = res.Y ?? res[Object.keys(res)[0] ?? ''];
+      if (y) {
+        dbg('resize', { path: 'resizer.onnx', variant: config.variantCode, crop: [cropW, cropH], out: y.dims });
+        return y;
+      }
+      dbg('resize', { path: 'resizer.onnx', variant: config.variantCode, note: 'no Y output; falling back to canvas' });
+    } catch (err) {
+      dbg('resize', { path: 'resizer.onnx', variant: config.variantCode, note: 'failed; falling back to canvas', error: (err as Error)?.message });
+    }
   }
 
-  const size = config.resolution;
+  // Fallback: high-quality canvas downscale. `imageSmoothingQuality:'high'` is
+  // a strictly-better-than-default antialias, but still NOT pixel-equivalent to
+  // resizer.onnx — the leading documented false-negative risk.  [UNVERIFIED]
   const dst = makeCanvas(size, size);
   const dctx = dst.getContext('2d') as CanvasRenderingContext2D;
+  dctx.imageSmoothingEnabled = true;
+  dctx.imageSmoothingQuality = 'high';
   dctx.drawImage(src as CanvasImageSource, cropX, cropY, cropW, cropH, 0, 0, size, size);
-  const { data } = dctx.getImageData(0, 0, size, size);
-
-  // NCHW [1,3,size,size], channels normalized to [0,1] — matches
-  // loadImageAsTensor in js/tm_watermark.js exactly (R plane, G plane, B
-  // plane; alpha dropped).
-  const total = size * size;
-  const tensor = new Float32Array(total * 3);
-  const page = total, twopage = 2 * total;
-  for (let i = 0; i < total; i++) {
-    const idx = i * 4;
-    tensor[i] = data[idx]! / 255;
-    tensor[i + page] = data[idx + 1]! / 255;
-    tensor[i + twopage] = data[idx + 2]! / 255;
-  }
-  return tensor;
+  const data = dctx.getImageData(0, 0, size, size).data;
+  dbg('resize', { path: 'canvas', variant: config.variantCode, crop: [cropW, cropH], out: [size, size] });
+  return new ort.Tensor('float32', packNchw01(data, size, size), [1, 3, size, size]);
 }
 
-/** Runs one decoder session and returns its 100-bit boolean output as 0/1s,
- *  or null if the run didn't produce a usable output. `results.output` is
- *  the tensor name in Adobe's published ONNX graphs; the first tensor in the
- *  result map is a defensive fallback in case a vendored model names it
- *  differently (unverified — see module header). */
-async function runInference(
-  ort: OrtModule, session: InferenceSession, tensorData: Float32Array, size: number,
-): Promise<number[] | null> {
-  const tensor = new ort.Tensor('float32', tensorData, [1, 3, size, size]);
-  const results = await session.run({ image: tensor });
-  const out = results.output ?? results[Object.keys(results)[0] ?? ''];
-  const raw = out?.data as ArrayLike<number> | undefined;
+/** Runs one decoder session on the preprocessed `image` tensor and returns its
+ *  100-bit boolean output as 0/1s, or null if the run didn't produce a usable
+ *  output. `results.output` is the tensor name in Adobe's published ONNX
+ *  graphs; the first tensor in the result map is a defensive fallback in case a
+ *  vendored model names it differently (unverified — see module header). */
+async function runDecoder(session: InferenceSession, imageTensor: OrtTensor): Promise<number[] | null> {
+  const results = await session.run({ image: imageTensor });
+  const outName = results.output ? 'output' : (Object.keys(results)[0] ?? '');
+  const out: OrtTensor | undefined = results[outName];
+
+  // Defensive CPU read (mirrors Adobe reading results['output']['cpuData']):
+  // preferredOutputLocation:'cpu' should make `.data` valid, but a gpu-buffer
+  // tensor's `.data` getter THROWS — so read it only when CPU-resident, else
+  // pull the async CPU copy. Either way a failure just yields null → no-signal.
+  let raw: ArrayLike<number> | undefined;
+  try {
+    if (out && out.location === 'cpu') {
+      raw = out.data as unknown as ArrayLike<number>;
+    } else if (out && typeof out.getData === 'function') {
+      raw = (await out.getData(false)) as unknown as ArrayLike<number>;
+    }
+  } catch {
+    raw = undefined;
+  }
+
+  const sample = raw && raw.length
+    ? Array.from({ length: Math.min(6, raw.length) }, (_, i) => Number(raw![i]).toFixed(3))
+    : [];
+  dbg('inference', { outName, dims: out?.dims, location: out?.location, length: raw?.length ?? 0, sample });
+
   if (!raw || raw.length !== TRUSTMARK_PAYLOAD_BITS) return null;
   return Array.from(raw, (v) => (v >= 0 ? 1 : 0));
 }
 
 /**
- * Runs a TrustMark deep scan on already-decoded RGBA pixels. Tries each
- * model variant (Q, then P) and returns the first ECC-valid decode; `{
- * present: false }` when no model is available, inference fails, or neither
- * variant's output passes the BCH check — see this module's header for
- * exactly what that guarantees and what remains unverified. NEVER throws.
+ * Runs a TrustMark deep scan on already-decoded RGBA pixels. Tries each model
+ * variant (Q, then P) and returns a DISCRIMINATED status (see
+ * TrustmarkDetection): 'detected' on the first ECC-valid decode; 'no-signal'
+ * when a decoder ran but nothing validated; 'not-installed' when no model
+ * bytes are on device; 'error' on an unexpected fault. NEVER throws. See this
+ * module's header for exactly what a detection guarantees and what remains
+ * unverified.
  */
 export async function detectTrustmark(
   rgba: Uint8ClampedArray | Uint8Array, width: number, height: number,
+  opts: { cacheOnly?: boolean } = {},
 ): Promise<TrustmarkDetection> {
+  const cacheOnly = !!opts.cacheOnly;
   try {
-    if (width < 8 || height < 8) return { present: false };
+    if (width < 8 || height < 8) return { status: 'error' };
     const ort = await loadOrt();
+    // Opportunistic — null just means the canvas resize fallback is used.
+    const resizerSession = await getResizerSession(ort, cacheOnly);
+
+    let sessionRan = false;      // a decoder session was obtained + inference attempted
+    let bitsProduced = false;    // a decoder returned a well-formed 100-bit vector
+    let notInstalledAny = false; // a variant had no model bytes on device
+    let loadErrAny = false;      // a variant had bytes but the session failed to build
+
     for (const config of MODEL_CONFIGS) {
-      const session = await getSession(ort, config);
-      if (!session) continue; // this variant's model isn't vendored/loadable — try the next
-      const tensorData = rgbaToModelTensor(rgba, width, height, config);
-      const bits = await runInference(ort, session, tensorData, config.resolution);
-      if (!bits) continue;
+      const outcome = await getSession(ort, config, cacheOnly);
+      if (outcome.kind === 'not-installed') {
+        notInstalledAny = true;
+        dbg('model', { variant: config.variantCode, file: config.fileName, status: 'not-installed' });
+        continue;
+      }
+      if (outcome.kind === 'error') {
+        loadErrAny = true;
+        dbg('model', { variant: config.variantCode, file: config.fileName, status: 'load-error', error: (outcome.error as Error)?.message });
+        continue;
+      }
+      dbg('session', { variant: config.variantCode, file: config.fileName, providers: DECODER_PROVIDERS });
+      sessionRan = true;
+
+      const imageTensor = await preprocess(ort, resizerSession, rgba, width, height, config);
+      const bits = await runDecoder(outcome.session, imageTensor);
+      if (!bits) continue; // output missing/malformed — sessionRan stays true → 'error' if nothing better
+      bitsProduced = true;
+
       const decoded = decodeTrustmarkPayload(bits);
+      dbg('decode', { variant: config.variantCode, bitCount: bits.length, valid: decoded.valid, schema: decoded.schema, version: decoded.version });
       if (decoded.valid) {
-        return { present: true, payloadHex: decoded.payloadHex, schema: decoded.schema, variant: config.variantCode };
+        return { status: 'detected', payloadHex: decoded.payloadHex, schema: decoded.schema, variant: config.variantCode };
       }
     }
-    return { present: false };
+
+    // A decoder produced proper output but nothing validated → the honest
+    // "ran, found nothing THIS check looks for". Distinct from a session that
+    // ran but never yielded usable bits (an error), and from no model at all.
+    if (bitsProduced) return { status: 'no-signal' };
+    if (sessionRan || loadErrAny) return { status: 'error' };
+    if (notInstalledAny) return { status: 'not-installed' };
+    return { status: 'not-installed' };
   } catch (err) {
     console.warn('[trustmark] deep scan failed', err);
-    return { present: false };
+    return { status: 'error' };
   }
 }

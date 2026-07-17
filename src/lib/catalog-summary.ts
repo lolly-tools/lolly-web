@@ -19,6 +19,7 @@
 
 import { escape } from '../utils.ts';
 import { icon } from './icons.ts';
+import { instanceFetch, instancePath } from './instance.ts';
 
 /** The slice of a catalogue-index tool entry this summary reads (the index shape
  *  is a build artifact, not a domain type the engine owns — see PlatformTool /
@@ -136,7 +137,7 @@ interface AssetSummary {
 // feed the read-only counts).
 async function fetchAssetSummary(): Promise<AssetSummary | null> {
   try {
-    const resp = await fetch('/catalog/assets/index.json');
+    const resp = await instanceFetch(instancePath('/catalog/assets/index.json'));
     if (!resp.ok) return null;
     // Response.json() is `any` in lib.dom; the parsed index is an array of
     // entries or an object wrapping one under `assets`.

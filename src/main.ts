@@ -23,6 +23,8 @@ import { hydrateNeurospicy, armNeurospicy, invalidateNeurospicyTracks, dropNeuro
 import { hydrateFeatureFlags, flagEnabledSync } from './feature-flags.ts';
 import { syncNeuroDock } from './components/neuro-dock.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
+import { initShareTargetIngest } from './lib/drop-router.ts';
+import { maybeShowFirstRunInstanceSheet } from './components/instance-sheet.ts';
 import { initSelectPreview } from './select-preview.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
 import { announce } from './a11y.ts';
@@ -458,6 +460,14 @@ async function boot(): Promise<void> {
     } catch { /* ignore corrupt/oversized cache */ }
   }
 
+  // First-run instance choice (Tauri shells only, once): gate BEFORE the first
+  // catalog sync so a chosen instance is honoured immediately instead of a
+  // bundled sync followed by a second one. A no-op (one fast IndexedDB read,
+  // no dialog) on every later boot and on every non-Tauri shell — see
+  // components/instance-sheet.ts's own header for the two callers (this gate,
+  // and the profile "Change" button later).
+  await maybeShowFirstRunInstanceSheet(host);
+
   const catalogReady = syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]);
   catalogReady.then(() => syncCorePrefetch(host as unknown as Parameters<typeof syncCorePrefetch>[0])); // fire-and-forget after sync
   // The Neurospicy dock mounts ABOVE, before this sync starts — on a cold install its
@@ -526,6 +536,14 @@ async function boot(): Promise<void> {
     await navigate(host, { force: true });
   }
 
+  // Android share-target (ACTION_SEND → Lolly): poll the native stash and route
+  // shared files through the universal drop chooser. Placed after the first
+  // navigate so a cold-start share opens its sheet over a painted view, not the
+  // boot skeleton; runs regardless of which view mounted (the chooser is
+  // body-mounted). A feature-detected no-op everywhere but the Android WebView,
+  // and drop-router's heavy deps stay lazy — the init itself is tiny.
+  initShareTargetIngest(host as unknown as Parameters<typeof initShareTargetIngest>[0]);
+
   // Warm the likely-next view chunks so the first tap doesn't pay a cold dynamic-import.
   // import() promises are cached, so the later route reuses these.
   const warmTool = (): void => { void import('./views/tool.ts').catch(() => {}); };
@@ -575,6 +593,10 @@ async function boot(): Promise<void> {
   window.addEventListener('hashchange', onRouteChange);
   window.addEventListener('popstate', onRouteChange);
   window.addEventListener('lolly:navigate', onRouteChange);
+  // Forced same-route remount — lib/drop-router.ts routes a shared file INTO the
+  // route the user is already on (its one-shot stashes are consumed at mount),
+  // which the same-route dedup inside navigate() would otherwise swallow.
+  window.addEventListener('lolly:remount', () => { navigate(host, { force: true }).catch(console.error); });
 
   document.querySelectorAll<HTMLElement>('[data-route]').forEach(btn => {
     btn.addEventListener('click', () => {

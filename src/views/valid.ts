@@ -23,8 +23,9 @@
  */
 
 import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
-import { verifyC2pa, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, analyzeLsb } from '@lolly/engine';
-import type { FileMetadata, MetaGroup, StripFormat } from '@lolly/engine';
+import { verifyC2pa, verifySeal, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, analyzeLsb } from '@lolly/engine';
+import type { FileMetadata, MetaGroup, StripFormat, SealVerifyResult } from '@lolly/engine';
+import { resolveSealKey } from '../lib/seal-dns.ts';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
@@ -263,6 +264,13 @@ function scorecardPipHtml(it: ScorecardItem, i: number): string {
     `</li>`;
 }
 
+// The compact, icon-only pip the mini scorecard uses in a collapsed report row.
+// Shared by miniScoreHtml and injectDeepScanPip so a passively-found deep-scan
+// pip matches the rest of the mini row exactly.
+function miniScorePipHtml(it: ScorecardItem): string {
+  return `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(pipStatusWord(it))}`}"><span class="valid-score-ic">${svgIcon(it.icon)}</span></li>`;
+}
+
 function scorecardHtml(report: VerifyReport, watermark?: Watermark, extra?: ScorecardItem[]): string {
   return `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${scorecardModel(report, watermark, extra).map(scorecardPipHtml).join('')}</ul>`;
 }
@@ -421,8 +429,7 @@ function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none' {
 // showing when collapsed". Same eight pips, same colour = state, label as a tooltip.
 function miniScoreHtml(report: VerifyReport, watermark?: Watermark, extra?: ScorecardItem[]): string {
   if (!report.found && !watermark?.present && !extra?.length) return '';
-  return `<ul class="valid-score valid-score--mini" aria-hidden="true">${scorecardModel(report, watermark, extra).map((it) =>
-    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(pipStatusWord(it))}`}"><span class="valid-score-ic">${svgIcon(it.icon)}</span></li>`).join('')}</ul>`;
+  return `<ul class="valid-score valid-score--mini" aria-hidden="true">${scorecardModel(report, watermark, extra).map(miniScorePipHtml).join('')}</ul>`;
 }
 
 // The always-visible summary row of a collapsible report: state badge, filename,
@@ -449,7 +456,7 @@ function reportMaker(report: VerifyReport): { names: string[]; lolly: boolean } 
   return { names, lolly: report.madeWithLolly || names.some((n) => /lolly/i.test(n)) };
 }
 
-function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadata, watermark?: Watermark): string {
+function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadata, watermark?: Watermark, seal?: SealVerifyResult): string {
   const { state, identity } = resolveState(report);
   // Attribution chip: OIDC email for a device credential, else the CA signer's
   // organisation (Google, Adobe…). Only when the chain reached a pinned anchor.
@@ -473,7 +480,7 @@ function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadat
     ${aiDecl ? `<span class="valid-item-ai" title="${escape(aiDecl)}">${svgIcon('aiSpark')}<span>${t('AI')}</span></span>` : ''}
     <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
     ${who ? `<span class="valid-item-signer" title="${escape(t('Signed by {who}', { who }))}">${svgIcon('mail')}<span>${escape(who)}</span></span>` : ''}
-    ${miniScoreHtml(report, watermark, extraPips(origin, makerHint, isVideo, meta))}
+    ${miniScoreHtml(report, watermark, [...extraPips(origin, makerHint, isVideo, meta), ...(sealPip(seal) ? [sealPip(seal)!] : [])])}
     <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>`;
 }
 
@@ -624,14 +631,144 @@ function watermarkNote(wm: Watermark | undefined): string {
     </div>`;
 }
 
-// ── Deep scan for third-party watermarks (Adobe TrustMark) ──────────────────
-// A user-invoked, lazy-loaded action — see plans/watermark-detectors.md. The
-// neural decoder (shells/web/src/lib/trustmark.ts) is tens of MB and must
-// NEVER load on the default verify path, so this is a plain button that
-// dynamic-imports the module on click (wireDeepScan in mountValid); nothing
-// here imports it eagerly. Reuses the Lolly Imprint's `.valid-wm` styling for
-// the positive-result note (same "a durable in-pixel mark was found" idea,
-// different maker) rather than inventing new CSS.
+// ── SEAL (hackerfactor) signature — byte-level cryptographic provenance ──────
+// DISTINCT from Meta's "Content Seal" pixel watermark (contentSealPip/Note
+// below): SEAL signs the FILE BYTES and publishes its public key in DNS. It runs
+// on the DEFAULT verify path (byte-level, like the C2PA / metadata reads — NOT
+// the neural deep scan). Only a positive OR a present-but-failed result renders;
+// a file with no SEAL record shows nothing (absence is never "clean"). SEAL
+// proves DOMAIN control + byte integrity — not a CA-verified legal identity, and
+// nothing about the visual content.
+function sealPip(seal: SealVerifyResult | undefined): ScorecardItem | null {
+  if (!seal?.found) return null;
+  if (seal.valid && seal.keySource === 'dns') return { icon: 'seal', label: t('SEAL signature'), status: 'pass', statusWord: t('verified') };
+  // Valid but the key came from the file itself (no DNS confirmation) — integrity
+  // without domain attribution, so it's an amber "present", not a green verdict.
+  if (seal.valid) return { icon: 'seal', label: t('SEAL signature'), status: 'warn', statusWord: t('unconfirmed key') };
+  return { icon: 'seal', label: t('SEAL signature'), status: 'fail', statusWord: t('failed') };
+}
+function sealNoteHtml(seal: SealVerifyResult | undefined): string {
+  if (!seal?.found) return '';
+  const domain = seal.domain ? escape(seal.domain) : t('an undisclosed domain');
+  const idLine = seal.signerId ? ` ${t('Signer id: {id}.', { id: escape(seal.signerId) })}` : '';
+  const whenLine = seal.timestamp ? ` ${t('Self-asserted signing time: {when}.', { when: escape(seal.timestamp) })}` : '';
+  if (seal.valid && seal.keySource === 'dns') {
+    const coverage = seal.coversWholeFile
+      ? t('The signature covers the whole file, so its bytes are unchanged since it was signed.')
+      : t('The signature covers only part of the file, so only that portion is proven unchanged.');
+    return `
+    <div class="valid-wm" role="note">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('seal')}</span>
+      <div class="valid-wm-text">
+        <strong>${t('Signed by {domain} (SEAL)', { domain })}</strong>
+        <span>${t('A SEAL cryptographic signature over the file’s bytes verified against the public key published in DNS for this domain.')} ${coverage}${idLine}${whenLine}</span>
+        <span>${t('SEAL proves control of the domain — domain-level attribution, not a CA-verified legal identity — and says nothing about the visual content. Checked on this device; only a public-key DNS lookup left the device, never the file.')}</span>
+      </div>
+    </div>`;
+  }
+  if (seal.valid) {
+    // Verified against the record's OWN inline key — internally consistent, but
+    // the key was never confirmed against DNS, so the domain is unattested.
+    return `
+    <div class="valid-wm valid-wm--warn" role="note">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('seal')}</span>
+      <div class="valid-wm-text">
+        <strong>${t('SEAL signature is internally consistent')}</strong>
+        <span>${t('This file’s SEAL signature verifies against a public key the file itself supplied, but that key was not confirmed against DNS for {domain} — so the bytes are self-consistent, without proven domain attribution.', { domain })}${idLine}${whenLine}</span>
+      </div>
+    </div>`;
+  }
+  return `
+    <div class="valid-wm valid-wm--warn" role="note">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('seal')}</span>
+      <div class="valid-wm-text">
+        <strong>${t('SEAL signature did not verify')}</strong>
+        <span>${t('This file carries a SEAL signature record naming {domain}, but it did not validate: {reason}', { domain, reason: escape(seal.reason) })}</span>
+      </div>
+    </div>`;
+}
+
+// ── Appended-payload extraction (view + download) ────────────────────────────
+// The steganalysis reader already surfaces trailing bytes as a metadata row
+// (see file-metadata.ts's `appended`); this callout goes one step further and
+// lets a viewer actually see and pull out what's riding after the container
+// ends — same "reveal, never launder" stance as the clean-copy action below.
+// Shown for EVERY appended payload, including the legitimate motion-photo
+// case (no warning pip there — see stegoPips — but "here's the trailing data"
+// is still a neutral, useful action). The View/Download handlers themselves
+// live in mountValid (they need activeFiles); this only builds the markup.
+const PAYLOAD_EXT: Record<string, string> = {
+  'zip archive': 'zip', 'gzip data': 'gz', 'PDF document': 'pdf',
+  'Windows executable': 'bin', 'ELF executable': 'bin',
+  'video (motion photo)': 'mp4', text: 'txt',
+};
+/** Extension for a downloaded payload, derived from the engine's best-effort
+ *  `kind` sniff. Anything not explicitly named above (images, RAR, generic
+ *  binary data) falls back to a neutral `.bin` rather than guessing wrong. */
+function payloadExt(kind: string): string {
+  return PAYLOAD_EXT[kind] ?? 'bin';
+}
+function appendedPayloadHtml(meta: FileMetadata | undefined, fileIndex: number): string {
+  if (!meta?.appended) return '';
+  const isMotion = meta.appended.kind === 'video (motion photo)';
+  // Reuse the already-formatted "kind — size" string from the metadata row
+  // instead of reformatting the byte count here.
+  const detail = meta.fields.find((f) => f.label === 'Appended data')?.value ?? meta.appended.kind;
+  return `
+    <div class="valid-wm${isMotion ? '' : ' valid-wm--warn'}" role="note" data-payload-block="${fileIndex}">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('package')}</span>
+      <div class="valid-wm-text">
+        <strong>${isMotion ? t('Appended video data') : t('Appended data found')}</strong>
+        <span>${escape(detail)}</span>
+        <div class="valid-payload-actions">
+          <button type="button" class="valid-clean-link" data-payload-view="${fileIndex}">${t('View')}</button>
+          <button type="button" class="valid-clean-link" data-payload-download="${fileIndex}">${t('Download')}</button>
+        </div>
+        <div class="valid-payload-view" data-payload-panel="${fileIndex}" hidden></div>
+      </div>
+    </div>`;
+}
+// Hex dump with an ASCII gutter — 16 bytes/row, classic layout. The payload is
+// attacker-controlled bytes; the caller escapes this output before it ever
+// touches innerHTML (see payloadPreviewHtml), so nothing here needs escaping
+// itself, but every byte is rendered as its numeric hex/period form, never as
+// a live character — there is no path from payload bytes to markup.
+function hexDump(bytes: Uint8Array): string {
+  const lines: string[] = [];
+  for (let i = 0; i < bytes.length; i += 16) {
+    const row = bytes.subarray(i, Math.min(i + 16, bytes.length));
+    const hex = Array.from(row, (b) => b.toString(16).padStart(2, '0')).join(' ').padEnd(47, ' ');
+    const ascii = Array.from(row, (b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '.')).join('');
+    lines.push(`${i.toString(16).padStart(8, '0')}  ${hex}  |${ascii}|`);
+  }
+  return lines.join('\n');
+}
+const PAYLOAD_PREVIEW_MAX = 2048;
+/** Renders the first ~2 KB of a (possibly hostile) payload as plain escaped
+ *  text — a hex dump for anything binary, decoded UTF-8 for the `text` kind.
+ *  SECURITY: this is the only thing ever done with payload bytes on this
+ *  page — no parsing, no rendering as an image/HTML/script, and the result is
+ *  always passed through `escape()` before reaching innerHTML, so a payload
+ *  crafted to look like markup can never execute or inject. */
+function payloadPreviewHtml(bytes: Uint8Array, kind: string): string {
+  const truncated = bytes.length > PAYLOAD_PREVIEW_MAX;
+  const slice = bytes.subarray(0, PAYLOAD_PREVIEW_MAX);
+  const body = kind === 'text'
+    ? new TextDecoder('utf-8', { fatal: false }).decode(slice)
+    : hexDump(slice);
+  const more = truncated ? `\n\n${t('… {n} more bytes not shown', { n: bytes.length - PAYLOAD_PREVIEW_MAX })}` : '';
+  return `<pre class="valid-payload-dump">${escape(body)}${escape(more)}</pre>`;
+}
+
+// ── Deep scan for third-party watermarks (Adobe TrustMark + Meta Content Seal) ──
+// See plans/watermark-detectors.md. The two neural decoders (lib/trustmark.ts,
+// lib/contentseal.ts) each pull in onnxruntime-web + a model and must NEVER load
+// on the default verify path — they're lazily dynamic-imported. The scan runs
+// AUTOMATICALLY (scanOne/scanAllDecodable in mountValid) once the models are
+// on-device; the one-time ~90 MB download is offered once per batch via the
+// header banner (deepScanBannerHtml → enableDeepScan), so a single consent
+// serves every file. Reuses the Lolly Imprint's `.valid-wm` styling for the
+// positive-result notes (same "a durable in-pixel mark was found" idea).
 const TRUSTMARK_DETECTED_PIP: ScorecardItem = {
   icon: 'imprint', label: '', status: 'pass', statusWord: '',
 };
@@ -651,17 +788,64 @@ function trustmarkNoteHtml(payloadHex: string, schema: string): string {
       </div>
     </div>`;
 }
-// The button + its results slot, appended below the hero scorecard. Gated to
-// formats the deep-scan pixel decode can actually read (WM_DECODABLE) —
-// hidden entirely for PDF/video/TIFF/SVG rather than shown-then-disabled.
-function deepScanBlock(fileIndex: number, format: string | null, fileName: string): string {
-  const fmt = (format || fileName.split('.').pop() || '').toLowerCase();
-  if (!WM_DECODABLE.has(fmt)) return '';
+/** The pip for a positive Content Seal read — a consistent message survived
+ *  four re-encodings on THIS device. Unlike TrustMark this has NO error-
+ *  correcting gate (it's a statistical consensus that a flat/low-detail image
+ *  can trip), so it reads as an amber "likely", not a green "detected". */
+function contentSealPip(): ScorecardItem {
+  return { icon: 'imprint', label: t('Content Seal'), status: 'warn', statusWord: t('likely') };
+}
+// The Content Seal positive note ALWAYS carries the Muse-proprietary caveat: the
+// open Pixel Seal / Video Seal extractor is not Meta's production "Muse" variant,
+// so a hit must never be read as "this is Meta Muse / Meta AI output". Absence is
+// never shown at all (see scanOne), so this only appears on a real detection.
+function contentSealNoteHtml(messageHex: string): string {
+  const msg = messageHex
+    ? ` ${t('Recovered message: {payload}', { payload: `<code>${escape(messageHex)}</code>` })}`
+    : '';
   return `
-    <div class="valid-deepscan" data-deepscan-block="${fileIndex}">
-      <button type="button" class="btn valid-deepscan-btn" data-deep-scan="${fileIndex}">${t('Deep scan for watermarks')}</button>
-      <span class="valid-busy" data-deepscan-status="${fileIndex}" hidden></span>
+    <div class="valid-wm" role="note">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
+      <div class="valid-wm-text">
+        <strong>${t('Meta Content Seal likely')}</strong>
+        <span>${t('An open Pixel Seal image watermark decoded consistently from the pixels across several re-encodings. Unlike a Content Credential or TrustMark — which carry an error-correcting check — this is a statistical match with no cryptographic gate, so a low-detail or flat image can occasionally read as a false positive.')}${msg}</span>
+        <span>${t('This reads only Meta’s open-source Pixel Seal / Video Seal image watermark. Meta’s production “Muse” image pipeline uses a separate proprietary variant this cannot read, so a hit does not mean Meta Muse or Meta AI, and its absence rules nothing out.')}</span>
+      </div>
+    </div>`;
+}
+// Per-file deep-scan slot: the pip-injection anchor + a notes area, appended
+// below the hero scorecard. Gated to formats the pixel decode can read
+// (WM_DECODABLE) — omitted for PDF/video/TIFF/SVG. There is NO per-file button:
+// the scan runs automatically once the detector models are on-device, and the
+// one-time download is offered ONCE per batch in the header banner
+// (deepScanBannerHtml) so every file benefits from a single consent.
+function deepScanBlock(fileIndex: number, format: string | null, fileName: string): string {
+  if (!isDeepScannable(format, fileName)) return '';
+  return `
+    <div class="valid-deepscan" data-deepscan-block="${fileIndex}" hidden>
       <div data-deepscan-result="${fileIndex}"></div>
+    </div>`;
+}
+function isDeepScannable(format: string | null, fileName: string): boolean {
+  return WM_DECODABLE.has((format || fileName.split('.').pop() || '').toLowerCase());
+}
+// The batch-level consent banner, shown at the top of the report when deep-scan
+// models aren't yet on-device and at least one file is a decodable raster. One
+// click downloads the detectors once (~90 MB) and then every image in the batch
+// is scanned automatically; on a later visit (models cached) this never appears
+// and scanning is silent/automatic.
+function deepScanBannerHtml(count: number): string {
+  return `
+    <div class="valid-deepscan-banner" data-deepscan-banner role="note">
+      <span class="valid-deepscan-banner-ic" aria-hidden="true">${svgIcon('imprint')}</span>
+      <div class="valid-deepscan-banner-text">
+        <strong>${t('Scan for invisible watermarks?')}</strong>
+        <span data-deepscan-banner-msg>${t('Check {n} image(s) for Adobe TrustMark / Meta Content Seal watermarks in the pixels. Downloads a detector once (~90 MB), then runs automatically for every file — on-device, nothing uploaded.', { n: count })}</span>
+        <div class="valid-deepscan-progress" data-deepscan-progress role="progressbar" aria-label="${escape(t('Downloading the watermark detector'))}" hidden>
+          <div class="valid-deepscan-progress-fill" data-deepscan-progress-fill></div>
+        </div>
+      </div>
+      <button type="button" class="btn valid-deepscan-enable" data-deep-scan-enable>${t('Enable')}</button>
     </div>`;
 }
 
@@ -909,7 +1093,7 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
   return '';
 }
 
-function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark, mine?: LocalExportMatch): string {
+function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark, mine?: LocalExportMatch, seal?: SealVerifyResult): string {
   const { state, sub, identity } = resolveState(report);
   const claim: Partial<Claim> = report.claim ?? {};
   const signer: Partial<Signer> = report.signer ?? {};
@@ -922,6 +1106,10 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // and the steganalysis reads imply — see deriveAi/aiMarkPip/stegoPips.
   const { origin: aiOrigin, makerHint } = deriveAi(report, meta);
   const pips = extraPips(aiOrigin, makerHint, preview?.kind === 'video', meta);
+  // SEAL is a byte-level signal computed alongside C2PA (see sealPip): its pip
+  // rides with the other watermark/provenance pips in the hero scorecard.
+  const sp = sealPip(seal);
+  if (sp) pips.push(sp);
   // Who signed: the device credential's OIDC email when present, else the
   // organisation / common name from a CA signer's certificate (Google, Adobe,
   // Microsoft… carry no SAN email). Only shown when the chain reached a pinned
@@ -1041,6 +1229,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       ${mine ? mineNote(mine) : ''}
       ${panelsBlock}
       ${watermarkNote(watermark)}
+      ${sealNoteHtml(seal)}
+      ${appendedPayloadHtml(meta, fileIndex)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
     ? t("<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment: only Lolly (here and via <code>lolly validate</code>) can read it — external C2PA viewers don't support WebM at all.")
     : identity
@@ -1155,13 +1345,18 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   // (EXIF/XMP/… — PDF via the shell's pdf bridge, everything else on the engine),
   // or an error message. Kept narrow so both the single- and multi-file paths
   // share the exact engine call. Bytes are read once and reused for both reads.
-  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark; mine?: LocalExportMatch }> {
+  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark; mine?: LocalExportMatch; seal?: SealVerifyResult }> {
     try {
       if (file.size > MAX_VERIFY_BYTES) {
         return { error: t('File is too large to verify here (over {n} MB).', { n: Math.round(MAX_VERIFY_BYTES / 1024 / 1024) }) };
       }
       const bytes = new Uint8Array(await file.arrayBuffer());
       const report = await verifyC2pa(bytes, VERIFY_OPTS);
+      // SEAL runs on the same bytes, on-device. verifySeal parses first and only
+      // reaches out for a DNS public-key lookup when a SEAL record is actually
+      // present — so a normal (non-SEAL) file triggers zero network I/O. The
+      // image itself is never sent; only the domain the record names is looked up.
+      const seal = await verifySeal(bytes, resolveSealKey);
       const meta = await readMetadata(bytes);
       const { watermark, lsb } = await pixelChecks(file, report.format) ?? {};
       // The LSB verdict rides on the metadata object (it's "what the file
@@ -1174,7 +1369,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
         }
       }
       const mine = await localExportByHash(bytes);
-      return { report, meta, watermark, mine };
+      return { report, meta, watermark, mine, seal };
     } catch (err) {
       return { error: (err as Error)?.message || String(err) };
     }
@@ -1263,67 +1458,180 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     }
   }
 
-  // Appends the TrustMark pip to the report's LIVE hero scorecard (creating
-  // one from scratch if the report had none — e.g. a file with no C2PA
-  // manifest, no Lolly Imprint and no AI declaration) rather than re-rendering
-  // the whole card, so nothing else in the report (scroll position, an
-  // already-open <details>, the masonry layout) is disturbed.
-  function injectTrustmarkPip(deepscanEl: HTMLElement): void {
+  // Appends a deep-scan pip to the report's LIVE hero scorecard (creating one
+  // from scratch if the report had none — e.g. a file with no C2PA manifest, no
+  // Lolly Imprint and no AI declaration) rather than re-rendering the whole
+  // card, so nothing else in the report (scroll position, an already-open
+  // <details>, the masonry layout) is disturbed. Called once per positive
+  // detector, so a second hit finds the list the first created and appends to it.
+  function injectDeepScanPip(deepscanEl: HTMLElement, pip: ScorecardItem): void {
     const resultCard = deepscanEl.closest<HTMLElement>('.valid-result');
     const scoreList = resultCard?.querySelector<HTMLElement>('.valid-score:not(.valid-score--mini)');
-    const pipHtml = scorecardPipHtml(trustmarkPip(), scoreList?.children.length ?? 0);
+    const pipHtml = scorecardPipHtml(pip, scoreList?.children.length ?? 0);
     if (scoreList) {
       scoreList.insertAdjacentHTML('beforeend', pipHtml);
     } else {
       deepscanEl.insertAdjacentHTML('beforebegin',
         `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${pipHtml}</ul>`);
     }
+    // Also mirror it into the collapsed row's MINI scorecard (multi-file cards
+    // only — single-file reports have no summary), so a hit shows in the summary
+    // without expanding. Create the mini list if the summary had none (a file
+    // with no C2PA/imprint/AI renders no mini until now).
+    const summary = deepscanEl.closest<HTMLElement>('.valid-item')?.querySelector<HTMLElement>(':scope > .valid-item-summary');
+    if (summary) {
+      let mini = summary.querySelector<HTMLElement>('.valid-score--mini');
+      if (!mini) {
+        mini = document.createElement('ul');
+        mini.className = 'valid-score valid-score--mini';
+        mini.setAttribute('aria-hidden', 'true');
+        summary.insertBefore(mini, summary.querySelector('.valid-item-chev'));
+      }
+      mini.insertAdjacentHTML('beforeend', miniScorePipHtml(pip));
+    }
   }
 
-  // Click handler for [data-deep-scan]: decode the file's pixels, lazily load
-  // the TrustMark module, and — ONLY on a positive (ECC-valid) detection —
-  // inject the green pip + the payload/schema note. Absence is never shown as
-  // a verdict (per plans/watermark-detectors.md): a negative or failed scan
-  // just says the scan ran and found nothing THIS check looks for, never
-  // "no watermark" / "clean".
-  async function runDeepScan(btn: HTMLButtonElement): Promise<void> {
-    const fileIndex = Number(btn.dataset.deepScan);
+  // Passive per-file scan: decode the file's pixels ONCE, run BOTH detectors
+  // (Adobe TrustMark + Meta Content Seal) in cacheOnly mode (NEVER downloads —
+  // that's the header banner's one-time job), and — ONLY on a positive
+  // detection — inject that maker's green/amber pip + note. Absence is never
+  // shown as a verdict (per plans/watermark-detectors.md): a negative or
+  // not-installed scan stays silent. Runs at most once per file per batch.
+  const scannedIndexes = new Set<number>();
+  async function scanOne(fileIndex: number): Promise<void> {
+    if (scannedIndexes.has(fileIndex)) return;
     const file = activeFiles[fileIndex];
-    const block = btn.closest<HTMLElement>('[data-deepscan-block]');
-    const statusEl = block?.querySelector<HTMLElement>(`[data-deepscan-status="${fileIndex}"]`);
+    const block = reportEl.querySelector<HTMLElement>(`[data-deepscan-block="${fileIndex}"]`);
     const resultEl = block?.querySelector<HTMLElement>(`[data-deepscan-result="${fileIndex}"]`);
-    if (!file || !block || !statusEl || !resultEl) return;
-
-    btn.disabled = true;
-    statusEl.hidden = false;
-    statusEl.textContent = t('Scanning… (loading a small model on first use)');
+    if (!file || !block || !resultEl) return;
+    scannedIndexes.add(fileIndex);
     try {
-      const [pixels, { detectTrustmark }] = await Promise.all([
+      const [pixels, { detectTrustmark }, { detectContentSeal }] = await Promise.all([
         decodeToRgba(file),
         import('../lib/trustmark.ts'),
+        import('../lib/contentseal.ts'),
       ]);
-      if (!pixels) {
-        statusEl.textContent = t('Couldn’t read this image’s pixels to scan it.');
+      if (!pixels) return;
+      const [tm, cs] = await Promise.all([
+        detectTrustmark(pixels.data, pixels.width, pixels.height, { cacheOnly: true }),
+        detectContentSeal(pixels.data, pixels.width, pixels.height, { cacheOnly: true }),
+      ]);
+      let shown = false;
+      if (tm.status === 'detected') {
+        injectDeepScanPip(block, trustmarkPip());
+        resultEl.insertAdjacentHTML('beforeend', trustmarkNoteHtml(tm.payloadHex ?? '', tm.schema ?? ''));
+        shown = true;
+      }
+      if (cs.status === 'detected') {
+        injectDeepScanPip(block, contentSealPip());
+        resultEl.insertAdjacentHTML('beforeend', contentSealNoteHtml(cs.messageHex ?? ''));
+        shown = true;
+      }
+      if (shown) { block.hidden = false; const p = block.closest<HTMLElement>('.valid-panels'); if (p) layoutMasonry(p); }
+    } catch (err) {
+      // Passive + best-effort: never surface a failure inline (models may just
+      // not be cached). scannedIndexes stays set so it isn't retried on a
+      // re-expand; the header banner is the path to (re)enable.
+      host.log('warn', 'valid: passive deep scan failed', { error: (err as Error)?.message });
+    }
+  }
+
+  // Scan every decodable raster in the current batch (cacheOnly). Sequential so a
+  // large drop doesn't fire N decodes + inferences at once; pips pop in as each
+  // completes. Files already scanned (scannedIndexes) are skipped.
+  async function scanAllDecodable(): Promise<void> {
+    for (let i = 0; i < activeFiles.length; i++) {
+      if (isDeepScannable(null, activeFiles[i]!.name)) await scanOne(i);
+    }
+  }
+
+  /** `bytes` → "12.3 MB", for the download-progress label. Low-bandwidth by
+   *  design: one decimal place, no locale-aware NumberFormat machinery. */
+  function formatMb(bytes: number): string {
+    return `${(bytes / (1000 * 1000)).toFixed(1)} MB`;
+  }
+
+  // The header banner's one-time "Enable" — download the detectors ONCE (network
+  // allowed) so the whole batch benefits, then scan everything from cache.
+  async function enableDeepScan(btn: HTMLButtonElement): Promise<void> {
+    const banner = btn.closest<HTMLElement>('[data-deepscan-banner]');
+    const msg = banner?.querySelector<HTMLElement>('[data-deepscan-banner-msg]');
+    const bar = banner?.querySelector<HTMLElement>('[data-deepscan-progress]');
+    const fill = banner?.querySelector<HTMLElement>('[data-deepscan-progress-fill]');
+    btn.disabled = true;
+    if (msg) msg.textContent = t('Downloading the detector (~90 MB, once)…');
+    bar?.removeAttribute('hidden');
+    bar?.classList.add('is-indeterminate');
+
+    // Combines BOTH downloads (TrustMark's ~90 MB decoders + Content Seal's
+    // usually-absent extractor) into one running bar. `startedX` distinguishes
+    // "never fetched" (a 404 that fires before a single onProgress call — the
+    // common Content Seal case) from "fetching, size unknown", so a model that
+    // simply isn't vendored can't drag the whole bar into indeterminate.
+    let loadedTm = 0, totalTm: number | null = null, startedTm = false;
+    let loadedCs = 0, totalCs: number | null = null, startedCs = false;
+    const render = (): void => {
+      if (!bar || !fill) return;
+      const loaded = loadedTm + loadedCs;
+      const totalKnown = (!startedTm || totalTm != null) && (!startedCs || totalCs != null);
+      const total = totalKnown ? (totalTm ?? 0) + (totalCs ?? 0) : null;
+      if (total != null && total > 0) {
+        bar.classList.remove('is-indeterminate');
+        bar.setAttribute('aria-valuemin', '0');
+        bar.setAttribute('aria-valuemax', String(total));
+        bar.setAttribute('aria-valuenow', String(Math.min(loaded, total)));
+        fill.style.width = `${Math.min(100, (loaded / total) * 100)}%`;
+        if (msg) msg.textContent = t('Downloading the detector… {loaded} of {total}', { loaded: formatMb(loaded), total: formatMb(total) });
+      } else {
+        bar.classList.add('is-indeterminate');
+        bar.removeAttribute('aria-valuenow');
+        bar.removeAttribute('aria-valuemax');
+        if (msg) msg.textContent = t('Downloading the detector… {loaded} so far', { loaded: formatMb(loaded) });
+      }
+    };
+
+    try {
+      const [{ prefetchTrustmarkModels }, { prefetchContentSealModel }] = await Promise.all([
+        import('../lib/trustmark.ts'),
+        import('../lib/contentseal.ts'),
+      ]);
+      const ok = await prefetchTrustmarkModels({
+        onProgress: (p) => { startedTm = true; loadedTm = p.loaded; totalTm = p.total; render(); },
+      });
+      await prefetchContentSealModel({
+        onProgress: (p) => { startedCs = true; loadedCs = p.loaded; totalCs = p.total; render(); },
+      }).catch(() => false); // best-effort; usually absent
+      if (!ok) {
+        if (msg) msg.textContent = t('Couldn’t download the watermark detector. Check your connection and try again.');
+        bar?.setAttribute('hidden', '');
+        btn.disabled = false;
         return;
       }
-      const result = await detectTrustmark(pixels.data, pixels.width, pixels.height);
-      if (result.present) {
-        injectTrustmarkPip(block);
-        resultEl.innerHTML = trustmarkNoteHtml(result.payloadHex ?? '', result.schema ?? '');
-        statusEl.hidden = true;
-        btn.hidden = true; // found it — the button's job here is done
-      } else {
-        // Hedged, not a verdict: this checks for ONE specific mark (TrustMark)
-        // and didn't recover one — it says nothing about any other mark, and
-        // nothing about whether the file is otherwise "clean".
-        statusEl.textContent = t('No TrustMark signal recovered — this checks for one specific watermark and doesn’t rule out others.');
-      }
+      banner?.remove();
+      await scanAllDecodable();
     } catch (err) {
-      statusEl.textContent = t('Deep scan couldn’t run in this browser.');
-      host.log('warn', 'valid: deep scan failed', { error: (err as Error)?.message });
-    } finally {
+      if (msg) msg.textContent = t('Couldn’t enable deep scanning in this browser.');
+      bar?.setAttribute('hidden', '');
       btn.disabled = false;
+      host.log('warn', 'valid: enable deep scan failed', { error: (err as Error)?.message });
     }
+  }
+
+  // After a batch renders: if the detector models are already on-device, scan
+  // everything automatically (no decision for the user). If not, show ONE
+  // consent banner at the top of the report so a single download serves the whole
+  // batch. Never auto-downloads. `hasDecodable` guards against showing the banner
+  // for a PDF/SVG/video-only batch that can't be deep-scanned at all.
+  async function armDeepScan(hasDecodable: boolean): Promise<void> {
+    if (!hasDecodable) return;
+    let ready = false;
+    try {
+      const { trustmarkModelsReady } = await import('../lib/trustmark.ts');
+      ready = await trustmarkModelsReady();
+    } catch { ready = false; }
+    if (ready) { void scanAllDecodable(); return; }
+    const decodableCount = activeFiles.filter((f) => isDeepScannable(null, f.name)).length;
+    reportEl.insertAdjacentHTML('afterbegin', deepScanBannerHtml(decodableCount));
   }
 
   // Which section a PDF finding's label belongs in (its findings arrive as flat
@@ -1388,16 +1696,17 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     previewUrls = [];
     activeFiles = list;
     activeDigests = [];
+    scannedIndexes.clear(); // fresh batch — allow each file to be scanned again
     reportEl.hidden = false;
 
     // One file reads exactly as before — the full report inline, no collapse chrome.
     if (list.length === 1) {
       const file = list[0]!;
       reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: escape(file.name) })}</p></div>`;
-      const { report, error, meta, watermark, mine } = await verifyFile(file);
+      const { report, error, meta, watermark, mine, seal } = await verifyFile(file);
       activeDigests[0] = report?.environment?.inputs;
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
-        ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark, mine)
+        ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark, mine, seal)
         : `<p class="valid-busy">${t('Could not check this file: {message}', { message: escape(error!) })}</p>`;
       const panels = reportEl.querySelector<HTMLElement>('.valid-panels');
       if (panels) layoutMasonry(panels);
@@ -1413,6 +1722,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
         playSfx(report?.state === 'valid' ? 'sign' : 'warn');
       }
       reportEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Auto-scan if models are on-device, else offer the one-time header banner.
+      if (report) void armDeepScan(isDeepScannable(report.format, file.name));
       return;
     }
 
@@ -1452,12 +1763,12 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     let allValid = true, anyAi = false, anyLolly = false;
     for (let i = 0; i < list.length; i++) {
       const file = list[i]!, card = cards[i]!;
-      const { report, error, meta, watermark, mine } = await verifyFile(file);
+      const { report, error, meta, watermark, mine, seal } = await verifyFile(file);
       activeDigests[i] = report?.environment?.inputs;
       if (report) {
         card.className = `valid-item is-${stateTone(report)}`;
-        card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark)}</summary>` +
-          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i, watermark, mine)}</div>`;
+        card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark, seal)}</summary>` +
+          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i, watermark, mine, seal)}</div>`;
       } else {
         card.className = 'valid-item is-bad';
         card.innerHTML = errorSummary(file.name, error!);
@@ -1475,6 +1786,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     } else {
       playSfx(allValid ? 'sign' : 'warn');
     }
+    // Arm deep scanning for the batch — auto if the models are on-device, else a
+    // single header banner so one download serves every file.
+    void armDeepScan(list.some((f) => isDeepScannable(null, f.name)));
   }
 
   // Append "-clean" before the extension: report.pdf → report-clean.pdf.
@@ -1517,6 +1831,76 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 2000);
     }
   }
+  // Append "-payload" before an extension derived from the sniffed kind:
+  // report.jpg → report-payload.zip (for an appended zip), report-payload.bin
+  // for anything unrecognised — never a name that invites a double-click.
+  const payloadFileName = (name: string, kind: string): string => {
+    const dot = name.lastIndexOf('.');
+    const base = dot > 0 ? name.slice(0, dot) : name;
+    return `${base}-payload.${payloadExt(kind)}`;
+  };
+
+  // Re-reads the file fresh and re-runs the same deterministic byte-offset
+  // detection (engine/src/file-metadata.ts) rather than threading the offset
+  // through dataset attributes — mirrors downloadCleanCopy's re-read-on-demand
+  // pattern, and keeps a single source of truth for "where the payload starts".
+  async function rereadAppended(fileIndex: number): Promise<{ file: File; bytes: Uint8Array; appended: NonNullable<FileMetadata['appended']> } | undefined> {
+    const file = activeFiles[fileIndex];
+    if (!file || file.size > MAX_VERIFY_BYTES) return undefined;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const appended = extractFileMetadata(bytes).appended;
+    return appended ? { file, bytes, appended } : undefined;
+  }
+
+  // Toggles the inline hex/text preview on the appended-payload callout.
+  // SECURITY: payloadPreviewHtml only ever escape()s a hex dump or decoded
+  // text into this panel — there is no path from the (untrusted) payload
+  // bytes to rendered/executed markup.
+  async function viewPayload(btn: HTMLButtonElement): Promise<void> {
+    const fileIndex = Number(btn.dataset.payloadView);
+    const panel = reportEl.querySelector<HTMLElement>(`[data-payload-panel="${fileIndex}"]`);
+    if (!panel) return;
+    if (!panel.hidden) { panel.hidden = true; btn.textContent = t('View'); return; }
+    btn.disabled = true;
+    try {
+      const found = await rereadAppended(fileIndex);
+      panel.innerHTML = found
+        ? payloadPreviewHtml(found.bytes.subarray(found.appended.offset), found.appended.kind)
+        : `<p class="valid-busy">${t('Could not re-read this payload.')}</p>`;
+      panel.hidden = false;
+      btn.textContent = t('Hide');
+    } catch (err) {
+      panel.innerHTML = `<p class="valid-busy">${t('Could not re-read this payload.')}</p>`;
+      panel.hidden = false;
+      host.log('warn', 'valid: payload view failed', { error: (err as Error)?.message });
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // The extraction download — same on-device re-read, sliced from the recorded
+  // offset and handed to host.export.file untouched (no parsing, no re-encode).
+  async function downloadPayload(btn: HTMLButtonElement): Promise<void> {
+    const fileIndex = Number(btn.dataset.payloadDownload);
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t('Extracting…');
+    try {
+      const found = await rereadAppended(fileIndex);
+      if (!found) throw new Error('No appended payload found.');
+      const payload = found.bytes.subarray(found.appended.offset);
+      await host.export.file(new Blob([payload as BlobPart], { type: 'application/octet-stream' }), {
+        filename: payloadFileName(found.file.name, found.appended.kind),
+      });
+      btn.textContent = t('Downloaded ✓');
+    } catch (err) {
+      btn.textContent = t('Couldn’t extract this');
+      host.log('warn', 'valid: payload download failed', { error: (err as Error)?.message });
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 2000);
+    }
+  }
+
   // "Recreate with these settings in <tool>" — turn the credential's scalar-input
   // digest back into a seeded tool link (lib/seed-url.ts — the same URL shape a
   // share of that look produces). The digest stores every value as a display
@@ -1557,8 +1941,12 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     if (btn) downloadCleanCopy(btn);
     const rec = (e.target as HTMLElement).closest<HTMLAnchorElement>('[data-recreate]');
     if (rec) { e.preventDefault(); void recreateFromDigest(rec); }
-    const scan = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-deep-scan]');
-    if (scan) void runDeepScan(scan);
+    const enable = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-deep-scan-enable]');
+    if (enable) void enableDeepScan(enable);
+    const view = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-payload-view]');
+    if (view) void viewPayload(view);
+    const dl = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-payload-download]');
+    if (dl) void downloadPayload(dl);
   });
 
   drop.addEventListener('click', () => input.click());

@@ -13,6 +13,7 @@
  * static graph stays /pro-free and the overlay loads from the (pro-free) gallery.
  */
 import { escape } from './utils.ts';
+import { t } from './i18n.ts';
 import { mountModal } from './components/modal.ts';
 import { confirmDialog } from './components/confirm-dialog.ts';
 import { mountBodyPopover } from './components/body-popover.ts';
@@ -64,6 +65,9 @@ export interface FolderOverlayOpts {
   onOpenGroup?(folder: Folder): void;
   showCreateFolder?: boolean;
   allowBatchExport?: boolean;
+  /** Show the downloads log (lib/export-history.ts) as a "Recent exports" reopen
+   *  rail beside the saved sessions — the history-fab contexts (gallery/projects). */
+  showRecentExports?: boolean;
 }
 
 /**
@@ -85,7 +89,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
   const {
     context = 'gallery', sessionEntries = [], imageRefs = [], sessionSizes = {},
     nameById = new Map(), onResume, onPickImage, onDelete, onOpenGroup,
-    showCreateFolder = false, allowBatchExport = false,
+    showCreateFolder = false, allowBatchExport = false, showRecentExports = false,
   } = opts;
 
   const store = createFolderStore(host);
@@ -101,6 +105,9 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
   const imageByRef = new Map<string, OverlayImageRef>(imageRefs.map(r => [r.id, r]));
   let folders: Folder[] = [];
   let viewFolderId: string | null = null;   // null → root view
+  // The downloads log, mapped to render-ready tiles (loaded lazily in boot when
+  // showRecentExports is on). Read-only here: the log caps + prunes itself.
+  let recentExports: Array<{ href: string; thumb: string; caption: string; at: number }> = [];
 
   // The item menu mounts INSIDE this dialog (see openMenu below) and registers
   // window/document listeners (Escape, outside-click, resize, route-change) that must
@@ -190,6 +197,17 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
       ${looseTiles ? `<div class="folder-grid">${looseTiles}</div>` : ''}
       ${empty ? `<p class="folder-overlay-empty">Nothing saved yet.</p>`
         : (!looseTiles && folders.length ? `<p class="folder-overlay-empty">All items are organized into folders.</p>` : '')}
+      ${recentExports.length ? `
+        <div class="folder-exports">
+          <h3 class="folder-exports-title">${t('Recent exports')}</h3>
+          <div class="folder-exports-rail">
+            ${recentExports.map(x => `
+              <a class="folder-export-tile" href="${escape(x.href)}" data-open-export
+                 title="${escape(x.caption)} · ${escape(new Date(x.at).toLocaleDateString())}">
+                <img src="${escape(x.thumb)}" alt="${escape(x.caption)}" loading="lazy">
+              </a>`).join('')}
+          </div>
+        </div>` : ''}
     `;
   }
 
@@ -242,6 +260,19 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
       const ref = imageByRef.get(openImage.dataset.openImage!);
       modal.close();
       if (ref) onPickImage?.(ref);
+      return;
+    }
+
+    // A recent export reopens the tool with the exact state it was downloaded with —
+    // plain hash navigation (a fresh mount re-resolves asset refs). Modified clicks
+    // keep browser semantics (new tab), so the overlay stays open for those.
+    const openExport = t.closest<HTMLAnchorElement>('[data-open-export]');
+    if (openExport) {
+      const me = e as MouseEvent;
+      if (me.metaKey || me.ctrlKey || me.shiftKey || me.altKey) return;
+      e.preventDefault();
+      modal.close();
+      window.location.hash = openExport.getAttribute('href') ?? '';
       return;
     }
 
@@ -507,6 +538,14 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
   (async () => {
     try { await store.prune(); } catch { /* prune is best-effort */ }
     folders = await store.list();
+    if (showRecentExports) {
+      try {
+        const { listExports, exportReopenHref } = await import('./lib/export-history.ts');
+        recentExports = (await listExports(12))
+          .filter(x => x.thumb)
+          .map(x => ({ href: exportReopenHref(x), thumb: x.thumb!, caption: x.filename || x.label, at: x.at }));
+      } catch { /* history is best-effort */ }
+    }
     render();
   })();
 }

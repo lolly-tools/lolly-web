@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Universal drop router — the "drop a file on the front door" seam (gallery +
- * dashboard roots, and the welcome dialog's file-picker fallback). A SCOPED
+ * dashboard roots, the welcome dialog's file-picker fallback, and the Android
+ * share-target ingest — see initShareTargetIngest below). A SCOPED
  * drag-and-drop handler sniffs what landed and opens a chooser sheet offering
  * only the routes that genuinely apply:
  *
@@ -36,7 +37,7 @@ import { t } from '../i18n.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
-import { choiceDialog } from '../components/confirm-dialog.ts';
+import { choiceDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import type { DialogChoice } from '../components/confirm-dialog.ts';
 import { setPendingVerify } from './verify-handoff.ts';
 import type { PickerHost } from '../views/picker.ts';
@@ -130,12 +131,19 @@ const toolExists = (id: string): boolean =>
  * drops keep only the batch routes (library / verify) — the design and PDF routes
  * are single-file journeys.
  */
-export async function openDropChooser(files: File[], host: PickerHost): Promise<void> {
+export async function openDropChooser(
+  files: File[],
+  host: PickerHost,
+  opts: { superseded?: () => boolean } = {},
+): Promise<void> {
   if (!files.length) return;
   const picker = await import('../views/picker.ts');
   const single = files.length === 1;
   const first = files[0]!;
   const s = await sniffFile(first, single, picker);
+  // A newer share superseded this one while the picker chunk / head read was in
+  // flight — don't mount a stale chooser next to (or after) the replacement's.
+  if (opts.superseded?.()) return;
   const allIngestable = files.every(
     (f) => isMediaFile(f) || picker.isPdfUpload(f) || picker.isPptxUpload(f),
   );
@@ -173,26 +181,50 @@ export async function openDropChooser(files: File[], host: PickerHost): Promise<
     title: single ? t('What should Lolly do with this file?') : t('What should Lolly do with these files?'),
     message,
     choices,
+    // Scopes closeConfirmDialogs so a rapid next drop/share only supersedes a
+    // still-open chooser of THIS kind — never an unrelated confirm/prompt dialog
+    // open elsewhere in the app (see initShareTargetIngest's poll()).
+    tag: 'drop-chooser',
   });
   if (!chosen) return;
 
   switch (chosen) {
     case 'design':
       pendingDesign = first;
-      window.location.hash = '#/tool/layout-studio';
+      routeToConsumer('#/tool/layout-studio', onToolRoute('layout-studio'));
       break;
     case 'compress':
       pendingToolFile = { toolId: 'compress-pdf', file: first };
-      window.location.hash = '#/tool/compress-pdf';
+      routeToConsumer('#/tool/compress-pdf', onToolRoute('compress-pdf'));
       break;
     case 'verify':
       setPendingVerify({ files });
-      window.location.hash = '#/verify';
+      routeToConsumer('#/verify', /^#\/(verify|valid|v)([?/]|$)/.test(window.location.hash));
       break;
     case 'library':
       await ingestToLibrary(files, host, picker);
       break;
   }
+}
+
+// ── routing that survives the shell's same-route dedup ────────────────────────
+
+/** True when the CURRENT location is already inside tool `id` — either routing
+ *  form (the #/tool/<id> hash, or the canonical /t/<id> path the tool view's
+ *  syncUrl rewrites the address bar to). Tool ids are [a-z0-9-], regex-safe. */
+const onToolRoute = (id: string): boolean =>
+  new RegExp(`^#/tool/${id}([?/]|$)`).test(window.location.hash)
+  || new RegExp(`^/t/${id}([?/]|$)`).test(window.location.pathname);
+
+/** Navigate to `hash`. Every stash this router arms is consumed at MOUNT time
+ *  (free-canvas / views/tool.ts / valid.ts), but main.ts's navigate() dedupes a
+ *  hash change resolving to the already-mounted route — and a share can arrive
+ *  while the user is ALREADY inside the destination view. In that case ask the
+ *  shell for a forced remount via its 'lolly:remount' seam so the stash is
+ *  still consumed; plain drops (gallery/dashboard only) never hit it. */
+function routeToConsumer(hash: string, alreadyThere: boolean): void {
+  if (window.location.hash !== hash) window.location.hash = hash;
+  if (alreadyThere) window.dispatchEvent(new Event('lolly:remount'));
 }
 
 /**
@@ -333,4 +365,83 @@ export function openDropFilePicker(host: PickerHost): void {
   });
   input.addEventListener('cancel', done);
   input.click();
+}
+
+// ── Android share-target ingest (ACTION_SEND → the same chooser) ──────────────
+
+/** The share-target half of the `LollyShare` JS interface the Android shell's
+ *  MainActivity registers (the same object carries the export share-OUT verb
+ *  shareFile used by tauri-mobile's export override — hence the per-verb
+ *  feature-detect in initShareTargetIngest, not a bare `window.LollyShare`
+ *  check). Poll returns a JSON stash descriptor, or '' when nothing pends. */
+interface LollyShareBridge {
+  sharedFilePoll(): string;
+  sharedFileChunk(i: number): string;
+  sharedFileConsumed(): void;
+}
+
+/**
+ * Decode the Android bridge's base64 chunks (1 MiB of raw bytes each) into one
+ * contiguous buffer. `read` is injected so chunks stream straight off the JS
+ * interface without first materialising a string[]. Whitespace is stripped
+ * before decode (android.util.Base64.DEFAULT wraps lines; browsers' forgiving
+ * base64 tolerates that, Node's atob historically didn't). Pure — exported for
+ * the co-located test.
+ */
+export function assembleShareChunks(count: number, read: (i: number) => string): Uint8Array<ArrayBuffer> {
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (let i = 0; i < count; i++) {
+    const bin = atob(read(i).replace(/\s+/g, ''));
+    const bytes = new Uint8Array(bin.length);
+    for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+    parts.push(bytes);
+    total += bytes.length;
+  }
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) { out.set(p, off); off += p.length; }
+  return out;
+}
+
+/**
+ * Android share-target ingest: MainActivity stashes an ACTION_SEND stream and
+ * exposes it over `LollyShare`; a share arriving while the WebView is alive
+ * also dispatches 'lolly-share-target' on window. Feature-detected on the poll
+ * verb, so everywhere except the Android app this is a cheap no-op. A pending
+ * share runs through the exact chooser a dropped file gets — the sheet is
+ * body-mounted (mountModal) and every route is a hash navigation (or a forced
+ * remount, see routeToConsumer), so it works from whichever view the share
+ * lands on. Rapid successive shares: latest wins — a still-open chooser from
+ * the previous share is dismissed (closeConfirmDialogs, scoped to the
+ * 'drop-chooser' tag every openDropChooser sheet carries, so an unrelated
+ * confirm/prompt dialog open elsewhere in the app is never swept up in it) or,
+ * if its sniff is still in flight, superseded before it mounts; choosers are
+ * never queued.
+ * Call once at boot, after the first view has mounted (main.ts).
+ */
+export function initShareTargetIngest(host: PickerHost): void {
+  const bridge = (window as unknown as { LollyShare?: Partial<LollyShareBridge> }).LollyShare;
+  if (typeof bridge?.sharedFilePoll !== 'function'
+    || typeof bridge.sharedFileChunk !== 'function'
+    || typeof bridge.sharedFileConsumed !== 'function') return;
+  const share = bridge as LollyShareBridge;
+  let seq = 0;
+  const poll = (): void => {
+    const raw = share.sharedFilePoll();
+    if (!raw) return;
+    let file: File | null = null;
+    try {
+      const meta = JSON.parse(raw) as { name?: string; mime?: string; chunks?: number };
+      const bytes = assembleShareChunks(meta.chunks ?? 0, (i) => share.sharedFileChunk(i));
+      file = new File([bytes], meta.name || 'shared-file', { type: meta.mime || '' });
+    } catch { /* malformed stash — still consumed below so it can't wedge future polls */ }
+    share.sharedFileConsumed();
+    if (!file) return;
+    const mine = ++seq;
+    closeConfirmDialogs('drop-chooser');
+    void openDropChooser([file], host, { superseded: () => mine !== seq });
+  };
+  window.addEventListener('lolly-share-target', poll);
+  poll(); // cold start: the launching intent was stashed before this JS booted
 }

@@ -25,6 +25,22 @@
 }
 .folder-grid--folders { margin-bottom: 18px; }
 
+/* Recent exports — the downloads log's reopen rail (moved here from the export
+   popup), shown alongside the saved sessions in the history overlay. */
+.folder-exports { margin-top: 4px; }
+.folder-exports-title {
+  margin: 0 0 6px; font-size: 11px; font-weight: 600;
+  color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.folder-exports-rail { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.folder-export-tile {
+  flex: 0 0 auto; display: block; line-height: 0; overflow: hidden;
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) / 1.5);
+  background: hsl(var(--muted)); transition: border-color 0.12s, box-shadow 0.12s;
+}
+.folder-export-tile:hover { border-color: hsl(var(--primary) / 0.6); box-shadow: 0 3px 14px hsl(0 0% 0% / 0.08); }
+.folder-export-tile img { height: 56px; width: auto; max-width: 120px; object-fit: cover; display: block; }
+
 .folder-tile {
   position: relative; border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1.1); background: hsl(var(--card));

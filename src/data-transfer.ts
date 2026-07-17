@@ -131,7 +131,10 @@ function zipAsync(entries: Record<string, BundleEntry>): Promise<Uint8Array> {
 // balloon a small hostile zip into gigabytes of memory (the classic zip bomb).
 // Real backups are images stored uncompressed, far under these.
 const MAX_RESTORE_ENTRY_BYTES = 512 * 1024 * 1024;
-const MAX_RESTORE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+// Exported so a fetched-from-a-URL backup (components/instance-sheet.ts) can cap
+// the COMPRESSED download itself at the same ceiling, before any of these
+// per-entry/total checks on the inflated contents ever get a chance to run.
+export const MAX_RESTORE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 
 function unzipAsync(bytes: Uint8Array): Promise<Unzipped> {
   let total = 0;

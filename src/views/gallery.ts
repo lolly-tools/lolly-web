@@ -22,6 +22,7 @@ import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { syncCatalog, prefetchAssetsById } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
+import { instanceFetch, instancePath } from '../lib/instance.ts';
 import { privacyNoticeMarkup, mountPrivacyNotice } from './privacy-notice.ts';
 import { personalizeNudgeMarkup, mountPersonalizeNudge } from './personalize-nudge.ts';
 import { profileSignature, canPersonalize, regeneratePreviews } from '../personalize-previews.ts';
@@ -1390,6 +1391,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
       nameById,
       showCreateFolder: true,
       allowBatchExport: proEnabled,
+      showRecentExports: true,
       onResume: (entry) => {
         window.location.hash = isBatchSlot(entry.slot)
           ? `#/pro?session=${encodeURIComponent(entry.slot)}`
@@ -1448,7 +1450,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
       if (await host.tokens?.isLocked?.()) return;
       tokensId = (await host.assets._findMetaByType('tokens'))?.id;
       if (tokensId === undefined && galleryRoot?.isConnected) {
-        const resp = await fetch('/catalog/assets/index.json');
+        const resp = await instanceFetch(instancePath('/catalog/assets/index.json'));
         if (resp.ok) {
           const idx = await resp.json() as { assets?: Array<{ id?: string; type?: string }> };
           tokensId = idx.assets?.find(a => a.type === 'tokens')?.id;
@@ -1828,7 +1830,7 @@ function defaultText(input: Record<string, unknown>): { text: string; swatch?: s
 async function fillDefaultsList(dialog: HTMLElement, toolId: string): Promise<void> {
   let inputs: Array<Record<string, unknown>>;
   try {
-    const resp = await fetch(`/tools/${encodeURIComponent(toolId)}/tool.json`);
+    const resp = await instanceFetch(instancePath(`/tools/${encodeURIComponent(toolId)}/tool.json`));
     if (!resp.ok) return;
     const manifest = await resp.json() as { inputs?: Array<Record<string, unknown>> };
     inputs = Array.isArray(manifest.inputs) ? manifest.inputs : [];

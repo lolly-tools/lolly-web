@@ -17,6 +17,7 @@
 import { importSpkiOrJwkPublicKey, verifyCatalogEnvelope } from '../../../../engine/src/catalog-integrity.ts';
 import type { CatalogSignatureEnvelope } from '../../../../engine/src/catalog-integrity.ts';
 import type { ToolIntegrityOpts } from '../../../../engine/src/loader.ts';
+import { instanceFetch, instancePath } from '../lib/instance.ts';
 
 declare global {
   // Merge the optional pin into vite-env.d.ts's minimal ImportMetaEnv — Vite
@@ -39,9 +40,12 @@ async function load(): Promise<ToolIntegrityOpts | null> {
   if (!PINNED_KEY) return null;
   const publicKey = await importSpkiOrJwkPublicKey(PINNED_KEY);
   // Bypasses the service worker's /tools cache by construction (it's under
-  // /catalog, which sw.js deliberately never caches) — the envelope is always
-  // as fresh as the index it binds.
-  const resp = await fetch('/catalog/tools/index.sig.json');
+  // /catalog, which sw.js deliberately never caches; a remote-instance fetch is
+  // cross-origin, which the SW ignores entirely) — the envelope is always as
+  // fresh as the index it binds. Fetched through the instance base so a
+  // key-pinned build verifies the REMOTE index against the remote's envelope:
+  // an instance signed by a different key fails closed, as it must.
+  const resp = await instanceFetch(instancePath('/catalog/tools/index.sig.json'));
   if (!resp.ok) {
     throw new Error(`catalog integrity: signature envelope missing (HTTP ${resp.status}) but a key is pinned`);
   }
