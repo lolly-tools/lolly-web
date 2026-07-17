@@ -64,7 +64,7 @@ function parseDnsSeal(txt: string): Record<string, string> | null {
   const re = /([A-Za-z][A-Za-z0-9._+-]*)\s*=\s*("(?:[^"]*)"(?:\s+"[^"]*")*|[^\s]+)/g;
   for (let m: RegExpExecArray | null; (m = re.exec(txt)); ) {
     const key = m[1]!;
-    let raw = m[2]!;
+    const raw = m[2]!;
     // Concatenate one-or-more quoted segments (split long p=), else strip a
     // single pair of surrounding quotes.
     const quoted = raw.match(/"([^"]*)"/g);
