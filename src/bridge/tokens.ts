@@ -29,6 +29,7 @@
  */
 
 import { createTokenSet, aliasPath } from '../../../../engine/src/tokens.ts';
+import { instanceFetch, instancePath } from '../lib/instance.ts';
 import type { TokensAPI, TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
 // The exclusion read lives in its own leaf module (not lib/brand-doc.ts, whose
 // engine-barrel import would drag studio code into this bridge's boot graph).
@@ -164,7 +165,7 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     try {
       // The catalog index carries only shipped assets, so it is catalog-only by
       // construction — the right cold-load source for both callers.
-      const resp = await fetch(ASSET_INDEX_URL);
+      const resp = await instanceFetch(instancePath(ASSET_INDEX_URL));
       if (resp.ok) {
         const idx = await resp.json() as { assets?: Array<TokensAssetMeta & { type?: string }> };
         return idx.assets?.find(a => a.type === 'tokens') ?? null;
@@ -196,7 +197,9 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     try {
       const url = asset.formats[0]?.url;
       if (url) {
-        const resp = await fetch(url, { cache: 'no-store' });
+        // instancePath: cold-load metas come from the raw network index, whose
+        // format URLs are root-relative (synced metas are already absolute).
+        const resp = await instanceFetch(instancePath(url), { cache: 'no-store' });
         if (resp.ok) return await resp.json();
       }
     } catch { /* offline and not yet prefetched */ }

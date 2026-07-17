@@ -1364,7 +1364,13 @@ export function mountColorField(container: HTMLElement, id: string, opts: MountC
     float: opts.float, swatchesOnly: opts.swatchesOnly, inline: opts.inline, modes: opts.modes,
   });
   wireColorField(container, {
-    onChange: (_id, value) => opts.onChange(String(value)),
+    // A token-backed swatch emits a token value OBJECT ({ ref, value }) so the sidebar can keep
+    // the colour linked to its brand token. mountColorField's callers all speak plain colour
+    // STRINGS (MountColorFieldOpts.onChange(value: string)), so unwrap to the hex here — a bare
+    // String() would hand them "[object Object]", which then stores as an invalid CSS colour.
+    onChange: (_id, value) => opts.onChange(
+      value && typeof value === 'object' ? String((value as { value?: unknown }).value ?? '') : String(value),
+    ),
     onInteractStart: opts.onInteractStart,
     onInteractEnd: opts.onInteractEnd,
   });

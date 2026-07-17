@@ -57,6 +57,11 @@ export interface ChoiceDialogOpts {
   title: string;
   message: string;
   choices?: DialogChoice[];
+  /** Tags this dialog so a targeted `closeConfirmDialogs(tag)` can dismiss just
+   *  this one (and others sharing the tag) without touching unrelated confirm/
+   *  choice/notice/prompt dialogs open elsewhere in the app — e.g. a rapid
+   *  second Android share superseding the previous share's still-open chooser. */
+  tag?: string;
 }
 
 /**
@@ -65,7 +70,7 @@ export interface ChoiceDialogOpts {
  * backdrop. Choices render right-to-left as given, with `primary: true` styled
  * as the brand call-to-action; a Cancel button is always prepended.
  */
-export function choiceDialog({ title, message, choices = [] }: ChoiceDialogOpts): Promise<string | null> {
+export function choiceDialog({ title, message, choices = [], tag }: ChoiceDialogOpts): Promise<string | null> {
   return new Promise((resolve) => {
     const content = `
       <h2 class="modal-title">${escape(title)}</h2>
@@ -80,6 +85,7 @@ export function choiceDialog({ title, message, choices = [] }: ChoiceDialogOpts)
       initialFocus: (el) => el.querySelector<HTMLElement>('.modal-primary, [data-choice]'), // default focus on the lead choice
       onClose: (result) => { openDialogs.delete(modal.el); resolve(result ?? null); },
     });
+    if (tag) modal.el.dataset.dialogTag = tag;
     openDialogs.add(modal.el);
     modal.el.addEventListener('click', (e) => {
       const chosen = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-choice]') : null;
@@ -173,8 +179,17 @@ export function promptDialog({ title, message, confirmLabel = 'OK', placeholder 
   });
 }
 
-/** Tear down any still-open confirm dialogs — call on view unmount. */
-export function closeConfirmDialogs(): void {
-  for (const dlg of openDialogs) { if (dlg.open) dlg.close(); dlg.remove(); }
-  openDialogs.clear();
+/**
+ * Tear down still-open confirm dialogs — call on view unmount. With no `tag`,
+ * closes EVERY open dialog (the view-unmount use). Pass the `tag` a `choiceDialog`
+ * was opened with to close only dialogs sharing it, leaving unrelated confirm/
+ * choice/notice/prompt dialogs elsewhere in the app untouched.
+ */
+export function closeConfirmDialogs(tag?: string): void {
+  for (const dlg of openDialogs) {
+    if (tag && dlg.dataset.dialogTag !== tag) continue;
+    if (dlg.open) dlg.close();
+    dlg.remove();
+    openDialogs.delete(dlg);
+  }
 }

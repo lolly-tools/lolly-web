@@ -914,6 +914,7 @@ export async function mountProjects(
         imageRefs, sessionSizes: sizes, nameById,
         showCreateFolder: true,
         allowBatchExport: flagEnabled(profile, PRO_FLAG.id),
+        showRecentExports: true,
         onResume: (entry) => resumeSession(entry.slot),
         onDelete: () => {},
       });

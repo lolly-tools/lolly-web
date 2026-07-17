@@ -10,6 +10,7 @@
 import { loadTool } from '@lolly/engine';
 import type { LoadedTool, ToolManifest } from '../../../../engine/src/loader.ts';
 import { currentLang } from '../i18n.ts';
+import { instanceFetch, instancePath } from '../lib/instance.ts';
 
 // Loaded tools are cached so selecting the same template across many rows — the
 // primary power-user workflow — loads each template only once.
@@ -17,7 +18,7 @@ const toolCache = new Map<string, Promise<LoadedTool> | LoadedTool>();
 
 function makeFetchFile(toolId: string): (path: string) => Promise<string> {
   return async (path: string) => {
-    const resp = await fetch(`/tools/${path}`);
+    const resp = await instanceFetch(instancePath(`/tools/${path}`));
     if (resp.status === 404) throw new Error('tool-not-found');
     const ct = resp.headers.get('content-type') ?? '';
     if (!resp.ok || (ct.includes('text/html') && !path.endsWith('.html'))) {

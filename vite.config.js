@@ -21,6 +21,8 @@ const MIME = {
   '.mp3':  'audio/mpeg',
   '.glb':  'model/gltf-binary',
   '.gltf': 'model/gltf+json',
+  '.mjs':  'text/javascript',
+  '.wasm': 'application/wasm',
 };
 
 // Vite resolve.alias only rewrites JS import statements — it has no effect on
@@ -34,6 +36,26 @@ function serveRepoStatic() {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
+
+        // Serve the onnxruntime-web WASM runtime (public/ort/*.{mjs,wasm}) RAW,
+        // ignoring any query. ORT loads its wasm-glue via a runtime dynamic
+        // import(); Vite's client rewrites that to `/ort/x.mjs?import` and routes
+        // it through the module-transform pipeline, where a public/ file isn't in
+        // the module graph → 404 (the deep scan's "couldn't run" error). Serving
+        // it here, before Vite's transform middleware, short-circuits with the raw
+        // module so the import resolves. Dev-only; the prod build has no `?import`
+        // and serves public/ort/ statically from dist/. (Populated at setup from
+        // node_modules/onnxruntime-web/dist/*.{wasm,mjs}.)
+        if (url?.startsWith('/ort/')) {
+          const filePath = resolve(__dirname, 'public', url.slice(1));
+          if (existsSync(filePath) && statSync(filePath).isFile()) {
+            const data = readFileSync(filePath);
+            res.setHeader('Content-Type', MIME[extname(filePath)] ?? 'application/octet-stream');
+            res.setHeader('Content-Length', data.byteLength);
+            res.end(data);
+            return;
+          }
+        }
 
         // Serve /info/* directly from public/info/ before the SPA fallback runs.
         if (url?.startsWith('/info')) {
@@ -103,6 +125,15 @@ export default defineConfig({
   // module worker (src/lib/zzfxm-worker.ts, which ESM-imports the engine). Emit
   // it as an ES module so the import graph survives the build unchanged.
   worker: { format: 'es' },
+  // onnxruntime-web (lazy-loaded by the /verify deep-scan: lib/trustmark.ts +
+  // lib/contentseal.ts) must NOT go through Vite's esbuild dep pre-bundler — it
+  // rewrites the package's `import.meta.url`-relative wasm/worker loading and the
+  // dynamic `import('onnxruntime-web')` then throws at runtime (surfaced as the
+  // deep scan's 'error' / "couldn't run in this browser"). Excluding it makes Vite
+  // serve the package's own ESM untouched; the wasm binaries load at runtime from
+  // /ort/ via `ort.env.wasm.wasmPaths` (populated into public/ort/ at setup), not
+  // through the bundler. Standard onnxruntime-web + Vite requirement.
+  optimizeDeps: { exclude: ['onnxruntime-web'] },
   resolve: {
     alias: {
       '@lolly/engine': resolve(repoRoot, 'engine/src/index.ts'),

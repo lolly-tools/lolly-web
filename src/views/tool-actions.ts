@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, parseUrlState, isToolUrl, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, SCALES, mulberry32 } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, SCALES, mulberry32 } from '@lolly/engine';
 import { escape } from '../utils.js';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
@@ -464,6 +464,33 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </div>
       </div>` : '';
 
+  // Tier 2.8 — "Content protection": one collapsed disclosure folding the four
+  // provenance/protection cards above (password, C2PA, Imprint, print marks &
+  // bleed) so the panel shows one header instead of up to four separate boxes.
+  // Purely a wrapping shell — none of the four cards' own markup, classes,
+  // data-actions, defaults or per-format [data-*-only] gating changes; this
+  // only adds one more OUTER layer of visibility on top (see refreshPrintUi,
+  // which also owns hiding the whole wrapper when NONE of the four apply to
+  // the selected format — e.g. a text/data format like csv/json/ics).
+  const hasProtection = hasPdf || hasZip || c2paFormats.length > 0 || imprintFmts.length > 0 || hasPrint;
+  // Pre-opened whenever any inner card would itself arrive pre-opened/pre-set —
+  // a URL-sourced password, an on-by-default C2PA credential, a linked imprint
+  // flag, or a linked bleed/marks value — so a deep link still surfaces its
+  // setting without an extra click.
+  const protectionOpen = pdfPassInitOpen || c2paInitOn || Boolean(exportDefaults.imprint) || printInitOn;
+  // Matches the canonical per-format predicates the four cards already use
+  // (isC2paFmt/isImprintFmt/isPrintFmt, plus the password card's pdf/pdf-cmyk/zip
+  // set) — never loosened, just OR'd together to decide the outer wrapper.
+  const protectionVisibleInitial = (initialFmt === 'pdf' || initialFmt === 'pdf-cmyk' || initialFmt === 'zip')
+    || isC2paFmt(initialFmt) || isImprintFmt(initialFmt) || isPrintFmt(initialFmt);
+  const protectionRow = hasProtection ? `
+      <div class="section-card export-protection${protectionOpen ? ' is-open' : ''}" data-protection-section style="display:${protectionVisibleInitial ? 'flex' : 'none'}">
+        <button type="button" class="protection-head" data-action="protection-toggle" aria-expanded="${protectionOpen}">${icon('shield', { className: 'protection-icon' })}<span>Content protection</span></button>
+        <div class="protection-body" data-protection-body style="display:${protectionOpen ? 'flex' : 'none'}">
+          ${pdfPassRow}${c2paRow}${imprintRow}${printRow}
+        </div>
+      </div>` : '';
+
   // Tier 3 — ancillary settings. Everything optional (transparent bg, timing,
   // dithering) lives in one wrapping chip cluster so the panel reads consistently
   // no matter which controls a given tool/format enables.
@@ -571,101 +598,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;
   const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : '';
 
-  // Tier 5 — "Recent exports": this tool's slice of the downloads log
-  // (lib/export-history.ts), a compact reopen rail under the Download button.
-  // Populated async by refreshRecentExports; stays hidden until entries exist.
-  const recentRow = actions.includes('download') ? `
-    <div data-recent-exports hidden style="margin-top:10px">
-      <span style="display:block;font-size:11px;font-weight:600;color:hsl(var(--muted-foreground));margin-bottom:6px">${t('Recent exports')}</span>
-      <div data-recent-exports-list style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px"></div>
-    </div>` : '';
-
   // The panel host (#tool-actions) is present for every export-capable tool that
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${cmykRow}${pdfPassRow}${c2paRow}${imprintRow}${printRow}${audioRow}${settingsRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${cmykRow}${protectionRow}${audioRow}${settingsRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
-    ${recentRow}
   `;
-
-  // "Recent exports" — fill the reopen rail with this tool's recent downloads.
-  // Clicking an entry applies its recorded state to the LIVE session via
-  // runtime.setInput (a plain #/tool href would no-op: the router keys the tool
-  // route on id alone, so a same-tool hash navigation dedupes); the real href is
-  // kept so middle-click / open-in-new-tab still gets a fresh mount. DOM stays
-  // bounded: listToolExports caps at 6 entries. Refreshed after each download
-  // and on every popup open (the log can grow in another tab).
-  async function refreshRecentExports(): Promise<void> {
-    const wrap = el?.querySelector<HTMLElement>('[data-recent-exports]');
-    const list = el?.querySelector<HTMLElement>('[data-recent-exports-list]');
-    if (!wrap || !list) return;
-    try {
-      const { listToolExports, exportReopenHref } = await import('../lib/export-history.ts');
-      const entries = (await listToolExports(manifest.id)).filter(x => x.thumb);
-      if (!entries.length) { wrap.hidden = true; return; }
-      list.innerHTML = entries.map((x, i) => `
-        <a href="${escape(exportReopenHref(x))}" data-recent-reopen="${i}"
-           title="${escape(x.filename || x.label)} · ${escape(new Date(x.at).toLocaleDateString())}"
-           style="flex:0 0 auto;display:block;border:1px solid hsl(var(--border));border-radius:6px;overflow:hidden;line-height:0">
-          <img src="${escape(x.thumb!)}" alt="${escape(x.filename || x.label)}" style="height:44px;width:auto;max-width:96px;object-fit:cover;display:block">
-        </a>`).join('');
-      list.querySelectorAll<HTMLAnchorElement>('[data-recent-reopen]').forEach(a => {
-        a.addEventListener('click', async (ev) => {
-          // Modified clicks keep browser semantics (new tab = a fresh mount).
-          if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
-          ev.preventDefault();
-          const entry = entries[Number(a.dataset.recentReopen)];
-          if (!entry) return;
-          // Sequential like multi-edit's fan-out; each set lands in undo history.
-          const { values } = parseUrlState(entry.query, manifest);
-          // setInput never resolves asset refs — that only happens inside createRuntime —
-          // so a bare-id ref parsed from the query would reach the template url-less and
-          // blank the image (and a later Save would persist the broken ref). Re-resolve
-          // ref-shaped values here, mirroring the runtime's resolveOne: catalog ids via
-          // host.assets.get, pasted Lolly-tool links via compose.renderUrl. Unresolvable →
-          // null, the same graceful drop a fresh mount applies.
-          const refId = (v: unknown): string | null => {
-            if (!v || typeof v !== 'object') return null;
-            const id = (v as { id?: unknown }).id;
-            return typeof id === 'string' ? id : null;
-          };
-          const resolveRef = async (v: InputValue): Promise<InputValue> => {
-            const id = refId(v);
-            if (id === null) return v;
-            try {
-              if (isToolUrl(id)) return (host.compose?.renderUrl ? await host.compose.renderUrl(id) : null) as InputValue;
-              return await host.assets.get(id) as InputValue;
-            } catch { return null; }
-          };
-          for (const [id, v] of Object.entries(values)) {
-            const decl = manifest.inputs.find(i => i.id === id);
-            let next: InputValue = v;
-            if (decl?.type === 'asset') next = await resolveRef(v);
-            else if (decl?.type === 'blocks' && Array.isArray(v)) {
-              // Blocks carry asset sub-fields (deck/carousel media slots) as bare ids too.
-              const assetFields = (decl.fields ?? []).filter(f => f.type === 'asset').map(f => f.id);
-              if (assetFields.length) {
-                next = await Promise.all(v.map(async (item) => {
-                  if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
-                  const rec = { ...(item as Record<string, InputValue>) };
-                  for (const fid of assetFields) {
-                    if (refId(rec[fid]) !== null) rec[fid] = await resolveRef(rec[fid] as InputValue);
-                  }
-                  return rec;
-                })) as InputValue;
-              }
-            }
-            await runtime.setInput(id, next);
-          }
-          announce(t('Restored'));
-        });
-      });
-      wrap.hidden = false;
-    } catch { /* history is best-effort */ }
-  }
-  void refreshRecentExports();
 
   exportOpts.forEach(i => {
     el.querySelector<HTMLInputElement>(`[data-input-id="${escape(i.id)}"]`)
@@ -907,6 +847,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     el!.querySelectorAll<HTMLElement>('[data-c2pa-only]').forEach(c => { c.style.display = (isC2paFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
     el!.querySelectorAll<HTMLElement>('[data-imprint-only]').forEach(c => { c.style.display = (isImprintFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
     el!.querySelectorAll<HTMLElement>('[data-c2pa-webm]').forEach(c => { c.style.display = fmt === 'webm' ? 'block' : 'none'; });
+    // The "Content protection" wrapper itself: hidden when none of its four inner
+    // cards apply to the selected format (e.g. a text/data format like csv/json/ics),
+    // so an always-collapsed, permanently-empty header never shows. Each inner card
+    // keeps its own [data-*-only] gate above — this is one more OUTER layer only, it
+    // never loosens them. Mirrors the exact per-card predicates this function already
+    // applies (password: pdf/pdf-cmyk/zip; C2PA/imprint: their own fmt set; print: isPrintFmt).
+    const protectionEl = el!.querySelector<HTMLElement>('[data-protection-section]');
+    if (protectionEl) {
+      const anyValid = (fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'zip')
+        || isC2paFmt(fmt) || isImprintFmt(fmt) || isPrintFmt(fmt);
+      protectionEl.style.display = anyValid ? 'flex' : 'none';
+    }
   }
   // Whether the password field currently holds a value that came from ?password=
   // (a Standard-tier link lock). The Strong tier must NEVER reuse a URL-sourced
@@ -994,6 +946,19 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (body) body.style.display = open ? 'flex' : 'none';
     el!.querySelector('[data-action="pdfpass-toggle"]')?.setAttribute('aria-expanded', String(open));
     if (open) el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.focus();
+  });
+
+  // "Content protection" disclosure — the outer header toggles the whole group of
+  // four provenance/protection cards open/closed. Purely visual, same idiom as the
+  // password card's own toggle above: nothing inside changes state or export
+  // behaviour, and each inner card's own disclosure (password, print marks) keeps
+  // working independently once the group is open.
+  el.querySelector<HTMLButtonElement>('[data-action="protection-toggle"]')?.addEventListener('click', () => {
+    const card = el!.querySelector('.export-protection');
+    const open = card?.classList.toggle('is-open') ?? false;
+    const body = el!.querySelector<HTMLElement>('[data-protection-body]');
+    if (body) body.style.display = open ? 'flex' : 'none';
+    el!.querySelector('[data-action="protection-toggle"]')?.setAttribute('aria-expanded', String(open));
   });
 
   // Encryption-tier switch: refresh the hint/constraints, re-evaluate the C2PA
@@ -1579,7 +1544,6 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           // Hash the exact downloaded bytes so /verify can match a file back here.
           const contentHash = downloadedBlob ? await hashBlob(downloadedBlob) : undefined;
           await recordExport({ toolId: manifest.id, label: manifest.name, filename, format: fmt, thumb, query: serializeUrlState(runtime.getModel()), at: Date.now(), ...(contentHash ? { contentHash } : {}) });
-          void refreshRecentExports();   // surface the new entry on the rail
         } catch { /* history is best-effort */ }
       })();
     } catch (err) {
@@ -1695,7 +1659,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Expose actions the mount scope can trigger programmatically (e.g. `?copy`,
   // and the unsaved-changes dialog's "Save & leave"). stopAudioPreview lets the
   // popup-close + tool-teardown paths silence an in-progress audio audition.
-  return { copy: performCopy, preview, save: performSave, setDims, stopAudioPreview, refreshRecentExports };
+  return { copy: performCopy, preview, save: performSave, setDims, stopAudioPreview };
 }
 
 // Adds scroll-to-change and click-drag-to-scrub to a number input.

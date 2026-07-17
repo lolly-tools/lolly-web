@@ -15,6 +15,8 @@
  * speed-up that degrades gracefully: an absent/failed bundle changes nothing but the timing.
  */
 
+import { instanceFetch, instancePath } from './instance.ts';
+
 /** One look: an inline SVG string, or a path to a raster look; `sig` guards against staleness. */
 interface BundleEntry { svg?: string; src?: string; sig?: string }
 
@@ -24,7 +26,7 @@ let bundlePromise: Promise<Record<string, BundleEntry>> | null = null;
 
 export function loadPreviewBundle(): Promise<Record<string, BundleEntry>> {
   if (!bundlePromise) {
-    bundlePromise = fetch('/catalog/previews/bundle.json')
+    bundlePromise = instanceFetch(instancePath('/catalog/previews/bundle.json'))
       .then((r) => (r.ok ? (r.json() as Promise<Record<string, BundleEntry>>) : {}))
       .catch(() => ({}));
   }

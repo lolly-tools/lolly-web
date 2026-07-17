@@ -606,14 +606,57 @@
    since it's a real click target). The result note it can inject reuses
    .valid-wm entirely (see watermarkNote/trustmarkNoteHtml in views/valid.ts). */
 .valid-deepscan { margin-top: 0.9rem; display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
-.valid-deepscan-btn {
-  font-size: 0.78rem; padding: 0.45rem 0.85rem;
-  background: transparent; border: 1px solid hsl(var(--border));
-  border-radius: 999px; color: hsl(var(--foreground));
+
+/* Batch consent banner — the one-time "enable deep scan" offer at the top of the
+   report. After one click the detectors download once and every file is scanned
+   automatically; on later visits (models cached) this never appears. Understated
+   (a soft neutral card, not the loud violet AI banner) — it's an optional extra. */
+.valid-deepscan-banner {
+  display: flex; align-items: center; gap: 0.75rem;
+  margin-bottom: 1rem; padding: 0.8rem 1rem;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.35);
 }
-.valid-deepscan-btn:hover:not(:disabled) { background: hsl(var(--muted) / 0.4); }
-.valid-deepscan-btn:disabled { opacity: 0.6; cursor: default; }
-.valid-deepscan [data-deepscan-status] { font-size: 0.78rem; }
+.valid-deepscan-banner-ic { flex: 0 0 auto; display: inline-flex; color: hsl(var(--muted-foreground)); }
+.valid-deepscan-banner-ic svg { width: 1.4rem; height: 1.4rem; }
+.valid-deepscan-banner-text { display: grid; gap: 0.15rem; min-width: 0; }
+.valid-deepscan-banner-text strong { font-size: 0.92rem; }
+.valid-deepscan-banner-text span { font-size: 0.8rem; color: hsl(var(--muted-foreground)); }
+.valid-deepscan-enable {
+  flex: 0 0 auto; margin-left: auto;
+  font-size: 0.82rem; padding: 0.45rem 1.1rem; border-radius: 999px;
+  background: hsl(var(--foreground)); color: hsl(var(--background)); border: 0; font-weight: 600;
+}
+.valid-deepscan-enable:hover:not(:disabled) { opacity: 0.9; }
+.valid-deepscan-enable:disabled { opacity: 0.6; cursor: default; }
+
+/* Download-progress bar for the "Enable" click — hidden until a real fetch is
+   in flight (views/valid.ts's enableDeepScan). Same width-driven-fill idiom as
+   .storage-bar-wrap/.storage-bar-fill (profile page), just taller and inside the
+   banner's text column. `.is-indeterminate` covers BOTH the brief gap before the
+   first chunk arrives and a Content-Length-less response — a sliding highlight
+   rather than a fabricated percentage. */
+.valid-deepscan-progress {
+  margin-top: 0.35rem; width: 100%; max-width: 22rem;
+  height: 5px; border-radius: 3px; overflow: hidden;
+  background: hsl(var(--border));
+}
+.valid-deepscan-progress-fill {
+  display: block; height: 100%; width: 0%;
+  border-radius: 3px; background: hsl(var(--foreground));
+  transition: width 0.2s ease-out;
+}
+.valid-deepscan-progress.is-indeterminate .valid-deepscan-progress-fill {
+  width: 40% !important; transition: none;
+  animation: valid-deepscan-indeterminate 1.3s ease-in-out infinite;
+}
+@keyframes valid-deepscan-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .valid-deepscan-progress.is-indeterminate .valid-deepscan-progress-fill { animation: none; opacity: 0.5; }
+}
 
 /* ── AI-generated flag ───────────────────────────────────────────────────────
    The loudest element on the page. A full-width violet banner with a pulsing
@@ -693,6 +736,26 @@
 .valid-wm-text { display: grid; gap: 0.15rem; min-width: 0; }
 .valid-wm-text strong { font-size: 0.9rem; font-weight: 650; color: hsl(var(--foreground)); }
 .valid-wm-text span { font-size: 0.8rem; line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+
+/* Warn-toned variant — the appended-payload callout (views/valid.ts,
+   appendedPayloadHtml). A smuggled zip/exe is worth the amber --vf-warn hue;
+   the neutral motion-photo case keeps the default pass-tinted .valid-wm. */
+.valid-wm--warn { border-color: hsl(var(--vf-warn) / 0.4); background: hsl(var(--vf-warn) / 0.08); }
+.valid-wm--warn .valid-wm-ic { background: hsl(var(--vf-warn) / 0.22); color: hsl(30 75% 30%); }
+
+/* Appended-payload View/Download actions — reuses .valid-clean-link's quiet
+   inline-text-button styling rather than adding a new button treatment, and
+   the inline hex/text preview panel it can open beneath them. */
+.valid-payload-actions { display: flex; gap: 1.1rem; margin-top: 0.35rem; }
+.valid-payload-view {
+  margin-top: 0.6rem; max-height: 16rem; overflow: auto;
+  padding: 0.6rem 0.75rem; border-radius: 0.5rem;
+  background: hsl(var(--background) / 0.6); border: 1px solid hsl(var(--border));
+}
+.valid-payload-dump {
+  margin: 0; font-family: var(--font-mono); font-size: 0.68rem; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all; color: hsl(var(--foreground));
+}
 
 /* ── Panels — the file/facts summary, "made from" inputs digest, "what happened"
    (change history), "what was checked" (assertion log) and embedded metadata as

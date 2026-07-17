@@ -5,9 +5,11 @@
  * On boot, fetch the tool catalog manifest and asset catalog manifest from
  * known URLs. Diff against IndexedDB. Update meta. Prefetch core-tier assets.
  *
- * The catalog URL is environment-configured (defaults to /catalog/ for the
- * MVP, which serves from the same origin). In Tauri this will point to the
- * production CDN with checksum verification.
+ * The catalog base defaults to same-origin /catalog/, and every fetch here goes
+ * through lib/instance.ts (instancePath/instanceFetch): when the user points
+ * the shell at a remote Lolly deployment, the same sync runs against that
+ * instance's catalog — checksum verification included. See lib/instance.ts's
+ * module header for the offline/SW/signing consequences of a remote base.
  *
  * Sync is idempotent and resumable. Network failure ≠ broken app — we fall back
  * to whatever is in cache and flip `networkStatus.offline`, which surfaces a small
@@ -19,6 +21,7 @@ import { verifyAssetChecksum } from '../bridge/assets.ts';
 import { assertToolIndexIntegrity } from './integrity.ts';
 import { currentLang } from '../i18n.ts';
 import { pinnedAssetIds, refreshPinnedToolFiles } from '../lib/offline-pins.ts';
+import { initInstanceBase, instanceFetch, instancePath } from '../lib/instance.ts';
 
 /** One resolvable file for a catalog asset (an entry in an asset's `formats`).
  *  Structurally matches the bridge's AssetFormat so it flows into
@@ -185,6 +188,10 @@ function setCatalogMeta(key: string, value: CatalogMeta): void {
 let cachedAssetIndex: AssetIndex | null = null;
 
 export async function syncCatalog(host: SyncHost): Promise<void> {
+  // Load the persisted instance base BEFORE the first fetch. Wired here (not in
+  // main.ts) so the sync bootstrap is self-contained: every entry point that
+  // syncs gets the right base with no boot-order coordination. Never throws.
+  await initInstanceBase();
   setOffline(false);
   try {
     await Promise.all([
@@ -203,7 +210,7 @@ async function conditionalFetch(url: string, etagKey: string): Promise<Response 
   if (stored?.etag) headers['If-None-Match'] = stored.etag;
   else if (stored?.lastModified) headers['If-Modified-Since'] = stored.lastModified;
 
-  const resp = await fetch(url, { headers });
+  const resp = await instanceFetch(url, { headers });
   if (resp.status === 304) return null; // unchanged
 
   if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
@@ -224,7 +231,7 @@ async function syncTools(host: SyncHost): Promise<void> {
   // copy (rewritten only on a fresh 200) so the gallery can fall back offline.
   for (let attempt = 0; attempt < CATALOG_FETCH_ATTEMPTS; attempt++) {
     try {
-      const resp = await conditionalFetch(`${CATALOG_BASE}/tools/index.json`, 'tool-index');
+      const resp = await conditionalFetch(instancePath(`${CATALOG_BASE}/tools/index.json`), 'tool-index');
       if (!resp) {
         host.log('info', 'Tool catalog unchanged (304)');
         return;
@@ -284,13 +291,27 @@ let defaultFavouriteIds: readonly string[] = [];
  *  hasn't been fetched this session). Read once at boot to seed first-run favourites. */
 export function defaultFavouriteAssetIds(): readonly string[] { return defaultFavouriteIds; }
 
+/**
+ * With a remote instance base set, rewrite the index's root-relative format
+ * URLs to absolute instance URLs BEFORE they reach the asset-meta store — one
+ * chokepoint that makes every downstream consumer (prefetch here, on-demand
+ * fetchAndCache, picker thumbnail <img>s, tokens doc reads) follow the instance
+ * without further threading. Passthrough (byte-identical) when no base is set.
+ */
+function absolutizeAssetUrls(index: AssetIndex): AssetIndex {
+  for (const a of index.assets) {
+    for (const f of a.formats) f.url = instancePath(f.url);
+  }
+  return index;
+}
+
 async function syncAssets(host: SyncHost): Promise<void> {
-  const resp = await conditionalFetch(`${CATALOG_BASE}/assets/index.json`, 'assets-index');
+  const resp = await conditionalFetch(instancePath(`${CATALOG_BASE}/assets/index.json`), 'assets-index');
   if (!resp) {
     host.log('info', 'Asset catalog unchanged (304)');
     return;
   }
-  const index = await resp.json() as AssetIndex;
+  const index = absolutizeAssetUrls(await resp.json() as AssetIndex);
   cachedAssetIndex = index; // let syncCorePrefetch reuse this fresh fetch
   if (Array.isArray(index.defaultFavourites)) {
     defaultFavouriteIds = index.defaultFavourites.filter((x): x is string => typeof x === 'string');
@@ -326,7 +347,7 @@ async function prefetchAsset(host: SyncHost, meta: AssetMetaRecord): Promise<voi
   for (const fmt of meta.formats) {
     const key = `${meta.id}:${fmt.format}:${meta.version}`;
     if (await host.assets._hasBlob(key)) continue;
-    const resp = await fetch(fmt.url);
+    const resp = await instanceFetch(fmt.url);
     if (!resp.ok) continue;
     const blob = await resp.blob();
     try {
@@ -346,9 +367,9 @@ export async function syncCorePrefetch(host: SyncHost): Promise<void> {
     // network fetch if it ran a 304 (unchanged) and never stashed one.
     let index = cachedAssetIndex;
     if (!index) {
-      const resp = await fetch(`${CATALOG_BASE}/assets/index.json`);
+      const resp = await instanceFetch(instancePath(`${CATALOG_BASE}/assets/index.json`));
       if (!resp.ok) return;
-      index = await resp.json() as AssetIndex;
+      index = absolutizeAssetUrls(await resp.json() as AssetIndex);
     }
     // Pinned tool FILES freshen on this idle path — keyed on a PERSISTED index
     // watermark, not this session's toolIndexChanged() flag: the flag is only
@@ -381,9 +402,9 @@ export async function prefetchAssetsById(host: SyncHost, ids: readonly string[])
   if (!ids.length) return;
   let index = cachedAssetIndex;
   if (!index) {
-    const resp = await fetch(`${CATALOG_BASE}/assets/index.json`);
+    const resp = await instanceFetch(instancePath(`${CATALOG_BASE}/assets/index.json`));
     if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching asset index`);
-    index = await resp.json() as AssetIndex;
+    index = absolutizeAssetUrls(await resp.json() as AssetIndex);
     cachedAssetIndex = index;
   }
   const want = new Set(ids);

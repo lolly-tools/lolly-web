@@ -28,7 +28,14 @@
       card now also carries the literal `section-card` class — only what
       genuinely differs (which fields a card holds, .export-pdfpass's extra
       click-to-expand chevron, .export-print's wider row gap) stays under its
-      own name. */
+      own name. .export-pdfpass/.export-c2pa/.export-imprint/.export-print (the
+      genuinely provenance/protection four — .export-cmyk is a print-quality
+      setting, not protection, so it stays outside) are further nested inside
+      one more collapsed wrapper, `.export-protection` ("Content protection"),
+      whose own header button reuses the exact `.pdfpass-head` button-reset +
+      rotating-caret idiom under its own name, `.protection-head` (tool-chrome.css) —
+      the four inner cards' own classes, data-actions and per-format gating are
+      completely unchanged; the wrapper only adds one more outer show/hide layer. */
 
 .plat-section {   /* platform.css — the shared <details> flavour's page-layout margin */
   margin: 0 0 1.1rem;
@@ -88,9 +95,10 @@
 /* ── Export panel's settings cards — the prime target for this rec: identical
    icon-head + body + hint anatomy, four separate class families. */
 .section-card-head,
-.cmyk-head, .audio-head, .c2pa-head, .print-head, .pdfpass-head {   /* tool-chrome.css —
-  .pdfpass-head is a <button>, so its reset (width/margin/padding/background/
-  border/cursor) plus its own hover + rotating-caret pseudo stay local deltas */
+.cmyk-head, .audio-head, .c2pa-head, .print-head, .pdfpass-head, .protection-head {   /* tool-chrome.css —
+  .pdfpass-head/.protection-head are <button>s, so their reset (width/margin/
+  padding/background/border/cursor) plus their own hover + rotating-caret
+  pseudo stay local deltas */
   display: flex;
   align-items: center;
   gap: 7px;
@@ -101,7 +109,7 @@
   color: hsl(var(--muted-foreground));
 }
 .section-card-icon,
-.cmyk-icon, .audio-icon, .pdfpass-icon, .c2pa-icon, .print-icon {   /* tool-chrome.css */
+.cmyk-icon, .audio-icon, .pdfpass-icon, .c2pa-icon, .print-icon, .protection-icon {   /* tool-chrome.css */
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
