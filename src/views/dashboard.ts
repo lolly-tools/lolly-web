@@ -62,6 +62,9 @@ import { USER_TOKENS_ID } from '../bridge/tokens.ts';
 import { applyBrandVars, brandRadiusValue, tokenValueToHex } from '../brand-vars.ts';
 import { listStudioTokens, formatStudioValue, gradientCss } from '../lib/token-studio.ts';
 import type { StudioToken } from '../lib/token-studio.ts';
+import type { ExportEntry } from '../lib/export-history.ts';
+import { attachDropRouter } from '../lib/drop-router.ts';
+import type { PickerHost } from './picker.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
@@ -776,6 +779,12 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   armViewEnter(viewEl, '.tools-home, .plat-header, .dash-tabs, .plat-section, .dash-foot');
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
+  // Universal drop front door — the same scoped router as the gallery (design →
+  // Layout Studio, PDF → import/compress, media → library or /verify). Torn down
+  // on navigation; the cast is erased (the concrete web host carries the picker's
+  // upload surface).
+  attachDropRouter(viewEl, host as unknown as PickerHost);
+
   // "This device" starts collapsed (the server-rendered default, above) everywhere,
   // then opens itself right away when the tab actually lays out as two columns
   // (≥900px, matching .dash-device-grid's breakpoint in dashboard.css) — there's
@@ -1063,14 +1072,15 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   import('../lib/export-history.ts')
     .then(({ listExports }) => listExports(12))
     .then((exports) => {
-      const items = exports
-        .filter((e) => e.thumb)
+      const entries = exports.filter((e) => e.thumb);
+      const items = entries
         .map((e) => ({ thumb: e.thumb!, label: e.filename || e.label, href: `#/tool/${e.toolId}${e.query ? '?' + e.query : ''}` }));
       const sec = viewEl.querySelector<HTMLElement>('#dash-exports');
       const stackMount = viewEl.querySelector<HTMLElement>('[data-exports-stack]');
       if (isCurrent(stackMount) && sec && items.length) {
         createRecentStack(stackMount, items);
         sec.hidden = false;
+        wireExportShare(stackMount, entries, items.map((it) => it.href));
       }
     })
     .catch(() => { /* no exports yet — the section stays hidden */ });
@@ -1124,6 +1134,47 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
       }
     });
   }
+}
+
+// Share action for the Latest-exports stack: a pill beside the deck's Open link
+// that hands whichever export is at the FRONT to the shared Share-link dialog
+// (components/share-dialog.ts — extracted exactly to be callable anywhere) with
+// the entry's toolId + serialized reopen state. The stack keeps its [data-open]
+// href aimed at the front card (recent-stack layout()), so that href keys back to
+// the export entry; the cards' own reopen links stay untouched. A duplicate href
+// (same tool + state downloaded twice) resolves to the newest entry — same link
+// either way.
+function wireExportShare(stackMount: HTMLElement, entries: ExportEntry[], hrefs: string[]): void {
+  const openEl = stackMount.querySelector<HTMLAnchorElement>('[data-open]');
+  const ui = stackMount.querySelector<HTMLElement>('.dash-stack-ui');
+  if (!openEl || !ui) return;
+  const byHref = new Map<string, ExportEntry>();
+  hrefs.forEach((href, i) => { if (!byHref.has(href)) byHref.set(href, entries[i]!); });
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'dash-stack-open dash-stack-share';
+  btn.style.margin = '0';           // .dash-stack-open centres itself; inline in the ‹ › row here
+  btn.style.cursor = 'pointer';
+  btn.textContent = t('Share link');
+  ui.appendChild(btn);
+  btn.addEventListener('click', async () => {
+    const entry = byHref.get(openEl.getAttribute('href') ?? '');
+    if (!entry) return;
+    btn.disabled = true;
+    try {
+      const [{ openShareDialog }, { getTool }] = await Promise.all([
+        import('../components/share-dialog.ts'),
+        import('../bridge/tool-loader.ts'),
+      ]);
+      const { manifest } = await getTool(entry.toolId);
+      const baseParts = entry.query ? entry.query.split('&') : [];
+      // Carry the downloaded format so the recipient's link opens on the same one
+      // (mirrors the Projects view's per-session share).
+      if (entry.format) baseParts.push(`format=${encodeURIComponent(entry.format)}`);
+      openShareDialog({ toolId: entry.toolId, baseParts, manifest, currentFormat: entry.format, title: t('Share this creation') });
+    } catch { /* share is best-effort — the reopen links still work */ }
+    finally { btn.disabled = false; }
+  });
 }
 
 // Open + scroll to a deep-linked panel/group. Reference panels AND capability

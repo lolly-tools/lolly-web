@@ -7,6 +7,7 @@
 // pre-answer it. So this module has no preview to draw before the fact and nothing to
 // coach; it arms nothing, and the first tap goes straight to the picker.
 import { announce } from '../a11y.ts';
+import { icon } from '../lib/icons.ts';
 import { composeCropRect, cropPixelSize } from './screen-capture-crop.ts';
 import { subscribeRecordPreview } from '../lib/record-preview.ts';
 import { storeRecordingAsset } from './picker.ts';
@@ -42,7 +43,7 @@ export function setupScreenCaptureControl({
   const shotBtn = document.createElement('button');
   shotBtn.type = 'button';
   shotBtn.className = 'canvas-screen-btn';
-  shotBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span>Screenshot</span>';
+  shotBtn.innerHTML = `${icon('camera', { size: 16 })}<span>Screenshot</span>`;
 
   const recBtn = document.createElement('button');
   recBtn.type = 'button';

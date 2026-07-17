@@ -374,6 +374,7 @@
 .profile-view .store-bar .seg[data-cat="images"]   { background: hsl(var(--store-2)); }
 .profile-view .store-bar .seg[data-cat="cache"]    { background: hsl(var(--store-3)); }
 .profile-view .store-bar .seg[data-cat="previews"] { background: hsl(var(--store-4)); }
+.profile-view .store-bar .seg[data-cat="pins"]     { background: hsl(var(--store-5)); }
 .profile-view .store-bar .seg--other,
 .profile-view .store-chip-sw.is-hatch {
   background: repeating-linear-gradient(45deg, hsl(var(--store-other)) 0 5px, hsl(var(--store-other) / .5) 5px 10px);
@@ -398,6 +399,7 @@
 .profile-view .store-chip-sw[data-cat="images"]   { background: hsl(var(--store-2)); }
 .profile-view .store-chip-sw[data-cat="cache"]    { background: hsl(var(--store-3)); }
 .profile-view .store-chip-sw[data-cat="previews"] { background: hsl(var(--store-4)); }
+.profile-view .store-chip-sw[data-cat="pins"]     { background: hsl(var(--store-5)); }
 .profile-view .store-chip-name { font-size: 12px; color: hsl(var(--foreground)); }
 .profile-view .store-chip-val { font-size: 12px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
 

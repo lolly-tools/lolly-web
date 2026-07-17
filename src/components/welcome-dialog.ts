@@ -14,6 +14,10 @@
  *                              explicitly choosing to explore) is what settles
  *                              the question; backing out of the wizard brings
  *                              the welcome back next visit.
+ *   "Bring your design"      → the universal drop router's file picker
+ *                              (lib/drop-router.ts): a Figma/Penpot/PDF/… file
+ *                              routes into Layout Studio or the library. Like
+ *                              the wizard path, it does NOT persist the flag.
  *   "Explore the tools"      → dismiss, persist the flag, stay on the gallery.
  *
  * Dismissing by any other means (Escape, backdrop) persists the flag too — a
@@ -31,6 +35,8 @@ import type { Lang } from '../i18n.ts';
 import { escape, NAV_EVENTS } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import type { WebProfileAPI } from '../bridge/profile.ts';
+import type { PickerHost } from '../views/picker.ts';
+import { openDropFilePicker } from '../lib/drop-router.ts';
 import { mountModal } from './modal.ts';
 
 /** Persisted (localStorage, same tier as the theme) once the welcome is settled. */
@@ -49,7 +55,7 @@ export function markWelcomeDismissed(): void {
   try { localStorage.setItem(WELCOME_DISMISSED_KEY, '1'); } catch { /* storage off — just won't persist */ }
 }
 
-export type WelcomeChoice = 'brand' | 'explore' | 'dismiss';
+export type WelcomeChoice = 'brand' | 'import' | 'explore' | 'dismiss';
 
 let openPromise: Promise<WelcomeChoice> | null = null;
 // The open dialog's settle fn — lets closeWelcomeDialog() tear down through the
@@ -59,7 +65,9 @@ let settleOpen: ((choice: WelcomeChoice | null) => void) | null = null;
 // Renders the dialog's own copy through t() so a language-chip switch can
 // re-paint it in place, and the chip row itself (native names, active state
 // from the resolved boot-time language — see i18n.ts's initI18n).
-function renderWelcomeContent(): string {
+// `withImport` gates the "Bring your design" card on the caller having handed
+// over an upload-capable host (the drop router needs it for the library route).
+function renderWelcomeContent(withImport: boolean): string {
   return `
     <p class="welcome-eyebrow">${t('Welcome to Lolly')}</p>
     <h2 class="welcome-title">${t('Your tools, your rules')}</h2>
@@ -71,6 +79,13 @@ function renderWelcomeContent(): string {
         <span class="welcome-card-line">${t('Start from one colour or your design tokens — everything stays on this device.')}</span>
         <span class="welcome-card-cta" aria-hidden="true">${t('Set up your brand →')}</span>
       </button>
+      ${withImport ? `
+      <button type="button" class="welcome-card" data-choice="import">
+        <span class="welcome-card-icon">${icon('filePlus', { size: 22 })}</span>
+        <span class="welcome-card-kicker">${t('Bring your design')}</span>
+        <span class="welcome-card-line">${t('Drop in a Figma, Penpot, InDesign or PDF file — it becomes an editable layout.')}</span>
+        <span class="welcome-card-cta" aria-hidden="true">${t('Import a file →')}</span>
+      </button>` : ''}
       <button type="button" class="welcome-card" data-choice="explore">
         <span class="welcome-card-icon">${icon('eye', { size: 22 })}</span>
         <span class="welcome-card-kicker">${t('Explore the community tools')}</span>
@@ -95,11 +110,13 @@ function renderWelcomeContent(): string {
  * `profileApi`, when given, lets the language chips persist a choice to the
  * canonical profile record (mirrors the profile-card picker); without it the
  * choice still applies for the session via i18n.ts's localStorage mirror.
+ * `uploadHost` (the full web host) enables the "Bring your design" card, whose
+ * picked file routes through lib/drop-router.ts's chooser.
  */
-export function showWelcomeDialog(profileApi?: WebProfileAPI): Promise<WelcomeChoice> {
+export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: PickerHost): Promise<WelcomeChoice> {
   if (openPromise) return openPromise;
   openPromise = new Promise((resolve) => {
-    const modal = mountModal<WelcomeChoice | null>(renderWelcomeContent(), {
+    const modal = mountModal<WelcomeChoice | null>(renderWelcomeContent(!!uploadHost), {
       className: 'welcome-dialog',
       ariaLabel: 'Welcome to Lolly',
       cancelValue: 'dismiss', // Escape / backdrop click
@@ -137,7 +154,7 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI): Promise<WelcomeCh
             } catch { /* preference save is best-effort */ }
           }
           if (modal.el.isConnected) {
-            modal.el.innerHTML = renderWelcomeContent();
+            modal.el.innerHTML = renderWelcomeContent(!!uploadHost);
             modal.el.querySelector<HTMLButtonElement>(`[data-lang="${lang}"]`)?.focus();
           }
         })();
@@ -149,6 +166,9 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI): Promise<WelcomeCh
         const choice = card.dataset.choice as WelcomeChoice;
         modal.close(choice);
         if (choice === 'brand') window.location.hash = '#/start';
+        // Like the wizard path, 'import' doesn't persist the dismissal (onClose
+        // above) — cancelling the file picker brings the welcome back next visit.
+        if (choice === 'import' && uploadHost) openDropFilePicker(uploadHost);
       }
       // Backdrop dismissal is handled by mountModal (cancelValue: 'dismiss').
     });

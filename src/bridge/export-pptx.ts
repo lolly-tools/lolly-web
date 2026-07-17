@@ -334,7 +334,17 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     const box = boxOf(rect);
     const fill = pptxGradientFill(style.backgroundImage) ?? pptxSolidFill(style.backgroundColor) ?? undefined;
     const borders = pptxBorderRects(style, box, E);
-    const radiusPx = parseFloat(style.borderTopLeftRadius) || 0;
+    // PPTX roundRect carries ONE corner radius, so an asymmetric box (deck-builder shape
+    // boxes now allow a per-corner [TL,TR,BR,BL] radius) can only approximate. Take the
+    // LARGEST of the four corners rather than the top-left alone: top-left-only silently
+    // dropped ALL rounding whenever that corner was 0 (e.g. [0,96,96,0] → a square), which
+    // is more wrong than keeping a rounded look. Uniform radii are unaffected.
+    const radiusPx = Math.max(
+      parseFloat(style.borderTopLeftRadius) || 0,
+      parseFloat(style.borderTopRightRadius) || 0,
+      parseFloat(style.borderBottomRightRadius) || 0,
+      parseFloat(style.borderBottomLeftRadius) || 0,
+    );
     if (fill || borders.outline || radiusPx > 0) {
       shapes.push({ kind: 'rect', ...box, fill, line: borders.outline, radius: radiusPx > 0 ? Math.round(radiusPx * E) : undefined });
     }

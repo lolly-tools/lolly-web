@@ -336,49 +336,9 @@
 .asset-picker-catbtn:focus-visible { outline: 2px solid hsl(var(--primary) / 0.5); outline-offset: 2px; }
 .asset-picker-catbtn-glyph { display: inline-flex; }
 .asset-picker-catbtn-glyph svg { width: 18px; height: 18px; }
-/* Pretty tooltip — the category name in a small bubble below the icon, on hover
-   or keyboard focus. Below (not above) because the row hugs the top of the
-   scrolling body, whose overflow would clip a bubble reaching up over the tabs.
+/* The category-name bubble on hover/focus comes from the shared [data-tip]
+   tooltip primitive (parts/tooltip.css) — this sheet's copy was promoted there.
    aria-label carries the same name for assistive tech. */
-.asset-picker-catbtn[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%) translateY(-3px);
-  padding: 4px 8px;
-  background: hsl(var(--foreground));
-  color: hsl(var(--background));
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  z-index: 6;
-}
-.asset-picker-catbtn[data-tip]::before {
-  content: "";
-  position: absolute;
-  top: calc(100% + 3px);
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-bottom-color: hsl(var(--foreground));
-  opacity: 0;
-  transition: opacity 0.12s ease;
-  z-index: 6;
-}
-.asset-picker-catbtn:hover::after,
-.asset-picker-catbtn:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
-.asset-picker-catbtn:hover::before,
-.asset-picker-catbtn:focus-visible::before { opacity: 1; }
-@media (prefers-reduced-motion: reduce) {
-  .asset-picker-catbtn[data-tip]::after { transition: none; transform: translateX(-50%); }
-}
 
 .asset-picker-grid {
   display: grid;
@@ -811,6 +771,7 @@
 }
 .asset-picker-toolcard-actions .tc-edit,
 .asset-picker-toolcard-actions .tc-back {
+  text-decoration: none; /* the extension hint renders tc-back as an <a> */
   padding: 7px 14px;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -870,7 +831,8 @@
 }
 
 .asset-picker-footer { display: flex; align-items: center; gap: 10px; }
-.asset-picker-webcam {
+.asset-picker-webcam,
+.asset-picker-screencap {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -884,8 +846,21 @@
   font-size: 13px;
   transition: border-color 0.12s, background 0.12s;
 }
-.asset-picker-webcam:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
-.asset-picker-webcam svg { display: block; }
+.asset-picker-webcam:hover,
+.asset-picker-screencap:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
+.asset-picker-webcam svg,
+.asset-picker-screencap svg { display: block; }
+
+/* "Screenshot this page" card (pasted non-Lolly URL): the page URL, muted and
+   wrappable; the inline error drops the empty-state's tall centring. */
+.asset-picker-capture-url {
+  margin: 0;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  color: hsl(var(--muted-foreground));
+  word-break: break-all;
+}
+.asset-picker-toolcard .cap-error { margin: 0; padding: 0; text-align: left; }
 
 /* ── Webcam capture dialog ─────────────────────────────────────────────────
    Stacks above the picker panel (which is z 1001). Sibling on <body>. */

@@ -82,8 +82,10 @@
   color: hsl(var(--muted-foreground));
 }
 
-.welcome-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-@media (max-width: 560px) { .welcome-cards { grid-template-columns: 1fr; } }
+/* Auto-fit: two cards (no upload host) or three ("Bring your design") both fill
+   the row; narrow viewports stack to one column. */
+.welcome-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+@media (max-width: 640px) { .welcome-cards { grid-template-columns: 1fr; } }
 
 .welcome-card {
   display: flex;
@@ -104,8 +106,9 @@
   border-color: hsl(var(--primary) / 0.45);
   background: hsl(var(--primary) / 0.06);
 }
-/* Icon leading each choice card — heart (make it yours) / eye (explore). Brand
-   card picks up the primary accent; the explore card stays muted. */
+/* Icon leading each choice card — heart (make it yours) / filePlus (bring your
+   design) / eye (explore). Brand card picks up the primary accent; the rest
+   stay muted. */
 .welcome-card-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
 .welcome-card--brand .welcome-card-icon { color: hsl(var(--primary)); }
 .welcome-card-kicker { font-size: 15px; font-weight: 700; }

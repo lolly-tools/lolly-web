@@ -38,6 +38,7 @@
     "kiwi-schema": "^0.5.0",
     "lottie-web": "^5.12.2",
     "mp4-muxer": "^5.2.2",
+    "onnxruntime-web": "^1.27.0",
     "pdf-lib": "^1.17.1",
     "webm-muxer": "^5.1.4",
     "woff2-encoder": "^2.0.0"

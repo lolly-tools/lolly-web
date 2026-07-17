@@ -46,6 +46,7 @@ import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.t
 import { playSfx } from '../lib/sfx.ts';
 import { exportSizeDriver } from './export-size.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
+import { createNetAPI } from '../bridge/net.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
 import { mountFilmstrip, type Filmstrip } from '../lib/page-filmstrip.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
@@ -62,6 +63,7 @@ import type { Unit } from '../../../../engine/src/units.js';
 
 // The input + actions subsystems live in sibling modules (verbatim split of this
 // file). They only `import type` back from here, so these value imports don't cycle.
+import { icon } from '../lib/icons.ts';
 import { asRow } from './tool-types.ts';
 import { setupStageNav, type StageNav } from './tool-stage-nav.ts';
 import {
@@ -169,6 +171,7 @@ export interface ActionsApi {
   save?: (btn?: HTMLElement | null) => Promise<boolean>;
   setDims?: (dims?: { width?: number; height?: number; unit?: string }) => void;
   stopAudioPreview?: () => void;
+  refreshRecentExports?: () => Promise<void>;
 }
 
 /** A shared monotonic bar-write guard (a holder object so shrinkUrl can share it). */
@@ -210,6 +213,7 @@ export interface RunExportOpts {
   fps?: number;
   wait?: number;
   duration?: number;
+  live?: boolean;
   audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number };
   filename?: string;
   bundleFormats?: string[];
@@ -340,6 +344,15 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const sup = toolSupport(tool.manifest, host.capabilities);
   if (sup.status === 'install') { mountInstallPrompt(viewEl, tool.manifest); return; }
   if (sup.status === 'unavailable') { mountUnavailable(viewEl, tool.manifest, sup.unmet); return; }
+
+  // A manifest `network.allowlist` gives THIS mount a host clone whose `net`
+  // enforces exactly that list — the boot-time shared host keeps its fail-closed
+  // empty allowlist and is never mutated (bridge methods are closures, not
+  // `this`-bound, so a shallow spread is safe). Everything below — runtime,
+  // hooks, actions — uses the clone; tools without the field see no change.
+  if (tool.manifest.network?.allowlist?.length) {
+    host = { ...host, net: createNetAPI({ allowlist: tool.manifest.network.allowlist }) };
+  }
 
   // Source the colour picker's swatches from design tokens (the canonical brand
   // colours), so choosing one keeps the value linked to the token. Falls back to
@@ -741,7 +754,10 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
               <a href="${escape(backHref)}" class="tools-home sidebar-back">${backLabel}</a>
             </div>
             <div class="sidebar-header-row">
-              <span class="sidebar-title">${escape(tool.manifest.name)}</span>
+              <span class="sidebar-title-wrap">
+                <span class="sidebar-title">${escape(tool.manifest.name)}</span>
+                ${canSaveSession ? `<button type="button" class="multi-edit-btn" id="multi-edit-btn" data-tip="${escape(t('Make variants'))}" aria-label="${escape(t('Make variants'))}" aria-haspopup="menu" aria-expanded="false">${icon('grid', { className: 'multi-edit-icon' })}</button>` : ''}
+              </span>
               <button class="fullscreen-toggle" id="fullscreen-toggle" ${sidebarOpen ? 'open' : ''} aria-label="${escape(sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar'))}"></button>
             </div>
           </div>
@@ -1242,6 +1258,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // so the dirty-state helpers (markSessionDirty / markSessionSaved, defined later)
   // can flash and clear it from the input-change chokepoint.
   let renderSaveBtn: HTMLButtonElement | null = null;
+  // openExport can fire before `actionsApi` below is initialized (?options auto-open
+  // runs synchronously mid-mount, and the const would be in its TDZ), so the popup's
+  // recent-exports refresh goes through this indirection, assigned after renderActions.
+  let refreshRecentOnOpen: (() => void) | null = null;
   const renderPill    = viewEl.querySelector<HTMLElement>('#render-pill');
   const renderFab     = viewEl.querySelector<HTMLButtonElement>('#render-fab');   // the "Export" half (opens export)
   renderSaveBtn       = viewEl.querySelector<HTMLButtonElement>('#render-save');  // the "Save" half (outer-scoped)
@@ -1285,6 +1305,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       layout.classList.add('export-open');
       renderFab.setAttribute('aria-expanded', 'true');
       applyModality();
+      refreshRecentOnOpen?.();   // re-read the downloads log — it can grow in another tab
       // Move focus into the dialog (its close button) for keyboard/SR users — but
       // not when auto-opened from ?options on load, where grabbing focus is jarring.
       if (focus) exportOverlay.querySelector<HTMLElement>('.export-popup-close')?.focus();
@@ -1651,6 +1672,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       const on  = actionsEl?.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked;
       if (fmt === 'html' && on) params.set('nostage', '');
     }
+    if (dirtyParams.has('imprint')) {
+      // Pixel watermark — the popup toggle, written in the engine's canonical
+      // `imprint=1` form (see url-mode serializeUrlState); unchecked drops it.
+      const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked;
+      if (on) params.set('imprint', '1');
+    }
 
     const qs = params.toString();
     // Bump the shared guard on EVERY write (not just when we pack) so a later,
@@ -1684,6 +1711,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
 
   const actionsApi = renderActions(actionsEl, tool.manifest, runtime, canvasEl, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot);
+  refreshRecentOnOpen = () => void actionsApi?.refreshRecentExports?.();
 
   // Preview-generation hook — scripts/build-previews.ts calls this to grab a VECTOR
   // SCREENSHOT (SVG) of the mounted canvas for ANY tool, even an export:false utility

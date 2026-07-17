@@ -261,6 +261,10 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   // and keyboard wiring stays gated behind !isTouch further below.
   const hudEl = document.createElement('div');
   hudEl.className = 'stage-nav';
+  // Hidden for the duration of a live-capture take: the HUD hovers over the stage,
+  // and the element-crop recording tiers capture anything inside the stage box.
+  // The rule ships in live-capture.ts's injected <style>, scoped to the take.
+  hudEl.setAttribute('data-live-hide', '');
   stageEl.appendChild(hudEl);
   // Dock the theme cycle + sound toggles at the end of the HUD (a hairline
   // separator sets them apart from the zoom controls), so every canvas tool

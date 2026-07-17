@@ -18,6 +18,7 @@
 import { verifyAssetChecksum } from '../bridge/assets.ts';
 import { assertToolIndexIntegrity } from './integrity.ts';
 import { currentLang } from '../i18n.ts';
+import { pinnedAssetIds, refreshPinnedToolFiles } from '../lib/offline-pins.ts';
 
 /** One resolvable file for a catalog asset (an entry in an asset's `formats`).
  *  Structurally matches the bridge's AssetFormat so it flows into
@@ -42,6 +43,10 @@ interface AssetMetaRecord {
 
 /** The tool catalog index as fetched from /catalog/tools/index.json. */
 interface ToolIndex {
+  version?: string;
+  /** Rolls only when the tool set actually changes (build-catalog-index.ts keeps
+   *  it stable on idempotent regeneration) — the pin-refresh watermark. */
+  generatedAt?: string;
   tools: Array<{ id: string } & Record<string, unknown>>;
 }
 
@@ -93,11 +98,11 @@ interface SyncHost {
   log(level: string, msg: string, data?: Record<string, unknown>): void;
   assets: {
     _syncFromIndex(assets: AssetMetaRecord[]): Promise<unknown>;
-    _pruneStale(assets: AssetMetaRecord[], sessionRefs: unknown): Promise<{ blobs: number; meta: number }>;
+    _pruneStale(assets: AssetMetaRecord[], sessionRefs: Set<string>): Promise<{ blobs: number; meta: number }>;
     _hasBlob(key: string): Promise<boolean>;
     _cacheBlob(key: string, blob: Blob): Promise<unknown>;
   };
-  state: { _getAssetRefs(): Promise<unknown> };
+  state: { _getAssetRefs(): Promise<Set<string>> };
 }
 
 /** Stored conditional-request validators for a catalog resource. */
@@ -297,6 +302,18 @@ async function syncAssets(host: SyncHost): Promise<void> {
   // Remove stale blobs: old versions, removed assets, and on-demand blobs not
   // referenced by any saved session (browsed-but-unsaved fetches don't accumulate).
   const sessionRefs = await host.state._getAssetRefs();
+  // Assets referenced by a pinned ("available offline") tool count as referenced
+  // too — a pin must survive the browsed-but-unsaved prune, at the CURRENT
+  // catalog version (a version bump re-prefetches below, in syncCorePrefetch).
+  try {
+    const pinned = await pinnedAssetIds();
+    if (pinned.size) {
+      for (const a of index.assets) {
+        if (!pinned.has(a.id)) continue;
+        for (const f of a.formats) sessionRefs.add(`${a.id}:${f.format}:${a.version}`);
+      }
+    }
+  } catch { /* pins unreadable — prune with session refs only */ }
   const pruned = await host.assets._pruneStale(index.assets, sessionRefs);
   if (pruned.blobs || pruned.meta) {
     host.log('info', `Pruned stale assets: ${pruned.blobs} blobs, ${pruned.meta} metadata entries`);
@@ -333,9 +350,42 @@ export async function syncCorePrefetch(host: SyncHost): Promise<void> {
       if (!resp.ok) return;
       index = await resp.json() as AssetIndex;
     }
-    const core = index.assets.filter(a => a.tier === 'core');
-    await Promise.allSettled(core.map(a => prefetchAsset(host, a)));
+    // Pinned tool FILES freshen on this idle path — keyed on a PERSISTED index
+    // watermark, not this session's toolIndexChanged() flag: the flag is only
+    // ever true in the one session that fetched fresh bytes, so a tab closed
+    // mid-refresh would strand offline pins on the old deploy across every
+    // later 304 boot (offline-pins.ts owns the watermark + retry semantics).
+    // Runs BEFORE the asset pass below so a manifest that gained an asset ref
+    // prefetches it this boot.
+    const toolIndex = window.__toolIndex;
+    if (toolIndex?.generatedAt) {
+      await refreshPinnedToolFiles(`${toolIndex.version ?? ''}|${toolIndex.generatedAt}`).catch(() => {});
+    }
+    // Pinned ("available offline") tools' asset refs ride the core prefetch, so
+    // a catalog version bump re-fetches them at the new version each boot.
+    const pinned = await pinnedAssetIds().catch(() => new Set<string>());
+    const wanted = index.assets.filter(a => a.tier === 'core' || pinned.has(a.id));
+    await Promise.allSettled(wanted.map(a => prefetchAsset(host, a)));
   } catch (e) {
     host.log('warn', 'Core prefetch failed', { error: String(e) });
   }
+}
+
+/**
+ * Prefetch specific catalog assets (by id) through the same checksum-verified
+ * path as the core-tier boot prefetch. Offline pinning calls this at pin time —
+ * threaded in by the view, since lib/offline-pins.ts can't import this module
+ * without a cycle (syncAssets/syncCorePrefetch read pin state above).
+ */
+export async function prefetchAssetsById(host: SyncHost, ids: readonly string[]): Promise<void> {
+  if (!ids.length) return;
+  let index = cachedAssetIndex;
+  if (!index) {
+    const resp = await fetch(`${CATALOG_BASE}/assets/index.json`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching asset index`);
+    index = await resp.json() as AssetIndex;
+    cachedAssetIndex = index;
+  }
+  const want = new Set(ids);
+  await Promise.allSettled(index.assets.filter(a => want.has(a.id)).map(a => prefetchAsset(host, a)));
 }

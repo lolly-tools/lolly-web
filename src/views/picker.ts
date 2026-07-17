@@ -44,12 +44,14 @@ import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { libCategory, LIB_GROUPS, loadAssetCategories, categoryLabel } from '../lib/asset-category.ts';
 import type { LibGroup } from '../lib/asset-category.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
+import { icon } from '../lib/icons.ts';
+import { isChromium } from '../capabilities.ts';
 import { loadFavouriteAssets, loadHiddenAssets, assetBaseId } from '../lib/asset-favourites.ts';
 import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { NAV_EVENTS } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, docsHref } from '../i18n.ts';
 import { genAiPill, assetAiKind } from '../lib/genai-pill.ts';
 import { isFlagOn, STRIP_UPLOAD_META_FLAG } from '../feature-flags.ts';
 import type { AssetRef, AssetPickerOpts, ComposeUrlOpts, ExportFormat, HostV1, Profile } from '../../../../engine/src/bridge/host-v1.ts';
@@ -63,16 +65,23 @@ import type { WebStateAPI } from '../bridge/state.ts';
  *  affordance that feeds storeUserUpload (the picker's footer input, the catalog's
  *  drop area). Images (raster + SVG), short video, Lottie, and audio all flow
  *  through storeUserUpload; audio (the user's own music) is stored verbatim as a
- *  type:'audio' asset. PDF/.ai don't go through storeUserUpload itself: callers
- *  route them to pdf-import.ts's ingestPdfAsSvgAssets (page(s) → stored SVG) via
- *  isPdfUpload. */
-export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai';
+ *  type:'audio' asset. PDF/.ai and PowerPoint .pptx don't go through storeUserUpload
+ *  itself: callers route them to pdf-import.ts's ingestPdfAsSvgAssets /
+ *  pptx-import.ts's ingestPptxAsSvgAssets (page(s)/slide(s) → stored SVG) via
+ *  isPdfUpload / isPptxUpload. */
+export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx';
 
 /** A PDF — or an Illustrator .ai, which saved PDF-compatible IS a PDF — that upload
  *  surfaces must hand to the page→SVG converter instead of storeUserUpload. Sync and
  *  chunk-free on purpose: callers decide the route before lazy-loading pdf-import. */
 export const isPdfUpload = (file: File): boolean =>
   /\.(pdf|ai)$/i.test(file.name) || /^application\/(pdf|illustrator)$/i.test(file.type);
+
+/** A PowerPoint .pptx that upload surfaces must hand to the slide→SVG converter
+ *  instead of storeUserUpload. Sync and chunk-free on purpose: callers decide the
+ *  route before lazy-loading pptx-import. */
+export const isPptxUpload = (file: File): boolean =>
+  /\.pptx$/i.test(file.name) || file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 /** The window.__toolIndex tool slice the picker reads (a denormalised catalog/sync
  *  projection, not an engine domain type). */
@@ -288,6 +297,22 @@ async function render(
   const canWebcam = showUserAssets && opts.type !== 'vector'
     && typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
 
+  // Would a raster screenshot serve this slot at all? Shared gate for both capture
+  // sources below — same terms as webcam: upload-capable, not a vector slot.
+  const captureCouldServe = showUserAssets && opts.type !== 'vector';
+
+  // "Capture screen" beside it, feature-detected on getDisplayMedia (absent on most
+  // mobile browsers). A picker-level source like webcam — NOT gated on any tool
+  // capability flag: the browser's own share picker is the whole selection UI, and
+  // recorder.still() releases the stream the moment the frame is grabbed.
+  const canScreencap = captureCouldServe
+    && typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia)
+    && typeof host.recorder?.still === 'function';
+
+  // A pasted https URL that is NOT a Lolly link can still become an image where the
+  // shell can capture pages (extension installed / Tauri) — see showUrlFallback.
+  const canCaptureUrl = captureCouldServe && (host.capabilities ?? []).includes('capture');
+
   // Smart-paste / compose: any image slot can render a Lolly tool (or a previous
   // saved creation) AS the image — available whenever the shell can compose and the
   // slot isn't video-only. The toolId in any link/tool must resolve to a real local
@@ -422,6 +447,7 @@ async function render(
             <span class="asset-picker-upload-label">${t('Upload your own…')}</span>
           </label>
           ${canWebcam ? `<button type="button" class="asset-picker-webcam">${cameraGlyph} ${t('Take a photo')}</button>` : ''}
+          ${canScreencap ? `<button type="button" class="asset-picker-screencap">${icon('monitor', { size: 14 })} ${t('Capture screen')}</button>` : ''}
         </footer>
       ` : ''}
     </div>
@@ -888,6 +914,18 @@ async function render(
           if (refs[0]) close(refs[0]);
           return;
         }
+        // A .pptx deck routes the same way — chosen slide(s) become SVG assets via
+        // the lazy pptx-import chunk. Same collect/slot semantics as the PDF branch.
+        if (isPptxUpload(file)) {
+          const { ingestPptxAsSvgAssets } = await import('./pptx-import.ts');
+          const refs = await ingestPptxAsSvgAssets(host, file, {
+            mode: collect ? 'multi' : 'single',
+            warn: (m) => announce(m, { assertive: true }),
+          });
+          if (collect) { for (const r of refs) await collect.onAsset(r); if (refs.length) collectToast(true); return; }
+          if (refs[0]) close(refs[0]);
+          return;
+        }
         const ref = await storeUserUpload(host, file);
         if (collect) { collectToast(await collect.onAsset(ref)); return; }
         close(ref);
@@ -909,6 +947,25 @@ async function render(
     if (!ref) return;
     if (collect) { collectToast(await collect.onAsset(ref)); return; }
     close(ref);
+  });
+
+  // "Capture screen": the browser's own display picker IS the selection UI —
+  // recorder.still() prompts it, grabs one frame, and stops the share immediately.
+  // The frame takes the SAME ingest path as a webcam shot (storeUserUpload), so
+  // resize/metadata/provenance handling stays identical across capture sources.
+  root.querySelector('.asset-picker-screencap')?.addEventListener('click', async () => {
+    try {
+      const blob = await host.recorder!.still({ source: 'screen' });
+      const file = new File([blob], `screen-${Date.now()}.png`, { type: blob.type || 'image/png' });
+      const ref = await storeUserUpload(host, file);
+      if (collect) { collectToast(await collect.onAsset(ref)); return; }
+      close(ref);
+    } catch (e) {
+      // Dismissing the browser's share picker is a cancel, not a failure.
+      if ((e as Error | null)?.name === 'NotAllowedError') return;
+      host.log('error', 'Screen capture failed', { error: String(e) });
+      announce(t('Couldn’t capture the frame.'), { assertive: true });
+    }
   });
 
   // Library sections + bucketing live in lib/asset-category.ts (shared with the Catalog
@@ -957,7 +1014,7 @@ async function render(
     catbarEl.innerHTML = libraryGroupKeys.map(key => {
       const on = !collapsedGroups.has(key);
       const label = t(categoryLabel(key));
-      return `<button type="button" class="asset-picker-catbtn${on ? ' is-active' : ''}" data-cat-filter="${escapeHtml(key)}" aria-pressed="${on}" aria-label="${escapeHtml(label)}" data-tip="${escapeHtml(label)}">
+      return `<button type="button" class="asset-picker-catbtn${on ? ' is-active' : ''}" data-cat-filter="${escapeHtml(key)}" aria-pressed="${on}" aria-label="${escapeHtml(label)}" data-tip="${escapeHtml(label)}" data-tip-below>
         <span class="asset-picker-catbtn-glyph">${categoryGlyph(key)}</span>
       </button>`;
     }).join('');
@@ -1501,6 +1558,68 @@ async function render(
     renderPreview();
   }
 
+  // A pasted https URL that ISN'T a Lolly link. Where the shell can capture pages
+  // (extension / Tauri) and a raster screenshot would serve this slot, offer to
+  // screenshot it; on a Chromium browser WITHOUT capture, point at the extension
+  // (the same install affordance the capture tools use); otherwise keep the plain
+  // "can't open" message.
+  function showUrlFallback(url: string): void {
+    if (canCaptureUrl) { showUrlCaptureCard(url); return; }
+    const offerExtension = captureCouldServe && isChromium();
+    showTakeover(`
+      <p class="asset-picker-empty">${t("That isn't a Lolly tool link this app can open.")}${offerExtension
+        ? `<br>${t('Add the free Lolly screenshot extension and any web page can drop in here as an image — install it, then reload.')}`
+        : ''}</p>
+      ${offerExtension ? `<div class="asset-picker-toolcard-actions" style="justify-content:center">
+        <a class="tc-back" href="${escapeHtml(docsHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a>
+      </div>` : ''}`);
+  }
+
+  // The "Screenshot this page" card. The capture bridge does the real work (extension
+  // DevTools / Tauri webview); the shot is stored through storeUserUpload — the same
+  // ingest as an upload/webcam frame, so it lands in "Your images" with identical
+  // metadata/provenance handling — then fills the slot (or the collect folder).
+  function showUrlCaptureCard(url: string): void {
+    showTakeover(`
+      <div class="asset-picker-toolcard">
+        <div class="asset-picker-toolcard-head">
+          <button type="button" class="asset-picker-toolcard-back" aria-label="${escapeHtml(t('Back to list'))}">←</button>
+          ${icon('monitor', { size: 16 })}
+          <span>${t('Not a Lolly link — screenshot this page as your image?')}</span>
+        </div>
+        <p class="asset-picker-capture-url">${escapeHtml(url)}</p>
+        <p class="asset-picker-error cap-error" hidden></p>
+        <div class="asset-picker-toolcard-actions">
+          <button type="button" class="tc-use cap-shoot">${t('Screenshot this page')}</button>
+        </div>
+      </div>`);
+    toolcardHost.querySelector('.asset-picker-toolcard-back')?.addEventListener('click', dismissTakeover);
+    const goBtn = toolcardHost.querySelector<HTMLButtonElement>('.cap-shoot')!;
+    const errEl = toolcardHost.querySelector<HTMLElement>('.cap-error')!;
+    goBtn.addEventListener('click', async () => {
+      goBtn.disabled = true;
+      goBtn.classList.add('is-rendering');
+      goBtn.textContent = t('Capturing page…');
+      errEl.hidden = true;
+      try {
+        // Viewport-shaped (the url-shot default) — the slot's true box isn't known here.
+        const shot = await host.capture!.page({ url, width: 1280, height: 800 });
+        const blob = await (await fetch(shot.url)).blob();
+        const file = new File([blob], `screenshot-${Date.now()}.png`, { type: blob.type || 'image/png' });
+        const ref = await storeUserUpload(host, file);
+        if (collect) { dismissTakeover(); collectToast(await collect.onAsset(ref)); return; }
+        close(ref);
+      } catch (e) {
+        host.log('error', 'URL screenshot failed', { url, error: String(e) });
+        goBtn.disabled = false;
+        goBtn.classList.remove('is-rendering');
+        goBtn.textContent = t('Screenshot this page');
+        errEl.textContent = t('Couldn’t capture that page: {message}', { message: (e as Error).message });
+        errEl.hidden = false;
+      }
+    });
+  }
+
   // Open a saved single-tool session as an image: reconstruct its canonical embed
   // URL from the stored values (the same createRuntime → serializeUrlState → buildEmbedUrl
   // recipe the in-place editor uses) and hand it to the render card. Pre-configured,
@@ -1661,7 +1780,7 @@ async function render(
         const desc = await host.compose._describeUrl(raw).catch(() => null);
         if (seq !== detectSeq) return; // superseded by a newer keystroke
         if (desc) showToolCard(desc, raw, { editUrl: raw });
-        else showTakeover(`<p class="asset-picker-empty">${t("That isn't a Lolly tool link this app can open.")}</p>`);
+        else showUrlFallback(raw);
         return;
       }
       detectSeq++; // invalidate any in-flight detection now that it's not a URL

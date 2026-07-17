@@ -48,9 +48,15 @@ function capResponse(res: Response, cap: number): Response {
 }
 
 function matches(pattern: string, url: string): boolean {
-  // Simple prefix-match for now. Supports trailing wildcards: "https://api.example.com/*"
+  // Simple prefix-match for now. Supports trailing wildcards: "https://api.example.com/*".
+  // The prefix must end at a path separator — the manifest schema requires the "/*" form,
+  // and this enforces the same boundary for hand-fed allowlists (CLI/TUI opts) — so an
+  // entry like "https://api.example.com*" can never bleed into a lookalike host such as
+  // "https://api.example.com.evil.io/".
   if (pattern.endsWith('*')) {
-    return url.startsWith(pattern.slice(0, -1));
+    let prefix = pattern.slice(0, -1);
+    if (!prefix.endsWith('/')) prefix += '/';
+    return url.startsWith(prefix);
   }
   return url === pattern;
 }

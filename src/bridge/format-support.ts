@@ -48,6 +48,17 @@ export function canRecord(): boolean {
          typeof HTMLCanvasElement.prototype.captureStream === 'function';
 }
 
+// Live capture ("Record live" on webm/mp4) needs a display-capture source plus a
+// usable recorder. Deliberately does NOT require CropTarget: any browser with
+// getDisplayMedia can take live-capture.ts's calibrated-crop tier — Chromium just
+// gets the exact element crop for free. Mobile browsers (no getDisplayMedia) and
+// Tauri WebViews fail the probe, so the toggle never shows where it can't work.
+export function liveCaptureSupport(): boolean {
+  return typeof navigator !== 'undefined' &&
+         typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
+         canRecord();
+}
+
 // Which video containers this browser can actually record. Safari/iOS = mp4 only;
 // Firefox = webm only; recent Chrome = both. The view uses this to gate the format
 // picker so users only see formats their browser can produce. Deliberately probes

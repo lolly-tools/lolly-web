@@ -39,6 +39,7 @@
 @import './parts/buttons.css'      layer(primitives); /* .btn/.btn--primary/.btn--glass — primitives layer, so view rules extend them */
 @import './parts/chips.css'        layer(primitives); /* .chip/.card/.section-header */
 @import './parts/disclosure.css'   layer(primitives); /* .section-card fold primitive (rec 7) */
+@import './parts/tooltip.css'      layer(primitives); /* [data-tip] — the ONE styled tooltip */
 @import './parts/gallery.css'      layer(chrome);
 @import './parts/featured.css'     layer(chrome);
 @import './parts/topbar.css'       layer(chrome);

@@ -20,7 +20,8 @@ import { icon } from '../lib/icons.ts';
 import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
-import { syncCatalog } from '../catalog/sync.ts';
+import { syncCatalog, prefetchAssetsById } from '../catalog/sync.ts';
+import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
 import { privacyNoticeMarkup, mountPrivacyNotice } from './privacy-notice.ts';
 import { personalizeNudgeMarkup, mountPersonalizeNudge } from './personalize-nudge.ts';
 import { profileSignature, canPersonalize, regeneratePreviews } from '../personalize-previews.ts';
@@ -35,6 +36,8 @@ import type { FeaturedEntry, FeaturedManifest, FeaturedVariant, FeaturedRowHandl
 import { loadFavourites, saveFavourites } from '../lib/favourites.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
+import { attachDropRouter } from '../lib/drop-router.ts';
+import type { PickerHost } from './picker.ts';
 import { announce } from '../a11y.ts';
 import { playSfx, playGalleryAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { sessionRow } from '../folder-tiles.ts';
@@ -188,6 +191,9 @@ const HISTORY_ICON = icon('history');
 
 // Lucide "star" — the per-card favourite toggle. Filled via CSS when active (.is-fav).
 const STAR_ICON = icon('star');
+// Lucide "pin" — the per-card "available offline" toggle. Filled via CSS when
+// active (.is-pinned) — the filled state doubles as the pinned indicator.
+const PIN_ICON = icon('pin');
 // Sentinel category id for the starred-favourites filter (not a real catalog category).
 const FAV_CAT = 'favourites';
 
@@ -344,10 +350,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   // featured + utility strips, pill counts) excludes them with no per-site guard. They
   // still load via #/tool/<id>, URL mode and the CLI — this only hides them from the listing.
   const index: { tools: GalleryTool[] } = { tools: rawIndex.tools.filter(t => t.listed !== false) };
-  const [savedEntries, profile, sessionSizes] = await Promise.all([
+  const [savedEntries, profile, sessionSizes, pinnedTools] = await Promise.all([
     host.state.list(),
     host.profile.get(),
     host.state.sizes().catch((): Record<string, number> => ({})),
+    // Tools pinned "available offline" (lib/offline-pins.ts) — drives each card's
+    // pin toggle state. Unreadable pins just render every card unpinned.
+    pinnedToolIds().catch(() => new Set<string>()),
   ]);
 
   // Profile-personalized previews (see ../personalize-previews.js). `sig` is empty
@@ -421,6 +430,21 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   // promoted INTO the featured hero strip — see featuredEntriesNow().
   const favourites = loadFavourites(profile);
   const isFav = (id: string): boolean => favourites.has(id);
+  const isPinned = (id: string): boolean => pinnedTools.has(id);
+
+  // Editor-layout tools mount an extra lazy view chunk (free-canvas / doc-editor /
+  // deck-editor — see views/tool.ts). Warm the matching import when a tool is
+  // pinned, and once per gallery mount for already-pinned tools, so the chunk
+  // lands in the SW's cache-first bucket and a pinned editor tool still boots
+  // offline. import() promises are cached, so repeats are free.
+  const warmEditorChunk = (layout: string | undefined): void => {
+    if (layout === 'editor') void import('./free-canvas.ts').catch(() => {});
+    else if (layout === 'document') void import('./doc-editor.ts').catch(() => {});
+    else if (layout === 'deck') void import('./deck-editor.ts').catch(() => {});
+  };
+  if (pinnedTools.size) {
+    void pinnedRenderLayouts().then(layouts => layouts.forEach(warmEditorChunk)).catch(() => {});
+  }
   // Favourites visible in the current catalog (not hidden by a flag) — the pill count.
   const favCount = (): number => index.tools.filter(t => favourites.has(t.id) && !hidden.has(t.category)).length;
 
@@ -548,6 +572,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     headshotId: profile.headshot?.id,
   });
 
+  // Universal drop front door: any file dragged onto the gallery is sniffed and
+  // routed (design → Layout Studio, PDF → import/compress, media → library or
+  // /verify). Scoped to this view's root and torn down on navigation — never a
+  // window/document-global handler. The cast is erased: the concrete web host
+  // carries the picker's upload surface.
+  attachDropRouter(viewEl, host as unknown as PickerHost);
+
   // Empty catalog: offer a re-sync without a full reload.
   viewEl.querySelector('.gallery-retry')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
@@ -671,7 +702,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     const target = e.target as HTMLElement;
     // Controls with their own behaviour (fav/info/history/resume, carousel nav/dots) already
     // stopPropagation or preventDefault; skip anything inside them defensively.
-    if (target.closest('.gcar-nav, .gcar-dot, [data-fav], [data-info], [data-history], [data-resume]')) return;
+    if (target.closest('.gcar-nav, .gcar-dot, [data-fav], [data-pin], [data-info], [data-history], [data-resume]')) return;
     const tile = target.closest<HTMLElement>('.gtile');
     const gcar = tile?.querySelector<HTMLElement>('.gcar');
     if (!tile || !gcar) return;
@@ -1031,7 +1062,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   function render(): void {
     if (!masonry) return;
     masonry.innerHTML = allTools
-      .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), thumbsByTool(t.id), darkTheme))
+      .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), isPinned(t.id), thumbsByTool(t.id), darkTheme))
       .join('');
     masonry.append(noResults);
     tileById.clear();
@@ -1127,6 +1158,42 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
         if (!toolById.get(id)?.featured) refreshFeatured();
         if (activeCat === FAV_CAT) applyView(); // in the Favourites view the card must now hide/show in place
         else renderPills();                    // otherwise just refresh the pill count
+      });
+    });
+    // Pin / unpin ("available offline"). Pinning fetches the tool's files + its
+    // manifest-declared catalog assets into the offline caches (lib/offline-pins.ts);
+    // the button's filled state doubles as the pinned indicator. Busy-guarded so a
+    // double-tap can't race an in-flight pin against an unpin.
+    container.querySelectorAll<HTMLElement>('[data-pin]').forEach(el => {
+      el.addEventListener('click', async (e) => {
+        e.stopPropagation(); e.preventDefault();
+        if (el.classList.contains('is-busy')) return;
+        const id = el.dataset.pin!;
+        const nm = toolById.get(id)?.name ?? id;
+        const on = !pinnedTools.has(id);
+        el.classList.add('is-busy');
+        try {
+          if (on) {
+            // Same erased cast as the syncCatalog call above — the concrete web host
+            // satisfies sync's structural SyncHost slice at runtime.
+            const manifest = await pinTool(id, ids => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], ids));
+            pinnedTools.add(id);
+            warmEditorChunk(manifest.render?.layout);
+          } else {
+            await unpinTool(id);
+            pinnedTools.delete(id);
+          }
+          el.classList.toggle('is-pinned', on);
+          el.setAttribute('aria-pressed', String(on));
+          el.title = on ? t('Available offline') : t('Keep available offline');
+          el.setAttribute('aria-label', on ? t('Remove {name} from offline', { name: nm }) : t('Keep {name} available offline', { name: nm }));
+          announce(on ? t('{name} is available offline', { name: nm }) : t('{name} removed from offline', { name: nm }));
+        } catch (err) {
+          host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
+          announce(t('Couldn’t save {name} for offline — check your connection', { name: nm }), { assertive: true });
+        } finally {
+          el.classList.remove('is-busy');
+        }
       });
     });
     // Info + history modals.
@@ -1393,7 +1460,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     const welcome = await import('../components/welcome-dialog.ts');
     if (!galleryRoot.isConnected) return; // navigated away while the chunk loaded
     welcome.mountBrandTips(viewEl.querySelector<HTMLElement>('.tool-masonry'));
-    if (!welcome.isWelcomeDismissed()) void welcome.showWelcomeDialog(host.profile); // 'brand' navigates itself
+    // 'brand' navigates itself; the upload host enables the "Bring your design" card.
+    if (!welcome.isWelcomeDismissed()) void welcome.showWelcomeDialog(host.profile, host as unknown as PickerHost);
   })();
 
   // Profile-personalized previews: once the user has opted in to "use my details",
@@ -1444,6 +1512,7 @@ function cardMarkup(
   personalizedThumb: string | undefined,
   isNew = false,
   isFav = false,
+  isPinned = false,
   sessionThumbs: string[] = [],
   darkTheme = false,
 ): string {
@@ -1645,6 +1714,7 @@ function cardMarkup(
       </div>
       <div class="gtile-actions">
         <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: tool.name }) : t('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
+        ${unavailable ? '' : `<button type="button" class="gtile-iconbtn gtile-pin${isPinned ? ' is-pinned' : ''}" data-pin="${escape(tool.id)}" aria-pressed="${isPinned}" title="${escape(isPinned ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(isPinned ? t('Remove {name} from offline', { name: tool.name }) : t('Keep {name} available offline', { name: tool.name }))}">${PIN_ICON}</button>`}
         <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
         ${historyBtn}
       </div>

@@ -518,7 +518,7 @@ button.cat-download { font: inherit; cursor: pointer; }
 }
 .cat-zoom-btn:hover { background: #ffffff26; }
 .cat-zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
-.cat-zoom-pct { min-width: 46px; font-variant-numeric: tabular-nums; }
+.cat-zoom-pct { min-width: 46px; font-variant-numeric: tabular-nums; color: white; background: transparent; appearance: none;    border: 0;}
 /* Play/pause overlay for the details-modal Lottie player. Bottom-left of the preview, clear of
    the centred zoom HUD and the vertically-centred prev/next chevrons. z-index above the stage so
    the stage's wheel/drag surface doesn't swallow the click. */
