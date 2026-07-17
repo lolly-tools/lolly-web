@@ -129,10 +129,10 @@
    .chip--flag in shape (small, bold, letter-spaced label) but a different
    species (3px corner-badge radius, not a 999px pill; positioned, not inline)
    so it stays its own full recipe rather than joining that merge. */
-.plat-chip-flag {
-  position: absolute; top: 4px; right: 4px;
-  font-size: .55rem; font-weight: 700; letter-spacing: .04em; line-height: 1;
-  padding: .2rem .32rem; border-radius: 3px;
+.plat-chip-flag { font-family:"SUSE Mono";
+  position: absolute; top: .25rem; right: .5rem;
+  font-size: .55rem; font-weight: 700; letter-spacing: -.04em; line-height: 1;
+  padding: .2rem .32rem; border-radius: calc(var(--radius)*.6);
   background: hsl(0 0% 100% / .88); color: hsl(0 0% 10%);
 }
 .plat-chip-flag.is-static { position: static; display: inline-block; }
