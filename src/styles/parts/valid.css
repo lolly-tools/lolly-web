@@ -177,7 +177,7 @@
   margin: 0;
   border-radius: calc(var(--radius) - 0.35rem);
   overflow: hidden;
-  border: 1px solid hsl(var(--border));
+  border: 0;
   background:
     conic-gradient(from 90deg, hsl(var(--muted-foreground) / 0.10) 25%, transparent 0 50%, hsl(var(--muted-foreground) / 0.10) 0 75%, transparent 0) 0 0 / 22px 22px,
     hsl(var(--muted) / 0.5);
