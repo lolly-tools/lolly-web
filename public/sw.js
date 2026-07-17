@@ -16,7 +16,9 @@
  *
  *   3. Tool files under /tools/ (template.html, styles.css, hooks.js, tool-local
  *      assets) → NETWORK-FIRST with a timeout race, so a deploy propagates
- *      immediately and a slow/dead connection still falls back to cache.
+ *      immediately and a slow/dead connection still falls back to cache — first
+ *      this generation's cache, then the separate PIN_CACHE bucket that holds
+ *      tools the user pinned "available offline" (lib/offline-pins.ts).
  *
  *   4. Preview images + the preview-look bundle under /catalog/previews/ →
  *      STALE-WHILE-REVALIDATE: serve the cached copy instantly (no blocking
@@ -38,7 +40,15 @@
  * entries on activate (a one-time clear of anything already gone stale).
  */
 
-const CACHE = 'lolly-v10';
+const CACHE = 'lolly-v11';
+
+// Tools pinned "available offline": the page writes /tools/<id>/* copies into
+// this SEPARATE, unversioned bucket (shells/web/src/lib/offline-pins.ts — keep
+// the two literals in sync). Deliberately NOT tied to the CACHE generation:
+// activate below never deletes it, so pins survive service-worker updates. The
+// page owns its lifecycle (pin writes, unpin deletes); the fetch path only
+// READS it, as the last-resort fallback for /tools/ requests.
+const PIN_CACHE = 'lolly-pins';
 
 // Stable key the app-shell document is cached under for the offline fallback.
 // Every navigation (/, /pro, /tool/...) resolves to the same SPA index.html, so
@@ -88,9 +98,17 @@ const CACHE_PATTERNS = [
   /^\/tools\//,
 ];
 
+// TrustMark ONNX watermark-decoder models (/verify's "Deep scan for
+// watermarks", tens of MB each) bypass the SW's own Cache Storage entirely —
+// shells/web/src/lib/trustmark.ts fetches and caches the bytes itself in
+// IndexedDB (mirroring the Google-Fonts fetch-once pattern), so letting the
+// SW ALSO cache them here would just double the on-device copies for no
+// benefit. Listed explicitly (rather than relying on falling through
+// unmatched) so a future edit to CACHE_PATTERNS can't accidentally catch it.
 const BYPASS_PATTERNS = [
   /^\/catalog\//,
   /^\/api\//,
+  /^\/models\//,
 ];
 
 self.addEventListener('install', event => {
@@ -103,10 +121,10 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  // Remove caches from previous versions.
+  // Remove caches from previous versions (never the pin bucket — see PIN_CACHE).
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE && k !== PIN_CACHE).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
@@ -243,8 +261,11 @@ async function networkFirst(event) {
   clearTimeout(timer);
   if (winner && winner.ok) return winner;
 
-  // Network lost the race (slow), failed, or returned non-ok → try cache.
-  const cached = await cache.match(request);
+  // Network lost the race (slow), failed, or returned non-ok → try this
+  // generation's cache, then the pinned-tools bucket (a pinned tool must serve
+  // even if it was never opened during this cache generation).
+  const cached = await cache.match(request)
+    || await caches.match(request, { cacheName: PIN_CACHE }).catch(() => undefined);
   if (cached) {
     event.waitUntil(network); // let the slow fetch finish and update the cache
     return cached;

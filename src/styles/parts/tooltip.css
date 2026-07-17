@@ -1,0 +1,76 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* ── Tooltip primitive — the app's ONE styled tooltip. ──────────────────────────
+   Opt in by putting `data-tip="Label"` on any element (promoted from the asset
+   picker's category buttons, the original recipe). A small bubble appears ABOVE
+   the element on hover or keyboard focus — above the pointer, so the finger/cursor
+   never covers it; carry the same text in aria-label for assistive tech (the bubble
+   is a pseudo-element, presentation only, never read).
+
+   Opt-out: `data-tip-below` drops the bubble BELOW instead, for hosts hugging the
+   TOP of a scrolling/clipping container (e.g. the asset picker's sticky category
+   bar) where an above-bubble would be clipped.
+
+   Contract: the host element becomes position:relative (anchors the bubble) and
+   must tolerate that. Prefer this over native title= for interactive chrome —
+   title is invisible to keyboard and touch users, and the browser draws it BELOW
+   the cursor where the pointer covers it. */
+
+[data-tip] { position: relative; }
+
+/* Default: ABOVE the element. */
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  padding: 4px 8px;
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 6;
+}
+[data-tip]::before {
+  content: "";
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: hsl(var(--foreground));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 6;
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+[data-tip]:hover::before,
+[data-tip]:focus-visible::before { opacity: 1; }
+
+/* Opt-out: BELOW the element (top-hugging hosts that would clip an above-bubble). */
+[data-tip-below]::after {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform: translateX(-50%) translateY(-3px);
+}
+[data-tip-below]::before {
+  top: calc(100% + 3px);
+  bottom: auto;
+  border-top-color: transparent;
+  border-bottom-color: hsl(var(--foreground));
+}
+[data-tip-below]:hover::after,
+[data-tip-below]:focus-visible::after { transform: translateX(-50%) translateY(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tip]::after { transition: none; transform: translateX(-50%); }
+}

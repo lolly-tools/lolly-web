@@ -23,7 +23,7 @@
  */
 
 import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
-import { verifyC2pa, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark } from '@lolly/engine';
+import { verifyC2pa, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, analyzeLsb } from '@lolly/engine';
 import type { FileMetadata, MetaGroup, StripFormat } from '@lolly/engine';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
@@ -67,6 +67,7 @@ interface VerifyReport {
   trusted: boolean;
   madeWithLolly: boolean;
   likelyMadeWithLolly: boolean;
+  partsMadeWithLolly: boolean;
   delivered: boolean;
   format: string | null;
   checks: Check[];
@@ -188,8 +189,11 @@ const isExpectedRow = (c: Check): boolean => c.code === 'signingCredential.untru
 // …); this collapses them onto a stable eight so the hero reads as a consistent
 // glance, with each pip's state (pass / fail / warn / not-applicable) derived
 // from the actual rows — never hard-coded.
-interface ScorecardItem { icon: IconName; label: string; status: keyof typeof STATUS_WORD; hideStatus?: boolean; ash?: boolean; }
-function scorecardModel(report: VerifyReport): ScorecardItem[] {
+interface ScorecardItem { icon: IconName; label: string; status: keyof typeof STATUS_WORD; hideStatus?: boolean; ash?: boolean; statusWord?: string; }
+// A pip's status word: the shared pass/fail vocabulary unless the item carries
+// its own (the Lolly Imprint says "detected" — presence, not a graded check).
+const pipStatusWord = (it: ScorecardItem): string => it.statusWord ?? t(STATUS_WORD[it.status]);
+function scorecardModel(report: VerifyReport, watermark?: Watermark, extra: ScorecardItem[] = []): ScorecardItem[] {
   const cs = report.checks || [];
   const okRow = (code: string): boolean => cs.some((c) => c.ok && c.code === code);
   const badRow = (...codes: string[]): boolean => cs.some((c) => !c.ok && !isExpectedRow(c) && codes.includes(c.code));
@@ -208,6 +212,7 @@ function scorecardModel(report: VerifyReport): ScorecardItem[] {
     : (report.signer?.identity && present('signingCredential.expired')) ? 'warn' : na;
   const lollyMade = !!report.madeWithLolly;
   const lollyLikely = !!report.likelyMadeWithLolly;
+  const lollyParts = !!report.partsMadeWithLolly;
 
   return [
     // Yes/no, not a graded check: "Made with Lolly" (green tick), a "Likely"
@@ -216,10 +221,20 @@ function scorecardModel(report: VerifyReport): ScorecardItem[] {
     // applicable"/"invalid" would misword the amber and grey cases.
     {
       icon: 'lollipop',
-      label: lollyMade ? t('Made with Lolly') : lollyLikely ? t('Likely made with Lolly') : t('Not made with Lolly'),
-      status: lollyMade ? 'pass' : lollyLikely ? 'warn' : na,
+      label: lollyMade ? t('Made with Lolly') : lollyLikely ? t('Likely made with Lolly')
+        : lollyParts ? t('Parts made with Lolly') : t('Not made with Lolly'),
+      status: lollyMade ? 'pass' : (lollyLikely || lollyParts) ? 'warn' : na,
       hideStatus: !lollyMade,
     },
+    // The Lolly Imprint — detected in the pixels ON this device, so it earns a
+    // real pass pip, seated right beside the Made-with-Lolly verdict it backs.
+    // Present ONLY when found: absence is uninformative (resize erases it;
+    // non-Lolly rasters never carry it), so there is no fail/na state.
+    ...(watermark?.present ? [{ icon: 'imprint' as IconName, label: t('Lolly Imprint'), status: 'pass' as const, statusWord: t('detected') }] : []),
+    // Extra signal pips, seated up top with the other watermark facts: the
+    // SynthID/Meta likelihood pip (aiMarkPip) and the steganalysis heuristics
+    // (stegoPips) — built by the caller so both scorecards stay in sync.
+    ...extra,
     { icon: 'document', label: t('Manifest found'), status: found ? 'pass' : na },
     { icon: 'eye', label: t('Manifest readable'), status: readable },
     { icon: 'link', label: t('Assertions bound to the claim'), status: assertions },
@@ -235,13 +250,21 @@ function scorecardModel(report: VerifyReport): ScorecardItem[] {
   ];
 }
 
-function scorecardHtml(report: VerifyReport): string {
-  return `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${scorecardModel(report).map((it, i) =>
-    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" style="--i:${i}" aria-label="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(t(STATUS_WORD[it.status]))}`}">` +
+// One scorecard pip's markup — factored out of scorecardHtml so the
+// deep-scan click handler (mountValid) can append a freshly-found TrustMark
+// pip to a LIVE `<ul class="valid-score">` after the fact, using the exact
+// same template rather than re-rendering (and losing scroll/expand state)
+// on the whole report.
+function scorecardPipHtml(it: ScorecardItem, i: number): string {
+  return `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" style="--i:${i}" aria-label="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(pipStatusWord(it))}`}">` +
       `<span class="valid-score-ic" aria-hidden="true">${svgIcon(it.icon)}</span>` +
       `<span class="valid-score-label" aria-hidden="true">${escape(it.label)}</span>` +
-      (it.hideStatus ? '' : `<span class="valid-score-status" aria-hidden="true">${escape(t(STATUS_WORD[it.status]))}</span>`) +
-    `</li>`).join('')}</ul>`;
+      (it.hideStatus ? '' : `<span class="valid-score-status" aria-hidden="true">${escape(pipStatusWord(it))}</span>`) +
+    `</li>`;
+}
+
+function scorecardHtml(report: VerifyReport, watermark?: Watermark, extra?: ScorecardItem[]): string {
+  return `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${scorecardModel(report, watermark, extra).map(scorecardPipHtml).join('')}</ul>`;
 }
 
 function checkRow(c: Check, i = 0): string {
@@ -265,7 +288,15 @@ function fact(label: string, value: unknown, icon: IconName): string {
 // assertion-log) and placed ABOVE change history so an inspected asset tells its
 // "what it's made from" story before its "what happened to it" story. Empty in →
 // nothing rendered (so panelsBlock silently drops this column when there's no digest).
-export function inputsDigestHtml(inputs: Record<string, string> | undefined): string {
+// `recreate` (the /verify path only — the catalog/gallery callers pass none) adds
+// the "Recreate with these settings" CTA: the anchor's plain href opens a blank
+// session as the fallback; mountValid's delegated [data-recreate] handler upgrades
+// the click into a digest-seeded link (lib/seed-url.ts). Settings-honest wording:
+// the digest is scalar-only, so this reopens the recorded settings, not a clone.
+export function inputsDigestHtml(
+  inputs: Record<string, string> | undefined,
+  recreate?: { toolId: string; toolName: string; fileIndex: number },
+): string {
   const entries = inputs ? Object.entries(inputs).filter(([, v]) => v != null && v !== '') : [];
   if (!entries.length) return '';
   const isColor = (v: string): boolean => /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
@@ -273,11 +304,32 @@ export function inputsDigestHtml(inputs: Record<string, string> | undefined): st
     const sw = isColor(v) ? `<span class="valid-input-swatch" style="background:${escape(v)}" aria-hidden="true"></span>` : '';
     return `<div class="valid-input-row"><dt>${escape(k)}</dt><dd>${sw}<span>${escape(v)}</span></dd></div>`;
   }).join('');
+  const cta = recreate ? `
+      <a class="btn valid-recreate" style="margin-top:.65rem" href="#/tool/${escape(recreate.toolId)}"
+         data-recreate="${recreate.fileIndex}" data-recreate-tool="${escape(recreate.toolId)}">${t('Recreate with these settings in {tool}', { tool: escape(recreate.toolName) })}</a>` : '';
   return `
     <div class="valid-inputs valid-panel">
       <h3>${svgIcon('sparkle')}<span>${t('Made from')}</span></h3>
-      <dl class="valid-input-list">${rows}</dl>
+      <dl class="valid-input-list">${rows}</dl>${cta}
     </div>`;
+}
+
+// "Recreate in <tool>": env.tool records the tool's display NAME (the id only as
+// a fallback — engine/src/metadata.ts), and in whatever language the EXPORTER ran;
+// resolve it back to a live tool id against the loaded tool index by matching id,
+// name, and every i18n sidecar name, case-insensitively. No index yet, or no match
+// (a retired or foreign tool) → undefined and the CTA simply isn't offered.
+function resolveRecreateTool(recorded: unknown): { toolId: string; toolName: string } | undefined {
+  const wanted = typeof recorded === 'string' ? recorded.trim().toLowerCase() : '';
+  if (!wanted) return undefined;
+  for (const tool of window.__toolIndex?.tools ?? []) {
+    const i18nNames = Object.values((tool.i18n ?? {}) as Record<string, { name?: unknown } | undefined>).map((o) => o?.name);
+    const names = [tool.id, tool.name, ...i18nNames];
+    if (names.some((n) => typeof n === 'string' && n.trim().toLowerCase() === wanted)) {
+      return { toolId: tool.id, toolName: typeof tool.name === 'string' && tool.name ? tool.name : tool.id };
+    }
+  }
+  return undefined;
 }
 
 // The "checked on this device" footnote, wrapped as a professional callout: a
@@ -286,6 +338,18 @@ const deviceNote = (inner: string): string =>
   `<div class="valid-note">
     <span class="valid-note-ic" aria-hidden="true">${svgIcon('lock')}</span>
     <p class="valid-note-body">${inner}</p>
+  </div>`;
+
+// "You made this here" — the checked bytes hash-match an entry in this device's
+// own export history (lib/export-history.ts contentHash), so beyond anything the
+// credential claims we KNOW this exact file left this browser, and can reopen the
+// tool with the exact state it was downloaded with (the entry's reopen query).
+// Local knowledge only — independent of (and shown regardless of) the C2PA verdict.
+interface LocalExportMatch { href: string; at: number }
+const mineNote = (mine: LocalExportMatch): string =>
+  `<div class="valid-note valid-note--mine">
+    <span class="valid-note-ic" aria-hidden="true">${svgIcon('userCheck')}</span>
+    <p class="valid-note-body">${t('<strong>You made this here.</strong> This exact file matches one you exported on this device ({when}).', { when: escape(fmtDate(mine.at)) })} <a href="${escape(mine.href)}">${t('Reopen it exactly as it was')}</a></p>
   </div>`;
 
 const fmtDate = (iso: unknown): string => {
@@ -355,10 +419,10 @@ function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none' {
 
 // Icon-only mirror of the hero scorecard for the collapsed summary — the "highlights
 // showing when collapsed". Same eight pips, same colour = state, label as a tooltip.
-function miniScoreHtml(report: VerifyReport): string {
-  if (!report.found) return '';
-  return `<ul class="valid-score valid-score--mini" aria-hidden="true">${scorecardModel(report).map((it) =>
-    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(t(STATUS_WORD[it.status]))}`}"><span class="valid-score-ic">${svgIcon(it.icon)}</span></li>`).join('')}</ul>`;
+function miniScoreHtml(report: VerifyReport, watermark?: Watermark, extra?: ScorecardItem[]): string {
+  if (!report.found && !watermark?.present && !extra?.length) return '';
+  return `<ul class="valid-score valid-score--mini" aria-hidden="true">${scorecardModel(report, watermark, extra).map((it) =>
+    `<li class="valid-score-pip is-${it.status}${it.ash ? ' is-ash' : ''}" title="${escape(it.label)}${it.hideStatus ? '' : `: ${escape(pipStatusWord(it))}`}"><span class="valid-score-ic">${svgIcon(it.icon)}</span></li>`).join('')}</ul>`;
 }
 
 // The always-visible summary row of a collapsible report: state badge, filename,
@@ -385,7 +449,7 @@ function reportMaker(report: VerifyReport): { names: string[]; lolly: boolean } 
   return { names, lolly: report.madeWithLolly || names.some((n) => /lolly/i.test(n)) };
 }
 
-function summaryInner(fileName: string, report: VerifyReport): string {
+function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadata, watermark?: Watermark): string {
   const { state, identity } = resolveState(report);
   // Attribution chip: OIDC email for a device credential, else the CA signer's
   // organisation (Google, Adobe…). Only when the chain reached a pinned anchor.
@@ -400,12 +464,16 @@ function summaryInner(fileName: string, report: VerifyReport): string {
   const lead = (tone === 'good' && maker)
     ? `<span class="valid-item-maker ${maker.lolly ? 'is-lolly' : 'is-other'}" title="${escape(t(state.title))}">${t('Made with {names}', { names: escape(maker.names.join(' · ')) })}</span>`
     : `<span class="valid-item-badge is-${tone}">${escape(t(state.title))}</span>`;
+  const aiDecl = report.aiGenerated ? t('Content Credential declares AI-generated content')
+    : meta?.ai ? t('Embedded metadata declares AI-generated content') : null;
+  const { origin, makerHint } = deriveAi(report, meta);
+  const isVideo = PREVIEW_VID.has((report.format || fileName.split('.').pop() || '').toLowerCase());
   return `
     ${lead}
-    ${report.aiGenerated ? `<span class="valid-item-ai" title="${escape(t('Content Credential declares AI-generated content'))}">${svgIcon('aiSpark')}<span>${t('AI')}</span></span>` : ''}
+    ${aiDecl ? `<span class="valid-item-ai" title="${escape(aiDecl)}">${svgIcon('aiSpark')}<span>${t('AI')}</span></span>` : ''}
     <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
     ${who ? `<span class="valid-item-signer" title="${escape(t('Signed by {who}', { who }))}">${svgIcon('mail')}<span>${escape(who)}</span></span>` : ''}
-    ${miniScoreHtml(report)}
+    ${miniScoreHtml(report, watermark, extraPips(origin, makerHint, isVideo, meta))}
     <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>`;
 }
 
@@ -481,33 +549,65 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
 }
 
 // ── AI-generated flag ───────────────────────────────────────────────────────
-// The loudest marker on the page: when a credential declares its pixels came
-// from a trained model, we say so in a purple, animated, unmissable banner.
+// The loudest marker on the page: when the file declares its pixels came from
+// a trained model, we say so in a purple, animated, unmissable banner. Two
+// declaration sources, two strengths of claim: a signed C2PA assertion
+// (report.aiGenerated), or the bare IPTC DigitalSourceType tag in the file's
+// embedded metadata (meta.ai) — the sidecar flag Gemini/Imagen, Midjourney and
+// Meta AI write alongside their invisible pixel watermarks. Either way the
+// banner also points at the invisible-watermark layer (SynthID, Video Seal…)
+// that we canNOT read on-device — declared honestly instead of over-claimed.
+interface AiOrigin { kind: 'generated' | 'composite'; via: 'credential' | 'metadata'; credit?: string }
 const AI_FLAG_COPY = {
-  generated: {
-    title: 'AI-generated content',
-    sub: 'This file’s Content Credential declares it was generated by AI — produced by a trained algorithmic model, not captured or hand-made.',
+  credential: {
+    generated: {
+      title: 'AI-generated content',
+      sub: 'This file’s Content Credential declares it was generated by AI — produced by a trained algorithmic model, not captured or hand-made.',
+    },
+    composite: {
+      title: 'Contains AI-generated content',
+      sub: 'This file’s Content Credential declares AI-generated elements were composited in — part of it was produced by a trained algorithmic model.',
+    },
   },
-  composite: {
-    title: 'Contains AI-generated content',
-    sub: 'This file’s Content Credential declares AI-generated elements were composited in — part of it was produced by a trained algorithmic model.',
+  metadata: {
+    generated: {
+      title: 'AI-generated content',
+      sub: 'This file’s embedded metadata declares it was generated by AI — the IPTC “digital source type” tag its generator wrote next to the pixels. The tag is genuine when present but trivially stripped, so its absence never proves the opposite.',
+    },
+    composite: {
+      title: 'Contains AI-generated content',
+      sub: 'This file’s embedded metadata declares AI-generated elements were composited in — a tag written by the editing tool, and easily stripped.',
+    },
   },
 };
-function aiFlagHtml(report: VerifyReport): string {
-  if (!report.aiGenerated) return '';
-  const c = AI_FLAG_COPY[report.aiGenerated.kind];
+// Matches the makers whose AI output carries Google's SynthID pixel watermark
+// (Gemini/Imagen/Veo — and "Nano Banana", Gemini's image-model brand).
+const SYNTHID_MAKERS = /google|gemini|imagen|veo|nano.?banana/i;
+function aiFlagHtml(origin: AiOrigin | undefined, makerHint = ''): string {
+  if (!origin) return '';
+  const c = AI_FLAG_COPY[origin.via][origin.kind];
+  // The invisible-watermark layer: Google (and partners) stamp SynthID into the
+  // pixels themselves. We can't read it on-device — nobody outside the makers
+  // can — so we say what's likely and point at the only real detector.
+  const note = SYNTHID_MAKERS.test(`${origin.credit ?? ''} ${makerHint}`)
+    ? t('Google’s AI models also stamp an invisible <strong>SynthID</strong> watermark into the pixels themselves, so this file very likely carries one — it survives even when this label is stripped. Only Google’s tools can read it: {link}.', {
+        link: '<a href="https://deepmind.google/models/synthid/" target="_blank" rel="noopener">SynthID Detector</a>',
+      })
+    : t('Large AI generators also typically stamp an invisible watermark into the pixels themselves (Google’s SynthID — also adopted by OpenAI — or Meta’s Video Seal). It survives metadata stripping, but only each maker’s own detector can read it.');
   return `
     <div class="valid-ai-flag" role="alert">
       <span class="valid-ai-flag-ic" aria-hidden="true">${svgIcon('aiSpark')}</span>
       <span class="valid-ai-flag-text">
         <strong>${escape(t(c.title))}</strong>
         <span>${escape(t(c.sub))}</span>
+        ${origin.credit ? `<span class="valid-ai-flag-credit">“${escape(origin.credit)}”</span>` : ''}
+        <span class="valid-ai-flag-note">${note}</span>
       </span>
       <span class="valid-ai-flag-tag" aria-hidden="true">${t('AI')}</span>
     </div>`;
 }
 
-// ── Lolly pixel watermark ─────────────────────────────────────────────────────
+// ── Lolly Imprint (our pixel watermark) ──────────────────────────────────────
 // Shown ONLY when the in-pixel mark is found (absence is uninformative — resize
 // erases it and non-Lolly rasters never carry it, so "not found" must never read
 // as "not made with Lolly"). Deliberately quiet and clearly secondary to the
@@ -518,10 +618,110 @@ function watermarkNote(wm: Watermark | undefined): string {
     <div class="valid-wm" role="note">
       <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
       <div class="valid-wm-text">
-        <strong>${t('Lolly pixel watermark present')}</strong>
-        <span>${t("An imperceptible mark Lolly can embed in the pixels of a raster export. Unlike the Content Credential — which travels in metadata and is lost to a re-save or strip — this rides in the image itself and survives recompression, so it's a durable hint that the image came from Lolly. A supporting signal, not a cryptographic guarantee.")}</span>
+        <strong>${t('Lolly Imprint present')}</strong>
+        <span>${t("The Lolly Imprint is an imperceptible watermark Lolly can embed in the pixels of a raster export. Unlike the Content Credential — which travels in metadata and is lost to a re-save or strip — it rides in the image itself and survives recompression, so it's a durable hint that the image came from Lolly. A supporting signal, not a cryptographic guarantee.")}</span>
       </div>
     </div>`;
+}
+
+// ── Deep scan for third-party watermarks (Adobe TrustMark) ──────────────────
+// A user-invoked, lazy-loaded action — see plans/watermark-detectors.md. The
+// neural decoder (shells/web/src/lib/trustmark.ts) is tens of MB and must
+// NEVER load on the default verify path, so this is a plain button that
+// dynamic-imports the module on click (wireDeepScan in mountValid); nothing
+// here imports it eagerly. Reuses the Lolly Imprint's `.valid-wm` styling for
+// the positive-result note (same "a durable in-pixel mark was found" idea,
+// different maker) rather than inventing new CSS.
+const TRUSTMARK_DETECTED_PIP: ScorecardItem = {
+  icon: 'imprint', label: '', status: 'pass', statusWord: '',
+};
+/** Builds the scorecard pip for a positive TrustMark decode — a real
+ *  on-device, ECC-validated read, so (like the Lolly Imprint) it earns a
+ *  green pass pip rather than the amber SynthID/Meta likelihood wording. */
+function trustmarkPip(): ScorecardItem {
+  return { ...TRUSTMARK_DETECTED_PIP, label: t('TrustMark'), statusWord: t('detected') };
+}
+function trustmarkNoteHtml(payloadHex: string, schema: string): string {
+  return `
+    <div class="valid-wm" role="note">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
+      <div class="valid-wm-text">
+        <strong>${t('Adobe TrustMark detected')}</strong>
+        <span>${t('A TrustMark watermark ({schema}) was decoded from the pixels and passed its error-correction check — a real, on-device read, not a guess. Recovered payload: {payload}', { schema: escape(schema), payload: `<code>${escape(payloadHex)}</code>` })}</span>
+      </div>
+    </div>`;
+}
+// The button + its results slot, appended below the hero scorecard. Gated to
+// formats the deep-scan pixel decode can actually read (WM_DECODABLE) —
+// hidden entirely for PDF/video/TIFF/SVG rather than shown-then-disabled.
+function deepScanBlock(fileIndex: number, format: string | null, fileName: string): string {
+  const fmt = (format || fileName.split('.').pop() || '').toLowerCase();
+  if (!WM_DECODABLE.has(fmt)) return '';
+  return `
+    <div class="valid-deepscan" data-deepscan-block="${fileIndex}">
+      <button type="button" class="btn valid-deepscan-btn" data-deep-scan="${fileIndex}">${t('Deep scan for watermarks')}</button>
+      <span class="valid-busy" data-deepscan-status="${fileIndex}" hidden></span>
+      <div data-deepscan-result="${fileIndex}"></div>
+    </div>`;
+}
+
+// ── AI declaration + third-party watermark pip ──────────────────────────────
+// The AI declaration, from either source: the signed credential wins (stronger
+// claim), else the bare IPTC tag in the file's embedded metadata (meta.ai).
+// `makerHint` joins everything that names the maker — the claim generator, the
+// agents on AI-sourced history steps, and the software/credit fields read from
+// bare metadata — for the SynthID/Meta maker checks.
+function deriveAi(report: VerifyReport, meta: FileMetadata | undefined): { origin: AiOrigin | undefined; makerHint: string } {
+  const origin: AiOrigin | undefined = report.aiGenerated
+    ? { kind: report.aiGenerated.kind, via: 'credential' }
+    : meta?.ai
+      ? { kind: meta.ai.kind, via: 'metadata', credit: meta.ai.credit }
+      : undefined;
+  if (!origin) return { origin, makerHint: '' };
+  const gen = report.claim?.generatorInfo?.name != null ? String(report.claim.generatorInfo.name)
+    : typeof report.claim?.claimGenerator === 'string' ? report.claim.claimGenerator : '';
+  const makerHint = [
+    gen,
+    ...(report.history ?? []).filter((a) => AI_SOURCE_SLUGS[sourceSlug(a)]).map(stepAgent),
+    ...(meta?.fields ?? []).filter((f) => f.group === 'software' || f.label === 'Credit').map((f) => f.value),
+  ].filter(Boolean).join(' ');
+  return { origin, makerHint };
+}
+
+// SynthID / Meta's in-pixel watermarks can't be read outside their makers, so
+// their scorecard pip states likelihood: an amber pip whose label carries the
+// whole claim (no status word — "passed"/"invalid" would both misword it),
+// shown when the file's own AI declaration names a maker whose policy is to
+// watermark all AI output. The Lolly Imprint pip (a real on-device detection)
+// is appended in scorecardModel; this one rides beside it.
+const META_MAKERS = /meta\s?ai|imagined?\s+with\s+ai|\bemu\b/i;
+function aiMarkPip(origin: AiOrigin | undefined, makerHint: string, isVideo: boolean): ScorecardItem | null {
+  if (!origin) return null;
+  const hay = `${origin.credit ?? ''} ${makerHint}`;
+  if (SYNTHID_MAKERS.test(hay)) return { icon: 'aiSpark', label: t('SynthID likely'), status: 'warn', hideStatus: true };
+  if (META_MAKERS.test(hay)) return { icon: 'aiSpark', label: isVideo ? t('Meta Video Seal likely') : t('Meta AI watermark likely'), status: 'warn', hideStatus: true };
+  return null;
+}
+
+// Steganalysis pips — amber heuristics from the byte read (a payload appended
+// after the image container ends) and the shell's pixel pass (chi-square LSB
+// analysis, engine steganalysis.ts). The legitimate motion-photo append stays
+// out of the scorecard — it's disclosed in the metadata panel instead.
+function stegoPips(meta: FileMetadata | undefined): ScorecardItem[] {
+  const pips: ScorecardItem[] = [];
+  if (meta?.appended && meta.appended.kind !== 'video (motion photo)') {
+    pips.push({ icon: 'package', label: t('Hidden data appended'), status: 'warn', hideStatus: true });
+  }
+  if (meta?.lsb?.suspicious) {
+    pips.push({ icon: 'eye', label: t('LSB steganography likely'), status: 'warn', hideStatus: true });
+  }
+  return pips;
+}
+
+// One list for both scorecards: the SynthID/Meta likelihood pip + steganalysis.
+function extraPips(origin: AiOrigin | undefined, makerHint: string, isVideo: boolean, meta: FileMetadata | undefined): ScorecardItem[] {
+  const ai = aiMarkPip(origin, makerHint, isVideo);
+  return [...(ai ? [ai] : []), ...stegoPips(meta)];
 }
 
 // ── Change history (the recorded C2PA actions) ──────────────────────────────
@@ -680,6 +880,13 @@ type PreviewKind = 'image' | 'video' | 'pdf' | 'none';
 interface Preview { url?: string; kind: PreviewKind; format: string; name: string; }
 const PREVIEW_IMG = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'webp']);
 const PREVIEW_VID = new Set(['mp4', 'm4v', 'mov', 'webm']);
+// Raster formats a <canvas> can decode to RGBA — shared by the Lolly-Imprint/
+// LSB pixel pass (mountValid's pixelChecks) AND the TrustMark deep-scan
+// button's gating (deepScanBlock below), so both agree on what's checkable.
+// SVG is deliberately excluded even though it's in PREVIEW_IMG: watermarks
+// live in RASTER pixels, and rasterising a vector for the sake of a scan
+// would be meaningless (there is no pixel grid to have carried a mark).
+const WM_DECODABLE = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp']);
 function previewKind(format: string | null, name: string): PreviewKind {
   const f = (format || name.split('.').pop() || '').toLowerCase();
   if (PREVIEW_IMG.has(f)) return 'image';
@@ -702,7 +909,7 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
   return '';
 }
 
-function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark): string {
+function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark, mine?: LocalExportMatch): string {
   const { state, sub, identity } = resolveState(report);
   const claim: Partial<Claim> = report.claim ?? {};
   const signer: Partial<Signer> = report.signer ?? {};
@@ -711,6 +918,10 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const generator = claim.generatorInfo?.name
     ? `${claim.generatorInfo!.name}${claim.generatorInfo!.version ? ' ' + claim.generatorInfo!.version : ''}`
     : claim.claimGenerator;
+  // AI declaration (credential or bare metadata) + the extra scorecard pips it
+  // and the steganalysis reads imply — see deriveAi/aiMarkPip/stegoPips.
+  const { origin: aiOrigin, makerHint } = deriveAi(report, meta);
+  const pips = extraPips(aiOrigin, makerHint, preview?.kind === 'video', meta);
   // Who signed: the device credential's OIDC email when present, else the
   // organisation / common name from a CA signer's certificate (Google, Adobe,
   // Microsoft… carry no SAN email). Only shown when the chain reached a pinned
@@ -725,7 +936,11 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // has the room (see .valid-panels). madeFromBlock is placed ahead of stepsBlock
   // in panelsBlock below so it reads (and, on narrow viewports, stacks) directly
   // above change history.
-  const madeFromBlock = report.found && report.claim ? inputsDigestHtml(env.inputs) : '';
+  // The recreate CTA rides the digest panel only when the claim's own content is
+  // trustworthy (made / likely-made with Lolly — the digest IS a Lolly assertion)
+  // AND the recorded tool name resolves against this build's tool index.
+  const recreate = (report.madeWithLolly || report.likelyMadeWithLolly) ? resolveRecreateTool(env.tool) : undefined;
+  const madeFromBlock = report.found && report.claim ? inputsDigestHtml(env.inputs, recreate ? { ...recreate, fileIndex } : undefined) : '';
   const stepsBlock = report.found && report.claim ? stepsHtml(report) : '';
   const checksBlock = checksHtml(report);
   const selfnoteBlock = report.found && report.claim && !report.madeWithLolly ? `
@@ -797,6 +1012,12 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       : report.trusted
         ? `<span class="valid-hero-pill valid-hero-pill--trusted"><span class="valid-trusted-badge" aria-hidden="true">✓</span>${escape(t(state.title))}</span>`
         : `<span class="valid-hero-verdict">${escape(t(state.title))}</span>`;
+  // A file whose intact chain records Lolly steps without being a Lolly creation
+  // gets the amber lolly pill BESIDE the main verdict — credit for the Lolly leg
+  // without claiming the whole file (see engine partsMadeWithLolly).
+  const partsPill = report.partsMadeWithLolly
+    ? ` <span class="valid-hero-pill valid-hero-pill--likely-lolly" title="${escape(t('The provenance chain records steps made with Lolly, but the file as it stands was produced by another tool.'))}"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${t('Parts made with Lolly')}</span>`
+    : '';
   return `
     <div class="valid-result ${state.cls}">
       <div class="valid-top">
@@ -806,16 +1027,18 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
             <span class="valid-hero-icon">${report.madeWithLolly
     ? '<span class="valid-hero-logo" aria-hidden="true"></span>'
     : ICON_SHIELD}</span>
-            <h2><span class="valid-hero-filename">${escape(fileName)}</span> ${verdictHtml}</h2>
+            <h2><span class="valid-hero-filename">${escape(fileName)}</span> ${verdictHtml}${partsPill}</h2>
           </div>
           ${state === STATE_COPY.lolly ? lollyValidationsHtml
     : state === STATE_COPY.likelyLolly ? likelyLollyBadgesHtml
     : state === STATE_COPY.invalid ? invalidBadgesHtml
       : `<p>${sub}</p>${identityLine}`}
         </div>
-        ${report.found ? scorecardHtml(report) : ''}
+        ${report.found || watermark?.present || pips.length ? scorecardHtml(report, watermark, pips) : ''}
       </div>
-      ${aiFlagHtml(report)}
+      ${deepScanBlock(fileIndex, report.format, fileName)}
+      ${aiFlagHtml(aiOrigin, makerHint)}
+      ${mine ? mineNote(mine) : ''}
       ${panelsBlock}
       ${watermarkNote(watermark)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
@@ -932,7 +1155,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   // (EXIF/XMP/… — PDF via the shell's pdf bridge, everything else on the engine),
   // or an error message. Kept narrow so both the single- and multi-file paths
   // share the exact engine call. Bytes are read once and reused for both reads.
-  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark }> {
+  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark; mine?: LocalExportMatch }> {
     try {
       if (file.size > MAX_VERIFY_BYTES) {
         return { error: t('File is too large to verify here (over {n} MB).', { n: Math.round(MAX_VERIFY_BYTES / 1024 / 1024) }) };
@@ -940,19 +1163,54 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       const bytes = new Uint8Array(await file.arrayBuffer());
       const report = await verifyC2pa(bytes, VERIFY_OPTS);
       const meta = await readMetadata(bytes);
-      const watermark = await detectPixelWatermark(file, report.format);
-      return { report, meta, watermark };
+      const { watermark, lsb } = await pixelChecks(file, report.format) ?? {};
+      // The LSB verdict rides on the metadata object (it's "what the file
+      // quietly carries", same as the appended-payload read) — one object
+      // through the render pipeline instead of another parallel param.
+      if (meta && lsb) {
+        meta.lsb = lsb;
+        if (lsb.suspicious) {
+          meta.fields.push({ label: 'LSB analysis', value: t('pixel pair statistics match LSB steganography'), group: 'technical', sensitive: true });
+        }
+      }
+      const mine = await localExportByHash(bytes);
+      return { report, meta, watermark, mine };
     } catch (err) {
       return { error: (err as Error)?.message || String(err) };
     }
   }
 
-  // Decode a raster file to RGBA and run the engine's pixel-watermark detector.
-  // NB: no downscale — detection must see native-resolution pixels (a resize
+  // "You made this here": match the checked bytes back to this device's own export
+  // history by SHA-256 (the contentHash recordExport stores at download time). The
+  // history is read once per mount; no hashing at all when no entry carries a hash
+  // (pre-hash records, insecure contexts). Best-effort — never fails a verify.
+  let exportsByHash: Map<string, { href: string; at: number }> | null = null;
+  async function localExportByHash(bytes: Uint8Array): Promise<LocalExportMatch | undefined> {
+    try {
+      if (!exportsByHash) {
+        const { listExports, exportReopenHref } = await import('../lib/export-history.ts');
+        // listExports is newest-first; reverse so a re-downloaded file's NEWEST
+        // record wins the Map (last set for a duplicate hash).
+        exportsByHash = new Map((await listExports(24))
+          .filter((e) => e.contentHash)
+          .reverse()
+          .map((e) => [e.contentHash!, { href: exportReopenHref(e), at: e.at }]));
+      }
+      if (!exportsByHash.size) return undefined;
+      const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
+      const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      return exportsByHash.get(hex);
+    } catch { return undefined; }
+  }
+
+  // Decode a raster file to RGBA once and run every pixel-domain check on it:
+  // the engine's Lolly-Imprint detector, plus chi-square LSB steganalysis for
+  // PNG (the real-world LSB carrier — a lossy format's decoded LSBs are codec
+  // noise, not hidden bits, so the analysis would be meaningless there).
+  // NB: no downscale — the Imprint must see native-resolution pixels (a resize
   // shifts the 8×8 grid and erases the mark). Best-effort; anything we can't
   // decode (TIFF, SVG, PDF, video) or that faults returns undefined.
-  const WM_DECODABLE = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp']);
-  async function detectPixelWatermark(file: File, format: string | null): Promise<Watermark | undefined> {
+  async function pixelChecks(file: File, format: string | null): Promise<{ watermark?: Watermark; lsb?: FileMetadata['lsb'] } | undefined> {
     const fmt = (format || file.name.split('.').pop() || '').toLowerCase();
     if (!WM_DECODABLE.has(fmt)) return undefined;
     let bmp: ImageBitmap | undefined;
@@ -967,11 +1225,104 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       ctx.drawImage(bmp, 0, 0);
       const { data } = ctx.getImageData(0, 0, w, h);
       const r = detectWatermark(data, { width: w, height: h });
-      return { present: r.present, score: r.score };
+      const lsb = fmt === 'png' ? analyzeLsb(data, { width: w, height: h }) : undefined;
+      return {
+        watermark: { present: r.present, score: r.score },
+        lsb: lsb ? { suspicious: lsb.suspicious, score: lsb.score } : undefined,
+      };
     } catch {
       return undefined;
     } finally {
       bmp?.close?.();
+    }
+  }
+
+  // ── Deep scan for watermarks (Adobe TrustMark) ──────────────────────────
+  // A SEPARATE decode from pixelChecks' — deliberately: pixelChecks always
+  // runs (every verify), so keeping it free of anything that would pull in
+  // onnxruntime-web is what makes the default /verify path stay instant.
+  // This one only runs when the user clicks the button, and imports
+  // lib/trustmark.ts lazily right there.
+  async function decodeToRgba(file: File): Promise<{ data: Uint8ClampedArray; width: number; height: number } | undefined> {
+    let bmp: ImageBitmap | undefined;
+    try {
+      bmp = await createImageBitmap(file);
+      const w = bmp.width, h = bmp.height;
+      if (w < 8 || h < 8) return undefined;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return undefined;
+      ctx.drawImage(bmp, 0, 0);
+      const { data } = ctx.getImageData(0, 0, w, h);
+      return { data, width: w, height: h };
+    } catch {
+      return undefined;
+    } finally {
+      bmp?.close?.();
+    }
+  }
+
+  // Appends the TrustMark pip to the report's LIVE hero scorecard (creating
+  // one from scratch if the report had none — e.g. a file with no C2PA
+  // manifest, no Lolly Imprint and no AI declaration) rather than re-rendering
+  // the whole card, so nothing else in the report (scroll position, an
+  // already-open <details>, the masonry layout) is disturbed.
+  function injectTrustmarkPip(deepscanEl: HTMLElement): void {
+    const resultCard = deepscanEl.closest<HTMLElement>('.valid-result');
+    const scoreList = resultCard?.querySelector<HTMLElement>('.valid-score:not(.valid-score--mini)');
+    const pipHtml = scorecardPipHtml(trustmarkPip(), scoreList?.children.length ?? 0);
+    if (scoreList) {
+      scoreList.insertAdjacentHTML('beforeend', pipHtml);
+    } else {
+      deepscanEl.insertAdjacentHTML('beforebegin',
+        `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${pipHtml}</ul>`);
+    }
+  }
+
+  // Click handler for [data-deep-scan]: decode the file's pixels, lazily load
+  // the TrustMark module, and — ONLY on a positive (ECC-valid) detection —
+  // inject the green pip + the payload/schema note. Absence is never shown as
+  // a verdict (per plans/watermark-detectors.md): a negative or failed scan
+  // just says the scan ran and found nothing THIS check looks for, never
+  // "no watermark" / "clean".
+  async function runDeepScan(btn: HTMLButtonElement): Promise<void> {
+    const fileIndex = Number(btn.dataset.deepScan);
+    const file = activeFiles[fileIndex];
+    const block = btn.closest<HTMLElement>('[data-deepscan-block]');
+    const statusEl = block?.querySelector<HTMLElement>(`[data-deepscan-status="${fileIndex}"]`);
+    const resultEl = block?.querySelector<HTMLElement>(`[data-deepscan-result="${fileIndex}"]`);
+    if (!file || !block || !statusEl || !resultEl) return;
+
+    btn.disabled = true;
+    statusEl.hidden = false;
+    statusEl.textContent = t('Scanning… (loading a small model on first use)');
+    try {
+      const [pixels, { detectTrustmark }] = await Promise.all([
+        decodeToRgba(file),
+        import('../lib/trustmark.ts'),
+      ]);
+      if (!pixels) {
+        statusEl.textContent = t('Couldn’t read this image’s pixels to scan it.');
+        return;
+      }
+      const result = await detectTrustmark(pixels.data, pixels.width, pixels.height);
+      if (result.present) {
+        injectTrustmarkPip(block);
+        resultEl.innerHTML = trustmarkNoteHtml(result.payloadHex ?? '', result.schema ?? '');
+        statusEl.hidden = true;
+        btn.hidden = true; // found it — the button's job here is done
+      } else {
+        // Hedged, not a verdict: this checks for ONE specific mark (TrustMark)
+        // and didn't recover one — it says nothing about any other mark, and
+        // nothing about whether the file is otherwise "clean".
+        statusEl.textContent = t('No TrustMark signal recovered — this checks for one specific watermark and doesn’t rule out others.');
+      }
+    } catch (err) {
+      statusEl.textContent = t('Deep scan couldn’t run in this browser.');
+      host.log('warn', 'valid: deep scan failed', { error: (err as Error)?.message });
+    } finally {
+      btn.disabled = false;
     }
   }
 
@@ -1026,6 +1377,9 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   // on reportEl, see wireCleanCopy) can re-read the right file's bytes on demand
   // rather than holding every batch's bytes in memory between renders.
   let activeFiles: File[] = [];
+  // Each report's scalar-input digest, same indexing — what a [data-recreate]
+  // click (the "Recreate with these settings" CTA) seeds the tool link from.
+  let activeDigests: Array<Record<string, string> | undefined> = [];
 
   async function handle(files: FileList | File[] | null | undefined): Promise<void> {
     const list = files ? [...files] : [];
@@ -1033,15 +1387,17 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     previewUrls.forEach((u) => URL.revokeObjectURL(u));
     previewUrls = [];
     activeFiles = list;
+    activeDigests = [];
     reportEl.hidden = false;
 
     // One file reads exactly as before — the full report inline, no collapse chrome.
     if (list.length === 1) {
       const file = list[0]!;
       reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: escape(file.name) })}</p></div>`;
-      const { report, error, meta, watermark } = await verifyFile(file);
+      const { report, error, meta, watermark, mine } = await verifyFile(file);
+      activeDigests[0] = report?.environment?.inputs;
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
-        ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark)
+        ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark, mine)
         : `<p class="valid-busy">${t('Could not check this file: {message}', { message: escape(error!) })}</p>`;
       const panels = reportEl.querySelector<HTMLElement>('.valid-panels');
       if (panels) layoutMasonry(panels);
@@ -1050,8 +1406,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       // A file that's BOTH gets the chirps over the ooo; any OTHER AI file gets the
       // ooo alone (no chirps); a non-AI file keeps the usual verdict — chirps if
       // intact, a soft cautionary "uh-oh" if broken, missing, or unreadable.
-      if (report?.aiGenerated) {
-        if (report.madeWithLolly) playSfx('sign');
+      if (report?.aiGenerated || meta?.ai) {
+        if (report?.madeWithLolly) playSfx('sign');
         playSfx('ghost');
       } else {
         playSfx(report?.state === 'valid' ? 'sign' : 'warn');
@@ -1096,17 +1452,18 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     let allValid = true, anyAi = false, anyLolly = false;
     for (let i = 0; i < list.length; i++) {
       const file = list[i]!, card = cards[i]!;
-      const { report, error, meta, watermark } = await verifyFile(file);
+      const { report, error, meta, watermark, mine } = await verifyFile(file);
+      activeDigests[i] = report?.environment?.inputs;
       if (report) {
         card.className = `valid-item is-${stateTone(report)}`;
-        card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report)}</summary>` +
-          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i, watermark)}</div>`;
+        card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark)}</summary>` +
+          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i, watermark, mine)}</div>`;
       } else {
         card.className = 'valid-item is-bad';
         card.innerHTML = errorSummary(file.name, error!);
       }
       if (report?.state !== 'valid') allValid = false;
-      if (report?.aiGenerated) anyAi = true;
+      if (report?.aiGenerated || meta?.ai) anyAi = true;
       if (report?.madeWithLolly) anyLolly = true;
     }
     // One summary verdict, mirroring the single-file rule: AI in the batch → the
@@ -1160,9 +1517,48 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 2000);
     }
   }
+  // "Recreate with these settings in <tool>" — turn the credential's scalar-input
+  // digest back into a seeded tool link (lib/seed-url.ts — the same URL shape a
+  // share of that look produces). The digest stores every value as a display
+  // string (engine summarizeInputs): numbers may carry a unit ("12 mm"), booleans
+  // are 'true'/'false' — coerce them per the manifest's input types before
+  // seeding, or serializeUrlState would mis-encode them (a truthy 'false' string
+  // serialises as boolean ON). Failure falls back to the anchor's blank-session href.
+  async function recreateFromDigest(a: HTMLAnchorElement): Promise<void> {
+    const toolId = a.dataset.recreateTool || '';
+    const inputs = activeDigests[Number(a.dataset.recreate)];
+    if (!toolId) return;
+    try {
+      const [{ getTool }, { toolSeedHref }] = await Promise.all([
+        import('../bridge/tool-loader.ts'),
+        import('../lib/seed-url.ts'),
+      ]);
+      const { manifest } = await getTool(toolId);
+      const typeById = new Map(manifest.inputs.map((inp) => [inp.id, inp.type]));
+      const values: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(inputs ?? {})) {
+        const type = typeById.get(k);
+        if (type === 'number') {
+          const n = parseFloat(v);          // drops a trailing unit ("12 mm" → 12)
+          if (!Number.isNaN(n)) values[k] = n;
+        } else if (type === 'boolean') {
+          values[k] = v === 'true';
+        } else {
+          values[k] = v;
+        }
+      }
+      window.location.hash = await toolSeedHref(toolId, values);
+    } catch {
+      window.location.hash = `#/tool/${toolId}`;   // seeding failed — open a blank session
+    }
+  }
   reportEl.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-clean-copy]');
     if (btn) downloadCleanCopy(btn);
+    const rec = (e.target as HTMLElement).closest<HTMLAnchorElement>('[data-recreate]');
+    if (rec) { e.preventDefault(); void recreateFromDigest(rec); }
+    const scan = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-deep-scan]');
+    if (scan) void runDeepScan(scan);
   });
 
   drop.addEventListener('click', () => input.click());

@@ -18,12 +18,17 @@ import {
   parseJsonDeck, parseMarkdownDeck, parseDeck, toMediaRef, coerceSlide, coerceBox, refUrl,
   buildThumbFace, initDeckEditor, deriveContent, contentTitle, contentBody,
   mdToRichHtml, richHtmlToMd, layoutToBoxes, parsePptxGenDeck, isPptxGenSource, toHex,
+  coerceRadius, radiusCorners, pptxDeckToSlides, pptxMediaDataUrl, makeMediaResolver,
+  duplicateBoxes,
 } from './deck-editor.ts';
+import type { PptxDeckRead } from '@lolly/engine';
 
 // ── jsdom bootstrap (functions touch `document` only at call time) ────────────
 const dom = new JSDOM('<!DOCTYPE html><body></body>');
 const W = dom.window as unknown as typeof globalThis & { Event: typeof Event; MouseEvent: typeof MouseEvent };
-for (const k of ['document', 'HTMLElement', 'KeyboardEvent', 'Event', 'MouseEvent', 'Node']) {
+// `window` + getComputedStyle are needed because the inspector mounts the app's real colour
+// picker (color-field.ts), which wires window listeners and reads computed styles on mount.
+for (const k of ['window', 'document', 'HTMLElement', 'KeyboardEvent', 'Event', 'MouseEvent', 'Node', 'getComputedStyle']) {
   (globalThis as Record<string, unknown>)[k] = (dom.window as unknown as Record<string, unknown>)[k];
 }
 const click = (el: Element): void => { el.dispatchEvent(new W.Event('click', { bubbles: true })); };
@@ -285,18 +290,97 @@ test('mdToRichHtml / richHtmlToMd: italic + blank line + h2 + h3 round-trip', ()
   assert.ok(richHtmlToMd(d3).includes('alpha\nbeta'), 'BR round-trips to a newline');
 });
 
-test('text editor: opens over the active slide, edits, commits content on close', () => {
+test('mdToRichHtml / richHtmlToMd: numbered list round-trips through <ol>', () => {
+  const md = '# Steps\n1. first\n2. second\n3. third';
+  const div = document.createElement('div');
+  div.innerHTML = mdToRichHtml(md);
+  // consecutive numbered lines fold into one <ol> (the editor's insertOrderedList shape)
+  assert.equal(div.innerHTML, '<h1>Steps</h1><ol><li>first</li><li>second</li><li>third</li></ol>');
+  // …and serialise back to 1./2./3. markdown (renumbered from the <ol> order)
+  assert.equal(richHtmlToMd(div), md);
+  // a bullet list immediately after a numbered list stays two separate lists, not merged
+  const mixed = document.createElement('div');
+  mixed.innerHTML = mdToRichHtml('1. a\n- b');
+  assert.equal(mixed.innerHTML, '<ol><li>a</li></ol><ul><li>b</li></ul>');
+});
+
+test('richHtmlToMd: a hook-rendered pipe table serialises back to pipe rows, not a mashed run', () => {
+  // What the deck-builder hook's readTable renders for a content table — the inline
+  // editor serialises this DOM on every blur, so a click-then-blur with NO edit must
+  // round-trip the table (incl. cell pipes and column alignment) instead of
+  // flattening every cell into one text run (review finding).
+  const div = document.createElement('div');
+  div.innerHTML =
+    '<table class="sl-table"><thead><tr><th>Col A</th><th style="text-align:right">Col B</th></tr></thead>' +
+    '<tbody><tr><td><strong>a</strong></td><td>1 | 2</td></tr><tr><td>b</td><td>2</td></tr></tbody></table>';
+  assert.equal(richHtmlToMd(div), '| Col A | Col B |\n| --- | ---: |\n| **a** | 1 \\| 2 |\n| b | 2 |');
+});
+
+test('richHtmlToMd: nested lists indent two spaces per level instead of flattening', () => {
+  // The hook's renderList nests a child list inside the still-open parent <li>; its
+  // listItem() reads two spaces back as one level, so this is the exact inverse.
+  const ul = document.createElement('div');
+  ul.innerHTML = '<ul><li>a<ul><li>b</li><li>c</li></ul></li><li>d</li></ul>';
+  assert.equal(richHtmlToMd(ul), '- a\n  - b\n  - c\n- d');
+  const ol = document.createElement('div');
+  ol.innerHTML = '<ol><li>one<ol><li>inner</li></ol></li><li>two</li></ol>';
+  assert.equal(richHtmlToMd(ol), '1. one\n  1. inner\n2. two');
+});
+
+test('richHtmlToMd: inline code spans and safe links keep their markdown', () => {
+  const div = document.createElement('div');
+  div.innerHTML = '<p>run <code>npm test</code>, see <a href="https://example.com/docs">the docs</a></p>';
+  assert.equal(richHtmlToMd(div), 'run `npm test`, see [the docs](https://example.com/docs)');
+  // an href-less link (the hook renders unsafe schemes text-only) stays plain text
+  const bare = document.createElement('div');
+  bare.innerHTML = '<p><a>click</a></p>';
+  assert.equal(richHtmlToMd(bare), 'click');
+});
+
+// A minimal frozen slide DOM in the canvas — what the tool renders for a layout slide, which
+// the inline editor edits in place. `.sl-frozen` because click-to-edit requires it.
+function injectSlide(canvasEl: HTMLElement, idx: number, headHtml: string, bodyHtml = ''): HTMLElement {
+  canvasEl.innerHTML =
+    `<div class="slides sl-frozen"><section class="sl-slide sl-slide--${idx}" data-pdf-page>` +
+    (headHtml ? `<header class="sl-head"><h1 class="sl-title">${headHtml}</h1></header>` : '') +
+    (bodyHtml ? `<div class="sl-body">${bodyHtml}</div>` : '') +
+    `</section></div>`;
+  return canvasEl.querySelector<HTMLElement>(`.sl-slide--${idx}`)!;
+}
+
+test('inline text edit: the real .sl-head/.sl-body become editable, Escape commits content', () => {
   const { stageEl, val } = mountFixture([{ content: '# Old', layout: 'title' }]);
-  click(stageEl.querySelector('.deck-bar__edit')!);
-  const area = stageEl.querySelector<HTMLElement>('.deck-text__area')!;
-  assert.ok(area, 'editor mounted over the canvas');
-  assert.equal(area.innerHTML, '<h1>Old</h1>');   // seeded from the slide's markdown
-  // user rewrites it as rich text…
-  area.innerHTML = '<h1>New</h1><ul><li>point</li></ul>';
-  // …and Escape commits + closes (blur path shares the same closeTextEditor)
+  const canvasEl = document.getElementById('tool-canvas')!;
+  injectSlide(canvasEl, 0, 'Old');
+  // The bar's Edit button (icon) enters inline editing — no popup is created.
+  click(stageEl.querySelector('.deck-bar__btn')!);
+  const head = canvasEl.querySelector<HTMLElement>('.sl-head')!;
+  assert.equal(head.getAttribute('contenteditable'), 'true', 'the real head band is now editable');
+  assert.equal(stageEl.querySelector('.deck-text'), null, 'no popup editor is created');
+  assert.ok(stageEl.querySelector('.deck-fmt'), 'a floating format bar is shown');
+  // user rewrites the title in place…
+  head.querySelector('.sl-title')!.textContent = 'New';
+  // …and Escape commits the serialised content + tears down the editing state
   document.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  assert.equal((val('deck') as Array<{ content?: string }>)[0]!.content, '# New\n- point');
-  assert.equal(stageEl.querySelector('.deck-text'), null, 'editor closed');
+  assert.equal((val('deck') as Array<{ content?: string }>)[0]!.content, '# New');
+  assert.equal(head.getAttribute('contenteditable'), null, 'editing torn down');
+  assert.equal(stageEl.querySelector('.deck-fmt'), null, 'format bar removed');
+});
+
+test('inline text edit: title + body recombine into one content string', () => {
+  const { val } = mountFixture([{ content: '# T\n\nbody', layout: 'title' }]);
+  const canvasEl = document.getElementById('tool-canvas')!;
+  injectSlide(canvasEl, 0, 'T', '<p class="sl-p">body</p>');
+  const bar = document.querySelector('.deck-bar__btn') as HTMLElement;
+  click(bar);
+  const head = canvasEl.querySelector<HTMLElement>('.sl-head')!;
+  const body = canvasEl.querySelector<HTMLElement>('.sl-body')!;
+  assert.equal(head.getAttribute('contenteditable'), 'true');
+  assert.equal(body.getAttribute('contenteditable'), 'true', 'both regions editable');
+  head.querySelector('.sl-title')!.textContent = 'Title';
+  body.innerHTML = '<p>line one</p><ul><li>a</li></ul>';
+  document.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal((val('deck') as Array<{ content?: string }>)[0]!.content, '# Title\n\nline one\n- a');
 });
 
 // ── step 6: per-slide free-canvas ───────────────────────────────────────────────
@@ -310,6 +394,50 @@ test('coerceBox: defends kind / geometry / passthrough fields', () => {
   assert.ok(typeof b.id === 'string' && b.id, 'auto-id when absent');
   const img = coerceBox({ kind: 'image', src: 'https://x/a.png' });
   assert.equal(img.kind, 'image'); assert.equal(img.src, 'https://x/a.png');
+});
+
+test('coerceRadius: number | uniform array | per-corner array | absent', () => {
+  // A single number passes through; 0 / absent becomes null so the key is omitted.
+  assert.equal(coerceRadius(24), 24);
+  assert.equal(coerceRadius(0), null);
+  assert.equal(coerceRadius(undefined), null);
+  assert.equal(coerceRadius(null), null);
+  // A uniform array collapses back to one number — keeps the stored record minimal.
+  assert.equal(coerceRadius([12, 12, 12, 12]), 12);
+  assert.equal(coerceRadius([0, 0, 0, 0]), null);
+  // A genuinely per-corner array stays an array, in CSS corner order.
+  assert.deepEqual(coerceRadius([96, 0, 48, 0]), [96, 0, 48, 0]);
+  // Malformed values clamp to 0 (never negative, never NaN, never throws).
+  assert.equal(coerceRadius('nonsense'), null);
+  assert.equal(coerceRadius(-40), null);
+  assert.deepEqual(coerceRadius([-40, 'x', null, 8]), [0, 0, 0, 8]);
+});
+
+test('radiusCorners: always four numbers, matching the hook radiusList shape', () => {
+  assert.deepEqual(radiusCorners(24), [24, 24, 24, 24]);
+  assert.deepEqual(radiusCorners([96, 0, 48, 0]), [96, 0, 48, 0]);
+  assert.deepEqual(radiusCorners(undefined), [0, 0, 0, 0]);
+  assert.deepEqual(radiusCorners([12, 12, 12, 12]), [12, 12, 12, 12]);   // uniform collapses then re-expands
+});
+
+test('coerceBox: radius round-trips (uniform in → number, per-corner in → array)', () => {
+  assert.equal(coerceBox({ kind: 'box', radius: 24 }).radius, 24);
+  assert.deepEqual(coerceBox({ kind: 'box', radius: [96, 0, 48, 0] }).radius, [96, 0, 48, 0]);
+  // A zero radius is omitted entirely (minimal record).
+  assert.equal('radius' in coerceBox({ kind: 'box', radius: 0 }), false);
+  assert.equal('radius' in coerceBox({ kind: 'box' }), false);
+});
+
+test('coerceBox: valign + fit are stored compactly (defaults omitted)', () => {
+  // Full words and compact codes both accepted; 'top' is the render default so it is NOT stored.
+  assert.equal(coerceBox({ kind: 'text', valign: 'middle' }).valign, 'm');
+  assert.equal(coerceBox({ kind: 'text', valign: 'b' }).valign, 'b');
+  assert.equal('valign' in coerceBox({ kind: 'text', valign: 'top' }), false);
+  assert.equal('valign' in coerceBox({ kind: 'text' }), false);
+  // fit rides only when on.
+  assert.equal(coerceBox({ kind: 'text', fit: true }).fit, true);
+  assert.equal('fit' in coerceBox({ kind: 'text', fit: false }), false);
+  assert.equal('fit' in coerceBox({ kind: 'text' }), false);
 });
 
 test('free-canvas: freeform slide mounts the layer with one box per boxes[] entry', () => {
@@ -622,6 +750,78 @@ test('delete key: removes the whole selection', () => {
   assert.equal((val('deck') as Array<{ boxes: unknown[] }>)[0]!.boxes.length, 0);
 });
 
+// ── right-click context menu (freeform) ──────────────────────────────────────────
+
+test('duplicateBoxes: structured clones with fresh ids, +24 offset, appended after the originals', () => {
+  const src = { url: 'https://x/a.png', id: 'asset' };
+  const boxes = [
+    coerceBox({ id: 'a', kind: 'text', text: 'A', x: 100, y: 100, w: 200, h: 200 }),
+    coerceBox({ id: 'b', kind: 'image', src, x: 400, y: 300, w: 200, h: 200 }),
+  ];
+  const { boxes: out, ids } = duplicateBoxes(boxes, [0, 1]);
+  assert.equal(out.length, 4);
+  assert.equal(out[0], boxes[0]);                       // originals untouched, in place
+  assert.equal(out[1], boxes[1]);
+  assert.equal(out[2]!.text, 'A');
+  assert.equal(out[2]!.x, 124); assert.equal(out[2]!.y, 124);   // +24/+24 native px
+  assert.equal(out[3]!.x, 424); assert.equal(out[3]!.y, 324);
+  assert.ok(out[2]!.id && out[2]!.id !== 'a', 'clone gets a fresh id');
+  assert.notEqual(out[2]!.id, out[3]!.id);
+  assert.deepEqual(ids, [out[2]!.id, out[3]!.id], 'ids point at the clones');
+  // the clone's nested src ref is a structured COPY, never shared with the original
+  assert.notEqual(out[3]!.src, src);
+  assert.deepEqual(out[3]!.src, src);
+});
+
+test('context menu: right-click selects the box, Duplicate clones + selects the copy in ONE commit', () => {
+  const { stageEl, val, subs } = mountFixture([{ mode: 'freeform', boxes: [
+    { id: 'a', kind: 'text', text: 'A', x: 100, y: 100, w: 200, h: 200 },
+  ] }]);
+  let commits = 0;
+  subs.push(() => commits++);
+  stageEl.querySelector('.deck-free-box')!.dispatchEvent(new W.MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 150 }));
+  const menu = stageEl.querySelector<HTMLElement>('.fc-context-menu')!;
+  assert.ok(menu, 'menu opened on the stage');
+  assert.equal(stageEl.querySelectorAll('.deck-free-box.is-sel').length, 1, 'right-click selected the box');
+  const dup = Array.from(menu.querySelectorAll<HTMLButtonElement>('.fc-pop-item')).find(b => b.textContent === 'Duplicate')!;
+  assert.equal(dup.disabled, false);
+  click(dup);
+  const d = (val('deck') as Array<{ boxes: Array<{ id: string; x: number; y: number; text?: string }> }>)[0]!.boxes;
+  assert.equal(d.length, 2);
+  assert.equal(d[1]!.text, 'A');
+  assert.equal(d[1]!.x, 124); assert.equal(d[1]!.y, 124);
+  assert.notEqual(d[1]!.id, d[0]!.id, 'clone got a fresh id');
+  assert.equal(commits, 1, 'duplicate is a single commit (one undo step)');
+  assert.equal(stageEl.querySelector('.fc-context-menu'), null, 'menu closed after running');
+  const sel = stageEl.querySelectorAll<HTMLElement>('.deck-free-box.is-sel');
+  assert.equal(sel.length, 1);
+  assert.equal(sel[0]!.dataset.idx, '1', 'the CLONE is the selection');
+});
+
+test('context menu: empty-canvas opens with selection ops disabled; Escape closes menu only', () => {
+  const { stageEl } = mountFixture(FF2());
+  stageEl.querySelector('.deck-free__bg')!.dispatchEvent(new W.MouseEvent('contextmenu', { bubbles: true, clientX: 500, clientY: 300 }));
+  let menu = stageEl.querySelector<HTMLElement>('.fc-context-menu')!;
+  assert.ok(menu, 'menu opens on empty canvas');
+  for (const b of menu.querySelectorAll<HTMLButtonElement>('button')) {
+    assert.equal(b.disabled, true, `"${b.title || b.textContent}" disabled with no selection`);
+  }
+  document.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(stageEl.querySelector('.fc-context-menu'), null, 'Escape closed the menu');
+  // with a box selected, a right-click on it keeps the selection and enables the ops
+  clickBox(stageEl.querySelector('.deck-free-box')!);
+  stageEl.querySelector('.deck-free-box')!.dispatchEvent(new W.MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 150 }));
+  menu = stageEl.querySelector<HTMLElement>('.fc-context-menu')!;
+  const item = (label: string): HTMLButtonElement =>
+    Array.from(menu.querySelectorAll<HTMLButtonElement>('button')).find(b => (b.textContent || b.title) === label)!;
+  assert.equal(item('Delete').disabled, false);
+  assert.equal(item('Align left').disabled, false);
+  assert.equal(item('Distribute horizontally').disabled, true, 'distribute still needs 3+');
+  document.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(stageEl.querySelector('.fc-context-menu'), null);
+  assert.equal(stageEl.querySelectorAll('.deck-free-box.is-sel').length, 1, 'Escape did not clear the selection');
+});
+
 // ── review-fix regressions ───────────────────────────────────────────────────────
 
 test('fix: selection resets on slide navigation — never mutates the wrong slide', () => {
@@ -728,4 +928,180 @@ test('parsePptxGenDeck: a pptxgenjs script imports as freeform slides (shape + t
 test('parseDeck routes a pptxgenjs script through the importer', () => {
   const slides = parseDeck('const p = new (require("pptxgenjs"))(); const s = p.addSlide(); s.addText("Hi", { x:1, y:1, w:3, h:1 });');
   assert.equal(slides[0]!.mode, 'freeform');
+});
+
+// ── binary .pptx read-model import (engine readPptx → freeform slides) ──────────
+
+/** A minimal PptxDeckRead at the 16:9 default page — 12192000×6858000 EMU (13.33×7.5in). */
+const deckOf = (slides: PptxDeckRead['slides'], widthEmu = 12_192_000, heightEmu = 6_858_000): PptxDeckRead =>
+  ({ widthEmu, heightEmu, theme: { colors: {} }, slides });
+// 1in × 1in origin, 6.6̅in × 3.75in extent — exactly half the page on each axis.
+const AT = { xEmu: 914_400, yEmu: 914_400, cxEmu: 6_096_000, cyEmu: 3_429_000 };
+type LooseBox = { kind: string; x: number; y: number; w: number; h: number; rot?: number; text?: string; color?: string; fontSize?: number; fill?: string; shape?: string; lineColor?: string; lineWidth?: number; src?: string };
+const boxesOf = (s: { boxes?: unknown[] }): LooseBox[] => (s.boxes ?? []) as LooseBox[];
+
+test('pptxDeckToSlides: EMU → native mapping on a 12192000×6858000 deck', () => {
+  const slides = pptxDeckToSlides(deckOf([{ index: 0, nodes: [{ type: 'text', ...AT, paras: [{ runs: [{ text: 'Hi' }] }] }] }]));
+  assert.equal(slides.length, 1);
+  assert.equal(slides[0]!.mode, 'freeform');
+  const b = boxesOf(slides[0]!)[0]!;
+  assert.equal(b.kind, 'text');
+  assert.equal(b.text, 'Hi');
+  assert.equal(b.x, 144);    // 1in of 13.33in → 1920 native
+  assert.equal(b.y, 256);    // 1in of 7.5in → 1920 native
+  assert.equal(b.w, 960);    // half the page width
+  assert.equal(b.h, 960);    // half the page height
+  // zero page size falls back to 13.333×7.5 — same mapping
+  const fb = boxesOf(pptxDeckToSlides(deckOf([{ index: 0, nodes: [{ type: 'text', ...AT, paras: [] }] }], 0, 0))[0]!)[0]!;
+  assert.equal(fb.x, 144);
+  assert.equal(fb.y, 256);
+});
+
+test('pptxDeckToSlides: text runs → markdown, first-run colour + sizePt', () => {
+  const slides = pptxDeckToSlides(deckOf([{
+    index: 0,
+    nodes: [{
+      type: 'text', ...AT,
+      paras: [
+        { runs: [{ text: 'Hello', bold: true, color: { hex: 'FFFFFF' }, sizePt: 40 }, { text: '\n' }, { text: 'world', italic: true, underline: true }] },
+        { runs: [{ text: 'next para' }] },
+      ],
+    }],
+  }]));
+  const b = boxesOf(slides[0]!)[0]!;
+  assert.equal(b.text, '**Hello**\n*world*\nnext para');   // break run + para boundary → newlines, underline dropped
+  assert.equal(b.color, '#FFFFFF');                        // first-run colour, hash added
+  assert.equal(b.fontSize, 80);                            // (40/72)in of a 13.333in page → native px (WIDTH axis — the hook paints cqw)
+});
+
+test('pptxDeckToSlides: scheme-provenance colour with a resolved hex is used', () => {
+  const slides = pptxDeckToSlides(deckOf([{
+    index: 0,
+    nodes: [{ type: 'text', ...AT, paras: [{ runs: [{ text: 'branded', color: { scheme: 'accent1', hex: '30BA78' } }] }] }],
+  }]));
+  assert.equal(boxesOf(slides[0]!)[0]!.color, '#30BA78');
+});
+
+test('pptxDeckToSlides: shape geom → box shape, fill + line colours', () => {
+  const slides = pptxDeckToSlides(deckOf([{
+    index: 0,
+    nodes: [
+      { type: 'shape', ...AT, geom: 'ellipse', fill: { hex: '223039' } },
+      { type: 'shape', ...AT, geom: 'roundRect', fill: { scheme: 'accent2', hex: '2453FF' }, line: { hex: '0C322C' } },
+      { type: 'shape', ...AT, geom: 'triangle' },
+    ],
+  }]));
+  const [a, b, c] = boxesOf(slides[0]!);
+  assert.equal(a!.kind, 'box');
+  assert.equal(a!.shape, 'ellipse');
+  assert.equal(a!.fill, '#223039');
+  assert.equal(b!.shape, 'round');
+  assert.equal(b!.fill, '#2453FF');
+  assert.equal(b!.lineColor, '#0C322C');
+  assert.equal(c!.shape, 'rect');   // any other geometry → rect
+});
+
+test('pptxDeckToSlides: pic resolves through getMediaUrl; null → placeholder card + label', () => {
+  const deck = deckOf([{ index: 0, nodes: [{ type: 'pic', ...AT, media: 'ppt/media/image1.png' }] }]);
+  const img = boxesOf(pptxDeckToSlides(deck, () => 'data:image/png;base64,AA')[0]!)[0]!;
+  assert.equal(img.kind, 'image');
+  assert.equal(img.src, 'data:image/png;base64,AA');
+  const [card, label] = boxesOf(pptxDeckToSlides(deck, () => null)[0]!);
+  assert.equal(card!.kind, 'box');
+  assert.ok(card!.fill, 'placeholder carries a light fill');
+  assert.equal(label!.kind, 'text');
+  assert.equal(label!.text, 'Image placeholder — could not be imported');
+  assert.ok(label!.x > card!.x && label!.y > card!.y && label!.w < card!.w, 'label sits inside the card');
+  assert.equal(boxesOf(pptxDeckToSlides(deck)[0]!)[0]!.kind, 'box');   // no resolver at all
+});
+
+test('pptxDeckToSlides: an outlined shape gets a default lineWidth (border needs BOTH)', () => {
+  const slides = pptxDeckToSlides(deckOf([{
+    index: 0,
+    nodes: [
+      { type: 'shape', ...AT, line: { hex: '0C322C' } },
+      { type: 'shape', ...AT },
+    ],
+  }]));
+  const [lined, plain] = boxesOf(slides[0]!);
+  assert.equal(lined!.lineColor, '#0C322C');
+  assert.equal(lined!.lineWidth, 2);   // Math.max(2, npt(1)) — the reader has no a:ln w yet
+  assert.equal(plain!.lineWidth, undefined, 'no line → no width');
+});
+
+test('pptxDeckToSlides: caps boxes per slide at the tool render cap (120)', () => {
+  const nodes = Array.from({ length: 130 }, (): PptxDeckRead['slides'][number]['nodes'][number] =>
+    ({ type: 'text', ...AT, paras: [{ runs: [{ text: 'x' }] }] }));
+  assert.equal(boxesOf(pptxDeckToSlides(deckOf([{ index: 0, nodes }]))[0]!).length, 120);
+});
+
+test('makeMediaResolver: one encode per distinct path; budget overflow → null', () => {
+  // 6 pic nodes sharing one r:embed must encode the part ONCE, and every box gets the url.
+  const nodes = Array.from({ length: 6 }, (): PptxDeckRead['slides'][number]['nodes'][number] =>
+    ({ type: 'pic', ...AT, media: 'ppt/media/image1.png' }));
+  let calls = 0;
+  const slides = pptxDeckToSlides(deckOf([{ index: 0, nodes }]), makeMediaResolver(() => { calls++; return 'data:image/png;base64,AA'; }));
+  assert.equal(calls, 1, 'shared media path encoded once');
+  assert.equal(boxesOf(slides[0]!).filter(b => b.kind === 'image' && b.src === 'data:image/png;base64,AA').length, 6);
+  // null results are memoised too — a failed part never re-resolves
+  let misses = 0;
+  const nullRes = makeMediaResolver(() => { misses++; return null; });
+  assert.equal(nullRes('a.png'), null);
+  assert.equal(nullRes('a.png'), null);
+  assert.equal(misses, 1);
+  // once emitted chars exceed the budget, further DISTINCT paths resolve to null (placeholder),
+  // while already-memoised urls keep returning.
+  const r2 = makeMediaResolver(() => 'data:image/png;base64,' + 'A'.repeat(64), 60);
+  assert.ok(r2('a.png'), 'first path lands (budget not yet exceeded)');
+  assert.equal(r2('b.png'), null, 'over budget → null');
+  assert.ok(r2('a.png'), 'memoised url survives the exceeded budget');
+});
+
+test('pptxDeckToSlides: table → markdown pipe table, header first, | escaped', () => {
+  const slides = pptxDeckToSlides(deckOf([{
+    index: 0,
+    nodes: [{ type: 'table', ...AT, rows: [['a|b', 'c'], ['d', 'e']] }],
+  }]));
+  const b = boxesOf(slides[0]!)[0]!;
+  assert.equal(b.kind, 'text');
+  assert.equal(b.text, '| a\\|b | c |\n| --- | --- |\n| d | e |');
+});
+
+test('pptxDeckToSlides: unknown → placeholder card + a label inside it', () => {
+  const slides = pptxDeckToSlides(deckOf([{ index: 0, nodes: [{ type: 'unknown', ...AT, tag: 'chart' }] }]));
+  const [card, label] = boxesOf(slides[0]!);
+  assert.equal(card!.kind, 'box');
+  assert.ok(card!.fill, 'card carries a light fill');
+  assert.equal(label!.kind, 'text');
+  assert.equal(label!.text, 'Chart / SmartArt placeholder — not editable');
+  assert.ok(label!.x > card!.x && label!.y > card!.y && label!.w < card!.w, 'label sits inside the card');
+});
+
+test('pptxDeckToSlides: notes + rot pass through (rot omitted when zero)', () => {
+  const slides = pptxDeckToSlides(deckOf([{
+    index: 0,
+    nodes: [
+      { type: 'shape', ...AT, rot: 45 },
+      { type: 'shape', ...AT },
+    ],
+    notes: 'presenter notes',
+  }]));
+  assert.equal(slides[0]!.notes, 'presenter notes');
+  const [r, plain] = boxesOf(slides[0]!);
+  assert.equal(r!.rot, 45);
+  assert.equal('rot' in plain!, false);
+});
+
+test('pptxDeckToSlides: caps at 40 slides', () => {
+  const many = Array.from({ length: 45 }, (_, i): PptxDeckRead['slides'][number] =>
+    ({ index: i, nodes: [{ type: 'text', ...AT, paras: [{ runs: [{ text: 'S' + i }] }] }] }));
+  assert.equal(pptxDeckToSlides(deckOf(many)).length, 40);
+});
+
+test('pptxMediaDataUrl: extension-sniffed data: URL; unknown type / text part → null', () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  assert.equal(pptxMediaDataUrl({ 'ppt/media/image1.png': png }, 'ppt/media/image1.png'), 'data:image/png;base64,iVBORw==');
+  assert.equal(pptxMediaDataUrl({ 'ppt/media/movie1.emf': png }, 'ppt/media/movie1.emf'), null);
+  assert.equal(pptxMediaDataUrl({ 'ppt/media/a.png': 'text' }, 'ppt/media/a.png'), null);
+  assert.equal(pptxMediaDataUrl({}, 'ppt/media/missing.png'), null);
 });

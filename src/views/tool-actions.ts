@@ -10,23 +10,28 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS } from '@lolly/engine';
+import { serializeUrlState, parseUrlState, isToolUrl, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, SCALES, mulberry32 } from '@lolly/engine';
 import { escape } from '../utils.js';
+import { t } from '../i18n.ts';
+import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
 import { livePalette } from '../lib/live-palette.ts';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
+import { mountBodyPopover } from '../components/body-popover.ts';
 import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.js';
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
 import { playScrubTick } from '../lib/sfx.ts';
 import { loopRank } from '../lib/neurospicy.ts';
-import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
+import { songUrlToWavBlobUrl, renderSong } from '../lib/zzfxm-render.ts';
+import { pcmToWavBlob } from '../lib/pcm-wav.ts';
 import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { aspectWarning } from './export-size.js';
 import { bumpMetric, recordFormat } from '../metrics.js';
-import { videoSupport, cmykTiffSupport, tiffSupport } from '../bridge/format-support.js';
+import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport } from '../bridge/format-support.js';
 
 import type { InputValue } from '../../../../engine/src/inputs.js';
+import type { SongSpec } from '../../../../engine/src/zzfx-compose.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 import type { Unit } from '../../../../engine/src/units.js';
@@ -52,6 +57,12 @@ const FMT_EXT: Record<string, string>   = { 'pdf-cmyk': 'pdf', 'cmyk-tiff': 'tif
 // so treat webp-anim as stampable in the UI gating too, else the toggle/card would be
 // hidden and opts.c2pa never set, silently dropping the default provenance.
 const isC2paFmt = (f: string | undefined): boolean => !!f && (C2PA_FORMATS.includes(f) || f === 'webp-anim');
+
+// The durable in-pixel watermark only embeds via the canvas raster encoders
+// (renderRaster/renderBitmap's opts.imprint branch in bridge/export.ts) — the same
+// still-raster list the deep-link auto-export honours (views/tool.ts). Zip carries
+// the flag through to its bundled raster members.
+const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif'].includes(f);
 
 // Print marks & bleed apply to the three print formats (pdf / pdf-cmyk / cmyk-tiff).
 // Defaults when the user turns the card on; the CSV tokens (crop,reg,bleed,bars)
@@ -134,6 +145,30 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // line-art to sit consistently beside the Copy and Share icons.
   const SAVE_SVG = `<svg class="save-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 
+  // The exact payload a save persists — live input values plus the `__` markers
+  // (tool identity + export settings). Shared by performSave and the "Make
+  // variants" action so a variant is byte-for-byte a normal saved session.
+  function sessionSnapshot(): Record<string, unknown> & { __export_format: string } {
+    const values: Record<string, InputValue> = Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
+    // The effective export format (user-selected, or the tool's default). Drives
+    // a vector (SVG) thumbnail for vector tools — see captureThumbnail.
+    const fmt = el?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value ?? '';
+    return {
+      ...values,
+      __toolId:          manifest.id,
+      __toolVersion:     manifest.version,
+      __export_filename: el?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ?? '',
+      __export_format:   fmt,
+      __export_width:    el?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '',
+      __export_height:   el?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '',
+      __export_unit:     el?.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value ?? 'px',
+      __export_dpi:      el?.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '',
+      __export_profile:  el?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value ?? '',
+      __export_bleed:    readBleed(el),
+      __export_marks:    readMarks(el),
+    };
+  }
+
   // Shared, awaitable save routine — used by the Save button AND the
   // unsaved-changes dialog's "Save & leave". Returns true on success. Always
   // re-enables the button and surfaces failures: a save error used to leave the
@@ -151,26 +186,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     try {
       // Reuse the session's slot after the first save (or when resuming an existing
       // session) so a re-save updates it in place; only mint a new slot the first time.
-      const slot   = activeSlot || `${manifest.id}:${Date.now()}`;
-      const values: Record<string, InputValue> = Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
-      // The effective export format (user-selected, or the tool's default). Drives
-      // a vector (SVG) thumbnail for vector tools — see captureThumbnail.
-      const fmt    = el?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value ?? '';
-      const thumb  = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, fmt);
-      await host.state.save(slot, {
-        ...values,
-        __toolId:          manifest.id,
-        __toolVersion:     manifest.version,
-        __export_filename: el?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ?? '',
-        __export_format:   fmt,
-        __export_width:    el?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '',
-        __export_height:   el?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '',
-        __export_unit:     el?.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value ?? 'px',
-        __export_dpi:      el?.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '',
-        __export_profile:  el?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value ?? '',
-        __export_bleed:    readBleed(el),
-        __export_marks:    readMarks(el),
-      }, thumb);
+      const slot  = activeSlot || `${manifest.id}:${Date.now()}`;
+      const data  = sessionSnapshot();
+      const thumb = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, data.__export_format);
+      await host.state.save(slot, data, thumb);
       // Remember the slot so the next save updates THIS session rather than creating a
       // duplicate (see activeSlot above). Set before filing so a fresh first-save is
       // both filed into its folder AND pinned as the active slot for later edits.
@@ -384,6 +403,27 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </div>
       </div>` : '';
 
+  // Tier 2.66 — the Lolly pixel imprint (engine pixel-watermark.ts): a durable,
+  // imperceptible mark mixed into the exported pixels. It completes the provenance
+  // story next to the C2PA card above — the credential is strippable, the pixel
+  // mark survives re-encodes/screenshots, and /verify detects both. Off by
+  // default; an ?imprint= link pre-checks it, and the toggle round-trips back
+  // into the URL (see views/tool.ts syncUrl).
+  const imprintFmts = formats.filter(isImprintFmt);
+  const imprintTip = imprintFmts.length ? helpTip(
+    t('Hides the Lolly Imprint — a durable, invisible watermark — in the image pixels. It survives re-encoding and screenshots, so any copy of the file can be recognised later.'),
+    { href: '#/verify', text: t('Check a file →') }
+  ) : null;
+  const imprintRow = imprintFmts.length ? `
+      <div class="section-card export-c2pa export-imprint" data-imprint-only style="display:${isImprintFmt(initialFmt) || initialFmt === 'zip' ? 'flex' : 'none'}">
+        <label class="c2pa-enable help-tip-host">
+          <input type="checkbox" data-action="imprint" ${exportDefaults.imprint ? 'checked' : ''}>
+          <span class="c2pa-head">${icon('imprint', { className: 'c2pa-icon' })}<span>${t('Lolly Imprint')}</span></span>
+          ${imprintTip!.button}
+          ${imprintTip!.pop}
+        </label>
+      </div>` : '';
+
   // Tier 2.7 — print marks & bleed (pdf / pdf-cmyk / cmyk-tiff). An opt-in card
   // (master checkbox) so ordinary output stays trim-sized; turning it on reveals a
   // bleed field (default 3mm) + the mark toggles at print-standard defaults. Mark
@@ -454,6 +494,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             <input type="checkbox" data-action="webm-60fps">
             60fps
           </label>
+          ${liveCaptureSupport() ? `<label class="gif-dither-toggle" data-video-only
+                 style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}"
+                 title="Record the on-screen preview in real time through a screen share — motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.">
+            <input type="checkbox" data-action="video-live">
+            Record live
+          </label>` : ''}
           ${runtime.hasFrameHook ? `<span class="vp-live-hint" style="flex-basis:100%;font-size:11px;opacity:.7;margin-top:2px">Records the live feed — start <strong>Go&nbsp;live</strong> on the canvas first.</span>` : ''}
         </div>` : '';
   // Audio track card — webm/mp4 only. An optional catalog music bed (type:
@@ -471,6 +517,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const audioTip = hasVideo ? helpTip(
     'Plays under the clip for its full duration, looping as needed. WebM and MP4 only.'
   ) : null;
+  // A tool with its own audio slot (assetType 'audio', e.g. the audiogram) offers
+  // that slot's CURRENT pick as a bed source — resolved live at export, so changing
+  // the sidebar pick needs no popup round-trip. "Generate music" composes a seeded
+  // ZzFXM tune on-device (engine composeSong → the render worker → transient WAV).
+  const hasToolAudioInput = runtime.getModel().some(i => i.type === 'asset' && i.assetType === 'audio');
   const audioRow = hasVideo ? `
       <div class="export-audio" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="audio-head help-tip-host">${ICON_NOTE}<span>Audio track</span>${audioTip!.button}${audioTip!.pop}</span>
@@ -478,8 +529,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           <select data-action="video-audio" aria-label="Audio track"
                   title="Optional music bed muxed into the recording — plays for the clip duration, looping if the clip is longer than the track.">
             <option value="">None</option>
+            ${hasToolAudioInput ? `<option value="__tool__">${escape(t('This tool’s audio'))}</option>` : ''}
+            <option value="__generate__">${escape(t('Generate music'))}</option>
           </select>
           <button type="button" class="audio-preview" data-action="audio-preview" title="Preview track" aria-label="Preview track" disabled>${ICON_PLAY}</button>
+          <button type="button" class="audio-preview" data-action="audio-regen" hidden title="${escape(t('Regenerate music'))}" aria-label="${escape(t('Regenerate music'))}">${icon('refresh')}</button>
         </div>
         <div class="audio-fade">
           <label>Fade in <input type="number" data-action="audio-fadein" min="0" max="5" step="0.5" value="1"><span>s</span></label>
@@ -517,14 +571,101 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;
   const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : '';
 
+  // Tier 5 — "Recent exports": this tool's slice of the downloads log
+  // (lib/export-history.ts), a compact reopen rail under the Download button.
+  // Populated async by refreshRecentExports; stays hidden until entries exist.
+  const recentRow = actions.includes('download') ? `
+    <div data-recent-exports hidden style="margin-top:10px">
+      <span style="display:block;font-size:11px;font-weight:600;color:hsl(var(--muted-foreground));margin-bottom:6px">${t('Recent exports')}</span>
+      <div data-recent-exports-list style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px"></div>
+    </div>` : '';
+
   // The panel host (#tool-actions) is present for every export-capable tool that
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${cmykRow}${pdfPassRow}${c2paRow}${printRow}${audioRow}${settingsRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${cmykRow}${pdfPassRow}${c2paRow}${imprintRow}${printRow}${audioRow}${settingsRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
+    ${recentRow}
   `;
+
+  // "Recent exports" — fill the reopen rail with this tool's recent downloads.
+  // Clicking an entry applies its recorded state to the LIVE session via
+  // runtime.setInput (a plain #/tool href would no-op: the router keys the tool
+  // route on id alone, so a same-tool hash navigation dedupes); the real href is
+  // kept so middle-click / open-in-new-tab still gets a fresh mount. DOM stays
+  // bounded: listToolExports caps at 6 entries. Refreshed after each download
+  // and on every popup open (the log can grow in another tab).
+  async function refreshRecentExports(): Promise<void> {
+    const wrap = el?.querySelector<HTMLElement>('[data-recent-exports]');
+    const list = el?.querySelector<HTMLElement>('[data-recent-exports-list]');
+    if (!wrap || !list) return;
+    try {
+      const { listToolExports, exportReopenHref } = await import('../lib/export-history.ts');
+      const entries = (await listToolExports(manifest.id)).filter(x => x.thumb);
+      if (!entries.length) { wrap.hidden = true; return; }
+      list.innerHTML = entries.map((x, i) => `
+        <a href="${escape(exportReopenHref(x))}" data-recent-reopen="${i}"
+           title="${escape(x.filename || x.label)} · ${escape(new Date(x.at).toLocaleDateString())}"
+           style="flex:0 0 auto;display:block;border:1px solid hsl(var(--border));border-radius:6px;overflow:hidden;line-height:0">
+          <img src="${escape(x.thumb!)}" alt="${escape(x.filename || x.label)}" style="height:44px;width:auto;max-width:96px;object-fit:cover;display:block">
+        </a>`).join('');
+      list.querySelectorAll<HTMLAnchorElement>('[data-recent-reopen]').forEach(a => {
+        a.addEventListener('click', async (ev) => {
+          // Modified clicks keep browser semantics (new tab = a fresh mount).
+          if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+          ev.preventDefault();
+          const entry = entries[Number(a.dataset.recentReopen)];
+          if (!entry) return;
+          // Sequential like multi-edit's fan-out; each set lands in undo history.
+          const { values } = parseUrlState(entry.query, manifest);
+          // setInput never resolves asset refs — that only happens inside createRuntime —
+          // so a bare-id ref parsed from the query would reach the template url-less and
+          // blank the image (and a later Save would persist the broken ref). Re-resolve
+          // ref-shaped values here, mirroring the runtime's resolveOne: catalog ids via
+          // host.assets.get, pasted Lolly-tool links via compose.renderUrl. Unresolvable →
+          // null, the same graceful drop a fresh mount applies.
+          const refId = (v: unknown): string | null => {
+            if (!v || typeof v !== 'object') return null;
+            const id = (v as { id?: unknown }).id;
+            return typeof id === 'string' ? id : null;
+          };
+          const resolveRef = async (v: InputValue): Promise<InputValue> => {
+            const id = refId(v);
+            if (id === null) return v;
+            try {
+              if (isToolUrl(id)) return (host.compose?.renderUrl ? await host.compose.renderUrl(id) : null) as InputValue;
+              return await host.assets.get(id) as InputValue;
+            } catch { return null; }
+          };
+          for (const [id, v] of Object.entries(values)) {
+            const decl = manifest.inputs.find(i => i.id === id);
+            let next: InputValue = v;
+            if (decl?.type === 'asset') next = await resolveRef(v);
+            else if (decl?.type === 'blocks' && Array.isArray(v)) {
+              // Blocks carry asset sub-fields (deck/carousel media slots) as bare ids too.
+              const assetFields = (decl.fields ?? []).filter(f => f.type === 'asset').map(f => f.id);
+              if (assetFields.length) {
+                next = await Promise.all(v.map(async (item) => {
+                  if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+                  const rec = { ...(item as Record<string, InputValue>) };
+                  for (const fid of assetFields) {
+                    if (refId(rec[fid]) !== null) rec[fid] = await resolveRef(rec[fid] as InputValue);
+                  }
+                  return rec;
+                })) as InputValue;
+              }
+            }
+            await runtime.setInput(id, next);
+          }
+          announce(t('Restored'));
+        });
+      });
+      wrap.hidden = false;
+    } catch { /* history is best-effort */ }
+  }
+  void refreshRecentExports();
 
   exportOpts.forEach(i => {
     el.querySelector<HTMLInputElement>(`[data-input-id="${escape(i.id)}"]`)
@@ -572,6 +713,73 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }).catch(() => { /* pre-sync/offline — leave "None" only */ });
   }
 
+  // The tool's own audio slot (assetType 'audio'), read LIVE from the model so the
+  // popup always reflects the current sidebar pick. Returns the narrow ref shape
+  // the bed paths need; null when the slot is empty or the tool has none.
+  const toolAudioRef = (): { id?: string; url?: string; format?: string } | null => {
+    const v = runtime.getModel().find(i => i.type === 'asset' && i.assetType === 'audio')?.value;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    const r = v as { id?: unknown; url?: unknown; format?: unknown };
+    const ref = {
+      id:     typeof r.id === 'string' ? r.id : undefined,
+      url:    typeof r.url === 'string' ? r.url : undefined,
+      format: typeof r.format === 'string' ? r.format : undefined,
+    };
+    return ref.id || ref.url ? ref : null;
+  };
+  // Resolve that slot to a fetchable { url, format }: the asset store when the ref
+  // has an id (same on-demand fetch+cache the catalog beds use), else the ref's own
+  // url (a transient upload). Null when nothing is resolvable — export stays silent.
+  async function resolveToolAudio(): Promise<{ url: string; format?: string } | null> {
+    const ref = toolAudioRef();
+    if (!ref) return null;
+    if (ref.id) {
+      try {
+        const r = await host.assets.get(ref.id);
+        if (r?.url) return { url: r.url, format: r.format };
+      } catch { /* not in the store (transient ref) — fall back to its own url */ }
+    }
+    return ref.url ? { url: ref.url, format: ref.format } : null;
+  }
+  // A tool that arrives with a chosen track defaults the bed to it — the user can
+  // still pick a catalog track or None. Static markup already carries the option.
+  if (audioSel && audioSel.querySelector('option[value="__tool__"]') && toolAudioRef()) audioSel.value = '__tool__';
+
+  // "Generate music": a transient ZzFXM bed, seeded so the SAME tune deterministically
+  // re-renders at any length (export re-renders at the clip's duration). Regenerate
+  // rolls a new seed. The spec is derived entirely from the seed via the engine's
+  // seeded PRNG — archetype, tempo, scale and progression all replayable.
+  let genSeed = (Math.random() * 0x7fffffff) >>> 0;
+  let genWavUrl: string | null = null;   // cached preview WAV blob URL
+  let genWavKey = '';                    // "seed:targetSec" the cache was rendered for
+  const genDur = (): number => Math.max(8, Math.min(90, videoParams().duration));
+  function generatedSongSpec(seed: number, targetSec: number): SongSpec {
+    const rng = mulberry32(seed);
+    const pick = <T>(a: readonly T[]): T => a[Math.floor(rng() * a.length)]!;
+    const archetype = pick(['melodic', 'ambient', 'lofi', 'bossaNova', 'rhythmic', 'whimsical', 'chiptune', 'cuban'] as const);
+    const bpm: Record<typeof archetype, [number, number]> = {
+      melodic: [60, 84], ambient: [48, 60], lofi: [66, 84], bossaNova: [108, 126],
+      rhythmic: [96, 120], whimsical: [84, 108], chiptune: [132, 160], cuban: [96, 116],
+    };
+    const scale = pick(['majorPent', 'minorPent', 'suspended'] as const);
+    const pool = SCALES[scale].slice(0, 6);   // low register — melodies walk upward from the roots
+    return {
+      archetype, seed, scale, targetSec,
+      bpm: Math.round(bpm[archetype][0] + rng() * (bpm[archetype][1] - bpm[archetype][0])),
+      roots: [12, pick(pool), pick(pool), pick(pool)],
+      pan: Math.round((rng() - 0.5) * 30) / 100,
+    };
+  }
+  async function generatedWavUrl(targetSec: number): Promise<string> {
+    const key = `${genSeed}:${targetSec}`;
+    if (genWavUrl && genWavKey === key) return genWavUrl;
+    const pcm = await renderSong(composeSong(generatedSongSpec(genSeed, targetSec)));
+    if (genWavUrl) URL.revokeObjectURL(genWavUrl);
+    genWavUrl = URL.createObjectURL(pcmToWavBlob(pcm));
+    genWavKey = key;
+    return genWavUrl;
+  }
+
   // Audio preview — a play/pause toggle that auditions the selected track before
   // export. A single detached <audio> element (never in the DOM, so it must be
   // paused explicitly on every teardown path — a removed media element keeps
@@ -593,12 +801,23 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const syncAudioPreviewEnabled = (): void => {
     if (audioPreviewBtn) audioPreviewBtn.disabled = !(audioSel && audioSel.value);
   };
-  audioSel?.addEventListener('change', () => { stopAudioPreview(); previewSrcId = null; syncAudioPreviewEnabled(); });
+  // Regenerate ("new tune") shows only while Generate music is the chosen bed.
+  const audioRegenBtn = el.querySelector<HTMLButtonElement>('[data-action="audio-regen"]');
+  const syncAudioRegenVisible = (): void => {
+    if (audioRegenBtn) audioRegenBtn.hidden = audioSel?.value !== '__generate__';
+  };
+  audioSel?.addEventListener('change', () => { stopAudioPreview(); previewSrcId = null; syncAudioPreviewEnabled(); syncAudioRegenVisible(); });
   if (audioPreviewBtn) {
     audioPreviewBtn.addEventListener('click', async () => {
       const id = audioSel?.value;
       if (!id) return;
-      if (previewAudio && previewSrcId === id && !previewAudio.paused) { stopAudioPreview(); return; }
+      // Key the loaded source so a regenerated tune or a changed sidebar audio pick
+      // reloads instead of replaying the stale bytes; catalog ids key as themselves.
+      const toolRef = id === '__tool__' ? toolAudioRef() : null;
+      const srcKey = id === '__generate__' ? `__generate__:${genSeed}:${genDur()}`
+        : id === '__tool__' ? `__tool__:${toolRef?.id ?? toolRef?.url ?? ''}`
+        : id;
+      if (previewAudio && previewSrcId === srcKey && !previewAudio.paused) { stopAudioPreview(); return; }
       try {
         if (!previewAudio) {
           previewAudio = new Audio();
@@ -607,11 +826,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           previewAudio.addEventListener('pause', () => setAudioPreviewPlaying(false));
           previewAudio.addEventListener('ended', () => setAudioPreviewPlaying(false));
         }
-        if (previewSrcId !== id) {
+        if (previewSrcId !== srcKey) {
           audioPreviewBtn.classList.add('is-loading');
-          const ref = await host.assets.get(id);
-          previewAudio.src = ref.url;
-          previewSrcId = id;
+          const url = id === '__generate__' ? await generatedWavUrl(genDur())
+            : id === '__tool__' ? (await resolveToolAudio())?.url
+            : (await host.assets.get(id)).url;
+          if (!url) throw new Error('no track to preview');
+          previewAudio.src = url;
+          previewSrcId = srcKey;
           audioPreviewBtn.classList.remove('is-loading');
         }
         await previewAudio.play();
@@ -621,6 +843,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       }
     });
     syncAudioPreviewEnabled();
+  }
+  if (audioRegenBtn) {
+    audioRegenBtn.addEventListener('click', () => {
+      genSeed = (Math.random() * 0x7fffffff) >>> 0;
+      const wasPlaying = Boolean(previewAudio && !previewAudio.paused);
+      stopAudioPreview();
+      previewSrcId = null;
+      // Mid-audition regenerate rolls straight into the new tune (still within the
+      // user's click gesture, so autoplay policy allows it).
+      if (wasPlaying) audioPreviewBtn?.click();
+    });
+    syncAudioRegenVisible();
   }
 
   // Colour bars track the format: ON for the CMYK print formats (pdf-cmyk /
@@ -671,6 +905,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // Shown for zip too: bundled members are stamped individually. The webm
     // caveat sentence only shows for webm (no external viewer reads it there).
     el!.querySelectorAll<HTMLElement>('[data-c2pa-only]').forEach(c => { c.style.display = (isC2paFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
+    el!.querySelectorAll<HTMLElement>('[data-imprint-only]').forEach(c => { c.style.display = (isImprintFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
     el!.querySelectorAll<HTMLElement>('[data-c2pa-webm]').forEach(c => { c.style.display = fmt === 'webm' ? 'block' : 'none'; });
   }
   // Whether the password field currently holds a value that came from ?password=
@@ -742,6 +977,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   // Full-page HTML export toggle ("no stage") — round-trips through the URL as ?nostage.
   el.querySelector<HTMLInputElement>('[data-action="full-page"]')?.addEventListener('change', () => onUrlSync?.('nostage'));
+
+  // Pixel-watermark toggle — round-trips through the URL as ?imprint=1 (see syncUrl).
+  el.querySelector<HTMLInputElement>('[data-action="imprint"]')?.addEventListener('change', () => onUrlSync?.('imprint'));
 
   // PDF open-password — clear-text in the URL by design (see pdfPassRow). Syncs on
   // input so a crafted/edited link round-trips; syncUrl gates it to the pdf format.
@@ -887,7 +1125,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     };
   }
 
-  function videoParams(): { wait: number; duration: number; fps: number | undefined } {
+  function videoParams(): { wait: number; duration: number; fps: number | undefined; live: boolean } {
     const wait     = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-wait"]')?.value ?? '')     ?? 1;
     const duration = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-duration"]')?.value ?? '') ?? 5;
     const hiFps    = el!.querySelector<HTMLInputElement>('[data-action="webm-60fps"]')?.checked ?? false;
@@ -895,6 +1133,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       wait:     isFinite(wait)     ? Math.max(0,  wait)     : 1,
       duration: isFinite(duration) ? Math.max(0.5, duration) : 5,
       fps:      hiFps ? 60 : undefined,
+      // "Record live" (webm/mp4): capture the on-screen preview via a screen share
+      // instead of the offline render — see bridge/live-capture.ts. Popup-local.
+      live:     el!.querySelector<HTMLInputElement>('[data-action="video-live"]')?.checked ?? false,
     };
   }
 
@@ -1135,14 +1376,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const isAnimated = isAnimatedFmt(fmt);
     const isGif      = fmt === 'gif';
 
+    let liveTake = false;
     if (isAnimated) {
-      const { wait, duration, fps } = videoParams();
+      const { wait, duration, fps, live } = videoParams();
       const totalS = wait + duration;
+      liveTake = live && isVideoFmt(fmt);
       btn.textContent = isGif
         ? `Encoding GIF… ${totalS}s`
-        : fps === 60
-          ? `Rendering 60fps… ${totalS}s+`
-          : `Recording… ${totalS}s`;
+        : liveTake
+          ? `Recording live… ${duration}s`   // no wait phase — capture starts once the stage is located
+          : fps === 60
+            ? `Rendering 60fps… ${totalS}s+`
+            : `Recording… ${totalS}s`;
     } else {
       // Slow non-animated exports (CMYK TIFF, high-DPI raster, PDF) previously froze
       // on a disabled button with no signal. Show progress and tell assistive tech.
@@ -1162,13 +1407,28 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       if (isVideoFmt(fmt)) {
         const audioId = el!.querySelector<HTMLSelectElement>('[data-action="video-audio"]')?.value;
         if (audioId) {
-          const ref = await host.assets.get(audioId);
           // ZzFXM songs and tracker modules have no playable audio file — render them
           // to a transient WAV blob URL so the URL-driven muxer paths consume them
           // exactly like an encoded loop. (mod → libopenmpt, zzfxm → the synth.)
-          const audioUrl = ref.format === 'zzfxm' ? (wavBlobUrl = await songUrlToWavBlobUrl(ref.url))
-            : isModuleFormat(ref.format) ? (wavBlobUrl = await modUrlToWavBlobUrl(ref.url))
-            : ref.url;
+          const toWavIfNeeded = async (r: { url: string; format?: string }): Promise<string> =>
+            r.format === 'zzfxm' ? (wavBlobUrl = await songUrlToWavBlobUrl(r.url))
+            : isModuleFormat(r.format) ? (wavBlobUrl = await modUrlToWavBlobUrl(r.url))
+            : r.url;
+          let audioUrl: string | null = null;
+          let audioTrackId: string | undefined = audioId;
+          if (audioId === '__generate__') {
+            // A fresh worker render at THIS clip's length — the seed keeps it the
+            // same tune the user auditioned, just arranged to fit.
+            const pcm = await renderSong(composeSong(generatedSongSpec(genSeed, genDur())));
+            audioUrl = wavBlobUrl = URL.createObjectURL(pcmToWavBlob(pcm));
+            audioTrackId = `zzfxm-generated-${genSeed}`;
+          } else if (audioId === '__tool__') {
+            // The tool's own audio slot, read live — an emptied slot exports silent.
+            const ref = await resolveToolAudio();
+            if (ref) { audioUrl = await toWavIfNeeded(ref); audioTrackId = toolAudioRef()?.id ?? audioId; }
+          } else {
+            audioUrl = await toWavIfNeeded(await host.assets.get(audioId));
+          }
           const numCtl = (a: string, dflt: number): number => {
             const v = el!.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value;
             return v != null && v !== '' ? (Number(v) || 0) : dflt;
@@ -1177,7 +1437,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           const fadeOut = numCtl('audio-fadeout', 0);
           const volume  = Math.max(0, Math.min(100, numCtl('audio-volume', 100))) / 100;
           const duck    = Math.max(0, Math.min(100, numCtl('audio-duck', 100))) / 100;
-          audioOpt = { audio: { id: audioId, url: audioUrl, fadeIn, fadeOut, volume, duck } };
+          if (audioUrl) audioOpt = { audio: { id: audioTrackId, url: audioUrl, fadeIn, fadeOut, volume, duck } };
         }
       }
       // Surface progress on the button for slow non-animated exports — the CMYK
@@ -1193,6 +1453,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       const opts: RunExportOpts = {
         ...exportDims(),
         onProgress: (done, total) => {
+          // Live take: (done, total) is a seconds countdown from the recorder. The
+          // button is the one status surface guaranteed OUTSIDE the capture — the
+          // in-page pill is skipped when the stage leaves it no capture-safe spot.
+          if (liveTake) {
+            if (total > 0) btn.textContent = `Recording live… ${done}s`;
+            return;
+          }
           if (isAnimated || total <= 0) return;
           const pct = Math.floor((done / total) * 100);
           if (pct === lastExportPct) return;
@@ -1223,9 +1490,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...(isC2paFmt(fmt) && el!.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]')?.checked
           ? { c2pa: true, ...(c2paDaysVal() ? { c2paDays: c2paDaysVal()! } : {}) }
           : {}),
-        // Pixel watermark (?imprint= default) — the bridge applies it only to raster
-        // formats, so it's harmless to pass through for others / zip members.
-        ...(exportDefaults.imprint ? { imprint: true } : {}),
+        // Pixel watermark — the popup toggle (seeded by ?imprint=); the bridge
+        // applies it only to raster formats, so it's harmless to pass through for
+        // others / zip members. A tool with no raster format renders no toggle —
+        // fall back to the link default.
+        ...((el!.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked ?? exportDefaults.imprint) ? { imprint: true } : {}),
         ...(fmt === 'zip' ? {
           ...printOpts(),   // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
           palette: brandPalette,
@@ -1248,6 +1517,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         } : {}),
       };
       const filename = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || manifest.name;
+      // The exact bytes handed to host.export.download — hashed into the export-
+      // history record below so /verify can later match a file back to this device.
+      let downloadedBlob: Blob | null = null;
       // Carousel / paged tool: a STILL-image download becomes one image PER PAGE, zipped.
       // (PDF already fans out to a multi-page document via renderMultiPagePdf; animated /
       // html / zip formats keep their own paths.) Each [data-pdf-page] frame is exported
@@ -1274,16 +1546,26 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           return out;
         }, { shutter: true });
         if (files.length === 1) {
+          downloadedBlob = files[0]!.blob;
           await host.export.download(files[0]!.blob, `${filename}.${extFor(fmt, files[0]!.blob)}`);
         } else {
           const { buildZip } = await import('../pro/zip.ts');
           const zipBlob = await buildZip(files, { zipName: filename });
+          downloadedBlob = zipBlob;
           await host.export.download(zipBlob, `${filename}.zip`);
         }
       } else {
         // Mask the resize with the shutter for instant (raster/vector) exports;
         // skip it for animated formats, which record the live canvas over seconds.
-        const blob = await exportUnscaled(() => runtime.export(canvasEl, fmt, opts), { shutter: !isAnimated });
+        // A LIVE take must keep the fit-to-stage scale: exportUnscaled blows the
+        // canvas up to native size for the entire recording, so the user watches a
+        // clipped canvas and the capture crops to a viewport slice. Record the
+        // preview exactly as displayed instead — the recorder's sizing/bitrate math
+        // already reads the on-screen rect × dpr.
+        const blob = liveTake
+          ? await runtime.export(canvasEl, fmt, opts)
+          : await exportUnscaled(() => runtime.export(canvasEl, fmt, opts), { shutter: !isAnimated });
+        downloadedBlob = blob;
         await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
       }
       if (wavBlobUrl) { URL.revokeObjectURL(wavBlobUrl); wavBlobUrl = null; }
@@ -1292,9 +1574,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // non-blocking: a thumbnail of what was exported + enough state to reopen it.
       void (async () => {
         try {
-          const { recordExport } = await import('../lib/export-history.ts');
+          const { recordExport, hashBlob } = await import('../lib/export-history.ts');
           const thumb = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, fmt, false);
-          await recordExport({ toolId: manifest.id, label: manifest.name, filename, format: fmt, thumb, query: serializeUrlState(runtime.getModel()), at: Date.now() });
+          // Hash the exact downloaded bytes so /verify can match a file back here.
+          const contentHash = downloadedBlob ? await hashBlob(downloadedBlob) : undefined;
+          await recordExport({ toolId: manifest.id, label: manifest.name, filename, format: fmt, thumb, query: serializeUrlState(runtime.getModel()), at: Date.now(), ...(contentHash ? { contentHash } : {}) });
+          void refreshRecentExports();   // surface the new entry on the rail
         } catch { /* history is best-effort */ }
       })();
     } catch (err) {
@@ -1323,6 +1608,69 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (await performSave(this)) setTimeout(() => { navigateTo(returnTo); }, 800);
   });
 
+  // "Make variants" / multi-edit — the icon button NEXT TO THE TOOL NAME (markup
+  // in tool.ts's sidebar header; it lives outside `el`, hence the document lookup).
+  // Deliberately not an export option: it's a step BEFORE export. The click opens
+  // a how-many dropdown (2–8, multi-edit's MIN_SEL–MAX_SEL); picking a count
+  // persists the CURRENT live state into that many fresh sessions (labelled A…H —
+  // the same payload + slot shape performSave writes, so they're ordinary saved
+  // sessions everywhere) and jumps straight into multi-edit with them side by
+  // side. The active session's own slot is untouched: variants are copies, so
+  // the experiments never overwrite the original.
+  const multiBtn = document.getElementById('multi-edit-btn') as HTMLButtonElement | null;
+  if (multiBtn) {
+    const makeVariants = async (count: number): Promise<void> => {
+      if (multiBtn.dataset.saving) return;
+      multiBtn.dataset.saving = '1';
+      multiBtn.disabled = true;
+      multiBtn.setAttribute('aria-busy', 'true');
+      try {
+        const data  = sessionSnapshot();
+        // One thumbnail serves every copy — they start identical.
+        const thumb = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, data.__export_format);
+        const stamp = Date.now();
+        const slots: string[] = [];
+        for (let i = 0; i < count; i++) {
+          const slot = `${manifest.id}:${stamp + i}`;   // ms offset keeps the minted slots unique
+          await host.state.save(slot, { ...data, __label: String.fromCharCode(65 + i) }, thumb);
+          slots.push(slot);
+        }
+        announce('Saved');
+        // The shape mountMultiEdit parses (main.ts route 'multi': ?s=slot,slot…).
+        navigateTo(`#/multi?s=${slots.map(encodeURIComponent).join(',')}`);
+      } catch (err) {
+        console.error('Make variants failed:', err);
+        announce('Save failed');
+      } finally {
+        multiBtn.disabled = false;
+        multiBtn.removeAttribute('aria-busy');
+        delete multiBtn.dataset.saving;
+      }
+    };
+    const menu = mountBodyPopover(multiBtn, (pop) => {
+      pop.innerHTML = `
+        <div class="multi-edit-menu-head">${t('How many copies?')}</div>
+        <div class="multi-edit-menu-counts">${[2, 3, 4, 5, 6, 7, 8].map(n =>
+          `<button type="button" class="multi-edit-count" role="menuitem" data-count="${n}">${n}</button>`).join('')}</div>`;
+      pop.querySelectorAll<HTMLButtonElement>('[data-count]').forEach(b => b.addEventListener('click', () => {
+        menu.close();
+        void makeVariants(Number(b.dataset.count));
+      }));
+      return pop.querySelector<HTMLElement>('[data-count]');
+    }, {
+      className: 'multi-edit-menu',
+      ariaLabel: t('Make variants'),
+      // Left-aligned under the trigger (the default is right-aligned — built for
+      // the top-right chrome; this trigger sits in the LEFT sidebar).
+      position(pop, anchor) {
+        const r = anchor.getBoundingClientRect();
+        pop.style.top  = `${Math.round(r.bottom + 8)}px`;
+        pop.style.left = `${Math.max(8, Math.round(r.left))}px`;
+      },
+    });
+    multiBtn.addEventListener('click', () => { menu.isOpen() ? menu.close(true) : menu.open(); });
+  }
+
   // Apply the initial (or restored) dimensions to the canvas preview immediately.
   refreshCanvasPreview();
 
@@ -1347,7 +1695,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Expose actions the mount scope can trigger programmatically (e.g. `?copy`,
   // and the unsaved-changes dialog's "Save & leave"). stopAudioPreview lets the
   // popup-close + tool-teardown paths silence an in-progress audio audition.
-  return { copy: performCopy, preview, save: performSave, setDims, stopAudioPreview };
+  return { copy: performCopy, preview, save: performSave, setDims, stopAudioPreview, refreshRecentExports };
 }
 
 // Adds scroll-to-change and click-drag-to-scrub to a number input.

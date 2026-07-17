@@ -99,9 +99,6 @@ const WHEEL_TO_VELOCITY = 14;     // px/s of spin added per unit of horizontal w
 const MAX_VELOCITY = 3200;        // px/s cap so a wild flick or wheel can't teleport the strip
 const INERTIA_FRICTION = 0.94;    // velocity decay per ~16.7ms frame (≈1s coast to rest)
 const INERTIA_MIN_V = 6;          // px/s; below this the coast stops and ambient drift may resume
-const SHUFFLE_TRAVEL_PX = 9;      // how far a manually-flipped example nudges vertically ("off the deck")
-const SHUFFLE_MS = 260;           // brief — roughly the .is-shifting cross-fade pace
-
 // Lucide "arrow-right" — the Open affordance glyph.
 const ARROW = icon('arrowRight', { size: 15, strokeWidth: 2.2 });
 
@@ -277,9 +274,8 @@ export function mountFeaturedRow(
     link.setAttribute('href', active?.dataset.seedhref ?? link.dataset.basehref ?? link.getAttribute('href') ?? '');
   }
 
-  // Cross-fade a stage to the next (dir 1) / previous (dir -1) look. `shuffle` adds the
-  // card-shuffle micro-motion — passed on a MANUAL flip, off for the ambient cross-fade.
-  function advanceStage(stage: Element, dir = 1, shuffle = false): void {
+  // Cross-fade a stage to the next (dir 1) / previous (dir -1) look.
+  function advanceStage(stage: Element, dir = 1): void {
     const link = stage.parentElement!;
     const all = [...stage.querySelectorAll<HTMLImageElement>('.ftile-img')];
     const imgs = rotationImgs(stage);
@@ -295,52 +291,15 @@ export function mountFeaturedRow(
     incoming.classList.add('is-active');
     syncDots(link, imgs, imgs.length < 2 ? -1 : nextIdx);
     refreshLinkHref(link);   // the tile now links to the look it's showing
-    if (shuffle && !reduced && nextIdx !== cur) shuffleFlip(incoming, cur >= 0 ? imgs[cur]! : null, dir);
-  }
-
-  // Card-shuffle micro-motion on a manual flip: the incoming example rises into place from
-  // the direction you're flipping (down→next comes up from below), while the outgoing one
-  // recedes the opposite way and a hair smaller — a brief "next card off the deck" beat that
-  // makes flipping through looks feel physical. WAAPI so it layers cleanly over the CSS Ken
-  // Burns and reverts on its own (no fill) — Ken Burns simply resumes. transform-origin is
-  // pinned to the floor so the object stays planted (matching the Ken Burns scale).
-  function shuffleFlip(incoming: HTMLImageElement, outgoing: HTMLImageElement | null, dir: number): void {
-    if (typeof incoming.animate !== 'function') return;   // WAAPI guard (ancient engines)
-    const off = dir >= 0 ? SHUFFLE_TRAVEL_PX : -SHUFFLE_TRAVEL_PX;
-    const play = (el: HTMLImageElement, from: string, to: string): void => {
-      (el as unknown as { __shuffle?: Animation }).__shuffle?.cancel();   // a fast flurry shouldn't stack
-      (el as unknown as { __shuffle?: Animation }).__shuffle = el.animate(
-        [{ transform: from, transformOrigin: 'center bottom' },
-         { transform: to,   transformOrigin: 'center bottom' }],
-        { duration: SHUFFLE_MS, easing: 'cubic-bezier(.22,.7,.28,1)' },
-      );
-    };
-    play(incoming, `translateY(${off}px) scale(.985)`, 'translateY(0) scale(1)');
-    if (outgoing) play(outgoing, 'translateY(0) scale(1)', `translateY(${-off}px) scale(.985)`);
-  }
-
-  // Shift one tool's examples on BOTH its original tile and its clone, so they stay in sync.
-  function shiftTool(toolId: string, dir: number): void {
-    track.querySelectorAll(`.ftile[data-tool="${CSS.escape(toolId)}"] .ftile-stage`).forEach((s) => advanceStage(s, dir, true));
-  }
-
-  // A manual shift (wheel / vertical gesture) suppresses the auto cross-fade + drift for
-  // a beat and speeds the transition (.is-shifting) so hand-flips feel snappy, not slow.
-  let shiftClsTimer: ReturnType<typeof setTimeout> | undefined;
-  function markManualShift(): void {
-    manualUntil = performance.now() + RESUME_DELAY_MS;
-    section.classList.add('is-shifting');
-    clearTimeout(shiftClsTimer);
-    shiftClsTimer = setTimeout(() => section.classList.remove('is-shifting'), 600);
   }
 
   let fadeTimer: ReturnType<typeof setInterval> | undefined;
   if (!reduced) {
     fadeTimer = setInterval(() => {
-      // Pause the auto cross-fade while the pointer is over the strip, a finger is on it,
-      // or a hand-shift is in progress — a cross-fade firing mid-swipe animates two
-      // drop-shadowed images at once and janks the scroll (mobile especially). `touching`
-      // covers the whole swipe; hovering/manualUntil cover the mouse + post-gesture rest.
+      // Pause the auto cross-fade while the pointer is over the strip or a finger is on
+      // it — a cross-fade firing mid-swipe animates two drop-shadowed images at once and
+      // janks the scroll (mobile especially). `touching` covers the whole swipe;
+      // hovering/manualUntil cover the mouse + post-gesture rest.
       if (destroyed || !visible || !onScreen || document.hidden || hovering || touching || performance.now() < manualUntil) return;
       track.querySelectorAll('.ftile-stage').forEach((s) => advanceStage(s));
     }, FADE_INTERVAL_MS);
@@ -373,20 +332,7 @@ export function mountFeaturedRow(
   let pressLink: HTMLAnchorElement | null = null; // the tile link a mouse/pen press landed on
   let suppressNextClick = false;                  // we opened on pointerup; cancel the native click
 
-  // Touch gesture state — horizontal = native carousel scroll; vertical = shift the
-  // examples of the touched tile. Direction is decided after a few px, then locked.
-  let touchGesture: 'pending' | 'shift' | 'scroll' = 'scroll';
-  let touchId = -1;
-  let touchStartX = 0;
-  let touchStartY = 0;
-  let shiftBaseY = 0;
-  let touchTool: string | null = null;
-
-  // How much wheel / drag travel steps one example.
   const DRAG_SLOP = 8;      // px a mouse/pen press may travel and still count as a click, not a drag
-  const SHIFT_STEP_WHEEL = 60;
-  const SHIFT_STEP_TOUCH = 46;
-  const GESTURE_SLOP = 8;   // px before a touch commits to shift-vs-scroll
 
   // The current UI theme decides which transparent-background looks are legible (a
   // reverse/white look on a light tile — or a dark look on a dark tile — would vanish).
@@ -595,9 +541,6 @@ export function mountFeaturedRow(
     }
   }, { signal, passive: true });
 
-  const tileToolAt = (e: Event): string | null =>
-    (e.target as Element | null)?.closest?.<HTMLElement>('.ftile')?.dataset.tool ?? null;
-
   // Open a tile's link the same way its native anchor would (same-origin hash route,
   // or an explicit resume URL). We do this on pointerup for a clean tap rather than
   // trust the native click, which a drifting / re-cloning carousel drops when the
@@ -615,41 +558,23 @@ export function mountFeaturedRow(
   };
 
   // ── Wheel ─────────────────────────────────────────────────────────────────────
-  // Vertical wheel over a tile SHIFTS that tile's examples (quick flip through looks);
-  // horizontal wheel (trackpad swipe) spins the carousel with momentum. Non-passive so
-  // both can preventDefault. Vertical wheel off a tile is left to scroll the page.
-  let wheelTool: string | null = null;
-  let wheelAccum = 0;
+  // Horizontal wheel (trackpad swipe) spins the carousel with momentum — the only
+  // axis the strip owns. A vertical wheel ALWAYS falls through and scrolls the
+  // PAGE, in every view mode: the strip must never capture it (scroll hijack —
+  // the old vertical-flips-examples gesture trapped readers trying to get past
+  // the row). Non-passive so the horizontal branch can preventDefault.
   viewport.addEventListener('wheel', (e) => {
     if (reduced) return;
-    if (coverflow) {                                         // any wheel flicks between covers
-      e.preventDefault();
-      snapTarget = null;
-      const primary = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      velocity = clampV(velocity + primary * WHEEL_TO_VELOCITY);
-      return;
-    }
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {           // horizontal → carousel momentum
-      manualUntil = performance.now() + RESUME_DELAY_MS;
-      e.preventDefault();
-      velocity = clampV(velocity + e.deltaX * WHEEL_TO_VELOCITY);
-      return;
-    }
-    const toolId = tileToolAt(e);                            // vertical → shift this tile's looks
-    if (!toolId) return;
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;    // vertical → page scroll
+    manualUntil = performance.now() + RESUME_DELAY_MS;
     e.preventDefault();
-    if (toolId !== wheelTool) { wheelTool = toolId; wheelAccum = 0; }
-    wheelAccum += e.deltaY;
-    while (Math.abs(wheelAccum) >= SHIFT_STEP_WHEEL) {
-      const dir = wheelAccum > 0 ? 1 : -1;                   // scroll down → next look
-      shiftTool(toolId, dir);
-      wheelAccum -= dir * SHIFT_STEP_WHEEL;
-      markManualShift();
-    }
+    snapTarget = null;                                       // a spin overrides a pending Cover Flow snap
+    velocity = clampV(velocity + e.deltaX * WHEEL_TO_VELOCITY);
   }, { signal });
 
-  // ── Pointer down — mouse/pen start a horizontal carousel drag; touch defers the
-  // decision (horizontal scroll vs vertical example-shift) to the first move. Either
+  // ── Pointer down — mouse/pen start a horizontal carousel drag; gallery touch is
+  // left ENTIRELY to the browser (touch-action pan-x pan-y: horizontal pans the
+  // strip's native scroller, vertical scrolls the page — never captured). Either
   // way the grab lights up the backdrop (see .is-grabbing). ──
   viewport.addEventListener('pointerdown', (e) => {
     // A press on the ⋯ menu button is neither a pan nor a tile open — leave it to the button's
@@ -659,7 +584,7 @@ export function mountFeaturedRow(
     // native drag-to-folder — never a pan grab. Yield to the browser (no preventDefault /
     // pointer capture / dragging state) so HTML5 drag can begin; panning stays available
     // via the wheel/trackpad, the mobile grip, and the ambient drift. (Touch has no native
-    // DnD, so it keeps the normal scroll/shift gesture handling below.)
+    // DnD, so it keeps its native scroll gestures.)
     if (tileDragOut && e.pointerType !== 'touch' && e.button === 0 && (e.target as Element | null)?.closest?.('.ftile-link')) return;
     velocity = 0;                                            // a grab cancels any coast
     snapTarget = null;
@@ -668,16 +593,10 @@ export function mountFeaturedRow(
     dragStartX = e.clientX;                                  // anchor for the click-vs-drag slop test
     pressLink = (e.target as Element | null)?.closest?.<HTMLAnchorElement>('.ftile-link') ?? null;
     section.classList.add('is-grabbing');
-    // Gallery touch defers to a scroll-vs-shift decision; Cover Flow touch (and all
-    // mouse/pen) go straight to a horizontal drag.
-    if (e.pointerType === 'touch' && !coverflow) {
-      touchGesture = 'pending';
-      touchId = e.pointerId;
-      touchStartX = e.clientX;
-      touchStartY = e.clientY;
-      touchTool = tileToolAt(e);
-      return;
-    }
+    // Gallery touch: no JS gesture — the native scroller owns both axes. (Cover Flow
+    // touch keeps the JS horizontal drag; its pan-y touch-action leaves vertical to
+    // the page.)
+    if (e.pointerType === 'touch' && !coverflow) return;
     if (e.pointerType !== 'touch' && e.button !== 0 && e.button !== 1) return; // left- or middle-drag pans (mouse/pen), like the canvas
     dragging = true;
     dragPointerId = e.pointerId;
@@ -694,35 +613,8 @@ export function mountFeaturedRow(
   viewport.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }, { signal });
 
   viewport.addEventListener('pointermove', (e) => {
-    // Gallery touch: decide scroll (horizontal, native) vs shift (vertical, ours).
-    if (e.pointerType === 'touch' && !coverflow) {
-      if (e.pointerId !== touchId || touchGesture === 'scroll') return;
-      if (touchGesture === 'pending') {
-        const dx = e.clientX - touchStartX, dy = e.clientY - touchStartY;
-        if (Math.max(Math.abs(dx), Math.abs(dy)) <= GESTURE_SLOP) return;
-        if (Math.abs(dy) > Math.abs(dx) && touchTool) {
-          touchGesture = 'shift';
-          dragMoved = true;                                  // a shift is a gesture, not a tap — don't also open the tool
-          shiftBaseY = e.clientY;
-          try { viewport.setPointerCapture(touchId); } catch { /* best effort */ }
-        } else {
-          touchGesture = 'scroll';                           // native pan-x handles the carousel
-          return;
-        }
-      }
-      // shift mode: each SHIFT_STEP_TOUCH of vertical travel flips one example.
-      let dy = e.clientY - shiftBaseY;
-      while (Math.abs(dy) >= SHIFT_STEP_TOUCH) {
-        const dir = dy < 0 ? 1 : -1;                         // drag up → next look
-        if (touchTool) shiftTool(touchTool, dir);
-        shiftBaseY += dir === 1 ? -SHIFT_STEP_TOUCH : SHIFT_STEP_TOUCH;
-        dy = e.clientY - shiftBaseY;
-        markManualShift();
-      }
-      e.preventDefault();
-      return;
-    }
-    // Mouse/pen: horizontal carousel drag.
+    // Gallery touch never drags via JS (native scroller owns it), so `dragging` is
+    // false and this returns. Mouse/pen (and Cover Flow touch): horizontal drag.
     if (!dragging || e.pointerId !== dragPointerId) return;
     const now = performance.now();
     const dx = e.clientX - lastPointerX;
@@ -745,12 +637,7 @@ export function mountFeaturedRow(
   }, { signal });
 
   const endDrag = (e: PointerEvent): void => {
-    if (e.pointerType === 'touch' && !coverflow) {
-      if (e.pointerId !== touchId) return;
-      if (touchGesture === 'shift') { try { viewport.releasePointerCapture(touchId); } catch { /* ok */ } }
-      touchGesture = 'scroll';
-      touchId = -1;
-      touchTool = null;
+    if (e.pointerType === 'touch' && !coverflow) {           // no JS gesture to unwind — just the grab tint
       section.classList.remove('is-grabbing');
       manualUntil = performance.now() + RESUME_DELAY_MS;
       return;
@@ -816,9 +703,10 @@ export function mountFeaturedRow(
   }, { signal, capture: true });
 
   // ── Mobile drag handle — a JS-driven page-scroll grip (pointer events, so it works
-  // with a finger AND with a mouse at mobile widths). The immersive strip captures
-  // vertical gestures, so this pill drags the page 1:1 (finger/cursor up → content up),
-  // like the tool editor's sheet grip. ──
+  // with a finger AND with a mouse at mobile widths). A belt-and-braces explicit
+  // handle that drags the page 1:1 (finger/cursor up → content up), like the tool
+  // editor's sheet grip. (Vertical swipes on the strip itself also scroll the page
+  // now — the strip never captures vertical.) ──
   const grip = section.querySelector<HTMLElement>('.featured-grip');
   if (grip) {
     let gripId = -1;
@@ -985,7 +873,6 @@ export function mountFeaturedRow(
       cancelAnimationFrame(raf);
       cancelAnimationFrame(resizeRaf);
       clearTimeout(relayout);
-      clearTimeout(shiftClsTimer);
       if (fadeTimer) clearInterval(fadeTimer);
       if (ricId) cancelRic(ricId);
     },

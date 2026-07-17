@@ -296,6 +296,18 @@
   gap: 8px;
 }
 
+/* Title + the multi-edit trigger hug each other on the left; the wrap owns the
+   flexible width (and the collapsed-sidebar fade) so the icon stays NEXT TO the
+   name rather than drifting to the row's far edge. */
+.sidebar-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  transition: opacity 0.15s;
+}
+
 .sidebar-title {
   font-size: 13px;
   font-weight: 600;
@@ -304,14 +316,71 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  flex: 1;
-  transition: opacity 0.15s;
 }
 
-.tool-layout[data-sidebar="closed"] .sidebar-title {
+.tool-layout[data-sidebar="closed"] .sidebar-title-wrap {
   opacity: 0;
   pointer-events: none;
 }
+
+/* Multi-edit trigger — icon-only, labelled by the [data-tip] tooltip primitive.
+   Opens the how-many-copies menu (see tool-actions.ts). */
+.multi-edit-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  transition: background 0.12s, color 0.12s;
+}
+.multi-edit-btn:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+.multi-edit-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.multi-edit-btn[disabled] { opacity: 0.5; cursor: default; }
+.multi-edit-btn svg { width: 15px; height: 15px; }
+
+/* The how-many-copies dropdown (body-mounted via mountBodyPopover — position:fixed,
+   so it escapes the sidebar's overflow clipping). Surface mirrors .profile-menu. */
+.multi-edit-menu {
+  position: fixed;
+  z-index: 100000;
+  padding: 8px;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.4);
+  box-shadow: 0 12px 32px hsl(0 0% 0% / 0.24);
+}
+.multi-edit-menu-head {
+  padding: 2px 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.multi-edit-menu-counts { display: flex; gap: 4px; }
+.multi-edit-count {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: transparent;
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.multi-edit-count:hover { background: hsl(var(--accent)); border-color: hsl(var(--primary)); }
+.multi-edit-count:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 
 .fullscreen-toggle {
   flex-shrink: 0;

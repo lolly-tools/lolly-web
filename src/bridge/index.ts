@@ -24,6 +24,7 @@ import { createClipboardAPI } from './clipboard.ts';
 import { createNetAPI } from './net.ts';
 import { createTextAPI } from './text.ts';
 import { createPdfAPI } from './pdf.ts';
+import { createPptxAPI } from './pptx.ts';
 import { createCaptureAPI } from './capture.ts';
 import { createMediaAPI } from './media.ts';
 import { createRecorderAPI } from './recorder.ts';
@@ -117,9 +118,14 @@ export async function createBridge(): Promise<WebHost> {
     _describeUrl: async (url: string) => (await loadCompose())._describeUrl(url),
   } as WebHost['compose'];
 
-  host.net = createNetAPI({ allowlist: [] }); // populated per-tool from manifest
+  // Fail-closed boot default — an EMPTY allowlist, never mutated. A tool that
+  // declares network.allowlist gets a per-mount HOST CLONE with a scoped net
+  // instead: views/tool.ts (the live canvas), views/multi-edit.ts (each member's
+  // runtime), and pro/render-export.ts withToolNet (offscreen batch/zip/compose).
+  host.net = createNetAPI({ allowlist: [] });
   host.text = createTextAPI();
   host.pdf = createPdfAPI(); // on-device PDF metadata inspect + strip (pdf-lib, lazy-loaded)
+  host.pptx = createPptxAPI(); // on-device .pptx inspect + surgical rebrand (fflate + engine pptx-read/pptx-patch, lazy-loaded)
   // Extension when installed (real capture in the browser); otherwise the stub
   // that throws a clear error. In Tauri, capture.js is overridden to the native impl.
   host.capture = extCapture ? createExtensionCaptureAPI() : createCaptureAPI();
@@ -135,6 +141,21 @@ export async function createBridge(): Promise<WebHost> {
   // Perceptual colour tools (v1.40) — pure engine math, attached verbatim so
   // web/CLI/Tauri can never drift.
   host.color = makeColorApi();
+
+  // Lazy images facade (v1.60): decode/resize/re-encode wraps the upload path's
+  // codec glue (and, inside it, the 3 MB lazy HEIC WASM decoder) — none of which
+  // belongs in the boot chunk. Built + cached on first host.images call; every
+  // ImagesAPI method is async, so the facade is transparent to callers.
+  let imagesImpl: NonNullable<WebHost['images']> | null = null;
+  const loadImages = async (): Promise<NonNullable<WebHost['images']>> => {
+    if (!imagesImpl) { const { createImagesAPI } = await import('./images.ts'); imagesImpl = createImagesAPI(); }
+    return imagesImpl;
+  };
+  host.images = {
+    decode: async (input) => (await loadImages()).decode(input),
+    resize: async (input, opts) => (await loadImages()).resize(input, opts),
+    encode: async (input, opts) => (await loadImages()).encode(input, opts),
+  };
 
   // pick is a bridge-level concern: it needs the full host (logging, assets.get,
   // assets._uploadUserAsset). Defined here after all sub-APIs are wired so the

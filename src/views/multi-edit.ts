@@ -29,6 +29,7 @@ import '../styles/parts/tool.css';        // .tool-inputs control styles (shared
 import '../styles/parts/multi-edit.css';
 import { createRuntime, UNITS } from '@lolly/engine';
 import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
+import { createNetAPI } from '../bridge/net.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
@@ -277,7 +278,17 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   // before the markup — as this view used to — left the grid blank for the whole loop,
   // scaling with the selection (up to 8 sessions). Live canvases are still the point of
   // this view; they're just the enhancement now, not the first frame.
-  for (const m of members) m.runtime = await createRuntime(m.tool, host, m.values);
+  // Same rule as views/tool.ts: a manifest `network.allowlist` gives that MOUNT a
+  // host clone whose `net` enforces exactly that list — the shared boot host keeps
+  // its fail-closed empty allowlist and is never mutated (bridge methods are
+  // closures, not `this`-bound, so a shallow spread is safe). Per member, not
+  // per view: the grid can mix tools with different (or no) allowlists.
+  for (const m of members) {
+    const mountHost = m.tool.manifest.network?.allowlist?.length
+      ? { ...host, net: createNetAPI({ allowlist: m.tool.manifest.network.allowlist }) }
+      : host;
+    m.runtime = await createRuntime(m.tool, mountHost, m.values);
+  }
 
   // Declared ahead of the cell loop: runtime.subscribe emits synchronously, so
   // scheduleSidebar (hoisted fn) runs before the sidebar block below is reached.

@@ -29,6 +29,7 @@ import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect
 import { toCssPx } from '@lolly/engine';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import { askLollyIntent } from './picker.ts';
+import { takePendingDesignImport } from '../lib/drop-router.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
@@ -3811,6 +3812,31 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   document.addEventListener('pointerdown', onDocDown, true);
 
   renderChrome();
+
+  // Universal drop front door (lib/drop-router.ts): a design file dropped on the
+  // gallery/dashboard was stashed one-shot and is consumed here on mount, through
+  // the exact same lazy parseDesignFile → commit path as the Import panel above.
+  const pendingImport = importCfg ? takePendingDesignImport() : null;
+  if (pendingImport) {
+    void (async () => {
+      announce(t('Importing…'));
+      try {
+        const { parseDesignFile } = await import('./design-import.ts');
+        const res = await parseDesignFile(pendingImport, {
+          host: host as any, log: (m: string) => announce(m), interactive: true, map: importMap,
+        });
+        if (disposed) return;
+        const boxes = (Array.isArray(res.boxes) ? res.boxes : []) as Box[];
+        if (!boxes.length) throw new Error(t('Nothing importable was found in that file.'));
+        selection = new Set<string>();
+        commit(boxes);
+        if (setCanvasSize && res.width > 0 && res.height > 0) setCanvasSize(res.width, res.height, 'px');
+        announce(boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length }));
+      } catch (err) {
+        if (!disposed) announce(((err as Error)?.message) || t('Import failed.'), { assertive: true });
+      }
+    })();
+  }
 
   return {
     destroy() {

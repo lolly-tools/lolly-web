@@ -687,4 +687,27 @@
   .dash-hero-primary { min-height: 112px; }
   .dash-hero-logo { max-height: 40px; }
 }
+
+/* ── Universal drop front door (lib/drop-router.ts) ─────────────────────────
+   Same hint-pill pattern as the gallery: the router toggles .is-file-drag on
+   the view root while a file drag hovers it. */
+.dashboard-view .drop-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%) translateY(6px);
+  padding: 10px 20px;
+  border: 1px solid hsl(var(--primary) / 0.5);
+  border-radius: 999px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font-size: 13.5px;
+  font-weight: 650;
+  box-shadow: 0 10px 30px hsl(var(--foreground) / 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 90;
+}
+.dashboard-view.is-file-drag .drop-hint { opacity: 1; transform: translateX(-50%); }
 }

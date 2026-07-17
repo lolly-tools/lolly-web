@@ -540,7 +540,11 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       </div>
       ${modes
         ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null, inline)
-        : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null, false, inline)}
+        // In a click-to-open POPOVER (float / regular sidebar / block), the LCH sliders start
+        // COLLAPSED — the popover opens compact (hex + alpha + swatches), which keeps it in the
+        // viewport, and the sliders expand when the user focuses the .color-input. The INLINE
+        // panel (brand editor) is a dedicated always-open editor, so its sliders/dials stay shown.
+        : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null, !inline, inline)}
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
         <input type="range" class="color-alpha-slider" data-color-alpha="${eid}"
@@ -938,6 +942,23 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     });
   });
 
+  // Off-screen height of the popover measured as if the collapsed LCH sliders were EXPANDED.
+  // Positioning uses this so the popover opens in the direction its full (expanded) size fits
+  // and reserves that room — then revealing the sliders (hex-input focus) grows into the
+  // reserved space and NEVER re-positions. Repositioning on reveal was the cause of both the
+  // "swatch component jumps" flip and the "clicking a slider closes the picker" miss (the
+  // popover moved out from under the pointer between press and release).
+  function measuredFullHeight(popover: HTMLElement, width: number): number {
+    const lch = popover.querySelector<HTMLElement>(':scope > .color-lch[hidden]');
+    if (lch) lch.hidden = false;                       // measure the expanded height
+    const prev = popover.style.cssText;
+    popover.style.cssText = `position:fixed;visibility:hidden;left:-9999px;top:0;width:${width}px;`;
+    const h = popover.offsetHeight;
+    popover.style.cssText = prev;
+    if (lch) lch.hidden = true;                        // restore the collapsed render
+    return h;
+  }
+
   function positionPopover(field: HTMLElement, trigger: HTMLElement, popover: HTMLElement): void {
     // Force-settle any in-flight entrance cascade on the field's ancestors first: while
     // `card-in` is running, the animated `translate` makes that ancestor the popover's
@@ -972,7 +993,15 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const t = (trigger.closest('td') || trigger).getBoundingClientRect();
       const W = Math.max(224, Math.round(t.width));
       const left = Math.max(8, Math.min(t.left, window.innerWidth - W - 8));
-      popover.style.cssText = `position:fixed;top:${Math.round(t.top - cb.y)}px;left:${Math.round(left - cb.x)}px;width:${W}px;right:auto;z-index:10001;border-top-left-radius:0;`;
+      // Measure the EXPANDED height (sliders reserved), then clamp vertically so the popover
+      // never spills off the bottom (or top) of the viewport — even after the sliders expand.
+      const ph = measuredFullHeight(popover, W);
+      let top = t.top;
+      if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+      top = Math.max(8, top);
+      // Only square the top-left corner when the popover is still docked flush to the cell.
+      const docked = Math.abs(top - t.top) < 1;
+      popover.style.cssText = `position:fixed;top:${Math.round(top - cb.y)}px;left:${Math.round(left - cb.x)}px;width:${W}px;right:auto;z-index:10001;${docked ? 'border-top-left-radius:0;' : ''}`;
       armOutside(field, popover);
     } else {
       // Regular sidebar field: portal to position:fixed anchored to the field (like the
@@ -984,13 +1013,14 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       // sidebar's bottom; close on any outside interaction.
       const sb = scope.closest('.sidebar-body') || scope.closest('.sidebar');
       const f = field.getBoundingClientRect();
-      const prev = popover.style.cssText;
-      popover.style.cssText = `position:fixed;visibility:hidden;left:-9999px;top:0;width:${Math.round(f.width)}px;`;
-      const ph = popover.offsetHeight;
+      // Decide the open direction on the EXPANDED height (sliders reserved), so a later reveal
+      // never has to flip the popover (the "swatch jumps" bug). Below is the common case and
+      // has no gap; when it must open UP (field near the viewport bottom) the collapsed popover
+      // sits at the reserved top and grows down to the field on reveal.
+      const ph = measuredFullHeight(popover, Math.round(f.width));
       const bottomLimit = sb ? sb.getBoundingClientRect().bottom : window.innerHeight;
       const openUp = (bottomLimit - f.bottom) < ph + 10;
       const top = openUp ? Math.max(8, Math.round(f.top - 4 - ph)) : Math.round(f.bottom + 4);
-      popover.style.cssText = prev;
       popover.style.cssText = `position:fixed;top:${top - cb.y}px;left:${Math.round(f.left) - cb.x}px;width:${Math.round(f.width)}px;right:auto;z-index:10001;`;
       armOutside(field, popover);
     }
@@ -1003,9 +1033,13 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     disarmOutside();
     const close = () => { popover.hidden = true; popover.style.cssText = ''; field.querySelector('.color-trigger')?.setAttribute('aria-expanded', 'false'); disarmOutside(); };
     outside = (e) => { if (!field.contains(e.target as Node | null)) close(); };
-    // A fixed popover doesn't follow the field — close it on scroll rather than leave
-    // it stranded over unrelated controls (capture catches the sidebar's own scroll).
-    onScroll = () => close();
+    // A fixed popover doesn't follow the field — close it on scroll rather than leave it
+    // stranded over unrelated controls (capture catches the sidebar's own scroll). BUT don't
+    // close while the user is actively inside the popover: pressing a range slider (or the hex
+    // input) can trigger a browser scroll-into-view, and closing on THAT dropped the picker
+    // out from under a slider drag ("clicking the sliders just closes it"). Focus inside the
+    // popover ⇒ the scroll is the interaction's own, not a dismiss.
+    onScroll = () => { if (popover.contains(document.activeElement)) return; close(); };
     setTimeout(() => {
       document.addEventListener('pointerdown', outside!);
       window.addEventListener('scroll', onScroll!, true);
@@ -1238,8 +1272,26 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   scope.querySelectorAll<HTMLInputElement>('.color-input[data-color-hex]').forEach(hexInput => {
     const id = hexInput.dataset.colorHex!;
     const field = hexInput.closest<HTMLElement>('[data-color-field]');
-    hexInput.addEventListener('focus', () => interact(true));
-    hexInput.addEventListener('blur', () => interact(false));
+    hexInput.addEventListener('focus', () => {
+      interact(true);
+      // Expand the collapsed LCH sliders on first focus/tap of the hex input. Only the simple
+      // popover's sliders (a DIRECT child of .color-popover) — never the modes-tab picker's
+      // nested .color-lch, whose visibility the tabs own. NO re-position here: the popover was
+      // already laid out for its expanded height (measuredFullHeight), so the sliders grow into
+      // reserved space. Repositioning on reveal is exactly what caused the popover to jump and
+      // to slip out from under a slider press (closing instead of dragging).
+      const lch = field?.querySelector<HTMLElement>('.color-popover > .color-lch[hidden]');
+      if (lch) lch.hidden = false;
+    });
+    hexInput.addEventListener('blur', (e) => {
+      // Moving focus to another control INSIDE the picker (grabbing a slider right after the
+      // hex input revealed it) must NOT end the interaction: interact(false) here drops the
+      // host's drag-suppression (tool-inputs' _sliderDragging), so the slider's very first
+      // change rebuilds the sidebar row and the picker vanishes mid-drag. Only end when focus
+      // truly leaves the field.
+      if (field && e.relatedTarget instanceof Node && field.contains(e.relatedTarget)) return;
+      interact(false);
+    });
     hexInput.addEventListener('input', () => {
       const raw = hexInput.value.trim();
       const fmt = valueFmt(field);

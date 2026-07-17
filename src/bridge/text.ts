@@ -250,5 +250,27 @@ export function createTextAPI(): TextAPI {
       for (const [tag, info] of Object.entries(infos)) out[tag] = info.default;
       return out;
     },
+
+    /**
+     * Resolve a font FAMILY to a fetchable sfnt via the shell's registry —
+     * SUSE statics, user-uploaded/Google faces, then the Outfit platform face
+     * (v1.60). There is no run text at resolve time, so faces are ranked
+     * against a basic-latin sample; the chain's primary face is returned and
+     * sibling unicode subsets are dropped (the contract is one file — a caller
+     * shaping non-latin keeps its own fallback via toPath's `notdef`). Lazily
+     * imported so hosts that only ever shape explicit fontUrls never pull the
+     * registry (and its IndexedDB dependency) into their path.
+     */
+    async fontUrl(family, opts) {
+      if (typeof family !== 'string' || !family.trim()) return null;
+      const { resolveVectorFont } = await import('./font-registry.ts');
+      const vf = await resolveVectorFont({
+        fontFamily: family,
+        fontWeight: String(opts?.weight ?? 400),
+        fontStyle: opts?.italic ? 'italic' : 'normal',
+      }, 'AaBb0123');
+      if (!vf) return null;
+      return { url: vf.url, ...(vf.variations ? { variations: vf.variations } : {}) };
+    },
   };
 }

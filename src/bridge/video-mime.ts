@@ -37,3 +37,18 @@ export function videoMimeCandidates(preferred: string, { audio = false }: { audi
     : [WEBM_CODECS, MP4_CODECS];
   return preferred === 'mp4' ? [...second, ...first] : [...first, ...second];
 }
+
+// ── Encode bitrate ────────────────────────────────────────────────────────────
+// Left to its defaults, MediaRecorder encodes at a flat browser default (~2.5 Mbps
+// in Chromium) regardless of resolution — soft/blocky at 1080p+, and wasteful for a
+// tiny clip. Scale the target with pixels × fps, clamped to 1–24 Mbps so a huge
+// canvas can't request a runaway rate.
+//   bitsPerPixel 0.1  (default) — offline tool renders: flat fills, text, few
+//                                 gradients, frame-perfect delivery
+//   bitsPerPixel 0.15           — live capture (screen/camera): real motion, one
+//                                 take, no chance to re-render
+export const LIVE_BITS_PER_PIXEL = 0.15;
+export function videoBitrate(width: number, height: number, fps: number, bitsPerPixel = 0.1): number {
+  const raw = Math.round(width * height * fps * bitsPerPixel);
+  return Math.max(1_000_000, Math.min(raw, 24_000_000));
+}

@@ -36,7 +36,7 @@ import type { VectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
 import { unscopeStyleEls } from '../lib/scope-css.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
-import { videoMimeCandidates } from './video-mime.ts';
+import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
 // Capability probes live in format-support.ts so the tool view can import them
 // without pulling this rasteriser onto the tool-open path. Re-exported here for
 // dynamic callers (e.g. bridge/compose.ts does `await import('./export.ts')`).
@@ -132,6 +132,11 @@ export interface ExportOpts {
   fullPage?: boolean;
   wait?: number;
   duration?: number;
+  /** Record the ON-SCREEN preview through a screen share instead of the offline
+   *  frame-by-frame render, so frame pacing matches what the user watched. Opt-in
+   *  via the export panel's "Record live" toggle; webm/mp4 only. Popup-local like
+   *  wait/duration — never serialized into URLs or share links. */
+  live?: boolean;
 }
 
 interface ExportDims {
@@ -354,10 +359,12 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'pptx':
       return await renderPptx(node, opts);
     case 'webm':
-      return await (isRecordStage(node) ? renderRecord(node, opts, 'webm')
+      return await (opts.live ? renderLive(node, opts, 'webm')
+        : isRecordStage(node) ? renderRecord(node, opts, 'webm')
         : isTopTailStage(node) ? renderTopTail(node, opts, 'webm') : renderVideo(node, opts, 'webm'));
     case 'mp4':
-      return await (isRecordStage(node) ? renderRecord(node, opts, 'mp4')
+      return await (opts.live ? renderLive(node, opts, 'mp4')
+        : isRecordStage(node) ? renderRecord(node, opts, 'mp4')
         : isTopTailStage(node) ? renderTopTail(node, opts, 'mp4') : renderVideo(node, opts, 'mp4'));
     case 'gif':
       return await renderGif(node, opts);
@@ -5724,16 +5731,10 @@ async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
 const MAX_VIDEO_FRAMES = 600;
 
 // ── Encode quality: explicit bitrate + deterministic frame delivery ──────────
-// Left to its defaults, MediaRecorder encodes at a flat browser default (~2.5 Mbps
-// in Chromium) regardless of resolution — soft/blocky at 1080p+, and wasteful for a
-// tiny clip. Scale the target with pixels × fps at ~0.1 bits/pixel (tuned for
-// graphic/screen content: flat fills, text, few gradients), clamped to 1–24 Mbps so
-// a huge canvas can't request a runaway rate. Audio bed rides at a fixed 128 kbps.
+// Bitrate math lives in video-mime.ts (DOM-free, shared with recorder.ts) — the
+// default 0.1 bits/pixel is tuned for these offline graphic renders. Audio bed
+// rides at a fixed 128 kbps.
 const AUDIO_BITRATE = 128_000;
-function videoBitrate(width: number, height: number, fps: number): number {
-  const raw = Math.round(width * height * fps * 0.1);
-  return Math.max(1_000_000, Math.min(raw, 24_000_000));
-}
 function recorderOpts(mimeType: string, width: number, height: number, fps: number, hasAudio: boolean): MediaRecorderOptions {
   const o: MediaRecorderOptions = { mimeType, videoBitsPerSecond: videoBitrate(width, height, fps) };
   if (hasAudio) o.audioBitsPerSecond = AUDIO_BITRATE;
@@ -6025,6 +6026,45 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     }
     pump();
   });
+}
+
+// ── Live capture ("Record live") ─────────────────────────────────────────────
+// Records the on-screen preview through a screen share so the clip's frame pacing
+// matches what the user actually watched — the opt-in alternative to the offline
+// paths above. Chromium self-tab shares crop to the element exactly (CropTarget);
+// other browsers/surfaces run live-capture.ts's stage-flash calibration and a
+// per-frame canvas crop. One MediaRecorder encode at the live bitrate tier (real
+// motion, one take, no re-render). The module is lazy-imported so it loads only
+// when the option is actually used. wait/fps don't apply: capture starts when the
+// stage is located and frames arrive at the compositor's own cadence.
+async function renderLive(node: Element, opts: ExportOpts, preferred: string): Promise<Blob> {
+  const durationS = opts.duration ?? 5;
+  const { audio, mimeType } = await prepareExportAudio(opts, preferred, durationS);
+  if (!mimeType) { audio?.stop(); throw new Error(NO_VIDEO_MSG); }
+  const { captureLiveClip } = await import('./live-capture.ts');
+  // Bitrate from the stage's device-pixel size — the ceiling either crop tier can
+  // deliver. 60fps in the math (compositor rate); the clamp bounds a huge canvas.
+  const { width, height } = node.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  try {
+    const blob = await captureLiveClip(node, {
+      durationMs: durationS * 1000,
+      mimeType,
+      videoBitsPerSecond: videoBitrate(Math.round(width * dpr), Math.round(height * dpr), 60, LIVE_BITS_PER_PIXEL),
+      audioTrack: audio?.track ?? null,
+      onRecordStart: () => audio?.start(),
+      // Countdown for chrome OUTSIDE the capture (the export button) — the in-page
+      // pill is skipped whenever it has no capture-safe spot next to the stage.
+      onProgress: opts.onProgress,
+      onWarn: msg => _host?.log?.('warn', msg),
+    });
+    // MediaRecorder may fall back to the other container (mp4 request → webm bytes
+    // on Firefox) — derive the label from what it actually produced, like renderVideo.
+    const container = videoContainer(blob.type || mimeType);
+    return await withVideoMeta(new Blob([blob], { type: container }), container, opts.meta);
+  } finally {
+    audio?.stop();
+  }
 }
 
 // ── Top & Tail video compositor ────────────────────────────────────────────────

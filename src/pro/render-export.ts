@@ -16,6 +16,7 @@
 import { createRuntime, toCssPx, serializeUrlState, packQuery, isPackAvailable, PACK_PARAM } from '@lolly/engine';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
+import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import type { Unit } from '../../../../engine/src/units.ts';
 
 // Absolute short-form tool URL — `https://lolly.tools/t/<id>?<inputs>`, the human
@@ -40,6 +41,7 @@ async function preferCompactQuery(query: string): Promise<string> {
 }
 import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
+import { createNetAPI } from '../bridge/net.ts';
 import { applyBrandVars } from '../brand-vars.ts';
 import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
@@ -95,6 +97,12 @@ interface RenderRowOpts {
    * caller that passes embedMeta:false is never stamped regardless.
    */
   c2pa?: boolean;
+  /**
+   * Lolly pixel watermark (bridge/export.ts opts.imprint) — lets a batch/zip run
+   * carry the export panel's toggle per row. Forwarded only when true; the bridge
+   * embeds it on raster formats and ignores it elsewhere.
+   */
+  imprint?: boolean;
 }
 
 /**
@@ -115,6 +123,19 @@ function withThumbAssets(host: HostV1): HostV1 {
         assets.get(id, { ...opts, format: opts.format ?? 'thumb' }),
     },
   } as HostV1;
+}
+
+/**
+ * Per-mount net enforcement, mirroring the live view (views/tool.ts mountTool): a
+ * tool whose manifest declares `network.allowlist` renders with a host clone whose
+ * `net` is scoped to exactly that list. The shared boot host keeps its fail-closed
+ * empty allowlist — never mutated. Wrapping here covers every offscreen path
+ * (batch row, composed child, preview), so a nested render can't fetch beyond its
+ * OWN manifest grant. Same spread-copy safety rationale as withThumbAssets.
+ */
+function withToolNet(host: HostV1, manifest: ToolManifest): HostV1 {
+  const allowlist = manifest.network?.allowlist;
+  return allowlist?.length ? { ...host, net: createNetAPI({ allowlist }) } : host;
 }
 
 /**
@@ -237,7 +258,7 @@ type ExportStage = HTMLDivElement & { _lottieCleanup?: () => void };
  *        in `unit` (px/mm/cm/in/pt); blank falls back to the tool's native size.
  *        `dpi` sets raster resolution for physical units.
  */
-export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, width, height, unit = 'px', dpi, composeStack, watermark, embedMeta, thumbnail, thumbAssets, strongPassword, c2pa }: RenderRowOpts = {}): Promise<RenderRowResult> {
+export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, width, height, unit = 'px', dpi, composeStack, watermark, embedMeta, thumbnail, thumbAssets, strongPassword, c2pa, imprint }: RenderRowOpts = {}): Promise<RenderRowResult> {
   const tool = await getTool(row.toolId);
   if (!isExportable(tool.manifest)) {
     throw new Error(`"${tool.manifest.name}" is render-only and cannot be exported.`);
@@ -264,7 +285,7 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
   }
   // composeStack threads tool-id recursion state down when this render is itself
   // a composed child (set by the compose bridge); undefined for normal batch rows.
-  const runtime = await createRuntime(tool, thumbAssets ? withThumbAssets(host) : host, seeded, { composeStack });
+  const runtime = await createRuntime(tool, withToolNet(thumbAssets ? withThumbAssets(host) : host, tool.manifest), seeded, { composeStack });
 
   // Export dimension qualified with the unit (px / mm / cm / in / pt) so the
   // engine converts per format; blank falls back to the native canvas size.
@@ -289,7 +310,7 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
     // watermark/embedMeta/thumbnail are forwarded only when set (compose passes
     // watermark:false + embedMeta:false so an embedded child isn't stamped); batch
     // rows leave them undefined so runtime.export keeps its normal defaults.
-    const exportOpts: { width?: string | number; height?: string | number; dpi?: number; watermark?: boolean; embedMeta?: boolean; thumbnail?: boolean; strongPassword?: string; wait?: number; duration?: number; fps?: number; c2pa?: boolean } = { width: outW, height: outH, dpi };
+    const exportOpts: { width?: string | number; height?: string | number; dpi?: number; watermark?: boolean; embedMeta?: boolean; thumbnail?: boolean; strongPassword?: string; wait?: number; duration?: number; fps?: number; c2pa?: boolean; imprint?: boolean } = { width: outW, height: outH, dpi };
     if (watermark !== undefined) exportOpts.watermark = watermark;
     if (embedMeta !== undefined) exportOpts.embedMeta = embedMeta;
     if (thumbnail !== undefined) exportOpts.thumbnail = thumbnail;
@@ -299,6 +320,9 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
     // are intermediates — never stamped; an explicit opts.c2pa always wins.
     const wantC2pa = c2pa ?? (embedMeta === false || thumbnail ? false : c2paDefaultOn(tool.manifest));
     if (wantC2pa) exportOpts.c2pa = true;
+    // Pixel watermark: opt-in only, never a default — the bridge embeds it on
+    // raster formats and ignores it elsewhere.
+    if (imprint) exportOpts.imprint = true;
     // Motion format → capture a short clip. Its settle time + length come from the
     // tool's own render.video declaration (the same values the single-tool export bar
     // uses), with the length clamped so a composed/embedded render stays bounded. The
@@ -336,7 +360,7 @@ export async function renderToolPages(row: BatchRow, host: HostV1, { format, thu
   }
   const layoutW = tool.manifest.render.width;   // one page's native size
 
-  const runtime = await createRuntime(tool, thumbAssets ? withThumbAssets(host) : host, { ...(row.values ?? {}) });
+  const runtime = await createRuntime(tool, withToolNet(thumbAssets ? withThumbAssets(host) : host, tool.manifest), { ...(row.values ?? {}) });
 
   // No fixed height: let the document lay out its FULL height so every page box is
   // measured (page boxes are fixed-size, so they render identically whether or not

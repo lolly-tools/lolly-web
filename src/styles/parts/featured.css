@@ -90,9 +90,9 @@
      instead of highlighting the captions. */
   -webkit-user-select: none;
           user-select: none;
-  /* Horizontal swipe pans the strip (native); a vertical swipe SHIFTS the touched
-     tile's examples (handled in JS). Page-scroll on mobile uses the area below the strip. */
-  touch-action: pan-x;
+  /* Horizontal swipe pans the strip (native scroller); a vertical swipe scrolls the
+     PAGE — the strip never captures vertical (scroll hijack). */
+  touch-action: pan-x pan-y;
 }
 /* Lift the spotlight on the dark themes, where it reads as a genuine lit pool rather
    than a tint — Pine-Green glow against near-black / dark-teal. Light theme keeps the
@@ -104,9 +104,6 @@
 /* Grabbing lights the backdrop a touch — playful, and it gives transparent-background
    examples something to read against while you flip through them. Fades back on release. */
 .featured.is-grabbing .featured-viewport { background-color: hsl(var(--primary) / .12); }
-/* Manual example-shifts (wheel / vertical gesture) flip quickly, not at the slow
-   cinematic cross-fade pace. */
-.featured.is-shifting .ftile-img { transition-duration: .3s; }
 
 /* Flush filmstrip — NO gap, NO per-tile radius: the tiles butt edge-to-edge inside
    the inset panel and read as one continuous strip. */
@@ -396,7 +393,7 @@
    position; this block just sets the 3D stage and the resting/selected chrome. */
 .featured--coverflow .featured-viewport {
   perspective: 1500px;
-  touch-action: none;                 /* JS owns the drag + snap in this mode */
+  touch-action: pan-y;                /* JS owns the horizontal drag + snap; vertical stays with the page */
 }
 .featured--coverflow .featured-track {
   transform-style: preserve-3d;
@@ -482,9 +479,11 @@
 .featured--coverflow .ftile.is-centred .ftile-open { opacity: 1; transform: translate(-50%, 0); }
 
 /* ── Mobile drag handle ──────────────────────────────────────────────────────
-   Matches the tool editor's sheet grip. The immersive strip captures vertical
-   gestures, so this pill is the clear "grab here to slide the page up/down" handle
-   (touch-action:pan-y → dragging it scrolls the page). Desktop doesn't need it. */
+   Matches the tool editor's sheet grip. A belt-and-braces explicit "grab here to
+   slide the page up/down" handle. (Historically the strip captured vertical
+   gestures, which made this pill essential; vertical now scrolls the page from
+   anywhere on the strip, so it's just a clear extra affordance.) Desktop doesn't
+   need it. */
 .featured-grip { display: none; }
 @media (max-width: 640px) {
   .featured-grip {

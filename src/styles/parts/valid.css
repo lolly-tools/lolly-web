@@ -600,6 +600,21 @@
 
 @keyframes valid-pip-in { from { opacity: 0; scale: 0.6; } to { opacity: 1; scale: 1; } }
 
+/* ── Deep scan for watermarks (TrustMark) — a quiet secondary action right
+   below the hero scorecard, not a CTA: the button is a plain outlined pill
+   (mirrors .valid-clean-link's understatement, one step up in prominence
+   since it's a real click target). The result note it can inject reuses
+   .valid-wm entirely (see watermarkNote/trustmarkNoteHtml in views/valid.ts). */
+.valid-deepscan { margin-top: 0.9rem; display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+.valid-deepscan-btn {
+  font-size: 0.78rem; padding: 0.45rem 0.85rem;
+  background: transparent; border: 1px solid hsl(var(--border));
+  border-radius: 999px; color: hsl(var(--foreground));
+}
+.valid-deepscan-btn:hover:not(:disabled) { background: hsl(var(--muted) / 0.4); }
+.valid-deepscan-btn:disabled { opacity: 0.6; cursor: default; }
+.valid-deepscan [data-deepscan-status] { font-size: 0.78rem; }
+
 /* ── AI-generated flag ───────────────────────────────────────────────────────
    The loudest element on the page. A full-width violet banner with a pulsing
    glow, a swept sheen, and a twinkling sparkle — impossible to scroll past. */
@@ -646,6 +661,17 @@
   0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
   50%      { opacity: 0.78; transform: scale(1.12) rotate(8deg); }
 }
+/* Credit line ("Made with Google AI") + the invisible-watermark note inside the
+   AI banner — the note reads as a quieter footnote under the main claim. */
+.valid-ai-flag-credit { font-size: 0.82rem; font-style: italic; color: hsl(0 0% 100% / 0.95); }
+.valid-ai-flag-note { margin-top: 0.35rem; font-size: 0.76rem; color: hsl(0 0% 100% / 0.82); }
+.valid-ai-flag-note strong { color: hsl(0 0% 100%); }
+.valid-ai-flag-note a { color: inherit; font-weight: 700; text-decoration: underline; }
+
+/* In-pixel watermark signals live in the hero scorecard as pips, not as hero
+   badges: the Lolly Imprint (detected on-device) is a green pass pip; SynthID /
+   Meta marks (only readable by their makers) are amber likelihood pips whose
+   label carries the whole claim — see aiMarkPip in views/valid.ts. */
 
 /* ── Lolly pixel-watermark note ───────────────────────────────────────────────
    A quiet, clearly-secondary callout shown only when the in-pixel mark is found.

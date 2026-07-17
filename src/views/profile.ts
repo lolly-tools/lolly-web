@@ -42,6 +42,7 @@ import { stopNeurospicy } from '../lib/neurospicy.ts';
 import { syncNeuroDock } from '../components/neuro-dock.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
+import { pinnedToolBytes, unpinAll } from '../lib/offline-pins.ts';
 // Colour / palette / fonts / brand-pack / corner radius all live in the
 // Dashboard's "Your brand" editor now (and the #/start wizard).
 import { registerUserFonts } from '../user-fonts.ts';
@@ -121,6 +122,9 @@ interface StorageModel {
   images: { bytes: number; count: number; list: AssetRef[] };
   cache: { bytes: number };
   previews: PreviewsMeasure;
+  /** Tools pinned "available offline" — their cached FILE bytes (lib/offline-pins.ts).
+   *  Their prefetched catalog asset blobs are counted by the `cache` slice. */
+  pins: { bytes: number; count: number };
   measured: number;
   hasEstimate: boolean;
   usage: number | null;
@@ -591,7 +595,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const estP = navigator.storage?.estimate
       ? navigator.storage.estimate().catch(() => null)
       : Promise.resolve(null);
-    const [estimate, sessions, sessionSizes, cacheBytes, allImages, imagesBytes, previews] = await Promise.all([
+    const [estimate, sessions, sessionSizes, cacheBytes, allImages, imagesBytes, previews, pins] = await Promise.all([
       estP,
       host.state.list().catch((): SessionEntry[] => []),
       host.state.sizes!().catch((): Record<string, number> => ({})),
@@ -599,6 +603,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       host.assets._listUserAssets!().catch((): AssetRef[] => []),
       host.assets._userAssetsSize!().catch(() => 0),
       measurePreviews(),
+      pinnedToolBytes().catch(() => ({ bytes: 0, count: 0 })),
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
     // The grid shows visual uploads only: the headshot is hidden, and the non-visual
@@ -606,7 +611,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // would render as broken tiles. Their bytes stay in the slice either way.
     const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
     const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));
-    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes;
+    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes;
     const hasEstimate = !!(estimate && estimate.usage != null);
     const usage: number | null = hasEstimate ? estimate!.usage! : null;
     const quota: number | null = (estimate && estimate.quota) || null;
@@ -618,6 +623,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       images: { bytes: imagesBytes, count: imageList.length, list: imageList },
       cache: { bytes: cacheBytes },
       previews,
+      pins,
       measured, hasEstimate, usage, quota, overshoot, other, total,
     };
   }
@@ -630,6 +636,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       `Asset cache ${fmtBytes(m.cache.bytes)}`,
     ];
     if (m.previews.available) parts.push(`Tool previews ${fmtBytes(m.previews.bytes)}`);
+    if (m.pins.count) parts.push(`Available offline ${fmtBytes(m.pins.bytes)}`);
     let s = m.hasEstimate
       ? `Using ${fmtBytes(m.total)}: ${parts.join(', ')}`
       : `Measured ${fmtBytes(m.measured)}: ${parts.join(', ')}`;
@@ -682,6 +689,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // open managed list (multi-select state) is never rebuilt out from under the user.
   function renderSection(m: StorageModel, sort: string) {
     const hasPrev = m.previews.available;
+    // Pinned-tools slice only renders once something is pinned — a permanent
+    // "0 B" row would be noise for the (default) never-pinned user.
+    const hasPins = m.pins.count > 0;
     return `
       <section class="store-meter" aria-label="${escape(t('Storage on this device'))}">
         <header class="store-hero">
@@ -695,6 +705,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <button type="button" class="seg" data-cat="images" style="flex-grow:0"></button>
           <button type="button" class="seg" data-cat="cache" style="flex-grow:0"></button>
           <button type="button" class="seg" data-cat="previews" style="flex-grow:0"${hasPrev ? '' : ' hidden'}></button>
+          <button type="button" class="seg" data-cat="pins" style="flex-grow:0"${hasPins ? '' : ' hidden'}></button>
           <span class="seg seg--other" data-cat="other" style="flex-grow:0" aria-hidden="true" hidden></span>
         </div>
         <p class="visually-hidden" id="store-aria-sentence"></p>
@@ -704,6 +715,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <li><button type="button" class="store-chip" data-cat="images"><span class="store-chip-sw" data-cat="images"></span><span class="store-chip-name">${t('My images')}</span><span class="store-chip-val" data-size="images">—</span></button></li>
           <li><button type="button" class="store-chip" data-cat="cache"><span class="store-chip-sw" data-cat="cache"></span><span class="store-chip-name">${t('Asset cache')}</span><span class="store-chip-val" data-size="cache">—</span></button></li>
           ${hasPrev ? `<li><button type="button" class="store-chip" data-cat="previews"><span class="store-chip-sw" data-cat="previews"></span><span class="store-chip-name">${t('Tool previews')}</span><span class="store-chip-val" data-size="previews">—</span></button></li>` : ''}
+          ${hasPins ? `<li><button type="button" class="store-chip" data-cat="pins"><span class="store-chip-sw" data-cat="pins"></span><span class="store-chip-name">${t('Available offline')}</span><span class="store-chip-val" data-size="pins">—</span></button></li>` : ''}
           ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">${t('Other')}</span><span class="store-chip-val" data-size="other">—</span>${infoDot(t('Your profile, internal indexes, the offline app cache and storage overhead — everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.'))}</span></li>` : ''}
         </ul>
 
@@ -747,6 +759,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           ${hasPrev ? `<div class="store-manage store-manage--row" data-cat="previews">
             <span class="store-manage-name">${t('Tool previews')} ${infoDot(t('Snapshots Lolly draws of personalised tool cards — they redraw when needed. Safe to clear.'))} <span class="storage-count" data-size-label="previews">0 KB</span></span>
             <button type="button" id="clear-previews-btn" class="btn-link-danger">${t('Clear previews')}</button>
+          </div>` : ''}
+
+          ${hasPins ? `<div class="store-manage store-manage--row" data-cat="pins">
+            <span class="store-manage-name">${t('Available offline')} ${infoDot(t('Tools you pinned in the gallery to work offline — their files are kept on this device. Unpinning re-downloads them on demand.'))} <span class="storage-count" data-size-label="pins">0 KB</span></span>
+            <button type="button" id="unpin-all-btn" class="btn-link-danger">${t('Unpin all')}</button>
           </div>` : ''}
         </div>
 
@@ -819,7 +836,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     };
     function updateReclaim(m: StorageModel) {
       const el = body.querySelector('#store-reclaim');
-      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + selectedSessionBytes()) });
+      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + m.pins.bytes + selectedSessionBytes()) });
     }
 
     // Refresh ONLY the visualization (hero, segments, legend, quota, reclaim, aria,
@@ -840,6 +857,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         ['images', m.images.bytes, t('My images'), true],
         ['cache', m.cache.bytes, t('Asset cache'), true],
         ['previews', m.previews.bytes, t('Tool previews'), m.previews.available],
+        ['pins', m.pins.bytes, t('Available offline'), m.pins.count > 0],
       ];
       for (const [cat, bytes, label, avail] of segs) {
         const seg = bar?.querySelector<HTMLElement>(`.seg[data-cat="${cat}"]`);
@@ -856,11 +874,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setText('[data-size="images"]', fmtBytes(m.images.bytes));
       setText('[data-size="cache"]', fmtBytes(m.cache.bytes));
       setText('[data-size="previews"]', fmtBytes(m.previews.bytes));
+      setText('[data-size="pins"]', fmtBytes(m.pins.bytes));
       setText('[data-size="other"]', `~${fmtBytes(m.other)}`);
       setText('[data-count="sessions"]', String(m.sessions.count));
       setText('[data-size-hint="sessions"]', fmtBytes(m.sessions.bytes));
       setText('[data-size-label="cache"]', fmtBytes(m.cache.bytes));
       setText('[data-size-label="previews"]', fmtBytes(m.previews.bytes));
+      setText('[data-size-label="pins"]', fmtBytes(m.pins.bytes));
       const imgCount = body.querySelector('#userimg-count');
       const imgSize = body.querySelector('#userimg-size');
       if (imgCount) imgCount.textContent = `${m.images.count}`;
@@ -1035,6 +1055,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const prevBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-previews-btn');
       if (prevBtn) { await clearRegenerable(prevBtn, () => host.previews?.clear(), t('Cleared tool previews')); return; }
 
+      const unpinBtn = (e.target as Element).closest<HTMLButtonElement>('#unpin-all-btn');
+      if (unpinBtn) { await clearRegenerable(unpinBtn, () => unpinAll(), t('Removed offline copies')); return; }
+
       if ((e.target as Element).closest('.store-selbar-clear')) { body.querySelectorAll<HTMLInputElement>('.store-sess-check').forEach(c => { c.checked = false; }); syncSelbar(); return; }
       const selDel = (e.target as Element).closest<HTMLButtonElement>('.store-selbar-del');
       if (selDel) { await deleteSelectedSessions(selDel); return; }
@@ -1145,6 +1168,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         localStorage.clear();
         sessionStorage.clear();
         await clearIdbStores(['state', 'profile', 'user-assets', 'asset-blob', 'asset-meta']);
+        // The 'profile' wipe above dropped the pin RECORDS; also drop the pinned
+        // tools' Cache Storage bucket so no orphaned bytes survive the clear.
+        await unpinAll().catch(() => { /* cache API unavailable — nothing pinned */ });
         host.profile.bust!();
         applyTheme('light');
         modal.close();

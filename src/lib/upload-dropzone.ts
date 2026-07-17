@@ -8,12 +8,13 @@
  *
  * Files ingest through the SAME storeUserUpload path as the asset picker (downscale/
  * sanitise/credential-preserve/animated-sniff); a PDF/.ai converts page(s) to SVG
- * assets via the lazily-loaded pdf-import chunk. Ingest is sequential on purpose —
+ * assets via the lazily-loaded pdf-import chunk, and a PowerPoint .pptx converts
+ * chosen slide(s) the same way via pptx-import. Ingest is sequential on purpose —
  * parallel ingest of a big multi-drop would spike memory (each raster decode holds a
  * full bitmap) — and the single-flight guard is module-level so a mid-ingest re-mount
  * (the catalogue rebuilds its body per render) can't open a second lane.
  */
-import { storeUserUpload, isPdfUpload, UPLOAD_ACCEPT } from '../views/picker.ts';
+import { storeUserUpload, isPdfUpload, isPptxUpload, UPLOAD_ACCEPT } from '../views/picker.ts';
 import type { PickerHost } from '../views/picker.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
@@ -30,7 +31,7 @@ export interface DropzoneOpts {
 }
 
 // What the ingest path ACTUALLY accepts — keep in step with UPLOAD_ACCEPT.
-const DEFAULT_HINT = 'Images (PNG, JPG, WEBP, GIF), SVG, PDF & Illustrator, audio (MP3, WAV, OGG, M4A, FLAC), plus video & Lottie';
+const DEFAULT_HINT = 'Images (PNG, JPG, WEBP, GIF), SVG, PDF & Illustrator, PowerPoint, audio (MP3, WAV, OGG, M4A, FLAC), plus video & Lottie';
 
 // Lucide-style upload glyph (themes via currentColor; sized in dropzone.css).
 const UPLOAD_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>';
@@ -72,6 +73,17 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
         if (isPdfUpload(file)) {
           const { ingestPdfAsSvgAssets } = await import('../views/pdf-import.ts');
           const refs = await ingestPdfAsSvgAssets(host, file, {
+            mode: 'multi',
+            warn: (m) => announce(m, { assertive: true }),
+          });
+          stored += refs.length;
+          continue;
+        }
+        // A .pptx deck converts chosen slide(s) to SVG assets the same way, via the
+        // lazily-loaded pptx-import chunk (fflate + the engine reader, not pdf-lib).
+        if (isPptxUpload(file)) {
+          const { ingestPptxAsSvgAssets } = await import('../views/pptx-import.ts');
+          const refs = await ingestPptxAsSvgAssets(host, file, {
             mode: 'multi',
             warn: (m) => announce(m, { assertive: true }),
           });

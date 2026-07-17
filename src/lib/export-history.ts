@@ -19,6 +19,9 @@ export interface ExportEntry {
   thumb: string | null; // data-URL preview
   query: string;        // serialised URL-state → reopen link
   at: number;           // epoch ms
+  /** Hex SHA-256 of the exact bytes downloaded — lets /verify match a file back to
+   *  this record. Optional: absent on pre-hash records and where crypto.subtle is. */
+  contentHash?: string;
 }
 
 const STORE = 'exports';
@@ -50,4 +53,24 @@ export async function listExports(limit = 12): Promise<ExportEntry[]> {
     const all = (await db.getAll(STORE)) as ExportEntry[];
     return all.sort((a, b) => b.at - a.at).slice(0, limit);
   } catch { return []; }
+}
+
+/** One tool's most recent exports, newest first (the export popup's reopen rail). */
+export async function listToolExports(toolId: string, limit = 6): Promise<ExportEntry[]> {
+  return (await listExports(CAP)).filter((e) => e.toolId === toolId).slice(0, limit);
+}
+
+/** The reopen link for an entry — the tool plus the exact state it was downloaded
+ *  with. The single source of the URL shape (dashboard stack + export popup rail). */
+export function exportReopenHref(e: Pick<ExportEntry, 'toolId' | 'query'>): string {
+  return `#/tool/${e.toolId}${e.query ? '?' + e.query : ''}`;
+}
+
+/** Hex SHA-256 of a blob's bytes; undefined where crypto.subtle is unavailable
+ *  (insecure contexts) or the read fails — callers treat the hash as best-effort. */
+export async function hashBlob(blob: Blob): Promise<string | undefined> {
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch { return undefined; }
 }

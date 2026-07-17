@@ -57,6 +57,16 @@ export interface RunBatchOpts {
   pathAware?: boolean;
   /** AES-256 lock applied to any pdf/pdf-cmyk rows (ignored for other formats). */
   strongPassword?: string;
+  /**
+   * Lolly pixel imprint, forwarded to every row (renderRowToBlob opts.imprint —
+   * the bridge embeds it on raster formats and ignores it elsewhere). Opt-in
+   * only, never a default: unlike c2pa/watermark (policy defaults renderRowToBlob
+   * applies itself), imprint mirrors the export panel's toggle (tool-actions
+   * [data-action="imprint"], seeded by ?imprint=). Sessions don't persist it
+   * (sessionSnapshot writes no __export_imprint), so there's no per-row channel —
+   * callers thread the live toggle's run-level value here.
+   */
+  imprint?: boolean;
 }
 
 const FMT_EXT: Record<string, string> = { 'pdf-cmyk': 'pdf', jpeg: 'jpg', 'eps-cmyk': 'eps', 'svg-anim': 'svg', 'webp-anim': 'webp' };
@@ -94,7 +104,7 @@ function uniqueName(used: Set<string>, base: string, ext: string, pathAware = fa
 export async function runBatch(
   rows: BatchRow[],
   host: HostV1,
-  { format, unit, dpi, onProgress, isCancelled, pathAware = false, strongPassword }: RunBatchOpts = {},
+  { format, unit, dpi, onProgress, isCancelled, pathAware = false, strongPassword, imprint }: RunBatchOpts = {},
 ): Promise<{ files: BatchFile[]; results: BatchResult[] }> {
   const files: BatchFile[] = [];
   const results: BatchResult[] = [];
@@ -122,7 +132,7 @@ export async function runBatch(
       const rowDpi = rowUnit === 'px' ? undefined : (row.dpi ?? dpi ?? 300);
       const t0 = Date.now();
       const { blob, format: fmt, url } = await renderRowToBlob(row as Parameters<typeof renderRowToBlob>[0], host, {
-        format: row.format || format, width: row.outWidth, height: row.outHeight, unit: rowUnit as NonNullable<Parameters<typeof renderRowToBlob>[2]>['unit'], dpi: rowDpi, strongPassword,
+        format: row.format || format, width: row.outWidth, height: row.outHeight, unit: rowUnit as NonNullable<Parameters<typeof renderRowToBlob>[2]>['unit'], dpi: rowDpi, strongPassword, imprint,
       });
       const ms = Date.now() - t0; // render time, surfaced in the zip manifest
       // Per-row filename wins for the stem (extension stripped — we add the

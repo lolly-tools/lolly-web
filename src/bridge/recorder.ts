@@ -23,7 +23,7 @@ import type {
 // Import the tiny mime-candidate list directly (NOT videoMimeType from export.ts) —
 // recorder.ts is wired into the bridge at boot, and pulling in export.ts (the whole
 // rasteriser) would drag it into the preload bundle. video-mime.ts is dependency-free.
-import { videoMimeCandidates } from './video-mime.ts';
+import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
 // Tiny dependency-free shell side channel — safe to import on the boot path.
 import { publishRecordPreview } from '../lib/record-preview.ts';
 
@@ -423,12 +423,23 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
   const mimeType = wantVideo
     ? (videoMimeType(opts.format ?? 'mp4', { audio: haveAudio }) ?? videoMimeType(opts.format ?? 'mp4') ?? '')
     : audioMimeType(opts.format);
+  // Explicit video bitrate: left to its default, MediaRecorder encodes ~2.5 Mbps flat
+  // regardless of resolution — visibly blocky for a 1080p+ screen or camera take, and
+  // a live take gets no second chance. Scale with the track's actual size × frame rate
+  // at the live bits-per-pixel tier. Settings can be sparse right after acquisition,
+  // so fall back to 720p30 rather than a degenerate request. Browsers clamp (never
+  // reject) bitrate values, so only the mime hint can make construction throw.
+  const encOpts: MediaRecorderOptions = {};
+  if (wantVideo) {
+    const s = stream.getVideoTracks()[0]?.getSettings?.() ?? {};
+    encOpts.videoBitsPerSecond = videoBitrate(s.width ?? 1280, s.height ?? 720, s.frameRate ?? 30, LIVE_BITS_PER_PIXEL);
+  }
   let recorder: MediaRecorder;
   try {
     try {
-      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorder = new MediaRecorder(stream, mimeType ? { ...encOpts, mimeType } : encOpts);
     } catch {
-      recorder = new MediaRecorder(stream); // let the browser pick if the hinted mime is rejected
+      recorder = new MediaRecorder(stream, encOpts); // drop the rejected mime hint, keep the bitrate
     }
   } catch (e) {
     // Even the browser-default MediaRecorder can't encode this stream (no supported format):

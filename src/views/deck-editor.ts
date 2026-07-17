@@ -28,9 +28,12 @@ import {
 } from './free-canvas-math.ts';
 import type { Box, BoxFieldConfig, HandleName, AlignEdge, Axis, ZOp, AABB, Rect } from './free-canvas-math.ts';
 import { icon } from '../lib/icons.ts';
+import type { IconName } from '../lib/icons.ts';
+import { mountColorField } from '../components/color-field.ts';
 import { parsePptxGenJs, inchesToNative } from '../lib/pptxgen-import.ts';
 import type { TextRun } from '../lib/pptxgen-import.ts';
-import { nearestBrandColor } from '@lolly/engine';
+import { nearestBrandColor, isPptx, readPptx } from '@lolly/engine';
+import type { PptxDeckRead, PptxReadPara, PptxParts } from '@lolly/engine';
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +114,7 @@ const SLOTS_FOR: Record<string, string[]> = {
 const LAYOUTS = Object.keys(SLOTS_FOR);
 const DEFAULT_BG = '#141b2d';
 const MAX_SLIDES = 40;   // mirrors the tool hook's cap
+const MAX_BOXES = 120;   // lock-step with MAX_BOXES in community/deck-builder/hooks.js — the tool renders at most this many boxes per freeform slide
 
 // Static thumbnail scheme colours — mirror the tool hook's THEME_FALLBACK + schemeColors
 // (community/deck-builder/hooks.js) so a themed slide's thumbnail reflects its scheme
@@ -212,6 +216,7 @@ export function coerceSlide(o: Record<string, unknown>): Slide {
 }
 
 let boxSeq = 0;
+let colourSeq = 0;   // unique-enough id per mounted inspector colour picker
 /** A colour value (hex, with or without the leading #) → a safe `#rrggbb(aa)` or '' if not a
  *  hex. Accepts the hash-less 6-hex pptxgenjs uses. */
 export function toHex(v: unknown): string {
@@ -224,11 +229,29 @@ const SHAPE_NORM: Record<string, 'rect' | 'round' | 'pill' | 'ellipse'> = {
   rect: 'rect', square: 'rect', round: 'round', rounded: 'round', roundrect: 'round',
   pill: 'pill', stadium: 'pill', ellipse: 'ellipse', circle: 'ellipse', oval: 'ellipse',
 };
+/** The three geometries the inspector offers. `round` is not among them: since the tool's
+ *  boxRadiusCss lets a `rect` carry its authored corners, "rounded" is a rectangle WITH a
+ *  radius, not a separate shape — so offering both would be one control contradicting
+ *  another. Legacy/imported `round` records still load, and read as Rectangle. */
+type ShapeUi = 'rect' | 'pill' | 'ellipse';
+function shapeUi(v: unknown): ShapeUi {
+  const s = SHAPE_NORM[asText(v).toLowerCase()] || 'rect';
+  return s === 'pill' ? 'pill' : s === 'ellipse' ? 'ellipse' : 'rect';
+}
+/** The tool's own default text size: styles.css gives an unsized .sl-box-text `3cqw`, i.e.
+ *  3% of the native canvas width. Shown as the Size field's placeholder so an unset box
+ *  reads as what it actually renders, without writing a value we didn't need to store. */
+const DEFAULT_TEXT_PX = Math.round(1920 * 0.03);
 
 /** Coerce a loose object into a defended freeform box (the SHARED box shape): id +
  *  kind:"text"|"image"|"box" + x/y/w/h numbers (px on the slide native canvas) + optional
- *  rot; text/color/fontSize/align for text, src for image, and fill/shape/radius/lineColor/
- *  lineWidth for a shape "box". Missing geometry defaults to a sensible size. */
+ *  rot; text/color/fontSize/align/valign/fit for text, src for image, and
+ *  fill/shape/radius/lineColor/lineWidth for a shape "box". Missing geometry defaults to a
+ *  sensible size.
+ *
+ *  The record is kept MINIMAL on purpose — it is stored as JSON in a `text` sub-field, so
+ *  it round-trips through URL/session state and every key costs URL budget. So: compact
+ *  align codes, and every optional key omitted rather than written at its default. */
 export function coerceBox(o: Record<string, unknown>): Box {
   const rawKind = asText(o.kind);
   const kind = rawKind === 'image' ? 'image' : rawKind === 'box' ? 'box' : 'text';
@@ -244,7 +267,7 @@ export function coerceBox(o: Record<string, unknown>): Box {
     // text or image of its own — text sits in separate boxes above it (array order = z-order).
     const fill = toHex(o.fill); if (fill) b.fill = fill;
     b.shape = SHAPE_NORM[asText(o.shape).toLowerCase()] || 'rect';
-    if (o.radius != null) { const r = Math.max(0, num(o.radius as never, 0)); if (r) b.radius = r; }
+    const radius = coerceRadius(o.radius); if (radius != null) b.radius = radius;
     const lc = toHex(o.lineColor ?? o.stroke); if (lc) b.lineColor = lc;
     if (o.lineWidth != null || o.strokeWidth != null) { const lw = Math.max(0, num((o.lineWidth ?? o.strokeWidth) as never, 0)); if (lw) b.lineWidth = lw; }
   } else if (kind === 'text') {
@@ -261,12 +284,58 @@ export function coerceBox(o: Record<string, unknown>): Box {
   // BOX_ALIGN map renders both, so normalise to the compact form for a stable stored value.
   const al = ALIGN_NORM[asText(o.align).toLowerCase()];
   if (al) b.align = al;
+  const va = VALIGN_NORM[asText(o.valign).toLowerCase()];
+  if (va && va !== 't') b.valign = va;          // 't' is the render default — don't store it
+  if (o.fit) b.fit = true;                      // omitted when off, so an unfitted box carries no key
   return b;
 }
 
 const ALIGN_NORM: Record<string, 'l' | 'c' | 'r'> = {
   l: 'l', left: 'l', c: 'c', center: 'c', centre: 'c', r: 'r', right: 'r',
 };
+/** Vertical text position inside the box. Mirrors the hook's BOX_VALIGN: compact codes are
+ *  what we store, the full words are what hand-written / layout-studio-shaped JSON uses. */
+const VALIGN_NORM: Record<string, 't' | 'm' | 'b'> = {
+  t: 't', top: 't', m: 'm', middle: 'm', center: 'm', centre: 'm', b: 'b', bottom: 'b',
+};
+
+/** A shape's corner rounding, in native px: ONE number for all four corners, or a
+ *  [topLeft, topRight, bottomRight, bottomLeft] array (CSS corner order) when they differ.
+ *  Collapses a uniform array back to a single number so the stored record stays minimal,
+ *  and returns null for "no rounding" so the key is omitted entirely. Mirrors radiusList()
+ *  in the tool hook — the two must read the same shape. */
+export function coerceRadius(v: unknown): number | number[] | null {
+  if (Array.isArray(v)) {
+    const r = [0, 1, 2, 3].map(i => Math.max(0, num(v[i] as never, 0)));
+    if (r.every(n => n === r[0])) return r[0]! > 0 ? r[0]! : null;
+    return r;
+  }
+  if (v == null) return null;
+  const one = Math.max(0, num(v as never, 0));
+  return one > 0 ? one : null;
+}
+
+/** A radius (number | number[] | absent) as the 4 corners it paints, for the inspector's
+ *  per-corner fields. */
+export function radiusCorners(v: unknown): [number, number, number, number] {
+  const r = coerceRadius(v);
+  if (Array.isArray(r)) return [r[0]!, r[1]!, r[2]!, r[3]!];
+  const one = typeof r === 'number' ? r : 0;
+  return [one, one, one, one];
+}
+
+/** Clone the boxes at `indices` for a Duplicate op: structured clones (a nested src asset
+ *  ref must NOT be shared with its original), id dropped so coerceBox re-mints a fresh one,
+ *  offset +off/+off native px, appended after the originals in index order. Pure — the
+ *  caller re-points the selection at `ids` and commits ONCE (one undo step). */
+export function duplicateBoxes(boxes: Box[], indices: number[], off = 24): { boxes: Box[]; ids: string[] } {
+  const clones = indices.filter(i => boxes[i]).map(i => {
+    const c = structuredClone(boxes[i]) as Record<string, unknown>;
+    delete c.id;
+    return coerceBox({ ...c, x: num(c.x as never, 0) + off, y: num(c.y as never, 0) + off });
+  });
+  return { boxes: [...boxes, ...clones], ids: clones.map(c => String(c.id)) };
+}
 
 // ── layout → freeform conversion ("switch to freeform, keep the content") ─────────
 // Turning a structured layout slide into a freeform canvas EXPLODES its content into
@@ -339,7 +408,7 @@ export function layoutToBoxes(slide: Slide, nativeW = 1920, nativeH = 1920): Box
   });
   const content = asText(slide.content);
   if (content.trim()) {
-    boxes.push(coerceBox({ kind: 'text', text: content, align: layout === 'title' ? 'c' : 'l', ...px(textRegion(layout)) }));
+    boxes.push(coerceBox({ kind: 'text', text: content, align: layout === 'title' ? 'c' : 'l', fit: true, ...px(textRegion(layout)) }));
   }
   return boxes;
 }
@@ -461,7 +530,7 @@ export function parsePptxGenDeck(source: string): Slide[] {
   const wIn = parsed.layout.wIn || 13.333, hIn = parsed.layout.hIn || 7.5;
   const nx = (v: number): number => Math.round(inchesToNative(v, wIn, NW));   // x / width / radius (width axis)
   const ny = (v: number): number => Math.round(inchesToNative(v, hIn, NW));   // y / height (height axis)
-  const npt = (pt: number): number => Math.round(inchesToNative(pt / 72, hIn, NW));   // points → native
+  const npt = (pt: number): number => Math.round(inchesToNative(pt / 72, wIn, NW));   // points → native (WIDTH axis — the hook paints fontSize/lineWidth as cqw)
   const slides = parsed.slides.slice(0, MAX_SLIDES).map((sl): Slide => {
     const boxes: Box[] = [];
     for (const el of sl.elements) {
@@ -489,6 +558,145 @@ export function parsePptxGenDeck(source: string): Slide[] {
     return s;
   });
   return slides.length ? slides : [coerceSlide({})];
+}
+
+/** A read text node's paragraphs → the markdown a freeform text box stores — the binary-read
+ *  sibling of runsToMarkdown: **bold** / *italic* marks; paragraph boundaries and explicit
+ *  break runs (the reader emits `a:br` as a run whose text is just '\n') become line breaks.
+ *  Underline has no markdown equivalent — dropped. */
+function readRunsToMarkdown(paras: PptxReadPara[]): string {
+  const lines = paras.map(p => {
+    let md = '';
+    for (const r of p.runs) {
+      const t = asText(r.text);
+      if (t === '\n') { md += '\n'; continue; }
+      let m = t;
+      if (r.bold && m) m = '**' + m + '**';
+      if (r.italic && m) m = '*' + m + '*';
+      md += m;
+    }
+    return md;
+  });
+  return lines.join('\n').replace(/\n+$/, '');
+}
+
+/** A pipe-table cell: '|' escaped so it can't split the row, newlines flattened (a pipe row
+ *  is one line). */
+const tableCell = (s: string): string => asText(s).replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ').trim();
+
+// Light neutral for a frame we can't materialise (missing/oversized media, charts, SmartArt)
+// — reads as an empty card, and brandifyDeck may snap it onto a brand grey.
+const PLACEHOLDER_FILL = '#e6e9ee';
+const EMU_PER_IN = 914400;
+
+/** Import a READ binary .pptx (the engine's readPptx model) as FREEFORM slides — the binary
+ *  twin of parsePptxGenDeck, same EMU→1920² proportional mapping, one box per node:
+ *  text → a `text` box (runs → markdown, colour/size from the first run — a text node's own
+ *  fill is dropped, one box per node), shape → a `box`, pic → an `image` via `getMediaUrl`
+ *  (null → a placeholder card + a small label), table → a `text` box holding a markdown pipe
+ *  table, chart/SmartArt/OLE (`unknown`) → a placeholder card + a small label. Boxes cap at
+ *  MAX_BOXES per slide (the tool renders no more). Colours re-theme to the brand separately
+ *  (brandifyDeck — it needs the host tokens). */
+export function pptxDeckToSlides(deck: PptxDeckRead, getMediaUrl?: (path: string) => string | null): Slide[] {
+  const NW = 1920;
+  const wIn = deck.widthEmu / EMU_PER_IN || 13.333, hIn = deck.heightEmu / EMU_PER_IN || 7.5;
+  const nx = (emu: number): number => Math.round(inchesToNative(emu / EMU_PER_IN, wIn, NW));   // x / width (width axis)
+  const ny = (emu: number): number => Math.round(inchesToNative(emu / EMU_PER_IN, hIn, NW));   // y / height (height axis)
+  const npt = (pt: number): number => Math.round(inchesToNative(pt / 72, wIn, NW));            // points → native (WIDTH axis — the hook paints fontSize/lineWidth as cqw)
+  const slides = deck.slides.slice(0, MAX_SLIDES).map((sl): Slide => {
+    const boxes: Array<Record<string, unknown>> = [];
+    // Light card + a small label naming the loss — shared by unresolvable media and the
+    // chart/SmartArt/OLE frames, so what didn't survive import is visible on the slide.
+    const placeholder = (geo: { x: number; y: number; w: number; h: number; rot?: number }, label: string): void => {
+      boxes.push({ kind: 'box', ...geo, fill: PLACEHOLDER_FILL });
+      const pad = Math.max(8, Math.round(Math.min(geo.w, geo.h) * 0.08));
+      boxes.push({
+        kind: 'text', text: label,
+        x: geo.x + pad, y: geo.y + pad, w: Math.max(1, geo.w - 2 * pad), h: Math.max(1, geo.h - 2 * pad),
+        rot: geo.rot, fontSize: npt(12), color: '#172029',   // explicit dark ink — the card is light
+      });
+    };
+    for (const node of sl.nodes) {
+      if (boxes.length >= MAX_BOXES) break;   // the tool renders at most MAX_BOXES per slide
+      const geo = { x: nx(node.xEmu), y: ny(node.yEmu), w: nx(node.cxEmu), h: ny(node.cyEmu), rot: node.rot };
+      if (node.type === 'text') {
+        const first = node.paras[0]?.runs[0];
+        boxes.push({
+          kind: 'text', ...geo, text: readRunsToMarkdown(node.paras),
+          // .hex regardless of scheme provenance — brandify re-snaps it to the brand anyway.
+          // toHex here because coerceBox stores `color` verbatim (the reader's hex is bare).
+          color: toHex(first?.color?.hex) || undefined,
+          fontSize: first?.sizePt != null ? npt(first.sizePt) : undefined,
+        });
+      } else if (node.type === 'shape') {
+        boxes.push({
+          kind: 'box', ...geo, fill: node.fill?.hex,
+          shape: node.geom === 'ellipse' ? 'ellipse' : node.geom === 'roundRect' ? 'round' : 'rect',
+          lineColor: node.line?.hex,
+          // The reader doesn't surface a:ln w yet; the tool draws a border only when BOTH
+          // lineColor and lineWidth are set, so an outline needs a default visible width.
+          lineWidth: node.line?.hex ? Math.max(2, npt(1)) : undefined,
+        });
+      } else if (node.type === 'pic') {
+        const src = node.media ? getMediaUrl?.(node.media) ?? null : null;
+        if (src) boxes.push({ kind: 'image', ...geo, src });
+        else placeholder(geo, 'Image placeholder — could not be imported');
+      } else if (node.type === 'table') {
+        if (!node.rows.length) continue;
+        const row = (cells: string[]): string => '| ' + cells.map(tableCell).join(' | ') + ' |';
+        boxes.push({
+          kind: 'text', ...geo,
+          text: [row(node.rows[0]!), '| ' + node.rows[0]!.map(() => '---').join(' | ') + ' |', ...node.rows.slice(1).map(row)].join('\n'),
+        });
+      } else {
+        placeholder(geo, 'Chart / SmartArt placeholder — not editable');
+      }
+    }
+    boxes.length = Math.min(boxes.length, MAX_BOXES);   // a placeholder pair can land one over
+    return coerceSlide({ mode: 'freeform', boxes, notes: sl.notes });
+  });
+  return slides.length ? slides : [coerceSlide({})];
+}
+
+// Extension → mime for the media parts we inline as data: URLs; anything else (emf, tiff,
+// video…) stays a placeholder.
+const MEDIA_MIME: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', svg: 'image/svg+xml',
+};
+const MAX_MEDIA_BYTES = 4 * 1024 * 1024;   // a data: URL beyond this bloats the stored deck
+
+/** A .pptx media part → a data: URL an image box can store, or null when the part is
+ *  missing, not an inlineable image type, or too big. Base64 is built over ~8k slices —
+ *  String.fromCharCode over a whole multi-MB part would overflow the argument stack. */
+export function pptxMediaDataUrl(parts: PptxParts, path: string): string | null {
+  const part = parts[path];
+  if (!(part instanceof Uint8Array) || part.length > MAX_MEDIA_BYTES) return null;
+  const mime = MEDIA_MIME[(/\.([a-z0-9]+)$/i.exec(path)?.[1] ?? '').toLowerCase()];
+  if (!mime) return null;
+  let bin = '';
+  for (let i = 0; i < part.length; i += 8192) bin += String.fromCharCode(...part.subarray(i, i + 8192));
+  return 'data:' + mime + ';base64,' + btoa(bin);
+}
+
+// Whole-import budget for inlined media, in data-URL chars — past it, further paths resolve
+// to null (an on-slide placeholder) rather than exhausting the heap on a media-heavy deck.
+const TOTAL_MEDIA_CHARS = 64 * 1024 * 1024;
+
+/** Wrap a media resolver with per-path memoisation (null results too — a part that failed
+ *  once fails for every pic referencing it) and the TOTAL_MEDIA_CHARS budget. Without the
+ *  memo, N pic nodes sharing one r:embed would re-encode the same part into N distinct
+ *  multi-MB strings. */
+export function makeMediaResolver(resolve: (path: string) => string | null, budget = TOTAL_MEDIA_CHARS): (path: string) => string | null {
+  const cache = new Map<string, string | null>();
+  let chars = 0;
+  return (path) => {
+    if (cache.has(path)) return cache.get(path) ?? null;
+    const url = chars > budget ? null : resolve(path);
+    if (url) chars += url.length;
+    cache.set(path, url);
+    return url;
+  };
 }
 
 /** Route paste text to the right parser: a pptxgenjs script → the pptxgen importer; JSON if it
@@ -570,49 +778,114 @@ function inlineMdToHtml(s: string): string {
 }
 
 /** Markdown subset → the HTML shown in the contenteditable. Consecutive bullet lines fold
- *  into one `<ul>`; headings become `<h1..3>`; blank lines become empty paragraphs (so the
- *  paragraph structure round-trips); everything else is a `<p>`. */
+ *  into one `<ul>` and consecutive numbered lines (`1.` / `1)`) into one `<ol>`; headings
+ *  become `<h1..3>`; blank lines become empty paragraphs (so the paragraph structure
+ *  round-trips); everything else is a `<p>`. */
 export function mdToRichHtml(md: string): string {
   const lines = String(md).replace(/\r\n?/g, '\n').split('\n');
   const out: string[] = [];
-  let ul: string[] = [];
-  const flushUl = (): void => { if (ul.length) { out.push('<ul>' + ul.join('') + '</ul>'); ul = []; } };
+  // One buffer for whichever kind of list is currently open — the two never interleave
+  // without a flush between them, so a single { tag, items } holds both.
+  let list: { tag: 'ul' | 'ol'; items: string[] } | null = null;
+  const flushList = (): void => { if (list) { out.push(`<${list.tag}>` + list.items.join('') + `</${list.tag}>`); list = null; } };
+  const pushItem = (tag: 'ul' | 'ol', html: string): void => {
+    if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+    list.items.push('<li>' + html + '</li>');
+  };
   for (const raw of lines) {
     const line = raw.replace(/\s+$/, '');
     const bullet = /^(\s*)[-*+]\s+(.*)$/.exec(line);
-    if (bullet) { ul.push('<li>' + inlineMdToHtml(bullet[2]!) + '</li>'); continue; }
-    flushUl();
+    if (bullet) { pushItem('ul', inlineMdToHtml(bullet[2]!)); continue; }
+    const numbered = /^(\s*)\d{1,9}[.)]\s+(.*)$/.exec(line);
+    if (numbered) { pushItem('ol', inlineMdToHtml(numbered[2]!)); continue; }
+    flushList();
     const heading = /^(#{1,3})\s+(.*)$/.exec(line);
     if (heading) { const lvl = heading[1]!.length; out.push(`<h${lvl}>` + inlineMdToHtml(heading[2]!) + `</h${lvl}>`); continue; }
     if (line.trim() === '') { out.push('<p><br></p>'); continue; }
     out.push('<p>' + inlineMdToHtml(line) + '</p>');
   }
-  flushUl();
+  flushList();
   return out.join('');
 }
 
-/** One inline element's children → markdown (`<strong>`→`**`, `<em>`→`*`, `<br>`→newline). */
+/** One inline node → markdown (`<strong>`→`**`, `<em>`→`*`, `<br>`→newline). */
+function inlineNodeToMd(node: Node): string {
+  if (node.nodeType === 3) return node.nodeValue || '';
+  if (node.nodeType !== 1) return '';
+  const c = node as HTMLElement;
+  const tag = c.tagName.toUpperCase();
+  // A soft break (Shift+Enter, or a browser's in-block <br>) is real content — emit a
+  // newline, don't drop it, or adjacent lines mash into one word-run on save.
+  if (tag === 'BR') return '\n';
+  const inner = inlineHtmlToMd(c);
+  if (tag === 'STRONG' || tag === 'B') return '**' + inner + '**';
+  if (tag === 'EM' || tag === 'I') return '*' + inner + '*';
+  // The hook's inlineMd also renders `code` spans and [text](url) links — serialise
+  // them back to their markdown, or a click-then-blur with NO edit would commit the
+  // flattened text (the same data-loss class as tables). A link the hook rendered
+  // href-less (unsafe scheme) stays plain text.
+  if (tag === 'CODE') return '`' + inner + '`';
+  if (tag === 'A') {
+    const href = c.getAttribute('href');
+    return href ? '[' + inner + '](' + href + ')' : inner;
+  }
+  return inner;
+}
+
+/** One inline element's children → markdown. */
 function inlineHtmlToMd(el: Node): string {
   let s = '';
-  for (const node of Array.from(el.childNodes)) {
-    if (node.nodeType === 3) { s += node.nodeValue || ''; continue; }
-    if (node.nodeType !== 1) continue;
-    const c = node as HTMLElement;
-    const tag = c.tagName.toUpperCase();
-    // A soft break (Shift+Enter, or a browser's in-block <br>) is real content — emit a
-    // newline, don't drop it, or adjacent lines mash into one word-run on save.
-    if (tag === 'BR') { s += '\n'; continue; }
-    const inner = inlineHtmlToMd(c);
-    if (tag === 'STRONG' || tag === 'B') s += '**' + inner + '**';
-    else if (tag === 'EM' || tag === 'I') s += '*' + inner + '*';
-    else s += inner;
-  }
+  for (const node of Array.from(el.childNodes)) s += inlineNodeToMd(node);
   return s;
 }
 
+/** A rendered <ul>/<ol> → markdown list lines. Recurses into a list nested inside an
+ *  <li> (the hook's renderList opens a child list inside the still-open parent item)
+ *  with a two-space indent per level — exactly what the hook's listItem() reads back —
+ *  so nesting round-trips instead of the child items flattening into the parent's text. */
+function listToMd(el: HTMLElement, blocks: string[], depth = 0): void {
+  const ordered = el.tagName.toUpperCase() === 'OL';
+  let n = 1;
+  for (const li of Array.from(el.children)) {
+    if (li.tagName.toUpperCase() !== 'LI') continue;
+    let text = '';
+    const nested: HTMLElement[] = [];
+    for (const node of Array.from(li.childNodes)) {
+      const t = node.nodeType === 1 ? (node as HTMLElement).tagName.toUpperCase() : '';
+      if (t === 'UL' || t === 'OL') nested.push(node as HTMLElement);
+      else text += inlineNodeToMd(node);
+    }
+    blocks.push('  '.repeat(depth) + (ordered ? `${n++}. ` : '- ') + text.trim());
+    for (const sub of nested) listToMd(sub, blocks, depth + 1);
+  }
+}
+
+/** A rendered pipe table (the hook's readTable output) → markdown pipe rows. Cell
+ *  pipes are re-escaped (`\|` — the form splitRow un-escapes), and the separator row
+ *  after the header — what makes the rows a table again on re-parse — carries each
+ *  column's alignment read back off the header cells' text-align styles. */
+function tableToMd(el: HTMLElement, blocks: string[]): void {
+  const rows = Array.from(el.querySelectorAll('tr'));
+  if (!rows.length) return;
+  const cells = (tr: Element): HTMLElement[] => Array.from(tr.children)
+    .filter((c): c is HTMLElement => c instanceof HTMLElement && /^T[HD]$/.test(c.tagName.toUpperCase()));
+  const rowMd = (tr: Element): string =>
+    '| ' + cells(tr).map(c => inlineHtmlToMd(c).replace(/\|/g, '\\|').replace(/\n+/g, ' ').trim()).join(' | ') + ' |';
+  blocks.push(rowMd(rows[0]!));
+  blocks.push('| ' + cells(rows[0]!).map(c => {
+    const a = (c.style?.textAlign || '').toLowerCase();
+    return a === 'center' ? ':---:' : a === 'right' ? '---:' : a === 'left' ? ':---' : '---';
+  }).join(' | ') + ' |');
+  for (const tr of rows.slice(1)) blocks.push(rowMd(tr));
+}
+
 /** The contenteditable's HTML → the stored markdown-subset string. Block children map back:
- *  `<h1..3>`→`#…`, `<ul>/<ol>`→`- `/`N. ` list lines, `<p>/<div>`→a plain line. Trailing
- *  empty lines (a browser's stray final paragraph) are trimmed. */
+ *  `<h1..3>`→`#…`, `<ul>/<ol>`→`- `/`N. ` list lines (nested lists indented),
+ *  `<table>`→pipe rows, `<p>/<div>`→a plain line. Trailing empty lines (a browser's
+ *  stray final paragraph) are trimmed. Must round-trip everything the deck-builder
+ *  hook renders from content markdown — the inline layout editor serialises the
+ *  HOOK-RENDERED slide DOM on every blur, so any structure this can't re-emit would
+ *  be silently destroyed by a click-then-blur with no edit at all. */
 export function richHtmlToMd(root: HTMLElement): string {
   const blocks: string[] = [];
   for (const node of Array.from(root.childNodes)) {
@@ -624,13 +897,11 @@ export function richHtmlToMd(root: HTMLElement): string {
       const lvl = Math.min(3, Number(tag[1]));
       blocks.push('#'.repeat(lvl) + ' ' + inlineHtmlToMd(el));
     } else if (tag === 'UL' || tag === 'OL') {
-      let n = 1;
-      for (const li of Array.from(el.children)) {
-        if (li.tagName.toUpperCase() !== 'LI') continue;
-        blocks.push((tag === 'OL' ? (n++ + '. ') : '- ') + inlineHtmlToMd(li));
-      }
+      listToMd(el, blocks);
     } else if (tag === 'LI') {
       blocks.push('- ' + inlineHtmlToMd(el));
+    } else if (tag === 'TABLE') {
+      tableToMd(el, blocks);
     } else {
       // p / div / anything block-level. A paragraph that is ONLY a soft break (an empty
       // <p><br></p>, the browser's blank-line marker) collapses to an empty block = the
@@ -803,17 +1074,28 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     stack: 'Stacked', golden: 'Golden ratio', cols3: 'Three columns', grid4: 'Four grid',
   };
 
-  function makeSelect(cls: string, label: string, choices: string[], value: string, onChange: (v: string) => void, labelOf: (v: string) => string = cap1): HTMLLabelElement {
+  // Each top-bar control is an ICON + a compact select — no text caption. The icon carries a
+  // `title` tooltip naming the control, the select carries the matching aria-label, so the
+  // meaning survives for both hover and assistive tech while the bar stays uncluttered.
+  function makeSelect(cls: string, iconName: IconName, label: string, choices: string[], value: string, onChange: (v: string) => void, labelOf: (v: string) => string = cap1): HTMLLabelElement {
     const wrap = document.createElement('label');
     wrap.className = 'deck-bar__field';
-    const capEl = document.createElement('span'); capEl.className = 'deck-bar__cap'; capEl.textContent = label;
+    wrap.title = label;
+    const capEl = document.createElement('span');
+    capEl.className = 'deck-bar__ico';
+    capEl.innerHTML = icon(iconName);
     const sel = document.createElement('select'); sel.className = cls;
+    sel.setAttribute('aria-label', label);
     for (const o of choices) { const op = document.createElement('option'); op.value = o; op.textContent = labelOf(o); sel.appendChild(op); }
     sel.value = value;
     sel.addEventListener('change', () => onChange(sel.value));
     wrap.append(capEl, sel);
     return wrap;
   }
+  // A group wrapper so related controls read as a cluster (matches the freeform toolbar's grps).
+  const barGroup = (...kids: HTMLElement[]): HTMLElement => {
+    const g = document.createElement('div'); g.className = 'deck-bar__grp'; g.append(...kids); return g;
+  };
 
   function renderBar(): void {
     bar.textContent = '';
@@ -822,118 +1104,246 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     const slideTheme = asText(slide?.theme), slideLogo = asText(slide?.logo);
     const mode = asText(slide?.mode) === 'freeform' ? 'freeform' : 'layout';
 
-    // Deck theme is GLOBAL — committed via setInput("theme", …), never through the deck clone.
-    bar.appendChild(makeSelect('deck-bar__sel deck-bar__deck-theme', 'Deck theme',
-      DECK_THEMES, DECK_THEMES.includes(deckTheme) ? deckTheme : 'auto',
-      (v) => { onDirty?.('theme'); runtime.setInput('theme', v); }));
-    // On-canvas slide LAYOUT picker — layout mode only (freeform has no template). Mirrors
-    // the sidebar's layout sub-field so the primary flow (pick the slide's shape right on
-    // the canvas) never needs the sidebar.
-    if (mode !== 'freeform') {
-      const slideLayout = asText(slide?.layout);
-      bar.appendChild(makeSelect('deck-bar__sel deck-bar__slide-layout', 'Layout',
-        LAYOUTS, LAYOUTS.includes(slideLayout) ? slideLayout : 'title',
-        (v) => commitSlide({ layout: v }), (v) => LAYOUT_LABELS[v] ?? cap1(v)));
-    }
-    // Per-slide theme / logo / mode — each clone-and-commits the active slide.
-    bar.appendChild(makeSelect('deck-bar__sel deck-bar__slide-theme', 'Slide theme',
-      DECK_THEMES, DECK_THEMES.includes(slideTheme) ? slideTheme : 'auto',
-      (v) => commitSlide({ theme: v })));
-    bar.appendChild(makeSelect('deck-bar__sel deck-bar__slide-logo', 'Logo',
-      SLIDE_LOGOS, SLIDE_LOGOS.includes(slideLogo) ? slideLogo : 'auto',
-      (v) => commitSlide({ logo: v })));
+    // Structure cluster: mode + (in layout mode) the slide layout, and the inline-edit button.
     // Mode: switching a layout slide to freeform EXPLODES its content into positioned boxes
     // (layoutToBoxes) so the user keeps their content — but only when the slide has no boxes
     // yet, so flipping back and forth never clobbers a canvas they've already arranged.
-    bar.appendChild(makeSelect('deck-bar__sel deck-bar__slide-mode', 'Mode',
-      MODES, mode, (v) => {
-        if (v === 'freeform') {
-          const s = activeSlide();
-          const hasBoxes = Array.isArray(s?.boxes) && (s!.boxes as Box[]).length > 0;
-          if (s && !hasBoxes) { commitSlide({ mode: 'freeform', boxes: layoutToBoxes(s, opts.nativeW, opts.nativeH) }); return; }
-        }
-        commitSlide({ mode: v });
-      }));
+    const structure: HTMLElement[] = [
+      makeSelect('deck-bar__sel deck-bar__slide-mode', 'shapes', 'Slide mode',
+        MODES, mode, (v) => {
+          if (v === 'freeform') {
+            const s = activeSlide();
+            const hasBoxes = Array.isArray(s?.boxes) && (s!.boxes as Box[]).length > 0;
+            if (s && !hasBoxes) { commitSlide({ mode: 'freeform', boxes: layoutToBoxes(s, opts.nativeW, opts.nativeH) }); return; }
+          }
+          commitSlide({ mode: v });
+        }),
+    ];
+    if (mode !== 'freeform') {
+      // On-canvas slide LAYOUT picker — layout mode only (freeform has no template). Mirrors
+      // the sidebar's layout sub-field so the primary flow never needs the sidebar.
+      const slideLayout = asText(slide?.layout);
+      structure.push(makeSelect('deck-bar__sel deck-bar__slide-layout', 'grid', 'Slide layout',
+        LAYOUTS, LAYOUTS.includes(slideLayout) ? slideLayout : 'title',
+        (v) => commitSlide({ layout: v }), (v) => LAYOUT_LABELS[v] ?? cap1(v)));
+      // Edit-text focuses the inline editor. Click-to-edit on the slide is the primary path;
+      // this is the discoverable, keyboard-reachable affordance for it.
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'deck-bar__btn';
+      editBtn.title = 'Edit slide text';
+      editBtn.setAttribute('aria-label', 'Edit slide text');
+      editBtn.innerHTML = icon('pen');
+      editBtn.addEventListener('click', () => openTextEditor());
+      structure.push(editBtn);
+    }
+    bar.appendChild(barGroup(...structure));
 
-    // Edit-text opens the on-canvas rich editor — layout mode only (freeform edits text
-    // per-box: double-click a text box in the canvas).
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'deck-bar__edit';
-    editBtn.textContent = 'Edit text';
-    editBtn.disabled = mode === 'freeform';
-    editBtn.addEventListener('click', () => openTextEditor());
-    bar.appendChild(editBtn);
+    // Styling cluster: deck theme (GLOBAL — committed via setInput("theme"), never the deck
+    // clone), then this slide's theme + logo overrides.
+    bar.appendChild(barGroup(
+      makeSelect('deck-bar__sel deck-bar__deck-theme', 'palette', 'Deck theme',
+        DECK_THEMES, DECK_THEMES.includes(deckTheme) ? deckTheme : 'auto',
+        (v) => { onDirty?.('theme'); runtime.setInput('theme', v); }),
+      makeSelect('deck-bar__sel deck-bar__slide-theme', 'droplet', 'Slide theme',
+        DECK_THEMES, DECK_THEMES.includes(slideTheme) ? slideTheme : 'auto',
+        (v) => commitSlide({ theme: v })),
+      makeSelect('deck-bar__sel deck-bar__slide-logo', 'seal', 'Slide logo',
+        SLIDE_LOGOS, SLIDE_LOGOS.includes(slideLogo) ? slideLogo : 'auto',
+        (v) => commitSlide({ logo: v })),
+    ));
   }
 
-  // ── on-canvas rich-text editor (step 5) ────────────────────────────────────────
-  let textEditor: HTMLElement | null = null;
-  let textEditorSlideIdx = -1;   // slide the layout editor was opened on (deferred-commit target)
+  // ── inline layout-slide text editing ───────────────────────────────────────────
+  // Edit the REAL rendered slide text in place — the actual `.sl-head` / `.sl-body` in the
+  // tool canvas become contenteditable, so you type on the slide at its true size/position,
+  // no popup. The trick that makes this safe against the tool's every-commit canvas repaint:
+  // we DON'T commit while typing, so the model never changes mid-edit and the tool never
+  // repaints the editable out from under the caret. The edit lands (and the sidebar's own
+  // `content` field updates with it) on blur / Escape / navigating away — one commit, one
+  // repaint, at the end.
+  interface LayoutEdit { slideIdx: number; regions: HTMLElement[]; toolbar: HTMLElement; injected: HTMLElement | null }
+  let layoutEdit: LayoutEdit | null = null;
+  const isEditingLayout = (): boolean => layoutEdit !== null;
+
   const onEditorKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') { e.stopPropagation(); closeTextEditor(true); }
+    if (e.key === 'Escape') { e.stopPropagation(); commitLayoutEdit(); }
   };
-  function closeTextEditor(commit: boolean): void {
-    if (!textEditor) return;
-    const area = textEditor.querySelector<HTMLElement>('.deck-text__area');
-    if (commit && area) {
-      const md = richHtmlToMd(area);
-      // Commit to the slide the editor was OPENED on (a focusout can fire after the user has
-      // navigated to another slide — writing to the live active slide would overwrite it).
-      if (md !== asText(readDeck()[textEditorSlideIdx]?.content)) commitSlideAt(textEditorSlideIdx, { content: md });
+  // The rendered element(s) that hold this slide's editable text: the title band and the
+  // body. A truly empty slide has neither — we inject a bare editable body so it can still
+  // be typed into (returned as `injected` so it's removed cleanly if the edit is abandoned).
+  function editRegions(slideEl: HTMLElement): { regions: HTMLElement[]; injected: HTMLElement | null } {
+    // Direct children only (a nested `.sl-body` inside a slot must not become editable) —
+    // filtered by class rather than a `:scope >` selector so it's robust across engines.
+    const found = Array.from(slideEl.children).filter(
+      (c): c is HTMLElement => c instanceof HTMLElement && (c.classList.contains('sl-head') || c.classList.contains('sl-body')),
+    );
+    if (found.length) return { regions: found, injected: null };
+    const body = document.createElement('div');
+    body.className = 'sl-body';
+    body.innerHTML = '<p><br></p>';
+    // Before the corner furniture so it reads as slide content, not over the logo.
+    const furniture = slideEl.querySelector('.sl-logo, .sl-pageno');
+    slideEl.insertBefore(body, furniture ?? null);
+    return { regions: [body], injected: body };
+  }
+  // Serialise the editable regions back to the slide's `content` markdown. Head (its <h1>) →
+  // `# title`; body blocks → their lines. Joined, the hook re-lifts the first heading as the
+  // title on the next render, so this round-trips.
+  function serializeLayout(regions: HTMLElement[]): string {
+    return regions.map(r => richHtmlToMd(r)).filter(md => md.trim() !== '').join('\n\n');
+  }
+  function teardownLayoutEdit(): void {
+    if (!layoutEdit) return;
+    for (const r of layoutEdit.regions) {
+      r.removeAttribute('contenteditable');
+      r.removeAttribute('role');
+      r.removeAttribute('aria-label');
+      r.classList.remove('is-editing');
     }
-    textEditor.remove();
-    textEditor = null;
+    layoutEdit.injected?.remove();
+    layoutEdit.toolbar.remove();
+    layoutEdit = null;
     document.removeEventListener('keydown', onEditorKey, true);
   }
-  function positionTextEditor(): void {
-    if (!textEditor) return;
-    const m = canvasMetrics();
-    textEditor.style.left = (m.cr.left - m.sr.left) + 'px';
-    textEditor.style.top = (m.cr.top - m.sr.top) + 'px';
-    textEditor.style.width = m.cr.width + 'px';
-    textEditor.style.height = m.cr.height + 'px';
+  function commitLayoutEdit(): void {
+    if (!layoutEdit) return;
+    const { slideIdx, regions } = layoutEdit;
+    const md = serializeLayout(regions);
+    teardownLayoutEdit();
+    // Commit to the slide the edit OPENED on (blur can fire after navigation), and only when
+    // it actually changed — a no-op edit shouldn't churn a repaint or an undo entry.
+    if (md !== asText(readDeck()[slideIdx]?.content)) commitSlideAt(slideIdx, { content: md });
   }
-  function openTextEditor(): void {
-    if (textEditor) { closeTextEditor(true); return; }
-    const slide = activeSlide();
-    if (!slide || asText(slide.mode) === 'freeform') return;
-    textEditorSlideIdx = clampedActive();
-    const wrap = document.createElement('div');
-    wrap.className = 'deck-text';
-    const area = document.createElement('div');
-    area.className = 'deck-text__area';
-    area.contentEditable = 'true';
-    area.setAttribute('role', 'textbox');
-    area.setAttribute('aria-multiline', 'true');
-    area.setAttribute('aria-label', 'Slide text');
-    area.innerHTML = mdToRichHtml(asText(slide.content));
-    const exec = (c: string, val?: string): void => { try { document.execCommand(c, false, val); } catch { /* jsdom / unsupported */ } area.focus(); };
+
+  /** Place the caret where the user clicked, rather than selecting the region — so the first
+   *  keystroke edits, never replaces. Falls back to the end of the text. */
+  function caretAt(region: HTMLElement, at: { x: number; y: number } | null): void {
+    const sel = document.defaultView?.getSelection?.();
+    if (!sel) return;
+    const range = document.createRange();
+    let placed = false;
+    if (at) {
+      const doc = document as Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null;
+        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      };
+      try {
+        // Two names for one feature: WebKit/Blink ship caretRangeFromPoint, Gecko the
+        // standard caretPositionFromPoint. Neither exists in jsdom.
+        const r = doc.caretRangeFromPoint?.(at.x, at.y);
+        if (r && region.contains(r.startContainer)) { range.setStart(r.startContainer, r.startOffset); placed = true; }
+        else {
+          const p = doc.caretPositionFromPoint?.(at.x, at.y);
+          if (p && region.contains(p.offsetNode)) { range.setStart(p.offsetNode, p.offset); placed = true; }
+        }
+      } catch { /* unsupported — fall through to the end */ }
+    }
+    if (!placed) range.selectNodeContents(region);
+    range.collapse(placed);   // caret point → collapse to it; fallback → END, never select-all
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  // A compact floating format bar (bold / italic / H2 / bullet / numbered), styled like the
+  // freeform toolbar for a consistent look. It acts on whichever region has the selection;
+  // pointerdown-preventDefault keeps that selection alive through the click.
+  function buildTextFormatBar(exec: (c: string, val?: string) => void): HTMLElement {
     const fmt = document.createElement('div');
-    fmt.className = 'deck-text__bar';
-    const cmd = (label: string, run: () => void): HTMLButtonElement => {
+    fmt.className = 'deck-fmt';
+    fmt.setAttribute('data-export-hide', '');
+    const cmd = (label: string, title: string, run: () => void, cls = ''): HTMLButtonElement => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'deck-text__btn'; b.textContent = label; b.title = label;
+      b.type = 'button'; b.className = 'deck-fmt__btn' + cls; b.title = title;
+      b.setAttribute('aria-label', title);
+      b.textContent = label;
       b.addEventListener('pointerdown', (e) => e.preventDefault());   // keep the editable's selection
       b.addEventListener('click', run);
       return b;
     };
     fmt.append(
-      cmd('H1', () => exec('formatBlock', 'h1')),
-      cmd('H2', () => exec('formatBlock', 'h2')),
-      cmd('B', () => exec('bold')),
-      cmd('I', () => exec('italic')),
-      cmd('•', () => exec('insertUnorderedList')),
+      cmd('B', 'Bold (⌘B)', () => exec('bold'), ' deck-fmt__btn--b'),
+      cmd('I', 'Italic (⌘I)', () => exec('italic'), ' deck-fmt__btn--i'),
+      cmd('H', 'Heading', () => exec('formatBlock', 'h2')),
+      cmd('•', 'Bulleted list', () => exec('insertUnorderedList')),
+      cmd('1.', 'Numbered list', () => exec('insertOrderedList')),
     );
-    wrap.append(fmt, area);
-    // Commit + close when focus leaves the editor entirely (blur to another app control).
-    wrap.addEventListener('focusout', () => {
-      setTimeout(() => { if (textEditor && !textEditor.contains(document.activeElement)) closeTextEditor(true); }, 0);
-    });
-    overlay.appendChild(wrap);
-    textEditor = wrap;
-    positionTextEditor();
+    return fmt;
+  }
+  function positionFormatBar(): void {
+    if (!layoutEdit) return;
+    const m = canvasMetrics();
+    // +44 top clears the deck bar that docks over the canvas on a tall/square deck (mirrors
+    // the freeform toolbar's offset), so the format bar never hides behind it.
+    layoutEdit.toolbar.style.left = (m.cr.left - m.sr.left + 8) + 'px';
+    layoutEdit.toolbar.style.top = (m.cr.top - m.sr.top + 44) + 'px';
+  }
+
+  /** Enter inline editing on the active layout slide. `at` (client coords) targets the caret
+   *  and picks which region (title vs body) to focus. */
+  function openTextEditor(at: { x: number; y: number } | null = null): void {
+    if (layoutEdit) { commitLayoutEdit(); return; }
+    const slide = activeSlide();
+    if (!slide || asText(slide.mode) === 'freeform') return;
+    const idx = clampedActive();
+    const slideEl = opts.canvasEl.querySelector<HTMLElement>('.slides .sl-slide--' + idx);
+    if (!slideEl) return;
+
+    const { regions, injected } = editRegions(slideEl);
+    for (const r of regions) {
+      r.setAttribute('contenteditable', 'true');   // setAttribute (not .contentEditable) so it reflects everywhere
+      r.setAttribute('role', 'textbox');
+      r.setAttribute('aria-label', r.classList.contains('sl-head') ? 'Slide title' : 'Slide body');
+      r.classList.add('is-editing');
+    }
+
+    // execCommand acts on the current selection (in whichever region has focus); refocus that
+    // region afterward so the caret stays put.
+    const exec = (c: string, val?: string): void => {
+      const active = (document.activeElement instanceof HTMLElement && regions.includes(document.activeElement))
+        ? document.activeElement : regions[0]!;
+      try { document.execCommand(c, false, val); } catch { /* jsdom / unsupported */ }
+      active.focus();
+    };
+    const toolbar = buildTextFormatBar(exec);
+    overlay.appendChild(toolbar);
+    layoutEdit = { slideIdx: idx, regions, toolbar, injected };
+    positionFormatBar();
     document.addEventListener('keydown', onEditorKey, true);
-    area.focus();
+
+    // Bold / Italic keyboard chords — ONLY those two: browsers route ⌘B/⌘I into a
+    // contenteditable, so binding them (with preventDefault so the native default doesn't
+    // also fire) is safe. NOT ⌘1/2/8 — those are the browser's reserved switch-to-tab-N
+    // accelerators, un-preventable, so they'd leave the app AND not format. Headings and
+    // lists live on the visible format bar.
+    for (const r of regions) {
+      r.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') return;   // handled by the capture-phase onEditorKey
+        if (!((ev as KeyboardEvent).metaKey || (ev as KeyboardEvent).ctrlKey) || ev.altKey || ev.shiftKey) return;
+        const k = ev.key.toLowerCase();
+        if (k === 'b') { ev.preventDefault(); exec('bold'); }
+        else if (k === 'i') { ev.preventDefault(); exec('italic'); }
+      });
+      // Commit when focus leaves the editing surface entirely (to another slide, the sidebar,
+      // anywhere that isn't a region or the format bar). Deferred a tick so moving BETWEEN
+      // the two regions, or clicking a format button, doesn't count as leaving.
+      r.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (!layoutEdit) return;
+          const ae = document.activeElement;
+          const inside = ae instanceof Node && (layoutEdit.regions.some(rr => rr.contains(ae)) || layoutEdit.toolbar.contains(ae));
+          if (!inside) commitLayoutEdit();
+        }, 0);
+      });
+    }
+
+    // Focus the clicked region (title vs body), or the first, and drop the caret at the click.
+    const target = (at && regions.find(r => {
+      const rc = r.getBoundingClientRect();
+      return at.x >= rc.left && at.x <= rc.right && at.y >= rc.top && at.y <= rc.bottom;
+    })) || regions[0]!;
+    target.focus();
+    caretAt(target, at);
   }
 
   // ── per-slide free-canvas (step 6+) ────────────────────────────────────────────
@@ -1084,6 +1494,201 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     return tools;
   }
 
+  // ── the box inspector — per-box control values for the selection ─────────────────
+  // A second toolbar row, shown only when the selection holds something to control: text
+  // boxes get size / colour / align / vertical position / fit, shapes get fill / geometry /
+  // corner radius / border. Every control writes to EVERY selected box of its kind, so a
+  // multi-selection restyles in one gesture.
+  //
+  // The row above it aligns BOXES TO EACH OTHER; these controls set what's INSIDE a box.
+  // They're deliberately labelled fields rather than icons — icon-for-icon they'd be the
+  // same six arrows as the arrange row, meaning something else entirely.
+  const boxKind = (b: Box | undefined): 'text' | 'image' | 'box' => {
+    const k = asText(b?.kind);
+    return k === 'image' ? 'image' : k === 'box' ? 'box' : 'text';
+  };
+  // UI-only: whether the corner fields are split into four. Sticky across repaints so
+  // unlinking doesn't collapse the moment a value commits.
+  let cornersSplit = false;
+
+  /** Apply a patch to every selected box of `kind`. Everything routes back through
+   *  coerceBox, so it is the ONE normaliser — which is also what keeps the stored records
+   *  minimal, since coerceBox drops any key sitting at its render default. */
+  function patchSel(kind: 'text' | 'box', patch: Record<string, unknown>): void {
+    const boxes = activeBoxes().slice();
+    const hit = selIndices().filter(i => boxes[i] && boxKind(boxes[i]) === kind);
+    if (!hit.length) return;
+    for (const i of hit) boxes[i] = coerceBox({ ...boxes[i]!, ...patch });
+    commitBoxes(boxes);
+  }
+  /** The value every selected box of a kind agrees on, or `mixed` when they differ. */
+  function shared<T>(idxs: number[], read: (b: Box) => T, mixed: T): T {
+    const boxes = activeBoxes();
+    if (!idxs.length) return mixed;
+    const first = read(boxes[idxs[0]!]!);
+    for (const i of idxs) if (read(boxes[i]!) !== first) return mixed;
+    return first;
+  }
+
+  function buildInspector(): HTMLElement | null {
+    const boxes = activeBoxes();
+    const texts = selIndices().filter(i => boxes[i] && boxKind(boxes[i]) === 'text');
+    const shapes = selIndices().filter(i => boxes[i] && boxKind(boxes[i]) === 'box');
+    if (!texts.length && !shapes.length) return null;
+
+    const bar = document.createElement('div');
+    bar.className = 'deck-free__insp';
+    // A toolbar click must never start a marquee on the canvas underneath.
+    bar.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+    const cell = (label: string, control: HTMLElement): HTMLElement => {
+      const c = document.createElement('label');
+      c.className = 'deck-free__cell';
+      const t = document.createElement('span');
+      t.className = 'deck-free__cell-t';
+      t.textContent = label;
+      c.append(t, control);
+      return c;
+    };
+    const numField = (value: number | null, placeholder: string, onSet: (n: number) => void, aria?: string): HTMLInputElement => {
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.className = 'deck-free__num'; inp.min = '0';
+      if (aria) inp.setAttribute('aria-label', aria);   // glyph-labelled fields (corner radii) need a real name
+      inp.value = value == null ? '' : String(value);
+      inp.placeholder = placeholder;
+      // `change`, not `input`: a commit repaints the whole overlay and would tear the field
+      // out from under the caret on every keystroke.
+      inp.addEventListener('change', () => { const n = Number(inp.value); if (Number.isFinite(n)) onSet(Math.max(0, Math.round(n))); });
+      return inp;
+    };
+    const selectField = <T extends string>(value: T, options: Array<[T, string]>, onSet: (v: T) => void): HTMLSelectElement => {
+      const sel = document.createElement('select');
+      sel.className = 'deck-free__sel';
+      for (const [v, label] of options) {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = label; o.selected = v === value;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', () => onSet(sel.value as T));
+      return sel;
+    };
+    // The app's real colour picker (OKLCH sliders + hex + alpha + brand-token swatches), the
+    // SAME component every other colour surface uses — never a native <input type=color>.
+    // Mounted as a compact float trigger (swatch + name, click to open the popover). A small
+    // clear button rides alongside for the "inherit the slide / no fill" state the picker
+    // can't express (empty ≠ black). Each field needs a stable-enough id; the running seq is fine.
+    const colourField = (value: string, onSet: (hex: string) => void, onClear: () => void): HTMLElement => {
+      const wrap = document.createElement('span');
+      wrap.className = 'deck-free__colour';
+      if (!value) wrap.classList.add('is-unset');
+      const host = document.createElement('span');
+      host.className = 'deck-free__cpick';
+      mountColorField(host, 'deck-col-' + (colourSeq++), {
+        value: value || 'transparent',
+        float: true,
+        onChange: (hex) => { if (hex && hex !== 'transparent') onSet(hex); },
+      });
+      const clr = document.createElement('button');
+      clr.type = 'button'; clr.className = 'deck-free__clear';
+      clr.textContent = '×';
+      clr.title = 'Clear — inherit the slide';
+      clr.setAttribute('aria-label', 'Clear colour — inherit the slide');
+      clr.disabled = !value;
+      clr.addEventListener('click', onClear);
+      wrap.append(host, clr);
+      return wrap;
+    };
+    const group = (...kids: HTMLElement[]): HTMLElement => {
+      const g = document.createElement('div');
+      g.className = 'deck-free__grp';
+      g.append(...kids);
+      return g;
+    };
+
+    if (texts.length) {
+      // Size is authored in NATIVE px (the box coordinate space), matching x/y/w/h. Unset
+      // means the tool's own 3cqw default, so that's the placeholder rather than a value we
+      // silently write in.
+      const fs = shared<number | null>(texts, b => (b.fontSize == null ? null : num(b.fontSize as never, 0)), null);
+      const colour = shared(texts, b => asText(b.color), '');
+      const align = shared(texts, b => (ALIGN_NORM[asText(b.align).toLowerCase()] || 'l'), 'l' as 'l' | 'c' | 'r');
+      const valign = shared(texts, b => (VALIGN_NORM[asText(b.valign).toLowerCase()] || 't'), 't' as 't' | 'm' | 'b');
+      const fit = shared(texts, b => !!b.fit, false);
+
+      const fitBox = document.createElement('input');
+      fitBox.type = 'checkbox'; fitBox.className = 'deck-free__check'; fitBox.checked = fit;
+      fitBox.addEventListener('change', () => patchSel('text', { fit: fitBox.checked }));
+
+      bar.append(group(
+        cell('Size', numField(fs, String(DEFAULT_TEXT_PX), n => patchSel('text', { fontSize: n }))),
+        cell('Colour', colourField(colour, hex => patchSel('text', { color: hex }), () => patchSel('text', { color: '' }))),
+      ), group(
+        cell('Text', selectField(align, [['l', 'Left'], ['c', 'Centre'], ['r', 'Right']], v => patchSel('text', { align: v }))),
+        cell('Position', selectField(valign, [['t', 'Top'], ['m', 'Middle'], ['b', 'Bottom']], v => patchSel('text', { valign: v }))),
+        cell('Shrink to fit', fitBox),
+      ));
+    }
+
+    if (shapes.length) {
+      const fill = shared(shapes, b => asText(b.fill), '');
+      const shape = shared(shapes, b => shapeUi(b.shape), 'rect' as ShapeUi);
+      const lineColor = shared(shapes, b => asText(b.lineColor), '');
+      const lineWidth = shared<number | null>(shapes, b => (b.lineWidth == null ? null : num(b.lineWidth as never, 0)), null);
+      // Corners only mean something on a rectangle — a pill and an ellipse ARE their
+      // rounding, so the fields would be lying.
+      const roundable = shape === 'rect';
+      const corners = shared<string>(shapes, b => radiusCorners(b.radius).join(','), '');
+      const cur = corners ? corners.split(',').map(Number) as [number, number, number, number] : [0, 0, 0, 0];
+      const uniform = cur[0] === cur[1] && cur[1] === cur[2] && cur[2] === cur[3];
+      const split = cornersSplit || !uniform;
+
+      bar.append(group(
+        cell('Fill', colourField(fill, hex => patchSel('box', { fill: hex }), () => patchSel('box', { fill: '' }))),
+        cell('Shape', selectField(shape, [['rect', 'Rectangle'], ['pill', 'Pill'], ['ellipse', 'Ellipse']], v => patchSel('box', { shape: v }))),
+      ));
+
+      if (roundable) {
+        const cornerGrp = group();
+        if (split) {
+          // CSS corner order — the same order the record stores and the hook paints.
+          const labels: Array<[string, number, string]> = [
+            ['↖', 0, 'Top-left corner radius'], ['↗', 1, 'Top-right corner radius'],
+            ['↘', 2, 'Bottom-right corner radius'], ['↙', 3, 'Bottom-left corner radius'],
+          ];
+          for (const [glyph, i, aria] of labels) {
+            cornerGrp.append(cell(glyph, numField(cur[i]!, '0', n => {
+              const next = cur.slice() as [number, number, number, number];
+              next[i] = n;
+              patchSel('box', { radius: next });
+            }, aria)));
+          }
+        } else {
+          cornerGrp.append(cell('Corners', numField(cur[0]!, '0', n => patchSel('box', { radius: n }))));
+        }
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.className = 'deck-free__btn deck-free__btn--link' + (split ? '' : ' is-on');
+        link.textContent = split ? 'Link' : 'Split';
+        link.title = split ? 'Link all four corners to one value' : 'Set each corner separately';
+        link.addEventListener('click', () => {
+          cornersSplit = !split;
+          // Linking collapses to the largest corner rather than silently picking the first —
+          // the user's biggest radius is the one they meant to keep.
+          if (!cornersSplit) patchSel('box', { radius: Math.max(cur[0]!, cur[1]!, cur[2]!, cur[3]!) });
+          else renderFree();
+        });
+        cornerGrp.append(link);
+        bar.append(cornerGrp);
+      }
+
+      bar.append(group(
+        cell('Border', colourField(lineColor, hex => patchSel('box', { lineColor: hex }), () => patchSel('box', { lineColor: '' }))),
+        cell('Width', numField(lineWidth, '0', n => patchSel('box', { lineWidth: n }))),
+      ));
+    }
+    return bar;
+  }
+
   function renderFree(): void {
     const isFree = asText(activeSlide()?.mode) === 'freeform';
     free.hidden = !isFree;
@@ -1112,6 +1717,8 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     bg.addEventListener('pointerdown', (e) => startMarquee(e as PointerEvent));
     free.appendChild(bg);
     free.appendChild(buildToolbar());
+    const insp = buildInspector();
+    if (insp) free.appendChild(insp);
 
     boxes.forEach((box, i) => { const el = buildBoxEl(box, i); free.appendChild(el); boxEls[i] = el; });
 
@@ -1146,8 +1753,9 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     const nw = opts.nativeW || 1920, nh = opts.nativeH || 1080;
     const w = Math.round(nw * 0.4), h = Math.round(nh * 0.2);
     const seed: Record<string, unknown> = { kind, x: Math.round((nw - w) / 2), y: Math.round((nh - h) / 2), w, h };
-    if (kind === 'text') seed.text = 'Text';
-    else if (kind === 'box') { seed.shape = 'round'; seed.radius = Math.round(nw * 0.02); seed.fill = '#cfd8dc'; }
+    if (kind === 'text') { seed.text = 'Text'; seed.fit = true; }   // shrink-to-fit on by default
+    // A rectangle carrying a radius IS the rounded shape (see ShapeUi) — no `round` needed.
+    else if (kind === 'box') { seed.shape = 'rect'; seed.radius = Math.round(nw * 0.02); seed.fill = '#cfd8dc'; }
     boxes.push(coerceBox(seed));
     const at = boxes.length - 1;
     selection = new Set([at]); primary = at;
@@ -1180,6 +1788,122 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     setSelByIds(boxes, ids);   // reordering moves the boxes — keep the selection on them
     commitBoxes(boxes);
   }
+  function duplicateSelection(): void {
+    if (!selection.size) return;
+    const { boxes, ids } = duplicateBoxes(activeBoxes().slice(), selIndices());
+    setSelByIds(boxes, ids);   // the CLONES become the selection (appended after the originals)
+    commitBoxes(boxes);        // one commit = one undo step
+  }
+
+  // ── right-click context menu (freeform) — the toolbar's object ops at the cursor ──
+  // Mirrors free-canvas.ts openContextMenu (same structure, same shared .fc-popover /
+  // .fc-context-menu classes from styles/parts/editor.css) but self-contained — that file
+  // is a parallel in-flight stream, so nothing is imported from it.
+  let ctxMenu: HTMLElement | null = null;
+  const closeCtxMenu = (): void => {
+    if (!ctxMenu) return;
+    ctxMenu.remove(); ctxMenu = null;
+    document.removeEventListener('pointerdown', onCtxDown, true);
+    document.removeEventListener('keydown', onCtxKey, true);
+    document.removeEventListener('scroll', closeCtxMenu, true);
+    document.defaultView?.removeEventListener('resize', closeCtxMenu);
+  };
+  // Capture-phase: a pointerdown that stopPropagation()s (box startMove) must still close.
+  const onCtxDown = (e: Event): void => {
+    if (ctxMenu && !(e.target instanceof Node && ctxMenu.contains(e.target))) closeCtxMenu();
+  };
+  // Escape closes ONLY the menu — preventDefault + stopPropagation so the same keypress
+  // never also clears the selection or reaches another Escape handler.
+  const onCtxKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeCtxMenu(); }
+  };
+  function openCtxMenu(clientX: number, clientY: number): void {
+    closeCtxMenu();
+    const hasSel = selection.size > 0;
+    const menu = document.createElement('div');
+    menu.className = 'fc-popover fc-context-menu';
+    const item = (label: string, svg: string, run: () => void, disabled: boolean, danger = false): void => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fc-pop-item' + (danger ? ' fc-pop-danger' : '');
+      b.disabled = disabled;
+      b.innerHTML = `<span class="fc-pop-ic">${svg}</span><span>${label}</span>`;
+      b.addEventListener('click', (e) => { e.stopPropagation(); if (b.disabled) return; run(); closeCtxMenu(); });
+      menu.appendChild(b);
+    };
+    const sep = (): void => { const s = document.createElement('div'); s.className = 'fc-pop-sep'; menu.appendChild(s); };
+    // Icon-only grid row (title/aria carry the label); `cols` drives the CSS var.
+    const grid = (cols: number, cells: Array<[string, IconName, () => void, boolean]>): void => {
+      const g = document.createElement('div');
+      g.className = 'fc-pop-grid';
+      g.style.setProperty('--cols', String(cols));
+      for (const [label, name, run, disabled] of cells) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'fc-pop-gitem'; b.disabled = disabled;
+        b.title = label; b.setAttribute('aria-label', label);
+        b.innerHTML = icon(name);
+        b.addEventListener('click', (e) => { e.stopPropagation(); if (b.disabled) return; run(); closeCtxMenu(); });
+        g.appendChild(b);
+      }
+      menu.appendChild(g);
+    };
+    item('Duplicate', icon('duplicate'), () => duplicateSelection(), !hasSel);
+    item('Delete', icon('trash'), () => deleteBox(), !hasSel, true);
+    sep();
+    // Stacking order — 2×2: columns are magnitude (one step │ all the way), rows are
+    // direction (up = forward/front, down = backward/back).
+    grid(2, [
+      ['Bring forward', 'orderForward', () => doZ('forward'), !hasSel],
+      ['Bring to front', 'orderFront', () => doZ('front'), !hasSel],
+      ['Send backward', 'orderBackward', () => doZ('backward'), !hasSel],
+      ['Send to back', 'orderBack', () => doZ('back'), !hasSel],
+    ]);
+    sep();
+    // Align — 3 across × 2 rows (L/C/R then T/M/B); distribute — one row of 2 (needs 3+).
+    grid(3, [
+      ['Align left', 'alignL', () => doAlign('left'), !hasSel],
+      ['Align centre', 'alignC', () => doAlign('hcentre'), !hasSel],
+      ['Align right', 'alignR', () => doAlign('right'), !hasSel],
+      ['Align top', 'alignT', () => doAlign('top'), !hasSel],
+      ['Align middle', 'alignM', () => doAlign('vcentre'), !hasSel],
+      ['Align bottom', 'alignB', () => doAlign('bottom'), !hasSel],
+    ]);
+    grid(2, [
+      ['Distribute horizontally', 'distH', () => doDistribute('h'), selection.size < 3],
+      ['Distribute vertically', 'distV', () => doDistribute('v'), selection.size < 3],
+    ]);
+    menu.addEventListener('pointerdown', (e) => e.stopPropagation());
+    stageEl.appendChild(menu);
+    // Clamp into the stage rect (free-canvas's math) so a menu opened near the bottom /
+    // right edge slides back into view instead of clipping offscreen.
+    const sr = stageEl.getBoundingClientRect();
+    menu.style.left = Math.max(6, Math.min(clientX - sr.left, sr.width - menu.offsetWidth - 6)) + 'px';
+    menu.style.top = Math.max(6, Math.min(clientY - sr.top, sr.height - menu.offsetHeight - 6)) + 'px';
+    ctxMenu = menu;
+    document.addEventListener('pointerdown', onCtxDown, true);
+    document.addEventListener('keydown', onCtxKey, true);
+    document.addEventListener('scroll', closeCtxMenu, true);
+    document.defaultView?.addEventListener('resize', closeCtxMenu);
+  }
+  const onFreeContextMenu = (e: MouseEvent): void => {
+    if (asText(activeSlide()?.mode) !== 'freeform') return;
+    const t = e.target as HTMLElement | null;
+    if (!t?.closest) return;
+    // An open text edit keeps the NATIVE menu (spellcheck / paste while typing).
+    if (t.closest('[contenteditable="true"]')) return;
+    // The toolbar + inspector are controls, not canvas objects — leave them native too.
+    if (t.closest('.deck-free__tools, .deck-free__insp')) return;
+    e.preventDefault();
+    if (boxEditCommit) boxEditCommit();   // a right-click elsewhere flushes an open edit first
+    const boxEl = t.closest<HTMLElement>('.deck-free-box');
+    const idx = boxEl ? Number(boxEl.dataset.idx) : -1;
+    // A right-click on an UNSELECTED box selects it (single) first; on a selected box the
+    // whole selection stays, so the menu acts on all of it. Empty canvas keeps whatever
+    // selection exists — the items disable themselves off selection.size.
+    if (idx >= 0 && !selection.has(idx)) { selection = new Set([idx]); primary = idx; renderFree(); }
+    openCtxMenu(e.clientX, e.clientY);
+  };
+  free.addEventListener('contextmenu', onFreeContextMenu);
 
   // Open a text box for in-place rich-text editing: the box's rendered `.deck-free-box__text`
   // (already showing mdToRichHtml(box.text)) becomes contenteditable; on blur / Escape /
@@ -1249,6 +1973,9 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
   }
 
   function startMove(e: PointerEvent, idx: number): void {
+    // Right-click is the context menu, never a gesture — a move begun on button 2 would
+    // collapse a multi-selection (or hang) on the pointerup the native menu swallows.
+    if (e.button === 2) return;
     // A pointerdown INSIDE the box currently being edited just places the caret — never move.
     if (editingBox === idx) return;
     e.preventDefault(); e.stopPropagation();
@@ -1277,6 +2004,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     attachGesture();
   }
   function startResize(e: PointerEvent, idx: number, handle: HandleName): void {
+    if (e.button === 2) return;   // right-click is the context menu, never a gesture
     e.preventDefault(); e.stopPropagation();
     selection = new Set([idx]); primary = idx;
     const boxes = activeBoxes().slice();
@@ -1285,6 +2013,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     attachGesture();
   }
   function startRotate(e: PointerEvent): void {
+    if (e.button === 2) return;   // right-click is the context menu, never a gesture
     e.preventDefault(); e.stopPropagation();
     const boxes = activeBoxes().slice();
     const idxs = selIndices();
@@ -1300,6 +2029,8 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     attachGesture();
   }
   function startMarquee(e: PointerEvent): void {
+    // Right-click is the context menu — an empty-canvas one must not deselect first.
+    if (e.button === 2) return;
     e.preventDefault();
     if (boxEditCommit) boxEditCommit();
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
@@ -1419,7 +2150,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     const ae = document.activeElement as HTMLElement | null;
     const tag = ae?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable) return;
-    if (ae?.closest?.('.deck-strip, .deck-bar, .deck-load, .deck-text')) return;   // their own keys
+    if (ae?.closest?.('.deck-strip, .deck-bar, .deck-load, .deck-fmt')) return;   // their own keys
     const nudges: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (nudges[e.key] && selection.size) {
       e.preventDefault();
@@ -1465,7 +2196,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     renderStrip();
     renderBar();
     renderFree();
-    positionTextEditor();
+    positionFormatBar();
     syncFocusMax();
   }
 
@@ -1479,8 +2210,9 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
   const loadBtn = document.createElement('button');
   loadBtn.type = 'button';
   loadBtn.className = 'deck-strip__load';
-  loadBtn.textContent = 'Load';
-  loadBtn.title = 'Load a deck from JSON or Markdown';
+  loadBtn.innerHTML = icon('uploadImage') + '<span>Load deck</span>';
+  loadBtn.title = 'Load a whole deck from Markdown, JSON, or a PowerPoint file';
+  loadBtn.setAttribute('aria-label', 'Load a deck from Markdown, JSON, or PowerPoint');
 
   const stripScroll = document.createElement('div');
   stripScroll.className = 'deck-strip__scroll';
@@ -1523,6 +2255,11 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     const w = thumbWidth();
     stripScroll.textContent = '';
 
+    // A fresh, untouched deck (the single starter slide) → make Load INVITING: bringing in a
+    // real deck is the strong first move, so it glows until the user has started building.
+    const starter = deck.length <= 1 && asText(deck[0]?.content).startsWith('# New deck');
+    loadBtn.classList.toggle('is-inviting', starter);
+
     deck.forEach((slide, i) => {
       const thumb = document.createElement('button');
       thumb.type = 'button';
@@ -1548,14 +2285,16 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
       del.setAttribute('aria-label', `Delete slide ${i + 1}`);
       del.title = 'Delete slide';
       del.textContent = '×';
-      del.addEventListener('click', (e) => {
-        e.stopPropagation();
+      // The × is a span (a nested <button> inside the thumb <button> would be invalid HTML),
+      // so deletion is ALSO reachable from the keyboard: Delete/Backspace on the focused thumb.
+      const deleteThis = (): void => {
         const d = readDeck();
         if (d.length <= 1) return;   // keep at least one slide
         const next = d.slice(0, i).concat(d.slice(i + 1));
         commitDeck(next);
         setActive(Math.min(i, next.length - 1));
-      });
+      };
+      del.addEventListener('click', (e) => { e.stopPropagation(); deleteThis(); });
 
       thumb.append(face, num, del);
       thumb.addEventListener('click', () => setActive(i));
@@ -1564,6 +2303,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
         else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); setActive(i - 1); }
         else if (e.key === 'Home') { e.preventDefault(); setActive(0); }
         else if (e.key === 'End') { e.preventDefault(); setActive(readDeck().length - 1); }
+        else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteThis(); }
       });
       stripScroll.appendChild(thumb);
     });
@@ -1604,9 +2344,14 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     if (loadPop) { closeLoad(); return; }
     loadPop = document.createElement('div');
     loadPop.className = 'deck-load';
+    // Dialog semantics (it's a hand-rolled popover, not mountModal, but should still announce
+    // as a labelled dialog). It already closes on Escape + focuses the textarea (see below).
+    loadPop.setAttribute('role', 'dialog');
+    loadPop.setAttribute('aria-modal', 'true');
+    loadPop.setAttribute('aria-label', 'Load a deck');
     loadPop.innerHTML =
       '<div class="deck-load__hd">Load a deck</div>' +
-      '<p class="deck-load__hint">Paste, <strong>upload</strong>, or <strong>drop a file</strong> — Markdown (slides split by <code>---</code>), JSON (an array of slides), or a <strong>pptxgenjs</strong> script (re-themed to your brand).</p>';
+      '<p class="deck-load__hint">Paste, <strong>upload</strong>, or <strong>drop a file</strong> — Markdown (slides split by <code>---</code>), JSON (an array of slides), a <strong>pptxgenjs</strong> script, or a PowerPoint <strong>.pptx</strong> (re-themed to your brand).</p>';
     const ta = document.createElement('textarea');
     ta.className = 'deck-load__ta';
     ta.setAttribute('aria-label', 'Deck Markdown or JSON');
@@ -1614,18 +2359,58 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     const err = document.createElement('div');
     err.className = 'deck-load__err';
     err.hidden = true;
+    // The err div is styled as an ERROR (red); an informational note reuses it but overrides
+    // the colour inline — cleared again whenever a real error lands.
+    const showErr = (msg: string): void => { err.hidden = false; err.style.color = ''; err.textContent = msg; };
+    const showNote = (msg: string): void => { err.hidden = false; err.style.color = 'var(--ink-muted)'; err.textContent = msg; };
 
-    // Read a picked / dropped file's text into the textarea.
+    // A binary .pptx (the upload/drop path only — never the textarea): unzip via the web
+    // bridge (fflate stays a dynamic chunk; the engine reader is zip-free and already
+    // statically bundled), lower to freeform slides, snap the imported palette to the
+    // brand, commit as ONE undo step.
+    const loadPptxFile = async (bytes: ArrayBuffer): Promise<void> => {
+      const { inflatePptx } = await import('../bridge/pptx.ts');
+      const parts = await inflatePptx(bytes);
+      if (!isPptx(parts)) throw new Error('That file is not a PowerPoint presentation (.pptx).');
+      const deck = readPptx(parts, (xml) => new DOMParser().parseFromString(xml, 'application/xml'));
+      const total = deck.slides.length;
+      // Memoised + budgeted resolver; slides past MAX_SLIDES are sliced off inside
+      // pptxDeckToSlides BEFORE lowering, so their media is never encoded at all.
+      let slides = pptxDeckToSlides(deck, makeMediaResolver((path) => pptxMediaDataUrl(parts, path)));
+      try { slides = await brandifyDeck(slides); } catch { /* keep the imported colours */ }
+      commitDeck(slides);
+      setActive(0);
+      if (total > MAX_SLIDES) {
+        // informational, not an error — the popover stays open so the note is readable
+        showNote('Loaded the first ' + MAX_SLIDES + ' slides — the deck has ' + total + '.');
+      } else {
+        closeLoad();
+      }
+    };
+    // Read a picked / dropped file: a binary PowerPoint deck goes straight through the
+    // .pptx importer; anything else is text into the textarea.
     const readFile = (file: File | null | undefined): void => {
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => { ta.value = String(reader.result ?? ''); err.hidden = true; ta.focus(); };
-      reader.onerror = () => { err.hidden = false; err.textContent = 'Could not read that file.'; };
-      reader.readAsText(file);
+      let pptx = /\.pptx$/i.test(file.name) || file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      void (async () => {
+        try {
+          const buf = await file.arrayBuffer();
+          const b = new Uint8Array(buf);
+          // PK\x03\x04 = a zip container (every real .pptx, whatever it's named); a zip that
+          // ISN'T a deck is told apart by isPptx() with a clear error, not decoded as text.
+          pptx ||= b.length > 3 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04;
+          if (pptx) { await loadPptxFile(buf); return; }
+          ta.value = new TextDecoder().decode(buf);
+          err.hidden = true;
+          ta.focus();
+        } catch (e) {
+          showErr((pptx ? 'Could not import that PowerPoint file. ' : 'Could not read that file. ') + ((e as Error)?.message ?? ''));
+        }
+      })();
     };
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = '.md,.markdown,.mdown,.json,.txt,.js,.mjs,text/markdown,application/json,text/plain,text/javascript';
+    fileInput.accept = '.md,.markdown,.mdown,.json,.txt,.js,.mjs,.pptx,text/markdown,application/json,text/plain,text/javascript,application/vnd.openxmlformats-officedocument.presentationml.presentation';
     fileInput.style.display = 'none';
     fileInput.addEventListener('change', () => readFile(fileInput.files?.[0]));
     // Drag-and-drop a file anywhere on the popover.
@@ -1651,8 +2436,8 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
       if (!text) { closeLoad(); return; }
       let slides: Slide[];
       try { slides = parseDeck(text); }
-      catch (e) { err.hidden = false; err.textContent = 'Could not parse that — check the Markdown / JSON / pptxgenjs. ' + (e as Error).message; return; }
-      if (!slides.length) { err.hidden = false; err.textContent = 'No slides found in that input.'; return; }
+      catch (e) { showErr('Could not parse that — check the Markdown / JSON / pptxgenjs. ' + (e as Error).message); return; }
+      if (!slides.length) { showErr('No slides found in that input.'); return; }
       // A pptxgenjs import arrives with its own colours — re-theme them to the brand palette.
       if (isPptxGenSource(text)) { try { slides = await brandifyDeck(slides); } catch { /* keep the imported colours */ } }
       commitDeck(slides);
@@ -1666,6 +2451,34 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     ta.focus();
   }
   loadBtn.addEventListener('click', openLoad);
+
+  // Click the slide's text on the canvas → open the rich-text editor, caret where you
+  // clicked. Layout mode only: a freeform slide is edited per box, through its own overlay.
+  //
+  // Delegated from the canvas ELEMENT, which survives the full-innerHTML repaint the tool
+  // does on every commit — a listener bound to the rendered text inside would not.
+  //
+  // Editing edits activeSlide(), and this only lands on the RIGHT slide when the deck is
+  // FROZEN: frozen takes pointer-events off every slide but the focused one (styles.css /
+  // buildAnimCss), so a click can only reach the active slide. When the deck is instead
+  // playing (sl-anim: a transition is set and nothing is focused) the slides are stacked
+  // full-frame layers all catching clicks, and the topmost is not activeSlide() — so a
+  // click there would edit the wrong slide. Bail; the user focuses a slide first (clicking
+  // a filmstrip thumb freezes onto it), and the "Edit text" button covers the rest.
+  const onCanvasClick = (e: MouseEvent): void => {
+    if (isEditingLayout()) return;                            // already editing
+    if (!opts.canvasEl.querySelector('.slides.sl-frozen')) return;   // only when frozen on one slide
+    if (asText(activeSlide()?.mode) === 'freeform') return;   // freeform owns its canvas
+    const t = e.target as Element | null;
+    if (!t?.closest) return;
+    // A photo, the brand logo or the page number is not a text click.
+    if (t.closest('.sl-slot, .sl-logo, .sl-pageno')) return;
+    // The text bands, or the bare slide — the latter so a slide with no text yet can still
+    // be clicked into, rather than being the one slide you can't start typing on.
+    if (!t.closest('.sl-head, .sl-body, .sl-slide')) return;
+    openTextEditor({ x: e.clientX, y: e.clientY });
+  };
+  opts.canvasEl.addEventListener('click', onCanvasClick);
 
   // wire up ---------------------------------------------------------------------
   renderAll();
@@ -1692,6 +2505,13 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     if (!overlay.isConnected) return;
     if (gesture) return;    // a live drag/resize owns the DOM until pointer-up commits
     if (editingBox >= 0) return;   // an open box text edit owns its node until it commits
+    // An OPEN colour popover (the inspector's fill / text / border pickers) owns its DOM:
+    // every slider/hex/swatch change commits through patchSel, and rebuilding the overlay
+    // on that commit would tear the popover — and the slider under the pointer, mid-drag —
+    // out of the DOM after a single increment. The field keeps its own trigger swatch in
+    // sync and the tool repaints the canvas regardless; lastSig stays stale, so the overlay
+    // catches up on the first commit or selection change after the popover closes.
+    if (free.querySelector('.color-popover:not([hidden])')) return;
     const sig = sigOf();
     if (sig === lastSig) return;
     lastSig = sig;
@@ -1702,8 +2522,10 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
     destroy(): void {
       try { unsubscribe(); } catch { /* already gone */ }
       detachGesture();
+      closeCtxMenu();   // the menu lives on stageEl (not the overlay) + holds document listeners
+      opts.canvasEl.removeEventListener('click', onCanvasClick);
       document.removeEventListener('keydown', onFreeKey);
-      closeTextEditor(false);
+      teardownLayoutEdit();
       closeLoad();
       overlay.remove();
     },

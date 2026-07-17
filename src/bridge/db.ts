@@ -18,7 +18,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -81,6 +81,20 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // (losing it just forgets the list), so it is NOT in REQUIRED_STORES — its absence
         // must never escalate into wiping the user's real data.
         db.createObjectStore('exports', { keyPath: 'id' });
+      }
+      if (oldVersion < 6) {
+        // TrustMark ONNX watermark-decoder model bytes (tens of MB each), fetched
+        // once from same-origin /models/trustmark/ on the /verify page's "Deep scan
+        // for watermarks" action and cached here so the feature is offline after
+        // first use (see shells/web/src/lib/trustmark.ts) — the Google-Fonts
+        // fetch-once-then-IndexedDB pattern (lib/google-fonts.ts), applied to a
+        // model file instead of a font file. Keyed by filename, NOT keyPath — a
+        // plain get/put store, like 'asset-blob'. Pure regenerable cache (a
+        // missing/corrupt entry just re-fetches), so — like 'generated-previews'/
+        // 'exports' — it is intentionally NOT in REQUIRED_STORES: its absence must
+        // never escalate into wiping the user's real data, and it is NOT part of
+        // the portable data-transfer backup (it isn't user data).
+        db.createObjectStore('trustmark-models');
       }
     },
     blocking() {
