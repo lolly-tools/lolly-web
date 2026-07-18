@@ -290,6 +290,19 @@ test('mdToRichHtml / richHtmlToMd: italic + blank line + h2 + h3 round-trip', ()
   assert.ok(richHtmlToMd(d3).includes('alpha\nbeta'), 'BR round-trips to a newline');
 });
 
+test('mdToRichHtml: escapes quotes/apostrophes too (delegates to the canonical 5-char escape, not a local 3-char one)', () => {
+  const md = `"quoted" & <tag> it's fine`;
+  const html = mdToRichHtml(md);
+  // the raw markup mdToRichHtml hands to innerHTML must entity-escape ALL five chars —
+  // not just `& < >` — so a later reuse of this string in attribute position is safe too.
+  assert.ok(html.includes('&quot;quoted&quot;'), 'raw double quotes must be entity-escaped');
+  assert.ok(html.includes('it&#39;s'), 'raw apostrophe must be entity-escaped');
+  // …and still round-trips losslessly back to the original markdown once parsed
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  assert.equal(richHtmlToMd(div), md);
+});
+
 test('mdToRichHtml / richHtmlToMd: numbered list round-trips through <ol>', () => {
   const md = '# Steps\n1. first\n2. second\n3. third';
   const div = document.createElement('div');
@@ -525,16 +538,21 @@ test('layoutToBoxes: explodes content + filled slots into positioned boxes', () 
   assert.equal(text.text, '# Head\n\nbody');   // content carried verbatim
   assert.equal(text.align, 'l');
   assert.ok((text.y as number) < 200, 'text sits in the head band');
-  // title layout centres one big text box, no image slots
+  assert.equal(text.valign, undefined, 'head-band layouts top-anchor the text (default), so no valign is stored');
+  // title layout centres one big text box, no image slots — vertically centred too, so
+  // the switch to freeform never makes the title jump off centre.
   const t = layoutToBoxes({ layout: 'title', content: '# Big' } as any, 1920, 1920);
   assert.equal(t.length, 1);
   assert.equal(t[0]!.align, 'c');
+  assert.equal(t[0]!.valign, 'm', 'title text stays vertically centred through the switch');
   // an empty slide converts to an empty canvas
   assert.equal(layoutToBoxes({ layout: 'title', content: '' } as any).length, 0);
-  // image boxes come BEFORE the text box, so a full-bleed caption paints on top
+  // image boxes come BEFORE the text box, so a full-bleed caption paints on top; the
+  // caption keeps its foot position (valign bottom) so it doesn't jump to the top.
   const full = layoutToBoxes({ layout: 'full', content: '# Cap', media1: { url: 'img' } } as any, 1920, 1920);
   assert.equal(full[0]!.kind, 'image');
   assert.equal(full[1]!.kind, 'text');
+  assert.equal(full[1]!.valign, 'b', 'full-bleed caption stays at the foot');
 });
 
 test('coerceBox: normalises align words to the compact form', () => {

@@ -389,13 +389,15 @@ function pptxMeta(opts: ExportOpts): PptxBuildOptsMeta {
 type PptxBuildOptsMeta = { title?: string; description?: string; source?: string; contact?: string } | null;
 
 async function zipPptxParts(parts: Record<string, string | Uint8Array>): Promise<Blob> {
-  const { zipSync } = await import('fflate');
+  // Dynamic import keeps fflate out of this chunk (as the direct fflate import
+  // here did before the shell's zip paths were unified onto lib/zip.ts).
+  const { zipAsync } = await import('../lib/zip.ts');
   const enc = new TextEncoder();
   const files: Record<string, Uint8Array> = {};
   for (const [path, content] of Object.entries(parts)) {
     files[path] = typeof content === 'string' ? enc.encode(content) : content;
   }
-  return new Blob([zipSync(files) as BlobPart], { type: PPTX_MIME });
+  return new Blob([(await zipAsync(files)) as BlobPart], { type: PPTX_MIME });
 }
 
 // ─── authored deck model (tool-driven NATIVE pptx) ───────────────────────────

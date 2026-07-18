@@ -28,3 +28,6 @@ public/models/
 # copied from node_modules/onnxruntime-web/dist/ per fetch-trustmark-models.ts
 # (trustmark.ts sets ort.env.wasm.wasmPaths = '/ort/').
 public/ort/
+
+# Claude Code local state (worktrees etc.) — never commit
+.claude/

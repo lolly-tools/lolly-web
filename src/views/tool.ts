@@ -204,6 +204,9 @@ export interface RunExportOpts {
   c2pa?: boolean;
   c2paDays?: number;
   imprint?: boolean;
+  /** Opt-in durable Content Credential (neural TrustMark mark) for raster exports. */
+  durable?: boolean;
+  durableId?: number;
   bleed?: string;
   cropMarks?: boolean;
   registrationMarks?: boolean;
@@ -393,7 +396,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A no-op for ordinary readable links. Done once so every consumer below agrees.
   urlParams = await expandQuery(urlParams ?? '');
 
-  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint } = parseUrlState(urlParams, tool.manifest);
+  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, durable: urlDurable } = parseUrlState(urlParams, tool.manifest);
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
   // `?nostage` pre-checks the export panel's "Full page" toggle (HTML export only):
@@ -2482,6 +2485,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // Only an explicit `imprint=0`/`off` link suppresses it (see url-mode.ts
         // parseImprint; list mirrors tool-actions.ts's isImprintFmt).
         if (urlImprint !== false && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'pdf', 'pdf-cmyk', 'pptx'].includes(fmt)) expOpts.imprint = true;
+        // Opt-in durable Content Credential (?durable=1): a neural TrustMark mark
+        // carrying Lolly's id. Raster-only (no container rasters yet) and a no-op
+        // until the encoder model is on-device. See plans/durable-content-credentials.md.
+        if (urlDurable && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(fmt)) expOpts.durable = true;
         // Print prep: honour ?bleed= / ?marks= so a deep link auto-exports a
         // print-ready file. Applied only when the link asks for it (never default).
         if (isPrintFmt(fmt) && (urlBleed || urlMarks)) {

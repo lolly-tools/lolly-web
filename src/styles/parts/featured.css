@@ -104,6 +104,8 @@
 /* Grabbing lights the backdrop a touch — playful, and it gives transparent-background
    examples something to read against while you flip through them. Fades back on release. */
 .featured.is-grabbing .featured-viewport { background-color: hsl(var(--primary) / .12); }
+/* A manual look-pick (dot click) flips quickly, not at the slow cinematic cross-fade pace. */
+.featured.is-shifting .ftile-img { transition-duration: .3s; }
 
 /* Flush filmstrip — NO gap, NO per-tile radius: the tiles butt edge-to-edge inside
    the inset panel and read as one continuous strip. */
@@ -375,17 +377,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 0;                     /* the dots' own hit padding provides the spacing */
   min-height: 5px;
   padding-bottom: clamp(10px, 1.8vh, 18px);
 }
+/* Clickable: each dot is a padded hit target around a small visual circle (::before)
+   so a fingertip can land on one; clicking jumps the tile straight to that look
+   (delegated in featured-row.ts — the wrapping <a> click is swallowed). */
 .ftile-dot {
+  display: inline-flex;
+  padding: 5px;
+  cursor: pointer;
+}
+.ftile-dot::before {
+  content: "";
   width: 5px; height: 5px;
   border-radius: 50%;
   background: hsl(var(--muted-foreground) / .4);
   transition: background .3s ease, transform .3s ease;
 }
-.ftile-dot.is-on { background: hsl(var(--primary)); transform: scale(1.35); }
+.ftile-dot:hover::before { background: hsl(var(--muted-foreground) / .8); transform: scale(1.35); }
+.ftile-dot.is-on::before { background: hsl(var(--primary)); transform: scale(1.35); }
 
 /* ── Cover Flow view ─────────────────────────────────────────────────────────
    The strip becomes a 3D player-select: covers fan back from a centred, upright one.
@@ -473,8 +485,12 @@
    shadow is dropped (it reads odd on an angled cover). */
 .featured--coverflow .ftile-meta,
 .featured--coverflow .ftile-dots { opacity: 0; transition: opacity .2s ease; }
+/* Dots are clickable now: while hidden on a side cover they must not swallow the
+   "centre this cover" click (opacity alone leaves them interactive). */
+.featured--coverflow .ftile-dots { pointer-events: none; }
 .featured--coverflow .ftile.is-centred .ftile-meta,
 .featured--coverflow .ftile.is-centred .ftile-dots { opacity: 1; }
+.featured--coverflow .ftile.is-centred .ftile-dots { pointer-events: auto; }
 .featured--coverflow .ftile-stage::after { opacity: 0; }
 .featured--coverflow .ftile.is-centred .ftile-open { opacity: 1; transform: translate(-50%, 0); }
 

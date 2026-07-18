@@ -247,7 +247,11 @@ export function mountFeaturedRow(
     if (!dots) return;
     if (imgs.length < 2) { dots.innerHTML = ''; return; }
     if (dots.childElementCount !== imgs.length) {
-      dots.innerHTML = imgs.map(() => '<span class="ftile-dot"></span>').join('');
+      // data-dot = rotation index; the delegated click handler jumps straight to that
+      // look. Spans, not buttons — they live inside the tile's <a> (no nested
+      // interactives) and stay aria-hidden decoration; keyboard users get the same
+      // looks via the ambient rotation + the seeded link.
+      dots.innerHTML = imgs.map((_, i) => `<span class="ftile-dot" data-dot="${i}"></span>`).join('');
     }
     [...dots.children].forEach((d, i) => d.classList.toggle('is-on', i === activeIdx));
   }
@@ -274,23 +278,45 @@ export function mountFeaturedRow(
     link.setAttribute('href', active?.dataset.seedhref ?? link.dataset.basehref ?? link.getAttribute('href') ?? '');
   }
 
-  // Cross-fade a stage to the next (dir 1) / previous (dir -1) look.
-  function advanceStage(stage: Element, dir = 1): void {
+  // Cross-fade a stage straight to look `idx` (clamped into the rotation).
+  function showStage(stage: Element, idx: number): void {
     const link = stage.parentElement!;
     const all = [...stage.querySelectorAll<HTMLImageElement>('.ftile-img')];
+    const imgs = rotationImgs(stage);
+    if (!imgs.length) return;
+    const shownIdx = Math.max(0, Math.min(idx, imgs.length - 1));
+    all.forEach((i) => i.classList.remove('is-active'));  // also clears a lingering base
+    imgs[shownIdx]!.classList.add('is-active');
+    syncDots(link, imgs, imgs.length < 2 ? -1 : shownIdx);
+    refreshLinkHref(link);   // the tile now links to the look it's showing
+  }
+
+  // Cross-fade a stage to the next (dir 1) / previous (dir -1) look.
+  function advanceStage(stage: Element, dir = 1): void {
     const imgs = rotationImgs(stage);
     if (!imgs.length) return;
     const cur = imgs.findIndex((i) => i.classList.contains('is-active'));
     // cur === -1 means the active layer is the base placeholder (now out of rotation) —
     // step onto the first variant regardless of direction.
-    const nextIdx = imgs.length < 2 || cur === -1
+    showStage(stage, imgs.length < 2 || cur === -1
       ? 0
-      : ((cur + dir) % imgs.length + imgs.length) % imgs.length;
-    all.forEach((i) => i.classList.remove('is-active'));  // also clears a lingering base
-    const incoming = imgs[nextIdx]!;
-    incoming.classList.add('is-active');
-    syncDots(link, imgs, imgs.length < 2 ? -1 : nextIdx);
-    refreshLinkHref(link);   // the tile now links to the look it's showing
+      : ((cur + dir) % imgs.length + imgs.length) % imgs.length);
+  }
+
+  // Jump one tool's stages — BOTH its original tile and its wrap-clone — to look `idx`,
+  // so the pair stays in sync (a dot click can land on either copy).
+  function jumpTool(toolId: string, idx: number): void {
+    track.querySelectorAll(`.ftile[data-tool="${CSS.escape(toolId)}"] .ftile-stage`).forEach((s) => showStage(s, idx));
+  }
+
+  // A manual look-pick (dot click) suppresses the auto cross-fade + drift for a beat
+  // and speeds the transition (.is-shifting) so hand-picks feel snappy, not slow.
+  let shiftClsTimer: ReturnType<typeof setTimeout> | undefined;
+  function markManualShift(): void {
+    manualUntil = performance.now() + RESUME_DELAY_MS;
+    section.classList.add('is-shifting');
+    clearTimeout(shiftClsTimer);
+    shiftClsTimer = setTimeout(() => section.classList.remove('is-shifting'), 600);
   }
 
   let fadeTimer: ReturnType<typeof setInterval> | undefined;
@@ -577,9 +603,11 @@ export function mountFeaturedRow(
   // strip's native scroller, vertical scrolls the page — never captured). Either
   // way the grab lights up the backdrop (see .is-grabbing). ──
   viewport.addEventListener('pointerdown', (e) => {
-    // A press on the ⋯ menu button is neither a pan nor a tile open — leave it to the button's
-    // own click (delegated to the consumer's actions menu), whatever the view mode / device.
-    if ((e.target as Element | null)?.closest?.('.ftile-menu')) return;
+    // A press on the ⋯ menu button or an example dot is neither a pan nor a tile open —
+    // leave it to its own click handling (the consumer's actions menu / the dot branch of
+    // the capture click handler below), whatever the view mode / device. Skipping here
+    // also keeps pressLink unset, so the pointerup deterministic-open never fires for it.
+    if ((e.target as Element | null)?.closest?.('.ftile-menu, .ftile-dot')) return;
     // Drag-out mode: a mouse/pen press ON a tile is a click-to-open or the start of a
     // native drag-to-folder — never a pan grab. Yield to the browser (no preventDefault /
     // pointer capture / dragging state) so HTML5 drag can begin; panning stays available
@@ -671,6 +699,17 @@ export function mountFeaturedRow(
     // Let a ⋯ menu-button click through untouched — it must reach the consumer's delegated
     // handler, and (in Cover Flow) must NOT be treated as a "centre this side cover" click.
     if ((e.target as Element | null)?.closest?.('.ftile-menu')) return;
+    // An example dot picks that look directly — swallow the click so the wrapping
+    // <a> doesn't also navigate. (The non-hijacking replacement for the old
+    // vertical-scroll shift gesture.)
+    const dot = (e.target as Element | null)?.closest?.<HTMLElement>('.ftile-dot');
+    if (dot) {
+      e.preventDefault();
+      e.stopPropagation();
+      const toolId = dot.closest<HTMLElement>('.ftile')?.dataset.tool;
+      if (toolId) { jumpTool(toolId, Number(dot.dataset.dot ?? 0)); markManualShift(); }
+      return;
+    }
     // We already navigated on pointerup (deterministic open) — swallow the native click
     // so the anchor doesn't fire a second, duplicate navigation.
     if (suppressNextClick) { suppressNextClick = false; e.preventDefault(); e.stopPropagation(); dragMoved = false; return; }
@@ -873,6 +912,7 @@ export function mountFeaturedRow(
       cancelAnimationFrame(raf);
       cancelAnimationFrame(resizeRaf);
       clearTimeout(relayout);
+      clearTimeout(shiftClsTimer);
       if (fadeTimer) clearInterval(fadeTimer);
       if (ricId) cancelRic(ricId);
     },

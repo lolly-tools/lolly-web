@@ -31,7 +31,8 @@ import {
   figmaNodesToNodes,
   type DesignMapOptions,
 } from '@lolly/engine';
-import { unzip, unzipSync, strFromU8, type UnzipFileInfo } from 'fflate';
+import { strFromU8 } from 'fflate';
+import { unzipAsync } from '../lib/zip.ts';
 // Figma .fig decode: a canvas.fig is a Kiwi binary (self-describing schema + data).
 // The schema chunk is raw-DEFLATE (native DecompressionStream); the data chunk is zstd
 // (fzstd — pure JS, by the fflate author). kiwi-schema is Evan Wallace's official decoder.
@@ -135,7 +136,11 @@ export async function parseDesignFile(
   // Unzip once and route by contents.
   const isZip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
   if (isZip) {
-    const files = await unzipAsync(buf);
+    const files = await unzipAsync(buf, {
+      maxEntryBytes: MAX_ZIP_ENTRY_BYTES,
+      maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
+      tooLarge: name => `This archive expands too large to import (${name}).`,
+    });
     if (isIdml(files)) {
       const { parseIdmlZip } = await import('./idml-import.ts');
       return parseIdmlZip(files, { host, warn, map });
@@ -838,35 +843,6 @@ function sniffImageMime(b: Uint8Array): string {
   return 'image/png';
 }
 
-// unzip via fflate, mirroring shells/web/src/data-transfer.js (async offloads to a
-// Worker in a real browser; sync fallback where no Worker exists, e.g. tests).
-// The filter runs BEFORE each entry is inflated: an entry declaring an absurd
-// uncompressed size — or a set of entries summing past the total cap — rejects
-// the whole import instead of inflating a zip bomb into memory.
-function unzipAsync(bytes: Uint8Array): Promise<Record<string, Uint8Array>> {
-  let total = 0;
-  let bomb: string | null = null;
-  const filter = (f: UnzipFileInfo): boolean => {
-    total += f.originalSize || 0;
-    if ((f.originalSize || 0) > MAX_ZIP_ENTRY_BYTES || total > MAX_ZIP_TOTAL_BYTES) {
-      bomb = f.name;
-      return false;
-    }
-    return true;
-  };
-  const guard = <T>(data: T): T => {
-    if (bomb) throw new Error(`This archive expands too large to import (${bomb}).`);
-    return data;
-  };
-  const HAS_WORKER = typeof Worker !== 'undefined';
-  if (!HAS_WORKER) return Promise.resolve().then(() => guard(unzipSync(bytes, { filter })));
-  return new Promise((resolve, reject) => {
-    unzip(bytes, { filter }, (err, data) => {
-      if (err) return reject(err);
-      try { resolve(guard(data)); } catch (e) { reject(e); }
-    });
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Small helpers

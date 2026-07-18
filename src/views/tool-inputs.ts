@@ -308,6 +308,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   const renderOneInput = (input: InputModelItem, prev: InputModelItem | null): string => {
     const isCheckbox = input.control === 'checkbox';
+    // `display: 'pill'` on a boolean → an inline chip toggle. Still a checkbox row
+    // (control-before-label <label>), so the existing checkbox change wiring fires
+    // unchanged; the CSS reshapes it, and consecutive pills are flowed into one
+    // wrapped .input-pillbar by the section loop below.
+    const isPill = isCheckbox && input.display === 'pill';
     // The datetime field is a flatpickr (altInput) control, and the whole panel
     // re-renders on every keystroke — a floating label would re-animate from its
     // resting to floating position each time the value re-populates and visibly
@@ -320,7 +325,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // `vector` input forwards to its first number field. Wrap these in a <div role=group>
     // instead: the caption still names them (aria-labelledby), but it never proxies clicks.
     const isComposite = ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker'].includes(input.control);
-    const cls = `input-row${isCheckbox ? ' input-row--checkbox' : ''}${isStaticLabel ? ' input-row--static-label' : ''}${isSubControl(input, prev) ? ' input-row--sub' : ''}`;
+    const cls = `input-row${isCheckbox ? ' input-row--checkbox' : ''}${isPill ? ' input-row--pill' : ''}${isStaticLabel ? ' input-row--static-label' : ''}${isSubControl(input, prev) ? ' input-row--sub' : ''}`;
     const valueTag = input.control === 'slider'
       ? ` <span class="input-value">${parseFloat(String(input.value ?? 0))}</span>`
       : '';
@@ -360,9 +365,13 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const parts: string[] = [];
   let openSection: string | null = null;
   let prevInput: InputModelItem | null = null;
+  let pillbarOpen = false;   // a run of consecutive `display:'pill'` booleans, wrapped
+  const isPillInput = (i: InputModelItem): boolean => i.control === 'checkbox' && i.display === 'pill';
+  const closePillbar = (): void => { if (pillbarOpen) { parts.push('</div>'); pillbarOpen = false; } };
   for (const input of rowModel) {
     const sec = input.section ?? null;
     if (sec !== openSection) {
+      closePillbar();   // a chip bar never spans a section boundary
       if (openSection !== null) parts.push('</div></details>');
       if (sec !== null) {
         const wasOpen = openSections.has(sec);
@@ -371,9 +380,14 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       openSection = sec;
       prevInput = null;   // a section break ends any pairing
     }
+    // Open a chip bar around a run of pills; close it the moment a non-pill follows.
+    const pill = isPillInput(input);
+    if (pill && !pillbarOpen) { parts.push('<div class="input-pillbar" role="group">'); pillbarOpen = true; }
+    else if (!pill && pillbarOpen) closePillbar();
     parts.push(renderOneInput(input, prevInput));
     prevInput = input;
   }
+  closePillbar();
   if (openSection !== null) parts.push('</div></details>');
   // Destroy flatpickr instances on the outgoing markup so their body-level calendars +
   // document/window listeners don't orphan. Deferred to a microtask because this
@@ -1368,8 +1382,16 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // label meant for text fields) while only narrowing a dropdown you had to open
       // first. It sat above every 11-16 option select — blend mode, language,
       // transition, motion — where there was nothing to filter.
-      return `<select data-input-id="${id}">${(input.options ?? []).map(o =>
-        `<option value="${escape(o.value)}" ${o.value === input.value ? 'selected' : ''}>${escape(o.label ?? o.value)}</option>`
+      // brandFonts: append every font the user added to their brand as extra options
+      // (de-duped against the manifest's own), so a font picker lists the whole brand
+      // type kit — mirrors the same flag on a `blocks` select sub-field.
+      let selOpts = (input.options ?? []).map(o => ({ value: String(o.value), label: String(o.label ?? o.value) }));
+      if (input.brandFonts) {
+        const seen = new Set(selOpts.map(o => o.value));
+        for (const fam of brandFontFamilies()) if (!seen.has(fam)) { selOpts.push({ value: fam, label: fam }); seen.add(fam); }
+      }
+      return `<select data-input-id="${id}">${selOpts.map(o =>
+        `<option value="${escape(o.value)}" ${o.value === String(input.value ?? '') ? 'selected' : ''}>${escape(o.label)}</option>`
       ).join('')}</select>`;
     }
     case 'checkbox':

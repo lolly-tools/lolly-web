@@ -39,60 +39,14 @@ import { playSfx } from '../lib/sfx.ts';
 import { takePendingVerify } from '../lib/verify-handoff.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
-
-// Local mirror of the engine verifier's report shape (c2pa-verify's C2paReport
-// is not re-exported through the barrel). Structural — the awaited result of
-// verifyC2pa() is assignable to it.
-interface Check { code: string; ok: boolean; explanation: string; }
-interface SignerIdentity { email: string | null; issuer: string | undefined; }
-interface Signer {
-  commonName: string | undefined;
-  organization: string | undefined;
-  notBefore: string;
-  notAfter: string;
-  selfSigned: boolean;
-  alg: string;
-  identity?: SignerIdentity;
-}
-interface Claim {
-  title: unknown;
-  format: unknown;
-  claimGenerator: unknown;
-  generatorInfo: Record<string, string | number | boolean> | null;
-  instanceId: unknown;
-  manifestLabel: string;
-  actions: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown }>;
-}
-interface VerifyReport {
-  found: boolean;
-  state: 'valid' | 'invalid' | 'none';
-  trusted: boolean;
-  madeWithLolly: boolean;
-  likelyMadeWithLolly: boolean;
-  partsMadeWithLolly: boolean;
-  delivered: boolean;
-  format: string | null;
-  checks: Check[];
-  reason?: string;
-  claim?: Claim;
-  environment?: (Record<string, string | number | boolean> & { inputs?: Record<string, string> }) | null;
-  author?: { name: string; email?: string };
-  signer?: Signer;
-  aiGenerated?: { kind: 'generated' | 'composite'; sourceType: string };
-  history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; generator?: unknown }>;
-}
-
-// The pixel-watermark detection result (engine detectWatermark), surfaced only
-// when present — a durable, lower-confidence provenance signal that lives in the
-// pixels rather than the C2PA metadata container.
-interface Watermark {
-  present: boolean;
-  score: number;
-  // Set when the mark was found INSIDE a container file's embedded raster
-  // (a .pptx slide image, a PDF image XObject) rather than in the dropped file's
-  // own pixels — the note/pip wording changes to say so.
-  embedded?: boolean;
-}
+// The pure verdict/scorecard model — no DOM, no CSS import, so it's importable (and
+// tested) standalone. See valid-verdict.ts's header for why this lives apart from the
+// rendering below.
+import {
+  isExpiredOnly, isExpectedRow, pipStatusWord, scorecardModel, resolveState, stateTone,
+  STATE_COPY,
+} from './valid-verdict.ts';
+import type { Check, SignerIdentity, Signer, Claim, VerifyReport, Watermark, ScorecardItem } from './valid-verdict.ts';
 
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
 // plus the vendored C2PA trust list (Google/Gemini, the camera makers, Bria,
@@ -123,141 +77,6 @@ const ICON_CHEVRON = glyph('chevronDown');
 // and the per-fact <dt> labels. /valid's icons are a hair thinner (1.9) than
 // the registry default (2).
 const svgIcon = (name: IconName): string => glyph(name, { strokeWidth: 1.9 });
-const STATUS_WORD = { pass: 'passed', fail: 'failed', warn: 'invalid', na: 'n/a' };
-
-const STATE_COPY = {
-  valid: {
-    cls: 'is-valid',
-    title: 'Credential intact',
-    sub: 'The file is exactly what its embedded credential signed. Signed with an on-device key — integrity, not identity.',
-  },
-  invalid: {
-    cls: 'is-invalid',
-    title: 'Credential broken',
-    sub: 'The file carries Content Credentials, but they no longer match its bytes — it was modified after signing, or the credential is damaged.',
-  },
-  none: {
-    cls: 'is-none',
-    title: 'No Content Credentials',
-    sub: 'This file carries no C2PA manifest. It was still inspected on-device for a Lolly Imprint, embedded metadata and hidden data.',
-  },
-  // state 'valid' + the signing chain verifies against the pinned Lolly CA
-  // root: integrity plus a CA-verified signer identity. What was made — and
-  // with which app — remains the signer’s own claim.
-  trusted: {
-    cls: 'is-valid is-trusted',
-    title: 'Verified',
-    sub: 'The file is exactly what its embedded credential signed, and the signing certificate chains to the pinned Lolly CA root — integrity plus a CA-verified identity. What it records about how it was made is still the signer’s own claim.',
-  },
-  // state 'valid' + the claim records Lolly → the answer users came for.
-  lolly: {
-    cls: 'is-valid is-lolly',
-    title: 'Made with Lolly',
-    sub: 'The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim; an on-device key, not a CA identity.)',
-  },
-  // state 'valid' + trusted + a c2pa.published (not created) action: an existing
-  // asset Lolly distributes but did not author. Honest journey — verified
-  // authentic, delivered by Lolly, made by someone else (shown below).
-  delivered: {
-    cls: 'is-valid is-delivered',
-    title: 'Delivered by Lolly',
-    sub: 'This is the genuine official version, delivered by Lolly. The credential chains to the pinned Lolly CA root, so the file is intact and its origin is CA-verified. Lolly delivered this asset — it did not create it; who made it is recorded below as the signer’s own claim.',
-  },
-  // Every check passed EXCEPT the cert validity window: the bytes still match
-  // what was signed — saying "modified after signing" here would be false.
-  expired: {
-    cls: 'is-none is-expired',
-    title: 'Credential expired',
-    sub: 'The file still matches exactly what its credential signed — nothing was modified — but the signing certificate (a short-lived on-device key; the lifetime is picked at export) has lapsed, so the credential no longer validates.',
-  },
-  // state 'invalid', but ONLY the hard binding (the file's own bytes) failed —
-  // the claim signature and every hashed-URI-bound assertion (the actions and
-  // export context this page shows as edit history / "made from") checked out,
-  // and the claim records a Lolly creation. A softer, honest middle ground
-  // between the flat "Made with Lolly" and "Credential broken".
-  likelyLolly: {
-    cls: 'is-none is-likelylolly',
-    title: 'Likely made with Lolly',
-    sub: 'The credential’s own content checks out — its signature is valid and everything it references matches — and it records a Lolly export, but the file’s bytes no longer match the hard binding, so this exact copy can’t be vouched for. It was probably re-saved, re-encoded, or re-uploaded through something that left the manifest alone.',
-  },
-};
-
-// True when the ONLY failure (beyond the always-present untrusted marker) is
-// the certificate validity window.
-function isExpiredOnly(report: VerifyReport): boolean {
-  const fails = report.checks.filter((c) => !c.ok && c.code !== 'signingCredential.untrusted');
-  return fails.length === 1 && fails[0]!.code === 'signingCredential.expired';
-}
-
-// The untrusted marker is the designed posture, not damage — render it as an
-// informational row, never as a failure.
-const isExpectedRow = (c: Check): boolean => c.code === 'signingCredential.untrusted';
-
-// Eight canonical C2PA checks for the hero scorecard. The verifier emits a
-// variable number of rows (one hashed-URI per assertion, trusted vs untrusted,
-// …); this collapses them onto a stable eight so the hero reads as a consistent
-// glance, with each pip's state (pass / fail / warn / not-applicable) derived
-// from the actual rows — never hard-coded.
-interface ScorecardItem { icon: IconName; label: string; status: keyof typeof STATUS_WORD; hideStatus?: boolean; ash?: boolean; statusWord?: string; }
-// A pip's status word: the shared pass/fail vocabulary unless the item carries
-// its own (the Lolly Imprint says "detected" — presence, not a graded check).
-const pipStatusWord = (it: ScorecardItem): string => it.statusWord ?? t(STATUS_WORD[it.status]);
-function scorecardModel(report: VerifyReport, watermark?: Watermark, extra: ScorecardItem[] = []): ScorecardItem[] {
-  const cs = report.checks || [];
-  const okRow = (code: string): boolean => cs.some((c) => c.ok && c.code === code);
-  const badRow = (...codes: string[]): boolean => cs.some((c) => !c.ok && !isExpectedRow(c) && codes.includes(c.code));
-  const present = (code: string): boolean => cs.some((c) => c.code === code);
-  const found = !!report.found;
-  const na = 'na';
-
-  const readable = present('credential.unreadable') ? 'fail' : found ? 'pass' : na;
-  const assertions = badRow('assertion.hashedURI.mismatch', 'assertion.missing') ? 'fail'
-    : okRow('assertion.hashedURI.match') ? 'pass' : na;
-  const signature = badRow('claimSignature.mismatch') ? 'fail' : okRow('claimSignature.validated') ? 'pass' : na;
-  const validity = present('signingCredential.expired') ? 'warn' : okRow('claimSignature.insideValidity') ? 'pass' : na;
-  const binding = badRow('assertion.dataHash.mismatch', 'assertion.bmffHash.mismatch') ? 'fail'
-    : (okRow('assertion.dataHash.match') || okRow('assertion.bmffHash.match')) ? 'pass' : na;
-  const trust = okRow('signingCredential.trusted') ? 'pass'
-    : (report.signer?.identity && present('signingCredential.expired')) ? 'warn' : na;
-  const lollyMade = !!report.madeWithLolly;
-  const lollyLikely = !!report.likelyMadeWithLolly;
-  const lollyParts = !!report.partsMadeWithLolly;
-
-  return [
-    // Yes/no, not a graded check: "Made with Lolly" (green tick), a "Likely"
-    // amber middle ground (manifest content checks out, file bytes don't), or
-    // a plain "Not made with Lolly" — none of these show a status pill, "not
-    // applicable"/"invalid" would misword the amber and grey cases.
-    {
-      icon: 'lollipop',
-      label: lollyMade ? t('Made with Lolly') : lollyLikely ? t('Likely made with Lolly')
-        : lollyParts ? t('Parts made with Lolly') : t('Not made with Lolly'),
-      status: lollyMade ? 'pass' : (lollyLikely || lollyParts) ? 'warn' : na,
-      hideStatus: !lollyMade,
-    },
-    // The Lolly Imprint — detected in the pixels ON this device, so it earns a
-    // real pass pip, seated right beside the Made-with-Lolly verdict it backs.
-    // Present ONLY when found: absence is uninformative (resize erases it;
-    // non-Lolly rasters never carry it), so there is no fail/na state.
-    ...(watermark?.present ? [{ icon: 'imprint' as IconName, label: t('Lolly Imprint'), status: 'pass' as const, statusWord: watermark.embedded ? t('in an image') : t('detected') }] : []),
-    // Extra signal pips, seated up top with the other watermark facts: the
-    // SynthID/Meta likelihood pip (aiMarkPip) and the steganalysis heuristics
-    // (stegoPips) — built by the caller so both scorecards stay in sync.
-    ...extra,
-    { icon: 'document', label: t('Manifest found'), status: found ? 'pass' : na },
-    { icon: 'eye', label: t('Manifest readable'), status: readable },
-    { icon: 'link', label: t('Assertions bound to the claim'), status: assertions },
-    { icon: 'pen', label: t('Claim signature valid'), status: signature },
-    { icon: 'clock', label: t('Certificate within validity'), status: validity },
-    { icon: 'hash', label: t('File bytes match (hard binding)'), status: binding },
-    // "Signer identity" has no CA answer when the file was signed with a
-    // self-signed on-device key — so say that plainly (dark-ash card) rather
-    // than a bare "not applicable".
-    (trust === 'na' && report.signer?.selfSigned
-      ? { icon: 'cpu', label: t('Signed with an on-device key'), status: na, hideStatus: true, ash: true }
-      : { icon: 'userCheck', label: t('Signer identity (CA-verified)'), status: trust }),
-  ];
-}
 
 // One scorecard pip's markup — factored out of scorecardHtml so the
 // deep-scan click handler (mountValid) can append a freshly-found TrustMark
@@ -373,66 +192,6 @@ const fmtDate = (iso: unknown): string => {
   return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 };
 
-interface ResolvedState {
-  state: (typeof STATE_COPY)[keyof typeof STATE_COPY];
-  sub: string;
-  identity: SignerIdentity | undefined;
-}
-// Resolve the hero state (which STATE_COPY entry it maps to) and the occasionally
-// reworded sub-line. Shared by the full report body AND the collapsed summary so the
-// two never disagree on the headline. Defence in depth: a green "trusted" hero must
-// never outrank a broken credential — the engine only sets report.trusted when the
-// file is intact, but the view never trusts that invariant blind, so an invalid file
-// always resolves to its failure state whatever `trusted` says.
-function resolveState(report: VerifyReport): ResolvedState {
-  const trusted = report.trusted && report.state === 'valid';
-  const state = report.madeWithLolly ? STATE_COPY.lolly
-    : trusted && report.delivered ? STATE_COPY.delivered
-    : trusted ? STATE_COPY.trusted
-    : report.state === 'invalid' && report.likelyMadeWithLolly ? STATE_COPY.likelyLolly
-    : report.state === 'invalid' && isExpiredOnly(report) ? STATE_COPY.expired
-    : (STATE_COPY[report.state] ?? STATE_COPY.none);
-  // Set only when the signing chain verified against the pinned root: a still-valid
-  // cert (report.trusted true) or an anchored-but-expired one (identity CA-verified,
-  // signing time unprovable).
-  const identity = report.signer?.identity;
-  // Two subs would lie once a chain verifies against the anchor: the lolly one claims
-  // "an on-device key, not a CA identity" and the expired one blames "a one-year
-  // on-device key". Swap the wording, keep the state.
-  // The default trusted copy is Lolly-specific ("the pinned Lolly CA root"),
-  // which is wrong for a third-party signer (Google, Adobe, Microsoft…). When
-  // the chain verified against a NON-Lolly anchor, name the actual root and the
-  // signer's organisation instead. Delivered/lolly stay Lolly-worded (they ARE
-  // Lolly). signerOrg comes from the CA-verified cert — only used once trusted.
-  const signerOrg = report.signer?.organization || report.signer?.commonName;
-  const thirdPartyRoot = !!identity?.issuer && !/\blolly\b/i.test(identity.issuer);
-  // NB: `sub` is rendered as raw HTML (so the signer/anchor names can be <strong>).
-  // The static STATE_COPY subs carry no HTML metacharacters; any cert-derived value
-  // interpolated here (issuer, signerOrg) MUST be escape()'d — it is attacker-controlled.
-  const sub = state === STATE_COPY.lolly && report.trusted
-    ? t('The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim, signed under a CA-verified identity.)')
-    : state === STATE_COPY.expired && identity
-      ? t('The file still matches exactly what its credential signed — nothing was modified — but the short-lived signing certificate has expired, so the credential no longer validates. Without a trusted timestamp the time of signing cannot be proven.')
-      : state === STATE_COPY.trusted && thirdPartyRoot
-        ? t('The file is exactly what its embedded credential signed, and the signing certificate chains to <strong>{issuer}</strong> — a recognised C2PA trust anchor{signer}. Integrity plus a CA-verified identity; what it records about how it was made is still the signer’s own claim.', {
-            issuer: escape(identity!.issuer!),
-            signer: signerOrg ? t(', identifying the signer as <strong>{org}</strong>', { org: escape(signerOrg) }) : '',
-          })
-        : t(state.sub);
-  return { state, sub, identity };
-}
-
-// A single tone for the collapsed summary's badge / card stripe. good = intact
-// (valid / lolly / trusted / delivered), warn = expired-only, bad = broken, none
-// = no credential.
-function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none' {
-  const { state } = resolveState(report);
-  if (state === STATE_COPY.invalid) return 'bad';
-  if (state === STATE_COPY.expired || state === STATE_COPY.likelyLolly) return 'warn';
-  if (state === STATE_COPY.none) return 'none';
-  return 'good';
-}
-
 // Icon-only mirror of the hero scorecard for the collapsed summary — the "highlights
 // showing when collapsed". Same eight pips, same colour = state, label as a tooltip.
 function miniScoreHtml(report: VerifyReport, watermark?: Watermark, extra?: ScorecardItem[]): string {
@@ -464,7 +223,20 @@ function reportMaker(report: VerifyReport): { names: string[]; lolly: boolean } 
   return { names, lolly: report.madeWithLolly || names.some((n) => /lolly/i.test(n)) };
 }
 
-function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadata, watermark?: Watermark, seal?: SealVerifyResult): string {
+// The strongest POSITIVE signal to lead the summary badge / hero verdict with
+// when a file carries NO C2PA credential: an exact local-export match ("Made on
+// this device") or a detected Lolly Imprint. A bare "No Content Credentials"
+// reads at a glance as "nothing here" and buries these — so surface the real
+// signal instead. Returns null when a credential exists (its own verdict leads)
+// or there is nothing positive to show.
+function noCredentialSignal(report: VerifyReport, watermark?: Watermark, mine?: LocalExportMatch): string | null {
+  if (report.found) return null;               // a C2PA credential exists → its verdict leads
+  if (mine) return t('Made on this device');   // exact byte-match to a local export — the strongest signal
+  if (watermark?.present) return t('Lolly Imprint');
+  return null;
+}
+
+function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadata, watermark?: Watermark, seal?: SealVerifyResult, mine?: LocalExportMatch): string {
   const { state, identity } = resolveState(report);
   // Attribution chip: OIDC email for a device credential, else the CA signer's
   // organisation (Google, Adobe…). Only when the chain reached a pinned anchor.
@@ -476,9 +248,15 @@ function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadat
   // ingredients — matching the timeline's maker pills. A broken / expired / no-
   // credential file leads with the verdict badge instead: the problem is the
   // headline, and its maker isn't something to vouch for.
-  const lead = (tone === 'good' && maker)
-    ? `<span class="valid-item-maker ${maker.lolly ? 'is-lolly' : 'is-other'}" title="${escape(t(state.title))}">${t('Made with {names}', { names: escape(maker.names.join(' · ')) })}</span>`
-    : `<span class="valid-item-badge is-${tone}">${escape(t(state.title))}</span>`;
+  // A no-credential file with a strong positive signal (made on this device / a
+  // Lolly Imprint) leads with THAT, in green — not the grey "No Content
+  // Credentials" that reads as "nothing here".
+  const signal = noCredentialSignal(report, watermark, mine);
+  const lead = signal
+    ? `<span class="valid-item-maker is-lolly" title="${escape(signal)}">${escape(signal)}</span>`
+    : (tone === 'good' && maker)
+      ? `<span class="valid-item-maker ${maker.lolly ? 'is-lolly' : 'is-other'}" title="${escape(t(state.title))}">${t('Made with {names}', { names: escape(maker.names.join(' · ')) })}</span>`
+      : `<span class="valid-item-badge is-${tone}">${escape(t(state.title))}</span>`;
   const aiDecl = report.aiGenerated ? t('Content Credential declares AI-generated content')
     : meta?.ai ? t('Embedded metadata declares AI-generated content') : null;
   const { origin, makerHint } = deriveAi(report, meta);
@@ -824,6 +602,28 @@ function trustmarkNoteHtml(payloadHex: string, schema: string): string {
       <div class="valid-wm-text">
         <strong>${t('Adobe TrustMark detected')}</strong>
         <span>${t('A TrustMark watermark ({schema}) was decoded from the pixels and passed its error-correction check — a real, on-device read, not a guess. Recovered payload: {payload}', { schema: escape(schema), payload: `<code>${escape(payloadHex)}</code>` })}</span>
+      </div>
+    </div>`;
+}
+/** A positive read of Lolly's OWN durable mark — a TrustMark-format soft binding
+ *  carrying Lolly's identifier, recognised on-device (engine readLollyDurable).
+ *  It's a real, ECC-validated read, so (like the Lolly Imprint) a green pass pip
+ *  — and it's the more specific answer, so it REPLACES the generic TrustMark pip
+ *  when the payload is ours. See plans/durable-content-credentials.md. */
+function lollyDurablePip(): ScorecardItem {
+  return { ...TRUSTMARK_DETECTED_PIP, label: t('Lolly durable mark'), statusWord: t('detected') };
+}
+// Honest scope: this states what it PROVES (a Lolly identifier is watermarked
+// into the pixels and error-corrected) and what it's FOR (re-linking after a
+// metadata strip). It does NOT claim a manifest was resolved — that lookup
+// (CAI Soft Binding Resolution) is deferred to a SUSE-hosted deploy.
+function lollyDurableNoteHtml(schema: string): string {
+  return `
+    <div class="valid-wm" role="note">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
+      <div class="valid-wm-text">
+        <strong>${t('Durable Lolly credential')}</strong>
+        <span>${t('A TrustMark-format watermark ({schema}) carrying Lolly’s own identifier was decoded from the pixels and passed its error-correction check — a real, on-device read. Unlike the Content Credential, which lives in metadata and is stripped on upload, this identifier is hidden in the pixels, so it can re-link this file to Lolly even after the metadata is gone.', { schema: escape(schema) })}</span>
       </div>
     </div>`;
 }
@@ -1232,13 +1032,19 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
             <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('lollipop')}</span><span>${t('It records a Lolly creation')}</span></div>
             <div class="valid-vbadge is-warn"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('hash')}</span><span>${t("This file's bytes no longer match")}</span></div>
           </div>` : '';
+  // When there's no C2PA credential, lead the hero with the strongest positive
+  // signal (made on this device / Lolly Imprint) as a green pill, rather than a
+  // bare grey "No Content Credentials" — the actual C2PA absence stays in the sub.
+  const noCredSignal = noCredentialSignal(report, watermark, mine);
   const verdictHtml = report.madeWithLolly
     ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(t(state.title))}</span>`
     : report.likelyMadeWithLolly
       ? `<span class="valid-hero-pill valid-hero-pill--likely-lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(t(state.title))}</span>`
       : report.trusted
         ? `<span class="valid-hero-pill valid-hero-pill--trusted"><span class="valid-trusted-badge" aria-hidden="true">✓</span>${escape(t(state.title))}</span>`
-        : `<span class="valid-hero-verdict">${escape(t(state.title))}</span>`;
+        : noCredSignal
+          ? `<span class="valid-hero-pill valid-hero-pill--lolly"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${escape(noCredSignal)}</span>`
+          : `<span class="valid-hero-verdict">${escape(t(state.title))}</span>`;
   // A file whose intact chain records Lolly steps without being a Lolly creation
   // gets the amber lolly pill BESIDE the main verdict — credit for the Lolly leg
   // without claiming the whole file (see engine partsMadeWithLolly).
@@ -1251,7 +1057,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
         ${mediaPreviewHtml(preview, 'lg')}
         <div class="valid-hero">
           <div class="valid-hero-title">
-            <span class="valid-hero-icon">${report.madeWithLolly
+            <span class="valid-hero-icon">${report.madeWithLolly || noCredSignal
     ? '<span class="valid-hero-logo" aria-hidden="true"></span>'
     : ICON_SHIELD}</span>
             <h2><span class="valid-hero-filename">${escape(fileName)}</span> ${verdictHtml}${partsPill}</h2>
@@ -1710,8 +1516,15 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       ]);
       let shown = false;
       if (tm.status === 'detected') {
-        injectDeepScanPip(block, trustmarkPip());
-        resultEl.insertAdjacentHTML('beforeend', trustmarkNoteHtml(tm.payloadHex ?? '', tm.schema ?? ''));
+        // A Lolly-owned durable id is the more specific answer — show it INSTEAD
+        // of the generic TrustMark pip; otherwise fall back to the neutral one.
+        if (tm.lolly) {
+          injectDeepScanPip(block, lollyDurablePip());
+          resultEl.insertAdjacentHTML('beforeend', lollyDurableNoteHtml(tm.schema ?? ''));
+        } else {
+          injectDeepScanPip(block, trustmarkPip());
+          resultEl.insertAdjacentHTML('beforeend', trustmarkNoteHtml(tm.payloadHex ?? '', tm.schema ?? ''));
+        }
         shown = true;
       }
       if (cs.status === 'detected') {
@@ -1996,8 +1809,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       const { report, error, meta, watermark, mine, seal } = await verifyFile(file);
       activeDigests[i] = report?.environment?.inputs;
       if (report) {
-        card.className = `valid-item is-${stateTone(report)}`;
-        card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark, seal)}</summary>` +
+        // A no-credential file with a positive signal (made here / imprint) gets
+        // the good (green) stripe, matching its badge — not the neutral grey.
+        const cardTone = noCredentialSignal(report, watermark, mine) ? 'good' : stateTone(report);
+        card.className = `valid-item is-${cardTone}`;
+        card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark, seal, mine)}</summary>` +
           `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i, watermark, mine, seal)}</div>`;
       } else {
         card.className = 'valid-item is-bad';
