@@ -23,8 +23,9 @@
  */
 
 import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
-import { verifyC2pa, verifySeal, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, analyzeLsb } from '@lolly/engine';
+import { verifyC2pa, verifySeal, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, detectWatermarkSearch, analyzeLsb, isPptx, pptxMediaImages } from '@lolly/engine';
 import type { FileMetadata, MetaGroup, StripFormat, SealVerifyResult } from '@lolly/engine';
+import { looksLikePptxFile, inflatePptx, PPTX_MIME } from '../bridge/pptx.ts';
 import { resolveSealKey } from '../lib/seal-dns.ts';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
@@ -84,7 +85,14 @@ interface VerifyReport {
 // The pixel-watermark detection result (engine detectWatermark), surfaced only
 // when present — a durable, lower-confidence provenance signal that lives in the
 // pixels rather than the C2PA metadata container.
-interface Watermark { present: boolean; score: number; }
+interface Watermark {
+  present: boolean;
+  score: number;
+  // Set when the mark was found INSIDE a container file's embedded raster
+  // (a .pptx slide image, a PDF image XObject) rather than in the dropped file's
+  // own pixels — the note/pip wording changes to say so.
+  embedded?: boolean;
+}
 
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
 // plus the vendored C2PA trust list (Google/Gemini, the camera makers, Bria,
@@ -131,7 +139,7 @@ const STATE_COPY = {
   none: {
     cls: 'is-none',
     title: 'No Content Credentials',
-    sub: 'Nothing to verify — this file carries no C2PA manifest.',
+    sub: 'This file carries no C2PA manifest. It was still inspected on-device for a Lolly Imprint, embedded metadata and hidden data.',
   },
   // state 'valid' + the signing chain verifies against the pinned Lolly CA
   // root: integrity plus a CA-verified signer identity. What was made — and
@@ -231,7 +239,7 @@ function scorecardModel(report: VerifyReport, watermark?: Watermark, extra: Scor
     // real pass pip, seated right beside the Made-with-Lolly verdict it backs.
     // Present ONLY when found: absence is uninformative (resize erases it;
     // non-Lolly rasters never carry it), so there is no fail/na state.
-    ...(watermark?.present ? [{ icon: 'imprint' as IconName, label: t('Lolly Imprint'), status: 'pass' as const, statusWord: t('detected') }] : []),
+    ...(watermark?.present ? [{ icon: 'imprint' as IconName, label: t('Lolly Imprint'), status: 'pass' as const, statusWord: watermark.embedded ? t('in an image') : t('detected') }] : []),
     // Extra signal pips, seated up top with the other watermark facts: the
     // SynthID/Meta likelihood pip (aiMarkPip) and the steganalysis heuristics
     // (stegoPips) — built by the caller so both scorecards stay in sync.
@@ -594,13 +602,12 @@ function aiFlagHtml(origin: AiOrigin | undefined, makerHint = ''): string {
   if (!origin) return '';
   const c = AI_FLAG_COPY[origin.via][origin.kind];
   // The invisible-watermark layer: Google (and partners) stamp SynthID into the
-  // pixels themselves. We can't read it on-device — nobody outside the makers
-  // can — so we say what's likely and point at the only real detector.
+  // pixels themselves. We can't read it on-device, so we just share what's likely
+  // — we don't route users to a maker's proprietary detector or make excuses for
+  // what we can't do.
   const note = SYNTHID_MAKERS.test(`${origin.credit ?? ''} ${makerHint}`)
-    ? t('Google’s AI models also stamp an invisible <strong>SynthID</strong> watermark into the pixels themselves, so this file very likely carries one — it survives even when this label is stripped. Only Google’s tools can read it: {link}.', {
-        link: '<a href="https://deepmind.google/models/synthid/" target="_blank" rel="noopener">SynthID Detector</a>',
-      })
-    : t('Large AI generators also typically stamp an invisible watermark into the pixels themselves (Google’s SynthID — also adopted by OpenAI — or Meta’s Video Seal). It survives metadata stripping, but only each maker’s own detector can read it.');
+    ? t('Google’s AI models also stamp an invisible <strong>SynthID</strong> watermark into the pixels themselves, so this file very likely carries one — it survives even when this label is stripped.')
+    : t('Large AI generators also typically stamp an invisible watermark into the pixels themselves (Google’s SynthID — also adopted by OpenAI — or Meta’s Video Seal), which survives metadata stripping.');
   return `
     <div class="valid-ai-flag" role="alert">
       <span class="valid-ai-flag-ic" aria-hidden="true">${svgIcon('aiSpark')}</span>
@@ -625,9 +632,41 @@ function watermarkNote(wm: Watermark | undefined): string {
     <div class="valid-wm" role="note">
       <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
       <div class="valid-wm-text">
-        <strong>${t('Lolly Imprint present')}</strong>
-        <span>${t("The Lolly Imprint is an imperceptible watermark Lolly can embed in the pixels of a raster export. Unlike the Content Credential — which travels in metadata and is lost to a re-save or strip — it rides in the image itself and survives recompression, so it's a durable hint that the image came from Lolly. A supporting signal, not a cryptographic guarantee.")}</span>
+        <strong>${wm.embedded ? t('Lolly Imprint found in an embedded image') : t('Lolly Imprint present')}</strong>
+        <span>${wm.embedded
+    ? t("This file isn't a raster Lolly signs directly, but one of the images embedded inside it carries the Lolly Imprint — an imperceptible watermark Lolly can embed in the pixels of a raster it renders. It rides in the image itself and survives recompression, so it's a durable hint that an image in this file came from Lolly. A supporting signal, not a cryptographic guarantee.")
+    : t("The Lolly Imprint is an imperceptible watermark Lolly can embed in the pixels of a raster export. Unlike the Content Credential — which travels in metadata and is lost to a re-save or strip — it rides in the image itself and survives recompression, so it's a durable hint that the image came from Lolly. A supporting signal, not a cryptographic guarantee.")}</span>
       </div>
+    </div>`;
+}
+
+// The scorecard pip for a detected Lolly Imprint — the exact item scorecardModel
+// seats beside the verdict, reused so a Tier-2 (opt-in resize search) recovery
+// injects an IDENTICAL pip. Presence is presence: the wording never depends on
+// which tier found it or on the scale/offset it was recovered at.
+const lollyImprintPip = (): ScorecardItem => ({ icon: 'imprint', label: t('Lolly Imprint'), status: 'pass', statusWord: t('detected') });
+
+// ── Opt-in Tier-2 "resized Imprint" search ───────────────────────────────────
+// The automatic pixel pass (pixelChecks) runs Tier 0 (plain detect) + Tier 1 (the
+// cheap block-phase OFFSET search, crop recovery). It deliberately does NOT run
+// Tier 2 — the resample-heavy SCALE grid — because that costs a bilinear resample
+// + detect per cell and the common case on a public /verify page is an unmarked
+// file, so paying it silently on every miss is unacceptable. Exactly like the
+// TrustMark deep-scan button, it's offered PER FILE, ONLY when nothing was found
+// yet, and only for a raster we can decode. Honest scope: it recovers a CROPPED or
+// MODERATELY-resized Imprint (~0.5×–2×); it does NOT survive an aggressive social-
+// media downscale (that needs a resize-invariant scheme, out of scope here).
+function imprintRescanBlock(fileIndex: number, format: string | null, fileName: string, present: boolean, madeWithLolly: boolean): string {
+  if (present || madeWithLolly || !isDeepScannable(format, fileName)) return '';
+  return `
+    <div class="valid-wm valid-wm--action" data-imprint-rescan-block="${fileIndex}">
+      <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
+      <div class="valid-wm-text">
+        <strong>${t('Was this image resized or cropped?')}</strong>
+        <span>${t('No Lolly Imprint was found in the pixels as they are. If this image was cropped or moderately resized, a deeper pixel search can still recover the Imprint. It runs entirely on this device and won’t survive an aggressive social-media downscale.')}</span>
+        <div data-imprint-rescan-result="${fileIndex}"></div>
+      </div>
+      <button type="button" class="btn valid-wm-rescan" data-imprint-rescan="${fileIndex}">${t('Search for a resized Imprint')}</button>
     </div>`;
 }
 
@@ -1229,6 +1268,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       ${mine ? mineNote(mine) : ''}
       ${panelsBlock}
       ${watermarkNote(watermark)}
+      ${imprintRescanBlock(fileIndex, report.format, fileName, !!watermark?.present, report.madeWithLolly)}
       ${sealNoteHtml(seal)}
       ${appendedPayloadHtml(meta, fileIndex)}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
@@ -1324,7 +1364,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       </header>
 
       <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
-        <input type="file" multiple accept=".pdf,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.mp4,.m4v,.mov,.webm,.mkv,application/pdf,image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,video/mp4,video/webm,video/x-matroska" hidden>
+        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.mp4,.m4v,.mov,.webm,.mkv,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,video/mp4,video/webm,video/x-matroska" hidden>
         <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
         <strong>${t('Drop files here')}</strong>
         <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm — check one or several at once')}</span>
@@ -1358,7 +1398,14 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       // image itself is never sent; only the domain the record names is looked up.
       const seal = await verifySeal(bytes, resolveSealKey);
       const meta = await readMetadata(bytes);
-      const { watermark, lsb } = await pixelChecks(file, report.format) ?? {};
+      let { watermark, lsb } = await pixelChecks(file, report.format) ?? {};
+      // A container file (.pptx / PDF) can carry the Imprint inside an embedded
+      // raster even though the file itself isn't one Lolly signs directly. Only
+      // scan when the top-level pixel check found no mark of its own.
+      if (!watermark?.present) {
+        const embedded = await containerImprintScan(file, report.format, bytes);
+        if (embedded?.present) watermark = embedded;
+      }
       // The LSB verdict rides on the metadata object (it's "what the file
       // quietly carries", same as the appended-payload read) — one object
       // through the render pipeline instead of another parallel param.
@@ -1419,10 +1466,26 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       if (!ctx) return undefined;
       ctx.drawImage(bmp, 0, 0);
       const { data } = ctx.getImageData(0, 0, w, h);
+      // FAST PATH: a pristine (un-cropped, un-resized) Lolly export detects on this
+      // single pass at zero extra cost — the dominant real-world outcome. Only on a
+      // MISS do we pay for the crop-recovery offset search (Tier 1: 64 block-phase
+      // offsets, NO resample), so an un-resized file stays instant. The resample-
+      // heavy scale search (Tier 2) is opt-in per file — never run automatically here.
       const r = detectWatermark(data, { width: w, height: h });
+      let present = r.present, score = r.score;
+      if (!r.present) {
+        const searched = await detectWatermarkSearch(data, { width: w, height: h }, { tier: 1 });
+        if (searched.present) {
+          present = true; score = searched.score;
+          host.log('debug', 'valid: pixel search recovered mark', {
+            tier: searched.tier, scale: searched.scale, offsetX: searched.offsetX, offsetY: searched.offsetY,
+            hypothesesTried: searched.hypothesesTried, score: +searched.score.toFixed(4),
+          });
+        }
+      }
       const lsb = fmt === 'png' ? analyzeLsb(data, { width: w, height: h }) : undefined;
       return {
-        watermark: { present: r.present, score: r.score },
+        watermark: { present, score },
         lsb: lsb ? { suspicious: lsb.suspicious, score: lsb.score } : undefined,
       };
     } catch {
@@ -1430,6 +1493,121 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     } finally {
       bmp?.close?.();
     }
+  }
+
+  // ── Lolly Imprint inside a container file's embedded rasters ─────────────
+  // A .pptx or PDF isn't a raster Lolly signs directly, but it can CARRY rasters
+  // Lolly rendered (a rasterised slide, a baked CSS fallback) that hold the
+  // pixel Imprint. We decode each embedded image at its NATIVE stored resolution
+  // (no resize — the mark rides an 8×8 grid a resize would shift) and run the
+  // engine detector. Only a POSITIVE hit surfaces (absence is uninformative and
+  // must never read as "not made with Lolly"); the unzip/pdf-parse + canvas
+  // decode stay shell-side, the enumeration + detection math are engine-pure.
+  const CONTAINER_IMG_CAP = 48; // hard bound on images decoded from one container
+  const YIELD_EVERY = 6;        // cooperative yield so a big deck doesn't jank the tab
+
+  // Decode encoded image bytes (png/jpeg) to RGBA via a canvas — the same 4-step
+  // path pixelChecks uses, but from a byte blob rather than the dropped File.
+  async function decodeBytesToRgba(bytes: Uint8Array, mime: string): Promise<{ data: Uint8ClampedArray; width: number; height: number } | undefined> {
+    let bmp: ImageBitmap | undefined;
+    try {
+      bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
+      const w = bmp.width, h = bmp.height;
+      if (w < 8 || h < 8) return undefined; // too small to carry a mark (detector no-ops anyway)
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return undefined;
+      ctx.drawImage(bmp, 0, 0);
+      const { data } = ctx.getImageData(0, 0, w, h);
+      return { data, width: w, height: h };
+    } catch {
+      return undefined;
+    } finally {
+      bmp?.close?.();
+    }
+  }
+
+  // First embedded image whose pixels clear the Imprint threshold wins — we stop
+  // there (presence-only; no count is claimed). Returns the strongest score seen
+  // so the caller can log even a near-miss. Never throws.
+  async function scanRgbaImages(items: Array<{ bytes: Uint8Array; mime: string }>): Promise<{ present: boolean; score: number; scanned: number }> {
+    let best = 0, scanned = 0;
+    for (let i = 0; i < items.length; i++) {
+      const rgba = await decodeBytesToRgba(items[i]!.bytes, items[i]!.mime);
+      if (!rgba) continue;
+      scanned++;
+      const r = detectWatermark(rgba.data, { width: rgba.width, height: rgba.height });
+      if (r.score > best) best = r.score;
+      if (r.present) return { present: true, score: r.score, scanned };
+      if (scanned % YIELD_EVERY === 0) await new Promise((res) => setTimeout(res, 0));
+    }
+    return { present: false, score: best, scanned };
+  }
+
+  // .pptx → unzip (fflate, shell-side), enumerate ppt/media/*.{png,jpg,jpeg}
+  // (engine pptxMediaImages), decode + detect. Best-effort; never throws.
+  async function pptxImprintScan(bytes: Uint8Array): Promise<Watermark | undefined> {
+    try {
+      const parts = await inflatePptx(bytes);
+      if (!isPptx(parts)) return undefined;
+      const media = pptxMediaImages(parts, CONTAINER_IMG_CAP);
+      if (!media.length) {
+        // A native-vector deck (text boxes, roundRect shapes, gradient/solid fills)
+        // holds no raster in ppt/media at all — so there is nothing an 8×8-block
+        // pixel Imprint could ride. This is the EXPECTED shape of an ordinary
+        // deck-builder/deck-studio export, not a broken scan: absence stays
+        // uninformative and surfaces NOTHING negative. Logged (neutral) so the
+        // trail explains why a green deck reads clean.
+        host.log('debug', 'valid: pptx has no raster media; Lolly Imprint only rides embedded raster images, not vector slides');
+        return undefined;
+      }
+      const items: Array<{ bytes: Uint8Array; mime: string }> = [];
+      for (const m of media) {
+        const b = parts[m.path];
+        if (b instanceof Uint8Array) items.push({ bytes: b, mime: m.mime });
+      }
+      const r = await scanRgbaImages(items);
+      host.log('debug', 'valid: pptx imprint scan', { media: media.length, scanned: r.scanned, present: r.present, score: +r.score.toFixed(4) });
+      // r.present === false here means the deck's rasters are byte-faithful USER
+      // uploads (photos, an SVG logo's PNG fallback) — correctly unmarked, not a
+      // failed detect. Still surface nothing; never render absence as "clean".
+      return r.present ? { present: true, score: r.score, embedded: true } : undefined;
+    } catch { return undefined; }
+  }
+
+  // PDF → decode the DCTDecode (JPEG) + non-predictor Flate RGB/Gray image
+  // XObjects at native resolution (extractPdfImageBytes, pdf-lib), detect.
+  // GAP (logged, not faked): jsPDF's own FlateDecode-with-PNG-predictor rasters
+  // — what a future imprint-on-embed would write into a PDF — and JPX/CCITT/JBIG2
+  // images are NOT decodable by this path yet, so a mark inside one is invisible
+  // here. A pure-VECTOR Lolly PDF (QR, lockup) carries no raster XObject at all,
+  // so it can hold no pixel Imprint by construction. We surface only real hits
+  // and record what we couldn't read, so "no hit" is never shown as "clean".
+  async function pdfImprintScan(file: File): Promise<Watermark | undefined> {
+    try {
+      const { extractPdfImageBytes } = await import('./pdf-import.ts');
+      const { images, skipped, skippedFilters } = await extractPdfImageBytes(file, { max: CONTAINER_IMG_CAP });
+      if (skipped > 0) {
+        host.log('info', 'valid: pdf imprint scan skipped undecodable images', { skipped, filters: skippedFilters });
+      }
+      if (!images.length) return undefined;
+      const r = await scanRgbaImages(images);
+      host.log('debug', 'valid: pdf imprint scan', { images: images.length, scanned: r.scanned, present: r.present, score: +r.score.toFixed(4) });
+      return r.present ? { present: true, score: r.score, embedded: true } : undefined;
+    } catch (err) {
+      host.log('warn', 'valid: pdf imprint scan failed', { error: (err as Error)?.message });
+      return undefined;
+    }
+  }
+
+  // Dispatch a container file to its embedded-raster Imprint scan. Only runs when
+  // the top-level pixel check found nothing (a raster Lolly signs directly is
+  // handled there); a non-container file returns undefined and shows nothing.
+  async function containerImprintScan(file: File, format: string | null, bytes: Uint8Array): Promise<Watermark | undefined> {
+    if (looksLikePptxFile(file)) return pptxImprintScan(bytes);
+    if (format === 'pdf' || /\.pdf$/i.test(file.name)) return pdfImprintScan(file);
+    return undefined;
   }
 
   // ── Deep scan for watermarks (Adobe TrustMark) ──────────────────────────
@@ -1458,26 +1636,40 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     }
   }
 
-  // Appends a deep-scan pip to the report's LIVE hero scorecard (creating one
-  // from scratch if the report had none — e.g. a file with no C2PA manifest, no
-  // Lolly Imprint and no AI declaration) rather than re-rendering the whole
-  // card, so nothing else in the report (scroll position, an already-open
-  // <details>, the masonry layout) is disturbed. Called once per positive
-  // detector, so a second hit finds the list the first created and appends to it.
+  // Injects a detected deep-scan pip into the report's LIVE hero scorecard —
+  // positioned RIGHT AFTER the "Made with Lolly" verdict pip (always the first
+  // pip), NOT appended after the eight C2PA checks: a real TrustMark/Content Seal
+  // read is a top-line provenance signal and belongs beside the verdict. Multiple
+  // hits cluster in call order (marked with data-deepscan-pip so the second lands
+  // after the first). If the report had no scorecard at all (a file with no C2PA,
+  // no Lolly Imprint and no AI declaration), one is created from scratch. Mutates
+  // the live DOM rather than re-rendering, so scroll/open-<details>/masonry are
+  // undisturbed. Also mirrored into the collapsed row's mini scorecard.
   function injectDeepScanPip(deepscanEl: HTMLElement, pip: ScorecardItem): void {
+    // Tag the pip so a later hit inserts after it, keeping the cluster ordered.
+    const tag = (html: string): string => html.replace('<li ', '<li data-deepscan-pip ');
+    // Place `html` right after the verdict pip (list.firstElementChild) or after
+    // the last already-injected deep-scan pip; fall back to append on an empty list.
+    const place = (list: HTMLElement, html: string): void => {
+      const injected = list.querySelectorAll<HTMLElement>(':scope > [data-deepscan-pip]');
+      const anchor = injected.length ? injected[injected.length - 1]! : list.firstElementChild;
+      if (anchor) anchor.insertAdjacentHTML('afterend', html);
+      else list.insertAdjacentHTML('beforeend', html);
+    };
+
     const resultCard = deepscanEl.closest<HTMLElement>('.valid-result');
     const scoreList = resultCard?.querySelector<HTMLElement>('.valid-score:not(.valid-score--mini)');
-    const pipHtml = scorecardPipHtml(pip, scoreList?.children.length ?? 0);
+    const pipHtml = tag(scorecardPipHtml(pip, 0));
     if (scoreList) {
-      scoreList.insertAdjacentHTML('beforeend', pipHtml);
+      place(scoreList, pipHtml);
     } else {
       deepscanEl.insertAdjacentHTML('beforebegin',
         `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${pipHtml}</ul>`);
     }
-    // Also mirror it into the collapsed row's MINI scorecard (multi-file cards
-    // only — single-file reports have no summary), so a hit shows in the summary
-    // without expanding. Create the mini list if the summary had none (a file
-    // with no C2PA/imprint/AI renders no mini until now).
+    // Mirror into the collapsed row's MINI scorecard (multi-file cards only —
+    // single-file reports have no summary), so a hit shows in the summary without
+    // expanding. Create the mini list if the summary had none. Same "after the
+    // verdict pip" placement as the full scorecard.
     const summary = deepscanEl.closest<HTMLElement>('.valid-item')?.querySelector<HTMLElement>(':scope > .valid-item-summary');
     if (summary) {
       let mini = summary.querySelector<HTMLElement>('.valid-score--mini');
@@ -1487,7 +1679,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
         mini.setAttribute('aria-hidden', 'true');
         summary.insertBefore(mini, summary.querySelector('.valid-item-chev'));
       }
-      mini.insertAdjacentHTML('beforeend', miniScorePipHtml(pip));
+      place(mini, tag(miniScorePipHtml(pip)));
     }
   }
 
@@ -1542,6 +1734,44 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   async function scanAllDecodable(): Promise<void> {
     for (let i = 0; i < activeFiles.length; i++) {
       if (isDeepScannable(null, activeFiles[i]!.name)) await scanOne(i);
+    }
+  }
+
+  // Opt-in Tier-2 "resized Imprint" search (imprintRescanBlock's button). Re-decode
+  // the file's pixels ONCE, run the full scale×offset grid, and — only on a hit —
+  // inject the standard Lolly-Imprint pip + note in place (injectDeepScanPip, same
+  // DOM-mutation path as the deep-scan pips, so scroll/masonry/open-state survive).
+  // A miss updates the button quietly; absence never reads as "not made with Lolly".
+  async function rescanImprint(btn: HTMLButtonElement): Promise<void> {
+    const fileIndex = Number(btn.dataset.imprintRescan);
+    const file = activeFiles[fileIndex];
+    const block = reportEl.querySelector<HTMLElement>(`[data-imprint-rescan-block="${fileIndex}"]`);
+    const resultEl = block?.querySelector<HTMLElement>(`[data-imprint-rescan-result="${fileIndex}"]`);
+    if (!file || !block || !resultEl) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t('Searching the pixels…');
+    try {
+      const pixels = await decodeToRgba(file);
+      if (!pixels) { btn.textContent = t('Couldn’t read this image.'); return; }
+      const found = await detectWatermarkSearch(pixels.data, { width: pixels.width, height: pixels.height }, { tier: 2 });
+      if (found.present) {
+        host.log('debug', 'valid: tier-2 imprint search recovered mark', {
+          scale: found.scale, offsetX: found.offsetX, offsetY: found.offsetY,
+          hypothesesTried: found.hypothesesTried, score: +found.score.toFixed(4),
+        });
+        injectDeepScanPip(btn, lollyImprintPip());
+        block.outerHTML = watermarkNote({ present: true, score: found.score });
+        reportEl.querySelectorAll<HTMLElement>('.valid-panels').forEach(layoutMasonry);
+      } else {
+        btn.textContent = t('No resized Imprint found');
+        resultEl.insertAdjacentHTML('beforeend',
+          `<span class="valid-wm-rescan-miss">${t('This image carries no recoverable Lolly Imprint. That doesn’t rule out a Lolly origin — an aggressive downscale erases the Imprint entirely.')}</span>`);
+      }
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = original;
+      host.log('warn', 'valid: tier-2 imprint search failed', { error: (err as Error)?.message });
     }
   }
 
@@ -1943,6 +2173,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     if (rec) { e.preventDefault(); void recreateFromDigest(rec); }
     const enable = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-deep-scan-enable]');
     if (enable) void enableDeepScan(enable);
+    const rescan = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-imprint-rescan]');
+    if (rescan) void rescanImprint(rescan);
     const view = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-payload-view]');
     if (view) void viewPayload(view);
     const dl = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-payload-download]');

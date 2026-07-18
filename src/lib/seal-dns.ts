@@ -48,7 +48,7 @@ function normaliseTxt(data: string): string {
   // un-escaping DoH's \" → ".
   if (/^".*"$/.test(s)) {
     const tokens = s.match(/"((?:[^"\\]|\\.)*)"/g);
-    if (tokens && tokens.length) {
+    if (tokens?.length) {
       return tokens.map((tok) => tok.slice(1, -1).replace(/\\(.)/g, '$1')).join('');
     }
   }

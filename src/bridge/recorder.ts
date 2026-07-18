@@ -560,7 +560,7 @@ async function grabFrame(stream: MediaStream, opts: StillOpts): Promise<Blob> {
     if (!ctx) throw new Error('no 2d context for the still');
     ctx.drawImage(video, 0, 0, w, h);
     const type = opts.type ?? 'image/png';
-    const quality = opts.quality ?? 0.92;
+    const quality = opts.quality ?? 0.97;
     const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, type, quality));
     // toBlob nulls on an unsupported type — fall back to PNG rather than failing the grab.
     if (!blob) {

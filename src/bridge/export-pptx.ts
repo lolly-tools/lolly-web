@@ -13,7 +13,7 @@ import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, spli
 import type { PptxSlide, PptxShape, PptxFill, PptxMedia, PptxPath } from "../../../../engine/src/pptx.ts";
 import { parseCssColorFull } from "./export-css.ts";
 import { asStr, deckBox, deckFill, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
-import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, stripCommentNodes, _host, type ExportOpts } from "./export.ts";
+import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, imprintEmbedCanvas, stripCommentNodes, _host, type ExportOpts, type ImprintState } from "./export.ts";
 
 type Rgba = [number, number, number, number];
 
@@ -64,7 +64,10 @@ function sniffImgExt(buf: Uint8Array, url: string): 'png' | 'jpeg' | 'svg' | nul
   return /\.svg(\?|#|$)/i.test(url) ? 'svg' : null;
 }
 // Rasterise SVG bytes to a PNG (the fallback blip a PowerPoint svgBlip requires).
-async function svgBytesToPng(svgBytes: Uint8Array, w: number, h: number): Promise<Uint8Array | null> {
+// `imprint` (the per-export ImprintState sink) is threaded ONLY for the tool's own
+// inline <svg> art (svgPic) — never for a fetched background / user-logo SVG, whose
+// PNG fallback must stay byte-faithful (those callers pass undefined).
+async function svgBytesToPng(svgBytes: Uint8Array, w: number, h: number, imprint?: ImprintState): Promise<Uint8Array | null> {
   if (typeof document === 'undefined') return null;
   const url = URL.createObjectURL(new Blob([svgBytes as BlobPart], { type: 'image/svg+xml' }));
   try {
@@ -77,6 +80,7 @@ async function svgBytesToPng(svgBytes: Uint8Array, w: number, h: number): Promis
     const cx = canvas.getContext('2d');
     if (!cx) return null;
     cx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    imprintEmbedCanvas(canvas, imprint);   // Lolly-rendered inline art only (opt-in, size-floored)
     return dataUrlToBytes(canvas.toDataURL('image/png'));
   } catch { return null; } finally { URL.revokeObjectURL(url); }
 }
@@ -233,7 +237,10 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     }
     const pxW = Math.max(2, Math.min(MAX_PPTX_PX, Math.round(r.width * scale)));
     const pxH = Math.max(2, Math.min(MAX_PPTX_PX, Math.round(r.height * scale)));
-    const dataUrl = await rasterizeNodeToDataUrl(el, pxW, pxH);
+    // rasterPic always bakes a LIVE DOM subtree (rotated el / canvas / video /
+    // CSS-fallback / treated <img>) — Lolly-rendered content, so it carries the
+    // imprint (opts.imprint gated + size-floored inside rasterizeNodeToDataUrl).
+    const dataUrl = await rasterizeNodeToDataUrl(el, pxW, pxH, undefined, opts._imprintSink);
     if (dataUrl) shapes.push({ kind: 'pic', ...boxOf(r), media: addMedia(dataUrlToBytes(dataUrl), 'png'), name });
   }
 
@@ -246,7 +253,10 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
     if (tryNativeSvg(new XMLSerializer().serializeToString(clone), boxOf(r))) return;
     await inlineBlobUrlsInEl(clone);
     const svgBytes = new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + new XMLSerializer().serializeToString(clone));
-    const png = await svgBytesToPng(svgBytes, r.width * 2, r.height * 2);
+    // svgPic handles a literal <svg> DOM node — the tool's OWN inline art (icons /
+    // illustrations / charts), so its PNG fallback carries the imprint. The raw SVG
+    // bytes (addMedia below) stay untouched — vector, outside pixel-watermark's domain.
+    const png = await svgBytesToPng(svgBytes, r.width * 2, r.height * 2, opts._imprintSink);
     if (!png) { await rasterPic(el as HTMLElement, r, 'vector'); return; }  // no fallback raster → bake
     const pngIdx = addMedia(png, 'png');
     const svgIdx = addMedia(svgBytes, 'svg');
