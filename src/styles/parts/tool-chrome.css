@@ -720,6 +720,10 @@
   padding: 0;
   background: none;
   border: 0;
+  /* These are collapsible-section headers, NOT action buttons — cancel the
+     `.tool-actions button` chrome (the inset/drop box-shadow) so the header
+     reads as a section label with a caret, not a raised button. */
+  box-shadow: none;
   cursor: pointer;
 }
 .pdfpass-head:hover,

@@ -158,7 +158,8 @@ export interface ExportDefaults {
   marks?: PrintMarks | null;
   nostage?: boolean;
   c2pa?: { on: boolean; days?: number | null };
-  /** Pixel-watermark opt-in from ?imprint= — applied to raster exports. */
+  /** Pixel-watermark setting from ?imprint= — on by default (like c2pa) for
+   *  raster exports; false only for an explicit `imprint=0`/`off` link. */
   imprint?: boolean;
 }
 
@@ -1510,8 +1511,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // Content Credentials from ?c2pa= ({ on, days } or undefined) — an explicit
     // link setting beats the tool's render.c2pa default in the popup.
     c2pa:     urlC2pa || undefined,
-    // Pixel watermark from ?imprint= — a raster-export opt-in (off by default).
-    imprint:  urlImprint || undefined,
+    // Pixel watermark from ?imprint= — on by default (like c2pa). Preserve an
+    // explicit `imprint=0`/`off` as false rather than collapsing it to
+    // undefined (`false || undefined` would silently re-default it to on).
+    imprint:  urlImprint === false ? false : urlImprint === true ? true : undefined,
   };
   // Rewrite the URL hash query string to reflect the current tool state so the
   // page is shareable and bookmarkable. Uses replaceState — no history entry.
@@ -1680,10 +1683,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (fmt === 'html' && on) params.set('nostage', '');
     }
     if (dirtyParams.has('imprint')) {
-      // Pixel watermark — the popup toggle, written in the engine's canonical
-      // `imprint=1` form (see url-mode serializeUrlState); unchecked drops it.
+      // Pixel watermark — on by default like c2pa (see url-mode serializeUrlState):
+      // unchecking the popup toggle writes the explicit `imprint=0` opt-out;
+      // checking it back on returns to the default, so the param drops out.
       const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked;
-      if (on) params.set('imprint', '1');
+      if (on) params.delete('imprint'); else params.set('imprint', '0');
     }
 
     const qs = params.toString();
@@ -2471,8 +2475,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           expOpts.c2pa = true;
           if (urlC2pa?.days) expOpts.c2paDays = urlC2pa.days;
         }
-        // Pixel watermark (?imprint=): a raster-export opt-in, independent of C2PA.
-        if (urlImprint && ['png', 'jpg', 'jpeg', 'webp', 'avif'].includes(fmt)) expOpts.imprint = true;
+        // Pixel watermark (?imprint=): on by default for imprint-capable formats,
+        // like C2PA — independent of the C2PA credential itself. Covers still rasters
+        // AND the container formats (pdf/pdf-cmyk/pptx), whose Lolly-rendered rasters
+        // are imprinted as they're composited in (a pure-vector page marks nothing).
+        // Only an explicit `imprint=0`/`off` link suppresses it (see url-mode.ts
+        // parseImprint; list mirrors tool-actions.ts's isImprintFmt).
+        if (urlImprint !== false && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'pdf', 'pdf-cmyk', 'pptx'].includes(fmt)) expOpts.imprint = true;
         // Print prep: honour ?bleed= / ?marks= so a deep link auto-exports a
         // print-ready file. Applied only when the link asks for it (never default).
         if (isPrintFmt(fmt) && (urlBleed || urlMarks)) {

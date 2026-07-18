@@ -20,7 +20,7 @@ import {
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
   embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
   buildExportMeta,
-  embedWatermark,
+  embedWatermark, canCarryWatermark,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
   buildEncryptDictValues, encryptObjectBytes, preparePassword,
   buildEncryptedZip,
@@ -77,6 +77,18 @@ interface BrandPaletteEntry {
 }
 
 // The union of options this host's export path understands. A superset of the
+// Per-export imprint state threaded through the vector/container export path in
+// place of a bare `imprint` boolean. A single instance is created per format
+// render (renderFormat) and reaches imprintEmbedCanvas at every raster chokepoint
+// by reference, across the export.ts / export-pptx.ts boundary. `want` mirrors
+// opts.imprint on a Lolly-rendered raster; `applied` is set true — ONLY inside
+// imprintEmbedCanvas — the first time a mark is genuinely embedded (want && the
+// raster clears the size floor). stampC2pa reads `applied` so a container export
+// (pdf) claims an imprint only when one was really written — a pure-vector page
+// (a QR PDF) marks no raster, so it must not claim. `undefined` / want:false at a
+// call site = never mark (user assets, opted-out exports).
+export interface ImprintState { want: boolean; applied: boolean }
+
 // engine's ExportOpts — the extra fields (print marks, video timing, c2pa, …)
 // are web-shell extensions the engine passes through untouched.
 export interface ExportOpts {
@@ -99,10 +111,16 @@ export interface ExportOpts {
   audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number };
   c2pa?: boolean;
   c2paDays?: number | string;
-  /** Embed the Lolly pixel watermark into raster exports (png/jpg/webp). Off by
-   *  default; opt-in via the `imprint` URL param. A durable, imperceptible mark
-   *  that survives what strips the C2PA credential — see engine/pixel-watermark. */
+  /** Embed the Lolly pixel watermark into raster exports (png/jpg/webp/avif/tiff).
+   *  On by default, like C2PA; explicit opt-out via `imprint=0` in the URL. A
+   *  durable, imperceptible mark that survives what strips the C2PA credential —
+   *  see engine/pixel-watermark. */
   imprint?: boolean;
+  /** INTERNAL, per-format-render mutable sink (created in renderFormat, never
+   *  URL-serialized). Carries the imprint request down to imprintEmbedCanvas and
+   *  records whether a container raster was actually marked, so stampC2pa can
+   *  claim an imprint truthfully for pdf. See ImprintState. */
+  _imprintSink?: ImprintState;
   palette?: BrandPaletteEntry[];
   bleed?: number | string;
   cropMarks?: boolean;
@@ -276,6 +294,12 @@ export function createExportAPI(host: WebHost) {
 const C2PA_STAMPABLE = new Set<string>(C2PA_FORMATS);
 
 async function renderFormat(node: Element, format: string, opts: ExportOpts = {}): Promise<Blob> {
+  // Fresh imprint sink per format render (so each zip member — which re-enters
+  // here — starts with applied=false; a marked earlier member can't make a later
+  // pure-vector one over-claim). Created BEFORE dispatch so the container render
+  // path can flip `applied`, and read by stampC2pa AFTER. `want` gates whether any
+  // Lolly-rendered raster gets marked at all.
+  opts._imprintSink = { want: !!opts.imprint, applied: false };
   const blob = await renderFormatDispatch(node, format, opts);
   const key = format === 'webm' || format === 'mp4'
     ? (blob.type.includes('mp4') ? 'mp4' : 'webm')
@@ -314,6 +338,12 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'webp':
       return await renderBitmap(node, 'image/webp', opts);
     case 'avif':
+      // Same imprint-then-encode path as webp (renderBitmap perturbs the canvas
+      // pixels before the browser's AV1 encode). Survival is UNVERIFIED here —
+      // the watermark was calibrated against 8×8-block JPEG DCT quantization
+      // (see engine/pixel-watermark.ts); AV1's block-transform + loop-filter
+      // pipeline is different enough that it needs its own round-trip
+      // calibration (like the sharp JPEG suite) before this can be trusted.
       return await renderBitmap(node, 'image/avif', opts);
     case 'cmyk-tiff':
       return await renderCmykTiff(node, opts);
@@ -389,6 +419,29 @@ function imprintCanvas(canvas: HTMLCanvasElement): void {
   ctx.putImageData(id, 0, 0);
 }
 
+// Imprint a LOLLY-RENDERED raster that's about to be baked into a container (a
+// PDF page, a PPTX slide, an SVG <image>). Two extra gates over the standalone
+// raster encoders: (1) `imprint.want` — the caller only threads a want-set sink
+// for opts.imprint AND a Lolly-own render, never a passed-through user image
+// (those call sites omit the sink → undefined); and (2) canCarryWatermark — an
+// embed chokepoint sees many small decorative rasters (gradient chips, icons), so
+// anything below the ~240px detection floor is skipped as wasted work. NEVER call
+// this on a user's own embedded photo/logo bytes.
+//
+// SINGLE writer of ImprintState.applied: the flag flips true here, and only here,
+// the moment a mark is genuinely embedded — so stampC2pa can never claim an
+// imprint a render didn't actually apply (a pure-vector page keeps applied=false).
+export function imprintEmbedCanvas(canvas: HTMLCanvasElement, imprint: ImprintState | undefined): void {
+  if (imprint?.want && canCarryWatermark(canvas.width, canvas.height)) {
+    imprintCanvas(canvas);
+    imprint.applied = true;
+  }
+}
+
+// Default JPEG encode quality. The browser default (0.92) leaves visible ringing
+// around text and hard edges; 0.97 clears it for a modest size increase.
+const JPEG_QUALITY = 0.97;
+
 async function renderRaster(node: Element, format: string, opts: ExportOpts): Promise<Blob> {
   const lib = await getDomToImage();
   const d = exportDims(node, opts);
@@ -409,10 +462,10 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       const raw = await lib.toCanvas(node, dtoOpts);
       const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
       imprintCanvas(canvas);
-      blob = await canvasToBlob(canvas, format === 'jpeg' ? 'image/jpeg' : 'image/png', format === 'jpeg' ? (opts.quality ?? 0.92) : undefined);
+      blob = await canvasToBlob(canvas, format === 'jpeg' ? 'image/jpeg' : 'image/png', format === 'jpeg' ? (opts.quality ?? JPEG_QUALITY) : undefined);
     } else {
       const dataUrl = await (format === 'jpeg'
-        ? lib.toJpeg(node, { quality: opts.quality ?? 0.92, ...dtoOpts })
+        ? lib.toJpeg(node, { quality: opts.quality ?? JPEG_QUALITY, ...dtoOpts })
         : lib.toPng(node, dtoOpts));
       const res = await fetch(dataUrl);
       blob = await res.blob();
@@ -492,6 +545,11 @@ async function renderTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   } finally {
     restore();
   }
+  // Imprint before reading pixels back out, so the mark is in the bytes packTiff
+  // serialises. Uncompressed TIFF is lossless — unlike JPEG/AVIF this is a
+  // straight round-trip of exactly what embedWatermark wrote, no re-encode to
+  // survive.
+  if (opts.imprint) imprintCanvas(canvas);
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const rgba = ctx.getImageData(0, 0, W, H).data;       // sRGB, straight (un-premultiplied)
@@ -1772,7 +1830,10 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
       const prevOpacity = el.style.opacity;
       el.style.opacity = '1';   // g already carries the element opacity; don't bake it in twice
       let dataUrl: string | null = null;
-      try { dataUrl = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH); }
+      // Lolly-composited subtree baked into an SVG <image> — same chokepoint as the
+      // PDF escape hatch, so it honours opts.imprint too (inert until SVG is imprint-
+      // enabled upstream, since the mark is size-floored and opt-in either way).
+      try { dataUrl = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH, undefined, opts._imprintSink); }
       finally { el.style.opacity = prevOpacity; }
       if (dataUrl) {
         _host?.log?.('info', `svg: rasterised <${tag}> (unsupported ${rasterReason})`);
@@ -2537,9 +2598,9 @@ async function renderArtworkPdf(node: Element, opts: ExportOpts, geo: PrintGeome
   const svgRoot = node.tagName?.toLowerCase() === 'svg' ? node
     : isSvgRooted(node) ? node.querySelector('svg') : null;
   if (svgRoot) {
-    await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set());
+    await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set(), opts._imprintSink);
   } else {
-    await drawHtmlVectors(pdf, node, art.x, art.y, art.w, art.h, opts.convertPaths !== false, opts.onProgress, opts.rasterFallback !== false);
+    await drawHtmlVectors(pdf, node, art.x, art.y, art.w, art.h, opts.convertPaths !== false, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink);
   }
 
   return pdf.output('blob');
@@ -2774,17 +2835,20 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
     if (opts.registrationMarks) marks.push('registration marks');
     if (opts.bleedMarks) marks.push('bleed marks');
     if (opts.colorBars) marks.push('a colour bar');
-    // The durable in-pixel watermark only actually runs for the canvas-based
-    // raster encoders (renderRaster/renderBitmap's opts.imprint branch) — gate
-    // on those formats so the credential never claims a mark that format's
-    // export path can't actually embed.
-    const imprintCapable = format === 'png' || format === 'jpg' || format === 'jpeg' || format === 'webp';
+    // The durable in-pixel watermark runs two ways: unconditionally for the
+    // canvas-based raster encoders (renderRaster/renderBitmap/renderTiff's
+    // opts.imprint branch — imprintCapable formats always carry it), and — for
+    // a CONTAINER format (pdf) — only when a Lolly-rendered raster was actually
+    // composited in and marked (imprintEmbedCanvas flipped _imprintSink.applied).
+    // A pure-vector page (e.g. a QR PDF) marks nothing, so it must NOT claim: gate
+    // the container case on the applied flag, never on the format alone.
+    const imprintCapable = format === 'png' || format === 'jpg' || format === 'jpeg' || format === 'webp' || format === 'avif' || format === 'tiff';
     const actions = exportActionSteps(format, {
       cmyk: /cmyk/i.test(format),
       paletteColors: opts.palette?.length,
       marks,
       watermarked: !!opts.watermark,
-      imprint: !!opts.imprint && imprintCapable,
+      imprint: !!opts.imprint && (imprintCapable || !!opts._imprintSink?.applied),
       audio: !!opts.audio?.url,
       // Honest origin: the runtime flags a sensor capture (live camera / mic take).
       ...(opts.c2paCapture ? { capture: opts.c2paCapture } : {}),
@@ -2979,8 +3043,8 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts): Promise
     // HTML page walks via drawHtmlVectors. Common case here is HTML page boxes.
     const svgRoot = el.tagName?.toLowerCase() === 'svg' ? el
       : isSvgRooted(el) ? el.querySelector('svg') : null;
-    if (svgRoot) await drawSvgVectorsInRegion(pdf, svgRoot, 0, 0, w, h, new Set());
-    else await drawHtmlVectors(pdf, el, 0, 0, w, h, convert, opts.onProgress, opts.rasterFallback !== false);
+    if (svgRoot) await drawSvgVectorsInRegion(pdf, svgRoot, 0, 0, w, h, new Set(), opts._imprintSink);
+    else await drawHtmlVectors(pdf, el, 0, 0, w, h, convert, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink);
   }
   const blob = pdf.output('blob');
   if (opts.password) {
@@ -3217,7 +3281,7 @@ async function drawPrintMarks(page: any, geo: PrintGeometry, { space = 'rgb', la
 // ox/oy are the PDF-space top-left offsets (pt); regionW/regionH are the
 // target dimensions (pt). Used both by the full-page SVG canvas path and by
 // drawHtmlVectors when it encounters an inline <svg> element.
-async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: number, regionW: number, regionH: number, registeredFonts: Set<unknown> | null = null): Promise<void> {
+async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: number, regionW: number, regionH: number, registeredFonts: Set<unknown> | null = null, imprint?: ImprintState): Promise<void> {
   const vb = (svgEl as SVGSVGElement).viewBox?.baseVal;
   const vbW = (vb && vb.width  > 0) ? vb.width  : svgEl.getBoundingClientRect().width;
   const vbH = (vb && vb.height > 0) ? vb.height : svgEl.getBoundingClientRect().height;
@@ -3256,7 +3320,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       const dpr = 150 / 72;                                    // output-region px at ~150dpi, bounded
       const pxW = Math.max(2, Math.min(2000, Math.round(fitW * dpr)));
       const pxH = Math.max(2, Math.min(2000, Math.round(fitH * dpr)));
-      const png = await rasterizeSvgElement(svgEl, pxW, pxH);
+      const png = await rasterizeSvgElement(svgEl, pxW, pxH, false, imprint);
       pdf.addImage(png, 'PNG', ox, oy, fitW, fitH);
       return;
     } catch { /* fall through to the vector walk (better a solid silhouette than nothing) */ }
@@ -3567,6 +3631,9 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
               fw = ivbW * s; fh = ivbH * s;
               fx = x + (w - fw) / 2; fy = y + (h - fh) / 2;
             }
+            // A nested <image href> is a REFERENCED asset (a user logo/photo), not
+            // Lolly-rendered content — never imprint it (KEY PRINCIPLE). Its own
+            // gradient/filter rasterisation fallback stays unmarked (imprint omitted).
             await drawSvgVectorsInRegion(pdf, inner, fx, fy, fw, fh, registeredFonts);
           }
         } catch { /* fall through to raster */ }
@@ -3735,7 +3802,7 @@ function pdfApplyClip(pdf: any, shape: ClipShape, ox: number, oy: number, sx: nu
 // background — alpha-correct (unlike a flat midpoint), and reusing the same
 // buildRadialGradientEl the SVG walker emits. `w`/`h` are the box size in CSS px.
 // Returns null when the value isn't a parseable radial gradient.
-async function radialGradientPng(bgImg: string, w: number, h: number, pxW: number, pxH: number): Promise<string | null> {
+async function radialGradientPng(bgImg: string, w: number, h: number, pxW: number, pxH: number, imprint?: ImprintState): Promise<string | null> {
   const NS = 'http://www.w3.org/2000/svg';
   const grad = buildRadialGradientEl(NS, bgImg, 0, 0, w, h, 1);
   if (!grad) return null;
@@ -3750,7 +3817,7 @@ async function radialGradientPng(bgImg: string, w: number, h: number, pxW: numbe
   rect.setAttribute('width', String(w)); rect.setAttribute('height', String(h));
   rect.setAttribute('fill', 'url(#svggrad-1)');
   svg.appendChild(rect);
-  return rasterizeSvgElement(svg, pxW, pxH);
+  return rasterizeSvgElement(svg, pxW, pxH, false, imprint);
 }
 
 // Run `draw` with a CSS-clockwise rotation of `deg` about the point (cx, cy) in the
@@ -3985,7 +4052,7 @@ function svgArcToBeziers(x1: number, y1: number, rx: number, ry: number, phi: nu
 // data URL, alpha preserved. The PDF walker uses this for gradient / filter
 // illustrations the vector path can't reproduce faithfully (no shading; CSS-class
 // fills). `flipX` mirrors horizontally to honour a scaleX(-1) CSS transform.
-async function rasterizeSvgElement(svgEl: Element, pxW: number, pxH: number, flipX = false): Promise<string> {
+async function rasterizeSvgElement(svgEl: Element, pxW: number, pxH: number, flipX = false, imprint?: ImprintState): Promise<string> {
   const clone = svgEl.cloneNode(true) as Element;
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('width',  String(pxW));
@@ -4005,6 +4072,9 @@ async function rasterizeSvgElement(svgEl: Element, pxW: number, pxH: number, fli
   const ctx = canvas.getContext('2d')!;
   if (flipX) { ctx.translate(pxW, 0); ctx.scale(-1, 1); }
   ctx.drawImage(img, 0, 0, pxW, pxH);
+  // Lolly-rendered gradient/filter/pattern subtree → carry the pixel imprint into
+  // the PDF/PPTX raster it becomes (opts.imprint gated, size-floored).
+  imprintEmbedCanvas(canvas, imprint);
   return canvas.toDataURL('image/png');
 }
 
@@ -4019,7 +4089,7 @@ const RASTER_DPI = 200;       // resolution for the PDF escape-hatch (points × 
 // to fill). Returns null on failure so the caller falls through to the (lossy) vector
 // walk — never worse than before. Nothing mounts on-screen, so the position:fixed
 // containing-block gotcha (the offscreen-stage flash) does not apply here.
-export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: number, bg?: string): Promise<string | null> {
+export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: number, bg?: string, imprint?: ImprintState): Promise<string | null> {
   const r = el.getBoundingClientRect();
   const cssW = r.width, cssH = r.height;
   if (cssW < 0.5 || cssH < 0.5 || pxW < 2 || pxH < 2) return null;
@@ -4036,6 +4106,10 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
         ...(bg ? { background: bg } : {}),
       },
     });
+    // Lolly-composited DOM subtree → carry the imprint into the PDF/PPTX/SVG raster
+    // it becomes. (A user <img> descendant baked into this composite is perturbed
+    // too — Lolly-composed content, PSNR-bounded; the one caveat, see task notes.)
+    imprintEmbedCanvas(canvas, imprint);
     return canvas.toDataURL('image/png');
   } catch (e) {
     _host?.log?.('warn', `vector export: node rasterise fallback failed — ${(e as Error).message}`);
@@ -4048,7 +4122,7 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
 // Draws the live DOM as PDF vectors into the rectangular region (ox, oy, regionW,
 // regionH) in page points (top-left origin). Callers pass the full page for an
 // ordinary export, or the bleed box for a print export (so the design bleeds).
-async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, regionW: number, regionH: number, convertPaths = true, onProgress?: (done: number, total: number) => void, rasterFallback = true): Promise<void> {
+async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, regionW: number, regionH: number, convertPaths = true, onProgress?: (done: number, total: number) => void, rasterFallback = true, imprint?: ImprintState): Promise<void> {
   const rect0 = node.getBoundingClientRect();
   const scaleX = regionW / rect0.width;
   const scaleY = regionH / rect0.height;
@@ -4139,7 +4213,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       const dpr = RASTER_DPI / 72;
       const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * dpr)));
       const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(h * dpr)));
-      const png = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH);
+      const png = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH, undefined, imprint);
       if (png) {
         _host?.log?.('info', `pdf: rasterised <${tag}> (unsupported ${rasterReason})`);
         pdf.addImage(png, 'PNG', x, y, w, h);   // PNG alpha composites over the page
@@ -4175,7 +4249,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
         const dpr = RASTER_DPI / 72;
         const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * dpr)));
         const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(h * dpr)));
-        const png = await radialGradientPng(bgImg, rect.width, rect.height, pxW, pxH);
+        const png = await radialGradientPng(bgImg, rect.width, rect.height, pxW, pxH, imprint);
         if (png) {
           if (hasRadius) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, () => pdf.addImage(png, 'PNG', x, y, w, h));
           else pdf.addImage(png, 'PNG', x, y, w, h);
@@ -4245,12 +4319,12 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
           // Honour a scaleX(-1) flip (computed transform's matrix a-component < 0).
           const tm = String(style.transform || '').match(/matrix\(\s*(-?[\d.]+)/);
           const flipX = tm ? parseFloat(tm[1]!) < 0 : el.classList.contains('flip');
-          const png = await rasterizeSvgElement(el, pxW, pxH, flipX);
+          const png = await rasterizeSvgElement(el, pxW, pxH, flipX, imprint);
           pdf.addImage(png, 'PNG', x, y, w, h);
           return;
         } catch { /* fall through to the vector walk */ }
       }
-      await drawSvgVectorsInRegion(pdf, el, x, y, w, h, registeredFonts);
+      await drawSvgVectorsInRegion(pdf, el, x, y, w, h, registeredFonts, imprint);
       return;
     }
 
@@ -4281,6 +4355,9 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
             const fw = vbW * s, fh = vbH * s;
             const [px, py] = objectPositionFractions(style.objectPosition);
             const dx = x + (w - fw) * px, dy = y + (h - fh) * py;
+            // This SVG came from a user <img src> (a logo/photo asset), not from
+            // Lolly's own render — never imprint it (KEY PRINCIPLE). imprint omitted,
+            // so its gradient-rasterisation fallback keeps the user's pixels intact.
             if (cover) {
               await withPdfClipRect(pdf, x, y, w, h, () => drawSvgVectorsInRegion(pdf, svgEl, dx, dy, fw, fh, registeredFonts));
             } else {

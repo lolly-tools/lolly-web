@@ -58,11 +58,16 @@ const FMT_EXT: Record<string, string>   = { 'pdf-cmyk': 'pdf', 'cmyk-tiff': 'tif
 // hidden and opts.c2pa never set, silently dropping the default provenance.
 const isC2paFmt = (f: string | undefined): boolean => !!f && (C2PA_FORMATS.includes(f) || f === 'webp-anim');
 
-// The durable in-pixel watermark only embeds via the canvas raster encoders
-// (renderRaster/renderBitmap's opts.imprint branch in bridge/export.ts) — the same
-// still-raster list the deep-link auto-export honours (views/tool.ts). Zip carries
-// the flag through to its bundled raster members.
-const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif'].includes(f);
+// The durable in-pixel watermark embeds two ways: the standalone raster encoders
+// (renderRaster/renderBitmap/renderTiff's opts.imprint branch), and — for the
+// CONTAINER formats — imprintEmbedCanvas baking the mark into each Lolly-rendered
+// raster as it's composited into a PDF page / PPTX slide (bridge/export.ts +
+// export-pptx.ts). So the list covers both: still rasters AND pdf/pdf-cmyk/pptx.
+// A pure-vector container marks nothing (no raster to carry it) — the C2PA claim
+// is gated on whether a mark was actually applied, never on this list, so no
+// over-claim (see export.ts stampC2pa). Mirrors the deep-link gate in views/tool.ts.
+// Zip carries the flag through to its bundled raster + container members.
+const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'pdf', 'pdf-cmyk', 'pptx'].includes(f);
 
 // Print marks & bleed apply to the three print formats (pdf / pdf-cmyk / cmyk-tiff).
 // Defaults when the user turns the card on; the CSV tokens (crop,reg,bleed,bars)
@@ -406,18 +411,27 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Tier 2.66 — the Lolly pixel imprint (engine pixel-watermark.ts): a durable,
   // imperceptible mark mixed into the exported pixels. It completes the provenance
   // story next to the C2PA card above — the credential is strippable, the pixel
-  // mark survives re-encodes/screenshots, and /verify detects both. Off by
-  // default; an ?imprint= link pre-checks it, and the toggle round-trips back
-  // into the URL (see views/tool.ts syncUrl).
+  // mark survives re-encodes/screenshots, and /verify detects both. On by default,
+  // like C2PA; `?imprint=0` unchecks it, and the toggle round-trips back into the
+  // URL (see views/tool.ts syncUrl) — unchecking sets imprint=0, checking (the
+  // default) drops the param entirely so a plain link stays clean.
   const imprintFmts = formats.filter(isImprintFmt);
+  // A .pptx / .pdf is a CONTAINER: the Imprint can only ride raster images it
+  // embeds, never the native vector slides/shapes or byte-faithful user uploads.
+  // A deck of headings, boxes and a vector logo (or one whose only pictures are
+  // your own photos) therefore carries no detectable Imprint even with it on — so
+  // say so rather than let the toggle over-promise. It lands on baked content:
+  // rotated or CSS-filtered elements, effect layers, inline SVG art, rendered charts.
+  const containerImprintFmt = imprintFmts.some((f) => f === 'pptx' || f === 'pdf' || f === 'pdf-cmyk');
   const imprintTip = imprintFmts.length ? helpTip(
-    t('Hides the Lolly Imprint — a durable, invisible watermark — in the image pixels. It survives re-encoding and screenshots, so any copy of the file can be recognised later.'),
+    t('Hides the Lolly Imprint — a durable, invisible watermark — in the image pixels. It survives re-encoding and screenshots, so any copy of the file can be recognised later.')
+    + (containerImprintFmt ? ' ' + t('It rides embedded raster images, not the vector shapes and text — a slide or page built only of headings, boxes and a vector logo has no pixels to carry it.') : ''),
     { href: '#/verify', text: t('Check a file →') }
   ) : null;
   const imprintRow = imprintFmts.length ? `
       <div class="section-card export-c2pa export-imprint" data-imprint-only style="display:${isImprintFmt(initialFmt) || initialFmt === 'zip' ? 'flex' : 'none'}">
         <label class="c2pa-enable help-tip-host">
-          <input type="checkbox" data-action="imprint" ${exportDefaults.imprint ? 'checked' : ''}>
+          <input type="checkbox" data-action="imprint" ${exportDefaults.imprint !== false ? 'checked' : ''}>
           <span class="c2pa-head">${icon('imprint', { className: 'c2pa-icon' })}<span>${t('Lolly Imprint')}</span></span>
           ${imprintTip!.button}
           ${imprintTip!.pop}
@@ -464,30 +478,30 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </div>
       </div>` : '';
 
-  // Tier 2.8 — "Content protection": one collapsed disclosure folding the four
-  // provenance/protection cards above (password, C2PA, Imprint, print marks &
-  // bleed) so the panel shows one header instead of up to four separate boxes.
-  // Purely a wrapping shell — none of the four cards' own markup, classes,
-  // data-actions, defaults or per-format [data-*-only] gating changes; this
-  // only adds one more OUTER layer of visibility on top (see refreshPrintUi,
-  // which also owns hiding the whole wrapper when NONE of the four apply to
-  // the selected format — e.g. a text/data format like csv/json/ics).
-  const hasProtection = hasPdf || hasZip || c2paFormats.length > 0 || imprintFmts.length > 0 || hasPrint;
+  // Tier 2.8 — "Content protection": one collapsed disclosure folding the
+  // provenance/protection cards (password, C2PA, Imprint) so the panel shows one
+  // header instead of up to three separate boxes. Print marks & bleed are NOT in
+  // here — they're print PRODUCTION geometry, not content protection, so printRow
+  // stays its own top-level section (see the assembly below). Purely a wrapping
+  // shell — none of the inner cards' own markup, classes, data-actions, defaults
+  // or per-format [data-*-only] gating changes; this only adds one more OUTER
+  // layer of visibility on top (see refreshPrintUi, which also owns hiding the
+  // whole wrapper when NONE of the three apply to the selected format).
+  const hasProtection = hasPdf || hasZip || c2paFormats.length > 0 || imprintFmts.length > 0;
   // Pre-opened whenever any inner card would itself arrive pre-opened/pre-set —
-  // a URL-sourced password, an on-by-default C2PA credential, a linked imprint
-  // flag, or a linked bleed/marks value — so a deep link still surfaces its
-  // setting without an extra click.
-  const protectionOpen = pdfPassInitOpen || c2paInitOn || Boolean(exportDefaults.imprint) || printInitOn;
-  // Matches the canonical per-format predicates the four cards already use
-  // (isC2paFmt/isImprintFmt/isPrintFmt, plus the password card's pdf/pdf-cmyk/zip
-  // set) — never loosened, just OR'd together to decide the outer wrapper.
+  // a URL-sourced password, an on-by-default C2PA credential, or a linked imprint
+  // flag — so a deep link still surfaces its setting without an extra click.
+  const protectionOpen = pdfPassInitOpen || c2paInitOn || Boolean(exportDefaults.imprint);
+  // Matches the canonical per-format predicates the inner cards already use
+  // (isC2paFmt/isImprintFmt, plus the password card's pdf/pdf-cmyk/zip set) —
+  // never loosened, just OR'd together to decide the outer wrapper.
   const protectionVisibleInitial = (initialFmt === 'pdf' || initialFmt === 'pdf-cmyk' || initialFmt === 'zip')
-    || isC2paFmt(initialFmt) || isImprintFmt(initialFmt) || isPrintFmt(initialFmt);
+    || isC2paFmt(initialFmt) || isImprintFmt(initialFmt);
   const protectionRow = hasProtection ? `
       <div class="section-card export-protection${protectionOpen ? ' is-open' : ''}" data-protection-section style="display:${protectionVisibleInitial ? 'flex' : 'none'}">
-        <button type="button" class="protection-head" data-action="protection-toggle" aria-expanded="${protectionOpen}">${icon('shield', { className: 'protection-icon' })}<span>Content protection</span></button>
+        <button type="button" class="protection-head" data-action="protection-toggle" aria-expanded="${protectionOpen}">${icon('shield', { className: 'protection-icon' })}<span>${t('Content protection')}</span></button>
         <div class="protection-body" data-protection-body style="display:${protectionOpen ? 'flex' : 'none'}">
-          ${pdfPassRow}${c2paRow}${imprintRow}${printRow}
+          ${pdfPassRow}${c2paRow}${imprintRow}
         </div>
       </div>` : '';
 
@@ -602,7 +616,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${cmykRow}${protectionRow}${audioRow}${settingsRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
   `;
@@ -855,8 +869,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // applies (password: pdf/pdf-cmyk/zip; C2PA/imprint: their own fmt set; print: isPrintFmt).
     const protectionEl = el!.querySelector<HTMLElement>('[data-protection-section]');
     if (protectionEl) {
+      // Print marks live in their own section now (data-printmarks-only), so the
+      // protection wrapper's visibility does NOT include isPrintFmt.
       const anyValid = (fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'zip')
-        || isC2paFmt(fmt) || isImprintFmt(fmt) || isPrintFmt(fmt);
+        || isC2paFmt(fmt) || isImprintFmt(fmt);
       protectionEl.style.display = anyValid ? 'flex' : 'none';
     }
   }

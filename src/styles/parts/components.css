@@ -38,7 +38,7 @@
 .plat-note,                /* platform.css */
 .valid-note,               /* valid.css */
 .share-note {              /* dialogs.css */
-  border: 1px solid hsl(var(--border));
+  border: 0;
 }
 .note {
   margin: 0; max-width: 72ch; padding: .75rem .9rem;

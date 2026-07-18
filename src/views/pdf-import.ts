@@ -31,6 +31,7 @@ import {
 import type { PDFContext, PDFObject } from 'pdf-lib';
 import {
   interpretPdfPage, parseToUnicode, toUnicodeDecoder, finalizeBoxes, safeColor, pdfNodesToSvg,
+  unfilterPng,
   type DesignMapOptions,
 } from '@lolly/engine';
 import type { PdfNode, PdfFontInfo, PdfXObject } from '../../../../engine/src/pdf-map.ts';
@@ -308,7 +309,12 @@ async function imageBytes(desc: ImageDesc, warn: (msg: string) => void): Promise
       // Raw stream bytes ARE the JPEG the browser can decode directly.
       return { bytes: desc.stream.getContents(), mime: 'image/jpeg', ext: 'jpg' };
     }
-    if ((last === 'FlateDecode' || last == null) && desc.width > 0 && desc.height > 0 && desc.bpc === 8 && !((desc.predictor as number) > 1)) {
+    // Flate RGB/Gray at 8bpc. Accept no predictor / TIFF-none (<=1) AND PNG
+    // predictors (>=10) — the latter is what jsPDF's addImage(png,'PNG') writes
+    // (/Predictor 15), so this is how /verify can read Lolly's OWN PDF PNG embeds.
+    // TIFF predictor 2 (2..9) stays skipped (flateImageToPng would return null).
+    const pred = (desc.predictor as number) ?? 1;
+    if ((last === 'FlateDecode' || last == null) && desc.width > 0 && desc.height > 0 && desc.bpc === 8 && (pred <= 1 || pred >= 10)) {
       const png = await flateImageToPng(desc);
       if (png) return { bytes: png, mime: 'image/png', ext: 'png' };
     }
@@ -330,8 +336,21 @@ async function flateImageToPng(desc: ImageDesc): Promise<Uint8Array | null> {
   const cs = desc.colorSpace || '';
   const comps = /RGB/i.test(cs) ? 3 : (/Gray/i.test(cs) ? 1 : 0);
   if (!comps) return null;
-  const samples = decodePDFRawStream(desc.stream).decode();
+  if (desc.bpc !== 8) return null;
   const { width, height } = desc;
+  let samples = decodePDFRawStream(desc.stream).decode();
+  // PNG predictor (/Predictor >= 10): pdf-lib's FlateStream only inflates — it
+  // never applies predictors — so `samples` is still PNG-row-filtered (a 1-byte
+  // filter tag + width*comps bytes per row). Reverse the filters to get real
+  // pixels. bytesPerPixel = comps at 8bpc. TIFF predictor 2 (2..9) isn't handled.
+  const pred = (desc.predictor as number) ?? 1;
+  if (pred >= 10) {
+    const un = unfilterPng(samples, width, height, comps);
+    if (!un) return null;
+    samples = un;
+  } else if (pred > 1) {
+    return null;
+  }
   const need = width * height * comps;
   if (samples.length < need) return null;
   const rgba = new Uint8ClampedArray(width * height * 4);
@@ -435,6 +454,65 @@ function makeHandle(doc: PDFDocument): PdfHandle {
 /** Open a PDF/.ai for page-level conversion (shared by uploads and the page picker). */
 export async function openPdfFile(file: File | Blob): Promise<PdfHandle> {
   return makeHandle(await loadDoc(file));
+}
+
+// ── raster inspection (the /verify Lolly-Imprint scan) ─────────────────────────
+
+/** The result of decoding a PDF's embedded raster image XObjects for pixel-domain
+ *  inspection. `skipped`/`skippedFilters` count the image XObjects present that
+ *  this path can't yet turn into pixels — TIFF-predictor Flate (Predictor 2) and
+ *  JPXDecode / CCITTFax / JBIG2 — so a caller can report the coverage gap honestly
+ *  instead of reading "no hit" as "nothing there". jsPDF's own FlateDecode PNG-
+ *  predictor rasters (/Predictor 15) ARE decoded now (via unfilterPng), so Lolly's
+ *  own PDF PNG embeds are readable by the Lolly-Imprint scan. */
+export interface PdfImageScan {
+  /** Image XObjects decoded to browser-readable bytes, native stored resolution. */
+  images: Array<{ bytes: Uint8Array; mime: string }>;
+  /** How many image XObjects were found but NOT decodable to pixels by this path. */
+  skipped: number;
+  /** Distinct undecodable filter names seen (for the coverage log). */
+  skippedFilters: string[];
+}
+
+/**
+ * Enumerate + decode a PDF/.ai's raster image XObjects to browser-decodable bytes,
+ * for pixel-domain inspection (the Lolly-Imprint check on /verify). Reuses the
+ * exact decode `imageBytes` uses — DCTDecode (JPEG) pass-through and Flate
+ * RGB/Gray (no predictor OR a PNG predictor, unfiltered via unfilterPng) — at
+ * each image's NATIVE stored resolution (NO resize, so the watermark's 8×8 grid
+ * stays intact). Walks page + nested-form
+ * resources, dedupes image streams shared across pages (a logo reused on every
+ * slide decodes once), caps the count, and reports what it couldn't decode.
+ * Read-only: never touches storeUserUpload. Never throws for a per-image fault —
+ * a bad XObject is counted as skipped and the walk continues.
+ */
+export async function extractPdfImageBytes(
+  file: File | Blob,
+  { max = 32 }: { max?: number } = {},
+): Promise<PdfImageScan> {
+  const doc = await loadDoc(file);
+  const ctx = doc.context;
+  const images: Array<{ bytes: Uint8Array; mime: string }> = [];
+  const skippedFilters = new Set<string>();
+  let skipped = 0;
+  const seen = new Set<PDFRawStream>();
+  const pageCount = doc.getPageCount();
+  for (let p = 0; p < pageCount && images.length < max; p++) {
+    const imageStreams = new Map<string, ImageDesc>();
+    try {
+      const node = doc.getPage(p).node;
+      extractResources(ctx, getKey(ctx, node, 'Resources'), imageStreams, 0);
+    } catch { continue; } // a malformed page's resources — skip it, keep scanning
+    for (const desc of imageStreams.values()) {
+      if (images.length >= max) break;
+      if (seen.has(desc.stream)) continue;
+      seen.add(desc.stream);
+      const got = await imageBytes(desc, () => {});
+      if (got) images.push({ bytes: got.bytes, mime: got.mime });
+      else { skipped++; skippedFilters.add(desc.filter[desc.filter.length - 1] || 'raw'); }
+    }
+  }
+  return { images, skipped, skippedFilters: [...skippedFilters] };
 }
 
 // Base64 in chunks — String.fromCharCode(...bigArray) overflows the call stack.

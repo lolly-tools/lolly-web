@@ -743,6 +743,15 @@
 .valid-wm--warn { border-color: hsl(var(--vf-warn) / 0.4); background: hsl(var(--vf-warn) / 0.08); }
 .valid-wm--warn .valid-wm-ic { background: hsl(var(--vf-warn) / 0.22); color: hsl(30 75% 30%); }
 
+/* Neutral action variant — the opt-in "check for a resized Imprint" (Tier 2 pixel
+   search) prompt, shown when the automatic pass (Tier 0 + Tier 1) found no Imprint.
+   Neutral-toned (no verdict has been reached yet) with a right-aligned trigger; on
+   a hit the whole block is replaced by the standard pass-tinted .valid-wm note. */
+.valid-wm--action { border-color: hsl(var(--border)); background: hsl(var(--muted) / 0.4); align-items: center; }
+.valid-wm--action .valid-wm-ic { background: hsl(var(--muted-foreground) / 0.16); color: hsl(var(--muted-foreground)); }
+.valid-wm-rescan { flex: 0 0 auto; align-self: center; white-space: nowrap; }
+.valid-wm-rescan-miss { display: block; margin-top: 0.35rem; font-size: 0.78rem; color: hsl(var(--muted-foreground)); }
+
 /* Appended-payload View/Download actions — reuses .valid-clean-link's quiet
    inline-text-button styling rather than adding a new button treatment, and
    the inline hex/text preview panel it can open beneath them. */
@@ -977,7 +986,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-note {
   display: flex; gap: 0.75rem; align-items: flex-start;
   margin: 0; padding: 0.8rem 0.95rem;
-  border-radius: calc(var(--radius) * 0.9rem);
+  border-radius: var(--radius) ;
   background: hsl(var(--muted) / 0.4);
 }
 .valid-note-ic {

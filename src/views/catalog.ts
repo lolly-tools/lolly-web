@@ -194,7 +194,7 @@ const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((res, rej) =>
 // Rasterise an SVG (given as its markup) to a Blob at exact pixel dimensions, in the
 // given image type. Drawing from a same-origin data URL avoids canvas tainting, so
 // toBlob always succeeds. JPEG gets an opaque white fill first (it has no alpha).
-async function svgToRaster(svgText: string, w: number, h: number, mime = 'image/png', quality = 0.92): Promise<Blob> {
+async function svgToRaster(svgText: string, w: number, h: number, mime = 'image/png', quality = 0.97): Promise<Blob> {
   const img = new Image();
   img.decoding = 'async';
   await new Promise<void>((res, rej) => {
@@ -2390,7 +2390,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (fmt === 'jpg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, swp, shp); }   // JPEG has no alpha
     ctx.drawImage(imgEl, sxp, syp, swp, shp, 0, 0, swp, shp);
     const mime = fmt === 'jpg' ? 'image/jpeg' : fmt === 'webp' ? 'image/webp' : 'image/png';
-    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, mime, 0.92));
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, mime, 0.97));
     if (!blob) throw new Error('crop encode failed');
     const outFmt = fmt === 'jpg' ? 'jpg' : fmt;
     detail.crop = `${swp}×${shp}px @ ${sxp},${syp}`;
