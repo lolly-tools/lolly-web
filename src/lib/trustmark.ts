@@ -59,7 +59,7 @@
  * either way. See TrustmarkDetection below and valid.ts's runDeepScan.
  */
 
-import { decodeTrustmarkPayload, TRUSTMARK_PAYLOAD_BITS } from '@lolly/engine';
+import { decodeTrustmarkPayload, readLollyDurable, TRUSTMARK_PAYLOAD_BITS, type LollyDurable } from '@lolly/engine';
 import { openDB } from '../bridge/db.ts';
 import { loadOrt, readResponseWithProgress, serializeSessionCreate, type FetchProgress } from './ort.ts';
 
@@ -125,6 +125,11 @@ export interface TrustmarkDetection {
   schema?: string;
   /** Which decoder model produced the hit ('Q' or 'P' — see MODEL_CONFIGS). */
   variant?: 'Q' | 'P';
+  /** Set on 'detected' when the ECC-valid payload is one of Lolly's OWN durable
+   *  marks (engine readLollyDurable: magic + layout revision recognised), else
+   *  null. Pure on-device recognition — NO manifest-resolution server involved
+   *  — so /verify can show a "durable Lolly credential" pip without one. */
+  lolly?: LollyDurable | null;
 }
 
 // ── Terse, opt-in diagnostics ───────────────────────────────────────────────
@@ -551,7 +556,7 @@ export async function detectTrustmark(
       const decoded = decodeTrustmarkPayload(bits);
       dbg('decode', { variant: config.variantCode, bitCount: bits.length, valid: decoded.valid, schema: decoded.schema, version: decoded.version });
       if (decoded.valid) {
-        return { status: 'detected', payloadHex: decoded.payloadHex, schema: decoded.schema, variant: config.variantCode };
+        return { status: 'detected', payloadHex: decoded.payloadHex, schema: decoded.schema, variant: config.variantCode, lolly: readLollyDurable(decoded) };
       }
     }
 

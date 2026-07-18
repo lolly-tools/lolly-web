@@ -23,8 +23,9 @@
  * doc. Nothing else on the device is touched.
  */
 
-import { zip, unzip, zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { strToU8, strFromU8 } from 'fflate';
 import type { Unzipped } from 'fflate';
+import { zipAsync, unzipAsync } from './lib/zip.ts';
 import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts, USER_FONT_PREFIX } from './user-fonts.ts';
@@ -81,37 +82,7 @@ interface FontRow {
 }
 type LogoRow = FontRow;
 
-const HAS_WORKER = typeof Worker !== 'undefined';
 type BundleEntry = Uint8Array | [Uint8Array, { level: 0 }];
-
-function zipAsync(entries: Record<string, BundleEntry>): Promise<Uint8Array> {
-  if (!HAS_WORKER) return Promise.resolve(zipSync(entries));
-  return new Promise((resolve, reject) => zip(entries, (err, data) => (err ? reject(err) : resolve(data))));
-}
-
-// A brand pack is a tokens doc + a handful of woff2s — tens of KB to a few MB.
-// Bound inflation anyway so a hostile zip can't balloon (same stance as backups).
-const MAX_ENTRY_BYTES = 64 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 256 * 1024 * 1024;
-
-function unzipAsync(bytes: Uint8Array): Promise<Unzipped> {
-  let total = 0;
-  let bomb: string | null = null;
-  const filter = (f: { name: string; originalSize?: number }): boolean => {
-    total += f.originalSize || 0;
-    if ((f.originalSize || 0) > MAX_ENTRY_BYTES || total > MAX_TOTAL_BYTES) { bomb = f.name; return false; }
-    return true;
-  };
-  const guard = (data: Unzipped): Unzipped => {
-    if (bomb) throw new Error(`That brand file expands too large to load (${bomb}).`);
-    return data;
-  };
-  if (!HAS_WORKER) return Promise.resolve().then(() => guard(unzipSync(bytes, { filter })));
-  return new Promise((resolve, reject) => unzip(bytes, { filter }, (err, data) => {
-    if (err) return reject(err);
-    try { resolve(guard(data)); } catch (e) { reject(e); }
-  }));
-}
 
 const SUBTLE = globalThis.crypto?.subtle ?? null;
 
@@ -292,7 +263,12 @@ export function isBrandPack(files: Unzipped): boolean {
  *  deciding which importer a dropped .zip belongs to). */
 export async function unzipBrandBytes(bytes: ArrayBuffer | Uint8Array): Promise<Unzipped> {
   try {
-    return await unzipAsync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+    // A brand pack is a tokens doc + a handful of woff2s — tens of KB to a few
+    // MB — so lib/zip.ts's DEFAULT bomb caps (64 MB entry / 256 MB total) are
+    // exactly this payload's policy.
+    return await unzipAsync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), {
+      tooLarge: name => `That brand file expands too large to load (${name}).`,
+    });
   } catch {
     throw new Error("That file isn't a valid brand pack — it couldn't be unzipped.");
   }

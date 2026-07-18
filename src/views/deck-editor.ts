@@ -34,6 +34,7 @@ import { parsePptxGenJs, inchesToNative } from '../lib/pptxgen-import.ts';
 import type { TextRun } from '../lib/pptxgen-import.ts';
 import { nearestBrandColor, isPptx, readPptx } from '@lolly/engine';
 import type { PptxDeckRead, PptxReadPara, PptxParts } from '@lolly/engine';
+import { escape as escapeHtml } from '../utils.ts';
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -390,6 +391,17 @@ function textRegion(layout: string): Frac {
   return { x: FF_PAD, y: FF_PAD, w: 1 - 2 * FF_PAD, h: FF_HEAD };
 }
 
+/** How the text is anchored VERTICALLY inside its region — chosen so the exploded box
+ *  holds the text exactly where the template painted it, and the switch to freeform never
+ *  makes it jump: `title` centres it (the layout centres the title in the whole slide),
+ *  `full` drops it to the foot (the caption band sits at the bottom over the cover), and
+ *  every other layout tops its head band (where those layouts pin the title). */
+function textValign(layout: string): 't' | 'm' | 'b' {
+  if (layout === 'title') return 'm';
+  if (layout === 'full') return 'b';
+  return 't';
+}
+
 /** Explode a layout slide into freeform boxes. Image boxes are pushed FIRST so a `full`
  *  slide's caption text lands ON TOP of its cover image (later boxes paint above). */
 export function layoutToBoxes(slide: Slide, nativeW = 1920, nativeH = 1920): Box[] {
@@ -408,7 +420,7 @@ export function layoutToBoxes(slide: Slide, nativeW = 1920, nativeH = 1920): Box
   });
   const content = asText(slide.content);
   if (content.trim()) {
-    boxes.push(coerceBox({ kind: 'text', text: content, align: layout === 'title' ? 'c' : 'l', fit: true, ...px(textRegion(layout)) }));
+    boxes.push(coerceBox({ kind: 'text', text: content, align: layout === 'title' ? 'c' : 'l', valign: textValign(layout), fit: true, ...px(textRegion(layout)) }));
   }
   return boxes;
 }
@@ -765,9 +777,6 @@ export function buildThumbFace(slide: Slide, deckTheme = 'auto', resolved?: { bg
 // `**bold**`, `*italic*`). These two pure functions are the bridge — markdown → editable
 // HTML on open, editable HTML → markdown on blur — so the round-trip is lossless for that
 // subset and DOM-testable headlessly.
-
-const escapeHtml = (s: string): string =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** One line's inline markdown (`**bold**` / `*italic*`) → HTML. Bold is consumed first so
  *  its `**` markers never leak into the italic pass. */

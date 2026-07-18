@@ -38,8 +38,9 @@
  * round-trip can be exercised headlessly in tests against an in-memory bridge.
  */
 
-import { zip, unzip, zipSync, unzipSync, strToU8, strFromU8, type UnzipFileInfo } from 'fflate';
+import { strToU8, strFromU8 } from 'fflate';
 import type { Unzipped } from 'fflate';
+import { zipAsync, unzipAsync } from './lib/zip.ts';
 
 export const BACKUP_FORMAT = 'lolly-backup';
 
@@ -112,53 +113,19 @@ interface BackupManifest {
 // tuple form for already-compressed image bytes, to skip re-deflating).
 type BundleEntry = Uint8Array | [Uint8Array, { level: 0 }];
 
-// (Un)zipping a backup can be tens of MB of images; on the UI thread the synchronous
-// path froze the tab for seconds. fflate's async zip/unzip offload to a Web Worker,
-// keeping the click responsive. But the worker only exists in a real browser — the
-// headless round-trip test (and any no-Worker context) has no global Worker, where
-// fflate's async would have nothing to offload to. So gate on Worker presence and
-// fall back to the synchronous path there (byte-identical output, just blocking).
-const HAS_WORKER = typeof Worker !== 'undefined';
-
-function zipAsync(entries: Record<string, BundleEntry>): Promise<Uint8Array> {
-  if (!HAS_WORKER) return Promise.resolve(zipSync(entries));
-  return new Promise((resolve, reject) => {
-    zip(entries, (err, data) => (err ? reject(err) : resolve(data)));
-  });
-}
-
-// Declared-size bounds checked BEFORE each entry inflates: a restore should never
-// balloon a small hostile zip into gigabytes of memory (the classic zip bomb).
-// Real backups are images stored uncompressed, far under these.
+// Zipping goes through lib/zip.ts: worker-offloaded in a real browser (a backup
+// can be tens of MB of images — the synchronous path froze the tab for seconds),
+// sync fallback in no-Worker contexts like the headless round-trip test.
+//
+// Restore bounds: declared-size caps checked BEFORE each entry inflates — a
+// restore should never balloon a small hostile zip into gigabytes of memory.
+// Real backups are images stored uncompressed, far under these; they're far
+// LARGER than lib/zip.ts's default (brand-pack-sized) caps, hence explicit.
 const MAX_RESTORE_ENTRY_BYTES = 512 * 1024 * 1024;
 // Exported so a fetched-from-a-URL backup (components/instance-sheet.ts) can cap
-// the COMPRESSED download itself at the same ceiling, before any of these
-// per-entry/total checks on the inflated contents ever get a chance to run.
+// the COMPRESSED download itself at the same ceiling, before the per-entry/total
+// checks on the inflated contents ever get a chance to run.
 export const MAX_RESTORE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
-
-function unzipAsync(bytes: Uint8Array): Promise<Unzipped> {
-  let total = 0;
-  let bomb: string | null = null;
-  const filter = (f: UnzipFileInfo): boolean => {
-    total += f.originalSize || 0;
-    if ((f.originalSize || 0) > MAX_RESTORE_ENTRY_BYTES || total > MAX_RESTORE_TOTAL_BYTES) {
-      bomb = f.name;
-      return false;
-    }
-    return true;
-  };
-  const guard = (data: Unzipped): Unzipped => {
-    if (bomb) throw new Error(`That backup expands too large to restore (${bomb}).`);
-    return data;
-  };
-  if (!HAS_WORKER) return Promise.resolve().then(() => guard(unzipSync(bytes, { filter })));
-  return new Promise((resolve, reject) => {
-    unzip(bytes, { filter }, (err, data) => {
-      if (err) return reject(err);
-      try { resolve(guard(data)); } catch (e) { reject(e); }
-    });
-  });
-}
 
 // `formatVersion` is the layout this build *writes* — bump it on any change to the
 // part set or their shapes. Readers, however, never gate on it directly: they gate
@@ -453,7 +420,11 @@ export async function importBackup(
 ): Promise<ImportSummary> {
   let files: Unzipped;
   try {
-    files = await unzipAsync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+    files = await unzipAsync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), {
+      maxEntryBytes: MAX_RESTORE_ENTRY_BYTES,
+      maxTotalBytes: MAX_RESTORE_TOTAL_BYTES,
+      tooLarge: name => `That backup expands too large to restore (${name}).`,
+    });
   } catch {
     throw new Error("That file isn't a valid backup — it couldn't be unzipped.");
   }

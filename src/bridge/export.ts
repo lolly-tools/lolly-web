@@ -20,10 +20,10 @@ import {
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
   embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
   buildExportMeta,
-  embedWatermark, canCarryWatermark,
+  embedWatermark, canCarryWatermark, LOSSLESS_STRENGTH,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
   buildEncryptDictValues, encryptObjectBytes, preparePassword,
-  buildEncryptedZip,
+  buildEncryptedZip, crc32,
   buildPptxParts, EMU_PER_PX,
 } from '@lolly/engine';
 import {
@@ -51,6 +51,23 @@ import type { Dimension } from '../../../../engine/src/units.ts';
 import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts';
 import { n2, parseCssColor, parseCssColorFull, rgbaCss, parseCssLen, resolveRadii, objectPositionFractions } from "./export-css.ts";
 import { renderPptx } from "./export-pptx.ts";
+// Stage-1 split: DOM-free byte-stampers and vector-PDF helpers extracted
+// verbatim to sibling modules, imported back so no call site changes.
+import {
+  patchJpegDpi, insertPngPhys, insertPngMeta, insertJpegExif, iccWanted,
+  insertPngIcc, insertJpegIcc, injectSvgMeta, withGifComment,
+  inflateBytes, deflateBytes,
+} from './export-image-meta.ts';
+import {
+  pureRotationDeg, sampleGradientMidpoint, brandSwatchPalette, blendSvgWithWhite,
+  pdfRoundedRect, withPdfAlpha, withPdfClipRect, withPdfRoundedClip, pdfApplyClip,
+  withPdfRotation, drawSvgPathToPdf, applyTextTransform,
+  buildCmykPaletteMap, assignSpotResourceNames, cmykKey, paletteHitKey, substitutePdfRgb,
+  svgLen, preserveAspectRatioAlign, parseSvgColor,
+} from './export-pdf-vector.ts';
+import type { BrandPaletteEntry, PaletteHit } from './export-pdf-vector.ts';
+// Moved to export-pdf-vector.ts; re-exported because export-pptx.ts imports it from here.
+export { pureRotationDeg };
 
 // ── Local types ─────────────────────────────────────────────────────────────
 type Rgb = [number, number, number];
@@ -62,19 +79,6 @@ type LabelsRecord = Partial<Record<LabelSlot, string>>;
 interface WebIdentityAPI { signer(): Promise<unknown>; }
 type WebHost = HostV1 & { identity?: WebIdentityAPI };
 
-// The shell's brand palette entries fed via opts.palette (hex + CMYK 0–100).
-// spot: a named spot/Pantone lock, independent of cmyk — a swatch may carry
-// either, both, or neither. cmyk (when set) is always the process-colour
-// fallback used for preview / non-PDF export / the PDF Separation
-// tint-transform's alternate space, whether or not a spot is also set; when a
-// spot is locked with no explicit cmyk, buildCmykPaletteMap derives one from
-// the swatch's own hex instead (see its own comment).
-interface BrandPaletteEntry {
-  hex?: string;
-  cmyk?: number[];
-  label?: string;
-  spot?: { name: string; book?: string } | null;
-}
 
 // The union of options this host's export path understands. A superset of the
 // Per-export imprint state threaded through the vector/container export path in
@@ -116,6 +120,16 @@ export interface ExportOpts {
    *  durable, imperceptible mark that survives what strips the C2PA credential —
    *  see engine/pixel-watermark. */
   imprint?: boolean;
+  /** Embed a DURABLE Content Credential — a TrustMark-format neural watermark
+   *  carrying Lolly's identifier — into raster exports, so a metadata strip can't
+   *  erase the "made with Lolly" link and a TrustMark-aware tool can recover it.
+   *  Opt-in (heavy neural encode + a fetched ~tens-of-MB model), unlike the
+   *  default-on pure-JS `imprint`. A no-op when the encoder model isn't on-device
+   *  (scripts/convert-trustmark-encoder-onnx.py). Raster-only (png/jpg/webp/avif/
+   *  tiff) — see lib/trustmark-embed.ts and plans/durable-content-credentials.md. */
+  durable?: boolean;
+  /** Reserved id carried by the durable mark (0 until the CAI id scheme lands). */
+  durableId?: number;
   /** INTERNAL, per-format-render mutable sink (created in renderFormat, never
    *  URL-serialized). Carries the imprint request down to imprintEmbedCanvas and
    *  records whether a container raster was actually marked, so stampC2pa can
@@ -410,11 +424,14 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
 // Embed the Lolly pixel watermark into a canvas in place (straight sRGB RGBA;
 // canvas 2D getImageData is un-premultiplied). No-op contract lives in the
 // engine — flat/tiny buffers return unchanged. See engine/src/pixel-watermark.ts.
-function imprintCanvas(canvas: HTMLCanvasElement): void {
+// `strength` lets a LOSSLESS format (png/tiff) embed the gentler LOSSLESS_STRENGTH
+// — it faces no quantization, so a subtler mark still reads back with wide margin;
+// lossy formats omit it and keep the JPEG-calibrated DEFAULT_STRENGTH.
+function imprintCanvas(canvas: HTMLCanvasElement, strength?: number): void {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx || canvas.width < 8 || canvas.height < 8) return;
   const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const marked = embedWatermark(id.data, { width: canvas.width, height: canvas.height });
+  const marked = embedWatermark(id.data, { width: canvas.width, height: canvas.height, ...(strength !== undefined ? { strength } : {}) });
   id.data.set(marked);
   ctx.putImageData(id, 0, 0);
 }
@@ -438,6 +455,25 @@ export function imprintEmbedCanvas(canvas: HTMLCanvasElement, imprint: ImprintSt
   }
 }
 
+// Neural DURABLE embed for a standalone raster canvas — the async, opt-in
+// counterpart to the sync imprintCanvas. Lazy-imports the encoder runner so ORT
+// + the ~tens-of-MB model stay out of the boot budget. Best-effort: a no-op
+// (pixels untouched) when opts.durable is off, or the encoder model isn't
+// installed / the encode faults. Container chokepoints (PDF/PPTX raster) stay
+// imprint-only for now — folding an async neural pass into the SYNC
+// imprintEmbedCanvas is future work (see plans/durable-content-credentials.md).
+async function durableEmbedCanvas(canvas: HTMLCanvasElement, opts: ExportOpts): Promise<void> {
+  if (!opts.durable) return;
+  try {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    const { embedLollyDurable } = await import('../lib/trustmark-embed.ts');
+    const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const marked = await embedLollyDurable(id.data, canvas.width, canvas.height, { reservedId: opts.durableId });
+    if (marked) { id.data.set(marked); ctx.putImageData(id, 0, 0); }
+  } catch { /* best-effort; never break an export over the durable pass */ }
+}
+
 // Default JPEG encode quality. The browser default (0.92) leaves visible ringing
 // around text and hard edges; 0.97 clears it for a modest size increase.
 const JPEG_QUALITY = 0.97;
@@ -456,12 +492,16 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
   const fc = beginFrameClock(node); renderFrameAt(fc, 0);
   try {
     let blob: Blob;
-    if (opts.imprint) {
+    if (opts.imprint || opts.durable) {
       // Pixel-watermark path: rasterise to a canvas so we can perturb the pixels
       // before encoding, then encode with the same quality the dataURL path uses.
+      // Also the durable-embed path, which likewise needs canvas pixels.
       const raw = await lib.toCanvas(node, dtoOpts);
       const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
-      imprintCanvas(canvas);
+      // png is lossless → the gentler LOSSLESS_STRENGTH; jpeg keeps the
+      // quantization-calibrated DEFAULT_STRENGTH (undefined ⇒ engine default).
+      if (opts.imprint) imprintCanvas(canvas, format === 'png' ? LOSSLESS_STRENGTH : undefined);
+      await durableEmbedCanvas(canvas, opts);
       blob = await canvasToBlob(canvas, format === 'jpeg' ? 'image/jpeg' : 'image/png', format === 'jpeg' ? (opts.quality ?? JPEG_QUALITY) : undefined);
     } else {
       const dataUrl = await (format === 'jpeg'
@@ -522,6 +562,7 @@ async function renderBitmap(node: Element, mimeType: string, opts: ExportOpts): 
   }
   const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
   if (opts.imprint) imprintCanvas(canvas);
+  await durableEmbedCanvas(canvas, opts);
   return canvasToBlob(canvas, mimeType, opts.quality ?? 0.9);
 }
 
@@ -549,7 +590,8 @@ async function renderTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   // serialises. Uncompressed TIFF is lossless — unlike JPEG/AVIF this is a
   // straight round-trip of exactly what embedWatermark wrote, no re-encode to
   // survive.
-  if (opts.imprint) imprintCanvas(canvas);
+  if (opts.imprint) imprintCanvas(canvas, LOSSLESS_STRENGTH); // uncompressed TIFF is lossless
+  await durableEmbedCanvas(canvas, opts);
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const rgba = ctx.getImageData(0, 0, W, H).data;       // sRGB, straight (un-premultiplied)
@@ -955,323 +997,6 @@ function coverRasterStyle(d: ExportDims, opts: ExportOpts, targetW: number, targ
   return result;
 }
 
-// ── PNG physical-resolution metadata ────────────────────────────────────────
-//
-// dom-to-image PNGs carry no DPI, so they're assumed 96 — a 2480px-wide A4
-// raster would print ~26 inches wide. insertPngPhys (below) injects a pHYs chunk
-// recording the real DPI so print/layout software places the image at its
-// intended physical size. All the byte-level stampers here take and return a
-// Uint8Array (the caller reads/writes the Blob once) and are best-effort: any
-// parse hiccup returns the input bytes untouched.
-
-// JPEG carries DPI in the JFIF APP0 segment (right after SOI). Browsers emit one
-// with no/72 density; patch the density-unit + X/Y density so placing apps size
-// it physically. Best-effort: anything unexpected returns the bytes untouched.
-function patchJpegDpi(b: Uint8Array, dpi: number): Uint8Array {
-  if (!(dpi > 0)) return b;
-  try {
-    // FFD8 (SOI) FFE0 (APP0) … "JFIF\0" at byte 6.
-    if (b[0] !== 0xFF || b[1] !== 0xD8 || b[2] !== 0xFF || b[3] !== 0xE0) return b;
-    if (!(b[6] === 0x4A && b[7] === 0x46 && b[8] === 0x49 && b[9] === 0x46 && b[10] === 0x00)) return b;
-    const out = b.slice();
-    const d = Math.min(0xFFFF, Math.round(dpi));
-    out[13] = 1;                // density units: dots per inch
-    out[14] = (d >> 8) & 0xFF;  // Xdensity
-    out[15] = d & 0xFF;
-    out[16] = (d >> 8) & 0xFF;  // Ydensity
-    out[17] = d & 0xFF;
-    return out;
-  } catch {
-    return b;
-  }
-}
-
-const readU32 = (b: Uint8Array, o: number): number => ((b[o]! << 24) | (b[o + 1]! << 16) | (b[o + 2]! << 8) | b[o + 3]!) >>> 0;
-function writeU32(b: Uint8Array, o: number, v: number): void { b[o] = (v >>> 24) & 255; b[o + 1] = (v >>> 16) & 255; b[o + 2] = (v >>> 8) & 255; b[o + 3] = v & 255; }
-
-let CRC_TABLE: Uint32Array | null = null;
-function crc32(buf: Uint8Array): number {
-  if (!CRC_TABLE) {
-    CRC_TABLE = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      CRC_TABLE[n] = c >>> 0;
-    }
-  }
-  let crc = 0xFFFFFFFF;
-  for (let i = 0; i < buf.length; i++) crc = CRC_TABLE[(crc ^ buf[i]!) & 0xFF]! ^ (crc >>> 8);
-  return (crc ^ 0xFFFFFFFF) >>> 0;
-}
-
-function pngChunk(type: string, data: Uint8Array): Uint8Array {
-  const chunk = new Uint8Array(12 + data.length);
-  writeU32(chunk, 0, data.length);
-  for (let i = 0; i < 4; i++) chunk[4 + i] = type.charCodeAt(i);
-  chunk.set(data, 8);
-  writeU32(chunk, 8 + data.length, crc32(chunk.subarray(4, 8 + data.length)));
-  return chunk;
-}
-
-// Splice a pHYs chunk (pixels-per-metre, unit=metre) in right after IHDR.
-function insertPngPhys(png: Uint8Array, dpi: number): Uint8Array | null {
-  const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
-  for (let i = 0; i < 8; i++) if (png[i] !== SIG[i]) return null;
-  const ihdrLen = readU32(png, 8);
-  const insertAt = 8 + 12 + ihdrLen; // sig + (len+type+data+crc) of IHDR
-  const ppm = Math.round(dpi / 0.0254); // px per inch → px per metre
-  const data = new Uint8Array(9);
-  writeU32(data, 0, ppm);
-  writeU32(data, 4, ppm);
-  data[8] = 1; // unit specifier: metres
-  const phys = pngChunk('pHYs', data);
-  const out = new Uint8Array(png.length + phys.length);
-  out.set(png.subarray(0, insertAt), 0);
-  out.set(phys, insertAt);
-  out.set(png.subarray(insertAt), insertAt + phys.length);
-  return out;
-}
-
-// ── Provenance metadata (authorship embedded per format) ─────────────────────
-//
-// A generic record assembled by the engine (engine/src/metadata.js) is mapped
-// here onto each format's native mechanism: PNG iTXt, JPEG EXIF (IFD0), PDF info
-// dict (in renderPdf/renderCmykPdf), SVG <metadata>+<title>/<desc>, GIF comment,
-// and the video containers via the engine's video-meta.js (MP4 udta/ilst,
-// Matroska Tags — see withVideoMeta beside renderVideo).
-// All best-effort: anything unexpected returns the input untouched.
-
-const xmlEsc = (s: unknown): string => String(s ?? '')
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-// PNG: one UTF-8 iTXt chunk per metadata field, spliced in after IHDR.
-function iTXtChunk(keyword: string, text: string): Uint8Array {
-  const enc = new TextEncoder();
-  const kw = enc.encode(keyword);
-  const txt = enc.encode(text);
-  const data = new Uint8Array(kw.length + 5 + txt.length);
-  let o = 0;
-  data.set(kw, o); o += kw.length;
-  data[o++] = 0; // keyword terminator
-  data[o++] = 0; // compression flag (uncompressed)
-  data[o++] = 0; // compression method
-  data[o++] = 0; // language tag (empty) terminator
-  data[o++] = 0; // translated keyword (empty) terminator
-  data.set(txt, o);
-  return pngChunk('iTXt', data);
-}
-
-function insertPngMeta(png: Uint8Array, meta: ExportMeta | null | undefined): Uint8Array {
-  if (!meta) return png;
-  try {
-    const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
-    for (let i = 0; i < 8; i++) if (png[i] !== SIG[i]) return png;
-    const pairs = ([
-      ['Software', meta.software], ['Author', meta.author],
-      ['Source', meta.source], ['Description', meta.description], ['Comment', meta.contact],
-    ] as [string, string][]).filter(([, v]) => v);
-    if (!pairs.length) return png;
-    const chunks = pairs.map(([k, v]) => iTXtChunk(k, v));
-    const at = 8 + 12 + readU32(png, 8); // after IHDR
-    const extra = chunks.reduce((n, c) => n + c.length, 0);
-    const out = new Uint8Array(png.length + extra);
-    out.set(png.subarray(0, at), 0);
-    let o = at;
-    for (const c of chunks) { out.set(c, o); o += c.length; }
-    out.set(png.subarray(at), o);
-    return out;
-  } catch {
-    return png;
-  }
-}
-
-// JPEG: a minimal little-endian EXIF TIFF (IFD0, ASCII tags) in an APP1 segment,
-// inserted after the JFIF APP0. Tags: ImageDescription, Software, Artist.
-function buildExifTiff(fields: { tag: number; value: string }[]): Uint8Array | null {
-  const enc = new TextEncoder();
-  const entries = fields.map(f => {
-    const s = enc.encode(f.value);
-    const data = new Uint8Array(s.length + 1); data.set(s, 0); // NUL-terminated
-    return { tag: f.tag, count: data.length, data };
-  }).filter(e => e.count > 1);
-  const n = entries.length;
-  if (!n) return null;
-  const dataStart = 8 + 2 + n * 12 + 4; // header + IFD(count + entries + next)
-  const dataLen = entries.reduce((s, e) => s + (e.count > 4 ? e.count : 0), 0);
-  const tiff = new Uint8Array(dataStart + dataLen);
-  const dv = new DataView(tiff.buffer);
-  tiff[0] = 0x49; tiff[1] = 0x49;            // "II" little-endian
-  dv.setUint16(2, 0x002A, true);
-  dv.setUint32(4, 8, true);                  // IFD0 offset
-  dv.setUint16(8, n, true);
-  let entryOff = 10, dataOff = dataStart;
-  for (const e of entries) {
-    dv.setUint16(entryOff, e.tag, true);
-    dv.setUint16(entryOff + 2, 2, true);     // type ASCII
-    dv.setUint32(entryOff + 4, e.count, true);
-    if (e.count <= 4) tiff.set(e.data, entryOff + 8);
-    else { dv.setUint32(entryOff + 8, dataOff, true); tiff.set(e.data, dataOff); dataOff += e.count; }
-    entryOff += 12;
-  }
-  dv.setUint32(10 + n * 12, 0, true);        // next IFD = none
-  return tiff;
-}
-
-function insertJpegExif(b: Uint8Array, meta: ExportMeta | null | undefined): Uint8Array {
-  if (!meta) return b;
-  try {
-    const desc = [meta.description, meta.contact].filter(Boolean).join(' · ');
-    const tiff = buildExifTiff([
-      { tag: 0x010E, value: desc },          // ImageDescription
-      { tag: 0x0131, value: meta.software }, // Software
-      { tag: 0x013B, value: meta.author },   // Artist
-    ].filter(f => f.value));
-    if (!tiff) return b;
-    const id = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]; // "Exif\0\0"
-    const segLen = 2 + id.length + tiff.length;       // length field includes itself
-    if (segLen > 0xFFFF) return b;
-    const app1 = new Uint8Array(2 + segLen);
-    app1[0] = 0xFF; app1[1] = 0xE1;
-    app1[2] = (segLen >> 8) & 0xFF; app1[3] = segLen & 0xFF;
-    app1.set(id, 4); app1.set(tiff, 4 + id.length);
-
-    if (b[0] !== 0xFF || b[1] !== 0xD8) return b; // not JPEG
-    let at = 2; // after SOI; skip an APP0 (JFIF) if present so order stays valid
-    if (b[2] === 0xFF && b[3] === 0xE0) at = 4 + ((b[4]! << 8) | b[5]!);
-    const out = new Uint8Array(b.length + app1.length);
-    out.set(b.subarray(0, at), 0);
-    out.set(app1, at);
-    out.set(b.subarray(at), at + app1.length);
-    return out;
-  } catch {
-    return b;
-  }
-}
-
-// ── ICC colour profile embedding ─────────────────────────────────────────────
-//
-// Tags raster output with the colour space its pixels were rendered in (sRGB —
-// what the browser canvas produces), so colour-managed software reproduces them
-// faithfully instead of guessing. Profile bytes come from the engine (the single
-// source of truth); the shell only splices them into each format's native slot:
-// PNG iCCP chunk, JPEG APP2 segment. Best-effort: any hiccup returns the blob.
-
-// Embed when a profile is requested (default 'srgb') and this isn't a thumbnail.
-function iccWanted(opts: ExportOpts): boolean {
-  return opts.colorProfile !== 'none' && !opts.thumbnail;
-}
-
-// PNG: an iCCP chunk (profile name + compression method 0 + zlib-deflated
-// profile) spliced in right after IHDR, before IDAT — where the spec requires it.
-async function insertPngIcc(png: Uint8Array, iccBytes: Uint8Array): Promise<Uint8Array> {
-  try {
-    const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
-    for (let i = 0; i < 8; i++) if (png[i] !== SIG[i]) return png;
-    const name = new TextEncoder().encode('sRGB'); // 1–79 bytes, Latin-1
-    const compressed = await deflateBytes(iccBytes);
-    const data = new Uint8Array(name.length + 2 + compressed.length);
-    data.set(name, 0);
-    data[name.length] = 0;     // name terminator
-    data[name.length + 1] = 0; // compression method: zlib/deflate
-    data.set(compressed, name.length + 2);
-    const chunk = pngChunk('iCCP', data);
-    const at = 8 + 12 + readU32(png, 8); // after IHDR
-    const out = new Uint8Array(png.length + chunk.length);
-    out.set(png.subarray(0, at), 0);
-    out.set(chunk, at);
-    out.set(png.subarray(at), at + chunk.length);
-    return out;
-  } catch {
-    return png;
-  }
-}
-
-// JPEG: one or more APP2 "ICC_PROFILE\0" segments (the profile is split across
-// 65 519-byte chunks when large), inserted after the leading APP0/APP1 segments.
-function insertJpegIcc(b: Uint8Array, iccBytes: Uint8Array): Uint8Array {
-  try {
-    if (b[0] !== 0xFF || b[1] !== 0xD8) return b; // not JPEG
-    const id = [0x49, 0x43, 0x43, 0x5F, 0x50, 0x52, 0x4F, 0x46, 0x49, 0x4C, 0x45, 0x00]; // "ICC_PROFILE\0"
-    const MAX = 0xFFFF - 2 - id.length - 2; // payload room per APP2 (after len + id + seq/count)
-    const count = Math.ceil(iccBytes.length / MAX);
-    if (count > 255) return b; // ICC caps at 255 chunks
-    const segs: Uint8Array[] = [];
-    for (let i = 0; i < count; i++) {
-      const part = iccBytes.subarray(i * MAX, i * MAX + MAX);
-      const segLen = 2 + id.length + 2 + part.length; // length field includes itself
-      const app2 = new Uint8Array(2 + segLen);
-      app2[0] = 0xFF; app2[1] = 0xE2;
-      app2[2] = (segLen >> 8) & 0xFF; app2[3] = segLen & 0xFF;
-      app2.set(id, 4);
-      app2[4 + id.length] = i + 1;   // chunk sequence number (1-based)
-      app2[5 + id.length] = count;   // total chunks
-      app2.set(part, 6 + id.length);
-      segs.push(app2);
-    }
-    // Insert after a leading APP0 (JFIF) and/or APP1 (EXIF) so marker order stays valid.
-    let at = 2;
-    while (b[at] === 0xFF && (b[at + 1] === 0xE0 || b[at + 1] === 0xE1)) {
-      at += 2 + ((b[at + 2]! << 8) | b[at + 3]!);
-    }
-    const extra = segs.reduce((n, s) => n + s.length, 0);
-    const out = new Uint8Array(b.length + extra);
-    out.set(b.subarray(0, at), 0);
-    let o = at;
-    for (const s of segs) { out.set(s, o); o += s.length; }
-    out.set(b.subarray(at), o);
-    return out;
-  } catch {
-    return b;
-  }
-}
-
-// SVG: <title>/<desc> + a Dublin-Core <metadata> block, injected right after the
-// opening <svg> tag of the serialized markup (avoids DOM-namespace gymnastics).
-function svgMetaBlock(meta: ExportMeta): string {
-  const lines: string[] = [];
-  if (meta.tool) lines.push(`<title>${xmlEsc(meta.tool)}</title>`);
-  const desc = [meta.description, meta.contact].filter(Boolean).join(' · ');
-  if (desc) lines.push(`<desc>${xmlEsc(desc)}</desc>`);
-  lines.push(
-    '<metadata>',
-    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/">',
-    '<rdf:Description rdf:about="">',
-  );
-  if (meta.author) lines.push(`<dc:creator>${xmlEsc(meta.author)}</dc:creator>`);
-  lines.push(`<dc:publisher>${xmlEsc(meta.software)}</dc:publisher>`);
-  lines.push(`<dc:source>${xmlEsc(meta.source)}</dc:source>`, '</rdf:Description>', '</rdf:RDF>', '</metadata>');
-  return lines.join('\n');
-}
-
-function injectSvgMeta(xml: string, meta: ExportMeta | null | undefined): string {
-  if (!meta) return xml;
-  const m = xml.match(/<svg\b[^>]*?>/);
-  if (!m) return xml;
-  const at = m.index! + m[0]!.length;
-  return xml.slice(0, at) + '\n' + svgMetaBlock(meta) + xml.slice(at);
-}
-
-// GIF: a Comment Extension (0x21 0xFE …) inserted right after the header + LSD +
-// global colour table, before the first frame.
-function withGifComment(bytes: Uint8Array, text: string | undefined): Uint8Array {
-  if (!text || bytes.length < 13) return bytes;
-  const packed = bytes[10]!;
-  const gctSize = (packed & 0x80) ? 3 * (1 << ((packed & 0x07) + 1)) : 0;
-  const at = 13 + gctSize;
-  const txt = new TextEncoder().encode(text);
-  const subs: number[] = [];
-  for (let i = 0; i < txt.length; i += 255) {
-    const chunk = txt.subarray(i, i + 255);
-    subs.push(chunk.length, ...chunk);
-  }
-  const ext = new Uint8Array(2 + subs.length + 1);
-  ext[0] = 0x21; ext[1] = 0xFE; ext.set(subs, 2); ext[ext.length - 1] = 0x00;
-  const out = new Uint8Array(bytes.length + ext.length);
-  out.set(bytes.subarray(0, at), 0);
-  out.set(ext, at);
-  out.set(bytes.subarray(at), at + ext.length);
-  return out;
-}
 
 // Remove comment nodes from a subtree. A tool's template.html comments serialise
 // verbatim into its SVG export as pure dead weight — e.g. filter-duotone's ~674 KB
@@ -1519,26 +1244,6 @@ function isSvgRooted(node: Element): boolean {
   return false;
 }
 
-// The HTML→vector walkers position every element by its axis-aligned
-// getBoundingClientRect, which drops any CSS rotate() — a free-canvas box would
-// export unrotated at its enlarged bounding box. To render rotation faithfully we
-// detect a PURE rotation (orthonormal matrix, det +1 — NOT a scaleX(-1) flip or a
-// scale, which the walkers handle separately), then temporarily neutralise it on
-// the live element, walk the now-axis-aligned subtree, and wrap the result in a
-// rotation about the element's transform-origin. Returns 0 for anything that isn't
-// a clean rotation, so every non-rotated element stays byte-identical.
-export function pureRotationDeg(transform: string | null | undefined): number {
-  if (!transform || transform === 'none') return 0;
-  const m = /matrix\(([^)]+)\)/.exec(transform);
-  if (!m) return 0;
-  const p = m[1]!.split(',').map(parseFloat);
-  if (p.length < 4) return 0;
-  const [a, b, c, d] = p as [number, number, number, number];
-  if (Math.abs(a - d) > 1e-3 || Math.abs(b + c) > 1e-3) return 0;   // scale/flip → not a rotation
-  if (Math.abs(a * d - b * c - 1) > 1e-2) return 0;                 // determinant ≠ 1
-  const deg = Math.atan2(b, a) * 180 / Math.PI;
-  return Math.abs(deg) < 1e-3 ? 0 : deg;
-}
 
 // Returns a short reason string when `el` uses CSS the vector walkers can't faithfully
 // reproduce (they'd SILENTLY DROP it), so the caller rasterises the node's subtree and
@@ -2443,41 +2148,6 @@ function buildRadialGradientEl(NS: string, bgImage: string, elX: number, elY: nu
   return grad.childNodes.length >= 2 ? grad : null;
 }
 
-// Returns an averaged [r,g,b] sample of a linear-gradient's first and last
-// stops. Used by drawHtmlVectors as an approximation for PDF output.
-function sampleGradientMidpoint(bgImage: string): Rgb | null {
-  const m = bgImage.match(/^linear-gradient\((.+)\)$/s);
-  if (!m) return null;
-  const parts = splitCssArgs(m[1]!);
-  let start = 0;
-  if (parts[0] && /^to\s|deg$|turn$|rad$|grad$/.test(parts[0].trim())) start = 1;
-  const stops = parts.slice(start).filter(Boolean);
-  if (!stops.length) return null;
-  const c1 = gradStopToRgb(stops[0]!.trim(), 0, stops.length);
-  const c2 = gradStopToRgb(stops[stops.length - 1]!.trim(), stops.length - 1, stops.length);
-  if (!c1 && !c2) return null;
-  if (!c1) return c2;
-  if (!c2) return c1;
-  return [
-    Math.round((c1[0] + c2[0]) / 2),
-    Math.round((c1[1] + c2[1]) / 2),
-    Math.round((c1[2] + c2[2]) / 2),
-  ];
-}
-
-function gradStopToRgb(raw: string, index: number, total: number): Rgb | null {
-  const { colorStr } = parseGradientStop(raw, index, total);
-  if (!colorStr) return null;
-  const s = colorStr.trim().toLowerCase();
-  if (s.startsWith('#')) {
-    const h = s.slice(1);
-    if (h.length === 3) return [parseInt(h[0]!+h[0]!,16), parseInt(h[1]!+h[1]!,16), parseInt(h[2]!+h[2]!,16)];
-    if (h.length === 6) return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
-  }
-  const mm = s.match(/rgba?\((\d+)[, ]+(\d+)[, ]+(\d+)/);
-  if (mm) return [+mm[1]!, +mm[2]!, +mm[3]!];
-  return null;
-}
 
 
 
@@ -2527,34 +2197,6 @@ function printGeometry(node: Element, opts: ExportOpts, paletteSource: BrandPale
   return computePrintGeometry({ trimWpt: toPoints(d.w), trimHpt: toPoints(d.h), bleedPt, marks, palette });
 }
 
-// Normalise the shell's brand palette (hex + CMYK 0–100, and/or an independent
-// spot lock) into the engine's colour-bar form: { rgb, cmyk } both 0–1, plus a
-// label and — for a spot-locked swatch — its ink name, so the shell's bar
-// renderer can annotate the pair with the name instead of raw CMYK numbers.
-// Only entries with a declared CMYK anchor or a spot lock qualify (the others
-// fall back to generic RGB→CMYK at render time and so have nothing to verify);
-// a spot lock with no explicit cmyk still qualifies, deriving one from the
-// swatch's own hex (same fallback buildCmykPaletteMap uses) so its Separation
-// substitution has something to verify against. Deduped by hex+ink, since the
-// palette repeats Black/White as ramp endpoints; order is preserved so the
-// primary brand hues lead and survive the flat cell cap.
-function brandSwatchPalette(palette: BrandPaletteEntry[] | undefined): { rgb: Rgb; cmyk: [number, number, number, number]; label?: string; spotName?: string }[] {
-  const out: { rgb: Rgb; cmyk: [number, number, number, number]; label?: string; spotName?: string }[] = [], seen = new Set<string>();
-  for (const { hex, cmyk, label, spot } of palette ?? []) {
-    if (!hex || (!cmyk && !spot)) continue;
-    const h = hex.replace('#', '').toLowerCase();
-    if (h.length !== 6) continue;                         // skips 'transparent' etc.
-    const r = parseInt(h.slice(0, 2), 16) / 255;
-    const g = parseInt(h.slice(2, 4), 16) / 255;
-    const b = parseInt(h.slice(4, 6), 16) / 255;
-    const frac = cmyk && cmyk.length === 4 ? (cmyk.map(v => v / 100) as [number, number, number, number]) : rgbToCmyk(r, g, b);
-    const key = `${h}:${frac.join(',')}:${spot?.name ?? ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ rgb: [r, g, b], cmyk: frac, label, spotName: spot?.name });
-  }
-  return out;
-}
 
 // Render the artwork to a jsPDF blob. Without geometry the page is the trim size
 // and the design fills it (unchanged legacy behaviour, incl. optional jsPDF
@@ -3702,100 +3344,6 @@ function resolveStyleProp(el: any, prop: string): string | null {
   return m ? m[1]!.trim() : null;
 }
 
-// Approximate SVG opacity by blending with white, used since jsPDF lacks per-element opacity.
-function blendSvgWithWhite(rgb: Rgb, opacity: number): Rgb {
-  return [
-    Math.round(rgb[0] * opacity + 255 * (1 - opacity)),
-    Math.round(rgb[1] * opacity + 255 * (1 - opacity)),
-    Math.round(rgb[2] * opacity + 255 * (1 - opacity)),
-  ];
-}
-
-// Parse numeric args from an SVG path data segment string.
-function parseSvgPathArgs(str: string): number[] {
-  const m = str.match(/[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g);
-  return m ? m.map(Number) : [];
-}
-
-// Fill ('F') or stroke ('S') a rounded rect into the PDF using the fast
-// jsPDF.roundedRect when corners are uniform (or sharp), else a four-corner path
-// (so e.g. top-only rounding keeps square bottom corners). Coords are already in
-// pt; the caller sets fill/draw colour, line width and any GState first.
-function pdfRoundedRect(pdf: any, x: number, y: number, w: number, h: number, radii: CornerRadii, uniform: CornerPair | null, op: string): void {
-  if (uniform) {
-    if (uniform[0] > 0 || uniform[1] > 0) pdf.roundedRect(x, y, w, h, uniform[0], uniform[1], op);
-    else pdf.rect(x, y, w, h, op);
-  } else {
-    drawSvgPathToPdf(pdf, roundedRectPath(x, y, w, h, radii), v => v, v => v);
-    op === 'S' ? pdf.stroke() : pdf.fill();
-  }
-}
-
-// Run `draw` with a uniform fill+stroke alpha applied via jsPDF GState, then
-// reset to opaque (GState is sticky and would otherwise leak onto every later
-// element). No-op when alpha is 1 or GState is unavailable.
-function withPdfAlpha(pdf: any, a: number, draw: () => void): void {
-  const on = a < 1 && typeof pdf.GState === 'function' && typeof pdf.setGState === 'function';
-  if (on) pdf.setGState(new pdf.GState({ opacity: a, 'stroke-opacity': a }));
-  try { draw(); }
-  finally { if (on) pdf.setGState(new pdf.GState({ opacity: 1, 'stroke-opacity': 1 })); }
-}
-
-// Run `draw` with drawing clipped to the rect (x, y, w, h) in pt, then restore.
-// `rect(...,null)` adds the path with no paint op; clip()+discardPath() set it as
-// the clip region (W n). Used for object-fit: cover, where the fitted image/SVG
-// overflows the box and the spill must be cropped. `draw` may be async.
-async function withPdfClipRect(pdf: any, x: number, y: number, w: number, h: number, draw: () => unknown): Promise<void> {
-  pdf.saveGraphicsState();
-  pdf.rect(x, y, w, h, null);
-  pdf.clip();
-  pdf.discardPath();
-  try { await draw(); }
-  finally { pdf.restoreGraphicsState(); }
-}
-
-// Run `draw` with drawing clipped to a rounded rect (pt). Mirrors the SVG walker's
-// overflow:hidden + border-radius content clip: uniform corners use jsPDF's fast
-// roundedRect path, differing corners a four-corner path (both added with a null style
-// = path-only, then clip). Used to crop a rounded box's children/text to the corner
-// curve. `draw` may be async.
-async function withPdfRoundedClip(pdf: any, x: number, y: number, w: number, h: number, radii: CornerRadii, uniform: CornerPair | null, draw: () => unknown): Promise<void> {
-  pdf.saveGraphicsState();
-  if (uniform && uniform[0] <= 0 && uniform[1] <= 0) pdf.rect(x, y, w, h, null);
-  else if (uniform) pdf.roundedRect(x, y, w, h, uniform[0], uniform[1], null);
-  else drawSvgPathToPdf(pdf, roundedRectPath(x, y, w, h, radii), v => v, v => v);
-  pdf.clip();
-  pdf.discardPath();
-  try { await draw(); }
-  finally { pdf.restoreGraphicsState(); }
-}
-
-// Set the current jsPDF clip region to a CSS basic-shape / polygon clip-path. `shape`
-// geometry is box-local CSS px; (ox,oy) is the box's top-left in pt and (sx,sy) the
-// px→pt scale (per axis — a CSS circle under a non-uniform scale becomes an ellipse).
-// Must be called inside a saveGraphicsState()/restoreGraphicsState() pair. Mirrors the
-// SVG walker's vector <clipPath> so both formats clip identically.
-function pdfApplyClip(pdf: any, shape: ClipShape, ox: number, oy: number, sx: number, sy: number): void {
-  const X = (v: number) => ox + v * sx;
-  const Y = (v: number) => oy + v * sy;
-  if (shape.kind === 'circle' || shape.kind === 'ellipse') {
-    const rx = (shape.kind === 'circle' ? shape.r : shape.rx) * sx;
-    const ry = (shape.kind === 'circle' ? shape.r : shape.ry) * sy;
-    if (Math.abs(rx - ry) < 0.01) pdf.circle(X(shape.cx), Y(shape.cy), rx, null);
-    else pdf.ellipse(X(shape.cx), Y(shape.cy), rx, ry, null);
-  } else if (shape.kind === 'inset') {
-    const rx = shape.r * sx, ry = shape.r * sy;
-    if (rx > 0 || ry > 0) pdf.roundedRect(X(shape.x), Y(shape.y), shape.w * sx, shape.h * sy, rx, ry, null);
-    else pdf.rect(X(shape.x), Y(shape.y), shape.w * sx, shape.h * sy, null);
-  } else {
-    const pts = shape.points;
-    pdf.moveTo(X(pts[0]![0]), Y(pts[0]![1]));
-    for (let i = 1; i < pts.length; i++) pdf.lineTo(X(pts[i]![0]), Y(pts[i]![1]));
-    pdf.close();
-  }
-  pdf.clip();
-  pdf.discardPath();
-}
 
 // Rasterise a CSS radial-gradient fill to a PNG data URL at pxW×pxH. jsPDF has no radial
 // shading in compat mode, so the PDF walker embeds this bounded bitmap as the box
@@ -3820,222 +3368,6 @@ async function radialGradientPng(bgImg: string, w: number, h: number, pxW: numbe
   return rasterizeSvgElement(svg, pxW, pxH, false, imprint);
 }
 
-// Run `draw` with a CSS-clockwise rotation of `deg` about the point (cx, cy) in the
-// jsPDF drawing space (pt, top-left origin). Used so free-canvas boxes with a CSS
-// rotate() export rotated (not flattened to their bounding box). Applied via jsPDF's
-// transformation matrix; if that API is missing or throws we degrade gracefully to
-// an unrotated draw inside the saved/restored graphics state (never a broken PDF).
-async function withPdfRotation(pdf: any, deg: number, cx: number, cy: number, draw: () => unknown): Promise<void> {
-  const canMatrix = deg && typeof pdf.setCurrentTransformationMatrix === 'function' && typeof pdf.Matrix === 'function';
-  if (!canMatrix) { await draw(); return; }
-  const r = deg * Math.PI / 180, cos = Math.cos(r), sin = Math.sin(r);
-  // Rotate about (cx,cy): M = T(cx,cy)·R·T(-cx,-cy). jsPDF's Matrix is (a,b,c,d,e,f).
-  const a = cos, b = sin, c = -sin, d = cos;
-  const e = cx - (a * cx + c * cy);
-  const f = cy - (b * cx + d * cy);
-  pdf.saveGraphicsState();
-  try { pdf.setCurrentTransformationMatrix(new pdf.Matrix(a, b, c, d, e, f)); }
-  catch (err) { console.warn('[export] PDF rotation unavailable, flattening this element:', err); }
-  try { await draw(); }
-  finally { pdf.restoreGraphicsState(); }
-}
-
-// Emits jsPDF path operations (moveTo/lineTo/curveTo/close) for an SVG `d` string.
-// tx/ty are coordinate-transform functions: SVG user units → jsPDF pt (top-left origin).
-// Caller must call fill()/stroke()/fillStroke() after this returns.
-function drawSvgPathToPdf(pdf: any, d: string, tx: (v: number) => number, ty: (v: number) => number): void {
-  const cmdRe = /([MLHVCSQTAZmlhvcsqtaz])([^MLHVCSQTAZmlhvcsqtaz]*)/g;
-  let cx = 0, cy = 0;
-  let sx = 0, sy = 0;   // current subpath start — Z returns the current point here (SVG spec)
-  let lastCmd = '';
-  let lastCpx = 0, lastCpy = 0;
-  let m: RegExpExecArray | null;
-
-  while ((m = cmdRe.exec(d)) !== null) {
-    const cmd  = m[1]!;
-    const nums = parseSvgPathArgs(m[2]!);
-    const abs  = cmd === cmd.toUpperCase();
-    const C    = cmd.toUpperCase();
-    const ax   = (i: number) => abs ? nums[i]! : cx + nums[i]!;
-    const ay   = (i: number) => abs ? nums[i]! : cy + nums[i]!;
-
-    switch (C) {
-      case 'M':
-        for (let i = 0; i + 1 < nums.length; i += 2) {
-          const x = ax(i), y = ay(i + 1);
-          if (i === 0) { pdf.moveTo(tx(x), ty(y)); sx = x; sy = y; } // remember subpath start
-          else pdf.lineTo(tx(x), ty(y));
-          cx = x; cy = y;
-        }
-        break;
-      case 'L':
-        for (let i = 0; i + 1 < nums.length; i += 2) {
-          const x = ax(i), y = ay(i + 1);
-          pdf.lineTo(tx(x), ty(y)); cx = x; cy = y;
-        }
-        break;
-      case 'H':
-        for (let i = 0; i < nums.length; i++) {
-          cx = abs ? nums[i]! : cx + nums[i]!;
-          pdf.lineTo(tx(cx), ty(cy));
-        }
-        break;
-      case 'V':
-        for (let i = 0; i < nums.length; i++) {
-          cy = abs ? nums[i]! : cy + nums[i]!;
-          pdf.lineTo(tx(cx), ty(cy));
-        }
-        break;
-      case 'C':
-        for (let i = 0; i + 5 < nums.length; i += 6) {
-          const x1 = ax(i),     y1 = ay(i + 1);
-          const x2 = ax(i + 2), y2 = ay(i + 3);
-          const x  = ax(i + 4), y  = ay(i + 5);
-          pdf.curveTo(tx(x1), ty(y1), tx(x2), ty(y2), tx(x), ty(y));
-          lastCpx = x2; lastCpy = y2; cx = x; cy = y;
-        }
-        break;
-      case 'S':
-        for (let i = 0; i + 3 < nums.length; i += 4) {
-          const r1x = (lastCmd === 'C' || lastCmd === 'S') ? 2 * cx - lastCpx : cx;
-          const r1y = (lastCmd === 'C' || lastCmd === 'S') ? 2 * cy - lastCpy : cy;
-          const x2  = ax(i),     y2 = ay(i + 1);
-          const x   = ax(i + 2), y  = ay(i + 3);
-          pdf.curveTo(tx(r1x), ty(r1y), tx(x2), ty(y2), tx(x), ty(y));
-          lastCpx = x2; lastCpy = y2; cx = x; cy = y;
-        }
-        break;
-      case 'Q':
-        for (let i = 0; i + 3 < nums.length; i += 4) {
-          const qx1 = ax(i), qy1 = ay(i + 1);
-          const x   = ax(i + 2), y = ay(i + 3);
-          const x1  = cx + 2 / 3 * (qx1 - cx), y1 = cy + 2 / 3 * (qy1 - cy);
-          const x2  = x  + 2 / 3 * (qx1 - x),  y2 = y  + 2 / 3 * (qy1 - y);
-          pdf.curveTo(tx(x1), ty(y1), tx(x2), ty(y2), tx(x), ty(y));
-          lastCpx = qx1; lastCpy = qy1; cx = x; cy = y;
-        }
-        break;
-      case 'T':
-        for (let i = 0; i + 1 < nums.length; i += 2) {
-          const qx1 = (lastCmd === 'Q' || lastCmd === 'T') ? 2 * cx - lastCpx : cx;
-          const qy1 = (lastCmd === 'Q' || lastCmd === 'T') ? 2 * cy - lastCpy : cy;
-          const x   = ax(i), y = ay(i + 1);
-          const x1  = cx + 2 / 3 * (qx1 - cx), y1 = cy + 2 / 3 * (qy1 - cy);
-          const x2  = x  + 2 / 3 * (qx1 - x),  y2 = y  + 2 / 3 * (qy1 - y);
-          pdf.curveTo(tx(x1), ty(y1), tx(x2), ty(y2), tx(x), ty(y));
-          lastCpx = qx1; lastCpy = qy1; cx = x; cy = y;
-        }
-        break;
-      case 'A':
-        for (let i = 0; i + 6 < nums.length; i += 7) {
-          const rx = Math.abs(nums[i]!);
-          const ry = Math.abs(nums[i + 1]!);
-          const xRot = nums[i + 2]! * Math.PI / 180;
-          const la   = nums[i + 3]! ? 1 : 0;
-          const sw   = nums[i + 4]! ? 1 : 0;
-          const x    = ax(i + 5), y = ay(i + 6);
-          if (rx < 1e-6 || ry < 1e-6) {
-            pdf.lineTo(tx(x), ty(y));
-          } else {
-            for (const [bx1, by1, bx2, by2, bx, by] of svgArcToBeziers(cx, cy, rx, ry, xRot, la, sw, x, y)) {
-              pdf.curveTo(tx(bx1), ty(by1), tx(bx2), ty(by2), tx(bx), ty(by));
-            }
-          }
-          cx = x; cy = y;
-          lastCpx = cx; lastCpy = cy;
-        }
-        break;
-      case 'Z':
-        pdf.close();
-        // SVG: after closepath the current point returns to the subpath's start, so a
-        // following relative command (`z m…`) is offset from there — not the last drawn
-        // point. Without this the mono-white SUSE wordmark mangled (hourglass 'S').
-        cx = sx; cy = sy;
-        break;
-    }
-
-    lastCmd = C;
-    // Preserve the stored control point after curve commands so the next smooth
-    // command can reflect it: C/S keep the cubic control point, Q/T the quadratic
-    // one. Everything else has no control point, so it collapses to the current
-    // point. (Resetting after Q/T here was the bug that mangled smooth-quad glyphs.)
-    if (C !== 'C' && C !== 'S' && C !== 'Q' && C !== 'T') { lastCpx = cx; lastCpy = cy; }
-  }
-}
-
-// Converts an SVG arc command to cubic bezier curve segments.
-// Returns array of [cp1x, cp1y, cp2x, cp2y, endX, endY] per segment.
-// Algorithm from SVG spec appendix F.6.
-function svgArcToBeziers(x1: number, y1: number, rx: number, ry: number, phi: number, fa: number, fs: number, x2: number, y2: number): [number, number, number, number, number, number][] {
-  if (x1 === x2 && y1 === y2) return [];
-
-  const cosP = Math.cos(phi);
-  const sinP = Math.sin(phi);
-
-  const dx = (x1 - x2) / 2;
-  const dy = (y1 - y2) / 2;
-  const x1p =  cosP * dx + sinP * dy;
-  const y1p = -sinP * dx + cosP * dy;
-
-  let rx2 = rx * rx, ry2 = ry * ry;
-  const x1p2 = x1p * x1p, y1p2 = y1p * y1p;
-  const lam = x1p2 / rx2 + y1p2 / ry2;
-  if (lam > 1) {
-    const sl = Math.sqrt(lam);
-    rx *= sl; ry *= sl; rx2 = rx * rx; ry2 = ry * ry;
-  }
-
-  const num  = Math.max(0, rx2 * ry2 - rx2 * y1p2 - ry2 * x1p2);
-  const den  = rx2 * y1p2 + ry2 * x1p2;
-  const coef = (fa === fs ? -1 : 1) * Math.sqrt(num / den);
-  const cxp  =  coef * rx * y1p / ry;
-  const cyp  = -coef * ry * x1p / rx;
-
-  const cx = cosP * cxp - sinP * cyp + (x1 + x2) / 2;
-  const cy = sinP * cxp + cosP * cyp + (y1 + y2) / 2;
-
-  const angV = (ux: number, uy: number, vx: number, vy: number) => {
-    const sign = (ux * vy - uy * vx) < 0 ? -1 : 1;
-    const dot  = ux * vx + uy * vy;
-    const len  = Math.sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
-    return sign * Math.acos(Math.max(-1, Math.min(1, dot / len)));
-  };
-
-  const theta1 = angV(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
-  let dtheta   = angV((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
-  if (!fs && dtheta > 0) dtheta -= 2 * Math.PI;
-  if (fs  && dtheta < 0) dtheta += 2 * Math.PI;
-
-  const n  = Math.max(1, Math.ceil(Math.abs(dtheta) / (Math.PI / 2)));
-  const dt = dtheta / n;
-  const results: [number, number, number, number, number, number][] = [];
-
-  for (let i = 0; i < n; i++) {
-    const t1 = theta1 + i * dt;
-    const t2 = theta1 + (i + 1) * dt;
-    const alpha = (4 / 3) * Math.tan(dt / 4);
-
-    const cos1 = Math.cos(t1), sin1 = Math.sin(t1);
-    const cos2 = Math.cos(t2), sin2 = Math.sin(t2);
-
-    const ep1x = cosP * (rx * cos1) - sinP * (ry * sin1) + cx;
-    const ep1y = sinP * (rx * cos1) + cosP * (ry * sin1) + cy;
-    const dp1x = cosP * (-rx * sin1) - sinP * (ry * cos1);
-    const dp1y = sinP * (-rx * sin1) + cosP * (ry * cos1);
-    const ep2x = cosP * (rx * cos2) - sinP * (ry * sin2) + cx;
-    const ep2y = sinP * (rx * cos2) + cosP * (ry * sin2) + cy;
-    const dp2x = cosP * (-rx * sin2) - sinP * (ry * cos2);
-    const dp2y = sinP * (-rx * sin2) + cosP * (ry * cos2);
-
-    results.push([
-      ep1x + alpha * dp1x, ep1y + alpha * dp1y,
-      ep2x - alpha * dp2x, ep2y - alpha * dp2y,
-      ep2x, ep2y,
-    ]);
-  }
-
-  return results;
-}
 
 // Walks the live DOM tree and emits jsPDF vector objects:
 //   • background-color → filled rect / roundedRect
@@ -4670,19 +4002,6 @@ async function bakeImageFilter(imgEl: any, dataUrl: string, filterStr: string | 
   } catch { return dataUrl; }
 }
 
-// Apply CSS text-transform to a display string. CSS transforms text only at paint
-// time (textContent is unchanged), so the vector walkers — which read textContent
-// — must apply it themselves or vector exports show the original case. upper/lower
-// are 1:1 so they don't disturb per-line substring offsets; capitalize upcases the
-// first letter of each whitespace-separated word (locale-default).
-function applyTextTransform(str: string, transform: string | null | undefined): string {
-  switch (transform) {
-    case 'uppercase': return str.toUpperCase();
-    case 'lowercase': return str.toLowerCase();
-    case 'capitalize': return str.replace(/(^|[\s ])([^\s ])/gu, (_, p, c) => p + c.toUpperCase());
-    default: return str;
-  }
-}
 
 // Clips an image to a circle via an offscreen canvas. Used for headshots that
 // carry border-radius: 50%. Returns a PNG data URL.
@@ -4959,153 +4278,9 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   return opts.strongPassword ? encryptPdfStrong(cmykBlob, opts.strongPassword) : cmykBlob;
 }
 
-// A resolved brand-palette hit: the CMYK 4-tuple (0–1) to substitute — a plain
-// process-locked (or auto-derived-and-measured) swatch's own cmyk, or, for a
-// swatch with no explicit cmyk lock, one derived from its screen hex — plus,
-// when the swatch is ALSO spot-locked, the spot's name for a true /Separation
-// colourspace substitution in the PDF path (the other CMYK paths — TIFF, EPS —
-// only ever use .cmyk; see their own scope notes). cmyk and spot are
-// independent locks (see BrandPaletteEntry's doc comment): an explicit cmyk
-// lock is never overridden by a spot lock's derived equivalent, so a
-// separately-tuned process build survives even when a spot is also set.
-interface PaletteSpotHit { name: string; cmyk: [number, number, number, number]; }
-interface PaletteHit { cmyk: [number, number, number, number]; spot?: PaletteSpotHit; }
-
-// Builds a lookup map from quantised RGB keys (derived from palette hex values) to
-// their locked CMYK (+ optional spot name). Shared by every CMYK export path
-// (PDF/TIFF/EPS) for exact brand-swatch matches.
-function buildCmykPaletteMap(palette: BrandPaletteEntry[]): Map<string, PaletteHit> {
-  const map = new Map<string, PaletteHit>();
-  for (const { hex, cmyk, spot } of palette) {
-    if (!hex || (!cmyk && !spot)) continue;
-    const h = hex.replace('#', '').toLowerCase();
-    if (h.length !== 6) continue;
-    const r = parseInt(h.slice(0, 2), 16) / 255;
-    const g = parseInt(h.slice(2, 4), 16) / 255;
-    const b = parseInt(h.slice(4, 6), 16) / 255;
-    // An explicit cmyk lock always wins; a spot-only lock derives its
-    // equivalent from the swatch's own hex (same fallback used when neither
-    // is locked at all).
-    const frac = cmyk && cmyk.length === 4 ? (cmyk.map(v => v / 100) as [number, number, number, number]) : rgbToCmyk(r, g, b);
-    map.set(cmykKey(r, g, b), spot ? { cmyk: frac, spot: { name: spot.name, cmyk: frac } } : { cmyk: frac });
-  }
-  return map;
-}
-
-// Deterministic /CSn resource names for every spot-locked entry in a palette map,
-// assigned up front so substitutePdfRgb can write the final name into the content
-// stream before the matching PDF colourspace object exists — renderCmykPdf only
-// actually creates that object, lazily, for a spot a content stream really used.
-function assignSpotResourceNames(paletteMap: Map<string, PaletteHit>): Map<string, string> {
-  const names = new Map<string, string>();
-  for (const hit of paletteMap.values()) {
-    if (hit.spot && !names.has(hit.spot.name)) names.set(hit.spot.name, `CS${names.size + 1}`);
-  }
-  return names;
-}
-
-// Quantise an RGB triple (0–1) to a brand-match key. The precision MUST match
-// what jsPDF writes into the content stream: it emits colour operators at two
-// decimals (254/255 → "1.", 124/255 → "0.49"), so the palette side has to bucket
-// to two decimals too — a 3-decimal key never matches jsPDF's "0.49" against the
-// hex-exact 0.486, and every brand colour silently falls through to the generic
-// conversion. No 0–255 channel lands on a .5 boundary at ×100, so jsPDF's
-// toFixed(2) and Math.round always agree.
-function cmykKey(r: number, g: number, b: number): string {
-  return `${Math.round(r * 100)},${Math.round(g * 100)},${Math.round(b * 100)}`;
-}
-
-// The quantised key a palette entry is matched on (mirrors buildCmykPaletteMap),
-// so usedKeys recorded during substitution can be filtered back to entries.
-function paletteHitKey(p: BrandPaletteEntry): string | null {
-  const h = (p?.hex ?? '').replace('#', '').toLowerCase();
-  if (h.length !== 6) return null;
-  return cmykKey(parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255);
-}
-
-// Resolves PDF-space RGB (0–1) against the brand palette map, recording a hit
-// (numeric or spot) into `used` so the verification colour bar can show only the
-// inks that actually substituted. Returns null on a miss (caller falls back to the
-// engine's generic device-CMYK conversion).
-function pdfColorHit(r: number, g: number, b: number, paletteMap: Map<string, PaletteHit>, used?: Set<string>): PaletteHit | null {
-  const key = cmykKey(r, g, b);
-  const hit = paletteMap.get(key);
-  if (hit) used?.add(key);
-  return hit ?? null;
-}
-
-// Formats a CMYK component (0–1) as a compact decimal string for PDF output.
-function cmykN(v: number): string {
-  return v.toFixed(4).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') || '0';
-}
-
-// Replaces `r g b rg` / `r g b RG` operators with their CMYK equivalents — a plain
-// DeviceCMYK "k"/"K" operator for a process-locked (or auto-derived, or naive
-// fallback) match, or, for a spot-locked match, a switch to that spot's
-// /Separation colourspace at full tint ("/CSn cs 1 scn" / "/CSn CS 1 SCN" — the
-// resource name comes from spotNames, assigned by assignSpotResourceNames). `used`
-// collects the brand palette keys that matched (for the colour bar); `usedSpots`
-// collects the spot names actually referenced, so renderCmykPdf only materialises
-// a /Separation object for spots a content stream really uses.
-function substitutePdfRgb(
-  text: string,
-  paletteMap: Map<string, PaletteHit>,
-  spotNames: Map<string, string>,
-  used?: Set<string>,
-  usedSpots?: Set<string>,
-): string {
-  const N = '([+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)';
-  const W = '[\\s]+';
-  return text
-    .replace(new RegExp(`${N}${W}${N}${W}${N}${W}\\brg\\b`, 'g'), (_, r, g, b) => {
-      const hit = pdfColorHit(+r, +g, +b, paletteMap, used);
-      if (hit?.spot) { usedSpots?.add(hit.spot.name); return `/${spotNames.get(hit.spot.name)} cs 1 scn`; }
-      const [c, m, y, k] = hit ? hit.cmyk : rgbToCmyk(+r, +g, +b);
-      return `${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} k`;
-    })
-    .replace(new RegExp(`${N}${W}${N}${W}${N}${W}\\bRG\\b`, 'g'), (_, r, g, b) => {
-      const hit = pdfColorHit(+r, +g, +b, paletteMap, used);
-      if (hit?.spot) { usedSpots?.add(hit.spot.name); return `/${spotNames.get(hit.spot.name)} CS 1 SCN`; }
-      const [c, m, y, k] = hit ? hit.cmyk : rgbToCmyk(+r, +g, +b);
-      return `${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} K`;
-    });
-}
-
-// Decompresses a zlib/FlateDecode byte buffer using the browser Streams API.
-async function inflateBytes(data: Uint8Array): Promise<Uint8Array> {
-  return pipeThroughTransform(new DecompressionStream('deflate'), data);
-}
-
-// Compresses bytes to zlib/FlateDecode format using the browser Streams API.
-async function deflateBytes(data: Uint8Array): Promise<Uint8Array> {
-  return pipeThroughTransform(new CompressionStream('deflate'), data);
-}
-
-async function pipeThroughTransform(transform: any, data: Uint8Array): Promise<Uint8Array> {
-  const writer = transform.writable.getWriter();
-  writer.write(data);
-  writer.close();
-  const reader = transform.readable.getReader();
-  const chunks: Uint8Array[] = [];
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  const total = chunks.reduce((n, c) => n + c.length, 0);
-  const out = new Uint8Array(total);
-  let i = 0;
-  for (const c of chunks) { out.set(c, i); i += c.length; }
-  return out;
-}
 
 
-function svgLen(val: string | number | null | undefined, total: number): number {
-  if (!val) return 0;
-  const s = String(val);
-  if (s.endsWith('%')) return (parseFloat(s) / 100) * total;
-  return parseFloat(s) || 0;
-}
+
 
 // The computed fill/stroke of a live-DOM SVG element — resolves SVG inheritance
 // (an ancestor group's paint) and currentColor. Empty for a detached element, so
@@ -5120,17 +4295,6 @@ function computedPaint(el: Element, prop: string): string {
 }
 
 
-// Map a CSS object-position to the equivalent SVG preserveAspectRatio alignment keyword
-// (xMin/xMid/xMax + YMin/YMid/YMax), so an <image> / nested <svg> in an SVG export
-// anchors to the same edge/corner as on screen and in the PDF path. Reuses the same
-// fraction parse: a fraction ≤¼ → Min, ≥¾ → Max, else Mid — exact for the nine anchors
-// the editor offers (0 / 0.5 / 1).
-function preserveAspectRatioAlign(objectPosition: string | null | undefined): string {
-  const [px, py] = objectPositionFractions(objectPosition);
-  const xa = px <= 0.25 ? 'xMin' : px >= 0.75 ? 'xMax' : 'xMid';
-  const ya = py <= 0.25 ? 'YMin' : py >= 0.75 ? 'YMax' : 'YMid';
-  return xa + ya;
-}
 
 /**
  * Resolve an element's stroke paint the way the browser does — the counterpart to
@@ -5175,79 +4339,6 @@ function resolveColor(el: any): Rgb | null {
   return computed ? parseSvgColor(computed) : null;
 }
 
-// CSS3 extended named-colour table. Without it, named colours (navy, red,
-// steelblue, …) parse to null and <text fill="navy">/<line stroke="red"> get
-// silently dropped from PDF (EMF renders them via svg-ir's own table).
-const SVG_NAMED_COLORS: Record<string, Rgb> = {
-  aliceblue: [240,248,255], antiquewhite: [250,235,215], aqua: [0,255,255],
-  aquamarine: [127,255,212], azure: [240,255,255], beige: [245,245,220],
-  bisque: [255,228,196], black: [0,0,0], blanchedalmond: [255,235,205],
-  blue: [0,0,255], blueviolet: [138,43,226], brown: [165,42,42],
-  burlywood: [222,184,135], cadetblue: [95,158,160], chartreuse: [127,255,0],
-  chocolate: [210,105,30], coral: [255,127,80], cornflowerblue: [100,149,237],
-  cornsilk: [255,248,220], crimson: [220,20,60], cyan: [0,255,255],
-  darkblue: [0,0,139], darkcyan: [0,139,139], darkgoldenrod: [184,134,11],
-  darkgray: [169,169,169], darkgreen: [0,100,0], darkgrey: [169,169,169],
-  darkkhaki: [189,183,107], darkmagenta: [139,0,139], darkolivegreen: [85,107,47],
-  darkorange: [255,140,0], darkorchid: [153,50,204], darkred: [139,0,0],
-  darksalmon: [233,150,122], darkseagreen: [143,188,143], darkslateblue: [72,61,139],
-  darkslategray: [47,79,79], darkslategrey: [47,79,79], darkturquoise: [0,206,209],
-  darkviolet: [148,0,211], deeppink: [255,20,147], deepskyblue: [0,191,255],
-  dimgray: [105,105,105], dimgrey: [105,105,105], dodgerblue: [30,144,255],
-  firebrick: [178,34,34], floralwhite: [255,250,240], forestgreen: [34,139,34],
-  fuchsia: [255,0,255], gainsboro: [220,220,220], ghostwhite: [248,248,255],
-  gold: [255,215,0], goldenrod: [218,165,32], gray: [128,128,128],
-  green: [0,128,0], greenyellow: [173,255,47], grey: [128,128,128],
-  honeydew: [240,255,240], hotpink: [255,105,180], indianred: [205,92,92],
-  indigo: [75,0,130], ivory: [255,255,240], khaki: [240,230,140],
-  lavender: [230,230,250], lavenderblush: [255,240,245], lawngreen: [124,252,0],
-  lemonchiffon: [255,250,205], lightblue: [173,216,230], lightcoral: [240,128,128],
-  lightcyan: [224,255,255], lightgoldenrodyellow: [250,250,210], lightgray: [211,211,211],
-  lightgreen: [144,238,144], lightgrey: [211,211,211], lightpink: [255,182,193],
-  lightsalmon: [255,160,122], lightseagreen: [32,178,170], lightskyblue: [135,206,250],
-  lightslategray: [119,136,153], lightslategrey: [119,136,153], lightsteelblue: [176,196,222],
-  lightyellow: [255,255,224], lime: [0,255,0], limegreen: [50,205,50],
-  linen: [250,240,230], magenta: [255,0,255], maroon: [128,0,0],
-  mediumaquamarine: [102,205,170], mediumblue: [0,0,205], mediumorchid: [186,85,211],
-  mediumpurple: [147,112,219], mediumseagreen: [60,179,113], mediumslateblue: [123,104,238],
-  mediumspringgreen: [0,250,154], mediumturquoise: [72,209,204], mediumvioletred: [199,21,133],
-  midnightblue: [25,25,112], mintcream: [245,255,250], mistyrose: [255,228,225],
-  moccasin: [255,228,181], navajowhite: [255,222,173], navy: [0,0,128],
-  oldlace: [253,245,230], olive: [128,128,0], olivedrab: [107,142,35],
-  orange: [255,165,0], orangered: [255,69,0], orchid: [218,112,214],
-  palegoldenrod: [238,232,170], palegreen: [152,251,152], paleturquoise: [175,238,238],
-  palevioletred: [219,112,147], papayawhip: [255,239,213], peachpuff: [255,218,185],
-  peru: [205,133,63], pink: [255,192,203], plum: [221,160,221],
-  powderblue: [176,224,230], purple: [128,0,128], rebeccapurple: [102,51,153],
-  red: [255,0,0], rosybrown: [188,143,143], royalblue: [65,105,225],
-  saddlebrown: [139,69,19], salmon: [250,128,114], sandybrown: [244,164,96],
-  seagreen: [46,139,87], seashell: [255,245,238], sienna: [160,82,45],
-  silver: [192,192,192], skyblue: [135,206,235], slateblue: [106,90,205],
-  slategray: [112,128,144], slategrey: [112,128,144], snow: [255,250,250],
-  springgreen: [0,255,127], steelblue: [70,130,180], tan: [210,180,140],
-  teal: [0,128,128], thistle: [216,191,216], tomato: [255,99,71],
-  turquoise: [64,224,208], violet: [238,130,238], wheat: [245,222,179],
-  white: [255,255,255], whitesmoke: [245,245,245], yellow: [255,255,0],
-  yellowgreen: [154,205,50],
-};
-
-function parseSvgColor(color: string | null): Rgb | null {
-  if (!color) return null;
-  const lc = color.toLowerCase().trim();
-  if (lc === 'none' || lc === 'transparent') return null;
-  if (lc.startsWith('#')) {
-    const h = lc.slice(1);
-    if (h.length === 3) return [
-      parseInt(h[0]!+h[0]!, 16), parseInt(h[1]!+h[1]!, 16), parseInt(h[2]!+h[2]!, 16),
-    ];
-    if (h.length === 6) return [
-      parseInt(h.slice(0,2), 16), parseInt(h.slice(2,4), 16), parseInt(h.slice(4,6), 16),
-    ];
-  }
-  const m = lc.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-  if (m) return [+m[1]!, +m[2]!, +m[3]!];
-  return SVG_NAMED_COLORS[lc] ?? null;
-}
 
 // Ensures a canvas is exactly w×h logical pixels. dom-to-image-more may return
 // a physical-pixel canvas (canvas.width = w * devicePixelRatio) on HiDPI screens,

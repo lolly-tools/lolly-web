@@ -7,8 +7,9 @@
  * the downloads one at a time with a delay so the browser reliably accepts a
  * burst of saves — some browsers drop rapid-fire programmatic downloads.
  */
-import { zip, zipSync, deflateSync, strToU8, type Zippable } from 'fflate';
+import { deflateSync, strToU8, type Zippable } from 'fflate';
 import { buildEncryptedZip, crc32, type ZipTier, type ZipEntryInput } from '@lolly/engine';
+import { zipAsync } from '../lib/zip.ts';
 
 /** A rendered output described in the manifest (`lolly.txt`). */
 interface ManifestFile {
@@ -194,18 +195,6 @@ export async function buildZip(files: ZipFile[], meta: ZipMeta = {}): Promise<Bl
   if (meta.csv) entries['lolly-batch.csv'] = [strToU8(meta.csv), { level: 6 }];
   const zipped = await zipAsync(entries);
   return new Blob([zipped], { type: 'application/zip' });
-}
-
-// Zip off the main thread: fflate's async zip spins up a Worker, so packaging a
-// large batch (hundreds of PNGs/PDFs) no longer freezes the tab the way zipSync
-// did. The bytes are identical to the synchronous zipper. Falls back to zipSync
-// where Workers aren't available (e.g. some embedded WebViews), so behaviour is
-// preserved everywhere.
-function zipAsync(entries: Zippable): Promise<Uint8Array<ArrayBuffer>> {
-  if (typeof Worker === 'undefined') return Promise.resolve(zipSync(entries));
-  return new Promise((resolve, reject) => {
-    zip(entries, (err, data) => (err ? reject(err) : resolve(data)));
-  });
 }
 
 /** Save a single Blob via a transient object-URL anchor. */

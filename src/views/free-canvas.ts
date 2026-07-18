@@ -3683,8 +3683,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!Number.isFinite(n)) return dflt;
     return n < lo ? lo : (n > hi ? hi : n);
   }
-  const HTML_ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-  function escapeHtml(s: any): string { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => HTML_ESC[c]!); }
+  // Delegates to the canonical 5-char escape (utils.ts) — this used to hand-roll a 4-char
+  // (no `'`) escape, safe only by accident of every call site using double-quoted attrs.
+  function escapeHtml(s: any): string { return escape(s); }
   function fmtDate(iso: any): string {
     try { return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
     catch { return String(iso); }
