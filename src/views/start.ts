@@ -117,7 +117,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     return;
   }
 
-  const tabParam = new URLSearchParams(params).get('tab') ?? '';
+  const startSearch = new URLSearchParams(params);
+  const tabParam = startSearch.get('tab') ?? '';
+  // Read-only deep-link flag: `#/start?tab=color&wheel` opens the OKLCH Colour
+  // chart on mount. Consumed here; never propagated into a generated share link.
+  const wantWheel = startSearch.has('wheel');
   let activeTab: BrandTabKey = (TAB_KEYS.has(tabParam) ? tabParam : 'logos') as BrandTabKey;
 
   viewEl.innerHTML = `
@@ -279,6 +283,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     },
   }) : ((key: string, _opts?: { focus?: boolean }) => { activeTab = key as BrandTabKey; });
   selectTab(activeTab);
+
+  // Deep-link: `#/start?tab=color&wheel` opens the OKLCH Colour chart on mount —
+  // the same folded card the Colours tab reveals on click. Reuses the editor's
+  // own opener (it repaints the wheel via its toggle handler). A no-op when the
+  // editor didn't mount (failed/locked) or the chart card is absent (openColorChart
+  // returns false), so a locked/degraded studio deep-links gracefully. The flag
+  // is consumed here — selectTab's replaceState above already dropped it from the URL.
+  if (activeTab === 'color' && wantWheel) editor?.openColorChart();
 
   // ── Save & continue / finish ─────────────────────────────────────────────────
   const finish = (): void => {

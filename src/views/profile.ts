@@ -434,6 +434,19 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
   }
 
+  // Any collapsible section is deep-linkable OPEN: #/profile?focus=<section-id>
+  // expands it (setting `open` fires the toggle that lazy-loads storage/images —
+  // and the initial-open check at the bottom catches it too) and scrolls it into
+  // view. So a share link OR a screenshot recipe can reproduce an expanded section,
+  // instead of that state living only in a click no URL records.
+  if (focusParam && ['activity-section', 'storage-section', 'feature-flags-section', 'identity-section'].includes(focusParam)) {
+    const sec = viewEl.querySelector<HTMLDetailsElement>('#' + focusParam);
+    if (sec) {
+      sec.open = true;
+      requestAnimationFrame(() => sec.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
+  }
+
   // Appearance — theme preview cards (moved here from the dashboard). Each preview
   // applies the theme app-wide immediately (applyTheme mirrors to localStorage +
   // updates the PWA chrome colour) and persists it to the profile (canonical). The

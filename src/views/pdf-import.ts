@@ -67,6 +67,10 @@ interface ImageDesc {
   colorSpace: string | null;
   bpc: number;
   predictor: number | null;
+  /** Soft mask (/SMask) — a grayscale alpha image composited over the base at
+   *  decode time. How print engines encode blurred shadows and any alpha raster:
+   *  without it the base decodes as an opaque plate. */
+  smask?: ImageDesc;
 }
 
 // ── document loading + per-page interpretation (shared by both surfaces) ────────
@@ -146,9 +150,11 @@ export async function parsePdfFile(
   const { nodes, width, height, imageStreams } = interpretPage(doc, pageIndex);
   if (!nodes.length) throw new Error('Couldn’t find any importable artwork on that page.');
 
-  // Resolve placeholders → stored assets.
+  // Resolve placeholders → stored assets. Clip stacks are a serializer concern
+  // (pageToSvg honours them); free-canvas boxes can't clip, so drop them here.
   const vecCache = new Map<string, unknown>();
   for (const n of nodes) {
+    delete n._clips;
     try {
       if (n._vectorPath) {
         const ref = await storeVector(host, n, vecCache);
@@ -209,22 +215,14 @@ function extractResources(ctx: PDFContext, resDict: Ref, imageStreams: Map<strin
   }
 
   for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'Font'))) {
-    res.fonts[name] = buildFontInfo(ctx, ref);
+    res.fonts[name] = buildFontInfo(ctx, ref, imageStreams, depth);
   }
 
   for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'XObject'))) {
     const subtype = nameOf(ctx, getKey(ctx, ref, 'Subtype'));
     if (subtype === 'Image') {
       const key = `img${imageStreams.size}`;
-      imageStreams.set(key, {
-        stream: ctx.lookup(ref) as PDFRawStream,
-        filter: filterList(ctx, getKey(ctx, ref, 'Filter')),
-        width: numOf(ctx, getKey(ctx, ref, 'Width')) || 0,
-        height: numOf(ctx, getKey(ctx, ref, 'Height')) || 0,
-        colorSpace: colorSpaceName(ctx, getKey(ctx, ref, 'ColorSpace')),
-        bpc: numOf(ctx, getKey(ctx, ref, 'BitsPerComponent')) || 8,
-        predictor: numOf(ctx, getKey(ctx, dictOf(ctx, getKey(ctx, ref, 'DecodeParms')), 'Predictor')),
-      });
+      imageStreams.set(key, makeImageDesc(ctx, ref));
       res.xobjects[name] = { kind: 'image', imageKey: key };
     } else if (subtype === 'Form') {
       const mtx = ctx.lookup(getKey(ctx, ref, 'Matrix'));
@@ -246,6 +244,27 @@ function extractResources(ctx: PDFContext, resDict: Ref, imageStreams: Map<strin
   return res;
 }
 
+/** Descriptor for one image XObject, including its /SMask (one level — an SMask
+ *  never carries an SMask of its own). */
+function makeImageDesc(ctx: PDFContext, ref: Ref, depth = 0): ImageDesc {
+  const desc: ImageDesc = {
+    stream: ctx.lookup(ref as PDFObject | undefined) as PDFRawStream,
+    filter: filterList(ctx, getKey(ctx, ref, 'Filter')),
+    width: numOf(ctx, getKey(ctx, ref, 'Width')) || 0,
+    height: numOf(ctx, getKey(ctx, ref, 'Height')) || 0,
+    colorSpace: colorSpaceName(ctx, getKey(ctx, ref, 'ColorSpace')),
+    bpc: numOf(ctx, getKey(ctx, ref, 'BitsPerComponent')) || 8,
+    predictor: numOf(ctx, getKey(ctx, dictOf(ctx, getKey(ctx, ref, 'DecodeParms')), 'Predictor')),
+  };
+  if (depth === 0) {
+    const smaskRef = getKey(ctx, ref, 'SMask');
+    if (smaskRef && ctx.lookup(smaskRef as PDFObject | undefined) instanceof PDFRawStream) {
+      desc.smask = makeImageDesc(ctx, smaskRef, 1);
+    }
+  }
+  return desc;
+}
+
 function filterList(ctx: PDFContext, o: Ref): string[] {
   o = ctx.lookup(o as PDFObject | undefined);
   if (o instanceof PDFName) return [o.asString().replace(/^\//, '')];
@@ -255,7 +274,18 @@ function filterList(ctx: PDFContext, o: Ref): string[] {
 function colorSpaceName(ctx: PDFContext, o: Ref): string | null {
   o = ctx.lookup(o as PDFObject | undefined);
   if (o instanceof PDFName) return o.asString().replace(/^\//, '');
-  if (o instanceof PDFArray && o.size()) return nameOf(ctx, o.get(0));
+  if (o instanceof PDFArray && o.size()) {
+    const head = nameOf(ctx, o.get(0));
+    // ICCBased is an embedded profile with no device name — resolve it to a
+    // device space by its component count (/N). Chromium encodes EVERY print
+    // raster as [/ICCBased <N=3>], so without this every screenshot/photo on a
+    // captured page decodes as "unsupported" and drops.
+    if (head === 'ICCBased') {
+      const n = numOf(ctx, dictOf(ctx, o.get(1))?.get(PDFName.of('N')));
+      return n === 1 ? 'DeviceGray' : n === 4 ? 'DeviceCMYK' : 'DeviceRGB';
+    }
+    return head;
+  }
   return null;
 }
 function pdfString(ctx: PDFContext, o: Ref): string {
@@ -269,7 +299,7 @@ function pdfString(ctx: PDFContext, o: Ref): string {
 
 // ── fonts ─────────────────────────────────────────────────────────────────────
 
-function buildFontInfo(ctx: PDFContext, fontRef: Ref): PdfFontInfo {
+function buildFontInfo(ctx: PDFContext, fontRef: Ref, imageStreams: Map<string, ImageDesc>, depth: number): PdfFontInfo {
   const subtype = nameOf(ctx, getKey(ctx, fontRef, 'Subtype')) || '';
   const twoByte = subtype === 'Type0';
   const rawBase = nameOf(ctx, getKey(ctx, fontRef, 'BaseFont')) || '';
@@ -281,6 +311,36 @@ function buildFontInfo(ctx: PDFContext, fontRef: Ref): PdfFontInfo {
   const tuText = decodedText(ctx, getKey(ctx, fontRef, 'ToUnicode'));
   if (tuText) {
     try { info.decode = toUnicodeDecoder(parseToUnicode(tuText), twoByte); } catch { /* Latin-1 fallback */ }
+  }
+
+  // Type3 glyphs are content-stream drawing procedures — the interpreter executes
+  // them into real vector paths (engine pdf-map drawType3). This is how Chromium's
+  // printToPDF encodes app text, so it's the path every docs screenshot takes.
+  if (subtype === 'Type3') {
+    const fmArr = ctx.lookup(getKey(ctx, fontRef, 'FontMatrix'));
+    const fontMatrix = fmArr instanceof PDFArray ? fmArr.asArray().map((v) => numOf(ctx, v) ?? 0) : [0.001, 0, 0, 0.001, 0, 0];
+    const charProcs: Record<string, string> = {};
+    for (const [gname, gref] of dictEntries(ctx, getKey(ctx, fontRef, 'CharProcs'))) {
+      const t = decodedText(ctx, gref);
+      if (t != null) charProcs[gname] = t;
+    }
+    const encoding: Record<number, string> = {};
+    const encDict = dictOf(ctx, getKey(ctx, fontRef, 'Encoding'));
+    const diffs = encDict ? ctx.lookup(encDict.get(PDFName.of('Differences'))) : null;
+    if (diffs instanceof PDFArray) {
+      let code = 0;
+      for (const item of diffs.asArray()) {
+        const o = ctx.lookup(item);
+        if (o instanceof PDFNumber) code = o.asNumber();
+        else if (o instanceof PDFName) { encoding[code] = o.asString().replace(/^\//, ''); code++; }
+      }
+    }
+    const widths: Record<number, number> = {};
+    const firstChar = numOf(ctx, getKey(ctx, fontRef, 'FirstChar')) ?? 0;
+    const wArr = ctx.lookup(getKey(ctx, fontRef, 'Widths'));
+    if (wArr instanceof PDFArray) wArr.asArray().forEach((v, i) => { const w = numOf(ctx, v); if (w != null) widths[firstChar + i] = w; });
+    info.type3 = { fontMatrix, charProcs, encoding, widths, resources: extractResources(ctx, getKey(ctx, fontRef, 'Resources'), imageStreams, depth + 1) };
+    info.twoByte = false;
   }
   return info;
 }
@@ -305,25 +365,88 @@ function weightFromName(name: string): number {
 async function imageBytes(desc: ImageDesc, warn: (msg: string) => void): Promise<{ bytes: Uint8Array; mime: string; ext: string } | null> {
   const last = desc.filter[desc.filter.length - 1];
   try {
+    let base: { bytes: Uint8Array; mime: string; ext: string } | null = null;
     if (last === 'DCTDecode') {
       // Raw stream bytes ARE the JPEG the browser can decode directly.
-      return { bytes: desc.stream.getContents(), mime: 'image/jpeg', ext: 'jpg' };
+      base = { bytes: desc.stream.getContents(), mime: 'image/jpeg', ext: 'jpg' };
+    } else {
+      // Flate RGB/Gray at 8bpc. Accept no predictor / TIFF-none (<=1) AND PNG
+      // predictors (>=10) — the latter is what jsPDF's addImage(png,'PNG') writes
+      // (/Predictor 15), so this is how /verify can read Lolly's OWN PDF PNG embeds.
+      // TIFF predictor 2 (2..9) stays skipped (flateImageToPng would return null).
+      const pred = (desc.predictor as number) ?? 1;
+      if ((last === 'FlateDecode' || last == null) && desc.width > 0 && desc.height > 0 && desc.bpc === 8 && (pred <= 1 || pred >= 10)) {
+        const png = await flateImageToPng(desc);
+        if (png) base = { bytes: png, mime: 'image/png', ext: 'png' };
+      }
     }
-    // Flate RGB/Gray at 8bpc. Accept no predictor / TIFF-none (<=1) AND PNG
-    // predictors (>=10) — the latter is what jsPDF's addImage(png,'PNG') writes
-    // (/Predictor 15), so this is how /verify can read Lolly's OWN PDF PNG embeds.
-    // TIFF predictor 2 (2..9) stays skipped (flateImageToPng would return null).
-    const pred = (desc.predictor as number) ?? 1;
-    if ((last === 'FlateDecode' || last == null) && desc.width > 0 && desc.height > 0 && desc.bpc === 8 && (pred <= 1 || pred >= 10)) {
-      const png = await flateImageToPng(desc);
-      if (png) return { bytes: png, mime: 'image/png', ext: 'png' };
+    if (!base) {
+      warn(`Skipped an embedded image in an unsupported encoding (${last || 'raw'}).`);
+      return null;
     }
-    warn(`Skipped an embedded image in an unsupported encoding (${last || 'raw'}).`);
-    return null;
+    // A soft mask carries the image's alpha as a separate grayscale plane — how
+    // print engines encode blurred shadows and any transparent raster. Composite
+    // it, or the base renders as an opaque plate.
+    if (desc.smask) {
+      const masked = await applySmask(base, desc.smask);
+      if (masked) return masked;
+      warn('Kept an embedded image opaque (its soft mask was undecodable).');
+    }
+    return base;
   } catch (err) {
     warn(`Couldn’t import an embedded image (${msg(err)}).`);
     return null;
   }
+}
+
+/** Decode displayable bytes into pixels via the browser's own decoders. */
+async function decodeToImageData(bytes: Uint8Array, mime: string): Promise<ImageData | null> {
+  try {
+    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    const g = c.getContext('2d')!;
+    g.drawImage(bmp, 0, 0);
+    return g.getImageData(0, 0, bmp.width, bmp.height);
+  } catch {
+    return null;
+  }
+}
+
+/** Merge a /SMask's grayscale plane into the base image's alpha channel (nearest-
+ *  neighbour scaled when the planes' dimensions differ). Returns a PNG. */
+async function applySmask(base: { bytes: Uint8Array; mime: string }, smask: ImageDesc): Promise<{ bytes: Uint8Array; mime: string; ext: string } | null> {
+  const img = await decodeToImageData(base.bytes, base.mime);
+  if (!img) return null;
+
+  // The alpha plane: Flate gray samples directly, or a JPEG-coded mask's luma.
+  let alpha: Uint8Array | Uint8ClampedArray | null = null;
+  let aw = smask.width, ah = smask.height;
+  if (smask.filter[smask.filter.length - 1] === 'DCTDecode') {
+    const m = await decodeToImageData(smask.stream.getContents(), 'image/jpeg');
+    if (m) {
+      const gray = new Uint8Array(m.width * m.height);
+      for (let i = 0; i < gray.length; i++) gray[i] = m.data[i * 4]!;
+      alpha = gray; aw = m.width; ah = m.height;
+    }
+  } else if (smask.bpc === 8) {
+    alpha = flateSamples(smask, 1);
+  }
+  if (!alpha || aw < 1 || ah < 1) return null;
+
+  const { width, height, data } = img;
+  for (let y = 0; y < height; y++) {
+    const sy = height === ah ? y : Math.min(ah - 1, Math.floor((y * ah) / height));
+    for (let x = 0; x < width; x++) {
+      const sx = width === aw ? x : Math.min(aw - 1, Math.floor((x * aw) / width));
+      data[(y * width + x) * 4 + 3] = alpha[sy * aw + sx]!;
+    }
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  canvas.getContext('2d')!.putImageData(img, 0, 0);
+  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+  return blob ? { bytes: new Uint8Array(await blob.arrayBuffer()), mime: 'image/png', ext: 'png' } : null;
 }
 
 async function resolveImage(host: HostV1, desc: ImageDesc, warn: (msg: string) => void): Promise<unknown> {
@@ -331,28 +454,35 @@ async function resolveImage(host: HostV1, desc: ImageDesc, warn: (msg: string) =
   return got ? storeBytes(host, got.bytes, got.mime, got.ext) : null;
 }
 
-// Decode a Flate RGB/Gray image's raw samples into a PNG via a canvas.
-async function flateImageToPng(desc: ImageDesc): Promise<Uint8Array | null> {
-  const cs = desc.colorSpace || '';
-  const comps = /RGB/i.test(cs) ? 3 : (/Gray/i.test(cs) ? 1 : 0);
-  if (!comps) return null;
-  if (desc.bpc !== 8) return null;
-  const { width, height } = desc;
-  let samples = decodePDFRawStream(desc.stream).decode();
-  // PNG predictor (/Predictor >= 10): pdf-lib's FlateStream only inflates — it
-  // never applies predictors — so `samples` is still PNG-row-filtered (a 1-byte
-  // filter tag + width*comps bytes per row). Reverse the filters to get real
-  // pixels. bytesPerPixel = comps at 8bpc. TIFF predictor 2 (2..9) isn't handled.
+/** Inflate + de-predictor a Flate image stream's raw samples (8bpc only).
+ *  PNG predictor (/Predictor >= 10): pdf-lib's FlateStream only inflates — it
+ *  never applies predictors — so the samples are still PNG-row-filtered (a 1-byte
+ *  filter tag + width*comps bytes per row); reverse them to get real pixels.
+ *  TIFF predictor 2 (2..9) isn't handled. Shared by the color path and /SMask
+ *  alpha planes (comps=1). */
+function flateSamples(desc: ImageDesc, comps: number): Uint8Array | Uint8ClampedArray | null {
+  if (desc.bpc !== 8 || desc.width < 1 || desc.height < 1) return null;
+  let samples: Uint8Array | Uint8ClampedArray;
+  try { samples = decodePDFRawStream(desc.stream).decode(); } catch { return null; }
   const pred = (desc.predictor as number) ?? 1;
   if (pred >= 10) {
-    const un = unfilterPng(samples, width, height, comps);
+    const un = unfilterPng(samples, desc.width, desc.height, comps);
     if (!un) return null;
     samples = un;
   } else if (pred > 1) {
     return null;
   }
-  const need = width * height * comps;
-  if (samples.length < need) return null;
+  return samples.length >= desc.width * desc.height * comps ? samples : null;
+}
+
+// Decode a Flate RGB/Gray image's raw samples into a PNG via a canvas.
+async function flateImageToPng(desc: ImageDesc): Promise<Uint8Array | null> {
+  const cs = desc.colorSpace || '';
+  const comps = /RGB/i.test(cs) ? 3 : (/Gray/i.test(cs) ? 1 : 0);
+  if (!comps) return null;
+  const { width, height } = desc;
+  const samples = flateSamples(desc, comps);
+  if (!samples) return null;
   const rgba = new Uint8ClampedArray(width * height * 4);
   for (let i = 0, s = 0, d = 0; i < width * height; i++) {
     if (comps === 3) { rgba[d] = samples[s]!; rgba[d + 1] = samples[s + 1]!; rgba[d + 2] = samples[s + 2]!; s += 3; }
@@ -414,17 +544,38 @@ export interface PdfPageSvg {
   elementCount: number;
 }
 
+export interface PdfPageSvgOpts {
+  warn?: (msg: string) => void;
+  /**
+   * Override an image node's payload. Called once per drawable image node with
+   * its geometry in the page's own (point) space and the decoded fallback data:
+   * URI (null when the XObject couldn't be decoded); return a data: URI to
+   * substitute, or null to keep the fallback. Lets a caller re-source rasters it
+   * knows better than the PDF's re-encode — the docs-screenshot pipeline swaps
+   * the app's ORIGINAL webp/canvas pixels back in (lib/pdf-vector-shot.ts).
+   */
+  resolveImage?: (rect: { x: number; y: number; w: number; h: number }, fallback: string | null) => string | null;
+  /**
+   * Outline a text run's glyphs to SVG path `d` strings, one per line (baseline
+   * at y=0, pen at x=0). Return null to keep the font-dependent `<text>` (an
+   * uncovered glyph, an unresolved font). Lets a caller that can shape text
+   * (HarfBuzz) make the SVG self-contained — the docs-screenshot pipeline outlines
+   * every run so a shot needs no fonts at render time (lib/pdf-vector-shot.ts).
+   */
+  outlineText?: (run: { text: string; fontFamily: string; fontWeight: string | number; fontSize: number }) => Promise<string[] | null>;
+}
+
 /** An opened document: page count + a cached page→SVG converter. */
 export interface PdfHandle {
   pageCount: number;
-  pageToSvg(index: number, opts?: { warn?: (msg: string) => void }): Promise<PdfPageSvg>;
+  pageToSvg(index: number, opts?: PdfPageSvgOpts): Promise<PdfPageSvg>;
 }
 
 function makeHandle(doc: PDFDocument): PdfHandle {
   const cache = new Map<number, PdfPageSvg>();
   return {
     pageCount: doc.getPageCount(),
-    async pageToSvg(index: number, { warn = () => {} }: { warn?: (msg: string) => void } = {}): Promise<PdfPageSvg> {
+    async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
       const hit = cache.get(index);
       if (hit) return hit;
       const { nodes, width, height, imageStreams } = interpretPage(doc, index);
@@ -438,6 +589,31 @@ function makeHandle(doc: PDFDocument): PdfHandle {
         const desc = imageStreams.get(key);
         const got = desc ? await imageBytes(desc, warn) : null;
         if (got) images[key] = `data:${got.mime};base64,${bytesToBase64(got.bytes)}`;
+      }
+      // Per-NODE substitution: the same XObject can draw at several geometries,
+      // so re-sourcing keys the override by node, leaving other uses untouched.
+      if (resolveImage) {
+        let i = 0;
+        for (const n of nodes) {
+          const key = n._imageXObject;
+          if (!key) continue;
+          const fallback = images[key] ?? null;
+          const sub = resolveImage({ x: n.x, y: n.y, w: n.w, h: n.h }, fallback);
+          if (sub && sub !== fallback) {
+            const nk = `${key}~${i++}`;
+            images[nk] = sub;
+            n._imageXObject = nk;
+          }
+        }
+      }
+      // Outline text runs to real <path>s (self-contained, no font at render
+      // time). Un-rotated runs only; a null result keeps the <text> fallback.
+      if (outlineText) {
+        for (const n of nodes) {
+          if (n.kind !== 'text' || !n.text || (n.rot && Math.abs(n.rot) > 0.5)) continue;
+          const lines = await outlineText({ text: n.text, fontFamily: n.fontFamily ?? '', fontWeight: n.fontWeight ?? 400, fontSize: n.fontSize ?? 12 });
+          if (lines && lines.length) n._outlinePath = lines;
+        }
       }
       const out: PdfPageSvg = {
         svg: pdfNodesToSvg(nodes, { width, height, images }),

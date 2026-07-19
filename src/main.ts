@@ -412,6 +412,19 @@ async function boot(): Promise<void> {
   const host = await createBridge();
   trackVisualViewport();
 
+  // Loopback-only tooling hook: the docs-screenshot pipeline (scripts/
+  // build-docs-shots.ts) prints an app page to PDF in its Chromium, then asks the
+  // app itself to convert that print into a self-contained true-vector SVG
+  // (lib/pdf-vector-shot.ts — the same interpreter the design-import path ships,
+  // plus in-page font outlining/inlining only the app can do). Registered HERE,
+  // after the host (with its text shaper) exists, and closing over it, so text
+  // outlines to <path>. Gated to loopback so it never becomes deployed surface;
+  // lazy import, so a normal session pays nothing for it.
+  if (/^(?:127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
+    (window as unknown as { __lollyVectorShot?: (b64: string) => Promise<unknown> }).__lollyVectorShot =
+      (b64: string) => import('./lib/pdf-vector-shot.ts').then((m) => m.pdfToVectorSvg(b64, host as unknown as Parameters<typeof m.pdfToVectorSvg>[1]));
+  }
+
   // Chrome follows the brand: override the theme accent triples from the active
   // brand's semantic primary (a doc with no semantic slots — SUSE's — leaves the
   // hardcoded chrome). Fire-and-forget; the accents refine in place once tokens land.

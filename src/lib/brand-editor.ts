@@ -536,6 +536,11 @@ export interface BrandEditorHandle {
    *  repaintPalette and only funnel through persist(), so a single hook point
    *  would miss one path. Returns an unsubscribe. */
   onPalette: (cb: () => void) => () => void;
+  /** Deep-link entry: reveal the folded Colour chart card (the OKLCH wheel) the
+   *  Colours tab opens on click — repaints itself via its own toggle handler.
+   *  Returns false when the card isn't present (a locked build renders no
+   *  studio), so a host can degrade gracefully. */
+  openColorChart: () => boolean;
 }
 
 export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts: BrandEditorOptions = {}): Promise<BrandEditorHandle> {
@@ -554,6 +559,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       reload: () => Promise.resolve(),
       closeOverlays: () => {},
       onPalette: () => () => {},
+      openColorChart: () => false,
     };
   }
 
@@ -2071,5 +2077,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     reload,
     closeOverlays: closeEditor,
     onPalette: (cb) => { paletteObservers.add(cb); return () => { paletteObservers.delete(cb); }; },
+    openColorChart: () => {
+      if (!chartDetails) return false;
+      chartDetails.open = true; // fires the toggle handler above → paintWheel()
+      chartDetails.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      return true;
+    },
   };
 }

@@ -4741,6 +4741,28 @@ function endFrameClock(c: FrameClockCanvas | null): void {
   if (c) c.__lollyFrameDriven = false;
 }
 
+// ── CSS animation/transition scrubbing (no tool opt-in required) ────────────
+// A plain template that animates via CSS `animation`/`transition` (no canvas,
+// no __lollyFrameRender) previously had its frames paced by whatever real time
+// elapsed between toCanvas() calls — capture jitter (DOM serialize + image
+// decode isn't constant-time) meant the exported motion could subtly drift
+// from the authored timing. getAnimations() exposes every CSSAnimation/
+// CSSTransition affecting the node, so each can be paused and scrubbed to the
+// exact elapsed ms for the frame being captured — the same exact-phase
+// guarantee __lollyFrameRender gives canvas tools, without requiring one.
+// No-op (returns false) for tools with no CSS animations, and for JS/rAF-driven
+// motion that never produces a Web Animations API Animation object — those
+// still need the explicit clock hook.
+function scrubAnimations(node: Element, ms: number): boolean {
+  const anims = node.getAnimations?.({ subtree: true }) ?? [];
+  if (anims.length === 0) return false;
+  for (const a of anims) {
+    if (a.playState !== 'paused') a.pause();
+    a.currentTime = ms;
+  }
+  return true;
+}
+
 async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
@@ -4758,6 +4780,7 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
   };
   const restore = await swapBlobUrls(node);
   const waitMs = (opts.wait ?? 1) * 1000;
+  const durationMs = (opts.duration ?? 5) * 1000;   // same default every caller uses to derive frameCount
   let settled = false;
   // Raise the driven flag now (before the first capture) so a frame-clock tool's
   // rAF loop stops advancing on its own; frame(t) then paints the exact phase.
@@ -4768,6 +4791,10 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
     async frame(t = 0): Promise<HTMLCanvasElement> {
       if (frameClock) renderFrameAt(frameClock, t);   // deterministic phase — no settle wait needed
       else if (!settled) { await new Promise<void>(r => setTimeout(r, waitMs)); settled = true; }
+      // Scrub any CSS animation/transition to the exact frame time regardless of
+      // frameClock — a clocked canvas can still share the DOM with CSS-animated
+      // chrome around it. No-op when the node has none.
+      scrubAnimations(node, t * durationMs);
       return lib.toCanvas(node, dtoOpts);
     },
     dispose() { endFrameClock(frameClock); restore(); },
@@ -4909,7 +4936,15 @@ async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
 // Hard ceiling on buffered frames (Phase 1 holds one ImageBitmap each). A normal
 // clip is well under this; it exists to bound memory when duration/fps are pushed
 // past the UI limits via the URL, which would otherwise OOM a mobile WebView.
-const MAX_VIDEO_FRAMES = 600;
+// Scaled off navigator.deviceMemory where it's reported (Chromium only — the API
+// caps at 8): an 8GB-class device keeps the historical 600, a 2GB mobile WebView
+// gets a tighter ceiling instead of the same flat number as desktop. Floored at
+// 200 so the default 5s clip (150 frames at 30fps) always completes.
+function maxVideoFrames(): number {
+  const gb = (navigator as { deviceMemory?: number }).deviceMemory;
+  if (!gb) return 600;
+  return Math.max(200, Math.round((Math.min(8, gb) / 8) * 600));
+}
 
 // ── Encode quality: explicit bitrate + deterministic frame delivery ──────────
 // Bitrate math lives in video-mime.ts (DOM-free, shared with recorder.ts) — the
@@ -5098,9 +5133,10 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // limit is bypassable via the URL) can't queue hundreds of bitmaps and OOM a
   // mobile WebView. The cap is generous for normal clips; beyond it the clip is
   // truncated and we warn through the log channel.
-  if (frameCount > MAX_VIDEO_FRAMES) {
-    _host?.log?.('warn', `Video capped at ${MAX_VIDEO_FRAMES} frames (requested ${frameCount}); lower the duration or frame rate for a longer clip.`);
-    frameCount = MAX_VIDEO_FRAMES;
+  const cap = maxVideoFrames();
+  if (frameCount > cap) {
+    _host?.log?.('warn', `Video capped at ${cap} frames (requested ${frameCount}); lower the duration or frame rate for a longer clip.`);
+    frameCount = cap;
   }
 
   // Phase 1: render all frames sequentially through the shared FrameSource.
@@ -5164,7 +5200,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // audio bed joins the stream here (not in Phase 1): replay is real-time, so
   // starting the looped source at recorder.start() keeps it in sync and its
   // loop naturally covers the actual replay length — including a clip
-  // truncated by MAX_VIDEO_FRAMES, where frames.length is the timeline.
+  // truncated by maxVideoFrames(), where frames.length is the timeline.
   const offscreen = document.createElement('canvas');
   offscreen.width  = targetW;
   offscreen.height = targetH;
@@ -5805,9 +5841,10 @@ async function renderGif(node: Element, opts: ExportOpts): Promise<Blob> {
   // Same memory ceiling as renderVideo: duration is URL-bypassable and the GIF
   // encoder buffers every written frame, so clamp to bound memory + warn through
   // the log channel. Generous for normal clips; beyond it the clip is truncated.
-  if (frameCount > MAX_VIDEO_FRAMES) {
-    _host?.log?.('warn', `GIF capped at ${MAX_VIDEO_FRAMES} frames (requested ${frameCount}); lower the duration for a longer clip.`);
-    frameCount = MAX_VIDEO_FRAMES;
+  const cap = maxVideoFrames();
+  if (frameCount > cap) {
+    _host?.log?.('warn', `GIF capped at ${cap} frames (requested ${frameCount}); lower the duration for a longer clip.`);
+    frameCount = cap;
   }
 
   // Shared FrameSource: same sequential, real-time capture as the video path.
@@ -5890,9 +5927,10 @@ async function renderApng(node: Element, opts: ExportOpts): Promise<Blob> {
   // Same memory ceiling as renderVideo: duration is URL-bypassable and every
   // frame is buffered as an encoded PNG in frames[], so clamp to bound memory +
   // warn through the log channel. Generous for normal clips; beyond it truncated.
-  if (frameCount > MAX_VIDEO_FRAMES) {
-    _host?.log?.('warn', `APNG capped at ${MAX_VIDEO_FRAMES} frames (requested ${frameCount}); lower the duration for a longer clip.`);
-    frameCount = MAX_VIDEO_FRAMES;
+  const cap = maxVideoFrames();
+  if (frameCount > cap) {
+    _host?.log?.('warn', `APNG capped at ${cap} frames (requested ${frameCount}); lower the duration for a longer clip.`);
+    frameCount = cap;
   }
 
   // Shared FrameSource: same sequential, real-time capture as the video path.
@@ -5960,9 +5998,10 @@ async function renderWebpAnim(node: Element, opts: ExportOpts): Promise<Blob> {
   const durationMs    = (opts.duration ?? 5) * 1000;
   let   frameCount    = Math.max(1, Math.round(durationMs / frameInterval));
 
-  if (frameCount > MAX_VIDEO_FRAMES) {
-    _host?.log?.('warn', `Animated WebP capped at ${MAX_VIDEO_FRAMES} frames (requested ${frameCount}); lower the duration for a longer clip.`);
-    frameCount = MAX_VIDEO_FRAMES;
+  const cap = maxVideoFrames();
+  if (frameCount > cap) {
+    _host?.log?.('warn', `Animated WebP capped at ${cap} frames (requested ${frameCount}); lower the duration for a longer clip.`);
+    frameCount = cap;
   }
 
   const source  = await createFrameSource(node, opts);
