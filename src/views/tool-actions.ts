@@ -253,7 +253,21 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // recent Chrome→both); non-video formats always pass. See keepFormat / VIDEO.
   const formats       = manifest.render.formats.filter(keepFormat);
   const hasAnimated   = formats.some(isAnimatedFmt);
-  const initialFmt    = (exportDefaults.format && formats.includes(exportDefaults.format)) ? exportDefaults.format : formats[0];
+  // matchExportFormat: default the export to a dropped file's OWN format (a JPEG →
+  // jpg) until the user picks one. Reads AssetRef.format off the flagged input.
+  const matchFmtInput = (manifest.inputs || []).find((i) => (i as { matchExportFormat?: boolean }).matchExportFormat);
+  const assetExportFormat = (): string | null => {
+    if (!matchFmtInput) return null;
+    const v = runtime.getModel().find((m) => m.id === matchFmtInput.id)?.value as { format?: string } | null | undefined;
+    let f = (v && typeof v === 'object' && v.format) ? String(v.format).toLowerCase() : '';
+    if (f === 'jpeg') f = 'jpg';
+    return f && formats.includes(f) ? f : null;
+  };
+  // A ?format= link or a saved session (exportDefaults.format) is an explicit choice
+  // and wins; otherwise follow the upload's format, falling back to the first format.
+  const initialFmt    = (exportDefaults.format && formats.includes(exportDefaults.format))
+    ? exportDefaults.format
+    : (assetExportFormat() || formats[0]);
   const videoDefaults = (manifest.render.video ?? {}) as { wait?: number; duration?: number };
   const defaultWait     = videoDefaults.wait     ?? 1;
   const defaultDuration = videoDefaults.duration ?? 5;
@@ -865,6 +879,27 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       refreshPrintUi(); // owns [data-pdf-only] (password) visibility — see below
       onUrlSync?.('format');
       onUrlSync?.('marks');  // bars may have flipped with the format
+    });
+  }
+
+  // matchExportFormat: keep the export format tracking the dropped file's own format
+  // until the user picks one. A ?format= link / saved session locks it up-front; any
+  // manual pick locks it too. Idempotent — the subscribe fires on every input change,
+  // but only acts when a NEW upload's format differs from the current selection. The
+  // subscription's lifetime is this mount's runtime.
+  if (formatEl && matchFmtInput) {
+    let formatLocked = !!exportDefaults.format;
+    let autoSetting = false;
+    formatEl.addEventListener('change', () => { if (!autoSetting) formatLocked = true; });
+    runtime.subscribe(() => {
+      if (formatLocked) return;
+      const f = assetExportFormat();
+      if (f && f !== formatEl.value) {
+        autoSetting = true;
+        formatEl.value = f;
+        formatEl.dispatchEvent(new Event('change', { bubbles: true }));  // runs the per-format UI refresh above
+        autoSetting = false;
+      }
     });
   }
 

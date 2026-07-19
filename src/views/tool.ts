@@ -351,7 +351,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // Chromium browser a capture tool offers the extension ('install'); otherwise
   // "desktop only" ('unavailable').
   const sup = toolSupport(tool.manifest, host.capabilities);
-  if (sup.status === 'install') { mountInstallPrompt(viewEl, tool.manifest); return; }
+  // A capture tool on a Chromium browser without the extension: MOUNT it anyway.
+  // url-shot's visual composer + recipe output need no capture — only EXPORT does —
+  // so a full-screen gate would hide a core authoring surface. Mount the tool and
+  // steer to the extension/desktop for the actual capture with a dismissible banner
+  // (below). A genuinely unavailable capability (non-Chromium, or a non-capture
+  // need) still can't run here at all.
+  const captureHint = sup.status === 'install';
   if (sup.status === 'unavailable') { mountUnavailable(viewEl, tool.manifest, sup.unmet); return; }
 
   // A manifest `network.allowlist` gives THIS mount a host clone whose `net`
@@ -759,6 +765,14 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       <button type="button" class="tool-notice-close" id="dropped-assets-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
     </div>` : '';
 
+  // Capture tool without the extension (see the gate above): mounted for composition,
+  // so tell the author capture-to-file needs the extension/desktop while compose works.
+  const captureNotice = captureHint ? `
+    <div class="tool-notice" role="status" id="capture-hint-notice">
+      <span class="tool-notice-text">${t('Compose a shot and copy its recipe here. Saving it to a file needs the desktop app or browser extension.')} <a href="${escape(docsHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a></span>
+      <button type="button" class="tool-notice-close" id="capture-hint-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
+    </div>` : '';
+
   viewEl.innerHTML = `
     ${noAside ? `<a href="${escape(backHref)}" class="tools-home home-full">${backLabel}</a>` : ''}
     <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
@@ -779,6 +793,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
           <div class="sidebar-body">
             ${privacyBadge}
             ${droppedNotice}
+            ${captureNotice}
             <div id="tool-inputs" class="tool-inputs"></div>
             ${hasInputs ? `
               <div class="sidebar-utils" id="sidebar-utils">
@@ -945,6 +960,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     viewEl.querySelector('#dropped-assets-dismiss')
       ?.addEventListener('click', () => viewEl.querySelector('#dropped-assets-notice')?.remove());
   }
+  viewEl.querySelector('#capture-hint-dismiss')
+    ?.addEventListener('click', () => viewEl.querySelector('#capture-hint-notice')?.remove());
 
   // Export shutter: a camera-iris that closes over the whole stage so the brief
   // full-res resize during export (the "shake") is never seen, then opens.
@@ -1757,6 +1774,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // the ones without a Save button that this hook exists to cover.
   (globalThis as { __lollyCaptureThumb?: (fmt?: string) => Promise<string | null> }).__lollyCaptureThumb =
     (fmt = 'svg') => captureThumbnail(tool.manifest, contentEl, runtime, exportUnscaled, fmt);
+
+  // Canvas → input setter for THIS mounted tool. A template/canvas script can drive
+  // any declared input by id — including custom controls (sliders, colour fields)
+  // that the "set .value + dispatch input" pattern can't reach, since it rides the
+  // real runtime.setInput (URL sync, undo, dirty, session-save all included). Used
+  // by url-shot's visual composer to apply its crop/scroll/css back to the tool.
+  // Re-bound to the live runtime each mount; last-mounted wins (a single tool at a
+  // time on the tool route — /multi drives inputs its own way).
+  (globalThis as { __lollySetInput?: (id: string, value: InputValue) => void }).__lollySetInput =
+    (id, value) => { try { runtime.setInput(id, value); markUserDirty(id); } catch { /* unknown id — ignore */ } };
+
+  // Deep-link an overlay open on load, so a share link OR a screenshot recipe can
+  // reproduce a state that otherwise lives only in a click. `?share` opens the Share
+  // dialog. This is the pattern for making the app's click-only surfaces addressable
+  // (see plans/deep-linking.md) — each new one reads its flag here or in its view.
+  if (urlFlags.has('share')) {
+    requestAnimationFrame(() => showShareDialog(runtime, actionsEl, tool.manifest));
+  }
 
   // Motion preview-generation hook — scripts/build-animated-previews.ts calls this to
   // export the LIVE animating canvas as a short, small looping clip (apng/gif) for an

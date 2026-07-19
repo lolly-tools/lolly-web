@@ -1204,27 +1204,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
     container.querySelectorAll<HTMLElement>('[data-history]').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation(); e.preventDefault();
-        const tool = toolById.get(el.dataset.history!)!;
-        showHistoryDialog(tool, entriesByTool.get(tool.id) ?? [], sessionSizes, host, {
-          // Update in-memory state (per-tool list + global list + FAB count) as rows
-          // are deleted; the heavy masonry re-render is deferred to onClose.
-          onDelete: (slot) => {
-            const arr = entriesByTool.get(tool.id) ?? [];
-            const ai = arr.findIndex(x => x.slot === slot);
-            if (ai >= 0) arr.splice(ai, 1);
-            const si = sortedSaved.findIndex(x => x.slot === slot);
-            if (si >= 0) sortedSaved.splice(si, 1);
-            const count = historyFab?.querySelector('.history-fab-count');
-            if (count) count.textContent = String(sortedSaved.length);
-            if (historyFab && sortedSaved.length === 0) historyFab.hidden = true;
-          },
-          // Re-render once the dialog is gone, then put focus on the card's info
-          // button (stable) so keyboard focus isn't dropped to <body>.
-          onClose: () => {
-            render();
-            masonry!.querySelector<HTMLElement>(`[data-info="${CSS.escape(tool.id)}"]`)?.focus();
-          },
-        });
+        openHistoryFor(toolById.get(el.dataset.history!)!);
       });
     });
   }
@@ -1413,11 +1393,48 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   }
   historyFab?.addEventListener('click', openHistoryOverlay);
 
+  // A tool's saved-sessions dialog (the card (h) button and the ?history deep-link
+  // both land here). Deletes update the in-memory lists + FAB count immediately;
+  // the heavy masonry re-render is deferred to onClose, which also restores focus
+  // to the card's (stable) info button so keyboard focus isn't dropped to <body>.
+  function openHistoryFor(tool: GalleryTool): void {
+    showHistoryDialog(tool, entriesByTool.get(tool.id) ?? [], sessionSizes, host, {
+      onDelete: (slot) => {
+        const arr = entriesByTool.get(tool.id) ?? [];
+        const ai = arr.findIndex(x => x.slot === slot);
+        if (ai >= 0) arr.splice(ai, 1);
+        const si = sortedSaved.findIndex(x => x.slot === slot);
+        if (si >= 0) sortedSaved.splice(si, 1);
+        const count = historyFab?.querySelector('.history-fab-count');
+        if (count) count.textContent = String(sortedSaved.length);
+        if (historyFab && sortedSaved.length === 0) historyFab.hidden = true;
+      },
+      onClose: () => {
+        render();
+        masonry!.querySelector<HTMLElement>(`[data-info="${CSS.escape(tool.id)}"]`)?.focus();
+      },
+    });
+  }
+
   // Focus the search box on fine-pointer devices for type-to-find (skip touch so
   // the keyboard doesn't pop over the gallery).
   if (window.matchMedia?.('(pointer: fine)').matches) searchInput.focus({ preventScroll: true });
 
   render();
+
+  // ── Deep-link (read-only): open a card's dialog on mount. ───────────────────
+  // The gallery is the default route and parseRoute() drops its query string, so
+  // read the hash query directly (same shape as main.ts's peekUrlLang). `?tool=<id>`
+  // opens that card's info dialog; adding the `history` flag (or `?history=<id>`)
+  // opens its saved-sessions dialog instead. Consumed here only — a READ-ONLY flag,
+  // never propagated into a generated share link. An unknown/absent id opens
+  // nothing; the gallery just renders normally.
+  const deepLink = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
+  const deepLinkTool = toolById.get(deepLink.get('tool') ?? deepLink.get('history') ?? '');
+  if (deepLinkTool) {
+    if (deepLink.has('history')) openHistoryFor(deepLinkTool);
+    else showInfoDialog(deepLinkTool);
+  }
 
   // ── First-run welcome + tips strip (unbranded installs only) ────────────────
   // Unbranded = token discovery still resolves the lolly-start placeholder
