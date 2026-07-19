@@ -473,6 +473,8 @@ interface ViewElement extends HTMLElement { _cleanup?: () => void; }
 
 export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params = ''): Promise<void> {
   const host = hostIn as CatalogHost;
+  // Titles the tab AND labels this view for the next view's back pill (lib/back-nav.ts).
+  document.title = t('{name} — Lolly', { name: t('Catalogue') });
   // Deep link: /#/c?asset=<id> focuses (scrolls to + highlights) that asset on load.
   const linkedAsset = new URLSearchParams(params).get('asset');
   // Deep link: /#/c?section=<key>[,<key>…] lands with those sections EXPANDED (over the

@@ -20,7 +20,9 @@
  * Everything persists to the one `user/tokens/brand` install via the bridge's
  * single write chokepoint (installUserTokens → bust). A LOCKED catalog owns its
  * brand and can't be adjusted, so the route degrades to a read-only note.
- * Esc or the Back link returns to the gallery. `?tab=<key>` deep-links a step.
+ * Esc or the back pill returns to the view the user came from — the pill wears
+ * that view's name (lib/back-nav.ts), falling back to "Tools" (the gallery)
+ * when there's no history. `?tab=<key>` deep-links a step.
  */
 
 import '../styles/parts/start.css';       // this view's shell/layout (lazy chunk)
@@ -45,6 +47,8 @@ import { t } from '../i18n.ts';
 import type { LangSwitchHost } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
+import { getPrevView } from '../lib/back-nav.ts';
+import { navigateTo } from '../nav.ts';
 import { strFromU8 } from 'fflate';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
@@ -76,6 +80,23 @@ const IMPORT_FORMATS: ReadonlyArray<{ icon: string; name: string; ext: string }>
 export async function mountStart(viewEl: HTMLElement, host: StartHost, params = ''): Promise<void> {
   document.title = 'Make it yours · Lolly';
 
+  // The back pill wears the name of the view the user came from — a tool's
+  // "Manage fonts", the Dashboard CTA, a project folder — and returns there;
+  // with no recorded history it's the classic "Tools" → gallery. The click is
+  // routed through navigateTo so a path-form target (a tool's /t/<id> URL)
+  // stays an SPA hop instead of a full reload.
+  const prevView = getPrevView();
+  const backHref = prevView?.href ?? '#/';
+  const backLabel = prevView?.label ?? t('Tools');
+  const backPill = `<a class="tools-home start-back" href="${escape(backHref)}">${escape(backLabel)}</a>`;
+  const wireBackPill = (): void => {
+    viewEl.querySelector<HTMLAnchorElement>('.start-back')?.addEventListener('click', (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      navigateTo(backHref);
+    });
+  };
+
   // A locked catalog is authoritative — its brand (colours, fonts, radius) can't
   // be adjusted; every write funnels through installUserTokens, which refuses. So
   // skip the whole studio and say why, rather than dead-ending on an error.
@@ -84,7 +105,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     viewEl.innerHTML = `
       <div class="start">
         <div class="gallery-topright">${langFabHtml()}</div>
-        <a class="tools-home start-back" href="#/">${t('Tools')}</a>
+        ${backPill}
         <header class="start-head">
           <p class="start-eyebrow">${t('Brand')}</p>
           <h1 class="start-title">${t('This brand is set')}</h1>
@@ -92,6 +113,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         </header>
       </div>`;
     attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
+    wireBackPill();
     return;
   }
 
@@ -101,7 +123,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   viewEl.innerHTML = `
     <div class="start start--studio">
       <div class="gallery-topright">${langFabHtml()}</div>
-      <a class="tools-home start-back" href="#/">${t('Tools')}</a>
+      ${backPill}
       <header class="start-head">
         <p class="start-eyebrow">${t('Brand setup')}</p>
         <h1 class="start-title">${t('Make it yours')}</h1>
@@ -170,6 +192,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     </div>`;
 
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
+  wireBackPill();
 
   // Mount liveness: #view itself is the router's persistent container (it never
   // disconnects — navigation just replaces its innerHTML), so "are we still the
@@ -605,15 +628,16 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     void install(doc, importedLabel, colorsBtn);
   });
 
-  // ── Escape returns to the gallery (colour-popover Escapes stopPropagation at
-  //    the field, so they never reach this) ─────────────────────────────────────
+  // ── Escape returns to the view the user came from — same target as the back
+  //    pill (colour-popover Escapes stopPropagation at the field, so they never
+  //    reach this) ──────────────────────────────────────────────────────────────
   const onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape' || installing) return; // no Esc-teardown mid-install
     // The Esc stack: floating popovers first (they close themselves and
     // stopImmediatePropagation before this handler — the query is a
     // belt-and-braces guard so the sheet never folds under a popover that
     // somehow let the key through), then an expanded palette sheet folds to
-    // peek, then the import panel, then back to the gallery.
+    // peek, then the import panel, then back to where the user came from.
     const popoverOpen = !!editorMount.querySelector(
       '[data-be-editor]:not([hidden]), [data-grad-pop]:not([hidden]), .color-picker-field:not(.color-field--inline) .color-popover:not([hidden])');
     if (!popoverOpen && paletteSheet?.collapse()) { e.preventDefault(); return; }
@@ -624,7 +648,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       importBtn?.setAttribute('aria-expanded', 'false');
       return;
     }
-    window.location.hash = '#/';
+    navigateTo(backHref);
   };
   document.addEventListener('keydown', onKey);
   (viewEl as ViewElement)._cleanup = () => {

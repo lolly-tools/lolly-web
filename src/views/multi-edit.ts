@@ -100,6 +100,8 @@ const num = (v: unknown): number | undefined => {
 };
 
 export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, params: string): Promise<void> {
+  // Titles the tab AND labels this view for the next view's back pill (lib/back-nav.ts).
+  document.title = t('{name} — Lolly', { name: t('Multi-edit') });
   const slots = (new URLSearchParams(params).get('s') ?? '')
     .split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
 

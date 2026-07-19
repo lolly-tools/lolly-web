@@ -18,7 +18,7 @@
 .start {
   max-width: 2650px;
   margin: 0 auto;
-  padding: 40px 22px 96px;
+  padding: 18px 22px 96px;
   position: relative;
 }
 /* A soft brand-tinted wash behind the hero so a first-run page reads as crafted,
@@ -41,61 +41,54 @@
    later sheet) and drops the selector into flow. */
 .start > *:not(.gallery-topright) { position: relative; z-index: 1; }
 
-/* The studio's "← Tools" return is a real .tools-home glass pill now (the arrow
-   comes from its :before; pill + paint from components.css/buttons.css) — this
-   keeps only the studio's own placement. */
-.start-back { margin-bottom: 26px; }
+/* The studio's return pill is a real .tools-home glass pill (the arrow comes
+   from its :before; pill + paint from components.css/buttons.css) — this keeps
+   only the studio's own placement. The base .tools-home rule carries a 2em
+   top/left offset meant for its absolutely-positioned variants; this pill sits
+   in flow (and IS positioned — the `.start > *` lift above makes it relative),
+   so zero the offset or it shoves into the header. align-self + fit-content
+   pin it to content size on the colour tab, where .start becomes a flex column
+   (≥1100px below) and a stretched flex item would paint the pill as a
+   full-width bar. */
+.start-back {
+  margin-bottom: 10px;
+  top: 0;
+  left: 0;
+  align-self: flex-start;
+  width: fit-content;
+}
 
 /* ── Header — .start-head/-eyebrow/-title/-sub compose .section-header
-      (chips.css); every value below is a real local delta (this hero header
-      runs bigger than the shared default). ─────────────────────────────── */
-.start-head { margin-bottom: 26px; max-width: 660px; }
+      (chips.css). ONE compact header for every tab — eyebrow, title and sub on
+      a single wrapping line. It used to run hero-sized with the Colour tab
+      alone folding it down (a :has(data-active-tab) variant), but that jumped
+      the whole top chrome on every switch to/from Colours; the steps should
+      feel like one stable surface, so the workbench header is now the only
+      header. ─────────────────────────────────────────────────────────── */
+.start-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+}
 .start-eyebrow {
-  margin: 0 0 12px;
+  margin: 0;
   padding: 4px 11px;
   font-size: 11px;
   letter-spacing: 0.08em;
 }
 .start-title {
-  margin: 0 0 12px;
-  font-size: clamp(30px, 5vw, 46px);
-  font-weight: 800;
-  letter-spacing: -0.025em;
-  line-height: 1.03;
-}
-.start-sub {
-  font-size: 15.5px;
-  line-height: 1.62;
-}
-
-/* ── Colour tab: the workbench. The hero folds to one quiet line — the split
-      panes below get every vertical pixel so their bottoms can anchor to the
-      viewport (the anchored layout under "The studio mount"). :has() keys off
-      data-active-tab, which selectTab stamps on the editor root, so switching
-      tabs restyles the header without any re-render. */
-.start:has(.be[data-active-tab="color"]) { padding-top: 18px; }
-.start:has(.be[data-active-tab="color"]) .start-back { margin-bottom: 10px; }
-.start:has(.be[data-active-tab="color"]) .start-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  max-width: none;
-  margin-bottom: 12px;
-}
-.start:has(.be[data-active-tab="color"]) .start-eyebrow { margin: 0; }
-.start:has(.be[data-active-tab="color"]) .start-title {
   margin: 0;
   font-size: 20px;
-  line-height: 1.2;
+  font-weight: 800;
   letter-spacing: -0.015em;
+  line-height: 1.2;
 }
-.start:has(.be[data-active-tab="color"]) .start-sub { font-size: 12.5px; line-height: 1.5; flex: 1 1 26ch; }
-.start:has(.be[data-active-tab="color"]) .start-tabs { margin-bottom: 10px; }
-.start:has(.be[data-active-tab="color"]) .start-actions { margin-bottom: 12px; }
+.start-sub { font-size: 12.5px; line-height: 1.5; flex: 1 1 26ch; }
 /* Short screens: the sentence goes entirely — the tabs already say where we are. */
 @media (max-height: 720px) {
-  .start:has(.be[data-active-tab="color"]) .start-sub { display: none; }
+  .start-sub { display: none; }
 }
 
 /* ── Step tabs — numbered, in working order. The active step is filled; a step
@@ -105,7 +98,7 @@
   display: flex;
   gap: 6px;
   flex-wrap: nowrap;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 /* Every step takes an equal share of the row — flex-basis 0 + grow, so the active
    tab (or a longer label) never resizes its neighbours. min-width:0 lets a long
@@ -191,7 +184,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--card) / 0.92);

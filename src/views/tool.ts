@@ -30,6 +30,7 @@ import { instanceFetch, instancePath } from '../lib/instance.ts';
 const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
 import { navigateTo } from '../nav.ts';
+import { getPrevView } from '../lib/back-nav.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { docsHref, currentLang, t } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
@@ -161,6 +162,10 @@ export interface ExportDefaults {
   /** Pixel-watermark setting from ?imprint= — on by default (like c2pa) for
    *  raster exports; false only for an explicit `imprint=0`/`off` link. */
   imprint?: boolean;
+  /** Opt-in durable Content Credential (neural TrustMark embed) from ?durable=1.
+   *  OFF by default — a heavier per-export neural encode + one-time model fetch.
+   *  Raster formats only. */
+  durable?: boolean;
 }
 
 /** mountTool's strip-scale → export → reapply wrapper (injected into renderActions). */
@@ -442,13 +447,19 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     if (back) returnTo = back;
   } catch (e) { /* sessionStorage unavailable (private mode) */ }
 
-  // The back link follows that same marker: a tool launched from a folder reads "Back"
-  // and returns to the folder; from the gallery it reads "Tools" and returns there. This
-  // keeps the editing session a round-trip — add/resume a tool in a folder, then step
+  // The back link follows that same marker: a tool launched from a folder returns to
+  // the folder — wearing the FOLDER'S NAME when the view the user last left was that
+  // folder (lib/back-nav.ts; a reload mid-session or a stale marker falls back to
+  // "Back") — while from the gallery it reads "Tools" and returns there. This keeps
+  // the editing session a round-trip — add/resume a tool in a folder, then step
   // straight back into it — instead of dumping the user in the gallery.
   const fromFolder = returnTo !== '/';
   const backHref = fromFolder ? returnTo : '/';
-  const backLabel = fromFolder ? t('Back') : t('Tools');
+  const prevView = getPrevView();
+  const sameTarget = (a: string, b: string): boolean => a.replace(/^\//, '') === b.replace(/^\//, '');
+  const backLabel = fromFolder
+    ? escape(prevView && sameTarget(prevView.href, returnTo) ? prevView.label : t('Back'))
+    : escape(t('Tools'));
 
   // Populate inputs from user profile if they match profile field names
   const profile = await host.profile.get();
@@ -1518,6 +1529,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // explicit `imprint=0`/`off` as false rather than collapsing it to
     // undefined (`false || undefined` would silently re-default it to on).
     imprint:  urlImprint === false ? false : urlImprint === true ? true : undefined,
+    // Durable credential from ?durable=1 — opt-in, OFF by default (performance: a
+    // neural encode + a one-time model fetch), so it's simply true/undefined.
+    durable:  urlDurable || undefined,
   };
   // Rewrite the URL hash query string to reflect the current tool state so the
   // page is shareable and bookmarkable. Uses replaceState — no history entry.
@@ -1691,6 +1705,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // checking it back on returns to the default, so the param drops out.
       const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked;
       if (on) params.delete('imprint'); else params.set('imprint', '0');
+    }
+    if (dirtyParams.has('durable')) {
+      // Durable credential — OFF by default (opt-in, performance cost): checking
+      // writes durable=1; unchecking drops the param so a plain link stays clean.
+      const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked;
+      if (on) params.set('durable', '1'); else params.delete('durable');
     }
 
     const qs = params.toString();
