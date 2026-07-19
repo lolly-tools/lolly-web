@@ -373,6 +373,13 @@ export async function mountProjects(
   // ── render ───────────────────────────────────────────────────────────────
   function render(): void {
     if (!mounted) return; // an async callback fired after we navigated away — don't clobber the new view
+    // Title the view for the tab bar AND for back-nav (lib/back-nav.ts labels the
+    // previous view off document.title — this is how a tool opened from a folder,
+    // or #/start reached from one, gets a back pill wearing the folder's name).
+    const titleName = folderId == null ? t('Projects')
+      : folderId === UNCAT ? t('Uncategorised')
+      : (folders.find(f => f.id === folderId)?.name || t('Projects'));
+    document.title = t('{name} — Lolly', { name: titleName });
     featuredHandle?.destroy(); featuredHandle = null;  // stop the prior ribbon's rAF loop + listeners before its DOM is wiped
     searchCache = null;   // recompute matches once for this render (sort/data may have changed); the two callers below then share it
     pruneSelection();     // forget refs that vanished since the last render

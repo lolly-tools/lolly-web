@@ -115,6 +115,9 @@ export function insertPngMeta(png: Uint8Array, meta: ExportMeta | null | undefin
     const pairs = ([
       ['Software', meta.software], ['Author', meta.author],
       ['Source', meta.source], ['Description', meta.description], ['Comment', meta.contact],
+      // 'Copyright' is a PNG-registered text keyword; 'License' is conventional.
+      // User-asserted (bindToMeta) — empty on ordinary exports, filtered out below.
+      ['Copyright', meta.copyright || ''], ['License', meta.license || ''],
     ] as [string, string][]).filter(([, v]) => v);
     if (!pairs.length) return png;
     const chunks = pairs.map(([k, v]) => iTXtChunk(k, v));
@@ -132,7 +135,8 @@ export function insertPngMeta(png: Uint8Array, meta: ExportMeta | null | undefin
 }
 
 // JPEG: a minimal little-endian EXIF TIFF (IFD0, ASCII tags) in an APP1 segment,
-// inserted after the JFIF APP0. Tags: ImageDescription, Software, Artist.
+// inserted after the JFIF APP0. Tags: ImageDescription, Software, Artist, Copyright
+// (ascending tag order, as TIFF requires).
 export function buildExifTiff(fields: { tag: number; value: string }[]): Uint8Array | null {
   const enc = new TextEncoder();
   const entries = fields.map(f => {
@@ -167,10 +171,13 @@ export function insertJpegExif(b: Uint8Array, meta: ExportMeta | null | undefine
   if (!meta) return b;
   try {
     const desc = [meta.description, meta.contact].filter(Boolean).join(' · ');
+    // The © notice + any licence in one broadly-read field (Finder, Lightroom, …).
+    const rights = [meta.copyright, meta.license].filter(Boolean).join(' · ');
     const tiff = buildExifTiff([
       { tag: 0x010E, value: desc },          // ImageDescription
       { tag: 0x0131, value: meta.software }, // Software
       { tag: 0x013B, value: meta.author },   // Artist
+      { tag: 0x8298, value: rights },        // Copyright (© notice + licence) — tag order ascending
     ].filter(f => f.value));
     if (!tiff) return b;
     const id = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]; // "Exif\0\0"
@@ -284,6 +291,8 @@ export function svgMetaBlock(meta: ExportMeta): string {
     '<rdf:Description rdf:about="">',
   );
   if (meta.author) lines.push(`<dc:creator>${xmlEsc(meta.author)}</dc:creator>`);
+  const rights = [meta.copyright, meta.license].filter(Boolean).join(' · ');
+  if (rights) lines.push(`<dc:rights>${xmlEsc(rights)}</dc:rights>`);
   lines.push(`<dc:publisher>${xmlEsc(meta.software)}</dc:publisher>`);
   lines.push(`<dc:source>${xmlEsc(meta.source)}</dc:source>`, '</rdf:Description>', '</rdf:RDF>', '</metadata>');
   return lines.join('\n');

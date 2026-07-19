@@ -59,6 +59,22 @@ export function liveCaptureSupport(): boolean {
          canRecord();
 }
 
+// The durable credential (opt-in TrustMark embed — tool-actions.ts, export.ts's
+// durableEmbedCanvas) is a neural ONNX encode that lazily fetches a ~33 MB encoder
+// model from the deploy origin. Under Tauri (desktop/mobile) that model isn't
+// bundled and there's no origin server to pull it from, so the embed simply CAN'T
+// work offline there — hide the toggle rather than offer a silent no-op. The web
+// PWA fetches it from its own origin (then caches it in IndexedDB, so it keeps
+// working offline once primed), so the toggle is offered there. Also requires
+// WebAssembly for onnxruntime-web. If a Tauri build ever bundles the encoder under
+// /models/trustmark/, revisit this gate (a bundled model would work offline).
+export function durableSupport(): boolean {
+  if (typeof WebAssembly === 'undefined') return false;
+  const tauri = typeof window !== 'undefined' &&
+    typeof (window as { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__?.invoke === 'function';
+  return !tauri;
+}
+
 // Which video containers this browser can actually record. Safari/iOS = mp4 only;
 // Firefox = webm only; recent Chrome = both. The view uses this to gate the format
 // picker so users only see formats their browser can produce. Deliberately probes

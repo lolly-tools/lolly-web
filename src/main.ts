@@ -29,6 +29,7 @@ import { initSelectPreview } from './select-preview.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
 import { announce } from './a11y.ts';
 import { beginViewFade } from './view-fade.ts';
+import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from './lib/back-nav.ts';
 
 /** The web capability bridge, as produced by createBridge. */
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
@@ -105,8 +106,22 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     // selection re-mounts with the new set instead of deduping.
     : route.name === 'multi'     ? `multi:${route.params ?? ''}`
     : route.name;
+  // The URL this navigation left (hashchange oldURL / navigateTo's capture) —
+  // consumed on EVERY navigate, even a deduped one, so a stale stash can't
+  // leak into a later record. popstate leaves no stash; recordLeave() then
+  // falls back to the outgoing view's mount-time URL.
+  const leftHref = takeLeavingHref();
   if (!opts.force && routeSig === mountedRouteSig) return;
+  const prevSig = mountedRouteSig;
   mountedRouteSig = routeSig;
+
+  // Remember the view being left so the next view's back pill can name it and
+  // return there (lib/back-nav.ts). Only on a genuine view change: the routes
+  // whose signature keys on params (start/dashboard/profile/multi) re-navigate
+  // within themselves (#/start?tab=color → ?tab=type), and a forced same-sig
+  // remount (lolly:remount) isn't a leave at all.
+  const viewIdent = (sig: string): string => sig.replace(/^(start|dashboard|profile|multi):[\s\S]*$/, '$1');
+  if (prevSig && viewIdent(routeSig) !== viewIdent(prevSig)) recordLeave(leftHref);
 
   const view = document.getElementById('view') as ViewElement;
   view._cleanup?.();
@@ -288,6 +303,11 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     showReloadCard('This view didn’t finish loading. Reload to try again.');
     return;
   }
+
+  // The mount settled: its document.title is set and any URL canonicalisation
+  // (the tool view's /t/<id> rewrite) is done — snapshot it as the candidate
+  // "previous view" for the next navigation's back pill.
+  noteMountedView(route.name);
 
   // After the view swaps, tell assistive tech and move focus into the new view
   // so keyboard/SR users aren't stranded on the now-removed element. (Within a
@@ -590,6 +610,10 @@ async function boot(): Promise<void> {
     navQueued = true;
     Promise.resolve().then(() => { navQueued = false; navigate(host).catch(console.error); });
   };
+  // Capture the URL a hash navigation leaves BEFORE the debounced navigate
+  // consumes it — it becomes the back-pill target on the next view
+  // (lib/back-nav.ts; navigateTo() captures its own, popstate has none).
+  window.addEventListener('hashchange', (e) => noteLeavingHref(e.oldURL));
   window.addEventListener('hashchange', onRouteChange);
   window.addEventListener('popstate', onRouteChange);
   window.addEventListener('lolly:navigate', onRouteChange);

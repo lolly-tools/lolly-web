@@ -28,7 +28,7 @@ import { pcmToWavBlob } from '../lib/pcm-wav.ts';
 import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { aspectWarning } from './export-size.js';
 import { bumpMetric, recordFormat } from '../metrics.js';
-import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport } from '../bridge/format-support.js';
+import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport } from '../bridge/format-support.js';
 
 import type { InputValue } from '../../../../engine/src/inputs.js';
 import type { SongSpec } from '../../../../engine/src/zzfx-compose.ts';
@@ -68,6 +68,9 @@ const isC2paFmt = (f: string | undefined): boolean => !!f && (C2PA_FORMATS.inclu
 // over-claim (see export.ts stampC2pa). Mirrors the deep-link gate in views/tool.ts.
 // Zip carries the flag through to its bundled raster + container members.
 const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'pdf', 'pdf-cmyk', 'pptx'].includes(f);
+// Durable (neural TrustMark) embed is RASTER-ONLY — no pdf/pptx container path yet
+// (export.ts durableEmbedCanvas; see plans/durable-content-credentials.md).
+const isDurableFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(f);
 
 // Print marks & bleed apply to the three print formats (pdf / pdf-cmyk / cmyk-tiff).
 // Defaults when the user turns the card on; the CSV tokens (crop,reg,bleed,bars)
@@ -438,6 +441,29 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </label>
       </div>` : '';
 
+  // Tier 2.67 — the DURABLE credential (opt-in): a neural TrustMark-format mark
+  // carrying Lolly's id, so the "made with Lolly" link survives a metadata strip
+  // and TrustMark-aware tools can recover it. OFF by default — unlike the pure-JS
+  // Imprint, this is a per-export neural encode PLUS a one-time model download
+  // (expensive performance-wise), so it's a deliberate opt-in. Raster only. The
+  // toggle round-trips into the URL as ?durable=1 (see views/tool.ts syncUrl).
+  // Hidden entirely where the neural embed can't work offline (Tauri desktop/mobile —
+  // no origin to fetch the ~33 MB model from), so the toggle never shows as a no-op.
+  const durableFmts = durableSupport() ? formats.filter(isDurableFmt) : [];
+  const durableTip = durableFmts.length ? helpTip(
+    t('Embeds a durable, invisible credential in the pixels with an on-device AI model, so a copy survives metadata stripping and re-encoding — and TrustMark-aware tools can read it too. Heavier than the Imprint (a neural pass plus a one-time model download), so it is off by default.'),
+    { href: '#/verify', text: t('Check a file →') }
+  ) : null;
+  const durableRow = durableFmts.length ? `
+      <div class="section-card export-c2pa export-durable" data-durable-only style="display:${isDurableFmt(initialFmt) ? 'flex' : 'none'}">
+        <label class="c2pa-enable help-tip-host">
+          <input type="checkbox" data-action="durable" ${exportDefaults.durable ? 'checked' : ''}>
+          <span class="c2pa-head">${icon('imprint', { className: 'c2pa-icon' })}<span>${t('Durable credential')}</span></span>
+          ${durableTip!.button}
+          ${durableTip!.pop}
+        </label>
+      </div>` : '';
+
   // Tier 2.7 — print marks & bleed (pdf / pdf-cmyk / cmyk-tiff). An opt-in card
   // (master checkbox) so ordinary output stays trim-sized; turning it on reveals a
   // bleed field (default 3mm) + the mark toggles at print-standard defaults. Mark
@@ -491,7 +517,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Pre-opened whenever any inner card would itself arrive pre-opened/pre-set —
   // a URL-sourced password, an on-by-default C2PA credential, or a linked imprint
   // flag — so a deep link still surfaces its setting without an extra click.
-  const protectionOpen = pdfPassInitOpen || c2paInitOn || Boolean(exportDefaults.imprint);
+  const protectionOpen = pdfPassInitOpen || c2paInitOn || Boolean(exportDefaults.imprint) || Boolean(exportDefaults.durable);
   // Matches the canonical per-format predicates the inner cards already use
   // (isC2paFmt/isImprintFmt, plus the password card's pdf/pdf-cmyk/zip set) —
   // never loosened, just OR'd together to decide the outer wrapper.
@@ -501,7 +527,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       <div class="section-card export-protection${protectionOpen ? ' is-open' : ''}" data-protection-section style="display:${protectionVisibleInitial ? 'flex' : 'none'}">
         <button type="button" class="protection-head" data-action="protection-toggle" aria-expanded="${protectionOpen}">${icon('shield', { className: 'protection-icon' })}<span>${t('Content protection')}</span></button>
         <div class="protection-body" data-protection-body style="display:${protectionOpen ? 'flex' : 'none'}">
-          ${pdfPassRow}${c2paRow}${imprintRow}
+          ${pdfPassRow}${c2paRow}${imprintRow}${durableRow}
         </div>
       </div>` : '';
 
@@ -860,6 +886,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // caveat sentence only shows for webm (no external viewer reads it there).
     el!.querySelectorAll<HTMLElement>('[data-c2pa-only]').forEach(c => { c.style.display = (isC2paFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
     el!.querySelectorAll<HTMLElement>('[data-imprint-only]').forEach(c => { c.style.display = (isImprintFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
+    el!.querySelectorAll<HTMLElement>('[data-durable-only]').forEach(c => { c.style.display = isDurableFmt(fmt) ? 'flex' : 'none'; });
     el!.querySelectorAll<HTMLElement>('[data-c2pa-webm]').forEach(c => { c.style.display = fmt === 'webm' ? 'block' : 'none'; });
     // The "Content protection" wrapper itself: hidden when none of its four inner
     // cards apply to the selected format (e.g. a text/data format like csv/json/ics),
@@ -948,6 +975,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   // Pixel-watermark toggle — round-trips through the URL as ?imprint=1 (see syncUrl).
   el.querySelector<HTMLInputElement>('[data-action="imprint"]')?.addEventListener('change', () => onUrlSync?.('imprint'));
+  el.querySelector<HTMLInputElement>('[data-action="durable"]')?.addEventListener('change', () => onUrlSync?.('durable'));
 
   // PDF open-password — clear-text in the URL by design (see pdfPassRow). Syncs on
   // input so a crafted/edited link round-trips; syncUrl gates it to the pdf format.
@@ -1476,6 +1504,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // others / zip members. A tool with no raster format renders no toggle —
         // fall back to the link default.
         ...((el!.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked ?? exportDefaults.imprint) ? { imprint: true } : {}),
+        ...((el!.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked ?? exportDefaults.durable) ? { durable: true } : {}),
         ...(fmt === 'zip' ? {
           ...printOpts(),   // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
           palette: brandPalette,

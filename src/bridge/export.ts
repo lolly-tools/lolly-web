@@ -2447,6 +2447,15 @@ function c2paAuthor(meta: ExportMeta | null | undefined): { name: string; email?
   return { name, ...(email ? { email } : {}) };
 }
 
+// User-asserted IP → the signed manifest's dc:rights (engine c2pa.ts). Combines the
+// © notice + any licence into one line. Empty on ordinary exports — only tools that
+// declare bindToMeta copyright/license (embed-track-image) populate meta.copyright/
+// meta.license, so a normal render never asserts rights it can't stand behind.
+function c2paRights(meta: ExportMeta | null | undefined): string | undefined {
+  const r = [meta?.copyright, meta?.license].filter(Boolean).join(' · ');
+  return r || undefined;
+}
+
 // Content Credentials (opts.c2pa) — a signed C2PA manifest embedded into the
 // finished bytes of any supported container (pdf, png/apng, jpg, gif, svg,
 // tiff, webp). Signed with the enrolled identity's device key + Lolly-CA cert
@@ -2503,6 +2512,7 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
       software: opts.meta?.software,
       environment: c2paEnvironment(format, opts, dimensions),
       author: c2paAuthor(opts.meta),
+      rights: c2paRights(opts.meta),
       actions,
       ingredients: opts.ingredients,
       days,
@@ -2526,6 +2536,7 @@ async function signAndEmbedC2pa(blob: Blob, format: string, o: {
   software?: string;
   environment: Record<string, unknown>;
   author?: { name: string; email?: string };
+  rights?: string;
   actions: C2paActionInput[];
   ingredients?: IngredientCredential[];
   days?: number;
@@ -2542,6 +2553,7 @@ async function signAndEmbedC2pa(blob: Blob, format: string, o: {
     generatorInfo: { name: o.software || 'Lolly', version: ENGINE_VERSION },
     environment: o.environment,
     author: o.author,
+    ...(o.rights ? { rights: o.rights } : {}),
     actions: o.actions,
     ...(o.ingredients?.length ? { ingredients: o.ingredients } : {}),
     dates: signer ? {} : { notBefore: new Date(Date.now() - 60_000), notAfter: new Date(Date.now() + days * 86_400_000) },
@@ -2589,6 +2601,7 @@ export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string,
       software: meta.software,
       environment: c2paEnvironment(format, { meta, c2paInputs: o.inputs } as ExportOpts, o.dimensions),
       author: c2paAuthor(meta),
+      rights: c2paRights(meta),
       actions: o.actions,
       ingredients: o.ingredients,
     }, host as WebHost);
