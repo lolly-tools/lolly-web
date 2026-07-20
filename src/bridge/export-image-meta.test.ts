@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { deflateSync, inflateSync } from 'node:zlib';
 import { crc32 } from '@lolly/engine';
 import {
-  patchJpegDpi, readU32, writeU32, pngChunk, insertPngPhys, iTXtChunk,
+  patchJpegDpi, readU32, writeU32, pngChunk, insertPngPhys, insertPngCicp, setAvifCicp, iTXtChunk,
   insertPngMeta, buildExifTiff, insertJpegExif, iccWanted, insertPngIcc,
   insertJpegIcc, svgMetaBlock, injectSvgMeta, withGifComment,
   inflateBytes, deflateBytes,
@@ -141,6 +141,40 @@ test('insertPngPhys rejects non-PNG bytes with null', () => {
   assert.equal(insertPngPhys(ascii('not a png at all'), 300), null);
   const corrupt = minimalPng(); corrupt[0] = 0;
   assert.equal(insertPngPhys(corrupt, 300), null);
+});
+
+test('insertPngCicp splices a valid Rec.2100-PQ cICP chunk after IHDR', () => {
+  const png = minimalPng();
+  const out = insertPngCicp(png, { primaries: 9, transfer: 16, matrix: 0, fullRange: 1 });
+  assert.equal(out.length, png.length + 16); // 12-byte framing + 4-byte payload
+  const chunks = parsePngChunks(out);
+  assert.deepEqual(chunks.map(c => c.type), ['IHDR', 'cICP', 'IDAT', 'IEND']);
+  for (const c of chunks) assert.ok(c.crcOk, `${c.type} CRC valid`);
+  assert.deepEqual([...chunks[1]!.data], [9, 16, 0, 1]);
+  // Non-PNG bytes pass through untouched (best-effort).
+  assert.deepEqual([...insertPngCicp(ascii('nope'), { primaries: 9, transfer: 16, matrix: 0, fullRange: 1 })], [...ascii('nope')]);
+});
+
+test('setAvifCicp overwrites the nclx colr box with the PQ CICP, in place', () => {
+  // Minimal ISOBMFF: an ftyp box (avif brand) + a colr/nclx box seeded sRGB-ish.
+  const be16 = (n: number) => [(n >> 8) & 255, n & 255];
+  const ftyp = [0, 0, 0, 16, ...ascii('ftyp'), ...ascii('avif'), 0, 0, 0, 0];
+  const colr = [0, 0, 0, 19, ...ascii('colr'), ...ascii('nclx'), ...be16(1), ...be16(13), ...be16(6), 0x00];
+  const avif = new Uint8Array([...ftyp, ...colr]);
+  const before = avif.length;
+  const out = setAvifCicp(avif, { primaries: 9, transfer: 16 });
+  assert.equal(out.length, before, 'no size change → offsets stay valid');
+  assert.notEqual(out, avif, 'returns a copy, input untouched');
+  // Locate the nclx payload and check the rewritten CICP.
+  const i = [...out].findIndex((_, k) => String.fromCharCode(out[k]!, out[k + 1]!, out[k + 2]!, out[k + 3]!) === 'colr');
+  const dv = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  assert.equal(dv.getUint16(i + 8), 9, 'BT.2020 primaries (rewritten)');
+  assert.equal(dv.getUint16(i + 10), 16, 'PQ transfer (rewritten)');
+  // matrix + full-range are the encoder's YCbCr choice — must be PRESERVED.
+  assert.equal(dv.getUint16(i + 12), 6, 'matrix coefficients preserved');
+  assert.equal(out[i + 14], 0x00, 'full-range flag preserved');
+  // Non-AVIF (no ftyp) and AVIF-without-colr both pass through untouched.
+  assert.deepEqual([...setAvifCicp(ascii('not an avif!!'), { primaries: 9, transfer: 16 })], [...ascii('not an avif!!')]);
 });
 
 // ── PNG iTXt provenance metadata ─────────────────────────────────────────────

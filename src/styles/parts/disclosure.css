@@ -95,7 +95,7 @@
 /* ── Export panel's settings cards — the prime target for this rec: identical
    icon-head + body + hint anatomy, four separate class families. */
 .section-card-head,
-.cmyk-head, .audio-head, .c2pa-head, .print-head, .pdfpass-head, .protection-head {   /* tool-chrome.css —
+.cmyk-head, .audio-head, .c2pa-head, .print-head, .pdfpass-head, .protection-head, .hdr-head {   /* tool-chrome.css —
   .pdfpass-head/.protection-head are <button>s, so their reset (width/margin/
   padding/background/border/cursor) plus their own hover + rotating-caret
   pseudo stay local deltas */
@@ -109,7 +109,7 @@
   color: hsl(var(--muted-foreground));
 }
 .section-card-icon,
-.cmyk-icon, .audio-icon, .pdfpass-icon, .c2pa-icon, .print-icon, .protection-icon {   /* tool-chrome.css */
+.cmyk-icon, .audio-icon, .pdfpass-icon, .c2pa-icon, .print-icon, .protection-icon, .hdr-icon {   /* tool-chrome.css */
   width: 14px;
   height: 14px;
   flex: 0 0 auto;

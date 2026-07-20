@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, SCALES, mulberry32 } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, SCALES, mulberry32, HDR_DEFAULTS } from '@lolly/engine';
 import { escape } from '../utils.js';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
@@ -71,6 +71,10 @@ const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', '
 // Durable (neural TrustMark) embed is RASTER-ONLY — no pdf/pptx container path yet
 // (export.ts durableEmbedCanvas; see plans/durable-content-credentials.md).
 const isDurableFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(f);
+// HDR (Rec.2100 PQ) raster export. PNG (cICP) + JPEG (PQ ICC) + AVIF (native nclx
+// colr) + TIFF (PQ ICC tag, archival). WebP is excluded on purpose — it has no
+// working HDR decode path, so a PQ WebP would just look dark.
+const isHdrFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'avif', 'tiff'].includes(f);
 
 // Print marks & bleed apply to the three print formats (pdf / pdf-cmyk / cmyk-tiff).
 // Defaults when the user turns the card on; the CSV tokens (crop,reg,bleed,bars)
@@ -478,6 +482,39 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </label>
       </div>` : '';
 
+  // HDR (Rec.2100 PQ) raster export — OPT-IN, off by default. Boosts the brand's
+  // primary colours (the live palette) toward peak luminance so white text and
+  // brand colours glow on HDR displays while darks stay dark; SDR viewers see a
+  // normal image. Raster only (png/jpeg today). Round-trips into the URL as
+  // ?hdr=1 (see views/tool.ts syncUrl + engine/src/hdr.ts).
+  const hdrFmts = formats.filter(isHdrFmt);
+  const hdrTip = hdrFmts.length ? helpTip(
+    t('HDR (Rec.2100 PQ) boosts your brand colours and white text toward peak brightness so they glow on HDR-capable screens — Safari/Preview on Apple devices, Chrome on an HDR display — while dark areas stay dark. IMPORTANT: only use it where the destination supports HDR. Many platforms (social media, messaging apps, some websites) re-encode uploads and strip the HDR signal, which can leave the image looking dark or washed out. On an ordinary SDR screen it still shows as a normal image.'),
+  ) : null;
+  // Author dials — seeded from a tuned ?hdr= value, else the engine defaults. The
+  // body reveals when the toggle is on (like the print card). All four map onto
+  // hdrBoostToPQ knobs in the bridge (see export.ts hdrTune): White = peak nits,
+  // Reach = how far down the tones the glow spreads, Dark lift = how much darks
+  // brighten (0 keeps them dark), Focus = colour richness of the boost.
+  const hdrTune = exportDefaults.hdrTune ?? HDR_DEFAULTS;
+  const hdrSlider = (action: string, label: string, min: number, max: number, step: number, val: number): string =>
+    `<label class="hdr-slider"><span>${t(label)}</span><input type="range" data-action="${action}" min="${min}" max="${max}" step="${step}" value="${val}"></label>`;
+  const hdrRow = hdrFmts.length ? `
+      <div class="section-card export-hdr" data-hdr-only style="display:${isHdrFmt(initialFmt) ? 'flex' : 'none'}">
+        <label class="hdr-enable help-tip-host">
+          <input type="checkbox" data-action="hdr" ${exportDefaults.hdr ? 'checked' : ''}>
+          <span class="hdr-head">${icon('sunburst', { className: 'hdr-icon' })}<span>${t('HDR (bright colours)')}</span></span>
+          ${hdrTip!.button}
+          ${hdrTip!.pop}
+        </label>
+        <div class="hdr-body" data-hdr-body style="display:${exportDefaults.hdr ? 'grid' : 'none'}">
+          ${hdrSlider('hdr-peak', 'White', 400, 2000, 50, hdrTune.peakNits)}
+          ${hdrSlider('hdr-reach', 'Reach', 0, 100, 5, hdrTune.reach)}
+          ${hdrSlider('hdr-lift', 'Dark lift', 0, 100, 5, hdrTune.lift)}
+          ${hdrSlider('hdr-focus', 'Focus', 0, 100, 5, hdrTune.richness)}
+        </div>
+      </div>` : '';
+
   // Tier 2.7 — print marks & bleed (pdf / pdf-cmyk / cmyk-tiff). An opt-in card
   // (master checkbox) so ordinary output stays trim-sized; turning it on reveals a
   // bleed field (default 3mm) + the mark toggles at print-standard defaults. Mark
@@ -656,7 +693,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
   `;
@@ -922,6 +959,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     el!.querySelectorAll<HTMLElement>('[data-c2pa-only]').forEach(c => { c.style.display = (isC2paFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
     el!.querySelectorAll<HTMLElement>('[data-imprint-only]').forEach(c => { c.style.display = (isImprintFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
     el!.querySelectorAll<HTMLElement>('[data-durable-only]').forEach(c => { c.style.display = isDurableFmt(fmt) ? 'flex' : 'none'; });
+    el!.querySelectorAll<HTMLElement>('[data-hdr-only]').forEach(c => { c.style.display = isHdrFmt(fmt) ? 'flex' : 'none'; });
     el!.querySelectorAll<HTMLElement>('[data-c2pa-webm]').forEach(c => { c.style.display = fmt === 'webm' ? 'block' : 'none'; });
     // The "Content protection" wrapper itself: hidden when none of its four inner
     // cards apply to the selected format (e.g. a text/data format like csv/json/ics),
@@ -1011,6 +1049,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Pixel-watermark toggle — round-trips through the URL as ?imprint=1 (see syncUrl).
   el.querySelector<HTMLInputElement>('[data-action="imprint"]')?.addEventListener('change', () => onUrlSync?.('imprint'));
   el.querySelector<HTMLInputElement>('[data-action="durable"]')?.addEventListener('change', () => onUrlSync?.('durable'));
+  el.querySelector<HTMLInputElement>('[data-action="hdr"]')?.addEventListener('change', (e) => {
+    // Reveal the dials when HDR is on, hide them when off (like the print card).
+    const on = (e.target as HTMLInputElement).checked;
+    const body = el.querySelector<HTMLElement>('[data-hdr-body]');
+    if (body) body.style.display = on ? 'grid' : 'none';
+    onUrlSync?.('hdr');
+  });
+  for (const a of ['hdr-peak', 'hdr-reach', 'hdr-lift', 'hdr-focus']) {
+    el.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.addEventListener('input', () => onUrlSync?.('hdr'));
+  }
 
   // PDF open-password — clear-text in the URL by design (see pdfPassRow). Syncs on
   // input so a crafted/edited link round-trips; syncUrl gates it to the pdf format.
@@ -1494,6 +1542,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // fallback — so CMYK ink substitution always matches the active profile's
       // real brand (SUSE's measured inks, or whichever catalog is mounted).
       const brandPalette = await livePalette(host);
+      // Read one HDR slider's value (falls back to its default if the slider isn't
+      // rendered for this format/tool).
+      const hdrDial = (action: string, def: number): number => {
+        const v = Number(el!.querySelector<HTMLInputElement>(`[data-action="${action}"]`)?.value);
+        return Number.isFinite(v) ? v : def;
+      };
       const opts: RunExportOpts = {
         ...exportDims(),
         onProgress: (done, total) => {
@@ -1540,6 +1594,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // fall back to the link default.
         ...((el!.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked ?? exportDefaults.imprint) ? { imprint: true } : {}),
         ...((el!.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked ?? exportDefaults.durable) ? { durable: true } : {}),
+        // HDR (Rec.2100 PQ) — opt-in; passes the live brand palette as the colours
+        // to boost + the author's slider dials. The bridge applies it only to raster
+        // (png/jpeg/avif/tiff), so it's a harmless pass-through elsewhere.
+        ...((el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ?? exportDefaults.hdr)
+          ? {
+              hdr: true, palette: brandPalette,
+              hdrPeakNits: hdrDial('hdr-peak', HDR_DEFAULTS.peakNits),
+              hdrReach:    hdrDial('hdr-reach', HDR_DEFAULTS.reach),
+              hdrLift:     hdrDial('hdr-lift', HDR_DEFAULTS.lift),
+              hdrRichness: hdrDial('hdr-focus', HDR_DEFAULTS.richness),
+            }
+          : {}),
         ...(fmt === 'zip' ? {
           ...printOpts(),   // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
           palette: brandPalette,

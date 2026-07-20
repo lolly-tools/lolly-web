@@ -18,7 +18,8 @@ import '../styles/parts/editor.css';
 import '../styles/parts/document.css';
 import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
-import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl } from '@lolly/engine';
+import { loadTool, createRuntime, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
+import type { HdrSettings } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
@@ -166,6 +167,10 @@ export interface ExportDefaults {
    *  OFF by default — a heavier per-export neural encode + one-time model fetch.
    *  Raster formats only. */
   durable?: boolean;
+  /** Opt-in HDR (Rec.2100 PQ) raster export from ?hdr=1. OFF by default; raster only. */
+  hdr?: boolean;
+  /** HDR author dials to seed the export-panel sliders (from a tuned `hdr=` value). */
+  hdrTune?: HdrSettings;
 }
 
 /** mountTool's strip-scale → export → reapply wrapper (injected into renderActions). */
@@ -212,6 +217,13 @@ export interface RunExportOpts {
   /** Opt-in durable Content Credential (neural TrustMark mark) for raster exports. */
   durable?: boolean;
   durableId?: number;
+  /** Opt-in HDR (Rec.2100 PQ) raster export from ?hdr=1. Raster (png/jpeg/avif/tiff) only. */
+  hdr?: boolean;
+  /** HDR author dials (export-panel sliders): white peak (nits) + 0–100 reach/lift/richness. */
+  hdrPeakNits?: number;
+  hdrReach?: number;
+  hdrLift?: number;
+  hdrRichness?: number;
   bleed?: string;
   cropMarks?: boolean;
   registrationMarks?: boolean;
@@ -407,7 +419,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A no-op for ordinary readable links. Done once so every consumer below agrees.
   urlParams = await expandQuery(urlParams ?? '');
 
-  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, durable: urlDurable } = parseUrlState(urlParams, tool.manifest);
+  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, durable: urlDurable, hdr: urlHdr } = parseUrlState(urlParams, tool.manifest);
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
   // `?nostage` pre-checks the export panel's "Full page" toggle (HTML export only):
@@ -1549,6 +1561,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // Durable credential from ?durable=1 — opt-in, OFF by default (performance: a
     // neural encode + a one-time model fetch), so it's simply true/undefined.
     durable:  urlDurable || undefined,
+    // HDR (Rec.2100 PQ) raster export from ?hdr=1 — opt-in, OFF by default; the
+    // tuned form (`hdr=1600-60-0-50`) seeds the slider dials.
+    hdr:      urlHdr ? true : undefined,
+    hdrTune:  urlHdr ?? undefined,
   };
   // Rewrite the URL hash query string to reflect the current tool state so the
   // page is shareable and bookmarkable. Uses replaceState — no history entry.
@@ -1728,6 +1744,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // writes durable=1; unchecking drops the param so a plain link stays clean.
       const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked;
       if (on) params.set('durable', '1'); else params.delete('durable');
+    }
+    if (dirtyParams.has('hdr')) {
+      // HDR — OFF by default (opt-in): checking writes hdr=1 (or the compact tuned
+      // form when a slider is off-default); unchecking drops it. serializeHdr emits
+      // `1` when all dials are default so a plain link stays clean.
+      const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked;
+      if (on) {
+        const dial = (a: string, d: number) => {
+          const v = Number(actionsEl?.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value);
+          return Number.isFinite(v) ? v : d;
+        };
+        params.set('hdr', serializeHdr({
+          peakNits: dial('hdr-peak', HDR_DEFAULTS.peakNits),
+          reach:    dial('hdr-reach', HDR_DEFAULTS.reach),
+          lift:     dial('hdr-lift', HDR_DEFAULTS.lift),
+          richness: dial('hdr-focus', HDR_DEFAULTS.richness),
+        }));
+      } else params.delete('hdr');
     }
 
     const qs = params.toString();
@@ -2544,6 +2578,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // carrying Lolly's id. Raster-only (no container rasters yet) and a no-op
         // until the encoder model is on-device. See plans/durable-content-credentials.md.
         if (urlDurable && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(fmt)) expOpts.durable = true;
+        // Opt-in HDR (?hdr=1): Rec.2100 PQ raster export with brand-colour glow.
+        // PNG/JPEG/AVIF/TIFF (WebP excluded — no working HDR decode path). See engine/src/hdr.ts.
+        if (urlHdr && ['png', 'jpg', 'jpeg', 'avif', 'tiff'].includes(fmt)) {
+          expOpts.hdr = true;
+          expOpts.hdrPeakNits = urlHdr.peakNits;
+          expOpts.hdrReach = urlHdr.reach;
+          expOpts.hdrLift = urlHdr.lift;
+          expOpts.hdrRichness = urlHdr.richness;
+        }
         // Print prep: honour ?bleed= / ?marks= so a deep link auto-exports a
         // print-ready file. Applied only when the link asks for it (never default).
         if (isPrintFmt(fmt) && (urlBleed || urlMarks)) {
