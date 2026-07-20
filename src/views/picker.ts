@@ -2486,8 +2486,19 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     const isHuge = file.size > HUGE_UPLOAD_BYTES || longest > MAX_LONGEST_EDGE * 2;
     // Keep the exact bytes — but honour the privacy flag: strip-on png/jpeg drops EXIF/XMP/GPS
     // IN PLACE (no quality loss, C2PA store preserved so a credential still verifies).
-    const keepBytes = (): void => {
-      const out = stripMeta && (format === 'png' || format === 'jpeg') ? stripMetadata(raw, format) : raw;
+    const keepBytes = async (): Promise<void> => {
+      let out: Uint8Array = raw;
+      if (stripMeta && (format === 'png' || format === 'jpeg')) {
+        try {
+          out = stripMetadata(raw, format);
+        } catch {
+          // The in-place strip couldn't verify a clean result. A privacy opt-in must
+          // never fall back to storing the original with its metadata intact, so
+          // re-encode instead — a guaranteed scrub, same as the not-strippable branch.
+          await reencode();
+          return;
+        }
+      }
       blob = new Blob([out as BlobPart], { type: file.type || undefined });
       width = dims.width; height = dims.height;
     };
@@ -2516,7 +2527,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     const canStripInPlace = format === 'png' || format === 'jpeg';
     if (ex && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
       // Credentialed AND it fits → ALWAYS verbatim; the C2PA hard binding stays intact + validates.
-      keepBytes();
+      await keepBytes();
     } else if (stripMeta && !canStripInPlace) {
       // Privacy strip is ON but this format can't be scrubbed in place → re-encode (the
       // only way to drop its metadata). Checked BEFORE the size prompt: "Keep original"
@@ -2538,11 +2549,11 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
         choices: [{ id: 'resize', label: t('Resize') }, { id: 'keep', label: t('Keep original'), primary: true }],
       });
       if (picked === 'resize') await reencode();
-      else keepBytes();
+      else await keepBytes();
     } else {
       // Good size → keep the exact bytes. keepBytes() still scrubs EXIF/XMP/GPS in place for
       // png/jpeg when the privacy flag is on (no quality loss, C2PA store preserved).
-      keepBytes();
+      await keepBytes();
     }
   }
 
