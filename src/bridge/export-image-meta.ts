@@ -78,6 +78,54 @@ export function insertPngPhys(png: Uint8Array, dpi: number): Uint8Array | null {
   return out;
 }
 
+// Overwrite an AVIF's `colr`/`nclx` box (ISOBMFF colour-information) so it signals
+// Rec.2100 HDR — AVIF signals natively via nclx, no ICC needed. Canvas AVIF
+// encoders write a colr box (usually sRGB). We rewrite ONLY the two HDR-defining
+// fields — colour_primaries (u16 → 9, BT.2020) and transfer_characteristics
+// (u16 → 16, PQ) — and DELIBERATELY preserve matrix_coefficients + the
+// full_range flag: those describe how the AV1 bitstream's YCbCr maps back to RGB
+// (the encoder's choice); changing them would make the decoder misread the pixels.
+// The decoded RGB code values are our PQ pixels, now interpreted as BT.2020/PQ.
+// Best-effort: only touches bytes that start with an `ftyp` box AND contain a
+// `colr`+`nclx` marker (so a PNG fallback from a browser that can't encode AVIF,
+// or any non-AVIF input, passes through untouched). No size change → offsets stay valid.
+export function setAvifCicp(
+  bytes: Uint8Array,
+  cicp: { primaries: number; transfer: number },
+): Uint8Array {
+  // Require an ISOBMFF `ftyp` box (bytes 4..8) so we never scribble into other formats.
+  if (bytes.length < 16 || String.fromCharCode(bytes[4]!, bytes[5]!, bytes[6]!, bytes[7]!) !== 'ftyp') return bytes;
+  for (let i = 8; i + 11 < bytes.length; i++) { // i+11 (last transfer byte) must be in range
+    if (bytes[i] === 0x63 && bytes[i + 1] === 0x6f && bytes[i + 2] === 0x6c && bytes[i + 3] === 0x72 && // 'colr'
+        bytes[i + 4] === 0x6e && bytes[i + 5] === 0x63 && bytes[i + 6] === 0x6c && bytes[i + 7] === 0x78) { // 'nclx'
+      const out = bytes.slice();
+      const dv = new DataView(out.buffer, out.byteOffset, out.byteLength);
+      dv.setUint16(i + 8, cicp.primaries);  // colour_primaries → BT.2020 (9)
+      dv.setUint16(i + 10, cicp.transfer);  // transfer → PQ (16); matrix + range preserved
+      return out;
+    }
+  }
+  return bytes; // no colr/nclx (not an AVIF, or a fallback PNG) → leave unchanged
+}
+
+// Splice a cICP chunk (PNG 3rd ed.) after IHDR — the coding-independent code
+// points that flag an HDR PNG (colour primaries, transfer, matrix=0, full-range).
+// Colour-managed decoders key off this to render Rec.2100-PQ pixels as HDR.
+export function insertPngCicp(
+  png: Uint8Array,
+  cicp: { primaries: number; transfer: number; matrix: number; fullRange: number },
+): Uint8Array {
+  const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < 8; i++) if (png[i] !== SIG[i]) return png;
+  const insertAt = 8 + 12 + readU32(png, 8); // after IHDR
+  const chunk = pngChunk('cICP', new Uint8Array([cicp.primaries, cicp.transfer, cicp.matrix, cicp.fullRange]));
+  const out = new Uint8Array(png.length + chunk.length);
+  out.set(png.subarray(0, insertAt), 0);
+  out.set(chunk, insertAt);
+  out.set(png.subarray(insertAt), insertAt + chunk.length);
+  return out;
+}
+
 // ── Provenance metadata (authorship embedded per format) ─────────────────────
 //
 // A generic record assembled by the engine (engine/src/metadata.js) is mapped
@@ -216,11 +264,11 @@ export function iccWanted(opts: ExportOpts): boolean {
 
 // PNG: an iCCP chunk (profile name + compression method 0 + zlib-deflated
 // profile) spliced in right after IHDR, before IDAT — where the spec requires it.
-export async function insertPngIcc(png: Uint8Array, iccBytes: Uint8Array): Promise<Uint8Array> {
+export async function insertPngIcc(png: Uint8Array, iccBytes: Uint8Array, profileName = 'sRGB'): Promise<Uint8Array> {
   try {
     const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
     for (let i = 0; i < 8; i++) if (png[i] !== SIG[i]) return png;
-    const name = new TextEncoder().encode('sRGB'); // 1–79 bytes, Latin-1
+    const name = new TextEncoder().encode(profileName); // 1–79 bytes, Latin-1
     const compressed = await deflateBytes(iccBytes);
     const data = new Uint8Array(name.length + 2 + compressed.length);
     data.set(name, 0);

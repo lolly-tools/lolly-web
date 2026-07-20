@@ -26,7 +26,9 @@ import {
   buildEncryptDictValues, encryptObjectBytes, preparePassword,
   buildEncryptedZip, crc32,
   buildPptxParts, EMU_PER_PX,
+  hdrBoostToPQ, pqBt2020IccProfile, HDR_PQ_CICP,
 } from '@lolly/engine';
+import type { HdrBoostOptions } from '@lolly/engine';
 import {
   suseFontFile, SUSE_FONT_DIR,
   canVectoriseText, textBaselineY,
@@ -58,7 +60,7 @@ import { renderPptx } from "./export-pptx.ts";
 // verbatim to sibling modules, imported back so no call site changes.
 import {
   patchJpegDpi, insertPngPhys, insertPngMeta, insertJpegExif, iccWanted,
-  insertPngIcc, insertJpegIcc, injectSvgMeta, withGifComment,
+  insertPngIcc, insertJpegIcc, insertPngCicp, setAvifCicp, injectSvgMeta, withGifComment,
   inflateBytes, deflateBytes,
 } from './export-image-meta.ts';
 import {
@@ -134,6 +136,19 @@ export interface ExportOpts {
   durable?: boolean;
   /** Reserved id carried by the durable mark (0 until the CAI id scheme lands). */
   durableId?: number;
+  /** OPT-IN HDR raster export (the `hdr` URL param). When set, an HDR-capable
+   *  raster (png/jpeg/avif/tiff) is encoded in Rec.2100 PQ with the brand's primary
+   *  colours (opts.palette) boosted toward peak luminance — white text and brand
+   *  colours glow on HDR displays, darks stay dark. Off by default; SDR otherwise.
+   *  See engine/src/hdr.ts + pqBt2020IccProfile. */
+  hdr?: boolean;
+  /** HDR author dials (from the export-panel sliders / tuned `hdr=` value). All
+   *  optional — omitted ⇒ engine defaults. `hdrPeakNits`: white ceiling (nits).
+   *  `hdrReach`/`hdrLift`/`hdrRichness`: 0–100 (glow reach / dark lift / colour focus). */
+  hdrPeakNits?: number;
+  hdrReach?: number;
+  hdrLift?: number;
+  hdrRichness?: number;
   /** INTERNAL, per-format-render mutable sink (created in renderFormat, never
    *  URL-serialized). Carries the imprint request down to imprintEmbedCanvas and
    *  records whether a container raster was actually marked, so stampC2pa can
@@ -440,6 +455,47 @@ function imprintCanvas(canvas: HTMLCanvasElement, strength?: number): void {
   ctx.putImageData(id, 0, 0);
 }
 
+// Brand primary hexes to boost, pulled from the live palette threaded in opts.
+// Engine stays brand-agnostic — it never derives these. (White is added by
+// hdrBoostToPQ itself so white text glows even when the palette omits it.)
+function hdrTargets(opts: ExportOpts): string[] {
+  const out: string[] = [];
+  for (const p of (opts.palette ?? []) as Array<{ hex?: string }>) {
+    if (p.hex && /^#?[0-9a-fA-F]{3,8}$/.test(p.hex)) out.push(p.hex);
+  }
+  return out;
+}
+
+// HDR-transform a canvas in place: engine hdrBoostToPQ rewrites the pixels to
+// Rec.2100-PQ code values, boosting brand-colour matches toward peak luminance.
+// Pairs with the pqBt2020IccProfile ICC (jpeg) / cICP chunk (png) stamped after.
+function hdrCanvas(canvas: HTMLCanvasElement, opts: ExportOpts): void {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || canvas.width < 1 || canvas.height < 1) return;
+  const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  hdrBoostToPQ(id.data, { targets: hdrTargets(opts), ...hdrTune(opts) });
+  ctx.putImageData(id, 0, 0);
+}
+
+// Map the author's 0–100 dials (export-panel sliders / tuned `hdr=` value) onto
+// the engine's hdrBoostToPQ knobs. `reach` slides the OKLab-lightness knee (higher
+// = the glow reaches further down into mid/dark tones); `lift` is the dark-colour
+// boost floor; `richness` is the re-saturation. Any dial left undefined falls
+// through to the engine default (so a plain `hdr=1` looks exactly as before).
+function hdrTune(opts: ExportOpts): Partial<HdrBoostOptions> {
+  const t: Partial<HdrBoostOptions> = {};
+  if (opts.hdrPeakNits != null) t.peakNits = opts.hdrPeakNits;
+  if (opts.hdrReach != null) {
+    const r = Math.min(1, Math.max(0, opts.hdrReach / 100));
+    const center = 0.65 - 0.45 * r;               // r=0 → 0.65 (brights only); r=1 → 0.20 (almost all)
+    t.kneeLo = Math.max(0, center - 0.12);
+    t.kneeHi = Math.min(1, center + 0.12);
+  }
+  if (opts.hdrLift != null) t.boostFloor = Math.min(1, Math.max(0, opts.hdrLift / 100));
+  if (opts.hdrRichness != null) t.richness = Math.min(1, Math.max(0, opts.hdrRichness / 100));
+  return t;
+}
+
 // Imprint a LOLLY-RENDERED raster that's about to be baked into a container (a
 // PDF page, a PPTX slide, an SVG <image>). Two extra gates over the standalone
 // raster encoders: (1) `imprint.want` — the caller only threads a want-set sink
@@ -495,13 +551,19 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
   // animating canvas captures the configured pose, not a random rAF moment.
   const fc = beginFrameClock(node); renderFrameAt(fc, 0);
   try {
+    // HDR (opt-in, ?hdr=): PQ-encode the pixels + tag the container Rec.2100-PQ.
+    // Needs canvas pixels, so it forces the canvas path (like imprint/durable).
+    const hdrOn = !!opts.hdr && (format === 'png' || format === 'jpeg');
     let blob: Blob;
-    if (opts.imprint || opts.durable) {
+    if (opts.imprint || opts.durable || hdrOn) {
       // Pixel-watermark path: rasterise to a canvas so we can perturb the pixels
       // before encoding, then encode with the same quality the dataURL path uses.
       // Also the durable-embed path, which likewise needs canvas pixels.
       const raw = await lib.toCanvas(node, dtoOpts);
       const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
+      // HDR first: the PQ transform is the base encoding, so any provenance mark
+      // below lands in the final (PQ) pixel space and embed/detect stay consistent.
+      if (hdrOn) hdrCanvas(canvas, opts);
       // png is lossless → the gentler LOSSLESS_STRENGTH; jpeg keeps the
       // quantization-calibrated DEFAULT_STRENGTH (undefined ⇒ engine default).
       if (opts.imprint) imprintCanvas(canvas, format === 'png' ? LOSSLESS_STRENGTH : undefined);
@@ -519,12 +581,15 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
     // chunk/segment in order, rebuild the Blob once. (Each stamp was previously
     // its own arrayBuffer()→Blob round-trip — three full multi-MB copies for a
     // high-DPI PNG.) Insertion order is preserved, so the output is byte-identical.
-    const icc = iccWanted(opts) ? iccProfileBytes(opts.colorProfile) : null;
-    if (format === 'png' && (d.dpi > 0 || opts.meta || icc)) {
+    // HDR overrides the colour profile with Rec.2100 PQ (its cicp tag is the HDR
+    // signal); PNG also gets a cICP chunk.
+    const icc = hdrOn ? pqBt2020IccProfile() : (iccWanted(opts) ? iccProfileBytes(opts.colorProfile) : null);
+    if (format === 'png' && (d.dpi > 0 || opts.meta || icc || hdrOn)) {
       let bytes = new Uint8Array(await blob.arrayBuffer());
       if (d.dpi > 0) bytes = (insertPngPhys(bytes, d.dpi) || bytes) as Uint8Array<ArrayBuffer>;
       bytes = insertPngMeta(bytes, opts.meta) as Uint8Array<ArrayBuffer>;
-      if (icc) bytes = await insertPngIcc(bytes, icc) as Uint8Array<ArrayBuffer>;
+      if (hdrOn) bytes = insertPngCicp(bytes, HDR_PQ_CICP) as Uint8Array<ArrayBuffer>;
+      if (icc) bytes = await insertPngIcc(bytes, icc, hdrOn ? 'Rec2100 PQ' : 'sRGB') as Uint8Array<ArrayBuffer>;
       blob = new Blob([bytes], { type: 'image/png' });
     } else if (format === 'jpeg' && (d.dpi > 0 || opts.meta || icc)) {
       let bytes = new Uint8Array(await blob.arrayBuffer());
@@ -565,9 +630,21 @@ async function renderBitmap(node: Element, mimeType: string, opts: ExportOpts): 
     endFrameClock(fc);
   }
   const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
+  // HDR (AVIF only here — AVIF signals HDR natively via its nclx colr box; WebP
+  // has no working HDR decode path, so it's not offered). PQ-transform first, then
+  // rewrite the encoded AVIF's colr box to Rec.2100 PQ.
+  const hdrOn = !!opts.hdr && mimeType === 'image/avif';
+  if (hdrOn) hdrCanvas(canvas, opts);
   if (opts.imprint) imprintCanvas(canvas);
   await durableEmbedCanvas(canvas, opts);
-  return canvasToBlob(canvas, mimeType, opts.quality ?? 0.9);
+  const blob = await canvasToBlob(canvas, mimeType, opts.quality ?? 0.9);
+  if (hdrOn) {
+    // canvasToBlob may fall back to PNG where the browser can't encode AVIF;
+    // setAvifCicp no-ops on non-AVIF bytes, so this is safe either way.
+    const bytes = setAvifCicp(new Uint8Array(await blob.arrayBuffer()), HDR_PQ_CICP);
+    return new Blob([bytes as BlobPart], { type: blob.type || mimeType });
+  }
+  return blob;
 }
 
 // ── RGB TIFF export (archival / lossless raster) ────────────────────────────
@@ -594,22 +671,29 @@ async function renderTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   // serialises. Uncompressed TIFF is lossless — unlike JPEG/AVIF this is a
   // straight round-trip of exactly what embedWatermark wrote, no re-encode to
   // survive.
+  const hdrOn = !!opts.hdr;
+  // HDR first (like renderRaster) so any mark lands in the final PQ pixel space.
+  if (hdrOn) hdrCanvas(canvas, opts);
   if (opts.imprint) imprintCanvas(canvas, LOSSLESS_STRENGTH); // uncompressed TIFF is lossless
   await durableEmbedCanvas(canvas, opts);
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const rgba = ctx.getImageData(0, 0, W, H).data;       // sRGB, straight (un-premultiplied)
-  const rgb = flattenRgb(rgba);
+  // Flatten transparency onto white normally; onto BLACK for HDR — in PQ, white is
+  // 10 000 nits, so a transparent edge flattened to white would blaze; black is 0 nits.
+  const rgb = flattenRgb(rgba, hdrOn ? 0 : 255);
   const tiff = packTiff(rgb, {
     width: W, height: H, samplesPerPixel: 3, photometric: 2,
     dpi: d.dpi || CSS_DPI, meta: opts.meta, description: opts.meta?.description,
+    // Rec.2100-PQ profile → HDR TIFF (its cicp tag signals the encoding).
+    ...(hdrOn ? { icc: pqBt2020IccProfile() } : {}),
   });
   return new Blob([tiff as BlobPart], { type: 'image/tiff' });
 }
 
 // Straight (un-premultiplied) RGBA → packed RGB, compositing any transparency onto
-// a white sheet (baseline TIFF has no alpha channel in this profile).
-function flattenRgb(rgba: Uint8ClampedArray): Uint8Array {
+// a solid sheet of `bg` (baseline TIFF has no alpha channel in this profile).
+function flattenRgb(rgba: Uint8ClampedArray, bg = 255): Uint8Array {
   const px = rgba.length / 4;
   const out = new Uint8Array(px * 3);
   for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
@@ -617,7 +701,7 @@ function flattenRgb(rgba: Uint8ClampedArray): Uint8Array {
     if (a === 255) {
       out[j] = rgba[i]!; out[j + 1] = rgba[i + 1]!; out[j + 2] = rgba[i + 2]!;
     } else {
-      const t = a / 255, u = 255 * (1 - t);
+      const t = a / 255, u = bg * (1 - t);
       out[j]     = (rgba[i]!     * t + u + 0.5) | 0;
       out[j + 1] = (rgba[i + 1]! * t + u + 0.5) | 0;
       out[j + 2] = (rgba[i + 2]! * t + u + 0.5) | 0;

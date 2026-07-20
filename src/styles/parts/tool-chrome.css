@@ -779,13 +779,31 @@
   border-color: hsl(var(--ring));
 }
 .c2pa-enable,
-.print-enable{
+.print-enable,
+.hdr-enable{
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
 }
-.c2pa-enable input[type="checkbox"] { flex: 0 0 auto; }
+.c2pa-enable input[type="checkbox"], .hdr-enable input[type="checkbox"] { flex: 0 0 auto; }
+
+/* HDR author dials — revealed under the toggle when HDR is on. Two-column grid of
+   compact labelled range sliders (White peak, glow Reach, Dark lift, Focus). */
+.hdr-body {
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+.hdr-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+.hdr-slider > span { flex: 0 0 auto; min-width: 52px; }
+.hdr-slider input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: hsl(var(--brand-c1, var(--ring))); }
 .c2pa-enable:has(input:disabled) { cursor: default; opacity: 0.55; }
 
 /* C2PA lifetime picker — "Expires:" label + the days <select>, inline. Stacked
