@@ -4763,6 +4763,43 @@ function scrubAnimations(node: Element, ms: number): boolean {
   return true;
 }
 
+// ── Node-driven capture override (opt-in, Tier-B video prototype) ───────────
+// A Node/Playwright caller (packages/node-shell/src/webshell-render.ts,
+// renderVideoViaScreenshot) can expose window.__lollyCaptureScreenshot before
+// navigating here. When present, frame() calls it instead of dom-to-image: Node
+// takes a REAL Chromium screenshot of the live node, clipped to its own box —
+// genuine paint, no clone/serialize/reinterpret step — and hands the PNG bytes
+// back as base64, which are then scaled to the export's target pixel size on a
+// canvas exactly like dom-to-image's own output. Everything else (the
+// deterministic clock, scrubAnimations, the WebCodecs encode, C2PA/watermark
+// stamping) is the exact same pipeline.
+//
+// Deliberately does NOT force the live node to the target width/height/scale
+// the way dtoOpts styles a dom-to-image CLONE — an earlier version did, and it
+// leaked layout: forcing #tool-canvas's box away from its real flex-driven size
+// let neighbouring chrome (the sidebar) bleed into the shot. A screenshot is
+// captured at the node's own on-screen size and upscaled if needed; call
+// page.setViewportSize/deviceScaleFactor Node-side for a sharper native size
+// instead of fighting the live layout from here.
+declare global { interface Window { __lollyCaptureScreenshot?: () => Promise<string | null> } }
+
+async function captureViaExternalScreenshot(
+  targetW: number, targetH: number, capture: () => Promise<string | null>,
+): Promise<HTMLCanvasElement> {
+  const b64 = await capture();
+  if (!b64) throw new Error('external screenshot capture returned nothing');
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('external screenshot frame failed to decode'));
+    img.src = `data:image/png;base64,${b64}`;
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW; canvas.height = targetH;
+  canvas.getContext('2d')!.drawImage(img, 0, 0, targetW, targetH);
+  return canvas;
+}
+
 async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
@@ -4795,7 +4832,9 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
       // frameClock — a clocked canvas can still share the DOM with CSS-animated
       // chrome around it. No-op when the node has none.
       scrubAnimations(node, t * durationMs);
-      return lib.toCanvas(node, dtoOpts);
+      return window.__lollyCaptureScreenshot
+        ? captureViaExternalScreenshot(targetW, targetH, window.__lollyCaptureScreenshot)
+        : lib.toCanvas(node, dtoOpts);
     },
     dispose() { endFrameClock(frameClock); restore(); },
   };
