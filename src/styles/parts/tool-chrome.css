@@ -748,6 +748,10 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Query container so the C2PA card can lay its "Expires:" control out beside the
+     label when the (resizable) sidebar is wide enough — the viewport isn't the
+     signal here. See the @container rule under .c2pa-life below. */
+  container: protection / inline-size;
 }
 .export-pdfpass input[type="password"] {
   width: 100%;
@@ -783,6 +787,33 @@
 }
 .c2pa-enable input[type="checkbox"] { flex: 0 0 auto; }
 .c2pa-enable:has(input:disabled) { cursor: default; opacity: 0.55; }
+
+/* C2PA lifetime picker — "Expires:" label + the days <select>, inline. Stacked
+   below the enable row by default (the .section-card column). */
+.c2pa-life-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+.c2pa-life-label { flex: 0 0 auto; }
+.c2pa-life-pick select[data-action="c2pa-days"] { flex: 0 1 auto; }
+/* When the sidebar (→ this container) is wide enough to hold the label/checkbox AND
+   the "Expires:" control on one line, float them onto a single row (control pushed to
+   the right); below the threshold it collapses back to the stacked column above. Only
+   in the lifetime-picker state — the enrolled-identity "Signed as…" line stays stacked.
+   The WebM hint keeps its own full-width line whenever it shows. */
+@container protection (min-width: 380px) {
+  .export-c2pa:has(.c2pa-life-pick) {
+    flex-flow: row wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: 12px;
+  }
+  .export-c2pa:has(.c2pa-life-pick) .c2pa-hint { flex-basis: 100%; }
+}
 
 /* Print marks & bleed card — the box is the shared .section-card (disclosure.css,
    rec 7); a master checkbox (.print-enable) reveals the body so ordinary PDFs

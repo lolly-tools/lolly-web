@@ -2698,6 +2698,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
   }
 
+  // Clicking the stage/view backdrop OUTSIDE the artboard deselects, just like clicking the
+  // empty canvas inside it (onCanvasPointerDown is bound to canvasEl, so those clicks never
+  // reached it). Guarded to a DIRECT hit on the backdrop element (target === currentTarget)
+  // so a bubbled event from a box, toolbar, popover or the canvas never triggers it. Doesn't
+  // stopPropagation, so stageNav's pan on a backdrop drag is unaffected.
+  function onBackdropPointerDown(e: PointerEvent): void {
+    if (e.button > 0 || e.target !== e.currentTarget) return;
+    if (editing) commitTextEdit();
+    closePopover();
+    deselectEdge();
+    if (selection.size) selection = new Set<string>();
+    renderChrome();
+  }
+
   // pointermove fires far faster than paint (60–120 Hz); coalesce to one rAF per frame so
   // the heavy path (snap + live rects + connector redraw) runs at most once per paint.
   let pendingMove: PointerEvent | null = null;
@@ -3755,6 +3769,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // ── wiring ────────────────────────────────────────────────────────────────────
   canvasEl.addEventListener('pointerdown', onCanvasPointerDown);
+  stageEl.addEventListener('pointerdown', onBackdropPointerDown);   // deselect on backdrop click
+  viewEl.addEventListener('pointerdown', onBackdropPointerDown);
   canvasEl.addEventListener('pointermove', onGestureMove);
   canvasEl.addEventListener('pointerup', onGestureEnd);
   canvasEl.addEventListener('pointercancel', onGestureEnd);
@@ -3844,6 +3860,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       disposed = true;
       finishEdit();
       canvasEl.removeEventListener('pointerdown', onCanvasPointerDown);
+      stageEl.removeEventListener('pointerdown', onBackdropPointerDown);
+      viewEl.removeEventListener('pointerdown', onBackdropPointerDown);
       canvasEl.removeEventListener('pointermove', onGestureMove);
       canvasEl.removeEventListener('pointerup', onGestureEnd);
       canvasEl.removeEventListener('pointercancel', onGestureEnd);

@@ -41,9 +41,11 @@ export function suseFontFile(weight: number, italic: boolean, mono = false): str
 /**
  * Resolve a computed style to a SUSE TTF URL host.text.toPath can fetch, or null
  * if this run isn't set in the brand font. SUSE Mono resolves to the SUSEMono-*
- * statics. (Phase 2 will resolve non-SUSE/system fonts via a font registry or
- * @font-face src; until then those fall back to a plain <text> element — see
- * canVectoriseText.)
+ * statics. This is just the SUSE branch of the resolver: non-SUSE families —
+ * installed user fonts, the platform Outfit, and (Phase 2, now shipped) any
+ * arbitrary document `@font-face` — resolve via font-registry.ts's resolveVectorFont,
+ * which fetches + woff2-decompresses their bytes. A run only falls back to a plain
+ * <text> element when NO family in the stack resolves to a font file (see canVectoriseText).
  */
 export function resolveSuseFontUrl(style: FontStyleSlice): string | null {
   const family = (style.fontFamily || '').toLowerCase();

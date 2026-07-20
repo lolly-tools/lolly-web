@@ -15,6 +15,7 @@ import {
   parseDimension, isPhysical, toPixels, toPoints, toCssPx, toCssLength, CSS_DPI,
   iccProfileBytes, rgbToCmyk, cmykCondition, computePrintGeometry, emitEmf, emitEps, emitDxf, packApng, packWebpAnim,
   parseCssLength, cornerRadii, uniformRadius, insetCorners, roundedRectPath, parseBoxShadow,
+  parseCssMatrix, matAboutPivot, isAxisAlignedMat, matToSvg, type Mat2D,
   parseClipShape, parseRadialGradient, parseDropShadowFilter,
   splitCssArgs, parseGradientAngle, parseGradientStop,
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
@@ -37,6 +38,8 @@ import { svgDomToIr } from './svg-ir.ts';
 import { unscopeStyleEls } from '../lib/scope-css.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
+import { encodeMuxWebCodecs, type EncodeAudio } from './video-encode-core.ts';
+import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.ts';
 // Capability probes live in format-support.ts so the tool view can import them
 // without pulling this rasteriser onto the tool-open path. Re-exported here for
 // dynamic callers (e.g. bridge/compose.ts does `await import('./export.ts')`).
@@ -60,8 +63,9 @@ import {
 } from './export-image-meta.ts';
 import {
   pureRotationDeg, sampleGradientMidpoint, brandSwatchPalette, blendSvgWithWhite,
+  pdfGradientSpec, fillPdfShading,
   pdfRoundedRect, withPdfAlpha, withPdfClipRect, withPdfRoundedClip, pdfApplyClip,
-  withPdfRotation, drawSvgPathToPdf, applyTextTransform,
+  withPdfRotation, withPdfMatrix, drawSvgPathToPdf, applyTextTransform, borderDashArray,
   buildCmykPaletteMap, assignSpotResourceNames, cmykKey, paletteHitKey, substitutePdfRgb,
   svgLen, preserveAspectRatioAlign, parseSvgColor,
 } from './export-pdf-vector.ts';
@@ -1281,13 +1285,21 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
     if (!isPolygon && !(isBasicShape && vectorCaps?.clipBasicShapes)) return `clip-path:${cp}`;
   }
 
-  // background-image the walkers can't express: linear-gradient IS handled; conic and
-  // url() bitmaps/SVGs on a non-<img> box are dropped today. (radial is left as the
-  // existing solid-midpoint approximation — conservative.)
+  // background-image: linear/radial gradients emit true SVG/PDF gradients; a SINGLE
+  // non-tiling url() emits a real <image> (vector-first — keeps the box's text vector).
+  // Only cases with no single-<image> equivalent rasterise: conic-gradient, a TILING
+  // background (repeat at intrinsic/auto size), or MULTIPLE layered url() images.
   const bi = s.backgroundImage;
   if (bi && bi !== 'none') {
     if (bi.includes('conic-gradient')) return 'conic-gradient';
-    if (bi.includes('url(')) return 'background-image:url()';
+    if (bi.includes('url(')) {
+      const multiple = (bi.match(/url\(/g) || []).length > 1;
+      const rep = (s.backgroundRepeat || 'repeat').toLowerCase();
+      const size = (s.backgroundSize || 'auto').toLowerCase();
+      const singleImageSize = size === 'cover' || size === 'contain' || /100%\s+100%/.test(size);
+      const tiles = /repeat/.test(rep) && rep !== 'no-repeat' && !singleImageSize;
+      if (multiple || tiles) return 'background-image:url()';   // no single-<image> equivalent → raster
+    }
   }
 
   // NB: skew / 3-D transforms are deliberately NOT rasterised here. dom-to-image
@@ -1342,6 +1354,32 @@ function rotationPivot(
     x: (unrotRect.left - rootRect.left) + (o[0] || 0),
     y: (unrotRect.top - rootRect.top) + (o[1] || 0),
   };
+}
+
+// The first url(...) in a CSS value (e.g. background-image), unquoted; null if none.
+function firstCssUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const m = String(value).match(/url\(\s*(["']?)([^)"']+)\1\s*\)/);
+  return m ? m[2]!.trim() : null;
+}
+
+// A CSS url() → a self-contained href: a data: URI stays as-is; blob:/http/relative are
+// fetched and inlined as a data: URI (so the SVG renders in secure static mode). Null on fail.
+async function cssUrlToHref(url: string): Promise<string | null> {
+  try { return url.startsWith('data:') ? url : await blobToDataUrl(url); }
+  catch { return null; }
+}
+
+// preserveAspectRatio for a background-image sized via `background-size` + positioned via
+// `background-position`: cover→slice, contain→meet, two explicit lengths (e.g. 100% 100%)→
+// none (stretch), else cover-like (the common decorative default). Alignment from position.
+function bgImagePAR(style: CSSStyleDeclaration): string {
+  const size = (style.backgroundSize || 'auto').trim().toLowerCase();
+  const align = preserveAspectRatioAlign(style.backgroundPosition);
+  if (size === 'contain') return `${align} meet`;
+  if (size === 'cover') return `${align} slice`;
+  if (/\S+\s+\S+/.test(size) && !size.includes('auto')) return 'none';   // exact two-value → stretch
+  return `${align} slice`;
 }
 
 async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob> {
@@ -1434,6 +1472,25 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
       return;
     }
 
+    // General 2-D transform (rotate+scale, skew, arbitrary matrix) that isn't a pure
+    // rotation: neutralise it, walk the untransformed subtree, then wrap in an SVG
+    // matrix() about the transform-origin. Pure translate/scale is left to the AABB
+    // path below (getBoundingClientRect already captures it); 3-D/perspective returns
+    // null from parseCssMatrix and falls through to the same AABB path.
+    const mtx = pureRotationDeg(style.transform) === 0 ? parseCssMatrix(style.transform) : null;
+    if (mtx && !isAxisAlignedMat(mtx)) {
+      const prevInline = el.style.transform;
+      el.style.transform = 'none';
+      const unrot = el.getBoundingClientRect();
+      const pivot = rotationPivot(style, unrot, rootRect);
+      const gM = document.createElementNS(NS, 'g');
+      gM.setAttribute('transform', matToSvg(matAboutPivot(mtx, pivot.x, pivot.y)));
+      parentG.appendChild(gM);
+      try { await visitSvgNode(el, gM); }
+      finally { el.style.transform = prevInline; }
+      return;
+    }
+
     const rect = el.getBoundingClientRect();
     if (rect.width < 0.5 || rect.height < 0.5) return;
 
@@ -1477,6 +1534,7 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
 
     // ── Border radius (CSS corner-overlap clamped → pill, not ellipse) ───────
     const { radii, uniform } = resolveRadii(style, w, h);
+    const hasRadius = uniform ? (uniform[0] > 0 || uniform[1] > 0) : true;
 
     // ── Box shadow ────────────────────────────────────────────────────────────
     // Each outer shadow is the box's own shape, offset + grown by spread, filled
@@ -1554,23 +1612,43 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     }
 
     // ── Background ──────────────────────────────────────────────────────────
-    // linear-gradient() and radial-gradient() emit a true SVG gradient (alpha stops
-    // preserved). A solid background-color paints behind the gradient (CSS order) so a
-    // gradient with transparent stops still sits on the right colour.
+    // CSS paint order (bottom→top): background-color, then the background-image layer.
+    // A gradient emits a true SVG gradient (alpha stops preserved); a url() image emits a
+    // real <image> (vector-first — the box's text/children stay crisp, instead of
+    // rasterising the whole node), sized/positioned per background-size/position and clipped
+    // to the rounded box. Only when we CAN'T vectorise (conic, repeat, unresolvable) does the
+    // escape-hatch above rasterise.
     const bgImg = style.backgroundImage;
+    const bgRgb = parseCssColorFull(style.backgroundColor);
+    if (bgRgb) g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, rgbaCss(bgRgb)));
     if (bgImg && bgImg !== 'none') {
       const gid = ++uid;
       const gradEl = buildLinearGradientEl(NS, bgImg, x, y, w, h, gid)
         || buildRadialGradientEl(NS, bgImg, x, y, w, h, gid);
       if (gradEl) {
-        const bgRgb = parseCssColorFull(style.backgroundColor);
-        if (bgRgb) g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, rgbaCss(bgRgb)));
         defs.appendChild(gradEl);
         g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, `url(#svggrad-${gid})`));
+      } else {
+        const bgUrl = firstCssUrl(bgImg);
+        const href = bgUrl ? await cssUrlToHref(bgUrl) : null;
+        if (href) {
+          const im = document.createElementNS(NS, 'image');
+          im.setAttribute('href', href);
+          im.setAttribute('x', String(n2(x))); im.setAttribute('y', String(n2(y)));
+          im.setAttribute('width', String(n2(w))); im.setAttribute('height', String(n2(h)));
+          im.setAttribute('preserveAspectRatio', bgImagePAR(style));
+          if (hasRadius) {
+            const cid = `fcbgclip-${++uid}`;
+            const clip = document.createElementNS(NS, 'clipPath');
+            clip.setAttribute('id', cid);
+            clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+            clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));
+            defs.appendChild(clip);
+            im.setAttribute('clip-path', `url(#${cid})`);
+          }
+          g.appendChild(im);
+        }
       }
-    } else {
-      const bgRgb = parseCssColorFull(style.backgroundColor);
-      if (bgRgb) g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, rgbaCss(bgRgb)));
     }
 
     // ── Borders ─────────────────────────────────────────────────────────────
@@ -1607,6 +1685,11 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
       r.setAttribute('stroke', rgbStr(bT.rgb!));
       r.setAttribute('stroke-width', String(lw));
       if (bT.rgb![3] < 1) r.setAttribute('stroke-opacity', String(bT.rgb![3]));
+      const dash = borderDashArray(style.borderTopStyle, lw);
+      if (dash) {
+        r.setAttribute('stroke-dasharray', dash.dash.join(' '));
+        if (dash.round) r.setAttribute('stroke-linecap', 'round');
+      }
       g.appendChild(r);
     } else {
       const edge = (rect: { rgb: Rgba; el: Element }) => { if (rect.rgb[3] < 1) rect.el.setAttribute('fill-opacity', String(rect.rgb[3])); g.appendChild(rect.el); };
@@ -1710,23 +1793,26 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
       return;
     }
 
-    // ── overflow:hidden + border-radius → clip the CONTENT to the rounded box ──
-    // CSS clips a rounded overflow:hidden box's children to the corner curve; the
-    // walker draws each box's own rounded bg but doesn't clip descendants, so a child
-    // with a different fill (e.g. a code-editor titlebar) shows SQUARE corners at the
-    // parent's rounded edge. Route children/text/pseudo through a rounded <clipPath>
-    // sub-group — the box-shadow/background/border stay in `g` (unclipped) so an
-    // outset shadow still extends past the box. Only when there IS a radius (a square
-    // overflow:hidden changes nothing visible and is left alone, to stay conservative).
-    const hasRadius = uniform ? (uniform[0] > 0 || uniform[1] > 0) : true;
+    // ── overflow:hidden → clip the CONTENT to the box (rounded or square) ──────
+    // CSS crops an overflow:hidden box's descendants to the box (its corner curve when
+    // rounded); the walker draws each box's own bg but doesn't clip descendants, so a
+    // child that spills — a differently-filled titlebar past a rounded edge, or an
+    // over-sized image/child past a square edge — would show outside the box. Route
+    // children/text/pseudo through a <clipPath> sub-group (rounded fill, or a plain rect
+    // when there's no radius); the box-shadow/background/border stay in `g` (unclipped) so
+    // an outset shadow still extends past the box. A ROUNDED overflow box always clips (its
+    // children must follow the corner curve); a SQUARE one clips only when a descendant
+    // ACTUALLY spills (scroll > client) — most overflow:hidden boxes (flex/grid layout) clip
+    // nothing visible, and a clip group on every one would bloat the SVG for no change.
     const clipsOverflow = (style.overflowX && style.overflowX !== 'visible') || (style.overflowY && style.overflowY !== 'visible');
+    const spillsBox = (el.scrollWidth || 0) > (el.clientWidth || 0) + 1 || (el.scrollHeight || 0) > (el.clientHeight || 0) + 1;
     let contentG: Element = g;
-    if (clipsOverflow && hasRadius) {
+    if (clipsOverflow && (hasRadius || spillsBox)) {
       const cid = `fcovclip-${++uid}`;
       const clip = document.createElementNS(NS, 'clipPath');
       clip.setAttribute('id', cid);
       clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
-      clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));
+      clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));   // 0 radii → a plain rect
       defs.appendChild(clip);
       contentG = document.createElementNS(NS, 'g');
       contentG.setAttribute('clip-path', `url(#${cid})`);
@@ -3358,14 +3444,17 @@ function resolveStyleProp(el: any, prop: string): string | null {
 }
 
 
-// Rasterise a CSS radial-gradient fill to a PNG data URL at pxW×pxH. jsPDF has no radial
-// shading in compat mode, so the PDF walker embeds this bounded bitmap as the box
-// background — alpha-correct (unlike a flat midpoint), and reusing the same
-// buildRadialGradientEl the SVG walker emits. `w`/`h` are the box size in CSS px.
-// Returns null when the value isn't a parseable radial gradient.
-async function radialGradientPng(bgImg: string, w: number, h: number, pxW: number, pxH: number, imprint?: ImprintState): Promise<string | null> {
+// Rasterise a CSS linear- or radial-gradient fill to a PNG data URL at pxW×pxH. jsPDF's
+// compat-mode API has no vector shading (patterns need advancedAPI, which flips the
+// coordinate system), so the PDF walker embeds this bounded bitmap as the box background —
+// faithful multi-stop + angle and alpha-correct (unlike the old flat-midpoint solid),
+// reusing the SAME build{Linear,Radial}GradientEl the SVG walker emits so both paths agree.
+// `w`/`h` are the box size in CSS px. Returns null when the value isn't a parseable
+// linear/radial gradient (the caller falls back to the midpoint solid).
+async function gradientPng(bgImg: string, w: number, h: number, pxW: number, pxH: number, imprint?: ImprintState): Promise<string | null> {
   const NS = 'http://www.w3.org/2000/svg';
-  const grad = buildRadialGradientEl(NS, bgImg, 0, 0, w, h, 1);
+  const grad = buildLinearGradientEl(NS, bgImg, 0, 0, w, h, 1)
+    || buildRadialGradientEl(NS, bgImg, 0, 0, w, h, 1);
   if (!grad) return null;
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('xmlns', NS);
@@ -3379,6 +3468,55 @@ async function radialGradientPng(bgImg: string, w: number, h: number, pxW: numbe
   rect.setAttribute('fill', 'url(#svggrad-1)');
   svg.appendChild(rect);
   return rasterizeSvgElement(svg, pxW, pxH, false, imprint);
+}
+
+// Rasterise ONE outer box-shadow (shape only — never the element's content/text) to a
+// PNG for the PDF walker: jsPDF has no blur primitive, so a soft shadow is embedded as a
+// bounded shadow-only bitmap behind the box, mirroring the SVG walker's feGaussianBlur
+// shape (makeRoundedFill + the identical stdDeviation = blur/2). Returns the PNG plus the
+// shadow's region in element-local CSS px (the caller scales to pt + places it behind the
+// box). `wCss`/`hCss` are the box size in CSS px; `radiiCss` the CSS-px corner radii.
+async function rasterizeBoxShadow(
+  sh: { x: number; y: number; blur: number; spread: number; color: string },
+  wCss: number, hCss: number, radiiCss: CornerRadii, dprX: number, dprY: number, imprint?: ImprintState,
+): Promise<{ png: string; rx: number; ry: number; rw: number; rh: number } | null> {
+  const col = parseCssColorFull(sh.color);
+  if (!col) return null;
+  const sw = Math.max(0, wCss + 2 * sh.spread);
+  const shh = Math.max(0, hCss + 2 * sh.spread);
+  if (sw <= 0 || shh <= 0) return null;
+  const pad = sh.blur * 1.5 + Math.abs(sh.spread) + 8;    // matches the SVG walker's blur pad
+  const shapeX = sh.x - sh.spread, shapeY = sh.y - sh.spread;   // element-local CSS px
+  const rx = shapeX - pad, ry = shapeY - pad, rw = sw + 2 * pad, rh = shh + 2 * pad;
+  const sRadii = insetCorners(radiiCss, -sh.spread);             // negative inset = outset
+  const fill = col[3] < 1 ? `rgba(${col[0]},${col[1]},${col[2]},${col[3]})` : `rgb(${col[0]},${col[1]},${col[2]})`;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('xmlns', NS);
+  svg.setAttribute('viewBox', `${n2(rx)} ${n2(ry)} ${n2(rw)} ${n2(rh)}`);
+  const shape = makeRoundedFill(NS, shapeX, shapeY, sw, shh, sRadii, uniformRadius(sRadii), fill);
+  if (sh.blur > 0) {
+    const defs = document.createElementNS(NS, 'defs');
+    const filt = document.createElementNS(NS, 'filter');
+    filt.setAttribute('id', 'sh');
+    filt.setAttribute('filterUnits', 'userSpaceOnUse');
+    filt.setAttribute('x', String(n2(rx))); filt.setAttribute('y', String(n2(ry)));
+    filt.setAttribute('width', String(n2(rw))); filt.setAttribute('height', String(n2(rh)));
+    const fe = document.createElementNS(NS, 'feGaussianBlur');
+    fe.setAttribute('in', 'SourceGraphic');
+    fe.setAttribute('stdDeviation', String(sh.blur / 2));
+    filt.appendChild(fe);
+    defs.appendChild(filt);
+    svg.appendChild(defs);
+    shape.setAttribute('filter', 'url(#sh)');
+  }
+  svg.appendChild(shape);
+  // Per-axis density (points→px) so the bitmap hits RASTER_DPI in the placed PT region,
+  // not RASTER_DPI/scale — the region is placed at rw*scaleX × rh*scaleY pt.
+  const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(rw * dprX)));
+  const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(rh * dprY)));
+  const png = await rasterizeSvgElement(svg, pxW, pxH, false, imprint);
+  return { png, rx, ry, rw, rh };
 }
 
 
@@ -3504,7 +3642,8 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
 
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return;
-    if (parseFloat(style.opacity ?? '1') === 0) return;
+    const elOpacity = parseFloat(style.opacity ?? '1');
+    if (elOpacity === 0) return;
 
     // CSS rotate(): neutralise it, walk the axis-aligned subtree, and wrap the draw
     // in a jsPDF rotation about the transform-origin. Additive (no-op unrotated).
@@ -3515,6 +3654,29 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       const unrot = el.getBoundingClientRect();     // reading forces the reflow
       const pivot = rotationPivot(style, unrot, rootRect);
       try { await withPdfRotation(pdf, rotDeg, pivot.x * scaleX, pivot.y * scaleY, () => visit(el)); }
+      finally { el.style.transform = prevInline; }
+      return;
+    }
+
+    // General 2-D transform (rotate+scale / skew / matrix) that isn't a pure rotation:
+    // mirror the SVG walker — neutralise, walk the untransformed subtree, wrap the draw
+    // in the full CTM about the transform-origin. Pure translate/scale → AABB path below;
+    // 3-D/perspective → parseCssMatrix null → AABB path.
+    const mtx = pureRotationDeg(style.transform) === 0 ? parseCssMatrix(style.transform) : null;
+    if (mtx && !isAxisAlignedMat(mtx)) {
+      const prevInline = el.style.transform;
+      el.style.transform = 'none';
+      const unrot = el.getBoundingClientRect();
+      const pivot = rotationPivot(style, unrot, rootRect);
+      // Child geometry is drawn in anisotropically-scaled pt space (S = diag(scaleX,scaleY)),
+      // so the CTM that reproduces the CSS matrix M there is S·M·S⁻¹, NOT M: the off-diagonals
+      // pick up the aspect ratio (rotate/skew shear differently once x and y are scaled
+      // unequally). The SVG walker gets this for free from its single outer scale(scaleX,scaleY)
+      // group; the PDF walker bakes scale per-axis into every coord, so conjugate here. e,f are
+      // the S-scaled translation. (Uniform scale → ar=1 → unchanged, matching withPdfRotation.)
+      const ar = (scaleX && scaleY) ? scaleX / scaleY : 1;
+      const mPt: Mat2D = { a: mtx.a, b: mtx.b / ar, c: mtx.c * ar, d: mtx.d, e: mtx.e * scaleX, f: mtx.f * scaleY };
+      try { await withPdfMatrix(pdf, mPt, pivot.x * scaleX, pivot.y * scaleY, () => visit(el)); }
       finally { el.style.transform = prevInline; }
       return;
     }
@@ -3535,11 +3697,17 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // escape-hatch rasterises them (clipBasicShapes:false).
     const cpVal = style.clipPath || (style as any).webkitClipPath;
     const clipShape = (cpVal && cpVal !== 'none') ? parseClipShape(cpVal, rect.width, rect.height) : null;
-    if (!clipShape) { await paintEl(el, tag, style, rect, x, y, w, h, false); return; }
+    // Partial element opacity (0<o<1): jsPDF has no group-opacity primitive, so apply it
+    // as a GState alpha on the element's own draws. Correct for a LEAF (text/solid box —
+    // no descendants to composite); non-leaves keep the current opaque behaviour rather
+    // than mis-composite overlapping descendants (a per-op alpha ≠ CSS group opacity).
+    const alpha = (elOpacity < 1 && el.children.length === 0 && typeof pdf.GState === 'function' && typeof pdf.setGState === 'function') ? elOpacity : 1;
+    if (!clipShape && alpha === 1) { await paintEl(el, tag, style, rect, x, y, w, h, false); return; }
     pdf.saveGraphicsState();
     try {
-      pdfApplyClip(pdf, clipShape, x, y, scaleX, scaleY);
-      await paintEl(el, tag, style, rect, x, y, w, h, true);
+      if (alpha < 1) pdf.setGState(new pdf.GState({ opacity: alpha, 'stroke-opacity': alpha }));
+      if (clipShape) pdfApplyClip(pdf, clipShape, x, y, scaleX, scaleY);
+      await paintEl(el, tag, style, rect, x, y, w, h, !!clipShape);
     } finally { pdf.restoreGraphicsState(); }
   }
 
@@ -3549,6 +3717,42 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
   // `clipBasicShapes` = the element's clip-path was vectorised, so a basic-shape clip
   // isn't re-rasterised by the escape-hatch below.
   async function paintEl(el: any, tag: string, style: CSSStyleDeclaration, rect: DOMRect, x: number, y: number, w: number, h: number, clipBasicShapes: boolean): Promise<void> {
+    // CSS-px CornerRadii → pt (per axis). Shared by the box-shadow, background and border.
+    const scaleRadii = (r: CornerRadii): CornerRadii => ({
+      topLeft:     [r.topLeft[0]     * scaleX, r.topLeft[1]     * scaleY],
+      topRight:    [r.topRight[0]    * scaleX, r.topRight[1]    * scaleY],
+      bottomRight: [r.bottomRight[0] * scaleX, r.bottomRight[1] * scaleY],
+      bottomLeft:  [r.bottomLeft[0]  * scaleX, r.bottomLeft[1]  * scaleY],
+    });
+
+    // ── Box shadow (painted behind everything, mirrors the SVG walker) ──────────
+    // A HARD shadow (blur 0) is a plain offset shape → true vector rounded rect. A SOFT
+    // (blurred) shadow has no jsPDF vector primitive, so it's a bounded shadow-ONLY raster
+    // (never the element's content/text). PDF-only path — EMF/EPS go through the SVG walker
+    // with noBoxShadow, so no gate is needed here.
+    if (tag !== 'img' && tag !== 'svg' && style.boxShadow && style.boxShadow !== 'none') {
+      const { radii: shRadiiCss } = resolveRadii(style, rect.width, rect.height);
+      for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
+        if (sh.blur <= 0) {
+          // hard shadow → vector: offset+spread-grown rounded rect in the shadow colour
+          const col = parseCssColorFull(sh.color);
+          const sw = Math.max(0, rect.width + 2 * sh.spread), shh = Math.max(0, rect.height + 2 * sh.spread);
+          if (!col || sw <= 0 || shh <= 0) continue;
+          const sRadii = scaleRadii(insetCorners(shRadiiCss, -sh.spread));
+          const sx = x + (sh.x - sh.spread) * scaleX, sy = y + (sh.y - sh.spread) * scaleY;
+          pdf.setFillColor(col[0], col[1], col[2]);
+          withPdfAlpha(pdf, col[3], () => pdfRoundedRect(pdf, sx, sy, sw * scaleX, shh * scaleY, sRadii, uniformRadius(sRadii), 'F'));
+        } else {
+          // soft shadow → bounded shadow-only raster (last resort — no vector blur)
+          try {
+            const dens = RASTER_DPI / 72;
+            const res = await rasterizeBoxShadow(sh, rect.width, rect.height, shRadiiCss, dens * scaleX, dens * scaleY, imprint);
+            if (res) pdf.addImage(res.png, 'PNG', x + res.rx * scaleX, y + res.ry * scaleY, res.rw * scaleX, res.rh * scaleY);
+          } catch { /* skip a shadow that won't rasterise */ }
+        }
+      }
+    }
+
     // ── Rasterise escape-hatch (mirrors visitSvgNode) ───────────────────────────
     // Node uses CSS the walker can't express → embed it as an image at its rect
     // instead of dropping the effect. Returns on success so children/bg/text aren't
@@ -3572,41 +3776,70 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // resolved in CSS px then scaled per axis. Uniform corners take jsPDF's fast
     // roundedRect; differing corners take a four-corner path.
     const { radii: radiiCss, uniform: uniformCss } = resolveRadii(style, rect.width, rect.height);
-    const scaleRadii = (r: CornerRadii): CornerRadii => ({
-      topLeft:     [r.topLeft[0]     * scaleX, r.topLeft[1]     * scaleY],
-      topRight:    [r.topRight[0]    * scaleX, r.topRight[1]    * scaleY],
-      bottomRight: [r.bottomRight[0] * scaleX, r.bottomRight[1] * scaleY],
-      bottomLeft:  [r.bottomLeft[0]  * scaleX, r.bottomLeft[1]  * scaleY],
-    });
     const radii = scaleRadii(radiiCss);
     const uniform: CornerPair | null = uniformCss ? [uniformCss[0] * scaleX, uniformCss[1] * scaleY] : null;
     const hasRadius = uniform ? (uniform[0] > 0 || uniform[1] > 0) : true;
     const bgImg = style.backgroundImage;
-    if (bgImg && /^radial-gradient\(/.test(bgImg)) {
-      // radial-gradient: jsPDF has no radial shading in compat mode, so rasterise the
-      // gradient fill (alpha-correct) and place it as the box background, clipped to the
-      // rounded box. A solid background-color paints behind it (CSS order) so a gradient
-      // with transparent stops still sits on the right colour. (linear stays the fast
-      // solid-midpoint approximation below — unchanged.)
+    if (bgImg && (/^radial-gradient\(/.test(bgImg) || /^linear-gradient\(/.test(bgImg))) {
+      // linear/radial gradient: rasterise the fill (faithful multi-stop + angle,
+      // alpha-correct) and place it as the box background, clipped to the rounded box —
+      // jsPDF compat mode has no vector shading. A solid background-color paints behind it
+      // (CSS order) so a gradient with transparent stops sits on the right colour. If the
+      // gradient can't be parsed/rasterised we fall back to the flat solid-midpoint so we
+      // are never WORSE than before.
       const solid = parseCssColor(style.backgroundColor);
       if (solid) { pdf.setFillColor(solid[0], solid[1], solid[2]); pdfRoundedRect(pdf, x, y, w, h, radii, uniform, 'F'); }
-      try {
-        const dpr = RASTER_DPI / 72;
-        const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * dpr)));
-        const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(h * dpr)));
-        const png = await radialGradientPng(bgImg, rect.width, rect.height, pxW, pxH, imprint);
-        if (png) {
-          if (hasRadius) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, () => pdf.addImage(png, 'PNG', x, y, w, h));
-          else pdf.addImage(png, 'PNG', x, y, w, h);
-        }
-      } catch { /* leave the solid colour underneath */ }
+      let placed = false;
+      // 1) TRUE VECTOR — a jsPDF ShadingPattern, unless the gradient has transparent
+      //    stops (PDF shading carries no per-stop alpha → would lose them).
+      const spec = pdfGradientSpec(bgImg, x, y, w, h);
+      if (spec && !spec.hasAlpha) {
+        placed = fillPdfShading(pdf, spec, (doc) =>
+          drawSvgPathToPdf(doc, roundedRectPath(x, y, w, h, radii), (v) => v, (v) => v));
+      }
+      // 2) FAITHFUL RASTER — alpha stops, an unparseable value, or no shading API.
+      if (!placed) {
+        try {
+          const dpr = RASTER_DPI / 72;
+          const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * dpr)));
+          const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(h * dpr)));
+          const png = await gradientPng(bgImg, rect.width, rect.height, pxW, pxH, imprint);
+          if (png) {
+            if (hasRadius) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, () => pdf.addImage(png, 'PNG', x, y, w, h));
+            else pdf.addImage(png, 'PNG', x, y, w, h);
+            placed = true;
+          }
+        } catch { /* fall through to the midpoint solid */ }
+      }
+      // 3) LAST RESORT — a flat midpoint solid (only if nothing painted yet).
+      if (!placed && !solid) {
+        const mid = sampleGradientMidpoint(bgImg);
+        if (mid) { pdf.setFillColor(mid[0], mid[1], mid[2]); pdfRoundedRect(pdf, x, y, w, h, radii, uniform, 'F'); }
+      }
     } else {
-      const bgRgb = (bgImg && bgImg !== 'none')
-        ? sampleGradientMidpoint(bgImg)
-        : parseCssColor(style.backgroundColor);
-      if (bgRgb) {
-        pdf.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
-        pdfRoundedRect(pdf, x, y, w, h, radii, uniform, 'F');
+      // Solid background-color first (bottom layer).
+      const solid = parseCssColor(style.backgroundColor);
+      if (solid) { pdf.setFillColor(solid[0], solid[1], solid[2]); pdfRoundedRect(pdf, x, y, w, h, radii, uniform, 'F'); }
+      // background-image: url() → a real embedded image (vector-first for the box: its
+      // text/children stay vector instead of the whole node being rasterised). cover/contain
+      // fitted from the image's natural size, clipped to the box.
+      const bgUrl = (bgImg && bgImg !== 'none') ? firstCssUrl(bgImg) : null;
+      if (bgUrl) {
+        try {
+          const href = await cssUrlToHref(bgUrl);
+          if (href) {
+            const { src, fmt } = await imageForPdf(href);
+            const dims = await imageDims(src);
+            const fit = dims ? bgFitRect(dims.w, dims.h, x, y, w, h, style) : { x, y, w, h, overflows: false };
+            const draw = () => pdf.addImage(src, fmt, fit.x, fit.y, fit.w, fit.h);
+            if (hasRadius || fit.overflows) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, draw);
+            else draw();
+          }
+        } catch { /* skip the bg image — the box's own content still renders vector */ }
+      } else if (bgImg && bgImg !== 'none' && !solid) {
+        // a non-url, non-gradient bg (e.g. a lone unresolved value) → the old midpoint solid
+        const mid = sampleGradientMidpoint(bgImg);
+        if (mid) { pdf.setFillColor(mid[0], mid[1], mid[2]); pdfRoundedRect(pdf, x, y, w, h, radii, uniform, 'F'); }
       }
     }
 
@@ -3631,9 +3864,20 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       pdf.setLineWidth(lw);
       // CSS border-box: the border sits inside w×h; jsPDF strokes centred, so inset by lw/2.
       const innerUniform: CornerPair | null = uniform ? [Math.max(0, uniform[0] - lw / 2), Math.max(0, uniform[1] - lw / 2)] : null;
+      // dashed/dotted → a line-dash pattern (jsPDF dash is sticky, so reset after). Round
+      // caps for dotted give round dots. Guarded — older jsPDF lacks the setters.
+      const dash = borderDashArray(style.borderTopStyle, lw);
+      if (dash && typeof pdf.setLineDashPattern === 'function') {
+        pdf.setLineDashPattern(dash.dash, 0);
+        if (dash.round && typeof pdf.setLineCap === 'function') pdf.setLineCap('round');
+      }
       withPdfAlpha(pdf, bT.rgb![3], () =>
         pdfRoundedRect(pdf, x + lw / 2, y + lw / 2, w - lw, h - lw,
           insetCorners(radii, lw / 2), innerUniform, 'S'));
+      if (dash && typeof pdf.setLineDashPattern === 'function') {
+        pdf.setLineDashPattern([], 0);
+        if (dash.round && typeof pdf.setLineCap === 'function') pdf.setLineCap('butt');
+      }
     } else {
       const edge = (rgb: Rgba, dx: number, dy: number, ew: number, eh: number) => withPdfAlpha(pdf, rgb[3], () => {
         pdf.setFillColor(rgb[0], rgb[1], rgb[2]); pdf.rect(dx, dy, ew, eh, 'F');
@@ -3768,13 +4012,16 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // loop — their content is rendered by renderInlineContent, where each fragment gets
     // its own computed style (preserving bold, color, etc.).
     //
-    // overflow:hidden + border-radius → clip the CONTENT to the rounded box (mirrors the
-    // SVG walker): CSS crops a rounded overflow box's descendants to the corner curve, so
-    // a child with a different fill would otherwise show SQUARE corners at the parent's
-    // rounded edge. Only the content is clipped — bg/border already painted above stay,
-    // so the box's own rounded edge is intact. Conservative: square overflow boxes are
-    // left alone (nothing visibly changes).
+    // overflow:hidden → clip the CONTENT to the box (mirrors the SVG walker): CSS crops an
+    // overflow box's descendants to the box (its corner curve when rounded), so a child that
+    // spills — a differently-filled child past a rounded edge, or an over-sized child past a
+    // square edge — would otherwise show outside it. Only the content is clipped; bg/border
+    // painted above stay, so the box's own edge is intact. A ROUNDED overflow box always
+    // clips; a SQUARE one clips only when a descendant ACTUALLY spills (scroll > client), so a
+    // clip isn't added to every layout overflow:hidden box (withPdfRoundedClip → a plain rect
+    // when there's no radius).
     const clipsOverflow = (style.overflowX && style.overflowX !== 'visible') || (style.overflowY && style.overflowY !== 'visible');
+    const spillsBox = (el.scrollWidth || 0) > (el.clientWidth || 0) + 1 || (el.scrollHeight || 0) > (el.clientHeight || 0) + 1;
     const drawContent = async (): Promise<void> => {
       for (const child of el.children) {
         const cd = window.getComputedStyle(child).display;
@@ -3784,7 +4031,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       await renderInlineContent(pdf, el, style, rootRect, scaleX, scaleY, cssToPt, registeredFonts, convertPaths);
       await pdfPseudoContent(pdf, el, rootRect, scaleX, scaleY, cssToPt, registeredFonts, convertPaths);
     };
-    if (clipsOverflow && hasRadius) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, drawContent);
+    if (clipsOverflow && (hasRadius || spillsBox)) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, drawContent);
     else await drawContent();
   }
 
@@ -3827,7 +4074,7 @@ async function renderInlineContent(
       const letterSpacing = letterSpacingPx(nodeStyle.letterSpacing);
       const features = featureSettingsToHb(nodeStyle.fontFeatureSettings);
       const textRgb = parseCssColor(nodeStyle.color) || ([0, 0, 0] as Rgb);
-      const ascentPt = fontMetricsPx(nodeStyle, fontSizePx).ascent * cssToPt;
+      const { ascent, descent } = fontMetricsPx(nodeStyle, fontSizePx);
 
       // Use the browser's actual line breaks + per-line positions (exact match to
       // on-screen and the SVG output), NOT jsPDF's splitTextToSize — which re-measures
@@ -3843,7 +4090,10 @@ async function renderInlineContent(
             const r = line.rect;
             if (r.width < 0.5 || r.height < 0.5) continue;
             const x = (r.left - rootRect.left) * scaleX;
-            const top = (r.top - rootRect.top) * scaleY;
+            // Baseline within the line box = half-leading + ascent (the SAME textBaselineY
+            // the SVG walker uses), so a run with line-height > 1 sits centred instead of
+            // riding the top of its line box. (Was `top + ascent`, i.e. half-leading = 0.)
+            const baselinePt = textBaselineY(r.top - rootRect.top, r.height, ascent, descent) * scaleY;
             const shown = applyTextTransform(line.text, nodeStyle.textTransform);
             let drawn = false;
             if (outline) {
@@ -3855,7 +4105,7 @@ async function renderInlineContent(
                   pdf.setFillColor(textRgb[0], textRgb[1], textRgb[2]);
                   drawSvgPathToPdf(pdf, d,
                     (sx: number) => x + sx * cssToPt,
-                    (sy: number) => top + ascentPt + sy * cssToPt);
+                    (sy: number) => baselinePt + sy * cssToPt);
                   pdf.fill();
                   drawn = true;
                 }
@@ -3863,13 +4113,13 @@ async function renderInlineContent(
                 _host?.log?.('warn', `pdf: text-to-path failed, using embedded text — ${(e as Error).message}`);
               }
             }
-            if (!drawn) pdf.text(shown, x, top, { baseline: 'top' });
+            if (!drawn) pdf.text(shown, x, baselinePt, { baseline: 'alphabetic' });
 
             // Underline / strikethrough bars in the run's colour (text-decoration is
-            // otherwise dropped by the vector walk). Baseline = top + ascent; vertical
-            // metrics use cssToPt (matching ascentPt), width uses scaleX (matching x).
+            // otherwise dropped by the vector walk). Positioned relative to the baseline;
+            // width uses scaleX (matching x), vertical offsets use cssToPt.
             if (deco.u || deco.s) {
-              const baseline = top + ascentPt;
+              const baseline = baselinePt;
               const thick = Math.max(0.5, fontSizePx * 0.06) * cssToPt;
               const widthPt = r.width * scaleX;
               pdf.setFillColor(textRgb[0], textRgb[1], textRgb[2]);
@@ -3922,15 +4172,20 @@ async function pdfPseudoContent(pdf: any, el: Element, rootRect: { left: number;
     const embedUrl = await pdfUserFontEmbed(vf);
     const isUserFont = Boolean(vf?.url.startsWith('blob:'));
     const textRgb = parseCssColor(ds.ps.color) || ([0, 0, 0] as Rgb);
+    // Baseline within the marker's line box (half-leading + ascent), matching the SVG
+    // pseudo path's textBaselineY — so a bullet/arrow lines up with the main text (which
+    // is now also centred), not riding the top of its box.
+    const lineHPx = parseFloat(ds.ps.lineHeight) || fontSizePx * 1.2;
+    const { ascent: pAsc, descent: pDesc } = fontMetricsPx(ds.ps, fontSizePx);
+    const baselinePt = textBaselineY(ds.y - rootRect.top, lineHPx, pAsc, pDesc) * scaleY;
     let drawn = false;
     // Outline in convert-paths mode, or for a user font jsPDF can't embed faithfully.
     if (canVectoriseText(ds.ps, fontUrl, Boolean(_host?.text)) && (convertPaths || (isUserFont && !embedUrl))) {
       try {
         const { d, notdef } = await _host!.text!.toPath({ text: ds.text, fontUrl: fontUrl!, fontSize: fontSizePx, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
         if (d && !notdef) {
-          const ascentPt = fontMetricsPx(ds.ps, fontSizePx).ascent * cssToPt;
           pdf.setFillColor(textRgb[0], textRgb[1], textRgb[2]);
-          drawSvgPathToPdf(pdf, d, (sx: number) => x + sx * cssToPt, (sy: number) => y + ascentPt + sy * cssToPt);
+          drawSvgPathToPdf(pdf, d, (sx: number) => x + sx * cssToPt, (sy: number) => baselinePt + sy * cssToPt);
           pdf.fill();
           drawn = true;
         }
@@ -3938,7 +4193,7 @@ async function pdfPseudoContent(pdf: any, el: Element, rootRect: { left: number;
     }
     if (!drawn) {
       await applyPdfTextStyle(pdf, ds.ps, cssToPt, registeredFonts, embedUrl);
-      pdf.text(ds.text, x, y, { baseline: 'top' });
+      pdf.text(ds.text, x, baselinePt, { baseline: 'alphabetic' });
     }
   }
 }
@@ -4465,6 +4720,30 @@ async function blobToDataUrl(url: string): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+}
+
+// Natural pixel dimensions of an image href (for cover/contain fitting). Null on failure.
+async function imageDims(src: string): Promise<{ w: number; h: number } | null> {
+  try {
+    const bmp = await createImageBitmap(await (await fetch(src)).blob());
+    const d = { w: bmp.width, h: bmp.height };
+    bmp.close?.();
+    return d;
+  } catch { return null; }
+}
+
+// The fitted rect for a background-image inside the box (x,y,w,h), by `background-size` —
+// jsPDF's addImage stretches, so compute the fit ourselves to avoid distortion. cover →
+// fill+crop (overflows, clip to box); contain → fit inside; exact two-value / stretch →
+// the box. `background-position` anchors it. `overflows` tells the caller to clip.
+function bgFitRect(natW: number, natH: number, x: number, y: number, w: number, h: number, style: CSSStyleDeclaration): { x: number; y: number; w: number; h: number; overflows: boolean } {
+  const size = (style.backgroundSize || 'auto').trim().toLowerCase();
+  const stretch = /\S+\s+\S+/.test(size) && !size.includes('auto') && size !== 'cover' && size !== 'contain';
+  if (!(natW > 0) || !(natH > 0) || stretch) return { x, y, w, h, overflows: false };
+  const s = size === 'contain' ? Math.min(w / natW, h / natH) : Math.max(w / natW, h / natH);   // default cover
+  const iw = natW * s, ih = natH * s;
+  const [px, py] = objectPositionFractions(style.backgroundPosition);
+  return { x: x + (w - iw) * px, y: y + (h - ih) * py, w: iw, h: ih, overflows: iw > w + 0.5 || ih > h + 0.5 };
 }
 
 // Pick the jsPDF.addImage format from a data: URL's REAL MIME (the previous
@@ -5061,80 +5340,27 @@ async function pickWebCodecsAudio(container: 'mp4' | 'webm'): Promise<WebCodecsA
 
 interface WebCodecsAudioTrack extends WebCodecsAudioPick { buffer: AudioBuffer; }
 
+// An offline-rendered audio bed (AudioBuffer) → the transferable planar form the DOM-free
+// encode core takes. numberOfChannels stays the track's declared count; the core clamps
+// to the buffer's actual channel count when a plane is missing.
+function audioTrackToPlanar(a: WebCodecsAudioTrack): EncodeAudio {
+  const channels = Array.from({ length: a.buffer.numberOfChannels }, (_, i) => a.buffer.getChannelData(i));
+  return { channels, sampleRate: a.sampleRate, numberOfChannels: a.numberOfChannels, codec: a.codec, muxCodec: a.muxCodec, bitrate: a.bitrate };
+}
+
+// Encode + mux the buffered frames on the MAIN thread (the DOM-free core), then wrap the
+// bytes in a Blob and embed provenance. The Worker path (renderVideo) calls the same core
+// off-thread and wraps identically.
 async function encodeVideoWithWebCodecs(
   frames: ImageBitmap[],
   pick: WebCodecsPick,
   o: { width: number; height: number; fps: number; bitrate: number; meta?: ExportMeta | null; audio?: WebCodecsAudioTrack | null },
 ): Promise<Blob> {
-  const { width, height, fps, bitrate } = o;
-  const a = o.audio ?? null;
-  const isMp4 = pick.container === 'mp4';
-  const mux: any = isMp4 ? await import('mp4-muxer') : await import('webm-muxer');
-  const target = new mux.ArrayBufferTarget();
-  const audioTrack = a ? { codec: a.muxCodec, numberOfChannels: a.numberOfChannels, sampleRate: a.sampleRate } : null;
-  const muxer = new mux.Muxer(isMp4
-    ? { target, fastStart: 'in-memory', video: { codec: 'avc', width, height }, ...(audioTrack ? { audio: audioTrack } : {}) }
-    : { target, firstTimestampBehavior: 'offset', video: { codec: pick.muxCodec, width, height, frameRate: fps }, ...(audioTrack ? { audio: audioTrack } : {}) });
-
-  let encErr: unknown = null;
-  const encoder = new VideoEncoder({
-    output: (chunk, metadata) => { try { muxer.addVideoChunk(chunk, metadata); } catch (e) { encErr = e; } },
-    error: (e) => { encErr = e; },
+  const { buffer, type } = await encodeMuxWebCodecs(frames, pick, {
+    width: o.width, height: o.height, fps: o.fps, bitrate: o.bitrate,
+    audio: o.audio ? audioTrackToPlanar(o.audio) : null,
   });
-  const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
-  if (isMp4) config.avc = { format: 'avc' };   // length-prefixed avcC, as mp4-muxer expects
-  encoder.configure(config);
-
-  const keyEvery = Math.max(1, fps * 2);        // a keyframe roughly every 2s
-  const frameDurUs = Math.round(1e6 / fps);
-  for (let i = 0; i < frames.length && !encErr; i++) {
-    const frame = new VideoFrame(frames[i]!, { timestamp: Math.round(i * 1e6 / fps), duration: frameDurUs });
-    encoder.encode(frame, { keyFrame: i % keyEvery === 0 });
-    frame.close();
-    // Backpressure: let the encoder drain so the queue (and memory) stays bounded and
-    // the tab stays responsive on a long clip.
-    if (encoder.encodeQueueSize > 20) await new Promise<void>(r => setTimeout(r, 0));
-  }
-  await encoder.flush();
-  encoder.close();
-
-  // Audio pass: encode the offline-rendered PCM bed into the same muxer. Both muxers
-  // buffer/reorder internally (mp4 fastStart in-memory, webm timestamp offset), so
-  // all-video-then-all-audio + one finalize() interleaves correctly — no manual sync.
-  if (a && !encErr) {
-    const { buffer, sampleRate, numberOfChannels, bitrate: aBitrate } = a;
-    const aEnc = new AudioEncoder({
-      output: (chunk, metadata) => { try { muxer.addAudioChunk(chunk, metadata); } catch (e) { encErr = e; } },
-      error: (e) => { encErr = e; },
-    });
-    aEnc.configure({ codec: a.codec, sampleRate, numberOfChannels, bitrate: aBitrate });
-    const total = buffer.length;                 // frames per channel
-    const CHUNK = 4800;                           // ~0.1s @ 48k
-    const planar = new Float32Array(CHUNK * numberOfChannels);
-    for (let off = 0; off < total && !encErr; off += CHUNK) {
-      const n = Math.min(CHUNK, total - off);
-      // f32-planar layout for this chunk: [ch0: n samples][ch1: n samples] (stride n).
-      for (let ch = 0; ch < numberOfChannels; ch++) {
-        const plane = buffer.getChannelData(Math.min(ch, buffer.numberOfChannels - 1));
-        planar.set(plane.subarray(off, off + n), ch * n);
-      }
-      const audioData = new AudioData({
-        format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels,
-        timestamp: Math.round((off / sampleRate) * 1e6),   // microseconds
-        data: planar.subarray(0, n * numberOfChannels),    // AudioData copies the data
-      });
-      aEnc.encode(audioData);
-      audioData.close();
-      if (aEnc.encodeQueueSize > 20) await new Promise<void>(r => setTimeout(r, 0));
-    }
-    await aEnc.flush();
-    aEnc.close();
-  }
-
-  if (encErr) throw encErr instanceof Error ? encErr : new Error('VideoEncoder error');
-  muxer.finalize();
-  const type = isMp4 ? 'video/mp4' : 'video/webm';
-  return withVideoMeta(new Blob([target.buffer], { type }), type, o.meta ?? null);
+  return withVideoMeta(new Blob([buffer], { type }), type, o.meta ?? null);
 }
 
 async function renderVideo(node: Element, opts: ExportOpts, preferred: string): Promise<Blob> {
@@ -5214,22 +5440,52 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     const wantAudio = !!opts.audio?.url;
     const audioPick = pick && wantAudio ? await pickWebCodecsAudio(pick.container) : null;
     if (pick && (!wantAudio || audioPick)) {
+      // Resolve the offline music bed once; a failure here (bedOk=false) falls through to
+      // the MediaRecorder Phase 2, which muxes the live audio track instead.
+      let track: WebCodecsAudioTrack | null = null;
+      let bedOk = true;
       try {
-        let track: WebCodecsAudioTrack | null = null;
         if (wantAudio && audioPick) {
           const bed = await renderMusicBed(opts.audio!.url, clipSec, audioPick.sampleRate, {
             fadeIn: opts.audio!.fadeIn, fadeOut: opts.audio!.fadeOut, clipSec, volume: opts.audio!.volume,
           });                                       // matches prepareExportAudio's envelope (renderVideo beds don't duck)
           if (bed) track = { ...audioPick, buffer: bed };
         }
-        _host?.log?.('info', `video: WebCodecs ${pick.container}/${pick.codec}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps} ${Math.round(bitrate / 1000)}kbps`);
-        const blob = await encodeVideoWithWebCodecs(frames, pick, { width: targetW, height: targetH, fps, bitrate, meta: opts.meta, audio: track });
-        frames.forEach(b => b.close());
-        audio?.stop();                              // discard the now-unused live MediaRecorder audio track
-        return blob;
-      } catch (err) {
-        _host?.log?.('warn', `WebCodecs encode failed (${(err as { message?: string })?.message ?? err}); falling back to MediaRecorder.`);
-        // frames stay open; the live `audio` track stays live for Phase 2 below.
+      } catch { bedOk = false; }
+
+      // Off-thread encode (opt-in, probe-gated): hand the buffered frames + a COPY of the
+      // bed PCM to a Worker so the encode/mux runs off the main thread. Transfer is one-way,
+      // so this is COMMITTED — no Phase 2 fallback (the up-front support probe makes a mid-
+      // encode failure unlikely; a failure surfaces as a clear error and the user re-exports).
+      if (bedOk && supportsWorkerVideoEncode()) {
+        try {
+          const workerAudio: EncodeAudio | null = track ? {
+            channels: Array.from({ length: track.buffer.numberOfChannels }, (_, i) => new Float32Array(track!.buffer.getChannelData(i))),
+            sampleRate: track.sampleRate, numberOfChannels: track.numberOfChannels, codec: track.codec, muxCodec: track.muxCodec, bitrate: track.bitrate,
+          } : null;
+          _host?.log?.('info', `video: WebCodecs (worker) ${pick.container}/${pick.codec}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps}`);
+          const enc = await encodeVideoInWorker(frames, pick, { width: targetW, height: targetH, fps, bitrate, audio: workerAudio });
+          const blob = await withVideoMeta(new Blob([enc.buffer], { type: enc.type }), enc.type, opts.meta ?? null);
+          audio?.stop();                            // the worker consumed + closed the frames
+          return blob;
+        } catch (err) {
+          audio?.stop();
+          throw err instanceof Error ? err : new Error('worker video encode failed');
+        }
+      }
+
+      // In-thread encode: on failure the frames + live `audio` track stay valid for Phase 2.
+      if (bedOk) {
+        try {
+          _host?.log?.('info', `video: WebCodecs ${pick.container}/${pick.codec}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps} ${Math.round(bitrate / 1000)}kbps`);
+          const blob = await encodeVideoWithWebCodecs(frames, pick, { width: targetW, height: targetH, fps, bitrate, meta: opts.meta, audio: track });
+          frames.forEach(b => b.close());
+          audio?.stop();                            // discard the now-unused live MediaRecorder audio track
+          return blob;
+        } catch (err) {
+          _host?.log?.('warn', `WebCodecs encode failed (${(err as { message?: string })?.message ?? err}); falling back to MediaRecorder.`);
+          // frames stay open; the live `audio` track stays live for Phase 2 below.
+        }
       }
     }
   }

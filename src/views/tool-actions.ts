@@ -417,7 +417,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </label>
         <p class="c2pa-hint" data-c2pa-webm style="display:${initialFmt === 'webm' ? 'block' : 'none'}">WebM credentials are Lolly's own mapping for now — external C2PA viewers can't read WebM.</p>
         <div class="c2pa-life" data-c2pa-life>
-          <label class="c2pa-life-pick">Credential expires in
+          <label class="c2pa-life-pick"><span class="c2pa-life-label">Expires:</span>
             <select data-action="c2pa-days" aria-label="Credential lifetime">
               ${[7, 30, 90, 365].map(d => `<option value="${d}"${d === c2paInitDays ? ' selected' : ''}>${d} days</option>`).join('')}
             </select>

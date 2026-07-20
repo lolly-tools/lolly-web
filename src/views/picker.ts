@@ -397,7 +397,10 @@ async function render(
   if (allowToolUrl) tabs.push({ id: 'sessions', label: 'Saved creations' });
   if (showProjects) tabs.push({ id: 'projects', label: 'Projects' });
   if (embedTools.length) tabs.push({ id: 'tools', label: 'Tools' });
-  let activeTab: TabId = 'library';
+  // Collect mode (the Projects "+ New asset" flow) opens straight on Tools: the primary
+  // intent there is starting a fresh creation, not picking an existing image. Falls back
+  // to Library when the caller passed no tools. The slot-fill picker keeps Library.
+  let activeTab: TabId = collect && embedTools.length ? 'tools' : 'library';
 
   const placeholderFor = (id: TabId): string =>
     id === 'tools'    ? t('Search tools…')
@@ -635,6 +638,12 @@ async function render(
     setTab(target.dataset.tab as TabId);
     target.focus();
   });
+
+  // The initial pane is baked into the markup as Library; if the default tab is
+  // anything else (collect mode → Tools) switch to it now so the right pane paints
+  // immediately, before the async library query resolves. renderTools needs only the
+  // sync embedTools list, so the Tools pane is ready at once.
+  if (activeTab !== 'library') setTab(activeTab);
 
   // One delegated handler serves every region: choose an icon colour, pick a
   // library/user asset, delete a user image, embed a saved session, or open a tool.
@@ -1764,8 +1773,12 @@ async function render(
 
     // Land focus on an asset (the current one if provided) so the keyboard can
     // drive the picker straight away. A themed current id matches its base card.
-    const libCards = [...libraryEl.querySelectorAll<HTMLElement>('[data-asset-id]')];
-    (libCards.find(c => c.dataset.assetId === currentBaseId) || libCards[0])?.focus({ preventScroll: true });
+    // Only when Library is the active pane — in collect mode we've already switched
+    // to Tools and landed focus there, so don't yank it back to a hidden card.
+    if (activeTab === 'library') {
+      const libCards = [...libraryEl.querySelectorAll<HTMLElement>('[data-asset-id]')];
+      (libCards.find(c => c.dataset.assetId === currentBaseId) || libCards[0])?.focus({ preventScroll: true });
+    }
 
     // A Lolly tool URL pasted into the search box flips the picker into a "render
     // this tool" card; anything else filters the active pane. The seq guard drops a

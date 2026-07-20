@@ -27,7 +27,7 @@ import { icon } from '../lib/icons.ts';
 import { createFolderStore, childFolders, folderPath, descendantFolderIds } from '../folders.ts';
 import type { Folder } from '../folders.ts';
 import {
-  folderTile, sessionTile, imageTile, FOLDER_ICON, PACKAGE_ICON, MENU_ICON,
+  folderTile, sessionTile, imageTile, FOLDER_ICON, MENU_ICON,
   isBatchSlot, BATCH_SLOT_PREFIX,
   type MemberPreview,
 } from '../folder-tiles.ts';
@@ -308,6 +308,7 @@ export async function mountProjects(
       for (const e of m.sessions) visible.add(e.slot);
     } else if (folderId == null) {
       for (const f of childFolders(folders, null)) visible.add(f.id);
+      for (const e of uncategorised()) visible.add(e.slot);   // loose sessions now tile at root
     } else if (folderId === UNCAT) {
       for (const e of uncategorised()) visible.add(e.slot);
     } else {
@@ -389,10 +390,9 @@ export async function mountProjects(
 
   function rootHtml(): string {
     if (query) return shell(t('Projects'), 'projects', searchBodyHtml());
-    const uncat = uncategorised();
+    const loose = sortSessions(uncategorised());
     const createFolder = createTile('folder', FOLDER_PLUS_ICON, t('New folder'), t('Group saved sessions'));
     const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), t('Start a fresh creation'));
-    const uncatTile = pseudoFolderTile(UNCAT, t('Uncategorised'), uncat.map(e => e.slot));
     // Only TOP-LEVEL folders at the root; nested folders show inside their parent.
     const topFolders = sortFolders(childFolders(folders, null));
     const folderTiles = topFolders.map(f => folderTile(f, {
@@ -400,17 +400,26 @@ export async function mountProjects(
       count: tileItemCount(f),
       selectable: true, selected: isSelected(f.id),
     })).join('');
-    // First run: no folders AND no loose sessions → the lone "Uncategorised · 0 items" tile
-    // reads oddly on its own, so lead with a one-line invite explaining what Projects hold.
-    const invite = (!topFolders.length && !uncat.length)
+    // Loose (uncategorised) saved sessions render as tiles directly on the root grid —
+    // a just-added creation shows here at once instead of vanishing into an
+    // "Uncategorised" bucket. They're the SAME sessionTile a folder uses, so
+    // drag-into-folder, select, rename, render, and open all work by delegation
+    // (see wire()/wireDrag()). Newest first (the default sort) so a fresh add lands top-left.
+    const looseTiles = loose.map(e => sessionTile(e, {
+      toolName: toolName(e.toolId), sizeBytes: sizes[e.slot] || 0, tool: toolById.get(e.toolId),
+      selectable: true, selected: isSelected(e.slot),
+    })).join('');
+    // First run: no folders AND no loose sessions → lead with a one-line invite explaining
+    // what Projects hold, instead of a grid that's only the two "new" tiles.
+    const invite = (!topFolders.length && !loose.length)
       ? `<p class="projects-empty">${t('Your saved sessions land here — save one from any tool to start a project.')}</p>`
       : '';
-    // Content first (Uncategorised, then folders), create tiles LAST, so the grid reads
-    // top-left like a file manager and the "new" affordances trail.
+    // Loose creations first (newest top-left, so an add is immediately visible), then
+    // folders, then the "new" affordances trailing like a file manager.
     return shell(t('Projects'), 'projects', `
       ${invite}
       <div class="folder-grid projects-grid${viewMode === 'list' ? ' projects-list' : ''}">
-        ${uncatTile}${folderTiles}${createFolder}${createTool}
+        ${looseTiles}${folderTiles}${createFolder}${createTool}
       </div>`);
   }
 
@@ -582,29 +591,6 @@ export async function mountProjects(
     return targetId
       ? `<button type="button" class="projects-result-path" data-open-folder-nav="${escape(targetId)}" title="${escape(t('Open {name}', { name: text }))}">${inner}</button>`
       : `<span class="projects-result-path projects-result-path--static">${inner}</span>`;
-  }
-
-  // A folder-style tile for the synthetic Uncategorised group (no per-tile menu).
-  function pseudoFolderTile(id: string, name: string, slots: string[]): string {
-    const map = entryBySlot();
-    const cells = slots.slice(0, 4).map(s => {
-      const e = map.get(s);
-      if (e && isBatchSlot(e.slot)) return `<span class="folder-cell folder-cell--batch" aria-hidden="true">${PACKAGE_ICON}</span>`;
-      return e?.thumb
-        ? `<img class="folder-cell" src="${escape(e.thumb)}" alt="" loading="lazy" decoding="async">`
-        : `<span class="folder-cell folder-cell--empty" aria-hidden="true"></span>`;
-    }).join('');
-    const mosaic = cells ? `<span class="folder-mosaic">${cells}</span>` : `<span class="tile-cover tile-cover--batch" aria-hidden="true">${FOLDER_ICON}</span>`;
-    return `
-      <div class="folder-tile folder-tile--folder folder-tile--uncat" data-ref="${escape(id)}" data-kind="folder">
-        <button type="button" class="tile-primary" data-open-folder="${escape(id)}" aria-label="${escape(t('Open {name}', { name }))}">
-          ${mosaic}
-          <span class="tile-meta">
-            <span class="tile-title">${escape(name)}</span>
-            <span class="tile-sub">${slots.length === 1 ? t('1 item') : t('{n} items', { n: slots.length })}</span>
-          </span>
-        </button>
-      </div>`;
   }
 
   function createTile(kind: string, icon: string, title: string, sub: string): string {

@@ -34,7 +34,7 @@ import {
   unfilterPng,
   type DesignMapOptions,
 } from '@lolly/engine';
-import type { PdfNode, PdfFontInfo, PdfXObject } from '../../../../engine/src/pdf-map.ts';
+import type { PdfNode, PdfFontInfo, PdfXObject, PdfShading, PdfPattern, PdfGradientStop } from '../../../../engine/src/pdf-map.ts';
 import type { AssetRef, HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import { storeUserUpload } from './picker.ts';
 import { trapFocus } from '../lib/focus-trap.ts';
@@ -56,6 +56,8 @@ interface Resources {
   xobjects: Record<string, PdfXObject>;
   extgstates: Record<string, { ca?: number; CA?: number }>;
   ocgs: Record<string, string>;
+  shadings: Record<string, PdfShading>;
+  patterns: Record<string, PdfPattern>;
 }
 
 // A raster image XObject the shell will resolve to stored bytes.
@@ -113,6 +115,8 @@ function interpretPage(doc: PDFDocument, pageIndex: number): InterpretedPage {
     xobjects: resources.xobjects,
     extgstates: resources.extgstates,
     ocgs: resources.ocgs,
+    shadings: resources.shadings,
+    patterns: resources.patterns,
   }) as ImportNode[];
 
   return { nodes, width: mb.width, height: mb.height, imageStreams };
@@ -204,7 +208,7 @@ function contentString(ctx: PDFContext, pageNode: Ref): string {
 // ── resource extraction ─────────────────────────────────────────────────────
 
 function extractResources(ctx: PDFContext, resDict: Ref, imageStreams: Map<string, ImageDesc>, depth: number): Resources {
-  const res: Resources = { fonts: {}, xobjects: {}, extgstates: {}, ocgs: {} };
+  const res: Resources = { fonts: {}, xobjects: {}, extgstates: {}, ocgs: {}, shadings: {}, patterns: {} };
   if (!dictOf(ctx, resDict) || depth > 8) return res;
 
   for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'ExtGState'))) {
@@ -240,6 +244,19 @@ function extractResources(ctx: PDFContext, resDict: Ref, imageStreams: Map<strin
   for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'Properties'))) {
     const label = pdfString(ctx, getKey(ctx, ref, 'Name'));
     if (label) res.ocgs[name] = label;
+  }
+
+  // Shadings (the `sh` operator) and shading Patterns (PatternType 2, used as a
+  // `scn` fill). Chromium emits CSS gradients as shading patterns; decoding them
+  // to a pre-sampled colour ramp lets the engine paint a real SVG gradient instead
+  // of dropping the fill. Tiling patterns (PatternType 1) are left out.
+  for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'Shading'))) {
+    const sh = buildShading(ctx, ref);
+    if (sh) res.shadings[name] = sh;
+  }
+  for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'Pattern'))) {
+    const pt = buildPattern(ctx, ref);
+    if (pt) res.patterns[name] = pt;
   }
   return res;
 }
@@ -356,6 +373,184 @@ function weightFromName(name: string): number {
   if (/medium/i.test(s)) return 500;
   if (/light/i.test(s)) return 300;
   return 400;
+}
+
+// ── shadings & gradients ────────────────────────────────────────────────────
+//
+// PDF axial (ShadingType 2) / radial (ShadingType 3) shadings → a normalized
+// descriptor the engine can emit as an SVG <linearGradient>/<radialGradient>. The
+// byte work — evaluating the PDF /Function that maps the [0,1] axis to colour — lives
+// HERE (in the shell), so the pure engine only ever sees a pre-sampled colour ramp.
+// Chromium's print backend emits every CSS gradient as a shading pattern, so this is
+// the path the docs-screenshot pipeline and any .pdf/.ai upload take for gradients.
+
+/** A parsed PDF function: axis parameter t → colour components (each in [0,1]). */
+type PdfFn = (t: number) => number[];
+
+function numArray(ctx: PDFContext, o: Ref): number[] | null {
+  o = ctx.lookup(o as PDFObject | undefined);
+  return o instanceof PDFArray ? o.asArray().map((v) => numOf(ctx, v) ?? 0) : null;
+}
+function boolArray(ctx: PDFContext, o: Ref): boolean[] {
+  o = ctx.lookup(o as PDFObject | undefined);
+  // PDFBool stringifies to "true"/"false"; avoids importing the class.
+  return o instanceof PDFArray ? o.asArray().map((v) => String(ctx.lookup(v)) === 'true') : [];
+}
+
+/** Component count for a shading colour space (device or ICCBased-resolved). */
+function shadingComps(cs: string | null): number {
+  return cs ? (/CMYK/i.test(cs) ? 4 : /Gray/i.test(cs) ? 1 : 3) : 3;
+}
+function chan(v: number): string { return Math.round((v < 0 ? 0 : v > 1 ? 1 : v) * 255).toString(16).padStart(2, '0'); }
+/** Shading colour components → #rrggbb (Gray/RGB/CMYK by component count). */
+function componentsToHex(vals: number[], comps: number): string {
+  if (comps === 1) { const g = vals[0] ?? 0; return '#' + chan(g) + chan(g) + chan(g); }
+  if (comps === 4) {
+    const c = vals[0] ?? 0, m = vals[1] ?? 0, y = vals[2] ?? 0, k = vals[3] ?? 0;
+    return '#' + chan((1 - c) * (1 - k)) + chan((1 - m) * (1 - k)) + chan((1 - y) * (1 - k));
+  }
+  return '#' + chan(vals[0] ?? 0) + chan(vals[1] ?? 0) + chan(vals[2] ?? 0);
+}
+
+// A shading /Function is one function, or an array of n single-output functions
+// (one per colour component). Return a single t → components evaluator either way.
+function parseShadingFunction(ctx: PDFContext, o: Ref): PdfFn | null {
+  const lu = ctx.lookup(o as PDFObject | undefined);
+  if (lu instanceof PDFArray) {
+    const fns = lu.asArray().map((f) => parseFunction(ctx, f, 0));
+    if (!fns.length || fns.some((f) => !f)) return null;
+    return (t) => fns.map((f) => f!(t)[0] ?? 0);
+  }
+  return parseFunction(ctx, o, 0);
+}
+
+// PDF functions: Type 2 (exponential), Type 3 (stitching), Type 0 (sampled stream).
+// Type 4 (PostScript calculator) is unsupported → null (the shading is dropped).
+function parseFunction(ctx: PDFContext, o: Ref, depth: number): PdfFn | null {
+  if (depth > 8) return null;
+  const d = dictOf(ctx, o);
+  if (!d) return null;
+  const type = numOf(ctx, d.get(PDFName.of('FunctionType')));
+  const domain = numArray(ctx, d.get(PDFName.of('Domain'))) || [0, 1];
+  const d0 = domain[0] ?? 0, d1 = domain[1] ?? 1;
+  const clampT = (t: number): number => (t < d0 ? d0 : t > d1 ? d1 : t);
+
+  if (type === 2) {
+    const c0 = numArray(ctx, d.get(PDFName.of('C0'))) || [0];
+    const c1 = numArray(ctx, d.get(PDFName.of('C1'))) || [1];
+    const N = numOf(ctx, d.get(PDFName.of('N'))) ?? 1;
+    return (t) => { const p = Math.pow(clampT(t), N); return c0.map((c, j) => c + p * ((c1[j] ?? c) - c)); };
+  }
+
+  if (type === 3) {
+    const subs = (ctx.lookup(d.get(PDFName.of('Functions'))) as PDFObject | undefined);
+    const fnRefs = subs instanceof PDFArray ? subs.asArray() : [];
+    const fns = fnRefs.map((f) => parseFunction(ctx, f, depth + 1));
+    if (!fns.length || fns.some((f) => !f)) return null;
+    const bounds = numArray(ctx, d.get(PDFName.of('Bounds'))) || [];
+    const encode = numArray(ctx, d.get(PDFName.of('Encode'))) || [];
+    const k = fns.length;
+    return (t) => {
+      const tt = clampT(t);
+      let i = 0;
+      while (i < bounds.length && i < k - 1 && tt >= (bounds[i] ?? Infinity)) i++;
+      const lo = i === 0 ? d0 : (bounds[i - 1] ?? d0);
+      const hi = i >= k - 1 ? d1 : (bounds[i] ?? d1);
+      const e0 = encode[2 * i] ?? 0, e1 = encode[2 * i + 1] ?? 1;
+      const x = hi > lo ? e0 + (tt - lo) * (e1 - e0) / (hi - lo) : e0;
+      return fns[i]!(x);
+    };
+  }
+
+  if (type === 0) return parseSampledFunction(ctx, o, d0, d1);
+  return null;
+}
+
+// Type 0 sampled function: a stream of N samples × M components packed at
+// BitsPerSample bits, big-endian. Linear-interpolate between the two nearest
+// samples and decode each component to its output range.
+function parseSampledFunction(ctx: PDFContext, o: Ref, d0: number, d1: number): PdfFn | null {
+  const stream = ctx.lookup(o as PDFObject | undefined);
+  if (!(stream instanceof PDFRawStream)) return null;
+  const d = stream.dict;
+  const size = numArray(ctx, d.get(PDFName.of('Size'))) || [];
+  const range = numArray(ctx, d.get(PDFName.of('Range'))) || [];
+  const bps = numOf(ctx, d.get(PDFName.of('BitsPerSample'))) ?? 8;
+  const n = Math.floor(size[0] ?? 0), m = Math.floor(range.length / 2);
+  if (n < 1 || m < 1 || bps < 1 || bps > 32) return null;
+  const encode = numArray(ctx, d.get(PDFName.of('Encode'))) || [0, n - 1];
+  const decode = numArray(ctx, d.get(PDFName.of('Decode'))) || range;
+  let bytes: Uint8Array;
+  try { bytes = decodePDFRawStream(stream).decode(); } catch { return null; }
+  if (bytes.length < Math.ceil((n * m * bps) / 8)) return null;
+  const maxVal = Math.pow(2, bps) - 1;
+  const sampleAt = (idx: number, comp: number): number => {
+    let bit = (idx * m + comp) * bps, v = 0;
+    for (let b = 0; b < bps; b++, bit++) v = (v << 1) | ((bytes[bit >> 3]! >> (7 - (bit & 7))) & 1);
+    return v;
+  };
+  return (t) => {
+    const tt = t < d0 ? d0 : t > d1 ? d1 : t;
+    let e = d1 > d0 ? (encode[0] ?? 0) + (tt - d0) * ((encode[1] ?? n - 1) - (encode[0] ?? 0)) / (d1 - d0) : (encode[0] ?? 0);
+    e = e < 0 ? 0 : e > n - 1 ? n - 1 : e;
+    const i0 = Math.floor(e), i1 = Math.min(n - 1, i0 + 1), frac = e - i0;
+    const out: number[] = [];
+    for (let c = 0; c < m; c++) {
+      const s = sampleAt(i0, c) + (sampleAt(i1, c) - sampleAt(i0, c)) * frac;
+      const dl = decode[2 * c] ?? 0, dh = decode[2 * c + 1] ?? 1;
+      out.push(dl + (s / maxVal) * (dh - dl));
+    }
+    return out;
+  };
+}
+
+// Sample the colour ramp into stops. 16 uniform samples render a smooth gradient
+// faithfully once SVG linearly interpolates between them; interior stops that add
+// nothing (a flat run) are collapsed, endpoints always kept.
+function sampleStops(fn: PdfFn, domain: number[], comps: number): PdfGradientStop[] {
+  const t0 = domain[0] ?? 0, t1 = domain[1] ?? 1;
+  const span = (t1 - t0) || 1;
+  const N = 16;
+  const raw: PdfGradientStop[] = [];
+  for (let i = 0; i <= N; i++) {
+    let col: string;
+    try { col = componentsToHex(fn(t0 + (span * i) / N), comps); } catch { return []; }
+    if (!/^#[0-9a-f]{6}$/i.test(col)) return [];
+    raw.push({ offset: i / N, color: col });
+  }
+  const out: PdfGradientStop[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const keep = i === 0 || i === raw.length - 1 || raw[i]!.color !== raw[i - 1]!.color || raw[i]!.color !== raw[i + 1]!.color;
+    if (keep) out.push(raw[i]!);
+  }
+  return out;
+}
+
+function buildShading(ctx: PDFContext, o: Ref): PdfShading | null {
+  const d = dictOf(ctx, o);
+  if (!d) return null;
+  const type = numOf(ctx, d.get(PDFName.of('ShadingType')));
+  if (type !== 2 && type !== 3) return null; // only axial / radial
+  const coords = numArray(ctx, d.get(PDFName.of('Coords'))) || [];
+  if ((type === 2 && coords.length < 4) || (type === 3 && coords.length < 6)) return null;
+  const fn = parseShadingFunction(ctx, d.get(PDFName.of('Function')));
+  if (!fn) return null;
+  const domain = numArray(ctx, d.get(PDFName.of('Domain'))) || [0, 1];
+  const comps = shadingComps(colorSpaceName(ctx, d.get(PDFName.of('ColorSpace'))));
+  const stops = sampleStops(fn, domain, comps);
+  if (stops.length < 2) return null;
+  const ext = boolArray(ctx, d.get(PDFName.of('Extend')));
+  return { type: type as 2 | 3, coords, stops, extend: [ext[0] ?? false, ext[1] ?? false] };
+}
+
+/** A shading Pattern (PatternType 2) → { shading, matrix }; others → null. */
+function buildPattern(ctx: PDFContext, o: Ref): PdfPattern | null {
+  const d = dictOf(ctx, o);
+  if (!d || numOf(ctx, d.get(PDFName.of('PatternType'))) !== 2) return null;
+  const shading = buildShading(ctx, d.get(PDFName.of('Shading')));
+  if (!shading) return null;
+  const matrix = numArray(ctx, d.get(PDFName.of('Matrix'))) || undefined;
+  return { shading, matrix };
 }
 
 // ── image resolution ──────────────────────────────────────────────────────────

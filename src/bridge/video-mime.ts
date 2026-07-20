@@ -52,3 +52,38 @@ export function videoBitrate(width: number, height: number, fps: number, bitsPer
   const raw = Math.round(width * height * fps * bitsPerPixel);
   return Math.max(1_000_000, Math.min(raw, 24_000_000));
 }
+
+// ── WebCodecs encode scheduling (pure — DOM-free, unit-tested) ────────────────
+// The per-frame timing + keyframe cadence for the WebCodecs video encode, and the audio
+// PCM chunk boundaries, split out of the encode loop (export.ts encodeVideoWithWebCodecs)
+// so the timestamp / keyframe / chunking math is verifiable without a real VideoEncoder —
+// and so a Worker-side encoder can reuse the exact same schedule. Same numbers as before.
+
+/** One frame's encode timing: microsecond timestamp + duration, and whether it's a keyframe. */
+export interface FrameTiming { index: number; timestampUs: number; durationUs: number; keyFrame: boolean }
+
+/** Timestamps (µs) + a ~2s keyframe cadence for `frameCount` frames at `fps`. */
+export function videoFrameSchedule(frameCount: number, fps: number): FrameTiming[] {
+  const f = Math.max(1, fps);
+  const keyEvery = Math.max(1, Math.round(f * 2));   // a keyframe roughly every 2s
+  const durationUs = Math.round(1e6 / f);
+  const out: FrameTiming[] = [];
+  for (let i = 0; i < Math.max(0, frameCount); i++) {
+    out.push({ index: i, timestampUs: Math.round(i * 1e6 / f), durationUs, keyFrame: i % keyEvery === 0 });
+  }
+  return out;
+}
+
+/** One audio PCM slice: start offset + length in frames, and its µs timestamp. */
+export interface AudioChunkSpan { offsetFrames: number; numFrames: number; timestampUs: number }
+
+/** Partition `totalFrames` of PCM into `chunkFrames`-sized spans with µs timestamps. */
+export function audioChunkSchedule(totalFrames: number, sampleRate: number, chunkFrames: number): AudioChunkSpan[] {
+  const out: AudioChunkSpan[] = [];
+  const step = Math.max(1, chunkFrames);
+  const sr = Math.max(1, sampleRate);
+  for (let off = 0; off < totalFrames; off += step) {
+    out.push({ offsetFrames: off, numFrames: Math.min(step, totalFrames - off), timestampUs: Math.round((off / sr) * 1e6) });
+  }
+  return out;
+}
