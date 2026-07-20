@@ -9,7 +9,7 @@
  * content-stream rewrite. The DOM walkers themselves (drawHtmlVectors /
  * drawSvgVectorsInRegion) stay in export.ts and import these.
  */
-import { splitCssArgs, parseGradientStop, rgbToCmyk, roundedRectPath } from '@lolly/engine';
+import { splitCssArgs, parseGradientStop, parseGradientAngle, parseRadialGradient, rgbToCmyk, roundedRectPath } from '@lolly/engine';
 import { objectPositionFractions } from './export-css.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
 import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts';
@@ -71,6 +71,109 @@ export function sampleGradientMidpoint(bgImage: string): Rgb | null {
     Math.round((c1[1] + c2[1]) / 2),
     Math.round((c1[2] + c2[2]) / 2),
   ];
+}
+
+// A CSS linear/radial gradient resolved into a jsPDF ShadingPattern spec — true VECTOR
+// output for the PDF walker (preferred over rasterising). Coords are in the box's own pt
+// space (top-left, matching the walker); `matrix` carries a radial ellipse's y-scale, else
+// null. `hasAlpha` flags any transparent stop: PDF axial/radial shading has NO per-stop
+// alpha, so an alpha gradient must fall back to the faithful raster path instead.
+export interface PdfGradientSpec {
+  type: 'axial' | 'radial';
+  coords: number[];
+  stops: { offset: number; color: Rgb }[];
+  matrix: [number, number, number, number, number, number] | null;
+  hasAlpha: boolean;
+}
+
+// Parse a computed background-image (a single linear-/radial-gradient) into a shading spec
+// for the box (x,y,w,h) in pt. Geometry mirrors buildLinearGradientEl / parseRadialGradient
+// so the PDF vector gradient lands identically to the SVG one. Returns null when the value
+// isn't a parseable single linear/radial gradient (caller falls back to raster / midpoint).
+export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number, h: number): PdfGradientSpec | null {
+  const lin = bgImage.match(/^linear-gradient\((.+)\)$/s);
+  if (lin) {
+    const parts = splitCssArgs(lin[1]!);
+    if (parts.length < 2) return null;
+    let angleRad = Math.PI, start = 0;                       // default: to bottom
+    const first = parts[0]!.trim();
+    if (/^to\s|deg$|turn$|rad$|grad$/.test(first)) { angleRad = parseGradientAngle(first); start = 1; }
+    const raw = parts.slice(start);
+    if (raw.length < 2) return null;
+    const sinA = Math.sin(angleRad), cosA = Math.cos(angleRad);
+    const cx = x + w / 2, cy = y + h / 2;
+    const len = (Math.abs(w * sinA) + Math.abs(h * cosA)) / 2;
+    const coords = [cx - sinA * len, cy + cosA * len, cx + sinA * len, cy - cosA * len];
+    const { stops, hasAlpha } = gradientStopList(raw);
+    return stops.length >= 2 ? { type: 'axial', coords, stops, matrix: null, hasAlpha } : null;
+  }
+  const g = parseRadialGradient(bgImage, w, h);
+  if (!g) return null;
+  const CX = x + g.cx, CY = y + g.cy, rx = g.rx, ry = g.ry;
+  const stops: { offset: number; color: Rgb }[] = [];
+  let hasAlpha = false;
+  for (const st of g.stops) {
+    const rgb = parseSvgColor(st.colorStr ?? '');
+    if (!rgb) continue;
+    const off = st.offset.endsWith('px') ? parseFloat(st.offset) / (rx || 1)
+      : st.offset.endsWith('%') ? parseFloat(st.offset) / 100 : parseFloat(st.offset);
+    if (!Number.isFinite(off)) continue;
+    stops.push({ offset: Math.max(0, Math.min(1, off)), color: rgb });
+    if (st.opacity < 1) hasAlpha = true;
+  }
+  if (stops.length < 2 || !(rx > 0)) return null;
+  const coords = [CX, CY, 0, CX, CY, rx];
+  const matrix: PdfGradientSpec['matrix'] = Math.abs(rx - ry) > 0.01 ? [1, 0, 0, ry / rx, 0, CY * (1 - ry / rx)] : null;
+  return { type: 'radial', coords, stops, matrix, hasAlpha };
+}
+
+// Shared linear-gradient stop parse: CSS stop strings → sorted {offset 0-1, [r,g,b]} plus
+// an alpha flag. Missing offsets are spread evenly (index/(n-1)), matching CSS defaults.
+function gradientStopList(raw: string[]): { stops: { offset: number; color: Rgb }[]; hasAlpha: boolean } {
+  const out: { offset: number; color: Rgb }[] = [];
+  let hasAlpha = false;
+  const n = raw.length;
+  raw.forEach((r, i) => {
+    const { colorStr, opacity, offset } = parseGradientStop(r.trim(), i, n);
+    if (!colorStr) return;
+    const rgb = parseSvgColor(colorStr);
+    if (!rgb) return;
+    let off = offset.endsWith('%') ? parseFloat(offset) / 100 : parseFloat(offset);
+    if (!Number.isFinite(off)) off = n > 1 ? i / (n - 1) : 0;
+    out.push({ offset: Math.max(0, Math.min(1, off)), color: rgb });
+    if (opacity < 1) hasAlpha = true;
+  });
+  out.sort((a, b) => a.offset - b.offset);
+  return { stops: out, hasAlpha };
+}
+
+let gradKeySeq = 0;
+
+// Fill the current box with a true-vector jsPDF ShadingPattern (axial/radial). `pathOps`
+// adds the box outline (rounded/sharp) as a path — no paint — inside the advanced-API
+// block; the pattern then fills it. jsPDF requires advancedAPI() for shading patterns
+// (its coordinate space stays top-left in practice, verified), so the whole fill is wrapped
+// there. Returns false (caller rasterises) when the shading API is unavailable or throws —
+// so a fill is never silently dropped.
+export function fillPdfShading(pdf: any, spec: PdfGradientSpec, pathOps: (doc: any) => void): boolean {
+  if (typeof pdf.advancedAPI !== 'function' || typeof pdf.ShadingPattern !== 'function' || typeof pdf.Matrix !== 'function') return false;
+  const colors = spec.stops.map((s) => ({ offset: s.offset, color: [s.color[0], s.color[1], s.color[2]] }));
+  const key = `lgrad${gradKeySeq++}`;
+  let ok = false;
+  try {
+    pdf.advancedAPI((doc: any) => {
+      const sp = new doc.ShadingPattern(spec.type, spec.coords, colors);
+      doc.addShadingPattern(key, sp);
+      doc.saveGraphicsState();
+      try {
+        pathOps(doc);
+        const matrix = spec.matrix ? new doc.Matrix(...spec.matrix) : new doc.Matrix(1, 0, 0, 1, 0, 0);
+        doc.fill({ key, matrix });
+      } finally { doc.restoreGraphicsState(); }
+      ok = true;
+    });
+  } catch (err) { console.warn('[export] PDF vector gradient failed, falling back to raster:', err); return false; }
+  return ok;
 }
 
 export function gradStopToRgb(raw: string, index: number, total: number): Rgb | null {
@@ -227,6 +330,28 @@ export async function withPdfRotation(pdf: any, deg: number, cx: number, cy: num
   pdf.saveGraphicsState();
   try { pdf.setCurrentTransformationMatrix(new pdf.Matrix(a, b, c, d, e, f)); }
   catch (err) { console.warn('[export] PDF rotation unavailable, flattening this element:', err); }
+  try { await draw(); }
+  finally { pdf.restoreGraphicsState(); }
+}
+
+// Run `draw` with an arbitrary 2-D affine (rotate+scale / skew / matrix) applied about
+// the pivot (cx, cy) in pt — the general form of withPdfRotation for the vector walker's
+// matrix branch. `m` is the CSS transform matrix: a,b,c,d are unitless; e,f are the
+// translation ALREADY scaled to pt by the caller (rotate about (cx,cy):
+// M' = T(cx,cy)·m·T(-cx,-cy)). Degrades to an untransformed draw inside the saved state
+// if the jsPDF CTM API is missing/throws (never a broken PDF).
+export async function withPdfMatrix(
+  pdf: any, m: { a: number; b: number; c: number; d: number; e: number; f: number },
+  cx: number, cy: number, draw: () => unknown,
+): Promise<void> {
+  const canMatrix = typeof pdf.setCurrentTransformationMatrix === 'function' && typeof pdf.Matrix === 'function';
+  if (!canMatrix) { await draw(); return; }
+  const { a, b, c, d, e, f } = m;
+  const e2 = e + cx - (a * cx + c * cy);
+  const f2 = f + cy - (b * cx + d * cy);
+  pdf.saveGraphicsState();
+  try { pdf.setCurrentTransformationMatrix(new pdf.Matrix(a, b, c, d, e2, f2)); }
+  catch (err) { console.warn('[export] PDF matrix transform unavailable, flattening this element:', err); }
   try { await draw(); }
   finally { pdf.restoreGraphicsState(); }
 }
@@ -426,6 +551,18 @@ export function svgArcToBeziers(x1: number, y1: number, rx: number, ry: number, 
   }
 
   return results;
+}
+
+// Dash pattern for a dashed/dotted border stroke of width `w` (in the target unit —
+// SVG px or PDF pt). Approximates the browser's implementation-defined pattern: dotted →
+// round dots on a 1:1 gap (dash=[w,w] + round caps); dashed → [3w,2w] butt caps. Returns
+// null for solid/none/other styles (the caller strokes solid). Shared by both walkers so
+// SVG stroke-dasharray and PDF setLineDashPattern stay in step.
+export function borderDashArray(borderStyle: string | undefined | null, w: number): { dash: [number, number]; round: boolean } | null {
+  if (!(w > 0)) return null;
+  if (borderStyle === 'dotted') return { dash: [w, w], round: true };
+  if (borderStyle === 'dashed') return { dash: [w * 3, w * 2], round: false };
+  return null;
 }
 
 // Apply CSS text-transform to a display string. CSS transforms text only at paint

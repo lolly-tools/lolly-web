@@ -41,6 +41,7 @@
 import { openDB } from './db.ts';
 import { resolveSuseFontUrl } from './text-svg.ts';
 import type { FontStyleSlice } from './text-svg.ts';
+import { discoverFontFaces } from './fontface-discovery.ts';
 
 /** A face resolved for one run: the sfnt to shape with, plus its axis settings. */
 export interface VectorFont {
@@ -54,10 +55,13 @@ export interface VectorFont {
 
 /** One stored face as the registry models it. */
 interface RegistryFace {
-  /** Asset id for a user face; '' for a shell-served platform face. */
+  /** Asset id for a user face; '' for a platform / discovered face. */
   assetId: string;
-  /** Static URL for a platform face; '' when the bytes come from IndexedDB. */
+  /** Static URL for a platform face; '' when the bytes come from IndexedDB / a src URL. */
   staticUrl: string;
+  /** The `url()` of a face DISCOVERED in a document `@font-face`; '' otherwise. Fetched
+   *  + woff2-decompressed on demand, memoised under `src:${srcUrl}`. */
+  srcUrl?: string;
   weight: string;   // '400' or a variable range '100 900'
   style: string;    // 'normal' | 'italic'
   unicodeRange: string;
@@ -232,6 +236,19 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
       byFamily.set(key, list);
     }
   } catch { /* IDB unavailable — platform faces still resolve */ }
+
+  // Discover arbitrary @font-face families in the live document (brand fonts, system
+  // webfonts, embedded data: faces) so they vectorise too — not just SUSE/user/Outfit.
+  // Skip any family already backed by real bytes (SUSE's hardcoded branch, Outfit's
+  // platform face, an installed user font): those take precedence and are complete.
+  for (const f of discoverFontFaces()) {
+    if (f.family === 'suse' || f.family === 'suse mono') continue;
+    const existing = byFamily.get(f.family);
+    if (existing?.some((e) => e.assetId || e.staticUrl)) continue;
+    const list = existing ?? [];
+    list.push({ assetId: '', staticUrl: '', srcUrl: f.srcUrl, weight: f.weight, style: f.style, unicodeRange: f.unicodeRange });
+    byFamily.set(f.family, list);
+  }
   return byFamily;
 }
 
@@ -251,28 +268,42 @@ export function bustFontRegistry(): void {
  */
 async function faceUrl(face: RegistryFace): Promise<string> {
   if (face.staticUrl) return face.staticUrl;
-  const cached = sfntUrls.get(face.assetId);
+  // A user face is keyed by its asset id; a discovered @font-face by its src URL.
+  const cacheKey = face.assetId || (face.srcUrl ? `src:${face.srcUrl}` : '');
+  if (!cacheKey) throw new Error('font-registry: face has no bytes source');
+  const cached = sfntUrls.get(cacheKey);
   if (cached) return cached;
-  const pending = sfntPending.get(face.assetId);
+  const pending = sfntPending.get(cacheKey);
   if (pending) return pending;
 
   const job = (async () => {
-    const db = await openDB();
-    const rec = await db.get('user-assets', face.assetId) as { blob?: Blob } | undefined;
-    if (!rec?.blob) throw new Error(`font-registry: no bytes for ${face.assetId}`);
-    const bytes = new Uint8Array(await rec.blob.arrayBuffer());
-    // Already an sfnt (a hand-uploaded TTF/OTF, or a future format change)? The
-    // woff2 magic is 'wOF2'; anything else goes to HarfBuzz untouched.
+    let bytes: Uint8Array;
+    if (face.assetId) {
+      const db = await openDB();
+      const rec = await db.get('user-assets', face.assetId) as { blob?: Blob } | undefined;
+      if (!rec?.blob) throw new Error(`font-registry: no bytes for ${face.assetId}`);
+      bytes = new Uint8Array(await rec.blob.arrayBuffer());
+    } else {
+      // A discovered face: fetch its declared url() (same-origin or data:; a CORS-blocked
+      // cross-origin src throws → the family is skipped, keeping the <text> fallback).
+      const resp = await fetch(face.srcUrl!);
+      if (!resp.ok) throw new Error(`font-registry: fetch ${face.srcUrl} → ${resp.status}`);
+      bytes = new Uint8Array(await resp.arrayBuffer());
+    }
+    // Already an sfnt (a hand-uploaded TTF/OTF, or a static webfont)? The woff2 magic is
+    // 'wOF2'; anything else goes to HarfBuzz untouched. (woff1 'wOFF' isn't decompressed
+    // here — Google/brand @font-face serve woff2, and HarfBuzz can't read woff1 either, so
+    // a woff1-only face falls through to the caller's <text> fallback via a .notdef.)
     const isWoff2 = bytes[0] === 0x77 && bytes[1] === 0x4f && bytes[2] === 0x46 && bytes[3] === 0x32;
     const sfnt = isWoff2
       ? await (await import('woff2-encoder/decompress')).default(bytes)
       : bytes;
     const url = URL.createObjectURL(new Blob([sfnt as BlobPart], { type: 'font/otf' }));
-    sfntUrls.set(face.assetId, url);
+    sfntUrls.set(cacheKey, url);
     return url;
-  })().finally(() => sfntPending.delete(face.assetId));
+  })().finally(() => sfntPending.delete(cacheKey));
 
-  sfntPending.set(face.assetId, job);
+  sfntPending.set(cacheKey, job);
   return job;
 }
 
