@@ -558,6 +558,9 @@
 /* Taller, easier-to-hit targets while labelled; collapses back to compact icons
    in the @container query below. */
 .export-action-buttons button { flex: 1 1 0; min-width: 0; padding-block: 9px; }
+/* Jelly-mode stand-ins (Save / Download) share the same flex tracks; their
+   height/padding come from the component (scaled by the lib/jelly.ts bridge). */
+.export-action-buttons jelly-button { flex: 1 1 0; min-width: 0; }
 /* Copy and Save each carry a line-art glyph ahead of their label. */
 .copy-btn,
 .save-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

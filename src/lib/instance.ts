@@ -57,6 +57,7 @@
  *     remote index's checksums travel with its format entries.
  */
 
+import { ENGINE_VERSION } from '@lolly/engine';
 import { openDB } from '../bridge/db.ts';
 
 /** Key of the persisted base inside the 'profile' KV store. */
@@ -150,8 +151,24 @@ export function instancePath(p: string): string {
  */
 export function instanceFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   const url = String(input);
-  if (hasTauriInternals() && isCrossOrigin(url)) return tauriHttpFetch(url, init);
-  return fetch(url, init);
+  if (hasTauriInternals() && isCrossOrigin(url)) return tauriHttpFetch(url, withClientHeader(init));
+  return fetch(url, isCrossOrigin(url) ? init : withClientHeader(init));
+}
+
+/**
+ * Tag instance traffic with the shell kind + engine version — the same
+ * information a User-Agent would carry if browsers let pages set one, so a
+ * deployment's operator can tell which Lolly versions are in the field.
+ * Same-origin and Tauri-native requests only: a custom header on a browser
+ * CROSS-origin fetch forces a CORS preflight, which a plain static host
+ * serving a remote instance would fail — those requests stay untagged.
+ */
+function withClientHeader(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers);
+  if (!headers.has('x-lolly-client')) {
+    headers.set('x-lolly-client', `${hasTauriInternals() ? 'tauri' : 'web'} engine/${ENGINE_VERSION}`);
+  }
+  return { ...init, headers };
 }
 
 // ── Tauri plugin-http guest binding (minimal) ────────────────────────────────

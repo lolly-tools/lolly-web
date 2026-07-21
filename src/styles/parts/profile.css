@@ -14,7 +14,7 @@
   max-width: 960px;
   margin: 0 auto;
   /* top clears the fixed "← Tools" pill; bottom clears the fixed .profile-footer toolbar */
-  padding: 3rem 0 calc(5rem + env(safe-area-inset-bottom));
+  padding: 3rem .5rem calc(5rem + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
@@ -146,6 +146,11 @@
   outline: none; border-color: hsl(var(--ring));
   box-shadow: 0 0 0 2px hsl(var(--ring) / .3);
 }
+/* Jelly-effects mode (lib/jelly.ts): the identity inputs and the Save button
+   swap to <jelly-input>/<jelly-button>. Host-level custom properties override
+   the components' size tables so they sit at the compact form scale the native
+   controls use; width:100% fills the field grid cell like a native input. */
+.profile-view .profile-field jelly-input { width: 100%; }
 
 /* Form: "use my details" toggle (a pill that hugs its label) + actions row */
 .profile-view .profile-check {
@@ -157,7 +162,9 @@
   transition: border-color .12s, background .12s;
 }
 .profile-view .profile-check:hover { background: hsl(var(--accent)); }
-.profile-view .profile-check:has(input:checked) { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .08); }
+.profile-view .profile-check:has(input:checked),
+.profile-view .profile-check:has(jelly-checkbox[checked]) { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .08); }
+.profile-view .profile-check jelly-checkbox { flex: none; }
 /* Brief attention pulse when arrived at via #/profile?focus=use-details (the
    gallery's first-visit personalisation nudge points here). */
 .profile-view .profile-check.is-focus-pulse { animation: profile-check-pulse 1.1s ease-out 2; }
@@ -201,7 +208,17 @@
   transition: border-color .12s, background .12s;
 }
 .profile-view .feature-flag:hover { background: hsl(var(--accent)); }
-.profile-view .feature-flag:has(input:checked) { border-color: hsl(var(--primary)); }
+.profile-view .feature-flag:has(input:checked),
+.profile-view .feature-flag:has(jelly-switch[checked]) { border-color: hsl(var(--primary)); }
+/* Jelly-effects mode (lib/jelly.ts): the flag rows swap their CSS switch for a
+   <jelly-switch>. Its geometry tokens are host-level custom properties, so this
+   outer rule overrides the component's size table to sit close to the CSS
+   switch's footprint and keep the row height steady across the two modes. */
+.profile-view .feature-flag .feature-flag-jelly {
+  flex: none;
+  --jelly-switch-width: 44px;
+  --jelly-switch-height: 24px;
+}
 .profile-view .feature-flag-label { font-weight: 500; }
 /* "(batch mode)" rendered as a small pill beside the "Pro" label. */
 .profile-view .feature-flag-pill {

@@ -75,7 +75,7 @@ interface CanvasCfg {
   fontSizeField?: string; alignField?: string; valignField?: string;
   weightField?: string; fontField?: string; lineHeightField?: string;
   trackingField?: string; ligaturesField?: string; alternatesField?: string;
-  padField?: string; groupField?: string; clipField?: string;
+  padField?: string; fitTextField?: string; groupField?: string; clipField?: string;
   shadowField?: string; shadowColorField?: string;
   shadowXField?: string; shadowYField?: string; shadowBlurField?: string;
   minSize?: number;
@@ -125,7 +125,7 @@ interface FieldCfg {
   fontSizeField: string; alignField: string; valignField: string;
   weightField: string; fontField: string; lineHeightField: string;
   trackingField: string; ligaturesField: string; alternatesField: string;
-  padField: string; groupField: string; clipField: string;
+  padField: string; fitTextField: string; groupField: string; clipField: string;
   shadowField: string; shadowColorField: string;
   shadowXField: string; shadowYField: string; shadowBlurField: string;
   kindField: string;
@@ -313,6 +313,7 @@ const SVG = {
   shRounded: '<rect x="4" y="6" width="16" height="12" rx="4.5"/>',
   shPill: '<rect x="3" y="7.5" width="18" height="9" rx="4.5"/>',
   shEllipse: '<ellipse cx="12" cy="12" rx="9" ry="7"/>',
+  shCircle: '<circle cx="12" cy="12" r="8"/>',
   // Image-fit glyphs.
   fitContain: '<rect x="3" y="4.5" width="18" height="15" rx="1.5"/><rect x="8" y="8.5" width="8" height="7" rx="1"/>',
   fitCover: '<rect x="3" y="4.5" width="18" height="15" rx="1.5"/><path d="M3 16l4.5-3.5L11 15l3-2.2L21 18"/><circle cx="8.5" cy="9" r="1.2"/>',
@@ -430,7 +431,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     fontSizeField: cv.fontSizeField, alignField: cv.alignField, valignField: cv.valignField,
     weightField: cv.weightField, fontField: cv.fontField, lineHeightField: cv.lineHeightField,
     trackingField: cv.trackingField, ligaturesField: cv.ligaturesField, alternatesField: cv.alternatesField,
-    padField: cv.padField, groupField: cv.groupField, clipField: cv.clipField,
+    padField: cv.padField, fitTextField: cv.fitTextField, groupField: cv.groupField, clipField: cv.clipField,
     shadowField: cv.shadowField, shadowColorField: cv.shadowColorField,
     shadowXField: cv.shadowXField, shadowYField: cv.shadowYField, shadowBlurField: cv.shadowBlurField,
     kindField: 'kind',
@@ -470,6 +471,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   };
   const fontOptionsHtml = (cur?: any): string => fontOptions.map((o) =>
     `<option value="${escapeHtml(o.value)}"${String(cur) === o.value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+  // ── Manifest-driven shape control ─────────────────────────────────────────────
+  // The "More" panel's shape segment is built from the tool's OWN declared shape
+  // options — NOT a fixed list — so a tool only ever offers shapes its hooks.js can
+  // render (e.g. `circle` is Layout Studio only; Carousel/Org-chart/Record don't
+  // declare it, so it never shows there and can't produce a broken square). A known
+  // value gets its glyph; anything else falls back to its label text.
+  const SHAPE_ICON: Record<string, string> = {
+    rect: SVG.shRect, rounded: SVG.shRounded, pill: SVG.shPill, ellipse: SVG.shEllipse, circle: SVG.shCircle,
+  };
+  const shapeFieldDef = cfg.shapeField ? (input.fields || []).find((f) => f.id === cfg.shapeField) : undefined;
+  const shapeChoices: Array<[string, string, string?]> = (shapeFieldDef?.options || [])
+    .map((o) => [String(o.value ?? ''), t(String(o.label || o.value || '')), SHAPE_ICON[String(o.value ?? '')]]);
   const addKinds: AddKind[] = Array.isArray(cv.addKinds) && cv.addKinds.length
     ? cv.addKinds : [{ id: 'box', label: 'Box', seed: {} }];
   // Opt-in design-file import (Figma SVG / Penpot). Falsy for Layout Studio, whose
@@ -1292,7 +1305,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-more-panel';
     p.innerHTML = `
-      ${cfg.shapeField ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, [['rect', t('Rectangle'), SVG.shRect], ['rounded', t('Rounded'), SVG.shRounded], ['pill', t('Pill'), SVG.shPill], ['ellipse', t('Ellipse'), SVG.shEllipse]])) : ''}
+      ${cfg.shapeField && shapeChoices.length ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, shapeChoices)) : ''}
       ${cfg.radiusField ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
       ${cfg.opacityField ? iconRow(SVG.opacity, t('Opacity'), `<input type="range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
       ${cfg.fitField ? segRow(SVG.fitContain, t('Image fit'), segHtml(cfg.fitField, fitCur, [['contain', t('Contain'), SVG.fitContain], ['cover', t('Cover (crop)'), SVG.fitCover], ['fill', t('Stretch'), SVG.fitFill]])) : ''}
@@ -1307,7 +1320,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
-    wireSegs(p);
+    // Shape is special-cased: switching to "circle" also squares the box (w = h),
+    // since a circle is only an ellipse the geometry keeps 1:1. Everything else writes
+    // its field straight through.
+    wireSegs(p, (field, v) => { if (field === cfg.shapeField) setShape(v); else setField(field, v); });
     const MP_FIELD: Record<string, string> = { radius: cfg.radiusField, opacity: cfg.opacityField, shx: cfg.shadowXField, shy: cfg.shadowYField, shblur: cfg.shadowBlurField };
     p.querySelectorAll<HTMLSelectElement>('select[data-mp]').forEach((sel) => sel.addEventListener('change', () => setField(cfg.blendField, sel.value)));
     p.querySelectorAll<HTMLInputElement>('input[data-mp]').forEach((rng) => rng.addEventListener('input', () => {
@@ -1471,6 +1487,32 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const sel = new Set(selIndices(boxes));
     commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [field]: value } : b)));
   }
+  // Is this box a circle? (An ellipse the geometry keeps square — see setShape.)
+  const isCircle = (b: Box | undefined): boolean =>
+    !!cfg.shapeField && String(b?.[cfg.shapeField]) === 'circle';
+  // Set the shape on the selection. "circle" additionally squares each box to its
+  // smaller side about its centre (an inscribed circle), in the SAME commit as the
+  // shape change (one undo step) — otherwise a w≠h box would render as an ellipse and
+  // the label would lie. Any other shape writes straight through.
+  function setShape(v: string | undefined): void {
+    if (!cfg.shapeField) return;
+    if (v !== 'circle' || !cfg.wField || !cfg.hField) { setField(cfg.shapeField, v); return; }
+    const boxes = getBoxes();
+    const sel = new Set(selIndices(boxes));
+    commit(boxes.map((b, i) => {
+      if (!sel.has(i)) return b;
+      const w = Math.max(1, num(b[cfg.wField], 1));
+      const h = Math.max(1, num(b[cfg.hField], 1));
+      const d = Math.round(Math.min(w, h));
+      const cx = num(b[cfg.xField], 0) + w / 2;
+      const cy = num(b[cfg.yField], 0) + h / 2;
+      return {
+        ...b, [cfg.shapeField]: 'circle',
+        [cfg.wField]: d, [cfg.hField]: d,
+        [cfg.xField]: Math.round(cx - d / 2), [cfg.yField]: Math.round(cy - d / 2),
+      };
+    }));
+  }
   function bumpFont(delta: number): void {
     if (!cfg.fontSizeField) return;
     const boxes = getBoxes();
@@ -1536,6 +1578,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const trCur = Number.isFinite(trRaw) ? trRaw : 0;
     const ligCur = boolOf(b[cfg.ligaturesField], true);
     const altCur = boolOf(b[cfg.alternatesField], false);
+    const fitCur = boolOf(b[cfg.fitTextField], false);
     const alignCur = String(b[cfg.alignField] || 'center');
     const valignCur = String(b[cfg.valignField] || 'middle');
     const p = document.createElement('div');
@@ -1554,6 +1597,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       (cfg.trackingField ? `<label class="fc-row"><span>${t('Letter spacing')}</span><input type="range" min="-20" max="100" step="0.5" data-tp="tr" value="${trCur}"><b data-tp-val="tr">${trCur}</b></label>` : '') +
       (cfg.ligaturesField ? `<label class="fc-row fc-row-toggle"><span>${t('Ligatures')}</span><input type="checkbox" data-tp="lig"${ligCur ? ' checked' : ''}></label>` : '') +
       (cfg.alternatesField ? `<label class="fc-row fc-row-toggle"><span>${t('Alternates')}</span><input type="checkbox" data-tp="alt"${altCur ? ' checked' : ''}></label>` : '') +
+      // Shrink-to-fit: on → the text scales down to fit the box (never up); off → the box
+      // grows to the text (the default). See the hooks.js fit pass driven by data-fit.
+      (cfg.fitTextField ? `<label class="fc-row fc-row-toggle"><span>${t('Shrink text to fit')}</span><input type="checkbox" data-tp="fit"${fitCur ? ' checked' : ''}></label>` : '') +
       (cfg.alignField ? `<div class="fc-row"><span>${t('Align')}</span>${segHtml(cfg.alignField, alignCur, [['left', t('Align left'), SVG.textL], ['center', t('Align centre'), SVG.textC], ['right', t('Align right'), SVG.textR]])}</div>` : '') +
       (cfg.valignField ? `<div class="fc-row"><span>${t('Vertical')}</span>${segHtml(cfg.valignField, valignCur, [['top', t('Align top'), SVG.textT], ['middle', t('Centre vertically'), SVG.textM], ['bottom', t('Align bottom'), SVG.textB]])}</div>` : '') +
       (cfg.padField ? `<label class="fc-row"><span>${t('Padding')}</span><input type="range" min="0" max="200" data-tp="pad" value="${padCur}"><b data-tp-val="pad">${padCur}</b></label>` : '');
@@ -1590,8 +1636,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       else if (k === 'tr') { if (valEl) valEl.textContent = rng.value; setField(cfg.trackingField, +rng.value); }
       else { if (valEl) valEl.textContent = rng.value; setField(cfg.padField, +rng.value); }
     }));
+    const cbField: Record<string, string> = { lig: cfg.ligaturesField, alt: cfg.alternatesField, fit: cfg.fitTextField };
     p.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-tp]').forEach((cb) => cb.addEventListener('change', () => {
-      setField(cb.dataset.tp === 'lig' ? cfg.ligaturesField : cfg.alternatesField, cb.checked);
+      setField(cbField[cb.dataset.tp!], cb.checked);
     }));
     wireSegs(p);
     stageEl.appendChild(p);
@@ -2157,8 +2204,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // in the final render, so if the copy is taller than the box, grow it (only
     // ever grow) to keep it whole. The editable IS the rendered rich text (with
     // any pending size/weight previews already applied), so measure it directly.
+    // A box that opted into shrink-to-fit handles overflow by scaling the text DOWN, so
+    // it must NOT also grow — the two are opposite responses to the same overflow.
+    const fitOn = i >= 0 && !!cfg.fitTextField && boolOf(boxes[i]![cfg.fitTextField], false);
     let grownH: number | null = null;
-    if (changed && cfg.hField && done.boxEl) {
+    if (changed && !fitOn && cfg.hField && done.boxEl) {
       const needed = Math.ceil(done.el.scrollHeight);
       const boxNativeH = parseFloat(done.boxEl.style.height) || 0;
       if (boxNativeH && needed > boxNativeH + 1) grownH = needed;
@@ -2784,8 +2834,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         sdx += snap.x - nat.x; sdy += snap.y - nat.y;
         drawGuides(snap.guides);
       } else clearGuides();
+      // A circle stays a circle: lock its aspect (1:1) through the resize, as if Shift
+      // were held. Its startRect is already square, so any handle keeps w === h.
       const nr = resizeRect(gesture.startRect, gesture.handle, sdx, sdy, {
-        minSize, keepAspect: e.shiftKey, fromCentre: e.altKey,
+        minSize, keepAspect: e.shiftKey || isCircle(getBoxes()[gesture.index]), fromCentre: e.altKey,
       });
       applyLiveRect(gesture.index, { ...nr, rot: gesture.startRect.rot });
       gesture.liveRect = { ...nr, rot: gesture.startRect.rot };
@@ -2848,14 +2900,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     if (g.type === 'create') {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
+      // A circle seed must be born square (seedBox takes its geometry from the drawn
+      // rect, not the seed's w/h), so a tap uses one default diameter and a drag squares
+      // to its smaller side (anchored at the drag's top-left).
+      const circleSeed = cfg.shapeField && String(g.seed?.[cfg.shapeField]) === 'circle';
       let rect: Rect;
       if (moved < 6) {
         // A tap (no drag) drops a default-sized box centred on the point.
-        const w = 320, h = 200;
+        const w = circleSeed ? 400 : 320, h = circleSeed ? 400 : 200;
         rect = { x: g.origin.x - w / 2, y: g.origin.y - h / 2, w, h };
       } else {
         const c = g.corner || nat;
         rect = normDragRect(g.origin.x, g.origin.y, c.x, c.y, minSize);
+        if (circleSeed) { const s = Math.max(minSize, Math.min(rect.w, rect.h)); rect = { x: rect.x, y: rect.y, w: s, h: s }; }
       }
       const id = freshId(boxes);
       let box = seedBox(cfg, {}, g.seed, rect as MathRect, id);

@@ -17,6 +17,7 @@ import { announce } from '../a11y.js';
 import { colorFieldHtml, wireColorField } from '../components/color-field.js';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { canSkipInputsRebuild } from './inputs-sync.js';
+import { jellyActive } from '../lib/jelly.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { installTablePaste } from '../lib/table-paste.ts';
 import { splitMarkdownIntoBlocks } from '../lib/markdown.ts';
@@ -546,6 +547,18 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
     if (input?.control === 'vector') {
       setupVectorControl(control, runtime, id, onDirty, input);
+      return;
+    }
+
+    // Jelly-mode boolean rows: <jelly-switch> emits `change` on its host (never
+    // `input`) and has no `.type` — wire it straight to the runtime and skip the
+    // generic listener below. Undo/redo needs nothing extra: history hooks at
+    // runtime.setInput, and replay repaints the panel from the model (the host's
+    // live `.checked` getter keeps inputs-sync's domReflectsValue honest).
+    if (control.tagName === 'JELLY-SWITCH') {
+      control.addEventListener('change', () => {
+        runtime.setInput(id, (control as unknown as { checked: boolean }).checked);
+      });
       return;
     }
 
@@ -1395,7 +1408,13 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       ).join('')}</select>`;
     }
     case 'checkbox':
-      return `<input type="checkbox" data-input-id="${id}" ${input.value ? 'checked' : ''}>`;
+      // Jelly effects: plain boolean rows render the soft-body switch. Pill-display
+      // booleans keep the native checkbox — their chip look is CSS reshaping the
+      // checkbox row, not a switch. Block-field checkboxes (blocks editor) are
+      // separate markup below and stay native too.
+      return jellyActive() && input.display !== 'pill'
+        ? `<jelly-switch data-input-id="${id}" size="sm" label="${escape(input.label || id)}"${input.value ? ' checked' : ''}></jelly-switch>`
+        : `<input type="checkbox" data-input-id="${id}" ${input.value ? 'checked' : ''}>`;
     case 'color-picker':
       // Shared SUSE colour picker (see components/color-field.js).
       // `swatchesOnly` makes it a palette-restricted picker (no hex/native/alpha).

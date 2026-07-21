@@ -37,7 +37,8 @@ import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, STRIP_UPLOAD_META_FLAG, flagEnabled, isFlagOn, setFlagMirror } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, flagEnabled, isFlagOn, setFlagMirror } from '../feature-flags.ts';
+import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
 import { syncNeuroDock } from '../components/neuro-dock.ts';
 import { saveBlob } from '../pro/zip.ts';
@@ -220,6 +221,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Only the first-paint-critical reads run upfront. The Storage section's heavy
   // work is deferred to loadStorage() (run when the section is first expanded).
   const profile = await host.profile.get();
+  // Jelly effects (flag-gated soft-body switches): decide from the canonical
+  // profile, not the sync mirror, and load the lazy bundle before first paint so
+  // the flag rows render their final control with no post-mount swap. `jellyOn`
+  // and `liveProfile` are mutable — the flag list re-renders in place when the
+  // jelly flag itself is toggled (see the change listener below).
+  let jellyOn = await ensureJelly(flagEnabled(profile, JELLY_FLAG.id));
+  let liveProfile = profile;
   const fields = ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
   // The theme in force right now (applied at boot from the profile; localStorage
   // is only its FOUC mirror) — seeds the Appearance card's active preview.
@@ -256,17 +264,65 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       'class="help-tip-pop"',
       'class="help-tip-pop" style="left:50%;right:auto;top:auto;bottom:calc(100% + .4rem);transform:translateX(-50%);width:max-content;max-width:16rem"',
     ) : '';
+    // Jelly mode swaps the CSS switch for a <jelly-switch> (vendored web
+    // component, lib/jelly.ts). Its hidden native checkbox lives in shadow DOM,
+    // so the visible row label can't name it — the `label` attribute carries the
+    // accessible name instead. It reflects `.checked` and re-dispatches a
+    // bubbling `change` on the host, so the generic [data-flag] save listener
+    // below works identically for both control kinds.
+    //
+    // The label→control link is EXPLICIT (`for`/id): with no `for`, a label
+    // activates its FIRST labelable descendant — and on rows with an (i)
+    // explainer that's the help-tip <button>, not the switch, so row clicks
+    // opened the tip instead of toggling (the "mouse-blocked toggle" bug).
+    const ctlId = `ff-${f.id}`;
+    const control = jellyOn
+      ? `<jelly-switch id="${escape(ctlId)}" class="feature-flag-jelly" data-flag="${escape(f.id)}" size="sm" label="${escape(t(f.label))}" ${isFlagOn(liveProfile, f) ? 'checked' : ''}></jelly-switch>`
+      : `<input type="checkbox" id="${escape(ctlId)}" class="feature-flag-input" data-flag="${escape(f.id)}" ${isFlagOn(liveProfile, f) ? 'checked' : ''}>
+        <span class="feature-flag-switch" aria-hidden="true"></span>`;
     return `
     <li>
-      <label class="feature-flag">
+      <label class="feature-flag" for="${escape(ctlId)}">
         <span class="feature-flag-label">${escape(t(f.label))}${f.pill ? `<span class="feature-flag-pill">${escape(t(f.pill))}</span>` : ''}${
           info ? `<span class="feature-flag-info help-tip-host">${info.button}${infoPop}</span>` : ''
         }</span>
-        <input type="checkbox" class="feature-flag-input" data-flag="${escape(f.id)}" ${isFlagOn(profile, f) ? 'checked' : ''}>
-        <span class="feature-flag-switch" aria-hidden="true"></span>
+        ${control}
       </label>
     </li>`;
   };
+
+  // One identity-form control — <jelly-input> in jelly mode (form-associated:
+  // its ElementInternals.setFormValue keeps it in the form's FormData under the
+  // host's `name`, so the submit handler below reads both kinds identically).
+  // The visible .profile-field-label span stays either way; `label` doubles it
+  // onto the shadow input's aria-label so the accessible name survives the
+  // shadow boundary. Takes the value as an argument so the jelly-flag toggle
+  // can rebuild a control in place without dropping unsaved edits.
+  const fieldControl = (f: string, value: string) => jellyOn
+    ? `<jelly-input ${fieldAttrs(f)} name="${f}" size="sm" label="${escape(t(FIELD_LABELS[f] ?? f))}" value="${escape(value)}"></jelly-input>`
+    : `<input ${fieldAttrs(f)} name="${f}" value="${escape(value)}" placeholder=" ">`;
+
+  // The Save button — <jelly-button type="submit"> drives the closest light-DOM
+  // form via requestSubmit(), so the same submit listener fires. It must NOT
+  // carry .profile-btn-primary (those border/fill styles would paint a second
+  // box behind the jelly canvas).
+  const saveButtonHtml = () => jellyOn
+    ? `<jelly-button type="submit" class="profile-btn-jelly">${t('Save Profile')}</jelly-button>`
+    : `<button type="submit" class="profile-btn-primary">${t('Save Profile')}</button>`;
+
+  // The Feature-flags card's <ul> contents — a function so the jelly-flag toggle
+  // can re-render the list in place (its switches change kind on the spot).
+  const flagListHtml = () => `
+            ${CATEGORY_FLAGS.map(f =>
+              // Set the on-device Offline Utilities drawer apart from the creative
+              // tool categories above it with its own separator.
+              (f.category === 'utility' ? '<li class="feature-flag-divider" aria-hidden="true"></li>' : '') + flagRow(f)
+            ).join('')}
+            <li class="feature-flag-divider" aria-hidden="true"></li>
+            ${flagRow(NEUROSPICY_FLAG)}
+            ${flagRow(JELLY_FLAG)}
+            ${flagRow(PRO_FLAG)}
+            ${flagRow(STRIP_UPLOAD_META_FLAG)}`;
 
   viewEl.innerHTML = `
     <a href="#/" class="tools-home home-full">${t('Tools')}</a>
@@ -288,15 +344,17 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
               <div class="profile-fields">
                 ${fields.map(f => `<label class="profile-field">
                   <span class="profile-field-label">${escape(t(FIELD_LABELS[f] ?? f))}</span>
-                  <input ${fieldAttrs(f)} name="${f}" value="${escape((profile as Record<string, unknown>)[f] ?? '')}" placeholder=" ">
+                  ${fieldControl(f, String((profile as Record<string, unknown>)[f] ?? ''))}
                 </label>`).join('')}
               </div>
 
               <div class="profile-actions">
-                <button type="submit" class="profile-btn-primary">${t('Save Profile')}</button>
+                ${saveButtonHtml()}
                 <label class="profile-check">
                   <span class="profile-check-tag">${t(profile.useDetails ? 'Opted-in' : 'opt-in')}</span>
-                  <input type="checkbox" name="useDetails" ${profile.useDetails ? 'checked' : ''}>
+                  ${jellyOn
+                    ? `<jelly-checkbox name="useDetails" size="sm" label="${escape(t('Use my details to create'))}"${profile.useDetails ? ' checked' : ''}></jelly-checkbox>`
+                    : `<input type="checkbox" name="useDetails" ${profile.useDetails ? 'checked' : ''}>`}
                   <span class="profile-check-text">${t(profile.useDetails ? 'Using my details' : 'Use my details to create')}</span>
                 </label>
               </div>
@@ -307,7 +365,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                 <span class="profile-field-label headshot-heading">${t('Headshot')}</span>
                 <div class="headshot">
                   <div class="headshot-preview${headshotUrl ? '' : ' is-empty'}" id="headshot-preview"${headshotUrl ? ` style="background-image:url('${escape(headshotUrl)}')"` : ''}>
-                    <button type="button" class="headshot-edit" id="headshot-upload">${t(headshotUrl ? 'Edit' : 'Upload')}</button>
+                    ${jellyOn
+                      ? `<jelly-button variant="platinum" class="headshot-edit-jelly" id="headshot-upload">${t(headshotUrl ? 'Edit' : 'Upload')}</jelly-button>`
+                      : `<button type="button" class="headshot-edit" id="headshot-upload">${t(headshotUrl ? 'Edit' : 'Upload')}</button>`}
                   </div>
                   <button type="button" class="headshot-remove" id="headshot-remove" aria-label="${escape(t('Remove headshot'))}" title="${escape(t('Remove'))}"${headshotUrl ? '' : ' hidden'}>&times;</button>
                   <input type="file" id="headshot-file" accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif" hidden>
@@ -367,16 +427,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Feature flags')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body section-card-body">
           <p class="storage-hint-text feature-hint-text">${t('Self-governance, autonomy, choice. Enable or disable parts of the app here')}</p>
-          <ul class="feature-flags" id="feature-flags">
-            ${CATEGORY_FLAGS.map(f =>
-              // Set the on-device Offline Utilities drawer apart from the creative
-              // tool categories above it with its own separator.
-              (f.category === 'utility' ? '<li class="feature-flag-divider" aria-hidden="true"></li>' : '') + flagRow(f)
-            ).join('')}
-            <li class="feature-flag-divider" aria-hidden="true"></li>
-            ${flagRow(NEUROSPICY_FLAG)}
-            ${flagRow(PRO_FLAG)}
-            ${flagRow(STRIP_UPLOAD_META_FLAG)}
+          <ul class="feature-flags" id="feature-flags">${flagListHtml()}
           </ul>
         </div>
       </details>
@@ -395,6 +446,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   `;
 
   // Feature flags — auto-save each toggle (a preference, like the theme picker).
+  // `[data-flag]` is either the native checkbox or a <jelly-switch> host; both
+  // carry `.checked` and emit a bubbling `change`, so one handler covers both.
   viewEl.querySelector('#feature-flags')?.addEventListener('change', async e => {
     const input = (e.target as Element).closest<HTMLInputElement>('[data-flag]');
     if (!input) return;
@@ -402,6 +455,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const flagId = input.dataset.flag!;
     const featureFlags = { ...(current.featureFlags ?? {}), [flagId]: input.checked };
     await host.profile.set!({ ...current, featureFlags });
+    liveProfile = { ...current, featureFlags };
     // Keep the synchronous mirror in step so the Neurospicy player (rendered in
     // popovers, outside the profile-aware views) reflects the change on next render.
     setFlagMirror(flagId, input.checked);
@@ -411,8 +465,35 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (!input.checked) stopNeurospicy();
       syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);
     }
+    // Toggling Jelly effects applies on the spot: load the bundle if needed, then
+    // re-render the list so every row swaps between the CSS switch and
+    // <jelly-switch>. Focus returns to the toggled control (innerHTML drops it).
+    if (flagId === JELLY_FLAG.id) {
+      jellyOn = await ensureJelly(input.checked);
+      const list = viewEl.querySelector('#feature-flags');
+      if (list) {
+        list.innerHTML = flagListHtml();
+        list.querySelector<HTMLElement>(`[data-flag="${flagId}"]`)?.focus();
+      }
+      // The identity form swaps its controls in place too, carrying any unsaved
+      // edits across (both control kinds expose `.value` on the [name] element).
+      const form = viewEl.querySelector('#profile-form');
+      if (form) {
+        for (const f of fields) {
+          const ctl = form.querySelector<HTMLElement & { value?: string }>(`[name="${f}"]`);
+          if (ctl) ctl.outerHTML = fieldControl(f, String(ctl.value ?? ''));
+        }
+        const save = form.querySelector('button[type="submit"], jelly-button[type="submit"]');
+        if (save) save.outerHTML = saveButtonHtml();
+      }
+    }
     announce(input.checked ? t('Enabled') : t('Disabled'));
   });
+
+  // Label-click forwarding for the jelly switches is app-wide now — the one
+  // delegated forwarder installed by lib/jelly.ts when the bundle loads. (A
+  // second, view-local forwarder here would run on the same click and toggle the
+  // switch straight back — reading as a dead toggle.)
 
   // Deep-link target: the gallery's empty state links here (#/profile?focus=feature-flags)
   // to nudge re-enabling categories. The section is opened above; scroll it into view.
@@ -574,9 +655,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Personal details form
   viewEl.querySelector('#profile-form')!.addEventListener('submit', async e => {
     e.preventDefault();
-    const btn = (e.target as HTMLFormElement).querySelector<HTMLButtonElement>('button[type="submit"]');
+    // Either the native submit button or its jelly-mode <jelly-button> stand-in;
+    // disabling goes through the ATTRIBUTE (jelly-button observes it and syncs
+    // its shadow button; on a native button it's equivalent to .disabled).
+    const btn = (e.target as HTMLFormElement).querySelector<HTMLElement>('button[type="submit"], jelly-button[type="submit"]');
     const label = btn?.textContent ?? t('Save');
-    if (btn) btn.disabled = true;
+    btn?.toggleAttribute('disabled', true);
     const data = Object.fromEntries(new FormData(e.target as HTMLFormElement).entries());
     // Checkboxes aren't reliably in FormData (omitted when unchecked), so read it explicitly.
     const useDetails = (e.target as HTMLFormElement).querySelector<HTMLInputElement>('[name="useDetails"]')?.checked ?? false;
@@ -589,9 +673,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       playSfx('saveProfile');   // a warm, lovely "all set" chime on a successful save
       announce(t('Profile saved'));
       // Stay on the page; restore the button shortly after so users can keep editing.
-      setTimeout(() => { if (btn) { btn.textContent = label; btn.disabled = false; } }, 1600);
+      setTimeout(() => { if (btn) { btn.textContent = label; btn.toggleAttribute('disabled', false); } }, 1600);
     } catch {
-      if (btn) { btn.textContent = label; btn.disabled = false; }
+      if (btn) { btn.textContent = label; btn.toggleAttribute('disabled', false); }
       announce(t("Couldn't save — try again"), { assertive: true });
     }
   });
@@ -825,8 +909,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             <span>${t('Move to another device')} ${infoDot(t('Export everything — profile, saved sessions, uploaded images and preferences — as one file, then import it on another offline install to pick up exactly where you left off. Stays entirely on your devices.'))}</span>
           </div>
           <div class="storage-actions">
-            <button type="button" id="export-data-btn" class="btn" data-sfx="whoosh">${t('Export my data')}</button>
-            <button type="button" id="import-data-btn" class="btn">${t('Import data…')}</button>
+            ${jellyOn
+              ? `<jelly-button variant="platinum" id="export-data-btn" data-sfx="whoosh">${t('Export my data')}</jelly-button>
+            <jelly-button variant="platinum" id="import-data-btn">${t('Import data…')}</jelly-button>`
+              : `<button type="button" id="export-data-btn" class="btn" data-sfx="whoosh">${t('Export my data')}</button>
+            <button type="button" id="import-data-btn" class="btn">${t('Import data…')}</button>`}
             <input type="file" id="import-data-input" accept=".zip,application/zip" hidden>
           </div>
           <button type="button" id="export-render-btn" class="btn storage-hoard-btn">📦 ${t('Export my data &amp; render everything')}</button>
@@ -834,7 +921,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </div>
 
         <div class="storage-actions">
-          <button type="button" id="clear-storage-btn" class="btn btn-danger">${t('Clear all my data')}</button>
+          ${jellyOn
+            ? `<jelly-button variant="rose" id="clear-storage-btn">${t('Clear all my data')}</jelly-button>`
+            : `<button type="button" id="clear-storage-btn" class="btn btn-danger">${t('Clear all my data')}</button>`}
         </div>
 
         <div class="store-selbar" id="store-selbar" role="region" aria-live="polite" hidden>

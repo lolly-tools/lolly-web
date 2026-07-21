@@ -34,6 +34,40 @@
 .view-toggle-opt.is-active {
   background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 1px 3px hsl(0 0% 0% / 0.12);
 }
+/* Jelly effects mode (lib/jelly.ts): ONE persistent <jelly-segmented> pill,
+   mounted at body level by syncJellyNavToggle (view-toggle.ts) so it lives
+   ABOVE the view-fade snapshot layer (z 100000) and never re-mounts on
+   navigation — the pill slides once, continuously, while views cross-fade
+   beneath. Desktop only: while it's shown, [data-jelly-nav] hides each view's
+   own centred toggle; the ≤640px topbar keeps the native icon links (segments
+   can't render icons) and hides the floating pill instead. */
+.jelly-nav-wrap {
+  position: fixed; top: .5em; left: 50%; transform: translateX(-50%);
+  z-index: 100001;
+  /* The frosted pill: same glass recipe as the native .view-toggle. The
+     segmented control's own canvas track is made transparent below, so this
+     wrapper IS the track surface — giving the inactive-tab area the blurred
+     backdrop a canvas fill can't produce. */
+  padding: 3px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--muted) / 0.65);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+.jelly-nav-wrap[hidden] { display: none; }
+.jelly-nav-wrap .view-toggle-seg {
+  --jelly-segmented-font-size: 13px;
+  /* Painted per-frame via getComputedStyle — `transparent` resolves to a no-op
+     fill, leaving only the sliding accent pill on the frosted wrapper. */
+  --jelly-track: transparent;
+}
+@media (min-width: 641px) {
+  :root[data-jelly-nav] .view-toggle-wrap { display: none; }
+}
+@media (max-width: 640px) {
+  .jelly-nav-wrap { display: none; }
+}
 /* The gallery no longer needs its own top clearance for the fixed toggle band — the
    featured hero (.featured, 3.4rem top pad) or the .tool-masonry (3.6rem top pad, when
    no hero) already holds that space, so a .gallery padding-top just doubled it up. */
@@ -78,30 +112,10 @@
 
 /* ── Search field (filters the tree; a query reaches INTO sub-folders) ────────
    Lives in the fixed footer bar (.projects-footer, reusing the gallery's .gallery-footer
-   chrome), centred between the nav links via .gallery-search-wrap. */
+   chrome), centred between the nav links via .gallery-search-wrap. The field
+   itself is the shared gallerySearchBox now (gallery.css owns its chrome) —
+   the old hand-rolled .projects-search-box/-icon/-input/-clear set is retired. */
 .projects-search { margin: 0; display: flex; }
-.projects-search-box { position: relative; width: 100%; max-width: 30rem; }
-.projects-search-icon {
-  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
-  display: flex; color: hsl(var(--muted-foreground)); pointer-events: none;
-}
-.projects-search-icon svg { width: 16px; height: 16px; }
-.projects-search-input {
-  width: 100%; padding: 9px 34px; font: inherit; font-size: 13px;
-  background: hsl(var(--background)); color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  outline: none; transition: border-color 0.12s;
-}
-.projects-search-input:focus { border-color: hsl(var(--ring)); }
-/* We render our own ✕, so hide the native one (WebKit) to avoid a double clear. */
-.projects-search-input::-webkit-search-cancel-button { display: none; }
-.projects-search-clear {
-  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-  width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
-  border: 0; border-radius: 50%; background: transparent; color: hsl(var(--muted-foreground));
-  font-size: 13px; line-height: 1; cursor: pointer;
-}
-.projects-search-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 
 /* Results mode. */
 .projects-search-status { margin: 0.6rem 0 0; font-size: 12.5px; color: hsl(var(--muted-foreground)); }

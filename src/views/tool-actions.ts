@@ -46,6 +46,7 @@ import type {
 // The C2PA card only renders for C2PA-capable formats, so it's a no-op for
 // graphic-less tools. Re-exported below for tool.ts.
 import { c2paDefaultOn } from '../lib/c2pa-policy.ts';
+import { jellyActive } from '../lib/jelly.ts';
 
 // Human-readable labels and file extensions for format identifiers that differ
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
@@ -157,6 +158,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // line-art to sit consistently beside the Copy and Share icons.
   const SAVE_SVG = `<svg class="save-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 
+  // The Save action — one builder for both render sites (the default actions row
+  // and the save-only bar for input-less tools). Jelly mode swaps in a neutral
+  // <jelly-button>; the `save-btn` class stays for the icon-collapse @container
+  // rules, which are class-keyed, and carries no box paint of its own.
+  const saveBtnHtml = () => jellyActive()
+    ? `<jelly-button variant="platinum" data-action="save" data-sfx="save" class="save-btn" title="Save to your library">${SAVE_SVG}<span data-save-label>Save</span></jelly-button>`
+    : `<button data-action="save" data-sfx="save" class="save-btn" title="Save to your library">${SAVE_SVG}<span data-save-label>Save</span></button>`;
+
   // The exact payload a save persists — live input values plus the `__` markers
   // (tool identity + export settings). Shared by performSave and the "Make
   // variants" action so a variant is byte-for-byte a normal saved session.
@@ -188,12 +197,15 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // nothing (and then click a now-disabled button — a no-op). The thumbnail is
   // best-effort (captureThumbnail swallows its own errors), so it never blocks a save.
   async function performSave(saveBtnEl?: HTMLElement | null): Promise<boolean> {
+    // Either the native <button> or its jelly-mode <jelly-button> stand-in —
+    // disabling goes through the ATTRIBUTE, which both honour (jelly-button
+    // observes it and syncs its shadow button).
     const btn = (saveBtnEl ?? el?.querySelector('[data-action="save"]')) as HTMLButtonElement | null;
     if (!btn || btn.dataset.saving) return false;
     const label = btn.querySelector<HTMLElement>('[data-save-label]') ?? btn;
     const idle  = label.textContent;
     btn.dataset.saving = '1';
-    btn.disabled = true;
+    btn.toggleAttribute('disabled', true);
     label.textContent = 'Saving…';
     try {
       // Reuse the session's slot after the first save (or when resuming an existing
@@ -222,7 +234,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     } catch (e) {
       console.error('Save failed:', e);
       label.textContent = idle;
-      btn.disabled = false;
+      btn.toggleAttribute('disabled', false);
       delete btn.dataset.saving;
       announce('Save failed');
       return false;
@@ -238,7 +250,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // IndexedDB, contradicting the "nothing is stored/uploaded" promise).
     const optedOut = Array.isArray(manifest.render.actions) && manifest.render.actions.length === 0;
     if (!hasInputs || optedOut) { el.innerHTML = ''; return {}; }
-    el.innerHTML = `<div class="export-action-buttons"><button data-action="save" data-sfx="save" class="save-btn">${SAVE_SVG}<span data-save-label>Save</span></button>${copyUrlBtn}</div>`;
+    el.innerHTML = `<div class="export-action-buttons">${saveBtnHtml()}${copyUrlBtn}</div>`;
     el.querySelector<HTMLButtonElement>('[data-action="save"]')!.addEventListener('click', async function (this: HTMLButtonElement) {
       if (await performSave(this)) setTimeout(() => { navigateTo(returnTo); }, 800);
     });
@@ -681,10 +693,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const CLIPBOARD_SVG = `<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`;
   const copyBtn = actions.includes('copy')
     ? `<button data-action="copy" class="copy-btn" title="Copy to clipboard">${CLIPBOARD_SVG}<span>Copy</span></button>` : '';
-  const saveBtn = actions.includes('save')
-    ? `<button data-action="save" data-sfx="save" class="save-btn" title="Save to your library">${SAVE_SVG}<span data-save-label>Save</span></button>` : '';
+  const saveBtn = actions.includes('save') ? saveBtnHtml() : '';
+  // Download is the primary CTA — jelly mode gives it the accent-fill squish.
+  const downloadLabel = `Download${formats.length === 1 ? ' ' + fmtLabel(formats[0]!) : ''}`;
   const downloadBtn = actions.includes('download')
-    ? `<button data-action="download">Download${formats.length === 1 ? ' ' + fmtLabel(formats[0]!) : ''}</button>`
+    ? (jellyActive()
+      ? `<jelly-button data-action="download" class="download-btn-jelly">${downloadLabel}</jelly-button>`
+      : `<button data-action="download">${downloadLabel}</button>`)
     : '';
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;
   const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : '';
@@ -1459,9 +1474,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   }
 
   el.querySelector<HTMLButtonElement>('[data-action="download"]')?.addEventListener('click', async (e) => {
+    // Native <button> or jelly-mode <jelly-button> — disable via the attribute,
+    // which both honour (jelly syncs it onto its shadow button).
     const btn  = e.currentTarget as HTMLButtonElement;
     const prev = btn.textContent;
-    btn.disabled = true;
+    btn.toggleAttribute('disabled', true);
     btn.setAttribute('aria-busy', 'true');
 
     const fmt        = formatEl?.value ?? formats[0]!;
@@ -1704,13 +1721,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         : 'Export failed — try again';
       btn.textContent = why;
       announce(why, { assertive: true });
-      setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 3500);
+      setTimeout(() => { btn.textContent = prev; btn.toggleAttribute('disabled', false); }, 3500);
       return;
     }
 
     btn.removeAttribute('aria-busy');
     btn.textContent = prev;
-    btn.disabled = false;
+    btn.toggleAttribute('disabled', false);
     announce('Export complete');
   });
 
