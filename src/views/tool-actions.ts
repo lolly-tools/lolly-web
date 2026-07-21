@@ -152,7 +152,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // label is swapped to "Copied!" on click, so it's wrapped in its own span to
   // keep the icon. Lives at the foot of the actions bar — after the render
   // (Download) button, so on mobile it stacks behind it.
-  const copyUrlBtn = `<button type="button" data-action="copy-url" class="copy-url-btn btn" title="Copy a shareable link" aria-label="Share"><svg class="copy-url-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg><span data-copy-url-label>Share</span></button>`;
+  // Share glyph + label, shared by both control kinds so the row stays uniform.
+  const SHARE_SVG = `<svg class="copy-url-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>`;
+  const copyUrlBtn = jellyActive()
+    ? `<jelly-button variant="platinum" data-action="copy-url" class="copy-url-btn" title="Copy a shareable link" label="Share">${SHARE_SVG}<span data-copy-url-label>Share</span></jelly-button>`
+    : `<button type="button" data-action="copy-url" class="copy-url-btn btn" title="Copy a shareable link" aria-label="Share">${SHARE_SVG}<span data-copy-url-label>Share</span></button>`;
 
   // Save glyph — a tray with a down-arrow (matches the Feather "download" mark),
   // line-art to sit consistently beside the Copy and Share icons.
@@ -692,13 +696,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // the primary CTA, alone on its own full-width line at the very bottom.
   const CLIPBOARD_SVG = `<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`;
   const copyBtn = actions.includes('copy')
-    ? `<button data-action="copy" class="copy-btn" title="Copy to clipboard">${CLIPBOARD_SVG}<span>Copy</span></button>` : '';
+    ? (jellyActive()
+      ? `<jelly-button variant="platinum" data-action="copy" class="copy-btn" title="Copy to clipboard" label="Copy">${CLIPBOARD_SVG}<span>Copy</span></jelly-button>`
+      : `<button data-action="copy" class="copy-btn" title="Copy to clipboard">${CLIPBOARD_SVG}<span>Copy</span></button>`) : '';
   const saveBtn = actions.includes('save') ? saveBtnHtml() : '';
   // Download is the primary CTA — jelly mode gives it the accent-fill squish.
   const downloadLabel = `Download${formats.length === 1 ? ' ' + fmtLabel(formats[0]!) : ''}`;
   const downloadBtn = actions.includes('download')
+    // The native button's ↓ affordance is a ::before glyph; the bridge strips
+    // pseudo-content off jelly hosts (it painted at the host corner, outside
+    // the capsule), so the jelly label carries the arrow as plain text.
     ? (jellyActive()
-      ? `<jelly-button data-action="download" class="download-btn-jelly">${downloadLabel}</jelly-button>`
+      ? `<jelly-button data-action="download" class="download-btn-jelly">↓ ${downloadLabel}</jelly-button>`
       : `<button data-action="download">${downloadLabel}</button>`)
     : '';
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;

@@ -2997,9 +2997,19 @@ function armAutoCopy(actionsEl: HTMLElement | null, actionsApi: ActionsApi | und
     return;
   }
 
+  // The armed affordance is the primary fill. On the native button that's the
+  // .copy-armed alias in buttons.css; a jelly-button ignores page box-paint
+  // (lib/jelly.ts strips it), so armed flips its variant instead — removing
+  // `platinum` falls back to the accent fill, the jelly "primary".
+  const jellyArmed = (on: boolean) => {
+    if (copyBtn.tagName !== 'JELLY-BUTTON') return;
+    if (on) copyBtn.removeAttribute('variant');
+    else copyBtn.setAttribute('variant', 'platinum');
+  };
   const disarm = () => {
     document.removeEventListener('pointerdown', onGesture, true);
     copyBtn.classList.remove('copy-armed');
+    jellyArmed(false);
   };
 
   const onGesture = (e: PointerEvent) => {
@@ -3012,6 +3022,7 @@ function armAutoCopy(actionsEl: HTMLElement | null, actionsApi: ActionsApi | und
 
   document.addEventListener('pointerdown', onGesture, true);
   copyBtn.classList.add('copy-armed');
+  jellyArmed(true);
 }
 
 

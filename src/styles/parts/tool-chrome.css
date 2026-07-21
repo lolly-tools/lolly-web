@@ -590,6 +590,20 @@
   /* Icon-only: drop back to a compact square rather than a tall, empty pill. */
   .export-action-buttons button { padding-block: 6px; }
 }
+/* Jelly pills run wider than the native buttons (component font + capsule
+   padding), so they shed their labels EARLIER — the Share label was clipping
+   at widths where the native row still fit. Icon-only jelly pills zero the
+   component's inline padding + slot gap so the glyph sits dead-centre. */
+@container (max-width: 320px) {
+  .export-action-buttons jelly-button > span { display: none; }
+  .export-action-buttons jelly-button {
+    --jelly-button-padding-inline: 0;
+    --jelly-button-gap: 0;
+  }
+}
+/* The jelly row reads airier than the native one (capsules, no borders) — pull
+   the three pills closer together. */
+.export-action-buttons:has(jelly-button) { gap: 4px; }
 
 /* Tier 1 — filename · format. The filename fills the row; when a format
    selector exists the two fuse into a single "name.format" segmented control. */
