@@ -40,6 +40,16 @@ const BRIDGE_CSS = `:root {
   --jelly-font-text: var(--font-brand);
   --jelly-font-mono: var(--font-mono);
 }
+/* Jelly hosts paint ALL their own chrome on canvas. Native-control recipes
+   that match by class or attribute — .modal-primary, [data-action="download"],
+   .gallery-search, whatever comes next — must never paint a second box (or
+   pseudo-element glyph) behind the capsule. Unlayered, these beat every
+   layered sheet, so the whole bug class dies here rather than selector by
+   selector. */
+jelly-button, jelly-input, jelly-switch, jelly-checkbox, jelly-segmented {
+  background: none; border: 0; box-shadow: none; padding: 0;
+}
+jelly-button::before, jelly-button::after { content: none; }
 /* Chrome-wide scale: jelly's size tables suit marketing pages; Lolly's chrome
    runs denser. Page-level rules beat shadow :host size tables, so this is the
    one knob for every surface (dialogs, action rows, forms). */
@@ -47,6 +57,21 @@ jelly-button {
   --jelly-button-font-size: .85rem;
   --jelly-button-height: 2.35rem;
   --jelly-button-min-width: 0;
+}
+/* The shadow button is content-sized and sits at the inline start of its
+   wrapper — so in a stretched host (flex rows) the capsule spans the host but
+   the label hugs the left. Filling the part lets its own justify-content
+   centre the slotted label/icon in every stretched jelly button. */
+jelly-button::part(button) { width: 100%; }
+/* Download is the export pane's core action — bigger than its row-mates.
+   Declared HERE because the size knobs above are unlayered: a layered
+   tool-chrome rule could never override them. */
+jelly-button.download-btn-jelly {
+  /* the component drives vertical bulk via height (its padding-block is 0) —
+     3.25rem ≈ the old native padding plus the extra breathing room */
+  --jelly-button-height: 3.25rem;
+  --jelly-button-font-size: .95rem;
+  font-weight: 700;
 }
 jelly-input {
   --jelly-input-font-size: .9rem;
