@@ -42,6 +42,17 @@ export const PRO_FLAG: FeatureFlag = { id: 'pro-batch', label: 'Pro', pill: 'bat
 // the background focus-music player — is opt-out here (ON by default like every flag).
 export const NEUROSPICY_FLAG: FeatureFlag = { id: 'neurospicy', label: 'Neurospicy Mode', pill: 'focus music' };
 
+// Jelly effects — flag-gated soft-body chrome controls (the vendored Jelly UI web
+// components, see lib/jelly.ts). ON by default like every historic flag, so the
+// plain `flagEnabled`/`flagEnabledSync` reads apply. Turning it off reverts the
+// upgraded controls to the plain CSS primitives and skips loading the bundle.
+export const JELLY_FLAG: FeatureFlag = {
+  id: 'jelly-effects',
+  label: 'Jelly effects',
+  pill: 'squishy',
+  info: 'Gives some controls a soft, springy feel, starting with the switches on this page. Follows your theme and brand colours, respects reduced-motion, and never touches tool output.',
+};
+
 // Opt-IN (default OFF): strip EXIF/XMP/GPS from images uploaded to the catalog. C2PA
 // content credentials are ALWAYS preserved regardless — this only governs other metadata.
 // Read by the upload pipeline (views/picker.ts storeUserUpload).

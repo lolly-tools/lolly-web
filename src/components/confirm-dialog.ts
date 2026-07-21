@@ -11,11 +11,29 @@
  * the safe Cancel button takes default focus.
  */
 import { escape } from '../utils.ts';
+import { jellyActive } from '../lib/jelly.ts';
 import { mountModal } from './modal.ts';
 
 // Open dialogs live on <body>, so a view unmount can't remove them by clearing
 // its own container — track them here and tear any down via closeConfirmDialogs().
 const openDialogs = new Set<HTMLDialogElement>();
+
+// One dialog action button — the plain .btn, or its <jelly-button> stand-in when
+// the Jelly effects flag is active (neutral platinum cancel/plain, accent primary,
+// rose danger — rose is bridged to --destructive in lib/jelly.ts). The jelly host
+// must NOT carry .btn (those border/fill styles would paint a second box behind
+// its canvas), but it keeps the modal-* classes: the delegated [data-act]/
+// [data-choice] click handlers and the initialFocus selectors work unchanged
+// because composed shadow clicks retarget to the host element.
+type BtnKind = 'cancel' | 'primary' | 'danger' | 'plain';
+function actionBtn(label: string, attrs: string, kind: BtnKind): string {
+  const modalClass = kind === 'plain' ? '' : `modal-${kind}`;
+  if (jellyActive()) {
+    const variant = kind === 'primary' ? '' : kind === 'danger' ? ' variant="rose"' : ' variant="platinum"';
+    return `<jelly-button${variant} class="${modalClass}" ${attrs}>${escape(label)}</jelly-button>`;
+  }
+  return `<button type="button" class="btn${modalClass ? ` ${modalClass}` : ''}" ${attrs}>${escape(label)}</button>`;
+}
 
 export interface ConfirmDialogOpts {
   title: string;
@@ -30,8 +48,8 @@ export function confirmDialog({ title, message, confirmLabel = 'Delete', danger 
       <h2 class="modal-title">${escape(title)}</h2>
       <p class="modal-msg">${escape(message)}</p>
       <div class="modal-actions">
-        <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>
-        <button type="button" class="btn${danger ? ' modal-danger' : ''}" data-act="ok">${escape(confirmLabel)}</button>
+        ${actionBtn('Cancel', 'data-act="cancel"', 'cancel')}
+        ${actionBtn(confirmLabel, 'data-act="ok"', danger ? 'danger' : 'plain')}
       </div>`;
     const modal = mountModal<boolean>(content, {
       className: 'modal',
@@ -76,8 +94,8 @@ export function choiceDialog({ title, message, choices = [], tag }: ChoiceDialog
       <h2 class="modal-title">${escape(title)}</h2>
       <p class="modal-msg">${escape(message)}</p>
       <div class="modal-actions modal-actions--choices">
-        <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>
-        ${choices.map(c => `<button type="button" class="btn${c.primary ? ' modal-primary' : ''}" data-choice="${escape(c.id)}">${escape(c.label)}</button>`).join('')}
+        ${actionBtn('Cancel', 'data-act="cancel"', 'cancel')}
+        ${choices.map(c => actionBtn(c.label, `data-choice="${escape(c.id)}"`, c.primary ? 'primary' : 'plain')).join('')}
       </div>`;
     const modal = mountModal<string | null>(content, {
       className: 'modal',
@@ -115,7 +133,7 @@ export function noticeDialog({ title, message, okLabel = 'Got it' }: NoticeDialo
       <h2 class="modal-title">${escape(title)}</h2>
       ${paras}
       <div class="modal-actions">
-        <button type="button" class="btn modal-primary" data-act="ok">${escape(okLabel)}</button>
+        ${actionBtn(okLabel, 'data-act="ok"', 'primary')}
       </div>`;
     const modal = mountModal<void>(content, {
       className: 'modal',
@@ -153,13 +171,20 @@ export function promptDialog({ title, message, confirmLabel = 'OK', placeholder 
       <h2 class="modal-title">${escape(title)}</h2>
       <p class="modal-msg">${escape(message)}</p>
       ${errHtml}
-      <input type="${inputType === 'password' ? 'password' : 'text'}" class="modal-input"
+      ${jellyActive()
+        // jelly-input paints its own capsule — only the field's footprint is
+        // styled here. `label` carries the accessible name to the shadow input.
+        ? `<jelly-input type="${inputType === 'password' ? 'password' : 'text'}" class="modal-input"
+             label="${escape(message)}"
+             autocomplete="${inputType === 'password' ? 'off' : 'on'}" placeholder="${escape(placeholder)}"
+             style="width:100%;margin:.1rem 0 .3rem"></jelly-input>`
+        : `<input type="${inputType === 'password' ? 'password' : 'text'}" class="modal-input"
              aria-label="${escape(message)}"
              autocomplete="${inputType === 'password' ? 'off' : 'on'}" spellcheck="false" placeholder="${escape(placeholder)}"
-             style="width:100%;box-sizing:border-box;padding:9px 12px;margin:.1rem 0 .3rem;font-size:14px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))">
+             style="width:100%;box-sizing:border-box;padding:9px 12px;margin:.1rem 0 .3rem;font-size:14px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))">`}
       <div class="modal-actions">
-        <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>
-        <button type="button" class="btn modal-primary" data-act="ok">${escape(confirmLabel)}</button>
+        ${actionBtn('Cancel', 'data-act="cancel"', 'cancel')}
+        ${actionBtn(confirmLabel, 'data-act="ok"', 'primary')}
       </div>`;
     const modal = mountModal<string | null>(content, {
       className: 'modal',
@@ -174,8 +199,11 @@ export function promptDialog({ title, message, confirmLabel = 'OK', placeholder 
       if (act === 'ok') { modal.close(input.value); return; }
       if (act === 'cancel') modal.close(null);
     });
+    // Keydown from a jelly-input's shadow field bubbles composed, so this same
+    // listener covers both control kinds; .value is a live getter on both.
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); modal.close(input.value); } });
-    if (value) { input.value = value; input.select(); }
+    // jelly-input has no select(); optional-call keeps the pre-fill+select UX native-only.
+    if (value) { input.value = value; (input as Partial<HTMLInputElement>).select?.(); }
   });
 }
 

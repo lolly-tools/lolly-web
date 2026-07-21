@@ -7,6 +7,7 @@
 import { escape } from '../utils.ts';
 import { t, docsHref } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
+import { jellyActive } from '../lib/jelly.ts';
 
 /** The nav-bar glyphs (Lucide house style), shared so all three footers match.
  *  Path data lives in lib/icons.ts — .shield is 'shieldCheck' there, deduped
@@ -29,10 +30,23 @@ export const NAV_ICONS = {
 export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string; value?: string; className?: string; clearLabel?: string }): string {
   const cls = opts.className ?? 'gallery-search';
   const value = opts.value ?? '';
-  return `<div class="gallery-search-wrap">
+  // Jelly effects mode swaps the native field for a <jelly-input>. Every caller
+  // keeps working untouched: they query by the same class, `.value` is a live
+  // getter/setter on the host, and the inner field's `input`/keydown events are
+  // composed so host-bound listeners fire as before. The icon + ✕ still overlay
+  // the field (they need z-index above the jelly canvas — footer-nav.css).
+  const field = jellyActive()
+    // The inline padding-inline var is load-bearing: it insets the shadow
+    // field's text clear of the overlaid magnifier/✕. It must be INLINE — the
+    // lib/jelly.ts bridge sheet is unlayered and sets a chrome-wide
+    // --jelly-input-padding-inline, and unlayered rules beat any @layer views
+    // stylesheet rule regardless of specificity; only an inline style outranks it.
+    ? `<jelly-input class="${cls}" style="--jelly-input-padding-inline:2.1rem" type="text" placeholder="${escape(opts.placeholder)}" autocomplete="off" label="${escape(opts.ariaLabel)}"${value ? ` value="${escape(value)}"` : ''}></jelly-input>`
+    : `<input class="${cls}" type="text" placeholder="${escape(opts.placeholder)}" autocomplete="off" spellcheck="false" aria-label="${escape(opts.ariaLabel)}"${value ? ` value="${escape(value)}"` : ''}>`;
+  return `<div class="gallery-search-wrap${jellyActive() ? ' gallery-search-wrap--jelly' : ''}">
     <div class="gallery-search-box">
       <span class="gallery-search-icon" aria-hidden="true">${NAV_ICONS.search}</span>
-      <input class="${cls}" type="text" placeholder="${escape(opts.placeholder)}" autocomplete="off" spellcheck="false" aria-label="${escape(opts.ariaLabel)}"${value ? ` value="${escape(value)}"` : ''}>
+      ${field}
       <button type="button" class="gallery-search-clear" data-search-clear aria-label="${escape(opts.clearLabel ?? t('Clear search'))}"${value ? '' : ' hidden'}>✕</button>
     </div>
   </div>`;

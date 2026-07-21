@@ -20,6 +20,7 @@ import { icon } from '../lib/icons.ts';
 import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
+import { jellyActive } from '../lib/jelly.ts';
 import { syncCatalog, prefetchAssetsById } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
@@ -339,8 +340,15 @@ function armPreviewReveal(masonry: HTMLElement, animate: boolean): void {
   });
 }
 
-export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Promise<void> {
-  document.title = 'Lolly';
+export interface GalleryMountOpts {
+  /** Show ONLY this tool category (the `#/u` Utilities view = `only: 'utility'`).
+   *  Bypasses the per-category feature flags — a deep link to the Utilities tab
+   *  shows utilities even when the user hid that section from the main gallery. */
+  only?: string;
+}
+
+export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts: GalleryMountOpts = {}): Promise<void> {
+  document.title = opts.only ? 'Utilities — Lolly' : 'Lolly';
   // `window as unknown as …` bypasses the global Window['__toolIndex'] augmentation
   // (typed as the loosely-shaped ToolIndex in catalog/sync); this view reads it as the
   // denormalised GalleryTool slice. Erased cast — no runtime effect.
@@ -420,10 +428,19 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   const sortedSaved = [...savedEntries].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   const nameById = new Map(index.tools.map(t => [t.id, t.name]));
 
-  // Group by category; feature flags hide whole categories.
+  // Group by category; feature flags hide whole categories. In only-mode
+  // (the Utilities view) every OTHER category goes into the hidden set instead —
+  // reusing the one membership mechanism every downstream surface (grid, search,
+  // favourites count, featured strip, pill counts) already respects. The main
+  // gallery ALWAYS hides 'utility' now: utilities moved wholesale to the `#/u`
+  // view (their old feature flag governs that view, not a gallery section).
   const grouped: Record<string, GalleryTool[]> = {};
   for (const t of index.tools) (grouped[t.category ?? 'other'] ??= []).push(t);
-  const hidden = hiddenCategories(profile);
+  const hidden = opts.only
+    // `?? 'other'` matters: `grouped` keys uncategorised tools under 'other', so
+    // the hidden set must name that key too or they'd leak into the only-view.
+    ? new Set<string | undefined>([...new Set(index.tools.map(t => t.category ?? 'other'))].filter(c => c !== opts.only))
+    : hiddenCategories(profile).add('utility');
   const proEnabled = flagEnabled(profile, PRO_FLAG.id);
 
   // The user's starred tools — held in memory for this mount, persisted to the profile
@@ -496,9 +513,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   viewEl.classList.add('has-masonry');
   viewEl.innerHTML = `
     <div class="gallery${featuredEntries.length ? ' has-featured' : ''}">
-      <h1 class="visually-hidden">${t('Lolly — tools gallery')}</h1>
+      <h1 class="visually-hidden">${opts.only ? t('Lolly — utilities') : t('Lolly — tools gallery')}</h1>
       ${viewTopbarHtml({
-        active: 'tools',
+        active: opts.only ? 'utilities' : 'tools',
         right: `
           ${visibleCats.length ? `<button type="button" class="filter-fab" aria-label="${escape(t('Sort and filter tools'))}" aria-haspopup="true" aria-expanded="false" aria-controls="filter-popover" title="${escape(t('Sort & filter'))}">${FILTER_ICON}</button>` : ''}
           ${sortedSaved.length ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: sortedSaved.length }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}`,
@@ -525,7 +542,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
             <p class="filter-pop-head">${t('Filter')}</p>
             <div class="filter-pop-pills" aria-label="${escape(t('Filter tools by category'))}"></div>
             <label class="filter-pop-check">
-              <input type="checkbox" class="filter-hide-previews">
+              ${jellyActive()
+                ? `<jelly-switch class="filter-hide-previews" size="sm" label="${escape(t('Hide previews'))}"></jelly-switch>`
+                : `<input type="checkbox" class="filter-hide-previews">`}
               <span>${t('Hide previews')}</span>
             </label>
           </div>` : '',
@@ -551,7 +570,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
 
       ${footerNav({
         proEnabled,
-        searchHtml: gallerySearchBox({ placeholder: t('Search tools…'), ariaLabel: t('Search tools') }),
+        searchHtml: opts.only
+          ? gallerySearchBox({ placeholder: t('Search utilities…'), ariaLabel: t('Search utilities') })
+          : gallerySearchBox({ placeholder: t('Search tools…'), ariaLabel: t('Search tools') }),
       })}
       ${privacyNoticeMarkup()}
       ${personalizeNudgeMarkup(profile)}
@@ -1018,12 +1039,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
   // already in allTools). Drives the in-place hide-show; sort is applied separately.
   function matchesQuery(t: GalleryTool): boolean {
     const q = query.trim();
-    // Utilities are "hidden" from the main grid — they browse via the bottom strip, not
-    // a category pill — but they must still be findable, so they surface as grid tiles
-    // ONLY while a search is active (never in the default / category / favourites views).
-    if (t.category === 'utility') {
-      return q.length > 0 && (t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q));
-    }
+    // Utilities live in their own `#/u` view now and NEVER appear in the main
+    // gallery — not even via search (the Utilities view has its own search box).
+    // In only-mode they're ordinary tiles and take the normal path below.
+    if (t.category === 'utility' && !opts.only) return false;
     if (q) return t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q);
     if (activeCat === FAV_CAT) return favourites.has(t.id);   // starred collection
     return activeCat === 'all' || t.category === activeCat;
@@ -1031,7 +1050,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost): Prom
 
   function renderPills(): void {
     if (!pillbar) return;
-    const total = index.tools.filter(t => !hidden.has(t.category) && t.category !== 'utility').length;
+    // `hidden` already excludes 'utility' in the main gallery and everything
+    // else in the Utilities view, so it's the one membership test needed.
+    const total = index.tools.filter(t => !hidden.has(t.category ?? 'other')).length;
     const allActive = activeCat === 'all' && !query;
     let html = `<button class="gallery-pill${allActive ? ' active' : ''}" data-cat="all" type="button" aria-pressed="${allActive}">${t('All')}<span class="ct">${total}</span></button>`;
     // Favourites — the starred collection. Always shown (even at 0) so it's discoverable;

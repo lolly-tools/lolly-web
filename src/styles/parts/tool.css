@@ -912,9 +912,17 @@
     box-shadow:  0 1px #fff2,inset 0 .06rem .3rem #0004;
 }
 
-.input-row--checkbox:has(input:checked) {
+.input-row--checkbox:has(input:checked),
+.input-row--checkbox:has(jelly-switch[checked]) {
   border-color: hsl(var(--primary) / 0.5);
   background: hsl(var(--primary) / 0.07);
+}
+/* Jelly-mode boolean rows (lib/jelly.ts): the switch replaces the checkbox and
+   must not grow the compact row — cap its geometry via the host-level tokens. */
+.input-row--checkbox jelly-switch {
+  flex: none;
+  --jelly-switch-width: 38px;
+  --jelly-switch-height: 22px;
 }
 
 .input-row--checkbox .input-label {
@@ -2645,7 +2653,7 @@ background-color:hsl(var(--background) / 1);
 .tool-canvas-outer {
   overflow: hidden;
   flex-shrink: 0;
-  box-shadow: 0 .5em 3em #0002;
+  box-shadow: 0 0 0 1px #8884,0 .5em 3em #0002;
   /* Slow default transition = the gentle fade-OUT after a resize ends. */
   transition: box-shadow 0.4s ease;
 }
@@ -2658,7 +2666,7 @@ background-color:hsl(var(--background) / 1);
    transition here makes it appear quickly; the base rule fades it out slowly. */
 .tool-canvas-outer.is-resizing {
   box-shadow: 0 .5em 3em #0002,
-              0 0 0 2px hsl(var(--ring) / 0.32),
+              0 0 0 1.2px hsl(var(--ring) / 0.6),
               0 0 16px hsl(var(--ring) / 0.10);
   transition: box-shadow 0.09s ease;
 }

@@ -41,7 +41,7 @@ import { attachProfileMenu } from '../components/profile-menu.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountBodyPopover, pointAnchor } from '../components/body-popover.ts';
 import type { PopoverAnchor } from '../components/body-popover.ts';
-import { footerNav, NAV_ICONS } from '../components/footer-nav.ts';
+import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
 import { confirmDialog as baseConfirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import type { ConfirmDialogOpts } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
@@ -148,7 +148,7 @@ const CHEVRON_ICON = icon('chevronRight');
 // lucide "link" — the shareable-link glyph (matches the tool view's Share button).
 const SHARE_ICON = icon('share', { strokeWidth: 1.9 });
 // (Footer nav links + their glyphs live in components/footer-nav.ts, shared with the
-// Tools gallery and the Catalogue; NAV_ICONS.search is reused for the search field.)
+// Tools gallery and the Catalogue; the search field is the shared gallerySearchBox.)
 
 export async function mountProjects(
   viewEl: HTMLElement,
@@ -649,14 +649,10 @@ export async function mountProjects(
       ${footerNav({
         proEnabled,
         footerClass: 'projects-footer',
-        searchHtml: `
-        <div class="gallery-search-wrap">
-          <div class="projects-search-box">
-            <span class="projects-search-icon" aria-hidden="true">${NAV_ICONS.search}</span>
-            <input class="projects-search-input" type="search" placeholder="${escape(placeholder)}" autocomplete="off" spellcheck="false" aria-label="${escape(placeholder)}" value="${escape(query)}">
-            <button type="button" class="projects-search-clear" data-search-clear aria-label="${escape(t('Clear search'))}"${query ? '' : ' hidden'}>✕</button>
-          </div>
-        </div>`,
+        // The standard shared search field (component-audit rec 11 — this was the
+        // last hand-rolled copy; Tools + Catalogue already use it, and it carries
+        // the jelly-input upgrade). Placeholder stays projects-scoped.
+        searchHtml: gallerySearchBox({ placeholder, ariaLabel: placeholder, value: query }),
       })}`;
   }
 
@@ -719,7 +715,7 @@ export async function mountProjects(
   // Re-focus the (freshly re-rendered) search field, caret at the end, after a search-driven
   // render() has replaced the input. Value is identical, so caret-to-end is where the user is.
   function focusSearch(caretToEnd = false): void {
-    const el = viewEl.querySelector<HTMLInputElement>('.projects-search-input');
+    const el = viewEl.querySelector<HTMLInputElement>('.gallery-search');
     if (!el) return;
     el.focus({ preventScroll: true });
     if (caretToEnd) { const n = el.value.length; try { el.setSelectionRange(n, n); } catch { /* unsupported */ } }
@@ -869,12 +865,12 @@ export async function mountProjects(
     // Search field → debounced re-render into the flat results grid. The timer callback
     // re-reads the LIVE input (not the captured node) so a render triggered elsewhere mid-
     // debounce can't fire against a detached input, and refocuses the new field afterwards.
-    const searchInput = root.querySelector<HTMLInputElement>('.projects-search-input');
+    const searchInput = root.querySelector<HTMLInputElement>('.gallery-search');
     searchInput?.addEventListener('input', () => {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
         if (!mounted) return;
-        const v = (viewEl.querySelector<HTMLInputElement>('.projects-search-input')?.value ?? '').trim().toLowerCase();
+        const v = (viewEl.querySelector<HTMLInputElement>('.gallery-search')?.value ?? '').trim().toLowerCase();
         if (v === query) return;
         query = v;
         render();

@@ -21,6 +21,8 @@ import { registerUserFonts } from './user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateNeurospicy, armNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
 import { hydrateFeatureFlags, flagEnabledSync } from './feature-flags.ts';
+import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
+import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
 import { syncNeuroDock } from './components/neuro-dock.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
 import { initShareTargetIngest } from './lib/drop-router.ts';
@@ -35,7 +37,7 @@ import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from '
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -49,6 +51,7 @@ type Route =
   | { name: 'start'; params?: string }
   | { name: 'multi'; params?: string }
   | { name: 'components' }
+  | { name: 'utilities' }
   | { name: 'gallery' };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
@@ -71,8 +74,19 @@ let mountedRouteSig = '';
 // Announce client-side route changes (the view swaps via innerHTML, which
 // assistive tech wouldn't otherwise notice).
 function announceRoute(name: RouteName): void {
-  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit', components: 'Component library' };
+  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', utilities: 'Utilities', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit', components: 'Component library' };
   announce(`${labels[name] ?? 'Page'} loaded`);
+}
+
+/** The view-toggle tab a route lights up — null for routes without the tab bar. */
+function navKeyForRoute(name: RouteName): ViewToggleKey | null {
+  switch (name) {
+    case 'gallery': return 'tools';
+    case 'utilities': return 'utilities';
+    case 'projects': return 'projects';
+    case 'catalog': return 'catalog';
+    default: return null;
+  }
 }
 
 async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<void> {
@@ -164,7 +178,12 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     : null;
 
   view.classList.toggle('tool-view', route.name === 'tool');
-  view.classList.toggle('gallery-view', route.name === 'gallery');
+  // Utilities IS the gallery view (mountGallery in only-utility mode), so it must
+  // carry the same scoping class — gallery.css's desktop saved-list grid, footer
+  // padding and every other .gallery-view rule apply identically. Without it the
+  // mounted markup is styled by nothing and the view renders broken/blank.
+  view.classList.toggle('gallery-view', route.name === 'gallery' || route.name === 'utilities');
+  view.classList.toggle('utilities-view', route.name === 'utilities');
   view.classList.toggle('profile-view', route.name === 'profile');
   view.classList.toggle('dashboard-view', route.name === 'dashboard');
   view.classList.toggle('pro-view', route.name === 'pro');
@@ -290,6 +309,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       await mountComponents(view, host as unknown as Parameters<typeof mountComponents>[1], prevRouteName !== null);
       break;
     }
+    case 'utilities':
+      // The gallery in only-utilities mode: same view, same wiring, filtered to
+      // the on-device utility tools (compress-pdf, strip-data, countdown-timer…).
+      // The 'Offline Utilities' flag governs the WHOLE view now — off means no
+      // tab and no route (a deep link lands on the main gallery).
+      if (!flagEnabledSync(UTILITIES_FLAG_ID)) { window.location.replace('#'); return; }
+      await mountGallery(view, host as unknown as Parameters<typeof mountGallery>[1], { only: 'utility' });
+      break;
     case 'gallery':
     default:
       await mountGallery(view, host as unknown as Parameters<typeof mountGallery>[1]);
@@ -308,6 +335,10 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   // (the tool view's /t/<id> rewrite) is done — snapshot it as the candidate
   // "previous view" for the next navigation's back pill.
   noteMountedView(route.name);
+
+  // Reconcile the persistent jelly tab pill (view-toggle.ts): listing views
+  // show it (the pill slides to the active tab), everything else hides it.
+  syncJellyNavToggle(navKeyForRoute(route.name));
 
   // After the view swaps, tell assistive tech and move focus into the new view
   // so keyboard/SR users aren't stranded on the now-removed element. (Within a
@@ -466,6 +497,14 @@ async function boot(): Promise<void> {
     armNeurospicy(host as unknown as Parameters<typeof armNeurospicy>[0]);
     syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);   // show the bottom-right dock if the mode was left on
   }
+  // Jelly effects — start the lazy bundle load now, racing the rest of boot
+  // (catalog sync + first view mount) rather than blocking or idle-deferring:
+  // surfaces check the synchronous jellyActive() gate at paint, and a
+  // same-origin ~52 KB chunk usually wins that race (always, once the service
+  // worker has it). If it loses, that first render shows the plain controls —
+  // and the .then() below retrofits the persistent nav pill for the view that
+  // already mounted. Flag-off users never fetch the chunk.
+  if (jellyEnabled()) void ensureJelly().then(ok => { if (ok) syncJellyNavToggle(navKeyForRoute(parseRoute().name)); });
   // EVERY user-asset delete funnels through the bridge, which announces it here —
   // an audio delete must also leave the music player (stopping it, or advancing,
   // if it was the sounding track), no matter which surface deleted it (catalog,
@@ -682,6 +721,7 @@ function parseRoute(): Route {
     if (parts[0] === 'pro') return { name: 'pro', params: query || '' }; // /pro batch mode
     if (parts[0] === 'p') return { name: 'projects', folderId: parts[1] || null, params: query || '' };
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
+    if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities' }; // gallery filtered to the utility category
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
     return { name: 'gallery' };
   }

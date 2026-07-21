@@ -13,6 +13,8 @@
  * default in tokens.css. Stored 'suse' values migrate on apply.
  */
 
+import { syncJellyMode } from './lib/jelly.ts';
+
 export type Theme = 'light' | 'dark' | 'brand';
 
 export const THEMES: readonly Theme[] = ['light', 'dark', 'brand'];
@@ -82,6 +84,14 @@ export function applyTheme(theme: string, animate = true): void {
     if (triple) meta.content = `hsl(${triple})`;
     else if (fallback) meta.content = fallback;
   }
+
+  // Keep the Jelly effects controls (lib/jelly.ts) in step: pin their light/dark
+  // token defaults to the app theme rather than the OS scheme, and wake settled
+  // canvases — an idle jelly control only repaints on this event, so a theme swap
+  // would otherwise leave it painted in the old palette. Both are inert no-ops
+  // while the jelly bundle isn't loaded (attribute + unheard event).
+  syncJellyMode(theme);
+  window.dispatchEvent(new CustomEvent('jelly-theme-change'));
 }
 
 /** Called at module boot — applies the localStorage value before the profile loads. */

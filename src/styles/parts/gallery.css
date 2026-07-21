@@ -190,6 +190,21 @@
   pointer-events: none;
 }
 .gallery-search-icon svg { width: 16px; height: 16px; }
+/* Jelly effects mode (lib/jelly.ts): the field is a <jelly-input>; the search
+   icon and ✕ overlay its canvas, so they need stacking above it, and the inner
+   field needs matching inline padding so text clears the icon. The native field
+   chrome above (border/background/padding) must NOT paint on the jelly host —
+   the component draws its own capsule, and the two together read as a double
+   outline. */
+.gallery-search-wrap--jelly .gallery-search {
+  width: 100%;
+  /* (the icon-clearance --jelly-input-padding-inline lives INLINE on the element,
+     set by gallerySearchBox — a rule here sits in @layer views and would lose to
+     the unlayered lib/jelly.ts bridge sheet) */
+  background: none; border: 0; box-shadow: none; padding: 0; border-radius: 0;
+}
+.gallery-search-wrap--jelly .gallery-search-icon,
+.gallery-search-wrap--jelly .gallery-search-clear { z-index: 1; }
 
 .gallery-search {
   width: 100%;
@@ -1360,7 +1375,7 @@ a.gtile-name:focus-visible::after {
   border-color: hsl(var(--primary) / 0.5);
   background: hsl(var(--primary) / 0.08);
 }
-.gtile-iconbtn svg { width: 15px; height: 15px; stroke-width:2.5px}
+.gtile-iconbtn svg { width: 1em; height: 1em; stroke-width:.125em}
 /* Favourite (star) toggle — filled + accented when starred, so it reads as "on"
    without needing hover. */
 .gtile-fav.is-fav { color: hsl(var(--primary)); }
