@@ -32,6 +32,7 @@ const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
 import { navigateTo } from '../nav.ts';
 import { getPrevView } from '../lib/back-nav.ts';
+import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { docsHref, currentLang, t } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
@@ -3334,15 +3335,27 @@ function resolveCanvasAnnotations(canvasEl: HTMLElement): void {
 // lifecycle (components/modal.ts) — Escape and a backdrop click dismiss as
 // Cancel like every other app dialog.
 function showUnsavedDialog(onSave: (() => Promise<void> | void) | null, onLeave: () => void, detail?: string): void {
+  // Under the jelly flag the three actions become soft-body buttons (accent
+  // "Save & leave", neutral platinum for the two exits), mirroring the confirm-
+  // dialog.ts actionBtn mapping. The jelly host must NOT carry the box-painting
+  // .unsaved-* classes (they'd paint a second capsule behind its canvas) — the
+  // delegated [data-act] click handler retargets composed shadow clicks to the
+  // host, so it fires unchanged; a layout-only .unsaved-btn-jelly class stays.
+  const btn = (act: 'save' | 'leave' | 'cancel', label: string): string => {
+    const nativeClass = { save: 'unsaved-save', leave: 'unsaved-leave', cancel: 'unsaved-cancel' }[act];
+    return jellyActive()
+      ? `<jelly-button class="unsaved-btn-jelly"${act === 'save' ? '' : ' variant="platinum"'} data-act="${act}">${label}</jelly-button>`
+      : `<button type="button" class="${nativeClass}" data-act="${act}">${label}</button>`;
+  };
   const content = `
     <div class="unsaved-dialog-body">
       <h2>${t('Unsaved changes')}</h2>
       <p>${t('You have unsaved changes. <br>Would you like to save before leaving?')}</p>
       ${detail ? `<p class="unsaved-dialog-detail">${detail}</p>` : ''}
       <div class="unsaved-dialog-actions">
-        ${onSave ? `<button type="button" class="unsaved-save" data-act="save">${t('Save &amp; leave')}</button>` : ''}
-        <button type="button" class="unsaved-leave" data-act="leave">${t('Leave without saving')}</button>
-        <button type="button" class="unsaved-cancel" data-act="cancel">${t('Cancel')}</button>
+        ${onSave ? btn('save', t('Save &amp; leave')) : ''}
+        ${btn('leave', t('Leave without saving'))}
+        ${btn('cancel', t('Cancel'))}
       </div>
     </div>
   `;

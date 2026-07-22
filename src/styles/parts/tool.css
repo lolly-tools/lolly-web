@@ -1763,6 +1763,58 @@ background-color:hsl(var(--background) / 1);
   transition: box-shadow 0.12s, transform 0.12s ease;
 }
 
+/* Jelly slider (flag-gated via .cs-jelly, added by setupCustomSlider). The
+   thumb becomes a fully round blob that JS deforms into a soft egg while it
+   moves — so it needs a round base and the JS must own its transform 1:1.
+   During a drag we drop the CSS transform transition (the rAF spring is the
+   only smoother; a second .12s ease would smear the trail) and disable the
+   plain grab-swell rule (the spring drives the swell instead). */
+.cs-jelly .cs-thumb {
+  border-radius: 50%;
+  transform-origin: center;
+  will-change: transform;
+  /* JS owns transform (the rAF spring) — keep box-shadow/left transitions,
+     drop the transform one so nothing smears the egg. left still glides on
+     keyboard steps; the drag rule below drops it for a 1:1 pointer follow. */
+  transition: box-shadow 0.12s, left 0.12s ease;
+}
+.cs-jelly.dragging .cs-thumb,
+.cs-jelly:active .cs-thumb {
+  transition: box-shadow 0.12s;
+}
+
+/* The trailing tail — a CSS-border triangle whose colored (left) border is the
+   tapering body. JS sets its border-width (base height + length), position and
+   rotation each frame; it points away from travel and retracts elastically when
+   the drag stops. Same primary fill as the head/fill so it reads as one blob. */
+.cs-jelly .cs-tail {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-color: transparent;
+  border-left-color: hsl(var(--primary));
+  transform-origin: left center;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity, border-width;
+}
+
+/* ─── Jelly text fields in the sidebar (flag-gated) ─────────────────────────
+   Jelly hosts default to marketing-page fixed widths (220–280px); the sidebar
+   wants them full-bleed. Page-level rules beat the shadow :host size table.
+   Height is trimmed a touch so a stack of them stays sidebar-dense. */
+.input-row jelly-input,
+.input-row jelly-textarea {
+  display: block;
+  width: 100%;
+}
+.input-row jelly-input {
+  height: 2.6rem;
+}
+
 .cs-ticks {
   position: absolute;
   left: 0;

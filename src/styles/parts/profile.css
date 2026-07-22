@@ -524,6 +524,19 @@
   color: hsl(var(--muted-foreground)); font-weight: 600;
   font-size: .7rem; text-transform: uppercase; letter-spacing: .05em;
 }
+/* Jelly variant (flag): the soft-body button is a content-sized capsule, so
+   centre it in the circle rather than letting it sit at the top-left inline
+   origin (where the label clipped). The whole circle is the hit-area — a click
+   handler on .headshot-preview triggers the file picker (see profile.ts) — so
+   this element is a purely visual affordance; it fades in on hover, and stays
+   shown while the circle is empty (the "Upload" prompt) or the button is focused. */
+.profile-view .headshot-edit-jelly {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 1; opacity: 0; transition: opacity .15s;
+}
+.profile-view .headshot-preview:hover .headshot-edit-jelly,
+.profile-view .headshot-preview.is-empty .headshot-edit-jelly,
+.profile-view .headshot-edit-jelly:focus-within { opacity: 1; }
 .profile-view .headshot-remove {
   position: absolute; top: 4px; right: 4px; z-index: 2;
   width: 24px; height: 24px; border-radius: 50%;

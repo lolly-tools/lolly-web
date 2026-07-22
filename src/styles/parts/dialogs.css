@@ -53,6 +53,11 @@
 }
 
 .share-dialog { max-width: 460px; }
+/* The unsaved-changes guard has three actions ("Save & leave" / "Leave without
+   saving" / "Cancel"); at 380px they wrap to two rows (worse with the wider
+   jelly capsules). Give it room to lay them out on one line — applies in both
+   jelly on/off. Still clamped to 90vw above, so mobile stacks them as before. */
+.unsaved-dialog { max-width: 540px; }
 
 .unsaved-dialog::backdrop,
 .share-dialog::backdrop {
@@ -264,13 +269,19 @@
   /* On mobile the three actions wrap awkwardly with space-between (uneven rows,
      a lone button). Stack them full-width with comfortable tap targets; the
      primary "Save & leave" stays on top. */
+  /* Jelly variant (flag): the soft-body buttons paint their own capsule on a
+     canvas, so they don't take the .unsaved-* box classes — just keep them from
+     stretching oddly in the flex row. */
+  .unsaved-dialog-actions jelly-button { flex: 0 0 auto; }
+
   @media (max-width: 640px) {
     .unsaved-dialog-actions {
       flex-direction: column;
       flex-wrap: nowrap;
       gap: 8px;
     }
-    .unsaved-dialog-actions button {
+    .unsaved-dialog-actions button,
+    .unsaved-dialog-actions jelly-button {
       width: 100%;
       min-height: 44px;
     }

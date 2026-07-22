@@ -54,6 +54,7 @@ import { openFolderOverlay } from '../folder-overlay.ts';
 import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { createRuntime, serializeUrlState } from '@lolly/engine';
 import { getTool } from '../bridge/tool-loader.ts';
+import { getSessionSource } from '../lib/session-source.ts';
 import type { HostV1, Profile, AssetRef } from '../../../../engine/src/bridge/host-v1.ts';
 import type { WebStateAPI } from '../bridge/state.ts';
 import type { BatchFile } from '../pro/batch.ts';
@@ -147,6 +148,9 @@ const TRASH_ICON = icon('trash', { strokeWidth: 1.9 });
 const CHEVRON_ICON = icon('chevronRight');
 // lucide "link" — the shareable-link glyph (matches the tool view's Share button).
 const SHARE_ICON = icon('share', { strokeWidth: 1.9 });
+// lucide "users" — the team-projects create tile (shown only when a control plane
+// registers a session source; see lib/session-source.ts).
+const TEAM_ICON = icon('users', { strokeWidth: 1.9 });
 // (Footer nav links + their glyphs live in components/footer-nav.ts, shared with the
 // Tools gallery and the Catalogue; the search field is the shared gallerySearchBox.)
 
@@ -416,10 +420,16 @@ export async function mountProjects(
       : '';
     // Loose creations first (newest top-left, so an add is immediately visible), then
     // folders, then the "new" affordances trailing like a file manager.
+    // A "Team projects" tile appears only when a deployment's control plane has
+    // registered a session source (lib/session-source.ts); dormant otherwise, so
+    // the grid is byte-identical on the public shell.
+    const teamTile = getSessionSource()
+      ? createTile('team', TEAM_ICON, t('Team projects'), t('Shared with you on this instance'))
+      : '';
     return shell(t('Projects'), 'projects', `
       ${invite}
       <div class="folder-grid projects-grid${viewMode === 'list' ? ' projects-list' : ''}">
-        ${looseTiles}${folderTiles}${createFolder}${createTool}
+        ${looseTiles}${folderTiles}${createFolder}${createTool}${teamTile}
       </div>`);
   }
 
@@ -836,7 +846,13 @@ export async function mountProjects(
 
       // Create tiles
       const create = t.closest<HTMLElement>('[data-create]');
-      if (create) { create.dataset.create === 'folder' ? startCreateFolder(create) : startCreateTool(); return; }
+      if (create) {
+        const kind = create.dataset.create;
+        if (kind === 'folder') startCreateFolder(create);
+        else if (kind === 'team') void openTeamProjects();
+        else startCreateTool();
+        return;
+      }
 
       // Rename folder (click the title in a folder view)
       const rn = t.closest<HTMLElement>('[data-rename-folder]');
@@ -1759,6 +1775,71 @@ export async function mountProjects(
       });
     } catch (err) {
       host.log?.('warn', 'projects: share session failed', { slot, error: String(err) });
+    }
+  }
+
+  // ── team projects (control-plane session source; dormant without one) ───────
+  // A self-contained modal: browse the instance's shared projects → their
+  // sessions → open one into its tool. Opening reuses the SAME reconstruction
+  // shareSession() uses (createRuntime → serializeUrlState → navigate), so a team
+  // session opens as a fresh working copy at full fidelity (blocks included), with
+  // no local slot written. The source is pure data (see lib/session-source.ts).
+  const teamRowStyle = 'display:flex;justify-content:space-between;gap:1rem;width:100%;padding:.55rem .7rem;background:none;border:0;border-radius:var(--radius);color:inherit;text-align:left;cursor:pointer;font:inherit';
+  async function openTeamProjects(): Promise<void> {
+    const src = getSessionSource();
+    if (!src) return;
+    const modal = mountModal<void>(
+      `<div style="min-width:min(30rem,86vw)"><h2 style="margin-top:0">${escape(t('Team projects'))}</h2>
+        <div data-team-body><p class="projects-empty">${escape(t('Loading…'))}</p></div></div>`,
+      { className: 'team-projects-dialog' },
+    );
+    const body = modal.el.querySelector<HTMLElement>('[data-team-body]')!;
+    const row = (attr: string, id: string, name: string, meta: string): string =>
+      `<li><button type="button" style="${teamRowStyle}" ${attr}="${escape(id)}"
+        onmouseover="this.style.background='color-mix(in oklab,currentColor 8%,transparent)'" onmouseout="this.style.background='none'">
+        <span>${escape(name)}</span><span style="opacity:.6">${escape(meta)}</span></button></li>`;
+    const list = (items: string): string => `<ul style="list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:2px">${items}</ul>`;
+    const showProjects = async (): Promise<void> => {
+      const projects = await src.listProjects().catch(() => []);
+      if (!modal.el.isConnected) return;
+      body.innerHTML = projects.length
+        ? list(projects.map(p => row('data-team-project', p.id, p.name, p.sessionCount != null ? t('{n} sessions', { n: String(p.sessionCount) }) : '')).join(''))
+        : `<p class="projects-empty">${escape(t('No team projects are shared with you yet.'))}</p>`;
+    };
+    const showSessions = async (projectId: string, name: string): Promise<void> => {
+      body.innerHTML = `<p class="projects-empty">${escape(t('Loading…'))}</p>`;
+      const sessions = await src.listSessions(projectId).catch(() => []);
+      if (!modal.el.isConnected) return;
+      const back = `<button type="button" data-team-back style="background:none;border:0;color:inherit;opacity:.7;cursor:pointer;font:inherit;padding:.2rem 0;margin-bottom:.3rem">${escape(t('← All team projects'))}</button>`;
+      body.innerHTML = back + `<h3 style="margin:.1rem 0 .2rem;font-size:1rem">${escape(name)}</h3>` + (sessions.length
+        ? list(sessions.map(s => row('data-team-session', s.id, s.label || toolName(s.toolId) || s.toolId, toolName(s.toolId) || s.toolId)).join(''))
+        : `<p class="projects-empty">${escape(t('This project has no sessions yet.'))}</p>`);
+    };
+    body.addEventListener('click', (e) => {
+      const el = e.target as HTMLElement;
+      const proj = el.closest<HTMLElement>('[data-team-project]');
+      if (proj) { void showSessions(proj.dataset.teamProject!, proj.querySelector('span')?.textContent || ''); return; }
+      if (el.closest('[data-team-back]')) { void showProjects(); return; }
+      const sess = el.closest<HTMLElement>('[data-team-session]');
+      if (sess) { modal.close(); void openTeamSession(sess.dataset.teamSession!); }
+    });
+    void showProjects();
+  }
+
+  async function openTeamSession(sessionId: string): Promise<void> {
+    const src = getSessionSource();
+    if (!src) return;
+    try {
+      const data = await src.fetchSession(sessionId);
+      if (!data) { announce(t('That session is no longer available.')); return; }
+      const tool = await getTool(data.toolId);
+      const runtime = await createRuntime(tool, host, data.inputs as Parameters<typeof createRuntime>[2]);
+      const query = serializeUrlState(runtime.getModel());
+      armReturn();
+      window.location.hash = `#/tool/${data.toolId}${query ? `?${query}` : ''}`;
+    } catch (err) {
+      host.log?.('warn', 'projects: open team session failed', { sessionId, error: String(err) });
+      announce(t('That session could not be opened.'));
     }
   }
 

@@ -17,12 +17,17 @@ import { announce } from '../a11y.js';
 import { colorFieldHtml, wireColorField } from '../components/color-field.js';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { canSkipInputsRebuild } from './inputs-sync.js';
-import { jellyActive } from '../lib/jelly.ts';
+import { jellyActive, jellyEnabled } from '../lib/jelly.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { installTablePaste } from '../lib/table-paste.ts';
 import { splitMarkdownIntoBlocks } from '../lib/markdown.ts';
 import { playSliderTick, playScrubTick } from '../lib/sfx.ts';
 import { icon, hasIcon } from '../lib/icons.ts';
+// Generic per-input display policy (empty/no-op unless a deployment's control plane
+// has populated it via src/org/) — a rendering overlay only; the engine input model
+// stays the single source of truth.
+import { getInputPolicy } from '../lib/input-policy.ts';
+import type { InputPolicy } from '../lib/input-policy.ts';
 import {
   nestingActive, nestingConfig, deriveBlockKeys, blockParentIndex,
   blockTreeOrder, blockReparentMove, buildRefOptions, materializeRefTarget,
@@ -171,10 +176,24 @@ function focusSidebarBlock(blocksEl: Element, index: number | string): void {
  * edited field already shows. In that case (canSkipInputsRebuild) the rebuild is
  * skipped entirely. Returns the model to remember as the new baseline.
  */
-function syncInputs(el: PanelEl, model: InputModelItem[], prevModel: InputModelItem[] | null | undefined, runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void): InputModelItem[] {
+function syncInputs(el: PanelEl, model: InputModelItem[], prevModel: InputModelItem[] | null | undefined, runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void, toolId?: string): InputModelItem[] {
   if (canSkipInputsRebuild(el, model, prevModel)) return model;
-  renderInputs(el, model, runtime, host, onDirty);
+  renderInputs(el, model, runtime, host, onDirty, toolId);
   return model;
+}
+
+/**
+ * Whether an input's control should render fully LOCKED (inert + read-only) under a
+ * given policy. `locked` always locks; a `choice` locks every control EXCEPT a
+ * select — a select narrows its options instead, but a non-enumerable control
+ * (text, slider, colour…) has no in-UI "restrict to a set", so it locks to its
+ * value and the server enforces the allow-set. Pure — exported for tests.
+ */
+export function policyLocksControl(control: InputModelItem['control'], policy: InputPolicy | undefined): boolean {
+  if (!policy) return false;
+  if (policy.mode === 'locked') return true;
+  if (policy.mode === 'choice') return control !== 'select';
+  return false;
 }
 
 // Serialises drop-to-add commits per blocks-input id across re-renders (see the
@@ -255,10 +274,15 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
   return { accept, plural, addFiles };
 }
 
-function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void): void {
+function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void, toolId?: string): void {
+  // Generic input-policy overlay for the mounted tool (empty/no-op by default).
+  const policyFor = (id: string): InputPolicy | undefined => getInputPolicy(toolId, id);
   const modelValues: Record<string, InputValue> = Object.fromEntries(model.map(i => [i.id, i.value]));
   const panelModel = model.filter(i => {
     if (i.group === 'export') return false;
+    // A control-plane "hidden" input drops from the sidebar entirely (never
+    // rendered). This is a rendering overlay — the model still carries the input.
+    if (policyFor(i.id)?.mode === 'hidden') return false;
     if (!i.showIf) return true;
     // A showIf value may be a single value or an array of accepted values
     // (render if the current value is any of them).
@@ -318,7 +342,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // re-renders on every keystroke — a floating label would re-animate from its
     // resting to floating position each time the value re-populates and visibly
     // wobble. Pin it to a static label above the field instead.
-    const isStaticLabel = input.control === 'datetime-local-input';
+    // Jelly text fields carry their own placeholder inside a filled capsule and
+    // hide the real <input>/<textarea> in shadow DOM, so the floating-label CSS
+    // (which keys on `:has(input…)` / `:not(:placeholder-shown)` in the light DOM)
+    // can't see them. Pin those rows to a static label above the field instead.
+    const isJellyField = jellyActive() && (input.control === 'text-input' || input.control === 'textarea');
+    const isStaticLabel = input.control === 'datetime-local-input' || isJellyField;
     // Composite controls hold MANY interactive elements. A wrapping <label> makes the
     // browser forward any dead-space click to the label's first labelable descendant —
     // so a `blocks` input forwards gap / pill-body / near-miss clicks to block #0's
@@ -334,16 +363,36 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // Help moves behind an info button (see help-tip.js). The label id rides on the
     // text span only, so a composite's aria-labelledby never absorbs "More info".
     const ht = input.help ? helpTip(input.help) : null;
+    // Control-plane policy for this input (empty/no-op by default). A locked or
+    // restricted input gets a small lock chip beside its label whose tooltip names
+    // the managing instance (the note is supplied already-localised by src/org/).
+    const pol = policyFor(input.id);
+    const locks = policyLocksControl(input.control, pol);
+    const managed = locks || (pol?.mode === 'choice' && input.control === 'select');
+    const lockChip = managed && pol?.note
+      ? `<span class="input-lock-chip" data-tip="${escape(pol.note)}" aria-label="${escape(pol.note)}" tabindex="0" style="display:inline-flex;align-items:center;margin-inline-start:.35rem;vertical-align:middle;color:hsl(var(--muted-foreground))">${icon('lock', { size: 12, strokeWidth: 2 })}</span>`
+      : '';
     const labelText = `<span class="input-label-text"${isComposite ? ` id="${labelId}"` : ''}>${escape(input.label ?? input.id)}${valueTag}</span>`;
-    const label = `<span class="input-label">${labelText}${ht ? ht.button : ''}</span>`;
+    const label = `<span class="input-label">${labelText}${lockChip}${ht ? ht.button : ''}</span>`;
+    // A locked input displays the policy VALUE (when one is given) in place of the
+    // model's stored value — a render-only substitution, so the model is untouched.
+    const renderInput: InputModelItem = (pol?.mode === 'locked' && pol.value !== undefined)
+      ? { ...input, value: pol.value as InputValue }
+      : input;
     // Anything attached to this input leads its control, wrapped in a flex row.
     // Wrapping (rather than splicing markup into the target's own control) keeps
     // this agnostic about what the target control IS — no asset-picker internals
     // here, so any control can host an attachment.
     const lead = (attachments.get(input.id) ?? []).map(attachedControlHtml).join('');
-    const control = lead
-      ? `<div class="input-attached">${lead}${controlHtml(input, modelValues)}</div>`
-      : controlHtml(input, modelValues);
+    const rawControl = lead
+      ? `<div class="input-attached">${lead}${controlHtml(renderInput, modelValues, pol)}</div>`
+      : controlHtml(renderInput, modelValues, pol);
+    // A locked control renders inert + dimmed: `inert` drops it from focus + events,
+    // `pointer-events:none` covers pointer input for controls that don't honour
+    // inert. Cooperative only — the server is the hard gate (locked values 422).
+    const control = locks
+      ? `<span class="input-locked" inert aria-disabled="true" style="display:block;opacity:.6;pointer-events:none">${rawControl}</span>`
+      : rawControl;
     const help = ht ? ht.pop : '';
     if (isCheckbox) return `<label class="${cls}">${control}${label}${help}</label>`;
     if (isComposite) return `<div class="${cls}" role="group" aria-labelledby="${labelId}">${label}${control}${help}</div>`;
@@ -562,6 +611,23 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       return;
     }
 
+    // Jelly text field / textarea: the host re-dispatches only `change`, and the
+    // inner control's `input` event is composed:false so it never bubbles out to
+    // the host — bind the shadow control directly for live-as-you-type updates
+    // (value pipeline is otherwise identical to the native path). shadowRoot is
+    // open and the element upgraded synchronously (jellyActive ⇒ bundle loaded).
+    // maxlength isn't observed by jelly, so it's applied here from data-maxlength.
+    if (control.tagName === 'JELLY-INPUT' || control.tagName === 'JELLY-TEXTAREA') {
+      const inner = control.shadowRoot?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+      if (inner) {
+        const ml = Number(control.getAttribute('data-maxlength') || '');
+        if (ml > 0) inner.maxLength = ml;
+        if (control.tagName === 'JELLY-TEXTAREA') installTablePaste(inner as HTMLTextAreaElement);
+        inner.addEventListener('input', () => runtime.setInput(id, (control as unknown as { value: string }).value));
+      }
+      return;
+    }
+
     // Spreadsheet paste: a longtext gets clean TSV from an HTML-table clipboard
     // (Excel/Sheets/Numbers) instead of the delimiter-guessing plain-text form.
     if (control.tagName === 'TEXTAREA') installTablePaste(control as HTMLTextAreaElement);
@@ -700,7 +766,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // Block field changes
   el.querySelectorAll<HTMLInputElement>('[data-field-id]').forEach(field => {
-    field.addEventListener('input', () => {
+    // A jelly-switch block boolean (flag) emits `change` (never `input`), has no
+    // `.type`/`.validity`, and reports its state on `.checked` — so it needs its
+    // own event + value path. Everything else stays on the native `input` path.
+    const isJellySwitch = field.tagName === 'JELLY-SWITCH';
+    field.addEventListener(isJellySwitch ? 'change' : 'input', () => {
       // A number field mid-decimal — "1." or just "." — reports value="" with
       // validity.badInput. Committing that empties the model, which re-renders
       // the panel (blocks always take the full rebuild path) and wipes the
@@ -708,14 +778,16 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       // Hold off until the value parses; the field keeps showing the in-progress
       // text on its own, and the spinner arrows still commit valid steps. badInput
       // is never true for text/textarea/select, so this only ever guards numbers.
-      if (field.validity?.badInput) return;
+      if (!isJellySwitch && field.validity?.badInput) return;
       const parts = field.dataset.fieldId!.split(':');
       const blockId = parts[0]!, idx = parseInt(parts[1]!, 10), fieldId = parts[2]!;
       const inp = panelModel.find(i => i.id === blockId);
       if (!inp) return;
       let arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
-      const value: InputValue = field.type === 'checkbox' ? field.checked : field.value;
+      const value: InputValue = isJellySwitch
+        ? (field as unknown as { checked: boolean }).checked
+        : field.type === 'checkbox' ? field.checked : field.value;
       row[fieldId] = value;
       // Picking a parent from a reference dropdown anchors the target to a durable
       // id, so the link can't drift if rows are later reordered/added (same as the
@@ -1343,14 +1415,25 @@ function attachedControlHtml(input: InputModelItem): string {
   const next = opts[(at + 1) % opts.length]!;
   const glyph = cur.icon && hasIcon(cur.icon) ? icon(cur.icon, { size: 16 }) : escape(cur.label ?? cur.value);
   const title = `${input.label ?? input.id}: ${cur.label ?? cur.value} — switch to ${next.label ?? next.value}`;
+  // Jelly soft-body icon button (flag-gated). Its inner <button> click is
+  // composed, so it bubbles to the host and the [data-toggle-id] click handler
+  // fires unchanged; `label` sets the accessible name, `title` the tooltip.
+  if (jellyActive())
+    return `<jelly-icon-button class="icon-toggle-jelly" data-toggle-id="${escape(input.id)}" size="sm" label="${escape(title)}" title="${escape(title)}">${glyph}</jelly-icon-button>`;
   return `<button type="button" class="icon-toggle" data-toggle-id="${escape(input.id)}" title="${escape(title)}" aria-label="${escape(title)}">${glyph}</button>`;
 }
 
-function controlHtml(input: InputModelItem, modelValues: Record<string, InputValue> = {}): string {
+function controlHtml(input: InputModelItem, modelValues: Record<string, InputValue> = {}, policy?: InputPolicy): string {
   const id  = escape(input.id);
   const val = escape(input.value ?? '');
   switch (input.control) {
     case 'textarea':
+      // Jelly soft-body textarea (flag-gated). It re-dispatches only `change`,
+      // so live-as-you-type binding reaches into its shadow textarea (see the
+      // JELLY-TEXTAREA branch in the wiring loop). maxlength isn't an observed
+      // attribute, so it rides on data-maxlength and is applied there.
+      if (jellyActive())
+        return `<jelly-textarea data-input-id="${id}" size="sm" rows="${input.rows ?? 3}" value="${val}" placeholder="${escape(input.placeholder ?? '')}"${input.maxLength ? ` data-maxlength="${input.maxLength}"` : ''}></jelly-textarea>`;
       return `<textarea data-input-id="${id}" rows="${input.rows ?? 3}" maxlength="${input.maxLength ?? ''}" placeholder="${escape(input.placeholder ?? ' ')}">${val}</textarea>`;
     case 'slider': {
       // rangeWhen lets a slider's bounds depend on another input (e.g. per-pose
@@ -1402,6 +1485,15 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       if (input.brandFonts) {
         const seen = new Set(selOpts.map(o => o.value));
         for (const fam of brandFontFamilies()) if (!seen.has(fam)) { selOpts.push({ value: fam, label: fam }); seen.add(fam); }
+      }
+      // Control-plane `choice`: narrow the options to the allowed set (a rendering
+      // overlay — the model is untouched; the server enforces the same set). Only
+      // applied when at least one declared option survives, so a stale/empty allow
+      // list never renders an unusable empty select.
+      if (policy?.mode === 'choice' && policy.allow?.length) {
+        const allow = new Set(policy.allow.map(String));
+        const restricted = selOpts.filter(o => allow.has(o.value));
+        if (restricted.length) selOpts = restricted;
       }
       return `<select data-input-id="${id}">${selOpts.map(o =>
         `<option value="${escape(o.value)}" ${o.value === String(input.value ?? '') ? 'selected' : ''}>${escape(o.label)}</option>`
@@ -1556,9 +1648,17 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           const on = !!item[f.id];
           const ht = f.help ? helpTip(f.help) : null;
           // Checkbox + inline label (always labelled — a bare checkbox is opaque),
-          // spanning the full row so it reads as its own line.
+          // spanning the full row so it reads as its own line. Under the jelly
+          // flag it becomes a soft-body switch (its `label` is aria-only, so the
+          // visible .block-control-label span stays the label — no double). Only
+          // booleans jellify inside blocks: block text/number/select stay native
+          // because the block editor rebuilds on every keystroke and relies on
+          // native caret restoration, which a shadow-DOM jelly field can't offer.
+          const ctl = jellyActive()
+            ? `<jelly-switch class="block-field" size="sm" data-field-id="${fieldId}" label="${escape(f.label ?? f.id)}"${on ? ' checked' : ''}></jelly-switch>`
+            : `<input type="checkbox" class="block-field block-field--checkbox" data-field-id="${fieldId}"${on ? ' checked' : ''}>`;
           return `<label class="block-control block-control--checkbox block-control--full">
-            <input type="checkbox" class="block-field block-field--checkbox" data-field-id="${fieldId}"${on ? ' checked' : ''}>
+            ${ctl}
             <span class="block-control-label">${escape(f.label ?? f.id)}${ht ? ht.button : ''}</span>
             ${ht ? ht.pop : ''}
           </label>`;
@@ -1805,6 +1905,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       return `<div class="vector-input" data-input-id="${id}">${fields.map(fieldHtml).join('')}</div>`;
     }
     default:
+      // Jelly soft-body text field (flag-gated), same live-binding story as the
+      // textarea above (maxlength via data-maxlength, wired in the loop).
+      if (jellyActive())
+        return `<jelly-input data-input-id="${id}" size="sm" value="${val}" placeholder="${escape(input.placeholder ?? '')}"${input.maxLength ? ` data-maxlength="${input.maxLength}"` : ''}></jelly-input>`;
       return `<input type="text" data-input-id="${id}" value="${val}" maxlength="${input.maxLength ?? ''}" placeholder="${escape(input.placeholder ?? ' ')}">`;
   }
 }
@@ -2130,6 +2234,88 @@ function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirt
   // slider drag (_sliderDragging), so update this span directly or it stalls mid-drag.
   const valueOut = el.closest('.input-row')?.querySelector<HTMLElement>('.input-value');
 
+  // ── Jelly egg-trail (flag-gated, purely visual) ──────────────────────────
+  // The thumb chases the value with a soft, VISIBLE elastic lag — the same feel
+  // as the segmented nav tabs. A spring drags a "visual" position behind the
+  // (always-accurate) fill end; the gap between them stretches the thumb into an
+  // egg whose rounded end leads and whose pinched tail trails, and it lingers a
+  // beat as the spring reels in after you stop — so you see it at normal drag
+  // speed, not just fast flicks. This is POSITION-lag driven, not velocity: the
+  // old velocity version only showed on quick wiggles and read as a symmetric
+  // oval. The fill width, value and ARIA are never touched. Gated on
+  // jellyEnabled() (flag on), NOT jellyActive(): pure CSS/JS, no dependency on
+  // the vendored jelly bundle, so it needn't await that ~52 KB chunk. Off (old
+  // CSS grab-swell) when the flag is off or reduced motion is requested.
+  const jelly = jellyEnabled() && !prefersReducedMotion();
+  // Tunables — eyeballed against the nav tabs. STIFF/DAMP = the chase spring
+  // (softer than the tabs' 260/32 so the lag reads bigger); MAX_LEN caps the
+  // tail length px; GRAB/RATE = the round head's press-swell spring; TAIL_BASE
+  // = how wide the tail's base is vs the head diameter.
+  const J = { STIFF: 150, DAMP: 24, MAX_LEN: 64, GRAB: 1.2, RATE: 15, TAIL_BASE: 0.9 };
+  let jVis = NaN, jVel = 0, jPress = 1, jLastT = 0, jRaf = 0, jDragging = false;
+  const jBaseW = Math.max(6, thumb.offsetWidth || 14);
+  // The trailing tail is a separate triangular element (a single scaleX'd div
+  // can't keep the head circular AND taper the other end). The ROUND head
+  // (.cs-thumb) stays pinned on the accurate value and follows the drag; a
+  // spring drags jVis behind it, and |target − jVis| is the tail length, so the
+  // tail grows as you drag and retracts elastically when you stop (the nav-tab
+  // feel). Inserted before the thumb so the head paints over the tail's base.
+  let jTail: HTMLElement | null = null;
+  if (jelly) {
+    el.classList.add('cs-jelly');
+    jTail = document.createElement('div');
+    jTail.className = 'cs-tail';
+    jTail.setAttribute('aria-hidden', 'true');
+    track.insertBefore(jTail, thumb);
+  }
+
+  // Accurate thumb centre in track pixels, read from the live left% the drag
+  // handler already set — the spring chases this true position.
+  function jThumbPx(): number {
+    return (parseFloat(thumb.style.left) || 0) / 100 * track.clientWidth;
+  }
+  function jStep(t: number): void {
+    jRaf = 0;
+    const dt = jLastT ? Math.min(0.05, (t - jLastT) / 1000) : 1 / 60;
+    jLastT = t;
+    const target = jThumbPx();
+    if (!Number.isFinite(jVis)) { jVis = target; jVel = 0; }
+    // Slightly-underdamped spring drags the visual (tail-tip) position behind.
+    jVel += (J.STIFF * (target - jVis) - J.DAMP * jVel) * dt;
+    jVis += jVel * dt;
+    const lag = target - jVis;                                    // +ve when moving right; tail trails opposite
+    const len = Math.min(J.MAX_LEN, Math.abs(lag));               // tail length px
+    jPress += ((jDragging ? J.GRAB : 1) - jPress) * (1 - Math.exp(-dt * J.RATE));
+    // Round head: pinned on the value, uniform grab-swell only (stays a circle).
+    thumb.style.transform = `translate(-50%, -50%) scale(${jPress.toFixed(3)})`;
+    if (jTail) {
+      const pct = parseFloat(thumb.style.left) || 0;
+      const h = jBaseW * jPress * J.TAIL_BASE;                     // base height ≈ head diameter
+      // Triangle built pointing +x (apex right); rotate 180° about its base to
+      // point left. Tail points AWAY from travel: moving right (lag>0) → left.
+      jTail.style.left = `${pct}%`;
+      jTail.style.borderWidth = `${(h / 2).toFixed(2)}px 0 ${(h / 2).toFixed(2)}px ${len.toFixed(2)}px`;
+      jTail.style.transform = `translateY(-50%) rotate(${lag > 0 ? 180 : 0}deg)`;
+      jTail.style.opacity = (Math.min(1, len / 6)).toFixed(3);
+    }
+    const settled = !jDragging && Math.abs(lag) < 0.3 && Math.abs(jVel) < 0.6 && Math.abs(jPress - 1) < 0.003;
+    if (!settled) {
+      jRaf = requestAnimationFrame(jStep);
+    } else {                                                       // hand the head back to plain CSS, retract the tail
+      jVis = NaN; jVel = 0; jPress = 1; jLastT = 0;
+      thumb.style.transform = '';
+      if (jTail) { jTail.style.opacity = '0'; jTail.style.borderWidth = '0'; }
+    }
+  }
+  function jWake(): void { if (jelly && !jRaf) { jLastT = 0; jRaf = requestAnimationFrame(jStep); } }
+  // Keyboard/step change: yank the tail-tip back so the tail flicks out in the
+  // step direction, then the spring reels it in.
+  function jImpulse(dir: number): void {
+    if (!jelly) return;
+    jVis = (Number.isFinite(jVis) ? jVis : jThumbPx()) - dir * 14;
+    jWake();
+  }
+
   function snap(raw: number): number {
     const s = Math.round((raw - min) / step) * step + min;
     return +(Math.min(max, Math.max(min, s)).toFixed(10));
@@ -2154,6 +2340,7 @@ function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirt
     el.setPointerCapture(e.pointerId);
     _sliderDragging = true;
     el.classList.add('dragging');
+    if (jelly) { jDragging = true; jVis = NaN; jWake(); }
 
     function fromPointer(e: PointerEvent): void {
       const rect  = track.getBoundingClientRect();
@@ -2175,6 +2362,7 @@ function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirt
       el.removeEventListener('pointerup', onUp);
       _sliderDragging = false;
       el.classList.remove('dragging');
+      if (jelly) { jDragging = false; jWake(); } // let the egg settle back to a circle
       // Snap thumb to final stop and trigger one last render
       setThumb(lastSnapped);
       onDirty?.(id);
@@ -2198,6 +2386,7 @@ function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirt
     e.preventDefault();
     const snapped = snap(next);
     if (snapped === lastSnapped) return;
+    jImpulse(Math.sign(snapped - lastSnapped)); // pop the egg in the step direction
     lastSnapped = snapped;
     setThumb(lastSnapped);
     setAria(lastSnapped);

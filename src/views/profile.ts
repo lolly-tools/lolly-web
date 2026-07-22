@@ -46,6 +46,10 @@ import { exportBackup, importBackup } from '../data-transfer.ts';
 import { pinnedToolBytes, unpinAll } from '../lib/offline-pins.ts';
 import { getInstanceBase, setInstanceBase } from '../lib/instance.ts';
 import { openInstanceSheet } from '../components/instance-sheet.ts';
+// Generic per-field display policy (empty/no-op unless a deployment's control
+// plane has populated it via src/org/) + the admin-console affordance seam.
+import { getFieldPolicy } from '../lib/field-policy.ts';
+import { orgAdminHref } from '../org/index.ts';
 import { syncCatalog } from '../catalog/sync.ts';
 // Colour / palette / fonts / brand-pack / corner radius all live in the
 // Dashboard's "Your brand" editor now (and the #/start wizard).
@@ -235,6 +239,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // '' = bundled with this app (the default everywhere but a Tauri shell that
   // connected elsewhere) — see components/instance-sheet.ts + lib/instance.ts.
   const instanceBase = getInstanceBase();
+  // Instance-admin affordance — null unless the org session's role is admin/owner
+  // (so it never renders on a plain deployment).
+  const adminHref = orgAdminHref();
   // The headshot is a user asset; re-resolve it (the stored object URL goes stale
   // across reloads).
   const headshotRef = profile.headshot?.id ? await host.assets.get(profile.headshot!.id).catch(() => null) : null;
@@ -298,9 +305,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // onto the shadow input's aria-label so the accessible name survives the
   // shadow boundary. Takes the value as an argument so the jelly-flag toggle
   // can rebuild a control in place without dropping unsaved edits.
-  const fieldControl = (f: string, value: string) => jellyOn
-    ? `<jelly-input ${fieldAttrs(f)} name="${f}" size="sm" label="${escape(t(FIELD_LABELS[f] ?? f))}" value="${escape(value)}"></jelly-input>`
-    : `<input ${fieldAttrs(f)} name="${f}" value="${escape(value)}" placeholder=" ">`;
+  const fieldControl = (f: string, value: string) => {
+    // A locked field (control-plane policy, via lib/field-policy.ts) renders
+    // read-only. Dormant default: no policy ⇒ no attribute ⇒ unchanged.
+    const ro = getFieldPolicy(f)?.mode === 'locked' ? ' readonly' : '';
+    return jellyOn
+      ? `<jelly-input ${fieldAttrs(f)}${ro} name="${f}" size="sm" label="${escape(t(FIELD_LABELS[f] ?? f))}" value="${escape(value)}"></jelly-input>`
+      : `<input ${fieldAttrs(f)}${ro} name="${f}" value="${escape(value)}" placeholder=" ">`;
+  };
 
   // The Save button — <jelly-button type="submit"> drives the closest light-DOM
   // form via requestSubmit(), so the same submit listener fires. It must NOT
@@ -342,10 +354,23 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <div class="profile-details-grid">
             <div class="profile-details-main">
               <div class="profile-fields">
-                ${fields.map(f => `<label class="profile-field">
-                  <span class="profile-field-label">${escape(t(FIELD_LABELS[f] ?? f))}</span>
-                  ${fieldControl(f, String((profile as Record<string, unknown>)[f] ?? ''))}
-                </label>`).join('')}
+                ${fields.filter(f => getFieldPolicy(f)?.mode !== 'hidden').map(f => {
+                  // Consult the generic field-policy registry: hidden fields are
+                  // dropped above; a locked field shows a small "Managed by …"
+                  // chip and its policy value overrides the stored one. With no
+                  // policy (the default) this is exactly today's render.
+                  const pol = getFieldPolicy(f);
+                  const val = pol && pol.value !== undefined
+                    ? String(pol.value)
+                    : String((profile as Record<string, unknown>)[f] ?? '');
+                  const note = pol?.mode === 'locked' && pol.note
+                    ? `<span class="profile-field-note" style="margin-inline-start:.4rem;font-size:.72rem;font-weight:500;color:hsl(var(--muted-foreground));border:1px solid hsl(var(--border));border-radius:999px;padding:.05rem .45rem;white-space:nowrap">${escape(pol.note)}</span>`
+                    : '';
+                  return `<label class="profile-field">
+                  <span class="profile-field-label">${escape(t(FIELD_LABELS[f] ?? f))}${note}</span>
+                  ${fieldControl(f, val)}
+                </label>`;
+                }).join('')}
               </div>
 
               <div class="profile-actions">
@@ -407,6 +432,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="store-manage--row">
           <span class="store-manage-name">${escape(instanceBase || t('Bundled with this app'))}</span>
           <span style="display:flex;gap:8px">
+            ${adminHref ? `<a class="btn" id="instance-console-link" href="${escape(adminHref)}">${t('Instance console')}</a>` : ''}
             <button type="button" class="btn" id="instance-change-btn">${t('Change')}</button>
             <button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Disconnect')}</button>
           </span>
@@ -615,7 +641,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const removeBtn = viewEl.querySelector<HTMLElement>('#headshot-remove');
     if (removeBtn) removeBtn.hidden = !headshotUrl;
   };
-  viewEl.querySelector('#headshot-upload')?.addEventListener('click', () => headshotFileInput?.click());
+  // The whole circle is the hit-area: a click anywhere on the preview opens the
+  // file picker (the Upload/Edit button is just a visual affordance now, and its
+  // own click bubbles up here too). The ✕ remove badge handles its own click, so
+  // ignore taps that land on it.
+  viewEl.querySelector('#headshot-preview')?.addEventListener('click', e => {
+    if ((e.target as Element).closest('#headshot-remove')) return;
+    headshotFileInput?.click();
+  });
   headshotFileInput?.addEventListener('change', async () => {
     const file = headshotFileInput!.files?.[0];
     headshotFileInput!.value = '';

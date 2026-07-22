@@ -1031,8 +1031,11 @@
   50%      { box-shadow: 0 0 0 5px hsl(var(--primary) / 0); }
 }
 
-/* Download is the primary CTA — the biggest, easiest target in the row. */
-.tool-actions [data-action="download"] {
+/* Download is the primary CTA — the biggest, easiest target in the row. The
+   control-plane "Request approval" CTA takes download's place (same row, same
+   weight) when a deployment withholds download but permits an approval request. */
+.tool-actions [data-action="download"],
+.tool-actions [data-action="request-approval"] {
   /* fill (background/color) lives in parts/buttons.css's .btn--primary alias list */
   border-color: hsl(var(--primary));
   font-weight: 600;
@@ -1046,7 +1049,8 @@
   font-weight: 700;
 }
 
-.tool-actions [data-action="download"]:hover {
+.tool-actions [data-action="download"]:hover,
+.tool-actions [data-action="request-approval"]:hover {
   background: hsl(var(--primary) / 0.88);
   border-color: hsl(var(--primary) / 0.88);
 }

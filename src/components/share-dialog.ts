@@ -15,6 +15,8 @@ import { bumpMetric } from '../metrics.ts';
 import { announce } from '../a11y.ts';
 import { packQuery, isPackAvailable, PACK_PARAM, packEncrypted, isEncryptAvailable, ENC_PARAM } from '@lolly/engine';
 import { mountModal } from './modal.ts';
+import { shareSectionBuilders } from '../lib/share-sections.ts';
+import { jellyActive } from '../lib/jelly.ts';
 
 // Above this readable-query length the Share dialog auto-adopts the packed form.
 const AUTO_PACK_MIN = 1800;
@@ -134,7 +136,12 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
       <h2>${escape(title)}</h2>
       <div class="share-link-row">
         <input type="text" class="share-link-field" readonly aria-label="Shareable link">
-        <button type="button" class="share-copy-btn">Copy</button>
+        ${jellyActive()
+          // Keep the class: the copy handler selects by it, and the unlayered
+          // jelly bridge reset (lib/jelly.ts) already strips its layered fill so
+          // there's no second box behind the capsule. Accent = the row's action.
+          ? `<jelly-button class="share-copy-btn" label="Copy">Copy</jelly-button>`
+          : `<button type="button" class="share-copy-btn">Copy</button>`}
       </div>
       <p class="share-warning" data-share-warning role="status" hidden></p>
       ${showImageNote ? `<p class="share-note">
@@ -169,8 +176,11 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
         ${showCopy ? `<label><input type="checkbox" data-flag="copy"> ${escape(copyLabel)}</label>` : ''}
         ${version ? `<label><input type="checkbox" data-flag="_v"> Pin this tool version (${escape(String(version))})</label>` : ''}
       </fieldset>
+      <div class="share-extra-sections" data-extra-sections></div>
       <div class="share-dialog-actions">
-        <button type="button" class="share-done">Done</button>
+        ${jellyActive()
+          ? `<jelly-button variant="platinum" class="share-done" label="Done">Done</jelly-button>`
+          : `<button type="button" class="share-done">Done</button>`}
       </div>
     </div>
   `;
@@ -232,10 +242,12 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     if (encryptOn && !encToken) {
       // Never emit an unencrypted link while protection is on but no token is ready.
       field.value = encryptPw?.value ? 'Generating protected link…' : 'Enter a password above to generate the protected link.';
-      copyBtn.disabled = true;
+      // toggleAttribute (not .disabled): a jelly-button reflects disabled via the
+      // ATTRIBUTE only, and a native <button> honours it too — one path for both.
+      copyBtn.toggleAttribute('disabled', true);
       return;
     }
-    copyBtn.disabled = false;
+    copyBtn.toggleAttribute('disabled', false);
     const base = (encryptOn && encToken) ? [`${ENC_PARAM}=${encToken}`]
       : (shortestCb?.checked && packedToken) ? [`${PACK_PARAM}=${packedToken}`]
       : [...baseParts];
@@ -309,5 +321,22 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   refresh();
   field.focus();
   field.select();
+
+  // Extra sections from the generic registry (empty by default → nothing mounts,
+  // so the dialog is byte-identical without a registrant). A deployment's optional
+  // control plane registers one to offer instance-hosted links (see src/org/).
+  // Builders may be async; mount each only if it returns a node and the dialog is
+  // still open. Each gets the dialog's own copy affordance.
+  const extraHost = dialog.querySelector<HTMLElement>('[data-extra-sections]');
+  const builders = shareSectionBuilders();
+  if (extraHost && builders.length) {
+    const ctx = { toolId, baseParts, currentFormat: currentFmt, copy: copyToClipboard };
+    for (const build of builders) {
+      Promise.resolve(build(ctx))
+        .then(node => { if (node && dialog.isConnected) extraHost.appendChild(node); })
+        .catch(() => { /* a section that fails to build simply doesn't appear */ });
+    }
+  }
+
   return dialog;
 }
