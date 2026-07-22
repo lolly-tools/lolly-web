@@ -272,13 +272,20 @@
 .gallery-footer > .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .gallery-footer > .btn svg { width: 15px; height: 15px; flex-shrink: 0; }
 
+/* Jelly footer nav items (flag): the <jelly-button> paints its own capsule, so it
+   just needs to hold its width in the row and size its slotted icon (the slotted
+   svg is light-DOM, so this outer rule reaches it). */
+.gallery-footer .gallery-nav-jelly { flex: 0 0 auto; }
+.gallery-footer .gallery-nav-jelly svg { width: 15px; height: 15px; flex-shrink: 0; }
+
 /* Phones: full-width search on top, the nav links sharing the row beneath it — each
    collapsed to just its icon (label hidden) rather than dropped, so Platform &
    Capabilities stay reachable. aria-label keeps them named. */
 @media (max-width: 640px) {
   .gallery-footer { flex-wrap: wrap; gap: .5rem .6rem; }
   .gallery-search-wrap { flex-basis: 100%; order: -1; }
-  .gallery-footer > .btn { flex: 1; }
+  .gallery-footer > .btn,
+  .gallery-footer > .gallery-nav-jelly { flex: 1; }
   .gallery-footer .gallery-nav-label { display: none; }
 }
 

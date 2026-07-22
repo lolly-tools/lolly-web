@@ -84,6 +84,7 @@
 .toast-action,                                    /* tool-chrome.css */
 .tool-actions [data-action="copy"].copy-armed,    /* tool-chrome.css */
 .tool-actions [data-action="download"],           /* tool-chrome.css */
+.tool-actions [data-action="request-approval"],   /* tool-chrome.css — control-plane export gate */
 .share-copy-btn,                                  /* dialogs.css */
 .unsaved-save,                                    /* dialogs.css */
 .modal .modal-primary,                            /* dialogs.css */

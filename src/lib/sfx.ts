@@ -25,8 +25,10 @@
  *  - Mute-aware: an in-memory flag (mirrored to localStorage synchronously, so it's
  *    known before the profile loads) short-circuits playback. The profile is the
  *    canonical store — see hydrateSfxMuted() — mirroring how the theme persists.
- *  - Default: interface sounds are ON. (Reduced-motion is about MOTION, not audio, so
- *    it no longer silences sounds by default.) An explicit stored preference always wins.
+ *  - Default: interface sounds are OFF for new users (no stored preference yet);
+ *    an explicit stored preference — localStorage mirror or the profile — always
+ *    wins, so anyone who has turned sound on keeps it. (Reduced-motion is about
+ *    MOTION, not audio, so it is not what silences sounds here.)
  */
 
 export type SfxName = 'click' | 'pickup' | 'drop' | 'delete' | 'toggle' | 'navigate' | 'shutter' | 'shuffle' | 'coverflow' | 'gallery' | 'save' | 'saveProfile' | 'whoosh' | 'vacuum' | 'fanfare' | 'twinkle' | 'shimmer' | 'ding' | 'victory' | 'braaam' | 'sign' | 'warn' | 'ghost' | 'shoo' | 'reel' | 'aperture' | 'scribble' | 'waveform' | 'flick' | 'optIn' | 'optOut' | 'byebye' | 'key' | 'slider' | 'scrub' | 'select' | 'hydraulicOpen' | 'hydraulicClose' | 'verify' | 'dashboard' | 'newSession' | 'leaveSession' | 'whisper' | 'crystal' | 'land';
@@ -44,7 +46,7 @@ function readInitialMuted(): boolean {
     if (stored === '1') return true;
     if (stored === '0') return false;
   } catch { /* private mode / no storage — fall through to the default */ }
-  return false; // no explicit preference yet → interface sounds ON by default
+  return true; // no explicit preference yet → interface sounds OFF by default for new users
 }
 
 export function isSfxMuted(): boolean {

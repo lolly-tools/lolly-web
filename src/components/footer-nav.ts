@@ -61,14 +61,66 @@ export interface FooterNavOpts {
   footerClass?: string;
 }
 
+// Jelly nav items are <jelly-button>s (the component is a real <button>, not a
+// link), so they navigate on click here. Composed shadow clicks retarget to the
+// host; a modifier click opens a new tab so the "open in new tab" affordance of
+// the <a>s they replace is preserved. Installed once, on the first jelly render.
+let navHandlerInstalled = false;
+function ensureNavHandler(): void {
+  if (navHandlerInstalled || typeof document === 'undefined') return;
+  navHandlerInstalled = true;
+  document.addEventListener('click', (e: MouseEvent) => {
+    const host = e.target instanceof Element ? e.target.closest<HTMLElement>('jelly-button[data-href]') : null;
+    const href = host?.getAttribute('data-href');
+    if (!href) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey) window.open(href, '_blank', 'noopener');
+    else location.assign(href);
+  });
+}
+
+/** One footer nav item — the plain `.btn` link, or its soft-body <jelly-button>
+ *  stand-in (data-href → the click handler above) when the jelly flag is on. */
+function navItem(o: { href: string; nativeClass: string; variant?: string; style?: string; sfx?: string; aria: string; inner: string }): string {
+  const sfxAttr = o.sfx ? ` data-sfx="${o.sfx}"` : '';
+  if (jellyActive()) {
+    // Only the layout class `gallery-nav-jelly` rides on the host — NOT `.btn` /
+    // `.gallery-nav-link` (their `.gallery-footer > .btn` display/flex rules would
+    // fight the jelly host box). `size="sm"` gives compact padding; the visible
+    // .gallery-nav-label span keeps its class so the mobile label-hide still works.
+    return `<jelly-button class="gallery-nav-jelly" size="sm"${o.variant ? ` variant="${o.variant}"` : ''}${o.style ?? ''} data-href="${escape(o.href)}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</jelly-button>`;
+  }
+  return `<a href="${escape(o.href)}" class="${o.nativeClass}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</a>`;
+}
+
 /** The shared bottom bar: [Pro?] [Dashboard]  <search>  [Verify] [What?]. */
 export function footerNav({ proEnabled, searchHtml, footerClass }: FooterNavOpts): string {
+  if (jellyActive()) ensureNavHandler();
+  const label = (txt: string) => `<span class="gallery-nav-label">${txt}</span>`;
+  const pro = proEnabled ? navItem({
+    href: '#/pro', nativeClass: 'gallery-batch-link btn', variant: 'platinum',
+    aria: t('Open Batch mode — for power users'), inner: `${NAV_ICONS.zap}${label(t('Pro'))}`,
+  }) : '';
+  const dashboard = navItem({
+    href: '#/d', nativeClass: 'gallery-nav-link btn', variant: 'platinum', sfx: 'dashboard',
+    aria: t('Dashboard — this device, the brand system & the full feature set'), inner: `${NAV_ICONS.dashboard}${label(t('Dashboard'))}`,
+  });
+  // Verify keeps its solid SUSE Pine Green pill (explicit green in every theme,
+  // matching the native rule) via an inline --jelly-fill / --jelly-label.
+  const verify = navItem({
+    href: '#/verify', nativeClass: 'gallery-nav-link gallery-nav-link--verify btn', sfx: 'verify',
+    style: ' style="--jelly-fill:hsl(151 57% 42%);--jelly-label:#fff"',
+    aria: t('Verify Content Credentials — check any file on-device'), inner: `${NAV_ICONS.shield}${label(t('Verify'))}`,
+  });
+  const whatIs = navItem({
+    href: docsHref('index'), nativeClass: 'gallery-info-link btn', variant: 'platinum',
+    aria: t('What is Lolly? — about & help'), inner: `${NAV_ICONS.help}${label(t('What?'))}`,
+  });
   return `
     <footer class="gallery-footer${footerClass ? ' ' + footerClass : ''}">
-      ${proEnabled ? `<a href="#/pro" class="gallery-batch-link btn" aria-label="${escape(t('Open Batch mode — for power users'))}">${NAV_ICONS.zap}<span class="gallery-nav-label">${t('Pro')}</span></a>` : ''}
-      <a href="#/d" class="gallery-nav-link btn" data-sfx="dashboard" aria-label="${escape(t('Dashboard — this device, the brand system & the full feature set'))}">${NAV_ICONS.dashboard}<span class="gallery-nav-label">${t('Dashboard')}</span></a>
+      ${pro}
+      ${dashboard}
       ${searchHtml}
-      <a href="#/verify" class="gallery-nav-link gallery-nav-link--verify btn" data-sfx="verify" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${NAV_ICONS.shield}<span class="gallery-nav-label">${t('Verify')}</span></a>
-      <a href="${escape(docsHref('index'))}" class="gallery-info-link btn" aria-label="${escape(t('What is Lolly? — about & help'))}">${NAV_ICONS.help}<span class="gallery-nav-label">${t('What?')}</span></a>
+      ${verify}
+      ${whatIs}
     </footer>`;
 }

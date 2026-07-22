@@ -27,6 +27,7 @@ import { syncNeuroDock } from './components/neuro-dock.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
 import { initShareTargetIngest } from './lib/drop-router.ts';
 import { maybeShowFirstRunInstanceSheet } from './components/instance-sheet.ts';
+import { initOrg } from './org/index.ts';
 import { initSelectPreview } from './select-preview.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
 import { announce } from './a11y.ts';
@@ -581,6 +582,14 @@ async function boot(): Promise<void> {
   // urgent live value is a tool count that's gracefully hidden when absent and
   // patched in place once synced. Deep-linked /tool and /profile keep the
   // sync-then-navigate ordering: they genuinely need synced asset metadata first.
+  // Optional deployment control plane (src/org/): dormant + byte-identical to
+  // today when a deployment provides no org-config endpoint (the public case) —
+  // one tolerant, time-boxed probe, remembered so later boots skip even that. A
+  // `gated` deployment with no signed-in member renders its own sign-in gate in
+  // place of the app and returns `gate: true`; stop boot before any view mounts.
+  const org = await initOrg();
+  if (org?.gate) return;
+
   const routeName = parseRoute().name;
   const fastPath =
     ((routeName === 'gallery') && window.__toolIndex) ||

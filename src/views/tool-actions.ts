@@ -29,6 +29,8 @@ import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { aspectWarning } from './export-size.js';
 import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport } from '../bridge/format-support.js';
+import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
+import { openApprovalRequest } from '../lib/approval-request.ts';
 
 import type { InputValue } from '../../../../engine/src/inputs.js';
 import type { SongSpec } from '../../../../engine/src/zzfx-compose.ts';
@@ -702,16 +704,38 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const saveBtn = actions.includes('save') ? saveBtnHtml() : '';
   // Download is the primary CTA — jelly mode gives it the accent-fill squish.
   const downloadLabel = `Download${formats.length === 1 ? ' ' + fmtLabel(formats[0]!) : ''}`;
-  const downloadBtn = actions.includes('download')
-    // The native button's ↓ affordance is a ::before glyph; the bridge strips
-    // pseudo-content off jelly hosts (it painted at the host corner, outside
-    // the capsule), so the jelly label carries the arrow as plain text.
-    ? (jellyActive()
-      ? `<jelly-button data-action="download" class="download-btn-jelly">↓ ${downloadLabel}</jelly-button>`
-      : `<button data-action="download">${downloadLabel}</button>`)
+  // Consult the generic export-policy seam (src/lib/export-policy.ts): dormant — or a
+  // deployment that withholds nothing — resolves to 'download' and the CTA below is
+  // byte-identical to today. When a control plane withholds download but permits an
+  // approval request, the primary CTA becomes "Request approval" (Save still saves the
+  // session locally); when it withholds both, the CTA is dropped for a small note — no
+  // dead button. Gated on actions.includes('download') so a tool with no download
+  // action is unaffected. The view holds no control-plane knowledge: it asks the seam
+  // what it may offer, and routes "Request approval" through the generic opener.
+  const affordance = actions.includes('download') ? exportAffordance(getExportPolicy()) : 'download';
+  // Same primary-CTA slot as Download, so it takes the same prominent jelly
+  // recipe under the flag (the .download-btn-jelly class is a size/weight hook,
+  // not download-specific); the delegated [data-action] handler is unchanged.
+  const requestApprovalBtn = jellyActive()
+    ? `<jelly-button data-action="request-approval" class="download-btn-jelly">${escape(t('Request approval'))}</jelly-button>`
+    : `<button type="button" data-action="request-approval">${escape(t('Request approval'))}</button>`;
+  const downloadBtn = !actions.includes('download')
+    ? ''
+    : affordance === 'request-approval'
+      ? requestApprovalBtn
+      : affordance === 'blocked'
+        ? ''
+        // The native button's ↓ affordance is a ::before glyph; the bridge strips
+        // pseudo-content off jelly hosts (it painted at the host corner, outside
+        // the capsule), so the jelly label carries the arrow as plain text.
+        : (jellyActive()
+          ? `<jelly-button data-action="download" class="download-btn-jelly">↓ ${downloadLabel}</jelly-button>`
+          : `<button data-action="download">${downloadLabel}</button>`);
+  const blockedNote = (actions.includes('download') && affordance === 'blocked')
+    ? `<p class="export-blocked-note" role="status" style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center">${escape(t('Downloading is turned off for this tool on this instance.'))}</p>`
     : '';
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;
-  const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : '';
+  const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : blockedNote;
 
   // The panel host (#tool-actions) is present for every export-capable tool that
   // reaches here; guard the type for strict null-safety (never null in practice).
@@ -1481,6 +1505,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // returns { method: 'download' } when it falls back to saving the file instead.
     return host.clipboard.writeImage(await blobPromise);
   }
+
+  // The "Request approval" CTA (present in place of Download only when the export
+  // policy withheld download but permits a request — see `affordance` above). Routes
+  // through the generic opener seam (src/lib/approval-request.ts), which a control
+  // plane registers to open the approval dialog; the view stays control-plane-unaware.
+  el.querySelector<HTMLButtonElement>('[data-action="request-approval"]')?.addEventListener('click', () => {
+    openApprovalRequest({ toolId: manifest.id, title: manifest.name });
+  });
 
   el.querySelector<HTMLButtonElement>('[data-action="download"]')?.addEventListener('click', async (e) => {
     // Native <button> or jelly-mode <jelly-button> — disable via the attribute,
