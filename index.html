@@ -68,7 +68,7 @@
       try {
         var f = JSON.parse(localStorage.getItem('brand-fonts') || 'null');
         if (f) for (var k in f) {
-          if (k === '--font-brand' || k === '--font-mono') document.documentElement.style.setProperty(k, f[k]);
+          if (k === '--font-brand' || k === '--font-mono' || k === '--font-display' || k === '--font-italic') document.documentElement.style.setProperty(k, f[k]);
         }
       } catch (e) { /* corrupt cache — boot JS rewrites it */ }
       // Same trick for a customised corner radius (unlocked brands only —

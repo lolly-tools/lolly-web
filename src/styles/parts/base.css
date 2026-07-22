@@ -105,6 +105,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Brand type roles beyond the primary/mono pair. A brand may set an optional
+   DISPLAY face (top-level headings only) and an ITALIC face; both fall back to
+   the primary when the brand leaves them unset (the var's own fallback) or when
+   the chosen family can't load (the stack tail brand-vars.ts appends). Only h1/h2
+   take the display face — deeper headings stay on the primary. */
+h1, h2 { font-family: var(--font-display, var(--font-brand)); }
+em, i, cite { font-family: var(--font-italic, var(--font-brand)); }
+
 /* Smooth colour transitions only when the theme changes (class set by JS). */
 .theme-transitioning,
 .theme-transitioning * {
