@@ -70,10 +70,16 @@ const CHROME_STYLE_ID = 'brand-chrome-vars';
 // them before first paint (same trick as the theme flash guard) — without it,
 // a branded profile would flash Outfit on every load until boot JS runs.
 
-/** slot in the tokens doc (`font.<slot>`) → CSS var → default stack tail. */
+/** slot in the tokens doc (`font.<slot>`) → CSS var → default stack tail.
+ *  display (h1/h2) and italic degrade to the brand face, so a brand that sets
+ *  only those still reads coherently, and the tail also catches a font that
+ *  fails to load. Their consumers (base.css) also `var(--font-display,
+ *  var(--font-brand))`, so an UNSET slot falls through to the primary too. */
 const FONT_SLOTS = [
   ['brand', '--font-brand', "'Outfit', ui-sans-serif, system-ui, sans-serif"],
   ['mono', '--font-mono', "'SUSE Mono', ui-monospace, monospace"],
+  ['display', '--font-display', 'var(--font-brand)'],
+  ['italic', '--font-italic', 'var(--font-brand)'],
 ] as const;
 
 const FONT_CACHE_KEY = 'brand-fonts';

@@ -67,6 +67,7 @@ import { swatchTile, tileLabel } from './swatches.ts';
 import {
   listUserFonts, installGoogleFont, setPrimaryFont, setMonoFont, removeUserFont,
   primaryFontFamily, monoFontFamily, setBrandRadius,
+  setDisplayFont, setItalicFont, displayFontFamily, italicFontFamily,
 } from '../user-fonts.ts';
 import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
 import { mountFontsManager } from '../components/fonts-manager.ts';
@@ -768,7 +769,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
       <div class="be-panel be-typeroles">
         <div class="be-panel-head"><h3 class="be-panel-title">${t('Type roles')}</h3>
-          <p class="be-panel-sub">${t('What each face is <em>for</em> — the roles tools and the app read. Headings, body and UI wear the primary; code and data wear the mono face.')}</p></div>
+          <p class="be-panel-sub">${t('What each face is <em>for</em> — the roles tools and the app read. Body and UI wear the primary; set an optional <em>display</em> face for the top headings (h1/h2), an <em>italic</em> face for emphasis, and a <em>mono</em> face for code and data. Each falls back to the primary until you assign it.')}</p></div>
         <div class="be-specimen" data-be-specimen aria-live="off"></div>
       </div>
       </div>
@@ -1627,18 +1628,27 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const fontErr = $('[data-be-font-err]') as HTMLElement | null;
   const showFontErr = (m: string): void => { if (fontErr) { fontErr.textContent = m; fontErr.hidden = !m; } if (m) announce(m, { assertive: true }); };
   let fontFamilies: UserFontFamily[] = [];
-  let monoFamily = ''; // the font.mono role's family, '' when the platform default serves
+  let monoFamily = '';    // the font.mono role's family, '' when the platform default serves
+  let displayFamily = ''; // the font.display (h1/h2 heading) role's family
+  let italicFamily = '';  // the font.italic role's family
+  // One optional face-role chip: an active badge, or a button to assign the role.
+  const roleControl = (family: string, active: boolean, activeLabel: string, badgeMod: string, dataAttr: string, assignLabel: string, assignTitle: string): string =>
+    active
+      ? `<span class="be-font-badge be-font-badge--${badgeMod}">${activeLabel}</span>`
+      : `<button type="button" class="be-btn be-font-role" ${dataAttr}="${escape(family)}" title="${escape(assignTitle)}">${assignLabel}</button>`;
   const fontRow = (f: UserFontFamily): string => {
-    const isMono = f.family === monoFamily;
     return `
     <li class="be-font-row${f.primary ? ' is-primary' : ''}" data-font-family="${escape(f.family)}">
       <span class="be-font-aa" style="font-family:'${escape(f.family)}'" aria-hidden="true">Aa</span>
       <span class="be-font-meta"><span class="be-font-name" style="font-family:'${escape(f.family)}'">${escape(f.family)}</span>
         <span class="be-font-sub">${escape(f.weights)} · ${fmtBytes(f.bytes)}</span></span>
+      <span class="be-font-roles">
       ${f.primary ? `<span class="be-font-badge">${t('Primary')}</span>`
         : `<button type="button" class="be-btn be-font-mp" data-mp="${escape(f.family)}">${t('Make primary')}</button>`}
-      ${isMono ? `<span class="be-font-badge be-font-badge--mono">${t('Code')}</span>`
-        : `<button type="button" class="be-btn be-font-mono" data-mono="${escape(f.family)}" title="${escape(t('Use {family} for code & data', { family: f.family }))}">${t('Use for code')}</button>`}
+      ${roleControl(f.family, f.family === displayFamily, t('Headings'), 'display', 'data-display', t('Use for headings'), t('Use {family} for h1/h2 headings', { family: f.family }))}
+      ${roleControl(f.family, f.family === monoFamily, t('Code'), 'mono', 'data-mono', t('Use for code'), t('Use {family} for code & data', { family: f.family }))}
+      ${roleControl(f.family, f.family === italicFamily, t('Italic'), 'italic', 'data-italic', t('Use for italic'), t('Use {family} for italic text', { family: f.family }))}
+      </span>
       <button type="button" class="be-font-del" data-del="${escape(f.family)}" aria-label="${escape(t('Remove {family}', { family: f.family }))}">&#x2715;</button>
     </li>`;
   };
@@ -1648,17 +1658,26 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const mount = $('[data-be-specimen]') as HTMLElement | null; if (!mount) return;
     const brandFace = await primaryFontFamily(fontsHost).catch(() => '') || t('Platform default');
     const monoFace = monoFamily || t('Platform default');
+    // Display/italic fall back to the primary when the brand leaves them unset,
+    // so the face label reads "the primary" rather than an empty slot.
+    const displayFace = displayFamily || `${brandFace} (${t('primary')})`;
+    const italicFace = italicFamily || `${brandFace} (${t('primary')})`;
     if (!root.isConnected) return;
     mount.innerHTML = `
       <div class="be-typerole">
-        <span class="be-typerole-role">${t('Heading')}</span>
-        <span class="be-typerole-sample be-typerole-sample--h" style="font-family:var(--font-brand)">${t('Pack my box with five dozen liqueur jugs')}</span>
-        <span class="be-typerole-face">${escape(brandFace)}</span>
+        <span class="be-typerole-role">${t('Heading (h1/h2)')}</span>
+        <span class="be-typerole-sample be-typerole-sample--h" style="font-family:var(--font-display, var(--font-brand))">${t('Pack my box with five dozen liqueur jugs')}</span>
+        <span class="be-typerole-face">${escape(displayFace)}</span>
       </div>
       <div class="be-typerole">
         <span class="be-typerole-role">${t('Body')}</span>
         <span class="be-typerole-sample" style="font-family:var(--font-brand)">${t('Every tool, page and export follows the primary face — headings, body copy and UI alike. Sub-heading, call-to-action and italic roles arrive here as tokens tools can read.')}</span>
         <span class="be-typerole-face">${escape(brandFace)}</span>
+      </div>
+      <div class="be-typerole">
+        <span class="be-typerole-role">${t('Italic')}</span>
+        <span class="be-typerole-sample" style="font-family:var(--font-italic, var(--font-brand));font-style:italic">${t('Emphasis, quotations and asides wear the italic face.')}</span>
+        <span class="be-typerole-face">${escape(italicFace)}</span>
       </div>
       <div class="be-typerole">
         <span class="be-typerole-role">${t('Code &amp; data')}</span>
@@ -1670,6 +1689,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const list = $('[data-be-fonts]') as HTMLElement | null; if (!list) return;
     fontFamilies = await listUserFonts(fontsHost).catch(() => []);
     monoFamily = await monoFontFamily(fontsHost).catch(() => '');
+    displayFamily = await displayFontFamily(fontsHost).catch(() => '');
+    italicFamily = await italicFontFamily(fontsHost).catch(() => '');
     const rows: string[] = [];
     if (!fontFamilies.some(f => f.primary)) {
       const builtin = await primaryFontFamily(fontsHost).catch(() => '');
@@ -1704,6 +1725,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (mp) { mp.disabled = true; try { await setPrimaryFont(fontsHost, mp.dataset.mp!); await paintFonts(); notify('type'); announce(t('{family} is now your primary font', { family: mp.dataset.mp ?? '' })); } catch (err) { mp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const mono = (e.target as Element).closest<HTMLButtonElement>('[data-mono]');
     if (mono) { mono.disabled = true; try { await setMonoFont(fontsHost, mono.dataset.mono!); await paintFonts(); notify('type'); announce(t('{family} now serves code & data', { family: mono.dataset.mono ?? '' })); } catch (err) { mono.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    const disp = (e.target as Element).closest<HTMLButtonElement>('[data-display]');
+    if (disp) { disp.disabled = true; try { await setDisplayFont(fontsHost, disp.dataset.display!); await paintFonts(); notify('type'); announce(t('{family} now serves h1/h2 headings', { family: disp.dataset.display ?? '' })); } catch (err) { disp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    const ital = (e.target as Element).closest<HTMLButtonElement>('[data-italic]');
+    if (ital) { ital.disabled = true; try { await setItalicFont(fontsHost, ital.dataset.italic!); await paintFonts(); notify('type'); announce(t('{family} now serves italic text', { family: ital.dataset.italic ?? '' })); } catch (err) { ital.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const del = (e.target as Element).closest<HTMLButtonElement>('[data-del]'); if (!del) return;
     const fam = fontFamilies.find(f => f.family === del.dataset.del); if (!fam) return;
     const ok = await confirmDialog({
@@ -1716,7 +1741,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (!ok) return; del.disabled = true;
     try {
       await removeUserFont(fontsHost, fam);
-      if (fam.family === monoFamily) await setMonoFont(fontsHost, null).catch(() => {}); // a removed face can't keep a role
+      // A removed face can't keep any role it served.
+      if (fam.family === monoFamily) await setMonoFont(fontsHost, null).catch(() => {});
+      if (fam.family === displayFamily) await setDisplayFont(fontsHost, null).catch(() => {});
+      if (fam.family === italicFamily) await setItalicFont(fontsHost, null).catch(() => {});
       await paintFonts(); notify('type');
     } catch (err) { del.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); }
   });

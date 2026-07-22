@@ -189,13 +189,18 @@ export function withBrandFontToken(doc: unknown, family: string | null): Record<
   return withFontRoleToken(doc, 'brand', family);
 }
 
+/** The font roles the chrome reads (brand-vars.ts FONT_SLOTS): the primary face,
+ *  the code/data mono face, the h1/h2 display face, and the italic face. */
+export type FontRole = 'brand' | 'mono' | 'display' | 'italic';
+
 /**
- * The role-aware generalisation: `font.brand` is the app's primary face and
- * `font.mono` its code/data face — the two roles the chrome's --font-brand /
- * --font-mono vars read (brand-vars.ts FONT_SLOTS). Same merge semantics as
- * withBrandFontToken always had; pure, exported for tests.
+ * The role-aware generalisation: `font.brand` is the app's primary face,
+ * `font.mono` its code/data face, `font.display` its h1/h2 heading face and
+ * `font.italic` its italic face — the roles the chrome's --font-* vars read
+ * (brand-vars.ts FONT_SLOTS). Same merge semantics as withBrandFontToken always
+ * had; pure, exported for tests.
  */
-export function withFontRoleToken(doc: unknown, role: 'brand' | 'mono', family: string | null): Record<string, unknown> {
+export function withFontRoleToken(doc: unknown, role: FontRole, family: string | null): Record<string, unknown> {
   const src = (typeof doc === 'object' && doc !== null && !Array.isArray(doc)) ? doc as Record<string, unknown> : {};
   const out: Record<string, unknown> = structuredClone(src);
   const target = fontTargetOf(out);
@@ -322,6 +327,34 @@ export async function monoFontFamily(host: UserFontsHost): Promise<string> {
  *  and repaint the chrome. Same contract as setPrimaryFont. */
 export async function setMonoFont(host: UserFontsHost, family: string | null): Promise<void> {
   const doc = withFontRoleToken(await primaryBaseDoc(host), 'mono', family);
+  await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
+  await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
+}
+
+/** The current display (h1/h2 heading) family, resolved through the live token set. */
+export async function displayFontFamily(host: UserFontsHost): Promise<string> {
+  try { return familyFromTokenValue(await host.tokens?.resolve('{font.display}')); }
+  catch { return ''; }
+}
+
+/** Write `family` (or clear, with null) as font.display — the heading face used
+ *  for h1/h2 — and repaint the chrome. Same contract as setPrimaryFont. */
+export async function setDisplayFont(host: UserFontsHost, family: string | null): Promise<void> {
+  const doc = withFontRoleToken(await primaryBaseDoc(host), 'display', family);
+  await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
+  await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
+}
+
+/** The current italic family, resolved through the live token set. */
+export async function italicFontFamily(host: UserFontsHost): Promise<string> {
+  try { return familyFromTokenValue(await host.tokens?.resolve('{font.italic}')); }
+  catch { return ''; }
+}
+
+/** Write `family` (or clear, with null) as font.italic — the italic face — and
+ *  repaint the chrome. Same contract as setPrimaryFont. */
+export async function setItalicFont(host: UserFontsHost, family: string | null): Promise<void> {
+  const doc = withFontRoleToken(await primaryBaseDoc(host), 'italic', family);
   await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
   await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
 }
