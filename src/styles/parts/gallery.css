@@ -1383,6 +1383,41 @@ a.gtile-name:focus-visible::after {
   background: hsl(var(--primary) / 0.08);
 }
 .gtile-iconbtn svg { width: 1em; height: 1em; stroke-width:.125em}
+
+/* ── Utilities view (#/u) ─────────────────────────────────────────────────────
+   A utility's icon is a clear enough affordance on its own, so these tiles drop
+   the preview hero entirely and stack a LARGER icon ABOVE the title + description.
+   The box holds a fixed landscape aspect (3:2 — between 4:3 and 16:9) so every
+   tile is the same height whatever the description length. */
+.gtile--utility {
+  aspect-ratio: 3 / 2;
+  contain-intrinsic-size: auto 220px;
+}
+.gtile--utility .gtile-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gtile--utility .gtile-cap {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 18px 16px;
+}
+.gtile--utility .tool-card-icon { place-self: center; }
+.gtile--utility .tool-card-icon svg {
+  width: 56px;
+  height: 56px;
+  opacity: 0.6;
+}
+.gtile--utility:hover .tool-card-icon svg { opacity: 1; }
+.gtile--utility .gtile-meta { align-items: center; }
+.gtile--utility .gtile-name { white-space: normal; }
+/* No preview to float over, so the action cluster reads on the plain card
+   surface — drop the difference blend the over-preview buttons use. */
+.gtile--utility .gtile-actions { mix-blend-mode: normal; }
+
 /* Favourite (star) toggle — filled + accented when starred, so it reads as "on"
    without needing hover. */
 .gtile-fav.is-fav { color: hsl(var(--primary)); }

@@ -130,6 +130,10 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const showImageNote = hasImageInput(manifest);
   // Offer password-protection only when there's state to encrypt and WebCrypto is present.
   const encryptable = isEncryptAvailable() && !!baseQuery;
+  // The "Link options" section holds shortest-link / password / pin-version. Only render it
+  // when at least one of those can apply (shortest may still resolve async, so gate on
+  // pack-availability rather than the not-yet-known packed length).
+  const showLinkOptions = !!version || encryptable || (isPackAvailable() && !!baseQuery);
 
   const content = `
     <div class="share-dialog-body">
@@ -148,34 +152,43 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
         <span class="share-note-ico" aria-hidden="true">🛫</span>
         <span>Only the <b>inputs</b>, <b>settings</b>, <b>tool</b> selection, and <b>catalog assets</b> travel in this link. <br><b>images</b> or <b>files</b> you added from <b>this device stay here</b> <i>— you'll need to share those separately</i>.</span>
       </p>` : ''}
-      <label class="share-shortest" data-shortest-row hidden>
-        <input type="checkbox" data-shortest>
-        <span class="share-shortest-text">
-          <strong>Shortest link</strong>
-          <span class="share-shortest-note" data-shortest-note></span>
-        </span>
-      </label>
-      ${encryptable ? `
-      <label class="share-shortest" data-encrypt-row>
-        <input type="checkbox" data-encrypt>
-        <span class="share-shortest-text">
-          <strong>Password-protect this link</strong>
-          <span class="share-shortest-note">Encrypts the whole link (AES-256). The recipient types a password to open it — no server.</span>
-        </span>
-      </label>
-      <div data-encrypt-body hidden style="margin:-.2rem 0 .2rem 1.7rem">
-        <input type="password" data-encrypt-pw aria-label="Password to protect this link" autocomplete="off" spellcheck="false" placeholder="Set a password"
-               style="width:100%;box-sizing:border-box;padding:8px 11px;font-size:13px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))">
-        <span class="share-shortest-note" style="display:block;margin-top:.3rem">The password is <b>not</b> in the link — share it separately, and note it can't be recovered if lost.</span>
-      </div>` : ''}
-      <fieldset class="share-toggles">
-        <legend>When the recipient opens the link…</legend>
-        <label><input type="checkbox" data-flag="full"> Open in fullscreen (hide controls)</label>
-        <label data-options-row><input type="checkbox" data-flag="options"> Open with the export panel expanded</label>
-        ${canExport ? `<label><input type="checkbox" data-flag="export"> Download automatically when opened</label>` : ''}
-        ${showCopy ? `<label><input type="checkbox" data-flag="copy"> ${escape(copyLabel)}</label>` : ''}
-        ${version ? `<label><input type="checkbox" data-flag="_v"> Pin this tool version (${escape(String(version))})</label>` : ''}
-      </fieldset>
+      ${showLinkOptions ? `
+      <details class="share-section" data-link-options>
+        <summary>Link options</summary>
+        <div class="share-section-body">
+          <label class="share-shortest" data-shortest-row hidden>
+            <input type="checkbox" data-shortest>
+            <span class="share-shortest-text">
+              <strong>Shortest link</strong>
+              <span class="share-shortest-note" data-shortest-note></span>
+            </span>
+          </label>
+          ${encryptable ? `
+          <label class="share-shortest" data-encrypt-row>
+            <input type="checkbox" data-encrypt>
+            <span class="share-shortest-text">
+              <strong>Password-protect this link</strong>
+              <span class="share-shortest-note">Encrypts the whole link (AES-256). The recipient types a password to open it — no server.</span>
+            </span>
+          </label>
+          <div data-encrypt-body hidden style="margin:-.2rem 0 .2rem 1.7rem">
+            <input type="password" data-encrypt-pw aria-label="Password to protect this link" autocomplete="off" spellcheck="false" placeholder="Set a password"
+                   style="width:100%;box-sizing:border-box;padding:8px 11px;font-size:13px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))">
+            <span class="share-shortest-note" style="display:block;margin-top:.3rem">The password is <b>not</b> in the link — share it separately, and note it can't be recovered if lost.</span>
+          </div>` : ''}
+          ${version ? `<label class="share-toggle-row"><input type="checkbox" data-flag="_v"> Pin this tool version (${escape(String(version))})</label>` : ''}
+        </div>
+      </details>` : ''}
+      <details class="share-section" data-link-behaviour>
+        <summary>Link behaviour</summary>
+        <fieldset class="share-toggles">
+          <legend>When the recipient opens the link…</legend>
+          <label><input type="checkbox" data-flag="full"> Open in fullscreen (hide controls)</label>
+          <label data-options-row><input type="checkbox" data-flag="options"> Open with the export panel expanded</label>
+          ${canExport ? `<label><input type="checkbox" data-flag="export"> Download automatically when opened</label>` : ''}
+          ${showCopy ? `<label><input type="checkbox" data-flag="copy"> ${escape(copyLabel)}</label>` : ''}
+        </fieldset>
+      </details>
       <div class="share-extra-sections" data-extra-sections></div>
       <div class="share-dialog-actions">
         ${jellyActive()
@@ -191,7 +204,9 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const fullCb      = dialog.querySelector<HTMLInputElement>('[data-flag="full"]');
   const optionsCb   = dialog.querySelector<HTMLInputElement>('[data-flag="options"]');
   const optionsRow  = dialog.querySelector<HTMLElement>('[data-options-row]');
-  const checkboxes  = [...dialog.querySelectorAll<HTMLInputElement>('.share-toggles input[type="checkbox"]')];
+  // All on-visit flag checkboxes, wherever they live — the behaviour toggles sit in the
+  // "Link behaviour" section, "Pin this tool version" (_v) in "Link options".
+  const checkboxes  = [...dialog.querySelectorAll<HTMLInputElement>('input[data-flag]')];
   const shortestRow = dialog.querySelector<HTMLElement>('[data-shortest-row]')!;
   const shortestCb  = dialog.querySelector<HTMLInputElement>('[data-shortest]')!;
   const shortestNote = dialog.querySelector<HTMLElement>('[data-shortest-note]');
