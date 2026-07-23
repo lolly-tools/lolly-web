@@ -1390,7 +1390,7 @@ a.gtile-name:focus-visible::after {
    The box holds a fixed landscape aspect (3:2 — between 4:3 and 16:9) so every
    tile is the same height whatever the description length. */
 .gtile--utility {
-  aspect-ratio: 3 / 2;
+  aspect-ratio: 4 / 3;
   contain-intrinsic-size: auto 220px;
 }
 .gtile--utility .gtile-body {

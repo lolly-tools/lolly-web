@@ -41,7 +41,10 @@ export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string;
     // lib/jelly.ts bridge sheet is unlayered and sets a chrome-wide
     // --jelly-input-padding-inline, and unlayered rules beat any @layer views
     // stylesheet rule regardless of specificity; only an inline style outranks it.
-    ? `<jelly-input class="${cls}" style="--jelly-input-padding-inline:2.1rem" type="text" placeholder="${escape(opts.placeholder)}" autocomplete="off" label="${escape(opts.ariaLabel)}"${value ? ` value="${escape(value)}"` : ''}></jelly-input>`
+    // height inline for the same cascade reason as padding-inline: the component's
+    // shadow `:host{height:56px}` reads too tall / over-padded next to the footer's
+    // jelly-button links. 2.75rem (44px) trims the vertical padding to match them.
+    ? `<jelly-input class="${cls}" style="--jelly-input-padding-inline:2.1rem;height:2.75rem" type="text" placeholder="${escape(opts.placeholder)}" autocomplete="off" label="${escape(opts.ariaLabel)}"${value ? ` value="${escape(value)}"` : ''}></jelly-input>`
     : `<input class="${cls}" type="text" placeholder="${escape(opts.placeholder)}" autocomplete="off" spellcheck="false" aria-label="${escape(opts.ariaLabel)}"${value ? ` value="${escape(value)}"` : ''}>`;
   return `<div class="gallery-search-wrap${jellyActive() ? ' gallery-search-wrap--jelly' : ''}">
     <div class="gallery-search-box">

@@ -31,7 +31,7 @@
 import { instanceFetch, instancePath, getInstanceBase } from '../lib/instance.ts';
 import { setFieldPolicies } from '../lib/field-policy.ts';
 import type { FieldPolicy } from '../lib/field-policy.ts';
-import { setToolInputPolicies, clearInputPolicies } from '../lib/input-policy.ts';
+import { setToolInputPolicies, clearInputPolicies, setInputPolicyFailClosed } from '../lib/input-policy.ts';
 import type { InputPolicy } from '../lib/input-policy.ts';
 import { registerShareSection } from '../lib/share-sections.ts';
 import { setExportPolicy } from '../lib/export-policy.ts';
@@ -95,6 +95,10 @@ export interface OrgConfig {
   tools?: Record<string, ToolPolicySpec>;
   /** Capability flags the caller has on this instance (e.g. 'link.create'). */
   can?: Record<string, boolean>;
+  /** Control-plane governance for the shell's per-user feature flags, by flag id:
+   *  `default` is applied when the user hasn't chosen; `hidden` suppresses the
+   *  profile toggle (the default still applies). Absent ⇒ no instance opinion. */
+  featureFlags?: Record<string, { default?: boolean; hidden?: boolean }>;
   telemetry?: { level?: string; attribution?: unknown; consented?: boolean };
   inboxUnread?: number;
   policyVersion?: string | number;
@@ -135,6 +139,14 @@ const PROBE_TIMEOUT_MS = 1500;
 const ABSENT_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 const absentKey = (): string => `lolly:org-absent:${getInstanceBase() || 'same-origin'}`;
 
+/** How long a successfully-fetched org-config may stand in for a live one when the
+ *  (present) control plane can't be reached on a later boot — a bounded freshness
+ *  window so a control-plane outage is a non-event, not a fleet-wide policy drop.
+ *  Past it, stale policy is discarded and gated actions fail closed rather than
+ *  trusting an old copy indefinitely. */
+const ORG_CONFIG_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+const orgConfigKey = (): string => `lolly:org-config:${getInstanceBase() || 'same-origin'}`;
+
 // ── Accessors + subscription (the tiny surface other code may consult) ────────
 
 /** The active org-config, or null when dormant / not a member. */
@@ -145,6 +157,13 @@ export function orgConfig(): OrgConfig | null {
 /** The resolved session, or null (dormant, or a 401/no-session control plane). */
 export function orgSession(): Session | null {
   return session;
+}
+
+/** Control-plane governance for one feature flag, or null when no control plane
+ *  is present or it has no opinion on this flag. Consumed by feature-flags.ts to
+ *  resolve the default and hide governed toggles. */
+export function orgFlagGovernance(id: string): { default?: boolean; hidden?: boolean } | null {
+  return orgConfigState?.featureFlags?.[id] ?? null;
 }
 
 /**
@@ -217,19 +236,33 @@ async function fetchSession(): Promise<Session | null> {
   return body && (body.kind === 'member' || body.kind === 'guest') ? body : null;
 }
 
+/** The outcome of one member org-config load. `ok` carries a usable config (a fresh
+ *  200, or an in-session 304 whose in-memory copy still stands); `!ok` means the load
+ *  failed (network error, timeout, 5xx, or an unusable body) and the caller must decide
+ *  between a cached fallback and failing closed. */
+type OrgConfigLoad = { ok: true; config: OrgConfig } | { ok: false };
+
 /**
- * Load the member-only org-config with a conditional request. A 304 keeps the
- * cached copy; anything unusable leaves the previous state untouched.
+ * Load the member-only org-config with a conditional request. A fresh 200 is persisted
+ * to the resilient cache (see rememberOrgConfig) so a later failed boot can stand on it;
+ * a 304 keeps — and re-freshens the cache stamp for — the in-memory copy. Any genuine
+ * failure (no response, 5xx, unusable body) resolves `{ ok: false }` so the orchestration
+ * can fall back to a still-fresh cached copy or, absent one, fail closed.
  */
-async function fetchOrgConfig(): Promise<OrgConfig | null> {
+async function fetchOrgConfig(): Promise<OrgConfigLoad> {
   const init: RequestInit = orgConfigEtag ? { headers: { 'If-None-Match': orgConfigEtag } } : {};
   const res = await safeFetch('/api/v1/org-config', init);
-  if (!res) return orgConfigState;
-  if (res.status === 304) return orgConfigState; // unchanged — honour the cache
-  const body = await jsonBody<OrgConfig>(res);
-  if (!body || typeof body.instance?.name !== 'string') return orgConfigState;
+  if (!res) return { ok: false };                       // network error / timeout
+  if (res.status === 304) {                             // unchanged — honour the cache
+    if (!orgConfigState) return { ok: false };
+    rememberOrgConfig(orgConfigState, orgConfigEtag);   // re-stamp so the cache stays fresh
+    return { ok: true, config: orgConfigState };
+  }
+  const body = await jsonBody<OrgConfig>(res);           // null on 5xx / non-JSON / bad body
+  if (!body || typeof body.instance?.name !== 'string') return { ok: false };
   orgConfigEtag = res.headers.get('etag') || orgConfigEtag;
-  return body;
+  rememberOrgConfig(body, orgConfigEtag);                // persist the good copy for later
+  return { ok: true, config: body };
 }
 
 // ── Field policy: map the contract's profilePolicy onto the generic registry ──
@@ -269,8 +302,15 @@ function applyProfilePolicy(config: OrgConfig | null): void {
  * withholds download. `export.request` gates whether "Request approval" is offered in
  * its place, and each tool's `approvalChain` binds the chain used for that request.
  * A null config (dormant / non-member) clears the seam back to its dormant default.
+ *
+ * `failClosed` is the governed-but-unreachable-and-un-cached case: policy is known to
+ * exist on this instance but couldn't be confirmed this boot. Rather than fall open to
+ * a free download, the seam withholds direct download and offers only the (more
+ * restrictive) approval path — never fail open. It takes precedence over `config`,
+ * which is null in that case anyway.
  */
-function applyExportPolicy(config: OrgConfig | null): void {
+function applyExportPolicy(config: OrgConfig | null, failClosed = false): void {
+  if (failClosed) { setExportPolicy({ canDownload: false, canRequestApproval: true, chains: {} }); return; }
   if (!config) { setExportPolicy(undefined); return; }
   const can = config.can ?? {};
   const chains: Record<string, string> = {};
@@ -282,6 +322,18 @@ function applyExportPolicy(config: OrgConfig | null): void {
     canRequestApproval: !!can['export.request'],
     chains,
   });
+}
+
+/**
+ * Install (or lift) the global input-policy fail-closed overlay for the governed-but-
+ * unreachable-and-un-cached case. When on, every tool input the sidebar renders is
+ * treated as locked read-only — the more restrictive state — so a momentarily-unknown
+ * policy can never leave a gated input editable. Off restores the ordinary per-tool
+ * behaviour. The overlay outlives applyOrgToolPolicies (which only swaps explicit
+ * per-tool entries), so it keeps holding across tool mounts until policy is known again.
+ */
+function applyInputFailClosed(on: boolean): void {
+  setInputPolicyFailClosed(on ? { mode: 'locked', note: t('Managed by your organisation') } : null);
 }
 
 // ── Tool input policy: map the contract's per-tool spec onto the generic registry ─
@@ -391,7 +443,24 @@ export async function initOrg(): Promise<OrgState | null> {
 
     // Member → load org-config, apply its profile policy, surface the inbox.
     if (isMember) {
-      orgConfigState = await fetchOrgConfig();
+      const load = await fetchOrgConfig();
+      // Resilient-cache resolution. A fresh (or in-session 304) load governs directly.
+      // A failed load (the present control plane is unreachable this boot) falls back to
+      // the last good copy while it is still within ORG_CONFIG_TTL_MS; past the TTL — or
+      // with no cached copy at all — we do NOT trust stale policy, and gated surfaces
+      // fail CLOSED instead (never open).
+      let failClosed = false;
+      if (load.ok) {
+        orgConfigState = load.config;
+      } else {
+        const cached = readCachedOrgConfig();
+        if (cached) {
+          orgConfigState = cached;                       // honour a still-fresh cached policy
+        } else {
+          orgConfigState = null;                         // governed, but currently unknowable
+          failClosed = true;
+        }
+      }
       applyProfilePolicy(orgConfigState);
       // Populate the generic export-policy seam (download vs. request-approval) from
       // the caller's capability bits + per-tool approval chains, and register the
@@ -399,7 +468,10 @@ export async function initOrg(): Promise<OrgState | null> {
       // actually requests approval, keeping it out of the boot chunk. Both are
       // dormant-safe: a member whose instance withholds nothing downloads exactly as
       // today, and the opener is only ever reached via the export-policy affordance.
-      applyExportPolicy(orgConfigState);
+      // When failing closed, both the export seam and the input overlay clamp to the
+      // more restrictive state rather than falling open.
+      applyExportPolicy(orgConfigState, failClosed);
+      applyInputFailClosed(failClosed);
       unregisterApprovalOpener?.();
       unregisterApprovalOpener = registerApprovalOpener((rctx) => {
         import('./approval-dialog.ts')
@@ -461,6 +533,43 @@ function rememberAbsent(): void {
   try { localStorage.setItem(absentKey(), String(Date.now())); } catch { /* ignore */ }
 }
 
+// ── Resilient org-config cache (best-effort; makes a control-plane outage a non-event) ─
+
+/** One stored org-config record, keyed by instance base. */
+interface CachedOrgConfig { at: number; etag: string | null; config: OrgConfig }
+
+/** Persist a successfully-fetched org-config (and its ETag) so a later boot whose
+ *  refetch fails can stand on it within ORG_CONFIG_TTL_MS. Best-effort — a storage
+ *  error is swallowed (the live copy still governs this session). */
+function rememberOrgConfig(config: OrgConfig, etag: string | null): void {
+  try {
+    const rec: CachedOrgConfig = { at: Date.now(), etag, config };
+    localStorage.setItem(orgConfigKey(), JSON.stringify(rec));
+  } catch { /* storage unavailable — nothing to fall back on later, that's fine */ }
+}
+
+/** The cached org-config when one is stored, well-formed, and still within the freshness
+ *  TTL — else null (stale or past-TTL copies are never served, and an expired one is
+ *  evicted). Restores the ETag alongside, so a subsequent conditional request is warm. */
+function readCachedOrgConfig(): OrgConfig | null {
+  try {
+    const raw = localStorage.getItem(orgConfigKey());
+    if (!raw) return null;
+    const rec = JSON.parse(raw) as Partial<CachedOrgConfig>;
+    const at = Number(rec?.at);
+    if (!Number.isFinite(at) || Date.now() - at >= ORG_CONFIG_TTL_MS) {
+      localStorage.removeItem(orgConfigKey());          // past the TTL — drop, never serve stale
+      return null;
+    }
+    const config = rec.config;
+    if (!config || typeof config.instance?.name !== 'string') return null;
+    orgConfigEtag = rec.etag ?? orgConfigEtag;
+    return config;
+  } catch {
+    return null; // unreadable / malformed cache — behave as if there were none
+  }
+}
+
 /** TEST-ONLY: reset module state between cases. */
 export function _resetOrgForTests(): void {
   session = null;
@@ -474,5 +583,6 @@ export function _resetOrgForTests(): void {
   unregisterSessionSource?.();
   unregisterSessionSource = null;
   clearInputPolicies();
+  setInputPolicyFailClosed(null);
   setExportPolicy(undefined);
 }

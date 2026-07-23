@@ -127,7 +127,11 @@ export function syncJellyNavToggle(active: ViewToggleKey | null): void {
   // so ordinary route syncs never reset the physics state mid-slide.
   if (jellyNav.dataset.keys !== keys.join()) {
     jellyNav.dataset.keys = keys.join();
-    jellyNav.innerHTML = `<jelly-segmented class="view-toggle-seg" value="${VIEW_TOGGLE_HREFS[active]}" label="${escape(t('Switch between tools, utilities, projects and catalog'))}">${segmentsHtml(keys)}</jelly-segmented>`;
+    // height inline (not in CSS): the component's shadow `:host{height:44px}` +
+    // the wrapper's 3px padding made the pill taller than the sibling icon FABs
+    // (2.9em). 2.5rem host + the 3px rim ≈ 46px, matching them. Inline so it can't
+    // lose the cascade to the shadow default; the tab paddings ride in projects.css.
+    jellyNav.innerHTML = `<jelly-segmented class="view-toggle-seg" style="height:2.5rem" value="${VIEW_TOGGLE_HREFS[active]}" label="${escape(t('Switch between tools, utilities, projects and catalog'))}">${segmentsHtml(keys)}</jelly-segmented>`;
   } else {
     // Steering the value attribute re-syncs the control and the pill ANIMATES
     // from wherever it is — including a route change driven by the native

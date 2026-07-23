@@ -52,9 +52,11 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 const json = (body: unknown, extra: Record<string, string> = {}, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extra } });
 
-const { initOrg, orgConfig, orgSession, orgAdminHref, applyOrgToolPolicies, _resetOrgForTests } = await import('./index.ts');
+const { initOrg, orgConfig, orgSession, orgAdminHref, orgFlagGovernance, applyOrgToolPolicies, _resetOrgForTests } = await import('./index.ts');
+const { flagHidden, isFlagOn, flagEnabled, hydrateFeatureFlags, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG } = await import('../feature-flags.ts');
 const { getFieldPolicy, _clearFieldPoliciesForTests } = await import('../lib/field-policy.ts');
 const { getInputPolicy, _clearInputPoliciesForTests } = await import('../lib/input-policy.ts');
+const ORG_CONFIG_KEY = 'lolly:org-config:same-origin';
 const { getExportPolicy, exportAffordance, _clearExportPolicyForTests } = await import('../lib/export-policy.ts');
 const { openApprovalRequest, _clearApprovalOpenerForTests } = await import('../lib/approval-request.ts');
 
@@ -305,4 +307,148 @@ test('a non-member never fetches member-only org-config, and leaves the registry
   assert.equal(orgConfig(), null);
   assert.equal(getFieldPolicy('email'), undefined);
   assert.ok(!fetchLog.some(c => c.url.includes('/api/v1/org-config')), 'org-config not requested for a guest');
+});
+
+// ── Resilient org-config cache + offline/failure fail-closed semantics ─────────
+
+// A control plane that authenticates a member and delegates the org-config response
+// to the supplied handler (so a test can make it succeed, 5xx, or throw).
+function memberPlane(orgConfigHandler: (url: string, init?: RequestInit) => Response): void {
+  router = (url, init) => {
+    if (url.includes('/api/auth/config')) return json({ mode: 'open', provider: 'oidc', loginPath: '/login' });
+    if (url.includes('/api/auth/session')) return json({ kind: 'member', user: { sub: 'u1', role: 'member' } });
+    if (url.includes('/api/v1/org-config')) return orgConfigHandler(url, init);
+    return new Response('', { status: 404 });
+  };
+}
+
+test('resilient cache: a successful member org-config load is persisted with its ETag', async () => {
+  reset();
+  memberPlane(() => json({ instance: { name: 'Acme' }, inboxUnread: 0 }, { etag: 'W/"v1"' }));
+  await initOrg();
+  const raw = store.get(ORG_CONFIG_KEY);
+  assert.ok(raw, 'org-config cached under the instance-base key');
+  const rec = JSON.parse(raw!);
+  assert.equal(rec.config.instance.name, 'Acme');
+  assert.equal(rec.etag, 'W/"v1"');
+  assert.equal(typeof rec.at, 'number');
+});
+
+test('resilient cache: a failed refetch within TTL falls back to the cached policy', async () => {
+  reset();
+  // First boot succeeds and caches a policy that ALLOWS download.
+  memberPlane(() => json({ instance: { name: 'Acme' }, inboxUnread: 0 }, { etag: 'W/"v1"' }));
+  await initOrg();
+  assert.ok(store.get(ORG_CONFIG_KEY), 'first boot cached the good copy');
+
+  // A fresh page session (module state reset) keeps localStorage; the control plane is
+  // present but org-config now 5xxs.
+  _resetOrgForTests();
+  fetchLog = [];
+  document.getElementById('view')!.innerHTML = '<p class="loading">Loading…</p>';
+  memberPlane(() => new Response('boom', { status: 503 }));
+  const r = await initOrg();
+
+  assert.equal(r!.gate, false);
+  assert.equal(orgConfig()?.instance.name, 'Acme', 'served the cached org-config, not dropped policy');
+  assert.equal(getExportPolicy()!.canDownload, true, 'cached policy honoured — NOT failed closed');
+  assert.equal(exportAffordance(getExportPolicy()), 'download');
+  assert.equal(getInputPolicy('qr-code', 'url'), undefined, 'inputs not force-locked when a valid cache exists');
+});
+
+test('resilient cache: a cached copy past the TTL is dropped and gated actions fail closed', async () => {
+  reset();
+  // Seed a stale cache (26h old, older than the 24h TTL) directly.
+  store.set(ORG_CONFIG_KEY, JSON.stringify({
+    at: Date.now() - 26 * 60 * 60 * 1000, etag: 'W/"old"',
+    config: { instance: { name: 'Acme' }, inboxUnread: 0 },
+  }));
+  memberPlane(() => new Response('boom', { status: 503 }));
+  const r = await initOrg();
+
+  assert.equal(r!.gate, false);
+  assert.equal(orgConfig(), null, 'stale policy is not served past the TTL');
+  assert.equal(store.get(ORG_CONFIG_KEY), undefined, 'the expired cache entry is evicted');
+  // Export fails closed: no direct download, only the (more restrictive) approval path.
+  assert.equal(getExportPolicy()!.canDownload, false);
+  assert.equal(exportAffordance(getExportPolicy()), 'request-approval');
+  // Inputs fail closed: every input reads as locked read-only.
+  assert.equal(getInputPolicy('qr-code', 'url')?.mode, 'locked');
+});
+
+test('resilient cache: no cache + unreachable org-config ⇒ fail closed (never open)', async () => {
+  reset();
+  memberPlane(() => { throw new Error('offline'); }); // org-config network error
+  const r = await initOrg();
+  assert.equal(r!.gate, false, 'the app still mounts — an outage is a non-event, not a gate');
+  assert.equal(orgConfig(), null);
+  assert.equal(getExportPolicy()!.canDownload, false, 'export fails closed with no cache');
+  assert.equal(exportAffordance(getExportPolicy()), 'request-approval');
+  assert.equal(getInputPolicy('event-badge', 'logo')?.mode, 'locked', 'inputs fail closed with no cache');
+  assert.equal(getInputPolicy('event-badge', 'logo')?.note, 'Managed by your organisation');
+});
+
+test('resilient cache: dormant (no control plane) writes no cache and stays byte-identical', async () => {
+  reset();
+  const r = await initOrg();
+  assert.equal(r, null);
+  assert.equal(store.get(ORG_CONFIG_KEY), undefined, 'no org-config cache when there is no control plane');
+  assert.equal(getExportPolicy(), undefined, 'export seam stays dormant');
+  assert.equal(getInputPolicy('qr-code', 'url'), undefined, 'inputs untouched when dormant');
+});
+
+test('resilient cache: happy-path fresh load is unchanged (no fail-closed overlay)', async () => {
+  reset();
+  memberPlane(() => json({ instance: { name: 'Acme' }, inboxUnread: 0 }));
+  await initOrg();
+  assert.equal(orgConfig()?.instance.name, 'Acme');
+  assert.equal(getExportPolicy()!.canDownload, true, 'download stays allowed on a fresh success');
+  assert.equal(getInputPolicy('qr-code', 'url'), undefined, 'no fail-closed input overlay on a fresh success');
+});
+
+// ── Feature-flag governance (control plane sets default + visibility) ──────────
+
+test('feature-flag governance: defaults apply, hidden flags force default and drop the toggle', async () => {
+  reset();
+  controlPlane({
+    mode: 'gated', session: 'member',
+    orgConfig: {
+      instance: { name: 'Acme' }, inboxUnread: 0,
+      featureFlags: {
+        // strip-metadata is built-in OFF; the org forces it ON as a default.
+        [STRIP_UPLOAD_META_FLAG.id]: { default: true, hidden: false },
+        // jelly is built-in ON; the org stages it hidden + OFF (a suppressed toggle).
+        [JELLY_FLAG.id]: { default: false, hidden: true },
+      },
+    },
+  });
+  await initOrg();
+
+  // Governance is surfaced through the accessor.
+  assert.deepEqual(orgFlagGovernance(STRIP_UPLOAD_META_FLAG.id), { default: true, hidden: false });
+  assert.equal(flagHidden(JELLY_FLAG.id), true);
+  assert.equal(flagHidden(NEUROSPICY_FLAG.id), false); // no opinion ⇒ shown
+
+  // A user who hasn't chosen gets the control-plane default…
+  const fresh = { featureFlags: {} } as unknown as Parameters<typeof isFlagOn>[0];
+  assert.equal(isFlagOn(fresh, STRIP_UPLOAD_META_FLAG), true);
+  // …and a hidden flag is forced to its default even against a saved value.
+  const savedOn = { featureFlags: { [JELLY_FLAG.id]: true } } as unknown as Parameters<typeof isFlagOn>[0];
+  assert.equal(isFlagOn(savedOn, JELLY_FLAG), false, 'hidden default wins over the stored value');
+  assert.equal(flagEnabled(savedOn, JELLY_FLAG.id), false);
+
+  // The synchronous mirror agrees: hidden forced off, unset default forced on.
+  hydrateFeatureFlags(savedOn);
+  const mirror = JSON.parse(store.get('lolly:featureFlags') || '{}');
+  assert.equal(mirror[JELLY_FLAG.id], false);
+  assert.equal(mirror[STRIP_UPLOAD_META_FLAG.id], true);
+});
+
+test('feature-flag governance: dormant (no control plane) keeps historic behaviour', async () => {
+  reset();
+  await initOrg(); // dormant
+  assert.equal(orgFlagGovernance(JELLY_FLAG.id), null);
+  assert.equal(flagHidden(JELLY_FLAG.id), false);
+  assert.equal(isFlagOn({ featureFlags: {} } as unknown as Parameters<typeof isFlagOn>[0], STRIP_UPLOAD_META_FLAG), false); // built-in OFF
+  assert.equal(isFlagOn({ featureFlags: {} } as unknown as Parameters<typeof isFlagOn>[0], JELLY_FLAG), true); // built-in ON
 });
