@@ -519,7 +519,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         active: opts.only ? 'utilities' : 'tools',
         right: `
           ${visibleCats.length ? `<button type="button" class="filter-fab" aria-label="${escape(t('Sort and filter tools'))}" aria-haspopup="true" aria-expanded="false" aria-controls="filter-popover" title="${escape(t('Sort & filter'))}">${FILTER_ICON}</button>` : ''}
-          ${sortedSaved.length ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: sortedSaved.length }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}`,
+          ${sortedSaved.length && !opts.only ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: sortedSaved.length }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}`,
         popover: visibleCats.length ? `
           <div class="filter-popover" id="filter-popover" role="group" aria-label="${escape(t('Sort and filter tools'))}" hidden>
             <div class="filter-pop-sort">${themeSegmentHtml()}</div>
