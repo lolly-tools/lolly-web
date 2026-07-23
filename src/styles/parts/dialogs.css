@@ -157,6 +157,52 @@
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
+/* Collapsible "Link options" / "Link behaviour" groups. */
+.share-section {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+.share-section > summary {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.share-section > summary::-webkit-details-marker { display: none; }
+.share-section > summary::before {
+  content: "›";
+  display: inline-block;
+  font-size: 15px;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  transition: transform 0.15s;
+}
+.share-section[open] > summary::before { transform: rotate(90deg); }
+.share-section-body {
+  padding: 0 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.share-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.share-toggle-row input[type="checkbox"] { cursor: inherit; }
+/* Inside a collapsible section the fieldset drops its own border — the section owns it. */
+.share-section > .share-toggles {
+  border: 0;
+  padding: 0 14px 12px;
+}
+.share-section > .share-toggles legend { display: none; }
 .share-toggles {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);

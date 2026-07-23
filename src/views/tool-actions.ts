@@ -583,10 +583,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // layer of visibility on top (see refreshPrintUi, which also owns hiding the
   // whole wrapper when NONE of the three apply to the selected format).
   const hasProtection = hasPdf || hasZip || c2paFormats.length > 0 || imprintFmts.length > 0;
-  // Pre-opened whenever any inner card would itself arrive pre-opened/pre-set —
-  // a URL-sourced password, an on-by-default C2PA credential, or a linked imprint
-  // flag — so a deep link still surfaces its setting without an extra click.
-  const protectionOpen = pdfPassInitOpen || c2paInitOn || Boolean(exportDefaults.imprint) || Boolean(exportDefaults.durable);
+  // Collapsed by default. Pre-opened only when an inner card carries an EXPLICIT
+  // deep-linked setting — a URL-sourced password, a URL-sourced C2PA choice, or a
+  // linked imprint/durable flag — so a share link still surfaces its setting without
+  // an extra click. The mere default-on C2PA state (c2paInitOn) does NOT open it, so
+  // the common case shows a single tidy collapsed header.
+  const protectionOpen = pdfPassInitOpen || Boolean(exportDefaults.c2pa) || Boolean(exportDefaults.imprint) || Boolean(exportDefaults.durable);
   // Matches the canonical per-format predicates the inner cards already use
   // (isC2paFmt/isImprintFmt, plus the password card's pdf/pdf-cmyk/zip set) —
   // never loosened, just OR'd together to decide the outer wrapper.

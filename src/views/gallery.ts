@@ -566,7 +566,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       `) : `
         ${featuredEntries.length ? '<div class="featured-mount"></div>' : ''}
         <p class="gallery-search-status visually-hidden" role="status" aria-live="polite"></p>
-        <div class="tool-masonry"></div>
+        <div class="tool-masonry${opts.only === 'utility' ? ' tool-masonry--utility' : ''}"></div>
       `}
 
       ${footerNav({
@@ -1085,7 +1085,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   function render(): void {
     if (!masonry) return;
     masonry.innerHTML = allTools
-      .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), isPinned(t.id), thumbsByTool(t.id), darkTheme))
+      .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), isPinned(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility'))
       .join('');
     masonry.append(noResults);
     tileById.clear();
@@ -1556,6 +1556,7 @@ function cardMarkup(
   isPinned = false,
   sessionThumbs: string[] = [],
   darkTheme = false,
+  utilityLayout = false,
 ): string {
   const sup = toolSupport(tool, shellCaps);
   const unavailable = sup.status === 'unavailable';
@@ -1568,6 +1569,41 @@ function cardMarkup(
 
   const iconSvg = tool.icon ? `<span class="tool-card-icon" aria-hidden="true">${tool.icon}</span>` : '';
   const openHref = `#/tool/${escape(tool.id)}`;
+
+  // Utilities view (#/u): the icon alone is a clear enough affordance, so drop the
+  // preview hero entirely and stack a larger icon ABOVE the title + description. The
+  // card is a fixed landscape box (CSS clamps it between 4:3 and 16:9) so every tile
+  // is the same height regardless of description length. Actions row is kept as-is.
+  if (utilityLayout) {
+    const uHasSession = !!latest && !unavailable;
+    const uName = unavailable
+      ? `<span class="gtile-name" aria-disabled="true">${escape(tool.name)}</span>`
+      : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${uHasSession ? ` aria-label="${escape(t('Start a new {name} session', { name: tool.name }))}"` : ''}>${escape(tool.name)}</a>`;
+    const uHistoryBtn = (!unavailable && sessionCount > 0)
+      ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? t('1 saved session for {name}', { name: tool.name }) : t('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
+      : '';
+    return `
+      <article class="gtile gtile--utility${unavailable ? ' gtile--unavailable' : ''}" data-tool-id="${escape(tool.id)}">
+        <div class="gtile-body${unavailable ? '' : ' gtile-body--link'}">
+          <div class="gtile-cap">
+            ${iconSvg}
+            <span class="gtile-meta">
+              ${isNew ? `<span class="gtile-newbadge">${t('New')}</span>` : ''}
+              ${uName}
+              <p class="gtile-desc">${escape(tool.description ?? '')}</p>
+            </span>
+            ${statusBadge}
+          </div>
+        </div>
+        <div class="gtile-actions">
+          <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: tool.name }) : t('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
+          ${unavailable ? '' : `<button type="button" class="gtile-iconbtn gtile-pin${isPinned ? ' is-pinned' : ''}" data-pin="${escape(tool.id)}" aria-pressed="${isPinned}" title="${escape(isPinned ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(isPinned ? t('Remove {name} from offline', { name: tool.name }) : t('Keep {name} available offline', { name: tool.name }))}">${PIN_ICON}</button>`}
+          <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
+          ${uHistoryBtn}
+        </div>
+      </article>
+    `;
+  }
   const hasSession = !!latest && !unavailable;          // resumable, with or without a preview
   const hasThumbHero = hasSession && !!latest!.thumb;    // resumable AND has a preview image
   const hasPreview = !unavailable && !hasSession && !!tool.preview; // committed demo preview, no session yet
