@@ -61,6 +61,9 @@
   /* Painted per-frame via getComputedStyle — `transparent` resolves to a no-op
      fill, leaving only the sliding accent pill on the frosted wrapper. */
   --jelly-track: transparent;
+  /* Tighter halo around the active pill (component defaults: 4px / 18px). */
+  --jelly-segmented-padding: 2px;
+  --jelly-segmented-padding-inline: 15px;
 }
 @media (min-width: 641px) {
   :root[data-jelly-nav] .view-toggle-wrap { display: none; }

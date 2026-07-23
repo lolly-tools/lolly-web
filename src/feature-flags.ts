@@ -12,6 +12,7 @@
  */
 
 import type { Profile } from '../../../engine/src/bridge/host-v1.ts';
+import { orgFlagGovernance } from './org/index.ts';
 
 export interface FeatureFlag {
   id: string;
@@ -64,17 +65,38 @@ export const STRIP_UPLOAD_META_FLAG: FeatureFlag = {
   info: 'Removes EXIF, location (GPS) and other embedded metadata from images you upload. Content Credentials (C2PA provenance) are always preserved — a signed or AI-generated image keeps its credential either way.',
 };
 
-/** A flag is ON unless it has been explicitly turned off (the default for every flag). */
+// The standalone flags an OPTIONAL control plane may govern (default + visibility).
+// Ids match the server's GOVERNABLE_FLAGS; category/Pro flags stay purely local.
+export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_FLAG.id, STRIP_UPLOAD_META_FLAG.id];
+
+/** Whether the control plane has hidden a flag's user-facing toggle (a staged
+ *  surprise, or a policy the deployment owns). Dormant ⇒ false. The resolved
+ *  state still applies via flagEnabled/isFlagOn — hiding only drops the switch. */
+export function flagHidden(id: string): boolean {
+  return orgFlagGovernance(id)?.hidden === true;
+}
+
+/** A flag is ON unless it has been explicitly turned off — but a control plane can
+ *  set the default (applied when the user hasn't chosen) and, for a hidden flag,
+ *  force its default regardless of any stored value. Dormant ⇒ historic behaviour. */
 export function flagEnabled(profile: Profile | null | undefined, id: string): boolean {
-  return profile?.featureFlags?.[id] !== false;
+  const gov = orgFlagGovernance(id);
+  const saved = profile?.featureFlags?.[id];
+  if (gov?.hidden) return gov.default ?? saved !== false;
+  if (saved !== undefined) return saved;
+  return gov?.default ?? true;
 }
 
 /** Default-aware read: honours a flag's `default` (opt-in flags start off) when the user
- *  hasn't set it, and the saved value once they have. Prefer this when a flag isn't the
- *  historic "ON unless off" kind. */
+ *  hasn't set it, the control plane's default over that, and the saved value once the
+ *  user has chosen — unless the control plane hides the flag, when its default wins. */
 export function isFlagOn(profile: Profile | null | undefined, flag: FeatureFlag): boolean {
+  const gov = orgFlagGovernance(flag.id);
+  const builtin = flag.default !== false;
   const saved = profile?.featureFlags?.[flag.id];
-  return saved === undefined ? flag.default !== false : saved;
+  if (gov?.hidden) return gov.default ?? builtin;
+  if (saved !== undefined) return saved;
+  return gov?.default ?? builtin;
 }
 
 // A synchronous localStorage mirror of profile.featureFlags, so surfaces that render
@@ -84,7 +106,17 @@ export function isFlagOn(profile: Profile | null | undefined, flag: FeatureFlag)
 // flagEnabled), so an unhydrated mirror still shows opt-out features.
 const FLAG_MIRROR_KEY = 'lolly:featureFlags';
 export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
-  try { localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify(profile?.featureFlags ?? {})); } catch { /* best-effort */ }
+  // Bake control-plane governance into the mirror so the synchronous reads match
+  // the default-aware ones: seed an unset governed flag with its instance default,
+  // and force a hidden flag to its default (no user toggle can override it).
+  const eff: Record<string, boolean> = { ...(profile?.featureFlags ?? {}) };
+  for (const id of GOVERNED_FLAG_IDS) {
+    const gov = orgFlagGovernance(id);
+    if (!gov) continue;
+    if (gov.hidden) { if (gov.default !== undefined) eff[id] = gov.default; }
+    else if (eff[id] === undefined && gov.default !== undefined) eff[id] = gov.default;
+  }
+  try { localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify(eff)); } catch { /* best-effort */ }
 }
 export function flagEnabledSync(id: string): boolean {
   try {

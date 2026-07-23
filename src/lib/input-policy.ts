@@ -41,14 +41,36 @@ export interface InputPolicy {
 // toolId → (inputId → policy).
 const registry = new Map<string, Map<string, InputPolicy>>();
 
+/** A global fail-closed overlay: when set, every input that has no explicit policy of
+ *  its own is treated as this (a locked read-only) policy — the more restrictive state.
+ *  Off (null) by default, so the dormant path is untouched. Its purpose is a governed
+ *  instance whose live policy is momentarily unknown and un-cached: the host installs
+ *  it so gated inputs never fall open to editable while policy can't be confirmed. It
+ *  is orthogonal to the per-tool registry and is NOT cleared by clearInputPolicies —
+ *  only its own setter (or the test reset) lifts it. */
+let failClosed: InputPolicy | null = null;
+
 /**
  * The policy for one input of one tool, or `undefined` when none is registered (the
- * default — the sidebar then behaves exactly as with no policy layer). Short-circuits
- * when the registry is empty (the dormant common case) so there is no per-input cost.
+ * default — the sidebar then behaves exactly as with no policy layer). An explicit
+ * per-tool policy always wins; otherwise the global fail-closed overlay applies when
+ * one is set, else `undefined`. The dormant common case (empty registry, no overlay)
+ * still returns `undefined` with no per-input cost.
  */
 export function getInputPolicy(toolId: string | undefined, inputId: string): InputPolicy | undefined {
-  if (!toolId || registry.size === 0) return undefined;
-  return registry.get(toolId)?.get(inputId);
+  if (!toolId) return undefined;
+  const explicit = registry.size ? registry.get(toolId)?.get(inputId) : undefined;
+  return explicit ?? failClosed ?? undefined;
+}
+
+/**
+ * Install (or, with `null`, lift) the global fail-closed overlay. When set, every input
+ * without an explicit policy reads as the supplied (locked) policy. The note is supplied
+ * already localised by the host, so this file stays product-neutral. Separate from the
+ * per-tool registry: clearInputPolicies / setToolInputPolicies never touch it.
+ */
+export function setInputPolicyFailClosed(policy: InputPolicy | null): void {
+  failClosed = policy;
 }
 
 /**
@@ -68,7 +90,9 @@ export function clearInputPolicies(): void {
   registry.clear();
 }
 
-/** TEST-ONLY convenience: empty the registry back to its dormant default. */
+/** TEST-ONLY convenience: empty the registry (and lift any fail-closed overlay) back
+ *  to the dormant default. */
 export function _clearInputPoliciesForTests(): void {
   registry.clear();
+  failClosed = null;
 }

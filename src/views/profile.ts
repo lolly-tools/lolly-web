@@ -37,7 +37,7 @@ import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, flagEnabled, isFlagOn, setFlagMirror } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, flagEnabled, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
 import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
 import { syncNeuroDock } from '../components/neuro-dock.ts';
@@ -266,6 +266,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // it opens upward/centred (inline style override) rather than help-tip-pop's default
   // "drop below, span the host" — which here would spill past the list, off-screen.
   const flagRow = (f: FeatureFlag) => {
+    // A control plane can hide a flag's toggle (a staged surprise, or a policy the
+    // deployment owns): drop the row entirely — the resolved default still applies,
+    // the user just never sees a switch. Dormant / shown ⇒ rendered as ever.
+    if (flagHidden(f.id)) return '';
     const info = f.info ? helpTip(t(f.info)) : null;
     const infoPop = info ? info.pop.replace(
       'class="help-tip-pop"',
@@ -363,8 +367,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                   const val = pol && pol.value !== undefined
                     ? String(pol.value)
                     : String((profile as Record<string, unknown>)[f] ?? '');
+                  // A locked field shows a padlock, not a text chip: the "Managed
+                  // by …" note rides along as its tooltip (title + accessible
+                  // label) so the row stays uncluttered. No note ⇒ nothing.
                   const note = pol?.mode === 'locked' && pol.note
-                    ? `<span class="profile-field-note" style="margin-inline-start:.4rem;font-size:.72rem;font-weight:500;color:hsl(var(--muted-foreground));border:1px solid hsl(var(--border));border-radius:999px;padding:.05rem .45rem;white-space:nowrap">${escape(pol.note)}</span>`
+                    ? `<span class="profile-field-lock" tabindex="0" role="img" title="${escape(pol.note)}" aria-label="${escape(pol.note)}" style="margin-inline-start:.35rem;display:inline-flex;vertical-align:middle;color:hsl(var(--muted-foreground))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>`
                     : '';
                   return `<label class="profile-field">
                   <span class="profile-field-label">${escape(t(FIELD_LABELS[f] ?? f))}${note}</span>
