@@ -25,6 +25,14 @@
   backdrop-filter: blur(10px);
   border-top: 1px solid hsl(var(--border));
 }
+/* Jelly mode: the soft-body controls carry their own vertical bulk, so the bar's
+   own .6rem block padding just doubled the height. Drop it (top fully, bottom to
+   only the iOS home-indicator inset) and tighten the gap. */
+.gallery-footer--jelly {
+  padding-top: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  gap: .5rem;
+}
 .app-view.gallery-view { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); } /* clear the fixed footer */
 
 /* First-visit privacy notice — a slim transparency strip pinned just above the

@@ -119,7 +119,7 @@ export function footerNav({ proEnabled, searchHtml, footerClass }: FooterNavOpts
     aria: t('What is Lolly? — about & help'), inner: `${NAV_ICONS.help}${label(t('What?'))}`,
   });
   return `
-    <footer class="gallery-footer${footerClass ? ' ' + footerClass : ''}">
+    <footer class="gallery-footer${jellyActive() ? ' gallery-footer--jelly' : ''}${footerClass ? ' ' + footerClass : ''}">
       ${pro}
       ${dashboard}
       ${searchHtml}
