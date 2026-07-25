@@ -505,21 +505,17 @@
   font-size: 12px;
   color: hsl(var(--muted-foreground));
 }
-.asset-picker-toolcard-controls select,
-.asset-picker-toolcard-controls input {
+/* The controls themselves are the shared field primitive (parts/fields.css); all
+   that survives here is this toolbar's compact height and the number fields' width.
+   Both call sites of this wrapper class — the picker's tool card and the embed
+   editor's ee-format/ee-w/ee-h row (views/tool-inputs.ts) — are migrated, so the
+   old outlined recipe that used to live here is gone rather than fenced off. */
+.asset-picker-toolcard-controls .field-select,
+.asset-picker-toolcard-controls .field-input {
   height: 30px;
-  padding: 0 8px;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  font: inherit;
-  font-size: 13px;
-  outline: none;
+  padding-block: 0;              /* the primitive's 9px block padding would burst 30px */
 }
 .asset-picker-toolcard-controls input { width: 5.5rem; }
-.asset-picker-toolcard-controls select:focus,
-.asset-picker-toolcard-controls input:focus { border-color: hsl(var(--primary)); }
 
 .asset-picker-toolcard-preview {
   display: flex;
@@ -603,9 +599,12 @@
   color: hsl(var(--card-foreground));
   cursor: pointer;
 }
-.asset-picker-toolcard-freeze input { accent-color: hsl(var(--primary)); }
+/* The tick is .field-check (parts/fields.css) — nothing to add here. */
 .asset-picker-toolcard-freeze-help {
-  margin: -10px 0 0 20px;
+  /* Indent = the tick's own box (.field-check, 16px) + the row's 6px gap, so the
+     help line starts exactly under the label text. Was 20px, tuned against the UA
+     checkbox this row used before the primitive landed. */
+  margin: -10px 0 0 22px;
   font-size: 11px;
   color: hsl(var(--muted-foreground));
 }
@@ -820,10 +819,17 @@
   font-size: 13px;
   transition: border-color 0.12s, background 0.12s;
 }
-.asset-picker-upload:hover {
+.asset-picker-upload:hover,
+.asset-picker-upload:focus-within {
   border-color: hsl(var(--primary));
   background: hsl(var(--accent));
 }
+/* The file input inside is `.visually-hidden`, not `hidden` — display:none is not
+   focusable, and the <label> can't take focus itself, so the old markup made
+   "Upload your own…" mouse-only. The input keeps the keyboard tab stop (Enter/Space
+   opens the OS picker) and the label wears its ring, exactly as the shared dropzone
+   does (lib/upload-dropzone.ts + parts/dropzone.css). */
+.asset-picker-upload:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .asset-picker-upload.is-disabled {
   opacity: 0.55;
   cursor: not-allowed;

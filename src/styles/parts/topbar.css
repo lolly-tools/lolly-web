@@ -161,8 +161,10 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 2.9em;
-  height: 2.9em;
+  box-sizing: border-box;
+  /* Square, on the row's shared height (tokens.css) — see .tools-home. */
+  width: var(--chrome-h);
+  height: var(--chrome-h);
   padding: 0;
   border: 1px solid hsl(var(--primary));
   border-radius: var(--radius);

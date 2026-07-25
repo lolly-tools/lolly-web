@@ -63,8 +63,10 @@
  */
 
 import { contentSealConsensus, CONTENTSEAL_MESSAGE_BITS } from '@lolly/engine';
-import { openDB } from '../bridge/db.ts';
-import { loadOrt, readResponseWithProgress, serializeSessionCreate, type FetchProgress } from './ort.ts';
+import {
+  createDebugLogger, createModelFetcher, loadOrt, makeCanvas, packNchw01, serializeSessionCreate,
+  type FetchProgress,
+} from './ort.ts';
 
 /** The converted ONNX extractor (scripts/convert-contentseal-onnx.py). One
  *  single-image graph: [1,3,H,W] float32 in [0,1] → interpolate to 256² → ×2−1
@@ -120,82 +122,23 @@ export interface ContentSealDetection {
   bits?: number;
 }
 
-// ── Terse, opt-in diagnostics (mirrors lib/trustmark.ts) ─────────────────────
-// `host.log` isn't in scope in this lazy module, so trace via console.debug —
-// GATED so a normal deep scan is silent. Turn on in DevTools with either
+// ── Terse, opt-in diagnostics ────────────────────────────────────────────────
+// Turn on in DevTools with either
 //   localStorage.setItem('lolly:contentseal:debug', '1')
 //   window.__CONTENTSEAL_DEBUG__ = true
 // to see where a scan falls off: model fetch, session creation, per-view
-// inference, and the final consensus (U / tau / present).
-function dbgEnabled(): boolean {
-  try {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('lolly:contentseal:debug') === '1') return true;
-  } catch {
-    // localStorage can throw in a sandboxed/partitioned context — ignore.
-  }
-  return typeof globalThis !== 'undefined' && (globalThis as { __CONTENTSEAL_DEBUG__?: boolean }).__CONTENTSEAL_DEBUG__ === true;
-}
-function dbg(stage: string, ctx?: object): void {
-  if (dbgEnabled()) console.debug(`[contentseal] ${stage}`, ctx ?? '');
-}
+// inference, and the final consensus (U / tau / present). Deliberately a
+// SEPARATE switch from TrustMark's — see lib/ort.ts's createDebugLogger.
+const dbg = createDebugLogger({
+  tag: 'contentseal', storageKey: 'lolly:contentseal:debug', globalFlag: '__CONTENTSEAL_DEBUG__',
+});
 
-// ── Model bytes: fetch-once, IndexedDB-forever (mirrors lib/trustmark.ts) ─────
-
-interface CachedModel { bytes: ArrayBuffer; version: number; cachedAt: number }
-
-async function fetchModelBytes(fileName: string, cacheOnly = false, onProgress?: (p: FetchProgress) => void): Promise<ArrayBuffer | null> {
-  try {
-    const db = await openDB();
-    const cached = await db.get('contentseal-models', fileName) as CachedModel | undefined;
-    if (cached && cached.version === MODEL_CACHE_VERSION && cached.bytes?.byteLength) {
-      dbg('fetch', { file: fileName, source: 'idb-cache', bytes: cached.bytes.byteLength });
-      return cached.bytes;
-    }
-  } catch {
-    // IDB unavailable — fall through to a network-only (uncached) fetch below.
-  }
-
-  // cacheOnly (the passive background scan): never hit the network. Not cached ⇒
-  // report absent so the auto-scan stays silent rather than fetching a model.
-  if (cacheOnly) { dbg('fetch', { file: fileName, source: 'cache-only-miss' }); return null; }
-
-  const url = `/models/${MODEL_DIR}/${fileName}`;
-  let resp: Response;
-  try {
-    resp = await fetch(url);
-  } catch (err) {
-    dbg('fetch', { file: fileName, url, status: 'network-error', error: (err as Error)?.message });
-    return null; // offline, or the dev server has nothing mounted at /models/
-  }
-  // Not vendored yet (Andy hasn't run scripts/convert-contentseal-onnx.py) —
-  // a plain 404, never an error surfaced to the user.
-  if (!resp.ok) {
-    dbg('fetch', { file: fileName, url, status: resp.status });
-    return null;
-  }
-  const bytes = await readResponseWithProgress(resp, onProgress);
-  // Vite's dev server answers a MISSING model with the SPA fallback index.html —
-  // a 200, so resp.ok above is true. Handing that HTML to ORT yields "protobuf
-  // parsing failed"; caching it poisons every later run. Reject anything that
-  // isn't the binary model: an HTML content-type, or a body starting with '<'.
-  // A real ONNX protobuf never begins with 0x3c. (Until convert-contentseal-onnx.py
-  // is run, the model is absent, so this path returns null → 'not-installed'.)
-  const contentType = resp.headers.get('content-type') || '';
-  const head = bytes.byteLength ? new Uint8Array(bytes, 0, 1)[0] : 0;
-  if (contentType.includes('text/html') || head === 0x3c /* '<' */) {
-    dbg('fetch', { file: fileName, url, status: 'not-a-model (SPA fallback?)', contentType, bytes: bytes.byteLength });
-    return null; // treated as not-installed, never cached
-  }
-  dbg('fetch', { file: fileName, url, status: 200, bytes: bytes.byteLength });
-
-  try {
-    const db = await openDB();
-    await db.put('contentseal-models', { bytes, version: MODEL_CACHE_VERSION, cachedAt: Date.now() }, fileName);
-  } catch {
-    // Best-effort cache write — a failed put just means re-fetching next time.
-  }
-  return bytes;
-}
+// ── Model bytes: fetch-once, IndexedDB-forever (lib/ort.ts, shared with trustmark) ──
+// Until scripts/convert-contentseal-onnx.py has been run the model is simply
+// absent, so every call here returns null → 'not-installed'.
+const fetchModelBytes = createModelFetcher({
+  store: 'contentseal-models', dir: MODEL_DIR, version: MODEL_CACHE_VERSION, dbg,
+});
 
 // ── onnxruntime-web: lazy import, one memoised session ────────────────────────
 
@@ -251,27 +194,7 @@ function getSession(ort: OrtModule, cacheOnly = false): Promise<SessionOutcome> 
 // Four augmented views of the candidate, each resized to 256², packed NCHW
 // [1,3,256,256] float32 in [0,1] (the converted graph applies its own ×2−1).
 
-function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement {
-  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  return c;
-}
-
-/** RGBA → NCHW [1,3,h,w] float32 in [0,1]: R plane, G plane, B plane; alpha
- *  dropped. The converted extractor does the [0,1]→[−1,1] scale itself. */
-function packNchw01(rgba: ArrayLike<number>, w: number, h: number): Float32Array {
-  const total = w * h;
-  const tensor = new Float32Array(total * 3);
-  const page = total, twopage = 2 * total;
-  for (let i = 0; i < total; i++) {
-    const idx = i * 4;
-    tensor[i] = (rgba[idx] as number) / 255;
-    tensor[i + page] = (rgba[idx + 1] as number) / 255;
-    tensor[i + twopage] = (rgba[idx + 2] as number) / 255;
-  }
-  return tensor;
-}
+// makeCanvas + packNchw01 are shared with lib/trustmark.ts (see lib/ort.ts).
 
 /** JPEG-encode a canvas at `quality` (0..1). Unifies OffscreenCanvas
  *  (convertToBlob) and HTMLCanvasElement (toBlob); null on any failure. */

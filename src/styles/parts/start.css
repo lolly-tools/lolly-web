@@ -41,19 +41,14 @@
    later sheet) and drops the selector into flow. */
 .start > *:not(.gallery-topright) { position: relative; z-index: 1; }
 
-/* The studio's return pill is a real .tools-home glass pill (the arrow comes
-   from its :before; pill + paint from components.css/buttons.css) — this keeps
-   only the studio's own placement. The base .tools-home rule carries a 2em
-   top/left offset meant for its absolutely-positioned variants; this pill sits
-   in flow (and IS positioned — the `.start > *` lift above makes it relative),
-   so zero the offset or it shoves into the header. align-self + fit-content
-   pin it to content size on the colour tab, where .start becomes a flex column
-   (≥1100px below) and a stretched flex item would paint the pill as a
-   full-width bar. */
+/* The studio's return pill is a real .tools-home glass pill (arrow + label from
+   components/back-pill.ts, paint from components.css/buttons.css) — this keeps
+   only the studio's own placement. It sits in flow rather than pinned to the
+   corner, so align-self + fit-content hold it to content size on the colour
+   tab, where .start becomes a flex column (≥1100px below) and a stretched flex
+   item would paint the pill as a full-width bar. */
 .start-back {
   margin-bottom: 10px;
-  top: 0;
-  left: 0;
   align-self: flex-start;
   width: fit-content;
 }
@@ -411,7 +406,7 @@
   padding: 7px 10px;
   cursor: pointer;
 }
-.start-color-chip input[type="checkbox"] { flex: none; margin: 0; accent-color: hsl(var(--primary)); }
+.start-color-chip input[type="checkbox"] { flex: none; margin: 0; }
 .start-color-swatch {
   flex: none;
   width: 18px;

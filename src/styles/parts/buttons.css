@@ -142,7 +142,7 @@
    selector list, same pattern as .btn--primary above. Call-sites keep only real
    shape deltas (box size, border, hover tint) in their own file. */
 .btn--glass,
-.tools-home,                                      /* components.css — "← Tools" back pill */
+.tools-home,                                      /* components.css — the shared back pill */
 .profile-link,                                    /* components.css — top-right profile pill */
 .filter-fab,                                      /* gallery.css — sort/filter & view-options FAB */
 .history-fab,                                     /* utilities.css/topbar.css — saved-sessions FAB */

@@ -46,26 +46,24 @@
 }
 .doc-ribbon .fc-sep-v { height: 22px; }
 
-.doc-style-select {
-  font: inherit; font-size: 12.5px; font-weight: 600;
-  max-width: 132px; height: 32px;
-  padding: 0 6px; border-radius: 8px;
-  border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
-  cursor: pointer;
-}
+/* Ribbon selects — paragraph style, font, line height, letter spacing. The box is
+   the shared `.field-select .field-select--sm .field-select--auto` primitive
+   (fields.css); only three things are genuinely local: the cap width per control,
+   the ribbon's 32px control height, and the heavier label weight that lets a
+   one-word value hold its own next to the icon buttons. Disabled comes from the
+   primitive (opacity .5 + not-allowed) — do not restate it here, this sheet is in
+   `@layer views` and would silently win. */
+.doc-style-select,
+.doc-font-select,
+.doc-lh-select,
+.doc-ls-select { height: 32px; font-weight: 600; }
+.doc-style-select { max-width: 132px; }
+.doc-font-select { max-width: 116px; }
+.doc-lh-select { max-width: 104px; }
+.doc-ls-select { max-width: 116px; }
 /* "New page" sits under the block-kind items in the Insert popover, set off by a rule. */
 .fc-pop-item--sep { margin-top: 4px; padding-top: 8px; border-top: 1px solid hsl(var(--border)); }
 
-/* Font picker in the ribbon — same chrome as the paragraph-style select, a touch
-   narrower. Sets the selected run's font, or the block's font when nothing is selected. */
-.doc-font-select {
-  font: inherit; font-size: 12.5px; font-weight: 600;
-  max-width: 116px; height: 32px;
-  padding: 0 6px; border-radius: 8px;
-  border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
-  cursor: pointer;
-}
-.doc-font-select:disabled { opacity: 0.4; cursor: default; }
 .doc-ribbon .fc-cbtn:disabled { opacity: 0.32; cursor: default; }
 .doc-ribbon .fc-cbtn.is-on { background: hsl(var(--primary) / 0.16); color: hsl(var(--primary)); }
 .doc-ribbon .fc-cbtn i { font-style: italic; }
@@ -116,12 +114,15 @@
 /* Settings (page setup) mini-form inside a .fc-panel popover. */
 .doc-setup-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
 .doc-setup-row > span { flex: 0 0 92px; color: hsl(var(--muted-foreground)); }
+/* The controls carry `.field-select`/`.field-input` (+ `--sm`) and the tick carries
+   `.field-check`; the only local truth is that a row's control takes the leftover
+   width. */
 .doc-setup-row select,
-.doc-setup-row input[type="text"] {
-  flex: 1; min-width: 0; font: inherit; font-size: 12.5px; padding: 5px 7px;
-  border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
-}
-.doc-setup-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: hsl(var(--primary)); cursor: pointer; }
+.doc-setup-row input[type="text"] { flex: 1; min-width: 0; }
+/* (A `revert-layer` opt-out lived here: the page-setup input sits in a `.fc-panel`,
+   and editor.css's `.fc-panel input[type="text"]` rule — same `views` layer, same
+   specificity — was stranding it on the old outlined generation. Fixed at source
+   instead: that rule now carries `:not(.field-input)` and yields to the primitive.) */
 .doc-setup-row .doc-setup-color { flex: 1; min-width: 0; display: flex; }
 
 /* Touch: keep the ribbon compact and always visible. */
@@ -132,6 +133,7 @@
 @media (max-width: 640px) {
   .doc-style-select { max-width: 96px; }
   .doc-font-select { max-width: 84px; }
+  .doc-lh-select, .doc-ls-select { max-width: 84px; }
 }
 
 /* ─── TipTap rich-document editor (views/doc-editor.js) ─────────────────────────

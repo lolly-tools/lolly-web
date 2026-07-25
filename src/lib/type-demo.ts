@@ -145,7 +145,7 @@ function control(face: LiveFace): string {
         <span class="td-auto-dot" aria-hidden="true"></span>Auto
       </button>
       <span class="td-range-wrap">
-        <input type="range" class="td-range" data-td-range="${face.key}" min="${ax.min}" max="${ax.max}" step="1" value="${WSTART}"
+        <input type="range" class="field-range td-range" data-td-range="${face.key}" min="${ax.min}" max="${ax.max}" step="1" value="${WSTART}"
                aria-label="Weight, ${ax.min} to ${ax.max}">
         <span class="td-scale" aria-hidden="true"><i>${escapeHtml(lo)}</i><i>${escapeHtml(ax.hi)}</i></span>
       </span>

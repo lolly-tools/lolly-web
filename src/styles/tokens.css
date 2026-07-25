@@ -21,6 +21,45 @@
   --font-mono: 'SUSE Mono', ui-monospace, monospace;
 }
 
+/* ─── Top-row chrome geometry ───────────────────────────────────────────────
+ * The controls that float along the top of a view — the back pill on the left
+ * (.tools-home, components/back-pill.ts) and the right-hand cluster
+ * (.gallery-topright: .filter-fab / .history-fab / .lang-fab / .profile-link)
+ * — are laid out in DIFFERENT files and used to be sized independently, so the
+ * two ends of the row never lined up: each carried its own padding, its own
+ * top offset, and heights that landed a few px apart. These three properties
+ * are the one source of truth for that row; every member reads them, so the
+ * row stays level no matter which view assembles it or what font-size the
+ * individual pill sets on itself.
+ *
+ * --chrome-h is in rem deliberately: the pill sets font-size:13px and the FABs
+ * inherit the body's 0.875rem, so an em-based height would silently diverge. */
+:root {
+  --chrome-h: 2.6rem;      /* shared height of every top-row control */
+  --chrome-top: 0.5rem;    /* distance from the top of the viewport */
+  --chrome-inset: 2rem;    /* distance from the left/right edge */
+}
+
+/* On phones the row drops clear of the notch and the content scrolls under it.
+   Overriding the token here — rather than restating the offset in each part
+   sheet's own media query, as they used to — keeps both ends of the row on the
+   same line at every width. */
+@media (max-width: 640px) {
+  :root {
+    --chrome-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+  }
+}
+
+/* Touch: the whole row grows to the 44px finger target at once. The
+   coarse-pointer block in parts/notfound.css used to bump each control
+   separately (a min-height here, extra padding there), which is exactly how
+   they drifted apart on phones. */
+@media (pointer: coarse) {
+  :root {
+    --chrome-h: 44px;
+  }
+}
+
 /* Generative-AI flag — a fixed violet, deliberately OUTSIDE any brand palette (and
    outside the verify pass/fail hues) so "made by a model" reads the same in every
    brand and never looks like a verdict. Space-separated HSL channels, used as

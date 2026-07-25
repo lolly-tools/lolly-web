@@ -66,6 +66,7 @@ import type { ExportEntry } from '../lib/export-history.ts';
 import { attachDropRouter } from '../lib/drop-router.ts';
 import type { PickerHost } from './picker.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
@@ -662,7 +663,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   const wheelColors = [...byHex.values()];
 
   viewEl.innerHTML = `
-    <a href="#/" class="tools-home home-full">${t('Tools')}</a>
+    ${backPillHtml()}
     <div class="gallery-topright">${langFabHtml()}</div>
     <div class="dash-layout">
       <header class="plat-header dash-header">
@@ -777,6 +778,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   // reveal ladder so it settles in with that panel's other sections instead of
   // snapping in at full opacity beneath the cascade.
   armViewEnter(viewEl, '.tools-home, .plat-header, .dash-tabs, .plat-section, .dash-foot');
+  mountBackPill(viewEl);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // Universal drop front door — the same scoped router as the gallery (design →

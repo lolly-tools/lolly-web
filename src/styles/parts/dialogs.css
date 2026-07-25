@@ -31,6 +31,13 @@
 }
 /* Choice buttons can carry longer labels than OK/Cancel — let them wrap. */
 .modal-actions--choices { flex-wrap: wrap; }
+/* askExportLock's password + zip-tier controls (lib/export-lock.ts). Both are
+   plain `.field-input` / `.field-select` now; the only thing the old inline
+   recipe carried that the primitive doesn't is the hairline gap between the two
+   stacked blocks (and before .modal-actions). Nothing else styles them — this
+   dialog is body-mounted, so no view sheet reaches it. */
+.export-lock-pw,
+.export-lock-tier { margin: 0.1rem 0; }
 
 /* ─── Unsaved changes dialog ─────────────────────────────────────────────── */
 /* pro/index.ts's leave-guard and views/tool.ts's clear/unsaved pair are all
@@ -59,8 +66,16 @@
    jelly on/off. Still clamped to 90vw above, so mobile stacks them as before. */
 .unsaved-dialog { max-width: 540px; }
 
+/* The dimmed-and-blurred backdrop, declared once for every dialog that wants it.
+   `.tool-meta-dialog` (gallery.css) and `.welcome-dialog` (welcome.css) each used
+   to restate these three declarations verbatim; they alias here instead.
+   Deliberately NOT a blanket `dialog::backdrop` — several dialogs run a plainer
+   scrim at a different alpha and no blur (projects, instance-sheet, storage,
+   catalog), and a default would silently blur all of them. */
 .unsaved-dialog::backdrop,
-.share-dialog::backdrop {
+.share-dialog::backdrop,
+.tool-meta-dialog::backdrop,   /* gallery.css */
+.welcome-dialog::backdrop {    /* welcome.css */
   background: hsl(0 0% 0% / 0.45);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
@@ -150,7 +165,9 @@
   font-size: 13px;
 }
 .share-shortest[hidden] { display: none; }
-.share-shortest input[type="checkbox"] { margin-top: 2px; cursor: inherit; }
+/* The box is `.field-check`; only the optical nudge onto the first text line
+   (this row is align-items: flex-start, two lines tall) stays here. */
+.share-shortest input[type="checkbox"] { margin-top: 2px; }
 .share-shortest-text { display: flex; flex-direction: column; gap: 1px; }
 .share-shortest-note {
   font-size: 12px;
@@ -189,20 +206,28 @@
   flex-direction: column;
   gap: 10px;
 }
-.share-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.share-toggle-row input[type="checkbox"] { cursor: inherit; }
+/* Row layout (flex/centre/8px gap/pointer) + the tick itself now come from the
+   shared `.field-toggle` + `.field-check` primitive (parts/fields.css); the type
+   size is this dialog's own delta. */
+.share-toggle-row { font-size: 13px; }
 /* Inside a collapsible section the fieldset drops its own border — the section owns it. */
 .share-section > .share-toggles {
   border: 0;
   padding: 0 14px 12px;
 }
-.share-section > .share-toggles legend { display: none; }
+/* Inside a section the summary already names the group visually, so the legend is
+   hidden — but VISUALLY, not with `display: none`, which would drop it from the
+   accessibility tree and leave the shell's only <fieldset> unnamed. Same
+   declarations as `.visually-hidden` (parts/base.css). */
+.share-section > .share-toggles legend {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .share-toggles {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
@@ -218,18 +243,16 @@
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
-.share-toggles label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  cursor: pointer;
-}
+/* Each label carries `.field-toggle` and each box `.field-check` — the row's
+   flex/centre/gap/cursor and the tick's whole appearance live there now. */
+.share-toggles label { font-size: 13px; }
+/* Kept: the disabled treatment is set on the LABEL by JS (`full` wins over
+   `options`), and this dimmer/cursor pair is the dialog's own value — it beats
+   the primitive's `:has(.field-check:disabled)` fallback from the `chrome` layer. */
 .share-toggles label.is-disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.share-toggles input[type="checkbox"] { cursor: inherit; }
 .share-dialog-actions {
   display: flex;
   justify-content: flex-end;

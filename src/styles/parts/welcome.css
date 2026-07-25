@@ -21,11 +21,8 @@
   color: hsl(var(--foreground));
   box-shadow: 0 24px 64px hsl(0 0% 0% / 0.4);
 }
-.welcome-dialog::backdrop {
-  background: hsl(0 0% 0% / 0.45);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
-}
+/* (`.welcome-dialog::backdrop` aliases the shared dimmed-blur backdrop in
+   parts/dialogs.css — three declarations that were identical in three sheets.) */
 
 /* Language chips — a wrapping pill row that sits at the FOOT of the dialog, under
    the two choice cards, set off by a hairline. Each chip is a plain pill (no

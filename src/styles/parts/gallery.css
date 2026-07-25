@@ -474,8 +474,10 @@ stroke-width:.81;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.9em;
-  height: 2.9em;
+  box-sizing: border-box;
+  /* Square, on the row's shared height (tokens.css) — see .tools-home. */
+  width: var(--chrome-h);
+  height: var(--chrome-h);
   padding: 0;
   border: 1px solid hsl(var(--primary));
   border-radius: var(--radius);
@@ -535,7 +537,10 @@ stroke-width:.81;
   font-weight: 600;
   cursor: pointer;
 }
-.filter-pop-check input { width: 18px; height: 18px; flex: none; cursor: pointer; accent-color: hsl(var(--primary)); }
+/* The tick itself is `.field-check` (parts/fields.css); the popover runs it a
+   couple of pixels larger than the 16px default so it reads at a glance in a
+   sparse list. */
+.filter-pop-check input { width: 18px; height: 18px; }
 
 /* Sort control at the top of the popover — a native <select> for familiarity and
    free keyboard/AT support, styled to match the search field. */
@@ -574,20 +579,14 @@ stroke-width:.81;
 }
 /* Sort key select + a direction toggle on one row. */
 .gallery-sort-row { display: flex; gap: 6px; align-items: stretch; }
+/* Box, chevron, hover-lift and focus halo come from `.field-select`
+   (parts/fields.css) — only the row geometry and the heavier weight that
+   matches `.filter-pop-head` above it are local. */
 .gallery-sort {
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 13px;
   font-weight: 600;
-  color: hsl(var(--foreground));
-  background: hsl(var(--background));
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  cursor: pointer;
 }
-.gallery-sort:focus { outline: none; border-color: hsl(var(--ring)); }
 /* Direction toggle — reverses the active sort (last results first). The lit arrow
    (down = default order, up = reversed) shows which way the results run. */
 .gallery-sort-dir {
@@ -1492,11 +1491,8 @@ a.gtile-name:focus-visible::after {
   overflow: auto;
   box-shadow: 0 8px 32px hsl(0 0% 0% / 0.2);
 }
-.tool-meta-dialog::backdrop {
-  background: hsl(0 0% 0% / 0.45);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
-}
+/* (`.tool-meta-dialog::backdrop` aliases the shared dimmed-blur backdrop in
+   parts/dialogs.css.) */
 .meta-dialog-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .meta-dialog-head { display: flex; align-items: center; gap: 12px; }
 .meta-dialog-icon { flex: none; }
@@ -1601,29 +1597,30 @@ a.gtile-name:focus-visible::after {
 .history-list { max-height: 50vh; overflow: auto; margin: 0; padding: 0; }
 
 /* Top-right cluster: history button sits to the LEFT of the profile pill. */
+/* Offsets come from the shared top-row geometry (tokens.css) — the same
+   properties the back pill on the left reads, so the row stays level. */
 .gallery-topright {
   position: fixed;
   z-index: 99999;
-  right: 2em;
-  top: .5em;
+  right: calc(var(--chrome-inset) + var(--vv-right, 0px));
+  top: calc(var(--chrome-top) + var(--vv-top, 0px));
   display: flex;
   align-items: center;
   gap: 10px;
 }
 /* Neutralise the profile pill's own fixed positioning when it lives in the cluster. */
 .gallery-topright .profile-link { position: static; right: auto; top: auto; }
-@media (max-width: 640px) {
-  .gallery-topright {
-    top: calc(1.25em + env(safe-area-inset-top, 0px) + var(--vv-top, 0px));
-    right: calc(2em + var(--vv-right, 0px));
-  }
-}
 
 /* ── Universal drop front door (lib/drop-router.ts) ─────────────────────────
    While a file drag hovers the view, the router toggles .is-file-drag on the
    view root and parks a single hint pill in it. Unobtrusive by design: no
    full-view overlay, just the pill floating over the masonry. */
-.gallery-view .drop-hint {
+/* The "drop a file here" pill. One rule for both views that show it — the
+   gallery/tools landing and the dashboard — since lib/drop-router.ts mints a
+   single `.drop-hint` element and both hosts want the identical pill. Lives in
+   this always-eager sheet rather than the lazy dashboard chunk so the hint is
+   styled the instant a drag starts, whichever route you are on. */
+.drop-hint {
   position: fixed;
   left: 50%;
   bottom: 30px;
@@ -1641,5 +1638,5 @@ a.gtile-name:focus-visible::after {
   transition: opacity 0.15s ease, transform 0.15s ease;
   z-index: 90;
 }
-.gallery-view.is-file-drag .drop-hint { opacity: 1; transform: translateX(-50%); }
+.is-file-drag .drop-hint { opacity: 1; transform: translateX(-50%); }
 

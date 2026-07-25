@@ -14,6 +14,7 @@
 import { confirmDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
 import type { ZipTier } from '@lolly/engine';
 
 export interface ExportLockResult {
@@ -24,8 +25,6 @@ export interface ExportLockResult {
   /** Whole-zip encryption tier (only when a password was set). */
   zipLock?: ZipTier;
 }
-
-const INPUT_STYLE = 'width:100%;box-sizing:border-box;padding:9px 12px;margin:.1rem 0;font-size:14px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))';
 
 /**
  * @param what           human phrase for the title, e.g. "5 files", "this folder".
@@ -38,11 +37,19 @@ export async function askExportLock(what: string, offerPassword: boolean): Promi
     return { ok };
   }
   return new Promise<ExportLockResult>((resolve) => {
+    // Both controls take their box from the shared `.field-*` primitive
+    // (styles/parts/fields.css, `primitives` layer) instead of the inline recipe
+    // this file used to retype. The select deliberately does NOT carry
+    // `.pdfpass-tier`: that rule lives in the LAZY, `views`-layer tool-chrome.css
+    // (the export panel's own tier control), so it would win over the primitive
+    // only in sessions that happened to load the tool view — and its `background:`
+    // shorthand would erase the primitive's chevron on an `appearance:none` box.
+    // The class was styling-only here; `.export-lock-tier` is the JS hook.
     const content = `
       <h2 class="modal-title">${escape(`Render ${what}?`)}</h2>
       <p class="modal-msg">Renders into a zip. Optionally set a password to lock the whole download (blank = no lock). Any PDFs inside are also individually AES-256-locked, so they stay locked after the zip is extracted.</p>
-      <input type="password" class="export-lock-pw" autocomplete="off" spellcheck="false" placeholder="Password (optional)" style="${INPUT_STYLE}">
-      <select class="pdfpass-tier export-lock-tier" aria-label="Zip lock strength" style="${INPUT_STYLE}">
+      <input type="password" class="field-input export-lock-pw" autocomplete="off" spellcheck="false" placeholder="Password (optional)" aria-label="${escape(t('Zip password (optional)'))}">
+      <select class="field-select export-lock-tier" aria-label="Zip lock strength">
         <option value="strong">Strong · AES-256 — needs 7-Zip / WinZip / macOS (not Windows Explorer) ⓘ</option>
         <option value="standard">Standard · opens anywhere incl. Windows Explorer — weaker</option>
       </select>

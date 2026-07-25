@@ -94,6 +94,106 @@ function defaultPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
   el.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
 }
 
+/** Options for `wireDisclosure` — the in-place sibling of mountBodyPopover below. */
+export interface DisclosureOptions {
+  /** Optional scrim element (the gallery's `.filter-backdrop`) — un/hidden with the
+   *  popover and, when present, dismisses it on click. CSS decides whether it paints
+   *  (the gallery shows it on mobile only); this module only drives `hidden`. */
+  backdrop?: HTMLElement | null;
+  /** Element to focus when the popover opens, resolved fresh on every open (the
+   *  content can be rebuilt between opens). Return null/undefined to leave focus put. */
+  initialFocus?(popover: HTMLElement): HTMLElement | null | undefined;
+  /** Notified after every state change — for a caller that mirrors the open state into
+   *  its own render (the catalog re-renders its topbar with the popover still open). */
+  onToggle?(open: boolean): void;
+}
+
+export interface DisclosureHandle {
+  open(): void;
+  close(returnFocus?: boolean): void;
+  toggle(): void;
+  isOpen(): boolean;
+}
+
+/**
+ * The in-place disclosure lifecycle: a `.filter-fab`-style trigger revealing a popover
+ * that is ALREADY in the view's markup (so it re-renders with the view and needs no
+ * repositioning), with outside-pointerdown dismissal, Escape, `aria-expanded` upkeep,
+ * focus restore to the trigger, and an optional backdrop.
+ *
+ * mountBodyPopover (below) owns the same lifecycle for popovers this module MINTS and
+ * positions on `document.body`; splitting the in-place case out keeps that one's mount +
+ * position + focus-trap contract intact rather than growing a second mode through it.
+ * The gallery's filter popover and the catalog's view-options popover were the two
+ * hand-rolled copies; where they had drifted this keeps:
+ *   - NON-capturing outside-pointerdown, deferred a tick (gallery's) — capture-phase
+ *     document listeners pre-empt the page's own handlers for no benefit here, and the
+ *     deferral is the same guard mountBodyPopover uses against self-dismissal.
+ *   - Escape on `document` (catalog's) — it closes the popover from anywhere on the page,
+ *     not only when focus already sits inside it, and it is `hidden`-guarded so it is
+ *     inert while closed. stopPropagation keeps a host view from also acting on it.
+ *   - Escape restores focus to the trigger (gallery's) — the catalog silently dropped it.
+ */
+export function wireDisclosure(
+  fab: HTMLElement | null,
+  pop: HTMLElement | null,
+  opts: DisclosureOptions = {},
+): DisclosureHandle {
+  let outside: ((e: PointerEvent) => void) | null = null;
+
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape' || !pop || pop.hidden) return;
+    e.stopPropagation();
+    close(true);
+  };
+
+  function bind(): void {
+    const handler = (e: PointerEvent): void => {
+      const target = e.target as Node;
+      if (pop && !pop.contains(target) && !fab?.contains(target)) close();
+    };
+    outside = handler;
+    // Deferred so the opening click's own pointerdown doesn't immediately close it.
+    setTimeout(() => { if (outside === handler) document.addEventListener('pointerdown', handler); }, 0);
+    document.addEventListener('keydown', onKey);
+  }
+
+  function unbind(): void {
+    if (outside) { document.removeEventListener('pointerdown', outside); outside = null; }
+    document.removeEventListener('keydown', onKey);
+  }
+
+  function open(): void {
+    if (!pop || !pop.hidden) return;
+    pop.hidden = false;
+    if (opts.backdrop) opts.backdrop.hidden = false;
+    fab?.setAttribute('aria-expanded', 'true');
+    opts.initialFocus?.(pop)?.focus();
+    bind();
+    opts.onToggle?.(true);
+  }
+
+  function close(returnFocus = false): void {
+    if (!pop || pop.hidden) return;
+    pop.hidden = true;
+    if (opts.backdrop) opts.backdrop.hidden = true;
+    fab?.setAttribute('aria-expanded', 'false');
+    unbind();
+    opts.onToggle?.(false);
+    if (returnFocus) fab?.focus();
+  }
+
+  const toggle = (): void => { if (pop) pop.hidden ? open() : close(); };
+
+  fab?.addEventListener('click', toggle);
+  opts.backdrop?.addEventListener('click', () => close());
+  // Rendered already-open (a view that re-renders its chrome while the popover is up):
+  // adopt that state so the dismissal listeners exist without a first toggle.
+  if (pop && !pop.hidden) bind();
+
+  return { open, close, toggle, isOpen: () => !!pop && !pop.hidden };
+}
+
 export function mountBodyPopover(
   anchor: PopoverAnchor,
   render: (el: HTMLDivElement, popover: BodyPopoverHandle) => HTMLElement | null | void,

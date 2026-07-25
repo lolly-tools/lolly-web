@@ -55,11 +55,6 @@ export async function listExports(limit = 12): Promise<ExportEntry[]> {
   } catch { return []; }
 }
 
-/** One tool's most recent exports, newest first (the export popup's reopen rail). */
-export async function listToolExports(toolId: string, limit = 6): Promise<ExportEntry[]> {
-  return (await listExports(CAP)).filter((e) => e.toolId === toolId).slice(0, limit);
-}
-
 /** The reopen link for an entry — the tool plus the exact state it was downloaded
  *  with. The single source of the URL shape (dashboard stack + export popup rail). */
 export function exportReopenHref(e: Pick<ExportEntry, 'toolId' | 'query'>): string {

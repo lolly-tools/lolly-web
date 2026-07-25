@@ -14,6 +14,7 @@
 import { cellInput, isCellEditable } from './model.ts';
 import { controlHtml } from './controls.ts';
 import { colorFieldHtml } from '../components/color-field.ts';
+import { t } from '../i18n.ts';
 import { toUnit, UNITS } from '@lolly/engine';
 import type { Unit } from '../../../../engine/src/units.ts';
 
@@ -235,8 +236,11 @@ function dataCell(col: Column, row: GridRow, ctx: GridCtx): string {
       }</td>`;
     }
     const hooks = `data-cell data-row="${esc(row.uid)}" data-col="${esc(col.key)}"`;
+    // The column label is the control's accessible name — the <th> above it is
+    // visual context only. `boxed: false` keeps the cell's bare-control look
+    // (pro.css strips border/background so the cell's own lines are the grid).
     return `<td class="pro-cell" data-col="${esc(col.key)}" data-row="${esc(row.uid)}">${
-      controlHtml(input, value as import('./controls.ts').ControlSpec['default'], hooks)
+      controlHtml(input, value as import('./controls.ts').ControlSpec['default'], hooks, { label: col.label, boxed: false })
     }</td>`;
   }
 
@@ -321,7 +325,8 @@ export function bodyRow(row: GridRow, columns: Column[], ctx: GridCtx): string {
   // so it's disabled (and dimmed) when the row is in px.
   const isPx = unit === 'px';
   const unitCell = `<td class="pro-cell pro-cell-fixed" data-row="${uid}" data-col="__unit">
-    <select class="pro-control pro-unit-cell" data-out-unit data-row="${uid}" title="Units for width & height">
+    <select class="pro-control pro-unit-cell" data-out-unit data-row="${uid}"
+      title="${esc(t('Units for width & height'))}" aria-label="${esc(t('Units for width & height'))}">
       ${UNITS.map(u => `<option value="${esc(u)}"${u === unit ? ' selected' : ''}>${esc(u)}</option>`).join('')}
     </select>
   </td>`;

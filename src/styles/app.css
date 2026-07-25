@@ -38,6 +38,7 @@
 @import './parts/utilities.css'    layer(base);
 @import './parts/buttons.css'      layer(primitives); /* .btn/.btn--primary/.btn--glass — primitives layer, so view rules extend them */
 @import './parts/chips.css'        layer(primitives); /* .chip/.card/.section-header */
+@import './parts/fields.css'       layer(primitives); /* .field-input/.field-select/.field-check/.field-radio/.field-range — the ONE form-control recipe */
 @import './parts/disclosure.css'   layer(primitives); /* .section-card fold primitive (rec 7) */
 @import './parts/tooltip.css'      layer(primitives); /* [data-tip] — the ONE styled tooltip */
 @import './parts/gallery.css'      layer(chrome);

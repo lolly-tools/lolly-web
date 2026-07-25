@@ -40,6 +40,7 @@ import { announce } from '../a11y.ts';
 import { t } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
+import { mountProgressToast } from '../components/progress-toast.ts';
 
 import type { WebToolHost, PanelEl } from './tool.ts';
 import type { InputModelItem, InputValue, InputSpec } from '../../../../engine/src/inputs.js';
@@ -47,6 +48,7 @@ import type { LoadedTool } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 import type { Unit } from '../../../../engine/src/units.js';
 import type { SavedStateData, WebStateAPI } from '../bridge/state.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 
 interface ViewElement extends HTMLElement { _cleanup?: () => void; }
 
@@ -219,14 +221,14 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       <div class="me-export" data-me-export="${i}">
         <span class="me-export-label">${t('Export')}</span>
         <label class="me-exp-field">${t('Format')}
-          <select data-me-fmt="${i}">${formats.map(f => `<option value="${escape(f)}"${f === fmt ? ' selected' : ''}>${escape(f.toUpperCase())}</option>`).join('')}</select>
+          <select class="field-select field-select--sm field-select--auto" data-me-fmt="${i}">${formats.map(f => `<option value="${escape(f)}"${f === fmt ? ' selected' : ''}>${escape(f.toUpperCase())}</option>`).join('')}</select>
         </label>
-        <label class="me-exp-field">${t('W')} <input type="number" min="1" inputmode="numeric" placeholder="${escape(t('auto'))}" data-me-w="${i}" value="${escape(w)}"></label>
-        <label class="me-exp-field">${t('H')} <input type="number" min="1" inputmode="numeric" placeholder="${escape(t('auto'))}" data-me-h="${i}" value="${escape(h)}"></label>
+        <label class="me-exp-field">${t('W')} <input type="number" class="field-input field-input--sm" min="1" inputmode="numeric" placeholder="${escape(t('auto'))}" data-me-w="${i}" value="${escape(w)}"></label>
+        <label class="me-exp-field">${t('H')} <input type="number" class="field-input field-input--sm" min="1" inputmode="numeric" placeholder="${escape(t('auto'))}" data-me-h="${i}" value="${escape(h)}"></label>
         <label class="me-exp-field">${t('Unit')}
-          <select data-me-unit="${i}">${UNITS.map(u => `<option value="${u}"${u === unit ? ' selected' : ''}>${u}</option>`).join('')}</select>
+          <select class="field-select field-select--sm field-select--auto" data-me-unit="${i}">${UNITS.map(u => `<option value="${u}"${u === unit ? ' selected' : ''}>${u}</option>`).join('')}</select>
         </label>
-        <label class="me-exp-field me-exp-dpi" ${unit === 'px' ? 'hidden' : ''}>${t('DPI')} <input type="number" min="1" inputmode="numeric" placeholder="300" data-me-dpi="${i}" value="${escape(dpi)}"></label>
+        <label class="me-exp-field me-exp-dpi" ${unit === 'px' ? 'hidden' : ''}>${t('DPI')} <input type="number" class="field-input field-input--sm" min="1" inputmode="numeric" placeholder="300" data-me-dpi="${i}" value="${escape(dpi)}"></label>
         <button type="button" class="btn me-download" data-me-download="${i}" data-sfx="whoosh">${t('Download')}</button>
       </div>`;
   };
@@ -234,7 +236,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   viewEl.innerHTML = `
     <div class="me-layout">
       <header class="me-head">
-        <a class="me-back" href="#/p" aria-label="${escape(t('Back to Projects'))}">←</a>
+        ${backPillHtml({ class: 'me-back', iconOnly: true })}
         <h1 class="me-title">${t('Multi-edit')} <span class="me-count">${t('{n} designs', { n: members.length })}</span></h1>
         <div class="me-head-actions">
           <button type="button" class="btn" data-me-saveall data-sfx="save">${t('Save all')}</button>
@@ -272,6 +274,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   const cleanups: Array<() => void> = [];
 
   cleanups.push(attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host));
+  mountBackPill(viewEl);
 
   // ── Hydrate the runtimes ────────────────────────────────────────────────────
   // Deferred to HERE, after the grid markup is in the DOM, so each session's stored
@@ -575,21 +578,12 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     for (let i = 0; i < members.length; i++) await saveOne(i);
   }
 
-  // Progress toast for the render pipeline — the same chrome the Projects view
-  // floats for its batch exports (classes live in app-level CSS).
+  // Progress toast for the render pipeline — the same shared toast the Projects view
+  // floats for its batch exports (components/progress-toast.ts).
   const toasts = new Set<HTMLElement>();
   cleanups.push(() => toasts.forEach(t => t.remove()));
   function renderViaToast(run: (mount: HTMLElement) => unknown): void {
-    const toast = document.createElement('div');
-    toast.className = 'pro-toast pro-toast--bar';
-    toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="${escape(t('Close'))}">✕</button><div class="pro-toast-mount"></div>`;
-    document.body.appendChild(toast);
-    toasts.add(toast);
-    const mount = toast.querySelector<HTMLElement>('.pro-toast-mount')!;
-    toast.querySelector('.pro-toast-close')!.addEventListener('click', () => { toast.remove(); toasts.delete(toast); });
-    Promise.resolve(run(mount)).catch((err) => {
-      mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${escape(String((err as { message?: unknown })?.message ?? err))}</p>`;
-    });
+    mountProgressToast(run, { variant: 'bar', track: toasts });
   }
   const authorForExport = async () => {
     const profile = await host.profile.get().catch(() => null);

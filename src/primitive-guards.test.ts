@@ -406,3 +406,128 @@ test('R6 (recs 1/4/13): deleted class names stay dead in selectors and markup', 
   }
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
 });
+
+// ── R7: the component library describes the shell that actually exists ───────
+// #/components is HAND-MAINTAINED specimen data (views/components-data.ts), so
+// nothing stops it drifting from the code it documents — and it had: five
+// selectors named classes deleted in the audit's own rec 13, and 65 of 70
+// `defined:` file:line anchors pointed at unrelated lines after the code moved
+// under them. The line numbers are gone (a path plus the symbol in the specimen
+// name survives refactors; a line number does not). These two rules keep the
+// remaining claims honest:
+//
+//   · every `defined:` path resolves to a real file
+//   · every class named in a `css:` list is still live somewhere in the shell
+//
+// Both are absolute, not ratchets: unlike the primitive rules above there's no
+// surveyed backlog to grandfather — a specimen pointing at something that isn't
+// there is simply wrong, and cheap to fix the moment it happens.
+
+/** Specimen file paths are written repo-relative ("shells/web/src/lib/seg.ts"),
+ *  sometimes as an "a.ts / b.ts" pair whose tail is bare ("lib/seg.ts"), and may
+ *  carry a trailing "(symbolName)" note. Reduce one token to a src-relative path. */
+function specimenPathCandidates(token: string): string[] {
+  const bare = token.replace(/\s*\(.*$/, '').trim();
+  if (!bare) return [];
+  const stripped = bare.replace(/^shells\/web\/src\//, '');
+  // A tail like "lib/seg.ts" is already src-relative; one like "platform.css"
+  // continues its partner's directory, so try the known component dirs too.
+  return [stripped, ...['lib', 'views', 'components', 'styles/parts', 'pro'].map(d => `${d}/${stripped}`)];
+}
+
+test('R7: components-data.ts `defined:` paths point at files that exist', () => {
+  const data = ALL.find(f => f.rel === 'views/components-data.ts');
+  assert.ok(data, 'views/components-data.ts not found — did the specimen data move?');
+  const known = new Set(ALL.map(f => f.rel));
+
+  const problems: string[] = [];
+  let checked = 0;
+  for (const m of data.text.matchAll(/\{ name: "((?:[^"\\]|\\.)*)"[^\n]*?defined: "([^"]*)"/g)) {
+    for (const token of (m[2] ?? '').split('/ ')) {
+      const cands = specimenPathCandidates(token);
+      if (!cands.length) continue;
+      checked++;
+      if (!cands.some(c => known.has(c))) {
+        problems.push(`"${m[1]}" → defined: "${token.trim()}" doesn't exist. Point it at the file that owns the component now, or drop the specimen if the component is gone.`);
+      }
+    }
+  }
+  // Floor so a rotted regex can't pass on nothing-checked (74 at authoring time).
+  assert.ok(checked >= 60, `only ${checked} defined: paths parsed — the specimen regex has rotted`);
+  assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
+});
+
+test('R7: components-data.ts `css:` selectors name classes that are still live', () => {
+  const data = ALL.find(f => f.rel === 'views/components-data.ts');
+  assert.ok(data, 'views/components-data.ts not found — did the specimen data move?');
+  // The haystack is the whole shell EXCEPT the specimen file: a class that only
+  // this file still mentions is precisely the dead one we're hunting.
+  const haystack = ALL.filter(f => f.rel !== 'views/components-data.ts').map(f => f.text).join('\n');
+
+  const problems: string[] = [];
+  let checked = 0;
+  for (const m of data.text.matchAll(/\{ name: "((?:[^"\\]|\\.)*)"[^\n]*?css: "([^"]*)"/g)) {
+    for (const cls of new Set((m[2] ?? '').match(/\.[a-zA-Z][\w-]*/g)?.map(c => c.slice(1)) ?? [])) {
+      checked++;
+      // Bounded on both sides so `.cat-stat` can't be satisfied by `.cat-stat-tile`.
+      if (!new RegExp(`[.'"\`\\s]${cls}(?![\\w-])`).test(haystack)) {
+        problems.push(`"${m[1]}" → css: ".${cls}" matches nothing in the shell. Update the selector list to the class that replaced it (or delete the specimen if the component is gone).`);
+      }
+    }
+  }
+  assert.ok(checked >= 200, `only ${checked} css: classes parsed — the specimen regex has rotted`);
+  assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
+});
+
+// ── R8: specimen form controls carry a class ─────────────────────────────────
+// The #/components stage is a bare `.cl-stage` div. A control whose real styling
+// hangs off an ancestor the stage doesn't reproduce — `.tool-actions select`,
+// say — renders there as raw UA chrome, so the library shows a square, native
+// widget next to a description of the drawn one. That is the exact drift this
+// page exists to catch, and it is invisible to R7 (which only asks whether the
+// classes in `css:` are still live somewhere).
+//
+// Rule: every form control in a `markup:` specimen names a class. The allowlist
+// is for controls deliberately styled by an ancestor selector INSIDE their own
+// specimen markup — those are honest, but only while the sheet that declares the
+// ancestor rule is imported by views/components.ts, so each entry records which.
+test('R8: form controls in components-data specimens are styled, not raw UA chrome', () => {
+  const data = ALL.find(f => f.rel === 'views/components-data.ts');
+  assert.ok(data, 'views/components-data.ts not found — did the specimen data move?');
+
+  // Controls styled by an ancestor rule in their own specimen markup.
+  // key → number of class-less occurrences permitted.
+  const ANCESTOR_STYLED: Record<string, number> = {
+    // `.input-row input` — parts/tool.css, imported by views/components.ts
+    'input type="text" data-input-id="headline" value="Hello"': 1,
+    // `.export-dims input[type="number"]` — parts/tool-chrome.css, ditto
+    'input type="number" data-action="export-width" data-scrub value="800"': 1,
+  };
+
+  const actual = new Map<string, number[]>();
+  const problems: string[] = [];
+  let checked = 0;
+
+  for (const m of data.text.matchAll(/markup: `([^`]*)`/g)) {
+    const markup = m[1] ?? '';
+    const at = lineOf(data.text, m.index ?? 0);
+    for (const tag of markup.match(/<(?:select|textarea|input)\b[^>]*>/g) ?? []) {
+      checked++;
+      if (/\bclass=/.test(tag)) continue;
+      const key = tag.replace(/^</, '').replace(/\s*\/?>$/, '').replace(/\s+/g, ' ');
+      const bucket = actual.get(key) ?? [];
+      bucket.push(at);
+      actual.set(key, bucket);
+      if (!(key in ANCESTOR_STYLED)) {
+        problems.push(
+          `views/components-data.ts:${at} — specimen control <${key}> has no class, so it renders as raw UA chrome on the .cl-stage checkerboard. ` +
+          `Give it the shared primitive (.field-input / .field-select / .field-check / .field-radio / .field-range), or add it to R8's ANCESTOR_STYLED allowlist naming the sheet that styles it.`,
+        );
+      }
+    }
+  }
+
+  assert.ok(checked >= 20, `only ${checked} specimen form controls parsed — the R8 regex has rotted`);
+  assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
+  checkRatchet(actual, ANCESTOR_STYLED, 'Style it with the shared field primitive instead.');
+});

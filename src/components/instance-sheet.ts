@@ -205,7 +205,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
         <h2 class="modal-title">${t('Connect to a Lolly instance')}</h2>
         <p class="modal-msg">${t('Enter the web address of the Lolly deployment to use.')}</p>
         <div class="instance-field-row">
-          <input type="url" class="field-input" id="instance-url" placeholder="https://your-instance.example.com" value="${escape(s.url)}" inputmode="url" autocomplete="off" spellcheck="false">
+          <input type="url" class="field-input field-input--mono" id="instance-url" placeholder="https://your-instance.example.com" value="${escape(s.url)}" inputmode="url" autocomplete="off" spellcheck="false">
         </div>
         ${err}${probe}
         <p class="note note--warning">${t('Tools from a connected instance run with the same trust as bundled ones — connect only to instances you trust.')}</p>
@@ -225,7 +225,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
         <h2 class="modal-title">${t('Import your data (optional)')}</h2>
         <p class="modal-msg">${t('Bring your saved sessions, images and profile across from a Lolly backup zip — from a link, or a file on this device.')}</p>
         <div class="instance-field-row">
-          <input type="url" class="field-input" id="instance-import-url" placeholder="https://…/LollyTools-backup.zip" value="${escape(s.url)}" inputmode="url" autocomplete="off" spellcheck="false">
+          <input type="url" class="field-input field-input--mono" id="instance-import-url" placeholder="https://…/LollyTools-backup.zip" value="${escape(s.url)}" inputmode="url" autocomplete="off" spellcheck="false">
           <button type="button" class="btn" data-act="import-url"${s.busy ? ' disabled' : ''}>${t('Fetch')}</button>
         </div>
         <div class="instance-import-or">${t('or')}</div>

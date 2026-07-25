@@ -38,9 +38,12 @@
  * round-trip can be exercised headlessly in tests against an in-memory bridge.
  */
 
-import { strToU8, strFromU8 } from 'fflate';
-import type { Unzipped } from 'fflate';
-import { zipAsync, unzipAsync } from './lib/zip.ts';
+import { strToU8 } from 'fflate';
+import { zipAsync } from './lib/zip.ts';
+import {
+  BUNDLE_HEADER, README_NAME, buildIntegrity, readJson, unzipBundle, verifyIntegrity,
+  type BundleEntry,
+} from './lib/bundle.ts';
 
 export const BACKUP_FORMAT = 'lolly-backup';
 
@@ -109,10 +112,10 @@ interface BackupManifest {
   integrity?: Record<string, string>;
 }
 
-// An fflate entry is either a Uint8Array or a [Uint8Array, opts] tuple (we pass the
-// tuple form for already-compressed image bytes, to skip re-deflating).
-type BundleEntry = Uint8Array | [Uint8Array, { level: 0 }];
-
+// The zip envelope — entry shape, SHA-256 integrity, the README banner, the
+// minReader gate — is the shared bundle format (lib/bundle.ts), identical to the
+// brand pack's. Only the payload below differs.
+//
 // Zipping goes through lib/zip.ts: worker-offloaded in a real browser (a backup
 // can be tens of MB of images — the synchronous path froze the tab for seconds),
 // sync fallback in no-Worker contexts like the headless round-trip test.
@@ -151,18 +154,9 @@ const PREF_KEYS = ['theme', 'sidebarWidth', 'ct-metrics'];
 // the round-trip is honest about what it didn't restore rather than silently
 // dropping it. `assets/blobs/*` is the open-ended image payload.
 const KNOWN_PARTS = new Set(['manifest.json', 'profile.json', 'sessions.json', 'assets.json', 'prefs.json']);
-// A plain-text summary for humans inspecting the zip (see backupReadme). It carries no
-// restorable data, so it's a known-but-ignored part — never counted as `skipped`, never
-// read on import — and it's kept out of the integrity map (a README, not payload).
-const README_NAME = 'lolly.txt';
 function isKnownPart(path: string): boolean {
   return KNOWN_PARTS.has(path) || path === README_NAME || path.startsWith('assets/blobs/');
 }
-
-// Mirrors the branding banner atop batch-export manifests (pro/zip.js `HEADER`).
-// Duplicated as a literal so this core module stays free of any /pro import (the batch
-// folder is designed to be removable) — keep the two in sync.
-const HEADER = '📐 Lolly  •  ❤️ Give Fitzy an Ovation  •  🌏 https://lolly.tools';
 
 // The human-readable `lolly.txt` dropped into every backup zip: the branding header, a
 // one-glance summary of what the bundle is + what's inside, how to load it, a legend of
@@ -178,7 +172,7 @@ function backupReadme(
   const time = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 
   const lines = [
-    HEADER,
+    BUNDLE_HEADER,
     '-'.repeat(56),
     '',
     '',
@@ -217,32 +211,6 @@ function backupReadme(
   if (authorLine) lines.push('', '', '[ Author Information ]', '', authorLine);
 
   return lines.join('\n') + '\n';
-}
-
-// Web Crypto — present in any secure browser context and in modern Node (so the
-// headless round-trip test exercises integrity too). Absent ⇒ integrity is a no-op
-// on both sides: we don't write the map, and we don't fail to verify one we can't.
-const SUBTLE = globalThis.crypto?.subtle ?? null;
-
-// Chunked so a multi-MB image blob doesn't blow the call stack via spread/apply.
-function bytesToBase64(bytes: Uint8Array): string {
-  let bin = '';
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
-  }
-  return btoa(bin);
-}
-
-async function sha256(bytes: Uint8Array): Promise<string> {
-  const digest = await SUBTLE!.digest('SHA-256', bytes as unknown as BufferSource);
-  return 'sha256-' + bytesToBase64(new Uint8Array(digest));
-}
-
-// An fflate entry is either a Uint8Array or a [Uint8Array, opts] tuple (we pass the
-// tuple form for already-compressed image bytes, to skip re-deflating). Normalise.
-function entryBytes(v: BundleEntry): Uint8Array {
-  return v instanceof Uint8Array ? v : v[0];
 }
 
 // Map a stored asset format / MIME to a file extension for the in-zip blob name.
@@ -376,13 +344,8 @@ export async function exportBackup(
   // truncated or mangled in transit (USB, email, AirDrop) fails with a clear message
   // instead of a confusing half-restore. Best-effort: omitted when Web Crypto isn't
   // available, and an older reader without integrity support ignores it harmlessly.
-  if (SUBTLE) {
-    const integrity: Record<string, string> = {};
-    for (const [path, value] of Object.entries(entries)) {
-      integrity[path] = await sha256(entryBytes(value));
-    }
-    manifest.integrity = integrity;
-  }
+  const integrity = await buildIntegrity(entries);
+  if (integrity) manifest.integrity = integrity;
 
   entries['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));
 
@@ -418,16 +381,12 @@ export async function importBackup(
   { host, storage }: { host: BackupHost; storage: BackupStorage },
   bytes: ArrayBuffer | Uint8Array,
 ): Promise<ImportSummary> {
-  let files: Unzipped;
-  try {
-    files = await unzipAsync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), {
-      maxEntryBytes: MAX_RESTORE_ENTRY_BYTES,
-      maxTotalBytes: MAX_RESTORE_TOTAL_BYTES,
-      tooLarge: name => `That backup expands too large to restore (${name}).`,
-    });
-  } catch {
-    throw new Error("That file isn't a valid backup — it couldn't be unzipped.");
-  }
+  const files = await unzipBundle(bytes, {
+    maxEntryBytes: MAX_RESTORE_ENTRY_BYTES,
+    maxTotalBytes: MAX_RESTORE_TOTAL_BYTES,
+    tooLarge: name => `That backup expands too large to restore (${name}).`,
+    invalid: "That file isn't a valid backup — it couldn't be unzipped.",
+  });
 
   const manifest = readJson(files, 'manifest.json');
   if (!manifest || manifest.format !== BACKUP_FORMAT) {
@@ -447,15 +406,7 @@ export async function importBackup(
   // Integrity — verify any part the manifest vouches for before writing anything.
   // Only runs when the bundle carries the map and Web Crypto is available; an older
   // bundle without it imports unchanged (can't-verify is not the same as corrupt).
-  if (manifest.integrity && SUBTLE) {
-    for (const [path, expected] of Object.entries(manifest.integrity)) {
-      const bytes = files[path];
-      if (!bytes) throw new Error(`This backup is incomplete — "${path}" is missing.`);
-      if ((await sha256(bytes)) !== expected) {
-        throw new Error(`This backup appears corrupted — "${path}" failed its integrity check.`);
-      }
-    }
-  }
+  await verifyIntegrity(files, manifest.integrity, 'This backup');
 
   const summary: ImportSummary = { profile: false, sessions: 0, userAssets: 0, prefs: 0, skipped: 0, failedAssets: 0 };
 
@@ -507,10 +458,4 @@ export async function importBackup(
   summary.skipped = Object.keys(files).filter(p => !isKnownPart(p)).length;
 
   return summary;
-}
-
-function readJson(files: Unzipped, name: string): any {
-  const u8 = files[name];
-  if (!u8) return null;
-  try { return JSON.parse(strFromU8(u8)); } catch { return null; }
 }

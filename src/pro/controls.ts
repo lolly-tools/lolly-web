@@ -33,6 +33,25 @@ export interface ControlSpec {
   default?: InputValue;
 }
 
+/** Options for controlHtml(). */
+export interface ControlOpts {
+  /**
+   * Accessible name for the control. A grid cell has no <label> and its column
+   * <th> is visual context only — not a name — so every cell control would be
+   * anonymous to a screen reader without this. Emitted as `aria-label`.
+   */
+  label?: string;
+  /**
+   * Emit the shared boxed-field primitive (`.field-input` / `.field-select`,
+   * styles/parts/fields.css). On by default — the blocks panel, the bulk-fill
+   * popover and the component gallery all want a real field. The grid opts OUT:
+   * pro.css deliberately strips a control bare inside a cell (the cell's own
+   * borders are the grid lines), and a select there re-opts into the native
+   * widget, so the primitive's emboss + drawn chevron would fight both.
+   */
+  boxed?: boolean;
+}
+
 /** The subset of an asset reference the asset cell reads back off a model value. */
 interface AssetRefLike {
   url?: string;
@@ -47,11 +66,20 @@ const esc = (s: unknown): string => String(s ?? '')
 /**
  * HTML for an editable control bound to one input declaration + current value.
  * `attrs` is a string of extra attributes (e.g. data-row / data-col hooks).
+ * `opts.label` names the control for assistive tech; `opts.boxed` toggles the
+ * shared field primitive (see ControlOpts).
  * Returns '' for types that have no inline control (caller renders read-only).
  */
-export function controlHtml(input: ControlSpec, value: InputValue | undefined, attrs = ''): string {
+export function controlHtml(input: ControlSpec, value: InputValue | undefined, attrs = '', opts: ControlOpts = {}): string {
   const t = input.type;
-  const common = `class="pro-control" data-type="${esc(t)}" ${attrs}`;
+  const { label = '', boxed = true } = opts;
+  // One place that assembles class + type hook + caller attrs + accessible name,
+  // so no control type can quietly ship without a name again.
+  const attrList = (cls: string, name: string): string =>
+    `class="${cls}" data-type="${esc(t)}" ${attrs}${name ? ` aria-label="${esc(name)}"` : ''}`;
+  const boxCls = (kind: 'input' | 'select'): string =>
+    `pro-control${boxed ? ` field-${kind} field-${kind}--auto` : ''}`;
+  const common = attrList(boxCls('input'), label);
 
   switch (t) {
     case 'longtext':
@@ -65,18 +93,20 @@ export function controlHtml(input: ControlSpec, value: InputValue | undefined, a
     }
 
     case 'boolean':
-      return `<input ${common} type="checkbox"${value ? ' checked' : ''}>`;
+      // The tick is the one control that takes the primitive in a grid cell too:
+      // a bare UA checkbox was the last 1rem OS widget left in the app.
+      return `<input ${attrList('pro-control field-check', label)} type="checkbox"${value ? ' checked' : ''}>`;
 
     // NOTE: 'color' is intentionally not handled here — colour cells use the
     // shared SUSE picker (components/color-field.js), rendered in grid.js.
 
     case 'select': {
-      const opts = (input.options ?? []).map(o => {
+      const options = (input.options ?? []).map(o => {
         const v = optionValue(o);
         const label = o && typeof o === 'object' ? (o.label ?? v) : v;
         return `<option value="${esc(v)}"${String(v) === String(value) ? ' selected' : ''}>${esc(label)}</option>`;
       }).join('');
-      return `<select ${common}>${opts}</select>`;
+      return `<select ${attrList(boxCls('select'), label)}>${options}</select>`;
     }
 
     case 'date':
@@ -91,8 +121,10 @@ export function controlHtml(input: ControlSpec, value: InputValue | undefined, a
       // A picked asset shows its thumbnail + name and flags the cell as selected
       // (data-selected) so the grid can make a filled image field obvious.
       const ref = value && typeof value === 'object' ? (value as AssetRefLike) : null;
+      // The button has visible text, so its name only needs the column prefix —
+      // and keeps the visible string inside it (label-in-name).
       if (!ref || !(ref.url || ref.id)) {
-        return `<button type="button" ${common} data-asset-pick>Choose…</button>`;
+        return `<button type="button" ${attrList('pro-control', label ? `${label} — Choose…` : '')} data-asset-pick>Choose…</button>`;
       }
       const name = ref.meta?.name || ref.id || 'Selected';
       const thumb = ref.url ? `<img class="pro-asset-thumb" src="${esc(ref.url)}" alt="">` : '';
@@ -100,7 +132,7 @@ export function controlHtml(input: ControlSpec, value: InputValue | undefined, a
       // can be cleared without opening the picker (handled by the grid click
       // delegate, which checks [data-asset-clear] before [data-asset-pick]).
       const clear = `<span class="pro-asset-clear" data-asset-clear role="button" aria-label="Remove image" title="Remove image"></span>`;
-      return `<button type="button" ${common} data-asset-pick data-selected>${thumb}<span class="pro-asset-name">${esc(name)}</span>${clear}</button>`;
+      return `<button type="button" ${attrList('pro-control', label ? `${label} — ${name}` : '')} data-asset-pick data-selected>${thumb}<span class="pro-asset-name">${esc(name)}</span>${clear}</button>`;
     }
 
     case 'url':
@@ -116,7 +148,11 @@ export function controlHtml(input: ControlSpec, value: InputValue | undefined, a
         const fv = v[f.id] ?? f.default ?? f.min ?? 0;
         const min = f.min !== undefined ? ` min="${f.min}"` : '';
         const max = f.max !== undefined ? ` max="${f.max}"` : '';
-        return `<label class="pro-vec-field" title="${esc(f.label ?? f.id)}"><span class="pro-vec-label">${esc(f.label ?? f.id)}</span><input class="pro-control pro-vec-num" type="number" data-vec-field="${esc(f.id)}"${min}${max} step="${f.step ?? 1}" value="${esc(fv)}"></label>`;
+        // The visible sub-label is display:none in a cell, so each sub-field
+        // carries its own name — qualified by the column so three anonymous
+        // "x / y / zoom" spinners don't all read the same in a row.
+        const subName = label ? `${label} ${f.label ?? f.id}` : String(f.label ?? f.id);
+        return `<label class="pro-vec-field" title="${esc(f.label ?? f.id)}"><span class="pro-vec-label">${esc(f.label ?? f.id)}</span><input class="pro-control pro-vec-num${boxed ? ' field-input field-input--auto' : ''}" type="number" aria-label="${esc(subName)}" data-vec-field="${esc(f.id)}"${min}${max} step="${f.step ?? 1}" value="${esc(fv)}"></label>`;
       }).join('');
       return `<div class="pro-vector" data-type="vector" data-vector ${attrs}>${sub}</div>`;
     }

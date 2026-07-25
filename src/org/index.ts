@@ -176,12 +176,6 @@ export function orgAdminHref(): string | null {
   return role === 'admin' || role === 'owner' ? '/admin' : null;
 }
 
-/** Subscribe to org-config changes; returns an unsubscribe fn. */
-export function subscribeOrg(fn: (config: OrgConfig | null) => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
 function emit(): void {
   for (const fn of listeners) {
     try { fn(orgConfigState); } catch (e) { console.error(e); }

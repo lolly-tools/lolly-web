@@ -59,7 +59,7 @@ export async function openHeadshotCropper(file: File): Promise<CroppedHeadshot |
         </div>
         <label class="cropper-zoom">
           <span>Zoom</span>
-          <input type="range" id="cropper-zoom" min="1" max="${MAX_ZOOM}" step="0.01" value="1">
+          <input type="range" class="field-range" id="cropper-zoom" min="1" max="${MAX_ZOOM}" step="0.01" value="1">
         </label>
         <div class="cropper-actions">
           <button type="button" class="cropper-btn cropper-btn--secondary" id="cropper-cancel">Cancel</button>

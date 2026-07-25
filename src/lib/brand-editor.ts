@@ -76,7 +76,7 @@ import {
   splitVariant, variantLabel, listLogos, installLogo, removeLogo,
 } from './brand-logos.ts';
 import type { LogoVariant, LogoSlot } from './brand-logos.ts';
-import { mountTokensPanel, mountGradientsPanel, mountCataloguePanel } from './brand-studio-tabs.ts';
+import { mountTokensPanel, mountGradientsPanel, mountCataloguePanel, panelHead } from './brand-studio-tabs.ts';
 import { mountStudioSplit } from './studio-split.ts';
 import { STUDIO_GROUPS, gradientAliasRefCount, materializeGradientAliases } from './token-studio.ts';
 import { POPULAR_FAMILIES } from './google-fonts.ts';
@@ -634,8 +634,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     <div class="be" data-brand-editor>
       <div class="be-tab" data-be-tab-panel="logos">
         <div class="be-panel be-logos">
-          <div class="be-panel-head"><h3 class="be-panel-title">${t('Logos')}</h3>
-            <p class="be-panel-sub">${t('Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way — an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.')}</p></div>
+          ${panelHead(t('Logos'), t('Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way — an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.'))}
           <div class="be-logo-grid" data-be-logos></div>
           <p class="be-err" data-be-logo-err hidden></p>
         </div>
@@ -644,8 +643,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <div class="be-tab be-tab--split" data-be-tab-panel="color">
       <div class="be-split-main">
       <div class="be-panel be-colour">
-        <div class="be-panel-head"><h3 class="be-panel-title">${t('Colour')}</h3>
-          <p class="be-panel-sub">${t('Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette beside — <strong>Save colour</strong> is what actually keeps it.')}</p></div>
+        ${panelHead(t('Colour'), t('Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette beside — <strong>Save colour</strong> is what actually keeps it.'))}
         <div class="be-suggest" data-be-suggest hidden></div>
         <div class="be-derive">
           <div class="be-colorpick">
@@ -671,7 +669,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             <label class="be-field"><span class="be-field-label">${t('Scheme')}</span>${segHtml('scheme', SCHEMES, scheme, t('Colour scheme'))}</label>
             <div class="be-field be-steps-field">
               <span class="be-field-label">${t('Shades')} <span class="be-steps-val" data-be-steps-val>${steps}</span></span>
-              <input type="range" class="be-steps-slider" data-be-steps min="${RAMP_STEPS_MIN}" max="${RAMP_STEPS_MAX}" step="1" value="${steps}" aria-label="${escape(t('Shades per ramp'))}">
+              <input type="range" class="field-range be-steps-slider" data-be-steps min="${RAMP_STEPS_MIN}" max="${RAMP_STEPS_MAX}" step="1" value="${steps}" aria-label="${escape(t('Shades per ramp'))}">
             </div>
             <details class="be-subst-details be-finetune" data-be-finetune>
               <summary><span class="be-subst-details-label">${t('Fine-tune')}</span></summary>
@@ -689,15 +687,17 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>
 
       <div class="be-panel be-generate">
-        <div class="be-panel-head"><h3 class="be-panel-title">${t('Build your palette')}</h3>
-          <p class="be-panel-sub">${t('Generate matching colours from your primary — pick a harmony, then <strong>+ Add</strong> the ones you want to your brand. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.')}</p></div>
+        ${panelHead(t('Build your palette'), t('Generate matching colours from your primary — pick a harmony, then <strong>+ Add</strong> the ones you want to your brand. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.'))}
         <div class="be-field">
           <span class="be-field-label">${t('Harmony')}</span>
-          <div class="view-seg be-seg be-schemekinds" role="group" aria-label="${escape(t('Colour harmony'))}" data-be-schemekind>
-            ${/* The free-N kinds are hidden UI-side only — the engine keeps them
-                  (stored docs may reference them) and the default stays adjacent-3. */''}
-            ${SCHEME_KINDS.filter(k => !k.id.startsWith('free-')).map(k => `<button type="button" class="view-seg-btn" data-kind="${escape(k.id)}" aria-pressed="${k.id === schemeKind}">${escape(k.label)}</button>`).join('')}
-          </div>
+          ${/* The shared segmented-control primitive (lib/seg.ts). The free-N kinds
+                are hidden UI-side only — the engine keeps them (stored docs may
+                reference them) and the default stays adjacent-3. `data-kind` is
+                this group's own value hook, kept because its click delegate below
+                keys off it; segHtml emits `data-val` alongside either way. */''}
+          ${segHtml('schemekind', SCHEME_KINDS.filter(k => !k.id.startsWith('free-')), schemeKind, t('Colour harmony'), {
+            attr: 'data-kind', extraClass: 'be-schemekinds', groupAttr: 'data-be-schemekind',
+          })}
         </div>
         <div class="be-candidates" data-be-candidates aria-live="polite"></div>
         <div class="be-previews-wrap">
@@ -717,8 +717,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
            bottom edge however far the palette scrolls. -->
       <div class="be-split-scroll" data-be-split-scroll>
       <div class="be-panel be-palette">
-        <div class="be-panel-head"><h3 class="be-panel-title">${t('Palette')}</h3>
-          <p class="be-panel-sub">${t('Every colour your brand carries. Click a swatch to recolour, rename or remove it; each section folds and grows with its own <strong>+ Add</strong>. The <strong>Colour chart</strong> below plots the same swatches by hue and chroma. Changes flow to every picker, tool and export.')}</p></div>
+        ${panelHead(t('Palette'), t('Every colour your brand carries. Click a swatch to recolour, rename or remove it; each section folds and grows with its own <strong>+ Add</strong>. The <strong>Colour chart</strong> below plots the same swatches by hue and chroma. Changes flow to every picker, tool and export.'))}
         <div class="be-pal" data-be-pal></div>
         <!-- The OKLCH wheel, demoted to a folded card — repainted on open, since
              a hidden mount measures 0×0 (see the toggle wiring below). -->
@@ -736,7 +735,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
            pane's anchored bottom edge, so exporting the palette never scrolls
            away. Lives OUTSIDE .be-split-scroll — see above. -->
       <div class="be-pal-dock" data-be-pal-dock>
-        <select class="be-pal-fmt-sel" data-be-pal-fmt aria-label="${escape(t('Download the palette as'))}">
+        <select class="field-select field-select--auto field-select--sm be-pal-fmt-sel" data-be-pal-fmt aria-label="${escape(t('Download the palette as'))}">
           <option value="tokens-json">${t('Design tokens (JSON)')}</option>
           <option value="css-vars">${t('CSS variables')}</option>
           <option value="css-classes">${t('CSS classes')}</option>
@@ -750,14 +749,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
       <div class="be-tab" data-be-tab-panel="type">
       <div class="be-panel be-custom-fonts">
-        <div class="be-panel-head"><h3 class="be-panel-title">${t('Your fonts')}</h3>
-          <p class="be-panel-sub">${t('Upload TTF, OTF, or WOFF font files — they stay on this device and are available to all tools and exports.')}</p></div>
+        ${panelHead(t('Your fonts'), t('Upload TTF, OTF, or WOFF font files — they stay on this device and are available to all tools and exports.'))}
         <div data-be-font-file-mount></div>
       </div>
 
       <div class="be-panel be-fonts">
-        <div class="be-panel-head"><h3 class="be-panel-title">${t('Fonts')}</h3>
-          <p class="be-panel-sub">${t('Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>; another can serve as your <strong>code</strong> face.')}</p></div>
+        ${panelHead(t('Fonts'), t('Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>; another can serve as your <strong>code</strong> face.'))}
         <ul class="be-font-list" data-be-fonts role="list"></ul>
         <form class="be-font-add" data-be-font-add>
           <input type="text" data-be-font-input list="be-google-fonts" placeholder="${escape(t('Search Google Fonts — Inter, Fraunces, Space Grotesk…'))}" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="${escape(t('Google Fonts family'))}">
@@ -768,19 +765,17 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>
 
       <div class="be-panel be-typeroles">
-        <div class="be-panel-head"><h3 class="be-panel-title">${t('Type roles')}</h3>
-          <p class="be-panel-sub">${t('What each face is <em>for</em> — the roles tools and the app read. Body and UI wear the primary; set an optional <em>display</em> face for the top headings (h1/h2), an <em>italic</em> face for emphasis, and a <em>mono</em> face for code and data. Each falls back to the primary until you assign it.')}</p></div>
+        ${panelHead(t('Type roles'), t('What each face is <em>for</em> — the roles tools and the app read. Body and UI wear the primary; set an optional <em>display</em> face for the top headings (h1/h2), an <em>italic</em> face for emphasis, and a <em>mono</em> face for code and data. Each falls back to the primary until you assign it.'))}
         <div class="be-specimen" data-be-specimen aria-live="off"></div>
       </div>
       </div>
 
       <div class="be-tab" data-be-tab-panel="tokens">
       <div class="be-panel be-radius-panel">
-        <div class="be-panel-head"><h3 class="be-panel-title">${t('Rounded corners')}</h3>
-          <p class="be-panel-sub">${t('One radius token — cards, buttons and panels across the app (and the tools that opt in) follow it.')}</p></div>
+        ${panelHead(t('Rounded corners'), t('One radius token — cards, buttons and panels across the app (and the tools that opt in) follow it.'))}
         <div class="brand-radius-row">
           <span class="brand-radius-preview" data-be-radius-preview aria-hidden="true"></span>
-          <input type="range" class="brand-radius-slider" data-be-radius-slider min="0" max="1.5" step="0.05" aria-label="${escape(t('Corner radius'))}">
+          <input type="range" class="field-range brand-radius-slider" data-be-radius-slider min="0" max="1.5" step="0.05" aria-label="${escape(t('Corner radius'))}">
           <span class="brand-radius-value" data-be-radius-value></span>
         </div>
         <p class="be-err" data-be-radius-err role="alert" hidden></p>
@@ -813,13 +808,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             <div class="be-editor-field"><div data-be-editor-color></div></div>
             <div class="be-editor-field be-stored" data-be-stored-row>
               <span class="be-stored-label" id="be-stored-label">${t('Stored as')}</span>
-              <!-- Composes the shared .view-seg primitive (lib/seg.ts) — .be-stored-seg
-                   keeps only its delta (a compact joined trough instead of .view-seg-btn's
-                   gapped pills; see brand-studio.css). role/aria-labelledby + the
-                   data-be-stored/data-store-fmt hooks are unchanged from before the merge. -->
-              <div class="view-seg be-stored-seg" role="group" aria-labelledby="be-stored-label" data-be-stored>
-                ${STORAGE_FORMATS.map(f => `<button type="button" class="view-seg-btn" data-store-fmt="${f.id}" aria-pressed="false">${escape(f.label)}</button>`).join('')}
-              </div>
+              ${/* Built from the shared segmented-control primitive (lib/seg.ts) —
+                    .be-stored-seg keeps only its delta (a compact joined trough
+                    instead of .view-seg-btn's gapped pills; see brand-studio.css).
+                    aria-labelledby, not aria-label: the group's name is already on
+                    screen as #be-stored-label. No option starts pressed — every
+                    button renders aria-pressed="false" and renderStoredSeg() marks
+                    the open swatch's notation once the editor knows it. */''}
+              ${segHtml('stored', STORAGE_FORMATS, '', '', {
+                attr: 'data-store-fmt', extraClass: 'be-stored-seg', groupAttr: 'data-be-stored', labelledBy: 'be-stored-label',
+              })}
             </div>
             <details class="be-subst-details" data-be-subst-details>
               <summary><span class="be-subst-details-label">${t('Print substitutes')}</span><span class="be-subst-chips" data-be-subst-chips></span></summary>
@@ -1105,7 +1103,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (screenEl) screenEl.textContent = `${hex.toUpperCase()} · rgb(${formatColor('rgb', hex)})`;
   };
   renderScreen();
+  // The four derive segments. Named explicitly because `[data-be-seg]` is the
+  // shared primitive's hook, not this listener's — the Harmony and "Stored as"
+  // segments now render through segHtml() too, and they own their own delegates
+  // (renderCandidates / renderStoredSeg). Without this guard they'd be swept in
+  // here as well and re-run renderPreview() on every click.
+  const DERIVE_SEGS = new Set(['scheme', 'surface', 'contrast', 'foreground']);
   root.querySelectorAll<HTMLElement>('[data-be-seg]').forEach(seg => {
+    if (!DERIVE_SEGS.has(seg.dataset.beSeg ?? '')) return;
     const on = (e: Event): void => {
       const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
       const name = seg.dataset.beSeg;
@@ -1772,12 +1777,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const body = slot
       ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(t('{name} logo', { name }))}" loading="lazy"></span>`
       : `<span class="be-logo-empty" aria-hidden="true">+</span>`;
+    // The slot's file input is `visually-hidden`, never `hidden`: a display:none
+    // input is not focusable, which made every logo slot mouse-only. The label
+    // draws the keyboard ring on its behalf via .be-logo-drop:focus-within
+    // (brand-studio.css) — the same construction the shared dropzone uses.
     return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${escape(v)}" data-treatment="${treatment ?? 'custom'}">
         <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(name)}</span>
           ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${escape(v)}" data-identity="${escape(identity)}" aria-label="${escape(t('Remove the {name} mark', { name }))}">&#x2715;</button>` : ''}</div>
         <label class="be-logo-drop">
           ${body}
-          <input type="file" class="be-logo-file" data-logo-file="${escape(v)}" data-identity="${escape(identity)}" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
+          <input type="file" class="be-logo-file visually-hidden" data-logo-file="${escape(v)}" data-identity="${escape(identity)}" accept="image/png,image/jpeg,image/svg+xml,image/webp" aria-label="${escape(t('Replace the {name} mark', { name }))}">
         </label>
         <p class="be-logo-hint">${escape(hint)}</p>
       </div>`;
@@ -1816,7 +1825,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             <form class="be-logo-addmark" data-logo-addmark data-identity="${escape(identity)}">
               <input type="text" class="be-logo-addmark-name" data-addmark-name placeholder="${escape(t('Name it — Icon, Crest…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Custom mark name'))}">
               <label class="be-btn be-logo-addmark-pick">${t('Choose file…')}
-                <input type="file" data-addmark-file accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden></label>
+                <input type="file" class="visually-hidden" data-addmark-file accept="image/png,image/jpeg,image/svg+xml,image/webp" aria-label="${escape(t('Choose a file for this mark'))}"></label>
             </form>
           </div>
         </div>`;

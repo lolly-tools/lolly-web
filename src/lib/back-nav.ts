@@ -42,6 +42,13 @@ const KEY = 'lolly:prevView';
 let leavingHref: string | null = null;
 let current: PrevView | null = null;   // the mounted view, candidate for the next record
 let prev: PrevView | null = null;      // in-memory copy of what KEY holds
+// Has THIS document performed a real in-app view change? Only then is there a
+// history entry behind us that history.back() will land on. The persisted
+// `prev` can't answer this: it survives a reload (and a reload starts a fresh
+// document whose back entry is the pre-reload page, not the previous view), so
+// a back pill that trusted `prev` alone would send a reloaded deep link
+// somewhere it never came from. Deliberately NOT persisted.
+let navigatedInDoc = false;
 
 const toRelative = (url: string): string => {
   try {
@@ -71,7 +78,17 @@ export function takeLeavingHref(): string | null {
 export function recordLeave(leftHref?: string | null): void {
   if (!current) return; // first boot — keep whatever survived the reload
   prev = { href: leftHref || current.href, label: current.label };
+  navigatedInDoc = true;
   try { sessionStorage.setItem(KEY, JSON.stringify(prev)); } catch { /* private mode */ }
+}
+
+/** True when this document has a real previous view sitting behind it in
+ *  history — i.e. the user walked here through the app rather than opening the
+ *  URL directly. Back pills use it to decide between history.back() (a genuine
+ *  back step, which pops the entry instead of piling another one on) and a
+ *  plain forward navigation to their fallback target. */
+export function canGoBack(): boolean {
+  return navigatedInDoc && window.history.length > 1;
 }
 
 /** Snapshot the just-mounted view. Call after the mount settles — the view has

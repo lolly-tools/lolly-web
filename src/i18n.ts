@@ -183,12 +183,6 @@ export async function setActiveLang(lang: Lang, opts: { persist?: boolean } = {}
   listeners.forEach(fn => { try { fn(lang); } catch (e) { console.error(e); } });
 }
 
-/** Notified after a language switch completes (catalog loaded, <html lang> set). */
-export function onLangChange(fn: (lang: Lang) => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
 /** The slice of the host bridge a language picker needs to persist its choice. */
 export interface LangSwitchHost {
   profile: { get(): Promise<object>; set?(profile: object): Promise<unknown> };

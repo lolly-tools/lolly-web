@@ -19,12 +19,17 @@
   backdrop-filter: blur(10px);
   position: sticky; top: 0; z-index: 20;
 }
+/* Icon-only back square — the shared back pill in its compact form
+   (components/back-pill.ts, iconOnly), so it goes back to wherever the
+   multi-edit session was opened from instead of the hardcoded "#/p" it used to
+   point at, and draws the same stroked arrow as every other back control. */
 .me-back {
   display: grid; place-items: center; width: 2rem; height: 2rem;
   /* paint comes from buttons.css's .btn--glass alias list */
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .8);
-  text-decoration: none; font-size: 1rem;
+  text-decoration: none; color: inherit;
 }
+.me-back svg { display: block; width: 16px; height: 16px; }
 .me-back:hover { border-color: hsl(var(--primary) / .55); }
 .me-title { margin: 0; font-size: 1.02rem; font-weight: 700; }
 .me-count { margin-inline-start: .5rem; font-size: .78rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
@@ -104,13 +109,10 @@
   display: grid; gap: .15rem;
   font-size: .64rem; font-weight: 600; color: hsl(var(--muted-foreground));
 }
-.me-exp-field input, .me-exp-field select {
-  font: inherit; font-size: .76rem; padding: .3rem .4rem;
-  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
-  background: hsl(var(--background)); color: hsl(var(--foreground));
-}
+/* The controls are `.field-input --sm` / `.field-select --sm` (parts/fields.css):
+   the compact box, its focus look and the disabled state all live there now. The
+   only thing this row genuinely differs on is how wide a number field gets. */
 .me-exp-field input { width: 4.6rem; }
-.me-exp-field input:focus, .me-exp-field select:focus { outline: none; border-color: hsl(var(--ring) / .6); }
 .me-exp-dpi[hidden] { display: none; }
 .me-download { margin-inline-start: auto; font-size: .76rem; }
 .me-export-note { margin: .4rem .8rem .7rem; font-size: .74rem; color: hsl(var(--muted-foreground)); }

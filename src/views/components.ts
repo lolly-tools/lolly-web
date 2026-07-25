@@ -6,13 +6,20 @@
  * components — a "Primitives" section for the shared layer a multi-wave refactor
  * shipped (buttons.css, chips.css, lib/seg.ts, lib/icons.ts, mountModal,
  * mountZoomHud, mountViewTopbar, swatchTile, setTheme, wireTabs, sessionRow,
- * mountBodyPopover, .section-card, .note/.field-input), then the remaining
+ * mountBodyPopover, backPillHtml, setupMobileSheet, staggerReveal, wireTileSelect,
+ * .section-card, .note/.field-input), then the remaining
  * common-primitive families, then per-view — from the specimen data in
  * components-data.ts (originally generated from the component-audit workflow;
  * hand-maintained since the refactor landed; the written analysis + per-rec
  * shipped status is plans/component-audit.md). Each specimen is shown live where
  * the component is a pure render function, as a static markup sample where it's
  * only CSS, and as a labelled source snippet where it needs the host bridge to run.
+ *
+ * Specimen data is HAND-MAINTAINED, so two guards in primitive-guards.test.ts
+ * (R7) keep it from drifting away from the shell it documents: every `defined:`
+ * path must resolve to a real file, and every class in a `css:` list must still
+ * be live somewhere. `defined:` carries a path and the symbol name, never a line
+ * number — those rotted on 65 of 70 entries before they were dropped.
  *
  * The page has one nav affordance: a back control that returns you where you came
  * from IF you arrived from inside Lolly (cameFromApp → history.back()), else drops
@@ -70,6 +77,7 @@ import { icon, iconNames } from '../lib/icons.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { viewTopbarHtml } from '../components/view-topbar.ts';
 import { mountBodyPopover, type BodyPopoverHandle } from '../components/body-popover.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 
 // A demo palette for the colour specimens (not the live brand).
 const DEMO: PaletteEntry[] = [
@@ -102,6 +110,9 @@ const LIVE: Record<string, { render: () => string | HTMLElement; wire?: (stage: 
   genai: { render: () => `${genAiPill('full')} ${genAiPill('partial')} ${genAiPill('full', true)}` },
   lollyBadge: { render: () => `${lollyBadge('sm')} ${lollyBadge('lg')}` },
   viewToggle: { render: () => viewToggle('tools') },
+  // Rendered in its in-flow form (no .home-full) so the specimen sits in the stage
+  // rather than pinning itself to the viewport corner.
+  backPill: { render: () => backPillHtml({ class: '' }) },
   themeSeg: { render: () => themeSegmentHtml() },
   soundSwitch: { render: () => soundSwitchHtml() },
   footerNav: { render: () => footerNav({ proEnabled: false, searchHtml: gallerySearchBox({ placeholder: t('Search'), ariaLabel: t('Search') }) }) },
@@ -252,7 +263,7 @@ function neutralizeMarkup(html: string): string {
   return html.replace(/<dialog\b/gi, '<div data-cl-dialog').replace(/<\/dialog>/gi, '</div>');
 }
 
-export async function mountComponents(viewEl: HTMLElement, _host: HostV1, cameFromApp: boolean): Promise<void> {
+export async function mountComponents(viewEl: HTMLElement, _host: HostV1): Promise<void> {
   document.title = 'Components — Lolly';
   viewEl.classList.add('cl-view', 'components-view');
 
@@ -263,7 +274,7 @@ export async function mountComponents(viewEl: HTMLElement, _host: HostV1, cameFr
   const jump = AUDIT_SECTIONS.map(sec => `<a href="#${sectionId(sec.title)}">${escape(sec.title)}</a>`).join('');
 
   viewEl.innerHTML = `
-    <button type="button" class="tools-home home-full cl-back" data-cl-back>${escape(cameFromApp ? t('Back') : t('Tools'))}</button>
+    ${backPillHtml({ class: 'home-full cl-back' })}
     <header class="cl-head">
       <h1 class="cl-title">${escape(t('Component library'))}</h1>
       <p class="cl-sub">${escape(t('Live samples of the shell’s components — common primitives first, then by view. Full inventory and unification notes: plans/component-audit.md.'))}</p>
@@ -320,13 +331,10 @@ export async function mountComponents(viewEl: HTMLElement, _host: HostV1, cameFr
     }
   });
 
-  // The one nav affordance. In-app arrival → step back to where you were; a cold
-  // deep link (no in-app predecessor) → the gallery.
-  viewEl.querySelector<HTMLButtonElement>('[data-cl-back]')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (cameFromApp && window.history.length > 1) window.history.back();
-    else window.location.hash = '#/';
-  });
+  // The one nav affordance — now the shared back pill, which already names and
+  // returns to the view you arrived from (and falls back to the gallery on a cold
+  // deep link), so this view no longer decides that for itself.
+  mountBackPill(viewEl);
 
   armViewEnter(viewEl, '.tools-home, .cl-head, .cl-recs, .cl-section');
 }

@@ -2,7 +2,7 @@
 /**
  * View-entrance cascade arming (platform & capabilities dashboards).
  *
- * The read-only dashboards reveal their top-level nodes — the "Tools" back-link,
+ * The read-only dashboards reveal their top-level nodes — the back pill,
  * the header band, then each section — as ONE staggered wave, so the page reads
  * as a single settle instead of the header snapping in while the cards cascade
  * underneath it. The CSS (app.css, gated behind

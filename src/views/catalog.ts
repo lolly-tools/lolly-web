@@ -37,6 +37,8 @@ import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
 import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
+import { segHtml } from '../lib/seg.ts';
+import { wireDisclosure } from '../components/body-popover.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { playSfx, playCatalogAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { autoplayLottieThumbs, mountLottieMarker, destroyLottiePlayers, lottiePlayerFor } from './lottie-mount.ts';
@@ -703,12 +705,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           ${themeSegmentHtml()}
           ${soundSegmentHtml()}
           <p class="filter-pop-head">${t('Favourites')}</p>
-          <div class="view-seg" role="group" aria-label="${escape(t('Favourites view mode'))}">
-            <button type="button" class="view-seg-btn" data-favview="gallery" aria-pressed="${favView === 'gallery'}">${t('Gallery')}</button>
-            <button type="button" class="view-seg-btn" data-favview="coverflow" aria-pressed="${favView === 'coverflow'}">${t('Cover Flow')}</button>
-          </div>
+          ${segHtml('favourites-view', [
+            { id: 'gallery', label: t('Gallery') },
+            { id: 'coverflow', label: t('Cover Flow') },
+          ], favView, t('Favourites view mode'), { attr: 'data-favview' })}
           <label class="filter-pop-check">
-            <input type="checkbox" class="cat-favstrip-toggle"${favStripOn ? ' checked' : ''}>
+            <input type="checkbox" class="cat-favstrip-toggle field-check"${favStripOn ? ' checked' : ''}>
             <span>${t('Show favourites strip')}</span>
           </label>
         </div>`,
@@ -2185,8 +2187,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>
       <div class="cat-dl-section">
         <span class="cat-dl-label">${t('Format')}</span>
-        <div class="cat-dl-fmt cat-crop-fmt" role="radiogroup">${fmts.map(([v, l], i) =>
-          `<label><input type="radio" name="cat-crop-fmt" value="${v}"${i === 0 ? ' checked' : ''}> ${l}</label>`).join('')}</div>
+        <div class="cat-dl-fmt cat-crop-fmt" role="radiogroup" aria-label="${escape(t('Format'))}">${fmts.map(([v, l], i) =>
+          `<label class="field-toggle"><input type="radio" class="field-radio" name="cat-crop-fmt" value="${v}"${i === 0 ? ' checked' : ''}> ${l}</label>`).join('')}</div>
       </div>
       <div class="cat-dl-actions">
         <button type="button" class="btn cat-crop-cancel">${t('Cancel')}</button>
@@ -2453,9 +2455,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>` : ''}
       <div class="cat-dl-section">
         <span class="cat-dl-label">${t('Format')}</span>
-        <div class="cat-dl-fmt" role="radiogroup">
-          <label><input type="radio" name="cat-dl-fmt" value="svg" checked> SVG <span class="cat-dl-hint">${t('vector')}</span></label>
-          <label><input type="radio" name="cat-dl-fmt" value="png"> PNG <span class="cat-dl-hint">${t('raster')}</span></label>
+        <div class="cat-dl-fmt" role="radiogroup" aria-label="${escape(t('Format'))}">
+          <label class="field-toggle"><input type="radio" class="field-radio" name="cat-dl-fmt" value="svg" checked> SVG <span class="cat-dl-hint">${t('vector')}</span></label>
+          <label class="field-toggle"><input type="radio" class="field-radio" name="cat-dl-fmt" value="png"> PNG <span class="cat-dl-hint">${t('raster')}</span></label>
         </div>
       </div>
       <div class="cat-dl-actions">
@@ -2578,10 +2580,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>
       <div class="cat-dl-section">
         <span class="cat-dl-label">${t('Format')}</span>
-        <div class="cat-dl-fmt" role="radiogroup">
-          <label><input type="radio" name="cat-dl-fmt" value="png" checked> PNG <span class="cat-dl-hint">${t('lossless')}</span></label>
-          <label><input type="radio" name="cat-dl-fmt" value="jpg"> JPG <span class="cat-dl-hint">${t('smaller')}</span></label>
-          <label><input type="radio" name="cat-dl-fmt" value="webp"> WebP <span class="cat-dl-hint">${t('modern')}</span></label>
+        <div class="cat-dl-fmt" role="radiogroup" aria-label="${escape(t('Format'))}">
+          <label class="field-toggle"><input type="radio" class="field-radio" name="cat-dl-fmt" value="png" checked> PNG <span class="cat-dl-hint">${t('lossless')}</span></label>
+          <label class="field-toggle"><input type="radio" class="field-radio" name="cat-dl-fmt" value="jpg"> JPG <span class="cat-dl-hint">${t('smaller')}</span></label>
+          <label class="field-toggle"><input type="radio" class="field-radio" name="cat-dl-fmt" value="webp"> WebP <span class="cat-dl-hint">${t('modern')}</span></label>
         </div>
       </div>
       <div class="cat-dl-actions">
@@ -2908,28 +2910,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const voPop = viewEl.querySelector<HTMLElement>('.cat-viewopts');
     if (voPop) wireThemeSegment(voPop, host);   // Theme picker in the view-options popover
     if (voPop) wireSoundSegment(voPop, host);   // Sound on/off segment in the view-options popover
-    const onVODocDown = (e: PointerEvent): void => {
-      if (!voPop) return;
-      const t = e.target as Node;
-      if (!voPop.contains(t) && t !== voBtn && !voBtn?.contains(t)) closeViewOpts();
-    };
-    const onVOKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') closeViewOpts(); };
-    closeViewOpts = () => {
-      viewOptsOpen = false;
-      voPop?.setAttribute('hidden', '');
-      voBtn?.setAttribute('aria-expanded', 'false');
-      document.removeEventListener('pointerdown', onVODocDown, true);
-      document.removeEventListener('keydown', onVOKey);
-    };
-    voBtn?.addEventListener('click', () => {
-      viewOptsOpen = !viewOptsOpen;
-      if (viewOptsOpen) {
-        voPop?.removeAttribute('hidden');
-        voBtn.setAttribute('aria-expanded', 'true');
-        document.addEventListener('pointerdown', onVODocDown, true);
-        document.addEventListener('keydown', onVOKey);
-      } else { closeViewOpts(); }
-    });
+    // Same lifecycle as the gallery's filter popover (toggle `hidden`, aria-expanded,
+    // outside-pointerdown dismissal, Escape, focus restore) — shared in
+    // components/body-popover.ts. `onToggle` keeps the render-time `viewOptsOpen` flag
+    // in sync so a re-render of the topbar reproduces the popover's current state.
+    const voDisclosure = wireDisclosure(voBtn, voPop, { onToggle: (open) => { viewOptsOpen = open; } });
+    closeViewOpts = () => voDisclosure.close();
     // Gallery ↔ Cover Flow: switch the live strip in place (no full re-render).
     voPop?.addEventListener('click', (e) => {
       const seg = (e.target as HTMLElement).closest<HTMLElement>('[data-favview]');

@@ -82,7 +82,10 @@
   border: 0;
   box-shadow: 0 2px 3px #0002;
 }
-.brand-radius-slider { flex: 1 1 auto; min-width: 0; accent-color: hsl(var(--primary)); }
+/* accent-color dropped — parts/fields.css's `:where(input[type=range])` baseline
+   supplies the identical `hsl(var(--primary))` and dresses the track/thumb too.
+   Nothing here sets height/appearance, so that baseline lands unopposed. */
+.brand-radius-slider { flex: 1 1 auto; min-width: 0; }
 .brand-radius-value {
   flex: 0 0 auto;
   min-width: 7.5ch;
@@ -163,7 +166,7 @@
 /* Shades slider — how many divisions each ramp carries (3–20). */
 .be-steps-field .be-field-label { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
 .be-steps-val { font-family: var(--font-mono); font-size: .8rem; font-weight: 700; color: hsl(var(--foreground)); }
-.be-steps-slider { width: 100%; accent-color: hsl(var(--primary)); cursor: pointer; }
+.be-steps-slider { width: 100%; cursor: pointer; }
 
 .be-preview { display: grid; gap: .9rem; align-content: start; }
 .be-ramps { display: grid; gap: .5rem; }
@@ -291,12 +294,13 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   border: 1px solid hsl(var(--border));
   box-shadow: 0 3px 14px #0000001f;
 }
-.be-pal-fmt-sel {
-  min-width: 0; max-width: 15rem; padding: .35rem .5rem; font: inherit; font-size: .76rem; cursor: pointer;
-  border: 1px solid hsl(var(--input)); border-radius: var(--radius);
-  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
-}
-.be-pal-fmt-sel:focus { border-color: hsl(var(--ring) / .6); }
+/* The box/chevron/focus recipe now comes from `.field-select .field-select--sm`
+   (parts/fields.css, layer primitives — the markup carries both). Only the dock's
+   own geometry stays here: it must shrink inside the pill and never run past it,
+   and it keeps the pill's full-radius corner rather than the compact half-radius.
+   (`--auto` on the markup keeps the content-width sizing it always had — the
+   primitive's default is a full-width sidebar field.) */
+.be-pal-fmt-sel { min-width: 0; max-width: 15rem; border-radius: var(--radius); }
 
 /* Swatch editor popover — absolutely placed under the clicked tile by JS.
    The card is a flex column: everything scrolls in .be-editor-scroll while the
@@ -342,7 +346,11 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
    one shared border, dividers between buttons) — not a restated duplicate, so it
    stays local. Same-specificity single-class selectors; gallery.css (`.view-seg`,
    eager) always loads before this lazy studio sheet, so these win the cascade tie. */
-.be-stored-seg { display: inline-flex; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45); overflow: hidden; }
+/* flex-wrap: the joined trough must stay ONE row — a wrapped segment would break
+   the shared border/divider run. segHtml() stamps `.be-seg` (wrap: wrap, for the
+   gapped derive segments) on every group it renders, so this restores nowrap for
+   this one; same specificity, declared later, so it wins the tie. */
+.be-stored-seg { display: inline-flex; flex-wrap: nowrap; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45); overflow: hidden; }
 .be-stored-seg button {
   border: 0; background: transparent; color: hsl(var(--muted-foreground));
   font: inherit; font-size: .64rem; font-weight: 700; letter-spacing: .03em;
@@ -454,6 +462,13 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 }
 .be-logo-slot.is-filled .be-logo-drop { border-style: solid; }
 .be-logo-drop:hover { border-color: hsl(var(--primary) / .55); }
+/* The tile's file input is `visually-hidden` (focusable) rather than `hidden`
+   (display:none, unfocusable) — so the LABEL wears the keyboard ring on its
+   behalf. Same construction as the shared upload dropzone (dropzone.css .updz). */
+.be-logo-drop:focus-within {
+  border-color: hsl(var(--primary) / .55);
+  outline: 2px solid hsl(var(--ring)); outline-offset: 2px;
+}
 .be-logo-art {
   
   background-image:
@@ -650,6 +665,9 @@ background-image:
 }
 .be-logo-addmark-name:focus { border-color: hsl(var(--ring) / .6); }
 .be-logo-addmark-pick { text-align: center; cursor: pointer; }
+/* It is styled as a button and now behaves like one for the keyboard too: the
+   file input inside is visually-hidden (focusable), so the label carries the ring. */
+.be-logo-addmark-pick:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .be-logo-addidentity { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid hsl(var(--border) / .7); }
 .be-logo-addidentity input {
   flex: 1 1 16rem; min-width: 0; padding: .45rem .6rem; font: inherit; font-size: .8rem;
@@ -678,7 +696,7 @@ background-image:
 }
 .be-tok-num { width: 5.5rem; }
 .be-tok-dim:focus, .be-tok-num:focus { border-color: hsl(var(--ring) / .6); }
-.be-tok-range { flex: 1 1 8rem; min-width: 6rem; accent-color: hsl(var(--primary)); }
+.be-tok-range { flex: 1 1 8rem; min-width: 6rem; }
 .be-tok-out { font-family: var(--font-mono); font-size: .72rem; color: hsl(var(--muted-foreground)); min-width: 2.6rem; }
 .be-tok-unit { font-size: .74rem; color: hsl(var(--muted-foreground)); }
 .be-tok-shadow-chip {
@@ -701,17 +719,16 @@ background-image:
 }
 .be-tok-del:hover { color: hsl(var(--destructive)); }
 .be-tok-add { display: flex; gap: .5rem; flex-wrap: wrap; }
-.be-tok-add-kind {
-  flex: 0 0 auto; padding: .4rem .5rem; font: inherit; font-size: .76rem; cursor: pointer;
-  border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
-  background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
-}
+/* Same story as .be-pal-fmt-sel — `.field-select .field-select--sm` carries the
+   box; the add-row only needs the kind picker to hug its content beside the
+   flexible name field. */
+.be-tok-add-kind { flex: 0 0 auto; }
 .be-tok-add-name {
   flex: 1 1 14rem; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .8rem;
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
-.be-tok-add-kind:focus, .be-tok-add-name:focus { border-color: hsl(var(--ring) / .6); }
+.be-tok-add-name:focus { border-color: hsl(var(--ring) / .6); }
 
 /* ── Gradients (Colour tab). */
 .be-grad-list { display: grid; gap: .5rem; margin-bottom: .8rem; }
@@ -1011,6 +1028,23 @@ background-image:
   margin-bottom: .25rem;
 }
 
+/* The explicit browse affordance, now a SIBLING of the drop label (a <label>
+   may not contain a button) — a quiet line under the zone rather than a second
+   control competing inside it. */
+.fonts-upload-alt {
+  margin: .4rem 0 0;
+  text-align: center;
+  font-size: .8rem;
+  color: hsl(var(--muted-foreground));
+}
+/* `is-uploading` lands on the LABEL, which used to contain this button — so the
+   sibling line has to opt back into the same suspended state or it stays bright
+   and clickable while the zone behind it is dimmed and inert. */
+.fonts-upload:has(.fonts-upload-drop.is-uploading) .fonts-upload-alt {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 .fonts-upload-btn {
   display: inline;
   padding: 0;
@@ -1115,6 +1149,15 @@ background-image:
   display: inline-flex;
   align-items: center;
 }
+
+/* Each meta value carries its own key — the row prints "w: 400  style: normal
+   size: 42.1KB" with no extra spans. (Ported here when the duplicate
+   parts/fonts-manager.css sheet was deleted; these three were the only rules in
+   it without a counterpart above. `margin-inline-end`, not `margin-right`, so
+   the labels sit correctly in RTL.) */
+.fonts-item-weight::before { content: 'w:'; margin-inline-end: .25rem; }
+.fonts-item-style::before { content: 'style:'; margin-inline-end: .25rem; }
+.fonts-item-size::before { content: 'size:'; margin-inline-end: .25rem; }
 
 .fonts-item-delete {
   position: absolute;

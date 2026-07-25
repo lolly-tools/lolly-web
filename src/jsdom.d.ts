@@ -8,5 +8,8 @@ declare module 'jsdom' {
   export class JSDOM {
     constructor(html?: string, options?: { pretendToBeVisual?: boolean; [key: string]: unknown });
     readonly window: Window & typeof globalThis;
+    /** Re-point the document's URL without rebuilding the DOM — how
+     *  back-pill.test.ts walks the router through a sequence of views. */
+    reconfigure(settings: { url?: string; windowTop?: unknown }): void;
   }
 }

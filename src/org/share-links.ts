@@ -203,14 +203,16 @@ export function buildInstanceShareSection(ctx: ShareSectionContext, config: OrgC
       `<span class="share-shortest-note" style="display:block;margin:.2rem 0 .5rem">${escape(t('The recipient can edit this tool for the chosen period; their saves land with you.'))}</span>` +
       `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">` +
         `<label style="display:inline-flex;align-items:center;gap:.35rem;font-size:13px">${escape(t('Expires in'))} ` +
-          `<select data-guest-ttl style="padding:6px 9px;font-size:13px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))">` +
+          `<select data-guest-ttl class="field-select field-select--sm field-select--auto">` +
             ttls.map(o => `<option value="${o.h}"${o.h === 72 ? ' selected' : ''}>${escape(o.label)}</option>`).join('') +
           `</select>` +
         `</label>` +
         `<button type="button" class="btn btn--sm" data-act="mint-guest">${escape(t('Create guest link'))}</button>` +
       `</div>` +
-      `<input type="password" data-guest-pw autocomplete="off" spellcheck="false" placeholder="${escape(t('Password (optional)'))}" aria-label="${escape(t('Password (optional)'))}" ` +
-        `style="width:100%;box-sizing:border-box;margin-top:.5rem;padding:8px 11px;font-size:13px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))">`;
+      // Box recipe from the shared .field-input primitive (styles/parts/fields.css);
+      // only the row's own top gap stays local — no view sheet reaches this node.
+      `<input type="password" data-guest-pw class="field-input" autocomplete="off" spellcheck="false" placeholder="${escape(t('Password (optional)'))}" aria-label="${escape(t('Password (optional)'))}" ` +
+        `style="margin-top:.5rem">`;
     const result = makeResultRow(ctx.copy);
     const err = makeErrorLine();
     row.append(result.el, err.el);

@@ -61,7 +61,10 @@
 
 import { decodeTrustmarkPayload, readLollyDurable, TRUSTMARK_PAYLOAD_BITS, type LollyDurable } from '@lolly/engine';
 import { openDB } from '../bridge/db.ts';
-import { loadOrt, readResponseWithProgress, serializeSessionCreate, type FetchProgress } from './ort.ts';
+import {
+  createDebugLogger, createModelFetcher, loadOrt, makeCanvas, packNchw01, serializeSessionCreate,
+  type FetchProgress,
+} from './ort.ts';
 
 /** One of TrustMark's two published decoder variants (js/tm_watermark.js's
  *  `modelConfigs`) — Q first (matches upstream's own ordering; the search
@@ -133,95 +136,41 @@ export interface TrustmarkDetection {
 }
 
 // ── Terse, opt-in diagnostics ───────────────────────────────────────────────
-// `host.log` isn't in scope in this lazy module, so trace via console.debug —
-// GATED so a normal deep scan is silent. Turn on in DevTools with either
+// Turn on in DevTools with either
 //   localStorage.setItem('lolly:trustmark:debug', '1')
 //   window.__TRUSTMARK_DEBUG__ = true
 // to see WHERE a scan falls off: model fetch (ok/404 + url), session created
 // (+ requested providers), inference done (+ output name/shape/sample logits),
-// decoded bit count, and the BCH pass/fail.
-function dbgEnabled(): boolean {
-  try {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('lolly:trustmark:debug') === '1') return true;
-  } catch {
-    // localStorage can throw in a sandboxed/partitioned context — ignore.
-  }
-  return typeof globalThis !== 'undefined' && (globalThis as { __TRUSTMARK_DEBUG__?: boolean }).__TRUSTMARK_DEBUG__ === true;
-}
-function dbg(stage: string, ctx?: object): void {
-  if (dbgEnabled()) console.debug(`[trustmark] ${stage}`, ctx ?? '');
-}
-
-// ── Model bytes: fetch-once, IndexedDB-forever (mirrors lib/google-fonts.ts) ──
-
-interface CachedModel { bytes: ArrayBuffer; version: number; cachedAt: number }
-
-async function fetchModelBytes(fileName: string, cacheOnly = false, onProgress?: (p: FetchProgress) => void): Promise<ArrayBuffer | null> {
-  try {
-    const db = await openDB();
-    const cached = await db.get('trustmark-models', fileName) as CachedModel | undefined;
-    if (cached && cached.version === MODEL_CACHE_VERSION && cached.bytes?.byteLength) {
-      dbg('fetch', { file: fileName, source: 'idb-cache', bytes: cached.bytes.byteLength });
-      return cached.bytes;
-    }
-  } catch {
-    // IDB unavailable — fall through to a network-only (uncached) fetch below.
-  }
-
-  // cacheOnly (the passive background scan): never hit the network — a ~45 MB
-  // decoder download is opt-in, gated behind the explicit "Deep scan" button.
-  // Not in cache ⇒ report absent so the button stays offered.
-  if (cacheOnly) { dbg('fetch', { file: fileName, source: 'cache-only-miss' }); return null; }
-
-  const url = `/models/trustmark/${fileName}`;
-  let resp: Response;
-  try {
-    resp = await fetch(url);
-  } catch (err) {
-    dbg('fetch', { file: fileName, url, status: 'network-error', error: (err as Error)?.message });
-    return null; // offline, or the dev server has nothing mounted at /models/
-  }
-  // Not vendored yet (Andy hasn't run scripts/fetch-trustmark-models.ts) —
-  // a plain 404, never an error surfaced to the user.
-  if (!resp.ok) {
-    dbg('fetch', { file: fileName, url, status: resp.status });
-    return null;
-  }
-  const bytes = await readResponseWithProgress(resp, onProgress);
-  // Vite's dev server answers a MISSING model with the SPA fallback index.html —
-  // a 200, so resp.ok above is true. Handing that HTML to ORT yields "protobuf
-  // parsing failed"; caching it poisons every later run. Reject anything that
-  // isn't the binary model: an HTML content-type, or a body that starts with '<'
-  // ('<!doctype…'). A real ONNX protobuf never begins with 0x3c. (The 454-byte
-  // resizer is legit-small, so there is NO minimum-size check here.)
-  const contentType = resp.headers.get('content-type') || '';
-  const head = bytes.byteLength ? new Uint8Array(bytes, 0, 1)[0] : 0;
-  if (contentType.includes('text/html') || head === 0x3c /* '<' */) {
-    dbg('fetch', { file: fileName, url, status: 'not-a-model (SPA fallback?)', contentType, bytes: bytes.byteLength });
-    return null; // treated as not-installed, never cached
-  }
-  dbg('fetch', { file: fileName, url, status: 200, bytes: bytes.byteLength });
-
-  try {
-    const db = await openDB();
-    await db.put('trustmark-models', { bytes, version: MODEL_CACHE_VERSION, cachedAt: Date.now() }, fileName);
-    // Once a DECODER is cached the passive background scan can run offline — set
-    // the tiny readiness marker the /verify header reads to decide auto-scan vs.
-    // show the one-time download banner (see trustmarkModelsReady).
-    if (/^decoder_/.test(fileName)) {
-      await db.put('trustmark-models', { ready: true, version: MODEL_CACHE_VERSION } as unknown as CachedModel, READY_KEY);
-    }
-  } catch {
-    // Best-effort cache write — a failed put just means re-fetching next time.
-  }
-  return bytes;
-}
+// decoded bit count, and the BCH pass/fail. Deliberately a SEPARATE switch from
+// Content Seal's — see lib/ort.ts's createDebugLogger.
+const dbg = createDebugLogger({
+  tag: 'trustmark', storageKey: 'lolly:trustmark:debug', globalFlag: '__TRUSTMARK_DEBUG__',
+});
 
 // A tiny non-model record under this reserved key records "a decoder is cached at
 // the current version" so readiness can be checked WITHOUT loading a 45 MB blob.
 // getSession/fetchModelBytes only ever read specific decoder_* / resizer keys, so
 // this marker is inert to them.
 const READY_KEY = '__ready__';
+
+// ── Model bytes: fetch-once, IndexedDB-forever (lib/ort.ts, shared with contentseal) ──
+// A cacheOnly (passive background) scan never hits the network — a ~45 MB decoder
+// download is opt-in, gated behind the explicit "Deep scan" button; not in cache ⇒
+// report absent so the button stays offered.
+const fetchModelBytes = createModelFetcher({
+  store: 'trustmark-models',
+  dir: 'trustmark',
+  version: MODEL_CACHE_VERSION,
+  dbg,
+  // Once a DECODER is cached the passive background scan can run offline — set the
+  // tiny readiness marker the /verify header reads to decide auto-scan vs. show the
+  // one-time download banner (see trustmarkModelsReady).
+  afterCache: async (fileName, db) => {
+    if (/^decoder_/.test(fileName)) {
+      await db.put('trustmark-models', { ready: true, version: MODEL_CACHE_VERSION }, READY_KEY);
+    }
+  },
+});
 
 /** True when a TrustMark decoder is cached on-device at the current version, so a
  *  scan needs NO download. The /verify header uses this to run the deep scan
@@ -358,12 +307,7 @@ function getResizerSession(ort: OrtModule, cacheOnly = false): Promise<Inference
 // float32 in [0,1]. Preferred resize is Adobe's resizer.onnx; canvas is the
 // documented fallback (see the module header's honesty ledger).
 
-function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement {
-  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  return c;
-}
+// makeCanvas + packNchw01 are shared with lib/contentseal.ts (see lib/ort.ts).
 
 /** Adobe's runResizeModelSquare crop rule: only crop when the aspect ratio is
  *  extreme (>2 or <0.5) or the variant demands a square input (P); a moderate
@@ -382,21 +326,6 @@ function cropRect(width: number, height: number, config: TrustmarkModelConfig): 
     y = Math.floor((height - h) / 2);
   }
   return { x, y, w, h };
-}
-
-/** RGBA → NCHW [1,3,h,w] float32 in [0,1]: R plane, G plane, B plane; alpha
- *  dropped. Verbatim layout of loadImageAsTensor's `imageTensor` packing. */
-function packNchw01(rgba: ArrayLike<number>, w: number, h: number): Float32Array {
-  const total = w * h;
-  const tensor = new Float32Array(total * 3);
-  const page = total, twopage = 2 * total;
-  for (let i = 0; i < total; i++) {
-    const idx = i * 4;
-    tensor[i] = (rgba[idx] as number) / 255;
-    tensor[i + page] = (rgba[idx + 1] as number) / 255;
-    tensor[i + twopage] = (rgba[idx + 2] as number) / 255;
-  }
-  return tensor;
 }
 
 /** Verbatim port of js/tm_watermark.js's computeScalesFixed: bisects, per

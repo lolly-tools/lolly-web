@@ -12,7 +12,7 @@
  *
  * The key property: because the incoming view sits underneath at full opacity,
  * anything IDENTICAL between the two views — the Tools|Projects|Catalog tab bar,
- * the language button, the profile link, the dashboard/verify "Tools" back-link —
+ * the language button, the profile link, the dashboard/verify back pill —
  * stays rock-solid through the fade. The opaque new copy shows through the fading
  * old one pixel-for-pixel, so only what actually CHANGED cross-fades. Shared chrome
  * is held in place for free, with zero per-element wiring.
@@ -76,7 +76,7 @@ export function beginViewFade(view: HTMLElement): ViewFade | null {
   // offset rides scrollTop below, moving only flow content and leaving fixed chrome put.
   // z-index sits above the in-view chrome — notably the mobile top bar at 99999,
   // re-rendered per view — so a top-left element that DIFFERS between views (the tab
-  // bar vs the dashboard/verify "Tools" back-link) cross-fades uniformly instead of
+  // bar vs the dashboard/verify back pill) cross-fades uniformly instead of
   // snapping in on top. The 100000+ layers (filter popover, profile menu, dialogs)
   // are always closed during a route change, and the overlay is pointer-events:none,
   // so covering the viewport for the fade is purely visual and never swallows a click.

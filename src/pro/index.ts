@@ -43,6 +43,7 @@ import { rowsForFolder } from './folder-rows.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import type { Unit } from '../../../../engine/src/units.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 
 // The asset-picker options shape, derived from the host bridge so the local
 // casts below stay in lockstep with it (type-only; erased at runtime).
@@ -182,13 +183,14 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // ── Static shell ───────────────────────────────────────────────────────────
   viewEl.innerHTML = `
     <div class="pro-wrap">
-      <a href="#/" class="tools-home home-full">${t('Tools')}</a>
+      ${backPillHtml()}
 
       <div class="pro-toolbar">
         <button type="button" class="pro-btn pro-hamburger" id="pro-menu" aria-label="${escape(t('Toolbar menu'))}" aria-expanded="false" aria-controls="pro-toolbar-group">☰</button>
         <div class="pro-toolbar-group" id="pro-toolbar-group">
           <label class="pro-format pro-zip" title="${escape(t('Name for the downloaded .zip'))}">
-            <input type="text" id="pro-zip-name" placeholder="lolly-batch" autocomplete="off" spellcheck="false">
+            <input type="text" id="pro-zip-name" placeholder="lolly-batch" autocomplete="off" spellcheck="false"
+              aria-label="${escape(t('Name for the downloaded .zip'))}">
             <span class="pro-zip-ext" aria-hidden="true">.zip</span>
           </label>
           <!-- + Row / +5 live at the bottom-left of the grid, where you use them.
@@ -198,14 +200,18 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
         <span class="pro-spacer"></span>
         <div class="pro-zoom" data-pro-zoom></div>
         <label class="pro-format pro-unit-field" id="pro-unit-field" title="${escape(t('Units for the Width & Height columns'))}">
-          <select id="pro-unit">${UNIT_OPTIONS.map(u => `<option value="${u}"${u === state.unit ? ' selected' : ''}>${u}</option>`).join('')}</select>
+          <select id="pro-unit" class="field-select field-select--auto field-select--sm"
+            aria-label="${escape(t('Units for the Width & Height columns'))}">${UNIT_OPTIONS.map(u => `<option value="${u}"${u === state.unit ? ' selected' : ''}>${u}</option>`).join('')}</select>
         </label>
         <label class="pro-format pro-dpi-field" id="pro-dpi-field" title="${escape(t('Raster resolution for physical units (mm/cm/in/pt). Ignored for px and for vector formats.'))}">
-          <input type="number" id="pro-dpi" min="36" max="1200" step="1" value="${state.dpi}"${state.unit === 'px' ? ' disabled' : ''}>
+          <input type="number" id="pro-dpi" class="field-input field-input--auto field-input--sm"
+            aria-label="${escape(t('Raster resolution in DPI'))}"
+            min="36" max="1200" step="1" value="${state.dpi}"${state.unit === 'px' ? ' disabled' : ''}>
           <span class="pro-dpi-suffix" aria-hidden="true">dpi</span>
         </label>
         <label class="pro-format" id="pro-format-field" title="${escape(t('Output format for all rows (rows can override)'))}">
-          <select id="pro-format">${FORMAT_OPTIONS.map(f => `<option value="${f}"${f === state.format ? ' selected' : ''}>${f.toUpperCase()}</option>`).join('')}</select>
+          <select id="pro-format" class="field-select field-select--auto field-select--sm"
+            aria-label="${escape(t('Output format for every row'))}">${FORMAT_OPTIONS.map(f => `<option value="${f}"${f === state.format ? ' selected' : ''}>${f.toUpperCase()}</option>`).join('')}</select>
         </label>
         <button type="button" class="pro-btn" id="pro-sessions" title="${escape(t('Save or load a snapshot of this whole batch'))}">⛁ ${t('Sessions')}</button>
         <button type="button" class="pro-btn pro-btn--primary" id="pro-render" title="${escape(t('Render the batch'))}">${t('Render')}</button>
@@ -320,26 +326,31 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   const isDirty = () => baseline !== null && serialize() !== baseline;
   const markClean = () => { baseline = serialize(); };
 
-  // Leaving /pro via the "← Tools" link. The link stays a normal hash anchor
-  // (shared pill styling with profile/full-screen tools); we just intercept the
-  // click when the batch is dirty and offer to save it as a session first.
+  // Leaving /pro via the back pill. The pill owns the actual navigation (it goes
+  // back to wherever you came from, not unconditionally to the gallery — see
+  // components/back-pill.ts); this only takes the click over when the batch is
+  // dirty, to offer saving it as a session first, and hands the pill's own `go`
+  // back once the user has decided.
   let leaveAfterSave = false;
-  const goHome = () => { location.hash = '#/'; };
-  viewEl.querySelector('.tools-home')?.addEventListener('click', (e) => {
-    // Only guard when there's unsaved, saveable work: a session needs at least
-    // one template row (doSave enforces it), so prompting otherwise would offer a
-    // "save" that can't succeed. Clean / empty → let the anchor navigate.
-    if (!isDirty() || !state.rows.some(r => r.toolId)) return;
-    e.preventDefault();
-    showSaveSessionDialog({
-      // Open the Sessions popover, then arm the one-shot "leave after saving"
-      // intent — openSessions() runs closeSessions() synchronously (which clears
-      // the flag), so it must be set *after* the call. doSave consumes it; an
-      // abandoned popover clears it via closeSessions, so a later normal save
-      // won't navigate.
-      onSave: () => { openSessions(sessionsBtn); leaveAfterSave = true; },
-      onLeave: goHome,
-    });
+  let goHome = () => { location.hash = '#/'; };   // replaced by the pill's `go` on the guarded path
+  mountBackPill(viewEl, {
+    intercept: (go) => {
+      // Only guard when there's unsaved, saveable work: a session needs at least
+      // one template row (doSave enforces it), so prompting otherwise would offer a
+      // "save" that can't succeed. Clean / empty → let the pill navigate.
+      if (!isDirty() || !state.rows.some(r => r.toolId)) return false;
+      goHome = go;
+      showSaveSessionDialog({
+        // Open the Sessions popover, then arm the one-shot "leave after saving"
+        // intent — openSessions() runs closeSessions() synchronously (which clears
+        // the flag), so it must be set *after* the call. doSave consumes it; an
+        // abandoned popover clears it via closeSessions, so a later normal save
+        // won't navigate.
+        onSave: () => { openSessions(sessionsBtn); leaveAfterSave = true; },
+        onLeave: () => go(),
+      });
+      return true;
+    },
   });
 
   // Spreadsheet keyboard navigation (roving focus + focused/editing states).
@@ -912,7 +923,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       <div class="pro-popover-control">${
         isColor
           ? colorFieldHtml(`bulk~${escapeHtml(key)}`, colorValue, { float: true, swatchesOnly: col.spec!.swatchesOnly === true })
-          : controlHtml(col.spec!, col.spec!.default ?? '', 'data-bulk-input')
+          : controlHtml(col.spec!, col.spec!.default ?? '', 'data-bulk-input', { label: col.label })
       }</div>
       <div class="pro-popover-actions">
         <button type="button" class="pro-btn" data-bulk-cancel>Cancel</button>
