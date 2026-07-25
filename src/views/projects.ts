@@ -32,13 +32,11 @@ import {
   type MemberPreview,
 } from '../folder-tiles.ts';
 import type { PickerHost } from './picker.ts';   // type-only (erased); the value is lazy-imported in openAddPicker
-import { viewToggle } from '../components/view-toggle.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
 import { playProjectsAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { mountFeaturedRow } from '../components/featured-row.ts';
 import type { FeaturedEntry, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
-import { attachProfileMenu } from '../components/profile-menu.ts';
-import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { viewTopbarHtml, mountViewTopbar } from '../components/view-topbar.ts';
 import { mountBodyPopover, pointAnchor } from '../components/body-popover.ts';
 import type { PopoverAnchor } from '../components/body-popover.ts';
 import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
@@ -46,6 +44,7 @@ import { confirmDialog as baseConfirmDialog, closeConfirmDialogs } from '../comp
 import type { ConfirmDialogOpts } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
+import { mountProgressToast } from '../components/progress-toast.ts';
 import { announce } from '../a11y.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
@@ -192,7 +191,7 @@ export async function mountProjects(
   let profile: Profile | null = null;
   let headshotUrl = '';
   let mounted = true;        // false after the view is swapped out (guards async renders)
-  const toasts = new Set<HTMLDivElement>();  // live "Render folder" toasts, torn down on navigate-away
+  const toasts = new Set<HTMLElement>();  // live "Render folder" toasts, torn down on navigate-away
   let overlayModal: ModalHandle<any> | null = null;      // the move-picker / new-folder-name dialog, if open
   let featuredHandle: FeaturedRowHandle | null = null; // the Uncategorised preview ribbon (drift/coverflow/grip), if mounted
   // Multi-select: ref → 'folder' | 'session'. A closure var (NOT the DOM) because
@@ -616,26 +615,28 @@ export async function mountProjects(
       </div>`;
   }
 
-  // Profile + saved-sessions (history) buttons, carried over from the gallery so the
-  // chrome is consistent (no tool filters here — they're meaningless for projects).
-  function topRight(): string {
+  // Projects' own trigger buttons in the shared top bar's `right` slot: view/sort
+  // options + saved-sessions (history). The rest of the cluster — language FAB and
+  // profile pill — is the shared chrome (components/view-topbar.ts), same as Tools
+  // and Catalog. (No tool filters here — they're meaningless for projects.)
+  function topRightSlot(): string {
     const saved = entries.length;
     return `
-      <div class="gallery-topright projects-topright">
         <button type="button" class="filter-fab projects-viewopts" aria-label="${escape(t('View and sort options'))}" aria-haspopup="true" title="${escape(t('View & sort'))}">${FILTER_ICON}</button>
-        ${saved ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: saved }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${saved}</span></button>` : ''}
-        ${langFabHtml()}
-        <a href="#/profile" class="profile-link${headshotUrl ? ' has-avatar' : ''}" aria-label="${escape(t('Open your profile'))}">${headshotUrl ? `<img class="profile-link-avatar" src="${escape(headshotUrl)}" alt="">` : ''}<span class="profile-link-name">${escape(profile?.firstname || t('Profile'))}</span></a>
-      </div>`;
+        ${saved ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: saved }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${saved}</span></button>` : ''}`;
   }
 
   function shell(heading: string, active: 'tools' | 'projects' | 'catalog', inner: string, { inFolder = false }: { inFolder?: boolean } = {}): string {
     return `
       <div class="projects${inFolder ? ' projects--folder' : ''}${query ? ' projects--searching' : ''}">
-        <div class="gallery-topbar">
-          <div class="view-toggle-wrap">${viewToggle(active)}</div>
-          ${topRight()}
-        </div>
+        ${viewTopbarHtml({
+          active,
+          right: topRightSlot(),
+          // No view-specific class on the cluster: the old `.projects-topright` marker
+          // this markup used to carry had no CSS rule and no selector anywhere in the
+          // repo, so it went out with the hand-rolled copy.
+          profile: { firstname: profile?.firstname, headshotUrl },
+        })}
         <h1 class="visually-hidden">${escape(heading)}</h1>
         ${inner}
         ${bulkBarHtml()}
@@ -928,13 +929,12 @@ export async function mountProjects(
     }
     root.querySelector('.history-fab')?.addEventListener('click', openHistory);
 
-    // Mobile: the avatar opens a single menu (theme + saved sessions + Settings);
-    // on desktop it stays a plain link to the profile page.
-    attachProfileMenu(root.querySelector<HTMLElement>('.profile-link'), host as ProjectsHost, {
-      savedCount: entries.length,
-      onHistory: openHistory,
+    // The invariant top-bar wiring — language menu, plus the mobile profile menu (on
+    // mobile the avatar opens theme + saved sessions + Settings; on desktop it stays a
+    // plain link to the profile page). Same call Tools and Catalog make.
+    mountViewTopbar(root, host as ProjectsHost, {
+      profileMenu: { savedCount: entries.length, onHistory: openHistory },
     });
-    attachLangMenu(root.querySelector<HTMLElement>('.lang-fab'), host as ProjectsHost);
 
     wireDrag(root);
     wireContextMenu(root);
@@ -1696,22 +1696,13 @@ export async function mountProjects(
 
   const authorForExport = (): Profile | null => (profile?.useDetails ? profile : null);
 
-  // Shared scaffold for every render/export path (folder, single session, selection):
-  // a floating .pro-toast with a live mount + close button, tracked so navigate-away
-  // tears it down (_cleanup). `run(mount)` does the gated /pro export; errors surface
-  // in the toast instead of throwing.
+  // Every render/export path (folder, single session, selection) runs inside the shared
+  // progress toast (components/progress-toast.ts) — full-width `--bar` variant under the
+  // profile row (projects.css), tracked in `toasts` so navigate-away tears it down
+  // (_cleanup). `run(mount)` does the gated /pro export; errors surface in the toast.
   function renderViaToast(run: (mount: HTMLElement) => unknown): void {
     closeMenu();
-    const toast = document.createElement('div');
-    toast.className = 'pro-toast pro-toast--bar'; // full-width bar under the profile row (projects.css)
-    toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="${escape(t('Close'))}">✕</button><div class="pro-toast-mount"></div>`;
-    document.body.appendChild(toast);
-    toasts.add(toast);
-    const mount = toast.querySelector<HTMLElement>('.pro-toast-mount')!;
-    toast.querySelector('.pro-toast-close')!.addEventListener('click', () => { toast.remove(); toasts.delete(toast); });
-    Promise.resolve(run(mount)).catch((err) => {
-      mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${escape(String((err as { message?: unknown })?.message ?? err))}</p>`;
-    });
+    mountProgressToast(run, { variant: 'bar', track: toasts });
   }
 
   // ── render a whole folder as one nested batch zip (gated /pro import) ────────

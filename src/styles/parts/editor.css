@@ -327,16 +327,25 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 }
 .fc-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
 .fc-row > span { flex: 0 0 86px; color: hsl(var(--muted-foreground)); }
+/* The box itself is `.field-select` / `.field-range` (fields.css). All a panel row
+   adds is how the control shares the row: fill the cell, never push it wider than
+   its label. Restating padding/border/background here would silently beat the
+   primitive — `views` outranks `primitives` — so it deliberately does not. */
 .fc-row select, .fc-row input[type="range"] { flex: 1; min-width: 0; }
-.fc-row select {
-  font: inherit; font-size: 12.5px; padding: 4px 6px; border-radius: 7px;
-  border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
-}
 .fc-row > b { flex: 0 0 32px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-/* Toggle rows (ligatures / stylistic alternates) — checkbox sits at the right edge. */
-.fc-row-toggle { cursor: pointer; }
+/* Toggle rows (ligatures / stylistic alternates) — checkbox sits at the right edge.
+   The tick is `.field-check` + `.field-toggle` (which also dims the row while the
+   box is disabled); only the label's flex behaviour is local. */
+.fc-row-toggle { cursor: pointer; transition: opacity 0.12s; }
 .fc-row-toggle > span { flex: 1 1 auto; }
-.fc-row-toggle input[type="checkbox"] { flex: none; width: 16px; height: 16px; accent-color: hsl(var(--primary)); cursor: pointer; }
+/* `.field-toggle`'s disabled dim is the right read for the Credit-me row's INITIAL
+   state (it ships `disabled` and is enabled once the profile read resolves), but the
+   change handler also disables the box for the duration of each write — so a plain
+   dim would flash the row on every toggle. Delay the dim and restore it instantly:
+   a fast write never crosses the threshold, a stalled one still reads as inert.
+   `cursor` has to be restated because `.fc-row-toggle` above (layer `views`) beats
+   the primitive's `not-allowed` — this is the delta that makes it true. */
+.fc-row-toggle:has(.field-check:disabled) { cursor: not-allowed; }
 
 /* Connector inspector (org-chart) — the properties popover for a selected line. */
 .fc-edge-panel { min-width: 236px; }
@@ -444,17 +453,19 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
    is one non-splitting flex item, so a wrap breaks cleanly between groups. */
 .fc-fmt-group { display: inline-flex; align-items: center; gap: 1px; }
 .fc-fmtbar .fc-cbtn.is-on { background: hsl(var(--primary) / 0.16); color: hsl(var(--primary)); }
-.fc-fmt-weight, .fc-fmt-font {
-  font: inherit; font-size: 12.5px; max-width: 104px;
-  padding: 4px 4px; border-radius: 8px;
-  border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
-}
+/* Both are `.field-select .field-select--sm .field-select--auto`; the only thing
+   the bar has an opinion about is how wide a font/weight name may get before it
+   ellipsises, so that is all that is left here. */
+.fc-fmt-weight, .fc-fmt-font { max-width: 104px; }
 .fc-fmt-font { max-width: 118px; }
 
-/* Type pill — font · weight · colour joined into one connected control. Inner
-   borders collapse (each control after the first pulls left 1px to overlap the
-   shared edge) and only the pill's outer corners round, so the three read as a
-   single object. The `:first-child`/`:last-child` rules also target the colour
+/* Type pill — font · weight · colour joined into one connected control. Only the
+   pill's outer corners round, so the three read as a single object. The -1px pull
+   below dates from when all three segments were outlined and had a shared 1px edge
+   to collapse; the two selects are now `.field-select` (embossed, `border: 0`), so
+   it survives only to keep the colour trigger's surviving left border flush against
+   its neighbour — it is a 1px nudge now, not a border collapse.
+   The `:first-child`/`:last-child` rules also target the colour
    field's nested trigger (its real bordered element), so the ends round whichever
    control sits there. */
 .fc-fmt-typegroup { display: inline-flex; align-items: stretch; }
@@ -527,8 +538,13 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .fc-row-lbl svg { width: 15px; height: 15px; flex: none; }
 .fc-row-lbl > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Text-only inputs / steppers / dims / info panels share the number+text field look. */
-.fc-panel input[type="number"], .fc-panel input[type="text"] {
+/* Text-only inputs / steppers / dims / info panels share the number+text field look.
+   This is the OLD outlined generation and it is scoped by element type, so it swallows
+   anything that wanders into a panel — including the Doc Studio page-setup fields, which
+   live in a `.fc-panel` and have already moved to `.field-input`. The `:not()` yields to
+   the primitive rather than out-ranking it from the same layer; migrate the remaining
+   free-canvas panel fields and this rule can go entirely. */
+.fc-panel input[type="number"]:not(.field-input), .fc-panel input[type="text"]:not(.field-input) {
   flex: 1; min-width: 0; font: inherit; font-size: 12.5px; padding: 4px 6px;
   border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
 }
@@ -569,7 +585,9 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .fc-dims-f input[type="number"] { flex: 1; min-width: 0; }
 /* Rotation row: a narrower number cell + a drag slider filling the rest. */
 .fc-dims-rot { grid-template-columns: 18px 86px 1fr; }
-.fc-dims-slider { width: 100%; min-width: 0; accent-color: hsl(var(--primary)); cursor: pointer; }
+/* `.field-range` draws it (fields.css); the grid cell only needs it to be
+   allowed to shrink below its intrinsic width. */
+.fc-dims-slider { min-width: 0; }
 
 /* Document info panel — editable name + at-a-glance meta rows. */
 .fc-info-panel { min-width: 262px; }

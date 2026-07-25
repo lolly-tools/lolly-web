@@ -157,7 +157,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
         <summary>Link options</summary>
         <div class="share-section-body">
           <label class="share-shortest" data-shortest-row hidden>
-            <input type="checkbox" data-shortest>
+            <input type="checkbox" class="field-check" data-shortest>
             <span class="share-shortest-text">
               <strong>Shortest link</strong>
               <span class="share-shortest-note" data-shortest-note></span>
@@ -165,28 +165,27 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
           </label>
           ${encryptable ? `
           <label class="share-shortest" data-encrypt-row>
-            <input type="checkbox" data-encrypt>
+            <input type="checkbox" class="field-check" data-encrypt>
             <span class="share-shortest-text">
               <strong>Password-protect this link</strong>
               <span class="share-shortest-note">Encrypts the whole link (AES-256). The recipient types a password to open it — no server.</span>
             </span>
           </label>
           <div data-encrypt-body hidden style="margin:-.2rem 0 .2rem 1.7rem">
-            <input type="password" data-encrypt-pw aria-label="Password to protect this link" autocomplete="off" spellcheck="false" placeholder="Set a password"
-                   style="width:100%;box-sizing:border-box;padding:8px 11px;font-size:13px;border:1px solid hsl(var(--input));border-radius:var(--radius);background:hsl(var(--background));color:hsl(var(--foreground))">
+            <input type="password" class="field-input" data-encrypt-pw aria-label="Password to protect this link" autocomplete="off" spellcheck="false" placeholder="Set a password">
             <span class="share-shortest-note" style="display:block;margin-top:.3rem">The password is <b>not</b> in the link — share it separately, and note it can't be recovered if lost.</span>
           </div>` : ''}
-          ${version ? `<label class="share-toggle-row"><input type="checkbox" data-flag="_v"> Pin this tool version (${escape(String(version))})</label>` : ''}
+          ${version ? `<label class="share-toggle-row field-toggle"><input type="checkbox" class="field-check" data-flag="_v"> Pin this tool version (${escape(String(version))})</label>` : ''}
         </div>
       </details>` : ''}
       <details class="share-section" data-link-behaviour>
         <summary>Link behaviour</summary>
         <fieldset class="share-toggles">
           <legend>When the recipient opens the link…</legend>
-          <label><input type="checkbox" data-flag="full"> Open in fullscreen (hide controls)</label>
-          <label data-options-row><input type="checkbox" data-flag="options"> Open with the export panel expanded</label>
-          ${canExport ? `<label><input type="checkbox" data-flag="export"> Download automatically when opened</label>` : ''}
-          ${showCopy ? `<label><input type="checkbox" data-flag="copy"> ${escape(copyLabel)}</label>` : ''}
+          <label class="field-toggle"><input type="checkbox" class="field-check" data-flag="full"> Open in fullscreen (hide controls)</label>
+          <label class="field-toggle" data-options-row><input type="checkbox" class="field-check" data-flag="options"> Open with the export panel expanded</label>
+          ${canExport ? `<label class="field-toggle"><input type="checkbox" class="field-check" data-flag="export"> Download automatically when opened</label>` : ''}
+          ${showCopy ? `<label class="field-toggle"><input type="checkbox" class="field-check" data-flag="copy"> ${escape(copyLabel)}</label>` : ''}
         </fieldset>
       </details>
       <div class="share-extra-sections" data-extra-sections></div>

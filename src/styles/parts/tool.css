@@ -97,6 +97,20 @@
 }
 .export-overlay { display: none; }
 
+/* The export panel's head label + close button. Breakpoint-independent — the
+   desktop (≥641px, below) and mobile (≤640px, tool-chrome.css) copies of the
+   export popup were byte-identical here, so they live outside both media
+   queries. Only the surrounding .export-popup-head/-body spacing is genuinely
+   per-breakpoint and stays in the two blocks. */
+.export-popup-title {
+  font-size: 13px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
+}
+.export-popup-close {
+  border: none; background: none; cursor: pointer; padding: 4px 8px;
+  font-size: 18px; line-height: 1; color: hsl(var(--muted-foreground));
+}
+
 /* Desktop (>640px): the Render button lives bottom-left of the sidebar and the
    export panel expands as a NON-MODAL sticky sheet over the sidebar bottom — no
    scrim, so the inputs above stay live. Sized to the (resizable) sidebar width. */
@@ -148,14 +162,7 @@
     border-bottom: 1px solid hsl(var(--border));
     flex-shrink: 0;
   }
-  .export-popup-title {
-    font-size: 13px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
-  }
-  .export-popup-close {
-    border: none; background: none; cursor: pointer; padding: 4px 8px;
-    font-size: 18px; line-height: 1; color: hsl(var(--muted-foreground));
-  }
+  /* .export-popup-title/-close: hoisted out of both breakpoints — see tool.css. */
   .export-popup-body { overflow-y: auto; padding: 14px; }
   .export-popup-body .tool-actions { margin: 0; padding: 0; border-top: none; }
   /* Let the last input scroll clear of the open export panel. */
@@ -557,13 +564,14 @@
 
 .home-full {
   /* inline-flex (not block) so it inherits the base .tools-home pill layout —
-     rounded, filled, with the ← / label gap — matching the sidebar back pill. */
+     rounded, filled, with the arrow / label gap — matching the sidebar back
+     pill. Height and padding stay on the base rule (components.css) so this
+     variant can't drift off the shared top-row geometry. */
   display: inline-flex;
-  padding: 9px 18px;
   position: absolute;
 }
 
-/* Shared "← Tools" return pill — fixed top-left corner. Used identically on the
+/* Shared back pill — fixed top-left corner. Used identically on the
    profile page, /pro batch mode, and full-screen utility tools (color-palette,
    countdown-timer). Combined selector beats the single-class .tools-home/.home-full
    rules so the fixed positioning always wins regardless of source order.
@@ -573,9 +581,14 @@
    combined selector is left with ONLY its positioning job. */
 .tools-home.home-full {
   position: fixed;
-  top: 1.25rem;
-  left: 1.25rem;
-  z-index: 100;
+  /* Mirror image of the top-right cluster's offsets (tokens.css) — same top,
+     same edge inset, same pinch-zoom re-pin — so the back pill and the
+     profile/language cluster sit on one line. It used to be pinned at its own
+     1.25rem/1.25rem, which put it a few px low and a few px in from where the
+     cluster started. */
+  top: calc(var(--chrome-top) + var(--vv-top, 0px));
+  left: calc(var(--chrome-inset) + var(--vv-left, 0px));
+  z-index: 99999;
 }
 
 .input-row {
@@ -843,7 +856,7 @@
   width: 100%;
   padding: 9px 32px 9px 10px;   /* right room for the custom chevron */
   background-color: hsl(var(--background));
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-image: var(--field-chevron);   /* the ONE chevron — parts/fields.css */
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 14px;
@@ -869,13 +882,7 @@
 }
 .vec-num:hover { border-color: hsl(var(--ring) / 0.4); }
 
-.input-row input:focus,
-.input-row textarea:focus,
-.input-row select:focus {
-  border-color: hsl(var(--ring));
-  outline: none;
-  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
-}
+/* :focus ring — the one shared recipe at the foot of this sheet. */
 
 
 .input-row textarea {
@@ -975,15 +982,13 @@
   color: hsl(var(--primary));
 }
 
-.input-row input[type="color"]:not(.color-popover-native) {
-  width: 36px;
-  height: 28px;
-  padding: 1px 2px;
-  border:none;;
-  border-radius: var(--radius);
-  cursor: pointer;
-  background: none;
-}
+/* (A `.input-row input[type="color"]:not(.color-popover-native)` box lived here.
+   The shell mints exactly ONE native colour input — `.color-popover-native`, the
+   escape hatch inside our own OKLCH picker (components/color-field.ts) — and the
+   policy that there is never another is stated outright in views/deck-editor.ts.
+   So the rule could only ever match nothing. Deleted 2026-07-25; the `:not([type=
+   "color"])` guards on the shared text-box rules above are vestigial for the same
+   reason, but they stay until someone re-derives those selectors.) */
 
 .input-row:has(.time-input-wrap) .input-label,
 .input-row:has(.blocks-input) .input-label{
@@ -1012,7 +1017,7 @@
   color-scheme: light dark;
 }
 .time-input-wrap input[type="time"]:hover { border-color: hsl(var(--ring) / 0.4); }
-.time-input-wrap input[type="time"]:focus { border-color: hsl(var(--ring)); outline: none; box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15); }
+/* :focus ring — the one shared recipe at the foot of this sheet. */
 
 /* ─── Datetime-local input ──────────────────────────────────────────────── */
 
@@ -1265,7 +1270,7 @@ background-color:hsl(var(--background) / 1);
   transition: border-color 0.12s;
 }
 .block-field:hover { border-color: hsl(var(--ring) / 0.4); }
-.block-field:focus { border-color: hsl(var(--ring)); outline: none; box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15); }
+/* :focus ring — the one shared recipe at the foot of this sheet. */
 
 .block-remove {
   width: 28px; height: 28px; flex-shrink: 0;   /* larger tap target (was 24) */
@@ -1569,7 +1574,7 @@ background-color:hsl(var(--background) / 1);
 .block-asset.is-lolly .block-asset-trigger:hover { border-color: hsl(var(--primary)); }
 
 /* Per-block range slider — native, kept compact */
-.block-range-input { width: 100%; accent-color: hsl(var(--ring)); cursor: pointer; }
+.block-range-input { width: 100%; cursor: pointer; }   /* thumb/track: .field-range (fields.css) — accent-color is inert on an appearance:none range */
 
 /* Typed add-menu */
 .block-add-menu { position: relative; align-self: stretch; }
@@ -1718,7 +1723,10 @@ background-color:hsl(var(--background) / 1);
   position: relative;
   height: 4px;
   border-radius: 2px;
-  background: hsl(var(--input));
+  /* `--input` is only 1.49:1 against the page in the light theme — under WCAG
+     1.4.11's 3:1 for a control boundary. Raised with the native range track in
+     parts/fields.css so the two sliders stay one object. */
+  background: hsl(var(--muted-foreground) / .75);
 }
 
 .cs-fill {
@@ -2926,5 +2934,44 @@ background-color:hsl(var(--background) / 1);
 #tool-content {
   width: 100%;
   min-height: 100%;
+}
+
+/* ─── The focused-field ring ─────────────────────────────────────────────────
+   ONE recipe (tinted border + a 3px translucent halo, the browser outline
+   suppressed) for every bordered text/number/select control in the tool view.
+   It was restated six times — three here, three in tool-chrome.css.
+
+   This sheet owns it, not tool-chrome.css, because it is the one that is ALWAYS
+   present wherever these selectors render: views/tool.ts loads both sheets, but
+   views/multi-edit.ts and views/profile.ts load tool.css ALONE, and both render
+   .input-row controls. Parking the shared rule in tool-chrome.css would have
+   silently dropped the ring in those two views.
+
+   Declared last in the sheet so it still beats the :hover border-colors above it
+   (.time-input-wrap, .block-field) exactly as the six separate rules did.
+   tool-chrome.css loads AFTER this sheet, so its two competing :hover rules
+   (.export-filename, .tool-actions select) carry a :not(:focus) there to keep
+   the same hover-vs-focus outcome — see the note beside them. The export panel's
+   card selects have moved to `.field-select`, which owns its own focus state
+   (halo OVER the emboss), so they are excluded here rather than having this
+   recipe flatten the highlight back out.
+
+   Untouched deliberately: the two partial variants that omit `outline: none`
+   (.export-dims .dim-dpi:focus-within here's sibling in tool-chrome.css, and
+   .input-section:has(.input-section-summary:focus-visible) above) — they ring a
+   CONTAINER, not the focusable element, so they are not this recipe. And
+   a11y.css's :focus-visible rings sit in a higher layer and keep winning. */
+.input-row input:focus,
+.input-row textarea:focus,
+.input-row select:focus,
+.time-input-wrap input[type="time"]:focus,
+.block-field:focus,
+.export-dims input[type="number"]:focus,    /* tool-chrome.css */
+.video-params input[type="number"]:focus,   /* tool-chrome.css */
+.export-filename:focus,                     /* tool-chrome.css */
+.tool-actions select:not(.field-select):focus {   /* tool-chrome.css */
+  border-color: hsl(var(--ring));
+  outline: none;
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
 }
 }

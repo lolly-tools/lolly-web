@@ -17,6 +17,7 @@ import { t } from './i18n.ts';
 import { mountModal } from './components/modal.ts';
 import { confirmDialog } from './components/confirm-dialog.ts';
 import { mountBodyPopover } from './components/body-popover.ts';
+import { mountProgressToast } from './components/progress-toast.ts';
 import type { BodyPopoverHandle } from './components/body-popover.ts';
 import { announce } from './a11y.ts';
 import { createFolderStore } from './folders.ts';
@@ -482,13 +483,13 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
     const { askExportLock } = await import('./lib/export-lock.ts');
     const { ok, strongPassword, zipLock } = await askExportLock('this folder', true);
     if (!ok) return;
-    const toast = document.createElement('div');
-    toast.className = 'pro-toast';
-    toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="Close">&#x2715;</button><div class="pro-toast-mount"></div>`;
-    document.body.appendChild(toast);
-    const mount = toast.querySelector<HTMLElement>('.pro-toast-mount')!;
-    toast.querySelector('.pro-toast-close')!.addEventListener('click', () => toast.remove());
-    try {
+    // The shared progress toast (components/progress-toast.ts). Deliberately NOT tracked
+    // to this dialog's lifecycle: mountModal uses showModal(), so while the overlay is up
+    // the body-level toast sits below the top layer and is invisible. The user only ever
+    // sees this progress by closing the overlay — tying the toast to onClose would destroy
+    // it at the exact moment it becomes visible. It outlives the overlay by design and is
+    // dismissed by its own ✕ (matching the pre-dedupe behaviour).
+    mountProgressToast(async (mount) => {
       const { exportFolderAsBatch } = await import('./pro/folder-export.ts');
       const profile = await host.profile.get().catch(() => null);
       await exportFolderAsBatch(host as unknown as Parameters<typeof exportFolderAsBatch>[0], folder, {
@@ -496,9 +497,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
         author: profile?.useDetails ? profile : null,
         strongPassword, zipLock,
       });
-    } catch (err) {
-      mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${escape(String((err as { message?: unknown })?.message ?? err))}</p>`;
-    }
+    });
   }
 
   // ── Inline name prompt (create / rename) ───────────────────────────────────

@@ -40,12 +40,23 @@
 .share-note {              /* dialogs.css */
   border: 0;
 }
-.note {
+/* .plat-note's spacing/type/colour block was byte-identical to this one, so the
+   earlier PARTIAL fold (border + radius only) is finished here: platform.css now
+   holds nothing of its own for the class. Note the layer move — platform.css is
+   `views`, this sheet is `chrome`, so dashboard.css's `.dash-foot { margin: 0;
+   max-width: none }` (also `views`) now beats it deterministically instead of by
+   whichever lazy chunk Vite injected last. That is the override .dash-foot was
+   written to be. */
+.note,
+.plat-note {              /* platform.css */
   margin: 0; max-width: 72ch; padding: .75rem .9rem;
   font-size: .85rem; line-height: 1.55; color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / .5);
 }
-.note strong { color: hsl(var(--foreground)); }
+.note strong,
+.plat-note strong {       /* platform.css */
+  color: hsl(var(--foreground));
+}
 .note--error {
   color: hsl(var(--destructive));
   border-color: hsl(var(--destructive) / 0.4);
@@ -232,18 +243,25 @@
 .tools-home {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-weight: 600;
   font-size: 13px;
+  line-height: 1;
   cursor: pointer;
   z-index: 9;
 
   box-shadow: inset 0 -.1em 1em 1px hsl(var(--primary) / 0.22), 0 .1em .3em #0002;
 
-  top: 2em;
-  left: 2em;
-  padding: 8px 18px;
-  border-radius:calc(var(--radius)*1.5);            /* pill */
+  /* Sized off the shared top-row geometry (tokens.css) rather than its own
+     padding box, so the pill is exactly as tall as the .lang-fab / .profile-link
+     cluster opposite it. A 1px transparent border matches the one those carry
+     (dropped to transparent in overrides.css) so the two ends of the row have
+     identical outer boxes and nothing reflows. */
+  min-height: var(--chrome-h);
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  padding: 0 16px;
+  border-radius: calc(var(--radius)*1.5);           /* pill */
   text-decoration: none;
 }
 .tools-home:hover {
@@ -251,11 +269,22 @@
   box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.34);
 }
 
+/* The leading arrow. backPillHtml() renders a stroked Lucide glyph so the pill
+   matches the icon FABs across the row; the text "←" below is the fallback for
+   any pill still written as bare markup (the #/components specimens), and is
+   suppressed the moment a real icon is present. */
+.back-pill-icon {
+  display: inline-flex;
+  flex: none;
+}
+.back-pill-icon svg { display: block; }
+
 .tools-home:before {
   content: "←";
   font-weight: 700;
   line-height: 1;
 }
+.tools-home:has(.back-pill-icon):before { content: none; }
 
 /* Sidebar back button: sits at the left of the back row (with the theme toggle on
    the right — see .sidebar-back-row). The filled .tools-home base gives the pill
@@ -266,16 +295,24 @@
 
 /* background/color/text-shadow/backdrop-filter/transition come from the shared
    .btn--glass alias (buttons.css) — matches the top-right FAB cluster. */
+/* Height/inset come from the shared top-row geometry (tokens.css) — the same
+   three properties the back pill on the opposite side reads, which is what
+   keeps the two ends of the row level. */
 .profile-link {
     position: absolute;
     z-index:99999;
-    right: 2em;
-    top: 1.25em;
+    right: var(--chrome-inset);
+    top: var(--chrome-top);
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: var(--chrome-h);
     text-decoration: none;
     font-weight: 600;
     font-size: 13px;
+    line-height: 1;
     border: 1px solid hsl(var(--primary));
-    padding: 12px 10px 12px 3em;
+    padding: 0 10px 0 3em;
     border-radius: calc(var(--radius)*1.5);
   }
 
@@ -322,8 +359,8 @@
   .profile-link {
     position: fixed;
     /* Re-pin to the visible top-right while the page is pinch-zoomed. */
-    top: calc(1.25em + var(--vv-top, 0px));
-    right: calc(2em + var(--vv-right, 0px));
+    top: calc(var(--chrome-top) + var(--vv-top, 0px));
+    right: calc(var(--chrome-inset) + var(--vv-right, 0px));
   }
 }
 
@@ -493,8 +530,16 @@
    stays local rather than nudging the studio's own pixel values. .color-input
    just below is the SAME concept again (a mono value field) but its box is a
    distinct oversized/painted variant with no property textually identical to
-   either list, so it stays its own full ruleset. */
-.field-input,
+   either list, so it stays its own full ruleset.
+
+   NAME HANDOVER (2026-07-25): `.field-input` used to be declared here, meaning
+   "the small mono value box". It now means "the shared text field" and is
+   declared in parts/fields.css (`primitives`) — the generic sense won because it
+   has an order of magnitude more call-sites. The mono reading survives as the
+   `.field-input--mono` modifier on that primitive; the aliases below keep their
+   share of the old recipe unchanged. Nothing in this file may claim
+   `.field-input` again: components.css is `chrome` and would silently beat the
+   primitive for every adopter in the app. */
 .be-fmt-input,           /* brand-studio.css */
 .be-lock-field input,    /* brand-studio.css */
 .be-cmyk-in input,       /* brand-studio.css */
@@ -503,10 +548,9 @@
   font: inherit;
 }
 /* MUST come after the `font: inherit` shorthand above — same specificity, so
-   source order is what lets the mono face/size win for the full .field-input box
-   (the be-* fields above keep inherit only; their mono comes from their context). */
-.field-input,
-.share-link-field {         /* dialogs.css — byte-identical box */
+   source order is what lets the mono face/size win for the full box (the be-*
+   fields above keep inherit only; their mono comes from their context). */
+.share-link-field {         /* dialogs.css */
   padding: 7px 10px;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
@@ -575,6 +619,10 @@
   flex-shrink: 0;
   text-align: center;
 }
+/* Stays a NATIVE range — like its two siblings above it, this slider is part of
+   the colour picker's own visual language and deliberately does not take
+   `.field-range` (whose 14px thumb would overflow this 4px rail). `accent-color`
+   therefore still works here. */
 .color-alpha-slider {
   flex: 1;
   height: 4px;

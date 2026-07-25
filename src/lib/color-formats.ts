@@ -36,15 +36,6 @@ export const STORAGE_FORMATS: ReadonlyArray<{ id: StorageFormat; label: string }
   { id: 'hsl', label: 'HSL' },
 ];
 
-export const COLOR_FORMATS: ReadonlyArray<{ id: ColorFormat; label: string; hint: string }> = [
-  { id: 'hex', label: 'Hex', hint: '#4f83cc' },
-  { id: 'rgb', label: 'RGB', hint: '79, 131, 204' },
-  { id: 'rgba', label: 'RGBA', hint: '79, 131, 204, 1' },
-  { id: 'hsl', label: 'HSL', hint: '215, 55%, 55%' },
-  { id: 'oklch', label: 'OKLCH', hint: '60% 0.1 250' },
-  { id: 'cmyk', label: 'CMYK', hint: '61, 36, 0, 20' },
-];
-
 export interface Rgba { r: number; g: number; b: number; a: number } // r,g,b 0-255; a 0-1
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));

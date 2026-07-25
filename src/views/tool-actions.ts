@@ -362,7 +362,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const cmykRow = hasCmyk ? `
       <div class="section-card export-cmyk" data-cmyk-only style="display:${isCmykFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="cmyk-head">${ICON_DROP}<span>Color profile</span></span>
-        <select data-action="cmyk-profile" aria-label="CMYK press profile"
+        <select class="field-select" data-action="cmyk-profile" aria-label="CMYK press profile"
                 title="The CMYK press condition your printer targets — embedded as the Print PDF's output intent, recorded in the Print TIFF's metadata.">
           ${cmykOptions}
         </select>
@@ -398,7 +398,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           <input type="password" data-action="pdf-password" autocomplete="new-password" spellcheck="false"
                  value="${escape(exportDefaults.password ?? '')}"
                  placeholder="Leave blank for no password" aria-label="Open password">
-          <select class="pdfpass-tier" data-action="pdf-lock-tier" aria-label="Encryption strength">
+          <select class="pdfpass-tier field-select field-select--sm" data-action="pdf-lock-tier" aria-label="Encryption strength">
             <option value="standard">Standard lock — opens in any PDF app</option>
             <option value="strong">Strong · AES-256 — newer apps only ⓘ</option>
           </select>
@@ -431,8 +431,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   ) : null;
   const c2paRow = c2paFormats.length ? `
       <div class="section-card export-c2pa" data-c2pa-only style="display:${isC2paFmt(initialFmt) || initialFmt === 'zip' ? 'flex' : 'none'}">
-        <label class="c2pa-enable help-tip-host">
-          <input type="checkbox" data-action="pdf-c2pa" ${c2paInitOn ? 'checked' : ''}>
+        <label class="c2pa-enable field-toggle help-tip-host">
+          <input type="checkbox" class="field-check" data-action="pdf-c2pa" ${c2paInitOn ? 'checked' : ''}>
           <span class="c2pa-head">${ICON_CRED}<span>C2PA Credentials</span></span>
           ${c2paTip!.button}
           ${c2paTip!.pop}
@@ -440,7 +440,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         <p class="c2pa-hint" data-c2pa-webm style="display:${initialFmt === 'webm' ? 'block' : 'none'}">WebM credentials are Lolly's own mapping for now — external C2PA viewers can't read WebM.</p>
         <div class="c2pa-life" data-c2pa-life>
           <label class="c2pa-life-pick"><span class="c2pa-life-label">Expires:</span>
-            <select data-action="c2pa-days" aria-label="Credential lifetime">
+            <select class="field-select field-select--sm field-select--auto" data-action="c2pa-days" aria-label="Credential lifetime">
               ${[7, 30, 90, 365].map(d => `<option value="${d}"${d === c2paInitDays ? ' selected' : ''}>${d} days</option>`).join('')}
             </select>
           </label>
@@ -469,8 +469,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   ) : null;
   const imprintRow = imprintFmts.length ? `
       <div class="section-card export-c2pa export-imprint" data-imprint-only style="display:${isImprintFmt(initialFmt) || initialFmt === 'zip' ? 'flex' : 'none'}">
-        <label class="c2pa-enable help-tip-host">
-          <input type="checkbox" data-action="imprint" ${exportDefaults.imprint !== false ? 'checked' : ''}>
+        <label class="c2pa-enable field-toggle help-tip-host">
+          <input type="checkbox" class="field-check" data-action="imprint" ${exportDefaults.imprint !== false ? 'checked' : ''}>
           <span class="c2pa-head">${icon('imprint', { className: 'c2pa-icon' })}<span>${t('Lolly Imprint')}</span></span>
           ${imprintTip!.button}
           ${imprintTip!.pop}
@@ -492,8 +492,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   ) : null;
   const durableRow = durableFmts.length ? `
       <div class="section-card export-c2pa export-durable" data-durable-only style="display:${isDurableFmt(initialFmt) ? 'flex' : 'none'}">
-        <label class="c2pa-enable help-tip-host">
-          <input type="checkbox" data-action="durable" ${exportDefaults.durable ? 'checked' : ''}>
+        <label class="c2pa-enable field-toggle help-tip-host">
+          <input type="checkbox" class="field-check" data-action="durable" ${exportDefaults.durable ? 'checked' : ''}>
           <span class="c2pa-head">${icon('imprint', { className: 'c2pa-icon' })}<span>${t('Durable credential')}</span></span>
           ${durableTip!.button}
           ${durableTip!.pop}
@@ -516,11 +516,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // brighten (0 keeps them dark), Focus = colour richness of the boost.
   const hdrTune = exportDefaults.hdrTune ?? HDR_DEFAULTS;
   const hdrSlider = (action: string, label: string, min: number, max: number, step: number, val: number): string =>
-    `<label class="hdr-slider"><span>${t(label)}</span><input type="range" data-action="${action}" min="${min}" max="${max}" step="${step}" value="${val}"></label>`;
+    `<label class="hdr-slider"><span>${t(label)}</span><input type="range" class="field-range" data-action="${action}" min="${min}" max="${max}" step="${step}" value="${val}"></label>`;
   const hdrRow = hdrFmts.length ? `
       <div class="section-card export-hdr" data-hdr-only style="display:${isHdrFmt(initialFmt) ? 'flex' : 'none'}">
-        <label class="hdr-enable help-tip-host">
-          <input type="checkbox" data-action="hdr" ${exportDefaults.hdr ? 'checked' : ''}>
+        <label class="hdr-enable field-toggle help-tip-host">
+          <input type="checkbox" class="field-check" data-action="hdr" ${exportDefaults.hdr ? 'checked' : ''}>
           <span class="hdr-head">${icon('sunburst', { className: 'hdr-icon' })}<span>${t('HDR (bright colours)')}</span></span>
           ${hdrTip!.button}
           ${hdrTip!.pop}
@@ -552,8 +552,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const pim          = { ...DEFAULT_PRINT_MARKS, colorBars: isCmykFmt(initialFmt), ...(exportDefaults.marks || {}), provenance: true };
   const printRow = hasPrint ? `
       <div class="section-card export-print" data-printmarks-only style="display:${isPrintFmt(initialFmt) ? 'flex' : 'none'}">
-        <label class="print-enable">
-          <input type="checkbox" data-action="print-enable" ${printInitOn ? 'checked' : ''}>
+        <label class="print-enable field-toggle">
+          <input type="checkbox" class="field-check" data-action="print-enable" ${printInitOn ? 'checked' : ''}>
           <span class="print-head">${ICON_CROP}<span>Print marks &amp; bleed</span></span>
         </label>
         <div class="print-body" data-print-body style="display:${printInitOn ? 'flex' : 'none'}">
@@ -563,11 +563,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             <span>mm</span>
           </label>
           <div class="print-toggles">
-            <label class="export-option"><input type="checkbox" data-action="mark-crop" ${pim.crop ? 'checked' : ''}> Crop</label>
-            <label class="export-option"><input type="checkbox" data-action="mark-reg" ${pim.registration ? 'checked' : ''}> Registration</label>
-            <label class="export-option"><input type="checkbox" data-action="mark-bleed" ${pim.bleed ? 'checked' : ''}> Bleed</label>
-            <label class="export-option"><input type="checkbox" data-action="mark-bars" ${pim.colorBars ? 'checked' : ''}> Color bars</label>
-            <label class="export-option"><input type="checkbox" data-action="mark-prov" ${pim.provenance ? 'checked' : ''}> Stamp details</label>
+            <label class="export-option"><input type="checkbox" class="field-check" data-action="mark-crop" ${pim.crop ? 'checked' : ''}> Crop</label>
+            <label class="export-option"><input type="checkbox" class="field-check" data-action="mark-reg" ${pim.registration ? 'checked' : ''}> Registration</label>
+            <label class="export-option"><input type="checkbox" class="field-check" data-action="mark-bleed" ${pim.bleed ? 'checked' : ''}> Bleed</label>
+            <label class="export-option"><input type="checkbox" class="field-check" data-action="mark-bars" ${pim.colorBars ? 'checked' : ''}> Color bars</label>
+            <label class="export-option"><input type="checkbox" class="field-check" data-action="mark-prov" ${pim.provenance ? 'checked' : ''}> Stamp details</label>
           </div>
           <p class="print-hint">Adds bleed and the chosen marks for a print shop; the artwork is scaled to fill the bleed. Registration marks print on all four plates in the Print PDF and Print TIFF. (An open-password can't be combined with marks.)</p>
         </div>
@@ -612,30 +612,32 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const hide = vectorOnly && !isVectorFmt(initialFmt);
     return `
         <label class="export-option"${vectorOnly ? ' data-vector-only' : ''}${hide ? ' style="display:none"' : ''}>
-          <input type="checkbox" data-input-id="${escape(i.id)}" ${i.value ? 'checked' : ''}>
+          <input type="checkbox" class="field-check" data-input-id="${escape(i.id)}" ${i.value ? 'checked' : ''}>
           ${escape(i.label ?? i.id)}
         </label>`;
   }).join('');
   const videoChip = hasAnimated ? `
         <div class="video-params" data-anim-params style="display:${isAnimatedFmt(initialFmt) ? 'flex' : 'none'}">
           <span class="vp-field"><span>Wait</span>
-            <input type="number" data-action="video-wait" value="${defaultWait}" min="0" max="30" step="0.5"><span>s</span></span>
+            <input type="number" data-action="video-wait" value="${defaultWait}" min="0" max="30" step="0.5"
+                   aria-label="${escape(t('Wait before recording (seconds)'))}"><span>s</span></span>
           <span class="vp-field"><span>Duration</span>
-            <input type="number" data-action="video-duration" value="${defaultDuration}" min="1" max="60" step="0.5"><span>s</span></span>
+            <input type="number" data-action="video-duration" value="${defaultDuration}" min="1" max="60" step="0.5"
+                   aria-label="${escape(t('Recording duration (seconds)'))}"><span>s</span></span>
           <label class="gif-dither-toggle" data-gif-only
                  style="display:${initialFmt === 'gif' ? 'flex' : 'none'}">
-            <input type="checkbox" data-action="gif-dither">
+            <input type="checkbox" class="field-check" data-action="gif-dither">
             Dither
           </label>
           <label class="gif-dither-toggle" data-webm-only
                  style="display:${initialFmt === 'webm' ? 'flex' : 'none'}">
-            <input type="checkbox" data-action="webm-60fps">
+            <input type="checkbox" class="field-check" data-action="webm-60fps">
             60fps
           </label>
           ${liveCaptureSupport() ? `<label class="gif-dither-toggle" data-video-only
                  style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}"
                  title="Record the on-screen preview in real time through a screen share — motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.">
-            <input type="checkbox" data-action="video-live">
+            <input type="checkbox" class="field-check" data-action="video-live">
             Record live
           </label>` : ''}
           ${runtime.hasFrameHook ? `<span class="vp-live-hint" style="flex-basis:100%;font-size:11px;opacity:.7;margin-top:2px">Records the live feed — start <strong>Go&nbsp;live</strong> on the canvas first.</span>` : ''}
@@ -664,7 +666,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       <div class="export-audio" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="audio-head help-tip-host">${ICON_NOTE}<span>Audio track</span>${audioTip!.button}${audioTip!.pop}</span>
         <div class="audio-pick">
-          <select data-action="video-audio" aria-label="Audio track"
+          <select class="field-select" data-action="video-audio" aria-label="Audio track"
                   title="Optional music bed muxed into the recording — plays for the clip duration, looping if the clip is longer than the track.">
             <option value="">None</option>
             ${hasToolAudioInput ? `<option value="__tool__">${escape(t('This tool’s audio'))}</option>` : ''}
@@ -689,7 +691,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const htmlChip = hasHtml ? `
         <label class="export-option" data-html-only style="display:${initialFmt === 'html' ? 'flex' : 'none'}"
                title="Drop the fixed-size canvas frame so the saved page fills the whole window.">
-          <input type="checkbox" data-action="full-page" ${exportDefaults.nostage ? 'checked' : ''}>
+          <input type="checkbox" class="field-check" data-action="full-page" ${exportDefaults.nostage ? 'checked' : ''}>
           Full page
         </label>` : '';
   const settingsRow = (optionChips || videoChip || htmlChip)

@@ -73,6 +73,10 @@ const PATHS = {
   // solid dot-menu — pass { filled: true }
   menuDots: '<circle cx="12" cy="5" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="12" cy="19" r="1.9"/>',
   arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  // The back pill's leading mark (components/back-pill.ts). A stroked Lucide
+  // arrow so the pill reads as one of the top-row chrome set rather than the
+  // text "←" glyph it used to draw from a ::before.
+  arrowLeft: '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
   // Lucide "pin" — the gallery card's "available offline" toggle (filled via CSS when active).

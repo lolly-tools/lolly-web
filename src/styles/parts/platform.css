@@ -16,16 +16,12 @@
 .plat-sub { margin: 0 0 1rem; max-width: 62ch; font-size: 1rem; line-height: 1.55; }
 .plat-header-text { min-width: 0; }
 .plat-header-text > :last-child { margin-bottom: 0; }
-/* .plat-note's border + border-radius are the literally-identical lines
-   folded into the shared `.note`/`.plat-note`/`.valid-note` selectors in
-   components.css (component audit rec 13) — only this view's own spacing
-   stays here. */
-.plat-note {
-  margin: 0; max-width: 72ch; padding: .75rem .9rem;
-  font-size: .85rem; line-height: 1.55; color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / .5);
-}
-.plat-note strong { color: hsl(var(--foreground)); }
+/* .plat-note is now fully folded into components.css's `.note` family (component
+   audit rec 13, finished): the border/radius went first, and its spacing, type,
+   colour, background and `strong` rule were byte-identical too, so they live
+   there as well. Nothing about the class is local to this view any more — the
+   only .plat-note rule left in this sheet is the `code` styling further down,
+   which it genuinely shares with .plat-section-desc. */
 
 /* Desktop: set the title beside its supporting copy so the header stays compact
    and the content starts higher up the page. Stacks again on narrow screens. */
@@ -37,7 +33,7 @@
 }
 
 /* Entrance cascade — ONE continuous ladder over the page's top-level nodes:
-   the "Tools" back-link (i=0) → the header band (i=1) → each section (i=2,3…).
+   the back pill (i=0) → the header band (i=1) → each section (i=2,3…).
    The header rides the SAME motion as the cards, so the page reveals as one
    wave instead of the old behaviour where the header snapped in at full opacity
    while only the sections faded under it (that split read as a flicker). Inner

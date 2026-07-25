@@ -13,7 +13,7 @@
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
-  /* top clears the fixed "← Tools" pill; bottom clears the fixed .profile-footer toolbar */
+  /* top clears the fixed back pill; bottom clears the fixed .profile-footer toolbar */
   padding: 3rem .5rem calc(5rem + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
@@ -69,29 +69,10 @@
   gap: 1rem;
 }
 .profile-view .profile-card-header h2 { margin: 0 0 1rem; }
-.profile-lang-picker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.profile-lang-picker .lang-switch-icon { width: 32px; height: 32px; flex: none; color: hsl(var(--muted-foreground)); }
-.profile-lang-select {
-  padding: 5px 26px 5px 10px;
-  background-color: hsl(var(--muted) / .6);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  background-size: 12px;
-  color: hsl(var(--foreground));
-  border: none;
-  border-radius: 999px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-}
+/* (`.profile-lang-picker` / `.profile-lang-select` lived here — a fourth copy of
+   the select chevron data-URI, matched by no markup since the language switcher
+   moved to the topbar's `.lang-fab` body-popover. Deleted 2026-07-25; the chevron
+   itself now lives once as `var(--field-chevron)` in parts/fields.css.) */
 
 /* Collapsible sections (Activity / Storage / Feature flags) — collapsed by
    default. Card chrome sits on the <details>; the <summary> is the header. */
@@ -455,7 +436,7 @@
 .profile-view .store-sess-list { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow: auto; }
 .profile-view .store-sess { display: flex; align-items: center; gap: .6rem; padding: .45rem 0; scroll-margin-block: 8px; }
 .profile-view .store-sess + .store-sess { border-top: 1px solid hsl(var(--border) / .6); }
-.profile-view .store-sess-check { flex: none; width: 16px; height: 16px; accent-color: hsl(var(--primary)); cursor: pointer; }
+.profile-view .store-sess-check { flex: none; width: 16px; height: 16px; cursor: pointer; }
 .profile-view .store-sess-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; flex: none; background: hsl(var(--muted)); }
 .profile-view .store-sess-thumb.is-placeholder { display: inline-flex; align-items: center; justify-content: center; color: hsl(var(--primary)); }
 .profile-view .store-sess-thumb.is-placeholder svg { width: 20px; height: 20px; }
@@ -598,7 +579,7 @@
   outline: 0; outline-offset: -1px;
 }
 .cropper-zoom { display: flex; align-items: center; gap: .7rem; margin: 1rem 0 .25rem; font-size: .8rem; color: hsl(var(--muted-foreground)); }
-.cropper-zoom input { flex: 1; accent-color: hsl(var(--primary)); }
+.cropper-zoom input { flex: 1; }
 .cropper-actions { display: flex; justify-content: flex-end; gap: .6rem; margin-top: 1rem; }
 .cropper-btn {
   padding: .5rem 1.15rem; font: inherit; font-size: .85rem; font-weight: 600;

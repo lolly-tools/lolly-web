@@ -247,14 +247,7 @@
     border-bottom: 1px solid hsl(var(--border));
     flex-shrink: 0;
   }
-  .export-popup-title {
-    font-size: 13px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
-  }
-  .export-popup-close {
-    border: none; background: none; cursor: pointer; padding: 4px 8px;
-    font-size: 18px; line-height: 1; color: hsl(var(--muted-foreground));
-  }
+  /* .export-popup-title/-close: hoisted out of both breakpoints — see tool.css. */
   .export-popup-body { overflow-y: auto; padding: 16px; }
   /* Drop the sidebar-specific spacing now that the panel lives in the popup. */
   .export-popup-body .tool-actions { margin: 0; padding: 0; border-top: none; }
@@ -306,13 +299,8 @@
   background: hsl(var(--primary) / 0.07);
 }
 
-.export-option input[type="checkbox"] {
-  flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  accent-color: hsl(var(--primary));
-  cursor: pointer;
-}
+/* The tick itself is `.field-check` (parts/fields.css) — size, accent, cursor and
+   flex:none all come from the primitive, so the chip adds nothing of its own. */
 
 /* Tier 2 — dimensions. The headline sizing control: both fields share the full
    width and sit taller than the other inputs. Each field carries a directional
@@ -400,7 +388,7 @@
   align-self: stretch;   /* match the height of the dimension inputs in its row */
   color: hsl(var(--foreground));
   background-color: hsl(var(--background));
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-image: var(--field-chevron);  /* the one shared caret (parts/fields.css) */
   background-repeat: no-repeat;
   background-position: center bottom 3px;  /* chevron centred beneath the text */
   background-size: 7px;                    /* tiny — matched to the 7px DPI caption scale */
@@ -459,9 +447,8 @@
 }
 .export-dims .dim-dpi input[type="number"]:focus { box-shadow: none; }
 
-/* Spinner-hiding + focus ring shared by all action-bar number inputs
-   (dimensions and video timing). Kept as one rule so the two contexts can't
-   drift. */
+/* Spinner-hiding shared by all action-bar number inputs (dimensions and video
+   timing). Kept as one rule so the two contexts can't drift. */
 .export-dims input[type="number"]::-webkit-inner-spin-button,
 .export-dims input[type="number"]::-webkit-outer-spin-button,
 .video-params input[type="number"]::-webkit-inner-spin-button,
@@ -470,12 +457,7 @@
   -webkit-appearance: none;
 }
 
-.export-dims input[type="number"]:focus,
-.video-params input[type="number"]:focus {
-  border-color: hsl(var(--ring));
-  outline: none;
-  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
-}
+/* Their :focus ring is the shared recipe at the foot of tool.css. */
 
 /* Claim the *horizontal* gesture on the scrubbable dimension fields so a drag
    scrubs the value, while leaving the vertical axis to the browser so the export
@@ -643,8 +625,7 @@
    `.section-card__hint` in disclosure.css. Only what's genuinely unique to a
    given card stays below under its own name. */
 .export-cmyk select[data-action="cmyk-profile"] {
-  width: 100%;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums;   /* box: .field-select */
 }
 .audio-pick {
   display: flex;
@@ -776,34 +757,19 @@
   font-size: 13px;
   box-sizing: border-box;
 }
-/* Encryption-strength selector (Standard 40-bit vs Strong AES-256). */
-.pdfpass-tier {
-  width: 100%;
-  padding: 8px 12px;
-  font-size: 12px;
-  box-sizing: border-box;
-  border: 1px solid hsl(var(--input));
-  border-radius: var(--radius);
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  cursor: pointer;
-}
-.pdfpass-tier:focus { outline: none; border-color: hsl(var(--ring)); }
+/* Encryption-strength selector (Standard 40-bit vs Strong AES-256). Box, chevron,
+   hover-lift and focus halo are `.field-select --sm` (parts/fields.css); the only
+   local truth is that an unavailable tier still has to read as unavailable. */
 .pdfpass-tier option:disabled { color: hsl(var(--muted-foreground)); }
 .export-pdfpass input[type="password"]:focus,
 .print-bleed input[type="number"]:focus{
   outline: none;
   border-color: hsl(var(--ring));
 }
-.c2pa-enable,
-.print-enable,
-.hdr-enable{
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-.c2pa-enable input[type="checkbox"], .hdr-enable input[type="checkbox"] { flex: 0 0 auto; }
+/* The three card master-toggles are `.field-toggle` rows (parts/fields.css):
+   flex + centre + 8px gap + pointer, and the disabled dimming that .hdr-enable /
+   .print-enable never had. Their own class names stay as the hooks the cards and
+   the component catalogue reference; the tick is `.field-check`. */
 
 /* HDR author dials — revealed under the toggle when HDR is on. Two-column grid of
    compact labelled range sliders (White peak, glow Reach, Dark lift, Focus). */
@@ -820,7 +786,16 @@
   color: hsl(var(--muted-foreground));
 }
 .hdr-slider > span { flex: 0 0 auto; min-width: 52px; }
+/* The track/thumb are the shared `.field-range` drawing; the only delta is the
+   BRAND tint — these dials are about brand colour, so the thumb follows --brand-c1
+   rather than --primary. accent-color stays for the (rare) UA that ignores
+   appearance:none; the explicit thumb colours below are what actually paints,
+   since a custom-drawn thumb no longer answers to accent-color. Vendor pseudos
+   must each get their own rule — one unknown pseudo drops the whole list. */
 .hdr-slider input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: hsl(var(--brand-c1, var(--ring))); }
+.hdr-slider input[type="range"]::-webkit-slider-thumb { background: hsl(var(--brand-c1, var(--ring))); }
+.hdr-slider input[type="range"]::-moz-range-thumb { background: hsl(var(--brand-c1, var(--ring))); }
+.hdr-slider input[type="range"]::-moz-range-progress { background: hsl(var(--brand-c1, var(--ring))); }
 .c2pa-enable:has(input:disabled) { cursor: default; opacity: 0.55; }
 
 /* C2PA lifetime picker — "Expires:" label + the days <select>, inline. Stacked
@@ -854,7 +829,6 @@
    rec 7); a master checkbox (.print-enable) reveals the body so ordinary PDFs
    stay plain. Its row gap is wider than the other three cards' — a real delta. */
 .export-print { gap: 10px; }
-.print-enable input[type="checkbox"] { flex: 0 0 auto; }
 .print-body {
   display: flex;
   flex-direction: column;
@@ -893,21 +867,25 @@
   transition: border-color 0.12s;
 }
 
-.export-filename:hover {
+/* :not(:focus) preserves the pre-dedupe outcome. The :focus ring is now the one
+   shared recipe at the foot of tool.css, and tool.css loads BEFORE this sheet —
+   without the guard this equal-specificity hover would start beating it and dim
+   the ring on a hovered, focused field. Same for .tool-actions select below. */
+.export-filename:hover:not(:focus) {
   border-color: hsl(var(--ring) / 0.4);
 }
 
-.export-filename:focus {
-  border-color: hsl(var(--ring));
-  outline: none;
-  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
-}
-
-/* Format selector */
-.tool-actions select {
+/* Format selector. This is the OLD outlined generation, kept deliberately: the
+   format select is one half of the fused "name.format" pill (see
+   .filename-extension above), where the shared 1px edge between the input and
+   the select IS the control — a borderless embossed select has nothing to fuse
+   with. The four standalone card selects (colour profile, encryption tier,
+   credential lifetime, audio track) have moved to `.field-select`, so this rule
+   yields to them rather than out-ranking the primitive from a higher layer. */
+.tool-actions select:not(.field-select) {
   padding: 9px 28px 9px 12px;   /* right room for the custom chevron */
   background-color: hsl(var(--background));
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-image: var(--field-chevron);  /* the one shared caret (parts/fields.css) */
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 14px;
@@ -925,14 +903,8 @@
   -moz-appearance: none;
 }
 
-.tool-actions select:hover {
+.tool-actions select:not(.field-select):hover:not(:focus) {
   border-color: hsl(var(--ring) / 0.4);
-}
-
-.tool-actions select:focus {
-  border-color: hsl(var(--ring));
-  outline: none;
-  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
 }
 /* Timing inputs — wait and duration, shown for webm and gif formats */
 /* Shown only for animated formats. Takes its own full-width row in the Tier-3
@@ -984,12 +956,8 @@
   white-space: nowrap;
 }
 
-.gif-dither-toggle input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-  accent-color: hsl(var(--primary));
-}
+/* Its tick is `.field-check` — nothing to restate here (the 5px row gap above is
+   the only genuine delta from `.field-toggle`). */
 
 /* Action buttons — base recipe (.btn + .tool-actions button) now lives in
    parts/buttons.css, imported globally from app.css. */

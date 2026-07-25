@@ -38,6 +38,20 @@ export interface StudioTabCtx {
 
 export interface StudioPanelHandle { render: () => void; teardown: () => void }
 
+/**
+ * The studio panel's titled head — `.be-panel-head`/`-title`/`-sub`, which alias
+ * chips.css's `.section-header` family (see styles/parts/chips.css). Was typed
+ * out as a raw template string eleven times across brand-editor.ts and this
+ * module; this is the one copy.
+ *
+ * Both arguments are **trusted HTML, not escaped** — every call site passes a
+ * `t()` string, and several of the subs carry deliberate inline markup
+ * (`<strong>`, `<em>`, a `<a href="#/c">` link). Never pass user input here.
+ * `sub` is optional; omitting it emits the head with a title alone.
+ */
+export const panelHead = (title: string, sub?: string): string =>
+  `<div class="be-panel-head"><h3 class="be-panel-title">${title}</h3>${sub ? `<p class="be-panel-sub">${sub}</p>` : ''}</div>`;
+
 // ── Tokens panel ──────────────────────────────────────────────────────────────
 
 /** The kinds the Tokens tab offers (gradient lives on the Colour tab instead —
@@ -63,7 +77,7 @@ function tokenValueEditor(tok: StudioToken): string {
   switch (tok.kind) {
     case 'opacity': {
       const v = typeof tok.raw === 'number' ? tok.raw : 1;
-      return `<input type="range" class="be-tok-range" min="0" max="1" step="0.01" value="${v}" data-tok-input="opacity" data-tok-path="${p}" aria-label="${escape(t('{name} opacity', { name: tok.name }))}">
+      return `<input type="range" class="field-range be-tok-range" min="0" max="1" step="0.01" value="${v}" data-tok-input="opacity" data-tok-path="${p}" aria-label="${escape(t('{name} opacity', { name: tok.name }))}">
         <output class="be-tok-out" data-tok-out>${escape(formatStudioValue(tok))}</output>`;
     }
     case 'rotation':
@@ -102,11 +116,10 @@ const isRecObj = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioPanelHandle {
   mount.innerHTML = `
-    <div class="be-panel-head"><h3 class="be-panel-title">${t('More tokens')}</h3>
-      <p class="be-panel-sub">${t('The rest of the system — spacing, sizing, stroke widths, opacity, rotation, plain numbers and shadows. Tools that read tokens follow these the way they follow your colours.')}</p></div>
+    ${panelHead(t('More tokens'), t('The rest of the system — spacing, sizing, stroke widths, opacity, rotation, plain numbers and shadows. Tools that read tokens follow these the way they follow your colours.'))}
     <div class="be-tok-list" data-tok-list></div>
     <form class="be-tok-add" data-tok-add>
-      <select class="be-tok-add-kind" data-tok-add-kind aria-label="${escape(t('Token type'))}">
+      <select class="field-select field-select--auto field-select--sm be-tok-add-kind" data-tok-add-kind aria-label="${escape(t('Token type'))}">
         ${TOKEN_KINDS.map(k => `<option value="${k.id}">${escape(t(k.label))}</option>`).join('')}
       </select>
       <input type="text" class="be-tok-add-name" data-tok-add-name placeholder="${escape(t('Name it — Gutter, Card shadow…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Token name'))}">
@@ -253,8 +266,7 @@ const GRAD_STOPS_MAX = 8;
 
 export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): StudioPanelHandle {
   mount.innerHTML = `
-    <div class="be-panel-head"><h3 class="be-panel-title">${t('Gradients')}</h3>
-      <p class="be-panel-sub">${t("Optional colour tokens — blends of your palette for backgrounds and accents. Stops wear your swatches, so they follow a recolour. Skip these entirely if your brand doesn't do gradients.")}</p></div>
+    ${panelHead(t('Gradients'), t("Optional colour tokens — blends of your palette for backgrounds and accents. Stops wear your swatches, so they follow a recolour. Skip these entirely if your brand doesn't do gradients."))}
     <details class="be-subst-details be-grads-details" data-be-grads-details>
       <summary><span class="be-subst-details-label">${t('Your gradients')}</span><span class="be-subst-chips"><span class="be-ps-chip" data-grad-count></span></span></summary>
       <div class="be-grad-list" data-grad-list></div>
@@ -595,8 +607,7 @@ export interface CataloguePanelCtx { host: HostV1; notify: () => void }
 
 export function mountCataloguePanel(mount: HTMLElement, ctx: CataloguePanelCtx): StudioPanelHandle {
   mount.innerHTML = `
-    <div class="be-panel-head"><h3 class="be-panel-title">${t('Catalogue')}</h3>
-      <p class="be-panel-sub">${t("The files your brand keeps — drop them here and they land in your {link}, sorted into its sections, ready for every tool's asset picker.", { link: `<a href="#/c">${t('Catalogue')}</a>` })}</p></div>
+    ${panelHead(t('Catalogue'), t("The files your brand keeps — drop them here and they land in your {link}, sorted into its sections, ready for every tool's asset picker.", { link: `<a href="#/c">${t('Catalogue')}</a>` }))}
     <div data-be-cat-dropzone></div>
     <div class="be-cat-groups" data-be-cat-groups aria-live="polite"></div>`;
 

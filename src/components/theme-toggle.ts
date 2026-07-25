@@ -19,6 +19,7 @@
 import { THEMES, THEME_LABELS, THEME_ICONS, nextTheme, currentTheme } from '../theme.ts';
 import { setTheme, type SetThemeHost as ThemeToggleHost } from '../lib/set-theme.ts';
 import { t } from '../i18n.ts';
+import { segHtml } from '../lib/seg.ts';
 
 export function createThemeToggle(host: ThemeToggleHost): HTMLButtonElement {
   const btn = document.createElement('button');
@@ -59,12 +60,11 @@ export function createThemeToggle(host: ThemeToggleHost): HTMLButtonElement {
  */
 export function themeSegmentHtml(headClass = 'filter-pop-head'): string {
   const cur = currentTheme();
-  // Label text goes through t() — safe to inline raw: the translation pipeline's
-  // tag-parity validator guarantees a tagless English source stays tagless.
+  // The shared segmented-control primitive (lib/seg.ts). `attr` stamps this control's
+  // own `data-theme-seg` value-hook — which wireThemeSegment() keys off — alongside the
+  // canonical `data-val`, so no markup fork is needed for it.
   return `<p class="${headClass}">${t('Theme')}</p>
-      <div class="view-seg" role="group" aria-label="${t('Theme')}">
-        ${THEMES.map(th => `<button type="button" class="view-seg-btn" data-theme-seg="${th}" aria-pressed="${th === cur}">${t(THEME_LABELS[th])}</button>`).join('')}
-      </div>`;
+      ${segHtml('theme', THEMES.map(th => ({ id: th, label: t(THEME_LABELS[th]) })), cur, t('Theme'), { attr: 'data-theme-seg' })}`;
 }
 
 /**

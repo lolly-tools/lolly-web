@@ -326,6 +326,11 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
     content: readDoc(),
     autofocus: 'end',
     editorProps: {
+      // TipTap already stamps role="textbox" on the editable (@tiptap/core createView) —
+      // do NOT add a second one. What it does not give the textbox is a NAME: the
+      // aria-label on .doc-tt-holder is invisible to AT because the wrapper is not the
+      // focusable element, so the name goes on the editable itself.
+      attributes: { 'aria-label': 'Document body' },
       // Paste raw Markdown → fully-formatted nodes. If the clipboard's HTML carries real
       // block STRUCTURE (Word / Docs / a web page — tables, lists, headings), let
       // ProseMirror parse that (richer). But code editors (VS Code) and browsers attach an
@@ -374,18 +379,18 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   const ribbon = el('div', 'doc-ribbon');
   ribbonDock.appendChild(ribbon);
 
-  const styleSel = el('select', 'doc-style-select') as HTMLSelectElement;
+  const styleSel = el('select', 'doc-style-select field-select field-select--sm field-select--auto') as HTMLSelectElement;
   styleSel.title = 'Paragraph style'; styleSel.setAttribute('aria-label', 'Paragraph style');
   STYLE_OPTS.forEach((o) => { const op = doc.createElement('option'); op.value = o.value; op.textContent = o.label; styleSel.appendChild(op); });
-  const fontSel = el('select', 'doc-font-select') as HTMLSelectElement;
+  const fontSel = el('select', 'doc-font-select field-select field-select--sm field-select--auto') as HTMLSelectElement;
   fontSel.title = 'Font'; fontSel.setAttribute('aria-label', 'Font');
   [['', 'Document font'], ['SUSE', 'SUSE'], ['SUSE Mono', 'SUSE Mono']].forEach(([v, l]) => { const op = doc.createElement('option'); op.value = v!; op.textContent = l!; fontSel.appendChild(op); });
   // Line height + letter spacing — block-level typographic controls (applied to the
   // selected paragraph/heading via the BlockTypography extension). Empty value = default.
-  const lhSel = el('select', 'doc-lh-select') as HTMLSelectElement;
+  const lhSel = el('select', 'doc-lh-select field-select field-select--sm field-select--auto') as HTMLSelectElement;
   lhSel.title = 'Line height'; lhSel.setAttribute('aria-label', 'Line height');
   [['', 'Line height'], ['1', 'Single'], ['1.15', 'Snug'], ['1.4', 'Normal'], ['1.6', 'Relaxed'], ['2', 'Double']].forEach(([v, l]) => { const op = doc.createElement('option'); op.value = v!; op.textContent = l!; lhSel.appendChild(op); });
-  const lsSel = el('select', 'doc-ls-select') as HTMLSelectElement;
+  const lsSel = el('select', 'doc-ls-select field-select field-select--sm field-select--auto') as HTMLSelectElement;
   lsSel.title = 'Letter spacing'; lsSel.setAttribute('aria-label', 'Letter spacing');
   [['', 'Letter spacing'], ['-0.03em', 'Tight'], ['0em', 'Normal'], ['0.03em', 'Wide'], ['0.06em', 'Wider']].forEach(([v, l]) => { const op = doc.createElement('option'); op.value = v!; op.textContent = l!; lsSel.appendChild(op); });
 
@@ -564,6 +569,7 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
       let ctrl: HTMLElement;
       if (spec.type === 'select') {
         const s = doc.createElement('select');
+        s.className = 'field-select field-select--sm';
         (spec.options || []).forEach((o) => { const op = doc.createElement('option'); op.value = o.value; op.textContent = o.label || o.value; s.appendChild(op); });
         s.value = String(val(spec.id) ?? spec.default ?? '');
         on(s, 'change', () => { runtime.setInput(spec.id, s.value); const o = (spec.options || []).find((x) => x.value === s.value); if (o?.width && o?.height) opts.setCanvasSize?.(o.width, o.height, o.unit || 'mm'); });
@@ -575,10 +581,10 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
           onChange: (v) => runtime.setInput(spec.id, v),
         });
       } else if (spec.type === 'boolean') {
-        const c = doc.createElement('input'); c.type = 'checkbox'; c.checked = val(spec.id) !== false;
+        const c = doc.createElement('input'); c.type = 'checkbox'; c.className = 'field-check'; c.checked = val(spec.id) !== false;
         on(c, 'change', () => runtime.setInput(spec.id, c.checked)); ctrl = c;
       } else {
-        const t = doc.createElement('input'); t.type = 'text'; t.value = String(val(spec.id) ?? spec.default ?? '');
+        const t = doc.createElement('input'); t.type = 'text'; t.className = 'field-input field-input--sm'; t.value = String(val(spec.id) ?? spec.default ?? '');
         on(t, 'input', () => runtime.setInput(spec.id, t.value)); ctrl = t;
       }
       row.appendChild(ctrl); pop.appendChild(row);

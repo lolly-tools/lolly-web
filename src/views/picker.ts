@@ -35,6 +35,7 @@ import { createRuntime, serializeUrlState, buildEmbedUrl, parseThemedAssetId, bu
 import { fmtBytes } from '../lib/format.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
+import { wireTabs } from '../lib/tabs.ts';
 import { downscaleRaster, computeResize, MAX_LONGEST_EDGE, readVideoDimensions } from '../bridge/image-resize.ts';
 import { createFolderStore, childFolders, folderPath } from '../folders.ts';
 import { announce } from '../a11y.ts';
@@ -446,7 +447,7 @@ async function render(
       ${opts.allowUpload ? `
         <footer class="asset-picker-footer">
           <label class="asset-picker-upload">
-            <input type="file" accept="${UPLOAD_ACCEPT}" hidden />
+            <input type="file" class="visually-hidden" accept="${UPLOAD_ACCEPT}" />
             <span class="asset-picker-upload-label">${t('Upload your own…')}</span>
           </label>
           ${canWebcam ? `<button type="button" class="asset-picker-webcam">${cameraGlyph} ${t('Take a photo')}</button>` : ''}
@@ -616,28 +617,16 @@ async function render(
 
   // Tab strip: click switches which source pane is visible; Arrow keys rove focus
   // between tabs (Home/End jump to the ends), activating each as it's reached — the
-  // ARIA tabs pattern. Roving keeps focus on the tab (setTab lands it on the pane's
-  // first card, so we re-focus the tab afterwards).
+  // ARIA tabs pattern, which is lib/tabs.ts's whole job (it also picks up Up/Down,
+  // which the hand-rolled copy this replaced dropped). wireTabs owns the button
+  // state (is-active / aria-selected / roving tabindex) and the focus move; setTab
+  // below owns everything picker-specific that follows.
   const tabsEl = root.querySelector<HTMLElement>('.asset-picker-tabs');
-  tabsEl?.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-tab]');
-    if (btn) setTab(btn.dataset.tab as TabId);
-  });
-  tabsEl?.addEventListener('keydown', (e) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-    const btns = [...tabsEl.querySelectorAll<HTMLElement>('.asset-picker-tab')];
-    const i = btns.findIndex(b => b === document.activeElement);
-    if (i < 0) return;
-    e.preventDefault();
-    const next = e.key === 'Home' ? 0
-      : e.key === 'End' ? btns.length - 1
-      : e.key === 'ArrowLeft' ? (i - 1 + btns.length) % btns.length
-      : (i + 1) % btns.length;
-    const target = btns[next];
-    if (!target) return;
-    setTab(target.dataset.tab as TabId);
-    target.focus();
-  });
+  // Keyboard roving must keep focus ON the tab so the next arrow press still lands
+  // there; a click (or a programmatic jump) hands focus down to the pane's first card.
+  const selectTab = tabsEl
+    ? wireTabs(tabsEl, { key: 'tab', onSelect: (v, info) => applyTab(v as TabId, info.reason !== 'key') })
+    : null;
 
   // The initial pane is baked into the markup as Library; if the default tab is
   // anything else (collect mode → Tools) switch to it now so the right pane paints
@@ -826,14 +815,17 @@ async function render(
 
   // Show/hide panes for the chosen tab, dismiss any tool-render takeover, re-filter
   // the now-visible pane with the current query, and land focus on its first card.
+  // Public entry point: routes through wireTabs so the strip's own state
+  // (is-active / aria-selected / roving tabindex) is applied exactly once, in one
+  // place. With a single source there's no strip at all — apply the pane switch direct.
   function setTab(id: TabId): void {
+    if (selectTab) selectTab(id);
+    else applyTab(id, true);
+  }
+
+  // `focusFirstCard` is false only while arrow-roving the strip (see wireTabs above).
+  function applyTab(id: TabId, focusFirstCard: boolean): void {
     activeTab = id;
-    root.querySelectorAll<HTMLElement>('.asset-picker-tab').forEach(b => {
-      const on = b.dataset.tab === id;
-      b.classList.toggle('is-active', on);
-      b.setAttribute('aria-selected', String(on));
-      b.tabIndex = on ? 0 : -1; // keep the roving tabindex on the selected tab
-    });
     toolcardHost.hidden = true;
     toolcardHost.innerHTML = '';
     if (currentEl) currentEl.hidden = false;
@@ -850,6 +842,7 @@ async function render(
       else if (id === 'projects') renderProjects(q);
       else if (id === 'tools') renderTools(q);
     }
+    if (!focusFirstCard) return;
     const first = navCards()[0];
     if (first) first.focus({ preventScroll: true });
   }
@@ -1424,12 +1417,12 @@ async function render(
           <span>${t('Render the <strong>{name}</strong> tool as your image', { name: escapeHtml(desc.name) })}</span>
         </div>
         <div class="asset-picker-toolcard-controls">
-          <label>${t('Format')} <select class="tc-format" aria-label="${escapeHtml(t('Render format'))}">${fmtOptions}</select></label>
-          <label>${t('Width')} <input type="number" class="tc-w" min="1" inputmode="numeric" placeholder="${escapeHtml(t('auto'))}" value="${desc.width ?? ''}"></label>
-          <label>${t('Height')} <input type="number" class="tc-h" min="1" inputmode="numeric" placeholder="${escapeHtml(t('auto'))}" value="${desc.height ?? ''}"></label>
+          <label>${t('Format')} <select class="tc-format field-select field-select--auto" aria-label="${escapeHtml(t('Render format'))}">${fmtOptions}</select></label>
+          <label>${t('Width')} <input type="number" class="tc-w field-input" min="1" inputmode="numeric" placeholder="${escapeHtml(t('auto'))}" value="${desc.width ?? ''}"></label>
+          <label>${t('Height')} <input type="number" class="tc-h field-input" min="1" inputmode="numeric" placeholder="${escapeHtml(t('auto'))}" value="${desc.height ?? ''}"></label>
         </div>
         <div class="asset-picker-toolcard-preview"><div class="asset-picker-loading">${t('Rendering…')}</div></div>
-        <label class="asset-picker-toolcard-freeze"><input type="checkbox" class="tc-freeze"> ${t('Freeze as a static image')}</label>
+        <label class="asset-picker-toolcard-freeze"><input type="checkbox" class="tc-freeze field-check"> ${t('Freeze as a static image')}</label>
         <p class="asset-picker-toolcard-freeze-help">${t("Won't update when the source tool changes, but doesn't count against nesting depth.")}</p>
         <div class="asset-picker-toolcard-actions">
           ${canEdit ? `<button type="button" class="tc-edit">${t('Edit inputs…')}</button>` : ''}

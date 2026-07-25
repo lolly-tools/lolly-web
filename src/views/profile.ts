@@ -29,6 +29,7 @@ import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts'
 import { BATCH_SLOT_PREFIX } from '../lib/batch-slots.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
+import { mountProgressToast } from '../components/progress-toast.ts';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
@@ -60,6 +61,7 @@ import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog
 import { relativeTime, fmtBytes, sessionRow } from '../folder-tiles.ts';
 import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
 import type { FeatureFlag } from '../feature-flags.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 
 /** A saved session as the web state bridge lists it — StateEntry plus the
  *  export filename and the thumbnail this view renders. */
@@ -173,6 +175,11 @@ const HEADSHOT_ID = 'user/headshot';
 // <dialog> sits in the top layer, so an orphan left open would block the next view
 // (unlike the body-level overlay divs these replaced).
 const openProfileModals = new Set<ModalHandle<any>>();
+
+// Live "export and render everything" progress toasts. They're body-level like the
+// dialogs above, so mountProfile's _cleanup drains them too — matching the Projects
+// view, which has always torn its batch-export toasts down on navigate-away.
+const openProfileToasts = new Set<HTMLElement>();
 
 // Randomised word the user must type to confirm the irreversible "clear all my
 // data" action — a deliberate speed-bump against an accidental wipe.
@@ -341,7 +348,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             ${flagRow(STRIP_UPLOAD_META_FLAG)}`;
 
   viewEl.innerHTML = `
-    <a href="#/" class="tools-home home-full">${t('Tools')}</a>
+    ${backPillHtml()}
     <div class="gallery-topbar" style="justify-content:flex-end">
       <div class="gallery-topright">
         ${langFabHtml()}
@@ -371,7 +378,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                   // by …" note rides along as its tooltip (title + accessible
                   // label) so the row stays uncluttered. No note ⇒ nothing.
                   const note = pol?.mode === 'locked' && pol.note
-                    ? `<span class="profile-field-lock" tabindex="0" role="img" title="${escape(pol.note)}" aria-label="${escape(pol.note)}" style="margin-inline-start:.35rem;display:inline-flex;vertical-align:middle;color:hsl(var(--muted-foreground))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>`
+                    ? `<span class="profile-field-lock" tabindex="0" role="img" title="${escape(pol.note)}" aria-label="${escape(pol.note)}" style="margin-inline-start:.35rem;display:inline-flex;vertical-align:middle;color:hsl(var(--muted-foreground))">${icon('lock', { size: 13 })}</span>`
                     : '';
                   return `<label class="profile-field">
                   <span class="profile-field-label">${escape(t(FIELD_LABELS[f] ?? f))}${note}</span>
@@ -606,6 +613,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // the language is consistent across views. switchLang saves to profile.lang +
   // localStorage, then reloads so the whole app re-renders in the new language.
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
+
+  mountBackPill(viewEl);
 
   // Sound switch — the unified "Sound:" toggle (speaker indicator + sliding switch). Auto-saves
   // each flip to profile.sfxMuted + localStorage and chirps when re-enabled (via applySfxMuted,
@@ -1466,77 +1475,79 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       });
     }
 
-    // The two-part export+render job, kicked off once the confirm word matches. Runs in a
-    // floating progress toast (torn down by its close button), like the projects view.
+    // The two-part export+render job, kicked off once the confirm word matches. Runs in
+    // the shared progress toast (components/progress-toast.ts) — the `--top` variant, so
+    // the wait-time quips stay readable while a big archive renders (the bottom-right
+    // default can sit below the fold on a long, scrolled profile page). Tracked in
+    // openProfileToasts so a view swap tears it down. The toast's outer catch is new:
+    // this job previously had no failure path outside its two inner try/catches, so a
+    // throw elsewhere left a stale "rendering…" message on screen forever.
     async function exportAndRenderEverything(): Promise<void> {
       // The victorious fanfare fires when the render QUEUE finishes (see runBatchWithProgress),
       // not here at kickoff — so it lands as a genuine "it's all done" reward.
-      const toast = document.createElement('div');
-      // Top-right so the wait-time quips are readable while a big archive renders (the
-      // bottom-right default can sit below the fold on a long, scrolled profile page).
-      toast.className = 'pro-toast pro-toast--top';
-      toast.innerHTML = `<button type="button" class="pro-toast-close" aria-label="${escape(t('Close'))}">✕</button><div class="pro-toast-mount"><p class="pro-progress-msg"><strong>${t('Preparing your export…')}</strong></p></div>`;
-      document.body.appendChild(toast);
-      const mount = toast.querySelector<HTMLElement>('.pro-toast-mount')!;
-      toast.querySelector('.pro-toast-close')!.addEventListener('click', () => toast.remove());
+      mountProgressToast(async (mount, toast) => {
+        const prof = await host.profile.get().catch(() => null);
+        const author = prof && (prof as { useDetails?: boolean }).useDetails ? prof : null;
 
-      const prof = await host.profile.get().catch(() => null);
-      const author = prof && (prof as { useDetails?: boolean }).useDetails ? prof : null;
-
-      // 1) Portable data backup (quick) — the same bundle the "Export my data" button makes.
-      try {
-        const { blob, filename, summary } = await exportBackup({ host: host as unknown as Parameters<typeof exportBackup>[0]['host'], storage: localStorage });
-        saveBlob(blob, filename);
-        mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Saved your data backup.</strong> Now rendering every creation…')}</p>`;
-        announce(t('Data backup saved: {sessions}, {images}', {
-          sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
-          images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
-        }));
-      } catch (err) {
-        host.log?.('error', 'Data export failed', { error: String(err) });
-        mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('The data backup failed ({error}). Continuing to the render…', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
-      }
-
-      // 2) Render EVERYTHING into one nested zip mirroring the Projects tree: loose
-      // (uncategorised) sessions at the top, each top-level folder recursed into subpaths.
-      try {
-        const [{ createFolderStore, childFolders }, { exportSelectionAsBatch }] = await Promise.all([
-          import('../folders.ts'),
-          import('../pro/folder-export.ts'),
-        ]);
-        const store = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
-        const folders = await store.list();
-        const entries = await (host.state as unknown as { list(): Promise<Array<{ slot: string }>> }).list().catch(() => []);
-        const claimed = new Set(folders.flatMap(f => f.items.filter(i => i.type === 'session').map(i => i.ref)));
-        const looseSlots = entries.filter(e => !claimed.has(e.slot)).map(e => e.slot);
-        const topLevelIds = childFolders(folders, null).map(f => f.id);
-        if (!looseSlots.length && !topLevelIds.length) {
-          mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> You have no saved sessions to render yet — make something first, then come back.')}</p>`;
-          return;
+        // 1) Portable data backup (quick) — the same bundle the "Export my data" button makes.
+        try {
+          const { blob, filename, summary } = await exportBackup({ host: host as unknown as Parameters<typeof exportBackup>[0]['host'], storage: localStorage });
+          saveBlob(blob, filename);
+          mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Saved your data backup.</strong> Now rendering every creation…')}</p>`;
+          announce(t('Data backup saved: {sessions}, {images}', {
+            sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
+            images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
+          }));
+        } catch (err) {
+          host.log?.('error', 'Data export failed', { error: String(err) });
+          mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('The data backup failed ({error}). Continuing to the render…', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
         }
-        const result = await exportSelectionAsBatch(host as unknown as Parameters<typeof exportSelectionAsBatch>[0], {
-          label: prof?.firstname ? `${prof.firstname}'s Lolly` : 'Lolly',
-          sessionRefs: looseSlots,
-          folderIds: topLevelIds,
-          allFolders: folders as unknown as NonNullable<Parameters<typeof exportSelectionAsBatch>[1]>['allFolders'],
-          mount,
-          author,
-          announce,
-          // Videos/animations encode in real time (they pause if the tab is hidden), so make
-          // them opt-in behind an explicit "I'll keep this tab active" affirmation. Dim the
-          // whole toast (not just its mount) while the choice is open — it floats above the
-          // dialog's backdrop, so it needs its own dimming.
-          onMotionFound: (count) => askKeepTabActive(count, toast),
-        });
-        // A falsy result means the motion prompt was cancelled — the backup still went out,
-        // but nothing was rendered, so say so rather than leaving a stale "rendering…".
-        if (!result) {
-          mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> Render cancelled — nothing else was downloaded.')}</p>`;
+
+        // 2) Render EVERYTHING into one nested zip mirroring the Projects tree: loose
+        // (uncategorised) sessions at the top, each top-level folder recursed into subpaths.
+        try {
+          const [{ createFolderStore, childFolders }, { exportSelectionAsBatch }] = await Promise.all([
+            import('../folders.ts'),
+            import('../pro/folder-export.ts'),
+          ]);
+          const store = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
+          const folders = await store.list();
+          const entries = await (host.state as unknown as { list(): Promise<Array<{ slot: string }>> }).list().catch(() => []);
+          const claimed = new Set(folders.flatMap(f => f.items.filter(i => i.type === 'session').map(i => i.ref)));
+          const looseSlots = entries.filter(e => !claimed.has(e.slot)).map(e => e.slot);
+          const topLevelIds = childFolders(folders, null).map(f => f.id);
+          if (!looseSlots.length && !topLevelIds.length) {
+            mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> You have no saved sessions to render yet — make something first, then come back.')}</p>`;
+            return;
+          }
+          const result = await exportSelectionAsBatch(host as unknown as Parameters<typeof exportSelectionAsBatch>[0], {
+            label: prof?.firstname ? `${prof.firstname}'s Lolly` : 'Lolly',
+            sessionRefs: looseSlots,
+            folderIds: topLevelIds,
+            allFolders: folders as unknown as NonNullable<Parameters<typeof exportSelectionAsBatch>[1]>['allFolders'],
+            mount,
+            author,
+            announce,
+            // Videos/animations encode in real time (they pause if the tab is hidden), so make
+            // them opt-in behind an explicit "I'll keep this tab active" affirmation. Dim the
+            // whole toast (not just its mount) while the choice is open — it floats above the
+            // dialog's backdrop, so it needs its own dimming.
+            onMotionFound: (count) => askKeepTabActive(count, toast),
+          });
+          // A falsy result means the motion prompt was cancelled — the backup still went out,
+          // but nothing was rendered, so say so rather than leaving a stale "rendering…".
+          if (!result) {
+            mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> Render cancelled — nothing else was downloaded.')}</p>`;
+          }
+        } catch (err) {
+          mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('Render failed: {error}', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
+          host.log?.('error', 'Render-everything failed', { error: String(err) });
         }
-      } catch (err) {
-        mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('Render failed: {error}', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
-        host.log?.('error', 'Render-everything failed', { error: String(err) });
-      }
+      }, {
+        variant: 'top',
+        seed: `<p class="pro-progress-msg"><strong>${t('Preparing your export…')}</strong></p>`,
+        track: openProfileToasts,
+      });
     }
 
     // Import a bundle from another install (merge-overwrite), then re-mount.
@@ -1747,6 +1758,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     closeConfirmDialogs();
     openProfileModals.forEach(m => m.close());
     openProfileModals.clear();
+    openProfileToasts.forEach(el => el.remove());
+    openProfileToasts.clear();
   };
 }
 

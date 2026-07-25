@@ -304,10 +304,10 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     }
     case 'components': {
       // The browsable component library (#/components). Lazy — it's a dev/design
-      // surface, off every hot path. cameFromApp drives its back button: an in-app
-      // arrival (prevRouteName set) gets history.back(); a cold deep link → gallery.
+      // surface, off every hot path. Its back pill is the shared one — it names
+      // and returns to the view you came from, or the gallery on a cold deep link.
       const { mountComponents } = await import('./views/components.ts');
-      await mountComponents(view, host as unknown as Parameters<typeof mountComponents>[1], prevRouteName !== null);
+      await mountComponents(view, host as unknown as Parameters<typeof mountComponents>[1]);
       break;
     }
     case 'utilities':

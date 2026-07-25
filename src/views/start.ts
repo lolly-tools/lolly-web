@@ -47,7 +47,7 @@ import { t } from '../i18n.ts';
 import type { LangSwitchHost } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
-import { getPrevView } from '../lib/back-nav.ts';
+import { backPillHtml, mountBackPill, resolveBackTarget } from '../components/back-pill.ts';
 import { navigateTo } from '../nav.ts';
 import { strFromU8 } from 'fflate';
 
@@ -82,20 +82,15 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
 
   // The back pill wears the name of the view the user came from — a tool's
   // "Manage fonts", the Dashboard CTA, a project folder — and returns there;
-  // with no recorded history it's the classic "Tools" → gallery. The click is
-  // routed through navigateTo so a path-form target (a tool's /t/<id> URL)
-  // stays an SPA hop instead of a full reload.
-  const prevView = getPrevView();
-  const backHref = prevView?.href ?? '#/';
-  const backLabel = prevView?.label ?? t('Tools');
-  const backPill = `<a class="tools-home start-back" href="${escape(backHref)}">${escape(backLabel)}</a>`;
-  const wireBackPill = (): void => {
-    viewEl.querySelector<HTMLAnchorElement>('.start-back')?.addEventListener('click', (e) => {
-      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      e.preventDefault();
-      navigateTo(backHref);
-    });
-  };
+  // with no recorded history it's the classic "Tools" → gallery. Rendering and
+  // click handling are the shared ones (components/back-pill.ts), so /start's
+  // pill behaves and lines up exactly like every other view's; only the in-flow
+  // placement (.start-back) is this view's own. Esc leaves the studio the same
+  // way, hence the resolved target being kept alongside.
+  const backTarget = resolveBackTarget();
+  const backHref = backTarget.href;
+  const backPill = backPillHtml({ class: 'start-back' });
+  const wireBackPill = (): void => { mountBackPill(viewEl); };
 
   // A locked catalog is authoritative — its brand (colours, fonts, radius) can't
   // be adjusted; every write funnels through installUserTokens, which refuses. So

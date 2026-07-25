@@ -150,7 +150,14 @@
    out from Open/Rename/Move, matching the pronounced header "Render folder" button. */
 .folder-menu-item--render { color: hsl(var(--primary)); font-weight: 600; }
 .folder-menu-item--render svg { opacity: 1; }
-.folder-menu-sep {
+/* Uppercase group label inside a folder menu — `--sep` is the folder overlay's "Move to"
+   separator, `--head` the Projects view's own menu/popover section headings ("View",
+   "Sort", "{n} selected", and the theme/sound segment labels). One recipe, one home: the
+   whole .folder-menu-* family lives in this sheet (the -head copy used to sit in
+   projects.css, byte-identical). Both sheets are app-wide @imports in app.css, so this is
+   about family ownership, not route weight. */
+.folder-menu-sep,
+.folder-menu-head {
   padding: 8px 10px 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.04em; color: hsl(var(--muted-foreground));
 }

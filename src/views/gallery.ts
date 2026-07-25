@@ -34,6 +34,8 @@ import { renderFeaturedVariant, renderFeaturedPages, displayFormatOf } from '../
 import { currentTheme } from '../theme.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
+import { segHtml } from '../lib/seg.ts';
+import { wireDisclosure } from '../components/body-popover.ts';
 import type { FeaturedEntry, FeaturedManifest, FeaturedVariant, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { loadFavourites, saveFavourites } from '../lib/favourites.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
@@ -527,14 +529,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
             ${featuredEntries.length ? `
             <div class="filter-pop-sort">
               <p class="filter-pop-head">${t('Featured view')}</p>
-              <div class="view-seg" role="group" aria-label="${escape(t('Featured view'))}">
-                ${FEATURED_VIEWS.map(v => `<button type="button" class="view-seg-btn" data-view="${v}" aria-pressed="${v === featuredView}">${escape(t(FEATURED_VIEW_LABELS[v]))}</button>`).join('')}
-              </div>
+              ${segHtml('featured-view', FEATURED_VIEWS.map(v => ({ id: v, label: t(FEATURED_VIEW_LABELS[v]) })), featuredView, t('Featured view'), { attr: 'data-view' })}
             </div>` : ''}
             <div class="filter-pop-sort">
               <label class="filter-pop-head" for="gallery-sort">${t('Sort by')}</label>
               <div class="gallery-sort-row">
-                <select class="gallery-sort" id="gallery-sort">
+                <select class="gallery-sort field-select" id="gallery-sort">
                   ${SORT_KEYS.map(k => `<option value="${k}">${escape(t(SORT_LABELS[k]))}</option>`).join('')}
                 </select>
                 <button type="button" class="gallery-sort-dir" id="gallery-sort-dir" aria-pressed="false" aria-label="${escape(t('Sort direction: newest first'))}" title="${escape(t('Reverse order'))}">${SORT_DIR_ICON}</button>
@@ -545,7 +545,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
             <label class="filter-pop-check">
               ${jellyActive()
                 ? `<jelly-switch class="filter-hide-previews" size="sm" label="${escape(t('Hide previews'))}"></jelly-switch>`
-                : `<input type="checkbox" class="filter-hide-previews">`}
+                : `<input type="checkbox" class="filter-hide-previews field-check">`}
               <span>${t('Hide previews')}</span>
             </label>
           </div>` : '',
@@ -656,8 +656,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Featured view-mode segmented control (Gallery | Cover Flow) in the filter popover —
   // drives BOTH strips.
   // Scoped to the Featured-view seg specifically — the popover now also holds a Theme
-  // .view-seg (added above), so a bare `.view-seg` query could grab the wrong one.
-  const viewSeg = viewEl.querySelector<HTMLElement>('.view-seg[aria-label="Featured view"]');
+  // .view-seg (added above), so a bare `.view-seg` query could grab the wrong one. The
+  // hook is segHtml()'s own `data-be-seg` name, not the (translated) aria-label.
+  const viewSeg = viewEl.querySelector<HTMLElement>('.view-seg[data-be-seg="featured-view"]');
   const paintViewSeg = (): void => viewSeg?.querySelectorAll<HTMLElement>('[data-view]').forEach(b =>
     b.setAttribute('aria-pressed', String(b.dataset.view === featuredView)));
   wireThemeSegment(viewEl, host);   // Theme picker in the same popover
@@ -1248,36 +1249,19 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // ── Filter popover: anchored dropdown on desktop, bottom sheet on mobile. ──
   // Matches the color-field popover conventions (Escape + outside-pointerdown
   // close, focus returns to the trigger).
-  let filterOutside: ((e: PointerEvent) => void) | null = null;
-  function openFilter(): void {
-    if (!filterPop || !filterPop.hidden) return;
-    filterPop.hidden = false;
-    if (filterBackdrop) filterBackdrop.hidden = false;       // CSS shows it on mobile only
-    filterFab?.setAttribute('aria-expanded', 'true');
-    filterPop.querySelector<HTMLElement>('.gallery-pill.active, .gallery-pill')?.focus();
-    filterOutside = (e) => {
-      if (!filterPop.contains(e.target as Node) && !filterFab!.contains(e.target as Node)) closeFilter();
-    };
-    // Defer so the opening click's own pointerdown doesn't immediately close it.
-    setTimeout(() => document.addEventListener('pointerdown', filterOutside!), 0);
-  }
-  function closeFilter(returnFocus = false): void {
-    if (!filterPop || filterPop.hidden) return;
-    filterPop.hidden = true;
-    if (filterBackdrop) filterBackdrop.hidden = true;
-    filterFab?.setAttribute('aria-expanded', 'false');
-    if (filterOutside) { document.removeEventListener('pointerdown', filterOutside); filterOutside = null; }
-    if (returnFocus) filterFab?.focus();
-  }
-  filterFab?.addEventListener('click', () => { filterPop!.hidden ? openFilter() : closeFilter(); });
-  filterPop?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.stopPropagation(); closeFilter(true); }
+  // The lifecycle (toggle `hidden`, aria-expanded, outside-pointerdown dismissal,
+  // Escape, backdrop, focus restore) is the shared one in components/body-popover.ts —
+  // the catalog's view-options popover rides the same helper.
+  const filterDisclosure = wireDisclosure(filterFab, filterPop, {
+    backdrop: filterBackdrop,
+    // Land on the active category pill so the popover's main choice is under the
+    // keyboard immediately.
+    initialFocus: pop => pop.querySelector<HTMLElement>('.gallery-pill.active, .gallery-pill'),
   });
-  filterBackdrop?.addEventListener('click', () => closeFilter());
   // If the view is torn down with the popover open, its document-level pointerdown
-  // listener would outlive the detached tree — closeFilter is idempotent and its
-  // default returnFocus=false makes this a no-op when already closed.
-  cleanups.push(() => closeFilter());
+  // listener would outlive the detached tree — close() is idempotent and its default
+  // returnFocus=false makes this a no-op when already closed.
+  cleanups.push(() => filterDisclosure.close());
 
   // "Hide previews" — collapse every card (grid AND featured strip) to icon + text,
   // keeping a slim Continue bar on resumable sessions. Device-level view preference,

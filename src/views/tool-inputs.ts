@@ -1694,7 +1694,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           // the value and accepts decimals (e.g. 1.3, 0.5). Mirrors the top-level
           // number-vs-slider convention so block fields read consistently.
           if (f.display === 'slider') {
-            return labelled(f, `<input type="range" class="block-field block-range-input" data-field-id="${fieldId}"
+            return labelled(f, `<input type="range" class="field-range block-field block-range-input" data-field-id="${fieldId}"
               min="${min}" max="${max}" step="${step}" value="${escape(cur)}" aria-label="${escape(f.label ?? f.id)}">`);
           }
           return labelled(f, `<input type="number" class="block-field block-number-input" data-field-id="${fieldId}"
@@ -1996,9 +1996,9 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
           </div>
           <div class="embed-editor-side">
             <div class="asset-picker-toolcard-controls">
-              <label>Format <select class="ee-format" aria-label="Render format">${fmtOptions}</select></label>
-              <label>Width <input type="number" class="ee-w" min="1" inputmode="numeric" placeholder="auto" value="${desc!.width ?? ''}"></label>
-              <label>Height <input type="number" class="ee-h" min="1" inputmode="numeric" placeholder="auto" value="${desc!.height ?? ''}"></label>
+              <label>Format <select class="ee-format field-select field-select--auto" aria-label="Render format">${fmtOptions}</select></label>
+              <label>Width <input type="number" class="ee-w field-input" min="1" inputmode="numeric" placeholder="auto" value="${desc!.width ?? ''}"></label>
+              <label>Height <input type="number" class="ee-h field-input" min="1" inputmode="numeric" placeholder="auto" value="${desc!.height ?? ''}"></label>
             </div>
             <div class="asset-picker-toolcard-preview ee-preview"><div class="asset-picker-loading">Rendering…</div></div>
             <div class="embed-editor-actions">

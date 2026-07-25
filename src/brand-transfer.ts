@@ -23,9 +23,13 @@
  * doc. Nothing else on the device is touched.
  */
 
-import { strToU8, strFromU8 } from 'fflate';
+import { strToU8 } from 'fflate';
 import type { Unzipped } from 'fflate';
-import { zipAsync, unzipAsync } from './lib/zip.ts';
+import { zipAsync } from './lib/zip.ts';
+import {
+  BUNDLE_HEADER, README_NAME, buildIntegrity, readJson, unzipBundle, verifyIntegrity,
+  type BundleEntry,
+} from './lib/bundle.ts';
 import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts, USER_FONT_PREFIX } from './user-fonts.ts';
@@ -41,7 +45,6 @@ export const BRAND_READER_VERSION = 1;
 const BRAND_PREF_KEYS = ['theme'];
 
 const KNOWN_PARTS = new Set(['manifest.json', 'tokens.json', 'fonts.json', 'logos.json', 'prefs.json']);
-const README_NAME = 'lolly.txt';
 const isKnownPart = (path: string): boolean =>
   KNOWN_PARTS.has(path) || path === README_NAME || path.startsWith('fonts/') || path.startsWith('logos/');
 
@@ -82,31 +85,13 @@ interface FontRow {
 }
 type LogoRow = FontRow;
 
-type BundleEntry = Uint8Array | [Uint8Array, { level: 0 }];
-
-const SUBTLE = globalThis.crypto?.subtle ?? null;
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let bin = '';
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
-  }
-  return btoa(bin);
-}
-
-async function sha256(bytes: Uint8Array): Promise<string> {
-  const digest = await SUBTLE!.digest('SHA-256', bytes as unknown as BufferSource);
-  return 'sha256-' + bytesToBase64(new Uint8Array(digest));
-}
-
-const entryBytes = (v: BundleEntry): Uint8Array => (v instanceof Uint8Array ? v : v[0]);
-
-const HEADER = '📐 Lolly  •  ❤️ Give Fitzy an Ovation  •  🌏 https://lolly.tools';
+// The zip envelope — entry shape, SHA-256 integrity, the README banner, the
+// minReader gate — is the shared bundle format (lib/bundle.ts), identical to the
+// data backup's. Only the payload below differs.
 
 function brandReadme(summary: BrandPackSummary, label: string, filename: string): string {
   return [
-    HEADER,
+    BUNDLE_HEADER,
     '-'.repeat(56),
     '',
     `[[ 🎨 ${filename} ]]`,
@@ -241,11 +226,8 @@ export async function exportBrandPack(
     label,
     counts: summary,
   };
-  if (SUBTLE) {
-    const integrity: Record<string, string> = {};
-    for (const [path, value] of Object.entries(entries)) integrity[path] = await sha256(entryBytes(value));
-    manifest.integrity = integrity;
-  }
+  const integrity = await buildIntegrity(entries);
+  if (integrity) manifest.integrity = integrity;
   entries['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));
   entries[README_NAME] = strToU8(brandReadme(summary, label, filename));
 
@@ -253,25 +235,16 @@ export async function exportBrandPack(
   return { blob: new Blob([zipped as BlobPart], { type: 'application/zip' }), filename, summary };
 }
 
-/** True when these zip contents are a brand pack (vs a data backup or noise) —
- *  lets one file input accept both kinds and route accordingly. */
-export function isBrandPack(files: Unzipped): boolean {
-  return readJson(files, 'manifest.json')?.format === BRAND_FORMAT;
-}
-
 /** Unzip helper shared with the views (start.ts sniffs the manifest before
  *  deciding which importer a dropped .zip belongs to). */
 export async function unzipBrandBytes(bytes: ArrayBuffer | Uint8Array): Promise<Unzipped> {
-  try {
-    // A brand pack is a tokens doc + a handful of woff2s — tens of KB to a few
-    // MB — so lib/zip.ts's DEFAULT bomb caps (64 MB entry / 256 MB total) are
-    // exactly this payload's policy.
-    return await unzipAsync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), {
-      tooLarge: name => `That brand file expands too large to load (${name}).`,
-    });
-  } catch {
-    throw new Error("That file isn't a valid brand pack — it couldn't be unzipped.");
-  }
+  // A brand pack is a tokens doc + a handful of woff2s — tens of KB to a few MB —
+  // so lib/zip.ts's DEFAULT bomb caps (64 MB entry / 256 MB total) are exactly
+  // this payload's policy.
+  return unzipBundle(bytes, {
+    tooLarge: name => `That brand file expands too large to load (${name}).`,
+    invalid: "That file isn't a valid brand pack — it couldn't be unzipped.",
+  });
 }
 
 /**
@@ -295,15 +268,7 @@ export async function importBrandPack(
   if (required > BRAND_READER_VERSION) {
     throw new Error('This brand file needs a newer version of the app. Update first, then load it.');
   }
-  if (manifest.integrity && SUBTLE) {
-    for (const [path, expected] of Object.entries(manifest.integrity as Record<string, string>)) {
-      const part = files[path];
-      if (!part) throw new Error(`This brand file is incomplete — "${path}" is missing.`);
-      if ((await sha256(part)) !== expected) {
-        throw new Error(`This brand file appears corrupted — "${path}" failed its integrity check.`);
-      }
-    }
-  }
+  await verifyIntegrity(files, manifest.integrity, 'This brand file');
 
   const summary: BrandImportSummary = { tokens: false, fontFamilies: 0, fontFiles: 0, logos: 0, prefs: 0, skipped: 0, failedFonts: 0 };
 
@@ -375,10 +340,4 @@ export async function importBrandPack(
 
   summary.skipped = Object.keys(files).filter(p => !isKnownPart(p)).length;
   return summary;
-}
-
-function readJson(files: Unzipped, name: string): any {
-  const u8 = files[name];
-  if (!u8) return null;
-  try { return JSON.parse(strFromU8(u8)); } catch { return null; }
 }

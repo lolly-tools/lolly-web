@@ -1240,7 +1240,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       '<div class="fc-size-presets">' +
       SIZE_PRESETS.map(([label, w, h]) => `<button type="button" class="fc-size-preset${sizeUnit === 'px' && w === d.w && h === d.h ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${escape(t(label))}</b><span>${w}×${h}</span></button>`).join('') +
       '</div>' +
-      `<label class="fc-row"><span>${t('Units')}</span><select data-sz="unit">${SIZE_UNITS.map((u) => `<option value="${u}"${u === sizeUnit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>` +
+      `<label class="fc-row"><span>${t('Units')}</span><select class="field-select field-select--sm" data-sz="unit">${SIZE_UNITS.map((u) => `<option value="${u}"${u === sizeUnit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>` +
       `<label class="fc-row"><span>${t('Width')}</span><input type="number" min="1" max="30000" step="any" data-sz="w" value="${dispW}"><b data-sz-unit>${sizeUnit}</b></label>` +
       `<label class="fc-row"><span>${t('Height')}</span><input type="number" min="1" max="30000" step="any" data-sz="h" value="${dispH}"><b data-sz-unit>${sizeUnit}</b></label>`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -1306,19 +1306,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.className = 'fc-panel fc-more-panel';
     p.innerHTML = `
       ${cfg.shapeField && shapeChoices.length ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, shapeChoices)) : ''}
-      ${cfg.radiusField ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
-      ${cfg.opacityField ? iconRow(SVG.opacity, t('Opacity'), `<input type="range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
+      ${cfg.radiusField ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" class="field-range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
+      ${cfg.opacityField ? iconRow(SVG.opacity, t('Opacity'), `<input type="range" class="field-range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
       ${cfg.fitField ? segRow(SVG.fitContain, t('Image fit'), segHtml(cfg.fitField, fitCur, [['contain', t('Contain'), SVG.fitContain], ['cover', t('Cover (crop)'), SVG.fitCover], ['fill', t('Stretch'), SVG.fitFill]])) : ''}
       ${cfg.imgPosField ? segRow(SVG.fitPos, t('Image position'), posGridHtml(cfg.imgPosField, posCur)) : ''}
-      ${cfg.blendField ? iconRow(SVG.blend, t('Blend mode'), `<select data-mp="blend">
+      ${cfg.blendField ? iconRow(SVG.blend, t('Blend mode'), `<select class="field-select field-select--sm" data-mp="blend">
         ${['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'].map((m) => opt(m, t(m[0]!.toUpperCase() + m.slice(1).replace('-', ' ')), blendCur)).join('')}
       </select>`) : ''}
       ${cfg.shadowField ? `<div class="fc-panel-sub">${t('Shadow')}</div>
         ${segRow(SVG.shadowIc, t('Apply to'), segHtml(cfg.shadowField, shadowCur, [['none', t('None')], ['box', t('Box')], ['text', t('Text')], ['content', t('Content')]]))}
         <label class="fc-row"><span class="fc-row-lbl">${t('Colour')}</span><span class="fc-cfield">${colorFieldHtml('fc-shadow', shColor, { float: true })}</span></label>
-        <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
-        <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
-        <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}`;
+        <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" class="field-range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
+        <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" class="field-range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
+        <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" class="field-range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // Shape is special-cased: switching to "circle" also squares the box (w = h),
     // since a circle is only an ellipse the geometry keeps 1:1. Everything else writes
@@ -1373,7 +1373,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         (cfg.rotationField
           ? `<div class="fc-dims-row fc-dims-rot"><span class="fc-dims-ic" title="${escape(t('Rotation'))}">${icon(SVG.rotate)}</span>` +
             `<label class="fc-dims-f"><input type="number" min="-180" max="180" data-dm="${cfg.rotationField}" value="${rot}"><i>°</i></label>` +
-            `<input type="range" class="fc-dims-slider" min="-180" max="180" value="${rot}" aria-label="${escape(t('Rotation'))}" data-dm-slider></div>`
+            `<input type="range" class="field-range fc-dims-slider" min="-180" max="180" value="${rot}" aria-label="${escape(t('Rotation'))}" data-dm-slider></div>`
           : '') +
       '</div>';
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -1426,7 +1426,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // an opt in/out toggle; the name/contact are edited in the profile.
       (info?.provenance ?
         `<div class="fc-panel-head fc-info-sub">${t('Embedded in exports')}</div>` +
-        `<label class="fc-row fc-row-toggle"><span>${t('Credit me')}</span><input type="checkbox" data-info="optin" disabled></label>` +
+        `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Credit me')}</span><input type="checkbox" class="field-check" data-info="optin" disabled></label>` +
         '<div class="fc-info-meta">' +
           `<div class="fc-info-line"><span>${t('Made with')}</span><b>Lolly · lolly.tools</b></div>` +
           `<div class="fc-info-line" data-prov="author" hidden><span>${t('Name')}</span><b></b></div>` +
@@ -1585,24 +1585,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.className = 'fc-panel fc-text-panel';
     p.innerHTML =
       `<div class="fc-panel-head">${t('Text')}</div>` +
-      (cfg.fontField ? `<label class="fc-row"><span>${t('Font')}</span><select data-tp="font">${fontOptionsHtml(fontCur)}</select></label>` : '') +
+      (cfg.fontField ? `<label class="fc-row"><span>${t('Font')}</span><select class="field-select field-select--sm" data-tp="font">${fontOptionsHtml(fontCur)}</select></label>` : '') +
       // Size row now carries the A−/A+ steppers (moved off the object bar) around the number.
       (cfg.fontSizeField ? `<div class="fc-row"><span>${t('Size')}</span><div class="fc-stepper">
         <button type="button" class="fc-cbtn" data-tp="smaller" title="${escape(t('Smaller'))}" aria-label="${escape(t('Smaller text'))}">A−</button>
         <input type="number" min="4" max="2000" data-tp="size" value="${sizeCur}">
         <button type="button" class="fc-cbtn" data-tp="bigger" title="${escape(t('Bigger'))}" aria-label="${escape(t('Bigger text'))}">A+</button>
       </div></div>` : '') +
-      (cfg.weightField ? `<label class="fc-row"><span>${t('Weight')}</span><select data-tp="weight">${weightChoicesFor(fontCur).map(([v, l]) => opt(v, t(l), weightCur)).join('')}</select></label>` : '') +
-      (cfg.lineHeightField ? `<label class="fc-row"><span>${t('Line height')}</span><input type="range" min="0.7" max="3" step="0.01" data-tp="lh" value="${lhCur}"><b data-tp-val="lh">${lhCur.toFixed(2)}</b></label>` : '') +
-      (cfg.trackingField ? `<label class="fc-row"><span>${t('Letter spacing')}</span><input type="range" min="-20" max="100" step="0.5" data-tp="tr" value="${trCur}"><b data-tp-val="tr">${trCur}</b></label>` : '') +
-      (cfg.ligaturesField ? `<label class="fc-row fc-row-toggle"><span>${t('Ligatures')}</span><input type="checkbox" data-tp="lig"${ligCur ? ' checked' : ''}></label>` : '') +
-      (cfg.alternatesField ? `<label class="fc-row fc-row-toggle"><span>${t('Alternates')}</span><input type="checkbox" data-tp="alt"${altCur ? ' checked' : ''}></label>` : '') +
+      (cfg.weightField ? `<label class="fc-row"><span>${t('Weight')}</span><select class="field-select field-select--sm" data-tp="weight">${weightChoicesFor(fontCur).map(([v, l]) => opt(v, t(l), weightCur)).join('')}</select></label>` : '') +
+      (cfg.lineHeightField ? `<label class="fc-row"><span>${t('Line height')}</span><input type="range" class="field-range" min="0.7" max="3" step="0.01" data-tp="lh" value="${lhCur}"><b data-tp-val="lh">${lhCur.toFixed(2)}</b></label>` : '') +
+      (cfg.trackingField ? `<label class="fc-row"><span>${t('Letter spacing')}</span><input type="range" class="field-range" min="-20" max="100" step="0.5" data-tp="tr" value="${trCur}"><b data-tp-val="tr">${trCur}</b></label>` : '') +
+      (cfg.ligaturesField ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Ligatures')}</span><input type="checkbox" class="field-check" data-tp="lig"${ligCur ? ' checked' : ''}></label>` : '') +
+      (cfg.alternatesField ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Alternates')}</span><input type="checkbox" class="field-check" data-tp="alt"${altCur ? ' checked' : ''}></label>` : '') +
       // Shrink-to-fit: on → the text scales down to fit the box (never up); off → the box
       // grows to the text (the default). See the hooks.js fit pass driven by data-fit.
-      (cfg.fitTextField ? `<label class="fc-row fc-row-toggle"><span>${t('Shrink text to fit')}</span><input type="checkbox" data-tp="fit"${fitCur ? ' checked' : ''}></label>` : '') +
+      (cfg.fitTextField ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Shrink text to fit')}</span><input type="checkbox" class="field-check" data-tp="fit"${fitCur ? ' checked' : ''}></label>` : '') +
       (cfg.alignField ? `<div class="fc-row"><span>${t('Align')}</span>${segHtml(cfg.alignField, alignCur, [['left', t('Align left'), SVG.textL], ['center', t('Align centre'), SVG.textC], ['right', t('Align right'), SVG.textR]])}</div>` : '') +
       (cfg.valignField ? `<div class="fc-row"><span>${t('Vertical')}</span>${segHtml(cfg.valignField, valignCur, [['top', t('Align top'), SVG.textT], ['middle', t('Centre vertically'), SVG.textM], ['bottom', t('Align bottom'), SVG.textB]])}</div>` : '') +
-      (cfg.padField ? `<label class="fc-row"><span>${t('Padding')}</span><input type="range" min="0" max="200" data-tp="pad" value="${padCur}"><b data-tp-val="pad">${padCur}</b></label>` : '');
+      (cfg.padField ? `<label class="fc-row"><span>${t('Padding')}</span><input type="range" class="field-range" min="0" max="200" data-tp="pad" value="${padCur}"><b data-tp-val="pad">${padCur}</b></label>` : '');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     p.querySelector<HTMLButtonElement>('[data-tp="smaller"]')?.addEventListener('click', () => { bumpFont(-6); const s = p.querySelector<HTMLInputElement>('[data-tp="size"]'); if (s) s.value = String(Math.max(4, (parseInt(s.value, 10) || 48) - 6)); });
     p.querySelector<HTMLButtonElement>('[data-tp="bigger"]')?.addEventListener('click', () => { bumpFont(6); const s = p.querySelector<HTMLInputElement>('[data-tp="size"]'); if (s) s.value = String((parseInt(s.value, 10) || 48) + 6); });
@@ -2494,7 +2494,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     typeGroup.className = 'fc-fmt-typegroup';
     if (cfg.fontField) {
       const fsel = document.createElement('select');
-      fsel.className = 'fc-fmt-font';
+      fsel.className = 'field-select field-select--sm field-select--auto fc-fmt-font';
       fsel.title = t('Font');
       fsel.setAttribute('aria-label', t('Font'));
       fsel.innerHTML = fontOptionsHtml();
@@ -2521,7 +2521,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // inherits the box weight); refreshFmtStates fills it from the selected run.
     if (cfg.weightField) {
       const sel = document.createElement('select');
-      sel.className = 'fc-fmt-weight';
+      sel.className = 'field-select field-select--sm field-select--auto fc-fmt-weight';
       sel.title = t('Weight of the selected text');
       sel.setAttribute('aria-label', t('Weight of the selected text'));
       const font = String((cfg.fontField && box[cfg.fontField]) || defaultFont);
@@ -3390,7 +3390,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ['curved', 'Curved — auto'], ['curved-v', 'Curved — vertical'], ['curved-h', 'Curved — horizontal'],
       ['arc', 'Arc — bow'], ['arc-wide', 'Arc — wide bow'], ['arc-flip', 'Arc — reverse bow'], ['arc-flip-wide', 'Arc — wide reverse'],
     ];
-    const styleSelect = `<select data-ep="style">${STYLE_OPTS.map(([v, l]) => `<option value="${v}"${styleCur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('')}</select>`;
+    // `row()` below wraps controls in a <div>, not a <label>, so this select gets no
+    // implicit name from its row text — it names itself.
+    const styleSelect = `<select class="field-select field-select--sm" data-ep="style" aria-label="${escape(t('Connector bend'))}">${STYLE_OPTS.map(([v, l]) => `<option value="${v}"${styleCur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('')}</select>`;
     const row = (lbl: string, ctrl: string): string => `<div class="fc-row"><span class="fc-row-lbl"><span>${lbl}</span></span>${ctrl}</div>`;
     const p = document.createElement('div');
     p.className = 'fc-panel fc-edge-panel';
@@ -3400,7 +3402,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       (arrowF ? row(t('Arrow'), segHtml(arrowF, arrowCur, [['none', t('None')], ['end', t('End')], ['both', t('Both')]])) : '') +
       (headF ? row(t('Head'), segHtml(headF, headCur, HEAD_CHOICES)) : '') +
       (dashF ? row(t('Line'), segHtml(dashF, dashCur, [['solid', t('Solid')], ['dashed', t('Dashed')], ['dotted', t('Dotted')]])) : '') +
-      (widthF ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Thickness')}</span></span><input type="range" data-ep="width" min="0.5" max="12" step="0.5" value="${widthCur}"><b data-ep-val="width">${widthCur}</b></label>` : '') +
+      (widthF ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Thickness')}</span></span><input type="range" class="field-range" data-ep="width" min="0.5" max="12" step="0.5" value="${widthCur}"><b data-ep-val="width">${widthCur}</b></label>` : '') +
       (colorF ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Colour')}</span></span><span class="fc-cfield">${colorFieldHtml('fc-edge-color', colorCur, { float: true })}</span></label>` : '') +
       `<div class="fc-row fc-edge-actions"><button type="button" class="fc-cbtn fc-danger" data-ep="del">${icon(SVG.trash)}<span>${nSel > 1 ? t('Delete {n} lines', { n: nSel }) : t('Delete line')}</span></button></div>`;
     p.addEventListener('pointerdown', (ev) => ev.stopPropagation());

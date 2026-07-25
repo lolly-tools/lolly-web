@@ -102,7 +102,7 @@ const CSS = `
 .neuro-empty { padding: 8px 10px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
 .neuro-vol { display: flex; align-items: center; gap: 9px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
 .neuro-vol span { flex: 0 0 3.4em; }
-.neuro-vol input[type="range"] { flex: 1; accent-color: hsl(var(--primary)); }
+.neuro-vol input[type="range"] { flex: 1; }
 /* The Internet Radio info tooltip — a real, INTERACTIVE tooltip (the SomaFM link
    inside is clickable), portalled to <body> as position:fixed so the scrolling
    track list can't clip it. Hidden = opacity 0 + pointer-events none (never a
@@ -259,8 +259,8 @@ export function musicPlayerBodyHtml(): string {
         <button type="button" class="neuro-tbtn" data-mp-next aria-label="Next track">${NEXT}</button>
         ${modeButtonHtml()}
       </div>
-      <label class="neuro-vol"><span>Music</span><input type="range" min="0" max="1" step="0.05" value="${getNeurospicy().volume}" data-mp-volume aria-label="Music volume"></label>
-      <label class="neuro-vol"><span>Effects</span><input type="range" min="0" max="1" step="0.05" value="${getSfxVolume()}" data-mp-sfx aria-label="Interface sound volume — how much of the UI you hear"></label>
+      <label class="neuro-vol"><span>Music</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getNeurospicy().volume}" data-mp-volume aria-label="Music volume"></label>
+      <label class="neuro-vol"><span>Effects</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getSfxVolume()}" data-mp-sfx aria-label="Interface sound volume — how much of the UI you hear"></label>
     </div>`;
 }
 

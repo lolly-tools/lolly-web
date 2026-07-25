@@ -30,8 +30,7 @@ import { instanceFetch, instancePath } from '../lib/instance.ts';
 // leaving simple/typical links in their hand-editable readable form.
 const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
-import { navigateTo } from '../nav.ts';
-import { getPrevView } from '../lib/back-nav.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { docsHref, currentLang, t } from '../i18n.ts';
@@ -466,19 +465,18 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     if (back) returnTo = back;
   } catch (e) { /* sessionStorage unavailable (private mode) */ }
 
-  // The back link follows that same marker: a tool launched from a folder returns to
-  // the folder — wearing the FOLDER'S NAME when the view the user last left was that
-  // folder (lib/back-nav.ts; a reload mid-session or a stale marker falls back to
-  // "Back") — while from the gallery it reads "Tools" and returns there. This keeps
-  // the editing session a round-trip — add/resume a tool in a folder, then step
-  // straight back into it — instead of dumping the user in the gallery.
+  // The back pill follows that same marker: a tool launched from a folder is PINNED
+  // to that folder — it must land back where the session was filed even if the user
+  // wandered elsewhere in between — so the marker is handed to the shared pill as an
+  // explicit target. Without a marker there's nothing to pin to and the pill does what
+  // it does everywhere else: names and returns to the view you actually came from
+  // (the gallery, the catalog, a search…), falling back to "Tools" only on a direct
+  // visit. Either way the editing session stays a round-trip instead of dumping the
+  // user in the gallery. The unsaved-changes dialog's "Save & leave" leaves through
+  // the pill's own handler rather than re-deriving a target, so both exits agree by
+  // construction.
   const fromFolder = returnTo !== '/';
-  const backHref = fromFolder ? returnTo : '/';
-  const prevView = getPrevView();
-  const sameTarget = (a: string, b: string): boolean => a.replace(/^\//, '') === b.replace(/^\//, '');
-  const backLabel = fromFolder
-    ? escape(prevView && sameTarget(prevView.href, returnTo) ? prevView.label : t('Back'))
-    : escape(t('Tools'));
+  const backPillOpts = fromFolder ? { href: returnTo } : {};
 
   // Populate inputs from user profile if they match profile field names
   const profile = await host.profile.get();
@@ -787,13 +785,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     </div>` : '';
 
   viewEl.innerHTML = `
-    ${noAside ? `<a href="${escape(backHref)}" class="tools-home home-full">${backLabel}</a>` : ''}
+    ${noAside ? backPillHtml(backPillOpts) : ''}
     <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
       ${showAside ? `
         <aside class="sidebar" id="tool-sidebar">
           <div class="sidebar-header">
             <div class="sidebar-back-row">
-              <a href="${escape(backHref)}" class="tools-home sidebar-back">${backLabel}</a>
+              ${backPillHtml({ ...backPillOpts, class: 'sidebar-back' })}
             </div>
             <div class="sidebar-header-row">
               <span class="sidebar-title-wrap">
@@ -2092,31 +2090,31 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     }).catch((err: unknown) => console.error('[deck-builder] deck editor failed to load:', err));
   }
 
-  // Intercept back / home nav clicks — offer save dialog if inputs have changed. Leaving
-  // routes to backHref (the launch folder when the session came from one, else the
-  // gallery), matching the back link's label and the Save button's return target.
-  if (hasInputs) {
-    viewEl.querySelectorAll('.tools-home').forEach(link => {
-      link.addEventListener('click', e => {
-        if (!userHasMadeChanges) return;
-        e.preventDefault();
-        // Offer "Save & leave" only when the tool actually has a save action.
-        const canSave = !!actionsEl?.querySelector('[data-action="save"]') && !!actionsApi?.save;
-        // If the session carries heavy embedded bytes (a recorded clip stamps meta.bytes),
-        // tell the user how big the save is — the recording is what makes a Record session
-        // large, and it's stored on-device.
-        const heavy = runtime.getModel()
-          .map(i => (i.value as { meta?: { bytes?: number } } | undefined)?.meta?.bytes)
-          .find((b): b is number => typeof b === 'number' && b > 0);
-        const detail = heavy ? t('Includes a {size} video clip, stored on this device.', { size: fmtBytes(heavy) }) : undefined;
-        showUnsavedDialog(
-          canSave ? async () => { if (await actionsApi!.save!()) navigateTo(backHref); } : null,
-          () => { navigateTo(backHref); },
-          detail,
-        );
-      });
-    });
-  }
+  // Wire the back pill(s) — the full-screen one and/or the sidebar one. When the
+  // tool has inputs and they've been touched, take the click over and offer the save
+  // dialog first; the pill's own `go` is what finally leaves, so the dialog's exits
+  // land exactly where the pill says they will (the launch folder when the session
+  // came from one, else the view the user arrived from).
+  mountBackPill(viewEl, {
+    intercept: (go) => {
+      if (!hasInputs || !userHasMadeChanges) return false;
+      // Offer "Save & leave" only when the tool actually has a save action.
+      const canSave = !!actionsEl?.querySelector('[data-action="save"]') && !!actionsApi?.save;
+      // If the session carries heavy embedded bytes (a recorded clip stamps meta.bytes),
+      // tell the user how big the save is — the recording is what makes a Record session
+      // large, and it's stored on-device.
+      const heavy = runtime.getModel()
+        .map(i => (i.value as { meta?: { bytes?: number } } | undefined)?.meta?.bytes)
+        .find((b): b is number => typeof b === 'number' && b > 0);
+      const detail = heavy ? t('Includes a {size} video clip, stored on this device.', { size: fmtBytes(heavy) }) : undefined;
+      showUnsavedDialog(
+        canSave ? async () => { if (await actionsApi!.save!()) go(); } : null,
+        () => { go(); },
+        detail,
+      );
+      return true;
+    },
+  });
 
   // Mark model inputs dirty the first time the user touches them.
   // The listener lives on the container so it survives renderInputs re-renders.

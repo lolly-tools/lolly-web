@@ -125,24 +125,19 @@
 }
 .pro-zoom-pct:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .pro-zoom-pct:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
-.pro-format select,
-.pro-format input,
-.pro-control {
-  font: inherit;
-  color: hsl(var(--foreground));
-  background: hsl(var(--background));
-  border: 1px solid hsl(var(--input));
-  border-radius: calc(var(--radius) * .35);
- 
-  padding: .5rem 0;
-}
+/* The boxed-field recipe that used to live here — font/foreground/background/
+   1px --input/radius — is the shared primitive now (styles/parts/fields.css).
+   The toolbar controls wear `.field-select`/`.field-input --auto --sm` and every
+   control the factory emits (pro/controls.ts) carries them too, so only the
+   genuine deltas are left below. A control inside a grid cell deliberately opts
+   OUT of the primitive (see the bare-cell block further down). */
 .pro-format input { width: 11rem; }
 
 /* Units + DPI controls (left of the format select). Compact: the unit select
-   sizes to content; the DPI input is a short box with a static "dpi" suffix. */
-.pro-unit-field select { padding-left: .4rem; padding-right: .2rem; }
+   sizes to content (--sm); the DPI input is a short right-aligned box with a
+   static "dpi" suffix. */
 .pro-dpi-field { gap: .3rem; }
-.pro-dpi-field input { width: 4.2rem; padding-left: .4rem; text-align: right; }
+.pro-dpi-field input { width: 4.2rem; text-align: right; }
 .pro-dpi-field input:disabled { opacity: .45; }
 .pro-dpi-suffix { font-size: .72rem; color: hsl(var(--muted-foreground)); }
 /* Active unit shown beside the Width/Height column headers. */
@@ -156,7 +151,10 @@
 /* The input sizes to its content (width set in JS via the mirror span below) so
    ".zip" trails the last character the user types. The wrapper still flexes to
    fill the toolbar, so the empty space to the right stays a clickable target. */
-.pro-zip input { font-size: 1.5rem; border: none; background: transparent; flex: 0 0 auto; min-width: 0; width: auto; padding: 0; text-align: left; }
+/* Not the shared box: a borderless oversized name field whose only chrome is
+   the wrapper. It states font/colour itself now that the deleted rule above no
+   longer hands them out (a bare input inherits neither). */
+.pro-zip input { font: inherit; font-size: 1.5rem; color: hsl(var(--foreground)); border: none; background: transparent; flex: 0 0 auto; min-width: 0; width: auto; padding: 0; text-align: left; }
 .pro-zip input:focus { outline: none; }
 /* ".zip" rendered as a small uppercase pill so it reads as a format badge that
    trails the typed name. The border has no colour of its own → currentColor. */
@@ -320,8 +318,12 @@ body.pro-scrubbing, body.pro-scrubbing * { cursor: ew-resize !important; user-se
 
 /* Zero spacing: every editable control fills its whole cell, so the entire cell
    area is the hit target. The cell's own borders provide the grid lines; the
-   control is borderless and transparent, with its padding as the text inset. */
-.pro-cell .pro-control,
+   control is borderless and transparent, with its padding as the text inset.
+   This is why a cell control does NOT take the .field-* primitive (controlHtml
+   is called with `boxed: false` here) — the two treatments are opposites.
+   The checkbox is the one exception: it is a 16px object, not a stretched box,
+   so it keeps the primitive and is excluded from the strip. */
+.pro-cell .pro-control:not([type="checkbox"]),
 .pro-cell-template .pro-template-select {
   width: 100%;
   height: 100%; /* fill the (possibly drag-resized) row height */
@@ -389,9 +391,10 @@ body.pro-scrubbing, body.pro-scrubbing * { cursor: ew-resize !important; user-se
 .pro-asset-clear:hover::before,
 .pro-asset-clear:focus-visible::before { content: '✕'; }
 .pro-cell:has(button[data-asset-pick][data-selected]) { background: hsl(var(--primary) / .07); }
+/* Size, fill and tick come from `.field-check`; the cell only has to centre it.
+   (It was a 1rem UA box with an accent-color one-liner until the primitive.) */
 .pro-cell input[type="checkbox"].pro-control {
-  width: 1rem; height: 1rem; min-height: 0; margin: .6rem auto; display: block;
-  padding: 0; accent-color: hsl(var(--primary)); cursor: pointer;
+  margin: .6rem auto; display: block;
 }
 .pro-cell:has(input[type="checkbox"]) { cursor: pointer; } /* whole boolean cell is clickable */
 
@@ -624,6 +627,11 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-popover-title { font-weight: 700; font-size: .85rem; margin-bottom: .6rem; }
 .pro-popover-control { margin-bottom: .7rem; }
 .pro-popover-control .pro-control { width: 100%; }
+/* …except a tick, which is a fixed 16px object (.field-check), not a box.
+   It has to restate the 16px rather than say `auto`: .field-check drops the
+   native widget (appearance:none), and an appearance-less checkbox has no
+   intrinsic size — `width:auto` shrink-to-fits an empty box to ZERO. */
+.pro-popover-control input[type="checkbox"].pro-control { width: 16px; }
 .pro-popover-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 
 /* Saved-sessions popover */
@@ -819,9 +827,36 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-blk-card-body { display: flex; flex-direction: column; gap: .55rem; padding: .65rem; }
 .pro-blk-field { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
 .pro-blk-flabel { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--muted-foreground)); }
-/* The shared .pro-control has no horizontal padding (grid cells add their own). */
+/* Panel fields fill their card and run a touch tighter than the primitive's
+   default padding; everything else about the box comes from .field-* now. */
 .pro-blocks-panel .pro-control { width: 100%; padding: .45rem .55rem; }
+/* …except a tick, which is a fixed 16px object (.field-check), not a box.
+   16px, not `auto`: .field-check sets appearance:none, and a checkbox with no
+   native widget has no intrinsic size — `auto` would collapse it to zero. */
+.pro-blocks-panel input[type="checkbox"].pro-control { width: 16px; padding: 0; }
+/* The tighter padding above is a shorthand, so it also eats the chevron gutter
+   .field-select reserves. Hand it back — the caret must not sit on the text. */
+.pro-blocks-panel select.pro-control { padding-inline-end: 32px; }
 .pro-blocks-panel textarea.pro-control { resize: vertical; }
-.pro-blk-asset { display: inline-flex; align-items: center; gap: .4rem; justify-content: flex-start; }
+/* The one .pro-control that isn't produced by controlHtml() (it is hand-written
+   in blocks-editor.ts, which this pass doesn't own) — so it can't be given the
+   primitive's classes at the markup end and states the box here instead.
+   It states the CURRENT generation, not the outlined one it used to inherit:
+   every other field in the same card is now `.field-input`/`.field-select`, and
+   one outlined button among embossed siblings reads as a mistake. Values are
+   copied verbatim from .field-input (styles/parts/fields.css) — when that
+   recipe moves, this is the call site to chase. */
+.pro-blk-asset {
+  display: inline-flex; align-items: center; gap: .4rem; justify-content: flex-start;
+  font: inherit; font-size: 13px; color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px #fff1, 0 .1rem .3rem #0002;
+  transition: box-shadow 0.12s, background-color 0.12s;
+  cursor: pointer;
+}
+.pro-blk-asset:hover { box-shadow: inset 0 1px #fff2, 0 .12rem .4rem #0004; }
+.pro-blk-asset:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .pro-blk-add { margin-top: .7rem; width: 100%; }
 }

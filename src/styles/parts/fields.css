@@ -1,0 +1,495 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* ── Field system — the one shared form-control primitive ────────────────────
+      `.field-input` / `.field-select` / `.field-check` / `.field-radio` /
+      `.field-range` / `.field-label`, plus a small zero-specificity `:where()`
+      baseline (accent-color, optgroup, date/time colour-scheme) for the native
+      controls nobody has claimed. Note what is NOT in that baseline: the range
+      drawing is opt-in only — see the Range section for why.
+
+      Why this file exists: before it, the same "boxed field" recipe
+      (`1px solid hsl(var(--input))` + `var(--radius)` + `hsl(var(--background))`
+      + `hsl(var(--foreground))` + `font: inherit`) was retyped in a dozen view
+      sheets and three JS `style="…"` strings, the select chevron data-URI was
+      pasted four times, and `accent-color: hsl(var(--primary))` twenty-one times
+      across fourteen files. One home, one voice.
+
+      Imported from app.css in `layer(primitives)` — on the critical path, same as
+      buttons.css, and deliberately BELOW `chrome`/`views` so a view sheet can
+      still add its true deltas (width, a compact height, a fused pill corner)
+      without fighting specificity. The corollary: a view rule that restates a
+      SHARED value beats this file silently. When adopting `.field-*` on existing
+      markup, delete the duplicated declarations from the view sheet — leave only
+      what is genuinely different there.
+
+      Voice (see buttons.css / tool.css for the ancestors of each move):
+      - Embossed, not outlined. `border: 0` + a white-alpha top highlight over a
+        soft dark drop is the current house generation; the outlined generation
+        (`1px solid hsl(var(--border))`) survives in older sheets and is not
+        propagated here.
+      - 13px control text, `font: inherit` for the family, `var(--radius)` corner.
+      - 0.12s transitions on colour-ish properties; no easing keyword (house).
+      - Disabled is opacity + cursor, never a colour swap (buttons.css:49).
+      - Hover LIFTS (highlight brightens, drop deepens); :active PRESSES IN
+        (the drop inverts to an inset). Fields read as physical objects here —
+        same vocabulary as the sidebar checkbox rows and the egg-trail slider. */
+
+:root {
+  /* The select chevron, declared ONCE. A Lucide `chevron-down` at a fixed mid
+     grey: #888 is the one ink that holds up on all three themes without a
+     second asset, and it is what the sidebar has shipped since the control
+     was first drawn (tool.css). Overridable per-surface if a dense toolbar
+     ever needs a lighter caret. */
+  --field-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+
+  /* The checkbox tick. A glyph inside a data-URI can't read a token, and the
+     tick sits on `--primary` — which is a near-black teal on light and a mid
+     Pine Green on dark/brand — so the ink genuinely has to flip. Two variants,
+     both here, rather than a colour that is legible on neither. */
+  --field-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+}
+[data-theme="dark"],
+[data-theme="brand"] {
+  --field-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23071a15' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+}
+
+/* ─── Text-ish fields + selects: the shared box ──────────────────────────── */
+
+.field-input,
+.field-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px #fff1, 0 .1rem .3rem #0002;
+  font: inherit;
+  font-size: 13px;
+  transition: box-shadow 0.12s, background-color 0.12s, background-position 0.12s;
+}
+
+/* Width is the one thing a boxed field argues about most often — a toolbar cell
+   wants to hug, a sidebar row wants the full column. `--auto` opts out rather
+   than making every toolbar restate `width: auto` next to its real deltas. */
+.field-input--auto,
+.field-select--auto { width: auto; }
+
+/* Compact: toolbars, table cells, the studio's dense token rows. */
+.field-input--sm,
+.field-select--sm {
+  padding: 5px 8px;
+  font-size: 12.5px;
+  border-radius: calc(var(--radius) * .5);
+}
+/* (`.field-select--sm`'s own chevron gutter is set AFTER the `.field-select`
+   block below — same specificity, so it has to come later to win.) */
+
+/* Machine values — hex, ids, tokens, URLs. Mirrors the mono treatment the
+   `.field-input` alias list in components.css already carries. */
+.field-input--mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background-color: hsl(var(--muted) / .4);
+}
+
+.field-select {
+  padding-inline-end: 32px;          /* room for the chevron */
+  cursor: pointer;
+  background-image: var(--field-chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  /* appearance:none drops the native menulist widget. The old appearance:auto +
+     transition combo made Chrome re-lay-out the native control on every hover
+     frame, producing a ~1px baseline jitter (tool.css records the same finding).
+     A plain box transitions cleanly. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+/* Must follow the block above, not the other `--sm` declarations — equal
+   specificity, so source order is the whole argument. */
+.field-select--sm { padding-inline-end: 24px; background-size: 12px; }
+
+/* Hover LIFTS. The chevron drifts a hair down the moment the control is live —
+   a one-pixel promise that the thing opens downward. */
+.field-input:hover:not(:disabled),
+.field-select:hover:not(:disabled) {
+  box-shadow: inset 0 1px #fff2, 0 .12rem .4rem #0004;
+}
+.field-select:hover:not(:disabled) { background-position: right 10px calc(50% + 1px); }
+
+/* Focus: the house halo, over the emboss rather than instead of it, so a
+   keyboard-focused field still reads as the same object. */
+.field-input:focus,
+.field-select:focus {
+  outline: none;
+  box-shadow: inset 0 1px #fff2, 0 0 0 3px hsl(var(--ring) / .15);
+}
+.field-select:focus { background-position: right 10px calc(50% + 1px); }
+
+/* …and a real ring for keyboard users specifically. Restated in a11y.css too
+   (that layer wins over any view sheet); this copy keeps the primitive correct
+   on its own, for anything that adopts it outside the app shell. */
+.field-input:focus-visible,
+.field-select:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Press: the object goes IN. Only the select gets it — a text field has a
+   caret to confirm the hit, a menulist has nothing until the popup paints. */
+.field-select:active:not(:disabled) {
+  box-shadow: inset 0 1px 3px #0003;
+}
+
+.field-input:disabled,
+.field-select:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.field-input::placeholder { color: hsl(var(--muted-foreground)); }
+
+/* Invalid, but only once the user has actually typed something wrong — never
+   on an untouched empty required field. */
+.field-input:user-invalid {
+  box-shadow: inset 0 1px #fff1, 0 0 0 2px hsl(var(--destructive) / .45);
+}
+
+/* ─── The micro-label ────────────────────────────────────────────────────── */
+
+/* The app's most recognisable type gesture: tiny, uppercase, heavy, wide-tracked,
+   muted. Same values as `.input-label` (tool.css) and `.section-card-head`. */
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: hsl(var(--muted-foreground));
+}
+
+/* A label + control stacked, the shape most call-sites hand-roll with an inline
+   `display:flex;flex-direction:column`. */
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.field-row--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.field-row--inline .field-label { flex: none; }
+
+/* ─── Checkbox + radio ───────────────────────────────────────────────────── */
+
+/* An outlined box that fills on check — the shape the profile view drew first
+   (profile.css `.profile-check input`), promoted here so every tick in the app
+   is the same object instead of a UA box at six different pixel sizes. */
+.field-check,
+.field-radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  /* NOT `--border`. An unchecked tick has no fill, so this hairline IS the
+     control — and `--border` measures 1.49 / 1.40 / 2.53 against the page in
+     light / dark / brand, all under WCAG 1.4.11's 3:1 for a control boundary.
+     A native checkbox got this right for free (Chrome draws #767676, 4.54:1);
+     drawing our own means owning it. `--muted-foreground` at .75 measures
+     3.70 / 4.75 / 5.60. The CHECKED state is already fine — a `--primary` fill
+     is 14.00 / 7.94 / 5.52 — so the failure was invisible until you looked for
+     a box that wasn't ticked, which is exactly the case that matters. */
+  border: 1.5px solid hsl(var(--muted-foreground) / .75);
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.field-check { border-radius: calc(var(--radius) * .25); }
+.field-radio { border-radius: 50%; }
+
+.field-check:hover:not(:disabled),
+.field-radio:hover:not(:disabled) { border-color: hsl(var(--primary) / .55); }
+
+.field-check:checked,
+.field-radio:checked {
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+.field-check:checked {
+  background-image: var(--field-tick);
+  background-size: 11px;
+}
+/* The radio dot is drawn, not fetched — a radial-gradient can read the token
+   directly, so the dot is theme-correct with no second asset. */
+.field-radio:checked {
+  background-image: radial-gradient(circle at center, hsl(var(--primary-foreground)) 0 3px, transparent 3.5px);
+}
+
+.field-check:indeterminate {
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  background-image: linear-gradient(hsl(var(--primary-foreground)) 0 0);
+  background-size: 8px 2px;
+}
+
+.field-check:focus-visible,
+.field-radio:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.field-check:disabled,
+.field-radio:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+/* …but not twice. Inside a `.field-toggle` the ROW already carries the dim, and
+   two stacked opacities multiply — 0.55 × 0.5 leaves the tick at 0.275, which
+   reads as missing rather than unavailable. */
+.field-toggle .field-check:disabled,
+.field-toggle .field-radio:disabled { opacity: 1; }
+
+/* The row a tick lives in: hit-area, not just the 16px box. */
+.field-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+/* Dimming a disabled row is right for a control that is genuinely unavailable and
+   WRONG for one that is briefly disabled while its write lands — several call-sites
+   flip `disabled` for the duration of an async save, and an instant dim reads as a
+   flash. So the dim waits 0.3s and the restore is immediate: a fast write never
+   crosses the threshold, a stalled one still reports itself as inert. */
+.field-toggle:has(.field-check:disabled),
+.field-toggle:has(.field-radio:disabled) {
+  opacity: .55;
+  cursor: not-allowed;
+  transition: opacity 0.12s 0.3s;
+}
+.field-toggle { transition: opacity 0.12s; }
+
+/* ─── Range ──────────────────────────────────────────────────────────────── */
+
+/* A native <input type="range"> dressed to match `.custom-slider` (tool.css) —
+   4px track, a 14px primary thumb that swells on grab. The tool sidebar keeps
+   its JS slider (ticks, units, the egg trail); this is for the ~20 plain ranges
+   scattered through the studio, the export panel and the editors that until now
+   were a bare OS widget with an `accent-color` one-liner on top.
+
+   STRICTLY OPT-IN, unlike the `:where()` baselines at the foot of this file.
+   It was briefly an element-level baseline, which was wrong for two reasons:
+   (1) tool templates render into `#tool-canvas` in the LIGHT DOM, so an
+   element-keyed rule reaches sliders authored by a TOOL — e.g. convert-image's
+   Quality dial — and `appearance: none` there silently overrode the tool's own
+   `accent-color` and OS shape. App chrome must not paint tool content.
+   (2) `appearance: none` disables `accent-color`, so it quietly broke every
+   surface that had opted into a tint but not into a custom track. A class you
+   have to ask for cannot do either by accident.
+
+   The colour picker's three sliders (`.color-mode-slider`, `.color-lch-slider`,
+   `.color-alpha-slider`) deliberately do NOT take this class — they paint their
+   own gradient tracks. */
+.field-range {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Vendor track/thumb pseudo-elements must live in SEPARATE rules — an unknown
+   vendor pseudo invalidates an entire selector list, so a combined
+   ::-webkit-…, ::-moz-… rule would drop out in both engines. */
+.field-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  /* Same reasoning as the checkbox hairline above: `--input` is 1.49 / 1.40 / 2.53
+     against the page and a track is a control boundary. .cs-track (tool.css) was
+     raised to match, so the JS slider and the native one stay one object. */
+  background: hsl(var(--muted-foreground) / .75);
+  box-shadow: inset 0 1px 2px #0002;
+}
+.field-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  /* Same reasoning as the checkbox hairline above: `--input` is 1.49 / 1.40 / 2.53
+     against the page and a track is a control boundary. .cs-track (tool.css) was
+     raised to match, so the JS slider and the native one stay one object. */
+  background: hsl(var(--muted-foreground) / .75);
+  box-shadow: inset 0 1px 2px #0002;
+}
+/* Firefox can paint the filled portion for free; WebKit can't without JS, so
+   the fill is a Firefox-only nicety rather than a promise the primitive makes. */
+.field-range::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: hsl(var(--primary));
+}
+
+.field-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;                 /* centre a 14px thumb on a 4px track */
+  border: 0;
+  border-radius: var(--radius);
+  background: hsl(var(--primary));
+  box-shadow: 0 1px 4px hsl(0 0% 0% / .25);
+  transition: transform 0.12s ease, box-shadow 0.12s;
+}
+.field-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: hsl(var(--primary));
+  box-shadow: 0 1px 4px hsl(0 0% 0% / .25);
+}
+
+/* Grab feedback, mirroring `.custom-slider.dragging .cs-thumb`. */
+.field-range:active::-webkit-slider-thumb {
+  transform: scale(1.3);
+  box-shadow: 0 0 0 5px hsl(var(--ring) / .25), 0 1px 5px hsl(0 0% 0% / .3);
+}
+.field-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px hsl(var(--ring)), 0 1px 4px hsl(0 0% 0% / .25);
+}
+.field-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px hsl(var(--ring)), 0 1px 4px hsl(0 0% 0% / .25);
+}
+/* The thumb ring above IS the focus indicator; the element outline would draw a
+   second one around the whole track. */
+.field-range:focus-visible{ outline: none; }
+
+.field-range:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ─── Zero-specificity baseline for unclaimed native controls ────────────── */
+
+/* `:where()` contributes NO specificity, so every one of these is a floor that
+   any existing rule — in any layer — silently wins. That is the point: it makes
+   a bare control brand-correct without pre-empting a surface that already had
+   an opinion. `accent-color` alone replaces 21 copies of the same one-liner. */
+:where(input[type="checkbox"], input[type="radio"], input[type="range"], progress) {
+  accent-color: hsl(var(--primary));
+}
+/* Native pickers (date/time/colour swatch/file button) follow the app theme,
+   not the OS one — the root already sets `color-scheme` per theme; this stops a
+   view sheet's element-level `color-scheme` from being the only thing keeping
+   a widget legible. */
+:where(input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"], input[type="week"]) {
+  color-scheme: inherit;
+}
+:where(optgroup) {
+  font-weight: 700;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* RTL: the chevron's `right 10px` is a physical edge. `padding-inline-end`
+   already logicalises, but background-position has no logical form, so flip it.
+   Lives here rather than rtl.css because it is part of the control's own
+   drawing — rtl.css keeps the layout-level flips. */
+[dir="rtl"] .field-select {
+  background-position: left 10px center;
+}
+[dir="rtl"] .field-select:hover:not(:disabled),
+[dir="rtl"] .field-select:focus {
+  background-position: left 10px calc(50% + 1px);
+}
+
+/* ─── Touch ──────────────────────────────────────────────────────────────── */
+
+/* WCAG 2.5.8 wants a 24×24 target. A 16px range with a 14px thumb is a
+   fingertip miss on a phone — the JS slider already gets this treatment in
+   parts/notfound.css's coarse-pointer block, and the native one has to match or
+   the two diverge exactly where it hurts most. */
+@media (pointer: coarse) {
+  .field-range { height: 28px; }
+  .field-range::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9px; }
+  .field-range::-moz-range-thumb { width: 22px; height: 22px; }
+  .field-check,
+  .field-radio { width: 20px; height: 20px; }
+  .field-check:checked { background-size: 13px; }
+}
+
+/* ─── prefers-contrast: more ─────────────────────────────────────────────── */
+
+/* The embossed generation draws a field with NO border: depth comes from a
+   white-alpha highlight over a soft drop, both of which measure ~1.0–1.4:1
+   against the page. That is the house voice and it is what the outlined
+   generation it replaced also measured (`--input` is 1.49 / 1.40 / 2.53), so
+   it is a standing property of the design rather than something this primitive
+   introduced — but a user who has asked the OS for more contrast should get a
+   real 3:1 boundary rather than a texture. `--muted-foreground` at .75 measures
+   3.70 / 4.75 / 5.60 in light / dark / brand. Inset, so it composites over the
+   field's own fill and the corner radius still reads. */
+@media (prefers-contrast: more) {
+  .field-input,
+  .field-select {
+    box-shadow: inset 0 0 0 1px hsl(var(--muted-foreground) / .75), inset 0 1px #fff1, 0 .1rem .3rem #0002;
+  }
+  .field-input:hover:not(:disabled),
+  .field-select:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 1px hsl(var(--muted-foreground)), inset 0 1px #fff2, 0 .12rem .4rem #0004;
+  }
+  .field-input:focus,
+  .field-select:focus {
+    box-shadow: inset 0 0 0 1px hsl(var(--ring)), 0 0 0 3px hsl(var(--ring) / .3);
+  }
+}
+
+/* ─── forced-colors (Windows High Contrast) ──────────────────────────────── */
+
+/* Forced-colors mode overrides background-color, border-color and outline-color
+   with system colours and forces box-shadow to `none`. Every part of this
+   primitive that isn't a border is therefore erased: the fields lose their only
+   boundary (they have no border to force), the range track and thumb vanish
+   entirely, and — worst — the CHECKED checkbox keeps its `background-image`
+   tick (background-image is NOT forced) while its `--primary` fill is replaced
+   by Canvas, leaving a white tick on white. Checked and unchecked become
+   indistinguishable, which for the export panel's provenance toggles is a
+   correctness bug, not a cosmetic one.
+   `forced-color-adjust: none` on the ticked states opts them out of the
+   override so the drawn fill+ink survives as authored; everything else is
+   redrawn in system colours. */
+@media (forced-colors: active) {
+  .field-input,
+  .field-select {
+    border: 1px solid ButtonBorder;
+  }
+  .field-input:focus-visible,
+  .field-select:focus-visible,
+  .field-check:focus-visible,
+  .field-radio:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  .field-check,
+  .field-radio { border-color: ButtonBorder; }
+  .field-check:checked,
+  .field-radio:checked,
+  .field-check:indeterminate { forced-color-adjust: none; }
+
+  .field-range::-webkit-slider-runnable-track { background: ButtonBorder; }
+  .field-range::-moz-range-track { background: ButtonBorder; }
+  .field-range::-webkit-slider-thumb { background: ButtonText; }
+  .field-range::-moz-range-thumb { background: ButtonText; }
+  /* The thumb's box-shadow IS the range's focus indicator everywhere else, and
+     box-shadow is forced to none here — so put a real outline back. */
+  .field-range:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+}

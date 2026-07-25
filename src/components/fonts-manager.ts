@@ -3,11 +3,17 @@
  * Can be mounted in brand config or catalog contexts.
  */
 
-import '../styles/parts/fonts-manager.css';
+// Styles: the `.fonts-*` block lives in styles/parts/brand-studio.css, which the
+// only mounter (lib/brand-editor.ts) already imports. There WAS a second copy in
+// styles/parts/fonts-manager.css — same layer, same specificity, so which one won
+// depended on Vite's chunk order, and the copies had drifted onto a
+// `var(--text-secondary)` token that is defined nowhere. One home now.
 import { installFontAsset, getInstalledFonts, removeFontAsset, refreshFontRegistry } from '../lib/font-asset-handler.ts';
 import { validateFontFile } from '../lib/font-utils.ts';
 import { setPrimaryFont, setMonoFont } from '../user-fonts.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import { announce } from '../a11y.ts';
+import { t } from '../i18n.ts';
 
 export interface FontsManagerOptions {
   host: HostV1;
@@ -15,24 +21,37 @@ export interface FontsManagerOptions {
   onFontInstalled?: (fontFamily: string) => void;
 }
 
+const errText = (e: unknown): string => String((e as { message?: unknown } | null)?.message ?? e);
+
+/** A failure the user needs to know about. This component used to narrate its
+ *  whole lifecycle to the console (24 calls, uniquely in the shell) and reported
+ *  real failures the same way — i.e. nowhere the user could see. Errors go to the
+ *  live region, the way lib/brand-editor.ts reports its own. */
+const fail = (message: string): void => { announce(message, { assertive: true }); };
+
 export async function mountFontsManager(container: HTMLElement, opts: FontsManagerOptions): Promise<void> {
   const { host, showBranding = false, onFontInstalled } = opts;
 
   container.innerHTML = `
     <div class="fonts-manager">
       <div class="fonts-upload" role="region" aria-label="Font upload">
+        <!-- The browse button is a SIBLING of the label, never a child: interactive
+             content inside a <label> is invalid, and it gave the same action two
+             focusable targets that fought over the click. The label (with its
+             visually-hidden, still-focusable input) is the drop zone AND a target
+             in its own right; the button is the explicit second affordance. -->
         <label class="fonts-upload-drop" data-fonts-drop>
           <input type="file" multiple class="fonts-upload-file visually-hidden" accept=".ttf,.otf,.woff,.woff2"
             aria-label="Upload font files (TTF, OTF, WOFF, WOFF2)">
-          <div class="fonts-upload-area">
+          <span class="fonts-upload-area">
             <span class="fonts-upload-icon" aria-hidden="true">📤</span>
             <span class="fonts-upload-text">
-              <strong>Drag and drop font files here</strong><br>
-              or <button type="button" class="fonts-upload-btn">click to browse</button>
+              <strong>Drag and drop font files here</strong>
             </span>
             <span class="fonts-upload-hint">Supports TTF, OTF, WOFF (max 5MB each)</span>
-          </div>
+          </span>
         </label>
+        <p class="fonts-upload-alt">or <button type="button" class="fonts-upload-btn">click to browse</button></p>
       </div>
 
       <div class="fonts-list" data-fonts-list aria-label="Installed fonts">
@@ -75,21 +94,17 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
 
   // Handle drops and file selection
   const handleFiles = async (files: FileList): Promise<void> => {
-    console.log('[fonts-manager] handleFiles called with', files.length, 'file(s)');
+    const rejected: string[] = [];
     const validFiles = Array.from(files).filter((f) => {
-      console.log('[fonts-manager] Validating file:', f.name, f.size, f.type);
       const validation = validateFontFile(f);
-      console.log('[fonts-manager] Validation result:', validation);
-      if (!validation.valid) {
-        console.warn(`[fonts-manager] Skipping ${f.name}: ${validation.error}`);
-        return false;
-      }
-      console.log(`[fonts-manager] File ${f.name} is valid`);
+      if (!validation.valid) { rejected.push(`${f.name} — ${validation.error ?? ''}`.trim()); return false; }
       return true;
     });
 
     if (!validFiles.length) {
-      console.warn('No valid font files selected');
+      fail(rejected.length
+        ? t("Couldn't add {file}", { file: rejected[0]! })
+        : t('No font files to add'));
       return;
     }
 
@@ -99,19 +114,15 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
 
     for (const file of validFiles) {
       try {
-        console.log(`Installing font: ${file.name}`, { size: file.size, type: file.type });
-        const result = await installFontAsset(host, file, (percent) => {
-          console.debug(`${file.name}: ${percent}%`);
-        });
-
+        const result = await installFontAsset(host, file);
         if (result) {
-          console.log(`✓ Font installed: ${result.family} (${result.weight})`);
+          announce(t('{family} added', { family: result.family }));
           onFontInstalled?.(result.family);
         } else {
-          console.error(`Failed to install ${file.name}: metadata parsing failed`);
+          fail(t("Couldn't read the font in {file}", { file: file.name }));
         }
       } catch (e) {
-        console.error(`Font installation error for ${file.name}:`, e instanceof Error ? e.message : e);
+        fail(t("Couldn't add {file}: {error}", { file: file.name, error: errText(e) }));
       }
     }
 
@@ -120,7 +131,7 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
       await refreshFontRegistry(host);
       await refreshFontList();
     } catch (e) {
-      console.error('Font registry refresh error:', e instanceof Error ? e.message : e);
+      fail(t("Couldn't refresh your fonts: {error}", { error: errText(e) }));
     }
 
     fileInput.disabled = false;
@@ -130,14 +141,10 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
 
   fileInput.addEventListener('change', (e) => {
     const input = e.target as HTMLInputElement;
-    console.log('[fonts-manager] File input change event', { files: input.files?.length });
     if (input.files && input.files.length > 0) {
-      console.log('[fonts-manager] Calling handleFiles with', input.files.length, 'file(s)');
       handleFiles(input.files).catch((err) => {
-        console.error('[fonts-manager] handleFiles error:', err instanceof Error ? err.message : err);
+        fail(t("Couldn't add those fonts: {error}", { error: errText(err) }));
       });
-    } else {
-      console.warn('[fonts-manager] No files selected');
     }
   });
 
@@ -148,17 +155,12 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
 
   // Refresh list of installed fonts
   const refreshFontList = async (): Promise<void> => {
-    console.log('[fonts-manager] Refreshing font list...');
     const fonts = await getInstalledFonts(host);
-    console.log('[fonts-manager] Got installed fonts:', fonts.length, fonts);
 
     if (!fonts.length) {
-      console.log('[fonts-manager] No fonts installed, showing empty state');
       fontsList.innerHTML = '<div class="fonts-empty">No fonts installed yet</div>';
       return;
     }
-
-    console.log('[fonts-manager] Rendering', fonts.length, 'installed fonts');
 
     fontsList.innerHTML = `
       <div class="fonts-items">
@@ -190,12 +192,12 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
         const fontId = btn.dataset.setPrimary!;
         const font = fonts.find(f => f.id === fontId);
         if (font) {
-          console.log('[fonts-manager] Setting primary font:', font.family);
           try {
             await setPrimaryFont(host as unknown as Parameters<typeof setPrimaryFont>[0], font.family);
             onFontInstalled?.(font.family);
+            announce(t('{family} is now your primary font', { family: font.family }));
           } catch (e) {
-            console.error('[fonts-manager] Failed to set primary font:', e);
+            fail(t("Couldn't set {family} as your primary font: {error}", { family: font.family, error: errText(e) }));
           }
         }
       });
@@ -206,12 +208,12 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
         const fontId = btn.dataset.setMono!;
         const font = fonts.find(f => f.id === fontId);
         if (font) {
-          console.log('[fonts-manager] Setting mono font:', font.family);
           try {
             await setMonoFont(host as unknown as Parameters<typeof setMonoFont>[0], font.family);
             onFontInstalled?.(font.family);
+            announce(t('{family} now serves code & data', { family: font.family }));
           } catch (e) {
-            console.error('[fonts-manager] Failed to set mono font:', e);
+            fail(t("Couldn't set {family} for code & data: {error}", { family: font.family, error: errText(e) }));
           }
         }
       });

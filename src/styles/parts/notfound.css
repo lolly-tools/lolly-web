@@ -161,16 +161,16 @@ button {
   .stage-nav-btn,
   .export-popup-close { min-height: 44px; min-width: 44px; }
 
-  /* Gallery touch targets: category pills (in the filter popover), the back
-     pill, the per-card icon buttons, the profile pill, and footer links. */
+  /* Gallery touch targets: category pills (in the filter popover), the per-card
+     icon buttons and footer links. */
   .gallery-pill,
-  .tools-home,
   .gallery-footer .btn { min-height: 44px; }
   .gallery-footer .btn { display: inline-flex; align-items: center; justify-content: center; }
   .gtile-iconbtn { width: 44px; height: 44px; }
-  .profile-link { padding-top: 14px; padding-bottom: 14px; }
-  /* The top-right cluster FABs (2.9em ≈ 39px) need bumping to 44px too. */
-  .filter-fab,
-  .history-fab { min-width: 44px; min-height: 44px; }
+  /* The whole top row — back pill, FABs, language and profile pills — grows to
+     the 44px finger target through the ONE property they all size from. That
+     override lives in tokens.css (which is unlayered, so a :root rule here
+     could not win against it); bumping each control separately, as this block
+     used to, is what let them drift apart at touch sizes. */
 }
 

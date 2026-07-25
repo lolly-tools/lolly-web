@@ -266,11 +266,8 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 }
 .projects-empty { color: hsl(var(--muted-foreground)); font-size: 14px; margin: 18px 2px; }
 
-/* "Move to" group label inside the per-tile menu. */
-.folder-menu-head {
-  padding: 8px 10px 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; color: hsl(var(--muted-foreground));
-}
+/* .folder-menu-head (the per-tile menu's group label) now shares the .folder-menu-sep
+   recipe in parts/folders.css — the whole .folder-menu-* family lives there. */
 
 /* The bespoke "+ New tool" chooser is retired — the shared asset picker (views/picker.ts)
    now handles "+ New asset" in "collect into this folder" mode, so its Library / Saved

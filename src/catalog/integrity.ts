@@ -29,11 +29,6 @@ declare global {
 
 const PINNED_KEY: string = import.meta.env.VITE_CATALOG_PUBLIC_KEY_JWK ?? '';
 
-/** Whether this build pins a catalog signing key (i.e. integrity is enforced). */
-export function isCatalogKeyPinned(): boolean {
-  return PINNED_KEY.length > 0;
-}
-
 let cached: Promise<ToolIntegrityOpts | null> | null = null;
 
 async function load(): Promise<ToolIntegrityOpts | null> {

@@ -37,3 +37,57 @@
   border-radius: calc(var(--radius) * .5);
 }
 
+/* The shared field primitive (parts/fields.css) states its own :focus-visible
+   ring so it is correct standalone, but it sits in `primitives` — below every
+   view sheet. Restate it here, in the top layer, so a view that legitimately
+   overrides the field's :focus look can never take the keyboard ring with it. */
+.field-input:focus-visible,
+.field-select:focus-visible,
+.field-check:focus-visible,
+.field-radio:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Controls whose own sheet sets `outline: none` and offers only a tinted border
+   (or nothing at all) in its place — a ~1px hue shift is not a focus indicator.
+   Same treatment as the list above: the styled :focus look is left alone, the
+   keyboard-only :focus-visible state gets a real ring. Grouped by sheet:
+   multi-edit.css, picker.css, pro/pro.css, gallery.css, tool-chrome.css,
+   brand-studio.css, editor.css, document.css, deck-editor.css, valid.css. */
+.me-search input:focus-visible,
+.me-exp-field input:focus-visible,
+.me-exp-field select:focus-visible,
+.asset-picker-search:focus-visible,
+.asset-picker-toolcard-controls select:focus-visible,
+.asset-picker-toolcard-controls input:focus-visible,
+.pro-zip input:focus-visible,
+.pro-tpl-search:focus-visible,
+.pro-cell .pro-control:focus-visible,
+.gallery-sort:focus-visible,
+.be-pal-fmt-sel:focus-visible,
+.pdfpass-tier:focus-visible,
+.identity-days-select:focus-visible,
+.fc-row select:focus-visible,
+.fc-fmt-font:focus-visible,
+.fc-fmt-weight:focus-visible,
+.doc-setup-row select:focus-visible,
+.doc-font-select:focus-visible,
+.doc-style-select:focus-visible,
+.doc-lh-select:focus-visible,
+.doc-ls-select:focus-visible,
+.deck-free__sel:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* ProseMirror (the Doc Studio editable) kills its own outline three times over
+   in document.css and puts nothing back, so a keyboard user tabbing into the
+   document body gets no indication they've landed. The editable is a page-sized
+   surface — a 2px outline around it reads as a border, so it takes the softer
+   ring the type-demo editable already uses. */
+.doc-tt-holder .ProseMirror:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--ring) / .55);
+}
+

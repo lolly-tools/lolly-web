@@ -39,6 +39,7 @@ import { playSfx } from '../lib/sfx.ts';
 import { takePendingVerify } from '../lib/verify-handoff.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 // The pure verdict/scorecard model — no DOM, no CSS import, so it's importable (and
 // tested) standalone. See valid-verdict.ts's header for why this lives apart from the
 // rendering below.
@@ -1159,7 +1160,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   document.title = 'Verify — Lolly';
 
   viewEl.innerHTML = `
-    <a href="#/" class="tools-home home-full">${t('Tools')}</a>
+    ${backPillHtml()}
     <div class="gallery-topright">${langFabHtml()}</div>
     <div class="platform-layout valid-layout">
       <header class="plat-header">
@@ -1180,6 +1181,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     </div>
   `;
   armViewEnter(viewEl, '.tools-home, .plat-header, .valid-drop');
+  mountBackPill(viewEl);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;
