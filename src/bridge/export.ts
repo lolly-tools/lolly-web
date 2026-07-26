@@ -14,9 +14,9 @@
 import {
   parseDimension, isPhysical, toPixels, toPoints, toCssPx, toCssLength, CSS_DPI,
   iccProfileBytes, rgbToCmyk, cmykCondition, computePrintGeometry, emitEmf, emitEps, emitDxf, packApng, packWebpAnim,
-  parseCssLength, cornerRadii, uniformRadius, insetCorners, roundedRectPath, parseBoxShadow,
+  parseCssLength, cornerRadii, uniformRadius, insetCorners, roundedRectPath, parseBoxShadow, parseTextShadow, gaussianShadowBands, gaussianShadowRings,
   parseCssMatrix, matAboutPivot, isAxisAlignedMat, matToSvg, type Mat2D,
-  parseClipShape, parseRadialGradient, parseDropShadowFilter,
+  parseClipShape, parseRadialGradient, parseConicGradient, parseDropShadowFilter, type ConicGradient,
   splitCssArgs, parseGradientAngle, parseGradientStop,
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
   embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
@@ -37,6 +37,9 @@ import {
 import { resolveVectorFont } from './font-registry.ts';
 import type { VectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
+import { placeBackground } from './bg-layout.ts';
+import { parseCssFilter, isDropShadowOnly, type FilterPrimitive } from './css-filter.ts';
+import { describeControl, controlText, isWidgetControl, rangeFraction, type ControlDesc } from './form-controls.ts';
 import { stackingRole, sortUnits, orderModifiedChildren, isFlexOrGridContainer } from './stacking-order.ts';
 import type { StackingRole } from './stacking-order.ts';
 import { unscopeStyleEls } from '../lib/scope-css.ts';
@@ -187,6 +190,11 @@ export interface ExportOpts {
    *  page and one unsupported property on a container would otherwise reduce the
    *  entire capture to a screenshot. */
   elementScopedRaster?: boolean;
+  /** Reconstruct `backdrop-filter: blur()` by duplicating, clipping and blurring the
+   *  content behind the element, instead of sending it to the raster hatch (which
+   *  cannot see a backdrop at all). Snapshot mode only — it duplicates geometry, and
+   *  the cost is only worth paying when the goal is fidelity to a live page. */
+  backdropBlur?: boolean;
   /** Page snapshots: paint in CSS stacking-context order (CSS 2.1 Appendix E
    *  §E.2) instead of DOM order — negative-z children behind their parent's
    *  in-flow content, positioned descendants above non-positioned ones, each
@@ -1371,7 +1379,16 @@ function isSvgRooted(node: Element): boolean {
 // `vectorCaps` lets a caller declare features IT can emit natively: the SVG walker
 // carries mix-blend-mode as a style and emits circle/ellipse/inset clips as <clipPath>
 // shapes, so it keeps those vector rather than rasterising (PDF/EMF/EPS still raster).
-export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vectorCaps?: { blend?: boolean; clipBasicShapes?: boolean; dropShadow?: boolean }): string | null {
+/** `backdrop-filter: blur(6px)` → 6. Null for anything that is not a single blur():
+ *  a chain like `blur(4px) saturate(1.3)` genuinely has no SVG equivalent, because
+ *  the extra functions operate on the backdrop we can only approximate. */
+export function parseBackdropBlurPx(bf: string): number | null {
+  const m = /^\s*blur\(\s*([\d.]+)px\s*\)\s*$/i.exec(bf || '');
+  const v = m ? parseFloat(m[1]!) : NaN;
+  return Number.isFinite(v) && v >= 0 ? v : null;
+}
+
+export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vectorCaps?: { blend?: boolean; clipBasicShapes?: boolean; dropShadow?: boolean; backdropBlur?: boolean }): string | null {
   const tag = el.tagName.toLowerCase();
   // <img> filters are already baked (bakeImageFilter); <svg> subtrees have their own
   // faithful/raster paths. Never rasterise those here.
@@ -1380,9 +1397,19 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
   // filter: a drop-shadow-only filter is kept vector by the SVG walker (feDropShadow),
   // so the caller declares that via vectorCaps.dropShadow; any other filter function has
   // no vector equivalent → rasterise.
-  if (s.filter && s.filter !== 'none' && !(vectorCaps?.dropShadow && parseDropShadowFilter(s.filter))) return `filter:${s.filter}`;
+  // Two vector routes for `filter`: drop-shadow(s) become real geometry, and every
+  // other CSS filter function is spec-defined AS an SVG filter, so the chain is
+  // emitted. Only a chain containing something with no SVG equivalent — a url()
+  // reference, an unknown function — still rasterises.
+  if (s.filter && s.filter !== 'none'
+      && !(vectorCaps?.dropShadow && parseDropShadowFilter(s.filter))
+      && !parseCssFilter(s.filter)) return `filter:${s.filter}`;
   const bf = s.backdropFilter || (s as { webkitBackdropFilter?: string }).webkitBackdropFilter;
-  if (bf && bf !== 'none') return `backdrop-filter:${bf}`;
+  // A blur-only backdrop-filter IS expressible: duplicate the content already painted
+  // behind the element, clip that duplicate to the element's own shape, and blur it.
+  // The caller declares support via vectorCaps.backdropBlur — anything richer than a
+  // single blur() (saturate, brightness, a filter chain) still has no vector form.
+  if (bf && bf !== 'none' && !(vectorCaps?.backdropBlur && parseBackdropBlurPx(bf) !== null)) return `backdrop-filter:${bf}`;
   // mix-blend-mode: SVG can carry it natively; only raster where the walker can't.
   if (s.mixBlendMode && s.mixBlendMode !== 'normal' && !vectorCaps?.blend) return `mix-blend-mode:${s.mixBlendMode}`;
 
@@ -1406,14 +1433,17 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
   // background (repeat at intrinsic/auto size), or MULTIPLE layered url() images.
   const bi = s.backgroundImage;
   if (bi && bi !== 'none') {
-    if (bi.includes('conic-gradient')) return 'conic-gradient';
+    // A conic gradient is drawn as a wedge fan when we can parse it; only the forms
+    // we can't (repeating-conic-gradient, an unreadable stop list) still raster.
+    if (bi.includes('conic-gradient') && !parseConicGradient(bi, 100, 100)) return 'conic-gradient';
     if (bi.includes('url(')) {
       const multiple = (bi.match(/url\(/g) || []).length > 1;
       const rep = (s.backgroundRepeat || 'repeat').toLowerCase();
       const size = (s.backgroundSize || 'auto').toLowerCase();
-      const singleImageSize = size === 'cover' || size === 'contain' || /100%\s+100%/.test(size);
-      const tiles = /repeat/.test(rep) && rep !== 'no-repeat' && !singleImageSize;
-      if (multiple || tiles) return 'background-image:url()';   // no single-<image> equivalent → raster
+      void size; void rep;
+      // A tiling background is emitted as an SVG <pattern> now, so only MULTIPLE
+      // layered url() images still have no single-element equivalent.
+      if (multiple) return 'background-image:url()';
     }
   }
 
@@ -1496,13 +1526,99 @@ async function cssUrlToHref(url: string): Promise<string | null> {
 // preserveAspectRatio for a background-image sized via `background-size` + positioned via
 // `background-position`: cover→slice, contain→meet, two explicit lengths (e.g. 100% 100%)→
 // none (stretch), else cover-like (the common decorative default). Alignment from position.
-function bgImagePAR(style: CSSStyleDeclaration): string {
-  const size = (style.backgroundSize || 'auto').trim().toLowerCase();
-  const align = preserveAspectRatioAlign(style.backgroundPosition);
-  if (size === 'contain') return `${align} meet`;
-  if (size === 'cover') return `${align} slice`;
-  if (/\S+\s+\S+/.test(size) && !size.includes('auto')) return 'none';   // exact two-value → stretch
-  return `${align} slice`;
+/** One parsed CSS filter function as its SVG element. The maths is all in
+ *  css-filter.ts; this is assembly only. */
+function filterPrimitiveEl(NS: string, p: FilterPrimitive): Element {
+  if (p.kind === 'blur') {
+    const e = document.createElementNS(NS, 'feGaussianBlur');
+    e.setAttribute('stdDeviation', String(Math.round(p.stdDeviation * 1000) / 1000));
+    return e;
+  }
+  if (p.kind === 'colorMatrix') {
+    const e = document.createElementNS(NS, 'feColorMatrix');
+    e.setAttribute('type', 'matrix');
+    e.setAttribute('values', p.values.map((n) => Math.round(n * 10000) / 10000).join(' '));
+    return e;
+  }
+  if (p.kind === 'hueRotate') {
+    const e = document.createElementNS(NS, 'feColorMatrix');
+    e.setAttribute('type', 'hueRotate');
+    e.setAttribute('values', String(Math.round(p.deg * 1000) / 1000));
+    return e;
+  }
+  const e = document.createElementNS(NS, 'feComponentTransfer');
+  const chan = (name: string) => {
+    const f = document.createElementNS(NS, name);
+    if (p.mode === 'linear') {
+      f.setAttribute('type', 'linear');
+      f.setAttribute('slope', String(Math.round((p.slope ?? 1) * 10000) / 10000));
+      f.setAttribute('intercept', String(Math.round((p.intercept ?? 0) * 10000) / 10000));
+    } else if (p.mode === 'invert') {
+      // invert(a) is the spec's table [a, 1-a] per channel.
+      f.setAttribute('type', 'table');
+      f.setAttribute('tableValues', `${p.amount ?? 1} ${1 - (p.amount ?? 1)}`);
+    } else {
+      f.setAttribute('type', 'linear');
+      f.setAttribute('slope', String(p.amount ?? 1));
+      f.setAttribute('intercept', '0');
+    }
+    return f;
+  };
+  if (p.mode === 'alpha') { e.appendChild(chan('feFuncA')); return e; }
+  for (const c of ['feFuncR', 'feFuncG', 'feFuncB']) e.appendChild(chan(c));
+  return e;
+}
+
+/**
+ * How far past its own box an element's `filter` paints, in CSS px.
+ *
+ * Only the filter: box-shadow is drawn separately by both walkers, and a transform is
+ * neutralised before capture. A blur reaches ~3σ, and drop-shadow's σ IS its blur
+ * value (unlike box-shadow's, which is half it — see buildDropShadowFilterEl).
+ */
+function effectSpillCss(style: CSSStyleDeclaration): number {
+  const f = style.filter;
+  if (!f || f === 'none') return 0;
+  let reach = 0;
+  for (const sh of parseDropShadowFilter(f) ?? []) {
+    reach = Math.max(reach, sh.blur * 3 + Math.max(Math.abs(sh.dx), Math.abs(sh.dy)));
+  }
+  for (const p of parseCssFilter(f) ?? []) {
+    if (p.kind === 'blur') reach = Math.max(reach, p.stdDeviation * 3);
+  }
+  return Math.min(200, reach);   // bounded: a pathological blur must not explode the capture
+}
+
+/** A computed length off a style, as a number. Missing/`auto` reads as 0. */
+function num2(style: CSSStyleDeclaration, key: string): number {
+  return Number.parseFloat((style as unknown as Record<string, string>)[key] || '') || 0;
+}
+
+/**
+ * An image's natural size, for resolving `background-size: auto`.
+ *
+ * Memoised by href because the same chevron data-URI is the background of every
+ * select on the page, and each miss is a decode. A failure resolves to null rather
+ * than rejecting: CSS then treats the image as area-sized, which is exactly the
+ * behaviour this replaced, so an undiscoverable image degrades to the old output
+ * instead of vanishing.
+ */
+const intrinsicCache = new Map<string, Promise<{ w: number; h: number } | null>>();
+function intrinsicSize(href: string): Promise<{ w: number; h: number } | null> {
+  let p = intrinsicCache.get(href);
+  if (!p) {
+    p = new Promise<{ w: number; h: number } | null>((resolve) => {
+      const im = new Image();
+      const done = (v: { w: number; h: number } | null) => resolve(v);
+      im.onload = () => done(im.naturalWidth > 0 ? { w: im.naturalWidth, h: im.naturalHeight } : null);
+      im.onerror = () => done(null);
+      im.src = href;
+      // A never-settling decode must not hang an export.
+      setTimeout(() => done(null), 3000);
+    });
+    intrinsicCache.set(href, p);
+  }
+  return p;
 }
 
 // Exported for bridge/export-paint-order.test.ts, which drives the REAL walker in
@@ -1624,7 +1740,33 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     /** Ids of overflow clipPaths emitted between `frame`'s element and here — a
      *  hoisted unit must carry them or it escapes a clip it has today. */
     clips: string[];
+    /** Intersection of every ancestor overflow box, in root coordinates. A node
+     *  that misses it entirely paints nothing on screen, so it is not emitted —
+     *  the cheapest form of clip reduction, since it removes the node AND the
+     *  clip work that would have hidden it. Null means unbounded. */
+    clipBox?: Rect | null;
+    /** Union of the boxes actually painted beneath the nearest clip candidate.
+     *  Filled during the walk so the decision "is this clip doing any work?" can
+     *  be made from measurements rather than guessed up front. */
+    bounds?: Bounds | null;
   }
+
+  /** A box in root coordinates. */
+  interface Rect { x: number; y: number; w: number; h: number }
+  /** A mutable union accumulator. Empty until something expands it. */
+  interface Bounds { minX: number; minY: number; maxX: number; maxY: number; any: boolean }
+  const newBounds = (): Bounds => ({ minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, any: false });
+  const expand = (b: Bounds | null | undefined, x: number, y: number, w: number, h: number): void => {
+    if (!b) return;
+    b.minX = Math.min(b.minX, x); b.minY = Math.min(b.minY, y);
+    b.maxX = Math.max(b.maxX, x + w); b.maxY = Math.max(b.maxY, y + h);
+    b.any = true;
+  };
+  const intersectRect = (a: Rect | null | undefined, b: Rect): Rect => {
+    if (!a) return b;
+    const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y);
+    return { x, y, w: Math.min(a.x + a.w, b.x + b.w) - x, h: Math.min(a.y + a.h, b.y + b.h) - y };
+  };
 
   const stackingOrder = opts.stackingOrder === true;
   /** What every element classifies as when the flag is off: in-flow, no context.
@@ -1677,6 +1819,165 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     list.push(entry);
     return { list, entry };
   };
+
+  /**
+   * Paint a form control's contents: the text it displays, or the geometry of a
+   * widget the UA draws.
+   *
+   * Text is NOT laid out here. A throwaway mirror is positioned over the control's
+   * content box, given its font and alignment, and walked with the same
+   * emitInlineTextSvg every other block goes through — so wrapping, direction,
+   * vertical centring and line boxes come from the browser. Reimplementing them
+   * would be a second, worse CSS. The mirror lives for one await and is removed in a
+   * finally, including when the text pass throws.
+   */
+  async function emitControlPaint(el: Element, tag: string, style: CSSStyleDeclaration, contentG: Element): Promise<void> {
+    const d = describeControl(el);
+    if (!d) return;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+
+    const num = (k: string) => Number.parseFloat((style as unknown as Record<string, string>)[k] || '') || 0;
+    const insetL = num('borderLeftWidth') + num('paddingLeft');
+    const insetT = num('borderTopWidth') + num('paddingTop');
+    const insetR = num('borderRightWidth') + num('paddingRight');
+    const insetB = num('borderBottomWidth') + num('paddingBottom');
+    const cw = Math.max(0, r.width - insetL - insetR);
+    const ch = Math.max(0, r.height - insetT - insetB);
+    if (cw <= 0 || ch <= 0) return;
+    const cx = r.left + insetL, cy = r.top + insetT;
+
+    if (isWidgetControl(d)) { emitWidgetControl(el, d, style, contentG, r); return; }
+
+    const ct = controlText(d);
+    if (!ct) return;
+
+    // Clip to the content box. This is the §7 "only when necessary" case: an
+    // over-long option label or an unscrolled textarea genuinely does not paint
+    // past the field on screen, and there is no geometry trick that crops text.
+    const clipId = `fcctl-${++uid}`;
+    const clip = document.createElementNS(NS, 'clipPath');
+    clip.setAttribute('id', clipId);
+    clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+    const cr = document.createElementNS(NS, 'rect');
+    cr.setAttribute('x', String(n2(cx - rootRect.left))); cr.setAttribute('y', String(n2(cy - rootRect.top)));
+    cr.setAttribute('width', String(n2(cw))); cr.setAttribute('height', String(n2(ch)));
+    clip.appendChild(cr);
+    defs.appendChild(clip);
+    const cg = document.createElementNS(NS, 'g');
+    cg.setAttribute('clip-path', `url(#${clipId})`);
+    contentG.appendChild(cg);
+
+    const mirror = document.createElement('div');
+    const ms = mirror.style;
+    ms.position = 'fixed';
+    ms.left = `${cx}px`; ms.top = `${cy}px`;
+    ms.width = `${cw}px`; ms.height = `${ch}px`;
+    ms.margin = '0'; ms.padding = '0'; ms.border = '0';
+    ms.pointerEvents = 'none';
+    // Behind everything and non-interactive: the mirror exists for one layout pass,
+    // but an export can be triggered from a visible page and must not flash.
+    ms.zIndex = '-2147483648'; ms.opacity = '0';
+    for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant',
+                     'fontFeatureSettings', 'letterSpacing', 'wordSpacing', 'textTransform',
+                     'textAlign', 'direction', 'lineHeight', 'fontStretch'] as const) {
+      (ms as unknown as Record<string, string>)[k] = (style as unknown as Record<string, string>)[k] || '';
+    }
+    // The ::placeholder colour is a real computed style in Chromium; falling back to
+    // the control's own colour is wrong-but-visible rather than invisible.
+    const phColor = ct.placeholder ? (window.getComputedStyle(el, '::placeholder').color || '') : '';
+    ms.color = phColor || style.color;
+    ms.overflow = 'hidden';
+    const inner = document.createElement('span');
+    inner.style.display = 'block';
+    if (ct.multiline) {
+      inner.style.whiteSpace = 'pre-wrap';
+      inner.style.wordBreak = (style as unknown as Record<string, string>).wordBreak || 'normal';
+      // Reproduce the scrolled position: a textarea scrolled halfway shows its
+      // middle, and drawing from the top would show text that isn't on screen.
+      inner.style.marginTop = `${-(el as HTMLElement).scrollTop}px`;
+    } else {
+      // Single-line inputs and selects centre their text in the content box.
+      ms.display = 'flex'; ms.alignItems = 'center';
+      inner.style.whiteSpace = 'pre';
+      inner.style.marginLeft = `${-(el as HTMLElement).scrollLeft}px`;
+      inner.style.flex = '1 1 auto';
+    }
+    inner.textContent = ct.text;
+    mirror.appendChild(inner);
+    document.body.appendChild(mirror);
+    try {
+      await emitInlineTextSvg(NS, inner, window.getComputedStyle(inner), rootRect, cg, vectorText);
+    } finally { mirror.remove(); }
+    if (!cg.childNodes.length) cg.remove();
+  }
+
+  /**
+   * Checkbox, radio and range.
+   *
+   * Only for UA-drawn widgets (`appearance` still native). When a stylesheet has set
+   * `appearance: none` — which every control in this app does — the tick, dot and
+   * track are ordinary CSS the walker already paints, and drawing a second widget on
+   * top would be the wrong answer twice.
+   */
+  function emitWidgetControl(el: Element, d: ControlDesc, style: CSSStyleDeclaration, contentG: Element, r: DOMRect): void {
+    const appearance = (style as unknown as Record<string, string>).appearance
+      || (style as unknown as Record<string, string>).webkitAppearance || 'auto';
+    if (appearance === 'none') return;
+    const type = (d.type || '').toLowerCase();
+    const x = r.left - rootRect.left, y = r.top - rootRect.top, w = r.width, h = r.height;
+    const accent = parseCssColorFull(style.accentColor === 'auto' ? '' : style.accentColor) ?? [26, 115, 232, 1] as Rgba;
+    const acc = `rgb(${accent[0]},${accent[1]},${accent[2]})`;
+    const add = (e: Element) => contentG.appendChild(e);
+    const rect = (rx: number, ry: number, rw: number, rh: number, fill: string, rad: number, stroke?: string) => {
+      const q = document.createElementNS(NS, 'rect');
+      q.setAttribute('x', String(n2(rx))); q.setAttribute('y', String(n2(ry)));
+      q.setAttribute('width', String(n2(rw))); q.setAttribute('height', String(n2(rh)));
+      if (rad) { q.setAttribute('rx', String(n2(rad))); q.setAttribute('ry', String(n2(rad))); }
+      q.setAttribute('fill', fill);
+      if (stroke) { q.setAttribute('stroke', stroke); q.setAttribute('stroke-width', '1'); }
+      return q;
+    };
+
+    if (type === 'checkbox' || type === 'radio') {
+      // An approximation of the platform widget, not a copy of it: the real one is
+      // drawn by the compositor with no CSS to read. Blank was the alternative, and a
+      // recognisable checkbox is closer to what the reader saw than an empty square.
+      const round = type === 'radio' ? Math.min(w, h) / 2 : Math.min(2, Math.min(w, h) / 4);
+      add(rect(x, y, w, h, d.checked ? acc : '#fff', round, d.checked ? undefined : '#767676'));
+      if (d.checked && type === 'checkbox') {
+        const p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', `M${n2(x + w * 0.22)} ${n2(y + h * 0.52)}L${n2(x + w * 0.42)} ${n2(y + h * 0.72)}L${n2(x + w * 0.78)} ${n2(y + h * 0.3)}`);
+        p.setAttribute('fill', 'none'); p.setAttribute('stroke', '#fff');
+        p.setAttribute('stroke-width', String(n2(Math.max(1.5, Math.min(w, h) * 0.14))));
+        p.setAttribute('stroke-linecap', 'round'); p.setAttribute('stroke-linejoin', 'round');
+        add(p);
+      } else if (d.checked) {
+        const c = document.createElementNS(NS, 'circle');
+        c.setAttribute('cx', String(n2(x + w / 2))); c.setAttribute('cy', String(n2(y + h / 2)));
+        c.setAttribute('r', String(n2(Math.min(w, h) * 0.22)));
+        c.setAttribute('fill', '#fff');
+        add(c);
+      }
+      return;
+    }
+
+    if (type === 'range') {
+      const frac = rangeFraction(d);
+      const th = Math.max(3, Math.min(4, h * 0.25));
+      const ty = y + (h - th) / 2;
+      add(rect(x, ty, w, th, '#c4c4c4', th / 2));
+      if (frac > 0) add(rect(x, ty, w * frac, th, acc, th / 2));
+      const rr = Math.min(h, 14) / 2;
+      const c = document.createElementNS(NS, 'circle');
+      // The thumb's centre travels between its own radii, not the full track.
+      c.setAttribute('cx', String(n2(x + rr + (w - 2 * rr) * frac)));
+      c.setAttribute('cy', String(n2(y + h / 2)));
+      c.setAttribute('r', String(n2(rr)));
+      c.setAttribute('fill', acc);
+      add(c);
+    }
+  }
 
   async function visitSvgNode(
     el: any, parentG: Element, ctx: PaintCtx,
@@ -1771,6 +2072,24 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     const w = rect.width;
     const h = rect.height;
 
+    // Entirely outside every ancestor's overflow box: it paints nothing on screen, so
+    // it is not emitted. Cheapest possible clip reduction — it removes the node and
+    // its whole subtree rather than emitting them and then hiding them. The rows
+    // scrolled out of a long list are the case that pays.
+    // ...except when its containing block escapes that box. CSS 2.1 §11.1.1: an
+    // absolutely-positioned element is NOT clipped by a non-positioned ancestor's
+    // overflow, and `fixed` escapes almost every clip — such a node is genuinely
+    // visible outside the box, and dropping it would delete content the reader saw.
+    // Erring toward keeping is the same call the hoist path makes a few lines up:
+    // an over-clipped node is a bug, an un-clipped node is a smaller one.
+    const escapesClip = style.position === 'absolute' || style.position === 'fixed';
+    const cb = escapesClip ? null : ctx.clipBox;
+    if (cb && (cb.w <= 0 || cb.h <= 0 || x + w <= cb.x || y + h <= cb.y || x >= cb.x + cb.w || y >= cb.y + cb.h)) return;
+    // Report the box up so the nearest clip candidate can tell whether its clip does
+    // any work. Done before any early return below, so a node that ends up rastered
+    // or skipped still counts toward its ancestor's decision.
+    expand(ctx.bounds, x, y, w, h);
+
     const g = document.createElementNS(NS, 'g');
     if (opacity < 0.999) g.setAttribute('opacity', opacity.toFixed(4));
     const placement = place(g, role, ctx, parentG, o?.placeDirect);
@@ -1816,7 +2135,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     const dropShadows = (tag !== 'img' && tag !== 'svg') ? parseDropShadowFilter(style.filter) : null;
     if (dropShadows) {
       const fId = `fcds-${++uid}`;
-      defs.appendChild(buildDropShadowFilterEl(NS, dropShadows, fId));
+      defs.appendChild(buildDropShadowFilterEl(NS, dropShadows, fId, { x, y, w, h }));
       g.setAttribute('filter', `url(#${fId})`);
     }
 
@@ -1827,11 +2146,62 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // ── Box shadow ────────────────────────────────────────────────────────────
     // Each outer shadow is the box's own shape, offset + grown by spread, filled
     // with the shadow colour and Gaussian-blurred, painted BEHIND the background.
-    // Skipped for EMF/EPS (opts.noBoxShadow) — those formats have no blur primitive
-    // and would emit an ugly hard-edged offset shape. Painted back-to-front so the
-    // first-listed shadow ends up on top, matching CSS.
+    // EMF/EPS/DXF (opts.noBoxShadow) have no blur primitive, and used to get no shadow
+    // at all rather than an ugly hard-edged offset shape. They can have one: a blur is
+    // reproducible as concentric bands (§13), and for a format with no alpha the bands
+    // have to be non-overlapping RINGS at absolute coverage — svg-ir flattens every
+    // shape against the page background independently, so overlapping increments never
+    // accumulate and come out far too light.
+    if (opts.noBoxShadow && tag !== 'img' && tag !== 'svg') {
+      for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
+        if (sh.inset) continue;
+        const col = parseCssColorFull(sh.color);
+        if (!col) continue;
+        const fillCol = `rgb(${col[0]},${col[1]},${col[2]})`;
+        const shapeAt = (t: number) => {
+          const sw = Math.max(0, w + 2 * (sh.spread + t)), shh = Math.max(0, h + 2 * (sh.spread + t));
+          if (sw <= 0 || shh <= 0) return '';
+          return roundedRectPath(x + sh.x - sh.spread - t, y + sh.y - sh.spread - t, sw, shh,
+            insetCorners(radii, -(sh.spread + t)));
+        };
+        const rings = gaussianShadowRings(sh.blur, col[3]);
+        if (!rings.length) {
+          // Hard shadow: one shape, exact, no approximation involved.
+          const d = shapeAt(0);
+          if (!d) continue;
+          const p = document.createElementNS(NS, 'path');
+          p.setAttribute('d', d);
+          p.setAttribute('fill', fillCol);
+          if (col[3] < 1) p.setAttribute('fill-opacity', String(col[3]));
+          g.appendChild(p);
+          continue;
+        }
+        // NOT clipped out of the border box, unlike the compositing path. A clipPath
+        // is no use here (svg-ir skips those, so EMF/EPS would ignore it), and cutting
+        // the box out of the innermost ring by hand measured WORSE — the shadow is
+        // offset, so an un-offset hole leaves a gap along its own top edge. It costs
+        // nothing in the target formats: svg-ir flattens the element's background to
+        // an opaque shape painted after these, which covers the area completely. Only
+        // a fully transparent background would reveal it, and then there is no box to
+        // cast the shadow in the first place.
+        for (const ring of rings) {
+          const outer = shapeAt(ring.outer);
+          if (!outer) continue;
+          const inner = ring.inner === null ? '' : shapeAt(ring.inner);
+          const p = document.createElementNS(NS, 'path');
+          p.setAttribute('d', outer + inner);
+          if (inner) p.setAttribute('fill-rule', 'evenodd');
+          p.setAttribute('fill', fillCol);
+          p.setAttribute('fill-opacity', String(Math.round(ring.alpha * 1000) / 1000));
+          g.appendChild(p);
+        }
+      }
+    }
+
+    // Painted back-to-front so the first-listed shadow ends up on top, matching CSS.
     if (!opts.noBoxShadow && tag !== 'img' && tag !== 'svg') {
       for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
+        if (sh.inset) continue;   // drawn after the background, below — CSS paints it inside
         const col = parseCssColorFull(sh.color);
         if (!col) continue;
         const sw = Math.max(0, w + 2 * sh.spread);
@@ -1841,8 +2211,60 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         const fill = col[3] < 1
           ? `rgba(${col[0]},${col[1]},${col[2]},${col[3]})`
           : `rgb(${col[0]},${col[1]},${col[2]})`;
-        const shape = makeRoundedFill(NS, x + sh.x - sh.spread, y + sh.y - sh.spread,
-          sw, sh2, sRadii, uniformRadius(sRadii), fill);
+        // CSS paints an outer shadow "as if the border box were opaque" and clips it
+        // away INSIDE that box (Backgrounds §7.1.1). Painting the whole shape and
+        // covering it with the background only works when the background is opaque —
+        // over a translucent panel the shadow shows straight through, which measured
+        // 6.2% mean / 36% worst-pixel error against the bitmap on this app's frosted
+        // surfaces.
+        //
+        // With no blur the hole is pure geometry: one evenodd path, shadow shape minus
+        // border box, and no clip at all (so it survives EMF/EPS too). With a blur the
+        // order matters — CSS blurs and THEN clips — and no amount of geometry
+        // reproduces that, so this is the §7 case where a clip is genuinely the
+        // mechanism rather than a shortcut.
+        // The hole is a HAIR smaller than the border box. Two antialiased edges meeting
+        // exactly leaves a seam of background showing between the shadow and the box —
+        // it measured up to 13% on a single pixel line, on the very fixtures that were
+        // previously exact. Half a pixel of overlap tucks the shadow under the box's
+        // own edge and costs nothing anywhere else.
+        //
+        // …but only when it MATTERS. An opaque background hides the shadow beneath it
+        // by simply painting over it, exactly as before, and that path measured exact.
+        // Cutting a hole there instead leaves two independently antialiased edges
+        // meeting along the border — a seam worth up to 13% on a single pixel line.
+        // So the hole is cut only when the background cannot do the hiding.
+        const bgAlpha = parseCssColorFull(style.backgroundColor)?.[3] ?? 0;
+        const needsHole = bgAlpha < 0.999;
+        let shape: Element;
+        if (!needsHole) {
+          shape = makeRoundedFill(NS, x + sh.x - sh.spread, y + sh.y - sh.spread,
+            sw, sh2, sRadii, uniformRadius(sRadii), fill);
+        } else if (sh.blur <= 0) {
+          const ring = document.createElementNS(NS, 'path');
+          ring.setAttribute('d',
+            roundedRectPath(x + sh.x - sh.spread, y + sh.y - sh.spread, sw, sh2, sRadii) +
+            roundedRectPath(x, y, w, h, radii));
+          ring.setAttribute('fill-rule', 'evenodd');
+          ring.setAttribute('fill', fill);
+          shape = ring;
+        } else {
+          shape = makeRoundedFill(NS, x + sh.x - sh.spread, y + sh.y - sh.spread,
+            sw, sh2, sRadii, uniformRadius(sRadii), fill);
+          const holeId = `fcshclip-${++uid}`;
+          const hole = document.createElementNS(NS, 'clipPath');
+          hole.setAttribute('id', holeId);
+          hole.setAttribute('clipPathUnits', 'userSpaceOnUse');
+          const cut = document.createElementNS(NS, 'path');
+          const cpad = sh.blur * 3 + Math.abs(sh.x) + Math.abs(sh.y) + Math.abs(sh.spread) + 8;
+          cut.setAttribute('d',
+            `M${n2(x - cpad)} ${n2(y - cpad)}H${n2(x + w + cpad)}V${n2(y + h + cpad)}H${n2(x - cpad)}Z` +
+            roundedRectPath(x, y, w, h, radii));
+          cut.setAttribute('clip-rule', 'evenodd');
+          hole.appendChild(cut);
+          defs.appendChild(hole);
+          shape.setAttribute('clip-path', `url(#${holeId})`);
+        }
         if (sh.blur > 0) {
           const fId = `shadow-${++uid}`;
           const filt = document.createElementNS(NS, 'filter');
@@ -1877,7 +2299,106 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // <image>; the vector background/border emission then stands down so the two
     // don't double-paint.
     let ownPaintRastered = false;
-    const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows) }) : null;
+    // ── CSS filter ───────────────────────────────────────────────────────────
+    // Every CSS shorthand filter is spec-defined as an equivalent SVG filter, so the
+    // chain is emitted rather than dropped (49 filtered elements on the gallery
+    // fixture used to lose theirs silently). drop-shadow is excluded — the walker
+    // draws those as geometry, which survives EMF/EPS where a filter would not.
+    if (!opts.noBoxShadow) {
+      const fv = style.filter || '';
+      if (fv && fv !== 'none' && !isDropShadowOnly(fv)) {
+        const prims = parseCssFilter(fv);
+        if (prims && prims.length) {
+          const fId = `fcflt-${++uid}`;
+          const filt = document.createElementNS(NS, 'filter');
+          filt.setAttribute('id', fId);
+          // Room for a blur to spread past the box, and sRGB to match CSS, which
+          // applies these in sRGB rather than SVG's linearRGB default.
+          const spread = prims.reduce((n, p) => p.kind === 'blur' ? Math.max(n, p.stdDeviation) : n, 0);
+          const pad = spread * 3 + 8;
+          filt.setAttribute('filterUnits', 'userSpaceOnUse');
+          filt.setAttribute('x', String(n2(x - pad))); filt.setAttribute('y', String(n2(y - pad)));
+          filt.setAttribute('width', String(n2(w + 2 * pad))); filt.setAttribute('height', String(n2(h + 2 * pad)));
+          filt.setAttribute('color-interpolation-filters', 'sRGB');
+          for (const pr of prims) filt.appendChild(filterPrimitiveEl(NS, pr));
+          defs.appendChild(filt);
+          g.setAttribute('filter', `url(#${fId})`);
+        }
+      }
+    }
+
+    // ── backdrop-filter: blur() ─────────────────────────────────────────────
+    // SVG has no primitive that reads what is painted behind an element, so the
+    // backdrop has to be reconstructed: take the content already emitted (at this
+    // point in the walk, `rootG` IS everything behind this element), clip that copy
+    // to this element's own shape, and blur it. The copy goes in first, so the
+    // element's background, border and children then paint over it exactly as they
+    // do on screen.
+    //
+    // Snapshot mode only. It duplicates geometry, which is the wrong trade for a
+    // tool export, and `rasterizeNodeToDataUrl` cannot do it at all — dom-to-image
+    // serialises the node into a <foreignObject>, and the backdrop is by definition
+    // outside that subtree, which is why the raster hatch always got this wrong.
+    const bfRaw = opts.backdropBlur === true
+      ? (style.backdropFilter || (style as { webkitBackdropFilter?: string }).webkitBackdropFilter || '')
+      : '';
+    const bfPx = bfRaw ? parseBackdropBlurPx(bfRaw) : null;
+    // The clone is expressed in root user space, so it can only be dropped into `g`
+    // when nothing between `g` and the root carries a transform — otherwise the
+    // rotation wrapper above would apply that transform a second time. Rotated
+    // frosted panels fall through to the raster hatch, as before.
+    let bfTransformed = false;
+    for (let a: Element | null = g; a && a !== rootG; a = a.parentElement) {
+      if (a.hasAttribute('transform')) { bfTransformed = true; break; }
+    }
+    if (bfPx !== null && bfPx > 0 && !bfTransformed && rootG.childNodes.length) {
+      // Bound the duplication: a page-sized backdrop under many blurred pills would
+      // copy the whole document once per pill. Past the cap, fall through and let the
+      // raster hatch have it rather than emit tens of megabytes.
+      const backdropNodes = rootG.childNodes.length;
+      if (backdropNodes <= BACKDROP_MAX_NODES) {
+        const bId = `fcbd-${++uid}`;
+        const filt = document.createElementNS(NS, 'filter');
+        filt.setAttribute('id', bId);
+        // Room for the blur to spread, and clamp to sRGB so the result matches CSS,
+        // which composites backdrop filters in sRGB rather than linearRGB.
+        // userSpaceOnUse over the element box padded by the blur radius. The default
+        // objectBoundingBox region would be relative to the whole duplicated
+        // backdrop's bbox — near page-sized — making the filter far more expensive
+        // than the area that actually shows through the clip.
+        const bpad = bfPx * 2 + 4;
+        filt.setAttribute('filterUnits', 'userSpaceOnUse');
+        filt.setAttribute('x',      String(n2(x - bpad)));
+        filt.setAttribute('y',      String(n2(y - bpad)));
+        filt.setAttribute('width',  String(n2(w + 2 * bpad)));
+        filt.setAttribute('height', String(n2(h + 2 * bpad)));
+        filt.setAttribute('color-interpolation-filters', 'sRGB');
+        const fe = document.createElementNS(NS, 'feGaussianBlur');
+        // CSS blur(Npx) is a Gaussian with stdDeviation N/2 (Filter Effects §.
+        fe.setAttribute('stdDeviation', String(n2(bfPx / 2)));
+        filt.appendChild(fe);
+        defs.appendChild(filt);
+
+        const cId = `fcbdclip-${++uid}`;
+        const cp = document.createElementNS(NS, 'clipPath');
+        cp.setAttribute('id', cId);
+        cp.setAttribute('clipPathUnits', 'userSpaceOnUse');
+        cp.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));
+        defs.appendChild(cp);
+
+        const bd = document.createElementNS(NS, 'g');
+        bd.setAttribute('clip-path', `url(#${cId})`);
+        bd.setAttribute('filter', `url(#${bId})`);
+        // Deep clones, not <use>: svg-ir (EMF/EPS/DXF) skips <use> outright, so a
+        // referenced backdrop would silently vanish from those formats.
+        for (const child of Array.from(rootG.childNodes)) bd.appendChild(child.cloneNode(true));
+        g.appendChild(bd);
+      } else {
+        _host?.log?.('info', `svg: backdrop-filter blur skipped on <${tag}> — ${backdropNodes} nodes behind it`);
+      }
+    }
+
+    const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows), backdropBlur: opts.backdropBlur === true }) : null;
     if (rasterReason) {
       const pxScale = scaleX * Math.max(1, d.dpi / CSS_DPI);
       const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * pxScale)));
@@ -1937,29 +2458,178 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       const gid = ++uid;
       const gradEl = buildLinearGradientEl(NS, bgImg, x, y, w, h, gid)
         || buildRadialGradientEl(NS, bgImg, x, y, w, h, gid);
+      const conic = gradEl ? null : parseConicGradient(bgImg, w, h);
       if (gradEl) {
         defs.appendChild(gradEl);
         g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, `url(#svggrad-${gid})`));
+      } else if (conic) {
+        // SVG has no conic primitive, so the sweep is drawn as a fan of wedges. It is
+        // the last thing on these pages that forced a raster: on the qr fixture a
+        // single conic page background became a 1168×900 PNG that swamped every
+        // vector node behind it.
+        const fan = conicFanEl(NS, conic, x, y, w, h, gid);
+        if (fan) {
+          const cid = `fcconic-${++uid}`;
+          const clip = document.createElementNS(NS, 'clipPath');
+          clip.setAttribute('id', cid);
+          clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+          clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));
+          defs.appendChild(clip);
+          fan.setAttribute('clip-path', `url(#${cid})`);
+          g.appendChild(fan);
+        }
       } else {
         const bgUrl = firstCssUrl(bgImg);
         const href = bgUrl ? await cssUrlToHref(bgUrl) : null;
         if (href) {
-          const im = document.createElementNS(NS, 'image');
-          im.setAttribute('href', href);
-          im.setAttribute('x', String(n2(x))); im.setAttribute('y', String(n2(y)));
-          im.setAttribute('width', String(n2(w))); im.setAttribute('height', String(n2(h)));
-          im.setAttribute('preserveAspectRatio', bgImagePAR(style));
-          if (hasRadius) {
-            const cid = `fcbgclip-${++uid}`;
-            const clip = document.createElementNS(NS, 'clipPath');
-            clip.setAttribute('id', cid);
-            clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
-            clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));
-            defs.appendChild(clip);
+          // Place the image per background-size/position/repeat instead of stretching
+          // it across the border box. The old behaviour was right only for a `cover`
+          // hero: a 14px right-centred select chevron came out smeared across the
+          // whole field, and this app's field primitive puts one on every select and
+          // every checkbox.
+          const area = {
+            w: Math.max(0, w - num2(style, 'borderLeftWidth') - num2(style, 'borderRightWidth')),
+            h: Math.max(0, h - num2(style, 'borderTopWidth') - num2(style, 'borderBottomWidth')),
+          };
+          const ax = x + num2(style, 'borderLeftWidth'), ay = y + num2(style, 'borderTopWidth');
+          const pl = placeBackground(style.backgroundSize, style.backgroundPosition,
+            style.backgroundRepeat, area, await intrinsicSize(href));
+
+          const cid = `fcbgclip-${++uid}`;
+          const clip = document.createElementNS(NS, 'clipPath');
+          clip.setAttribute('id', cid);
+          clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+          clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));
+          defs.appendChild(clip);
+
+          if (pl.w > 0 && pl.h > 0 && (pl.repeatX || pl.repeatY)) {
+            // A tiling background becomes a real <pattern> rather than a screenshot.
+            // The tile step is the painted size on the repeating axis and the whole
+            // area on the axis that doesn't repeat, so repeat-x doesn't become a grid.
+            const pid = `fcbgpat-${++uid}`;
+            const pat = document.createElementNS(NS, 'pattern');
+            pat.setAttribute('id', pid);
+            pat.setAttribute('patternUnits', 'userSpaceOnUse');
+            pat.setAttribute('x', String(n2(ax + (pl.repeatX ? pl.x % pl.w : pl.x))));
+            pat.setAttribute('y', String(n2(ay + (pl.repeatY ? pl.y % pl.h : pl.y))));
+            pat.setAttribute('width', String(n2(pl.repeatX ? pl.w : Math.max(pl.w, area.w))));
+            pat.setAttribute('height', String(n2(pl.repeatY ? pl.h : Math.max(pl.h, area.h))));
+            const pim = document.createElementNS(NS, 'image');
+            pim.setAttribute('href', href);
+            pim.setAttribute('x', '0'); pim.setAttribute('y', '0');
+            pim.setAttribute('width', String(n2(pl.w))); pim.setAttribute('height', String(n2(pl.h)));
+            pim.setAttribute('preserveAspectRatio', 'none');
+            pat.appendChild(pim);
+            defs.appendChild(pat);
+            const fillRect = makeRoundedFill(NS, x, y, w, h, radii, uniform, `url(#${pid})`);
+            g.appendChild(fillRect);
+          } else if (pl.w > 0 && pl.h > 0) {
+            const im = document.createElementNS(NS, 'image');
+            im.setAttribute('href', href);
+            im.setAttribute('x', String(n2(ax + pl.x))); im.setAttribute('y', String(n2(ay + pl.y)));
+            im.setAttribute('width', String(n2(pl.w))); im.setAttribute('height', String(n2(pl.h)));
+            // The size is already resolved, so the image must fill it exactly —
+            // letting preserveAspectRatio re-fit it would undo the arithmetic.
+            im.setAttribute('preserveAspectRatio', 'none');
             im.setAttribute('clip-path', `url(#${cid})`);
+            g.appendChild(im);
           }
-          g.appendChild(im);
         }
+      }
+    }
+
+    // ── Inset box-shadow ──────────────────────────────────────────────────────
+    // CSS paints an inset shadow over the background and under the border/content,
+    // so it goes here rather than with the outer shadows. The geometry is exactly the
+    // region between the border box and an offset, spread-shrunken copy of it: one
+    // path with two subpaths and `fill-rule: evenodd`, blurred, and clipped to the
+    // box so the blur cannot bleed outside. No stroke-width guessing, and the same
+    // element count a stroked approximation would need.
+    // Blur-less formats: the same ring treatment, mirrored. An inset shadow is the
+    // blur of the region OUTSIDE the offset, shrunken inner shape, so each ring is the
+    // annulus between two shrunken copies of it, and the innermost reaches the box.
+    if (opts.noBoxShadow && !ownPaintRastered && tag !== 'img' && tag !== 'svg') {
+      for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
+        if (!sh.inset) continue;
+        const col = parseCssColorFull(sh.color);
+        if (!col) continue;
+        const shrunk = (t: number) => {
+          const iw = w - 2 * (sh.spread + t), ih = h - 2 * (sh.spread + t);
+          if (iw <= 0 || ih <= 0) return '';
+          return roundedRectPath(x + sh.x + sh.spread + t, y + sh.y + sh.spread + t, iw, ih,
+            insetCorners(radii, sh.spread + t));
+        };
+        const boxPath = roundedRectPath(x, y, w, h, radii);
+        const rings = gaussianShadowRings(sh.blur, col[3]);
+        const steps: { outerD: string; innerD: string; alpha: number }[] = rings.length
+          ? rings.map((r) => ({
+              outerD: r.inner === null ? boxPath : shrunk(r.inner),
+              innerD: shrunk(r.outer),
+              alpha: r.alpha,
+            }))
+          : [{ outerD: boxPath, innerD: shrunk(0), alpha: col[3] }];
+        // Clip to the box: the offset copies reach past it, and an inset shadow that
+        // escapes its own element is the one failure worse than not drawing it.
+        const cid = `fcinsetring-${++uid}`;
+        const clip = document.createElementNS(NS, 'clipPath');
+        clip.setAttribute('id', cid);
+        clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+        clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));
+        defs.appendChild(clip);
+        const ringG = document.createElementNS(NS, 'g');
+        ringG.setAttribute('clip-path', `url(#${cid})`);
+        for (const st of steps) {
+          if (!st.outerD) continue;
+          const p = document.createElementNS(NS, 'path');
+          p.setAttribute('d', st.outerD + st.innerD);
+          if (st.innerD) p.setAttribute('fill-rule', 'evenodd');
+          p.setAttribute('fill', `rgb(${col[0]},${col[1]},${col[2]})`);
+          p.setAttribute('fill-opacity', String(Math.round(st.alpha * 1000) / 1000));
+          ringG.appendChild(p);
+        }
+        if (ringG.childNodes.length) g.appendChild(ringG);
+      }
+    }
+
+    if (!opts.noBoxShadow && !ownPaintRastered && tag !== 'img' && tag !== 'svg') {
+      for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
+        if (!sh.inset) continue;
+        const col = parseCssColorFull(sh.color);
+        if (!col) continue;
+        const iw = Math.max(0, w - 2 * sh.spread), ih = Math.max(0, h - 2 * sh.spread);
+        const iRadii = insetCorners(radii, sh.spread);
+        // The outer subpath has to reach past the blur on every side, or the ring's
+        // own outer edge blurs into view inside the box.
+        const pad = sh.blur * 3 + Math.abs(sh.x) + Math.abs(sh.y) + Math.abs(sh.spread) + 8;
+        const ring = document.createElementNS(NS, 'path');
+        ring.setAttribute('d',
+          `M${n2(x - pad)} ${n2(y - pad)}H${n2(x + w + pad)}V${n2(y + h + pad)}H${n2(x - pad)}Z` +
+          roundedRectPath(x + sh.x + sh.spread, y + sh.y + sh.spread, iw, ih, iRadii));
+        ring.setAttribute('fill-rule', 'evenodd');
+        ring.setAttribute('fill', `rgb(${col[0]},${col[1]},${col[2]})`);
+        if (col[3] < 1) ring.setAttribute('fill-opacity', String(col[3]));
+        if (sh.blur > 0) {
+          const fId = `fcinset-${++uid}`;
+          const filt = document.createElementNS(NS, 'filter');
+          filt.setAttribute('id', fId);
+          filt.setAttribute('filterUnits', 'userSpaceOnUse');
+          filt.setAttribute('x', String(n2(x - pad))); filt.setAttribute('y', String(n2(y - pad)));
+          filt.setAttribute('width', String(n2(w + 2 * pad))); filt.setAttribute('height', String(n2(h + 2 * pad)));
+          filt.setAttribute('color-interpolation-filters', 'sRGB');
+          const fe = document.createElementNS(NS, 'feGaussianBlur');
+          fe.setAttribute('stdDeviation', String(n2(sh.blur / 2)));   // CSS blur radius → σ
+          filt.appendChild(fe);
+          defs.appendChild(filt);
+          ring.setAttribute('filter', `url(#${fId})`);
+        }
+        const cid = `fcinsetclip-${++uid}`;
+        const clip = document.createElementNS(NS, 'clipPath');
+        clip.setAttribute('id', cid);
+        clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+        clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));
+        defs.appendChild(clip);
+        ring.setAttribute('clip-path', `url(#${cid})`);
+        g.appendChild(ring);
       }
     }
 
@@ -2119,20 +2789,64 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // nothing visible, and a clip group on every one would bloat the SVG for no change.
     const clipsOverflow = (style.overflowX && style.overflowX !== 'visible') || (style.overflowY && style.overflowY !== 'visible');
     const spillsBox = (el.scrollWidth || 0) > (el.clientWidth || 0) + 1 || (el.scrollHeight || 0) > (el.clientHeight || 0) + 1;
+    // ── Overflow clip (decided AFTER the walk — see finaliseOverflowClip) ─────
+    // A clip is friction for whoever opens the file next: a designer has to release
+    // it before they can edit anything inside. So the group is created optimistically
+    // and the clip attribute is only attached at the end, once the descendants have
+    // been measured and we know it is doing work. Across the five local fixtures the
+    // walker emitted 325 clip defs and 4373 references to them, every one a single
+    // shape — most of them around content that never came near the edge.
     let contentG: Element = g;
     let ovClipId: string | null = null;
-    if (clipsOverflow && (hasRadius || spillsBox)) {
-      const cid = `fcovclip-${++uid}`;
-      const clip = document.createElementNS(NS, 'clipPath');
-      clip.setAttribute('id', cid);
-      clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
-      clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));   // 0 radii → a plain rect
-      defs.appendChild(clip);
+    let ovBounds: Bounds | null = null;
+    const clipCandidate = Boolean(clipsOverflow) && (hasRadius || spillsBox);
+    if (clipCandidate) {
+      ovClipId = `fcovclip-${++uid}`;
       contentG = document.createElementNS(NS, 'g');
-      contentG.setAttribute('clip-path', `url(#${cid})`);
       g.appendChild(contentG);
-      ovClipId = cid;
+      ovBounds = newBounds();
     }
+
+    /**
+     * Attach the overflow clip, or prove it unnecessary and leave it off.
+     *
+     * Kept when content genuinely leaves the box (`spillsBox` — the browser's own
+     * scrollWidth/scrollHeight verdict, which also catches a text line running past
+     * the edge), or when the box is rounded and something painted inside comes close
+     * enough to an edge to touch a corner arc.
+     *
+     * Dropped otherwise, which also means dropping the `clip-path` references that
+     * hoisted descendants took with them — a dangling url(#…) would clip them to
+     * nothing.
+     */
+    const finaliseOverflowClip = (): void => {
+      if (!ovClipId) return;
+      const maxR = hasRadius
+        ? Math.max(radii.topLeft[0], radii.topLeft[1], radii.topRight[0], radii.topRight[1],
+                   radii.bottomRight[0], radii.bottomRight[1], radii.bottomLeft[0], radii.bottomLeft[1])
+        : 0;
+      const b = ovBounds;
+      const touchesEdge = !b || !b.any ? false
+        : b.minX < x + maxR || b.minY < y + maxR || b.maxX > x + w - maxR || b.maxY > y + h - maxR;
+      if (spillsBox || (hasRadius && touchesEdge)) {
+        const clip = document.createElementNS(NS, 'clipPath');
+        clip.setAttribute('id', ovClipId);
+        clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+        clip.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, '#fff'));   // 0 radii → a plain rect
+        defs.appendChild(clip);
+        contentG.setAttribute('clip-path', `url(#${ovClipId})`);
+        return;
+      }
+      // Not needed. Strip the references a hoisted descendant carried, then fold the
+      // wrapper away so the output has neither the clip nor an extra empty group.
+      for (const ref of Array.from(rootG.querySelectorAll(`[clip-path="url(#${ovClipId})"]`))) {
+        ref.removeAttribute('clip-path');
+      }
+      if (contentG !== g && contentG.parentNode === g) {
+        while (contentG.firstChild) g.insertBefore(contentG.firstChild, contentG);
+        contentG.remove();
+      }
+    };
 
     // ── The stacking context this element's descendants live in ───────────────
     // `parentG` is the in-flow pointer and `ctx.frame` is the stacking pointer.
@@ -2144,7 +2858,11 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // which is exactly what CSS paints, and exactly what a naive
     // "positioned ⇒ treat as a context" implementation gets wrong.
     let ownFrame: ScFrame | null = null;
-    let childCtx: PaintCtx = ctx;
+    // The box descendants are confined to. Rounded corners are ignored here on
+    // purpose: this is only ever used to REJECT a node that misses the box entirely,
+    // and the outer rectangle is the conservative bound for that.
+    const childClipBox = clipCandidate ? intersectRect(cb, { x, y, w, h }) : cb;
+    let childCtx: PaintCtx = { frame: ctx.frame, clips: ctx.clips, clipBox: childClipBox, bounds: ovBounds ?? ctx.bounds };
     if (stackingOrder) {
       if (createsCtx) {
         ownFrame = {
@@ -2157,11 +2875,12 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           anchor: contentG === g ? g.lastChild : null,
           neg: [], z0: [], pos: [],
         };
-        childCtx = { frame: ownFrame, clips: [] };
+        childCtx = { frame: ownFrame, clips: [], clipBox: childClipBox, bounds: ovBounds ?? ctx.bounds };
       } else {
         // Not a context: descendants belong to the SAME frame, but a hoist out
         // of here now crosses this element's overflow clip and must carry it.
-        childCtx = { frame: ctx.frame, clips: ovClipId ? ctx.clips.concat(ovClipId) : ctx.clips };
+        childCtx = { frame: ctx.frame, clips: ovClipId ? ctx.clips.concat(ovClipId) : ctx.clips,
+                     clipBox: childClipBox, bounds: ovBounds ?? ctx.bounds };
       }
     }
 
@@ -2184,19 +2903,53 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // §2.7) — so every layer-2/6/7 child already fails the inlineFlow test and
     // is already visited today.
     const kids: Element[] = stackingOrder && isFlexOrGridContainer(style.display)
-      ? orderModifiedChildren(Array.from(el.children) as Element[],
+      ? orderModifiedChildren(renderedChildren(el),
           (c) => Number.parseInt(window.getComputedStyle(c).order || '0', 10) || 0)
-      : (Array.from(el.children) as Element[]);
+      : renderedChildren(el);
     for (const child of kids) {
-      const cd = window.getComputedStyle(child).display;
-      const inlineFlow = cd === 'inline' || cd === 'inline-block' || cd === 'inline-flex';
-      if (!inlineFlow || child.tagName.toLowerCase() === 'svg') {
-        await visitSvgNode(child, contentG, childCtx);
-      }
+      if (hasOwnBox(child)) await visitSvgNode(child, contentG, childCtx);
     }
+    // Shadow text: a host's own text pass below reads el.childNodes, which for a
+    // shadow host is the LIGHT tree — the part that only renders where a <slot> puts
+    // it. Text authored inside the shadow root has to be walked from the root itself.
+    const sr = (el as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
+    if (sr) await emitInlineTextSvg(NS, sr, style, rootRect, contentG, vectorText);
 
     // ── Inline text ─────────────────────────────────────────────────────────
     await emitInlineTextSvg(NS, el, style, rootRect, contentG, vectorText);
+
+    // ── <canvas> ─────────────────────────────────────────────────────────────
+    // The pixels are the content; there is no vector form to recover. Snapshot the
+    // backing store the same way snapshotMotion does, so chart/filter/D3 tools and
+    // any real page draw something instead of an empty box. A cross-origin-tainted
+    // canvas throws on toDataURL — that is unrecoverable, so it degrades to blank
+    // with a warning rather than failing the export.
+    if (tag === 'canvas') {
+      try {
+        const url = (el as HTMLCanvasElement).toDataURL('image/png');
+        if (url && url.length > 'data:image/png;base64,'.length + 8) {
+          const im = document.createElementNS(NS, 'image');
+          im.setAttribute('href', url);
+          im.setAttribute('x', String(n2(x))); im.setAttribute('y', String(n2(y)));
+          im.setAttribute('width', String(n2(w))); im.setAttribute('height', String(n2(h)));
+          im.setAttribute('preserveAspectRatio', 'none');
+          contentG.appendChild(im);
+        }
+      } catch (e) {
+        _host?.log?.('warn', `svg: <canvas> could not be read (tainted?) — ${(e as Error).message}`);
+      }
+    }
+
+    // ── Form controls ────────────────────────────────────────────────────────
+    // A control's value is not a text node, so the pass above sees nothing and the
+    // box comes out empty — the blank URL field and blank Error-correction select on
+    // every tool-page snapshot. What it shows is decided in form-controls.ts; the
+    // LAYOUT is deliberately not reimplemented here. Instead the text is mirrored
+    // into a throwaway element positioned over the control's content box and walked
+    // with the same emitInlineTextSvg, so alignment, wrapping, direction, ellipsis
+    // and vertical centring come from the browser rather than from a second, worse
+    // implementation of CSS. The mirror is removed in a finally.
+    await emitControlPaint(el, tag, style, contentG);
 
     // ── CSS generated content (::before/::after markers) ──────────────────────
     // pseudoDescriptor only models the ABSOLUTELY POSITIONED marker idiom, so
@@ -2234,6 +2987,11 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       for (const u of f.z0)             f.content.appendChild(u.g);   // step 8 — tree order, NOT z-sorted
       for (const u of sortUnits(f.pos)) f.content.appendChild(u.g);   // step 9
     }
+
+    // Last, because it needs both the measured descendant bounds and the hoisted
+    // units to be in place before it can decide — and, if it decides against, strip
+    // the references those hoists carried.
+    finaliseOverflowClip();
   }
 
   // KNOWN LIMITATION: the PDF walker (`drawHtmlVectors`) has the identical
@@ -2297,11 +3055,24 @@ function mergeDeco(a: Deco, b: Deco): Deco { return { u: a.u || b.u, s: a.s || b
 // (non-SUSE font, no host.text, letter-spacing) fall back to a positioned <text>
 // element. Line positions come from Range.getBoundingClientRect, same strategy as
 // renderInlineContent for PDF.
+let shadowUid = 0;
+
 async function emitInlineTextSvg(
   NS: string, blockEl: any, blockStyle: CSSStyleDeclaration,
   rootRect: { left: number; top: number }, parentG: Element, vectorText: boolean,
 ): Promise<void> {
   const textApi = vectorText ? _host?.text : null;
+  // Filters need a <defs>. This function is called from both walkers and does not
+  // own the document, so the sink is found from the tree it is writing into — the
+  // root <svg>'s existing <defs>, or one created on demand.
+  const ownerSvg = parentG.ownerDocument?.documentElement?.tagName === 'svg'
+    ? parentG.ownerDocument.documentElement : parentG.closest?.('svg');
+  const shadowDefs: Element = (ownerSvg?.querySelector?.('defs') as Element | null)
+    ?? (() => {
+      const d = document.createElementNS(NS, 'defs');
+      (ownerSvg ?? parentG).insertBefore(d, (ownerSvg ?? parentG).firstChild);
+      return d;
+    })();
 
   async function walk(node: any, nodeStyle: CSSStyleDeclaration, deco: Deco): Promise<void> {
     if (node.nodeType === 3) {
@@ -2325,6 +3096,55 @@ async function emitInlineTextSvg(
       const letterSpacing = letterSpacingPx(nodeStyle.letterSpacing);
       const features = featureSettingsToHb(nodeStyle.fontFeatureSettings);
 
+      // text-shadow, back-to-front (CSS paints the FIRST-listed shadow on top, so the
+      // list is drawn in reverse). Each shadow is a DUPLICATE of the run's own
+      // geometry — the outlined <path>, or the <text> fallback — recoloured, shifted
+      // and blurred, rather than a filter on the original.
+      //
+      // Duplicates rather than a filter because a filter is all-or-nothing outside
+      // SVG: svg-ir skips <filter> entirely, so an EMF/EPS/DXF export would lose the
+      // shadow completely. A duplicated path survives those formats, and when the
+      // blur is zero — the hard offset idiom — it is exact everywhere with no filter
+      // at all.
+      const textShadows = parseTextShadow(nodeStyle.textShadow).reverse();
+      const appendWithShadows = (el: Element): void => {
+        for (const sh of textShadows) {
+          const col = parseCssColorFull(sh.color);
+          if (!col) continue;
+          const copy = el.cloneNode(true) as Element;
+          copy.setAttribute('fill', `rgb(${col[0]},${col[1]},${col[2]})`);
+          copy.setAttribute('fill-opacity', String(col[3]));
+          // A stroke belongs to the text, not to its shadow: CSS shadows the rendered
+          // glyph shape, and carrying the original's stroke colour through would draw
+          // an outline in the wrong colour on top of the blur.
+          copy.removeAttribute('stroke');
+          copy.removeAttribute('stroke-width');
+          copy.removeAttribute('stroke-opacity');
+          // The offset goes on a wrapper so it composes with whatever transform the
+          // original already carries (the outlined path is placed by translate()).
+          const wrap = document.createElementNS(NS, 'g');
+          wrap.setAttribute('transform', `translate(${n2(sh.x)},${n2(sh.y)})`);
+          if (sh.blur > 0) {
+            const fId = `fctxsh-${++shadowUid}`;
+            const filt = document.createElementNS(NS, 'filter');
+            filt.setAttribute('id', fId);
+            filt.setAttribute('x', '-50%'); filt.setAttribute('y', '-50%');
+            filt.setAttribute('width', '200%'); filt.setAttribute('height', '200%');
+            // sRGB, because CSS composites shadows in sRGB and SVG's filter default
+            // is linearRGB — the same blur looks materially lighter without this.
+            filt.setAttribute('color-interpolation-filters', 'sRGB');
+            const fe = document.createElementNS(NS, 'feGaussianBlur');
+            fe.setAttribute('stdDeviation', String(n2(sh.blur / 2)));   // CSS blur radius → σ
+            filt.appendChild(fe);
+            shadowDefs.appendChild(filt);
+            wrap.setAttribute('filter', `url(#${fId})`);
+          }
+          wrap.appendChild(copy);
+          parentG.appendChild(wrap);
+        }
+        parentG.appendChild(el);
+      };
+
       // Emit one run, positioned at its own line box `r`. Used per visual line.
       const placeLine = async (lineText: string, r: DOMRect) => {
         lineText = applyTextTransform(lineText, nodeStyle.textTransform);
@@ -2347,7 +3167,7 @@ async function emitInlineTextSvg(
               if (strokeAttr) p.setAttribute('stroke', strokeAttr);
               if (strokeWidthAttr) p.setAttribute('stroke-width', strokeWidthAttr);
               if (strokeOpacityAttr) p.setAttribute('stroke-opacity', strokeOpacityAttr);
-              parentG.appendChild(p);
+              appendWithShadows(p);
               return;
             }
           } catch (e) {
@@ -2372,7 +3192,7 @@ async function emitInlineTextSvg(
         if (strokeWidthAttr) t.setAttribute('stroke-width', strokeWidthAttr);
         if (strokeOpacityAttr) t.setAttribute('stroke-opacity', strokeOpacityAttr);
         t.textContent = lineText;
-        parentG.appendChild(t);
+        appendWithShadows(t);
       };
 
       // Draw underline / strikethrough as filled rects spanning the line box, in the
@@ -2419,12 +3239,61 @@ async function emitInlineTextSvg(
       if (node.tagName.toLowerCase() === 'br') return;
       const s = window.getComputedStyle(node);
       if (s.display === 'none') return;
-      if (s.display !== 'inline' && s.display !== 'inline-block' && s.display !== 'inline-flex') return;
+      // Non-replaced `display: inline` only. Anything with a box of its own —
+      // inline-block, inline-flex, an <input>, an inline <svg> — is visited by
+      // visitSvgNode, which paints its background, border and text as a unit.
+      // Descending into it here as well would draw its text a second time.
+      if (s.display !== 'inline' || isReplaced(node)) return;
       const cd = mergeDeco(deco, decoFlags(s));
       for (const child of node.childNodes) await walk(child, s, cd);
     }
   }
   for (const child of blockEl.childNodes) await walk(child, blockStyle, decoFlags(blockStyle));
+}
+
+/** Elements whose box is drawn by the UA rather than by their children: replaced
+ *  content and form controls. They default to `display: inline` but are atomic —
+ *  the inline text walk has nothing to find inside them. */
+const REPLACED = new Set(['img', 'svg', 'canvas', 'video', 'audio', 'iframe', 'object', 'embed',
+                          'input', 'select', 'textarea', 'progress', 'meter']);
+export function isReplaced(el: Element): boolean {
+  return REPLACED.has(el.tagName.toLowerCase());
+}
+
+/**
+ * Does this child have a box the block walk must paint?
+ *
+ * Everything except a non-replaced `display: inline`, whose background and text are
+ * the inline walk's job. This predicate is the whole reason an inline-block's
+ * background used to vanish: the loop tested for "inline flow" and skipped
+ * inline-block and inline-flex along with inline, leaving them to a text pass that
+ * paints no boxes at all — and leaving a replaced control, which has no text nodes,
+ * emitting nothing whatsoever.
+ *
+ * `display: contents` has no box of its own but its CHILDREN do, and visitSvgNode
+ * recurses, so it is included rather than dropped.
+ */
+/**
+ * The children this element actually RENDERS — the flat tree, not the DOM tree.
+ *
+ * A shadow host renders its shadow root's children, not its own; its light children
+ * appear only where a <slot> places them. Walking `el.children` therefore missed the
+ * entire shadow tree (39–51 rendered elements per page in this app, which is
+ * jelly-ui) while walking both would paint slotted content twice.
+ */
+export function renderedChildren(el: Element): Element[] {
+  const sr = (el as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
+  if (sr) return Array.from(sr.children) as Element[];
+  if (el.tagName.toLowerCase() === 'slot') {
+    // flatten:true resolves a slot forwarded into another slot.
+    return (el as HTMLSlotElement).assignedElements?.({ flatten: true }) ?? [];
+  }
+  return Array.from(el.children) as Element[];
+}
+
+export function hasOwnBox(child: Element): boolean {
+  const cd = window.getComputedStyle(child).display;
+  return cd !== 'inline' || isReplaced(child);
 }
 
 
@@ -2657,6 +3526,91 @@ function buildLinearGradientEl(NS: string, bgImage: string, elX: number, elY: nu
 // only assemble the SVG. An ellipse (rx≠ry) is emitted as a circle of radius rx with a
 // y-scale gradientTransform about the centre. gradientUnits="userSpaceOnUse" so coords
 // match the canvas. Returns null if the value isn't a parseable radial gradient.
+/**
+ * A conic gradient as a fan of wedges.
+ *
+ * Each wedge is a solid-filled pie slice between two angles, its colour sampled from
+ * the stop list at the wedge's midpoint. Enough wedges and the banding is below the
+ * threshold anyone can see; the count scales with the box so a small dial doesn't pay
+ * for a page background's smoothness.
+ *
+ * The radius reaches the FARTHEST corner from the centre — a conic gradient covers
+ * the whole box even when its centre is off to one side, and using half the diagonal
+ * would leave an unpainted crescent.
+ *
+ * CSS measures the angle clockwise from 12 o'clock; SVG's coordinate zero is at 3
+ * o'clock. The −90° here is that difference, and dropping it rotates every gradient
+ * on the page by a quarter turn.
+ */
+function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: number, h: number, gid: number): Element | null {
+  const cx = x + cg.cx, cy = y + cg.cy;
+  const R = Math.max(
+    Math.hypot(cg.cx, cg.cy), Math.hypot(w - cg.cx, cg.cy),
+    Math.hypot(cg.cx, h - cg.cy), Math.hypot(w - cg.cx, h - cg.cy),
+  );
+  if (!(R > 0) || !Number.isFinite(R)) return null;
+
+  // Stops as fractions of the sweep, in order, with any unpositioned ones already
+  // spread evenly by parseGradientStop.
+  const raw = cg.stops
+    .map((st) => ({ col: st.colorStr!, op: st.opacity, at: parseFloat(st.offset) / (st.offset.endsWith('%') ? 100 : 360) }))
+    .filter((st) => Number.isFinite(st.at));
+  if (raw.length < 2) return null;
+  // CSS gradient stop fixup: an offset smaller than the one before it is CLAMPED up
+  // to it, which is how a hard-edged stop is written (`red 0 25%, blue 0 50%`).
+  // Sorting instead would silently reorder those into a smooth ramp — and the
+  // checkerboard behind every tool canvas is exactly that idiom.
+  const stops = raw.map((st, i, all) => ({ ...st, at: i ? Math.max(st.at, all[i - 1]!.at) : st.at }));
+  for (let i = 1; i < stops.length; i++) stops[i]!.at = Math.max(stops[i]!.at, stops[i - 1]!.at);
+
+  // A repeating gradient's stop list is ONE period that tiles around the circle.
+  const first = stops[0]!.at, last = stops[stops.length - 1]!.at;
+  const period = cg.repeating && last > first ? last - first : 0;
+
+  const sample = (tRaw: number): { col: string; op: number } => {
+    const t = period ? first + (((tRaw - first) % period) + period) % period : tRaw;
+    if (t <= stops[0]!.at) return stops[0]!;
+    const last = stops[stops.length - 1]!;
+    if (t >= last.at) return last;
+    for (let i = 1; i < stops.length; i++) {
+      const a = stops[i - 1]!, b = stops[i]!;
+      if (t <= b.at) {
+        const span = b.at - a.at;
+        const f = span > 0 ? (t - a.at) / span : 0;
+        const ca = parseCssColorFull(a.col), cb = parseCssColorFull(b.col);
+        if (!ca || !cb) return f < 0.5 ? a : b;
+        const mix = (i0: number) => Math.round(ca[i0]! + (cb[i0]! - ca[i0]!) * f);
+        return { col: `rgb(${mix(0)},${mix(1)},${mix(2)})`, op: ca[3] + (cb[3] - ca[3]) * f };
+      }
+    }
+    return last;
+  };
+
+  // One wedge per ~1.5° at page scale, fewer for a small dial. Capped so a huge
+  // element cannot emit thousands of paths.
+  const n = Math.max(48, Math.min(360, Math.round(R / 2)));
+  const g = document.createElementNS(NS, 'g');
+  const base = cg.fromRad - Math.PI / 2;
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n, t1 = (i + 1) / n;
+    const a0 = base + t0 * 2 * Math.PI;
+    // Overlap each wedge into the next by a hair: exact shared edges leave a visible
+    // seam of background colour where two antialiased edges meet.
+    const a1 = base + t1 * 2 * Math.PI + 0.004;
+    const { col, op } = sample((t0 + t1) / 2);
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d',
+      `M${n2(cx)} ${n2(cy)}L${n2(cx + R * Math.cos(a0))} ${n2(cy + R * Math.sin(a0))}` +
+      `A${n2(R)} ${n2(R)} 0 0 1 ${n2(cx + R * Math.cos(a1))} ${n2(cy + R * Math.sin(a1))}Z`);
+    p.setAttribute('fill', col);
+    if (op < 1) p.setAttribute('fill-opacity', String(Math.round(op * 1000) / 1000));
+    p.setAttribute('shape-rendering', 'crispEdges');
+    g.appendChild(p);
+  }
+  void gid;
+  return g;
+}
+
 function buildRadialGradientEl(NS: string, bgImage: string, elX: number, elY: number, elW: number, elH: number, uid: number): Element | null {
   const g = parseRadialGradient(bgImage, elW, elH);
   if (!g) return null;
@@ -2690,16 +3644,40 @@ function buildRadialGradientEl(NS: string, bgImage: string, elX: number, elY: nu
 // Build an SVG <filter> of chained <feDropShadow> primitives for the given shadows
 // (parsed DOM-free by the engine's parseDropShadowFilter). A generous filter region
 // (-50%…200%) keeps large offsets/blurs from being clipped.
-function buildDropShadowFilterEl(NS: string, shadows: { dx: number; dy: number; blur: number; color: string }[], id: string): Element {
+/**
+ * `filter: drop-shadow(…)` as an SVG filter.
+ *
+ * The blur value is used as the standard deviation DIRECTLY, which is the one thing
+ * here that looks like a bug and is not. `box-shadow: … 12px` and
+ * `drop-shadow(… 12px)` do NOT produce the same blur: box-shadow's value is a radius
+ * of 2σ, drop-shadow's IS σ. Measured against Chromium at blur 4, 6, 12, 24 and 40,
+ * σ = blur is exact (0.000% pixel error) and σ = blur/2 — which this used to emit,
+ * on the reasonable-sounding grounds that it "matches box-shadow" — is off by up to
+ * 2.3% mean and 12.5% on a single pixel.
+ */
+function buildDropShadowFilterEl(NS: string, shadows: { dx: number; dy: number; blur: number; color: string }[], id: string,
+                                 box?: { x: number; y: number; w: number; h: number }): Element {
   const filt = document.createElementNS(NS, 'filter');
   filt.setAttribute('id', id);
-  filt.setAttribute('x', '-50%'); filt.setAttribute('y', '-50%');
-  filt.setAttribute('width', '200%'); filt.setAttribute('height', '200%');
+  // A region sized from the actual blur and offsets. The old -50%/200% bounding-box
+  // form is a fraction of the ELEMENT, so a big blur on a small element was clipped
+  // by its own filter region.
+  const reach = shadows.reduce((n, sh) => Math.max(n, sh.blur * 3 + Math.abs(sh.dx) + Math.abs(sh.dy)), 0) + 8;
+  if (box) {
+    filt.setAttribute('filterUnits', 'userSpaceOnUse');
+    filt.setAttribute('x', String(n2(box.x - reach))); filt.setAttribute('y', String(n2(box.y - reach)));
+    filt.setAttribute('width', String(n2(box.w + 2 * reach))); filt.setAttribute('height', String(n2(box.h + 2 * reach)));
+  } else {
+    filt.setAttribute('x', '-50%'); filt.setAttribute('y', '-50%');
+    filt.setAttribute('width', '200%'); filt.setAttribute('height', '200%');
+  }
+  // CSS composites filters in sRGB; SVG's default is linearRGB.
+  filt.setAttribute('color-interpolation-filters', 'sRGB');
   for (const sh of shadows) {
     const fe = document.createElementNS(NS, 'feDropShadow');
     fe.setAttribute('dx', String(n2(sh.dx)));
     fe.setAttribute('dy', String(n2(sh.dy)));
-    fe.setAttribute('stdDeviation', String(n2(sh.blur / 2)));   // CSS blur radius → σ (matches box-shadow)
+    fe.setAttribute('stdDeviation', String(n2(sh.blur)));   // NOT blur/2 — see above
     const col = parseCssColorFull(sh.color);
     if (col) { fe.setAttribute('flood-color', `rgb(${col[0]},${col[1]},${col[2]})`); fe.setAttribute('flood-opacity', String(col[3])); }
     else fe.setAttribute('flood-color', sh.color);
@@ -2895,7 +3873,11 @@ async function encryptPdfStrong(blob: Blob, password: string): Promise<Blob> {
   return new Blob([out], { type: 'application/pdf' });
 }
 
-async function renderPdf(node: Element, opts: ExportOpts): Promise<Blob> {
+// Exported for the shadow-fidelity harness (export-pdf-shadow-fidelity.test.ts),
+// which needs real PDF bytes to rasterise and diff — a recording mock cannot answer
+// "does this LOOK like the browser". Not part of the bridge surface; callers go
+// through createExportAPI.
+export async function renderPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   // Multi-page: a tool can flag page boxes with [data-pdf-page]; each becomes its
   // own PDF page sized to that element's own CSS box. This is independent of the
   // print-geometry (marks/bleed) path, which stays single-page. Falls through to
@@ -3926,6 +4908,124 @@ async function gradientPng(bgImg: string, w: number, h: number, pxW: number, pxH
 // shape (makeRoundedFill + the identical stdDeviation = blur/2). Returns the PNG plus the
 // shadow's region in element-local CSS px (the caller scales to pt + places it behind the
 // box). `wCss`/`hCss` are the box size in CSS px; `radiiCss` the CSS-px corner radii.
+/**
+ * An INSET shadow as a shadow-only bitmap covering exactly the element's box.
+ *
+ * Same geometry the SVG walker emits (which measures 0.02% against the browser): the
+ * region between the border box and an offset, spread-shrunken copy of it, as one
+ * evenodd path, blurred and clipped to the box. PDF has no blur operator, so unlike
+ * SVG this has to be baked — but baking a shadow is a far smaller compromise than
+ * baking the element, and it is the mechanism the soft OUTER shadow already uses here.
+ */
+/**
+ * A blurred text shadow as a shadow-only bitmap covering the line box plus `pad`.
+ *
+ * `d` is the shaped glyph outline in CSS px with its origin on the text baseline, so
+ * the SVG places it at (pad + offset, pad + baseline-within-line + offset).
+ */
+async function rasterizeTextShadow(
+  glyphs: { d: string } | { text: string; style: CSSStyleDeclaration },
+  sh: { x: number; y: number; blur: number }, col: Rgba,
+  lineW: number, lineH: number, baselineInLine: number, pad: number,
+  dprX: number, dprY: number, imprint?: ImprintState,
+): Promise<string | null> {
+  const rw = lineW + 2 * pad, rh = lineH + 2 * pad;
+  if (rw <= 0 || rh <= 0) return null;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('xmlns', NS);
+  svg.setAttribute('viewBox', `0 0 ${n2(rw)} ${n2(rh)}`);
+  const defs = document.createElementNS(NS, 'defs');
+  const filt = document.createElementNS(NS, 'filter');
+  filt.setAttribute('id', 'ts');
+  filt.setAttribute('x', '-50%'); filt.setAttribute('y', '-50%');
+  filt.setAttribute('width', '200%'); filt.setAttribute('height', '200%');
+  filt.setAttribute('color-interpolation-filters', 'sRGB');
+  const fe = document.createElementNS(NS, 'feGaussianBlur');
+  fe.setAttribute('stdDeviation', String(sh.blur / 2));   // CSS blur radius → σ
+  filt.appendChild(fe);
+  defs.appendChild(filt);
+  svg.appendChild(defs);
+  // Outlined glyphs when the caller has them; otherwise an SVG <text> in the run's
+  // own font. The raster happens in the browser, so the page's fonts resolve — this
+  // is the same shape the run itself takes when text-to-path is unavailable.
+  let p: Element;
+  if ('d' in glyphs) {
+    p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', glyphs.d);
+    p.setAttribute('transform', `translate(${n2(pad + sh.x)},${n2(pad + baselineInLine + sh.y)})`);
+  } else {
+    p = document.createElementNS(NS, 'text');
+    p.setAttribute('x', String(n2(pad + sh.x)));
+    p.setAttribute('y', String(n2(pad + baselineInLine + sh.y)));
+    p.setAttribute('dominant-baseline', 'alphabetic');
+    p.setAttribute('font-family', glyphs.style.fontFamily);
+    p.setAttribute('font-size', glyphs.style.fontSize);
+    p.setAttribute('font-weight', glyphs.style.fontWeight);
+    p.setAttribute('font-style', glyphs.style.fontStyle);
+    if (glyphs.style.letterSpacing && glyphs.style.letterSpacing !== 'normal') {
+      p.setAttribute('letter-spacing', glyphs.style.letterSpacing);
+    }
+    p.textContent = glyphs.text;
+  }
+  p.setAttribute('fill', `rgb(${col[0]},${col[1]},${col[2]})`);
+  if (col[3] < 1) p.setAttribute('fill-opacity', String(col[3]));
+  p.setAttribute('filter', 'url(#ts)');
+  svg.appendChild(p);
+  const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(rw * dprX)));
+  const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(rh * dprY)));
+  return await rasterizeSvgElement(svg, pxW, pxH, false, imprint);
+}
+
+async function rasterizeInsetShadow(
+  sh: { x: number; y: number; blur: number; spread: number; color: string },
+  wCss: number, hCss: number, radiiCss: CornerRadii, dprX: number, dprY: number, imprint?: ImprintState,
+): Promise<string | null> {
+  const col = parseCssColorFull(sh.color);
+  if (!col || wCss <= 0 || hCss <= 0) return null;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('xmlns', NS);
+  svg.setAttribute('viewBox', `0 0 ${n2(wCss)} ${n2(hCss)}`);
+  const defs = document.createElementNS(NS, 'defs');
+
+  const iw = Math.max(0, wCss - 2 * sh.spread), ih = Math.max(0, hCss - 2 * sh.spread);
+  const pad = sh.blur * 3 + Math.abs(sh.x) + Math.abs(sh.y) + Math.abs(sh.spread) + 8;
+  const ring = document.createElementNS(NS, 'path');
+  ring.setAttribute('d',
+    `M${n2(-pad)} ${n2(-pad)}H${n2(wCss + pad)}V${n2(hCss + pad)}H${n2(-pad)}Z` +
+    roundedRectPath(sh.x + sh.spread, sh.y + sh.spread, iw, ih, insetCorners(radiiCss, sh.spread)));
+  ring.setAttribute('fill-rule', 'evenodd');
+  ring.setAttribute('fill', `rgb(${col[0]},${col[1]},${col[2]})`);
+  if (col[3] < 1) ring.setAttribute('fill-opacity', String(col[3]));
+
+  if (sh.blur > 0) {
+    const filt = document.createElementNS(NS, 'filter');
+    filt.setAttribute('id', 'ish');
+    filt.setAttribute('filterUnits', 'userSpaceOnUse');
+    filt.setAttribute('x', String(n2(-pad))); filt.setAttribute('y', String(n2(-pad)));
+    filt.setAttribute('width', String(n2(wCss + 2 * pad))); filt.setAttribute('height', String(n2(hCss + 2 * pad)));
+    filt.setAttribute('color-interpolation-filters', 'sRGB');
+    const fe = document.createElementNS(NS, 'feGaussianBlur');
+    fe.setAttribute('stdDeviation', String(sh.blur / 2));   // CSS blur radius → σ
+    filt.appendChild(fe);
+    defs.appendChild(filt);
+    ring.setAttribute('filter', 'url(#ish)');
+  }
+  const clip = document.createElementNS(NS, 'clipPath');
+  clip.setAttribute('id', 'ic');
+  clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+  clip.appendChild(makeRoundedFill(NS, 0, 0, wCss, hCss, radiiCss, uniformRadius(radiiCss), '#fff'));
+  defs.appendChild(clip);
+  ring.setAttribute('clip-path', 'url(#ic)');
+  svg.appendChild(defs);
+  svg.appendChild(ring);
+
+  const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(wCss * dprX)));
+  const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(hCss * dprY)));
+  return await rasterizeSvgElement(svg, pxW, pxH, false, imprint);
+}
+
 async function rasterizeBoxShadow(
   sh: { x: number; y: number; blur: number; spread: number; color: string },
   wCss: number, hCss: number, radiiCss: CornerRadii, dprX: number, dprY: number, imprint?: ImprintState,
@@ -3952,6 +5052,7 @@ async function rasterizeBoxShadow(
     filt.setAttribute('filterUnits', 'userSpaceOnUse');
     filt.setAttribute('x', String(n2(rx))); filt.setAttribute('y', String(n2(ry)));
     filt.setAttribute('width', String(n2(rw))); filt.setAttribute('height', String(n2(rh)));
+    filt.setAttribute('color-interpolation-filters', 'sRGB');   // CSS composites in sRGB
     const fe = document.createElementNS(NS, 'feGaussianBlur');
     fe.setAttribute('in', 'SourceGraphic');
     fe.setAttribute('stdDeviation', String(sh.blur / 2));
@@ -4012,6 +5113,11 @@ async function rasterizeSvgElement(svgEl: Element, pxW: number, pxH: number, fli
 }
 
 const MAX_RASTER_PX = 2000;   // per-side cap for the vector escape-hatch (matches the inline-SVG raster)
+// How much already-painted content a single `backdrop-filter: blur()` may duplicate.
+// The backdrop is reconstructed by copying what sits behind the element, so a blurred
+// bar late in a busy page copies most of that page. Past this, the element falls back
+// to the raster hatch — a wrong-but-bounded answer beats an unbounded correct one.
+const BACKDROP_MAX_NODES = 400;
 const RASTER_DPI = 200;       // resolution for the PDF escape-hatch (points × RASTER_DPI/72)
 
 // Rasterise ONE live element's subtree to a PNG data URL at pxW×pxH device px — the
@@ -4022,15 +5128,21 @@ const RASTER_DPI = 200;       // resolution for the PDF escape-hatch (points × 
 // to fill). Returns null on failure so the caller falls through to the (lossy) vector
 // walk — never worse than before. Nothing mounts on-screen, so the position:fixed
 // containing-block gotcha (the offscreen-stage flash) does not apply here.
-export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: number, bg?: string, imprint?: ImprintState, ownPaintOnly?: boolean): Promise<string | null> {
+export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: number, bg?: string, imprint?: ImprintState, ownPaintOnly?: boolean, padPx = 0): Promise<string | null> {
   const r = el.getBoundingClientRect();
   const cssW = r.width, cssH = r.height;
   if (cssW < 0.5 || cssH < 0.5 || pxW < 2 || pxH < 2) return null;
+  // `padPx`: extra output pixels on every side, with the content shifted into the
+  // middle. A CSS effect can paint OUTSIDE the element's box — a drop-shadow is the
+  // common one — and a capture sized to the box crops it, which is how a drop-shadow
+  // came out sheared off in PDF export. The caller places the padded image at the
+  // correspondingly enlarged rect.
+  const pad = Math.max(0, Math.round(padPx));
   const lib = await getDomToImage();
   const restore = await swapBlobUrls(el);
   try {
     const canvas = await lib.toCanvas(el, {
-      width: pxW, height: pxH,
+      width: pxW + 2 * pad, height: pxH + 2 * pad,
       // `ownPaintOnly`: capture the element's OWN paint layer — background, border,
       // effect — and none of its descendants, so the caller can keep walking those
       // as vector. dom-to-image-more applies `filter` to every node it clones EXCEPT
@@ -4039,7 +5151,9 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
       // element sized to its (now absent) content.
       ...(ownPaintOnly ? { filter: (n: Node) => n === el } : {}),
       style: {
-        transform: `scale(${pxW / cssW}, ${pxH / cssH})`,
+        // translate first (unscaled output px), then scale — so the element lands
+        // `pad` pixels in from the top-left of the larger canvas.
+        transform: `translate(${pad}px, ${pad}px) scale(${pxW / cssW}, ${pxH / cssH})`,
         transformOrigin: 'top left',
         width: `${cssW}px`, height: `${cssH}px`,
         left: '0', top: '0', margin: '0',
@@ -4202,7 +5316,12 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // with noBoxShadow, so no gate is needed here.
     if (tag !== 'img' && tag !== 'svg' && style.boxShadow && style.boxShadow !== 'none') {
       const { radii: shRadiiCss } = resolveRadii(style, rect.width, rect.height);
+      // KNOWN DIVERGENCE: outer shadows only. The SVG walker draws inset shadows too
+      // (a clipped evenodd ring); the PDF walker has no clip+filter equivalent wired
+      // up here yet, and drawing an inset shadow as an outer one would be worse than
+      // omitting it.
       for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
+        if (sh.inset) continue;
         if (sh.blur <= 0) {
           // hard shadow → vector: offset+spread-grown rounded rect in the shadow colour
           const col = parseCssColorFull(sh.color);
@@ -4213,12 +5332,33 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
           pdf.setFillColor(col[0], col[1], col[2]);
           withPdfAlpha(pdf, col[3], () => pdfRoundedRect(pdf, sx, sy, sw * scaleX, shh * scaleY, sRadii, uniformRadius(sRadii), 'F'));
         } else {
-          // soft shadow → bounded shadow-only raster (last resort — no vector blur)
-          try {
-            const dens = RASTER_DPI / 72;
-            const res = await rasterizeBoxShadow(sh, rect.width, rect.height, shRadiiCss, dens * scaleX, dens * scaleY, imprint);
-            if (res) pdf.addImage(res.png, 'PNG', x + res.rx * scaleX, y + res.ry * scaleY, res.rw * scaleX, res.rh * scaleY);
-          } catch { /* skip a shadow that won't rasterise */ }
+          // soft shadow → concentric bands, outermost first. PDF has no blur operator,
+          // but the blur of an edge IS the Gaussian CDF, so painting the shape at a
+          // series of outsets with the right alpha increments reproduces it in pure
+          // vector — no embedded bitmap, editable, resolution-independent. Bands come
+          // from the engine (gaussianShadowBands) so PDF and any other blur-less
+          // renderer share one derivation.
+          const col = parseCssColorFull(sh.color);
+          const bands = col ? gaussianShadowBands(sh.blur, col[3]) : [];
+          if (col && bands.length) {
+            pdf.setFillColor(col[0], col[1], col[2]);
+            for (const band of bands) {
+              const t = sh.spread + band.outset;
+              const bw = rect.width + 2 * t, bh = rect.height + 2 * t;
+              if (bw <= 0 || bh <= 0) continue;
+              const bRadii = scaleRadii(insetCorners(shRadiiCss, -t));   // negative inset = outset
+              const bx = x + (sh.x - t) * scaleX, by = y + (sh.y - t) * scaleY;
+              withPdfAlpha(pdf, band.alpha, () =>
+                pdfRoundedRect(pdf, bx, by, bw * scaleX, bh * scaleY, bRadii, uniformRadius(bRadii), 'F'));
+            }
+          } else {
+            // No parseable colour → the old bounded shadow-only raster.
+            try {
+              const dens = RASTER_DPI / 72;
+              const res = await rasterizeBoxShadow(sh, rect.width, rect.height, shRadiiCss, dens * scaleX, dens * scaleY, imprint);
+              if (res) pdf.addImage(res.png, 'PNG', x + res.rx * scaleX, y + res.ry * scaleY, res.rw * scaleX, res.rh * scaleY);
+            } catch { /* skip a shadow that won't rasterise */ }
+          }
         }
       }
     }
@@ -4232,10 +5372,22 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       const dpr = RASTER_DPI / 72;
       const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * dpr)));
       const pxH = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(h * dpr)));
-      const png = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH, undefined, imprint);
+      // How far this element's effects paint OUTSIDE its box. A `filter` is the case
+      // that matters: capturing a drop-shadowed element at exactly its rect shears
+      // the shadow off, which measured 2.1% mean / 32% worst-pixel against the
+      // browser — the single largest shadow error left in PDF output.
+      //
+      // Units are the trap here: `pxW` is derived from `w`, which is POINTS, while the
+      // spill is CSS px. The pad has to be converted to points first and only then to
+      // capture pixels, or the padded image is placed at a rect that does not match the
+      // padding inside it — which measured WORSE than not padding at all.
+      const spillCss = effectSpillCss(style);
+      const padPt = spillCss * scaleX;
+      const padPx = Math.round(padPt * dpr);
+      const png = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH, undefined, imprint, false, padPx);
       if (png) {
         _host?.log?.('info', `pdf: rasterised <${tag}> (unsupported ${rasterReason})`);
-        pdf.addImage(png, 'PNG', x, y, w, h);   // PNG alpha composites over the page
+        pdf.addImage(png, 'PNG', x - padPt, y - padPt, w + 2 * padPt, h + 2 * padPt);
         return;
       }
       // png == null → fall through to the vector walk.
@@ -4310,6 +5462,52 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
         // a non-url, non-gradient bg (e.g. a lone unresolved value) → the old midpoint solid
         const mid = sampleGradientMidpoint(bgImg);
         if (mid) { pdf.setFillColor(mid[0], mid[1], mid[2]); pdfRoundedRect(pdf, x, y, w, h, radii, uniform, 'F'); }
+      }
+    }
+
+    // ── Inset box-shadow ──────────────────────────────────────────────────────
+    // CSS paints an inset shadow over the background and under the border, so it goes
+    // between the two. Baked to a shadow-only bitmap covering exactly the box: PDF has
+    // no blur operator, and baking the shadow is a far smaller compromise than baking
+    // the element — the same trade the soft outer shadow already makes here.
+    for (const sh of parseBoxShadow(style.boxShadow).reverse()) {
+      if (!sh.inset) continue;
+      const icol = parseCssColorFull(sh.color);
+      // Same band derivation as the outer shadow, mirrored: an inset shadow is the
+      // blur of the region OUTSIDE the offset, shrunken inner shape, so each band is
+      // a RING — everything except that shape shrunk by the band's outset — filled
+      // even-odd and clipped to the box.
+      const ibands = icol ? gaussianShadowBands(sh.blur, icol[3]) : [];
+      if (icol && (ibands.length || sh.blur <= 0)) {
+        const iw = Math.max(0, rect.width - 2 * sh.spread);
+        const ih = Math.max(0, rect.height - 2 * sh.spread);
+        const iRadiiCss = insetCorners(radiiCss, sh.spread);
+        const steps = ibands.length ? ibands : [{ outset: 0, alpha: icol[3] }];
+        await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, () => {
+          pdf.setFillColor(icol[0], icol[1], icol[2]);
+          for (const band of steps) {
+            const t = band.outset;
+            const bw = iw - 2 * t, bh = ih - 2 * t;
+            // Past the point where the inner shape collapses, the ring is the whole
+            // box — the shadow has closed over the middle.
+            const inner = bw > 0 && bh > 0
+              ? roundedRectPath(sh.x + sh.spread + t, sh.y + sh.spread + t, bw, bh, insetCorners(iRadiiCss, t))
+              : '';
+            const outer = `M0 0H${n2(rect.width)}V${n2(rect.height)}H0Z`;
+            withPdfAlpha(pdf, band.alpha, () => {
+              drawSvgPathToPdf(pdf, outer + inner,
+                (sx: number) => x + sx * scaleX, (sy: number) => y + sy * scaleY);
+              pdf.fillEvenOdd();
+            });
+          }
+        });
+      } else {
+        try {
+          const dens = RASTER_DPI / 72;
+          const png = await rasterizeInsetShadow(sh, rect.width, rect.height, radiiCss,
+            dens * scaleX, dens * scaleY, imprint);
+          if (png) pdf.addImage(png, 'PNG', x, y, w, h);
+        } catch { /* skip a shadow that won't rasterise */ }
       }
     }
 
@@ -4505,7 +5703,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
             && child.tagName.toLowerCase() !== 'svg') continue;
         await visit(child);
       }
-      await renderInlineContent(pdf, el, style, rootRect, scaleX, scaleY, cssToPt, registeredFonts, convertPaths);
+      await renderInlineContent(pdf, el, style, rootRect, scaleX, scaleY, cssToPt, registeredFonts, convertPaths, imprint);
       await pdfPseudoContent(pdf, el, rootRect, scaleX, scaleY, cssToPt, registeredFonts, convertPaths);
     };
     if (clipsOverflow && (hasRadius || spillsBox)) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, drawContent);
@@ -4525,7 +5723,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
 async function renderInlineContent(
   pdf: any, blockEl: any, blockStyle: CSSStyleDeclaration,
   rootRect: { left: number; top: number }, scaleX: number, scaleY: number, cssToPt: number,
-  registeredFonts: Set<unknown>, convertPaths = true,
+  registeredFonts: Set<unknown>, convertPaths = true, imprint?: ImprintState,
 ): Promise<void> {
   async function walk(node: any, nodeStyle: CSSStyleDeclaration, deco: Deco): Promise<void> {
     if (node.nodeType === 3) {
@@ -4572,6 +5770,65 @@ async function renderInlineContent(
             // riding the top of its line box. (Was `top + ascent`, i.e. half-leading = 0.)
             const baselinePt = textBaselineY(r.top - rootRect.top, r.height, ascent, descent) * scaleY;
             const shown = applyTextTransform(line.text, nodeStyle.textTransform);
+
+            // Shape once and reuse: the shadows and the run itself are the same
+            // glyphs, and HarfBuzz shaping is the expensive part of this loop.
+            let shapedD: string | null | undefined;
+            const textPathFor = async (t: string): Promise<string | null> => {
+              if (shapedD !== undefined) return shapedD;
+              try {
+                const res = await _host!.text!.toPath({ text: t, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
+                shapedD = res.d && !res.notdef ? res.d : null;
+              } catch { shapedD = null; }
+              return shapedD;
+            };
+
+            // ── text-shadow, back-to-front (CSS paints the first-listed on top) ──
+            // A hard offset is exact vector: the same run again, shifted, in the
+            // shadow colour. A blurred one has no PDF operator, so the outlined path
+            // is baked to a shadow-only bitmap — the same compromise the box shadows
+            // make here, and far smaller than baking the text itself.
+            const tShadows = parseTextShadow(nodeStyle.textShadow).reverse();
+            for (const tsh of tShadows) {
+              const scol = parseCssColorFull(tsh.color);
+              if (!scol) continue;
+              try {
+                if (tsh.blur > 0) {
+                  const d0 = outline ? await textPathFor(shown) : null;
+                  const pad = tsh.blur * 3 + Math.abs(tsh.x) + Math.abs(tsh.y) + 8;
+                  const png = await rasterizeTextShadow(
+                    d0 ? { d: d0 } : { text: shown, style: nodeStyle },
+                    tsh, scol, r.width, r.height,
+                    textBaselineY(0, r.height, ascent, descent), pad,
+                    (RASTER_DPI / 72) * scaleX, (RASTER_DPI / 72) * scaleY, imprint);
+                  if (png) {
+                    pdf.addImage(png, 'PNG', x - pad * scaleX,
+                      (r.top - rootRect.top - pad) * scaleY,
+                      (r.width + 2 * pad) * scaleX, (r.height + 2 * pad) * scaleY);
+                  }
+                  continue;
+                }
+                // Hard offset.
+                const d0 = outline ? await textPathFor(shown) : null;
+                if (d0) {
+                  pdf.setFillColor(scol[0], scol[1], scol[2]);
+                  withPdfAlpha(pdf, scol[3], () => {
+                    drawSvgPathToPdf(pdf, d0,
+                      (sx: number) => x + (sx + tsh.x) * cssToPt,
+                      (sy: number) => baselinePt + (sy + tsh.y) * cssToPt);
+                    pdf.fill();
+                  });
+                } else {
+                  const prev = pdf.getTextColor?.();
+                  pdf.setTextColor(scol[0], scol[1], scol[2]);
+                  withPdfAlpha(pdf, scol[3], () => {
+                    pdf.text(shown, x + tsh.x * cssToPt, baselinePt + tsh.y * cssToPt, { baseline: 'alphabetic' });
+                  });
+                  if (prev) pdf.setTextColor(prev);
+                }
+              } catch { /* a shadow that won't draw must not take the text with it */ }
+            }
+
             let drawn = false;
             if (outline) {
               try {
