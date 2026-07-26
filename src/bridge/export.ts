@@ -37,6 +37,8 @@ import {
 import { resolveVectorFont } from './font-registry.ts';
 import type { VectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
+import { stackingRole, sortUnits, orderModifiedChildren, isFlexOrGridContainer } from './stacking-order.ts';
+import type { StackingRole } from './stacking-order.ts';
 import { unscopeStyleEls } from '../lib/scope-css.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
@@ -174,6 +176,35 @@ export interface ExportOpts {
    *  embed it as a raster instead of dropping it. On by default; set false to A/B the
    *  pure-vector output (used by the byte-identical regression test). */
   rasterFallback?: boolean;
+  /** Page-snapshot mode for the raster escape hatch: capture only the offending
+   *  element's OWN paint layer as an <image> and keep walking its children as
+   *  vector, instead of baking the whole subtree into one PNG.
+   *
+   *  Default (absent/false) is the historical subtree behaviour, which every tool
+   *  export relies on — see the note at the hatch for why splitting paint from
+   *  children is not automatically safe when the two composite together. Turned on
+   *  by main.ts's `__lollyWalkerShot` loopback hook, where the input is a whole
+   *  page and one unsupported property on a container would otherwise reduce the
+   *  entire capture to a screenshot. */
+  elementScopedRaster?: boolean;
+  /** Page snapshots: paint in CSS stacking-context order (CSS 2.1 Appendix E
+   *  §E.2) instead of DOM order — negative-z children behind their parent's
+   *  in-flow content, positioned descendants above non-positioned ones, each
+   *  layer z-sorted, hoists terminating at every stacking-context creator (the
+   *  table in bridge/stacking-order.ts).
+   *
+   *  Default (absent/false) is DOM order, which every tool export has always
+   *  had. OFF is not "the new code happens to agree": `PaintCtx.frame === null`
+   *  makes every deferral branch unreachable, so each of the three placement
+   *  sites reduces to the single `parentG.appendChild(unit)` it was before and
+   *  the emitted bytes CANNOT differ. That short-circuit plus the byte-identity
+   *  golden in export-paint-order.test.ts is the entire protection for the
+   *  shipping SVG/PDF/EMF/EPS export path of every tool in every profile.
+   *
+   *  Turned on by main.ts's `__lollyWalkerShot` loopback hook, where the input
+   *  is a whole page: on Lolly's own gallery 99 elements carry a non-auto
+   *  z-index, 22 of them negative, and DOM order paints them all wrong. */
+  stackingOrder?: boolean;
   noBoxShadow?: boolean;
   password?: string;
   /** Strong tier: AES-256 (R6) applied as a final encrypt-last pass over the
@@ -1420,8 +1451,16 @@ function svgClipShapeEl(NS: string, shape: ClipShape, ox: number, oy: number): E
     if (shape.r > 0) { rect.setAttribute('rx', String(n2(shape.r))); rect.setAttribute('ry', String(n2(shape.r))); }
     return rect;
   }
+  // `empty` never reaches here — callers return before drawing (a zero-area clip
+  // paints nothing). Emitting a degenerate rect would be a silent 1px artefact,
+  // so be explicit rather than letting it fall through to the polygon branch.
+  if (shape.kind === 'empty') {
+    const none = document.createElementNS(NS, 'rect');
+    none.setAttribute('width', '0'); none.setAttribute('height', '0');
+    return none;
+  }
   const poly = document.createElementNS(NS, 'polygon');
-  poly.setAttribute('points', shape.points.map((p) => `${n2(ox + p[0])},${n2(oy + p[1])}`).join(' '));
+  poly.setAttribute('points', shape.points.map((p: [number, number]) => `${n2(ox + p[0])},${n2(oy + p[1])}`).join(' '));
   return poly;
 }
 
@@ -1466,7 +1505,11 @@ function bgImagePAR(style: CSSStyleDeclaration): string {
   return `${align} slice`;
 }
 
-async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob> {
+// Exported for bridge/export-paint-order.test.ts, which drives the REAL walker in
+// a REAL Chromium: jsdom cannot be the oracle for paint order, because the whole
+// thing hinges on getComputedStyle resolving z-index, isolation and display
+// blockification. Not part of the bridge's public surface otherwise.
+export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob> {
   const NS = 'http://www.w3.org/2000/svg';
   // Text → vector <path> by default (self-contained, font-independent SVG). The
   // 'Convert paths' export toggle (opts.convertPaths) turns this off, falling back
@@ -1512,9 +1555,12 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
   // `g` (shape parsed box-local, then offset to root coords). Returns true if emitted;
   // false for url()/path()/unparseable → the caller rasterises. Geometry parsing is the
   // shared parseClipShape so the SVG and PDF walkers agree on the shape.
-  const emitClip = (cp: string, x: number, y: number, w: number, h: number, g: Element): boolean => {
+  const emitClip = (cp: string, x: number, y: number, w: number, h: number, g: Element): 'ok' | 'empty' | 'unsupported' => {
     const shape = parseClipShape(cp, w, h);
-    if (!shape) return false;
+    if (!shape) return 'unsupported';
+    // A zero-area clip is fully understood and renders nothing. Report it so the
+    // caller can SKIP the element instead of handing it to the raster hatch.
+    if (shape.kind === 'empty') return 'empty';
     const cid = `fcclip-${++uid}`;
     const clip = document.createElementNS(NS, 'clipPath');
     clip.setAttribute('id', cid);
@@ -1522,10 +1568,120 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     clip.appendChild(svgClipShapeEl(NS, shape, x, y));
     defs.appendChild(clip);
     g.setAttribute('clip-path', `url(#${cid})`);
-    return true;
+    return 'ok';
   };
 
-  async function visitSvgNode(el: any, parentG: Element): Promise<void> {
+  // ── Stacking-context paint order (opts.stackingOrder) ────────────────────────
+  //
+  // The walk stays a single DOM-order pass; correctness comes from DEFERRED
+  // APPEND. A child whose Appendix E §E.2 layer is 2, 6 or 7 is built exactly as
+  // before but left DETACHED, parked in its stacking context's frame, and
+  // appended when that context finishes. Layers 3 and 4 append immediately, as
+  // they always have.
+  //
+  // Two facts about this walker are what make that free, and both were verified
+  // against the code before the design was chosen:
+  //
+  //  1. EVERYTHING IS EMITTED IN ROOT COORDINATES (`x = rect.left - rootRect.left`
+  //     throughout, `clipPathUnits="userSpaceOnUse"` on every clip). A <g> can be
+  //     re-parented anywhere with NO geometry fix-up. There is no need to rebuild
+  //     the tree into per-layer bucket groups.
+  //  2. EVERY APPEARANCE-CHANGING WRAPPER THE WALKER EMITS IS ITSELF A STACKING-
+  //     CONTEXT CREATOR — opacity, clip-path, mix-blend-mode, filter, rotate,
+  //     matrix. So a hoist terminates at each of them by construction, and the
+  //     ONLY wrapper a deferred unit can be lifted out of is the overflow-clip
+  //     group, which is a single re-appliable `clip-path` attribute (ctx.clips).
+  //
+  // `appendChild` on an already-parented node MOVES it, so no bucket groups are
+  // created and the emitted node count is unchanged apart from hoist clip
+  // wrappers. Cost: one pointer per deferred element (~300 on the gallery
+  // fixture, against a 2.2 MB output) and no second pass or second tree, so the
+  // 200-node cooperative yield is untouched.
+  //
+  // Given away deliberately: the emitted tree is no longer monotonic during the
+  // walk, so streaming serialisation is impossible and a mid-walk throw leaves
+  // orphaned detached subtrees. Neither matters today (one serialise at the end;
+  // the walk already throws on failure), but both are now foreclosed.
+
+  /** One deferred paint unit: the <g> (possibly wrapped in re-applied clips) and
+   *  the used z-index it sorts by. */
+  interface PaintUnit { z: number; g: Element }
+  /** One stacking context, alive while its element's subtree is being walked. */
+  interface ScFrame {
+    /** Where deferred units land — the context element's contentG. */
+    content: Element;
+    /** Last own-paint node when contentG === g, else null. See the finalisation
+     *  block for why layer 2 cannot just insert at firstChild. */
+    anchor: ChildNode | null;
+    neg: PaintUnit[];   // §E.2 step 3 — negative z, most negative first
+    z0: PaintUnit[];    // §E.2 step 8 — positioned, z-index auto|0, TREE order
+    pos: PaintUnit[];   // §E.2 step 9 — positive z, least positive first
+  }
+  /** What a child inherits. `frame === null` ⇒ the flag is off ⇒ every append is
+   *  the append this walker has always done. */
+  interface PaintCtx {
+    frame: ScFrame | null;
+    /** Ids of overflow clipPaths emitted between `frame`'s element and here — a
+     *  hoisted unit must carry them or it escapes a clip it has today. */
+    clips: string[];
+  }
+
+  const stackingOrder = opts.stackingOrder === true;
+  /** What every element classifies as when the flag is off: in-flow, no context.
+   *  Shared constant so the OFF path allocates nothing per node. */
+  const DOM_ORDER_ROLE: StackingRole = { createsContext: false, reason: '', layer: 3, z: 0, order: 0 };
+  /** Top layer (`<dialog open>` shown modally, an open popover). Guarded because
+   *  `:popover-open` throws in engines that don't know the selector.
+   *
+   *  KNOWN LIMITATION: this only makes a top-layer box a stacking CONTEXT so its
+   *  internals order correctly. It does NOT lift it above the rest of the
+   *  document (HTML §top layer) and `::backdrop` is not modelled at all
+   *  (pseudoDescriptor sees only ::before/::after). On the measured fixtures
+   *  that is the single largest remaining paint-order defect — ~36 points of
+   *  local-gallery's loss, against ~2 points for everything this flag fixes —
+   *  and it is a separate milestone. */
+  const topLayer = (el: Element): boolean => {
+    try { return typeof el.matches === 'function' && el.matches(':modal, :popover-open'); }
+    catch { return false; }
+  };
+
+  /** Append `unit` where CSS says it paints. Returns a handle so a caller that
+   *  later abandons the element (the zero-area clip-path early return) can undo
+   *  the deferral; null when the unit went straight into `parentG`. */
+  const place = (
+    unit: Element, role: StackingRole, ctx: PaintCtx, parentG: Element, direct?: boolean,
+  ): { list: PaintUnit[]; entry: PaintUnit } | null => {
+    // `direct` is the transform re-entry (see its call sites); `!ctx.frame` is
+    // the flag being off; layers 3/4 are in-flow content, which paints exactly
+    // where DOM order puts it. All three are byte-for-byte the old behaviour.
+    if (direct || !ctx.frame || role.layer === 3 || role.layer === 4) { parentG.appendChild(unit); return null; }
+    // Re-apply every overflow clip crossed by the hoist, outermost first. The
+    // <clipPath> already lives in <defs> with a stable id in ROOT coordinates,
+    // so this costs one attribute and no geometry.
+    //
+    // KNOWN LIMITATION (CSS 2.1 §11.1.1): an absolutely-positioned box is NOT
+    // clipped by a non-positioned ancestor's `overflow`, and `fixed` escapes
+    // almost all clips. We re-apply every crossed clip anyway. Deliberate: that
+    // is exactly what the walker does today, and getting the containing-block
+    // chain wrong UNCLIPS content, which is a far worse failure than
+    // mis-ordering. Revisit only with a fixture that demonstrates the escape.
+    let top: Element = unit;
+    for (let i = ctx.clips.length - 1; i >= 0; i--) {
+      const wrap = document.createElementNS(NS, 'g');
+      wrap.setAttribute('clip-path', `url(#${ctx.clips[i]})`);
+      wrap.appendChild(top);
+      top = wrap;
+    }
+    const list = role.layer === 2 ? ctx.frame.neg : role.layer === 6 ? ctx.frame.z0 : ctx.frame.pos;
+    const entry: PaintUnit = { z: role.z, g: top };
+    list.push(entry);
+    return { list, entry };
+  };
+
+  async function visitSvgNode(
+    el: any, parentG: Element, ctx: PaintCtx,
+    o?: { forceContext?: boolean; placeDirect?: boolean },
+  ): Promise<void> {
     if (el.nodeType !== 1) return;
     if (++nodesWalked % YIELD_NODES === 0) {
       opts.onProgress?.(Math.min(nodesWalked, totalNodes), totalNodes);
@@ -1539,6 +1695,23 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     const opacity = parseFloat(style.opacity ?? '1');
     if (opacity === 0) return;
 
+    // Where does CSS say this element's paint unit goes? One pure table lookup
+    // off the style we already fetched (bridge/stacking-order.ts). The parent's
+    // display is only needed for the flex/grid-item rule, so it is fetched ONLY
+    // when a non-auto z-index makes that rule reachable — 70 of 992 elements on
+    // the gallery fixture, rather than a second getComputedStyle per node.
+    const role: StackingRole = stackingOrder
+      ? stackingRole(
+          style as unknown as Parameters<typeof stackingRole>[0],
+          (style.zIndex && style.zIndex !== 'auto' && el.parentElement)
+            ? window.getComputedStyle(el.parentElement).display : '',
+          topLayer(el),
+        )
+      : DOM_ORDER_ROLE;
+    // The root of the walk is always a stacking context (Appendix E: the root
+    // element establishes one), and so is a transform re-entry — see below.
+    const createsCtx = stackingOrder && (role.createsContext || el === node || o?.forceContext === true);
+
     // CSS rotate(): neutralise it, walk the axis-aligned subtree, then wrap the
     // whole thing in an SVG rotation about the transform-origin (faithful in SVG,
     // unlike the AABB fallback). Additive — no-op for every unrotated element.
@@ -1550,8 +1723,21 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
       const pivot = rotationPivot(style, unrot, rootRect);
       const gRot = document.createElementNS(NS, 'g');
       gRot.setAttribute('transform', `rotate(${rotDeg.toFixed(4)} ${pivot.x.toFixed(3)} ${pivot.y.toFixed(3)})`);
-      parentG.appendChild(gRot);
-      try { await visitSvgNode(el, gRot); }
+      // gRot is the paint unit for this element (the rotation wraps everything
+      // it emits), so IT is what gets deferred.
+      place(gRot, role, ctx, parentG);
+      // forceContext + placeDirect exist ONLY for this re-entry, and they are
+      // both about the same piece of hidden state: `el.style.transform` has just
+      // been set to 'none', so the recursive call's getComputedStyle reports
+      // `transform: none`.
+      //   • forceContext — without it the element stops looking like a stacking
+      //     context (CSS Transforms 1 §3) on the way in, and its descendants
+      //     would hoist straight out of a rotation that is about to be applied.
+      //   • placeDirect  — without it `g` would be deferred a SECOND time into
+      //     the same frame, leaving gRot empty and painting the element twice
+      //     over at the wrong depth.
+      // Delete either one and the failure is silent. They are load-bearing.
+      try { await visitSvgNode(el, gRot, { frame: ctx.frame, clips: ctx.clips }, { forceContext: true, placeDirect: true }); }
       finally { el.style.transform = prevInline; }
       return;
     }
@@ -1569,8 +1755,10 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
       const pivot = rotationPivot(style, unrot, rootRect);
       const gM = document.createElementNS(NS, 'g');
       gM.setAttribute('transform', matToSvg(matAboutPivot(mtx, pivot.x, pivot.y)));
-      parentG.appendChild(gM);
-      try { await visitSvgNode(el, gM); }
+      place(gM, role, ctx, parentG);
+      // Same forceContext/placeDirect contract as the rotation branch above —
+      // see the comment there before touching either flag.
+      try { await visitSvgNode(el, gM, { frame: ctx.frame, clips: ctx.clips }, { forceContext: true, placeDirect: true }); }
       finally { el.style.transform = prevInline; }
       return;
     }
@@ -1585,7 +1773,7 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
 
     const g = document.createElementNS(NS, 'g');
     if (opacity < 0.999) g.setAttribute('opacity', opacity.toFixed(4));
-    parentG.appendChild(g);
+    const placement = place(g, role, ctx, parentG, o?.placeDirect);
 
     // clip-path → vector <clipPath> so the node stays vector instead of rasterising.
     // circle()/ellipse()/inset()/polygon() all route through the shared parseClipShape
@@ -1596,7 +1784,23 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     let clipHandled = true;
     const cp = style.clipPath || (style as any).webkitClipPath;
     if (cp && cp !== 'none') {
-      clipHandled = emitClip(cp, x, y, w, h, g) || cp.trim().indexOf('polygon(') === 0;
+      const clipRes = emitClip(cp, x, y, w, h, g);
+      // Zero area: the browser paints nothing here, so neither do we. Drop the
+      // group we just appended and stop — no clip, no children, no raster.
+      // UNPLACE: in stacking mode `g` was never attached to the DOM, it was
+      // parked in a frame array, so `.remove()` alone would leave an empty (or
+      // clip-wrapped) group to be appended at finalisation. Splice by IDENTITY
+      // rather than popping the tail — no child has been walked yet so it IS the
+      // last entry, but relying on that would rot the moment anything is added
+      // between the two points. The arrays are tiny.
+      if (clipRes === 'empty') {
+        if (placement) {
+          const i = placement.list.indexOf(placement.entry);
+          if (i >= 0) placement.list.splice(i, 1);
+        } else { g.remove(); }
+        return;
+      }
+      clipHandled = clipRes === 'ok' || cp.trim().indexOf('polygon(') === 0;
     }
 
     // mix-blend-mode: SVG carries it natively, so blend the vector content on `g`
@@ -1669,6 +1873,10 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     // neutralised for the capture (like the rotation branch neutralises transform) so
     // it isn't applied twice — once baked into the PNG and again via g's opacity.
     // Falls through to the vector walk if raster fails.
+    // Set when the escape hatch below captured this element's own paint as an
+    // <image>; the vector background/border emission then stands down so the two
+    // don't double-paint.
+    let ownPaintRastered = false;
     const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows) }) : null;
     if (rasterReason) {
       const pxScale = scaleX * Math.max(1, d.dpi / CSS_DPI);
@@ -1680,17 +1888,37 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
       // Lolly-composited subtree baked into an SVG <image> — same chokepoint as the
       // PDF escape hatch, so it honours opts.imprint too (inert until SVG is imprint-
       // enabled upstream, since the mark is size-floored and opt-in either way).
-      try { dataUrl = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH, undefined, opts._imprintSink); }
+      // Element-scoped mode (page snapshots): capture only this element's own paint
+      // and carry on walking its children as vector. Subtree mode (the default, and
+      // what every tool export has always done) bakes the whole subtree into the PNG.
+      //
+      // Why it matters: the hatch fires on the ELEMENT, so one `conic-gradient` or
+      // `backdrop-filter` on a top-level container used to convert an entire page to
+      // a screenshot — measured 100% raster coverage on two fixtures. Scoping it turns
+      // that cliff into local degradation: the offending box's paint becomes an
+      // <image>, everything inside it stays text and geometry.
+      //
+      // Left OFF for tool exports on purpose. Splitting an element's paint from its
+      // children changes compositing where the two interact (a child with
+      // `mix-blend-mode` blending against its parent's background is the case), and
+      // renderSvgFromHtml is the shipping SVG/PDF/EMF/EPS path for every tool in
+      // every profile. Snapshot-specific behaviour stays behind the flag.
+      const scoped = opts.elementScopedRaster === true;
+      try { dataUrl = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH, undefined, opts._imprintSink, scoped); }
       finally { el.style.opacity = prevOpacity; }
       if (dataUrl) {
-        _host?.log?.('info', `svg: rasterised <${tag}> (unsupported ${rasterReason})`);
+        _host?.log?.('info', `svg: rasterised <${tag}> ${scoped ? 'own paint' : 'subtree'} (unsupported ${rasterReason})`);
         const img = document.createElementNS(NS, 'image');
         img.setAttribute('href', dataUrl);
         img.setAttribute('x', String(n2(x)));  img.setAttribute('y', String(n2(y)));
         img.setAttribute('width', String(n2(w))); img.setAttribute('height', String(n2(h)));
         img.setAttribute('preserveAspectRatio', 'none');   // sized exactly to the box
         g.appendChild(img);
-        return;
+        if (!scoped) return;
+        // Scoped: the raster IS this element's background/border/effect layer, so skip
+        // re-emitting those in vector below (they would double-paint over the image)
+        // and fall through to the children walk.
+        ownPaintRastered = true;
       }
       // dataUrl == null → fall through to the normal (lossy) vector emission.
     }
@@ -1702,8 +1930,8 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     // rasterising the whole node), sized/positioned per background-size/position and clipped
     // to the rounded box. Only when we CAN'T vectorise (conic, repeat, unresolvable) does the
     // escape-hatch above rasterise.
-    const bgImg = style.backgroundImage;
-    const bgRgb = parseCssColorFull(style.backgroundColor);
+    const bgImg = ownPaintRastered ? 'none' : style.backgroundImage;
+    const bgRgb = ownPaintRastered ? null : parseCssColorFull(style.backgroundColor);
     if (bgRgb) g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, rgbaCss(bgRgb)));
     if (bgImg && bgImg !== 'none') {
       const gid = ++uid;
@@ -1741,6 +1969,7 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     // Colours keep their alpha (stroke-opacity / fill-opacity) — svg-ir flattens
     // it over the background for EMF/EPS — so hairline rgba() borders don't go opaque.
     const bSide = (wKey: string, cKey: string): { bw: number; rgb: Rgba | null } => {
+      if (ownPaintRastered) return { bw: 0, rgb: null };   // already in the raster
       const bw = parseFloat((style as any)[wKey]) || 0;
       return { bw, rgb: bw > 0 ? parseCssColorFull((style as any)[cKey]) : null };
     };
@@ -1891,6 +2120,7 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     const clipsOverflow = (style.overflowX && style.overflowX !== 'visible') || (style.overflowY && style.overflowY !== 'visible');
     const spillsBox = (el.scrollWidth || 0) > (el.clientWidth || 0) + 1 || (el.scrollHeight || 0) > (el.clientHeight || 0) + 1;
     let contentG: Element = g;
+    let ovClipId: string | null = null;
     if (clipsOverflow && (hasRadius || spillsBox)) {
       const cid = `fcovclip-${++uid}`;
       const clip = document.createElementNS(NS, 'clipPath');
@@ -1901,13 +2131,67 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
       contentG = document.createElementNS(NS, 'g');
       contentG.setAttribute('clip-path', `url(#${cid})`);
       g.appendChild(contentG);
+      ovClipId = cid;
+    }
+
+    // ── The stacking context this element's descendants live in ───────────────
+    // `parentG` is the in-flow pointer and `ctx.frame` is the stacking pointer.
+    // Splitting them is what makes Appendix E §E.2 step 8's parenthetical fall
+    // out for free: an element that is POSITIONED but does NOT create a context
+    // (`position: relative; z-index: auto`) is deferred into layer 6, its
+    // in-flow children append into its own contentG and travel with it, and a
+    // `z-index: 5` grandchild defers past it to the ANCESTOR frame's layer 7 —
+    // which is exactly what CSS paints, and exactly what a naive
+    // "positioned ⇒ treat as a context" implementation gets wrong.
+    let ownFrame: ScFrame | null = null;
+    let childCtx: PaintCtx = ctx;
+    if (stackingOrder) {
+      if (createsCtx) {
+        ownFrame = {
+          content: contentG,
+          // When there is no overflow clip, contentG IS g — so a layer-2 unit
+          // inserted at firstChild would land BEHIND this element's own
+          // box-shadow/background/border, which §E.2 step 3 puts first. Anchor
+          // on the last own-paint node instead. With a clip group, contentG is
+          // empty and firstChild is already the right place (anchor null).
+          anchor: contentG === g ? g.lastChild : null,
+          neg: [], z0: [], pos: [],
+        };
+        childCtx = { frame: ownFrame, clips: [] };
+      } else {
+        // Not a context: descendants belong to the SAME frame, but a hoist out
+        // of here now crosses this element's overflow clip and must carry it.
+        childCtx = { frame: ctx.frame, clips: ovClipId ? ctx.clips.concat(ovClipId) : ctx.clips };
+      }
     }
 
     // ── Recurse block-level children ────────────────────────────────────────
-    for (const child of el.children) {
+    // Inline children are left to emitInlineTextSvg below, which walks the inline
+    // flow and emits TEXT. That is right for a <span>, and silently wrong for an
+    // inline <svg>: the inline walk has no passthrough branch, so the SVG is
+    // dropped entirely and nothing warns. An <svg> is replaced content, not text —
+    // it has a box of its own at any display value — so route it here regardless.
+    // (App icons survived only because the CSS sets them display:block. A bare
+    // <svg> defaults to display:inline, which is exactly what a TOOL's own canvas
+    // is: the QR code was missing from every page snapshot for this reason. Tool
+    // EXPORTS were unaffected — an SVG-rooted canvas takes the renderSvg fast path
+    // and never enters this walker.)
+    //
+    // A flex/grid container paints its items in ORDER-MODIFIED document order
+    // (CSS Flexbox §5.4, CSS Grid §6), not raw document order. Pure reorder: the
+    // visit PREDICATE is untouched, and it doesn't need to change, because
+    // `position: absolute|fixed` blockifies computed display (CSS Display 3
+    // §2.7) — so every layer-2/6/7 child already fails the inlineFlow test and
+    // is already visited today.
+    const kids: Element[] = stackingOrder && isFlexOrGridContainer(style.display)
+      ? orderModifiedChildren(Array.from(el.children) as Element[],
+          (c) => Number.parseInt(window.getComputedStyle(c).order || '0', 10) || 0)
+      : (Array.from(el.children) as Element[]);
+    for (const child of kids) {
       const cd = window.getComputedStyle(child).display;
-      if (cd !== 'inline' && cd !== 'inline-block' && cd !== 'inline-flex') {
-        await visitSvgNode(child, contentG);
+      const inlineFlow = cd === 'inline' || cd === 'inline-block' || cd === 'inline-flex';
+      if (!inlineFlow || child.tagName.toLowerCase() === 'svg') {
+        await visitSvgNode(child, contentG, childCtx);
       }
     }
 
@@ -1915,11 +2199,81 @@ async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promise<Blob>
     await emitInlineTextSvg(NS, el, style, rootRect, contentG, vectorText);
 
     // ── CSS generated content (::before/::after markers) ──────────────────────
-    await svgPseudoContent(NS, contentG, rootRect, el, vectorText);
+    // pseudoDescriptor only models the ABSOLUTELY POSITIONED marker idiom, so
+    // every pseudo it emits is by construction a positioned descendant — i.e.
+    // §E.2 layer 6/7 (or 2 for a negative-z scrim), never in-flow content. In
+    // stacking mode each one therefore gets its own <g> and is placed like any
+    // other positioned child, which stops a marker from hiding under a later
+    // sibling's background.
+    await svgPseudoContent(NS, contentG, rootRect, el, vectorText,
+      stackingOrder && childCtx.frame
+        ? (z: number) => {
+            const pg = document.createElementNS(NS, 'g');
+            place(pg, { createsContext: false, reason: '', layer: z < 0 ? 2 : z > 0 ? 7 : 6, z, order: 0 },
+              childCtx, contentG);
+            return pg;
+          }
+        : undefined);
+
+    // ── Finalise this stacking context (CSS 2.1 Appendix E §E.2) ──────────────
+    // Everything deferred by descendants is appended here, in spec order. This
+    // runs AFTER emitInlineTextSvg and svgPseudoContent, so layers 6 and 7 land
+    // after layer-5 inline content automatically — a positioned child declared
+    // before its parent's text still paints on top of it, which is what CSS does
+    // and what DOM order got backwards.
+    if (ownFrame) {
+      const f = ownFrame;
+      // Step 3: negative-z contexts paint AFTER this element's own
+      // background/border and BEFORE all in-flow content. `first` is re-read
+      // here (not captured earlier) so it reflects the children/text/pseudo that
+      // have since been appended. insertBefore against a FIXED anchor preserves
+      // insertion sequence — [a], [a,b], [a,b,c] — so the sorted array goes in
+      // ascending, most-negative first, with no reverse.
+      const first = f.anchor ? f.anchor.nextSibling : f.content.firstChild;
+      for (const u of sortUnits(f.neg)) f.content.insertBefore(u.g, first);
+      for (const u of f.z0)             f.content.appendChild(u.g);   // step 8 — tree order, NOT z-sorted
+      for (const u of sortUnits(f.pos)) f.content.appendChild(u.g);   // step 9
+    }
   }
 
-  await visitSvgNode(node, rootG);
+  // KNOWN LIMITATION: the PDF walker (`drawHtmlVectors`) has the identical
+  // DOM-order defect and is deliberately untouched, so SVG/EMF/EPS/DXF get
+  // stacking order under the flag and PDF does not. That is a new divergence in
+  // two walkers whose own comments ask that they stay mirrored; it is recorded
+  // at both sites rather than silently accepted.
+  // The root call passes NO frame on purpose: `node` itself is the root stacking
+  // context (`el === node` forces it), and its own <g> must land in rootG
+  // directly. Handing it a frame nobody finalises would silently drop the whole
+  // page if the export root ever happened to be positioned.
+  await visitSvgNode(node, rootG, { frame: null, clips: [] });
   const xml = injectSvgMeta(new XMLSerializer().serializeToString(svgEl), opts.meta);
+
+  // Parse-check before returning. This walker can emit XML that does not parse,
+  // and it does it SILENTLY: the inline-<svg> passthrough clones live DOM and
+  // re-serialises it, so one malformed attribute in authored markup (a `<path d="…`
+  // that never closes — lib/icons.ts shipped exactly that) becomes an attribute
+  // whose value contains `</svg><span class=`, and XMLSerializer faithfully writes
+  // it out. The result was a 1.1 MB file, no thrown error, no warning, and it would
+  // have been committed as a screenshot baseline.
+  //
+  // Print-derived output cannot fail this way — it consumes painted output, never
+  // authored markup — so this gate is what buys the direct walker the same "fails
+  // loudly or not at all" property. DOMParser puts <parsererror> in the result
+  // rather than throwing, hence the explicit check.
+  try {
+    const probe = new DOMParser().parseFromString(xml, 'image/svg+xml');
+    const err = probe.getElementsByTagName('parsererror')[0];
+    if (err) {
+      const detail = (err.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+      throw new Error(`renderSvgFromHtml produced XML that does not parse: ${detail}`);
+    }
+  } catch (e) {
+    // Rethrow as a plain, actionable error. Never return the bad bytes: a caller
+    // that writes them to disk (the docs screenshot pipeline) has no other way to
+    // notice, and a half-valid SVG renders as a blank box in every viewer.
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+
   return new Blob(['<?xml version="1.0" standalone="no"?>\n' + xml], { type: 'image/svg+xml' });
 }
 
@@ -2169,17 +2523,29 @@ function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
 }
 
 // Emit any ::before/::after markers of `el` into the SVG group `parentG`.
-async function svgPseudoContent(NS: string, parentG: Element, rootRect: { left: number; top: number }, el: Element, vectorText: boolean): Promise<void> {
+//
+// `defer` (page-snapshot stacking-order mode only) supplies a <g> for one pseudo
+// given its used z-index, having already placed that <g> in the right Appendix E
+// layer of the enclosing stacking context. Absent ⇒ everything appends to
+// parentG exactly as before, which is what every tool export does.
+async function svgPseudoContent(
+  NS: string, parentG: Element, rootRect: { left: number; top: number }, el: Element, vectorText: boolean,
+  defer?: (z: number) => Element,
+): Promise<void> {
   for (const name of ['::before', '::after']) {
     const ds = pseudoDescriptor(el, name);
     if (!ds) continue;
     const x = ds.x - rootRect.left;
     const y = ds.y - rootRect.top;
+    // pseudoDescriptor already guarantees `position: absolute`, so the pseudo is
+    // a positioned descendant; only its z-index decides which layer.
+    const zRaw = (ds.ps.zIndex || 'auto').trim();
+    const parentG_ = defer ? defer(zRaw === 'auto' ? 0 : (Number.parseInt(zRaw, 10) || 0)) : parentG;
     if (ds.bg && ds.w > 0.5 && ds.h > 0.5) {
       const f = ds.bg[3] < 1
         ? `rgba(${ds.bg[0]},${ds.bg[1]},${ds.bg[2]},${ds.bg[3]})`
         : `rgb(${ds.bg[0]},${ds.bg[1]},${ds.bg[2]})`;
-      parentG.appendChild(makeRoundedFill(NS, x, y, ds.w, ds.h, ds.radii, ds.uniform, f));
+      parentG_.appendChild(makeRoundedFill(NS, x, y, ds.w, ds.h, ds.radii, ds.uniform, f));
     }
     if (!ds.text.trim()) continue;
     const fontSizePx = parseFloat(ds.ps.fontSize) || 16;
@@ -2201,7 +2567,7 @@ async function svgPseudoContent(NS: string, parentG: Element, rootRect: { left: 
           p.setAttribute('transform', `translate(${n2(x)},${n2(by)})`);
           if (fillAttr)  p.setAttribute('fill', fillAttr);
           if (alphaAttr) p.setAttribute('fill-opacity', alphaAttr);
-          parentG.appendChild(p);
+          parentG_.appendChild(p);
           placed = true;
         }
       } catch (e) { _host?.log?.('warn', `svg: pseudo text-to-path failed — ${(e as Error).message}`); }
@@ -2218,7 +2584,7 @@ async function svgPseudoContent(NS: string, parentG: Element, rootRect: { left: 
       if (fillAttr)  t.setAttribute('fill',         fillAttr);
       if (alphaAttr) t.setAttribute('fill-opacity', alphaAttr);
       t.textContent = ds.text;
-      parentG.appendChild(t);
+      parentG_.appendChild(t);
     }
   }
 }
@@ -3656,7 +4022,7 @@ const RASTER_DPI = 200;       // resolution for the PDF escape-hatch (points × 
 // to fill). Returns null on failure so the caller falls through to the (lossy) vector
 // walk — never worse than before. Nothing mounts on-screen, so the position:fixed
 // containing-block gotcha (the offscreen-stage flash) does not apply here.
-export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: number, bg?: string, imprint?: ImprintState): Promise<string | null> {
+export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: number, bg?: string, imprint?: ImprintState, ownPaintOnly?: boolean): Promise<string | null> {
   const r = el.getBoundingClientRect();
   const cssW = r.width, cssH = r.height;
   if (cssW < 0.5 || cssH < 0.5 || pxW < 2 || pxH < 2) return null;
@@ -3665,6 +4031,13 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
   try {
     const canvas = await lib.toCanvas(el, {
       width: pxW, height: pxH,
+      // `ownPaintOnly`: capture the element's OWN paint layer — background, border,
+      // effect — and none of its descendants, so the caller can keep walking those
+      // as vector. dom-to-image-more applies `filter` to every node it clones EXCEPT
+      // the root, so excluding everything yields exactly the root's own paint. The
+      // explicit width/height in `style` below keeps the box from collapsing when the
+      // element sized to its (now absent) content.
+      ...(ownPaintOnly ? { filter: (n: Node) => n === el } : {}),
       style: {
         transform: `scale(${pxW / cssW}, ${pxH / cssH})`,
         transformOrigin: 'top left',
@@ -3689,6 +4062,16 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
 // Draws the live DOM as PDF vectors into the rectangular region (ox, oy, regionW,
 // regionH) in page points (top-left origin). Callers pass the full page for an
 // ordinary export, or the bleed box for a print export (so the design bleeds).
+//
+// KNOWN LIMITATION — paint order. This walker paints in DOM order and has no
+// z-index handling, exactly as the SVG walker did before `ExportOpts.
+// stackingOrder`. That flag was added on the SVG side only (page snapshots go
+// out as SVG), so SVG/EMF/EPS/DXF can paint in CSS 2.1 Appendix E §E.2 order and
+// PDF cannot. A deliberate, recorded divergence in two walkers whose comments
+// otherwise ask that they stay mirrored: PDF has no deferred-append equivalent
+// here, because it emits drawing operators straight into a content stream rather
+// than building a re-parentable node tree, so the same fix is a different (and
+// larger) piece of work. Nothing regresses — PDF keeps the order it always had.
 async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, regionW: number, regionH: number, convertPaths = true, onProgress?: (done: number, total: number) => void, rasterFallback = true, imprint?: ImprintState): Promise<void> {
   const rect0 = node.getBoundingClientRect();
   const scaleX = regionW / rect0.width;
@@ -3780,7 +4163,10 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // (raster hatch / svg / img). Unparseable shapes leave clipShape null → paintEl's
     // escape-hatch rasterises them (clipBasicShapes:false).
     const cpVal = style.clipPath || (style as any).webkitClipPath;
-    const clipShape = (cpVal && cpVal !== 'none') ? parseClipShape(cpVal, rect.width, rect.height) : null;
+    const clipShapeRaw = (cpVal && cpVal !== 'none') ? parseClipShape(cpVal, rect.width, rect.height) : null;
+    // A zero-area clip paints nothing — return before any draw, matching the SVG walker.
+    if (clipShapeRaw && clipShapeRaw.kind === 'empty') return;
+    const clipShape = clipShapeRaw;
     // Partial element opacity (0<o<1): jsPDF has no group-opacity primitive, so apply it
     // as a GState alpha on the element's own draws. Correct for a LEAF (text/solid box —
     // no descendants to composite); non-leaves keep the current opaque behaviour rather
@@ -4109,7 +4495,14 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     const drawContent = async (): Promise<void> => {
       for (const child of el.children) {
         const cd = window.getComputedStyle(child).display;
-        if (cd === 'inline' || cd === 'inline-block' || cd === 'inline-flex') continue;
+        // Same carve-out as the SVG walker: inline children are left to the inline-text
+        // pass, which emits TEXT and has no <svg> branch — so an inline <svg> was
+        // dropped from PDF output entirely, silently. An <svg> is replaced content with
+        // a box of its own at any display value. A bare <svg> defaults to display:inline,
+        // which is what a tool's own canvas is, so this is the same missing-QR-code bug
+        // on the PDF side. Drawing it can only add: the previous behaviour was nothing.
+        if ((cd === 'inline' || cd === 'inline-block' || cd === 'inline-flex')
+            && child.tagName.toLowerCase() !== 'svg') continue;
         await visit(child);
       }
       await renderInlineContent(pdf, el, style, rootRect, scaleX, scaleY, cssToPt, registeredFonts, convertPaths);

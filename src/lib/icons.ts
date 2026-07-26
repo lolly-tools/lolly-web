@@ -52,7 +52,7 @@ const PACKAGE_BOX = '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73
 const PATHS = {
   // ---- Chrome / navigation (footer-nav, gallery, projects, profile, folder-tiles) ----
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
-  zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z',
+  zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
   // merged: identical in footer-nav.ts (NAV_ICONS.help) and featured-row.ts (HELP_ICON)
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
   // merged: gallery.ts INFO_ICON (two <path>s) + profile.ts INFO_ICON (one combined <path>) drew the same glyph

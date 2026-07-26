@@ -31,20 +31,22 @@ import {
 import type { PDFContext, PDFObject } from 'pdf-lib';
 import {
   interpretPdfPage, parseToUnicode, toUnicodeDecoder, finalizeBoxes, safeColor, pdfNodesToSvg,
-  unfilterPng,
+  unfilterPng, isShadowPlate, cullPdfNodes,
   type DesignMapOptions,
 } from '@lolly/engine';
-import type { PdfNode, PdfFontInfo, PdfXObject, PdfShading, PdfPattern, PdfGradientStop } from '../../../../engine/src/pdf-map.ts';
+import type { CullWindow } from '../../../../engine/src/pdf-svg.ts';
+import type { PdfNode, PdfFontInfo, PdfXObject, PdfShading, PdfPattern, PdfGradientStop, PdfSoftMaskDef } from '../../../../engine/src/pdf-map.ts';
 import type { AssetRef, HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import { renderTilePixels, type TileSource } from '../lib/pdf-shading.ts';
+import {
+  backdropLuminosity, buildPattern, buildShading, colorSpaceName, decodedText, dictOf, getKey,
+  groupColorSpace, nameOf, numArray, numOf, softMaskId,
+  type Ref, type ShadingCtx, type SoftMaskIdRegistry,
+} from '../lib/pdf-objects.ts';
 import { storeUserUpload } from './picker.ts';
 import { trapFocus } from '../lib/focus-trap.ts';
 import type { FocusTrap } from '../lib/focus-trap.ts';
 import { NAV_EVENTS } from '../utils.ts';
-
-// A pdf-lib lookup key — a value we can hand to `ctx.lookup(...)`. We also let `null`
-// through (some helpers pass a `dictOf(...) → PDFDict | null` result straight back in),
-// mirroring the untyped JS where `ctx.lookup(null)` simply yields undefined.
-type Ref = PDFObject | null | undefined;
 
 // The interpreter's PdfNode plus the `image` field the shell fills in when it resolves a
 // vector/raster placeholder to a stored asset (structurally the design-map DesignNode).
@@ -54,7 +56,7 @@ interface ImportNode extends PdfNode { image?: unknown; }
 interface Resources {
   fonts: Record<string, PdfFontInfo>;
   xobjects: Record<string, PdfXObject>;
-  extgstates: Record<string, { ca?: number; CA?: number }>;
+  extgstates: Record<string, { ca?: number; CA?: number; smask?: PdfSoftMaskDef | boolean }>;
   ocgs: Record<string, string>;
   shadings: Record<string, PdfShading>;
   patterns: Record<string, PdfPattern>;
@@ -92,19 +94,34 @@ interface InterpretedPage {
   height: number;
   /** Raster XObjects found on this page, keyed by the id the engine echoes back. */
   imageStreams: Map<string, ImageDesc>;
+  /** Function-based (ShadingType 1) shadings that need a raster tile, keyed by the
+   *  opaque `tileKey` the engine echoes back on each gradient. Nothing is
+   *  rasterised until a caller asks — a page that never paints one pays nothing. */
+  tiles: Map<string, TileSource>;
 }
 
-/** Decode + interpret ONE page (0-based) into DesignNodes with unresolved placeholders. */
-function interpretPage(doc: PDFDocument, pageIndex: number): InterpretedPage {
+/**
+ * Decode + interpret ONE page (0-based) into DesignNodes with unresolved placeholders.
+ *
+ * `diag` is the DIAGNOSTIC sink — dotted codes from the resource decoders and the
+ * engine interpreter, one per approximated or dropped paint. It is deliberately not
+ * the caller's user-facing warn stream: a single app screenshot legitimately emits
+ * ~80 `pattern.tiling.collapsed` lines, which is a report, not a notification. The
+ * docs-shot audit reads it verbatim; parsePdfFile summarises it.
+ */
+function interpretPage(doc: PDFDocument, pageIndex: number, diag: (msg: string) => void = () => {}): InterpretedPage {
   const pdfPage = doc.getPage(pageIndex);
   const ctx = doc.context;
   const node = pdfPage.node;
   const mb = pdfPage.getMediaBox();
 
   // Extract resources (recursively for forms). `imageStreams` collects raster XObjects
-  // keyed by a unique id the engine echoes back on each image node.
+  // keyed by a unique id the engine echoes back on each image node; `tiles` does the
+  // same for function-based shadings.
   const imageStreams = new Map<string, ImageDesc>();
-  const resources = extractResources(ctx, getKey(ctx, node, 'Resources'), imageStreams, 0);
+  const tiles = new Map<string, TileSource>();
+  const ec = makeExtractCtx(ctx, imageStreams, tiles, diag);
+  const resources = extractResources(ec, getKey(ctx, node, 'Resources'), 0);
   const content = contentString(ctx, node);
 
   const nodes = interpretPdfPage({
@@ -117,9 +134,13 @@ function interpretPage(doc: PDFDocument, pageIndex: number): InterpretedPage {
     ocgs: resources.ocgs,
     shadings: resources.shadings,
     patterns: resources.patterns,
+    // The interpreter reports approximations/drops as (code, detail); the shell owns
+    // the wording. Without this the whole pattern-and-shading failure mode was
+    // invisible — a blank page with an empty warnings list.
+    onWarn: (code, detail) => diag(detail ? `${code} (${detail})` : code),
   }) as ImportNode[];
 
-  return { nodes, width: mb.width, height: mb.height, imageStreams };
+  return { nodes, width: mb.width, height: mb.height, imageStreams, tiles };
 }
 
 /**
@@ -151,14 +172,27 @@ export async function parsePdfFile(
     }
   }
 
-  const { nodes, width, height, imageStreams } = interpretPage(doc, pageIndex);
+  // Diagnostics are collected, not forwarded: one line per approximated paint would
+  // be dozens of toasts. Summarised below, and only for the genuinely lossy rungs —
+  // a tiling pattern that collapsed to its inner paint lost nothing.
+  const diagnostics: string[] = [];
+  const { nodes, width, height, imageStreams } = interpretPage(doc, pageIndex, (m) => diagnostics.push(m));
   if (!nodes.length) throw new Error('Couldn’t find any importable artwork on that page.');
+  const lossy = diagnostics.filter((m) => !/^(pattern\.tiling\.collapsed|shading\.type1\.(flat|axialised))\b/.test(m)).length;
+  if (lossy) warn(`Approximated ${lossy} fill${lossy === 1 ? '' : 's'} that couldn’t be reproduced exactly.`);
 
-  // Resolve placeholders → stored assets. Clip stacks are a serializer concern
-  // (pageToSvg honours them); free-canvas boxes can't clip, so drop them here.
+  // Resolve placeholders → stored assets. Clip stacks and soft masks are serializer
+  // concerns (pageToSvg honours both); free-canvas boxes can express neither, so they
+  // are dropped here. A masked translucent achromatic plate is a print engine's
+  // box-shadow: not editable content at all, so it goes rather than importing as a
+  // grey rectangle. (This is exactly what the engine's paint-time placeholder
+  // heuristic used to do for EVERY surface — now scoped to the one surface that
+  // genuinely cannot render a mask.)
+  const drawable = nodes.filter((n) => !isShadowPlate(n));
   const vecCache = new Map<string, unknown>();
-  for (const n of nodes) {
+  for (const n of drawable) {
     delete n._clips;
+    delete n._softMask;
     try {
       if (n._vectorPath) {
         const ref = await storeVector(host, n, vecCache);
@@ -176,26 +210,22 @@ export async function parsePdfFile(
     }
   }
 
-  const boxes = finalizeBoxes(nodes, { prefix: 'p', ...map });
+  const boxes = finalizeBoxes(drawable, { prefix: 'p', ...map });
   if (!boxes.length) throw new Error('Couldn’t find any importable artwork on that page.');
   return { boxes, width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)), background: '#ffffff' };
 }
 
 // ── pdf-lib access helpers ─────────────────────────────────────────────────────
+// The generic object walkers (dictOf/getKey/numOf/…) and the whole function →
+// shading → pattern decoder now live in lib/pdf-objects.ts: pure pdf-lib work with
+// no DOM, so it can be unit-tested against real in-memory PDF dictionaries. This
+// module keeps only what needs the browser.
 
 function msg(err: unknown): string { return String((err && (err as Error).message) || err); }
-function dictOf(ctx: PDFContext, o: Ref): PDFDict | null { o = ctx.lookup(o as PDFObject | undefined); return (o instanceof PDFRawStream) ? o.dict : (o instanceof PDFDict ? o : null); }
-function getKey(ctx: PDFContext, o: Ref, key: string): PDFObject | undefined { const d = dictOf(ctx, o); return d ? d.get(PDFName.of(key)) : undefined; }
-function numOf(ctx: PDFContext, o: Ref): number | null { o = ctx.lookup(o as PDFObject | undefined); return o instanceof PDFNumber ? o.asNumber() : null; }
-function nameOf(ctx: PDFContext, o: Ref): string | null { o = ctx.lookup(o as PDFObject | undefined); return o instanceof PDFName ? o.asString().replace(/^\//, '') : null; }
+
 function dictEntries(ctx: PDFContext, o: Ref): [string, PDFObject][] {
   const d = dictOf(ctx, o);
   return d ? [...d.entries()].map(([k, v]): [string, PDFObject] => [k.asString().replace(/^\//, ''), v]) : [];
-}
-function decodedText(ctx: PDFContext, o: Ref): string | null {
-  o = ctx.lookup(o as PDFObject | undefined);
-  if (o instanceof PDFRawStream) { try { return new TextDecoder('latin1').decode(decodePDFRawStream(o).decode()); } catch { return null; } }
-  return null;
 }
 function contentString(ctx: PDFContext, pageNode: Ref): string {
   const c = ctx.lookup(getKey(ctx, pageNode, 'Contents'));
@@ -207,7 +237,30 @@ function contentString(ctx: PDFContext, pageNode: Ref): string {
 
 // ── resource extraction ─────────────────────────────────────────────────────
 
-function extractResources(ctx: PDFContext, resDict: Ref, imageStreams: Map<string, ImageDesc>, depth: number): Resources {
+/** The shared state one page's resource walk threads through every helper: the
+ *  pdf-lib context, the "resolve this later" registries, and the warn sink. Bundled
+ *  because all of them now reach every level of the recursion — a tiling pattern's
+ *  resources can hold fonts, images, shadings and further patterns.
+ *  `resources` closes the loop for lib/pdf-objects.ts, which must not import this
+ *  DOM-touching module back. */
+interface ExtractCtx extends ShadingCtx {
+  imageStreams: Map<string, ImageDesc>;
+  /** Soft-mask identity: /G object → ordinal, and mask variant → engine-facing id.
+   *  See `softMaskId` — the group alone is NOT the unit of identity. */
+  maskIds: SoftMaskIdRegistry;
+}
+
+/** Build the context for one page's walk. */
+function makeExtractCtx(ctx: PDFContext, imageStreams: Map<string, ImageDesc>, tiles: Map<string, TileSource>, warn: (m: string) => void): ExtractCtx {
+  const ec: ExtractCtx = {
+    ctx, imageStreams, tiles, warn, maskIds: { groups: new Map(), ids: new Map() },
+    resources: (d: Ref, depth: number) => extractResources(ec, d, depth),
+  };
+  return ec;
+}
+
+function extractResources(ec: ExtractCtx, resDict: Ref, depth: number): Resources {
+  const ctx = ec.ctx;
   const res: Resources = { fonts: {}, xobjects: {}, extgstates: {}, ocgs: {}, shadings: {}, patterns: {} };
   if (!dictOf(ctx, resDict) || depth > 8) return res;
 
@@ -216,17 +269,36 @@ function extractResources(ctx: PDFContext, resDict: Ref, imageStreams: Map<strin
     res.extgstates[name] = {};
     if (ca != null) res.extgstates[name]!.ca = ca;
     if (CA != null) res.extgstates[name]!.CA = CA;
+    // A soft mask on the graphics state (/SMask << /S /Luminosity /G <group> >>) is
+    // how Chromium prints a BOX-SHADOW: it fills the element's box with a flat
+    // translucent paint and lets the mask supply the blur, the offset and the rounded
+    // shape. The mask group /G is a form XObject — a content stream plus resources —
+    // so we PRE-DECODE it into exactly the shape the engine's interpreter can `run()`
+    // and the engine emits a real SVG `<mask>`. `/None` (the explicit "no mask"
+    // value) is a name, not a dict, so dictOf() rejects it and we record `false`.
+    //
+    // FOUR-state, and every distinction matters: an ExtGState only changes the
+    // parameters it actually lists, so an ExtGState with no /SMask key must leave
+    // whatever mask is in force ALONE. Only `/SMask /None` clears it.
+    //   dict, decoded  -> PdfSoftMaskDef (a mask comes into force, evaluable)
+    //   dict, undecodable -> true  (in force but opaque to us — the engine's
+    //                              last-resort rung; NEVER `false`, which would
+    //                              silently paint the shadow plate)
+    //   /None          -> false     (an explicit clear)
+    //   absent         -> undefined (leave the current mask as it is)
+    const sm = getKey(ctx, ref, 'SMask');
+    if (sm) res.extgstates[name]!.smask = dictOf(ctx, sm) ? buildSoftMask(ec, sm, depth) : false;
   }
 
   for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'Font'))) {
-    res.fonts[name] = buildFontInfo(ctx, ref, imageStreams, depth);
+    res.fonts[name] = buildFontInfo(ec, ref, depth);
   }
 
   for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'XObject'))) {
     const subtype = nameOf(ctx, getKey(ctx, ref, 'Subtype'));
     if (subtype === 'Image') {
-      const key = `img${imageStreams.size}`;
-      imageStreams.set(key, makeImageDesc(ctx, ref));
+      const key = `img${ec.imageStreams.size}`;
+      ec.imageStreams.set(key, makeImageDesc(ctx, ref));
       res.xobjects[name] = { kind: 'image', imageKey: key };
     } else if (subtype === 'Form') {
       const mtx = ctx.lookup(getKey(ctx, ref, 'Matrix'));
@@ -234,7 +306,7 @@ function extractResources(ctx: PDFContext, resDict: Ref, imageStreams: Map<strin
         kind: 'form',
         content: decodedText(ctx, ref) || '',
         matrix: mtx instanceof PDFArray ? mtx.asArray().map((v) => numOf(ctx, v) ?? 0) : undefined,
-        resources: extractResources(ctx, getKey(ctx, ref, 'Resources'), imageStreams, depth + 1),
+        resources: extractResources(ec, getKey(ctx, ref, 'Resources'), depth + 1),
       };
     }
   }
@@ -246,19 +318,108 @@ function extractResources(ctx: PDFContext, resDict: Ref, imageStreams: Map<strin
     if (label) res.ocgs[name] = label;
   }
 
-  // Shadings (the `sh` operator) and shading Patterns (PatternType 2, used as a
-  // `scn` fill). Chromium emits CSS gradients as shading patterns; decoding them
-  // to a pre-sampled colour ramp lets the engine paint a real SVG gradient instead
-  // of dropping the fill. Tiling patterns (PatternType 1) are left out.
+  // Shadings (the `sh` operator) and Patterns (PatternType 2 shading patterns and
+  // PatternType 1 tiling patterns, used as a `scn` fill). Chromium emits CSS
+  // gradients as shading patterns and out-of-sRGB colours as a tiling pattern
+  // wrapping a function-based shading; decoding both to a pre-sampled ramp / flat
+  // colour / raster tile lets the engine paint something real instead of dropping
+  // the fill entirely.
   for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'Shading'))) {
-    const sh = buildShading(ctx, ref);
+    const sh = buildShading(ec, ref);
     if (sh) res.shadings[name] = sh;
   }
   for (const [name, ref] of dictEntries(ctx, getKey(ctx, resDict, 'Pattern'))) {
-    const pt = buildPattern(ctx, ref);
+    const pt = buildPattern(ec, ref, depth);
     if (pt) res.patterns[name] = pt;
   }
   return res;
+}
+
+/**
+ * Pre-decode an ExtGState /SMask into a `PdfSoftMaskDef` — PDF 32000-1 §11.6.5.2.
+ *
+ * The whole point of this function is the shell/engine split: the mask group /G is a
+ * form XObject, so all the shell has to do is decode its stream, pull its /Matrix and
+ * /BBox, and extract its resources through the SAME recursive walker every other form
+ * uses. That registers the mask's own image XObjects in `ec.imageStreams`, so a
+ * blurred-shadow JPEG resolves through the existing DCTDecode pass-through (no decode,
+ * no re-encode) with zero new byte code. The engine then runs the content stream with
+ * its ordinary interpreter and emits an SVG `<mask>` — it never learns that a mask is
+ * usually a raster.
+ *
+ * Returns `true` (never `false`) on any decode failure: `false` means "no mask", which
+ * would make the interpreter paint the unmasked shadow ink as a hard grey plate.
+ */
+function buildSoftMask(ec: ExtractCtx, smRef: Ref, depth: number): PdfSoftMaskDef | true {
+  const ctx = ec.ctx;
+  // A mask group's resources can name further masks. extractResources' own depth cap
+  // terminates that, but a full resource walk per level is expensive for something
+  // the engine refuses past one level of nesting anyway — so stop early and cheaply.
+  if (depth > 4) return true;
+  try {
+    const gRef = getKey(ctx, smRef, 'G');
+    const g = ctx.lookup(gRef as PDFObject | undefined);
+    if (!g) return true;
+    const content = decodedText(ctx, gRef);
+    if (content == null) return true;
+
+    // Table 144's five keys are /Type, /S, /G, /BC and /TR — all five are read here or
+    // are inert (/Type). The two that can silently change the mask's meaning are
+    // resolved BEFORE the id is minted, because they are part of its identity.
+    const subtype: 'Luminosity' | 'Alpha' = nameOf(ctx, getKey(ctx, smRef, 'S')) === 'Alpha' ? 'Alpha' : 'Luminosity';
+    // /TR: a transfer function over the mask values. /Identity is the no-op; anything
+    // else (incl. a function stream, where nameOf yields null) is unrepresentable in
+    // an SVG <mask>, so the engine refuses the group rather than use a wrong curve.
+    const tr = getKey(ctx, smRef, 'TR');
+    const transfer = !!tr && nameOf(ctx, tr) !== 'Identity';
+    // /BC: the backdrop colour the group is composited against, expressed in the
+    // GROUP's colour space (§11.6.5.2) and in force everywhere outside the /BBox.
+    // Only a BLACK backdrop (luminosity 0, which is also the default when /BC is
+    // absent) is expressible: any brighter backdrop reveals content out to infinity
+    // and a userSpaceOnUse <mask> region cannot say that, so the engine refuses.
+    //
+    // The colour space is not optional context — it decides the sign. `[0 0 0 0]` is
+    // BLACK in DeviceRGB but WHITE in DeviceCMYK, and reading the latter as black is
+    // the unsafe failure: it hides live artwork outside a bbox instead of revealing
+    // it. Illustrator/InDesign print PDFs are exactly where CMYK group spaces occur.
+    // Unconvertible space (absent /CS, /Separation, /DeviceN, /Indexed…) → report a
+    // white backdrop, i.e. refuse: dropping the mask can only leave content visible.
+    //
+    // Per Table 144 /BC "shall be consulted only if the subtype S is Luminosity"; an
+    // /Alpha mask ignores it entirely rather than being refused because of it.
+    let backdrop: number | undefined;
+    if (subtype === 'Luminosity') {
+      const bc = numArray(ctx, getKey(ctx, smRef, 'BC'));
+      if (bc && bc.length) {
+        const lum = backdropLuminosity(groupColorSpace(ctx, gRef), bc);
+        if (lum == null) ec.warn('smask.bc.unconvertible');
+        backdrop = lum ?? 1;
+      }
+    }
+
+    // One id per DISTINCT mask, where "distinct" means the /G group AND every /SMask
+    // key that changes how it is interpreted — keying on /G alone let two dicts sharing
+    // one blur group collide.
+    const def: PdfSoftMaskDef = {
+      id: softMaskId(ec.maskIds, g as object, subtype, transfer, backdrop),
+      subtype,
+      content,
+      resources: extractResources(ec, getKey(ctx, gRef, 'Resources'), depth + 1),
+    };
+    const bbox = numArray(ctx, getKey(ctx, gRef, 'BBox'));
+    if (bbox && bbox.length >= 4) def.bbox = bbox;
+    const matrix = numArray(ctx, getKey(ctx, gRef, 'Matrix'));
+    if (matrix && matrix.length >= 6) def.matrix = matrix;
+    if (transfer) def.transfer = true;
+    if (backdrop !== undefined) def.backdrop = backdrop;
+    // DELIBERATE, recorded: the group's /Group /K (knockout) is not read. Knockout only
+    // changes the result where objects INSIDE the mask group overlap with transparency,
+    // and the interpreter's painter model already approximates that everywhere else;
+    // refusing every knockout group would cost more fidelity than it buys. /Group /I
+    // (isolated) needs no handling — §11.6.5.2 composites a luminosity group against
+    // /BC alone, which is isolated behaviour by definition.
+    return def;
+  } catch { return true; }
 }
 
 /** Descriptor for one image XObject, including its /SMask (one level — an SMask
@@ -288,23 +449,7 @@ function filterList(ctx: PDFContext, o: Ref): string[] {
   if (o instanceof PDFArray) return o.asArray().map((v) => nameOf(ctx, v)).filter(Boolean) as string[];
   return [];
 }
-function colorSpaceName(ctx: PDFContext, o: Ref): string | null {
-  o = ctx.lookup(o as PDFObject | undefined);
-  if (o instanceof PDFName) return o.asString().replace(/^\//, '');
-  if (o instanceof PDFArray && o.size()) {
-    const head = nameOf(ctx, o.get(0));
-    // ICCBased is an embedded profile with no device name — resolve it to a
-    // device space by its component count (/N). Chromium encodes EVERY print
-    // raster as [/ICCBased <N=3>], so without this every screenshot/photo on a
-    // captured page decodes as "unsupported" and drops.
-    if (head === 'ICCBased') {
-      const n = numOf(ctx, dictOf(ctx, o.get(1))?.get(PDFName.of('N')));
-      return n === 1 ? 'DeviceGray' : n === 4 ? 'DeviceCMYK' : 'DeviceRGB';
-    }
-    return head;
-  }
-  return null;
-}
+
 function pdfString(ctx: PDFContext, o: Ref): string {
   o = ctx.lookup(o as PDFObject | undefined);
   if (!o) return '';
@@ -316,7 +461,8 @@ function pdfString(ctx: PDFContext, o: Ref): string {
 
 // ── fonts ─────────────────────────────────────────────────────────────────────
 
-function buildFontInfo(ctx: PDFContext, fontRef: Ref, imageStreams: Map<string, ImageDesc>, depth: number): PdfFontInfo {
+function buildFontInfo(ec: ExtractCtx, fontRef: Ref, depth: number): PdfFontInfo {
+  const ctx = ec.ctx;
   const subtype = nameOf(ctx, getKey(ctx, fontRef, 'Subtype')) || '';
   const twoByte = subtype === 'Type0';
   const rawBase = nameOf(ctx, getKey(ctx, fontRef, 'BaseFont')) || '';
@@ -356,7 +502,7 @@ function buildFontInfo(ctx: PDFContext, fontRef: Ref, imageStreams: Map<string, 
     const firstChar = numOf(ctx, getKey(ctx, fontRef, 'FirstChar')) ?? 0;
     const wArr = ctx.lookup(getKey(ctx, fontRef, 'Widths'));
     if (wArr instanceof PDFArray) wArr.asArray().forEach((v, i) => { const w = numOf(ctx, v); if (w != null) widths[firstChar + i] = w; });
-    info.type3 = { fontMatrix, charProcs, encoding, widths, resources: extractResources(ctx, getKey(ctx, fontRef, 'Resources'), imageStreams, depth + 1) };
+    info.type3 = { fontMatrix, charProcs, encoding, widths, resources: extractResources(ec, getKey(ctx, fontRef, 'Resources'), depth + 1) };
     info.twoByte = false;
   }
   return info;
@@ -373,184 +519,6 @@ function weightFromName(name: string): number {
   if (/medium/i.test(s)) return 500;
   if (/light/i.test(s)) return 300;
   return 400;
-}
-
-// ── shadings & gradients ────────────────────────────────────────────────────
-//
-// PDF axial (ShadingType 2) / radial (ShadingType 3) shadings → a normalized
-// descriptor the engine can emit as an SVG <linearGradient>/<radialGradient>. The
-// byte work — evaluating the PDF /Function that maps the [0,1] axis to colour — lives
-// HERE (in the shell), so the pure engine only ever sees a pre-sampled colour ramp.
-// Chromium's print backend emits every CSS gradient as a shading pattern, so this is
-// the path the docs-screenshot pipeline and any .pdf/.ai upload take for gradients.
-
-/** A parsed PDF function: axis parameter t → colour components (each in [0,1]). */
-type PdfFn = (t: number) => number[];
-
-function numArray(ctx: PDFContext, o: Ref): number[] | null {
-  o = ctx.lookup(o as PDFObject | undefined);
-  return o instanceof PDFArray ? o.asArray().map((v) => numOf(ctx, v) ?? 0) : null;
-}
-function boolArray(ctx: PDFContext, o: Ref): boolean[] {
-  o = ctx.lookup(o as PDFObject | undefined);
-  // PDFBool stringifies to "true"/"false"; avoids importing the class.
-  return o instanceof PDFArray ? o.asArray().map((v) => String(ctx.lookup(v)) === 'true') : [];
-}
-
-/** Component count for a shading colour space (device or ICCBased-resolved). */
-function shadingComps(cs: string | null): number {
-  return cs ? (/CMYK/i.test(cs) ? 4 : /Gray/i.test(cs) ? 1 : 3) : 3;
-}
-function chan(v: number): string { return Math.round((v < 0 ? 0 : v > 1 ? 1 : v) * 255).toString(16).padStart(2, '0'); }
-/** Shading colour components → #rrggbb (Gray/RGB/CMYK by component count). */
-function componentsToHex(vals: number[], comps: number): string {
-  if (comps === 1) { const g = vals[0] ?? 0; return '#' + chan(g) + chan(g) + chan(g); }
-  if (comps === 4) {
-    const c = vals[0] ?? 0, m = vals[1] ?? 0, y = vals[2] ?? 0, k = vals[3] ?? 0;
-    return '#' + chan((1 - c) * (1 - k)) + chan((1 - m) * (1 - k)) + chan((1 - y) * (1 - k));
-  }
-  return '#' + chan(vals[0] ?? 0) + chan(vals[1] ?? 0) + chan(vals[2] ?? 0);
-}
-
-// A shading /Function is one function, or an array of n single-output functions
-// (one per colour component). Return a single t → components evaluator either way.
-function parseShadingFunction(ctx: PDFContext, o: Ref): PdfFn | null {
-  const lu = ctx.lookup(o as PDFObject | undefined);
-  if (lu instanceof PDFArray) {
-    const fns = lu.asArray().map((f) => parseFunction(ctx, f, 0));
-    if (!fns.length || fns.some((f) => !f)) return null;
-    return (t) => fns.map((f) => f!(t)[0] ?? 0);
-  }
-  return parseFunction(ctx, o, 0);
-}
-
-// PDF functions: Type 2 (exponential), Type 3 (stitching), Type 0 (sampled stream).
-// Type 4 (PostScript calculator) is unsupported → null (the shading is dropped).
-function parseFunction(ctx: PDFContext, o: Ref, depth: number): PdfFn | null {
-  if (depth > 8) return null;
-  const d = dictOf(ctx, o);
-  if (!d) return null;
-  const type = numOf(ctx, d.get(PDFName.of('FunctionType')));
-  const domain = numArray(ctx, d.get(PDFName.of('Domain'))) || [0, 1];
-  const d0 = domain[0] ?? 0, d1 = domain[1] ?? 1;
-  const clampT = (t: number): number => (t < d0 ? d0 : t > d1 ? d1 : t);
-
-  if (type === 2) {
-    const c0 = numArray(ctx, d.get(PDFName.of('C0'))) || [0];
-    const c1 = numArray(ctx, d.get(PDFName.of('C1'))) || [1];
-    const N = numOf(ctx, d.get(PDFName.of('N'))) ?? 1;
-    return (t) => { const p = Math.pow(clampT(t), N); return c0.map((c, j) => c + p * ((c1[j] ?? c) - c)); };
-  }
-
-  if (type === 3) {
-    const subs = (ctx.lookup(d.get(PDFName.of('Functions'))) as PDFObject | undefined);
-    const fnRefs = subs instanceof PDFArray ? subs.asArray() : [];
-    const fns = fnRefs.map((f) => parseFunction(ctx, f, depth + 1));
-    if (!fns.length || fns.some((f) => !f)) return null;
-    const bounds = numArray(ctx, d.get(PDFName.of('Bounds'))) || [];
-    const encode = numArray(ctx, d.get(PDFName.of('Encode'))) || [];
-    const k = fns.length;
-    return (t) => {
-      const tt = clampT(t);
-      let i = 0;
-      while (i < bounds.length && i < k - 1 && tt >= (bounds[i] ?? Infinity)) i++;
-      const lo = i === 0 ? d0 : (bounds[i - 1] ?? d0);
-      const hi = i >= k - 1 ? d1 : (bounds[i] ?? d1);
-      const e0 = encode[2 * i] ?? 0, e1 = encode[2 * i + 1] ?? 1;
-      const x = hi > lo ? e0 + (tt - lo) * (e1 - e0) / (hi - lo) : e0;
-      return fns[i]!(x);
-    };
-  }
-
-  if (type === 0) return parseSampledFunction(ctx, o, d0, d1);
-  return null;
-}
-
-// Type 0 sampled function: a stream of N samples × M components packed at
-// BitsPerSample bits, big-endian. Linear-interpolate between the two nearest
-// samples and decode each component to its output range.
-function parseSampledFunction(ctx: PDFContext, o: Ref, d0: number, d1: number): PdfFn | null {
-  const stream = ctx.lookup(o as PDFObject | undefined);
-  if (!(stream instanceof PDFRawStream)) return null;
-  const d = stream.dict;
-  const size = numArray(ctx, d.get(PDFName.of('Size'))) || [];
-  const range = numArray(ctx, d.get(PDFName.of('Range'))) || [];
-  const bps = numOf(ctx, d.get(PDFName.of('BitsPerSample'))) ?? 8;
-  const n = Math.floor(size[0] ?? 0), m = Math.floor(range.length / 2);
-  if (n < 1 || m < 1 || bps < 1 || bps > 32) return null;
-  const encode = numArray(ctx, d.get(PDFName.of('Encode'))) || [0, n - 1];
-  const decode = numArray(ctx, d.get(PDFName.of('Decode'))) || range;
-  let bytes: Uint8Array;
-  try { bytes = decodePDFRawStream(stream).decode(); } catch { return null; }
-  if (bytes.length < Math.ceil((n * m * bps) / 8)) return null;
-  const maxVal = Math.pow(2, bps) - 1;
-  const sampleAt = (idx: number, comp: number): number => {
-    let bit = (idx * m + comp) * bps, v = 0;
-    for (let b = 0; b < bps; b++, bit++) v = (v << 1) | ((bytes[bit >> 3]! >> (7 - (bit & 7))) & 1);
-    return v;
-  };
-  return (t) => {
-    const tt = t < d0 ? d0 : t > d1 ? d1 : t;
-    let e = d1 > d0 ? (encode[0] ?? 0) + (tt - d0) * ((encode[1] ?? n - 1) - (encode[0] ?? 0)) / (d1 - d0) : (encode[0] ?? 0);
-    e = e < 0 ? 0 : e > n - 1 ? n - 1 : e;
-    const i0 = Math.floor(e), i1 = Math.min(n - 1, i0 + 1), frac = e - i0;
-    const out: number[] = [];
-    for (let c = 0; c < m; c++) {
-      const s = sampleAt(i0, c) + (sampleAt(i1, c) - sampleAt(i0, c)) * frac;
-      const dl = decode[2 * c] ?? 0, dh = decode[2 * c + 1] ?? 1;
-      out.push(dl + (s / maxVal) * (dh - dl));
-    }
-    return out;
-  };
-}
-
-// Sample the colour ramp into stops. 16 uniform samples render a smooth gradient
-// faithfully once SVG linearly interpolates between them; interior stops that add
-// nothing (a flat run) are collapsed, endpoints always kept.
-function sampleStops(fn: PdfFn, domain: number[], comps: number): PdfGradientStop[] {
-  const t0 = domain[0] ?? 0, t1 = domain[1] ?? 1;
-  const span = (t1 - t0) || 1;
-  const N = 16;
-  const raw: PdfGradientStop[] = [];
-  for (let i = 0; i <= N; i++) {
-    let col: string;
-    try { col = componentsToHex(fn(t0 + (span * i) / N), comps); } catch { return []; }
-    if (!/^#[0-9a-f]{6}$/i.test(col)) return [];
-    raw.push({ offset: i / N, color: col });
-  }
-  const out: PdfGradientStop[] = [];
-  for (let i = 0; i < raw.length; i++) {
-    const keep = i === 0 || i === raw.length - 1 || raw[i]!.color !== raw[i - 1]!.color || raw[i]!.color !== raw[i + 1]!.color;
-    if (keep) out.push(raw[i]!);
-  }
-  return out;
-}
-
-function buildShading(ctx: PDFContext, o: Ref): PdfShading | null {
-  const d = dictOf(ctx, o);
-  if (!d) return null;
-  const type = numOf(ctx, d.get(PDFName.of('ShadingType')));
-  if (type !== 2 && type !== 3) return null; // only axial / radial
-  const coords = numArray(ctx, d.get(PDFName.of('Coords'))) || [];
-  if ((type === 2 && coords.length < 4) || (type === 3 && coords.length < 6)) return null;
-  const fn = parseShadingFunction(ctx, d.get(PDFName.of('Function')));
-  if (!fn) return null;
-  const domain = numArray(ctx, d.get(PDFName.of('Domain'))) || [0, 1];
-  const comps = shadingComps(colorSpaceName(ctx, d.get(PDFName.of('ColorSpace'))));
-  const stops = sampleStops(fn, domain, comps);
-  if (stops.length < 2) return null;
-  const ext = boolArray(ctx, d.get(PDFName.of('Extend')));
-  return { type: type as 2 | 3, coords, stops, extend: [ext[0] ?? false, ext[1] ?? false] };
-}
-
-/** A shading Pattern (PatternType 2) → { shading, matrix }; others → null. */
-function buildPattern(ctx: PDFContext, o: Ref): PdfPattern | null {
-  const d = dictOf(ctx, o);
-  if (!d || numOf(ctx, d.get(PDFName.of('PatternType'))) !== 2) return null;
-  const shading = buildShading(ctx, d.get(PDFName.of('Shading')));
-  if (!shading) return null;
-  const matrix = numArray(ctx, d.get(PDFName.of('Matrix'))) || undefined;
-  return { shading, matrix };
 }
 
 // ── image resolution ──────────────────────────────────────────────────────────
@@ -735,12 +703,18 @@ export interface PdfPageSvg {
   svg: string;
   width: number;
   height: number;
-  /** Drawable nodes the interpreter found — 0 means a blank/unimportable page. */
+  /** Drawable nodes the interpreter found — 0 means a blank/unimportable page.
+   *  PRE-cull, deliberately: this is the "was the print blank?" signal. */
   elementCount: number;
+  /** Crop-cull counters, present only when `cull` was given. */
+  culled?: { total: number; dropped: number; unbounded: number };
 }
 
 export interface PdfPageSvgOpts {
   warn?: (msg: string) => void;
+  /** Crop hint in the page's own (point) space: nodes that provably cannot paint
+   *  inside it are dropped before raster decode / tile raster / text outlining. */
+  cull?: CullWindow;
   /**
    * Override an image node's payload. Called once per drawable image node with
    * its geometry in the page's own (point) space and the decoded fallback data:
@@ -758,6 +732,17 @@ export interface PdfPageSvgOpts {
    * every run so a shot needs no fonts at render time (lib/pdf-vector-shot.ts).
    */
   outlineText?: (run: { text: string; fontFamily: string; fontWeight: string | number; fontSize: number }) => Promise<string[] | null>;
+  /**
+   * Rasterise irreducibly-2-D function-based shadings (an OKLCH hue wheel, a
+   * conic gradient) into small `<pattern>` tiles. Default true.
+   *
+   * Set false when a raster in the middle of otherwise-vector output is worse than
+   * an approximation — every tile shading then paints its area-weighted MEAN colour
+   * instead, with zero extra branching. The Layout Studio boxes path never reaches
+   * here at all (it consumes nodes directly), so this only governs the page-SVG
+   * surfaces: asset upload and the docs-screenshot pipeline.
+   */
+  rasterFallback?: boolean;
 }
 
 /** An opened document: page count + a cached page→SVG converter. */
@@ -767,26 +752,63 @@ export interface PdfHandle {
 }
 
 function makeHandle(doc: PDFDocument): PdfHandle {
-  const cache = new Map<number, PdfPageSvg>();
+  const cache = new Map<string, PdfPageSvg>();
   return {
     pageCount: doc.getPageCount(),
-    async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
-      const hit = cache.get(index);
+    async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText, rasterFallback = true, cull }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
+      const ckey = `${index}|${cull ? `${cull.x},${cull.y},${cull.width},${cull.height},${cull.pad ?? ''}` : ''}`;
+      const hit = cache.get(ckey);
       if (hit) return hit;
-      const { nodes, width, height, imageStreams } = interpretPage(doc, index);
+      const { nodes: allNodes, width, height, imageStreams, tiles } = interpretPage(doc, index, warn);
+      const culled = cull ? cullPdfNodes(allNodes, cull) : null;
+      const nodes = culled ? culled.nodes : allNodes;
+      if (culled?.dropped) warn(`cull.dropped ${culled.dropped}/${culled.total} (unbounded kept: ${culled.unbounded})`);
+      // A soft mask's own nodes are drawable too — a /Luminosity box-shadow mask IS a
+      // blurred greyscale JPEG, and it needs inlining exactly like any page raster (a
+      // 1-component DCTDecode stream, so `imageBytes` hands the JPEG straight through:
+      // no decode, no canvas, no re-encode). The mask objects are SHARED between the
+      // nodes they cover, so this over-enumerates and the `key in images` guard dedupes.
+      const maskNodes = nodes.flatMap((n) => n._softMask?.nodes ?? []);
       // Inline every raster XObject the page actually uses, so the SVG is
       // self-contained (and survives storeUserUpload's DOMPurify pass, which
       // allows data:image/png|jpeg hrefs on <image>).
       const images: Record<string, string> = {};
-      for (const n of nodes) {
+      for (const n of [...nodes, ...maskNodes]) {
         const key = n._imageXObject;
         if (!key || key in images) continue;
         const desc = imageStreams.get(key);
         const got = desc ? await imageBytes(desc, warn) : null;
         if (got) images[key] = `data:${got.mime};base64,${bytesToBase64(got.bytes)}`;
       }
+      // Function-based shadings that survived to rung 3 get a raster tile, resolved
+      // through the SAME `images` record (and the same data:-URI check) as an image
+      // XObject — one sanctioned seam, not two. Lazy and deduped by key: three
+      // instances of one hue wheel cost one tile. Every tile a node doesn't get
+      // simply paints that node's flat back-stop instead.
+      if (rasterFallback && tiles.size) {
+        const want = new Map<string, number>();
+        // Mask nodes included: a CSS `mask-image: linear-gradient()` arrives as a
+        // gradient INSIDE the mask group, and its tileKey must resolve or the mask
+        // renders as its flat back-stop.
+        for (const n of [...nodes, ...maskNodes]) {
+          const k = n._gradient?.tileKey;
+          if (!k || !tiles.has(k)) continue;
+          want.set(k, Math.max(want.get(k) ?? 0, n.w, n.h));
+        }
+        let budget = TILE_BYTE_BUDGET;
+        for (const [key, dim] of want) {
+          if (budget <= 0) { warn('shading.type1.averaged (page tile budget exhausted)'); break; }
+          const uri = rasterizeTile(tiles.get(key)!, tileSize(dim));
+          if (!uri) { warn('shading.type1.averaged (no canvas / tile render failed)'); continue; }
+          budget -= uri.length;
+          images[key] = uri;
+        }
+      }
       // Per-NODE substitution: the same XObject can draw at several geometries,
       // so re-sourcing keys the override by node, leaving other uses untouched.
+      // Page nodes ONLY — deliberately not mask nodes: the docs pipeline swaps the
+      // app's original screen pixels back in by geometry, and a soft mask's raster has
+      // no on-screen counterpart to swap (it is a blur kernel, not a picture).
       if (resolveImage) {
         let i = 0;
         for (const n of nodes) {
@@ -814,12 +836,43 @@ function makeHandle(doc: PDFDocument): PdfHandle {
         svg: pdfNodesToSvg(nodes, { width, height, images }),
         width: Math.max(1, Math.round(width)),
         height: Math.max(1, Math.round(height)),
-        elementCount: nodes.length,
+        elementCount: allNodes.length,
+        ...(culled ? { culled: { total: culled.total, dropped: culled.dropped, unbounded: culled.unbounded } } : {}),
       };
-      cache.set(index, out);
+      cache.set(ckey, out);
       return out;
     },
   };
+}
+
+// Total data:-URI bytes one page may spend on shading tiles. A pathological PDF
+// full of 2-D shadings must not be able to produce a 50 MB SVG; past the cap the
+// remaining shadings paint their mean colour and the page says so.
+const TILE_BYTE_BUDGET = 1_000_000;
+
+/** Tile edge for a shading painted at `dim` points: the next power of two, clamped.
+ *  Small on purpose — this is a smooth colour field, not detail. */
+function tileSize(dim: number): number {
+  const n = Math.max(1, Math.ceil(dim || 32));
+  return Math.min(192, Math.max(32, 2 ** Math.ceil(Math.log2(n))));
+}
+
+/** Rasterise one function-based shading to a PNG data: URI. Returns null where
+ *  there is no canvas at all (node/jsdom) — the node's flat back-stop paints. */
+function rasterizeTile(src: TileSource, size: number): string | null {
+  if (typeof document === 'undefined') return null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const g = canvas.getContext('2d');
+    if (!g) return null;
+    const img = g.createImageData(size, size);
+    img.data.set(renderTilePixels(src, size));
+    g.putImageData(img, 0, 0);
+    // toDataURL is synchronous on an HTMLCanvasElement — no convertToBlob dance.
+    const uri = canvas.toDataURL('image/png');
+    return /^data:image\//i.test(uri) ? uri : null;
+  } catch { return null; }
 }
 
 /** Open a PDF/.ai for page-level conversion (shared by uploads and the page picker). */
@@ -872,7 +925,7 @@ export async function extractPdfImageBytes(
     const imageStreams = new Map<string, ImageDesc>();
     try {
       const node = doc.getPage(p).node;
-      extractResources(ctx, getKey(ctx, node, 'Resources'), imageStreams, 0);
+      extractResources(makeExtractCtx(ctx, imageStreams, new Map(), () => {}), getKey(ctx, node, 'Resources'), 0);
     } catch { continue; } // a malformed page's resources — skip it, keep scanning
     for (const desc of imageStreams.values()) {
       if (images.length >= max) break;

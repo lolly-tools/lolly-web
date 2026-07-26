@@ -531,3 +531,40 @@ test('R8: form controls in components-data specimens are styled, not raw UA chro
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
   checkRatchet(actual, ANCESTOR_STYLED, 'Style it with the shared field primitive instead.');
 });
+
+// ── R9: every icon glyph is well-formed markup ───────────────────────────────
+// lib/icons.ts holds glyph bodies as raw markup STRINGS, so a missing `"/>` is
+// not a syntax error in TypeScript — it is a broken attribute that Chromium's
+// HTML parser silently recovers from by swallowing the following markup into the
+// attribute value. The glyph then does not draw, and anything that RE-SERIALISES
+// that DOM (the HTML-to-SVG export walker does, via XMLSerializer) emits invalid
+// XML: an attribute whose value contains `</svg><span class=`. That produced a
+// 1.1 MB unparseable file with no thrown error and no warning.
+//
+// `zap` shipped like that. This is the cheap structural check that would have
+// caught it: balanced quotes, and one close for every open tag.
+test('R9: lib/icons.ts glyph bodies are well-formed (balanced quotes and tags)', () => {
+  const f = ALL.find((x) => x.rel === 'lib/icons.ts');
+  assert.ok(f, 'lib/icons.ts not found — did the icon registry move?');
+
+  const problems: string[] = [];
+  let scanned = 0;
+  for (const m of f.text.matchAll(/^\s*'?([\w-]+)'?:\s*'((?:[^'\\]|\\.)*)',?\s*$/gm)) {
+    const [, name, body] = m;
+    if (!body || !body.includes('<')) continue;
+    scanned++;
+    const at = lineOf(f.text, m.index ?? 0);
+    const quotes = (body.match(/"/g) ?? []).length;
+    const opens = (body.match(/<[a-zA-Z]/g) ?? []).length;
+    const closes = (body.match(/\/>|<\//g) ?? []).length;
+    if (quotes % 2 !== 0) {
+      problems.push(`lib/icons.ts:${at} — glyph "${name}" has ${quotes} double quotes (odd, so an attribute is unterminated).`);
+    }
+    if (opens !== closes) {
+      problems.push(`lib/icons.ts:${at} — glyph "${name}" opens ${opens} element(s) but closes ${closes}. Every tag needs \`/>\` or a closing tag.`);
+    }
+  }
+
+  assert.ok(scanned >= 60, `only ${scanned} markup glyphs parsed — the R9 regex has rotted`);
+  assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
+});

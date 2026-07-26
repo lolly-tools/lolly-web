@@ -117,6 +117,12 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // Read-only deep-link flag: `#/start?tab=color&wheel` opens the OKLCH Colour
   // chart on mount. Consumed here; never propagated into a generated share link.
   const wantWheel = startSearch.has('wheel');
+  // The import panel is OPEN by default — bringing a brand in is the first thing
+  // most people do here, and hiding it behind a disclosure buried the one action
+  // the step exists for. `?import=0` collapses it (for a shot of the resting CTA,
+  // or a link that wants the steps in focus); `?import` is accepted too and is a
+  // no-op against the default, so a link stays honest if the default ever flips.
+  const importOpen = startSearch.get('import') !== '0';
   let activeTab: BrandTabKey = (TAB_KEYS.has(tabParam) ? tabParam : 'logos') as BrandTabKey;
 
   viewEl.innerHTML = `
@@ -147,12 +153,12 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       <!-- The persistent action row: Import/Export always on; Save & continue
            appears on change. One row, one place, whichever step is open. -->
       <div class="start-actions" role="toolbar" aria-label="${escape(t('Brand actions'))}">
-        <button type="button" class="be-btn start-import-cta" data-start-import aria-expanded="false"><span class="start-import-cta-ic" aria-hidden="true">↓</span> ${t('Import…')}</button>
+        <button type="button" class="be-btn start-import-cta" data-start-import aria-expanded="${importOpen}"><span class="start-import-cta-ic" aria-hidden="true">↓</span> ${t('Import…')}</button>
         <button type="button" class="be-btn" data-start-export data-sfx="whoosh">↑ ${t('Export')}</button>
         <span class="start-actions-note" data-start-note aria-live="polite"></span>
         <button type="button" class="be-cta start-save" data-start-save hidden></button>
       </div>
-      <div class="start-import-panel" data-start-import-panel hidden>
+      <div class="start-import-panel" data-start-import-panel${importOpen ? '' : ' hidden'}>
         <!-- The whole card is the control: click anywhere (it's the file input's
              label) or drop a file on it. The format tiles lead so people
              recognise THEIR export at a glance, in preference order. -->

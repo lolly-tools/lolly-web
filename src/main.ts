@@ -453,8 +453,40 @@ async function boot(): Promise<void> {
   // outlines to <path>. Gated to loopback so it never becomes deployed surface;
   // lazy import, so a normal session pays nothing for it.
   if (/^(?:127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
-    (window as unknown as { __lollyVectorShot?: (b64: string) => Promise<unknown> }).__lollyVectorShot =
-      (b64: string) => import('./lib/pdf-vector-shot.ts').then((m) => m.pdfToVectorSvg(b64, host as unknown as Parameters<typeof m.pdfToVectorSvg>[1]));
+    // `opts` (today: cropCssPx — the region the caller will keep, so the interpreter
+    // can drop nodes that provably can't paint there before decoding rasters and
+    // shaping text) is optional and passed straight through, so an older harness
+    // calling with one argument against a newer dist keeps working.
+    (window as unknown as { __lollyVectorShot?: (b64: string, opts?: unknown) => Promise<unknown> }).__lollyVectorShot =
+      (b64: string, opts?: unknown) => import('./lib/pdf-vector-shot.ts').then((m) => m.pdfToVectorSvg(
+        b64,
+        host as unknown as Parameters<typeof m.pdfToVectorSvg>[1],
+        (opts ?? {}) as Parameters<typeof m.pdfToVectorSvg>[2],
+      ));
+
+    // Sibling loopback hook, same gate: run the DIRECT HTML→SVG walker (the export
+    // bridge's renderSvgFromHtml — the path every tool export takes) over an
+    // arbitrary page subtree, with NO print-to-PDF in between. Exists so the
+    // vector-render audit can measure walker-vs-print on the same fixtures; see
+    // plans/svg-snapshot-without-print.md. Measurement surface only — the docs
+    // pipeline still goes through __lollyVectorShot.
+    (window as unknown as { __lollyWalkerShot?: (sel?: string) => Promise<unknown> }).__lollyWalkerShot =
+      async (sel = 'body', o: Record<string, unknown> = {}) => {
+        const node = document.querySelector(sel);
+        if (!node) throw new Error(`__lollyWalkerShot: no element matches ${sel}`);
+        const t0 = performance.now();
+        // convertPaths / rasterFallback are web-bridge ExportOpts, wider than the
+        // portable HostV1 ExportOpts this call is typed against — hence the cast.
+        // elementScopedRaster: a page snapshot must degrade LOCALLY. Without it one
+        // conic-gradient or backdrop-filter on a top-level container rasterises the
+        // whole page (measured: 100% raster coverage on two audit fixtures).
+        // stackingOrder: a page snapshot must paint in CSS stacking-context order
+        // (Appendix E §E.2), not DOM order. Lolly's own gallery has 99 non-auto
+        // z-indexes, 22 of them negative, so DOM order puts scrims over content
+        // and cards in reverse. Off for tool exports — see ExportOpts.
+        const blob = await host.export.render(node, 'svg', { convertPaths: true, elementScopedRaster: true, stackingOrder: true, ...o } as Parameters<typeof host.export.render>[2]);
+        return { svg: await blob.text(), ms: Math.round(performance.now() - t0) };
+      };
   }
 
   // Chrome follows the brand: override the theme accent triples from the active
