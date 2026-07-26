@@ -17,6 +17,7 @@
  */
 import { openPdfFile } from '../views/pdf-import.ts';
 import { resolveVectorFont, type VectorFont } from '../bridge/font-registry.ts';
+import type { CullWindow } from '../../../../engine/src/pdf-svg.ts';
 
 /** The slice of the host this module needs: the HarfBuzz text shaper. */
 interface TextApi { toPath: (o: unknown) => Promise<{ d: string; notdef?: number }> }
@@ -27,9 +28,29 @@ export interface VectorShotResult {
   /** Page size in the SVG's own units (PDF points). */
   width: number;
   height: number;
-  /** Drawable nodes the interpreter found — 0 means the print was blank. */
+  /** Drawable nodes the interpreter found — 0 means the print was blank. NOT
+   *  reduced by `cropCssPx`; see PdfPageSvg.elementCount. */
   elementCount: number;
   warnings: string[];
+  /** Crop-cull telemetry when `cropCssPx` was given and the interpreter reported it. */
+  culled?: { total: number; dropped: number; unbounded: number };
+}
+
+export interface VectorShotOpts {
+  /**
+   * The region the caller is actually going to keep, in CSS pixels of the printed
+   * page (x/y measured from the top-left of the FULL printed page, i.e. scroll
+   * offset already folded in). Nodes that provably cannot paint inside it are
+   * dropped straight after interpretation — before raster decode, shading-tile
+   * rasterisation and text outlining, which is where a cropped capture spends its
+   * bytes and its seconds.
+   *
+   * A pure size/time optimisation: it does NOT set the viewBox (windowPdfSvg does,
+   * and it stays the exact, authoritative re-framing), and any node whose extent
+   * can't be bounded is kept. Callers derive this rect and the windowPdfSvg rect
+   * from ONE crop so they cannot disagree.
+   */
+  cropCssPx?: { x: number; y: number; width: number; height: number };
 }
 
 /** Subset-tagged PDF font names ("ABCDEF+Outfit-Bold") → base name. */
@@ -243,23 +264,44 @@ function makeTextOutliner(warnings: string[], textApi?: TextApi): (run: { text: 
   };
 }
 
+/** A CSS-px crop → the same rect in the printed page's own point space. Chromium
+ *  prints CSS pixels at exactly 72/96 pt, so this is exact, not a calibration. */
+function cullWindowFor(crop: VectorShotOpts['cropCssPx']): CullWindow | undefined {
+  if (!crop) return undefined;
+  const { x, y, width, height } = crop;
+  if (![x, y, width, height].every((v) => typeof v === 'number' && isFinite(v))) return undefined;
+  if (!(width > 0) || !(height > 0)) return undefined;
+  return { x: x * PT_PER_PX, y: y * PT_PER_PX, width: width * PT_PER_PX, height: height * PT_PER_PX };
+}
+
 /** Convert one printed page (base64 PDF) to a standalone vector SVG. `host` (the
  *  app's live bridge) supplies the text shaper used to outline text to <path>. */
-export async function pdfToVectorSvg(b64: string, host?: OutlineHost): Promise<VectorShotResult> {
+export async function pdfToVectorSvg(b64: string, host?: OutlineHost, opts: VectorShotOpts = {}): Promise<VectorShotResult> {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const warnings: string[] = [];
   const rasters = await collectDomRasters(warnings);
   const outlineText = makeTextOutliner(warnings, host?.text);
   const handle = await openPdfFile(new Blob([bytes], { type: 'application/pdf' }));
+  const cull = cullWindowFor(opts.cropCssPx);
   const page = await handle.pageToSvg(0, {
     warn: (msg) => warnings.push(msg),
     outlineText,
     resolveImage: (rect) => matchRaster(rasters, {
       x: rect.x / PT_PER_PX, y: rect.y / PT_PER_PX, w: rect.w / PT_PER_PX, h: rect.h / PT_PER_PX,
     }),
+    // Only passed when there IS a crop: pdf-import applies it right after
+    // interpretation, i.e. before raster inlining, tile rasterisation and text
+    // outlining — which is where a cropped capture spends its bytes and seconds.
+    // See the crop-culling notes in engine/src/pdf-svg.ts for why this is a
+    // separate, conservative rect and not windowPdfSvg's authoritative one.
+    ...(cull ? { cull } : {}),
   });
   // embedFonts is now a safety net: it only matters for runs that stayed <text>
   // (outlineText returned null). Fully-outlined pages carry no <text> and no fonts.
   const svg = await embedFonts(page.svg, warnings);
-  return { svg, width: page.width, height: page.height, elementCount: page.elementCount, warnings };
+  const culled = page.culled;
+  return {
+    svg, width: page.width, height: page.height, elementCount: page.elementCount, warnings,
+    ...(culled ? { culled } : {}),
+  };
 }

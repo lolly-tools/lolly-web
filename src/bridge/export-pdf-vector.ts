@@ -304,6 +304,10 @@ export function pdfApplyClip(pdf: any, shape: ClipShape, ox: number, oy: number,
     const rx = shape.r * sx, ry = shape.r * sy;
     if (rx > 0 || ry > 0) pdf.roundedRect(X(shape.x), Y(shape.y), shape.w * sx, shape.h * sy, rx, ry, null);
     else pdf.rect(X(shape.x), Y(shape.y), shape.w * sx, shape.h * sy, null);
+  } else if (shape.kind === 'empty') {
+    // Zero-area clip: callers return before drawing, so this is unreachable. Clip
+    // to nothing rather than fall through and read `.points` off the wrong variant.
+    pdf.rect(X(0), Y(0), 0, 0, null);
   } else {
     const pts = shape.points;
     pdf.moveTo(X(pts[0]![0]), Y(pts[0]![1]));
