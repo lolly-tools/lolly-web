@@ -24,6 +24,7 @@ import { parseSvgPath } from '@lolly/engine';
 import type { HostV1, TextPathResult } from '../../../../engine/src/bridge/host-v1.ts';
 import type { PathSegment } from '../../../../engine/src/svg-path.ts';
 import type { VectorPathPrim, VectorImagePrim, VectorPrim, Rgb } from '../../../../engine/src/emf.ts';
+import { gaussianShadowRings } from '../../../../engine/src/css-box.ts';
 import { canVectoriseText, featureSettingsToHb, letterSpacingPx } from './text-svg.ts';
 import { resolveVectorFont } from './font-registry.ts';
 
@@ -224,6 +225,72 @@ async function decodeImageToRgb(href: string, bg: RgbTuple): Promise<{ w: number
  * @param {object} ctx     { host, getComputedStyle, background }
  * @returns {Promise<{width,height,prims}>}
  */
+/** A drop shadow recovered from an SVG `<filter>`. Lengths are USER units. */
+export interface SvgDropShadow { dx: number; dy: number; stdDeviation: number; rgb: RgbTuple; alpha: number }
+
+/**
+ * Recognise a drop-shadow `<filter>`.
+ *
+ * EMF, EPS and DXF have no filter primitive, so `<filter>` is in SKIP and every
+ * shadow used to vanish from those exports — including from the Penpot plugin, whose
+ * entire input is Penpot's SVG and whose shadows arrive exactly this way.
+ *
+ * Two spellings are accepted: the `feDropShadow` shorthand, and the classic chain
+ * (`feGaussianBlur` + `feOffset` + `feFlood` + composite) that most tools, Penpot
+ * included, still emit. The parse is deliberately tolerant — it reads the first blur,
+ * the first offset and the flood colour, and ignores the plumbing between them —
+ * because the goal is "is this a drop shadow, and roughly what one", not a filter
+ * interpreter. Anything with primitives we do not expect returns null and is left
+ * alone rather than approximated into something wrong.
+ */
+export function parseSvgDropShadow(filt: Element): SvgDropShadow | null {
+  const kids = Array.from(filt.children).map((c) => c.tagName.toLowerCase().replace(/^svg:/, ''));
+  // Primitives that change the picture in ways a shadow ramp cannot stand in for.
+  const UNEXPECTED = ['fetile', 'feturbulence', 'fedisplacementmap', 'feimage', 'femorphology',
+                      'feconvolvematrix', 'fediffuselighting', 'fespecularlighting', 'fecomponenttransfer'];
+  if (kids.some((k) => UNEXPECTED.includes(k))) return null;
+
+  const num = (el: Element | undefined, attr: string, dflt: number) => {
+    const v = Number.parseFloat(el?.getAttribute(attr) ?? '');
+    return Number.isFinite(v) ? v : dflt;
+  };
+  const find = (name: string) => Array.from(filt.children)
+    .find((c) => c.tagName.toLowerCase().replace(/^svg:/, '') === name);
+
+  const ds = find('fedropshadow');
+  if (ds) {
+    const rgb = parseColor(ds.getAttribute('flood-color') ?? '#000');
+    if (!rgb) return null;
+    // stdDeviation may be "x y"; the ramp is isotropic, so take the larger.
+    const sd = (ds.getAttribute('stdDeviation') ?? '2').trim().split(/[\s,]+/).map(Number.parseFloat);
+    return {
+      dx: num(ds, 'dx', 2), dy: num(ds, 'dy', 2),
+      stdDeviation: Math.max(...sd.filter(Number.isFinite), 0),
+      rgb, alpha: num(ds, 'flood-opacity', 1),
+    };
+  }
+
+  const blur = find('fegaussianblur');
+  if (!blur) return null;
+  const sd = (blur.getAttribute('stdDeviation') ?? '0').trim().split(/[\s,]+/).map(Number.parseFloat);
+  const stdDeviation = Math.max(...sd.filter(Number.isFinite), 0);
+  const off = find('feoffset');
+  const flood = find('feflood');
+  // Colour: an feFlood states it outright. Without one the chain is tinting
+  // SourceAlpha, which is black unless an feColorMatrix says otherwise; black is the
+  // overwhelmingly common case and a wrong-coloured shadow is worse than none, so a
+  // chain with a colour matrix but no flood is declined.
+  let rgb: RgbTuple | null = flood ? parseColor(flood.getAttribute('flood-color') ?? '#000') : null;
+  let alpha = flood ? num(flood, 'flood-opacity', 1) : 1;
+  if (!flood) {
+    if (kids.includes('fecolormatrix')) return null;
+    rgb = [0, 0, 0];
+  }
+  if (!rgb) return null;
+  if (!(stdDeviation > 0) && !off) return null;   // neither blurred nor offset: not a shadow
+  return { dx: num(off, 'dx', 0), dy: num(off, 'dy', 0), stdDeviation, rgb, alpha };
+}
+
 export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promise<VectorIrResult> {
   const { host, getComputedStyle } = ctx;
   // User-facing label for log/error text. Defaults to 'EMF' so existing callers
@@ -264,6 +331,24 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
 
   const prims: VectorPrim[] = [];
   const textApi = host?.text || null;
+  // <filter> defs, indexed by id. SKIP keeps the walk out of <defs>, so the only way
+  // to see them is to look them up by the id a shape references.
+  const filterCache = new Map<string, SvgDropShadow | null>();
+  const resolveDropShadow = (el: Element): SvgDropShadow | null => {
+    const raw = el.getAttribute('filter')
+      || (getComputedStyle ? safeComputed(getComputedStyle, el)?.filter : '')
+      || '';
+    const m = /url\(\s*['"]?#([^)'"\s]+)/.exec(raw);
+    if (!m) return null;
+    const id = m[1]!;
+    if (filterCache.has(id)) return filterCache.get(id)!;
+    const def = el.ownerDocument?.getElementById(id) ?? svgEl.querySelector(`#${CSS.escape(id)}`);
+    const parsed = def && def.tagName.toLowerCase().replace(/^svg:/, '') === 'filter'
+      ? parseSvgDropShadow(def) : null;
+    if (!parsed) warn(`filter #${id} is not a drop shadow — left out of this format`);
+    filterCache.set(id, parsed);
+    return parsed;
+  };
   const warn = (m: string) => host?.log?.('warn', `${LABEL.toLowerCase()}: ${m}`);
 
   // tx/ty/sX/sY accumulate the group transform; the closure maps a user coord to
@@ -378,6 +463,46 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     }));
     if (!subpaths.length) return;
 
+    // ── drop-shadow filter → a vector ramp ─────────────────────────────────────
+    // These formats have no blur, but a blur is reproducible as concentric bands of
+    // decreasing coverage (engine gaussianShadowRings). The bands are drawn as
+    // STROKES of the shape's own outline rather than as offset copies of it: a stroke
+    // of width 2t covers exactly the t-wide margin on either side, which gives the
+    // outset for free and — unlike offsetting — works on an arbitrary path. Offsetting
+    // a general path needs a boolean geometry library we do not have.
+    //
+    // Widest and lightest first, then narrower and darker, then the shadow's solid
+    // core, then the shape itself on top. That ordering is what makes it correct here:
+    // every prim is flattened to opaque against the page, so later ones simply cover
+    // earlier ones and the ramp comes out right without any alpha compositing.
+    const shadow = resolveDropShadow(el);
+    if (shadow) {
+      const rings = gaussianShadowRings(shadow.stdDeviation * 2, shadow.alpha);
+      const sdx = shadow.dx * sX * regX, sdy = shadow.dy * sY * regY;
+      const shifted = subpaths.map((sub) => ({
+        closed: sub.closed,
+        segments: sub.segments.map((seg) => shiftSeg(seg, sdx, sdy)),
+      }));
+      const scale = gAvg * rAvg;
+      for (const ring of rings) {
+        const col = flatten(shadow.rgb, ring.alpha, bg);
+        if (ring.inner === null) {
+          // The core: solid, and filled rather than stroked.
+          prims.push({ type: 'path', subpaths: shifted, fill: rgbObj(col), stroke: null, fillRule: 'nonzero' });
+          continue;
+        }
+        const width = 2 * ring.outer * scale;
+        if (width < 0.5) continue;
+        prims.push({ type: 'path', subpaths: shifted, fill: null,
+                     stroke: { ...rgbObj(col), width }, fillRule: 'nonzero' });
+      }
+      if (!rings.length) {
+        // Offset with no blur: one solid copy, exact.
+        prims.push({ type: 'path', subpaths: shifted,
+                     fill: rgbObj(flatten(shadow.rgb, shadow.alpha, bg)), stroke: null, fillRule: 'nonzero' });
+      }
+    }
+
     prims.push({
       type: 'path',
       subpaths,
@@ -475,6 +600,15 @@ function mapSeg(seg: PathSegment, mapPt: (x: number, y: number) => { x: number; 
   }
   const p = mapPt(seg.x, seg.y);
   return { op: seg.op, x: p.x, y: p.y } as PathSegment;
+}
+
+/** Translate an already-device-mapped segment. Used for the shadow offset, which is
+ *  applied after mapping so it does not have to be threaded through the CTM. */
+function shiftSeg(seg: PathSegment, dx: number, dy: number): PathSegment {
+  if (seg.op === 'C') {
+    return { op: 'C', x1: seg.x1 + dx, y1: seg.y1 + dy, x2: seg.x2 + dx, y2: seg.y2 + dy, x: seg.x + dx, y: seg.y + dy };
+  }
+  return { op: seg.op, x: seg.x + dx, y: seg.y + dy } as PathSegment;
 }
 
 function safeComputed(fn: (el: Element) => CSSStyleDeclaration, el: Element): CSSStyleDeclaration | null {

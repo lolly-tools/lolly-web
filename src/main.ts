@@ -484,7 +484,7 @@ async function boot(): Promise<void> {
         // (Appendix E §E.2), not DOM order. Lolly's own gallery has 99 non-auto
         // z-indexes, 22 of them negative, so DOM order puts scrims over content
         // and cards in reverse. Off for tool exports — see ExportOpts.
-        const blob = await host.export.render(node, 'svg', { convertPaths: true, elementScopedRaster: true, stackingOrder: true, ...o } as Parameters<typeof host.export.render>[2]);
+        const blob = await host.export.render(node, 'svg', { convertPaths: true, elementScopedRaster: true, stackingOrder: true, backdropBlur: true, ...o } as Parameters<typeof host.export.render>[2]);
         return { svg: await blob.text(), ms: Math.round(performance.now() - t0) };
       };
   }
