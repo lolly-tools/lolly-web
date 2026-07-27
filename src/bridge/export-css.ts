@@ -4,8 +4,14 @@
  * PPTX paths. Extracted verbatim from bridge/export.ts: pure functions (regex +
  * maths + engine DOM-free primitives), no DOM and no module state, so the walkers
  * and the PPTX builder import them rather than closing over export.ts.
+ *
+ * The two colour entry points are thin adapters over the engine's CSS Color 4
+ * parser. They USED to be a `rgba?(int,int,int)` regex commented "always
+ * rgb/rgba from getComputedStyle" — false since browsers began serialising
+ * non-legacy colours in their own space, which silently dropped the paint of
+ * anything wearing `oklch()` / `color-mix(in oklab, …)` (plans/color-spaces.md §4).
  */
-import { parseCssLength, cornerRadii, uniformRadius } from "@lolly/engine";
+import { parseCssLength, cornerRadii, uniformRadius, parseColorToSrgb8 } from "@lolly/engine";
 import type { CornerRadii, CornerPair } from "../../../../engine/src/css-box.ts";
 
 type Rgb = [number, number, number];
@@ -17,12 +23,7 @@ export function n2(v: number): number { return Math.round(v * 100) / 100; }
 // Like parseCssColor but preserves the alpha channel as a 4th element [r,g,b,a].
 // Returns null for fully transparent colours.
 export function parseCssColorFull(cssColor: string | null | undefined): Rgba | null {
-  if (!cssColor || cssColor === 'transparent') return null;
-  const m = cssColor.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
-  if (!m) return null;
-  const a = m[4] !== undefined ? parseFloat(m[4]) : 1;
-  if (a === 0) return null;
-  return [+m[1]!, +m[2]!, +m[3]!, a];
+  return parseColorToSrgb8(cssColor);
 }
 
 // Serialise an [r,g,b,a] as a CSS colour string (rgb() when opaque, else rgba()).
@@ -30,14 +31,11 @@ export function rgbaCss(c: Rgba): string {
   return c[3] < 1 ? `rgba(${c[0]},${c[1]},${c[2]},${c[3]})` : `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
-// Parse a computed CSS color (always rgb/rgba from getComputedStyle).
-// Returns null for transparent or fully-transparent rgba.
+// Parse a computed CSS colour, dropping alpha. Returns null for transparent or
+// fully-transparent colour.
 export function parseCssColor(cssColor: string | null | undefined): Rgb | null {
-  if (!cssColor || cssColor === 'transparent') return null;
-  const m = cssColor.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
-  if (!m) return null;
-  if (m[4] !== undefined && parseFloat(m[4]) === 0) return null;
-  return [+m[1]!, +m[2]!, +m[3]!];
+  const c = parseColorToSrgb8(cssColor);
+  return c ? [c[0], c[1], c[2]] : null;
 }
 
 // Parse a CSS length value (px or %). refPx is used for percentage resolution.

@@ -282,11 +282,12 @@
 
 /* ─── Range ──────────────────────────────────────────────────────────────── */
 
-/* A native <input type="range"> dressed to match `.custom-slider` (tool.css) —
-   4px track, a 14px primary thumb that swells on grab. The tool sidebar keeps
-   its JS slider (ticks, units, the egg trail); this is for the ~20 plain ranges
-   scattered through the studio, the export panel and the editors that until now
-   were a bare OS widget with an `accent-color` one-liner on top.
+/* A native <input type="range"> dressed to match `.custom-slider` (below) —
+   4px track, a 14px primary thumb that swells on grab. This is the FALLBACK look
+   now: an upgraded `.field-range` is hidden behind a real `.custom-slider`, and
+   this is what the ~20 plain ranges through the studio, the export panel and the
+   editors look like for the frame before the upgrade lands (and permanently in
+   any host that doesn't run it).
 
    STRICTLY OPT-IN, unlike the `:where()` baselines at the foot of this file.
    It was briefly an element-level baseline, which was wrong for two reasons:
@@ -318,7 +319,7 @@
   height: 4px;
   border-radius: 2px;
   /* Same reasoning as the checkbox hairline above: `--input` is 1.49 / 1.40 / 2.53
-     against the page and a track is a control boundary. .cs-track (tool.css) was
+     against the page and a track is a control boundary. .cs-track (below) was
      raised to match, so the JS slider and the native one stay one object. */
   background: hsl(var(--muted-foreground) / .75);
   box-shadow: inset 0 1px 2px #0002;
@@ -327,7 +328,7 @@
   height: 4px;
   border-radius: 2px;
   /* Same reasoning as the checkbox hairline above: `--input` is 1.49 / 1.40 / 2.53
-     against the page and a track is a control boundary. .cs-track (tool.css) was
+     against the page and a track is a control boundary. .cs-track (below) was
      raised to match, so the JS slider and the native one stay one object. */
   background: hsl(var(--muted-foreground) / .75);
   box-shadow: inset 0 1px 2px #0002;
@@ -377,6 +378,161 @@
 .field-range:focus-visible{ outline: none; }
 
 .field-range:disabled { opacity: .5; cursor: not-allowed; }
+
+/* A `.field-range` is UPGRADED at runtime: components/custom-slider.ts mounts a
+   real `.custom-slider` (below) beside it and the input stays only as the value +
+   event carrier, so every surface holding a reference to it keeps working. The
+   native recipe above is what it looks like for the frame before that happens —
+   and the whole of it in any host that doesn't run the upgrader. */
+input.field-range.is-upgraded { display: none; }
+
+/* ─── The slider ────────────────────────────────────────────────────────────
+   `.custom-slider` — a div with an accurate fill/thumb driven by
+   components/custom-slider.ts (pointer drag, keyboard stepping, detent tick and
+   the flag-gated jelly egg-trail). It was the tool sidebar's control and lived
+   in parts/tool.css; it is the app's ONE slider now, so it belongs here in
+   primitives with the field recipes — the native range above is its fallback,
+   which is why the two share a 4px track and a 14px thumb. */
+
+.custom-slider {
+  position: relative;
+  padding: 8px 0 20px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Claim the gesture: without this, a vertical drag that starts on the slider
+     scrolls the page on touch instead of moving the thumb. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cs-track {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  /* `--input` is only 1.49:1 against the page in the light theme — under WCAG
+     1.4.11's 3:1 for a control boundary. Raised with the native range track
+     above so the two sliders stay one object. */
+  background: hsl(var(--muted-foreground) / .75);
+}
+
+.cs-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: hsl(var(--primary));
+  pointer-events: none;
+  /* Glide for keyboard / programmatic changes; suppressed while dragging below
+     so a finger/pointer drag stays 1:1 with no lag. */
+  transition: width 0.12s ease;
+}
+
+.cs-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius);
+  background: hsl(var(--primary));
+  box-shadow: 0 1px 4px hsl(0 0% 0% / 0.25);
+  pointer-events: none;
+  transition: box-shadow 0.12s, transform 0.12s ease, left 0.12s ease;
+}
+
+.custom-slider:focus-visible .cs-thumb {
+  /* Solid, high-contrast keyboard focus ring on the thumb (was a faint 0.3 glow). */
+  box-shadow: 0 0 0 3px hsl(var(--ring)), 0 1px 4px hsl(0 0% 0% / 0.25);
+}
+
+/* Tactile grab feedback: the thumb swells while the slider is being dragged
+   (JS toggles .dragging) and on a desktop press. */
+.custom-slider.dragging .cs-thumb,
+.custom-slider:active .cs-thumb {
+  transform: translate(-50%, -50%) scale(1.35);
+  box-shadow: 0 0 0 5px hsl(var(--ring) / 0.25), 0 1px 5px hsl(0 0% 0% / 0.3);
+}
+
+.custom-slider.dragging .cs-fill,
+.custom-slider.dragging .cs-thumb {
+  transition: box-shadow 0.12s, transform 0.12s ease;
+}
+
+/* Jelly slider (flag-gated via .cs-jelly, added by mountCustomSlider). The
+   thumb becomes a fully round blob that JS deforms into a soft egg while it
+   moves — so it needs a round base and the JS must own its transform 1:1.
+   During a drag we drop the CSS transform transition (the rAF spring is the
+   only smoother; a second .12s ease would smear the trail) and disable the
+   plain grab-swell rule (the spring drives the swell instead). */
+.cs-jelly .cs-thumb {
+  border-radius: 50%;
+  transform-origin: center;
+  will-change: transform;
+  /* JS owns transform (the rAF spring) — keep box-shadow/left transitions,
+     drop the transform one so nothing smears the egg. left still glides on
+     keyboard steps; the drag rule below drops it for a 1:1 pointer follow. */
+  transition: box-shadow 0.12s, left 0.12s ease;
+}
+.cs-jelly.dragging .cs-thumb,
+.cs-jelly:active .cs-thumb {
+  transition: box-shadow 0.12s;
+}
+
+/* The trailing tail — a CSS-border triangle whose colored (left) border is the
+   tapering body. JS sets its border-width (base height + length), position and
+   rotation each frame; it points away from travel and retracts elastically when
+   the drag stops. Same primary fill as the head/fill so it reads as one blob. */
+.cs-jelly .cs-tail {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-color: transparent;
+  border-left-color: hsl(var(--primary));
+  transform-origin: left center;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity, border-width;
+}
+
+.cs-ticks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(8px + 4px + 5px);
+  height: 8px;
+  pointer-events: none;
+}
+
+.cs-tick {
+  position: absolute;
+  width: 1.5px;
+  height: 4px;
+  border-radius: 1px;
+  background: hsl(var(--muted-foreground) / 0.3);
+  transform: translateX(-50%);
+}
+
+.cs-tick:first-child,
+.cs-tick:last-child {
+  height: 6px;
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Chrome sliders sit in tight rows (a volume label, then the slider), not in the
+   sidebar's stacked field list: they take the row's free width, and drop the
+   bottom padding that was there to clear the sidebar's tick gutter. Surfaces
+   used to size these by selecting `input[type="range"]` (.neuro-vol, .fc-row,
+   .hdr-slider …) — that element no longer paints, so "fill the row", the one
+   thing every one of them asked for, is stated once here instead. */
+.custom-slider[data-cs-for-range] {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 0;
+}
 
 /* ─── Zero-specificity baseline for unclaimed native controls ────────────── */
 

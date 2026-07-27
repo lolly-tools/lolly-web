@@ -155,12 +155,29 @@ export const HIGH_WATER = 6;
 /** Poll interval (ms) backing up the 'dequeue' event, for encoders that don't fire it. */
 const DEQUEUE_FALLBACK_MS = 25;
 
+/**
+ * The slice of `AudioBuffer` addAudio actually reads.
+ *
+ * A real `AudioBuffer` satisfies this structurally, so every existing caller is
+ * unchanged. It is spelled out because `AudioBuffer` is a main-thread-only
+ * global: the sequence-render worker receives planar `Float32Array`s over
+ * postMessage and wraps them in this shape, and there is no other way to feed
+ * the same PCM to the same encoder from worker scope.
+ */
+export interface PcmSource {
+  /** Sample frames per channel. */
+  length: number;
+  numberOfChannels: number;
+  getChannelData(channel: number): Float32Array;
+}
+
 /** A push-based encode+mux session. Frames stream in; memory stays O(1) in duration. */
 export interface StreamingMux {
   /** Encode one frame at `tsUs` (µs). Resolves once the encoder has room for the next. */
   addFrame(src: CanvasImageSource, tsUs: number): Promise<void>;
-  /** Encode one AudioBuffer's PCM, appended after everything added so far. */
-  addAudio(buffer: AudioBuffer): Promise<void>;
+  /** Encode one buffer's PCM (an AudioBuffer, or its planar equivalent in a
+   *  worker), appended after everything added so far. */
+  addAudio(buffer: PcmSource): Promise<void>;
   /** Flush both encoders, finalize the muxer, and return the container. */
   finalize(): Promise<Blob>;
   /** Tear everything down without producing output. Safe to call more than once. */
@@ -267,7 +284,7 @@ export async function createStreamingMux(
       if (encErr) throw asError(encErr);
     },
 
-    async addAudio(buffer: AudioBuffer): Promise<void> {
+    async addAudio(buffer: PcmSource): Promise<void> {
       guard();
       if (!aEnc) throw new Error('streaming mux has no audio track (opts.audio was not set)');
       const sampleRate = a!.sampleRate;

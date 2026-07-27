@@ -10,14 +10,38 @@
  *                         is seeked to — pure, DOM-only-for-reading, node-testable.
  *   sequence-providers.ts turns one clip into pixels/PCM at a source time —
  *                         mediabunny + WebCodecs live ONLY behind that seam.
- *   THIS FILE             issues canvas calls for a plan, drives the frame loop,
- *                         mixes the audio graph, and feeds the streaming muxer.
+ *   sequence-render.worker.ts  the DOM-FREE executor: `drawItem`, the frame loop,
+ *                         the provider lifecycle and the truncation reconciliation
+ *                         (phase 4 Track B) — plus the Worker entry that runs it.
+ *   THIS FILE             reads the LIVE DOM (stage parse, dom-to-image rasters,
+ *                         the lottie player), mixes the audio graph, decides which
+ *                         thread executes, and owns every output container.
  *
  * There is deliberately NO activity, alpha, crossfade or source-time arithmetic in
  * here. If a question is "should this be visible / how faded / which frame of the
  * source", it belongs in the planner and is already answered by the PlanItem. What
- * is left here is genuinely browser-only: `ctx.save()`, `setTransform`, `Path2D`,
- * `drawImage`, `VideoEncoder`.
+ * is left here is genuinely browser-only: dom-to-image, lottie-web, the
+ * OfflineAudioContext, MediaRecorder and the container writers.
+ *
+ * WORKER OFFLOAD (phase 4 Track B), and the SPLIT RULE. `renderSequence` builds a
+ * fully serialisable `SeqJob` — the layers minus their elements, the static
+ * rasters, the clip bytes, the mixed PCM — and hands it to ONE executor,
+ * `runSequenceJob`. Which thread that executor runs on is the only difference
+ * between the two paths, so determinism is structural rather than asserted:
+ *
+ *   • no lottie layer  ⇒ the whole frame loop (decode, composite, encode, mux)
+ *     runs in the Worker and the main thread only awaits the result;
+ *   • a lottie layer   ⇒ HYBRID. lottie-web cannot run in a worker, so the worker
+ *     asks the main thread for that layer's raster per frame ('need-live') and
+ *     blocks on the answer, at most ONE request outstanding;
+ *   • gif / apng / the MediaRecorder fallback, or any missing capability
+ *     (`supportsWorkerSequenceRender()`), ⇒ the executor runs in-thread, exactly
+ *     as it did before this change.
+ *
+ * The worker path is OPT-IN behind the same `lolly.workerEncode` flag that gates
+ * bridge/video-encode.ts, and any non-coded worker failure falls back to a full
+ * in-thread render (the static rasters are kept as canvases precisely so that
+ * retry costs nothing).
  *
  * MEMORY. The mp4/webm path holds O(1) DECODED frames in duration: one canvas, at
  * most two decoded samples per open provider (the providers' own ledger enforces
@@ -45,21 +69,17 @@
 import {
   parseSequenceStage,
   applyDurationOverride,
-  sequenceDrawPlan,
   frameTimestamps,
   activeFrameWindow,
   crossfadeJunctions,
-  reconcileDecoded,
   sequenceError,
   toCodedError,
+  SequenceError,
   type SeqLayer,
-  type PlanItem,
+  type SeqErrorCode,
 } from './sequence-plan.ts';
 import {
-  createVideoProvider,
   createClipAudio,
-  type InstrumentedProvider,
-  type ProviderStats,
   type ClipAudio,
 } from './sequence-providers.ts';
 import {
@@ -67,11 +87,32 @@ import {
   type EncodePick,
   type StreamingMux,
 } from './video-encode-core.ts';
+// The DOM-free executor. Imported as an ordinary module for the in-thread path
+// AND spawned as a Worker below — one compositor, two hosts (see the header).
+import {
+  runSequenceJob,
+  toJobLayer,
+  jobTransferables,
+  closeJobBitmaps,
+  radiiOf,
+  fitRect,
+  type SeqJob,
+  type SeqJobLayer,
+  type SeqJobIO,
+  type SeqWorkerAudio,
+  type SeqWorkerIn,
+  type SeqWorkerOut,
+  type AnyCanvas,
+  type AnyCtx,
+} from './sequence-render.worker.ts';
+
+// The geometry helpers moved to the executor with `drawItem`; re-exported so the
+// module's public surface (and sequence-render.test.ts) is unchanged.
+export { radiiOf, fitRect };
 import { videoBitrate, videoMimeCandidates } from './video-mime.ts';
 import { insertPngPhys, insertPngMeta, insertPngIcc, iccWanted } from './export-image-meta.ts';
 import {
   packApng,
-  parseClipShape,
   videoProvenanceTags,
   embedMp4Meta,
   embedWebmMeta,
@@ -90,6 +131,7 @@ import { OFF_CLASS } from './sequence-dom.ts';
 // the memory and, worse, could resolve to a different build of the animation than
 // the one the preview showed. Reported alongside the other layering note.
 import { lottiePlayerFor } from '../views/lottie-mount.ts';
+import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import type { ExportOpts } from './export.ts';
 
 /** The slice of the web host this renderer needs. Log only — everything else is
@@ -131,8 +173,10 @@ const CSS_DPI = 96;
 
 const AUDIO_BITRATE = 128_000;
 
-type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
-type AnyCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+/** Lottie/live-raster requests the worker may have outstanding at once. One is
+ *  the whole bound: the executor asks, then blocks, so a slow main thread can
+ *  never queue frames up in worker memory. */
+export const LIVE_RASTER_QUEUE = 1;
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 
@@ -306,183 +350,6 @@ function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode,
   src.start(0);
 }
 
-// ── geometry: clip shapes and object-fit (pure, so they can be reasoned about) ──
-
-/**
- * `border-radius` shorthand → four corner radii in UNSCALED box px.
- *
- * The 1–4 value form with px / % only; the elliptical `a / b` form collapses to
- * its horizontal radii. That is the whole vocabulary the box editor authors
- * (`0`, `12px`, `9999px`), and an unparsed value degrades to a square corner —
- * a visible-but-harmless difference, never a thrown export.
- */
-export function radiiOf(borderRadius: string, w: number, h: number): [number, number, number, number] {
-  const s = (borderRadius || '').split('/')[0]?.trim() ?? '';
-  if (!s || s === '0') return [0, 0, 0, 0];
-  const toks = s.split(/\s+/).slice(0, 4);
-  const min = Math.min(w, h);
-  const one = (tok: string | undefined, ref: number): number => {
-    if (!tok) return 0;
-    const v = parseFloat(tok);
-    if (!Number.isFinite(v)) return 0;
-    return tok.endsWith('%') ? (v / 100) * ref : v;
-  };
-  const a = one(toks[0], min);
-  const b = one(toks[1] ?? toks[0], min);
-  const c = one(toks[2] ?? toks[0], min);
-  const d = one(toks[3] ?? toks[1] ?? toks[0], min);
-  // CSS shrinks every radius by one factor when a pair overflows its edge.
-  const f = Math.min(1, w / Math.max(1e-6, a + b), w / Math.max(1e-6, d + c), h / Math.max(1e-6, a + d), h / Math.max(1e-6, b + c));
-  const k = Math.min(1, f);
-  return [a * k, b * k, c * k, d * k];
-}
-
-/** Where the media lands inside its box, honouring object-fit / object-position. */
-export function fitRect(
-  fit: string, pos: string, natW: number, natH: number, boxW: number, boxH: number,
-): { x: number; y: number; w: number; h: number } {
-  const nw = natW > 0 ? natW : boxW;
-  const nh = natH > 0 ? natH : boxH;
-  let w = boxW;
-  let h = boxH;
-  if (fit === 'contain' || fit === 'scale-down') {
-    const s = Math.min(boxW / nw, boxH / nh, fit === 'scale-down' ? 1 : Infinity);
-    w = nw * s; h = nh * s;
-  } else if (fit === 'cover') {
-    const s = Math.max(boxW / nw, boxH / nh);
-    w = nw * s; h = nh * s;
-  } else if (fit === 'none') {
-    w = nw; h = nh;
-  } // 'fill' (the CSS default) stretches to the box — w/h already are the box.
-  const frac = (token: string, fallback: number): number => {
-    const t = token.trim().toLowerCase();
-    if (t === 'left' || t === 'top') return 0;
-    if (t === 'right' || t === 'bottom') return 1;
-    if (t === 'center' || t === '') return fallback;
-    const v = parseFloat(t);
-    return Number.isFinite(v) && t.endsWith('%') ? v / 100 : fallback;
-  };
-  const parts = (pos || '').trim() ? pos.trim().split(/\s+/) : [];
-  const fx = frac(parts[0] ?? '', 0.5);
-  const fy = frac(parts[1] ?? parts[0] ?? '', 0.5);
-  return { x: (boxW - w) * fx, y: (boxH - h) * fy, w, h };
-}
-
-/** CSS mix-blend-mode values that are also canvas composite operations. */
-const BLEND_OPS = new Set([
-  'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn',
-  'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity',
-]);
-
-// ── per-layer resources ─────────────────────────────────────────────────────
-
-interface LayerRes {
-  /** Statics: the whole box. Media: the box with its media element hidden. */
-  under: AnyCanvas | null;
-  /** Media only: the box's text/overlay chrome over a transparent background. */
-  over: AnyCanvas | null;
-  provider: InstrumentedProvider | null;
-  /** Element the provider decodes, so its src / object-fit can be read. */
-  media: HTMLElement | null;
-  /** Lottie marker, when kind === 'lottie'. */
-  lottie: Element | null;
-  /** Single-entry memo: a 30 fps output over a 12 fps Lottie re-uses the raster. */
-  lottieKey: number;
-  lottieCanvas: AnyCanvas | null;
-  /** Output-grid frame indices this layer is on screen for, inclusive. */
-  first: number;
-  last: number;
-  /** The source times the provider will be asked for, ascending (seconds). */
-  span: number[];
-  /** Counters copied off the provider just before it was disposed — the
-   *  truncation reconciliation runs after every provider is already gone. */
-  lastStats: ProviderStats | null;
-  /** The length this clip's source CLAIMS, copied off the provider for the same
-   *  reason: a clip trimmed past the end of an INTACT file is not truncated, while
-   *  the same requests against a file whose header outruns its packets are. */
-  srcClaimedSec: number;
-}
-
-// ── the executor ────────────────────────────────────────────────────────────
-
-/**
- * Draw ONE plan item. No decisions live here beyond "how do I express this on a
- * canvas" — activity, alpha, rotation and source time all arrive decided.
- *
- * The transform order reproduces sequence-clock's composed CSS transform exactly:
- * `translate(anim) → rotate(authored + anim) → scale(anim)` about the box centre,
- * which is the same matrix the preview builds and the same one renderRecord's
- * drawObject issues.
- */
-async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | undefined, S: number): Promise<void> {
-  const L = item.layer;
-  if (L.kind === 'audio') return;                 // a timeline citizen with no picture
-  if (item.alpha <= 0) return;
-  const w = L.rect.w * S;
-  const h = L.rect.h * S;
-  if (w <= 0 || h <= 0) return;
-
-  ctx.save();
-  try {
-    ctx.globalAlpha = clamp01(item.alpha);
-    if (L.blend && BLEND_OPS.has(L.blend)) ctx.globalCompositeOperation = L.blend as GlobalCompositeOperation;
-    ctx.translate((L.rect.x + L.rect.w / 2) * S + item.dx * S, (L.rect.y + L.rect.h / 2) * S + item.dy * S);
-    if (item.rot) ctx.rotate((item.rot * Math.PI) / 180);
-    if (item.scale !== 1) ctx.scale(item.scale, item.scale);
-
-    // Clips are authored against the UNSCALED box, so they are parsed there and
-    // scaled — a `12px` radius must grow with the export, a `50%` must not drift.
-    const ox = -w / 2;
-    const oy = -h / 2;
-    if (L.clipPath) {
-      const shape = parseClipShape(L.clipPath, L.rect.w, L.rect.h);
-      if (shape) {
-        if (shape.kind === 'empty') return;       // a well-formed clip enclosing nothing
-        const p = new Path2D();
-        if (shape.kind === 'circle') p.arc(ox + shape.cx * S, oy + shape.cy * S, shape.r * S, 0, Math.PI * 2);
-        else if (shape.kind === 'ellipse') p.ellipse(ox + shape.cx * S, oy + shape.cy * S, shape.rx * S, shape.ry * S, 0, 0, Math.PI * 2);
-        else if (shape.kind === 'inset') p.rect(ox + shape.x * S, oy + shape.y * S, shape.w * S, shape.h * S);
-        else {
-          shape.points.forEach(([px, py], i) => (i ? p.lineTo(ox + px * S, oy + py * S) : p.moveTo(ox + px * S, oy + py * S)));
-          p.closePath();
-        }
-        ctx.clip(p);
-      }
-    } else if (L.radius) {
-      const r = radiiOf(L.radius, L.rect.w, L.rect.h).map((v) => v * S) as [number, number, number, number];
-      if (r.some((v) => v > 0)) {
-        const p = new Path2D();
-        p.roundRect(ox, oy, w, h, r);
-        ctx.clip(p);
-      }
-    }
-
-    if (L.kind === 'lottie') {
-      if (res?.lottieCanvas) ctx.drawImage(res.lottieCanvas as CanvasImageSource, ox, oy, w, h);
-      else if (res?.under) ctx.drawImage(res.under as CanvasImageSource, ox, oy, w, h);
-      return;
-    }
-
-    if (L.kind === 'video') {
-      // Background + anything painted UNDER the media, then the frame, then the
-      // box's own text back on top (the DOM order the preview paints in).
-      if (res?.under) ctx.drawImage(res.under as CanvasImageSource, ox, oy, w, h);
-      if (res?.provider && item.sourceSec != null) {
-        const el = res.media;
-        const cs = el ? el.style : null;
-        const f = fitRect(cs?.objectFit || 'contain', cs?.objectPosition || '', res.provider.w, res.provider.h, w, h);
-        await res.provider.drawAt(ctx, item.sourceSec, { dx: ox + f.x, dy: oy + f.y, dw: f.w, dh: f.h });
-      }
-      if (res?.over) ctx.drawImage(res.over as CanvasImageSource, ox, oy, w, h);
-      return;
-    }
-
-    if (res?.under) ctx.drawImage(res.under as CanvasImageSource, ox, oy, w, h);
-  } finally {
-    ctx.restore();
-  }
-}
-
 // ── rasterisation (the renderRecord technique) ──────────────────────────────
 
 /**
@@ -594,7 +461,12 @@ async function mixSequenceAudio(
       continue;
     }
     const url = mediaSrc(L);
-    if (!url) continue;
+    if (!url) {
+      if (L.kind === 'audio') {
+        log('warn', `sequence audio: the audio box at ${Math.round(L.startMs)}ms has no source — it will be silent.`);
+      }
+      continue;
+    }
     let clip: ClipAudio | null = null;
     try {
       clip = await createClipAudio(url, { log });
@@ -602,11 +474,33 @@ async function mixSequenceAudio(
       log('warn', `sequence audio: ${toCodedError(err).message} — clip will be silent`);
       continue;
     }
-    if (!clip) continue;
+    if (!clip) {
+      // createClipAudio returns null for BOTH "this file has no audio track" and
+      // "nothing here could open it". For a video layer the first is the common,
+      // correct answer and warning would be noise. For an AUDIO BOX it never is:
+      // the user placed it precisely to be heard, so a null is always worth
+      // saying out loud. This branch used to be a bare `continue`, which is how
+      // an unregistered container (Ogg/Opus and MP3 — i.e. the entire shipped
+      // music catalog) produced a silent export with nothing in the log at all.
+      if (L.kind === 'audio') {
+        log('warn', `sequence audio: could not decode the audio box at ${Math.round(L.startMs)}ms (${url.slice(0, 120)}) — it will be silent. If this is an unusual container, re-encode it as mp3, m4a, ogg, wav or flac.`);
+      }
+      continue;
+    }
     try {
       const from = L.clipInMs / 1000;
       const srcDur = clip.durationSec();
-      const to = srcDur > 0 ? Math.min(from + L.durMs / 1000, srcDur) : from + L.durMs / 1000;
+      // Never ask for audio past the end of the MIX. The OfflineAudioContext is
+      // only `totalSec` long, so a sample starting at `startMs` can contribute at
+      // most `totalSec - startMs` of sound and everything beyond that is
+      // allocated, resampled, copied and then thrown away. For a decoded file the
+      // source's own end already caps it — but a PROCEDURAL clip reports
+      // `durationSec() === 0` by design ("I am composed to fit"), so it has no cap
+      // at all: an audio box left at the parser's ceiling (MAX_TIME_MS = 1 hour)
+      // would allocate ~1.4 GB of Float32 for a five-second render, twice over.
+      const room = Math.max(0, totalSec - L.startMs / 1000);
+      const span = Math.min(L.durMs / 1000, room);
+      const to = srcDur > 0 ? Math.min(from + span, srcDur) : from + span;
       if (!(to > from)) continue;
       const { channels } = await clip.pcm(from, to, MIX_RATE);
       const frames = channels[0]?.length ?? 0;
@@ -751,23 +645,17 @@ export async function renderSequence(
       log('info', `sequence: the crossfade at ${Math.round(a.startMs + a.durMs)}ms runs ${j.ms}ms — the shorter of the two clips' fade lengths (this clip authored ${a.exitMs}ms). Match the two fade lengths to get the longer dissolve.`);
     }
   }
-  const res = new Map<number, LayerRes>();
-  for (const L of stage.layers) {
-    const win = activeFrameWindow(L, usedGrid, ext.get(L.idx) ?? 0);
-    res.set(L.idx, {
-      under: null, over: null, provider: null, media: null, lottie: null,
-      lottieKey: Number.NaN, lottieCanvas: null,
-      first: win.first, last: win.last, span: win.span,
-      lastStats: null, srcClaimedSec: 0,
-    });
-  }
+  // Activity windows for the OVERLAP BUDGET only — the executor derives its own
+  // from the same wire layers and the same grid, so the two cannot disagree.
+  const win = new Map<number, { first: number; last: number; span: number[] }>();
+  for (const L of stage.layers) win.set(L.idx, activeFrameWindow(L, usedGrid, ext.get(L.idx) ?? 0));
   {
     let peak = 0;
     for (let i = 0; i < frameCount; i++) {
       let n = 0;
       for (const L of stage.layers) {
         if (L.kind !== 'video') continue;
-        const r = res.get(L.idx)!;
+        const r = win.get(L.idx)!;
         if (r.first >= 0 && i >= r.first && i <= r.last) n++;
       }
       peak = Math.max(peak, n);
@@ -777,51 +665,79 @@ export async function renderSequence(
     }
   }
 
-  const canvas: AnyCanvas = streaming && typeof OffscreenCanvas !== 'undefined'
-    ? new OffscreenCanvas(outW, targetH)
-    : Object.assign(document.createElement('canvas'), { width: outW, height: targetH });
-  const ctx = (canvas as any).getContext('2d', { alpha: true }) as AnyCtx;
-  if (!ctx) throw sequenceError('SEQ_DECODE_FAILED', 'no 2D context for the sequence canvas');
-
   const transparent = opts.background === 'transparent';
+  const wire: SeqJobLayer[] = [];
+  const plates: SeqJob['plates'] = [];
+  const clips: SeqJob['clips'] = [];
+  /** Layers whose picture must be re-rastered off the LIVE player every frame. */
+  const liveBoxes = new Map<number, { marker: Element; box: HTMLElement }>();
   let bgRaster: HTMLCanvasElement | null = null;
-  let mux: StreamingMux | null = null;
-  const openProviders = new Set<InstrumentedProvider>();
-
-  const disposeAll = async (): Promise<void> => {
-    for (const p of [...openProviders]) { try { await p.dispose(); } catch { /* already gone */ } }
-    openProviders.clear();
-  };
+  // The timeline panel's frame thumbnails run through the SAME dom-to-image instance
+  // this render is about to drive, and that library's options / url cache / sandbox
+  // iframe are module-global — whichever call tears down first clears them out from
+  // under the other, corrupting both pictures. Hold them for the whole render.
+  const resumeThumbRasters = suspendNodeRasters();
 
   try {
+    // Suspending stops the NEXT thumbnail shot; the one already inside the library
+    // cannot be cancelled, only waited out — and its teardown would clear the sandbox
+    // iframe and url cache out from under the first rasterBox below.
+    await drainNodeRasters();
     // ── static + chrome rasters (once each) ───────────────────────────────
+    // dom-to-image needs the live DOM, so this is the half of the render that can
+    // never move to a worker. Everything downstream consumes the canvases it
+    // produces and nothing else.
     const restoreBlobs = await swapBlobUrls(stageEl);
     try {
       if (!transparent) {
         bgRaster = await rasterBox(stageEl, S, [...stageEl.querySelectorAll('.lolly-box')]);
       }
       for (const L of stage.layers) {
-        const r = res.get(L.idx)!;
-        if (r.first < 0 || L.kind === 'audio') continue;
+        const w = win.get(L.idx)!;
         const el = L.el;
-        if (L.kind === 'video') {
-          r.media = (el.matches?.('video') ? el : el.querySelector('video')) as HTMLElement | null;
-          // A ZIP bundle re-dispatches each sub-format through renderFormat, whose
-          // motion guard keys on the OUTER format ('zip'), so snapshotMotion has
-          // already frozen every <video> into a sibling <img>. That still must be
-          // hidden too or it bakes into `over` and sits frozen on top of every
-          // decoded frame for the clip's whole span.
-          const hide = [
-            ...(r.media ? [r.media] : []),
-            ...el.querySelectorAll('[data-motion-still]'),
-          ];
-          r.under = await rasterBox(el, S, hide, { opaque: true });
-          r.over = await rasterBox(el, S, hide, { transparentBg: true, opaque: true });
-        } else if (L.kind === 'lottie') {
-          r.lottie = el.matches?.('[data-lottie-src]') ? el : el.querySelector('[data-lottie-src]');
-          r.under = await rasterBox(el, S, [], { opaque: true }); // the still fallback if no player mounted
-        } else {
-          r.under = await rasterBox(el, S, [], { opaque: true });
+        let under: HTMLCanvasElement | null = null;
+        let over: HTMLCanvasElement | null = null;
+        let media: HTMLElement | null = null;
+        let needsLiveRaster = false;
+        if (w.first >= 0 && L.kind !== 'audio') {
+          if (L.kind === 'video') {
+            media = (el.matches?.('video') ? el : el.querySelector('video')) as HTMLElement | null;
+            // A ZIP bundle re-dispatches each sub-format through renderFormat, whose
+            // motion guard keys on the OUTER format ('zip'), so snapshotMotion has
+            // already frozen every <video> into a sibling <img>. That still must be
+            // hidden too or it bakes into `over` and sits frozen on top of every
+            // decoded frame for the clip's whole span.
+            const hide = [
+              ...(media ? [media] : []),
+              ...el.querySelectorAll('[data-motion-still]'),
+            ];
+            under = await rasterBox(el, S, hide, { opaque: true });
+            over = await rasterBox(el, S, hide, { transparentBg: true, opaque: true });
+          } else if (L.kind === 'lottie') {
+            const marker = el.matches?.('[data-lottie-src]') ? el : el.querySelector('[data-lottie-src]');
+            under = await rasterBox(el, S, [], { opaque: true }); // the still fallback if no player mounted
+            // A lottie layer only forces the hybrid split when a live player is
+            // actually mounted; without one the static plate IS the picture, and
+            // the sequence still runs fully worker-side.
+            const player = marker ? (lottiePlayerFor(marker) as LottieScrubber | null) : null;
+            if (marker && player?.goToAndStop) {
+              liveBoxes.set(L.idx, { marker, box: el });
+              needsLiveRaster = true;
+            }
+          } else {
+            under = await rasterBox(el, S, [], { opaque: true });
+          }
+        }
+        plates.push({ idx: L.idx, under, over });
+        wire.push(toJobLayer(L, {
+          // The inline style, exactly as the old in-draw read took it.
+          objectFit: media?.style?.objectFit ?? '',
+          objectPosition: media?.style?.objectPosition ?? '',
+          needsLiveRaster,
+        }));
+        if (L.kind === 'video' && w.first >= 0) {
+          const url = mediaSrc(L);
+          if (url) clips.push({ idx: L.idx, src: url });
         }
       }
     } finally {
@@ -831,199 +747,418 @@ export async function renderSequence(
     // ── audio (independent of the frame loop, so it is resolved up front) ──
     // Length is the ACTUAL clip length (frameCount/fps), not the authored one, so a
     // capped gif/apng and a full-length mp4 both get a bed that ends where they do.
+    // OfflineAudioContext is main-thread only; the worker receives the rendered PCM.
     const mix = streaming ? await mixSequenceAudio(stage.layers, (frameCount / fps), opts, host) : { buffer: null, hasClipAudio: false };
-
-    // ── the muxer (the codec ladder already ran, before the frame budget) ──
     const audioPick = pick && mix.buffer ? await pickWebCodecsAudio(pick.container) : null;
 
-    const gifFrames: Uint8Array[] = [];
-    const gifPixels: Uint8ClampedArray[] = [];
+    const job: SeqJob = {
+      layers: wire, grid: usedGrid, frameCount, fps, totalMs: stage.totalMs,
+      outW, outH: targetH, scale: S,
+      bg: bgRaster, plates, clips,
+      maxLiveProviders: MAX_LIVE_PROVIDERS, watchdogMs: WATCHDOG_MS,
+    };
+    const liveRaster = makeLiveRaster(liveBoxes, S);
+    const hybrid = liveBoxes.size > 0;
 
-    if (pick) {
-      mux = await createStreamingMux(pick, {
-        width: outW, height: targetH, fps, bitrate,
-        audio: audioPick ? { ...audioPick, channels: [] } : null,
-      });
-      log('info', `sequence: WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${frameCount}f`);
-    }
-
-    // ── the frame loop ────────────────────────────────────────────────────
-    const bitmaps: ImageBitmap[] = [];             // MediaRecorder fallback only
-    for (let i = 0; i < frameCount; i++) {
-      const t = usedGrid[i] as number;
-      await watchdog(composeFrame(i, t), `frame ${i + 1}/${frameCount}`);
-
-      if (mux) {
-        await watchdog(mux.addFrame(canvas as CanvasImageSource, Math.round((i * 1e6) / fps)), `encode ${i + 1}/${frameCount}`);
-      } else if (streaming) {
-        bitmaps.push(await createImageBitmap(canvas as any));
-      } else if (format === 'apng') {
-        gifFrames.push(new Uint8Array(await (await canvasBlob(canvas, 'image/png')).arrayBuffer()));
-      } else {
-        gifPixels.push((ctx as CanvasRenderingContext2D).getImageData(0, 0, outW, targetH).data);
+    // ── which thread executes ─────────────────────────────────────────────
+    if (pick && supportsWorkerSequenceRender()) {
+      log('info', `sequence: worker offload — ${hybrid
+        ? `HYBRID (${liveBoxes.size} lottie layer(s) rastered on the main thread, one request in flight)`
+        : 'fully worker-side (decode, composite, encode and mux all off the main thread)'}`);
+      try {
+        const blob = await renderSequenceInWorker(job, pick, bitrate, audioPick, mix.buffer, {
+          log,
+          progress: (d, t) => opts.onProgress?.(d, t),
+          live: liveRaster,
+        });
+        return await withVideoMeta(blob, blob.type, opts.meta, host);
+      } catch (err) {
+        // A CODED failure is the render's real verdict (a truncated source, a
+        // codec that isn't there, a cancel) — re-running it in-thread would only
+        // reach the same answer more slowly. Anything else is the offload itself
+        // failing, and the in-thread path is the honest fallback: the plates are
+        // still canvases, so the retry costs no re-rasterisation.
+        if (err instanceof SequenceError) throw err;
+        log('warn', `sequence: worker offload unavailable (${(err as { message?: string })?.message ?? err}) — rendering in-thread.`);
       }
-      opts.onProgress?.(i + 1, frameCount);
     }
 
-    // Every provider has finished; only now is a shortfall meaningful.
-    reconcileProviders(stage.layers, res, fps, log);
-    await disposeAll();
-
-    if (mux) {
-      if (mix.buffer && audioPick) await mux.addAudio(mix.buffer);
-      const blob = await mux.finalize();
-      mux = null;
-      return await withVideoMeta(blob, blob.type, opts.meta, host);
-    }
-    if (streaming) return await recorderReplay(bitmaps, canvas as HTMLCanvasElement, ctx as CanvasRenderingContext2D, format, fps, opts, host);
-    if (format === 'apng') return await apngBlob(gifFrames, fps, opts);
-    return await gifBlob(gifPixels, outW, targetH, opts);
+    return await renderInThread(job, mix, audioPick, liveRaster);
   } catch (err) {
     const coded = toCodedError(err);
     log('error', `sequence export failed (${coded.code}): ${coded.message}`);
     throw err;
   } finally {
-    if (mux) { try { await mux.abort(); } catch { /* already down */ } }
-    await disposeAll();
+    resumeThumbRasters();
   }
 
   // ── inner helpers (closures over the render's state) ──────────────────────
 
-  /** Fail rather than hang: a decoder that has gone quiet cannot be un-stuck. */
-  async function watchdog<T>(p: Promise<T>, label: string): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        p,
-        new Promise<never>((_, rej) => {
-          timer = setTimeout(() => rej(sequenceError('SEQ_ABORTED', `sequence export stalled: ${label} made no progress for ${WATCHDOG_MS / 1000}s`)), WATCHDOG_MS);
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-
-  /** Paint the whole stage at `t`, opening/closing providers on their edges. */
-  async function composeFrame(i: number, t: number): Promise<void> {
-    // Providers are created at a clip's FIRST active frame and disposed at its
-    // last, so a 12-clip sequence never has 12 decoders open.
-    for (const L of stage!.layers) {
-      if (L.kind !== 'video') continue;
-      const r = res.get(L.idx)!;
-      if (i !== r.first || r.provider) continue;
-      const url = mediaSrc(L);
-      if (!url) continue;
-      const p = await createVideoProvider(url, { log });
-      openProviders.add(p);
-      r.provider = p;
-      r.srcClaimedSec = p.stats().claimedDurationSec;
-      if (r.span.length) p.prime?.(r.span);
-    }
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.clearRect(0, 0, outW, targetH);
-    if (bgRaster) ctx.drawImage(bgRaster as CanvasImageSource, 0, 0, outW, targetH);
-
-    for (const item of sequenceDrawPlan(stage!.layers, t, stage!.totalMs)) {
-      const r = res.get(item.layer.idx);
-      if (item.layer.kind === 'lottie' && r) await primeLottie(r, item);
-      await drawItem(ctx, item, r, S);
-    }
-
-    for (const L of stage!.layers) {
-      if (L.kind !== 'video') continue;
-      const r = res.get(L.idx)!;
-      if (i === r.last && r.provider) {
-        const p = r.provider;
-        r.lastStats = p.stats();          // the only evidence the truncation guard gets
-        r.provider = null;
-        openProviders.delete(p);
-        await p.dispose().catch(() => {});
-      }
-    }
-  }
-
   /**
-   * Advance the live Lottie player to this frame and re-raster the box.
-   *
-   * Memoised on the animation's OWN frame number, so a 30 fps export of a 12 fps
-   * Lottie rasterises 12 times a second, not 30. A single-entry memo is enough
-   * (the grid is monotonic, so repeats are always consecutive) and keeps the
-   * cache O(1) instead of growing with the clip.
+   * The historical path: one compositor (`runSequenceJob`), driven here, with the
+   * frame sink chosen by output format. Unchanged in behaviour — the loop, the
+   * watchdog labels, the provider lifecycle and the reconciliation all now live
+   * in the executor the worker runs too, which is what makes the two identical.
    */
-  async function primeLottie(r: LayerRes, item: PlanItem): Promise<void> {
-    if (!r.lottie || item.sourceSec == null) return;
-    const player = lottiePlayerFor(r.lottie) as { goToAndStop?(v: number, isFrame?: boolean): void; frameRate?: number } | null;
-    if (!player?.goToAndStop) return;
-    const rate = Number.isFinite(player.frameRate) && (player.frameRate as number) > 0 ? (player.frameRate as number) : 30;
-    const key = Math.round(item.sourceSec * rate);
-    if (key === r.lottieKey && r.lottieCanvas) return;
-    try { player.goToAndStop((key / rate) * 1000, false); } catch { return; }
-    const shot = await rasterBox(item.layer.el, S, [], { opaque: true });
-    if (shot) { r.lottieCanvas = shot; r.lottieKey = key; }
+  async function renderInThread(
+    job: SeqJob, mix: MixResult, audioPick: SeqAudioPick | null, liveRaster: SeqJobIO['lottieAt'],
+  ): Promise<Blob> {
+    const canvas: AnyCanvas = streaming && typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(outW, targetH)
+      : Object.assign(document.createElement('canvas'), { width: outW, height: targetH });
+    const ctx = (canvas as unknown as { getContext(id: string, o?: unknown): unknown }).getContext('2d', { alpha: true }) as AnyCtx | null;
+    if (!ctx) throw sequenceError('SEQ_DECODE_FAILED', 'no 2D context for the sequence canvas');
+
+    let mux: StreamingMux | null = null;
+    const bitmaps: ImageBitmap[] = [];             // MediaRecorder fallback only
+    const apngFrames: Uint8Array[] = [];
+    const gifPixels: Uint8ClampedArray[] = [];
+    try {
+      if (pick) {
+        mux = await createStreamingMux(pick, {
+          width: outW, height: targetH, fps, bitrate,
+          audio: audioPick ? { ...audioPick, channels: [] } : null,
+        });
+        log('info', `sequence: WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${frameCount}f (in-thread)`);
+      }
+
+      await runSequenceJob(job, canvas, ctx, {
+        log,
+        lottieAt: liveRaster,
+        progress: (done, total) => opts.onProgress?.(done, total),
+        frame: async (c, cx, _i, tsUs) => {
+          if (mux) await mux.addFrame(c as CanvasImageSource, tsUs);
+          else if (streaming) bitmaps.push(await createImageBitmap(c as ImageBitmapSource));
+          else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(c, 'image/png')).arrayBuffer()));
+          else gifPixels.push((cx as CanvasRenderingContext2D).getImageData(0, 0, outW, targetH).data);
+        },
+      });
+
+      if (mux) {
+        if (mix.buffer && audioPick) await mux.addAudio(mix.buffer);
+        const blob = await mux.finalize();
+        mux = null;
+        return await withVideoMeta(blob, blob.type, opts.meta, host);
+      }
+      if (streaming) return await recorderReplay(bitmaps, canvas as HTMLCanvasElement, ctx as CanvasRenderingContext2D, format, fps, opts, host);
+      if (format === 'apng') return await apngBlob(apngFrames, fps, opts);
+      return await gifBlob(gifPixels, outW, targetH, opts);
+    } finally {
+      if (mux) { try { await mux.abort(); } catch { /* already down */ } }
+    }
   }
 }
 
-// ── truncation reconciliation (spike rule 7) ────────────────────────────────
+// ── the live (lottie) raster, the one thing the worker cannot do ────────────
+
+/** The slice of a lottie-web player the exporter scrubs. */
+interface LottieScrubber { goToAndStop?(v: number, isFrame?: boolean): void; frameRate?: number }
 
 /**
- * Did every clip actually answer the requests we made of it?
+ * Build the per-frame live-raster function, or `undefined` when no layer needs one.
  *
- * A truncated container decodes a clean, short iteration with no error, so the only
- * evidence is arithmetic. Getting the arithmetic right means reconciling the
- * provider's ANSWERS against its own REQUESTS, in the SOURCE's time domain, with
- * four corrections that each turned a healthy export into a false SEQ_TRUNCATED:
- *
- *  • speed. The span is in source seconds and a speed-s clip walks it s times
- *    faster than the output grid, so the sampling rate is `fps / speed`, not `fps`.
- *  • requests, not draws. `decoded` counts DRAWS, and the compositor skips them for
- *    a transparent or zero-size box (a hidden clip kept only for its audio draws
- *    nothing at all, and every fade's first frame has alpha exactly 0).
- *  • the source's own end. A clip may be trimmed longer than its media, and a
- *    crossfade tail deliberately samples past the out-point; those requests can
- *    never be answered and are not evidence of anything.
- *  • PTS granularity. `lastSourceSec` is the decoded sample's presentation time,
- *    which lags the request by up to one SOURCE frame — 83 ms on a 12 fps screen
- *    recording, against a tolerance that would otherwise be 67 ms.
+ * Memoised on the animation's OWN frame number, so a 30 fps export of a 12 fps
+ * Lottie rasterises 12 times a second, not 30. A single-entry memo per layer is
+ * enough (the grid is monotonic, so repeats are always consecutive) and keeps
+ * the cache O(1) instead of growing with the clip. That memo is also what makes
+ * the worker's per-frame request cheap: most frames are answered from it without
+ * touching lottie-web or dom-to-image at all.
  */
-function reconcileProviders(
-  layers: SeqLayer[], res: Map<number, LayerRes>, fps: number, log: (l: string, m: string) => void,
-): void {
-  for (const L of layers) {
-    if (L.kind !== 'video') continue;
-    const r = res.get(L.idx);
-    if (!r || !r.span.length) continue;
-    const s = r.provider?.stats() ?? r.lastStats;
-    if (!s) continue;
-    if (!s.requests) {
-      log('info', 'sequence: a clip was never asked for a frame (invisible or zero-size) — nothing to reconcile.');
-      continue;
+function makeLiveRaster(
+  boxes: Map<number, { marker: Element; box: HTMLElement }>, S: number,
+): SeqJobIO['lottieAt'] {
+  if (!boxes.size) return undefined;
+  const memo = new Map<number, { key: number; shot: HTMLCanvasElement }>();
+  return async (layerIdx, _frame, sourceSec) => {
+    const entry = boxes.get(layerIdx);
+    if (!entry) return null;
+    const player = lottiePlayerFor(entry.marker) as LottieScrubber | null;
+    if (!player?.goToAndStop) return null;
+    const rate = Number.isFinite(player.frameRate) && (player.frameRate as number) > 0 ? (player.frameRate as number) : 30;
+    const key = Math.round(sourceSec * rate);
+    const prev = memo.get(layerIdx);
+    if (prev && prev.key === key) return prev.shot;
+    try { player.goToAndStop((key / rate) * 1000, false); } catch { return prev?.shot ?? null; }
+    const shot = await rasterBox(entry.box, S, [], { opaque: true });
+    if (shot) { memo.set(layerIdx, { key, shot }); return shot; }
+    return prev?.shot ?? null;
+  };
+}
+
+// ── the Worker client (modelled on bridge/video-encode.ts) ──────────────────
+//
+// Same conventions as the shipped video-encode worker client: ONE lazily spawned
+// module worker, respawned on error, runs keyed by id, an opt-in localStorage
+// gate and an up-front capability probe. The differences are inherent to this
+// being a long render rather than a single call: progress and log messages flow
+// back during the run, the main thread answers 'need-live' requests mid-render,
+// and an abort has to reach a loop that is already going.
+
+/** What one in-flight worker render needs from its caller. */
+interface SeqWorkerRun {
+  resolve(b: Blob): void;
+  reject(e: unknown): void;
+  log(level: string, msg: string): void;
+  progress(done: number, total: number): void;
+  live?: SeqJobIO['lottieAt'];
+  /** Restart the liveness deadline — called for every message this run sends. */
+  touch(): void;
+  /** Stop the liveness deadline (the run settled). */
+  clear(): void;
+}
+
+/**
+ * How long the CLIENT waits without hearing anything from a run before it gives up.
+ *
+ * The executor's own `watchdogMs` protects the frame loop, but it runs on the
+ * WORKER's event loop: a thread killed for memory pressure (Chrome does not
+ * reliably surface that as an `error` on the parent) or wedged inside a
+ * synchronous native decode cannot fire its own timer either, and the returned
+ * promise would then never settle — the export UI hangs with no error at all.
+ * This is the only deadline that survives the worker dying silently. Generous by
+ * design: a frame that is merely slow is the worker's watchdog's business, not this
+ * one's, and every message a run emits (progress, log, need-live) resets it.
+ */
+const SEQ_CLIENT_SILENCE_MS = 60_000;
+
+let seqWorker: Worker | null = null;
+let seqRunSeq = 0;
+const seqPending = new Map<number, SeqWorkerRun>();
+
+/** Swappable so a test can drive the protocol against a stub port. */
+let seqWorkerFactory: () => Worker = () =>
+  new Worker(new URL('./sequence-render.worker.ts', import.meta.url), { type: 'module' });
+
+/** TEST SEAM: replace the worker factory (pass null to restore the real one). */
+export function _setSequenceWorkerFactory(f: (() => Worker) | null): void {
+  // Swapping the factory tears the current worker down, so any run still on it
+  // would hang forever waiting for a thread that no longer exists. Settle them.
+  abortSequenceWorkerRenders('the worker factory was replaced');
+  seqWorkerFactory = f ?? (() => new Worker(new URL('./sequence-render.worker.ts', import.meta.url), { type: 'module' }));
+  disposeSequenceWorker();
+}
+
+/** Drop the worker instance itself (does not touch pending runs). */
+function disposeSequenceWorker(): void {
+  const w = seqWorker;
+  seqWorker = null;
+  if (!w) return;
+  w.onmessage = null;
+  w.onerror = null;
+  try { w.terminate(); } catch { /* already gone */ }
+}
+
+/**
+ * Cancel every render when the page goes away.
+ *
+ * Armed on first spawn rather than at import (this module is lazily loaded, and a
+ * listener that only matters once a worker exists should not be a side effect of
+ * loading the file). Without it, navigating away mid-export leaves a full
+ * decode+composite+encode of the whole sequence running invisibly off-thread,
+ * holding its providers, its canvas and a growing muxer buffer, until the tab
+ * closes. In-thread that work died with the render; off-thread it does not.
+ */
+let seqPageHideArmed = false;
+function armSeqPageHide(): void {
+  if (seqPageHideArmed) return;
+  seqPageHideArmed = true;
+  try {
+    globalThis.addEventListener?.('pagehide', () => abortSequenceWorkerRenders('the page was closed'));
+  } catch { /* no event target (node tests) */ }
+}
+
+function ensureSeqWorker(): Worker {
+  if (seqWorker) return seqWorker;
+  armSeqPageHide();
+  const w = seqWorkerFactory();
+  w.onmessage = (e: MessageEvent<SeqWorkerOut>): void => { void onSeqWorkerMessage(w, e.data); };
+  w.onerror = (): void => {
+    for (const run of seqPending.values()) { run.clear(); run.reject(new Error('sequence-render worker error')); }
+    seqPending.clear();
+    disposeSequenceWorker();      // the next render spawns a fresh one
+  };
+  seqWorker = w;
+  return w;
+}
+
+async function onSeqWorkerMessage(w: Worker, m: SeqWorkerOut): Promise<void> {
+  const run = seqPending.get(m.id);
+  if (!run) return;
+  run.touch();
+  if (m.type === 'log') { run.log(m.level, m.msg); return; }
+  if (m.type === 'progress') { run.progress(m.done, m.total); return; }
+  if (m.type === 'need-live') {
+    // The bounded queue in practice: the worker is blocked until this reply, so
+    // exactly one live raster exists at a time and a slow main thread simply
+    // slows the render instead of growing worker memory.
+    let bitmap: ImageBitmap | null = null;
+    try {
+      const img = await run.live?.(m.layerIdx, m.frame, m.sourceSec);
+      if (img) bitmap = await createImageBitmap(img as ImageBitmapSource);
+    } catch { bitmap = null; }
+    const reply: SeqWorkerIn = { type: 'live', id: m.id, token: m.token, bitmap };
+    try {
+      w.postMessage(reply, bitmap ? [bitmap] : []);
+    } catch {
+      // The worker went away between the request and this reply (a terminate on
+      // abort, or onerror). The bitmap was neither transferred nor consumed, so
+      // it is still ours to close — the run itself is settled elsewhere.
+      try { bitmap?.close(); } catch { /* already closed */ }
     }
-    const srcFps = fps / (Number.isFinite(L.speed) && L.speed > 0 ? L.speed : 1);
-    const from = s.firstRequestSec >= 0 ? s.firstRequestSec : (r.span[0] as number);
-    // What the source could actually have answered: our last request, but never
-    // past the media's own end.
-    const dur = r.srcClaimedSec > 0 ? r.srcClaimedSec : 0;
-    const askedEnd = s.lastRequestSec >= 0 ? s.lastRequestSec : (r.span[r.span.length - 1] as number);
-    const reachEnd = dur > 0 ? Math.min(askedEnd, dur) : askedEnd;
-    const expected = Math.max(0, reachEnd - from) + 1 / srcFps;
-    const check = reconcileDecoded({
-      expectedSec: expected,
-      decodedFrames: s.decoded,
-      lastTsSec: Math.max(0, s.lastSourceSec - from),
-      fps: srcFps,
-      requestedFrames: s.requests,
-      unreachableFrames: s.unreachable,
-      sourceFrameSec: s.sourceFrameSec,
-    });
-    if (!check.ok) {
-      throw sequenceError('SEQ_TRUNCATED', `a clip decoded ${check.shortfallSec.toFixed(2)}s short of its ${expected.toFixed(2)}s span — the source file looks truncated`);
-    }
-    log('info', `sequence: clip answered ${s.decoded}/${s.requests} requests (${s.missed} missed, ${s.unreachable} past its end, ${s.randomAccess ? 'random access' : 'primed'})`);
+    return;
   }
+  seqPending.delete(m.id);
+  run.clear();
+  if (m.type === 'done') { run.resolve(new Blob([m.buffer], { type: m.mime })); return; }
+  // An OFFLOAD failure is rejected as a PLAIN Error on purpose: that is the exact
+  // signal `renderSequence`'s catch tests for before retrying in-thread. Rejecting
+  // it as a coded SequenceError would present an infrastructure failure to the user
+  // as the render's verdict and skip a fallback that would have succeeded.
+  run.reject(m.offload
+    ? new Error(`worker offload failed (${m.code}): ${m.message}`)
+    : sequenceError(m.code as SeqErrorCode, m.message));
+  // A worker that failed on its own infrastructure (a muxer it could not build, a
+  // dynamic import that would not load) is not trustworthy for the retry, and it
+  // may still be holding the run's transferred plates. Drop the thread; the next
+  // render spawns a fresh one.
+  if (m.offload) disposeSequenceWorker();
+}
+
+/** The opt-in flag — the same one bridge/video-encode.ts uses. */
+export function workerSequenceRenderEnabled(): boolean {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem('lolly.workerEncode') === '1'; }
+  catch { return false; }
+}
+
+/**
+ * Can (and should) the composite+encode run in a Worker?
+ *
+ * Needs module Workers, an OffscreenCanvas to composite onto, WebCodecs to encode
+ * with, `createImageBitmap` to ship the plates over — and the opt-in. Anything
+ * missing falls back to the in-thread executor, which is the same code.
+ */
+export function supportsWorkerSequenceRender(): boolean {
+  return typeof Worker !== 'undefined'
+    && typeof OffscreenCanvas !== 'undefined'
+    && typeof VideoEncoder !== 'undefined'
+    && typeof createImageBitmap === 'function'
+    && workerSequenceRenderEnabled();
+}
+
+/**
+ * Cancel every in-flight worker render and tear the worker down.
+ *
+ * Both halves matter: the `abort` message lets the worker unwind its own frame
+ * loop (disposing decoders, aborting the muxer) rather than being killed mid
+ * decode, and `terminate()` guarantees the thread is gone even if it never
+ * answers. Idempotent.
+ */
+export function abortSequenceWorkerRenders(reason?: string): void {
+  const w = seqWorker;
+  const had = seqPending.size > 0;
+  for (const [id, run] of seqPending) {
+    if (w) { try { w.postMessage({ type: 'abort', id } satisfies SeqWorkerIn); } catch { /* already gone */ } }
+    run.clear();
+    run.reject(sequenceError('SEQ_ABORTED', reason ?? 'sequence export cancelled'));
+  }
+  seqPending.clear();
+  if (!w) { disposeSequenceWorker(); return; }
+  // Terminating in this same task would mean the worker never even DEQUEUES the
+  // abort we just posted, making every cancel a hard kill mid-decode. Detach the
+  // instance now (so the next render spawns a clean one and nothing here can
+  // observe its messages) and give its event loop one turn to unwind — dispose
+  // providers, abort the muxer — before pulling the thread out from under it.
+  seqWorker = null;
+  w.onmessage = null;
+  w.onerror = null;
+  const kill = (): void => { try { w.terminate(); } catch { /* already gone */ } };
+  if (had) setTimeout(kill, SEQ_ABORT_GRACE_MS);
+  else kill();
+}
+
+/** How long a cancelled worker gets to unwind before it is terminated. */
+export const SEQ_ABORT_GRACE_MS = 250;
+
+/**
+ * Render one job in the Worker. Rejects with a `SequenceError` for a coded
+ * failure the render itself produced, and a plain Error for an offload failure
+ * the caller should retry in-thread.
+ *
+ * Exported as a test seam (with `_setSequenceWorkerFactory`) so the whole
+ * message protocol — start, progress, log, need-live, done, error, abort — is
+ * provable in node against a stub port, not only in a browser.
+ */
+export async function renderSequenceInWorker(
+  job: SeqJob, pick: EncodePick, bitrate: number, audioPick: SeqAudioPick | null,
+  mixBuffer: AudioBuffer | null,
+  io: { log(l: string, m: string): void; progress(d: number, t: number): void; live?: SeqJobIO['lottieAt'] },
+): Promise<Blob> {
+  // The plates are canvases (the in-thread fallback still needs them), so the
+  // worker gets transferable COPIES. createImageBitmap does not consume its source.
+  const bitmapOf = async (c: CanvasImageSource | null): Promise<ImageBitmap | null> =>
+    (c ? await createImageBitmap(c as ImageBitmapSource) : null);
+  const wireJob: SeqJob = {
+    ...job,
+    bg: await bitmapOf(job.bg),
+    plates: await Promise.all(job.plates.map(async (p) => ({
+      idx: p.idx, under: await bitmapOf(p.under), over: await bitmapOf(p.over),
+    }))),
+    // A blob: URL is resolvable from a worker, but handing over the Blob itself
+    // is both cheaper (structured clone is by reference) and keeps the worker
+    // free of any dependency on the document's URL store. A remote URL is passed
+    // through so mediabunny can range-request it rather than us buffering it all.
+    clips: await Promise.all(job.clips.map(async (c) => ({
+      idx: c.idx,
+      src: typeof c.src === 'string' && c.src.startsWith('blob:')
+        ? await (await fetch(c.src)).blob()
+        : c.src,
+    }))),
+  };
+
+  const audio: SeqWorkerAudio | null = audioPick && mixBuffer
+    ? {
+        ...audioPick,
+        length: mixBuffer.length,
+        // COPIES, not the AudioBuffer's own views: these are transferred, and
+        // detaching the buffer the in-thread fallback would re-use is not a
+        // trade worth making for one memcpy of a few MB.
+        channels: Array.from({ length: audioPick.numberOfChannels }, (_, ch) =>
+          new Float32Array(mixBuffer.getChannelData(Math.min(ch, mixBuffer.numberOfChannels - 1)))),
+      }
+    : null;
+
+  const w = ensureSeqWorker();
+  const id = ++seqRunSeq;
+  const transfer: Transferable[] = jobTransferables(wireJob);
+  if (audio) for (const ch of audio.channels) transfer.push(ch.buffer);
+
+  return await new Promise<Blob>((resolve, reject) => {
+    let silence: ReturnType<typeof setTimeout> | undefined;
+    const clear = (): void => { if (silence) { clearTimeout(silence); silence = undefined; } };
+    const touch = (): void => {
+      clear();
+      silence = setTimeout(() => {
+        seqPending.delete(id);
+        // A plain Error, not a coded one: a silent worker is the offload failing,
+        // and the in-thread path is the honest retry.
+        reject(new Error(`the render worker went silent for ${SEQ_CLIENT_SILENCE_MS / 1000}s`));
+        disposeSequenceWorker();
+      }, SEQ_CLIENT_SILENCE_MS);
+      // Never hold the process open for this in a node test run.
+      (silence as unknown as { unref?: () => void }).unref?.();
+    };
+    seqPending.set(id, { resolve, reject, log: io.log, progress: io.progress, live: io.live, touch, clear });
+    const start: SeqWorkerIn = { type: 'start', id, job: wireJob, pick, bitrate, audio };
+    try {
+      w.postMessage(start, transfer);
+      touch();
+    } catch (err) {
+      seqPending.delete(id);
+      clear();
+      closeJobBitmaps(wireJob);
+      reject(err);
+    }
+  });
 }
 
 // ── output encoders ─────────────────────────────────────────────────────────

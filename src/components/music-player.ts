@@ -15,6 +15,7 @@ import {
   getNeurospicy, setNeurospicyLoop, setNeurospicyVolume, listLoops, isNeurospicyPlaying,
   toggleNeurospicyPlay, cycleNeurospicyLoop, setNeurospicyRepeat,
   getNeurospicyAnalyser, getNeurospicyProgress, seekNeurospicy,
+  trackCategory, NEURO_CATEGORY_ORDER,
   type NeurospicyHost, type NeuroTrack,
 } from '../lib/neurospicy.ts';
 import { getSfxVolume, setSfxVolume } from '../lib/sfx.ts';
@@ -166,29 +167,21 @@ function hideWarnTip(delay = 140): void {
   warnTipTimer = setTimeout(() => warnTip?.classList.remove('is-shown'), delay);
 }
 
-// Track-list groups, in display order. Tracks sort alphabetically WITHIN each group.
-// Every group starts folded (it still expands on click, and while searching).
-const CATEGORIES: { key: string; label: string; icon: string; warn?: string }[] = [
-  // The brand catalog's OTHER audio (not the built-in focus sets) — e.g. the licensed
-  // music beds. Leads the list; it's only rendered at all when the catalog actually
-  // ships such audio.
-  { key: 'catalog', label: 'Catalog', icon: '🗂️' },
-  { key: 'uploads', label: 'Uploads', icon: '📤' },
-  { key: 'lolly', label: 'Lolly Sings', icon: '🍭' },
-  { key: 'ambient', label: 'Ambient', icon: '🌊' },
-  { key: 'beats', label: 'Beats', icon: '🥁' },
-  { key: 'radio', label: 'Internet Radio', icon: '📻', warn: 'Internet radio, via SomaFM — needs an internet connection' },
-];
-
-/** Which group a track belongs to. */
-function trackCategory(t: NeuroTrack): string {
-  if (t.format === 'stream' || t.tags.includes('radio') || t.tags.includes('stream')) return 'radio';
-  if (t.id.startsWith('user/')) return 'uploads';       // the user's own uploads
-  if (!t.tags.includes('neurospicy')) return 'catalog'; // catalog audio outside the focus sets (music beds…)
-  if (t.format === 'zzfxm') return 'lolly';             // our generated / MIDI-converted tracks
-  if (t.tags.includes('lofi')) return 'ambient';        // the lo-fi loops
-  return 'beats';                                       // the remaining loops (breakbeats)
-}
+// Display metadata for the track-list groups. The ORDER comes from the library
+// (NEURO_CATEGORY_ORDER) — the same order listLoops sorts into and prev/next walk —
+// so what you read here is what "next" plays. Only labels/icons live in the UI.
+// The "Catalog" group is the brand catalog's OTHER audio (not the built-in focus
+// sets) — e.g. the licensed music beds; it leads the list and is only rendered at
+// all when the catalog ships such audio. Every group starts folded (it still
+// expands on click, and while searching).
+const CATEGORY_META: Record<string, { label: string; icon: string; warn?: string }> = {
+  catalog: { label: 'Catalog', icon: '🗂️' },
+  uploads: { label: 'Uploads', icon: '📤' },
+  lolly: { label: 'Lolly Sings', icon: '🍭' },
+  ambient: { label: 'Ambient', icon: '🌊' },
+  beats: { label: 'Beats', icon: '🥁' },
+  radio: { label: 'Internet Radio', icon: '📻', warn: 'Internet radio, via SomaFM — needs an internet connection' },
+};
 
 /** Friendly mood label from a track's tags (for the now-playing + list chips). */
 export function trackMood(tags: string[]): string {
@@ -242,14 +235,29 @@ export function trackPickerHtml(): string {
       </div>`;
 }
 
+/** Which optional parts of the body to render. Everything defaults to ON, so the
+ *  dock's `musicPlayerBodyHtml()` call is unchanged; the visualizer popout turns the
+ *  extras off because it has its own (a full-screen visualizer IS the level meter,
+ *  and it hosts music volume as a speaker control in its toolbar instead). */
+export interface MusicPlayerBodyOptions {
+  /** The little canvas level meter. */
+  meter?: boolean;
+  /** The interface-sound (SFX) volume slider. */
+  effects?: boolean;
+  /** The inline "Music" volume slider. Off when the host supplies its own control —
+   *  any `[data-mp-volume]` input inside the same scope gets wired either way. */
+  volume?: boolean;
+}
+
 /** The player body (meter, transport, volumes). The track picker is rendered
  *  separately (trackPickerHtml) up in the dock header row; both live under the
  *  same [data-music-player] scope (the dock <section>) so wiring finds them. */
-export function musicPlayerBodyHtml(): string {
+export function musicPlayerBodyHtml(opts: MusicPlayerBodyOptions = {}): string {
   ensureStyles();
+  const { meter = true, effects = true, volume = true } = opts;
   const playing = isNeurospicyPlaying();
   return `<div class="neuro-player">
-      <canvas class="neuro-meter" data-mp-meter width="260" height="24" aria-hidden="true"></canvas>
+      ${meter ? `<canvas class="neuro-meter" data-mp-meter width="260" height="24" aria-hidden="true"></canvas>` : ''}
       <div class="neuro-progress" data-mp-progress role="slider" tabindex="0" aria-label="Seek within track" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <span class="neuro-progress-fill" data-mp-progress-fill></span>
       </div>
@@ -259,8 +267,8 @@ export function musicPlayerBodyHtml(): string {
         <button type="button" class="neuro-tbtn" data-mp-next aria-label="Next track">${NEXT}</button>
         ${modeButtonHtml()}
       </div>
-      <label class="neuro-vol"><span>Music</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getNeurospicy().volume}" data-mp-volume aria-label="Music volume"></label>
-      <label class="neuro-vol"><span>Effects</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getSfxVolume()}" data-mp-sfx aria-label="Interface sound volume — how much of the UI you hear"></label>
+      ${volume ? `<label class="neuro-vol"><span>Music</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getNeurospicy().volume}" data-mp-volume aria-label="Music volume"></label>` : ''}
+      ${effects ? `<label class="neuro-vol"><span>Effects</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getSfxVolume()}" data-mp-sfx aria-label="Interface sound volume — how much of the UI you hear"></label>` : ''}
     </div>`;
 }
 
@@ -340,7 +348,10 @@ function openPanel(wrap: HTMLElement, open: boolean): void {
   btn.setAttribute('aria-expanded', String(open));
   panel.hidden = !open;
   if (open) wrap.querySelector<HTMLInputElement>('[data-mp-search]')?.focus();
-  else if (panel.contains(document.activeElement)) btn.focus(); // return focus to the trigger
+  // `wrap.ownerDocument`, not `document`: the visualizer popout mounts this player in a
+  // SECOND window, where the module-global `document` is the opener's and its
+  // activeElement is never inside this panel.
+  else if (panel.contains(wrap.ownerDocument.activeElement)) btn.focus(); // return focus to the trigger
 }
 
 /**
@@ -474,10 +485,18 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
       if (first) { e.preventDefault(); first.focus(); }
     }
   });
-  // Click-away closes the panel.
-  document.addEventListener('click', (e) => {
+  // Click-away closes the panel. Bound to the wrap's OWN document so a player mounted
+  // in the visualizer's popout window listens to clicks in that window: the opener's
+  // document neither sees the popout's clicks (so the panel would never close) nor
+  // should close it on unrelated clicks back in the app (so it would close at random).
+  const ownDoc = wrap.ownerDocument;
+  ownDoc.addEventListener('click', (e) => {
     if (!wrap.isConnected) return;
-    if (!(e.target instanceof Node) || !wrap.querySelector('[data-mp-picker]')?.contains(e.target)) openPanel(wrap, false);
+    const t = e.target;
+    // `instanceof Node` is unreliable across documents — each realm has its own Node —
+    // so check for the shape the call below actually needs instead.
+    const isNode = !!t && typeof (t as Node).nodeType === 'number';
+    if (!isNode || !wrap.querySelector('[data-mp-picker]')?.contains(t as Node)) openPanel(wrap, false);
   });
 
   const rebuildList = (): void => {
@@ -501,14 +520,17 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
               `<span class="neuro-track-dot"></span><span class="neuro-track-name">${escape(t.name)}</span>` +
               (m ? `<span class="neuro-track-mood">${escape(m)}</span>` : '') + `</button></li>`;
           };
-          list.innerHTML = CATEGORIES.map((cat) => {
-            const items = (byCat.get(cat.key) ?? []).sort((a, b) => a.name.localeCompare(b.name));
+          // Groups AND the rows inside them come out in listLoops' order — the one
+          // canonical playlist order, so next/prev match what's on screen. No re-sort here.
+          list.innerHTML = NEURO_CATEGORY_ORDER.map((key) => {
+            const cat = CATEGORY_META[key] ?? { label: key, icon: '🎵' };
+            const items = byCat.get(key) ?? [];
             if (!items.length) return '';
-            const folded = prevFold.get(cat.key) ?? true;
-            return `<li class="neuro-cat${folded ? ' is-collapsed' : ''}" data-cat="${cat.key}">` +
+            const folded = prevFold.get(key) ?? true;
+            return `<li class="neuro-cat${folded ? ' is-collapsed' : ''}" data-cat="${escape(key)}">` +
               `<button type="button" class="neuro-cat-head" data-cat-toggle aria-expanded="${!folded}">` +
               `<span class="neuro-cat-caret">${CARET}</span><span class="neuro-cat-emoji" aria-hidden="true">${cat.icon}</span><span>${escape(cat.label)}</span>` +
-              (cat.warn ? `<span class="neuro-warn" tabindex="0" role="button" data-mp-warn="${escape(cat.key)}" aria-label="${escape(cat.warn)}">${WARN}</span>` : '') +
+              (cat.warn ? `<span class="neuro-warn" tabindex="0" role="button" data-mp-warn="${escape(key)}" aria-label="${escape(cat.warn)}">${WARN}</span>` : '') +
               `<span class="neuro-cat-count">${items.length}</span></button>` +
               `<ul class="neuro-cat-tracks">${items.map(trackHtml).join('')}</ul></li>`;
           }).join('') + '<li class="neuro-empty" hidden>No matches</li>';
@@ -536,7 +558,14 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
   };
   rebuildList();
   // An audio upload/deletion invalidates the track list — rebuild it in place.
-  document.addEventListener('lolly:neuro-tracks', () => { if (wrap.isConnected) rebuildList(); });
+  // Self-removing: a player body can be torn down (the visualizer panel closing) and this
+  // listener has no teardown hook of its own, so it retires as soon as its wrap is gone
+  // rather than pinning the whole subtree and rebuilding a list nobody can see.
+  const onTracks = (): void => {
+    if (wrap.isConnected) rebuildList();
+    else ownDoc.removeEventListener('lolly:neuro-tracks', onTracks);
+  };
+  ownDoc.addEventListener('lolly:neuro-tracks', onTracks);
 
   startMeter(wrap);
 }
@@ -544,12 +573,42 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
 // ── level meter (local songs only) ──────────────────────────────────────────
 const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** Drive the canvas meter from the focus-loop analyser while the canvas is on-screen. */
+/**
+ * Advance just the seek bar, for a player body with no meter canvas.
+ *
+ * Keyed off the progress element rather than the canvas, and self-terminating on the same
+ * terms as the meter loop: detached or not laid out stops it, and a transport change
+ * ('lolly:neuro-playing' → refreshMusicPlayer) starts it again.
+ */
+function startProgressOnly(root: ParentNode): void {
+  const bar = root.querySelector<HTMLElement>('[data-mp-progress]');
+  if (!bar || bar.dataset.running === 'true') return;
+  bar.dataset.running = 'true';
+  const win = bar.ownerDocument.defaultView ?? window;
+  const draw = (): void => {
+    if (!bar.isConnected || bar.offsetParent === null) { bar.dataset.running = 'false'; return; }
+    const p = getNeurospicyProgress();
+    updateProgress(root, p);
+    if (isNeurospicyPlaying() && p) win.requestAnimationFrame(draw);
+    else bar.dataset.running = 'false';
+  };
+  win.requestAnimationFrame(draw);
+}
+
+/**
+ * Drive the level meter AND the progress bar from the focus-loop analyser.
+ *
+ * The progress bar is advanced by this same loop, so a body rendered WITHOUT a meter — the
+ * visualizer panel passes `meter: false`, since a full-screen visualizer is the meter —
+ * used to get a seek bar that never moved. When there's no canvas we still run a loop,
+ * just a progress-only one.
+ */
 function startMeter(root: ParentNode): void {
   const canvas = root.querySelector<HTMLCanvasElement>('[data-mp-meter]');
-  if (!canvas || canvas.dataset.running === 'true') return;
+  if (!canvas) { startProgressOnly(root); return; }
+  if (canvas.dataset.running === 'true') return;
   const c2d = canvas.getContext('2d');
-  if (!c2d) return;
+  if (!c2d) { startProgressOnly(root); return; }
   canvas.dataset.running = 'true';
 
   const draw = (): void => {

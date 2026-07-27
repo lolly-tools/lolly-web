@@ -18,10 +18,17 @@
  * on a mock: `commit` is a recorder because it is the module's output, and what is
  * checked is the resulting Box[], not that a function was called.
  *
- * NOT covered here (browser-only): filmstrip/waveform painting (canvas 2D + real
- * decode), layout-derived geometry (jsdom reports 0 for every rect, so the tests
- * below stub the two rects the gesture math reads), the ResizeObserver refit, the
- * <dialog> junction modal, and anything the sequence clock does with real media.
+ * The thumbnail pass is covered at the level jsdom can honestly reach: which BRANCH
+ * each clip kind takes (waveform / filmstrip / tiled still / the card's own fill), the
+ * classification off the live canvas that chooses it, the tiling arithmetic, and that a
+ * gesture aborts a queued pass. The canvas 2D context is a recorder and the bitmaps are
+ * fakes, because node has no raster — see the browser checklist below.
+ *
+ * NOT covered here (browser-only): that the pictures actually LOOK right (a real decode,
+ * a real drawImage, a Lottie's live <svg> rasterising, CORS tainting), layout-derived
+ * geometry (jsdom reports 0 for every rect, so the tests below stub the two rects the
+ * gesture math reads and the two sizes the thumb pass reads), the ResizeObserver refit,
+ * the <dialog> junction modal, and anything the sequence clock does with real media.
  *
  * Run directly:  node --test shells/web/src/views/timeline-panel.test.ts
  */
@@ -56,8 +63,13 @@ const {
   timeToPx, pxToTime, clientToTime, clampPxPerSec, fitPxPerSec, zoomAbout,
   tracksKey, snapCandidates, junctionAt, isTextControl, panelKeysActive,
   clampPanelH, tickStep, frameCountFor, packSeqRow, initTimelinePanel,
-  MIN_PPS, MAX_PPS, MIN_PANEL_H, EDGE_PX,
+  isPaintedColor, thumbMode, canRasterBox, appearanceSig,
+  MIN_PPS, MAX_PPS, MIN_PANEL_H, EDGE_PX, TAKE_TIMING,
+  MAX_NODE_RASTERS_PER_PASS, MAX_THUMB_PASSES,
 } = await import('./timeline-panel.ts');
+// The SAME module instance the panel holds (a dynamic import of an already-evaluated
+// module is the same record), so the seam installed here is the one it calls.
+const { _setNodeRasterer, clearClipThumbCache } = await import('../lib/clip-thumbs.ts');
 
 /** The phase-1 field mapping, exactly as sequence-studio's manifest declares it. */
 const cfg = {
@@ -279,6 +291,107 @@ test('frameCountFor stays bounded at both ends of a bar width', () => {
   }
 });
 
+// ── what a bar paints (the branch, not the pixels) ───────────────────────────
+
+test('isPaintedColor: "no background" is rgba(0,0,0,0), and must not light up has-thumbs', () => {
+  assert.equal(isPaintedColor('rgba(0, 0, 0, 0)'), false, 'the computed value of no background');
+  assert.equal(isPaintedColor('transparent'), false);
+  assert.equal(isPaintedColor(''), false);
+  assert.equal(isPaintedColor('rgba(20, 24, 29, 0.01)'), false, 'an invisible sliver of alpha is not a fill');
+  assert.equal(isPaintedColor('rgb(20, 24, 29)'), true);
+  assert.equal(isPaintedColor('rgba(20, 24, 29, 0.5)'), true);
+  assert.equal(isPaintedColor('#14181d'), true);
+  assert.equal(isPaintedColor('rgb(0 0 0 / 60%)'), true, 'the space-separated form is still a colour');
+});
+
+test('thumbMode: every clip kind picks its own picture, and a card falls back to its fill', () => {
+  // The regression this exists to stop: before it, ONLY audio and video painted, so a
+  // row of cards, images and tool clips was a row of identical coloured rectangles.
+  assert.equal(thumbMode('audio', 'a.mp3', ''), 'waveform');
+  assert.equal(thumbMode('video', 'a.mp4', ''), 'filmstrip');
+  assert.equal(thumbMode('image', 'a.png', ''), 'still', 'an image box tiles one still');
+  assert.equal(thumbMode('image', 'data:image/svg+xml,x', ''), 'still', 'a tool clip is an <img> like any other');
+  assert.equal(thumbMode('lottie', 'anim.json', ''), 'still');
+  // No media at all: the box's own colour, which is what it actually paints on frame.
+  assert.equal(thumbMode('', '', 'rgb(20, 24, 29)'), 'fill');
+  assert.equal(thumbMode('', '', 'rgba(0, 0, 0, 0)'), 'none', 'a transparent text box stays plain');
+  assert.equal(thumbMode('', '', ''), 'none');
+  // A media kind with no resolved url yet is not a picture — it falls back like a card.
+  assert.equal(thumbMode('image', '', 'rgb(1, 2, 3)'), 'fill');
+  assert.equal(thumbMode('video', '', ''), 'none');
+});
+
+test('thumbMode: a box worth photographing beats BOTH the flat fill and painting nothing', () => {
+  // The gap this closes: a frame — a card, a text box, a pen shape, a composed group —
+  // has no media element, so it used to be one flat rectangle of its own background,
+  // or (transparent text, and EVERY kind:'path' box, whose fill the hook forces to
+  // transparent) literally nothing at all. A row of frames read as a row of blanks.
+  assert.equal(thumbMode('', '', 'rgb(20, 24, 29)', true), 'node', 'a photograph beats a flat fill');
+  assert.equal(thumbMode('', '', 'rgba(0, 0, 0, 0)', true), 'node', 'and beats painting nothing');
+  // A decoded asset still wins: it is cheaper AND more faithful than a DOM photograph,
+  // and a tool clip's <img> IS the compose render, not a screenshot of a tag.
+  assert.equal(thumbMode('image', 'data:image/svg+xml,x', '', true), 'still');
+  assert.equal(thumbMode('audio', 'a.mp3', '', true), 'waveform');
+  assert.equal(thumbMode('video', 'v.mp4', '', true), 'filmstrip');
+});
+
+test('canRasterBox: photographs what has ink, declines what would come back blank', () => {
+  const doc = dom.window.document;
+  const box = (html: string): HTMLElement => {
+    const el = doc.createElement('div');
+    el.innerHTML = html;
+    return el;
+  };
+  // A text card: transparent, but there is something to see.
+  assert.equal(canRasterBox(box('<div class="lolly-box-text">Hello</div>'), 'rgba(0, 0, 0, 0)'), true);
+  // A card: an opaque background is enough on its own.
+  assert.equal(canRasterBox(box(''), 'rgb(20, 24, 29)'), true);
+  // A pen shape: hooks.js forces kind:'path' boxes to fill:'transparent', so the
+  // computed background says "nothing here" while the <svg> says otherwise.
+  assert.equal(canRasterBox(box('<svg class="lolly-box-path"></svg>'), 'rgba(0, 0, 0, 0)'), true);
+  // Nothing to photograph: a shot would cost a full dom-to-image call to produce a
+  // blank bitmap, so the bar stays on 'none'.
+  assert.equal(canRasterBox(box(''), 'rgba(0, 0, 0, 0)'), false);
+  assert.equal(canRasterBox(box('<div class="lolly-box-text">   </div>'), ''), false, 'whitespace is not text');
+  assert.equal(canRasterBox(null, 'rgb(20, 24, 29)'), false);
+  // Past the subtree ceiling we decline rather than build it — the MAX_SVG_MARKUP
+  // idiom. The limit is passed explicitly so this does not pin the constant's value.
+  const big = box('<div class="lolly-box-text">Hello</div>');
+  for (let i = 0; i < 12; i++) big.appendChild(doc.createElement('span'));
+  assert.equal(canRasterBox(big, 'rgb(20, 24, 29)', 100), true, 'under the given ceiling');
+  assert.equal(canRasterBox(big, 'rgb(20, 24, 29)', 5), false, 'over it, declined outright');
+});
+
+test('appearanceSig: a drag never invalidates a picture that has not changed a pixel', () => {
+  // THE point of the signature. A drag rewrites start/dur on every pointermove; keying
+  // the raster cache on the whole row would throw the photograph away and retake it at
+  // the end of every gesture, on every bar the drag rippled.
+  const a = { id: 'a', start: 0, dur: 2, clipIn: 0, speed: 1, lane: 'seq', bg: '#123', text: 'Hi' };
+  const dragged = { ...a, start: 7.25, dur: 3, clipIn: 1.5, speed: 2, lane: '' };
+  assert.equal(appearanceSig(a, cfg), appearanceSig(dragged, cfg));
+  // Transitions are timing too — a fade length changes when the bar plays, not how it
+  // looks at rest.
+  assert.equal(appearanceSig(a, cfg), appearanceSig({ ...a, enter: 'fade', exitMs: 400 }, cfg));
+
+  // Anything that changes the PICTURE changes the signature.
+  assert.notEqual(appearanceSig(a, cfg), appearanceSig({ ...a, bg: '#456' }, cfg));
+  assert.notEqual(appearanceSig(a, cfg), appearanceSig({ ...a, text: 'Bye' }, cfg));
+
+  // The id is deliberately absent: two boxes that look identical may share one raster,
+  // and one dom-to-image shot.
+  assert.equal(appearanceSig(a, cfg), appearanceSig({ ...a, id: 'b' }, cfg));
+
+  // Insertion order must not matter — the same row built by a seed and by a patch is
+  // the same picture.
+  const reordered = { text: 'Hi', bg: '#123', lane: 'seq', speed: 1, clipIn: 0, dur: 2, start: 0, id: 'a' };
+  assert.equal(appearanceSig(a, cfg), appearanceSig(reordered, cfg));
+
+  // null / undefined / '' are one "unauthored" state, not three.
+  assert.equal(appearanceSig({ bg: null }, cfg), appearanceSig({ bg: '' }, cfg));
+  assert.equal(appearanceSig({ bg: undefined }, cfg), appearanceSig({ bg: '' }, cfg));
+  assert.equal(appearanceSig(undefined, cfg), '');
+});
+
 test('packSeqRow re-exports the magnetic pack: gapless from zero, in row order', () => {
   const packed = packSeqRow([clip('a', 9, 3), clip('b', 40, 2), overlay('o', 1, 1)], cfg);
   const seq = packed.filter((b) => b.lane === 'seq');
@@ -288,10 +401,23 @@ test('packSeqRow re-exports the magnetic pack: gapless from zero, in row order',
 
 // ── the controller: one write per gesture ─────────────────────────────────────
 
+/**
+ * The add-kinds a HOST TOOL declares. Deliberately NOT sequence-studio's real list:
+ * `widget` is a kind no module knows about, so a menu that renders it is a menu reading
+ * the manifest rather than a hardcoded switch.
+ */
+const ADD_KINDS = [
+  { id: 'clip', label: 'Clip' },
+  { id: 'audio', label: 'Sound' },
+  { id: 'widget', label: 'Widget' },
+];
+
 interface Harness {
   commits: Box[][];
   boxes: Box[];
   root: HTMLElement;
+  /** The tool canvas the panel reads media/mute state off. */
+  canvasEl: HTMLElement;
   panel: { destroy(): void; setOpen(v: boolean): void; isOpen(): boolean };
   bar(id: string): HTMLElement;
   /** Drive the shared canvas selection, exactly as free-canvas would. */
@@ -307,7 +433,12 @@ interface Harness {
  * layout: the track viewport sits at x=0 and every bar is given the geometry the
  * panel's own restyle would have produced, so the gesture math reads real numbers.
  */
-function mount(initial: Box[], pxPerSecHint = 40): Harness {
+function mount(
+  initial: Box[],
+  pxPerSecHint = 40,
+  addKinds: Array<{ id: string; label?: string; seed?: Record<string, unknown> }> = ADD_KINDS,
+  extra: { host?: unknown; capabilities?: string[]; assetField?: string } = {},
+): Harness {
   const doc = dom.window.document;
   const stageEl = doc.createElement('div');
   const canvasEl = doc.createElement('div');
@@ -325,8 +456,11 @@ function mount(initial: Box[], pxPerSecHint = 40): Harness {
 
   const panel = initTimelinePanel({
     stageEl, canvasEl,
-    runtime: { subscribe: (fn: () => void) => { subs.add(fn); return () => subs.delete(fn); } },
-    host: {},
+    runtime: {
+      subscribe: (fn: () => void) => { subs.add(fn); return () => subs.delete(fn); },
+      ...(extra.capabilities ? { manifest: { capabilities: extra.capabilities } } : {}),
+    },
+    host: extra.host ?? {},
     blockId: 'boxes',
     cfg,
     getBoxes: () => boxes,
@@ -337,6 +471,8 @@ function mount(initial: Box[], pxPerSecHint = 40): Harness {
       onChange: (cb: () => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
     },
     reserve: (px: number) => { reserves.push(px); },
+    addKinds,
+    ...(extra.assetField ? { assetField: extra.assetField } : {}),
   } as never);
 
   // Stub the track viewport BEFORE opening: the panel fits its zoom to clientWidth on
@@ -360,7 +496,7 @@ function mount(initial: Box[], pxPerSecHint = 40): Harness {
   };
 
   return {
-    commits, root, panel, bar, reserves,
+    commits, root, panel, bar, reserves, canvasEl,
     select: (ids: string[]) => setSelection(ids),
     notify() { for (const f of subs) f(); },
     get boxes() { return boxes; },
@@ -735,6 +871,189 @@ test('a promoted box round-trips: promote, demote, and the model is scenery agai
   } finally { h.teardown(); }
 });
 
+// ── the `+` menu and the tl-add seam ──────────────────────────────────────────
+//
+// The complaint these pin (Andy, 2026-07-27): "I have no way to add audio outside of
+// the export menu, I'd like it in the timeline." The panel does not create boxes — it
+// dispatches `tl-add` with an add-kind id and the playhead, and free-canvas's create
+// pipeline does the rest. What is checked here is the CONTRACT: the kinds come from the
+// manifest, and the time is the live playhead.
+
+const click = (el: Element): void => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })); };
+
+/** Every `tl-add` that bubbles out of the panel, in order. */
+function recordAdds(h: Harness): Array<{ kind: string; atMs: number }> {
+  const seen: Array<{ kind: string; atMs: number }> = [];
+  h.root.parentElement!.addEventListener('tl-add', (e) => {
+    seen.push((e as CustomEvent).detail as { kind: string; atMs: number });
+  });
+  return seen;
+}
+
+/** The body-mounted menu currently open, if any. */
+const openMenu = (cls = '.tl-menu'): HTMLElement | null => dom.window.document.querySelector(cls);
+const menuLabels = (el: HTMLElement | null): string[] =>
+  Array.from(el?.querySelectorAll('.folder-menu-item') ?? []).map((n) => n.textContent?.trim() ?? '');
+
+/** Move the playhead by scrubbing the ruler (Alt bypasses snapping, so it is exact). */
+function seekTo(h: Harness, sec: number, pxPerSecHint = 40): void {
+  const ruler = h.root.querySelector('.tl-ruler') as HTMLElement;
+  const x = sec * pxPerSecHint;
+  ruler.dispatchEvent(pointer('pointerdown', x, { altKey: true }));
+  h.root.dispatchEvent(pointer('pointerup', x, { altKey: true }));
+}
+
+test('the + menu lists the TOOL\'s declared add-kinds, not a hardcoded set', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    const add = h.root.querySelector('.tl-tools .tl-add') as HTMLButtonElement;
+    assert.ok(add, 'the tool group carries an add button');
+    assert.equal(add.hidden, false);
+    assert.equal(add.getAttribute('aria-haspopup'), 'menu');
+    click(add);
+    const menu = openMenu();
+    assert.ok(menu, 'clicking opens a menu');
+    assert.deepEqual(menuLabels(menu), ['Clip', 'Sound', 'Widget'],
+      'exactly the manifest\'s kinds, in its order — including one no module knows about');
+    assert.equal(add.getAttribute('aria-expanded'), 'true');
+  } finally { h.teardown(); }
+});
+
+test('a tool with no add-kinds gets no + button rather than an empty menu', () => {
+  const h = mount([clip('a', 0, 3)], 40, []);
+  try {
+    assert.equal((h.root.querySelector('.tl-tools .tl-add') as HTMLButtonElement).hidden, true);
+  } finally { h.teardown(); }
+});
+
+test('choosing a kind dispatches tl-add with that kind and the CURRENT playhead', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const adds = recordAdds(h);
+    seekTo(h, 2.5);
+    click(h.root.querySelector('.tl-tools .tl-add')!);
+    const audio = Array.from(openMenu()!.querySelectorAll('.folder-menu-item'))
+      .find((n) => n.textContent?.trim() === 'Sound');
+    assert.ok(audio, 'AUDIO is one click away from the timeline — the whole point');
+    click(audio!);
+    assert.deepEqual(adds, [{ kind: 'audio', atMs: 2500 }], 'the kind id and the playhead, in ms');
+    assert.equal(h.commits.length, 0, 'the panel never creates the box itself');
+    assert.equal(openMenu(), null, 'and the menu closed behind the choice');
+  } finally { h.teardown(); }
+});
+
+test('the empty-sequence dropslot still works — it dispatches tl-add for a clip', () => {
+  // Overlay only: the seq row is empty, which is the only time the slot renders.
+  const h = mount([overlay('o', 1, 1)]);
+  try {
+    const adds = recordAdds(h);
+    const slot = h.root.querySelector('.tl-dropslot') as HTMLElement;
+    assert.ok(slot, 'an empty seq row still offers "Add a clip"');
+    click(slot);
+    assert.deepEqual(adds, [{ kind: 'clip', atMs: 0 }]);
+  } finally { h.teardown(); }
+});
+
+// ── the bar / chip context menu ───────────────────────────────────────────────
+
+/** Right-click an element the way a browser does. */
+function rightClick(el: Element): void {
+  el.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 300 }));
+}
+
+test('right-clicking a scenery chip offers promotion, and it is ONE commit', () => {
+  const h = mount([clip('a', 0, 3), scenery('s')]);
+  try {
+    rightClick(h.root.querySelector('.tl-chip[data-id="s"]')!);
+    const menu = openMenu('.tl-ctx-menu');
+    assert.ok(menu, 'a context menu opened');
+    assert.deepEqual(menuLabels(menu), ['Add to the timeline', 'Delete'],
+      'an untimed box is offered a time, not a split');
+    click(menu!.querySelector('.folder-menu-item')!);
+    assert.equal(h.commits.length, 1, 'ONE commit — the same promote() the inspector calls');
+    const written = h.commits[0]!.find((b) => b.id === 's')!;
+    assert.equal(written.start, 0, 'placed at the playhead');
+    assert.equal(written.dur, 3, 'with the pack default length');
+    assert.equal(written.lane, '', 'on an overlay lane, never the magnetic row');
+    assert.equal(openMenu('.tl-ctx-menu'), null, 'the menu closed');
+  } finally { h.teardown(); }
+});
+
+test('right-clicking a timed bar offers split + demote + delete, and demote is ONE commit', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 1, 1)]);
+  try {
+    rightClick(h.bar('o'));
+    const menu = openMenu('.tl-ctx-menu');
+    assert.deepEqual(menuLabels(menu), ['Split at playhead', 'Make always on', 'Delete']);
+    const demote = Array.from(menu!.querySelectorAll('.folder-menu-item'))
+      .find((n) => n.textContent?.trim() === 'Make always on')!;
+    click(demote);
+    assert.equal(h.commits.length, 1, 'ONE commit — demote(), not a second implementation');
+    const written = h.commits[0]!.find((b) => b.id === 'o')!;
+    assert.equal(written.start, '', 'start CLEARED to empty, never a 0');
+    assert.equal(written.dur, '');
+    assert.equal(written.lane, '');
+  } finally { h.teardown(); }
+});
+
+test('the context menu selects what it acts on, and Delete removes exactly that box', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    rightClick(h.bar('b'));
+    assert.deepEqual(h.root.querySelector('.tl-clip[data-id="b"]')?.getAttribute('aria-selected'), 'true',
+      'right-click selected the bar it opened on');
+    const del = Array.from(openMenu('.tl-ctx-menu')!.querySelectorAll('.folder-menu-item'))
+      .find((n) => n.textContent?.trim() === 'Delete')!;
+    click(del);
+    assert.equal(h.commits.length, 1, 'ONE commit');
+    assert.deepEqual(h.commits[0]!.map((b) => b.id), ['a'], 'only b went');
+  } finally { h.teardown(); }
+});
+
+test('right-clicking INSIDE a multi-selection collapses it to the clicked box', () => {
+  // Every item in this menu acts on the right-clicked box alone. Leaving three bars
+  // painted as selected while "Make always on" demotes one of them shows a state that
+  // never existed, and the user's next act is an undo of something they did not do.
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 1, 1)]);
+  try {
+    h.select(['a', 'b', 'o']);
+    rightClick(h.bar('b'));
+    assert.deepEqual(
+      Array.from(h.root.querySelectorAll('.tl-clip[aria-selected="true"]')).map((n) => (n as HTMLElement).dataset.id),
+      ['b'],
+      'the selection collapsed to the box the menu is about',
+    );
+    const demote = Array.from(openMenu('.tl-ctx-menu')!.querySelectorAll('.folder-menu-item'))
+      .find((n) => n.textContent?.trim() === 'Make always on')!;
+    click(demote);
+    assert.equal(h.commits.length, 1, 'ONE commit');
+    assert.equal(h.commits[0]!.find((b) => b.id === 'b')!.start, '', 'and only b was demoted');
+    assert.equal(h.commits[0]!.find((b) => b.id === 'a')!.start, 0, 'a is untouched');
+  } finally { h.teardown(); }
+});
+
+test('the context menu is keyboard reachable (Shift+F10) and Escape closes it', () => {
+  const h = mount([clip('a', 0, 3), scenery('s')]);
+  try {
+    const el = h.bar('a');
+    el.focus();
+    el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true }));
+    assert.ok(openMenu('.tl-ctx-menu'), 'Shift+F10 opens the menu on the focused bar');
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    assert.equal(openMenu('.tl-ctx-menu'), null, 'Escape closes it — the standing repo rule');
+    assert.equal(h.commits.length, 0, 'opening and closing a menu edits nothing');
+  } finally { h.teardown(); }
+});
+
+test('destroying the panel takes its body-mounted menus with it', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    click(h.root.querySelector('.tl-tools .tl-add')!);
+    assert.ok(openMenu(), 'precondition: a menu is up');
+  } finally { h.teardown(); }
+  assert.equal(openMenu(), null, 'no orphan popover left on <body>');
+});
+
 test('deleting the focused clip keeps focus inside the panel, so the keyboard stays alive', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
@@ -750,4 +1069,914 @@ test('deleting the focused clip keeps focus inside the panel, so the keyboard st
     const active = dom.window.document.activeElement as HTMLElement;
     assert.ok(h.root.contains(active), `focus stayed in the panel (was ${active.tagName})`);
   } finally { h.teardown(); }
+});
+
+// ── record-in-place voiceover (track C) ───────────────────────────────────────
+//
+// The panel's mic button opens a real host.recorder session, runs the playhead
+// through the take, and lands the result as an audio box. What is asserted below is
+// the OUTPUT: the committed Box[], the asset actually written to the host's user
+// store, and the panel's own DOM. The host bridge is a stand-in (as `commit` already
+// is) because it is the shell boundary this module talks through.
+//
+// BROWSER-ONLY, not covered here: whether the microphone permission prompt appears
+// where a real user expects it, whether the take's audio is audible/clean, whether
+// muting the composition actually stops sound reaching the mic, and the waveform the
+// inserted bar paints (canvas 2D + a real decode). Those need a device.
+
+/** The add-kinds a timed tool declares, WITH the manifest's audio seed. */
+const AUDIO_KINDS = [
+  { id: 'clip', label: 'Clip' },
+  { id: 'audio', label: 'Sound', seed: { kind: 'audio' } },
+];
+
+interface FakeRecorder {
+  host: unknown;
+  /** Live microphone references held by the meter — must be 0 after every path. */
+  meterRefs(): number;
+  sessions(): number;
+  cancels(): number;
+  uploads(): Map<string, { type?: string; meta?: Record<string, unknown> }>;
+  /** Let a gated (`gateMeter`) permission prompt resolve. */
+  grant(): void;
+  /** Let a held (`holdUpload`) asset write finish. */
+  finishUpload(): void;
+}
+
+/**
+ * A host bridge with a v1.17 recorder and a user-asset store, both in memory.
+ *
+ * `gateMeter` models the REAL meter's refcount contract (bridge/recorder.ts): the count is
+ * taken synchronously, a follower shares the leader's in-flight `getUserMedia` promise, and
+ * every resolved start owes exactly one stop. That contract is the only way to catch a take
+ * whose continuation resumes after it was abandoned.
+ * `holdUpload` keeps an asset write in flight so a save can be abandoned mid-flight.
+ */
+function fakeHost(opts: { deny?: boolean; bytes?: number; gateMeter?: boolean; holdUpload?: boolean } = {}): FakeRecorder {
+  let refs = 0;
+  let sessions = 0;
+  let cancels = 0;
+  let open = false;
+  let starting: Promise<void> | null = null;
+  let grant = (): void => { /* replaced when a gated start is in flight */ };
+  let finishUpload = (): void => { /* replaced when a held upload is in flight */ };
+  const uploads = new Map<string, { type?: string; meta?: Record<string, unknown> }>();
+  const host = {
+    log: () => { /* quiet */ },
+    recorder: {
+      isAvailable: () => true,
+      meter: {
+        start: async () => {
+          if (opts.deny) { const e = new Error('denied') as Error & { name: string }; e.name = 'NotAllowedError'; throw e; }
+          refs++;
+          if (!opts.gateMeter || open) return;
+          if (!starting) {
+            starting = new Promise<void>((res) => { grant = () => { open = true; starting = null; res(); }; });
+          }
+          await starting;
+        },
+        stop: () => { refs = Math.max(0, refs - 1); if (refs === 0) open = false; },
+        subscribe: () => () => { /* no levels in jsdom */ },
+      },
+      record: async () => {
+        sessions++;
+        return {
+          subscribe: () => () => { /* no levels in jsdom */ },
+          stop: async () => new Blob([new Uint8Array(opts.bytes ?? 2048)], { type: 'audio/webm;codecs=opus' }),
+          cancel: () => { cancels++; },
+        };
+      },
+      still: async () => new Blob([]),
+    },
+    assets: {
+      get: async (id: string) => ({
+        source: 'user', id, type: uploads.get(id)?.type ?? 'audio', format: 'webm',
+        url: `blob:${id}`, meta: uploads.get(id)?.meta,
+      }),
+      _uploadUserAsset: async (record: { id: string; type?: string; meta?: Record<string, unknown> }) => {
+        if (opts.holdUpload) await new Promise<void>((res) => { finishUpload = res; });
+        uploads.set(record.id, record);
+      },
+      _deleteUserAsset: async (id: string) => { uploads.delete(id); },
+    },
+  };
+  return {
+    host, meterRefs: () => refs, sessions: () => sessions, cancels: () => cancels, uploads: () => uploads,
+    grant: () => grant(), finishUpload: () => finishUpload(),
+  };
+}
+
+/** Resolve when the panel announces it has reached `phase`. */
+function takeReaches(root: HTMLElement, phase: string): Promise<void> {
+  return new Promise((resolve) => {
+    const on = (e: Event): void => {
+      if ((e as CustomEvent).detail?.phase !== phase) return;
+      root.removeEventListener('tl-take', on);
+      resolve();
+    };
+    root.addEventListener('tl-take', on);
+  });
+}
+
+/**
+ * Paint the canvas boxes the clock (and the take's mute pass) reads. `data-seq-ms` is
+ * what makes the clock playable at all — it refuses to run a zero-length sequence.
+ */
+function paintCanvasBoxes(h: Harness): HTMLElement[] {
+  h.canvasEl.setAttribute('data-seq-ms', '10000');
+  return h.boxes.map((b) => {
+    const el = dom.window.document.createElement('div');
+    el.className = 'lolly-box';
+    el.setAttribute('data-box-id', String(b.id));
+    h.canvasEl.appendChild(el);
+    return el;
+  });
+}
+
+/** Freeze the wall clock the take measures itself against. */
+function fakeClock(): { set(ms: number): void; restore(): void } {
+  const real = globalThis.performance.now;
+  let at = 100000;
+  globalThis.performance.now = () => at;
+  return { set: (ms: number) => { at = ms; }, restore: () => { globalThis.performance.now = real; } };
+}
+
+test('the mic button needs a recording host and an audio add-kind — NOT a manifest capability', () => {
+  // No recording host: the shipped default for every shell that cannot capture audio.
+  const plain = mount([clip('a', 0, 3)], 40, AUDIO_KINDS);
+  try {
+    assert.equal((plain.root.querySelector('.tl-mic') as HTMLElement).hidden, true, 'no host.recorder → no button');
+  } finally { plain.teardown(); }
+
+  // A capable shell but no audio add-kind: a take would have no box to become.
+  const noAudio = mount([clip('a', 0, 3)], 40, [{ id: 'clip', label: 'Clip' }], { host: fakeHost().host });
+  try {
+    assert.equal((noAudio.root.querySelector('.tl-mic') as HTMLElement).hidden, true, 'no audio add-kind → no button');
+  } finally { noAudio.teardown(); }
+
+  // Capable shell + audio vocabulary and NO declared capability — the shipping
+  // sequence-studio manifest. Progressive enhancement, like host.media's live camera:
+  // declaring `microphone` would mean "cannot run without a mic", which hides the tool
+  // from the TUI gallery and drops it from the CLI smoke gate. Nothing opens the mic
+  // until the button is pressed, so its presence risks no permission prompt.
+  const ready = mount([clip('a', 0, 3)], 40, AUDIO_KINDS, { host: fakeHost().host });
+  try {
+    const mic = ready.root.querySelector('.tl-mic') as HTMLElement;
+    assert.equal(mic.hidden, false, 'host + audio kind → the button is offered');
+    assert.equal(mic.getAttribute('aria-pressed'), 'false');
+  } finally { ready.teardown(); }
+});
+
+test('a completed take inserts ONE audio box at the playhead, with the MEASURED length', async () => {
+  const fake = fakeHost();
+  const clock = fakeClock();
+  const countIn = TAKE_TIMING.countInMs;
+  TAKE_TIMING.countInMs = 0;
+  const h = mount([clip('a', 0, 5)], 40, AUDIO_KINDS, { host: fake.host, capabilities: ['microphone'] });
+  const painted = paintCanvasBoxes(h);
+  try {
+    seekTo(h, 2);                        // the playhead sits at 2s (the shared ruler helper)
+    const mic = h.root.querySelector('.tl-mic') as HTMLButtonElement;
+
+    const live = takeReaches(h.root, 'recording');
+    click(mic);
+    await live;
+
+    assert.equal(mic.getAttribute('aria-pressed'), 'true', 'the button reads as live');
+    assert.equal((h.root.querySelector('.tl-rec') as HTMLElement).hidden, false, 'the take HUD is up');
+    assert.equal(h.root.querySelector('.tl-play')?.getAttribute('aria-label'), 'Pause',
+      'the playhead RUNS during the take — the transport says so');
+    assert.ok(painted.every((el) => el.getAttribute('data-t-mute') === '1'),
+      'the composition is silenced in the clock\'s own vocabulary while recording');
+    assert.equal(h.commits.length, 0, 'nothing is written to the model until the take lands');
+
+    clock.set(104200);                   // 4.2 s of take
+    const done = takeReaches(h.root, 'idle');
+    click(mic);
+    await done;
+
+    assert.equal(h.commits.length, 1, 'ONE commit for the insertion — one undo step');
+    const next = h.commits[0]!;
+    assert.equal(next.length, 2, 'exactly one box was added');
+    const box = next.find((b) => b.id !== 'a')!;
+    assert.equal(box.kind, 'audio', 'born from the manifest\'s audio add-kind seed');
+    assert.equal(box.start, 2, 'placed where the playhead was when the take began');
+    assert.equal(box.dur, 4.2, 'the MEASURED elapsed length, not the blob\'s');
+
+    const ref = box.image as { id: string; type: string };
+    assert.match(ref.id, /^user\/recording\/\d+\.webm$/, 'stored as a durable user asset');
+    const stored = fake.uploads().get(ref.id)!;
+    assert.equal(stored.type, 'audio', 'typed audio, not a silent video');
+    assert.equal(stored.meta?.durationMs, 4200,
+      'meta.durationMs is what becomes data-audio-dur — without it the box cannot be trimmed');
+
+    assert.equal(fake.meterRefs(), 0, 'the sound-check microphone reference was released');
+    assert.ok(painted.every((el) => !el.hasAttribute('data-t-mute')), 'the composition is audible again');
+    assert.equal((h.root.querySelector('.tl-rec') as HTMLElement).hidden, true, 'the HUD is gone');
+    assert.equal(mic.getAttribute('aria-pressed'), 'false');
+  } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; clock.restore(); }
+});
+
+test('re-taking over a selected take REPLACES its asset in one commit', async () => {
+  const fake = fakeHost();
+  const clock = fakeClock();
+  const countIn = TAKE_TIMING.countInMs;
+  TAKE_TIMING.countInMs = 0;
+  const existing: Box = {
+    id: 'vo', start: 1, dur: 3, lane: '', clipIn: 1.5, kind: 'audio',
+    image: { source: 'user', id: 'user/recording/1.webm', type: 'audio', url: 'blob:old' } as never,
+  };
+  const h = mount([clip('a', 0, 5), existing], 40, AUDIO_KINDS, { host: fake.host, capabilities: ['microphone'] });
+  try {
+    h.select(['vo']);
+    const mic = h.root.querySelector('.tl-mic') as HTMLButtonElement;
+    assert.equal(mic.getAttribute('aria-label'), 'Record over this take',
+      'the button says what the next press will do');
+
+    const live = takeReaches(h.root, 'recording');
+    click(mic);
+    await live;
+    clock.set(101800);
+    const done = takeReaches(h.root, 'idle');
+    click(mic);
+    await done;
+
+    assert.equal(h.commits.length, 1, 'ONE commit for the replacement — one undo step');
+    const next = h.commits[0]!;
+    assert.equal(next.length, 2, 'no box was added; the existing one was rewritten');
+    const box = next.find((b) => b.id === 'vo')!;
+    const ref = box.image as { id: string };
+    assert.notEqual(ref.id, 'user/recording/1.webm', 'the asset was swapped');
+    assert.equal(box.dur, 1.8, 'and re-fitted to the new take\'s measured length');
+    assert.equal(box.clipIn, 0, 'the old trim-in pointed into audio that no longer exists');
+    assert.equal(box.start, 1, 'the box stays where it was');
+    assert.equal(fake.uploads().has('user/recording/1.webm'), false, 'the superseded take was retired');
+  } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; clock.restore(); }
+});
+
+test('a denied microphone leaves no recording state and says so', async () => {
+  const fake = fakeHost({ deny: true });
+  const h = mount([clip('a', 0, 3)], 40, AUDIO_KINDS, { host: fake.host, capabilities: ['microphone'] });
+  const painted = paintCanvasBoxes(h);
+  try {
+    const mic = h.root.querySelector('.tl-mic') as HTMLButtonElement;
+    const done = takeReaches(h.root, 'idle');
+    click(mic);
+    await done;
+
+    assert.equal(mic.getAttribute('aria-pressed'), 'false', 'the button is not stuck in the pressed state');
+    assert.equal(mic.disabled, false, 'and it is pressable again');
+    assert.equal((h.root.querySelector('.tl-rec') as HTMLElement).hidden, true, 'no HUD left behind');
+    const note = h.root.querySelector('.tl-rec-note') as HTMLElement;
+    assert.equal(note.hidden, false);
+    assert.match(note.textContent || '', /Microphone blocked/, 'the user is told what happened');
+    assert.equal(fake.sessions(), 0, 'no recorder session was ever opened');
+    assert.equal(fake.meterRefs(), 0, 'no microphone reference is held');
+    assert.equal(h.commits.length, 0, 'nothing was written to the model');
+    assert.ok(painted.every((el) => !el.hasAttribute('data-t-mute')), 'the composition was never left muted');
+  } finally { h.teardown(); }
+});
+
+test('destroying the panel mid-take releases the microphone and writes nothing', async () => {
+  const fake = fakeHost();
+  const countIn = TAKE_TIMING.countInMs;
+  TAKE_TIMING.countInMs = 0;
+  const h = mount([clip('a', 0, 3)], 40, AUDIO_KINDS, { host: fake.host, capabilities: ['microphone'] });
+  const painted = paintCanvasBoxes(h);
+  try {
+    const live = takeReaches(h.root, 'recording');
+    click(h.root.querySelector('.tl-mic')!);
+    await live;
+    assert.equal(fake.sessions(), 1, 'precondition: a session is running');
+
+    h.panel.destroy();
+
+    assert.equal(fake.cancels(), 1, 'the session was cancelled, not left running');
+    assert.equal(fake.meterRefs(), 0, 'no microphone reference survived the panel');
+    assert.ok(painted.every((el) => !el.hasAttribute('data-t-mute')), 'the canvas was handed back unmuted');
+    assert.equal(h.commits.length, 0, 'an abandoned take writes nothing');
+    await frames(3);
+    assert.equal(h.commits.length, 0, 'and still nothing a few frames later');
+  } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; }
+});
+
+test('pressing the mic through a slow permission prompt never leaves a microphone reference held', async () => {
+  // The leak that a phase STRING cannot catch. Press 1 opens the prompt; press 2 abandons
+  // that take while the prompt is still up; press 3 starts a fresh one. When the permission
+  // finally lands, take 1's continuation resumes and sees a phase of 'countin' — take 3's.
+  // Identity, not phase, has to decide, and each continuation may release only the meter
+  // reference it took itself: the real meter tears the mic down at refcount 0 ONLY, so a
+  // single unbalanced reference keeps the browser's recording indicator lit until reload.
+  const fake = fakeHost({ gateMeter: true });
+  const countIn = TAKE_TIMING.countInMs;
+  TAKE_TIMING.countInMs = 0;
+  const h = mount([clip('a', 0, 3)], 40, AUDIO_KINDS, { host: fake.host });
+  try {
+    const mic = h.root.querySelector('.tl-mic') as HTMLButtonElement;
+    click(mic);                       // press 1 — waiting on the prompt
+    await frames(1);
+    click(mic);                       // press 2 — abandoned mid-prompt
+    await frames(1);
+    click(mic);                       // press 3 — a new take, same in-flight prompt
+
+    const live = takeReaches(h.root, 'recording');
+    fake.grant();
+    await live;
+    assert.equal(fake.sessions(), 1, 'exactly ONE recorder session — never two at once');
+
+    const done = takeReaches(h.root, 'idle');
+    click(mic);
+    await done;
+    await frames(2);
+    assert.equal(fake.meterRefs(), 0, 'every meter reference was balanced — the mic is off');
+    assert.equal(h.commits.length, 1, 'and one take landed, not two');
+  } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; }
+});
+
+test('a re-take abandoned while it saves keeps the OLD recording and commits nothing', async () => {
+  // Storing the new take must not delete the take it replaces until the model has been
+  // patched: abandon the save in between and the box is left pointing at an asset that no
+  // longer exists. Nor may the pending insert land in a panel the user has already closed.
+  const fake = fakeHost({ holdUpload: true });
+  const clock = fakeClock();
+  const countIn = TAKE_TIMING.countInMs;
+  TAKE_TIMING.countInMs = 0;
+  const existing: Box = {
+    id: 'vo', start: 1, dur: 3, lane: '', clipIn: 0, kind: 'audio',
+    image: { source: 'user', id: 'user/recording/111.webm', type: 'audio', url: 'blob:old' } as never,
+  };
+  const h = mount([clip('a', 0, 5), existing], 40, AUDIO_KINDS, { host: fake.host });
+  fake.uploads().set('user/recording/111.webm', { type: 'audio' });   // the take already on disk
+  try {
+    h.select(['vo']);
+    const live = takeReaches(h.root, 'recording');
+    click(h.root.querySelector('.tl-mic')!);
+    await live;
+    clock.set(101500);
+    click(h.root.querySelector('.tl-mic')!);   // stop → the upload is now held
+    await frames(2);
+
+    h.panel.setOpen(false);                    // the user closes the timeline mid-save
+    fake.finishUpload();
+    await frames(4);
+
+    assert.equal(h.commits.length, 0, 'an abandoned save commits nothing');
+    assert.equal(fake.uploads().has('user/recording/111.webm'), true,
+      'and the recording it would have replaced is still there');
+    assert.equal(fake.meterRefs(), 0, 'no microphone reference survived');
+  } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; clock.restore(); }
+});
+
+test('a VIDEO in the user/recording namespace is never offered as a take to record over', () => {
+  // The record tool and screen capture mint `user/recording/<ts>.mp4` VIDEO assets through
+  // the same store. Matching on the id prefix alone would offer to record over one — and
+  // the replace path patches the box to an audio ref and deletes the source file.
+  const fake = fakeHost();
+  const shot: Box = {
+    id: 'screen', start: 0, dur: 4, lane: 'seq', clipIn: 0, kind: 'clip',
+    image: { source: 'user', id: 'user/recording/222.mp4', type: 'video', url: 'blob:vid' } as never,
+  };
+  const h = mount([shot], 40, AUDIO_KINDS, { host: fake.host });
+  try {
+    h.select(['screen']);
+    const mic = h.root.querySelector('.tl-mic') as HTMLButtonElement;
+    assert.equal(mic.getAttribute('aria-label'), 'Record a voiceover',
+      'a screen/camera recording is not one of our takes — recording adds a box, never overwrites it');
+  } finally { h.teardown(); }
+});
+
+// ── thumbnails: the branch each bar actually takes ────────────────────────────
+
+/**
+ * Fill the canvas with the markup each box kind really renders (sequence-studio's
+ * hooks.js, verbatim in shape): an audio marker div, a <video>, a Lottie MARKER with
+ * its mounted <svg>, a plain <img>, and a card that is nothing but a background.
+ * This is what `mediaOf` reads — the panel classifies boxes off the LIVE CANVAS, not
+ * off the model, because the hook is what resolved the asset ref to a URL.
+ */
+function paintMediaBoxes(h: Harness, media: Record<string, string>): void {
+  h.canvasEl.setAttribute('data-seq-ms', '10000');
+  for (const b of h.boxes) {
+    const el = dom.window.document.createElement('div');
+    el.className = 'lolly-box';
+    el.setAttribute('data-box-id', String(b.id));
+    el.innerHTML = media[String(b.id)] ?? '';
+    h.canvasEl.appendChild(el);
+  }
+}
+
+interface CtxOp { op: string; args: unknown[] }
+
+/**
+ * jsdom has no layout and no 2D context, which is exactly the two things a thumb pass
+ * needs. Give every bar a size and every canvas a RECORDING context, so what the pass
+ * decided is observable. The drawing itself is still a browser fact — what is asserted
+ * here is which branch ran and with what.
+ */
+async function withThumbStubs(fn: (ops: Map<HTMLCanvasElement, CtxOp[]>) => Promise<void>): Promise<void> {
+  const w = dom.window as unknown as {
+    Element: { prototype: Element };
+    HTMLCanvasElement: { prototype: HTMLCanvasElement };
+  };
+  const ops = new Map<HTMLCanvasElement, CtxOp[]>();
+  const elProto = w.Element.prototype;
+  const saved = ['clientWidth', 'clientHeight'].map((k) => [k, Object.getOwnPropertyDescriptor(elProto, k)] as const);
+  // Bars only: `tracks.clientWidth` is an own property set by mount() and still wins.
+  for (const [k, size] of [['clientWidth', 120], ['clientHeight', 34]] as const) {
+    Object.defineProperty(elProto, k, {
+      configurable: true,
+      get(this: Element) { return this.classList?.contains('tl-clip') ? size : 0; },
+    });
+  }
+  const canvasProto = w.HTMLCanvasElement.prototype as unknown as { getContext: unknown };
+  const realGetContext = canvasProto.getContext;
+  canvasProto.getContext = function (this: HTMLCanvasElement) {
+    const log: CtxOp[] = ops.get(this) ?? [];
+    ops.set(this, log);
+    const rec = (op: string) => (...args: unknown[]): void => { log.push({ op, args }); };
+    return {
+      scale: rec('scale'), clearRect: rec('clearRect'), fillRect: rec('fillRect'),
+      drawImage: rec('drawImage'),
+      set fillStyle(v: string) { log.push({ op: 'fillStyle', args: [v] }); },
+      get fillStyle() { return '#000'; },
+    };
+  } as never;
+  try {
+    // AWAITED inside the try, not returned out of it: a synchronous finally would put
+    // the real descriptors back before the deferred pass this exists to observe ran.
+    await fn(ops);
+  } finally {
+    canvasProto.getContext = realGetContext as never;
+    for (const [k, desc] of saved) {
+      if (desc) Object.defineProperty(elProto, k, desc);
+      else delete (elProto as unknown as Record<string, unknown>)[k];
+    }
+  }
+}
+
+const thumbCanvas = (h: Harness, id: string): HTMLCanvasElement =>
+  h.root.querySelector(`.tl-clip[data-id="${id}"] canvas.tl-clip-thumbs`) as HTMLCanvasElement;
+
+/** Wait past the thumb pass's idle timeout (onIdle's setTimeout fallback in node). */
+const thumbPass = (): Promise<void> => new Promise((r) => setTimeout(r, 120));
+
+test('every clip kind is classified off the live canvas — including a Lottie and a tool clip', async () => {
+  const h = mount([clip('img', 0, 1), clip('tool', 1, 1), clip('anim', 2, 1), clip('card', 3, 1), overlay('snd', 0, 2)]);
+  try {
+    paintMediaBoxes(h, {
+      img: '<img class="lolly-box-img" src="https://x.test/photo.png">',
+      // A tool clip is a compose render: an ordinary <img> holding a data: URL.
+      tool: '<img class="lolly-box-img" src="data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E">',
+      // The Lottie MARKER also carries .lolly-box-img — a naive `img.lolly-box-img`
+      // lookup misses it (it is a div), which is why it gets its own branch.
+      anim: '<div class="lolly-box-img lolly-box-lottie" data-lottie-src="anim.json"><svg viewBox="0 0 100 50"></svg></div>',
+      card: '',
+      snd: '<div class="lolly-box-audio" data-audio-src="bed.mp3" data-audio-dur="4000"></div>',
+    });
+    // Force the rebuild that re-reads the canvas (the boxes were painted after mount).
+    h.panel.setOpen(false);
+    h.panel.setOpen(true);
+
+    assert.equal(h.bar('img').dataset.kind, 'image');
+    assert.equal(h.bar('tool').dataset.kind, 'image', 'a tool clip needs no kind of its own');
+    assert.equal(h.bar('anim').dataset.kind, 'lottie', 'an animation is no longer an untyped clip');
+    assert.equal(h.bar('card').dataset.kind, 'clip', 'no media: the lane kind, as before');
+    assert.equal(h.bar('snd').dataset.kind, 'audio');
+    // The label follows the same classification.
+    assert.equal(h.bar('anim').querySelector('.tl-clip-label')?.textContent, 'Animation');
+    assert.equal(h.bar('img').querySelector('.tl-clip-label')?.textContent, 'Image');
+  } finally { h.teardown(); }
+});
+
+test('a card bar paints its own fill IMMEDIATELY, and an inkless box still paints nothing', async () => {
+  // The underlay half of node mode. The fill goes down synchronously, before any await,
+  // so a frame bar is never blank while its photograph is being taken — and because the
+  // upgrade overwrites the same canvas and `has-thumbs` is only ever ADDED, there is no
+  // flash between the two. The photograph itself is the next test; here there is no
+  // rasteriser installed and no createImageBitmap, so the capture bails and the
+  // underlay is all that ever lands.
+  await withThumbStubs(async (ops) => {
+    const h = mount([clip('card', 0, 2), clip('ghost', 2, 2)]);
+    try {
+      paintMediaBoxes(h, { card: '', ghost: '' });
+      // The card's fill is the same inline background the box paints on the frame.
+      const cardBox = h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement;
+      cardBox.style.background = 'rgb(20, 24, 29)';
+      h.panel.setOpen(false);
+      h.panel.setOpen(true);
+      await thumbPass();
+
+      const card = ops.get(thumbCanvas(h, 'card')) ?? [];
+      assert.deepEqual(card.filter((o) => o.op === 'fillStyle').map((o) => o.args[0]), ['rgb(20, 24, 29)'],
+        'the bar is filled with the box’s own colour, not a made-up one');
+      assert.equal(card.some((o) => o.op === 'fillRect'), true);
+      assert.equal(h.bar('card').classList.contains('has-thumbs'), true, 'so the label gets its scrim');
+
+      // A box with no media, no fill, no text and no shape is left alone: photographing
+      // it would cost a full dom-to-image call to produce a blank bitmap, and an
+      // invisible rectangle must not claim has-thumbs (which would dress the label in a
+      // scrim over nothing).
+      assert.equal(ops.has(thumbCanvas(h, 'ghost')), false, 'no context was even asked for');
+      assert.equal(h.bar('ghost').classList.contains('has-thumbs'), false);
+    } finally { h.teardown(); }
+  });
+});
+
+/**
+ * Node mode end to end, with the dom-to-image shot faked through `_setNodeRasterer`.
+ *
+ * There is no rasteriser in node at all, so the seam is the only way to reach the
+ * branch — what is asserted is the panel's USE of it (which bars ask, how many, when it
+ * re-asks, what happens when it fails), never what the picture looks like.
+ *
+ * `createImageBitmap` is the other platform piece jsdom lacks: `captureNode` bails
+ * before it even looks at the rasterer without one.
+ */
+async function withNodeRaster(
+  shot: (el: HTMLElement, targetH: number) => Promise<{ width: number; height: number } | null>,
+  fn: (calls: string[]) => Promise<void>,
+): Promise<void> {
+  const g = globalThis as Record<string, unknown>;
+  const hadCib = Object.hasOwn(g, 'createImageBitmap');
+  const prevCib = g.createImageBitmap;
+  g.createImageBitmap = async (cv: { width: number; height: number }) => ({ width: cv.width, height: cv.height, close(): void { /* fake */ } });
+  const calls: string[] = [];
+  _setNodeRasterer(async (el, targetH) => {
+    calls.push(String((el as HTMLElement).getAttribute?.('data-box-id') ?? ''));
+    return (await shot(el as HTMLElement, targetH)) as HTMLCanvasElement | null;
+  });
+  // The LRU is module-global and node rasters are keyed by APPEARANCE, not by id — two
+  // tests with identically-shaped boxes would otherwise share a cached picture.
+  clearClipThumbCache();
+  try {
+    await fn(calls);
+  } finally {
+    _setNodeRasterer(null);
+    clearClipThumbCache();
+    if (hadCib) g.createImageBitmap = prevCib; else delete g.createImageBitmap;
+  }
+}
+
+/** A fake shot: a landscape canvas twice as wide as the requested bar height. */
+const okShot = async (_el: HTMLElement, targetH: number): Promise<{ width: number; height: number }> =>
+  ({ width: targetH * 2, height: targetH });
+
+test('a frame bar upgrades from its fill to a photograph of the box', async () => {
+  await withNodeRaster(okShot, async (calls) => {
+    await withThumbStubs(async (ops) => {
+      const h = mount([clip('card', 0, 2)]);
+      try {
+        paintMediaBoxes(h, { card: '' });
+        (h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement).style.background = 'rgb(20, 24, 29)';
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();                     // the shot is async; let it land
+
+        const card = ops.get(thumbCanvas(h, 'card')) ?? [];
+        assert.deepEqual(calls, ['card'], 'the box itself was photographed, not the bar');
+        assert.equal(card.some((o) => o.op === 'fillRect'), true, 'the underlay went down first');
+        // Tiled, not stretched — one bitmap, the same arithmetic as a still: a 68×34
+        // picture on a 120px bar is two tiles.
+        const draws = card.filter((o) => o.op === 'drawImage');
+        assert.deepEqual(draws.map((o) => o.args.slice(1)), [[0, 0, 68, 34], [68, 0, 68, 34]]);
+        assert.equal(h.bar('card').classList.contains('has-thumbs'), true);
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('a TRANSPARENT text box and a pen shape get pictures — before this they painted nothing', async () => {
+  await withNodeRaster(okShot, async (calls) => {
+    await withThumbStubs(async (ops) => {
+      // Rows that differ in APPEARANCE, not just in id: the signature deliberately
+      // leaves the id out, so two boxes that look identical share one shot (and one
+      // cache entry) — which is right, but would hide the second bar here.
+      const h = mount([
+        { ...clip('words', 0, 2), text: 'Chapter one' },
+        { ...clip('shape', 2, 2), kind: 'path', d: 'M0 0 L10 10' },
+      ]);
+      try {
+        // No background on either: a text box's default fill is '' and hooks.js FORCES
+        // every kind:'path' box to fill:'transparent'. Both used to reach 'none'.
+        paintMediaBoxes(h, {
+          words: '<div class="lolly-box-text">Chapter one</div>',
+          shape: '<svg class="lolly-box-path"><path d="M0 0 L10 10"/></svg>',
+        });
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();
+
+        assert.deepEqual(calls.slice().sort(), ['shape', 'words']);
+        for (const id of ['words', 'shape']) {
+          const log = ops.get(thumbCanvas(h, id)) ?? [];
+          assert.equal(log.some((o) => o.op === 'fillRect'), false, `${id}: nothing to underlay — it is transparent`);
+          assert.equal(log.some((o) => o.op === 'drawImage'), true, `${id}: got a picture`);
+          assert.equal(h.bar(id).classList.contains('has-thumbs'), true, `${id}: scrim`);
+        }
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('a failed photograph leaves the underlay standing rather than blanking the bar', async () => {
+  await withNodeRaster(async () => null, async (calls) => {
+    await withThumbStubs(async (ops) => {
+      const h = mount([clip('card', 0, 2), clip('words', 2, 2)]);
+      try {
+        paintMediaBoxes(h, { card: '', words: '<div class="lolly-box-text">Chapter one</div>' });
+        (h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement).style.background = 'rgb(20, 24, 29)';
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();
+
+        assert.equal(calls.length > 0, true, 'it did try');
+        const card = ops.get(thumbCanvas(h, 'card')) ?? [];
+        assert.deepEqual(card.filter((o) => o.op === 'fillStyle').map((o) => o.args[0]), ['rgb(20, 24, 29)']);
+        assert.equal(card.some((o) => o.op === 'drawImage'), false, 'no picture, but the fill survived');
+        assert.equal(h.bar('card').classList.contains('has-thumbs'), true);
+        // The transparent one has nothing to fall back TO, so it stays undressed — a
+        // scrim over an empty canvas would be worse than no scrim.
+        assert.equal(h.bar('words').classList.contains('has-thumbs'), false);
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('a crowded timeline is bounded: the pass budget refuses to queue one shot per bar', async () => {
+  // The stall this prevents: sixty frames × one uncancellable dom-to-image call each,
+  // serialised behind one lock. Only MAX_NODE_RASTERS_PER_PASS misses are started per
+  // pass, and at most MAX_THUMB_PASSES passes chain, so one scheduling can never spend
+  // more than the product — the row past that keeps its fill until the next gesture.
+  await withNodeRaster(okShot, async (calls) => {
+    await withThumbStubs(async () => {
+      // Each box must LOOK different, or the shared-run dedup would collapse sixty
+      // asks into one shot and prove nothing about the budget.
+      const many = Array.from({ length: 60 }, (_, i) => ({ ...clip(`f${i}`, i, 1), bg: `rgb(1, 2, ${i})` }));
+      const h = mount(many);
+      try {
+        paintMediaBoxes(h, {});
+        for (let i = 0; i < 60; i++) {
+          (h.canvasEl.querySelector(`[data-box-id="f${i}"]`) as HTMLElement).style.background = `rgb(1, 2, ${i})`;
+        }
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        for (let i = 0; i < 12; i++) await thumbPass();   // well past every chained pass
+
+        assert.ok(calls.length > 0, 'some frames did get pictures');
+        assert.ok(calls.length <= MAX_NODE_RASTERS_PER_PASS * MAX_THUMB_PASSES,
+          `bounded work: ${calls.length} shots for 60 bars`);
+        assert.ok(calls.length < 60, 'a sixty-frame row never queues sixty shots');
+        assert.equal(new Set(calls).size, calls.length, 'and never the same box twice');
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('a twenty-frame row CONVERGES: every bar is photographed, once, without a gesture', async () => {
+  // The other half of the bound, and the one that was broken. Two compounding bugs made
+  // a twenty-frame row give up part-finished: the chain capped at 3 passes × 6 = 18
+  // shots, and — worse — a continuation pass counted bars whose shot was still IN
+  // FLIGHT as misses, so it re-spent its whole budget on them and the bars it was
+  // queued to reach were skipped again, pass after pass. Nothing else re-runs a pass,
+  // so those bars stayed blank until the user happened to drag something.
+  await withNodeRaster(okShot, async (calls) => {
+    await withThumbStubs(async () => {
+      const many = Array.from({ length: 20 }, (_, i) => ({ ...clip(`f${i}`, i, 1), bg: `rgb(3, 4, ${i})` }));
+      const h = mount(many);
+      try {
+        paintMediaBoxes(h, {});
+        for (let i = 0; i < 20; i++) {
+          (h.canvasEl.querySelector(`[data-box-id="f${i}"]`) as HTMLElement).style.background = `rgb(3, 4, ${i})`;
+        }
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        for (let i = 0; i < 12; i++) await thumbPass();
+
+        assert.equal(new Set(calls).size, 20, `every frame got its own photograph (${calls.length} shots)`);
+        assert.equal(calls.length, 20, 'and none was taken twice');
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('a box that cannot be photographed is retired, not retried on every pass forever', async () => {
+  // A tainted canvas (a cross-origin image with no CORS headers) or a subtree that runs
+  // past NODE_RASTER_TIMEOUT_MS comes back with nothing, every time. Before the failure
+  // was remembered, the six bars in front spent the whole budget re-learning it on every
+  // pass of every scheduling, and the bars behind them were never reached at all.
+  const failShot = async (): Promise<null> => null;
+  await withNodeRaster(failShot, async (calls) => {
+    await withThumbStubs(async () => {
+      const h = mount([clip('bad', 0, 2), clip('good', 2, 2)]);
+      try {
+        paintMediaBoxes(h, { bad: '', good: '' });
+        for (const id of ['bad', 'good']) {
+          (h.canvasEl.querySelector(`[data-box-id="${id}"]`) as HTMLElement).style.background = 'rgb(9, 9, 9)';
+        }
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        for (let i = 0; i < 6; i++) await thumbPass();
+        const first = calls.length;
+        assert.ok(first > 0 && first <= 2, `one attempt per bar, not per pass (${first})`);
+
+        // A fresh scheduling (what any drag, zoom or fit does) must not re-open it.
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        for (let i = 0; i < 4; i++) await thumbPass();
+        assert.equal(calls.length, first, 'a hopeless bar costs exactly one shot, ever');
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('editing a card’s text re-photographs its bar — a stale picture would LIE about the box', async () => {
+  // `tracksKey` is id/lane/timed only, so a text or colour edit took the restyle branch
+  // and never re-ran a thumb pass: the bar went on showing a photograph of the old
+  // words indefinitely. Timing is excluded from the appearance key on purpose, so this
+  // must NOT fire for a drag — the case below.
+  await withNodeRaster(okShot, async (calls) => {
+    await withThumbStubs(async () => {
+      const h = mount([{ ...clip('card', 0, 2), text: 'Chapter one' }]);
+      try {
+        paintMediaBoxes(h, { card: '<div class="lolly-box-text">Chapter one</div>' });
+        (h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement).style.background = 'rgb(20, 24, 29)';
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        assert.equal(calls.length, 1);
+
+        // A drag: the model row's timing moved, its appearance did not.
+        h.boxes[0]!.start = 1;
+        h.notify();
+        await frames(2);
+        await thumbPass();
+        assert.equal(calls.length, 1, 'a drag re-uses the picture it already has');
+
+        // The sidebar edit.
+        h.boxes[0]!.text = 'Chapter two';
+        h.notify();
+        await frames(2);
+        await thumbPass();
+        assert.equal(calls.length, 2, 'new words, new photograph');
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('a second pass reuses the cached photograph, and a DRAG does not invalidate it', async () => {
+  await withNodeRaster(okShot, async (calls) => {
+    await withThumbStubs(async () => {
+      const h = mount([clip('card', 0, 2)]);
+      try {
+        paintMediaBoxes(h, { card: '' });
+        (h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement).style.background = 'rgb(20, 24, 29)';
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();
+        assert.equal(calls.length, 1);
+
+        // An unchanged rebuild: the LRU answers, no shot.
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();
+        assert.equal(calls.length, 1, 'the cache served it');
+
+        // A drag rewrites start/dur on the row. The picture has not changed one pixel,
+        // and re-shooting every bar a ripple touched is exactly what appearanceSig
+        // exists to prevent.
+        h.boxes[0]!.start = 5;
+        h.boxes[0]!.dur = 3;
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();
+        assert.equal(calls.length, 1, 'moving a clip is not a new picture');
+
+        // Recolouring the box IS a new picture.
+        (h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement).style.background = 'rgb(90, 10, 10)';
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();
+        assert.equal(calls.length, 2, 'a repaint of the box is a repaint of the bar');
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('a gesture aborts a queued pass before a single photograph is taken', async () => {
+  await withNodeRaster(okShot, async (calls) => {
+    await withThumbStubs(async () => {
+      const h = mount([clip('card', 0, 2)]);
+      try {
+        paintMediaBoxes(h, { card: '' });
+        (h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement).style.background = 'rgb(9, 9, 9)';
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        h.bar('card').dispatchEvent(pointer('pointerdown', 40 + EDGE_PX + 4));
+        await thumbPass();
+        assert.deepEqual(calls, [], 'a drag must never compete with a dom-to-image shot');
+
+        h.root.dispatchEvent(pointer('pointerup', 40 + EDGE_PX + 4));
+        await thumbPass();
+        await thumbPass();
+        assert.deepEqual(calls, ['card'], 'and the pass after the gesture does take it');
+      } finally { h.teardown(); }
+    });
+  });
+});
+
+test('an export suspends node rasters entirely, and caches nothing while it holds them', async () => {
+  // dom-to-image-more keeps MODULE-GLOBAL options / url cache / sandbox iframe and
+  // clears them at the end of ANY call, so a thumbnail shot overlapping an export
+  // corrupts both pictures. Nothing is cached while suspended either, or the bar would
+  // remember the blank forever.
+  const { suspendNodeRasters } = await import('../lib/clip-thumbs.ts');
+  await withNodeRaster(okShot, async (calls) => {
+    await withThumbStubs(async () => {
+      const h = mount([clip('card', 0, 2)]);
+      const release = suspendNodeRasters();
+      try {
+        paintMediaBoxes(h, { card: '' });
+        (h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement).style.background = 'rgb(20, 24, 29)';
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();
+        assert.deepEqual(calls, [], 'the export owns the rasteriser');
+
+        release();
+        h.panel.setOpen(false);
+        h.panel.setOpen(true);
+        await thumbPass();
+        await thumbPass();
+        assert.deepEqual(calls, ['card'], 'and the bar retries once it is free');
+      } finally { release(); h.teardown(); }
+    });
+  });
+});
+
+test('a thumb pass is idle-scheduled and a gesture aborts it before anything paints', async () => {
+  await withThumbStubs(async (ops) => {
+    const h = mount([clip('card', 0, 2)]);
+    try {
+      paintMediaBoxes(h, { card: '' });
+      (h.canvasEl.querySelector('[data-box-id="card"]') as HTMLElement).style.background = 'rgb(9, 9, 9)';
+      h.panel.setOpen(false);
+      h.panel.setOpen(true);
+      // Nothing has painted yet: the pass is deferred, never run inside the rebuild.
+      assert.equal(ops.size, 0, 'the pass waits for an idle moment');
+
+      // A drag begins. abortThumbs() runs on pointerdown, so the queued pass is dropped
+      // rather than competing with the gesture for the main thread.
+      const el = h.bar('card');
+      el.dispatchEvent(pointer('pointerdown', 40 + EDGE_PX + 4));
+      await thumbPass();
+      assert.equal(ops.size, 0, 'the aborted pass never touched a canvas');
+
+      // Releasing schedules a fresh pass, which does paint.
+      h.root.dispatchEvent(pointer('pointerup', 40 + EDGE_PX + 4));
+      await thumbPass();
+      assert.equal(ops.size, 1, 'the pass after the gesture runs');
+      assert.equal(h.bar('card').classList.contains('has-thumbs'), true);
+    } finally { h.teardown(); }
+  });
+});
+
+test('an image bar TILES one still across its width rather than stretching it', async () => {
+  await withThumbStubs(async (ops) => {
+    // A decoded picture and a bitmap factory — the two platform pieces jsdom lacks. The
+    // TILING is the panel's own arithmetic, and that is what is asserted.
+    const g = globalThis as Record<string, unknown>;
+    const hadCib = Object.hasOwn(g, 'createImageBitmap');
+    const prevCib = g.createImageBitmap;
+    g.createImageBitmap = async (cv: HTMLCanvasElement) => ({ width: cv.width, height: cv.height, close(): void { /* fake */ } });
+    const h = mount([clip('shot', 0, 3)]);
+    try {
+      paintMediaBoxes(h, { shot: '<img class="lolly-box-img" src="https://x.test/tiled-still.png">' });
+      const img = h.canvasEl.querySelector('img') as HTMLImageElement;
+      Object.defineProperty(img, 'complete', { value: true });
+      Object.defineProperty(img, 'naturalWidth', { value: 100 });
+      Object.defineProperty(img, 'naturalHeight', { value: 50 });
+      h.panel.setOpen(false);
+      h.panel.setOpen(true);
+      await thumbPass();
+      await thumbPass();                       // the capture is async; let it land
+
+      const bar = thumbCanvas(h, 'shot');
+      const draws = (ops.get(bar) ?? []).filter((o) => o.op === 'drawImage');
+      // A 100×50 picture at a 34px bar height is a 68px tile, so a 120px bar shows two.
+      assert.deepEqual(draws.map((o) => o.args.slice(1)), [[0, 0, 68, 34], [68, 0, 68, 34]],
+        'consecutive tiles at the asset’s own aspect — never one stretched thumbnail');
+      assert.equal(h.bar('shot').classList.contains('has-thumbs'), true);
+    } finally {
+      h.teardown();
+      if (hadCib) g.createImageBitmap = prevCib; else delete g.createImageBitmap;
+    }
+  });
 });

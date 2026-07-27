@@ -20,7 +20,7 @@
  * the text outlining, which needs host.text (absent in the lean CLI).
  */
 
-import { parseSvgPath } from '@lolly/engine';
+import { parseSvgPath, parseColorToSrgb8 } from '@lolly/engine';
 import type { HostV1, TextPathResult } from '../../../../engine/src/bridge/host-v1.ts';
 import type { PathSegment } from '../../../../engine/src/svg-path.ts';
 import type { VectorPathPrim, VectorImagePrim, VectorPrim, Rgb } from '../../../../engine/src/emf.ts';
@@ -35,36 +35,16 @@ const SKIP = new Set(['defs', 'clippath', 'lineargradient', 'radialgradient',
 
 type RgbTuple = [number, number, number];
 
-const NAMED: Record<string, RgbTuple> = {
-  black: [0, 0, 0], white: [255, 255, 255], red: [255, 0, 0], green: [0, 128, 0],
-  blue: [0, 0, 255], gray: [128, 128, 128], grey: [128, 128, 128], silver: [192, 192, 192],
-  yellow: [255, 255, 0], orange: [255, 165, 0], purple: [128, 0, 128], navy: [0, 0, 128],
-};
-
 // Parse an SVG/CSS colour to [r,g,b], or null for none/transparent/unparseable.
+// The engine's CSS Color 4 parser is the single source of truth (this file used to
+// carry a 12-name table and a legacy-rgb regex, so oklch()/oklab()/color() paints
+// vanished from EMF). `currentColor` is the one case it can't answer — its value
+// depends on inherited state — and EMF's walk resolves it to black as before.
 export function parseColor(input: string | null | undefined): RgbTuple | null {
   if (!input) return null;
-  const c = String(input).trim().toLowerCase();
-  if (!c || c === 'none' || c === 'transparent') return null;
-  if (c === 'currentcolor') return [0, 0, 0];
-  if (c[0] === '#') {
-    let hex = c.slice(1);
-    if (hex.length === 3) hex = hex.split('').map(h => h + h).join('');
-    if (hex.length === 6) {
-      const n = parseInt(hex, 16);
-      if (!Number.isNaN(n)) return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    }
-    return null;
-  }
-  const m = c.match(/^rgba?\(([^)]+)\)$/);
-  if (m) {
-    const parts = m[1]!.split(',').map(s => s.trim());
-    const ch = (s: string) => s.endsWith('%') ? Math.round(parseFloat(s) * 2.55) : parseInt(s, 10);
-    const r = ch(parts[0]!), g = ch(parts[1]!), b = ch(parts[2]!);
-    if ([r, g, b].every(Number.isFinite)) return [r, g, b];
-    return null;
-  }
-  return NAMED[c] ?? null;
+  if (String(input).trim().toLowerCase() === 'currentcolor') return [0, 0, 0];
+  const c = parseColorToSrgb8(input);
+  return c ? [c[0], c[1], c[2]] : null;
 }
 
 // Composite a colour over an opaque background by its alpha (source-over flatten).

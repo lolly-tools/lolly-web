@@ -34,11 +34,27 @@
  * else is slaved to its timebase. Videos free-run and are re-seeked only when they
  * drift past ~80 ms.
  *
+ * AUDIO BOXES ARE SCHEDULED, NOT DRIVEN. A `[data-audio-src]` box has no element to
+ * play — the tool hook emits an inert marker div — so each one is handed to that same
+ * AudioContext as a single `AudioBufferSourceNode.start(when, offset, duration)`,
+ * placed once, ahead of time, against `t0`. The frame loop never advances it: it only
+ * asserts the invariant "every box that should be sounding has a placement", and every
+ * exit from playback (pause, seek, repaint, hidden tab, destroy) stops the sources
+ * outright. Semantics are the export mix's, so preview and file agree — see driveAudio.
+ *
  * Seeks are strictly serialised per element (the Safari rule — a seek issued while
  * another is in flight is silently cancelled, so scrubbing returns a lottery of
  * frames). The queue is the shared, already-tested one from lib/clip-thumbs.ts; this
  * module adds only what playback needs on top: latest-wins scrub throttling and a
  * single confirm-and-nudge retry when a decoder lands short of the requested time.
+ *
+ * NOT EVERY AUDIO SOURCE IS A CONTAINER. A box may carry a TRACKER MODULE
+ * (.mod/.xm/.it/.s3m/.stm/.mtm) — a score plus its instrument samples, not encoded
+ * audio, so `decodeAudioData` cannot parse a byte of it. Those are rendered to PCM by
+ * libopenmpt (lib/mod-render.ts, lazily imported) and enter the ordinary decode cache
+ * as an AudioBuffer, so everything downstream — the ceilings, the abort plumbing, the
+ * scheduling triple — is unchanged. See "tracker modules" below for how one is
+ * recognised, and bridge/sequence-providers.ts for the export half of the same story.
  *
  * BROWSER-ONLY SURFACES (deliberately isolated behind injectable seams so the rest is
  * unit-testable in jsdom): `AudioContext`, `requestVideoFrameCallback`,
@@ -46,7 +62,10 @@
  */
 
 import { recTransition, isTransitionKind, type TransitionKind } from '../lib/transitions.ts';
-import { createSeekQueue, type SeekableEl } from '../lib/clip-thumbs.ts';
+import {
+  createSeekQueue, readBounded, withinDecodeBudget, MAX_AUDIO_DECODE_BYTES,
+  type SeekableEl,
+} from '../lib/clip-thumbs.ts';
 import { lottiePlayerFor } from './lottie-mount.ts';
 // The rate range is timeline-math's (a pure, DOM-free module): the tool hook, the
 // panel's writers and this reader must clamp identically, so there is exactly one
@@ -67,10 +86,132 @@ export const SCRUB_THROTTLE_MS = 100;
 export const DRIFT_TOLERANCE_S = 0.08;
 /** How far short of a source's own end the last held frame sits. */
 export const MEDIA_END_EPS_S = 0.04;
+/**
+ * How many DISTINCT audio sources one preview will ever decode.
+ *
+ * Decoded PCM is raw f32 — roughly 10 MB per minute per channel — and there is no
+ * streaming decode in the platform API, so the only defence is refusing to start.
+ * The compressed fetch is already bounded by MAX_AUDIO_DECODE_BYTES (shared with the
+ * waveform reader, so a file the timeline refused to draw is never decoded for
+ * preview either); these two ceilings bound what a composition full of music beds can
+ * cost. Past either one the box is simply silent in preview and a warning is logged —
+ * NEVER a throw, because the picture must keep playing.
+ */
+export const MAX_PREVIEW_AUDIO_SOURCES = 6;
+/**
+ * Ceiling on the decoded PCM this clock will hold at once, bytes.
+ *
+ * A tracker module is bounded differently on the way IN — its file is a few hundred
+ * kB, so MAX_AUDIO_DECODE_BYTES says nothing useful about how long it plays — and its
+ * own ceiling is the decode worker's `MAX_SECONDS` (480 s, lib/mod-worker.ts), after
+ * which it stops rendering. What lands here is then accounted exactly like a decoded
+ * file: a pathological module spends the whole budget and the tracks after it are
+ * silent in preview WITH A WARNING, which is the same degradation an over-long wav
+ * already gets. There is deliberately no second, module-specific budget.
+ */
+export const MAX_PREVIEW_PCM_BYTES = 96 * 1024 * 1024;
 /** Clamps mirroring the tool hook's own attribute clamps. */
 export { MIN_SPEED, MAX_SPEED };
 // MIN_/MAX_TRANSITION_MS are re-exported below, from the module that now owns the
 // applier — one declaration, same names on this module's surface as before.
+
+// ── tracker modules: recognising one ────────────────────────────────────────
+//
+// A .mod/.xm/.it/.s3m/.stm/.mtm file is a SCORE plus the instrument samples it plays —
+// there is no encoded audio stream in it at all. `decodeAudioData` fails on one and so
+// does mediabunny; the only thing in this codebase that can turn it into sound is
+// libopenmpt (lib/mod-render.ts). So before either decoder is handed the bytes,
+// something has to say "this is a module" — and that is harder than it sounds:
+//
+//   • THE FORMAT FIELD WOULD BE THE BEST SIGNAL AND IS NOT AVAILABLE HERE. An uploaded
+//     asset's `AssetRef.format` is exactly 'mod'/'xm'/… (that is what the export bar
+//     switches on — views/tool-actions.ts, `isModuleFormat(r.format)`), but the
+//     sequence tool's hook emits only `data-audio-src="<url>"`, so by the time a box
+//     reaches this module the format has been thrown away. Recovering it means a new
+//     `data-audio-format` attribute in community/sequence-studio/hooks.js — reported,
+//     not done here.
+//   • THE EXTENSION IS NOT ENOUGH. A user upload resolves to a `blob:` URL minted by
+//     bridge/assets.ts (`URL.createObjectURL`) with no path, no extension and a MIME
+//     type of whatever the OS guessed — and an upload is the ONLY way a module gets
+//     into a composition today (no brand catalog ships one; the picker accepts
+//     .mod/.xm/.it/.s3m/.stm/.mtm as uploads).
+//
+// So the signal is the BYTES, with the extension as a free fast path when there is
+// one. Both live here, pure and exported, and bridge/sequence-providers.ts imports
+// them for the export mix — one definition, so preview and export can never disagree
+// about what is a module. (That import direction, bridge → this file, is the same
+// read-only reuse the seek helpers below already have; the reverse would be a cycle.)
+
+/** The module formats libopenmpt decodes for us. Mirrors `MODULE_FORMATS` in
+ *  lib/mod-render.ts, which is the shipped list — a test asserts they are identical
+ *  rather than importing it, because that module must stay out of the eager graph. */
+export const MODULE_EXTENSIONS = ['mod', 'xm', 's3m', 'it', 'stm', 'mtm'] as const;
+
+/** A url's own path extension, lowercased. '' for a blob:/data: url, or a query-only
+ *  match — the query and fragment are cut first, so `?src=x.mod` is NOT an extension. */
+export function urlExtension(url: string): string {
+  const path = (url.split('#')[0] ?? '').split('?')[0] ?? '';
+  const base = path.slice(path.lastIndexOf('/') + 1);
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(dot + 1).toLowerCase() : '';
+}
+
+/** Does this url NAME a tracker module? A fast path only — see the section header. */
+export function isModuleUrl(url: string): boolean {
+  return (MODULE_EXTENSIONS as readonly string[]).includes(urlExtension(url));
+}
+
+/** Original-MOD channel magics that are not a literal 4CHN/16CH-style pattern. */
+const MOD_MAGIC = new Set([
+  'M.K.', 'M!K!', 'M&K!', 'N.T.', 'FLT4', 'FLT8', 'EXO4', 'EXO8',
+  'OCTA', 'OKTA', 'CD81', 'FA04', 'FA06', 'FA08',
+]);
+/** `4CHN`, `16CH`, `TDZ3` — the channel-count magics, written as patterns. */
+const MOD_MAGIC_RE = /^(?:[1-9]CHN|[1-9][0-9]C[HN]|TDZ[1-9])$/;
+/** ScreamTracker 2 identifies itself at offset 20, with 0x1A as the EOF marker at 28. */
+const STM_TAGS = new Set(['!scream!', 'bmod2stm', 'wuzamod!', 'swavepro']);
+
+/**
+ * Is this a tracker module, by its own bytes?
+ *
+ * Each of the six formats carries a magic, just not all in the same place: IT and XM
+ * at the very start, MTM likewise, S3M at 0x2C, STM at 0x14, and the original MOD
+ * family at 1080 — AFTER its 31 sample headers, which is why the buffer has to be at
+ * least 1084 bytes before that one can be read at all.
+ *
+ * HONEST LIMIT: a 15-instrument SoundTracker MOD (pre-1987 layout) has NO magic
+ * anywhere — nothing can identify it but its extension and a heuristic on its sample
+ * table, and a heuristic that guesses wrong sends an mp3 to libopenmpt. So this
+ * returns false for one, the extension path catches the ones named `.mod`, and the
+ * rest degrade to the same logged silence as any other undecodable box. libopenmpt
+ * itself sniffs the real format from the bytes, so this only has to decide WHO
+ * decodes, never WHICH format it is.
+ */
+export function sniffTrackerModule(src: ArrayBuffer | Uint8Array): boolean {
+  const b = src instanceof Uint8Array ? src : new Uint8Array(src);
+  if (b.length < 32) return false;
+  const tag = (at: number, len: number): string => {
+    let s = '';
+    for (let i = at; i < at + len && i < b.length; i++) s += String.fromCharCode(b[i] as number);
+    return s;
+  };
+  if (tag(0, 4) === 'IMPM') return true;                                  // Impulse Tracker
+  if (tag(0, 17) === 'Extended Module: ') return true;                    // FastTracker 2
+  if (tag(0, 3) === 'MTM' && (b[3] as number) < 0x20) return true;        // MultiTracker
+  if (b.length >= 48 && tag(44, 4) === 'SCRM') return true;               // ScreamTracker 3
+  if (STM_TAGS.has(tag(20, 8).toLowerCase()) && b[28] === 0x1a) return true; // ScreamTracker 2
+  if (b.length >= 1084) {                                                 // MOD and friends
+    const magic = tag(1080, 4);
+    if (MOD_MAGIC.has(magic) || MOD_MAGIC_RE.test(magic)) return true;
+  }
+  return false;
+}
+
+/** The one question both the preview and the export mix ask: does libopenmpt own this? */
+export function looksLikeTrackerModule(url: string, bytes?: ArrayBuffer | Uint8Array | null): boolean {
+  if (isModuleUrl(url)) return true;
+  return !!bytes && sniffTrackerModule(bytes);
+}
 
 // ── the public contract ─────────────────────────────────────────────────────
 
@@ -107,6 +248,32 @@ export interface SequenceClockOpts {
   caf?: (handle: number) => void;
   /** Test seam: monotonic ms — scrub throttling and the fallback playback timebase. */
   now?: () => number;
+  /**
+   * Test seam: fetch + decode ONE audio source, or null when it must stay silent.
+   * Defaults to a size-bounded fetch through the shared decode ceiling followed by
+   * `AudioContext.decodeAudioData`. Rejections are caught by the caller and logged.
+   */
+  loadAudio?: (url: string, signal: AbortSignal) => Promise<AudioBuffer | null>;
+  /**
+   * Test seam: render tracker-module BYTES to an AudioBuffer on the clock's context.
+   * Defaults to the libopenmpt worker client, imported lazily at the point of use so
+   * its WASM never enters the first-paint graph (see `defaultRenderModule`).
+   */
+  renderModule?: (ctx: BaseAudioContext, bytes: Uint8Array) => Promise<AudioBuffer>;
+}
+
+/**
+ * The shipped module renderer, behind a dynamic import.
+ *
+ * lib/mod-render.ts spawns a Worker carrying the libopenmpt WASM. A static import
+ * would put its chunk in this module's eager graph — and this module is on the editor's
+ * first-paint path — for a format almost no composition contains. So it is pulled only
+ * when a box's bytes actually turn out to be a module, exactly as mediabunny is in
+ * bridge/sequence-providers.ts.
+ */
+async function defaultRenderModule(ctx: BaseAudioContext, bytes: Uint8Array): Promise<AudioBuffer> {
+  const mod = await import('../lib/mod-render.ts');
+  return mod.renderModToAudioBuffer(ctx, bytes);
 }
 
 // ── the DOM applier: IMPORTED, never re-derived ─────────────────────────────
@@ -130,7 +297,7 @@ export {
 export type { Timing, TransitionAt, AuthoredStore, ApplyCtx } from '../bridge/sequence-dom.ts';
 
 import {
-  readTiming, isActiveAt, createAuthoredStore, applyTimeToElements, OFF_CLASS,
+  readTiming, isActiveAt, endOf, createAuthoredStore, applyTimeToElements, OFF_CLASS,
   type Timing,
 } from '../bridge/sequence-dom.ts';
 
@@ -313,6 +480,21 @@ interface VideoRec {
   playing: boolean;
 }
 
+/**
+ * One audio box's place in the preview mix.
+ *
+ * `node` is null both BEFORE the decode lands and AFTER a source ends or is refused —
+ * the record's existence, not its node, is what says "this box has been dealt with at
+ * the current playhead", so a box that cannot sound is never re-attempted 60 times a
+ * second. `key` is every attribute that decides WHETHER and WHERE it sounds: when it
+ * changes (the user muted the clip, dragged it, retrimmed it) the record is torn down
+ * and the box is re-placed on the next frame.
+ */
+interface AudioRec {
+  key: string;
+  node: AudioBufferSourceNode | null;
+}
+
 type AudioCtxCtor = new () => AudioContext;
 
 export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
@@ -334,6 +516,14 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   const store = createAuthoredStore();
   const videos = new Map<HTMLVideoElement, VideoRec>();
   const ticks = new Set<(tMs: number) => void>();
+  /** Live preview-mix records, one per audio box currently placed. */
+  const audios = new Map<HTMLElement, AudioRec>();
+  /** Decoded PCM, one entry per SOURCE URL (many boxes can share a track). */
+  const buffers = new Map<string, Promise<AudioBuffer | null>>();
+  /** Sources that failed or were refused: never fetched twice, never counted twice. */
+  const audioFailed = new Set<string>();
+  /** Every in-flight audio fetch, so destroy() abandons them rather than leaking. */
+  const audioAborts = new Set<AbortController>();
 
   let tMs = 0;
   let scrubbing = false;
@@ -344,6 +534,9 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   let t0 = 0;               // ctx.currentTime at playhead 0 (audio timebase)
   let wall0 = 0;            // nowMs() at playhead 0 (fallback timebase)
   let dead = false;
+  let pcmBytes = 0;         // decoded PCM currently held, bytes
+  let ctxWasRunning = false; // last seen ctx.state, to re-place audio after a resume
+  let speedWarned = false;   // the "no time-stretch" warning is once per clock
 
   const log = (level: string, msg: string): void => { try { host?.log?.(level, msg); } catch { /* logging is never fatal */ } };
 
@@ -381,6 +574,246 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   function releaseVideo(video: HTMLVideoElement, rec: VideoRec): void {
     if (rec.playing) { try { video.pause(); } catch { /* detached */ } rec.playing = false; }
     if (rec.mutedWas != null) { try { video.muted = rec.mutedWas; } catch { /* detached */ } rec.mutedWas = null; }
+  }
+
+  // ── preview audio: SCHEDULED against the master clock, never polled ──────────
+  //
+  // An audio box paints nothing (the tool hook emits a bare `[data-audio-src]`
+  // marker), so unlike a <video> there is no element whose own clock could carry it.
+  // It is placed directly on the shared AudioContext instead — the same context whose
+  // `currentTime` IS this module's timebase — with one AudioBufferSourceNode per box:
+  //
+  //     start(t0 + boxStart, clipIn + alreadyElapsed, howMuchIsLeft)
+  //
+  // so the sound is handed to the audio thread once, ahead of time, and is sample-
+  // accurate against the playhead by construction. Nothing here runs off rAF: a frame
+  // loop can be throttled, descheduled or run at 120 Hz, and audio started from one
+  // drifts audibly within seconds. The per-frame pass below only ASSERTS the invariant
+  // (every box that should be sounding has a record), it never advances the sound.
+  //
+  // Semantics are the export mix's, deliberately, so a preview and the rendered file
+  // agree: silent when `data-t-mute` is set, silent at speed ≠ 1 (v1 does not
+  // time-stretch, and a chipmunk voiceover is worse than a silent one — the identical
+  // rule bridge/sequence-render.ts states), offset by `data-clip-in`, and clipped both
+  // to the box's own window and to the sequence's end.
+
+  /** The audio source URL a box carries, or '' when it is not an audio box. */
+  function audioSrcOf(el: HTMLElement): string {
+    const m = el.matches?.('[data-audio-src]') ? el : el.querySelector?.('[data-audio-src]');
+    return m?.getAttribute('data-audio-src') || '';
+  }
+
+  /** Everything that decides WHETHER and WHERE a box sounds. */
+  function audioKey(url: string, timing: Timing): string {
+    return `${url}|${timing.start}|${timing.dur}|${timing.clipIn}|${timing.speed}|${timing.mute ? 1 : 0}`;
+  }
+
+  function stopAudioNode(node: AudioBufferSourceNode): void {
+    try { node.onended = null; } catch { /* fake/detached node */ }
+    try { node.stop(); } catch { /* never started, or already ended */ }
+    try { node.disconnect(); } catch { /* already torn down */ }
+  }
+
+  /** Silence one box and forget it, so the next pass may re-place it. */
+  function stopAudioFor(el: HTMLElement): void {
+    const rec = audios.get(el);
+    if (!rec) return;
+    audios.delete(el);
+    if (rec.node) stopAudioNode(rec.node);
+  }
+
+  /** Silence the whole preview mix. Every exit from playback goes through here. */
+  function stopAllAudio(): void {
+    for (const [, rec] of audios) if (rec.node) stopAudioNode(rec.node);
+    audios.clear();
+  }
+
+  /**
+   * Fetch + decode one source, at most once per clock.
+   *
+   * Bounded twice over: the declared Content-Length is refused before the body is
+   * touched, and the read itself is abandoned at the same ceiling so an unlabelled
+   * response cannot buffer a 500 MB asset just to be refused afterwards. Both ceilings
+   * are the waveform reader's, so "too big to draw" and "too big to hear" agree.
+   */
+  async function fetchAndDecode(url: string, signal: AbortSignal): Promise<AudioBuffer | null> {
+    const c = audioCtx();
+    if (!c || typeof fetch !== 'function') return null;
+    const res = await fetch(url, { signal });
+    if (!res.ok || signal.aborted) return null;
+    const declared = Number(res.headers?.get?.('content-length') ?? Number.NaN);
+    if (!withinDecodeBudget(Number.isFinite(declared) ? declared : null)) {
+      log('warn', `sequence audio: ${url} is larger than the decode ceiling — silent in preview`);
+      return null;
+    }
+    const bytes = await readBounded(res, MAX_AUDIO_DECODE_BYTES, signal);
+    if (!bytes || signal.aborted) return null;
+    // A TRACKER MODULE holds no encoded audio, so `decodeAudioData` would throw
+    // `EncodingError` on it and the box would be silent with only a generic warning.
+    // The bytes are already in hand, so recognising one costs a handful of byte
+    // comparisons and no second fetch; libopenmpt renders it at the context's own
+    // sample rate and the result joins the cache as an ordinary AudioBuffer.
+    if (looksLikeTrackerModule(url, bytes)) {
+      try {
+        // `renderMod` TRANSFERS this buffer to the worker; nothing below reads it again.
+        return await renderModule(c, new Uint8Array(bytes));
+      } catch (err) {
+        // Named, never swallowed — bufferFor's catch logs it against this url.
+        throw new Error(`tracker module could not be rendered (${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
+    return await c.decodeAudioData(bytes);
+  }
+
+  const loadAudio = opts.loadAudio || fetchAndDecode;
+  const renderModule = opts.renderModule || defaultRenderModule;
+
+  /** Bytes of raw PCM one decoded buffer holds. */
+  function pcmSizeOf(buf: AudioBuffer): number {
+    const frames = Number(buf.length) || 0;
+    const ch = Math.max(1, Number(buf.numberOfChannels) || 1);
+    return frames * ch * 4;
+  }
+
+  /** The decoded buffer for a source, decoding it once and guarding the memory. */
+  function bufferFor(url: string): Promise<AudioBuffer | null> {
+    const hit = buffers.get(url);
+    if (hit) return hit;
+    if (audioFailed.has(url)) return Promise.resolve(null);
+    if (buffers.size >= MAX_PREVIEW_AUDIO_SOURCES) {
+      audioFailed.add(url);
+      log('warn', `sequence audio: more than ${MAX_PREVIEW_AUDIO_SOURCES} distinct tracks in one composition — the rest are silent in preview`);
+      return Promise.resolve(null);
+    }
+    if (pcmBytes >= MAX_PREVIEW_PCM_BYTES) {
+      audioFailed.add(url);
+      log('warn', 'sequence audio: decoded-audio budget reached — this track is silent in preview');
+      return Promise.resolve(null);
+    }
+    const ac = new AbortController();
+    audioAborts.add(ac);
+    const p = loadAudio(url, ac.signal)
+      .then((buf) => {
+        if (!buf || dead) { buffers.delete(url); audioFailed.add(url); return null; }
+        pcmBytes += pcmSizeOf(buf);
+        return buf;
+      })
+      .catch((err: unknown) => {
+        // An undecodable, offline or aborted track degrades to silence. It must never
+        // reject into the frame loop: the picture keeps playing without the sound.
+        buffers.delete(url);
+        audioFailed.add(url);
+        log('warn', `sequence audio: ${url} could not be decoded (${err instanceof Error ? err.message : String(err)}) — silent in preview`);
+        return null;
+      })
+      .finally(() => { audioAborts.delete(ac); });
+    buffers.set(url, p);
+    return p;
+  }
+
+  /** A box's end on the timeline, seconds — its own window, capped by the sequence. */
+  function audioEndSec(timing: Timing, seq: number): number {
+    const end = endOf(timing, seq);
+    return (seq > 0 ? Math.min(end, seq) : end) / 1000;
+  }
+
+  /**
+   * Hand one decoded buffer to the audio thread, positioned against the master clock.
+   *
+   * `from` is where on the TIMELINE the sound begins: the box's start when it is still
+   * ahead of the playhead (the look-ahead case, scheduled precisely), or the playhead
+   * itself when we are already inside the box (play from the middle, a seek into it, a
+   * decode that landed late) — in which case `when` is already past and the platform
+   * starts it immediately with the matching offset, which is exactly right.
+   */
+  function startAudio(el: HTMLElement, timing: Timing, buf: AudioBuffer): void {
+    const c = ctx;
+    const rec = audios.get(el);
+    if (!c || !rec || rec.node || !isPlaying || dead) return;
+    if (!canvasEl.contains(el)) return;             // repainted away while decoding
+    const seq = seqMs();
+    const startSec = timing.start / 1000;
+    const endSec = audioEndSec(timing, seq);
+    const from = Math.max(startSec, c.currentTime - t0);
+    if (!(endSec > from)) return;                   // the window has already closed
+    const offset = timing.clipIn / 1000 + (from - startSec);
+    const srcDur = Number.isFinite(buf.duration) ? buf.duration : 0;
+    if (srcDur > 0 && offset >= srcDur) return;     // trimmed past the end of the file
+    let dur = endSec - from;
+    if (srcDur > 0) dur = Math.min(dur, srcDur - offset);
+    if (!(dur > 0)) return;
+    let node: AudioBufferSourceNode;
+    try {
+      node = c.createBufferSource();
+      node.buffer = buf;
+      node.connect(c.destination);
+    } catch (err) {
+      log('warn', `sequence audio: could not connect a source — ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    rec.node = node;
+    node.onended = (): void => {
+      // Keep the RECORD (the box has been dealt with at this playhead) but drop the
+      // node, so the per-frame pass neither restarts it nor stops a dead node.
+      const cur = audios.get(el);
+      if (cur === rec && cur.node === node) cur.node = null;
+      try { node.disconnect(); } catch { /* already torn down */ }
+    };
+    try {
+      node.start(Math.max(t0 + from, c.currentTime), offset, dur);
+    } catch (err) {
+      rec.node = null;
+      stopAudioNode(node);
+      log('warn', `sequence audio: start refused — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Make sure one audio box is placed for the CURRENT playhead. Idempotent: the record
+   * is written before the decode is even requested, so a box that is downloading, or
+   * that was refused, costs nothing on the next 59 frames of the second.
+   */
+  function placeAudio(el: HTMLElement, url: string, timing: Timing, key: string): void {
+    if (!isPlaying || dead || audios.has(el)) return;
+    if (!audioCtx()) return;                        // no output device: picture only
+    const seq = seqMs();
+    if (tMs / 1000 >= audioEndSec(timing, seq)) return;   // already past it
+    if (timing.mute) { audios.set(el, { key, node: null }); return; }
+    if (timing.speed !== 1) {
+      audios.set(el, { key, node: null });
+      if (!speedWarned) {
+        speedWarned = true;
+        log('warn', `sequence audio: a clip at ${Math.round(timing.start)}ms plays at ${timing.speed}× — silent (v1 does not time-stretch audio), matching the export mix`);
+      }
+      return;
+    }
+    if (!url) return;
+    audios.set(el, { key, node: null });
+    void bufferFor(url).then((buf) => {
+      const cur = audios.get(el);
+      if (!buf || !cur || cur.key !== key || cur.node) return;
+      startAudio(el, timing, buf);
+    });
+  }
+
+  /**
+   * The per-frame assertion for one audio box. It only ever CORRECTS state:
+   * re-places a box whose timing changed under it, silences one the playhead has left,
+   * and places one that has never been placed (a box minted by a repaint mid-play).
+   */
+  function driveAudio(el: HTMLElement, timing: Timing, active: boolean): void {
+    const url = audioSrcOf(el);
+    if (!url) return;
+    const key = audioKey(url, timing);
+    const rec = audios.get(el);
+    // Muted mid-playback, dragged, retrimmed: the placement is stale, drop it and let
+    // the same frame re-place it against the new attributes.
+    if (rec && rec.key !== key) { stopAudioFor(el); }
+    if (!isPlaying) { stopAudioFor(el); return; }
+    // PAST the window (not merely "not yet in it" — a box scheduled ahead of the
+    // playhead is inactive on purpose and must keep its pending source).
+    if (!active && tMs >= timing.start) { stopAudioFor(el); return; }
+    placeAudio(el, url, timing, key);
   }
 
   function driveMedia(el: HTMLElement, timing: Timing, sourceMs: number, active: boolean): void {
@@ -430,8 +863,10 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       const player = lottiePlayerFor(marker);
       if (player && active) { try { player.goToAndStop(sourceMs, false); } catch { /* player mid-teardown */ } }
     }
-    // Audio boxes (.lolly-box-audio) have no visual and no element to drive — the
-    // mix is phase 3. Nothing to do here on purpose.
+    // Audio boxes (.lolly-box-audio) have no visual and no element to drive, so their
+    // sound is placed on the shared AudioContext instead. This is the assertion pass,
+    // not the transport: see driveAudio.
+    driveAudio(el, timing, active);
   }
 
   // ── the apply pass ────────────────────────────────────────────────────────
@@ -456,6 +891,11 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     for (const [video, rec] of [...videos]) {
       if (!canvasEl.contains(video)) { releaseVideo(video, rec); rec.seeker.destroy(); videos.delete(video); }
     }
+    // Audio boxes a repaint orphaned. A scheduled source is on the AUDIO THREAD, not
+    // on the element, so dropping the detached box without stopping it leaves the
+    // track playing to the end of the sequence with nothing on screen to explain it —
+    // and a second copy starts the moment the fresh box is placed.
+    for (const [el] of [...audios]) if (!canvasEl.contains(el)) stopAudioFor(el);
     for (const cb of [...ticks]) { try { cb(tMs); } catch { /* a bad subscriber never stops the clock */ } }
   }
 
@@ -499,6 +939,13 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
 
   function tick(): void {
     if (dead || !isPlaying) return;
+    // A context the autoplay policy refused has a FROZEN currentTime, so elapsedMs
+    // keeps re-basing t0 against wall time while it stays suspended — which means
+    // anything scheduled meanwhile sits at the wrong place on the audio timeline. The
+    // frame `resume()` finally lands is the one frame where every source has to be
+    // re-placed; the apply pass below does it from the cached buffers.
+    const running = ctx ? ctx.state === 'running' : false;
+    if (running !== ctxWasRunning) { ctxWasRunning = running; stopAllAudio(); }
     const dur = duration();
     let next = tMs;
     try { next = elapsedMs(); } catch { /* a dying context must not strand playback */ }
@@ -522,6 +969,9 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     isPlaying = false;
     if (loop) { caf(loop); loop = 0; }
     for (const [video, rec] of videos) releaseVideo(video, rec);
+    // Before the context is suspended: a suspended context never fires `onended`, so
+    // a source left running here would be resurrected mid-note by the next resume.
+    stopAllAudio();
     try { void ctx?.suspend?.(); } catch { /* context already closed */ }
     applyNow();          // settle every box at the held position
   }
@@ -547,6 +997,14 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       if (isPlaying) {                                   // keep playback in step
         if (ctx) t0 = ctx.currentTime - tMs / 1000;
         wall0 = nowMs() - tMs;
+        // Every scheduled source was placed against the OLD t0 and is now in the wrong
+        // place. Drop them all; the apply pass this seek schedules re-places every box
+        // against the new playhead (from the cached buffers, so no refetch).
+        stopAllAudio();
+      } else {
+        // Seeking while paused must be silent — including a scrub that crosses an
+        // audio box, and including the settling pass pause() itself runs.
+        stopAllAudio();
       }
       schedule();
     },
@@ -562,10 +1020,11 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       if (c) { try { void c.resume?.(); } catch { /* resume is best-effort */ } }
       t0 = c ? c.currentTime - tMs / 1000 : 0;
       wall0 = nowMs() - tMs;
-      if (!c) log('warn', 'sequence-clock: no AudioContext — playback falls back to frame stepping');
+      if (!c) log('warn', 'sequence-clock: no AudioContext — playback falls back to frame stepping (audio boxes stay silent)');
       isPlaying = true;
       scrubbing = false;
-      applyNow();
+      ctxWasRunning = c?.state === 'running';
+      applyNow();          // places every audio box against the timebase set above
       loop = raf(tick);
     },
     pause,
@@ -592,6 +1051,14 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       }
       for (const [video, rec] of videos) { releaseVideo(video, rec); rec.seeker.destroy(); }
       videos.clear();
+      // Sound first: a scheduled source outlives the element, the canvas and this
+      // object, and would go on playing into a closed editor.
+      stopAllAudio();
+      for (const ac of [...audioAborts]) { try { ac.abort(); } catch { /* already settled */ } }
+      audioAborts.clear();
+      buffers.clear();               // the last reference to every decoded buffer
+      audioFailed.clear();
+      pcmBytes = 0;
       // Every class and inline property this clock ever wrote, undone.
       for (const el of boxes()) el.classList.remove(OFF_CLASS);
       store.restoreAll();

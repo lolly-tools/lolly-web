@@ -18,6 +18,7 @@ import {
   parseCssMatrix, matAboutPivot, isAxisAlignedMat, matToSvg, type Mat2D,
   parseClipShape, parseRadialGradient, parseConicGradient, parseDropShadowFilter, type ConicGradient,
   splitCssArgs, parseGradientAngle, parseGradientStop,
+  parseColor, interpolateColor, colorToSrgb8,
   buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
   embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
   buildExportMeta,
@@ -45,6 +46,7 @@ import type { StackingRole } from './stacking-order.ts';
 import { unscopeStyleEls } from '../lib/scope-css.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { recTransition } from '../lib/transitions.ts';
+import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
 import { encodeMuxWebCodecs, type EncodeAudio } from './video-encode-core.ts';
 import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.ts';
@@ -171,6 +173,15 @@ export interface ExportOpts {
   dataMime?: string;
   icoSizes?: number[];
   bundleFormats?: string[];
+  /** CONTACT SHEET frame count for a STILL export of a timed composition (the
+   *  `cuts` URL param; engine url-mode parses and clamps it). 1 or absent — the
+   *  overwhelmingly common case — is the frame at the playhead, byte-identical to
+   *  no param at all. N > 1 renders N stills at midpoint times across the
+   *  sequence: png/jpg/webp/svg come back as one ZIP of `<filename>-01.<ext>`
+   *  members, pdf as ONE document of N pages. Ignored by every non-still format
+   *  and by any node that is not a [data-sequence] stage. See bridge/
+   *  sequence-cuts.ts and plans/fable-timeline-editing.md §4.6. */
+  cuts?: number;
   onProgress?: (done: number, total: number) => void;
   fps?: number;
   repeat?: number;
@@ -320,6 +331,11 @@ export function createExportAPI(host: WebHost) {
       const removeWatermark = watermark ? addWatermarkOverlay(node as HTMLElement) : null;
       // Pull any editor-only chrome out of the tree for the duration of the capture.
       const restoreHidden = detachExportHidden(node);
+      // The timeline panel photographs its own clip boxes with the SAME dom-to-image
+      // instance, whose options / url cache / sandbox iframe are module-global and are
+      // cleared by whichever call finishes first. detachExportHidden removes the panel
+      // from the tree, which stops it *scheduling* more, but a shot already in flight
+      // would still corrupt this one — and the panel is not the only thing rastering.
       // Freeze every <video> to a current-frame still — the DOM serialiser can't
       // paint live video, so a video box would otherwise export blank. One swap on
       // the live node here covers every format, including each ZIP sub-format (they
@@ -335,10 +351,27 @@ export function createExportAPI(host: WebHost) {
         ? (): void => {}
         : snapshotMotion(node);
 
+      // The timeline panel photographs its own clip boxes with the SAME dom-to-image
+      // instance, whose options / url cache / sandbox iframe are module-global and are
+      // cleared by whichever call finishes first. detachExportHidden removes the panel
+      // from the tree, which stops it *scheduling* more, but a shot already in flight
+      // would still corrupt this one — and the panel is not the only thing rastering.
+      // Say it explicitly instead of relying on that side effect.
+      //
+      // Acquired HERE, immediately before the try, and not a line earlier: the counter
+      // is only decremented by the `finally` below, so anything that can throw between
+      // the two (snapshotMotion walks the tree) would suspend frame thumbnails for the
+      // rest of the session with nothing to log and nothing to reset it.
+      const resumeThumbRasters = suspendNodeRasters();
       try {
+        // Suspending stops the NEXT shot; it cannot cancel the uncancellable one that
+        // is already inside the library. Wait that one out — bounded — or its teardown
+        // clears the sandbox iframe and url cache out from under THIS render.
+        await drainNodeRasters();
         return await renderFormat(node, format, opts);
       } finally {
         restoreMotion();
+        resumeThumbRasters();
         restoreHidden();
         removeWatermark?.();
       }
@@ -437,7 +470,36 @@ async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif'
   return renderSequence(node, format, opts, _host ?? null);
 }
 
+// The STILL sibling of the compositor: `cuts=N` (N > 1) on a still format over a
+// [data-sequence] stage → N stills at midpoint times, zipped (raster/svg) or paged
+// (pdf). Lazy for the same reason as above, and because the overwhelmingly common
+// still export never comes near it. Every renderer stays here; sequence-cuts.ts
+// owns only the loop, the sampling and the naming.
+async function renderSequenceCutSheet(node: Element, format: string, opts: ExportOpts): Promise<Blob> {
+  const { renderSequenceCuts } = await import('./sequence-cuts.ts');
+  return renderSequenceCuts(node, format, opts, {
+    renderStill: (n, f, o) => renderFormat(n, f, o),
+    async renderPdfPages(pages, o, prepare) {
+      let blob = await renderMultiPagePdf(pages, o, prepare);
+      // The tail of renderPdf: the strong tier is an encrypt-last pass over the
+      // finished bytes, and a paged contact sheet is finished bytes.
+      if (o.strongPassword) blob = await encryptPdfStrong(blob, o.strongPassword);
+      return blob;
+    },
+    packZip: (members, o) => packZip(members, o),
+    log: (l, m) => { _host?.log?.(l as 'debug' | 'info' | 'warn' | 'error', m); },
+  });
+}
+
 async function renderFormatDispatch(node: Element, format: string, opts: ExportOpts = {}): Promise<Blob> {
+  // Contact sheet FIRST, ahead of every still renderer: `cuts=N` changes what the
+  // output IS (an archive, or a paged document), not how one still is drawn. The
+  // guard is exact — N > 1, a still format, a timed stage — so `cuts=1` and every
+  // non-sequence export fall straight through to the switch untouched.
+  if (opts.cuts != null && opts.cuts !== 1 && isSequenceStage(node)) {
+    const { wantsCuts } = await import('./sequence-cuts.ts');
+    if (wantsCuts(format, opts.cuts, true)) return await renderSequenceCutSheet(node, format, opts);
+  }
   switch (format) {
     case 'png':
       return await renderRaster(node, 'png', opts);
@@ -1438,7 +1500,7 @@ export function parseBackdropBlurPx(bf: string): number | null {
   return Number.isFinite(v) && v >= 0 ? v : null;
 }
 
-export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vectorCaps?: { blend?: boolean; clipBasicShapes?: boolean; dropShadow?: boolean; backdropBlur?: boolean }): string | null {
+export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vectorCaps?: { blend?: boolean; clipBasicShapes?: boolean; dropShadow?: boolean; backdropBlur?: boolean; conic?: boolean }): string | null {
   const tag = el.tagName.toLowerCase();
   // <img> filters are already baked (bakeImageFilter); <svg> subtrees have their own
   // faithful/raster paths. Never rasterise those here.
@@ -1483,9 +1545,12 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
   // background (repeat at intrinsic/auto size), or MULTIPLE layered url() images.
   const bi = s.backgroundImage;
   if (bi && bi !== 'none') {
-    // A conic gradient is drawn as a wedge fan when we can parse it; only the forms
-    // we can't (repeating-conic-gradient, an unreadable stop list) still raster.
-    if (bi.includes('conic-gradient') && !parseConicGradient(bi, 100, 100)) return 'conic-gradient';
+    // A conic gradient is drawn as a wedge fan when we can parse it — but ONLY by the
+    // SVG walker. The PDF walker has no conic branch (its gradient path handles linear
+    // and radial), and sampleGradientMidpoint returns null for a conic, so exempting it
+    // there dropped the sweep entirely: a box with a transparent flat fill lost its
+    // paint. So the exemption is scoped to the caller that can honour it.
+    if (bi.includes('conic-gradient') && !(vectorCaps?.conic && parseConicGradient(bi, 100, 100))) return 'conic-gradient';
     if (bi.includes('url(')) {
       const multiple = (bi.match(/url\(/g) || []).length > 1;
       const rep = (s.backgroundRepeat || 'repeat').toLowerCase();
@@ -2448,7 +2513,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       }
     }
 
-    const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows), backdropBlur: opts.backdropBlur === true }) : null;
+    const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows), backdropBlur: opts.backdropBlur === true, conic: true }) : null;
     if (rasterReason) {
       const pxScale = scaleX * Math.max(1, d.dpi / CSS_DPI);
       const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * pxScale)));
@@ -3603,7 +3668,12 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
   // Stops as fractions of the sweep, in order, with any unpositioned ones already
   // spread evenly by parseGradientStop.
   const raw = cg.stops
-    .map((st) => ({ col: st.colorStr!, op: st.opacity, at: parseFloat(st.offset) / (st.offset.endsWith('%') ? 100 : 360) }))
+    .map((st) => ({
+      col: st.colorStr!, op: st.opacity,
+      at: parseFloat(st.offset) / (st.offset.endsWith('%') ? 100 : 360),
+      // Parsed once per stop, not once per sampled wedge (this fan is up to 360 of them).
+      cc: parseColor(st.colorStr!),
+    }))
     .filter((st) => Number.isFinite(st.at));
   if (raw.length < 2) return null;
   // CSS gradient stop fixup: an offset smaller than the one before it is CLAMPED up
@@ -3627,10 +3697,16 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
       if (t <= b.at) {
         const span = b.at - a.at;
         const f = span > 0 ? (t - a.at) / span : 0;
-        const ca = parseCssColorFull(a.col), cb = parseCssColorFull(b.col);
-        if (!ca || !cb) return f < 0.5 ? a : b;
-        const mix = (i0: number) => Math.round(ca[i0]! + (cb[i0]! - ca[i0]!) * f);
-        return { col: `rgb(${mix(0)},${mix(1)},${mix(2)})`, op: ca[3] + (cb[3] - ca[3]) * f };
+        if (!a.cc || !b.cc) return f < 0.5 ? a : b;
+        // sRGB interpolation, PREMULTIPLIED — matching what the browser paints for
+        // the same conic (CSS Color 4 §12.3). Lerping the channels raw instead drags
+        // a `red → transparent` sweep through dark red at 50% instead of holding red
+        // and fading it, so the exported fan disagreed with the screen. The engine
+        // owns the maths (one interpolator for every format).
+        const mixed = interpolateColor(a.cc, b.cc, f, { space: 'srgb' });
+        const [r, g, bl, al] = colorToSrgb8(mixed);
+        // Alpha rides on fill-opacity below, so the fill itself is the opaque colour.
+        return { col: `rgb(${r},${g},${bl})`, op: al };
       }
     }
     return last;
@@ -4235,7 +4311,11 @@ export async function stampCaptureClip(host: HostV1, blob: Blob, format: 'mp4' |
 // this path can always encrypt (no print geometry), at the cost of the pdf-lib
 // PDF/X finishing pass. Print marks/bleed are not applied here; a tool that
 // emits page boxes opts out of the print-finishing card (render.printMarks:false).
-async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts): Promise<Blob> {
+// `prepare(i)` is called immediately before page `i` is measured and drawn, which
+// is the seam a contact sheet needs: there the SAME node is the page every time and
+// what changes between pages is the sequence playhead (bridge/sequence-cuts.ts).
+// Absent for the [data-pdf-page] case, where the pages are already distinct nodes.
+async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?: (i: number) => void): Promise<Blob> {
   const mod: any = await import('jspdf');
   const jsPDF = mod.jsPDF ?? mod.default?.jsPDF ?? mod.default;
   const convert = opts.convertPaths !== false;
@@ -4254,12 +4334,14 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts): Promise
   const encryption = opts.password
     ? { userPassword: opts.password, ownerPassword: opts.password, userPermissions: ['print'] }
     : undefined;
+  prepare?.(0);
   const first = sizeOf(pageEls[0]!);
   const pdf = new jsPDF({ unit: 'pt', format: [first.w, first.h], orientation: orientOf(first.w, first.h), encryption });
   applyPdfMeta(pdf, opts.meta);
 
   for (let i = 0; i < pageEls.length; i++) {
     const el = pageEls[i]!;
+    if (i > 0) prepare?.(i);
     const { w, h } = i === 0 ? first : sizeOf(el);
     if (i > 0) pdf.addPage([w, h], orientOf(w, h));
     // An SVG-rooted page walks as vectors (mirrors renderArtworkPdf); otherwise the
@@ -7035,6 +7117,14 @@ async function renderZip(node: Element, opts: ExportOpts): Promise<Blob> {
     const blob = await renderFormat(node, f, memberOpts);
     members.push({ name: zipMemberName(base, f), bytes: new Uint8Array(await blob.arrayBuffer()) });
   }
+  return packZip(members, opts);
+}
+
+// Pack already-rendered members into the archive. Split out of renderZip so the
+// contact sheet (bridge/sequence-cuts.ts) gets the identical container — including
+// both password tiers — without a second zip implementation.
+async function packZip(members: Array<{ name: string; bytes: Uint8Array }>, opts: ExportOpts): Promise<Blob> {
+  const password = opts.strongPassword || opts.password;
 
   // Encrypted bundle: standard = PKWARE ZipCrypto (opens anywhere, incl. Windows
   // Explorer; weak); strong = WinZip AES-256 (7-Zip / Keka / macOS; strong). Mirrors

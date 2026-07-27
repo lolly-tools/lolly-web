@@ -9,7 +9,7 @@
  * content-stream rewrite. The DOM walkers themselves (drawHtmlVectors /
  * drawSvgVectorsInRegion) stay in export.ts and import these.
  */
-import { splitCssArgs, parseGradientStop, parseGradientAngle, parseRadialGradient, rgbToCmyk, roundedRectPath } from '@lolly/engine';
+import { splitCssArgs, parseGradientStop, parseGradientAngle, parseRadialGradient, rgbToCmyk, roundedRectPath, parseColorToSrgb8 } from '@lolly/engine';
 import { objectPositionFractions } from './export-css.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
 import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts';
@@ -113,13 +113,18 @@ export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number
   const stops: { offset: number; color: Rgb }[] = [];
   let hasAlpha = false;
   for (const st of g.stops) {
+    // Alpha is recorded BEFORE the stop can be discarded. A fully transparent stop has
+    // no RGB triple to keep (parseSvgColor reports "nothing to paint"), but its very
+    // existence is what makes the gradient need the alpha-correct raster path — drop it
+    // first and `hasAlpha` stays false, so the PDF paints an opaque shading and the
+    // transparent waist silently vanishes while SVG and PNG still show it.
+    if (st.opacity < 1) hasAlpha = true;
     const rgb = parseSvgColor(st.colorStr ?? '');
-    if (!rgb) continue;
+    if (!rgb) { hasAlpha = true; continue; }
     const off = st.offset.endsWith('px') ? parseFloat(st.offset) / (rx || 1)
       : st.offset.endsWith('%') ? parseFloat(st.offset) / 100 : parseFloat(st.offset);
     if (!Number.isFinite(off)) continue;
     stops.push({ offset: Math.max(0, Math.min(1, off)), color: rgb });
-    if (st.opacity < 1) hasAlpha = true;
   }
   if (stops.length < 2 || !(rx > 0)) return null;
   const coords = [CX, CY, 0, CX, CY, rx];
@@ -136,12 +141,14 @@ function gradientStopList(raw: string[]): { stops: { offset: number; color: Rgb 
   raw.forEach((r, i) => {
     const { colorStr, opacity, offset } = parseGradientStop(r.trim(), i, n);
     if (!colorStr) return;
+    // Record alpha BEFORE discarding the stop — see the radial loop above for why a
+    // fully transparent stop must still set the flag it can no longer carry a colour for.
+    if (opacity < 1) hasAlpha = true;
     const rgb = parseSvgColor(colorStr);
-    if (!rgb) return;
+    if (!rgb) { hasAlpha = true; return; }
     let off = offset.endsWith('%') ? parseFloat(offset) / 100 : parseFloat(offset);
     if (!Number.isFinite(off)) off = n > 1 ? i / (n - 1) : 0;
     out.push({ offset: Math.max(0, Math.min(1, off)), color: rgb });
-    if (opacity < 1) hasAlpha = true;
   });
   out.sort((a, b) => a.offset - b.offset);
   return { stops: out, hasAlpha };
@@ -178,16 +185,7 @@ export function fillPdfShading(pdf: any, spec: PdfGradientSpec, pathOps: (doc: a
 
 export function gradStopToRgb(raw: string, index: number, total: number): Rgb | null {
   const { colorStr } = parseGradientStop(raw, index, total);
-  if (!colorStr) return null;
-  const s = colorStr.trim().toLowerCase();
-  if (s.startsWith('#')) {
-    const h = s.slice(1);
-    if (h.length === 3) return [parseInt(h[0]!+h[0]!,16), parseInt(h[1]!+h[1]!,16), parseInt(h[2]!+h[2]!,16)];
-    if (h.length === 6) return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
-  }
-  const mm = s.match(/rgba?\((\d+)[, ]+(\d+)[, ]+(\d+)/);
-  if (mm) return [+mm[1]!, +mm[2]!, +mm[3]!];
-  return null;
+  return parseSvgColor(colorStr);
 }
 
 // Normalise the shell's brand palette (hex + CMYK 0–100, and/or an independent
@@ -714,76 +712,11 @@ export function preserveAspectRatioAlign(objectPosition: string | null | undefin
   return xa + ya;
 }
 
-// CSS3 extended named-colour table. Without it, named colours (navy, red,
-// steelblue, …) parse to null and <text fill="navy">/<line stroke="red"> get
-// silently dropped from PDF (EMF renders them via svg-ir's own table).
-const SVG_NAMED_COLORS: Record<string, Rgb> = {
-  aliceblue: [240,248,255], antiquewhite: [250,235,215], aqua: [0,255,255],
-  aquamarine: [127,255,212], azure: [240,255,255], beige: [245,245,220],
-  bisque: [255,228,196], black: [0,0,0], blanchedalmond: [255,235,205],
-  blue: [0,0,255], blueviolet: [138,43,226], brown: [165,42,42],
-  burlywood: [222,184,135], cadetblue: [95,158,160], chartreuse: [127,255,0],
-  chocolate: [210,105,30], coral: [255,127,80], cornflowerblue: [100,149,237],
-  cornsilk: [255,248,220], crimson: [220,20,60], cyan: [0,255,255],
-  darkblue: [0,0,139], darkcyan: [0,139,139], darkgoldenrod: [184,134,11],
-  darkgray: [169,169,169], darkgreen: [0,100,0], darkgrey: [169,169,169],
-  darkkhaki: [189,183,107], darkmagenta: [139,0,139], darkolivegreen: [85,107,47],
-  darkorange: [255,140,0], darkorchid: [153,50,204], darkred: [139,0,0],
-  darksalmon: [233,150,122], darkseagreen: [143,188,143], darkslateblue: [72,61,139],
-  darkslategray: [47,79,79], darkslategrey: [47,79,79], darkturquoise: [0,206,209],
-  darkviolet: [148,0,211], deeppink: [255,20,147], deepskyblue: [0,191,255],
-  dimgray: [105,105,105], dimgrey: [105,105,105], dodgerblue: [30,144,255],
-  firebrick: [178,34,34], floralwhite: [255,250,240], forestgreen: [34,139,34],
-  fuchsia: [255,0,255], gainsboro: [220,220,220], ghostwhite: [248,248,255],
-  gold: [255,215,0], goldenrod: [218,165,32], gray: [128,128,128],
-  green: [0,128,0], greenyellow: [173,255,47], grey: [128,128,128],
-  honeydew: [240,255,240], hotpink: [255,105,180], indianred: [205,92,92],
-  indigo: [75,0,130], ivory: [255,255,240], khaki: [240,230,140],
-  lavender: [230,230,250], lavenderblush: [255,240,245], lawngreen: [124,252,0],
-  lemonchiffon: [255,250,205], lightblue: [173,216,230], lightcoral: [240,128,128],
-  lightcyan: [224,255,255], lightgoldenrodyellow: [250,250,210], lightgray: [211,211,211],
-  lightgreen: [144,238,144], lightgrey: [211,211,211], lightpink: [255,182,193],
-  lightsalmon: [255,160,122], lightseagreen: [32,178,170], lightskyblue: [135,206,250],
-  lightslategray: [119,136,153], lightslategrey: [119,136,153], lightsteelblue: [176,196,222],
-  lightyellow: [255,255,224], lime: [0,255,0], limegreen: [50,205,50],
-  linen: [250,240,230], magenta: [255,0,255], maroon: [128,0,0],
-  mediumaquamarine: [102,205,170], mediumblue: [0,0,205], mediumorchid: [186,85,211],
-  mediumpurple: [147,112,219], mediumseagreen: [60,179,113], mediumslateblue: [123,104,238],
-  mediumspringgreen: [0,250,154], mediumturquoise: [72,209,204], mediumvioletred: [199,21,133],
-  midnightblue: [25,25,112], mintcream: [245,255,250], mistyrose: [255,228,225],
-  moccasin: [255,228,181], navajowhite: [255,222,173], navy: [0,0,128],
-  oldlace: [253,245,230], olive: [128,128,0], olivedrab: [107,142,35],
-  orange: [255,165,0], orangered: [255,69,0], orchid: [218,112,214],
-  palegoldenrod: [238,232,170], palegreen: [152,251,152], paleturquoise: [175,238,238],
-  palevioletred: [219,112,147], papayawhip: [255,239,213], peachpuff: [255,218,185],
-  peru: [205,133,63], pink: [255,192,203], plum: [221,160,221],
-  powderblue: [176,224,230], purple: [128,0,128], rebeccapurple: [102,51,153],
-  red: [255,0,0], rosybrown: [188,143,143], royalblue: [65,105,225],
-  saddlebrown: [139,69,19], salmon: [250,128,114], sandybrown: [244,164,96],
-  seagreen: [46,139,87], seashell: [255,245,238], sienna: [160,82,45],
-  silver: [192,192,192], skyblue: [135,206,235], slateblue: [106,90,205],
-  slategray: [112,128,144], slategrey: [112,128,144], snow: [255,250,250],
-  springgreen: [0,255,127], steelblue: [70,130,180], tan: [210,180,140],
-  teal: [0,128,128], thistle: [216,191,216], tomato: [255,99,71],
-  turquoise: [64,224,208], violet: [238,130,238], wheat: [245,222,179],
-  white: [255,255,255], whitesmoke: [245,245,245], yellow: [255,255,0],
-  yellowgreen: [154,205,50],
-};
-
+// Parse an SVG/CSS colour to sRGB bytes, or null for none/transparent/unparseable.
+// Delegates to the engine's CSS Color 4 parser (the single source of truth), which
+// also owns THE named-colour table — this file used to carry its own 148-entry copy,
+// and its own legacy-rgb regex that dropped every oklch()/oklab()/color() paint.
 export function parseSvgColor(color: string | null): Rgb | null {
-  if (!color) return null;
-  const lc = color.toLowerCase().trim();
-  if (lc === 'none' || lc === 'transparent') return null;
-  if (lc.startsWith('#')) {
-    const h = lc.slice(1);
-    if (h.length === 3) return [
-      parseInt(h[0]!+h[0]!, 16), parseInt(h[1]!+h[1]!, 16), parseInt(h[2]!+h[2]!, 16),
-    ];
-    if (h.length === 6) return [
-      parseInt(h.slice(0,2), 16), parseInt(h.slice(2,4), 16), parseInt(h.slice(4,6), 16),
-    ];
-  }
-  const m = lc.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-  if (m) return [+m[1]!, +m[2]!, +m[3]!];
-  return SVG_NAMED_COLORS[lc] ?? null;
+  const c = parseColorToSrgb8(color);
+  return c ? [c[0], c[1], c[2]] : null;
 }

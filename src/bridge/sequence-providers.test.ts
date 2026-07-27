@@ -38,6 +38,7 @@ import {
   createElementProvider,
   createVideoProvider,
   isSeqTimeout,
+  MAX_MODULE_PCM_BYTES,
   planPull,
   providerCapability,
   resampleLinear,
@@ -48,6 +49,7 @@ import {
   type ProviderOpts,
 } from './sequence-providers.ts';
 import { SequenceError, reconcileDecoded } from './sequence-plan.ts';
+import { sniffTrackerModule } from '../views/sequence-clock.ts';
 
 // ── fakes ───────────────────────────────────────────────────────────────────
 
@@ -191,6 +193,13 @@ function fakeMediabunny(o: FakeVideoOpts = {}): FakeWorld {
     QTFF: 'QTFF',
     WEBM: 'WEBM',
     MATROSKA: 'MATROSKA',
+    // The audio-only containers. Lolly's catalog music is Ogg/Opus and MP3, so
+    // omitting these from the real module is what made every music bed silent.
+    OGG: 'OGG',
+    MP3: 'MP3',
+    WAVE: 'WAVE',
+    ADTS: 'ADTS',
+    FLAC: 'FLAC',
   };
   return world;
 }
@@ -221,6 +230,64 @@ test('source guard: mediabunny is lazy-imported and never via ALL_FORMATS', () =
   for (const singleton of ['MP4', 'QTFF', 'WEBM', 'MATROSKA']) {
     assert.match(code, new RegExp(`m\\.${singleton}\\b`), `explicit ${singleton} singleton must be imported`);
   }
+});
+
+// ── the containers the PRODUCT ships must all be decodable ──────────────────
+// This is the test that did not exist, and its absence shipped a real bug: the
+// audio path registered only the four VIDEO containers, so every catalog music
+// bed (Ogg/Opus and MP3) failed to decode and exports came out silent, with
+// nothing in the log. Deriving the list from the shipping surfaces rather than
+// hardcoding it means adding a new audio format to the library trips HERE
+// instead of quietly producing a silent export.
+
+test('every audio container the catalog ships or the uploader accepts is registered', async () => {
+  const src = readFileSync(fileURLToPath(new URL('./sequence-providers.ts', import.meta.url)), 'utf8');
+  const audioSet = /const AUDIO_CONTAINERS[\s\S]*?=>\s*\[([\s\S]*?)\]/.exec(src)?.[1] ?? '';
+  const registered = new Set([...audioSet.matchAll(/m\.([A-Z0-9]+)/g)].map(m => m[1]!));
+
+  // What the catalogs actually contain, read from the shipped indexes.
+  const root = new URL('../../../../', import.meta.url);
+  const catalogFormats = new Set<string>();
+  for (const brand of ['lolly-start', 'suse']) {
+    const idx = new URL(`brands/${brand}/catalog/assets/index.json`, root);
+    let raw: string;
+    try { raw = readFileSync(fileURLToPath(idx), 'utf8'); } catch { continue; }  // suse is a private submodule
+    const parsed = JSON.parse(raw) as { assets?: Array<Record<string, unknown>> };
+    for (const a of parsed.assets ?? []) {
+      if (a.type !== 'audio') continue;
+      for (const f of (a.formats as Array<{ format?: string }> | undefined) ?? []) {
+        if (f.format) catalogFormats.add(f.format);
+      }
+    }
+  }
+
+  // format id (or upload extension) -> the mediabunny container that reads it.
+  // 'zzfxm' is procedural: synthesised as PCM, it never touches a demuxer.
+  const CONTAINER_FOR: Record<string, string | null> = {
+    mp3: 'MP3', opus: 'OGG', ogg: 'OGG', oga: 'OGG', wav: 'WAVE',
+    m4a: 'MP4', aac: 'ADTS', flac: 'FLAC', zzfxm: null,
+  };
+
+  for (const fmt of catalogFormats) {
+    const need = CONTAINER_FOR[fmt];
+    assert.notEqual(need, undefined, `catalog ships audio format '${fmt}' that this test does not map to a container`);
+    if (need) assert.ok(registered.has(need), `catalog ships '${fmt}' but AUDIO_CONTAINERS omits ${need} — exports would be SILENT`);
+  }
+
+  // And every audio extension the picker offers the user.
+  const picker = readFileSync(fileURLToPath(new URL('../views/picker.ts', import.meta.url)), 'utf8');
+  const accept = /UPLOAD_ACCEPT\s*=\s*'([^']*)'/.exec(picker)?.[1] ?? '';
+  assert.ok(accept.length > 0, 'could not read UPLOAD_ACCEPT — this guard must not pass vacuously');
+  for (const ext of ['mp3', 'wav', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'flac']) {
+    if (!accept.includes(`.${ext}`)) continue;
+    const need = CONTAINER_FOR[ext];
+    if (need) assert.ok(registered.has(need), `uploader accepts .${ext} but AUDIO_CONTAINERS omits ${need}`);
+  }
+
+  // The video path stays lean on purpose — a video clip never needs an .ogg.
+  const videoSet = /const VIDEO_CONTAINERS[\s\S]*?=>\s*\[([\s\S]*?)\]/.exec(src)?.[1] ?? '';
+  const vids = new Set([...videoSet.matchAll(/m\.([A-Z0-9]+)/g)].map(m => m[1]!));
+  assert.deepEqual([...vids].sort(), ['MATROSKA', 'MP4', 'QTFF', 'WEBM']);
 });
 
 // ── capability ──────────────────────────────────────────────────────────────
@@ -663,5 +730,226 @@ test('ClipAudio.pcm copies the sink buffers so a recycled AudioBuffer cannot cor
   const out = await audio.pcm(0, 0.4, 10);
   shared.fill(-1);                                    // the sink reuses its storage
   assert.deepEqual([...(out.channels[0] as Float32Array)], [1, 2, 3, 4]);
+  await audio.dispose();
+});
+
+// ── tracker modules ─────────────────────────────────────────────────────────
+//
+// A .mod/.xm/.it/… is a score, not an encoded stream, so no demuxer reads one and the
+// box came out silent. What can be proven headlessly is the ROUTING (which decoder is
+// handed the bytes, and that the demuxer is not even attempted for a source that says
+// it is a module), the sniff (an uploaded module is a `blob:` url with no extension),
+// the trim (the same pure assembler a decoded file uses), and the degradation.
+//
+// ONLY A REAL BROWSER CAN PROVE that libopenmpt's WASM actually renders the notes —
+// the worker is stubbed here through the `renderModule` seam.
+
+/** Bytes that sniff as a module of each kind, with the magic at its real offset. */
+function moduleBytes(kind: 'it' | 'xm' | 's3m' | 'stm' | 'mtm' | 'mod'): Uint8Array {
+  const put = (b: Uint8Array, at: number, s: string): void => {
+    for (let i = 0; i < s.length; i++) b[at + i] = s.charCodeAt(i);
+  };
+  if (kind === 'it')  { const b = new Uint8Array(64);   put(b, 0, 'IMPM'); return b; }
+  if (kind === 'xm')  { const b = new Uint8Array(64);   put(b, 0, 'Extended Module: '); return b; }
+  if (kind === 's3m') { const b = new Uint8Array(64);   put(b, 44, 'SCRM'); return b; }
+  if (kind === 'mtm') { const b = new Uint8Array(64);   put(b, 0, 'MTM'); b[3] = 0x10; return b; }
+  if (kind === 'stm') { const b = new Uint8Array(64);   put(b, 20, '!Scream!'); b[28] = 0x1a; return b; }
+  const b = new Uint8Array(1084); put(b, 1080, 'M.K.'); return b;   // classic 31-sample MOD
+}
+
+/** A stub libopenmpt: `seconds` of a stereo ramp, at whatever rate it is asked for. */
+function fakeModuleRenderer(seconds = 2) {
+  const calls: { bytes: number; sampleRate: number }[] = [];
+  return {
+    calls,
+    async render(bytes: Uint8Array, sampleRate: number) {
+      calls.push({ bytes: bytes.length, sampleRate });
+      const n = Math.round(seconds * sampleRate);
+      const left = new Float32Array(n);
+      const right = new Float32Array(n);
+      for (let i = 0; i < n; i++) { left[i] = i; right[i] = -i; }
+      return { left, right, sampleRate };
+    },
+  };
+}
+
+test('source guard: libopenmpt is lazy-imported, never static', () => {
+  for (const file of ['./sequence-providers.ts', '../views/sequence-clock.ts']) {
+    const src = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    assert.equal(/^\s*import[\s\S]*?from\s+['"][^'"]*mod-render[^'"]*['"]/m.test(src), false,
+      `${file}: a static mod-render import drags the libopenmpt worker into the eager graph`);
+    assert.match(src, /await import\('\.\.\/lib\/mod-render\.ts'\)/,
+      `${file}: the lazy import must survive with a literal specifier`);
+  }
+});
+
+test('a url that NAMES a tracker module renders through libopenmpt and never opens a demuxer', async () => {
+  const world = fakeMediabunny();
+  const r = fakeModuleRenderer(2);
+  let demuxed = false;
+  const audio = await createClipAudio('https://example.test/song.mod', {
+    deps: {
+      hasWebCodecs: () => true,
+      loadMediabunny: async () => { demuxed = true; return world.module; },
+      fetchBytes: async () => moduleBytes('mod'),
+      renderModule: r.render,
+    },
+  });
+  assert.ok(audio, 'a .mod must produce audio, not silence');
+  const out = await audio.pcm(0.5, 1.0, 100);
+  assert.equal(demuxed, false, 'mediabunny was asked to open a file no demuxer can read');
+  assert.deepEqual(r.calls, [{ bytes: 1084, sampleRate: 100 }], 'rendered once, natively at the mix rate');
+  // The SAME window trim a decoded file gets: samples 50..99 of the ramp.
+  assert.equal(out.channels.length, 2);
+  assert.equal((out.channels[0] as Float32Array).length, 50);
+  assert.equal((out.channels[0] as Float32Array)[0], 50);
+  assert.equal((out.channels[1] as Float32Array)[49], -99);
+  assert.equal(audio.durationSec(), 2, 'the length is known once the render has landed');
+  await audio.dispose();
+});
+
+test('every module format sniffs, and ordinary audio does not', () => {
+  for (const kind of ['it', 'xm', 's3m', 'stm', 'mtm', 'mod'] as const) {
+    assert.equal(sniffTrackerModule(moduleBytes(kind)), true, `${kind} must be recognised by its magic`);
+  }
+  const wav = new Uint8Array(64);
+  for (const [i, c] of [...'RIFF....WAVEfmt '].entries()) wav[i] = c.charCodeAt(0);
+  assert.equal(sniffTrackerModule(wav), false, 'a wav is not a module');
+  assert.equal(sniffTrackerModule(new Uint8Array([0xff, 0xfb, 0x90, 0x00])), false, 'an mp3 frame header is not a module');
+  assert.equal(sniffTrackerModule(new Uint8Array(8)), false, 'too short to hold any magic');
+  // The documented blind spot: a 15-instrument SoundTracker MOD carries no magic at
+  // all, so only its extension can identify it.
+  assert.equal(sniffTrackerModule(new Uint8Array(600)), false);
+});
+
+test('an uploaded module (blob: url, no extension) is found by its BYTES once the demuxer fails', async () => {
+  const broken = fakeMediabunny({ openError: new Error('unsupported file format') });
+  const r = fakeModuleRenderer(1);
+  const logs: string[] = [];
+  const audio = await createClipAudio('blob:https://lolly.tools/6f1c-77a2', {
+    log: (_l, m) => { logs.push(m); },
+    deps: {
+      hasWebCodecs: () => true,
+      loadMediabunny: async () => broken.module,
+      fetchBytes: async () => moduleBytes('xm'),
+      renderModule: r.render,
+    },
+  });
+  assert.ok(audio, 'a blob: url with module bytes must not be silence');
+  assert.equal(r.calls.length, 0, 'nothing is rendered until the mix asks for a window');
+  const out = await audio.pcm(0, 0.5, 1000);
+  assert.equal((out.channels[0] as Float32Array).length, 500);
+  assert.deepEqual(logs, [], 'a source that plays must not warn');
+  await audio.dispose();
+});
+
+test('a blob: url that is NOT a module keeps the existing coded warning, and is fetched only once', async () => {
+  const broken = fakeMediabunny({ openError: new Error('unexpected end of file') });
+  let reads = 0;
+  const logs: string[] = [];
+  const audio = await createClipAudio('blob:https://lolly.tools/deadbeef', {
+    log: (_l, m) => { logs.push(m); },
+    deps: {
+      hasWebCodecs: () => true,
+      loadMediabunny: async () => broken.module,
+      fetchBytes: async () => { reads++; return new Uint8Array(2048); },
+      renderModule: async () => { throw new Error('must never be called'); },
+    },
+  });
+  assert.equal(audio, null);
+  assert.equal(reads, 1, 'one speculative read, never a retry loop');
+  assert.ok(logs.some((m) => m.includes('SEQ_TRUNCATED')), `the coded reason must survive: ${JSON.stringify(logs)}`);
+});
+
+test('a container that opens cleanly with no audio track is never speculatively read', async () => {
+  const noTrack = fakeMediabunny({ hasAudioTrack: false });
+  let reads = 0;
+  const audio = await createClipAudio('blob:https://lolly.tools/silent-clip', {
+    deps: {
+      hasWebCodecs: () => true,
+      loadMediabunny: async () => noTrack.module,
+      fetchBytes: async () => { reads++; return moduleBytes('it'); },
+    },
+  });
+  assert.equal(audio, null, 'a silent video is silent, not a module');
+  assert.equal(reads, 0, 'a file the demuxer READ is not a module — no byte fetch on the ordinary path');
+});
+
+test('a module still plays on a platform with no WebCodecs at all', async () => {
+  const r = fakeModuleRenderer(1);
+  const audio = await createClipAudio('blob:https://lolly.tools/tune', {
+    deps: {
+      hasWebCodecs: () => false,
+      loadMediabunny: async () => { throw new Error('must never be loaded'); },
+      fetchBytes: async () => moduleBytes('s3m'),
+      renderModule: r.render,
+    },
+  });
+  assert.ok(audio, 'libopenmpt is WASM — it needs no AudioDecoder');
+  await audio.pcm(0, 0.25, 8000);
+  assert.equal(r.calls.length, 1);
+  await audio.dispose();
+});
+
+test('a declared module that cannot be rendered is a LOUD silence, never a throw', async () => {
+  const logs: string[] = [];
+  const audio = await createClipAudio('https://example.test/broken.it', {
+    log: (_l, m) => { logs.push(m); },
+    deps: {
+      hasWebCodecs: () => true,
+      loadMediabunny: async () => fakeMediabunny().module,
+      fetchBytes: async () => null,                  // unreadable / past the byte ceiling
+    },
+  });
+  assert.equal(audio, null);
+  assert.ok(logs.some((m) => m.includes('tracker module') && m.includes('silent')),
+    `the box must be named in the log: ${JSON.stringify(logs)}`);
+});
+
+test('a render that rejects fails THAT window with a coded error and is not retried', async () => {
+  let calls = 0;
+  const audio = await createClipAudio('https://example.test/song.mod', {
+    deps: {
+      hasWebCodecs: () => true,
+      loadMediabunny: async () => fakeMediabunny().module,
+      fetchBytes: async () => moduleBytes('mod'),
+      renderModule: async () => { calls++; throw new Error('not a recognized tracker module'); },
+    },
+  });
+  assert.ok(audio);
+  await assert.rejects(audio.pcm(0, 1, 48000), (err: unknown) => err instanceof SequenceError);
+  await assert.rejects(audio.pcm(0, 1, 48000), (err: unknown) => err instanceof SequenceError);
+  assert.equal(calls, 1, 'the bytes were transferred to the worker — there is nothing to retry with');
+  await audio.dispose();
+  await assert.rejects(audio.pcm(0, 1, 48000), (err: unknown) => err instanceof SequenceError);
+});
+
+test('a module that renders past the PCM ceiling degrades to a warned silence', async () => {
+  const frames = Math.ceil(MAX_MODULE_PCM_BYTES / 8) + 1;
+  const logs: string[] = [];
+  const audio = await createClipAudio('https://example.test/endless.xm', {
+    log: (_l, m) => { logs.push(m); },
+    deps: {
+      hasWebCodecs: () => true,
+      loadMediabunny: async () => fakeMediabunny().module,
+      fetchBytes: async () => moduleBytes('xm'),
+      // A single shared plane: the ceiling must be judged on FRAME COUNT, not on
+      // however much memory this test is willing to allocate.
+      renderModule: async () => {
+        const plane = new Float32Array(1);
+        return {
+          left: { length: frames, 0: 0 } as unknown as Float32Array,
+          right: plane,
+          sampleRate: 48_000,
+        };
+      },
+    },
+  });
+  assert.ok(audio);
+  const out = await audio.pcm(0, 1, 48_000);
+  assert.deepEqual(out.channels, [], 'silence, not a 200 MB allocation');
+  assert.ok(logs.some((m) => m.includes('ceiling') && m.includes('silent')), JSON.stringify(logs));
   await audio.dispose();
 });

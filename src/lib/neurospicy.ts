@@ -101,7 +101,7 @@ function armSourceEnd(s: AudioBufferSourceNode, host: NeurospicyHost | null): vo
     // short-circuit and never build a fresh source, leaving audio dead. Clearing
     // src here forces the rebuild.
     stopSource();
-    if (host) void cycleNeurospicyLoop(host, 1);
+    if (host) void cycleNeurospicyLoop(host, 1, { skipStreams: true });
   };
 }
 
@@ -330,6 +330,33 @@ export function loopRank(id: string): number {
 /** A track for the player: id + display name, plus tags (for a mood chip) and the
  *  format (zzfxm/opus → local, meter-capable; a future 'stream' → radio, no meter). */
 export interface NeuroTrack { id: string; name: string; tags: string[]; format: string }
+
+// ── playlist order ──────────────────────────────────────────────────────────
+// ONE order for the whole feature: listLoops returns tracks in it, the player's
+// picker renders them in it (grouped by these keys), and prev/next + the
+// end-of-track advance walk it. They must not diverge — "next" has to go where
+// the list says it goes.
+export const NEURO_CATEGORY_ORDER: string[] = ['catalog', 'uploads', 'lolly', 'ambient', 'beats', 'radio'];
+
+/** Which playlist group a track belongs to (the picker's section, and the sort key). */
+export function trackCategory(t: NeuroTrack): string {
+  if (t.format === 'stream' || t.tags.includes('radio') || t.tags.includes('stream')) return 'radio';
+  if (t.id.startsWith('user/')) return 'uploads';       // the user's own uploads
+  if (!t.tags.includes('neurospicy')) return 'catalog'; // catalog audio outside the focus sets (music beds…)
+  if (t.format === 'zzfxm') return 'lolly';             // our generated / MIDI-converted tracks
+  if (t.tags.includes('lofi')) return 'ambient';        // the lo-fi loops
+  return 'beats';                                       // the remaining loops (breakbeats)
+}
+
+/** Sort comparator for the canonical playlist order: group, then any featured
+ *  slugs, then alphabetical within the group. */
+function byPlaylistOrder(a: NeuroTrack, b: NeuroTrack): number {
+  const rank = (t: NeuroTrack): number => {
+    const i = NEURO_CATEGORY_ORDER.indexOf(trackCategory(t));
+    return i < 0 ? NEURO_CATEGORY_ORDER.length : i; // an unknown group trails, never leads
+  };
+  return rank(a) - rank(b) || loopRank(a.id) - loopRank(b.id) || a.name.localeCompare(b.name);
+}
 // Cache only the connectivity-INDEPENDENT part (catalog + user uploads). Radio is
 // appended fresh on every call so it appears/disappears with `navigator.onLine`
 // instead of being frozen at whatever the first call saw.
@@ -343,14 +370,12 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
       // picker groups it under a separate "Catalog" section (see trackCategory).
       const refs = await host.assets.query({ type: 'audio' });
       for (const r of refs) { if (r.url) urlById.set(r.id, r.url); if (r.format) formatById.set(r.id, r.format); }
-      loops = refs
-        .map((r): NeuroTrack => ({
-          id: r.id,
-          name: String((r.meta?.name as string | undefined) ?? r.id),
-          tags: Array.isArray(r.meta?.tags) ? (r.meta.tags as string[]) : [],
-          format: r.format ?? '',
-        }))
-        .sort((a, b) => loopRank(a.id) - loopRank(b.id) || a.name.localeCompare(b.name));
+      loops = refs.map((r): NeuroTrack => ({
+        id: r.id,
+        name: String((r.meta?.name as string | undefined) ?? r.id),
+        tags: Array.isArray(r.meta?.tags) ? (r.meta.tags as string[]) : [],
+        format: r.format ?? '',
+      }));
     } catch { loops = []; }
     // The user's OWN uploaded audio — query() only reads catalog assets, so pull user
     // uploads separately and merge them in. ANY user audio plays here (tags only drive
@@ -366,6 +391,9 @@ export async function listLoops(host: NeurospicyHost): Promise<NeuroTrack[]> {
         loops.push({ id: a.id, name: String((a.meta?.name as string | undefined) ?? a.id), tags, format: a.format ?? '' });
       }
     } catch { /* no user assets on this host */ }
+    // Sort catalog + uploads TOGETHER into the canonical playlist order, so this list
+    // is exactly what the picker shows and exactly what next/prev step through.
+    loops.sort(byPlaylistOrder);
     // Never cache EMPTINESS: on a cold install the dock builds before the catalog
     // sync lands, and caching that zero-track answer would hide the whole library
     // until reload. An empty result stays uncached so the next call re-queries
@@ -446,13 +474,24 @@ export async function reconcileNeurospicySelection(host: NeurospicyHost): Promis
   if (typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:neuro-tracks'));
 }
 
-/** Step to the previous/next track in picker order (wraps). Keeps the mode enabled. */
-export async function cycleNeurospicyLoop(host: NeurospicyHost, dir: 1 | -1): Promise<void> {
+/** Step to the previous/next track in picker order (wraps) — the SAME order the
+ *  player's list shows, since listLoops owns it. Keeps the mode enabled.
+ *  `skipStreams` walks past the radio stations: used by the end-of-track advance,
+ *  which must never silently (and persistently) start a live internet stream.
+ *  A pressed next/prev button passes it off — radio is right there in the list. */
+export async function cycleNeurospicyLoop(
+  host: NeurospicyHost, dir: 1 | -1, opts: { skipStreams?: boolean } = {},
+): Promise<void> {
   const loops = await listLoops(host);
   if (!loops.length) return;
   const cur = loops.findIndex((l) => l.id === state.loopId);
-  const next = ((cur < 0 ? 0 : cur) + dir + loops.length) % loops.length;
-  await setNeurospicyLoop(host, loops[next]!.id);
+  const from = cur < 0 ? (dir === 1 ? -1 : 0) : cur;
+  for (let step = 1; step <= loops.length; step++) {
+    const t = loops[(((from + dir * step) % loops.length) + loops.length) % loops.length]!;
+    if (opts.skipStreams && trackCategory(t) === 'radio') continue;
+    await setNeurospicyLoop(host, t.id);
+    return;
+  }
 }
 
 // Autoplay policy: audio can't start before a user gesture. If enabled at boot, arm a

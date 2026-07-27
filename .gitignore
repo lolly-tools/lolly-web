@@ -31,3 +31,7 @@ public/ort/
 
 # Claude Code local state (worktrees etc.) — never commit
 .claude/
+
+# Artist MilkDrop presets staged from node_modules by scripts/copy-viz-presets.ts.
+# Third-party community works — depended on, never committed. See that script.
+public/viz-presets/

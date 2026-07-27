@@ -18,6 +18,20 @@ import { parseThemedAssetId, applyIconTheme, parseIconThemesDoc } from '../../..
 import { parseTreatedAssetId, parsePhotoTreatmentsDoc, wrapRasterWithTreatment, stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
 import { extractC2paStore, prepareC2paIngredientFromStore, aiKind } from '../../../../engine/src/c2pa-verify.ts';
 import { instanceFetch } from '../lib/instance.ts';
+// Derived scrub proxies (lib/clip-proxy.ts) are keyed by asset id and are NEVER
+// resolvable through this API — a proxy must not be able to reach an export. The
+// two things the assets bridge owes them are lifecycle, not resolution: register
+// the url→id pairing as an object URL is minted (the preview-only consumers see a
+// URL and nothing else), and evict the derived row when its source asset dies.
+//
+// Only the SYNCHRONOUS registry is imported statically. `deleteProxy` is pulled in
+// on demand at the one already-async call site, which keeps lib/clip-proxy.ts —
+// and with it the `import('mediabunny')` site inside it — out of the first-paint
+// module graph entirely. The registry itself is a few maps and no dependencies.
+import { noteScrubSource } from '../lib/scrub-registry.ts';
+// The `zzfxm:` procedural-audio id — an ENGINE-owned asset-id scheme, exactly like
+// tool-url.ts's, because every shell that resolves an asset has to recognise it.
+import { isZzfxmRef, parseZzfxmRef, formatZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
 import type { AssetRef, AssetQuery } from '../../../../engine/src/bridge/host-v1.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
@@ -185,6 +199,23 @@ function nextCopyName(srcName: string, taken: Set<string>): string {
 export function createAssetsAPI(db: AssetsDb) {
   const api = {
     async get(id: string, opts: { format?: string; version?: string } = {}): Promise<AssetRef> {
+      // A PROCEDURAL asset: `zzfxm:<seed>[:<style>]` names a song that is
+      // synthesised on demand, not a file anything stores. There are no bytes to
+      // look up, so the ref resolves to ITSELF — `url === id` — and the seed
+      // travels intact through the engine's `resolveAssetRefs`, which is the one
+      // resolution path every consumer shares. Without this the engine's
+      // `resolveOne` falls through to a catalog lookup, throws "Asset not in
+      // catalog", nulls the field before hooks run, and the bed silently vanishes
+      // from both the timeline and the export. See engine/src/zzfxm-ref.ts.
+      if (isZzfxmRef(id)) {
+        const ref = parseZzfxmRef(id);
+        if (!ref) throw new Error(`Malformed procedural audio ref: ${id}`);
+        const canonical = formatZzfxmRef(ref);
+        return {
+          source: 'library', id: canonical, type: 'audio', format: 'zzfxm', url: canonical,
+          meta: { name: 'Generated music', generated: true, seed: ref.seed, ...(ref.style ? { style: ref.style } : {}) },
+        };
+      }
       if (id.startsWith('user/')) {
         const userAsset = await db.get('user-assets', id);
         if (!userAsset) throw new Error(`User asset not found: ${id}`);
@@ -463,6 +494,14 @@ export function createAssetsAPI(db: AssetsDb) {
      */
     async _importUserAsset(record: UserAssetRecord): Promise<void> {
       await db.put('user-assets', record);
+      // The one path that REWRITES an existing id rather than minting a new one.
+      // A restore normally puts identical bytes back, but a proxy read has no
+      // source size to fingerprint against, so a stale row would be accepted on
+      // faith. Dropping it costs one background transcode and removes the whole
+      // class of "the filmstrip shows the previous file".
+      await import('../lib/clip-proxy.ts')
+        .then(m => m.deleteProxy(record.id))
+        .catch(() => { /* derived data — a failed evict is not an error */ });
     },
 
     /** Internal: how many images are in the user's personal library. */
@@ -494,6 +533,11 @@ export function createAssetsAPI(db: AssetsDb) {
       await db.delete('user-assets', id);
       // toAssetRef keys user URLs as `user:<id>:<format>:<version>` — evict any.
       evictObjectUrlsByPrefix(`user:${id}:`);
+      // A derived scrub proxy outlives nothing: without this its row (and its
+      // object URL) would leak for the lifetime of the database.
+      await import('../lib/clip-proxy.ts')
+        .then(m => m.deleteProxy(id))
+        .catch(() => { /* derived data — a failed evict is not an error */ });
       // EVERY user-asset delete funnels through here (catalog, picker, folder
       // overlay, projects) — announce it so cross-cutting reactions (e.g. the
       // Neurospicy player dropping a deleted audio track, wired in main.ts)
@@ -801,6 +845,11 @@ function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRe
     url = URL.createObjectURL(record.blob);
     OBJECT_URL_CACHE.set(cacheKey, url);
   }
+  // Preview consumers (filmstrips/waveforms) are handed this URL and can't get
+  // back to the id, which is the only thing a scrub proxy is keyed by. Note the
+  // pairing here — the one place a user clip's URL is minted. Registration only;
+  // the ref below still carries the ORIGINAL url, so export is untouched.
+  if (source === 'user' && record.type === 'video' && url) noteScrubSource(url, record.id);
   return {
     source,
     id: record.id,

@@ -18,6 +18,16 @@
    .tl-panel. Never nest this rule under the panel. */
 .seq-off { display: none !important; }
 
+/* A box being PHOTOGRAPHED for its timeline thumbnail (lib/clip-thumbs.ts, SHOT_CLASS).
+   dom-to-image copies the computed cssText into its clone, so an off-playhead box has
+   to lose `seq-off` for the duration of the shot or it photographs blank — which would
+   make it visible on the live artboard for the ~100-300ms the shot takes, once per bar,
+   after every drag. Park it outside the viewport instead: the shot passes its own
+   `transform: scale()` for the clone root, so this never reaches the picture.
+   Transform (not left/top) so it works whatever the box's positioning, and it is on a
+   canvas box — never on an ancestor of a position:fixed popover. */
+.lolly-box.tl-shot { transform: translate(-200vw, -200vw) !important; }
+
 /* ─── The docked band ────────────────────────────────────────────────────────
    A stage sibling pinned to the bottom edge. Height is written inline by the
    panel (clampPanelH) and the matching band is reserved on the stage via
@@ -118,6 +128,11 @@
   cursor: pointer;
   transition: background-color 0.14s ease, color 0.14s ease;
 }
+/* `display: inline-flex` above beats the base sheet's `[hidden] { display: none }`
+   (later layer wins), leaving a hidden button INVISIBLE BUT STILL LAID OUT — a 30px
+   hole plus the .tl-tools gap. The panel hides the `+` for a timed tool that declares
+   no addKinds, so restate it, exactly as `.tl-scenery[hidden]` does further down. */
+.tl-btn[hidden] { display: none; }
 .tl-btn svg { width: 16px; height: 16px; }
 .tl-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
 .tl-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
@@ -131,43 +146,94 @@
 .tl-play svg { width: 17px; height: 17px; }
 .tl-play:hover:not(:disabled) { background: hsl(var(--accent)); }
 
-/* CSS-drawn glyphs. `pause`, `scissors` and `plus` have no entry in
-   lib/icons.ts, and an inline 24×24 <svg> in the panel module would trip the R3
-   primitive guard — so they are drawn here instead. Everything is currentColor,
-   so they inherit the button's hover/active colours for free. */
-.tl-glyph {
+/* Every panel glyph is now a registry icon (lib/icons.ts) rendered as an <svg>,
+   sized by the `.tl-btn svg` / `.tl-play svg` rules above. The CSS-drawn
+   `.tl-glyph` pseudo-element drawings for pause / plus / scissors that used to
+   live here are gone — `plus`, `pause`, `scissors`, `zoomIn` and `zoomOut` are
+   real registry entries. Do not re-draw a glyph in CSS: add it to the registry. */
+
+/* ─── Record-in-place voiceover ──────────────────────────────────────────────
+   The mic button is an ordinary `.tl-btn` at rest; while a take runs it turns
+   destructive-red so "this is live" is legible without reading the label. The HUD
+   beside it (elapsed clock + level meter) only exists during a take.
+
+   No transform / backdrop-filter anywhere below: this strip sits between the tools
+   row and the inspector, both of which host `position: fixed` popovers, and the ban
+   documented on `.tl-panel` applies to every ancestor in between. */
+.tl-mic.is-recording {
+  background: hsl(var(--destructive));
+  color: hsl(var(--primary-foreground));
+}
+.tl-mic.is-recording:hover:not(:disabled) { background: hsl(var(--destructive) / 0.85); }
+
+.tl-rec {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.tl-rec[hidden] { display: none; }
+.tl-rec-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: hsl(var(--destructive));
+  animation: tl-rec-pulse 1.4s ease-in-out infinite;
+}
+.tl-rec.is-countin .tl-rec-dot { animation: none; opacity: 0.45; }
+.tl-rec-time {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: center;
+  white-space: nowrap;
+}
+.tl-rec.is-countin .tl-rec-time { font-size: 14px; font-weight: 700; }
+/* The level meter: a fill inside a track, width driven from dBFS in paintLevel. */
+.tl-rec-meter {
   position: relative;
-  display: inline-block;
-  width: 17px; height: 17px;
+  width: 64px; height: 6px;
+  border-radius: 3px;
+  background: hsl(var(--border));
+  overflow: hidden;
 }
-.tl-glyph::before,
-.tl-glyph::after { content: ""; position: absolute; background: currentColor; }
+.tl-rec-fill {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand-primary, hsl(var(--primary)));
+  transition: width 0.06s linear;
+}
+.tl-rec.is-hot .tl-rec-fill { background: hsl(var(--destructive)); }
 
-.tl-glyph[data-glyph="pause"]::before,
-.tl-glyph[data-glyph="pause"]::after {
-  top: 2px; bottom: 2px; width: 3px; border-radius: 1.5px;
+/* Permission / progress line. Truncates rather than pushing the inspector off the bar. */
+.tl-rec-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.tl-glyph[data-glyph="pause"]::before { left: 4px; }
-.tl-glyph[data-glyph="pause"]::after  { right: 4px; }
+.tl-rec-note[hidden] { display: none; }
 
-.tl-glyph[data-glyph="plus"]::before { left: 2px; right: 2px; top: 7.5px; height: 2px; border-radius: 1px; }
-.tl-glyph[data-glyph="plus"]::after  { top: 2px; bottom: 2px; left: 7.5px; width: 2px; border-radius: 1px; }
+@keyframes tl-rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
 
-/* Scissors: two crossed blades (pseudo-elements) over two finger loops drawn as
-   ring gradients on the box itself. */
-.tl-glyph[data-glyph="scissors"] {
-  background-image:
-    radial-gradient(circle at 4.5px 14px, transparent 1.3px, currentColor 1.4px, currentColor 2.3px, transparent 2.4px),
-    radial-gradient(circle at 12.5px 14px, transparent 1.3px, currentColor 1.4px, currentColor 2.3px, transparent 2.4px);
-}
-.tl-glyph[data-glyph="scissors"]::before,
-.tl-glyph[data-glyph="scissors"]::after {
-  top: 1px; left: 7.5px; width: 2px; height: 11px;
-  border-radius: 1px;
-  transform-origin: 50% 100%;
-}
-.tl-glyph[data-glyph="scissors"]::before { transform: rotate(20deg); }
-.tl-glyph[data-glyph="scissors"]::after  { transform: rotate(-20deg); }
+/* The add menu and the bar/chip context menu reuse the whole `.folder-menu*` recipe
+   (folders.css) so this sheet adds no second menu look. The ONE thing that must change:
+   `.folder-menu` is `position: absolute`, but these are body-mounted by mountBodyPopover,
+   which writes VIEWPORT coordinates (getBoundingClientRect) — absolute would drift by the
+   scroll offset. Same fix, same reason, as `.projects-menu` in projects.css. */
+.tl-menu { position: fixed; }
 
 /* ─── Inspector (selected-clip precision fields) ─────────────────────────────
    The shared field primitive owns the control look (parts/fields.css) — this
@@ -311,6 +377,10 @@
 .tl-clip[data-kind="video"]   { --tl-hue: var(--store-2); }
 .tl-clip[data-kind="image"]   { --tl-hue: var(--store-3); }
 .tl-clip[data-kind="audio"]   { --tl-hue: var(--store-4); }
+/* A Lottie box used to fall through to the generic clip/overlay tint, which made an
+   animation indistinguishable from a card. It has its own picture now, so it gets its
+   own step of the ramp too. */
+.tl-clip[data-kind="lottie"]  { --tl-hue: var(--store-5); }
 .tl-clip[data-kind="overlay"] { --tl-hue: var(--store-other); }
 .tl-clip-seq { top: 4px; bottom: 4px; }
 
@@ -536,7 +606,7 @@
   color: hsl(var(--muted-foreground));
   cursor: pointer;
 }
-.tl-chip-add .tl-glyph { width: 11px; height: 11px; }
+.tl-chip-add svg { width: 11px; height: 11px; }
 .tl-chip-add:hover {
   background: var(--brand-primary, hsl(var(--primary)));
   color: var(--brand-on-primary, hsl(var(--primary-foreground)));
@@ -616,6 +686,9 @@
   .tl-panel *,
   .tl-panel *::before,
   .tl-panel *::after { transition: none !important; }
+  /* The recording dot's pulse is an ANIMATION, which the rule above does not reach.
+     It carries no information the red fill doesn't — drop it, don't slow it. */
+  .tl-rec-dot { animation: none !important; }
 }
 
 }

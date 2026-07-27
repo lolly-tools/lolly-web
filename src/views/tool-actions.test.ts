@@ -10,6 +10,10 @@
  * compositor is the only motion path there — and untouched for every other tool;
  * there are guards below for both halves of that.
  *
+ * Section 5 covers the other half of the sequence export bar: the "Frames" contact
+ * sheet control (spec §4.6) — present only for a timed composition on a still
+ * format, and the sole source of `opts.cuts`.
+ *
  * Everything here is driven through the REAL renderActions against a jsdom canvas:
  * the assertions read the rendered DOM and the opts object the export actually
  * receives. The runtime/host stubs are inputs to the subject, not the subject —
@@ -74,7 +78,7 @@ class FakeRecorder { static isTypeSupported(): boolean { return true; } }
 Object.defineProperty(dom.window.navigator, 'mediaDevices', { value: { getDisplayMedia: () => Promise.resolve({}) }, configurable: true });
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
 
-const { renderActions } = await import('./tool-actions.ts');
+const { renderActions, extFor } = await import('./tool-actions.ts');
 
 // ── harness ──────────────────────────────────────────────────────────────────
 
@@ -87,10 +91,23 @@ interface Harness {
   /** Only the exports that carry the video params — the thumbnail capture the
    *  export-history record takes is a second, unrelated runtime.export call. */
   exports: () => Array<{ format: string; opts: Record<string, unknown> }>;
+  /** Every exportUnscaled(fn, opts) call, with the formats exported INSIDE it — the
+   *  export-history thumbnail capture also wraps itself, so the shutter decision can
+   *  only be judged against the call that produced the actual format. */
+  unscaled: () => Array<{ shutter?: boolean; formats: string[] }>;
+  /** Every DOWNLOAD export, any format. `onProgress` is the discriminator: the
+   *  download builds it, the export-history thumbnail capture doesn't. */
+  downloads: () => Array<{ format: string; opts: Record<string, unknown> }>;
+  /** The "Frames" (contact sheet) row, or null when it isn't in the panel at all. */
+  framesRow: () => HTMLElement | null;
+  framesInput: () => HTMLInputElement | null;
+  setFormat: (f: string) => void;
+  download: () => void;
 }
 
 /** Mount the export bar over a canvas that is (or isn't) a timed composition. */
-function mount({ seqMs, videoDuration = 12 }: { seqMs: number | null; videoDuration?: number }): Harness {
+function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'] }:
+  { seqMs: number | null; videoDuration?: number; formats?: string[] }): Harness {
   const doc = dom.window.document;
   doc.body.innerHTML = '';
   const panel = doc.createElement('div');
@@ -108,7 +125,7 @@ function mount({ seqMs, videoDuration = 12 }: { seqMs: number | null; videoDurat
   const seen: Array<{ format: string; opts: Record<string, unknown> }> = [];
   const manifest = {
     id: 'sequence-studio', name: 'Sequence Studio', version: '1.0.0', inputs: [],
-    render: { width: 1920, height: 1080, formats: ['webm', 'mp4', 'png'], video: { wait: 0, duration: videoDuration } },
+    render: { width: 1920, height: 1080, formats, video: { wait: 0, duration: videoDuration } },
   };
   const runtime = {
     getModel: () => [],
@@ -128,16 +145,34 @@ function mount({ seqMs, videoDuration = 12 }: { seqMs: number | null; videoDurat
     export: { download: async () => {} },
   };
 
+  const unscaledCalls: Array<{ shutter?: boolean; formats: string[] }> = [];
   renderActions(
     panel as never, manifest as never, runtime as never, canvas, host as never,
-    () => {}, (async (fn: () => unknown) => await fn()) as never, {},
+    () => {},
+    (async (fn: () => unknown, o: { shutter?: boolean } = {}) => {
+      const before = seen.length;
+      try { return await fn(); }
+      finally { unscaledCalls.push({ ...o, formats: seen.slice(before).map(e => e.format) }); }
+    }) as never,
+    {},
   );
 
   return {
     panel, canvas, stage,
     exports: () => seen.filter(e => 'durationUserSet' in e.opts),
+    unscaled: () => unscaledCalls,
+    downloads: () => seen.filter(e => typeof e.opts.onProgress === 'function'),
     duration: () => panel.querySelector('[data-action="video-duration"]') as HTMLInputElement,
     liveLabel: () => panel.querySelector('[data-live-capture]') as HTMLElement | null,
+    framesRow: () => panel.querySelector('[data-seq-still-only]') as HTMLElement | null,
+    framesInput: () => panel.querySelector('[data-action="export-cuts"]') as HTMLInputElement | null,
+    setFormat: (f: string) => {
+      const sel = panel.querySelector('[data-action="format"]') as HTMLSelectElement;
+      sel.value = f;
+      sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    },
+    download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
+      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
   };
 }
 
@@ -270,4 +305,160 @@ test('a box ticked before the tool became a sequence cannot leave opts.live set'
   await settle();
   assert.notEqual(h.exports()[0]!.opts.live, true, 'the compositor must get the export');
   assert.equal(h.exports()[0]!.opts.duration, 7, 'and it still renders the timeline length');
+});
+
+// ── 5. "Frames" — the contact sheet (plans/fable-timeline-editing.md §4.6) ────
+// A still export of a sequence renders the playhead frame. `cuts=N` instead samples
+// N stills at equal midpoint intervals across the timeline — a zip for raster/SVG,
+// N pages for PDF. The control belongs to timed compositions on still formats ONLY,
+// and `opts.cuts` is the pinned name the export bridge reads.
+
+const STILL = { formats: ['png', 'pdf', 'webm'] };
+
+test('Frames is absent for a tool that is not a timed composition', () => {
+  const h = mount({ seqMs: null, ...STILL });
+  assert.equal(h.framesRow(), null, 'no sequence, no contact sheet');
+  assert.equal(h.framesInput(), null);
+});
+
+test('Frames is hidden for a sequence on a motion format', () => {
+  const h = mount({ seqMs: 6000, formats: ['webm', 'png'] });   // initial format = webm
+  assert.equal(h.framesRow()!.style.display, 'none', 'a video has frames by definition');
+});
+
+test('Frames is shown for a sequence on a still format, defaulting to 1', () => {
+  const h = mount({ seqMs: 6000, ...STILL });                    // initial format = png
+  assert.equal(h.framesRow()!.style.display, 'flex');
+  assert.equal(h.framesInput()!.value, '1', 'the default is the playhead frame');
+  assert.equal(h.framesInput()!.min, '1');
+  assert.equal(h.framesInput()!.max, '64', 'bounded — a contact sheet is for human review');
+});
+
+test('Frames appears and disappears across a format switch', () => {
+  const h = mount({ seqMs: 6000, ...STILL });
+  h.setFormat('webm');
+  assert.equal(h.framesRow()!.style.display, 'none');
+  h.setFormat('pdf');
+  assert.equal(h.framesRow()!.style.display, 'flex', 'PDF takes N pages');
+  h.setFormat('png');
+  assert.equal(h.framesRow()!.style.display, 'flex');
+});
+
+test('Frames appears when a plain canvas BECOMES a timed composition, and goes when it stops', async () => {
+  const h = mount({ seqMs: null, ...STILL });
+  assert.equal(h.framesRow(), null);
+  const stage = dom.window.document.createElement('div');
+  stage.setAttribute('data-sequence', '');
+  stage.setAttribute('data-seq-ms', '8000');
+  h.canvas.appendChild(stage);
+  await settle();
+  assert.equal(h.framesRow()!.style.display, 'flex', 'the same observer that re-seeds Duration');
+  stage.remove();
+  await settle();
+  assert.equal(h.framesRow(), null, 'every clip deleted — no contact sheet either');
+});
+
+test('the Frames value reaches the export opts as opts.cuts', async () => {
+  const h = mount({ seqMs: 6000, ...STILL });
+  h.framesInput()!.value = '6';
+  h.download();
+  await settle();
+  assert.equal(h.downloads().length, 1);
+  assert.equal(h.downloads()[0]!.format, 'png');
+  assert.equal(h.downloads()[0]!.opts.cuts, 6);
+});
+
+test('a nonsense Frames value coerces to 1, and the ceiling clamps', async () => {
+  for (const [typed, want] of [['', 1], ['0', 1], ['-3', 1], ['2.7', 2], ['999', 64]] as Array<[string, number]>) {
+    const h = mount({ seqMs: 6000, ...STILL });
+    h.framesInput()!.value = typed;
+    h.download();
+    await settle();
+    assert.equal(h.downloads()[0]!.opts.cuts, want, `"${typed}" → ${want}`);
+  }
+});
+
+test('the default sequence export asks for a single frame', async () => {
+  const h = mount({ seqMs: 6000, ...STILL });
+  h.download();
+  await settle();
+  assert.equal(h.downloads()[0]!.opts.cuts, 1, 'the playhead frame — the untouched default path');
+});
+
+test('cuts never reaches the opts for a motion format or a non-sequence tool', async () => {
+  const seq = mount({ seqMs: 6000, ...STILL });
+  seq.setFormat('webm');
+  seq.download();
+  await settle();
+  assert.equal('cuts' in seq.downloads()[0]!.opts, false, 'a video export has no contact sheet');
+
+  const plain = mount({ seqMs: null, ...STILL });
+  plain.download();
+  await settle();
+  assert.equal('cuts' in plain.downloads()[0]!.opts, false, 'ordinary tools are untouched');
+});
+
+// ── 6. the download extension follows the BYTES, not the requested format ─────
+// A contact sheet (cuts > 1) of a still format returns a ZIP of N members while the
+// format id still says png/pdf/svg. Without this the user downloads "sheet.png" that
+// is really an archive and nothing will open it.
+
+test('a zipped contact sheet downloads as .zip, not the still extension', () => {
+  const z = new dom.window.Blob(['x'], { type: 'application/zip' });
+  assert.equal(extFor('png', z), 'zip');
+  assert.equal(extFor('pdf', z), 'zip');
+  assert.equal(extFor('svg', z), 'zip');
+});
+
+test('a single-cut still keeps its own extension', () => {
+  assert.equal(extFor('png', new dom.window.Blob(['x'], { type: 'image/png' })), 'png');
+  // A multi-page PDF sheet is ONE pdf, not a zip — it must stay .pdf.
+  assert.equal(extFor('pdf', new dom.window.Blob(['x'], { type: 'application/pdf' })), 'pdf');
+});
+
+test('the video container fallback still wins over the requested format', () => {
+  assert.equal(extFor('mp4', new dom.window.Blob(['x'], { type: 'video/webm' })), 'webm');
+});
+
+
+// ── 7. the export shutter covers ANIMATED exports too ────────────────────────
+// It used to be gated `shutter: !isAnimated`, on the reasoning that an animated
+// format records the live canvas. That is true only of a LIVE take, which never
+// reaches exportUnscaled at all — every other motion path composites off-screen,
+// and `.export-shutter` is a sibling of #tool-canvas-outer so it is outside the
+// captured subtree regardless. Meanwhile the resize shake is just as visible for
+// video. A regression here puts a camera-iris inside someone's exported file, or
+// puts the shake back on screen — neither is something a type checker will catch.
+
+test('an animated export runs behind the shutter', async () => {
+  const h = mount({ seqMs: 6000 });
+  h.setFormat('mp4');
+  h.download();
+  await settle();
+  assert.ok(h.unscaled().some(o => o.shutter === true && o.formats.includes('mp4')),
+    'the mp4 export itself must run inside a closed shutter');
+});
+
+test('a still export still runs behind the shutter', async () => {
+  const h = mount({ seqMs: null, formats: ['png', 'mp4'] });
+  h.setFormat('png');
+  h.download();
+  await settle();
+  assert.ok(h.unscaled().some(o => o.shutter === true && o.formats.includes('png')),
+    'png keeps the behaviour it always had');
+});
+
+test('a LIVE take bypasses exportUnscaled entirely — the shutter would be filmed', async () => {
+  const h = mount({ seqMs: null, formats: ['webm', 'png'] });
+  h.setFormat('webm');
+  const live = h.panel.querySelector('[data-action="video-live"]') as HTMLInputElement | null;
+  if (!live) return;                       // liveCaptureSupport() false in this env
+  live.checked = true;
+  h.download();
+  await settle();
+  // A live take keeps the fit-to-stage scale AND films the screen, so the webm
+  // itself must not be produced inside a wrapper. (Other wrapped calls may exist —
+  // the export-history thumbnail capture wraps its own png.)
+  assert.equal(h.unscaled().some(o => o.formats.includes('webm')), false,
+    'the live take must not run inside exportUnscaled at all');
 });

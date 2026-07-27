@@ -51,7 +51,12 @@ function pptxGradientFill(bgImage: string | null | undefined): PptxFill | null {
     const c = s.colorStr ? parseCssColorFull(s.colorStr) : null;
     if (!c) return;
     const pos = s.offset.endsWith('%') ? parseFloat(s.offset) / 100 : (stopArgs.length > 1 ? i / (stopArgs.length - 1) : 0);
-    grad.push({ pos, color: rgbaHex(c), alpha: c[3] < 1 ? c[3] : undefined });
+    // The stop's alpha lives on `opacity`, not inside `colorStr` — parseGradientStop
+    // returns an OPAQUE colour precisely so an SVG consumer cannot apply the alpha
+    // twice. Reading only c[3] therefore dropped per-stop transparency from PPTX
+    // fills; take the lower of the two so either carrier works.
+    const alpha = Math.min(c[3], Number.isFinite(s.opacity) ? s.opacity : 1);
+    grad.push({ pos, color: rgbaHex(c), alpha: alpha < 1 ? alpha : undefined });
   });
   return grad.length >= 2 ? { grad, angle } : null;
 }

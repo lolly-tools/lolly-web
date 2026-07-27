@@ -29,12 +29,18 @@
    trigger them, and the Export popup still opens from the rail Export icon. */
 .tool-layout.is-editor .render-pill { display: none; }
 
-/* Left toolbar rail — auto-hidden at rest on desktop (revealed whenever the
-   pointer is over the editor stage, like the mesh-gradient tool's on-canvas
-   controls), always-on for touch. Vertically centred by a flex DOCK wrapper —
-   NOT a transform. The rail must not carry `transform`/`backdrop-filter`, since
-   either would become the containing block for its colour-picker popover's
-   `position:fixed` and knock it off-screen. */
+/* Floating tool palette — a detached, DRAGGABLE rail rather than a full-height
+   slab: auto-hidden at rest on desktop (revealed whenever the pointer is over the
+   editor stage, like the mesh-gradient tool's on-canvas controls), always-on for
+   touch. At rest a flex DOCK wrapper parks it against the left edge; once dragged
+   the dock carries plain left/top (`.is-detached`).
+
+   Neither the dock nor the rail may carry `transform`/`backdrop-filter` — either
+   would become the containing block for the colour-picker popover's
+   `position:fixed` and knock it off-screen, which is also why the drag writes
+   left/top and never a translate. The rail's own full-height frosted ::before is
+   gone for the same family of reasons (and because a detached palette should read
+   as an object on the canvas, not a pane of glass down the whole edge). */
 .fc-toolbar-dock {
   position: absolute;
   left: 0; top: 0; bottom: 0;
@@ -44,15 +50,21 @@
   pointer-events: none;
   z-index: 16;
 }
+/* Dragged: the dock shrinks to the rail and takes the clamped left/top written by
+   free-canvas.ts (clampRailPos keeps it inside the stage and off the export pill). */
+.fc-toolbar-dock.is-detached {
+  bottom: auto;
+  align-items: flex-start;
+  padding-left: 0;
+}
 .fc-toolbar {
   pointer-events: auto;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 7px;
+  padding: 4px 7px 7px;
   border-radius: 16px;
-  background: hsl(var(--card) / 0.7);
-  isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
+  background: hsl(var(--card));
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px hsl(var(--border));
   opacity: 0;
   transition: opacity 0.18s ease;
@@ -60,26 +72,56 @@
 .tool-stage:hover .fc-toolbar,
 .fc-toolbar:hover,
 .fc-toolbar:focus-within { opacity: 1; }
+.fc-toolbar-dock.is-dragging .fc-toolbar {
+  opacity: 1;
+  cursor: grabbing;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.32), 0 0 0 1px hsl(var(--border));
+}
 
-/* Undo / redo joined into ONE history control — two stacked halves of a single
-   capsule (undo above, redo below) so the rail reads it as one back/forward
-   indicator rather than two separate buttons. Outer corners round; a hairline
-   splits the halves; each half dims (.fc-btn:disabled) at its end of the stack. */
-.fc-history {
+/* Drag grip — two short bars at the top of the palette. Deliberately NOT a button:
+   it is the one part of the rail that lets a pointerdown through to the drag
+   handler (every button stops it, so a tool click never moves the rail). */
+.fc-grip {
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  background: hsl(var(--muted) / 0.55);
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 14px;
+  cursor: grab;
+  touch-action: none;
 }
-/* Scoped under .fc-history so height/colour win over the later .fc-btn rules. */
-.fc-history .fc-hist-btn { height: 32px; border-radius: 0; color: hsl(var(--muted-foreground)); }
-.fc-history .fc-hist-btn:hover:not(:disabled) { color: hsl(var(--foreground)); }
-.fc-history .fc-hist-btn svg { width: 18px; height: 18px; }
-.fc-history .fc-hist-btn:first-child { border-radius: 12px 12px 0 0; }
-.fc-history .fc-hist-btn:last-child { border-radius: 0 0 12px 12px; }
-.fc-history .fc-hist-btn + .fc-hist-btn { box-shadow: inset 0 1px 0 hsl(var(--border)); }
-@media (pointer: coarse) { .fc-history .fc-hist-btn { height: 40px; } }
+.fc-grip span {
+  display: block;
+  width: 16px; height: 2px;
+  border-radius: 2px;
+  background: hsl(var(--border));
+}
+.fc-toolbar:hover .fc-grip span { background: hsl(var(--muted-foreground) / 0.6); }
+@media (pointer: coarse) { .fc-grip { height: 20px; } }
+
+/* The Lolly mark at the top of the rail opens the document menu (export, save,
+   undo/redo, canvas size, copy, share, info, import). Brand-hued identity mark
+   (--lolly-mark, injected by brand-vars.ts) — never the verify verdict green.
+   Wins over .fc-action-primary, which it also carries so mountTool keeps finding
+   the editor's primary affordance to focus. */
+.fc-toolbar .fc-btn.fc-btn-lolly {
+  --lolly-accent: 145 58% 34%;
+  background: transparent;
+  color: var(--lolly-mark, hsl(var(--lolly-accent)));
+}
+[data-theme="dark"] .fc-toolbar .fc-btn.fc-btn-lolly { --lolly-accent: 145 52% 60%; }
+.fc-toolbar .fc-btn.fc-btn-lolly:hover:not(:disabled) { background: hsl(var(--muted)); }
+.fc-toolbar .fc-btn.fc-btn-lolly svg { width: 22px; height: 22px; }
+/* Unsaved work: Save lives in the menu now, so the mark carries the render pill's cue. */
+.fc-toolbar .fc-btn.fc-btn-lolly.is-unsaved,
+.fc-toolbar .fc-btn.fc-btn-lolly.is-unsaved:hover:not(:disabled) {
+  background: var(--brand-warn, #b28727); color: var(--brand-warn-ink, #0c322c);
+}
+
+/* (Undo / redo used to be a stacked capsule in the rail. They are menu rows in the
+   Lolly menu now — see lollyItems() in free-canvas.ts — where they keep their live
+   enabled/disabled state and hold the menu open so you can step back repeatedly.) */
 
 .fc-btn {
   width: 40px; height: 40px; padding: 0;
@@ -89,6 +131,12 @@
   cursor: pointer;
   transition: background-color 0.14s ease;
 }
+/* `hidden` must be restated here. base.css's `[hidden]{display:none}` sits in the `base`
+   layer and this sheet is in `views`, which WINS on layer order regardless of
+   specificity — so .fc-btn's own `display: inline-flex` would beat it and leave an
+   invisible-but-space-taking 40px hole in the rail (Arrange, the mic button, every
+   conditionally-hidden icon). Same restatement as .tl-panel[hidden] in timeline.css. */
+.fc-btn[hidden] { display: none; }
 .fc-btn svg { width: 21px; height: 21px; }
 .fc-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
 .fc-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
@@ -296,19 +344,51 @@
    box-local coordinates against the real geometry (a handle can sit under another node),
    so free-canvas.ts owns it and there is no element-based second answer. That is also what
    lets the chrome be built once per node COUNT and only repositioned. */
-.fc-pen-layer { pointer-events: none; color: hsl(var(--primary)); z-index: 13; }
+/* CONTRAST — every pen mark carries a DUAL HALO: a light casing tight around it and a
+   dark edge just beyond. Whatever is underneath, one of the two separates from it: the
+   dark edge does the work on a white artboard, the light casing on a black shape, and on
+   a shape filled with the BRAND colour — where the --primary ink itself disappears — the
+   casing pair is the whole of what you see. It is what vector editors have drawn control
+   geometry with for decades, and it needs no measurement of the backdrop.
+   The alternative considered was `mix-blend-mode: difference` on the layer: it
+   self-inverts and is the only treatment that is strictly correct over a photograph. It
+   was rejected because it also inverts the brand colour these marks are deliberately
+   drawn in (a SUSE-green pen turns magenta), it goes muddy on antialiased edges and on
+   mid-grey backdrops it inverts to a near-identical mid-grey, and it would recolour the
+   corner/smooth/symmetric vocabulary into arbitrary hues. The halo keeps the ink
+   meaningful. Both layers are editor chrome inside the [data-export-hide] stage overlay
+   and are never exported, so the `filter` below costs the export walkers nothing; neither
+   layer hosts a popover or a [data-tip], so the stacking context it creates is harmless. */
+.fc-pen-layer,
+.fc-pen-chrome { --pen-casing: rgba(255, 255, 255, 0.95); --pen-edge: rgba(0, 0, 0, 0.55); }
+/* The preview path is a single stroked <path> painted in currentColor, so its halo has to
+   come from the layer: a tight light glow, then a darker one over that result. */
+.fc-pen-layer {
+  pointer-events: none; color: hsl(var(--primary)); z-index: 13;
+  filter: drop-shadow(0 0 1px var(--pen-casing)) drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.45));
+}
 .fc-pen-chrome { position: absolute; inset: 0; pointer-events: none; z-index: 16; }
 /* A node: square for a corner, round for smooth, round + ringed for symmetric — so the
-   continuity a drag will honour is legible without opening the control that sets it. */
+   continuity a drag will honour is legible without opening the control that sets it.
+   The white body plus the dark outer ring is the halo; the --primary rim stays as the
+   brand read, but nothing depends on it being visible. */
 .fc-pen-node {
   position: absolute; box-sizing: border-box;
   width: 9px; height: 9px; margin-left: -4.5px; margin-top: -4.5px;
   border-radius: 50%;
   background: #ffffff; border: 1.5px solid hsl(var(--primary));
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 1px var(--pen-edge), 0 1px 3px rgba(0, 0, 0, 0.28);
 }
 .fc-pen-node.is-corner { border-radius: 1px; }
-.fc-pen-node.is-symmetric { box-shadow: 0 0 0 2px hsl(var(--primary) / 0.28), 0 1px 3px rgba(0, 0, 0, 0.28); }
+/* Symmetric keeps its ring, now sandwiched: dark edge, the --primary band, light edge —
+   so the ring reads as a ring even where the band itself matches the backdrop. */
+.fc-pen-node.is-symmetric {
+  box-shadow:
+    0 0 0 1px var(--pen-edge),
+    0 0 0 3px hsl(var(--primary) / 0.55),
+    0 0 0 3.75px var(--pen-casing),
+    0 1px 3px rgba(0, 0, 0, 0.28);
+}
 .fc-pen-node.is-on { background: hsl(var(--primary)); border-color: #ffffff; }
 /* The first node of an open draft, i.e. the point a click closes the path on. */
 .fc-pen-node.is-close-target { width: 13px; height: 13px; margin-left: -6.5px; margin-top: -6.5px; border-width: 2px; }
@@ -317,11 +397,15 @@
   position: absolute; width: 7px; height: 7px;
   margin-left: -3.5px; margin-top: -3.5px; border-radius: 50%;
   background: hsl(var(--primary)); border: 1px solid #ffffff;
+  box-shadow: 0 0 0 1px var(--pen-edge);
 }
 .fc-pen-handle[hidden] { display: none; }
+/* The arms were the worst case — a 1px line at 60% in the brand colour vanished against
+   anything near it. Full-strength ink, cased both ways, still reads as a hairline. */
 .fc-pen-arm {
-  position: absolute; height: 1px; background: hsl(var(--primary) / 0.6);
+  position: absolute; height: 1px; background: hsl(var(--primary) / 0.9);
   transform-origin: 0 50%; margin-top: -0.5px;
+  box-shadow: 0 0 0 0.75px var(--pen-casing), 0 0 0 1.5px rgba(0, 0, 0, 0.4);
 }
 .fc-pen-arm[hidden] { display: none; }
 /* Armed pen / node-edit cursors, matching .fc-arming's vocabulary. */
@@ -390,6 +474,15 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .fc-ctxbar:has(.color-popover:not([hidden])),
 .fc-fmtbar:has(.color-popover:not([hidden])),
 .fc-panel:has(.color-popover:not([hidden])) { z-index: 30; }
+/* …but raising the BAR only settles it against its own siblings. The bar lives inside
+   `.fc-overlay` (z-index 12) while a panel is a direct child of the stage at 24, so the
+   two sit in different stacking contexts and the panel wins no matter how high the bar
+   goes — a popover opened from the ctx bar painted UNDER an open panel, and the panel's
+   buttons swallowed the clicks meant for the swatches. (Nothing hit this until the
+   gradient panel, which is the first that expects you to use the bar's colour field
+   while it is open.) So the panel steps aside instead, for exactly as long as the
+   popover is open. */
+.fc-overlay:has(.fc-ctxbar .color-popover:not([hidden])) ~ .fc-panel { z-index: 11; }
 
 /* "More" panel: shape / radius / opacity / image fit / blend. */
 .fc-panel {
@@ -514,8 +607,11 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
    sets `isolation:isolate` so the z-index:-1 pseudo stays layered behind its own
    content but above the artboard. The host keeps a translucent solid background too
    — a graceful fallback where backdrop-filter is unsupported, and it keeps a
-   scrolling panel readable in the strip a scrolled-away pseudo can't cover. */
-.fc-toolbar::before, .fc-ctxbar::before, .fc-fmtbar::before, .fc-panel::before {
+   scrolling panel readable in the strip a scrolled-away pseudo can't cover.
+
+   NOT the tool rail: that palette is opaque and unfrosted on purpose — a floating,
+   draggable object rather than a full-height sheet of glass down the stage edge. */
+.fc-ctxbar::before, .fc-fmtbar::before, .fc-panel::before {
   content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
   border-radius: inherit;
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
@@ -733,16 +829,34 @@ button.fc-readout:empty { display: none; }
 .tool-stage.is-grabbable { cursor: grab; }
 .tool-stage.is-grabbing  { cursor: grabbing; }
 
-/* Zoom HUD — a small bottom-right pill: −  [NN%]  +  Fit. Dimmed until the stage
-   is hovered or the canvas is zoomed, so it stays out of the way at rest. */
+/* Zoom HUD — a small TOP-RIGHT pill: −  [NN%]  +  Fit. Dimmed until the stage
+   is hovered or the canvas is zoomed, so it stays out of the way at rest.
+
+   It used to sit bottom-right, which is the same lane as the docked timeline band
+   (.tl-panel, z-index 22, timeline.css) — with the timeline open the band covered
+   the HUD outright and no z-index shuffle fixes that, since the band legitimately
+   owns the bottom of the stage. Top-right removes the collision instead of fighting
+   it, and shares the lane with nothing (the live-camera toggle and the fullscreen
+   float are both top-LEFT; the record flip button and the mobile Get|Save pill are
+   both bottom).
+
+   Vertical geometry comes from the SHARED top-row tokens (tokens.css: --chrome-top,
+   --chrome-h, --chrome-inset) — the same three the chromeless editor's back pill
+   reads via .tools-home.home-full (tool.css) — so the HUD and the back pill sit on
+   one line at every width and can't drift apart. min-height (not height) mirrors the
+   pill exactly and leaves the mobile stacked capsule below free to grow taller. The
+   --vv-* offsets re-pin it to the visible top-right while the page is pinch-zoomed,
+   as on the other end of the row. */
 .stage-nav {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
+  top: calc(var(--chrome-top) + var(--vv-top, 0px));
+  right: calc(var(--chrome-inset) + var(--vv-right, 0px));
   z-index: 20;
   display: flex;
   align-items: center;
   gap: 2px;
+  min-height: var(--chrome-h);
+  box-sizing: border-box;
   padding: 3px;
   border-radius: 999px;
   background: hsl(var(--card) / 0.85);
@@ -791,13 +905,17 @@ button.fc-readout:empty { display: none; }
 }
 
 /* Mobile: stack the zoom HUD into a vertical capsule so it fits the narrow stage,
-   reading + / NN% / − / Fit top-to-bottom like a map zoom control. */
+   reading + / NN% / − / Fit top-to-bottom like a map zoom control. It hangs DOWN from
+   the top-right corner, so nothing here needs a bottom offset any more (the base rule
+   is top-anchored, and --chrome-top already carries env(safe-area-inset-top) on phones
+   — see tokens.css — so the capsule clears the notch the same way the back pill does).
+   The stacked capsule is taller than --chrome-h, which is why the base rule pins the
+   row height with min-height rather than height. */
 @media (max-width: 640px) {
   .stage-nav {
     flex-direction: column;
     align-items: stretch;
     opacity: 1;                                    /* no hover on touch — keep it visible */
-    bottom: calc(10px + env(safe-area-inset-bottom, 0px));  /* clear the home indicator */
   }
   .stage-nav-btn { width: auto; }                 /* fill the column when stacked */
   .stage-nav [data-nav="in"]  { order: 1; }       /* + */
@@ -824,3 +942,49 @@ button.fc-readout:empty { display: none; }
 
 /* On touch the HUD is the primary zoom control; the canvas also keeps pinch/drag. */
 }
+
+/* ── on-canvas gradient editing ─────────────────────────────────────────────────
+   The gradient's line and its stop handles. Same layering logic as the pen: the line
+   is an <svg> at z-index 13 (under the selection chrome), the handles a sibling div at
+   15 so they stay grabbable over it. Both live inside the [data-export-hide] overlay,
+   so none of this reaches an export.
+
+   The stop handle is a SWATCH: --stop carries the stop's own colour, over a small
+   checkerboard so a translucent stop reads as translucent rather than as whatever the
+   artwork behind it happens to be. The white casing + dark ring is the same two-tone
+   treatment the pen nodes use, and for the same reason — a handle has to stay legible
+   on top of arbitrary artwork, including artwork the same colour as the handle. */
+.fc-grad-layer { pointer-events: none; z-index: 13; }
+.fc-grad-line-halo {
+  stroke: rgba(0, 0, 0, 0.55); stroke-width: 3.5; stroke-linecap: round; fill: none;
+}
+.fc-grad-line {
+  stroke: rgba(255, 255, 255, 0.95); stroke-width: 1.5; stroke-linecap: round; fill: none;
+  stroke-dasharray: 5 4;
+}
+.fc-grad-chrome { position: absolute; inset: 0; pointer-events: none; z-index: 15; }
+.fc-grad-stop {
+  position: absolute; width: 16px; height: 16px; margin-left: -8px; margin-top: -8px;
+  border-radius: 50%; pointer-events: auto; touch-action: none; cursor: ew-resize;
+  /* The swatch over a checkerboard, so alpha is visible. */
+  background:
+    linear-gradient(var(--stop, transparent), var(--stop, transparent)),
+    conic-gradient(#d8d8d8 0% 25%, #ffffff 0% 50%, #d8d8d8 0% 75%, #ffffff 0%) 0 0 / 8px 8px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.fc-grad-stop::after { content: ""; position: absolute; inset: -8px; }  /* fat touch target */
+.fc-grad-stop.is-on {
+  /* The selected stop is what the Fill field and Delete act on, so it needs to be
+     unmistakable — a primary ring outside the white casing. */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 0 3.5px hsl(var(--primary)), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.fc-grad-dir {
+  position: absolute; width: 13px; height: 13px; margin-left: -6.5px; margin-top: -6.5px;
+  border-radius: 50%; pointer-events: auto; touch-action: none; cursor: grab;
+  background: hsl(var(--primary)); border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.fc-grad-dir::after { content: ""; position: absolute; inset: -9px; }
+.fc-grad-panel .fc-grad-row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.fc-grad-panel .fc-grad-row-btns .fc-pop-item { flex: 1 1 auto; justify-content: center; }
