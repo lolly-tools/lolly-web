@@ -53,13 +53,25 @@
  * evidence instead: `stats().decoded`, `stats().missed` and
  * `stats().lastSourceSec` against `durationSec()`.
  *
- * BUNDLE SIZE. mediabunny is `import()`ed lazily and only the four container
- * singletons we actually accept (`MP4, QTFF, WEBM, MATROSKA`) are pulled in —
- * never `ALL_FORMATS`, which drags MP3/WAVE/Ogg/FLAC/ADTS/TS/HLS along for
- * 92 kB gzip instead of 60 kB. A static import would cost the preload entry
+ * BUNDLE SIZE. mediabunny is `import()`ed lazily and only the container
+ * singletons we actually accept are pulled in — never `ALL_FORMATS`. The video
+ * and audio paths register DIFFERENT sets (see VIDEO_CONTAINERS /
+ * AUDIO_CONTAINERS): registering only the video four here is what silently
+ * broke every catalog music bed, because Lolly's audio ships as Ogg/Opus and
+ * MP3. A static import would cost the preload entry
  * +352 kB (+89 kB gzip) versus +0.14 kB lazy. `sequence-providers.test.ts` has a
  * source guard that fails the build if either rule is ever broken by an
  * innocent-looking editor auto-import.
+ *
+ * NOT EVERY SOURCE IS A FILE. An audio box may carry a `zzfxm:<seed>[:<style>]`
+ * ref instead of an asset url — a *procedural* track, synthesised here from the
+ * engine's seeded composer. It arrives through the same `createClipAudio` and
+ * satisfies the same `ClipAudio`, so the mix cannot tell the difference; see the
+ * "procedural audio" section at the foot of this file for the grammar and for
+ * why it reports a duration of 0. A TRACKER MODULE (.mod/.xm/.it/.s3m/.stm/.mtm) is
+ * the same shape of thing from the other direction — a real file, but a score rather
+ * than an encoded stream, which no demuxer can read — and it arrives through the same
+ * door: see the "tracker modules" section, also at the foot of this file.
  *
  * BROWSER-ONLY, AND WHAT ISN'T. The decode/draw path needs WebCodecs and a real
  * canvas context, so it can only be proven in the Playwright tier. Everything
@@ -68,24 +80,49 @@
  * dispose idempotency — is injectable and covered headlessly.
  */
 
-import { createSeekQueue, METADATA_TIMEOUT_MS, type SeekQueue } from '../lib/clip-thumbs.ts';
+import {
+  createSeekQueue, METADATA_TIMEOUT_MS, readBounded, withinDecodeBudget,
+  MAX_AUDIO_DECODE_BYTES, type SeekQueue,
+} from '../lib/clip-thumbs.ts';
 // The element-seek fallback must behave EXACTLY like the phase-2 preview seeker,
 // or a clip would export frames the editor never showed. Rather than restate the
 // rules (serialise per element, confirm with requestVideoFrameCallback's
 // mediaTime, one quarter-frame nudge when the decoder lands short, hard timeout),
 // this imports the shipped implementation and its tuning constants from the
 // clock. Nothing there is modified — this is a read-only reuse.
+// The tracker-module recogniser comes from the same place for the same reason: the
+// preview and this mix must never disagree about which box libopenmpt owns, so there
+// is one definition of "is this a module" and both import it.
 import {
   waitSeekConfirmed,
   SEEK_TOLERANCE_S,
   SEEK_NUDGE_S,
   MEDIA_END_EPS_S,
+  isModuleUrl,
+  sniffTrackerModule,
+  urlExtension,
 } from '../views/sequence-clock.ts';
 // The error vocabulary is the plan module's, not a second one invented here: the
 // renderer switches on `SeqErrorCode`, and a provider that minted its own codes
 // would be invisible to it. `toCodedError` is the single normaliser for the three
 // flavours of throw (mediabunny typed / WebCodecs DOMException / plain Error).
 import { sequenceError, toCodedError, SequenceError, type SeqErrorCode } from './sequence-plan.ts';
+// The `zzfxm:` id format. Alone in its own module so bridge/assets.ts can
+// recognise one without pulling this file (and its lazy mediabunny import site)
+// into the first-paint graph — see engine/src/zzfxm-ref.ts's header.
+import { ZZFXM_SCHEME, parseZzfxmRef, type ZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
+// The procedural (`zzfxm:`) audio source composes with the ENGINE's composer —
+// there is exactly one ZzFXM composer in this codebase and this is not a second
+// one. Pure, DOM-free and seeded, so it is safe to import eagerly; the *renderer*
+// (a Worker) is the heavy half and stays lazy, below.
+import {
+  SCALES,
+  composeSong,
+  mulberry32,
+  type Archetype,
+  type SongSpec,
+} from '../../../../engine/src/zzfx-compose.ts';
+import type { RenderedPcm, ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 
 // ── tunables ────────────────────────────────────────────────────────────────
 
@@ -301,18 +338,51 @@ interface MbInput {
   dispose(): void;
 }
 
-/** The four constructors and four container singletons this module imports. */
+/** The constructors and container singletons this module imports. */
 export interface MediabunnyModule {
   Input: new (options: { formats: unknown[]; source: unknown }) => MbInput;
   BlobSource: new (blob: Blob) => unknown;
   UrlSource: new (url: string) => unknown;
   VideoSampleSink: new (track: MbVideoTrack) => MbVideoSink;
   AudioBufferSink: new (track: MbAudioTrack) => MbAudioSink;
+  // Video containers.
   MP4: unknown;
   QTFF: unknown;
   WEBM: unknown;
   MATROSKA: unknown;
+  // Audio-only containers — see AUDIO_CONTAINERS.
+  OGG: unknown;
+  MP3: unknown;
+  WAVE: unknown;
+  ADTS: unknown;
+  FLAC: unknown;
 }
+
+/**
+ * Which containers each decode path registers.
+ *
+ * These are DIFFERENT SETS on purpose, and getting it wrong is not a size
+ * regression — it is silence. A clip's own soundtrack lives inside a video
+ * container, so the audio path needs the video four PLUS the audio-only ones;
+ * the video path genuinely never needs an .ogg.
+ *
+ * The audio list is derived from what the product actually ships and accepts,
+ * not from taste:
+ *   - catalog audio assets are `mp3` and `opus` (Ogg) — brands/asts index.json
+ *   - picker.ts UPLOAD_ACCEPT takes .mp3 .wav .ogg .oga .opus .m4a .aac .flac
+ * (.m4a is an MP4 container, already covered. Tracker/MIDI uploads never reach
+ * mediabunny — they render through the zzfxm/mod path.)
+ *
+ * Cost, measured with esbuild --bundle --minify | gzip -9, not estimated:
+ * the video four are 60.5 kB gzip; adding OGG/MP3/WAVE takes it to 72.7 kB and
+ * ADTS/FLAC to 75.3 kB. All of it lands in the lazily-imported chunk that only a
+ * motion export pulls, so first paint is untouched — which is the rule that
+ * actually matters. ALL_FORMATS would still be wrong: it adds TS/HLS on top for
+ * containers nothing in Lolly can produce or accept.
+ */
+const VIDEO_CONTAINERS = (m: MediabunnyModule): unknown[] => [m.MP4, m.QTFF, m.WEBM, m.MATROSKA];
+const AUDIO_CONTAINERS = (m: MediabunnyModule): unknown[] =>
+  [m.MP4, m.QTFF, m.WEBM, m.MATROSKA, m.OGG, m.MP3, m.WAVE, m.ADTS, m.FLAC];
 
 /**
  * The ONE place mediabunny is loaded.
@@ -335,6 +405,11 @@ async function loadMediabunny(): Promise<MediabunnyModule> {
     QTFF: m.QTFF,
     WEBM: m.WEBM,
     MATROSKA: m.MATROSKA,
+    OGG: m.OGG,
+    MP3: m.MP3,
+    WAVE: m.WAVE,
+    ADTS: m.ADTS,
+    FLAC: m.FLAC,
   } as unknown as MediabunnyModule;
 }
 
@@ -666,7 +741,7 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
 
   const source = typeof src === 'string' ? new mb.UrlSource(src) : new mb.BlobSource(src);
   // Explicit singletons only — see the header, and the source guard in the tests.
-  const input = new mb.Input({ formats: [mb.MP4, mb.QTFF, mb.WEBM, mb.MATROSKA], source });
+  const input = new mb.Input({ formats: VIDEO_CONTAINERS(mb), source });
 
   let track: MbVideoTrack | null = null;
   try {
@@ -904,7 +979,15 @@ function waitMetadata(v: HTMLVideoElement, timeoutMs: number): Promise<boolean> 
  */
 export async function createElementProvider(url: string, opts: ProviderOpts = {}): Promise<InstrumentedProvider> {
   if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
-    throw coded(new Error('no DOM for the element-seek provider'), 'SEQ_UNSUPPORTED_MEDIA');
+    // Tagged `offload`: this is the LAST rung of the provider ladder, and it is
+    // missing only because we are in a worker. A clip mediabunny declined (an
+    // exotic container, a codec with no hardware decoder) is perfectly decodable
+    // by a <video> on the main thread, so this must NOT reach the user as an
+    // "unsupported media" verdict — it must send the render back in-thread, where
+    // this provider exists. See `SeqWorkerFail.offload` in sequence-render.worker.ts.
+    const err = coded(new Error('no DOM for the element-seek provider'), 'SEQ_UNSUPPORTED_MEDIA');
+    (err as unknown as Record<string, unknown>).offload = true;
+    throw err;
   }
   const timeout = opts.timeoutMs ?? OP_TIMEOUT_MS;
   const ledger = createLedger('element');
@@ -1018,7 +1101,33 @@ export async function createElementProvider(url: string, opts: ProviderOpts = {}
 export interface ClipAudioOpts {
   timeoutMs?: number;
   log?(level: string, msg: string): void;
-  deps?: { loadMediabunny?(): Promise<MediabunnyModule>; hasWebCodecs?(): boolean };
+  deps?: {
+    loadMediabunny?(): Promise<MediabunnyModule>;
+    hasWebCodecs?(): boolean;
+    /**
+     * Render a composed ZzFXM song to PCM. Injected by the tests (the shipped
+     * renderer is a Worker, which Node's test tier has no use for) and by any
+     * caller that already owns a render pool. Default: `lib/zzfxm-render.ts`.
+     */
+    renderSong?(song: ZzfxSong): Promise<RenderedPcm>;
+    /**
+     * Render tracker-module BYTES to PCM. Injected by the tests (the shipped renderer
+     * is a libopenmpt Worker). Default: `lib/mod-render.ts`, imported lazily.
+     */
+    renderModule?(bytes: Uint8Array, sampleRate: number): Promise<RenderedPcm>;
+    /**
+     * Read a source's bytes, for the module sniff. Injected by the tests; the default
+     * is a size-bounded fetch through the shared audio-decode ceiling.
+     */
+    fetchBytes?(src: Blob | string): Promise<Uint8Array | null>;
+  };
+  /**
+   * Length, in seconds, the PROCEDURAL source composes itself to. Only the
+   * `zzfxm:` scheme reads it; a decoded file has an intrinsic length and ignores
+   * it. Omitted (the mix's case, which cannot know it here) → derived from the
+   * end of the first requested window. See `zzfxmTargetSec`.
+   */
+  targetSec?: number;
 }
 
 /**
@@ -1035,16 +1144,52 @@ export async function createClipAudio(src: Blob | string, opts: ClipAudioOpts = 
   const deps = opts.deps ?? {};
   const log = opts.log ?? ((): void => {});
   const timeout = opts.timeoutMs ?? OPEN_TIMEOUT_MS;
-  const hasWc = deps.hasWebCodecs ? deps.hasWebCodecs() : (await providerCapability()).webcodecs;
-  if (!hasWc) return null;
 
-  try {
-    return await withTimeout(openClipAudio(src, opts), timeout, 'open (audio)');
-  } catch (err) {
-    const e = err as Error & { code?: string };
-    log('warn', `sequence audio: ${e.code ?? 'error'}: ${e.message} — clip will be silent`);
-    return null;
+  // A procedural track is decided BEFORE the WebCodecs gate: it is synthesised
+  // sample by sample in plain JS, so it is the one audio source that still works
+  // on a platform with no AudioDecoder at all.
+  if (typeof src === 'string') {
+    const ref = parseZzfxmRef(src);
+    if (ref) return openZzfxmAudio(ref, opts);
+    if (src.startsWith(ZZFXM_SCHEME)) {
+      log('warn', `sequence audio: "${src}" is not a valid ${ZZFXM_SCHEME} ref — clip will be silent`);
+      return null;
+    }
+    // A source that NAMES itself a tracker module never goes near the demuxer: no
+    // container reads one, and libopenmpt does not need WebCodecs to render it. A
+    // failure here is final — the file said what it was and could not be honoured —
+    // so it warns rather than falling through to a demux attempt that cannot work.
+    if (isModuleUrl(src)) {
+      const clip = await openModuleAudio(src, opts, 'declared');
+      if (!clip) {
+        log('warn', `sequence audio: ${src.slice(0, 120)} is a tracker module that could not be rendered — clip will be silent`);
+      }
+      return clip;
+    }
   }
+
+  const hasWc = deps.hasWebCodecs ? deps.hasWebCodecs() : (await providerCapability()).webcodecs;
+  if (hasWc) {
+    try {
+      const clip = await withTimeout(openClipAudio(src, opts), timeout, 'open (audio)');
+      // A clean null means the container OPENED and simply has no decodable audio
+      // track — the ordinary answer for a silent video, and definitely not a module.
+      if (clip) return clip;
+      return null;
+    } catch (err) {
+      const e = err as Error & { code?: string };
+      // Nothing could open it. Before calling it silence, ask the last question the
+      // ladder has: an uploaded module arrives as a `blob:` url with no extension and
+      // a guessed MIME type, so the BYTES are the only thing that can identify it.
+      const mod = await openModuleAudio(src, opts, 'sniffed');
+      if (mod) return mod;
+      log('warn', `sequence audio: ${e.code ?? 'error'}: ${e.message} — clip will be silent`);
+      return null;
+    }
+  }
+  // No WebCodecs at all: a module still plays (it is rendered in plain WASM), so the
+  // sniff is the whole ladder here rather than its last rung.
+  return await openModuleAudio(src, opts, 'sniffed');
 }
 
 async function openClipAudio(src: Blob | string, opts: ClipAudioOpts): Promise<ClipAudio | null> {
@@ -1052,7 +1197,7 @@ async function openClipAudio(src: Blob | string, opts: ClipAudioOpts): Promise<C
   const timeout = opts.timeoutMs ?? OP_TIMEOUT_MS;
   const mb = await (deps.loadMediabunny ?? loadMediabunny)();
   const source = typeof src === 'string' ? new mb.UrlSource(src) : new mb.BlobSource(src);
-  const input = new mb.Input({ formats: [mb.MP4, mb.QTFF, mb.WEBM, mb.MATROSKA], source });
+  const input = new mb.Input({ formats: AUDIO_CONTAINERS(mb), source });
 
   let track: MbAudioTrack | null = null;
   try {
@@ -1113,6 +1258,391 @@ async function openClipAudio(src: Blob | string, opts: ClipAudioOpts): Promise<C
       if (disposed) return;
       disposed = true;
       try { input.dispose(); } catch { /* already disposed */ }
+      await Promise.resolve();
+    },
+  };
+}
+
+// ── tracker modules: .mod/.xm/.it/.s3m/.stm/.mtm ────────────────────────────
+//
+// A tracker module is a SCORE — patterns of notes plus the instrument samples they
+// play — so there is no encoded audio stream in the file and no demuxer in existence
+// reads one. mediabunny therefore returns nothing for it, which is exactly how an
+// audio box holding a module came out silent with the export log saying only that the
+// container was unreadable. libopenmpt (lib/mod-render.ts, a vendored WASM worker) is
+// the one thing here that can render one, and it is ALREADY the path the export bar's
+// music bed uses for a 'mod'-format track (views/tool-actions.ts) — so this is a
+// wiring job, not a new capability.
+//
+// WHAT IT IS NOT: a second decode pipeline. The rendered PCM goes through the same
+// `assemblePcmWindow` a decoded file and a zzfxm song go through, so the trim, the
+// resample to the mix rate and the window semantics are literally the same code.
+//
+// HOW ONE IS RECOGNISED: `isModuleUrl` / `sniffTrackerModule`, imported from the clock
+// so the preview cannot disagree — see that file's "tracker modules" section for why
+// the extension alone is not enough (an upload is a `blob:` url) and why the AssetRef
+// `format` field, which WOULD be the honest signal, does not survive as far as here.
+//
+// WHY `renderMod` AND NOT `modUrlToWavBlobUrl`: the WAV round trip exists for the
+// URL-driven muxer, which can only be handed a url. Here the caller wants samples, and
+// `renderMod` already returns exactly the `{left, right, sampleRate}` the zzfxm path
+// returns — so taking the WAV detour would mean encoding a RIFF header, minting a blob
+// url, re-fetching it and demuxing it back to the same floats. (WAVE is registered in
+// AUDIO_CONTAINERS, so that route would work; it is simply two conversions and a
+// revoke-or-leak worse than not doing it.)
+
+/**
+ * Ceiling on ONE module's rendered PCM, bytes.
+ *
+ * The real bound is upstream: lib/mod-worker.ts stops at `MAX_SECONDS` (480 s), which
+ * at 48 kHz stereo f32 is ~184 MB. This is the assertion that it did — a module
+ * declares its own length and a malformed one can claim to loop forever, so if that
+ * cap is ever raised or bypassed this fails loudly with a warning instead of quietly
+ * allocating whatever the file asked for.
+ */
+export const MAX_MODULE_PCM_BYTES = 200 * 1024 * 1024;
+
+/** Extensions that have already said they are something else. Skipped by the sniff so
+ *  an ordinary clip never pays for a speculative read on a failure path. */
+const NON_MODULE_EXT = /^(?:mp4|m4v|mov|webm|mkv|mp3|ogg|oga|opus|m4a|aac|flac|wav|wave|aif|aiff|gif|png|jpg|jpeg|svg|json)$/;
+
+/** The shipped renderer, lazily imported so libopenmpt's WASM stays out of the eager
+ *  graph — the same rule mediabunny follows above, and for a rarer format. */
+async function defaultRenderModule(bytes: Uint8Array, sampleRate: number): Promise<RenderedPcm> {
+  const mod = await import('../lib/mod-render.ts');
+  return mod.renderMod(bytes, sampleRate);
+}
+
+/**
+ * A source's bytes, bounded by the SHARED audio-decode ceiling.
+ *
+ * `MAX_AUDIO_DECODE_BYTES` is the same 6 MiB the waveform reader and the preview
+ * decoder use, so "too big to draw", "too big to hear" and "too big to export" agree.
+ * It is generous for a module — a big .it with its samples is a couple of MB — and it
+ * is what stops a speculative sniff on a 500 MB video from buffering the file.
+ */
+async function fetchModuleBytes(src: Blob | string, opts: ClipAudioOpts): Promise<Uint8Array | null> {
+  const custom = opts.deps?.fetchBytes;
+  if (custom) return await custom(src);
+  if (typeof src !== 'string') {
+    if (src.size > MAX_AUDIO_DECODE_BYTES) return null;
+    return new Uint8Array(await src.arrayBuffer());
+  }
+  if (typeof fetch !== 'function') return null;
+  const res = await fetch(src);
+  if (!res.ok) return null;
+  const declared = Number(res.headers?.get?.('content-length') ?? Number.NaN);
+  if (!withinDecodeBudget(Number.isFinite(declared) ? declared : null)) return null;
+  const buf = await readBounded(res, MAX_AUDIO_DECODE_BYTES);
+  return buf ? new Uint8Array(buf) : null;
+}
+
+/**
+ * Open a tracker module as clip audio, or null when this source is not one (or cannot
+ * be read at all).
+ *
+ * `mode` is the difference between the two call sites: 'declared' means the url named
+ * itself a module and the bytes are fetched on that word alone, while 'sniffed' is the
+ * speculative last rung — the bytes have to identify themselves, and anything that
+ * does not is handed straight back so the caller can report its own failure.
+ *
+ * Never throws: every failure is a null, and the caller owns the warning, because only
+ * the caller knows whether a silent source is a surprise (an audio box) or the
+ * ordinary case (a video with no soundtrack).
+ */
+async function openModuleAudio(
+  src: Blob | string, opts: ClipAudioOpts, mode: 'declared' | 'sniffed',
+): Promise<ClipAudio | null> {
+  const timeout = opts.timeoutMs ?? OPEN_TIMEOUT_MS;
+  if (mode === 'sniffed' && typeof src === 'string' && NON_MODULE_EXT.test(urlExtension(src))) return null;
+  let bytes: Uint8Array | null = null;
+  try {
+    bytes = await withTimeout(fetchModuleBytes(src, opts), timeout, 'read (tracker module)');
+  } catch {
+    return null;                                   // unreadable, oversized, or a stall
+  }
+  if (!bytes || bytes.length < 32) return null;
+  if (mode === 'sniffed' && !sniffTrackerModule(bytes)) return null;
+  return moduleClip(bytes, opts);
+}
+
+/**
+ * A `ClipAudio` backed by libopenmpt.
+ *
+ * DEFERRED like the procedural one, and for the same reason: the first `pcm()` call is
+ * the first moment anything knows the mix rate, and rendering natively at that rate is
+ * one resample better than rendering at 48 kHz and converting. The render happens ONCE
+ * — the worker takes ownership of the byte buffer (it is transferred), so there is
+ * nothing to render a second time, and a failed render is remembered as a failure
+ * rather than retried against bytes that are already gone.
+ *
+ * `durationSec()` is 0 until the render lands, which is the same "no intrinsic length
+ * to declare yet" the procedural clip reports, and the mix already spells that case:
+ * the box is asked for exactly the window it occupies and the assembler zero-fills any
+ * tail past the end of the song. A module does NOT loop to fill its box — neither does
+ * an mp3, and the preview's AudioBufferSourceNode stops at the same place.
+ */
+function moduleClip(bytes: Uint8Array, opts: ClipAudioOpts): ClipAudio {
+  const log = opts.log ?? ((): void => {});
+  const timeout = opts.timeoutMs ?? OP_TIMEOUT_MS;
+  const render = opts.deps?.renderModule ?? defaultRenderModule;
+  let disposed = false;
+  let source: Uint8Array | null = bytes;
+  let pending: Promise<RenderedPcm> | null = null;
+  let duration = 0;
+
+  return {
+    durationSec: () => duration,
+
+    async pcm(fromSec, toSec, sampleRate) {
+      if (disposed) throw coded(new Error('clip audio disposed'), 'SEQ_ABORTED');
+      const from = Math.max(0, Number.isFinite(fromSec) ? fromSec : 0);
+      const to = Math.max(from, Number.isFinite(toSec) ? toSec : from);
+      if (!pending) {
+        const b = source;
+        source = null;                              // transferred to the worker below
+        if (!b) throw coded(new Error('tracker module already failed to render'), 'SEQ_DECODE_FAILED');
+        const rate = Number.isFinite(sampleRate) && sampleRate > 0 ? Math.round(sampleRate) : 48_000;
+        pending = withTimeout(render(b, rate), timeout, 'tracker module render');
+      }
+      let pcm: RenderedPcm;
+      try {
+        pcm = await pending;
+      } catch (err) {
+        throw coded(err, 'SEQ_DECODE_FAILED');
+      }
+      if (disposed) throw coded(new Error('clip audio disposed'), 'SEQ_ABORTED');
+      const frames = pcm.left.length;
+      if (frames * 2 * 4 > MAX_MODULE_PCM_BYTES) {
+        // Loud, and silent for this box only — the rest of the mix still renders.
+        log('warn', `sequence audio: a tracker module rendered ${Math.round(frames / Math.max(1, pcm.sampleRate))}s of PCM, past the ${Math.round(MAX_MODULE_PCM_BYTES / (1024 * 1024))} MB ceiling — clip will be silent`);
+        return { channels: [], sampleRate };
+      }
+      duration = pcm.sampleRate > 0 ? frames / pcm.sampleRate : 0;
+      // The SAME pure assembler the decoded and procedural paths use.
+      return assemblePcmWindow(
+        [{ channels: [pcm.left, pcm.right], sampleRate: pcm.sampleRate, timestamp: 0 }],
+        from, to, sampleRate,
+      );
+    },
+
+    async dispose() {
+      if (disposed) return;
+      disposed = true;
+      source = null;
+      pending = null;
+      await Promise.resolve();
+    },
+  };
+}
+
+// ── procedural audio: the `zzfxm:` scheme ───────────────────────────────────
+//
+// A sequence needs a music bed that is OFFLINE, REPRODUCIBLE and LICENCE-FREE.
+// A catalog loop is none of those three: it is an on-demand fetch, it only
+// exists in a brand pack that shipped it, and it carries whatever licence the
+// track came with. So a box may instead carry a *procedural* asset ref — an id,
+// not a file — and this module synthesises the audio from it.
+//
+// THE GRAMMAR (the whole contract, deliberately tiny):
+//
+//     zzfxm:<seed>            e.g. zzfxm:20260726
+//     zzfxm:<seed>:<style>    e.g. zzfxm:20260726:lofi
+//
+//   • `<seed>` is 1–10 DECIMAL DIGITS, read as a uint32. No sign, no `0x`, no
+//     decimal point, no whitespace — anything else is not a procedural ref at
+//     all, so it can never be confused with a `blob:`/`data:`/`https:` url.
+//   • `<style>` is optional and, when present, one of the engine's archetype
+//     names. An unrecognised style is IGNORED (the seed picks the archetype, as
+//     if the style had been omitted) rather than failing the bed: a typo in a
+//     shared link should still play music. It is still deterministic — the same
+//     unrecognised style always yields the same song.
+//   • Nothing else is encoded. In particular NOT the length: the same ref is a
+//     20-second bed under a 20-second sequence and a 90-second bed under a
+//     90-second one, which is what makes the ref survive editing.
+//
+// WHY `durationSec()` RETURNS 0. A synthesised source has no intrinsic length —
+// it is composed to fit. The mix in sequence-render.ts already spells that case:
+// `srcDur > 0 ? min(from + durMs, srcDur) : from + durMs`, i.e. a source that
+// declines to state a duration is asked for exactly the window the box occupies.
+// That is precisely the semantics wanted here, so the procedural clip reports 0
+// and the mix needs no change whatsoever.
+//
+// DETERMINISM IS THE POINT, AND HERE IS EXACTLY HOW FAR IT GOES. Every value in
+// the SPEC comes from `mulberry32(seed)` (integer-only) or from the target length;
+// there is no `Math.random`, no `Date`, no `performance.now`, no locale, no
+// Map/Set iteration order and no platform read anywhere on that path. So the
+// composed song — the notes, the tempo, the instruments, the arrangement — is
+// identical everywhere, always.
+//
+// The RENDER is one step weaker, and the difference is worth stating rather than
+// overclaiming: `zzfxG`'s sample loop uses `Math.sin`/`Math.cos`/`Math.tan` and
+// `**`, whose results ECMA-262 permits an implementation to approximate. V8, JSC
+// and SpiderMonkey are not guaranteed bit-identical for those. So the honest
+// claim is: byte-identical PCM for the same ref + target length on a GIVEN engine
+// (which is what the "export twice, get the same bed" promise actually needs),
+// and a perceptually identical song everywhere else. The target length is
+// quantised (below) so that a totalMs wobbling by a millisecond between two
+// renders cannot recompose the song.
+
+// The id format itself lives in engine/src/zzfxm-ref.ts — see that file's header for why
+// it is alone in a module. Re-exported here so this remains the ONE import site
+// for "the procedural bed", exactly as it was before the split.
+export { ZZFXM_SCHEME, parseZzfxmRef, formatZzfxmRef, isZzfxmRef, type ZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
+
+/** Shortest song the composer is ever asked for. Matches the export bar's floor. */
+export const ZZFXM_MIN_TARGET_SEC = 8;
+/** Longest. A song is composed and rendered whole, in memory. */
+export const ZZFXM_MAX_TARGET_SEC = 600;
+/**
+ * Target lengths are rounded UP to this grid before composing.
+ *
+ * Two renders of the same project must produce the same tune, and the length
+ * they ask for is derived from a stage's `totalMs` — which is a sum of authored
+ * numbers and can differ in its last float bit between a preview and an export.
+ * Quantising makes the composer's input stable against that jitter, and rounding
+ * up (never down) guarantees the song still covers the window it was asked for.
+ */
+export const ZZFXM_TARGET_QUANTUM_SEC = 0.5;
+
+/**
+ * The archetypes the SEED may choose from.
+ *
+ * A deliberate subset of the twelve: these are the ones that read as a bed under
+ * speech and picture. The other four (drum'n'bass, jungle, classical, spanish
+ * guitar) are reachable only by naming them as an explicit `<style>`. This list
+ * and its order are FROZEN — changing either would repoint every existing seed
+ * at a different tune, which is the one thing this whole scheme exists to
+ * prevent. It matches the export bar's picker (`views/tool-actions.ts`) so a
+ * seed means the same song in both places.
+ */
+const ZZFXM_SEEDED_ARCHETYPES = [
+  'melodic', 'ambient', 'lofi', 'bossaNova', 'rhythmic', 'whimsical', 'chiptune', 'cuban',
+] as const;
+
+/** Tempo window per archetype, in BPM. Frozen for the same reason as the list above. */
+const ZZFXM_BPM: Record<Archetype, readonly [number, number]> = {
+  melodic: [60, 84], ambient: [48, 60], lofi: [66, 84], bossaNova: [108, 126],
+  rhythmic: [96, 120], whimsical: [84, 108], chiptune: [132, 160], cuban: [96, 116],
+  drumAndBass: [160, 176], jungle: [158, 174], classical: [72, 96], spanishGuitar: [90, 120],
+};
+
+/** Scales the seed may choose from. Frozen (see above). */
+const ZZFXM_SCALES = ['majorPent', 'minorPent', 'suspended'] as const;
+
+/**
+ * Slack subtracted before rounding up, so a length that IS on the grid stays on
+ * it when it arrives a float-bit long. Without this, `ceil` would send 20.000000001s
+ * to 20.5 and 20s to 20 — the exact boundary jitter the grid exists to absorb.
+ * The cost is that the song may fall up to a microsecond short of the window,
+ * which is under a twentieth of one sample at 48 kHz.
+ */
+const TARGET_EPS_SEC = 1e-6;
+
+/** Clamp + quantise a wanted length to the grid the composer is actually asked for. */
+export function zzfxmTargetSec(wantedSec: number): number {
+  const s = Number.isFinite(wantedSec) ? wantedSec : ZZFXM_MIN_TARGET_SEC;
+  const q = Math.ceil(Math.max(0, s - TARGET_EPS_SEC) / ZZFXM_TARGET_QUANTUM_SEC) * ZZFXM_TARGET_QUANTUM_SEC;
+  const clamped = Math.min(ZZFXM_MAX_TARGET_SEC, Math.max(ZZFXM_MIN_TARGET_SEC, q));
+  // Kill the float dust `ceil(x/0.5)*0.5` can leave, so the number that reaches
+  // the composer is exactly representable and a cache key over it is stable.
+  return Math.round(clamped * 2) / 2;
+}
+
+/**
+ * Seed → song spec. TOTALLY determined by (seed, targetSec, style).
+ *
+ * Every draw comes from one `mulberry32(seed)` stream, consumed in a FIXED order
+ * — archetype, scale, tempo, three progression roots, pan — and a named `style`
+ * overrides only the archetype AFTER its draw has happened, so naming a style
+ * never shifts the rest of the stream. That is what lets `zzfxm:7` and
+ * `zzfxm:7:lofi` share a progression while differing in arrangement.
+ */
+export function generatedSongSpec(seed: number, targetSec: number, style?: Archetype): SongSpec {
+  const rng = mulberry32(seed >>> 0);
+  const pick = <T>(a: readonly T[]): T => a[Math.floor(rng() * a.length)] as T;
+  // The draw happens EVEN WHEN it is about to be overridden — the stream's
+  // position is part of the contract, so naming a style must not shift the scale,
+  // the progression or the pan out from under a seed.
+  const drawn: Archetype = pick(ZZFXM_SEEDED_ARCHETYPES);
+  const archetype: Archetype = style ?? drawn;
+  const scale = pick(ZZFXM_SCALES);
+  const pool = SCALES[scale].slice(0, 6);   // low register — melodies walk upward from the roots
+  const [lo, hi] = ZZFXM_BPM[archetype];
+  return {
+    archetype, seed: seed >>> 0, scale, targetSec,
+    bpm: Math.round(lo + rng() * (hi - lo)),
+    roots: [12, pick(pool), pick(pool), pick(pool)],
+    pan: Math.round((rng() - 0.5) * 30) / 100,
+  };
+}
+
+/** The shipped renderer, imported lazily so the Worker chunk is not in this module's eager graph. */
+async function defaultRenderSong(song: ZzfxSong): Promise<RenderedPcm> {
+  const mod = await import('../lib/zzfxm-render.ts');
+  return mod.renderSong(song);
+}
+
+/**
+ * A `ClipAudio` backed by the composer instead of a demuxer.
+ *
+ * Composition is DEFERRED to the first `pcm()` call, because that call is the
+ * first moment anything knows how long the song has to be. The result is cached
+ * per target length, so the ordinary one-window-per-clip case renders once and a
+ * caller that asks for several windows of the same bed gets one coherent song
+ * rather than several unrelated ones.
+ */
+function openZzfxmAudio(ref: ZzfxmRef, opts: ClipAudioOpts): ClipAudio {
+  const log = opts.log ?? ((): void => {});
+  const timeout = opts.timeoutMs ?? OP_TIMEOUT_MS;
+  const render = opts.deps?.renderSong ?? defaultRenderSong;
+  let disposed = false;
+  let cacheKey = -1;
+  let cached: Promise<RenderedPcm> | null = null;
+
+  if (ref.rawStyle) {
+    log('warn', `sequence audio: unknown ${ZZFXM_SCHEME} style "${ref.rawStyle}" — using the seed's own style.`);
+  }
+
+  return {
+    // 0 = "no intrinsic duration". See the section header: the mix reads this as
+    // "give the box exactly the window it asked for", which is the truth here.
+    durationSec: () => 0,
+
+    async pcm(fromSec, toSec, sampleRate) {
+      if (disposed) throw coded(new Error('clip audio disposed'), 'SEQ_ABORTED');
+      const from = Math.max(0, Number.isFinite(fromSec) ? fromSec : 0);
+      const to = Math.max(from, Number.isFinite(toSec) ? toSec : from);
+      // The song's timeline starts at 0 and the window is read out of it, so the
+      // length it must cover is the window's END, not its span.
+      const target = zzfxmTargetSec(opts.targetSec ?? to);
+      if (cacheKey !== target) {
+        cacheKey = target;
+        cached = withTimeout(render(composeSong(generatedSongSpec(ref.seed, target, ref.style))), timeout, 'zzfxm render');
+        // A failed render must not be remembered as this target's answer.
+        cached.catch(() => { if (cacheKey === target) { cacheKey = -1; cached = null; } });
+      }
+      let pcm: RenderedPcm;
+      try {
+        pcm = await (cached as Promise<RenderedPcm>);
+      } catch (err) {
+        throw coded(err, 'SEQ_DECODE_FAILED');
+      }
+      if (disposed) throw coded(new Error('clip audio disposed'), 'SEQ_ABORTED');
+      // One chunk at timestamp 0, through the SAME pure assembler a decoded file
+      // uses — so the trim and the resample to the mix rate are literally the
+      // same code, and a procedural clip cannot drift from a recorded one.
+      return assemblePcmWindow(
+        [{ channels: [pcm.left, pcm.right], sampleRate: pcm.sampleRate, timestamp: 0 }],
+        from, to, sampleRate,
+      );
+    },
+
+    async dispose() {
+      if (disposed) return;
+      disposed = true;
+      cached = null;
+      cacheKey = -1;
       await Promise.resolve();
     },
   };

@@ -687,3 +687,71 @@ export function smoothEdgePath(pts: Point[]): string {
   const mx = (s.x + t.x) / 2;
   return `M${ef2(s.x)} ${ef2(s.y)}C${ef2(mx)} ${ef2(s.y)} ${ef2(mx)} ${ef2(t.y)} ${ef2(t.x)} ${ef2(t.y)}`;
 }
+
+// ── on-canvas gradient editing ───────────────────────────────────────────────
+//
+// The geometry behind dragging a gradient's stops and direction directly on the
+// artboard. DOM-free and unit-tested for the usual reason: a gesture that lands a
+// stop 3% off is invisible in review and obvious to the person using it.
+
+/** The two ends of a gradient's line: where 0% and 100% sit, in box-local px. */
+export interface GradientLine {
+  from: Point;
+  to: Point;
+}
+
+/**
+ * The gradient line for a `w`×`h` box at `angleDeg`, in CSS `linear-gradient`
+ * terms: 0° points UP (the gradient runs bottom→top), 90° points right, and the
+ * line is centred on the box and long enough that its ends sit exactly where the
+ * first and last stop colours become solid.
+ *
+ * That length is not the box diagonal — CSS defines it as the projection of the
+ * box onto the gradient direction, |w·sin θ| + |h·cos θ|, which is what makes a
+ * 45° gradient reach the corners of a rectangle rather than stopping short. Using
+ * the diagonal instead is the classic off-by-a-bit that makes on-canvas handles
+ * disagree with the paint underneath them.
+ */
+export function gradientLine(w: number, h: number, angleDeg: number): GradientLine {
+  const rad = (((angleDeg % 360) + 360) % 360) * Math.PI / 180;
+  // CSS angle → direction vector. 0deg = up = (0,-1) in screen coords.
+  const dx = Math.sin(rad);
+  const dy = -Math.cos(rad);
+  const len = Math.abs(w * dx) + Math.abs(h * dy);
+  const cx = w / 2;
+  const cy = h / 2;
+  return {
+    from: { x: cx - (dx * len) / 2, y: cy - (dy * len) / 2 },
+    to: { x: cx + (dx * len) / 2, y: cy + (dy * len) / 2 },
+  };
+}
+
+/**
+ * Where a point falls along a gradient line, as a stop position 0–100 (clamped).
+ * The point is projected ONTO the line, so a drag that wanders off the line still
+ * moves the stop by the component that matters instead of stalling.
+ */
+export function gradientPosAt(w: number, h: number, angleDeg: number, px: number, py: number): number {
+  const { from, to } = gradientLine(w, h, angleDeg);
+  const vx = to.x - from.x;
+  const vy = to.y - from.y;
+  const len2 = vx * vx + vy * vy;
+  if (!(len2 > 0)) return 0;
+  const t = ((px - from.x) * vx + (py - from.y) * vy) / len2;
+  return Math.min(100, Math.max(0, t * 100));
+}
+
+/**
+ * The CSS gradient angle that points from the box centre toward (px, py) — what a
+ * drag on the direction handle means. Snaps to the nearest `snap` degrees when
+ * given one (the Shift-key affordance), so 0/45/90 are reachable exactly.
+ */
+export function gradientAngleAt(w: number, h: number, px: number, py: number, snap = 0): number {
+  const dx = px - w / 2;
+  const dy = py - h / 2;
+  if (!dx && !dy) return 0;
+  // Inverse of gradientLine's mapping: atan2(dx, -dy) puts 0° at "up".
+  let deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+  if (snap > 0) deg = Math.round(deg / snap) * snap;
+  return ((deg % 360) + 360) % 360;
+}

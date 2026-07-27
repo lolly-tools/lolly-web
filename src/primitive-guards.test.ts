@@ -548,11 +548,33 @@ test('R9: lib/icons.ts glyph bodies are well-formed (balanced quotes and tags)',
   assert.ok(f, 'lib/icons.ts not found — did the icon registry move?');
 
   const problems: string[] = [];
+  const seen = new Set<string>();
   let scanned = 0;
-  for (const m of f.text.matchAll(/^\s*'?([\w-]+)'?:\s*'((?:[^'\\]|\\.)*)',?\s*$/gm)) {
-    const [, name, body] = m;
+  // Every shape the registry uses, and both quote styles:
+  //   `name: '<path …/>'`            — a PATHS entry
+  //   `const SHARED = '<path …/>'`   — a fragment several entries splice in
+  //   `name: \`${SHARED}<path …/>\`` — an entry BUILT from one
+  //   `name: SHARED`                 — an entry that IS one, verbatim
+  // Single-quote-literals-only was the rot: `zoomIn`/`zoomOut` are template literals,
+  // `MAGNIFIER` is a bare const and `search` became an alias of it, so four glyphs —
+  // one of which used to be covered — fell out of the guard the day they landed.
+  // An interpolation is scanned as opaque text; the const it names is scanned on its
+  // own line, so nothing goes unchecked.
+  const bodies: Array<[string, string, number]> = [];
+  const consts = new Map<string, [string, number]>();
+  for (const m of f.text.matchAll(/^\s*(?:const\s+)?'?([\w-]+)'?\s*[:=]\s*(['`])((?:[^'`\\]|\\.)*)\2[,;]?\s*$/gm)) {
+    bodies.push([m[1]!, m[3]!, m.index ?? 0]);
+    if (/^\s*const\s/.test(m[0]!)) consts.set(m[1]!, [m[3]!, m.index ?? 0]);
+  }
+  for (const m of f.text.matchAll(/^\s*'?([\w-]+)'?\s*:\s*([A-Z][A-Z0-9_]*)\s*,\s*$/gm)) {
+    const src = consts.get(m[2]!);
+    if (src) bodies.push([m[1]!, src[0], m.index ?? 0]);
+  }
+  for (const [name, body, index] of bodies) {
+    const m = { index };
     if (!body || !body.includes('<')) continue;
     scanned++;
+    if (name) seen.add(name);
     const at = lineOf(f.text, m.index ?? 0);
     const quotes = (body.match(/"/g) ?? []).length;
     const opens = (body.match(/<[a-zA-Z]/g) ?? []).length;
@@ -565,6 +587,11 @@ test('R9: lib/icons.ts glyph bodies are well-formed (balanced quotes and tags)',
     }
   }
 
+  // Named explicitly, because these four are the ones the old regex silently dropped —
+  // if a future refactor takes them back out of range the count floor alone would not say so.
+  for (const must of ['MAGNIFIER', 'zoomIn', 'zoomOut', 'search']) {
+    assert.ok(seen.has(must), `R9 no longer scans "${must}" — the glyph regex has rotted again.`);
+  }
   assert.ok(scanned >= 60, `only ${scanned} markup glyphs parsed — the R9 regex has rotted`);
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
 });

@@ -11,10 +11,15 @@
  *     restore when the playhead leaves a transition or the clip goes off screen;
  *   • the per-element seek queue, driven by a mock media element and an injected
  *     waitFrame — never two seeks in flight, latest-wins scrub coalescing, exactly
- *     one nudge retry, and a confirmation timeout that resolves instead of hanging.
+ *     one nudge retry, and a confirmation timeout that resolves instead of hanging;
+ *   • the preview audio mix, against a fake AudioContext and an injected loader —
+ *     the (when, offset, duration) triple each box is scheduled with, which boxes are
+ *     refused (muted, speed ≠ 1, over the memory ceiling, undecodable), and that every
+ *     exit from playback leaves nothing running.
  *
- * NOT covered here (browser-only, deferred to the browser pass): the play
- * conductor's AudioContext timebase, requestVideoFrameCallback confirmation, real
+ * NOT covered here (browser-only, deferred to the browser pass): that audible sound
+ * actually reaches the output device, a real `decodeAudioData`, autoplay-policy
+ * behaviour of a refused/resumed context, requestVideoFrameCallback confirmation, real
  * <video> drift correction, and layout-derived box sizes (jsdom reports 0 for
  * offsetWidth, so the tests below set style.width/height, which the module's
  * measure() falls back to).
@@ -34,6 +39,8 @@ const {
   readTiming, endOf, isActiveAt, transitionAt, composeTransform, composeOpacity,
   createAuthoredStore, applyTimeToElements, createVideoSeeker, waitSeekConfirmed,
   createSequenceClock, OFF_CLASS, SEEK_NUDGE_S, SCRUB_THROTTLE_MS,
+  MAX_PREVIEW_AUDIO_SOURCES,
+  MODULE_EXTENSIONS, urlExtension, isModuleUrl, sniffTrackerModule, looksLikeTrackerModule,
 } = await import('./sequence-clock.ts');
 
 // ── fixtures ────────────────────────────────────────────────────────────────
@@ -42,7 +49,8 @@ interface BoxSpec {
   start?: number; dur?: number; clipIn?: number; speed?: number;
   enter?: string; enterMs?: number; exit?: string; exitMs?: number;
   mute?: boolean; lane?: string;
-  style?: string; audio?: boolean; w?: number; h?: number;
+  /** true = an audio box on the default source; a string names its own source. */
+  style?: string; audio?: boolean | string; w?: number; h?: number;
 }
 
 function box(spec: BoxSpec = {}): HTMLElement {
@@ -62,8 +70,11 @@ function box(spec: BoxSpec = {}): HTMLElement {
   if (spec.mute) el.setAttribute('data-t-mute', '1');
   if (spec.lane) el.setAttribute('data-t-lane', spec.lane);
   if (spec.audio) {
+    // Exactly what the tool hook emits: an inert marker carrying the source URL.
     const a = dom.window.document.createElement('div');
     a.className = 'lolly-box-audio';
+    a.setAttribute('data-audio-src', typeof spec.audio === 'string' ? spec.audio : 'bed.ogg');
+    a.setAttribute('aria-hidden', 'true');
     el.appendChild(a);
   }
   return el;
@@ -687,4 +698,666 @@ test('seek queue: a stale landing never nudges past a NEWER in-flight seek', asy
   assert.equal(seeker.nudges(), 0, 'no nudge toward the stale target');
   assert.deepEqual(v.calls.map((c) => c.t), [5, 20], 'only the two real seeks were issued');
   seeker.destroy();
+});
+
+// ── preview audio ───────────────────────────────────────────────────────────
+//
+// What a headless test can honestly pin is the SCHEDULING DECISION: which sources are
+// created at all, and the (when, offset, duration) triple each one is handed. That
+// triple is the whole contract with the audio thread — get it right and the sound is
+// sample-accurate by construction; get it wrong and no amount of frame-loop cleverness
+// recovers it. Everything below therefore asserts on those three numbers, on which
+// boxes are refused, and on what is left running after each exit from playback.
+//
+// What CANNOT be verified here (browser only): that audible sound reaches the output
+// device, autoplay-policy behaviour of a real `resume()`, and real decodeAudioData.
+
+interface FakeSource {
+  buffer: unknown;
+  onended: (() => void) | null;
+  started: { when: number; offset: number; dur: number } | null;
+  stops: number;
+  disconnects: number;
+  connectedTo: unknown;
+  connect(dest: unknown): void;
+  disconnect(): void;
+  start(when: number, offset: number, dur: number): void;
+  stop(): void;
+}
+
+function fakeAudioCtx() {
+  const sources: FakeSource[] = [];
+  const ctx = {
+    currentTime: 0,
+    state: 'running',
+    destination: { name: 'destination' },
+    createBufferSource(): FakeSource {
+      const s: FakeSource = {
+        buffer: null, onended: null, started: null, stops: 0, disconnects: 0, connectedTo: null,
+        connect(dest) { s.connectedTo = dest; },
+        disconnect() { s.disconnects++; },
+        start(when, offset, dur) { s.started = { when, offset, dur }; },
+        stop() { s.stops++; },
+      };
+      sources.push(s);
+      return s;
+    },
+    resume() { return Promise.resolve(); },
+    suspend() { return Promise.resolve(); },
+    close() { return Promise.resolve(); },
+  };
+  return { ctx, sources, live: (): FakeSource[] => sources.filter((s) => s.started && !s.stops) };
+}
+
+/** A decoded track: 97 s stereo at 48k — the catalog's loops, which is the point. */
+const fakeBuffer = (durationSec = 97): AudioBuffer => ({
+  duration: durationSec,
+  length: Math.round(durationSec * 48_000),
+  numberOfChannels: 2,
+  sampleRate: 48_000,
+} as unknown as AudioBuffer);
+
+/** Install a fake AudioContext for the duration of one test. */
+function withAudioCtx<T>(fn: (a: ReturnType<typeof fakeAudioCtx>) => T): T {
+  const a = fakeAudioCtx();
+  const g = globalThis as Record<string, unknown>;
+  const had = Object.hasOwn(g, 'AudioContext');
+  const prev = g.AudioContext;
+  g.AudioContext = function AudioContextStub() { return a.ctx; };
+  try {
+    return fn(a);
+  } finally {
+    if (had) g.AudioContext = prev; else delete g.AudioContext;
+  }
+}
+
+/** rAF seam that queues, so a frame runs exactly when the test says so. */
+function frameQueue() {
+  const q: (() => void)[] = [];
+  return {
+    raf: (cb: () => void): number => q.push(cb),
+    caf: (h: number): void => { q[h - 1] = (): void => { /* cancelled */ }; },
+    /** Run the frames pending right now (a callback that reschedules waits its turn). */
+    flush(): void { for (const cb of q.splice(0)) cb(); },
+    pending: (): number => q.length,
+  };
+}
+
+const settle = (): Promise<void> => new Promise((r) => { setImmediate(r); });
+
+/** Log capture, so "degrades with a warning" is a real assertion. */
+function logs(): { host: { log(l: string, m: string): void }; lines: string[] } {
+  const lines: string[] = [];
+  return { host: { log: (l, m) => { lines.push(`${l}: ${m}`); } }, lines };
+}
+
+test('audio: a box is scheduled once, at when = t0 + start, offset = clipIn, for its own length', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(8000, [{ start: 2000, dur: 3000, clipIn: 1500, audio: true }]);
+    const q = frameQueue();
+    const loads: string[] = [];
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async (url) => { loads.push(url); return fakeBuffer(); },
+    });
+    clock.play();
+    await settle();
+    assert.deepEqual(loads, ['bed.ogg'], 'the marker\'s src was decoded exactly once');
+    assert.equal(a.sources.length, 1);
+    // t0 = 0 (ctx.currentTime 0, playhead 0), so the clip's own start IS the when:
+    // the source is handed to the audio thread 2 s AHEAD of the moment it sounds,
+    // which is what makes it sample-accurate rather than frame-accurate.
+    assert.deepEqual(a.sources[0]!.started, { when: 2, offset: 1.5, dur: 3 });
+    assert.equal(a.sources[0]!.connectedTo, a.ctx.destination);
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: playing from inside a box starts it NOW, with the elapsed part skipped', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(8000, [{ start: 1000, dur: 4000, clipIn: 500, audio: true }]);
+    const q = frameQueue();
+    a.ctx.currentTime = 10;                     // a context that has been alive a while
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => fakeBuffer(),
+    });
+    clock.seek(2500);                            // start playback from the middle
+    q.flush();
+    clock.play();
+    await settle();
+    // t0 = 10 - 2.5 = 7.5; the box began 1.5 s ago, so the source starts immediately
+    // (when = ctx.currentTime) 1.5 s further into the file than its in-point.
+    // …and for what is LEFT of the window: the clip ends at 5 s, the playhead is at 2.5 s.
+    assert.deepEqual(a.sources[0]!.started, { when: 10, offset: 0.5 + 1.5, dur: 2.5 });
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: the scheduled span is clipped to the source, the box and the sequence', async () => {
+  await withAudioCtx(async (a) => {
+    // A 3 s file under a 10 s clip that itself overruns a 6 s sequence.
+    const { canvas } = stage(6000, [{ start: 1000, dur: 10_000, clipIn: 1000, audio: true }]);
+    const q = frameQueue();
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => fakeBuffer(3),
+    });
+    clock.play();
+    await settle();
+    // Window says 5 s of room (6 s sequence − 1 s start); the file has only 2 s left
+    // past its 1 s in-point, and that is the smaller of the two.
+    assert.deepEqual(a.sources[0]!.started, { when: 1, offset: 1, dur: 2 });
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: a muted box schedules nothing at all — no fetch, no source', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(6000, [{ start: 0, dur: 4000, mute: true, audio: true }]);
+    const q = frameQueue();
+    let loads = 0;
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => { loads++; return fakeBuffer(); },
+    });
+    clock.play();
+    await settle();
+    assert.equal(loads, 0, 'a muted clip is never even fetched');
+    assert.equal(a.sources.length, 0);
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: un-muting mid-playback places the box; muting again silences it', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas, els } = stage(6000, [{ start: 0, dur: 6000, mute: true, audio: true }]);
+    const q = frameQueue();
+    let wall = 0;
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => wall,
+      loadAudio: async () => fakeBuffer(),
+    });
+    clock.play();
+    await settle();
+    assert.equal(a.sources.length, 0);
+    // The panel's speaker button writes the model, the hook re-stamps the attribute.
+    els[0]!.removeAttribute('data-t-mute');
+    wall += 16; a.ctx.currentTime = 0.016;
+    q.flush();                                   // one playback frame
+    await settle();
+    assert.equal(a.live().length, 1, 'the un-muted clip now sounds');
+    els[0]!.setAttribute('data-t-mute', '1');
+    wall += 16; a.ctx.currentTime = 0.032;
+    q.flush();
+    await settle();
+    assert.equal(a.live().length, 0, 'and muting it again stops the source');
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: a clip at speed !== 1 is silent, with the same warning the export mix gives', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(6000, [{ start: 0, dur: 4000, speed: 2, audio: true }]);
+    const q = frameQueue();
+    const L = logs();
+    const clock = createSequenceClock({
+      canvasEl: canvas, host: L.host, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => fakeBuffer(),
+    });
+    clock.play();
+    await settle();
+    assert.equal(a.sources.length, 0);
+    assert.ok(L.lines.some((l) => l.includes('time-stretch')), `warned once: ${L.lines.join(' / ')}`);
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: pause stops every source, and resuming re-places it at the held playhead', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(8000, [{ start: 0, dur: 8000, audio: true }]);
+    const q = frameQueue();
+    let wall = 0;
+    let loads = 0;
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => wall,
+      loadAudio: async () => { loads++; return fakeBuffer(); },
+    });
+    clock.play();
+    await settle();
+    assert.equal(a.sources.length, 1);
+    // Two seconds of playback, then Space.
+    wall += 2000; a.ctx.currentTime = 2;
+    q.flush();
+    clock.pause();
+    assert.equal(a.sources[0]!.stops, 1, 'the source was stopped, not left running');
+    assert.equal(a.live().length, 0);
+    // Resume: the playhead is at 2 s, so the source restarts 2 s into the track — and
+    // the decode is NOT repeated, the buffer is cached for the life of the clock.
+    clock.play();
+    await settle();
+    assert.equal(loads, 1, 'no refetch on resume');
+    assert.equal(a.sources.length, 2);
+    assert.deepEqual(a.sources[1]!.started, { when: 2, offset: 2, dur: 6 });
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: seeking while playing re-places every source against the new playhead', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(10_000, [{ start: 2000, dur: 6000, clipIn: 1000, audio: true }]);
+    const q = frameQueue();
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => fakeBuffer(),
+    });
+    clock.play();
+    await settle();
+    assert.deepEqual(a.sources[0]!.started, { when: 2, offset: 1, dur: 6 });
+    a.ctx.currentTime = 1;                       // a second of real playback
+    clock.seek(5000);                            // scrub into the middle of the clip
+    q.flush();
+    await settle();
+    assert.equal(a.sources[0]!.stops, 1, 'the stale placement was stopped');
+    assert.equal(a.sources.length, 2);
+    // t0 = 1 − 5 = −4; the playhead is 3 s into the clip, so it starts immediately,
+    // 3 s past the in-point, with the remaining 3 s of the window.
+    assert.deepEqual(a.sources[1]!.started, { when: 1, offset: 4, dur: 3 });
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: seeking PAST a box silences it; seeking back places it again', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(10_000, [{ start: 1000, dur: 2000, audio: true }]);
+    const q = frameQueue();
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => fakeBuffer(),
+    });
+    clock.play();
+    await settle();
+    assert.equal(a.live().length, 1);
+    a.ctx.currentTime = 0.5;
+    clock.seek(7000);                            // well past the box's 3 s end
+    q.flush();
+    await settle();
+    assert.equal(a.live().length, 0, 'nothing sounds past the clip');
+    assert.equal(a.sources.length, 1, 'and no pointless second source was created');
+    clock.seek(1500);                            // back into it
+    q.flush();
+    await settle();
+    assert.equal(a.sources.length, 2);
+    assert.deepEqual(a.sources[1]!.started, { when: 0.5, offset: 0.5, dur: 1.5 });
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: seeking while PAUSED never makes a sound', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(8000, [{ start: 0, dur: 8000, audio: true }]);
+    const q = frameQueue();
+    let loads = 0;
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => { loads++; return fakeBuffer(); },
+    });
+    for (const t of [500, 1500, 2500, 3500]) { clock.seek(t, { scrubbing: true }); q.flush(); }
+    await settle();
+    assert.equal(loads, 0, 'a scrub decodes nothing');
+    assert.equal(a.sources.length, 0, 'and starts nothing');
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: reaching the end of the sequence stops the mix', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(3000, [{ start: 0, dur: 3000, audio: true }]);
+    const q = frameQueue();
+    let wall = 0;
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => wall,
+      loadAudio: async () => fakeBuffer(),
+    });
+    clock.play();
+    await settle();
+    assert.equal(a.live().length, 1);
+    wall += 4000; a.ctx.currentTime = 4;
+    q.flush();                                   // the frame that runs off the end
+    assert.equal(clock.playing(), false);
+    assert.equal(a.live().length, 0, 'the end of the sequence is silence, not a lingering track');
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: a box orphaned by a repaint is stopped, and the fresh one placed once', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(8000, [{ start: 0, dur: 8000, audio: true }]);
+    const q = frameQueue();
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => fakeBuffer(),
+    });
+    clock.play();
+    await settle();
+    const first = a.sources[0]!;
+    const art = canvas.querySelector('.artboard')!;
+    art.innerHTML = '';
+    art.appendChild(box({ start: 0, dur: 8000, audio: true }));
+    clock.reapply();
+    await settle();
+    assert.equal(first.stops, 1, 'the detached box stopped playing — no overlapping copy');
+    assert.equal(a.live().length, 1, 'exactly one track is sounding');
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: destroy stops every source, aborts the in-flight fetch and drops the buffers', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(8000, [
+      { start: 0, dur: 8000, audio: 'one.ogg' },
+      { start: 0, dur: 8000, audio: 'two.mp3' },
+    ]);
+    const q = frameQueue();
+    const seen: AbortSignal[] = [];
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: (url, signal) => {
+        seen.push(signal);
+        // one.ogg lands; two.mp3 never does — a slow CDN at the moment of teardown.
+        return url === 'one.ogg' ? Promise.resolve(fakeBuffer()) : new Promise(() => { /* never */ });
+      },
+    });
+    clock.play();
+    await settle();
+    assert.equal(a.live().length, 1);
+    clock.destroy();
+    await settle();
+    assert.equal(a.live().length, 0, 'nothing is left playing after destroy');
+    assert.equal(a.sources[0]!.stops, 1);
+    assert.ok(seen.some((s) => s.aborted), 'the fetch still in flight was aborted');
+    // And the DOM is handed back exactly as found, audio marker included.
+    assert.equal(canvas.querySelectorAll(`.${OFF_CLASS}`).length, 0);
+    canvas.remove();
+  });
+});
+
+test('audio: a decode failure degrades to silence with a warning, and is never retried', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(8000, [{ start: 0, dur: 8000, audio: true }]);
+    const q = frameQueue();
+    const L = logs();
+    let loads = 0;
+    let wall = 0;
+    const clock = createSequenceClock({
+      canvasEl: canvas, host: L.host, raf: q.raf, caf: q.caf, now: () => wall,
+      loadAudio: async () => { loads++; throw new Error('unsupported container'); },
+    });
+    clock.play();
+    await settle();
+    assert.equal(a.sources.length, 0, 'silent');
+    assert.equal(clock.playing(), true, 'and the picture keeps playing');
+    assert.ok(L.lines.some((l) => l.startsWith('warn:') && l.includes('unsupported container')), L.lines.join(' / '));
+    // Every subsequent frame must NOT re-attempt the fetch.
+    for (let i = 0; i < 3; i++) { wall += 16; a.ctx.currentTime += 0.016; q.flush(); await settle(); }
+    clock.pause();
+    clock.play();
+    await settle();
+    assert.equal(loads, 1, 'a failed source is asked for exactly once per clock');
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: the distinct-source ceiling is enforced, and the overflow degrades with a log', async () => {
+  await withAudioCtx(async (a) => {
+    const n = MAX_PREVIEW_AUDIO_SOURCES + 2;
+    const specs: BoxSpec[] = [];
+    for (let i = 0; i < n; i++) specs.push({ start: 0, dur: 8000, audio: `track-${i}.ogg` });
+    const { canvas } = stage(8000, specs);
+    const q = frameQueue();
+    const L = logs();
+    let loads = 0;
+    const clock = createSequenceClock({
+      canvasEl: canvas, host: L.host, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => { loads++; return fakeBuffer(); },
+    });
+    clock.play();
+    await settle();
+    assert.equal(loads, MAX_PREVIEW_AUDIO_SOURCES, 'decoded PCM is bounded by the ceiling, not by the composition');
+    assert.equal(a.live().length, MAX_PREVIEW_AUDIO_SOURCES);
+    assert.ok(L.lines.some((l) => l.includes('distinct tracks')), L.lines.join(' / '));
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: boxes sharing one source decode once and both sound', async () => {
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(10_000, [
+      { start: 0, dur: 3000, audio: 'sting.ogg' },
+      { start: 5000, dur: 3000, audio: 'sting.ogg' },
+    ]);
+    const q = frameQueue();
+    let loads = 0;
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => { loads++; return fakeBuffer(); },
+    });
+    clock.play();
+    await settle();
+    assert.equal(loads, 1, 'one decode for one URL');
+    assert.deepEqual(a.sources.map((s) => s.started?.when), [0, 5], 'both placements, each at its own start');
+    clock.destroy();
+    canvas.remove();
+  });
+});
+
+test('audio: with no AudioContext at all the clock plays picture and stays silent', async () => {
+  const { canvas } = stage(6000, [{ start: 0, dur: 6000, audio: true }]);
+  const q = frameQueue();
+  const L = logs();
+  let loads = 0;
+  const clock = createSequenceClock({
+    canvasEl: canvas, host: L.host, raf: q.raf, caf: q.caf, now: () => 0,
+    loadAudio: async () => { loads++; return fakeBuffer(); },
+  });
+  clock.play();
+  await settle();
+  assert.equal(clock.playing(), true);
+  assert.equal(loads, 0, 'nothing to play it through, so nothing is fetched');
+  assert.ok(L.lines.some((l) => l.includes('no AudioContext')), L.lines.join(' / '));
+  clock.destroy();
+  canvas.remove();
+});
+
+// ── tracker modules in the preview mix ──────────────────────────────────────
+//
+// A .mod/.xm/.it/… holds a score, not encoded audio, so `decodeAudioData` throws on
+// one and the box was silent. What is provable here: the recogniser (extension AND
+// bytes, because an uploaded module is a `blob:` url with neither an extension nor an
+// honest MIME type), that a recognised source is routed to libopenmpt instead of the
+// platform decoder, that it then rides the ORDINARY cache/abort/ceiling plumbing, and
+// that a failed render is a logged silence.
+//
+// ONLY A REAL BROWSER CAN PROVE that a .mod is audible: the libopenmpt WASM worker is
+// stubbed through the `renderModule` seam, and jsdom has no audio output at all.
+
+test('module detection: the extension is a fast path, and only on the PATH', () => {
+  assert.equal(urlExtension('https://x.test/song.MOD?v=2#t'), 'mod', 'case and query are not part of it');
+  assert.equal(urlExtension('blob:https://lolly.tools/6f1c-77a2'), '', 'an upload has no extension at all');
+  assert.equal(urlExtension('https://x.test/track.ogg?src=other.mod'), 'ogg', 'a query is never the extension');
+  assert.equal(isModuleUrl('https://x.test/track.ogg?src=other.mod'), false);
+  for (const ext of MODULE_EXTENSIONS) assert.equal(isModuleUrl(`a/b/tune.${ext}`), true, ext);
+  assert.equal(isModuleUrl('bed.ogg'), false);
+});
+
+test('module detection: MODULE_EXTENSIONS has not drifted from the shipped renderer', async () => {
+  // Imported HERE and nowhere in the shipped module: lib/mod-render.ts owns the list
+  // (libopenmpt is what actually decodes them), but importing it eagerly would drag
+  // the worker chunk onto the first-paint path. So the copy is guarded instead.
+  const { MODULE_FORMATS } = await import('../lib/mod-render.ts');
+  assert.deepEqual([...MODULE_EXTENSIONS].sort(), [...MODULE_FORMATS].sort());
+});
+
+/** An IT header — the shortest honest module fixture. */
+const itBytes = (): Uint8Array => {
+  const b = new Uint8Array(64);
+  for (const [i, c] of [...'IMPM'].entries()) b[i] = c.charCodeAt(0);
+  return b;
+};
+
+test('module detection: bytes decide when the url cannot', () => {
+  assert.equal(sniffTrackerModule(itBytes()), true);
+  assert.equal(sniffTrackerModule(itBytes().buffer as ArrayBuffer), true, 'an ArrayBuffer is accepted too');
+  assert.equal(looksLikeTrackerModule('blob:https://lolly.tools/6f1c', itBytes()), true);
+  assert.equal(looksLikeTrackerModule('blob:https://lolly.tools/6f1c', new Uint8Array(64)), false);
+  assert.equal(looksLikeTrackerModule('tune.xm', null), true, 'the name alone is enough');
+});
+
+/** A fetch stub returning `bytes` for every request. Restores the previous global. */
+function withFetch<T>(bytes: Uint8Array, fn: (calls: string[]) => T): T {
+  const g = globalThis as Record<string, unknown>;
+  const had = Object.hasOwn(g, 'fetch');
+  const prev = g.fetch;
+  const calls: string[] = [];
+  g.fetch = (url: string) => {
+    calls.push(url);
+    return Promise.resolve({
+      ok: true,
+      headers: { get: () => String(bytes.byteLength) },
+      // No `body`: readBounded falls back to arrayBuffer(), its documented path for a
+      // polyfilled fetch. The copy matters — the renderer transfers what it is given.
+      arrayBuffer: () => Promise.resolve(bytes.slice().buffer),
+    });
+  };
+  try {
+    return fn(calls);
+  } finally {
+    if (had) g.fetch = prev; else delete g.fetch;
+  }
+}
+
+test('audio: a tracker module is rendered by libopenmpt, never handed to decodeAudioData', async () => {
+  await withAudioCtx(async (a) => {
+    await withFetch(itBytes(), async () => {
+      let decodes = 0;
+      const ctxAny = a.ctx as unknown as Record<string, unknown>;
+      ctxAny.sampleRate = 48_000;
+      ctxAny.decodeAudioData = (): Promise<AudioBuffer> => {
+        decodes++;
+        return Promise.reject(new Error('EncodingError'));
+      };
+      const { canvas } = stage(8000, [{ start: 1000, dur: 3000, clipIn: 500, audio: 'blob:https://lolly.tools/6f1c' }]);
+      const q = frameQueue();
+      const rendered: { rate: number; bytes: number }[] = [];
+      const clock = createSequenceClock({
+        canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+        renderModule: async (ctx, bytes) => {
+          rendered.push({ rate: (ctx as { sampleRate?: number }).sampleRate ?? 0, bytes: bytes.length });
+          return fakeBuffer(30);
+        },
+      });
+      clock.play();
+      await settle();
+      assert.equal(decodes, 0, 'a module must never reach the platform decoder');
+      assert.deepEqual(rendered, [{ rate: 48_000, bytes: 64 }], 'libopenmpt got the bytes, at the context rate');
+      // And it is then an ordinary source: same scheduling triple as a decoded file.
+      assert.deepEqual(a.sources[0]?.started, { when: 1, offset: 0.5, dur: 3 });
+      clock.destroy();
+      canvas.remove();
+    });
+  });
+});
+
+test('audio: a module is fetched once and shared, through the ordinary decode cache', async () => {
+  await withAudioCtx(async (a) => {
+    await withFetch(itBytes(), async (calls) => {
+      const { canvas } = stage(9000, [
+        { start: 0, dur: 3000, audio: 'blob:https://lolly.tools/tune' },
+        { start: 5000, dur: 3000, audio: 'blob:https://lolly.tools/tune' },
+      ]);
+      const q = frameQueue();
+      const clock = createSequenceClock({
+        canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+        renderModule: async (_ctx, bytes) => {
+          assert.equal(bytes.length, 64, 'the sniffed bytes reach the renderer unchanged');
+          return fakeBuffer(30);
+        },
+      });
+      // The default loader is in play here, so this exercises the real fetch → sniff →
+      // render path, including the shared byte ceiling and the AbortController.
+      clock.play();
+      await settle();
+      assert.deepEqual(calls, ['blob:https://lolly.tools/tune'], 'one fetch for a source two boxes share');
+      assert.equal(a.sources.length, 2, 'both boxes are placed from the one decode');
+      clock.destroy();
+      canvas.remove();
+    });
+  });
+});
+
+test('audio: a module libopenmpt refuses is a logged silence, and is never retried', async () => {
+  await withAudioCtx(async (a) => {
+    await withFetch(itBytes(), async (calls) => {
+      const { canvas } = stage(6000, [{ start: 0, dur: 6000, audio: 'blob:https://lolly.tools/broken' }]);
+      const q = frameQueue();
+      const L = logs();
+      let renders = 0;
+      const clock = createSequenceClock({
+        canvasEl: canvas, host: L.host, raf: q.raf, caf: q.caf, now: () => 0,
+        renderModule: async () => { renders++; throw new Error('not a recognized tracker module'); },
+      });
+      clock.play();
+      await settle();
+      q.flush();
+      await settle();
+      assert.equal(a.sources.length, 0, 'nothing is scheduled');
+      assert.equal(clock.playing(), true, 'the picture keeps playing');
+      assert.equal(renders, 1, 'a refused source is remembered, not re-attempted every frame');
+      assert.equal(calls.length, 1);
+      assert.ok(
+        L.lines.some((l) => l.includes('blob:https://lolly.tools/broken') && l.includes('tracker module')),
+        `the box and the reason must both be named: ${L.lines.join(' / ')}`,
+      );
+      clock.destroy();
+      canvas.remove();
+    });
+  });
+});
+
+test('audio: a non-module source still goes to decodeAudioData', async () => {
+  await withAudioCtx(async (a) => {
+    await withFetch(new Uint8Array(64), async () => {
+      let decoded = 0;
+      (a.ctx as unknown as Record<string, unknown>).decodeAudioData = (): Promise<AudioBuffer> => {
+        decoded++;
+        return Promise.resolve(fakeBuffer(10));
+      };
+      const { canvas } = stage(4000, [{ start: 0, dur: 4000, audio: 'https://x.test/bed.ogg' }]);
+      const q = frameQueue();
+      const clock = createSequenceClock({
+        canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+        renderModule: async () => { throw new Error('must never be called for an ogg'); },
+      });
+      clock.play();
+      await settle();
+      assert.equal(decoded, 1, 'the platform decoder still owns real containers');
+      assert.equal(a.sources.length, 1);
+      clock.destroy();
+      canvas.remove();
+    });
+  });
 });

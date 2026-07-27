@@ -34,6 +34,39 @@ declare module 'dom-to-image-more' {
   export default lib;
 }
 
+// butterchurn (the MilkDrop visualizer) ships a webpack UMD bundle and no types.
+// Only what lib/butterchurn-viz.ts calls is declared. `loadPreset` takes our OWN
+// preset shape deliberately: we author presets as real functions rather than the
+// equation SOURCE STRINGS the stock converted packs use, which is what keeps the
+// visualizer off `new Function` (see lib/viz-presets.ts).
+declare module 'butterchurn' {
+  export interface ButterchurnVisualizer {
+    connectAudio(node: AudioNode): void;
+    /** Selective — unhooks only this node's branch into butterchurn's tap. */
+    disconnectAudio(node: AudioNode): void;
+    loadPreset(preset: import('./lib/viz-presets.ts').VizPreset, blendSeconds?: number): void;
+    setRendererSize(width: number, height: number, opts?: Record<string, number>): void;
+    /** Draw one frame. Call from a requestAnimationFrame loop. */
+    render(): void;
+  }
+  export interface ButterchurnOptions {
+    width: number;
+    height: number;
+    pixelRatio?: number;
+    textureRatio?: number;
+    meshWidth?: number;
+    meshHeight?: number;
+    outputFXAA?: boolean;
+  }
+  export function createVisualizer(
+    ctx: BaseAudioContext,
+    canvas: HTMLCanvasElement,
+    opts: ButterchurnOptions,
+  ): ButterchurnVisualizer;
+  const butterchurn: { createVisualizer: typeof createVisualizer };
+  export default butterchurn;
+}
+
 declare module 'gifenc' {
   /** A palette is an array of [r,g,b] (or [r,g,b,a]) tuples. */
   export type GifPalette = number[][];

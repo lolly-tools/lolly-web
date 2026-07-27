@@ -42,6 +42,7 @@ import { announce } from '../a11y.ts';
 import { choiceDialog, confirmDialog } from '../components/confirm-dialog.ts';
 import { maybeNudgeAssetMilestone } from '../lib/asset-milestone.ts';
 import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
+import { onIdle } from '../lib/clip-thumbs.ts';
 import { libCategory, LIB_GROUPS, loadAssetCategories, categoryLabel } from '../lib/asset-category.ts';
 import type { LibGroup } from '../lib/asset-category.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
@@ -189,6 +190,16 @@ interface PickerOpts {
   editTool?: (toolUrl: string, mode?: string) => Promise<AssetRef | null>;
   currentToolUrl?: string;
   currentToolName?: string;
+  /**
+   * Which source pane the picker opens on. A DEFAULT, not a lock: the tab strip stays
+   * fully usable, so the user can move off it immediately. A tab this pick doesn't
+   * offer (`tools` with no embeddable tools, `projects` on a slot that shows none)
+   * degrades to Library rather than opening a pane that isn't there. Absent keeps the
+   * historical default — collect mode opens on Tools, everything else on Library.
+   * Callers use it to match the pane to the ADD KIND the user chose: "add a tool"
+   * lands on Tools, "add audio" lands on the (already type-filtered) library.
+   */
+  initialTab?: TabId;
   /** Present → "collect into a folder" mode (see {@link CollectOpts}). */
   collect?: CollectOpts;
 }
@@ -398,10 +409,16 @@ async function render(
   if (allowToolUrl) tabs.push({ id: 'sessions', label: 'Saved creations' });
   if (showProjects) tabs.push({ id: 'projects', label: 'Projects' });
   if (embedTools.length) tabs.push({ id: 'tools', label: 'Tools' });
-  // Collect mode (the Projects "+ New asset" flow) opens straight on Tools: the primary
-  // intent there is starting a fresh creation, not picking an existing image. Falls back
-  // to Library when the caller passed no tools. The slot-fill picker keeps Library.
-  let activeTab: TabId = collect && embedTools.length ? 'tools' : 'library';
+  // Which pane opens first. The caller's `initialTab` wins when this pick actually
+  // offers that tab (so "add a tool" opens on Tools and "add audio" opens on the
+  // type-filtered library); it's only a default — the strip below stays live, so the
+  // user can switch away at once. A requested tab that isn't in `tabs` is ignored
+  // rather than honoured into an empty pane.
+  // Absent, the historical rule stands: collect mode (the Projects "+ New asset" flow)
+  // opens straight on Tools, because the primary intent there is starting a fresh
+  // creation rather than picking an existing image; the slot-fill picker keeps Library.
+  const requestedTab = opts.initialTab && tabs.some(tb => tb.id === opts.initialTab) ? opts.initialTab : null;
+  let activeTab: TabId = requestedTab ?? (collect && embedTools.length ? 'tools' : 'library');
 
   const placeholderFor = (id: TabId): string =>
     id === 'tools'    ? t('Search tools…')
@@ -2375,6 +2392,42 @@ async function probeMediaDurationMs(file: Blob, kind: 'video' | 'audio'): Promis
   }
 }
 
+/**
+ * Kick off the timeline scrub proxy for a freshly stored clip (phase 4 Track A).
+ *
+ * Deferred to an idle callback so a burst of uploads doesn't queue transcodes in
+ * front of the UI, and completely detached from the upload: `ensureProxy` never
+ * throws, and the extra guard here means even a broken import can't turn a
+ * successful upload into a failed one. The measured duration/dimensions from the
+ * ingest probe ride along as a hint so the common case skips a second container
+ * walk. A skipped or failed proxy is invisible — the timeline scrubs the original.
+ */
+function scheduleProxyBuild(
+  assetId: string,
+  bytes: Blob,
+  durationMs?: number,
+  width?: number,
+  height?: number,
+): void {
+  onIdle(() => {
+    void (async () => {
+      try {
+        const { ensureProxy } = await import('../lib/clip-proxy.ts');
+        await ensureProxy(assetId, bytes, {
+          hint: {
+            ...(durationMs != null ? { durationSec: durationMs / 1000 } : {}),
+            ...(width != null ? { width } : {}),
+            ...(height != null ? { height } : {}),
+          },
+        });
+      } catch { /* derived data: a proxy that never appears changes nothing */ }
+    })();
+  }, PROXY_IDLE_TIMEOUT_MS);
+}
+
+/** How long the proxy build may wait for an idle slot before running anyway. */
+const PROXY_IDLE_TIMEOUT_MS = 5000;
+
 export async function storeUserUpload(host: PickerHost, file: File): Promise<AssetRef> {
   // Read the file as a blob, stash it in the user-assets IDB store, return
   // a `user/...` AssetRef. The bridge's assets.get() resolves these via the
@@ -2701,6 +2754,14 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // Fire-and-forget: it must never delay or fail the upload it follows.
   void maybeNudgeAssetMilestone(host);
 
+  // Build the timeline scrub proxy for a video, on idle. Fire-and-forget for the
+  // same reason as the nudge above and then some: it is a transcode, so it must
+  // never be in front of the picker returning, and a failure is a silent no-op
+  // (the timeline just scrubs the original, exactly as it did before phase 4).
+  // The record is already durably written at this point, so the job can safely
+  // outlive this call. EXPORT NEVER SEES THIS — see lib/clip-proxy.ts's header.
+  if (record.type === 'video') scheduleProxyBuild(id, blob, durationMs, width, height);
+
   // Re-resolve via the public API so we get a proper AssetRef with object URL.
   return host.assets.get(id);
 }
@@ -2730,21 +2791,41 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
  * persisted on the record so host.assets.credential(id) serves it — `user/`
  * lookups read the stored store, not the bytes — letting the capture chain as an
  * ingredient when composited, exactly like a credentialed upload.
+ *
+ * `opts.audio` marks an AUDIO-ONLY take (the timeline panel's record-in-place
+ * voiceover): the container is still webm/mp4, but the asset's TYPE is 'audio', so
+ * every consumer that dispatches on type — the picker's filters, a tool hook asking
+ * "is this box a sound?" — reads it as a sound rather than a silent video.
+ *
+ * `opts.durationMs` is the take's MEASURED length. It matters far more than it looks:
+ * an audio asset has no element a caller can ask for `.duration`, so the timeline's
+ * media clamp (trim, "fit to media", promote's default length) has nothing to work
+ * with unless the length is stored here. It must come from the caller's own elapsed
+ * measurement — a fresh MediaRecorder blob routinely reports duration Infinity/0, the
+ * same lesson `data-clip-ms` records on the video side — so this function takes the
+ * number rather than probing the bytes. Ignored when it is not a finite positive.
  */
 export async function storeRecordingAsset(
   host: PickerHost, blob: Blob, ext: 'mp4' | 'webm' | 'png', prevId?: string,
   credential?: { store: Uint8Array; format: string },
+  opts?: { audio?: boolean; durationMs?: number },
 ): Promise<AssetRef> {
   const isStill = ext === 'png';
+  const isAudio = !isStill && opts?.audio === true;
   const id = `user/recording/${Date.now()}.${ext}`;
   // Measuring is best-effort: a shot that won't decode is still worth keeping (the
   // tool falls back to the rendered size), so never fail the capture over dimensions.
   const dims = isStill ? await readDimensions(blob).catch(() => ({} as { width?: number; height?: number })) : {};
+  const durationMs = Number(opts?.durationMs);
   await host.assets._uploadUserAsset({
-    id, type: isStill ? 'raster' : 'video', format: ext, blob, version: '1.0.0',
+    id, type: isStill ? 'raster' : isAudio ? 'audio' : 'video', format: ext, blob, version: '1.0.0',
     ...(dims.width && dims.height ? { width: dims.width, height: dims.height } : {}),
     ...(credential ? { credential: credential.store, credentialFormat: credential.format } : {}),
-    meta: { name: isStill ? `Screenshot.${ext}` : `Recording.${ext}`, bytes: blob.size },
+    meta: {
+      name: isStill ? `Screenshot.${ext}` : isAudio ? `Voiceover.${ext}` : `Recording.${ext}`,
+      bytes: blob.size,
+      ...(Number.isFinite(durationMs) && durationMs > 0 ? { durationMs: Math.round(durationMs) } : {}),
+    },
   });
   if (prevId && prevId.startsWith('user/recording/') && prevId !== id) {
     try { await host.assets._deleteUserAsset(prevId); } catch { /* orphan take is harmless */ }

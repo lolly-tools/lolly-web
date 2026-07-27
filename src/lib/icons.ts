@@ -43,6 +43,9 @@ const CHECK_TICK = '<path d="m9 12 2 2 4-4"/>';
 const SHIELD_OUTLINE = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
 const FILM_STRIP = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>';
 const GRID_4 = '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>';
+/** Lens + handle. Shared by `search` and the two zoom glyphs, which differ only
+ *  by the sign drawn inside the lens — that is what makes them read as a family. */
+const MAGNIFIER = '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>';
 const PACKAGE_BOX = '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>';
 
 /**
@@ -51,7 +54,7 @@ const PACKAGE_BOX = '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73
  */
 const PATHS = {
   // ---- Chrome / navigation (footer-nav, gallery, projects, profile, folder-tiles) ----
-  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  search: MAGNIFIER,
   zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
   // merged: identical in footer-nav.ts (NAV_ICONS.help) and featured-row.ts (HELP_ICON)
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
@@ -171,6 +174,10 @@ const PATHS = {
   droplet: '<path d="M12 2.7l5.3 5.3a7.5 7.5 0 1 1-10.6 0z"/>',
   convert: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
   resize: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>',
+  // A vertical double-headed arrow. Drawn upright so it can be ROTATED by whoever uses it
+  // — the visualizer turns it 45deg for its "enlarge" control, which is the conventional
+  // diagonal expand affordance.
+  arrowsV: '<path d="M12 4v16"/><path d="m8 8 4-4 4 4"/><path d="m8 16 4 4 4-4"/>',
   sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>',
   // Image fit modes — a deliberately symmetric pair: the same frame, with the
   // artwork drawn OVERFLOWING it (fill/crop) or INSET within it (fit whole). The
@@ -195,6 +202,18 @@ const PATHS = {
   // ---- tool-actions.ts export bar ----
   // Lucide rotate-cw — the "Regenerate music" button on the video audio-track card.
   refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>',
+
+  // ---- timeline panel (views/timeline-panel.ts) ----
+  // These five replace the CSS-drawn `.tl-glyph` pseudo-element drawings that the
+  // panel used while the registry had no entry for them. Zoom is deliberately a
+  // magnifying glass with a sign in the lens, not a bare +/− : a lone plus next to
+  // the panel's other add affordances read as "add", not "zoom".
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  zoomIn: `${MAGNIFIER}<path d="M8 11h6"/><path d="M11 8v6"/>`,
+  zoomOut: `${MAGNIFIER}<path d="M8 11h6"/>`,
+  // Lucide pause / scissors.
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  scissors: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>',
 
   // ---- object align / distribute / stacking order (shared with the free-canvas editors) ----
   // Object alignment (two bars snapping to an edge/centre) — distinct from text-align icons.

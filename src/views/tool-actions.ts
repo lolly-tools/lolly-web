@@ -138,6 +138,11 @@ function extFor(fmt: string, blob: Blob | null | undefined): string {
   const t = blob?.type || '';
   if (t.includes('mp4'))  return 'mp4';
   if (t.includes('webm')) return 'webm';
+  // A contact sheet (cuts > 1) of a still format comes back as a ZIP of N members,
+  // so the requested format id says 'png' while the bytes are an archive. Same rule
+  // as the video fallback above: the Blob wins, or the user downloads a sheet.png
+  // that no image viewer can open.
+  if (t.includes('zip'))  return 'zip';
   return FMT_EXT[fmt] ?? fmt;
 }
 
@@ -792,6 +797,54 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const durationEl    = el.querySelector<HTMLInputElement>('[data-action="video-duration"]');
   const liveLabelEl   = el.querySelector<HTMLElement>('[data-live-capture]');
 
+  // ── Contact sheets: the "Frames" control (plans/fable-timeline-editing §4.6) ─
+  // A still export of a timed composition renders the frame at the playhead
+  // (Andy's WYSIWYG rule). `cuts=N` instead samples N stills at equal MIDPOINT
+  // intervals across the sequence — raster/SVG come back as a zip of N files, PDF
+  // as N pages. Storyboards, thumbnail sheets, social carousels.
+  //
+  // The control exists ONLY while the artboard is a timed composition, and is
+  // visible only for a still format — so no other tool, and no motion format, can
+  // ever put `cuts` on the export opts. It's created/removed by syncFramesUi
+  // (below) rather than baked into the panel HTML, because a canvas can BECOME a
+  // sequence after mount (the MutationObserver path the Duration field already
+  // uses) and a control that is merely hidden would still answer querySelector.
+  const CUTS_MAX = 64;   // a contact sheet is for human review; the engine clamps too
+  const isStillFmt = (f: string | undefined): boolean =>
+    !!f && ['png', 'jpg', 'jpeg', 'webp', 'svg', 'pdf'].includes(f);
+  const hasStillFmt = formats.some(isStillFmt);
+  const framesRowHtml = `
+      <div class="export-dims export-frames" data-seq-still-only style="display:none">
+        <label class="dim-dpi" title="${escape(t('Evenly spaced stills across the sequence. 1 exports the current playhead frame.'))}">
+          <span>${escape(t('Frames'))}</span>
+          <input type="number" data-action="export-cuts" value="1" min="1" max="${CUTS_MAX}" step="1"
+                 aria-label="${escape(t('Frames to export'))}">
+        </label>
+      </div>`;
+  /** Mount/unmount the Frames row for `isSeq`, then show it for still formats only. */
+  function syncFramesUi(isSeq: boolean): void {
+    if (!hasStillFmt || !actions.includes('download')) return;
+    let row = el!.querySelector<HTMLElement>('[data-seq-still-only]');
+    if (!isSeq) { row?.remove(); return; }
+    if (!row) {
+      // Sits with the sizing controls: it is a "how much comes out" dial, like dims.
+      const anchor = el!.querySelector<HTMLElement>('[data-aspect-warning]')
+        ?? el!.querySelector<HTMLElement>('.export-dims')
+        ?? el!.querySelector<HTMLElement>('.filename-extension');
+      const frag = document.createElement('div');
+      frag.innerHTML = framesRowHtml.trim();
+      row = frag.firstElementChild as HTMLElement;
+      if (anchor) anchor.after(row); else el!.prepend(row);
+    }
+    row.style.display = isStillFmt(formatEl?.value ?? initialFmt) ? 'flex' : 'none';
+  }
+  /** The Frames value as an integer in [1, CUTS_MAX]; nonsense (blank, 0, NaN) → 1. */
+  function cutsValue(): number {
+    const inp = el!.querySelector<HTMLInputElement>('[data-action="export-cuts"]');
+    const n = Math.floor(Number(inp?.value));
+    return Number.isFinite(n) && n >= 1 ? Math.min(CUTS_MAX, n) : 1;
+  }
+
   // ── Sequence duration: follow the timeline, yield to the user ──────────────
   // ANDY'S RULE: the exported clip's duration matches the timeline's duration
   // always, UNLESS the user changes it here on export. This flag is the "unless":
@@ -840,6 +893,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         if (box?.checked) box.checked = false;
       }
     }
+    syncFramesUi(isSeq);
   }
   // Observation mechanism: the export bar has no existing hook that fires AFTER the
   // canvas DOM is repainted — runtime.subscribe fires on model change, which is
@@ -849,7 +903,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // `childList` catches the artboard being replaced wholesale by a re-render. It
   // lives as long as canvasEl does (same lifetime as the runtime.subscribe above);
   // there is no teardown seam here and none is needed — the node goes with the mount.
-  if (canvasEl && (durationEl || liveLabelEl)) {
+  if (canvasEl && (durationEl || liveLabelEl || hasStillFmt)) {
     new MutationObserver(() => syncSequenceUi())
       .observe(canvasEl, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-seq-ms', 'data-sequence'] });
   }
@@ -1059,6 +1113,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       el.querySelectorAll<HTMLElement>('[data-video-only]').forEach(c => {
         c.style.display = (isVideoFmt(fmt) && c.dataset.suppressed !== '1') ? 'flex' : 'none';
       });
+      // Contact sheets are a STILL-format affordance; the same handler owns them, so
+      // the Frames row can't survive a switch to a motion format. It only exists at
+      // all while the artboard is a sequence (syncFramesUi), so this is a no-op
+      // everywhere else — no data-suppressed flag needed, nothing to fight over.
+      el.querySelectorAll<HTMLElement>('[data-seq-still-only]').forEach(c => { c.style.display = isStillFmt(fmt) ? 'flex' : 'none'; });
       if (!isVideoFmt(fmt)) stopAudioPreview();   // the audio card is hidden — don't keep a preview playing under it
       el.querySelectorAll<HTMLElement>('[data-html-only]').forEach(c => { c.style.display = fmt === 'html' ? 'flex' : 'none'; });
       el.querySelectorAll<HTMLElement>('[data-cmyk-only]').forEach(c => { c.style.display = isCmykFmt(fmt) ? 'flex' : 'none'; });
@@ -1719,7 +1778,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // sequence path (the tool hook reads ctx.opts.durationUserSet), not to the
       // generic shell-wide export options, so it's carried as a local widening
       // rather than pushed into the shared interface.
-      const opts: RunExportOpts & { durationUserSet?: boolean } = {
+      const opts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } = {
         ...exportDims(),
         onProgress: (done, total) => {
           // Live take: (done, total) is a seconds countdown from the recorder. The
@@ -1736,6 +1795,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           btn.textContent = `Exporting… ${pct}%`;
         },
         ...(isAnimated ? videoParams() : {}),
+        // Contact sheet — `opts.cuts` is the pinned cross-agent name the export
+        // bridge reads. Passed only when the Frames control is actually mounted
+        // (a timed composition) AND the format is a still: every other export omits
+        // it entirely, so the single-playhead-frame default path is untouched.
+        ...(isStillFmt(fmt) && el!.querySelector('[data-seq-still-only]') ? { cuts: cutsValue() } : {}),
         ...audioOpt,
         ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
         ...(fmt === 'html' ? { fullPage: el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ?? false } : {}),
@@ -1816,7 +1880,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // (offsetWidth/Height — transform-independent, and the true possibly-resized page
         // size, not the tool's static render dims). One page → a single file; several → a zip.
         if (pageEls.length > 1) btn.textContent = `Exporting ${pageEls.length} pages…`;
-        const pageOpts: RunExportOpts & { durationUserSet?: boolean } = { ...opts };
+        const pageOpts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } = { ...opts };
         delete pageOpts.bundleFormats;
         const files = await exportUnscaled(async () => {
           const out: Array<{ name: string; blob: Blob }> = [];
@@ -1837,16 +1901,32 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           await host.export.download(zipBlob, `${filename}.zip`);
         }
       } else {
-        // Mask the resize with the shutter for instant (raster/vector) exports;
-        // skip it for animated formats, which record the live canvas over seconds.
         // A LIVE take must keep the fit-to-stage scale: exportUnscaled blows the
         // canvas up to native size for the entire recording, so the user watches a
         // clipped canvas and the capture crops to a viewport slice. Record the
         // preview exactly as displayed instead — the recorder's sizing/bitrate math
-        // already reads the on-screen rect × dpr.
+        // already reads the on-screen rect × dpr. It also films the SCREEN, so the
+        // shutter would appear in the take; both reasons point the same way, and the
+        // ternary below keeps live out of exportUnscaled entirely.
+        //
+        // EVERY OTHER export gets the shutter, animated included (Andy, 2026-07-27).
+        // This used to be `shutter: !isAnimated`, on the reasoning that an animated
+        // format "records the live canvas over seconds" — true only of a live take,
+        // which never reaches this branch. Every other motion path composites
+        // OFF-SCREEN: the sequence compositor rasterises static layers once and draws
+        // into its own canvas, renderRecord/renderTopTail draw to theirs, renderVideo
+        // replays onto an offscreen canvas, and a [data-capture-stream] tool captures
+        // its own canvas's backing store, which an overlay cannot touch. `.export-shutter`
+        // is also a SIBLING of #tool-canvas-outer while every capture targets
+        // #tool-canvas or below, so it is outside the captured subtree either way.
+        // Meanwhile the shake is real for video too — exportUnscaled strips the
+        // transform and resizes to full export dimensions, and a lottie layer visibly
+        // steps frame-by-frame during a sequence render. The iris is built to hold
+        // (see the CSS): it stays closed for the variable export time, and the export
+        // popup keeps showing progress underneath it.
         const blob = liveTake
           ? await runtime.export(canvasEl, fmt, opts)
-          : await exportUnscaled(() => runtime.export(canvasEl, fmt, opts), { shutter: !isAnimated });
+          : await exportUnscaled(() => runtime.export(canvasEl, fmt, opts), { shutter: true });
         downloadedBlob = blob;
         await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
       }

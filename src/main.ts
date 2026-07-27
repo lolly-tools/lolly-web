@@ -22,6 +22,7 @@ import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './
 import { hydrateNeurospicy, armNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
 import { hydrateFeatureFlags, flagEnabledSync } from './feature-flags.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
+import { installRangeUpgrader } from './components/custom-slider.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
 import { syncNeuroDock } from './components/neuro-dock.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
@@ -538,6 +539,11 @@ async function boot(): Promise<void> {
   // and the .then() below retrofits the persistent nav pill for the view that
   // already mounted. Flag-off users never fetch the chunk.
   if (jellyEnabled()) void ensureJelly().then(ok => { if (ok) syncJellyNavToggle(navKeyForRoute(parseRoute().name)); });
+  // Sliders. Installed AFTER the flag hydration above, because the egg-trail is
+  // flag-gated and a slider reads that once, when it mounts. Not gated itself:
+  // `.custom-slider` is the app's slider in both modes, and the chrome's plain
+  // ranges become one wherever they mount (see components/custom-slider.ts).
+  installRangeUpgrader();
   // EVERY user-asset delete funnels through the bridge, which announces it here —
   // an audio delete must also leave the music player (stopping it, or advancing,
   // if it was the sounding track), no matter which surface deleted it (catalog,

@@ -16,6 +16,7 @@ import { mountModal } from '../components/modal.ts';
 import { announce } from '../a11y.js';
 import { colorFieldHtml, wireColorField } from '../components/color-field.js';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
+import { customSliderHtml, mountCustomSlider, SLIDER_DRAG_EVENT } from '../components/custom-slider.ts';
 import { canSkipInputsRebuild } from './inputs-sync.js';
 import { jellyActive, jellyEnabled } from '../lib/jelly.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -1161,6 +1162,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   el.querySelectorAll<HTMLInputElement>('.block-range-input').forEach(r => {
     const hold = () => { _sliderDragging = true; };
     const release = () => { _sliderDragging = false; };
+    // Upgraded (custom-slider.ts): the input is hidden and never sees the gesture,
+    // so the slider relays it. Kept alongside the pointer pair below, which is
+    // still the path for a plain native range.
+    r.addEventListener(SLIDER_DRAG_EVENT, (e) => {
+      (e as CustomEvent<{ dragging: boolean }>).detail.dragging ? hold() : release();
+    });
     r.addEventListener('pointerdown', hold);
     r.addEventListener('pointerup', release);
     r.addEventListener('pointercancel', release);
@@ -1446,30 +1453,16 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       const min  = rw?.min  ?? input.min  ?? 0;
       const max  = rw?.max  ?? input.max  ?? 100;
       const step = rw?.step ?? input.step ?? 1;
-      // Clamp the displayed value into the active range so a leftover out-of-range
-      // value (e.g. carried from another pose, before the hook snaps it back)
-      // can't push the thumb/fill past the track.
-      const num  = Math.min(max, Math.max(min, parseFloat(String(input.value ?? min))));
-      const pct  = ((num - min) / (max - min) * 100).toFixed(3);
-      const stops = Math.round((max - min) / step);
-      const ticks = (stops >= 2 && stops <= 30)
-        ? `<div class="cs-ticks" aria-hidden="true">${
-            Array.from({ length: stops + 1 }, (_, i) =>
-              `<span class="cs-tick" style="left:${(i / stops * 100).toFixed(3)}%"></span>`
-            ).join('')
-          }</div>`
-        : '';
-      const unit = input.unit ?? input.suffix ?? '';
-      return `<div class="custom-slider" data-input-id="${id}"
-          data-min="${min}" data-max="${max}" data-step="${step}"${unit ? ` data-unit="${escape(unit)}"` : ''}
-          tabindex="0" role="slider" aria-label="${escape(input.label ?? id)}"
-          aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${num}" aria-valuetext="${escape(unit ? `${num} ${unit}` : String(num))}">
-        <div class="cs-track">
-          <div class="cs-fill" style="width:${pct}%"></div>
-          <div class="cs-thumb" style="left:${pct}%"></div>
-        </div>
-        ${ticks}
-      </div>`;
+      // The value is clamped into the active range by customSliderHtml, so a
+      // leftover out-of-range value (e.g. carried from another pose, before the
+      // hook snaps it back) can't push the thumb/fill past the track.
+      return customSliderHtml({
+        min, max, step,
+        value: parseFloat(String(input.value ?? min)),
+        unit: input.unit ?? input.suffix ?? '',
+        label: input.label ?? id,
+        attrs: `data-input-id="${id}"`,
+      });
     }
     case 'select': {
       // No filter box for long lists: a native select already type-aheads, and the
@@ -2221,177 +2214,22 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
 }
 
 function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirty?: (id: string) => void): void {
-  const min  = parseFloat(el.dataset.min ?? '');
-  const max  = parseFloat(el.dataset.max ?? '');
-  const step = parseFloat(el.dataset.step ?? '') || 1;
-  const unit = el.dataset.unit || '';
-  const track = el.querySelector<HTMLElement>('.cs-track')!;
-  const fill  = el.querySelector<HTMLElement>('.cs-fill')!;
-  const thumb = el.querySelector<HTMLElement>('.cs-thumb')!;
-
-  let lastSnapped = parseFloat(el.getAttribute('aria-valuenow') ?? '') || min;
   // Live numeric readout next to the label. The panel rebuild is suppressed during a
   // slider drag (_sliderDragging), so update this span directly or it stalls mid-drag.
   const valueOut = el.closest('.input-row')?.querySelector<HTMLElement>('.input-value');
-
-  // ── Jelly egg-trail (flag-gated, purely visual) ──────────────────────────
-  // The thumb chases the value with a soft, VISIBLE elastic lag — the same feel
-  // as the segmented nav tabs. A spring drags a "visual" position behind the
-  // (always-accurate) fill end; the gap between them stretches the thumb into an
-  // egg whose rounded end leads and whose pinched tail trails, and it lingers a
-  // beat as the spring reels in after you stop — so you see it at normal drag
-  // speed, not just fast flicks. This is POSITION-lag driven, not velocity: the
-  // old velocity version only showed on quick wiggles and read as a symmetric
-  // oval. The fill width, value and ARIA are never touched. Gated on
-  // jellyEnabled() (flag on), NOT jellyActive(): pure CSS/JS, no dependency on
-  // the vendored jelly bundle, so it needn't await that ~52 KB chunk. Off (old
-  // CSS grab-swell) when the flag is off or reduced motion is requested.
-  const jelly = jellyEnabled() && !prefersReducedMotion();
-  // Tunables — eyeballed against the nav tabs. STIFF/DAMP = the chase spring
-  // (softer than the tabs' 260/32 so the lag reads bigger); MAX_LEN caps the
-  // tail length px; GRAB/RATE = the round head's press-swell spring; TAIL_BASE
-  // = how wide the tail's base is vs the head diameter.
-  const J = { STIFF: 150, DAMP: 24, MAX_LEN: 64, GRAB: 1.2, RATE: 15, TAIL_BASE: 0.9 };
-  let jVis = NaN, jVel = 0, jPress = 1, jLastT = 0, jRaf = 0, jDragging = false;
-  const jBaseW = Math.max(6, thumb.offsetWidth || 14);
-  // The trailing tail is a separate triangular element (a single scaleX'd div
-  // can't keep the head circular AND taper the other end). The ROUND head
-  // (.cs-thumb) stays pinned on the accurate value and follows the drag; a
-  // spring drags jVis behind it, and |target − jVis| is the tail length, so the
-  // tail grows as you drag and retracts elastically when you stop (the nav-tab
-  // feel). Inserted before the thumb so the head paints over the tail's base.
-  let jTail: HTMLElement | null = null;
-  if (jelly) {
-    el.classList.add('cs-jelly');
-    jTail = document.createElement('div');
-    jTail.className = 'cs-tail';
-    jTail.setAttribute('aria-hidden', 'true');
-    track.insertBefore(jTail, thumb);
-  }
-
-  // Accurate thumb centre in track pixels, read from the live left% the drag
-  // handler already set — the spring chases this true position.
-  function jThumbPx(): number {
-    return (parseFloat(thumb.style.left) || 0) / 100 * track.clientWidth;
-  }
-  function jStep(t: number): void {
-    jRaf = 0;
-    const dt = jLastT ? Math.min(0.05, (t - jLastT) / 1000) : 1 / 60;
-    jLastT = t;
-    const target = jThumbPx();
-    if (!Number.isFinite(jVis)) { jVis = target; jVel = 0; }
-    // Slightly-underdamped spring drags the visual (tail-tip) position behind.
-    jVel += (J.STIFF * (target - jVis) - J.DAMP * jVel) * dt;
-    jVis += jVel * dt;
-    const lag = target - jVis;                                    // +ve when moving right; tail trails opposite
-    const len = Math.min(J.MAX_LEN, Math.abs(lag));               // tail length px
-    jPress += ((jDragging ? J.GRAB : 1) - jPress) * (1 - Math.exp(-dt * J.RATE));
-    // Round head: pinned on the value, uniform grab-swell only (stays a circle).
-    thumb.style.transform = `translate(-50%, -50%) scale(${jPress.toFixed(3)})`;
-    if (jTail) {
-      const pct = parseFloat(thumb.style.left) || 0;
-      const h = jBaseW * jPress * J.TAIL_BASE;                     // base height ≈ head diameter
-      // Triangle built pointing +x (apex right); rotate 180° about its base to
-      // point left. Tail points AWAY from travel: moving right (lag>0) → left.
-      jTail.style.left = `${pct}%`;
-      jTail.style.borderWidth = `${(h / 2).toFixed(2)}px 0 ${(h / 2).toFixed(2)}px ${len.toFixed(2)}px`;
-      jTail.style.transform = `translateY(-50%) rotate(${lag > 0 ? 180 : 0}deg)`;
-      jTail.style.opacity = (Math.min(1, len / 6)).toFixed(3);
-    }
-    const settled = !jDragging && Math.abs(lag) < 0.3 && Math.abs(jVel) < 0.6 && Math.abs(jPress - 1) < 0.003;
-    if (!settled) {
-      jRaf = requestAnimationFrame(jStep);
-    } else {                                                       // hand the head back to plain CSS, retract the tail
-      jVis = NaN; jVel = 0; jPress = 1; jLastT = 0;
-      thumb.style.transform = '';
-      if (jTail) { jTail.style.opacity = '0'; jTail.style.borderWidth = '0'; }
-    }
-  }
-  function jWake(): void { if (jelly && !jRaf) { jLastT = 0; jRaf = requestAnimationFrame(jStep); } }
-  // Keyboard/step change: yank the tail-tip back so the tail flicks out in the
-  // step direction, then the spring reels it in.
-  function jImpulse(dir: number): void {
-    if (!jelly) return;
-    jVis = (Number.isFinite(jVis) ? jVis : jThumbPx()) - dir * 14;
-    jWake();
-  }
-
-  function snap(raw: number): number {
-    const s = Math.round((raw - min) / step) * step + min;
-    return +(Math.min(max, Math.max(min, s)).toFixed(10));
-  }
-
-  // Keep aria-valuenow and a human aria-valuetext (with the unit, when one exists)
-  // in lockstep so screen readers announce the value on every change.
-  function setAria(v: number): void {
-    el.setAttribute('aria-valuenow', String(v));
-    el.setAttribute('aria-valuetext', unit ? `${v} ${unit}` : String(v));
-  }
-
-  function setThumb(rawVal: number): void {
-    const pct = ((Math.min(max, Math.max(min, rawVal)) - min) / (max - min) * 100).toFixed(3);
-    fill.style.width = pct + '%';
-    thumb.style.left = pct + '%';
-  }
-
-  el.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    el.focus({ preventScroll: true }); // so the keyboard handler is live right after a click
-    el.setPointerCapture(e.pointerId);
-    _sliderDragging = true;
-    el.classList.add('dragging');
-    if (jelly) { jDragging = true; jVis = NaN; jWake(); }
-
-    function fromPointer(e: PointerEvent): void {
-      const rect  = track.getBoundingClientRect();
-      const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-      const raw   = min + ratio * (max - min);
-      setThumb(raw);
-      const snapped = snap(raw);
-      if (snapped !== lastSnapped) {
-        lastSnapped = snapped;
-        setAria(snapped);
-        if (valueOut) valueOut.textContent = String(snapped);
-        runtime.setInput(id, snapped);
-        playSliderTick(); // a soft detent per step passed (rate-limited in sfx)
-      }
-    }
-
-    function onUp(): void {
-      el.removeEventListener('pointermove', fromPointer);
-      el.removeEventListener('pointerup', onUp);
-      _sliderDragging = false;
-      el.classList.remove('dragging');
-      if (jelly) { jDragging = false; jWake(); } // let the egg settle back to a circle
-      // Snap thumb to final stop and trigger one last render
-      setThumb(lastSnapped);
+  mountCustomSlider(el, {
+    onInput(v) {
+      if (valueOut) valueOut.textContent = String(v);
+      runtime.setInput(id, v);
+    },
+    onCommit(v) {
       onDirty?.(id);
-      runtime.setInput(id, lastSnapped);
-    }
-
-    el.addEventListener('pointermove', fromPointer);
-    el.addEventListener('pointerup', onUp);
-    fromPointer(e);
-  });
-
-  el.addEventListener('keydown', e => {
-    let next: number | null = null;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowUp')   next = lastSnapped + step;
-    else if (e.key === 'ArrowLeft'  || e.key === 'ArrowDown') next = lastSnapped - step;
-    else if (e.key === 'Home')      next = min;
-    else if (e.key === 'End')       next = max;
-    else if (e.key === 'PageUp')    next = lastSnapped + step * 10;
-    else if (e.key === 'PageDown')  next = lastSnapped - step * 10;
-    if (next === null) return;
-    e.preventDefault();
-    const snapped = snap(next);
-    if (snapped === lastSnapped) return;
-    jImpulse(Math.sign(snapped - lastSnapped)); // pop the egg in the step direction
-    lastSnapped = snapped;
-    setThumb(lastSnapped);
-    setAria(lastSnapped);
-    onDirty?.(id);
-    runtime.setInput(id, lastSnapped);
+      runtime.setInput(id, v);
+    },
+    // The panel must not rebuild under a drag — it would replace the element the
+    // pointer is captured on.
+    onDragStart() { _sliderDragging = true; },
+    onDragEnd() { _sliderDragging = false; },
   });
 }
 

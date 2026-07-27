@@ -435,7 +435,17 @@ export function mountFeaturedRow(
       const angle = -cd * CF_MAX_ANGLE;
       const scale = 1 - Math.min(Math.abs(d), 1) * (1 - CF_MIN_SCALE);
       const tuck = -td * g.w * CF_TUCK;
-      g.el.style.transform = `translateX(${tuck.toFixed(1)}px) rotateY(${angle.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+      // Rotating a cover about its own centre swings its NEAR half toward the camera by
+      // (halfWidth · scale · sin angle) — enough to cross the centred cover's z=0 plane, and
+      // the browser depth-sorts the intersecting planes per-pixel: the neighbour's near half
+      // paints OVER the centred cover, smearing its frost/edge across it. Recede each cover
+      // by exactly its own protrusion (+2px slack) so no plane ever reaches in front of the
+      // one before it, and the centred cover keeps a clean, unbroken edge.
+      // The +8px-per-cover-width term keeps stacking the far covers back after the angle has
+      // saturated, so every cover in the fan sits strictly behind the one nearer the centre
+      // instead of going coplanar and leaving the overlap to z-index alone.
+      const back = (g.w / 2) * scale * Math.abs(Math.sin((angle * Math.PI) / 180)) + Math.abs(td) * 8 + 2;
+      g.el.style.transform = `translateX(${tuck.toFixed(1)}px) translateZ(${(-back).toFixed(1)}px) rotateY(${angle.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
       g.el.style.zIndex = String(1000 - Math.round(Math.abs(d) * 20));
       g.el.classList.toggle('is-centred', Math.abs(d) < 0.5);
     }

@@ -11,6 +11,19 @@
  *                       latest-wins supersede; abort skipping
  *   • onIdle          — the setTimeout fallback path + cancellation
  *   • filmstrip()     — resolves empty (never throws) with no DOM present
+ *   • stillKey        — url + DEVICE-pixel height identity, width deliberately absent
+ *   • stillFrames()   — the abort short-circuit (no <img>, no request) and the live-
+ *                       element fast path (a decoded <img> is used, never re-fetched)
+ *   • svgDataUrl      — the Lottie route: viewBox → standalone pixel size, the dropped
+ *                       percentage style, the namespace, and the markup ceiling
+ *   • nodeKey         — the frame-bar raster's identity: LRU namespace, signature +
+ *                       device-pixel height, clamping, width deliberately absent
+ *   • suspendNodeRasters — the export gate: re-entrant, idempotent release
+ *   • nodeStill()     — through the `_setNodeRasterer` seam: the process-wide lock held
+ *                       across a TIMEOUT (no two shots in the library at once), the
+ *                       `.seq-off` borrow + offscreen park + restore, the post-shot
+ *                       reconciler (onNodeShotSettled), the failure memory, the
+ *                       detached-box refusal, `nodeRasterPending`, and `drainNodeRasters`
  *
  * WHAT IS **NOT** COVERED — browser-only, must be exercised in phase 2B's
  * browser pass, because node has no media pipeline to fake honestly:
@@ -23,24 +36,51 @@
  *     the decode itself needs a real Web Audio implementation)
  *   • ImageBitmap.close() actually running on eviction (the LRU test proves the
  *     dispose *hook* fires; that it frees GPU memory is a browser fact)
+ *   • a still actually DECODING — jsdom has no 2D context and no createImageBitmap,
+ *     so the capture always stops at the draw step here. That an image/Lottie/tool
+ *     bar ends up with the right picture is a browser fact.
+ *   • the dom-to-image shot behind `nodeStill` — there is no rasteriser in node at
+ *     all, so what a frame bar's photograph LOOKS like, the `.seq-off` strip/restore
+ *     around it, and `disableEmbedFonts` are all browser facts. What IS testable is
+ *     the panel's use of it, through the `_setNodeRasterer` seam — see
+ *     views/timeline-panel.test.ts.
  * A jsdom stand-in would prove nothing about any of those — every one of them is
  * a real-decoder behaviour. They are listed so the browser pass can script them.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
 import {
   frameTimes,
   bucketPeaks,
   filmstripKey,
   peaksKey,
+  windowPeaks,
   withinDecodeBudget,
   createLru,
   createSeekQueue,
   onIdle,
   filmstrip,
+  stillFrames,
+  stillKey,
+  svgDataUrl,
   readBounded,
+  nodeKey,
+  nodeStill,
+  nodeRastersSuspended,
+  nodeRasterFailed,
+  nodeRasterPending,
+  onNodeShotSettled,
+  drainNodeRasters,
+  clearClipThumbCache,
+  _setNodeRasterer,
+  suspendNodeRasters,
+  NODE_RASTER_TIMEOUT_MS,
   MAX_AUDIO_DECODE_BYTES,
   MAX_FRAMES,
+  MAX_NODE_H,
+  MAX_STILL_H,
+  MAX_SVG_MARKUP,
   type SeekableEl,
 } from './clip-thumbs.ts';
 
@@ -162,10 +202,47 @@ test('filmstripKey: clamped inputs collapse to the same key', () => {
   assert.equal(a, b);
 });
 
-test('peaksKey: namespaced apart from filmstrip keys and keyed by bucket count', () => {
-  assert.notEqual(peaksKey('a.mp3', 100), peaksKey('a.mp3', 101));
-  assert.ok(peaksKey('a.mp3', 100).startsWith('p|'));
+test('peaksKey: namespaced apart from filmstrip keys, and keyed by URL ALONE', () => {
+  // Deliberately NOT keyed by bucket count or trim window any more: a track is
+  // decoded once into a master envelope and every bar width / trim is re-derived
+  // from it. Keying by bucket count would decode the same file again for a bar one
+  // pixel wider, and keying by window would re-decode on every trim drag.
+  assert.equal(peaksKey('a.mp3'), peaksKey('a.mp3'));
+  assert.notEqual(peaksKey('a.mp3'), peaksKey('b.mp3'));
+  assert.ok(peaksKey('a.mp3').startsWith('p|'));
   assert.ok(filmstripKey('a.mp3', { count: 1, h: 10, clipInSec: 0, clipOutSec: 1 }).startsWith('f|'));
+});
+
+// The bug this fixes: the waveform was computed over the WHOLE file and stretched
+// across the bar, so trimming a clip squeezed the same picture rather than showing
+// the part that plays — and the two halves of a split clip drew identical waveforms.
+test('windowPeaks: a trim window shows THAT part of the track, not the whole thing', () => {
+  // Master: silent first half, loud second half, over a 10s track.
+  const master = new Float32Array(100);
+  for (let i = 50; i < 100; i++) master[i] = 1;
+
+  const firstHalf = windowPeaks(master, 10, 0, 5, 10);
+  const secondHalf = windowPeaks(master, 10, 5, 10, 10);
+  assert.ok(firstHalf.every(v => v === 0), 'the silent half reads silent');
+  assert.ok(secondHalf.every(v => v === 1), 'the loud half reads loud');
+  assert.notDeepEqual([...firstHalf], [...secondHalf], 'two halves of a split must differ');
+
+  // The whole track still works and is not the same as either half.
+  const whole = windowPeaks(master, 10, 0, 10, 10);
+  assert.ok(whole.slice(0, 5).every(v => v === 0) && whole.slice(5).every(v => v === 1));
+});
+
+test('windowPeaks: total over nonsense — never throws, always the requested length', () => {
+  const m = new Float32Array([0, 0.5, 1]);
+  for (const [dur, a, b] of [[0, 0, 1], [10, 5, 5], [10, 8, 2], [10, -5, 999], [Number.NaN, 0, 1]] as const) {
+    const out = windowPeaks(m, dur as number, a as number, b as number, 8);
+    assert.equal(out.length, 8);
+    assert.ok(out.every(v => Number.isFinite(v)), `dur=${dur} ${a}->${b} produced a non-finite peak`);
+  }
+  assert.equal(windowPeaks(new Float32Array(0), 10, 0, 5, 4).length, 4, 'an empty master is silence, not a crash');
+  // A window narrower than one master bucket must still show that bucket's level,
+  // not fall through the loop and read as silence.
+  assert.ok(windowPeaks(new Float32Array([1, 1, 1]), 3, 1.0, 1.01, 4).every(v => v === 1));
 });
 
 test('withinDecodeBudget: refuses oversized audio, allows the ceiling exactly', () => {
@@ -410,6 +487,150 @@ test('filmstrip: an already-aborted signal resolves empty promptly', async () =>
   assert.deepEqual(await filmstrip('video.mp4', { count: 4, h: 40, clipInSec: 0, clipOutSec: 2 }, ctrl.signal), []);
 });
 
+// ── stills (image / lottie / tool-clip bars) ─────────────────────────────────
+
+test('stillKey: the url AND the device-pixel height are both part of the identity', () => {
+  // Two bars of the same asset on a 1× and a 2× display must not share a bitmap.
+  assert.notEqual(stillKey('a.png', 34), stillKey('a.png', 68));
+  assert.notEqual(stillKey('a.png', 34), stillKey('b.png', 34));
+  assert.equal(stillKey('a.png', 34), stillKey('a.png', 34));
+  // Width is deliberately NOT in the key: the still is tiled, so one bitmap serves
+  // every bar width and a zoom step must not force a re-decode.
+  assert.equal(stillKey('a.png', 34).includes('|'), true);
+  // Clamped the same way the capture clamps, so an absurd height cannot mint keys.
+  assert.equal(stillKey('a.png', 1e6), stillKey('a.png', MAX_STILL_H));
+  assert.equal(stillKey('a.png', -4), stillKey('a.png', 8));
+  // Distinct from the filmstrip/peaks namespaces — one LRU holds all three.
+  assert.notEqual(stillKey('a.mp4', 34).slice(0, 2), peaksKey('a.mp4').slice(0, 2));
+});
+
+test('stillFrames: empty url, and no DOM at all, resolve empty rather than throwing', async () => {
+  assert.deepEqual(await stillFrames('', { h: 34 }), []);
+  assert.deepEqual(await stillFrames('a.png', { h: 34 }), []);
+});
+
+/**
+ * The minimum platform `stillFrames` needs: a `document`, a 2D context that records
+ * what was drawn, and a `createImageBitmap` that reports the canvas it snapshotted.
+ * The DRAWING is fake (jsdom has no raster); the SIZING, the source choice and the
+ * caching around it are the module's own real code. Installed for one test at a time,
+ * so the headless-policy tests above keep testing headlessness.
+ */
+interface DomProbe { made: string[]; drawn: unknown[] }
+async function withDom(fn: (probe: DomProbe) => Promise<void>): Promise<void> {
+  const dom = new JSDOM('<!DOCTYPE html><body></body>');
+  const probe: DomProbe = { made: [], drawn: [] };
+  const create = dom.window.document.createElement.bind(dom.window.document);
+  dom.window.document.createElement = ((tag: string) => {
+    probe.made.push(String(tag).toLowerCase());
+    const el = create(tag);
+    if (String(tag).toLowerCase() === 'canvas') {
+      (el as HTMLCanvasElement).getContext = (() => ({
+        drawImage: (src: unknown) => { probe.drawn.push(src); },
+      })) as never;
+    }
+    return el;
+  }) as typeof create;
+  const g = globalThis as Record<string, unknown>;
+  const hadDoc = Object.hasOwn(g, 'document');
+  const hadCib = Object.hasOwn(g, 'createImageBitmap');
+  const prevDoc = g.document;
+  const prevCib = g.createImageBitmap;
+  g.document = dom.window.document;
+  g.createImageBitmap = async (cv: HTMLCanvasElement) => ({ width: cv.width, height: cv.height, close(): void { /* fake */ } });
+  try {
+    await fn(probe);
+  } finally {
+    if (hadDoc) g.document = prevDoc; else delete g.document;
+    if (hadCib) g.createImageBitmap = prevCib; else delete g.createImageBitmap;
+  }
+}
+
+test('stillFrames: an already-aborted signal does no work at all — no <img>, no request', async () => {
+  await withDom(async ({ made, drawn }) => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    assert.deepEqual(await stillFrames('https://example.test/aborted.png', { h: 34 }, ctrl.signal), []);
+    // The abort-on-drag/zoom contract: `share()` defers the run by a microtask, so a
+    // caller that aborted in the same tick must not have created an element or fired
+    // a media request that nothing will ever consume.
+    assert.deepEqual(made.filter((tag) => tag === 'img'), [], 'no <img> was ever created');
+    assert.deepEqual(drawn, [], 'nothing was drawn');
+  });
+});
+
+/** A decoded `<img>`, as the canvas would hand one over. jsdom never loads images. */
+function decodedImg(w: number, h: number): HTMLImageElement {
+  const img = new JSDOM('<!DOCTYPE html><body><img src="a.png"></body>').window.document.querySelector('img') as HTMLImageElement;
+  Object.defineProperty(img, 'complete', { value: true });
+  Object.defineProperty(img, 'naturalWidth', { value: w });
+  Object.defineProperty(img, 'naturalHeight', { value: h });
+  return img;
+}
+
+test('stillFrames: a live, already-decoded <img> is drawn instead of re-fetching the url', async () => {
+  await withDom(async ({ made, drawn }) => {
+    const img = decodedImg(160, 90);
+    const frames = await stillFrames('live-img.png', { h: 34 }, undefined, img);
+    assert.equal(frames.length, 1, 'one tile-able bitmap');
+    assert.deepEqual(made.filter((tag) => tag === 'img'), [], 'the live element was used, not a fresh <img>');
+    assert.equal(drawn[0], img, 'the element on the page is what got drawn');
+    // The bitmap is captured at the asset's own aspect, at the requested height.
+    assert.equal(frames[0]?.height, 34);
+    assert.equal(frames[0]?.width, 60, '160×90 at h=34 is 60 wide');
+  });
+});
+
+test('stillFrames: a second ask for the same key returns the CACHE-OWNED array, not a re-decode', async () => {
+  await withDom(async ({ drawn }) => {
+    const img = decodedImg(100, 50);
+    const first = await stillFrames('cached.png', { h: 40 }, undefined, img);
+    assert.equal(first.length, 1);
+    assert.equal(drawn.length, 1);
+    const again = await stillFrames('cached.png', { h: 40 }, undefined, img);
+    // Same instance: the LRU owns these bitmaps and hands the SAME ones to the next
+    // caller, which is exactly why a caller may not close or retain them.
+    assert.equal(again, first, 'identical array instance, straight from the cache');
+    assert.equal(drawn.length, 1, 'no second draw');
+    // A different device-pixel height is a different picture, and does decode again.
+    await stillFrames('cached.png', { h: 80 }, undefined, img);
+    assert.equal(drawn.length, 2);
+  });
+});
+
+// ── svgDataUrl (the Lottie route: canvas cannot draw an <svg> element) ───────
+
+const svgOf = (attrs: string, inner = '<rect width="10" height="10"/>'): Element => {
+  const d = new JSDOM(`<!DOCTYPE html><body><svg ${attrs}>${inner}</svg></body>`, { contentType: 'text/html' });
+  return d.window.document.querySelector('svg') as Element;
+};
+
+test('svgDataUrl: takes the pixel size from the viewBox and inlines the markup', () => {
+  (globalThis as Record<string, unknown>).XMLSerializer = new JSDOM('').window.XMLSerializer;
+  const url = svgDataUrl(svgOf('viewBox="0 0 512 288" style="width:100%;height:100%"'));
+  assert.ok(url, 'a sized SVG serialises');
+  assert.ok(url.startsWith('data:image/svg+xml;charset=utf-8,'), 'inline data URL, no blob to revoke');
+  const markup = decodeURIComponent(url.slice('data:image/svg+xml;charset=utf-8,'.length));
+  assert.match(markup, /width="512"/, 'the viewBox drives the standalone width');
+  assert.match(markup, /height="288"/);
+  assert.ok(!markup.includes('width:100%'), 'the percentage style is dropped — it resolves to 0 standalone');
+  assert.match(markup, /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/, 'a standalone SVG needs its namespace');
+});
+
+test('svgDataUrl: falls back to width/height attributes, and declines an unsized SVG', () => {
+  (globalThis as Record<string, unknown>).XMLSerializer = new JSDOM('').window.XMLSerializer;
+  const sized = svgDataUrl(svgOf('width="120" height="60"'));
+  assert.ok(sized && decodeURIComponent(sized).includes('width="120"'));
+  assert.equal(svgDataUrl(svgOf('')), null, 'no viewBox and no attributes: nothing to rasterise');
+  assert.equal(svgDataUrl(svgOf('viewBox="0 0 0 0"')), null, 'a zero viewBox is not a size');
+});
+
+test('svgDataUrl: declines markup past the ceiling instead of building the string', () => {
+  (globalThis as Record<string, unknown>).XMLSerializer = new JSDOM('').window.XMLSerializer;
+  const fat = `<rect width="1" height="1" id="${'x'.repeat(MAX_SVG_MARKUP + 64)}"/>`;
+  assert.equal(svgDataUrl(svgOf('viewBox="0 0 10 10"', fat)), null);
+});
+
 // ── readBounded (the audio ceiling has to bound the FETCH, not just the decode) ──
 
 /** A Response-shaped stub that streams `chunks` and records whether it was cancelled. */
@@ -470,4 +691,282 @@ test('readBounded: a throwing stream resolves null rather than rejecting into pe
     arrayBuffer: async () => new ArrayBuffer(0),
   };
   assert.equal(await readBounded(res, MAX_AUDIO_DECODE_BYTES), null);
+});
+
+// REGRESSION: an OPEN-ENDED clip (no authored dur — the default music bed, and any box
+// promoted with only a Start) must not collapse its window to zero. The panel used to
+// pass `dur ?? 0`, which made to === from; windowPeaks then correctly answered silence,
+// so the waveform was still painted but flat at the floor — indistinguishable from no
+// waveform. The panel now resolves the length through span(); this pins the arithmetic
+// that made the symptom, so a future caller passing a zero-width window is caught here
+// rather than by eye.
+test('windowPeaks: a zero-width window is silence — which is why callers must resolve open-ended lengths', () => {
+  const master = new Float32Array(100).fill(1);
+  const collapsed = windowPeaks(master, 10, 0, 0, 16);
+  assert.ok(collapsed.every(v => v === 0), 'to === from can only mean silence');
+
+  // The same box, with its length resolved to the sequence end, is a real waveform.
+  const resolved = windowPeaks(master, 10, 0, 10, 16);
+  assert.ok(resolved.every(v => v === 1), 'a resolved open-ended span reads the whole track');
+  assert.notDeepEqual([...collapsed], [...resolved]);
+});
+
+// ── node rasters (a frame / card / shape bar photographs its own box) ────────
+
+test('nodeKey: namespaced apart from stills, keyed by signature AND device height', () => {
+  // One LRU holds filmstrips, stills, peaks and node rasters, so the prefixes must not
+  // collide — a still of a url that happened to equal a signature would otherwise be
+  // handed to a frame bar (and vice versa).
+  assert.ok(nodeKey('sig', 34).startsWith('n|'));
+  assert.notEqual(nodeKey('a.png', 34), stillKey('a.png', 34));
+  assert.notEqual(nodeKey('a.png', 34).slice(0, 2), peaksKey('a.png').slice(0, 2));
+
+  assert.equal(nodeKey('sig', 34), nodeKey('sig', 34));
+  assert.notEqual(nodeKey('sig', 34), nodeKey('other', 34));
+  // 1x vs 2x: a 34px bar on a retina display wants its own, sharper bitmap.
+  assert.notEqual(nodeKey('sig', 34), nodeKey('sig', 68));
+  // Clamped exactly like the capture clamps, so an absurd height cannot mint keys.
+  assert.equal(nodeKey('sig', 4), nodeKey('sig', 8));
+  assert.equal(nodeKey('sig', 9999), nodeKey('sig', MAX_NODE_H));
+});
+
+test('nodeStill: no signature, no element, or no DOM all resolve empty rather than throwing', async () => {
+  assert.deepEqual(await nodeStill('', null, { h: 34 }), []);
+  assert.deepEqual(await nodeStill('sig', null, { h: 34 }), []);
+});
+
+test('suspendNodeRasters: re-entrant, and the release is idempotent', () => {
+  // An export brackets itself with this because dom-to-image's globals are shared; two
+  // overlapping exports must not have the FIRST one to finish re-arm the thumbnails.
+  assert.equal(nodeRastersSuspended(), false);
+  const a = suspendNodeRasters();
+  const b = suspendNodeRasters();
+  assert.equal(nodeRastersSuspended(), true);
+  a();
+  a();                                   // a double release must not decrement twice
+  assert.equal(nodeRastersSuspended(), true, 'the second holder still has it');
+  b();
+  assert.equal(nodeRastersSuspended(), false);
+});
+
+/**
+ * A live box on a jsdom stage, plus the platform pieces a node raster needs. The SHOT
+ * is injected (`_setNodeRasterer`), because there is no rasteriser in node — what is
+ * exercised here is everything the module does AROUND the shot: the lock, the timeout,
+ * the class borrow, the failure memory.
+ */
+async function withNodeStage(
+  fn: (ctx: { doc: Document; box: HTMLElement; started: string[] }) => Promise<void>,
+): Promise<void> {
+  const dom = new JSDOM('<!DOCTYPE html><body><div id="stage"></div></body>');
+  const doc = dom.window.document;
+  const box = doc.createElement('div');
+  box.className = 'lolly-box';
+  doc.getElementById('stage')!.appendChild(box);
+  const g = globalThis as Record<string, unknown>;
+  const hadDoc = Object.hasOwn(g, 'document');
+  const hadCib = Object.hasOwn(g, 'createImageBitmap');
+  const prevDoc = g.document;
+  const prevCib = g.createImageBitmap;
+  g.document = doc;
+  g.createImageBitmap = async (cv: { width: number; height: number }) => ({ width: cv.width, height: cv.height, close(): void { /* fake */ } });
+  clearClipThumbCache();
+  try {
+    await fn({ doc: doc as unknown as Document, box, started: [] });
+  } finally {
+    _setNodeRasterer(null);
+    clearClipThumbCache();
+    if (hadDoc) g.document = prevDoc; else delete g.document;
+    if (hadCib) g.createImageBitmap = prevCib; else delete g.createImageBitmap;
+  }
+}
+
+const canvasOf = (w: number, h: number): HTMLCanvasElement =>
+  ({ width: w, height: h }) as HTMLCanvasElement;
+
+test('nodeStill: the process-wide lock is held until the shot REALLY ends, not until it times out', async () => {
+  // The corruption this prevents: dom-to-image-more keeps its options, its url cache
+  // and its sandbox <iframe> at MODULE scope and clears them at the end of any call.
+  // Releasing the lock on the 1.5s timeout let the next shot start while the timed-out
+  // one was still inside the library, so the first one's teardown wiped the second's
+  // state — the exact overlap the lock exists to prevent. Nothing about a timeout can
+  // cancel the call; all the lock can do is refuse to let anyone else in.
+  await withNodeStage(async ({ doc }) => {
+    const a = doc.createElement('div');
+    const b = doc.createElement('div');
+    doc.body.appendChild(a);
+    doc.body.appendChild(b);
+    let live = 0;
+    let peak = 0;
+    let releaseSlow!: () => void;
+    const slow = new Promise<void>((r) => { releaseSlow = r; });
+    _setNodeRasterer(async (el) => {
+      live++;
+      peak = Math.max(peak, live);
+      if (el === a) await slow;           // never finishes inside the timeout
+      live--;
+      return canvasOf(20, 10);
+    });
+
+    const first = nodeStill('sig-a', a as HTMLElement, { h: 10 });
+    const second = nodeStill('sig-b', b as HTMLElement, { h: 10 });
+    // Time the first one out, exactly as NODE_RASTER_TIMEOUT_MS would.
+    await new Promise((r) => setTimeout(r, NODE_RASTER_TIMEOUT_MS + 50));
+    assert.deepEqual(await first, [], 'the caller gave up on the shot that overran');
+    assert.equal(peak, 1, 'but no second call was ever let into the library beside it');
+
+    releaseSlow();
+    assert.equal((await second).length, 1, 'and the queued bar still gets its picture');
+    assert.equal(peak, 1);
+  });
+});
+
+test('nodeStill: an off-playhead box is un-hidden for the shot, parked offscreen, and put back', async () => {
+  // A frame outside the playhead window carries `.seq-off` → display:none, and
+  // dom-to-image copies that into its clone: without the borrow every frame bar
+  // photographs blank. Without the PARK the artboard strobes through each frame it
+  // photographs. Both have to be undone whichever way the shot ends.
+  await withNodeStage(async ({ box }) => {
+    box.classList.add('seq-off');
+    const seen: string[] = [];
+    _setNodeRasterer(async (el) => {
+      seen.push(el.className);
+      throw new Error('serialisation blew up');     // the ugliest exit path
+    });
+    assert.deepEqual(await nodeStill('sig', box, { h: 10 }), []);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]?.includes('seq-off'), false, 'the shot saw a VISIBLE box');
+    assert.equal(seen[0]?.includes('tl-shot'), true, 'parked offscreen while it was');
+    assert.equal(box.classList.contains('seq-off'), true, 'and the clock’s class came back');
+    assert.equal(box.classList.contains('tl-shot'), false, 'and the park is gone');
+  });
+});
+
+test('onNodeShotSettled: the clock gets the last word after a shot that borrowed the class', async () => {
+  // The restore above is a GUESS taken up to 1.5s earlier — the user may have scrubbed
+  // onto that very box meanwhile, and re-adding `.seq-off` would leave the ACTIVE frame
+  // invisible until the next seek. So the panel hands the clock's `reapply()` here.
+  await withNodeStage(async ({ box }) => {
+    let reapplied = 0;
+    const off = onNodeShotSettled(() => { reapplied++; });
+    try {
+      _setNodeRasterer(async () => canvasOf(20, 10));
+      box.classList.add('seq-off');
+      await nodeStill('sig-1', box, { h: 10 });
+      assert.equal(reapplied, 1, 'the clock is asked to re-assert what it believes');
+
+      // A box that was already visible borrowed nothing, so there is nothing to fix.
+      box.classList.remove('seq-off');
+      await nodeStill('sig-2', box, { h: 10 });
+      assert.equal(reapplied, 1);
+    } finally { off(); }
+    box.classList.add('seq-off');
+    await nodeStill('sig-3', box, { h: 10 });
+    assert.equal(reapplied, 1, 'and an unregistered reconciler is never called again');
+  });
+});
+
+test('nodeStill: a shot that comes back with nothing is remembered, not retried forever', async () => {
+  // A tainted canvas or a subtree past the time budget fails identically every time.
+  // Re-attempting it costs a full uncancellable shot to learn the same thing, and —
+  // because the caller's budget is spent in bar order — costs every bar behind it
+  // their turn. An ABORT is different: nothing was learned, so it must stay retryable.
+  await withNodeStage(async ({ box }) => {
+    let calls = 0;
+    _setNodeRasterer(async () => { calls++; return null; });
+    assert.deepEqual(await nodeStill('doomed', box, { h: 10 }), []);
+    assert.deepEqual(await nodeStill('doomed', box, { h: 10 }), []);
+    assert.deepEqual(await nodeStill('doomed', box, { h: 10 }), []);
+    assert.equal(calls, 1, 'one attempt, ever');
+    assert.equal(nodeRasterFailed(nodeKey('doomed', 10)), true);
+
+    // Same box, new appearance: a different picture is a different question.
+    assert.deepEqual(await nodeStill('doomed2', box, { h: 10 }), []);
+    assert.equal(calls, 2);
+  });
+});
+
+test('nodeStill: an ABORTED shot is not remembered as a failure — nothing was learned', async () => {
+  await withNodeStage(async ({ box }) => {
+    let calls = 0;
+    _setNodeRasterer(async () => { calls++; return canvasOf(20, 10); });
+    const ctrl = new AbortController();
+    ctrl.abort();
+    assert.deepEqual(await nodeStill('later', box, { h: 10 }, ctrl.signal), []);
+    assert.equal(nodeRasterFailed(nodeKey('later', 10)), false);
+    assert.equal((await nodeStill('later', box, { h: 10 })).length, 1, 'the next pass asks again');
+    assert.equal(calls, 1);
+  });
+});
+
+test('nodeStill: a DETACHED box is never photographed — an unstyled blank would be cached as its picture', async () => {
+  // A shot can wait a long time behind five others. If the runtime re-rendered the tool
+  // meanwhile, `job.box` points at a node that is no longer in the document, whose
+  // computed styles are empty — and the blank that comes back would be cached under the
+  // signature of the box the user is still looking at.
+  await withNodeStage(async ({ box }) => {
+    let calls = 0;
+    _setNodeRasterer(async () => { calls++; return canvasOf(20, 10); });
+    box.remove();
+    assert.deepEqual(await nodeStill('gone', box, { h: 10 }), []);
+    assert.equal(calls, 0, 'the shot was never taken');
+    assert.equal(nodeRasterFailed(nodeKey('gone', 10)), false, 'and it stays retryable');
+  });
+});
+
+test('nodeRasterPending: a bar already in flight is not a miss — that is what makes the retry chain converge', async () => {
+  // The budget is per pass, but the shots are serialised, so a continuation pass fires
+  // long before its predecessor's have landed in the cache. Counting those as misses
+  // made the retry re-spend its whole budget on bars that were already being taken.
+  await withNodeStage(async ({ box }) => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    _setNodeRasterer(async () => { await held; return canvasOf(20, 10); });
+    const key = nodeKey('busy', 10);
+    assert.equal(nodeRasterPending(key), false);
+    const run = nodeStill('busy', box, { h: 10 });
+    await Promise.resolve();
+    assert.equal(nodeRasterPending(key), true, 'in flight, so no second budget slot');
+    release();
+    assert.equal((await run).length, 1);
+    assert.equal(nodeRasterPending(key), false);
+  });
+});
+
+test('drainNodeRasters: an export waits the in-flight shot out, but is never held hostage', async () => {
+  // suspendNodeRasters() is a gate on the NEXT shot; it can do nothing about the
+  // uncancellable one already inside the library, whose teardown clears the sandbox
+  // iframe and url cache out from under the export. So the export drains first — with
+  // a bound, because a wedged library call must cost a beat, not the whole export.
+  await withNodeStage(async ({ box }) => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let finished = false;
+    _setNodeRasterer(async () => { await held; finished = true; return canvasOf(20, 10); });
+    const run = nodeStill('slow', box, { h: 10 });
+    // Let the shot actually reach the library. (A shot that has NOT got that far is
+    // covered by the suspend alone: it re-checks the gate after taking the lock and
+    // bails without calling anything, so there is nothing for the drain to wait on.)
+    await new Promise((r) => setTimeout(r, 0));
+
+    const resume = suspendNodeRasters();
+    let drained = false;
+    const drain = drainNodeRasters().then(() => { drained = true; });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(drained, false, 'the export is still waiting on the live shot');
+    release();
+    await drain;
+    assert.equal(finished, true, 'and it only proceeded once that shot was really done');
+    resume();
+    await run;
+
+    // The bound: a shot that never ends does not wedge the next export.
+    const stuck = new Promise<HTMLCanvasElement>(() => { /* never */ });
+    _setNodeRasterer(() => stuck);
+    void nodeStill('wedged', box, { h: 10 });
+    await Promise.resolve();
+    const t0 = Date.now();
+    await drainNodeRasters(30);
+    assert.ok(Date.now() - t0 < NODE_RASTER_TIMEOUT_MS, 'bounded, not hostage');
+  });
 });

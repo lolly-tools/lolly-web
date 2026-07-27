@@ -24,9 +24,15 @@ import {
   seedBox, normDragRect, snapAngle, normAngle, clampBoxToCanvas, selectionAABB,
   snapMove, snapPoint, scaleGroup, rotateGroup, num,
   edgeBorderPt, edgeWaypoints, edgeNested, roundedEdgePath, smoothEdgePath,
+  gradientLine, gradientPosAt, gradientAngleAt,
 } from './free-canvas-math.ts';
 import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
-import { toCssPx } from '@lolly/engine';
+import {
+  toCssPx,
+  parseColor, colorToHexString, interpolateColor,
+  parseGradientSpec, formatGradientSpec, gradientSpecToCss, MAX_GRADIENT_STOPS,
+} from '@lolly/engine';
+import type { GradientSpec } from '@lolly/engine';
 import type { BooleanOpName, VectorFieldConfig, VectorOpFailure, VectorOpResult } from './vector-ops.ts';
 import {
   booleanBoxes, boxOutlineKind, offsetBoxes, replaceBoxes, simplifyBoxes, strokeBoxesToPath,
@@ -46,6 +52,7 @@ import type { TimeCfg } from './timeline-math.ts';
 import type { TimelinePanel } from './timeline-panel.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import { takePendingDesignImport } from '../lib/drop-router.ts';
+import { LOLLY_ICON } from '../lib/lolly-badge.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
@@ -85,7 +92,7 @@ interface CanvasCfg {
   idField?: string;
   xField?: string; yField?: string; wField?: string; hField?: string;
   rotationField?: string;
-  fillField?: string; opacityField?: string; shapeField?: string;
+  fillField?: string; gradField?: string; opacityField?: string; shapeField?: string;
   radiusField?: string; imageField?: string; fitField?: string; imgPosField?: string;
   blendField?: string; textField?: string; textColorField?: string;
   fontSizeField?: string; alignField?: string; valignField?: string;
@@ -160,7 +167,7 @@ interface ConnectCfg {
 interface FieldCfg {
   idField: string; xField: string; yField: string; wField: string; hField: string;
   rotationField: string;
-  fillField: string; opacityField: string; shapeField: string;
+  fillField: string; gradField: string; opacityField: string; shapeField: string;
   radiusField: string; imageField: string; fitField: string; imgPosField: string;
   blendField: string; textField: string; textColorField: string;
   fontSizeField: string; alignField: string; valignField: string;
@@ -282,7 +289,10 @@ type FmtBar = HTMLDivElement & { _refs?: FmtRefs };
 interface PopGridItem { label: string; icon?: string; run(): void; disabled?: boolean; danger?: boolean; keepOpen?: boolean }
 interface PopSep { sep: true; grid?: undefined }
 interface PopGrid { sep?: undefined; grid: PopGridItem[]; cols?: number }
-interface PopAction { sep?: undefined; grid?: undefined; label: string; icon?: string; run(): void; disabled?: boolean; danger?: boolean; keepOpen?: boolean }
+// `key` tags the rendered row with `data-pop="<key>"` so a long-lived menu can be
+// refreshed in place — the undo/redo pair stays open while you step back, and its
+// enabled state has to follow the history stack rather than the moment it opened.
+interface PopAction { sep?: undefined; grid?: undefined; label: string; icon?: string; run(): void; disabled?: boolean; danger?: boolean; keepOpen?: boolean; key?: string }
 type PopItem = PopSep | PopGrid | PopAction;
 
 // Gesture state — filled in by beginGesture with pointerId/startClient.
@@ -435,6 +445,15 @@ const SVG = {
   penClose: '<path d="M12 5c5 0 7 3 7 7s-2 7-7 7-7-3-7-7 2-7 7-7z"/><circle cx="12" cy="5" r="2.2" fill="currentColor" stroke="none"/>',
   // Stroke — two rules of different weight, which is what the panel behind it sets.
   strokeIc: '<path d="M4 8h16" stroke-width="4.5"/><path d="M4 16h16" stroke-width="1.3"/>',
+  // Gradient: a square whose fill ramps, plus the two stop dots the canvas handles are.
+  // Drawn with a gradient def rather than hatching so the button reads as what it does
+  // even at 16px (the `icon()` wrapper only sets stroke, so the fill is declared here).
+  gradIc: '<defs><linearGradient id="fcGradIc" x1="0" y1="0" x2="1" y2="0">'
+    + '<stop offset="0" stop-color="currentColor" stop-opacity="0.85"/>'
+    + '<stop offset="1" stop-color="currentColor" stop-opacity="0.08"/></linearGradient></defs>'
+    + '<rect x="3.5" y="6" width="17" height="12" rx="2.5" fill="url(#fcGradIc)" stroke-width="1.4"/>'
+    + '<circle cx="7" cy="12" r="1.6" fill="currentColor" stroke="none"/>'
+    + '<circle cx="17" cy="12" r="1.6" fill="none" stroke-width="1.4"/>',
   // Stroke style: one rule, drawn in the style it names. The per-path dash/cap overrides
   // the wrapper's round cap, so each glyph IS a sample of the thing it selects.
   dashSolid: '<path d="M3 12h18" stroke-width="2.6"/>',
@@ -468,6 +487,80 @@ const SVG = {
 function icon(paths: string): string {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
+
+// ── the floating rail's position ──────────────────────────────────────────────
+
+/**
+ * Where the detached tool rail may sit, in stage-relative px. Pure numbers so the
+ * clamp is honestly testable without a browser — the caller does the measuring.
+ *
+ * `reserveBottom` is the band at the foot of the stage the rail must never cover
+ * (the export pill, wherever a host still shows one). It comes off the TRAVEL range,
+ * not off the stage, so a rail taller than the room that is left parks at the top
+ * edge rather than at a negative offset.
+ */
+export function clampRailPos(
+  want: { left: number; top: number },
+  rail: { w: number; h: number },
+  stage: { w: number; h: number },
+  o: { pad?: number; reserveBottom?: number } = {},
+): { left: number; top: number } {
+  const pad = o.pad ?? 8;
+  // An unmeasurable stage (a not-yet-laid-out ResizeObserver delivery, a stage that has
+  // gone display:none on navigation) must not be clamped against: every axis would
+  // collapse to `pad` and the remembered position would be silently lost. Hand the
+  // wanted position straight back — placePopover guards the same way.
+  if (!(stage.w > 0) || !(stage.h > 0)) return { left: Math.round(want.left), top: Math.round(want.top) };
+  const maxLeft = Math.max(pad, stage.w - rail.w - pad);
+  const maxTop = Math.max(pad, stage.h - rail.h - pad - Math.max(0, o.reserveBottom ?? 0));
+  return {
+    left: Math.round(Math.min(Math.max(want.left, pad), maxLeft)),
+    top: Math.round(Math.min(Math.max(want.top, pad), maxTop)),
+  };
+}
+
+/**
+ * Where a rail/anchor popover goes, in stage-relative px. It prefers the anchor's
+ * right (the docked rail's long-standing behaviour, unchanged while the rail sits on
+ * the left edge) and FLIPS to its left when that would overflow the stage.
+ *
+ * The flip only started mattering when the rail became draggable: a rail parked in the
+ * right half of a `overflow:hidden` stage (carousel-maker and record are `.is-paged`)
+ * used to open its menu straight out through the clipped edge. Vertically the popover
+ * is pulled up to keep its foot inside rather than being pinned to the anchor's top.
+ *
+ * Pure numbers, so the geometry is testable without a browser.
+ */
+export function placePopover(
+  anchor: { left: number; right: number; top: number },
+  pop: { w: number; h: number },
+  stage: { w: number; h: number },
+  gap = 8,
+  pad = 6,
+): { left: number; top: number } {
+  const rightSide = anchor.right + gap;
+  const leftSide = anchor.left - gap - pop.w;
+  // No measurable stage (detached / display:none / jsdom, which has no layout at all):
+  // there is nothing to clamp against, so keep the plain anchored placement rather than
+  // inventing a position from zeroes.
+  if (!(stage.w > 0) || !(stage.h > 0)) return { left: rightSide, top: Math.max(pad, anchor.top) };
+  // Flip only if the left side is genuinely better: on a stage too narrow for either,
+  // stay on the preferred side and let the clamp do what it can.
+  const left = (rightSide + pop.w > stage.w - pad && leftSide >= pad) ? leftSide : rightSide;
+  const maxTop = Math.max(pad, stage.h - pop.h - pad);
+  return {
+    left: Math.round(Math.max(pad, Math.min(left, Math.max(pad, stage.w - pop.w - pad)))),
+    top: Math.round(Math.min(Math.max(anchor.top, pad), maxTop)),
+  };
+}
+
+/**
+ * The dragged rail position — CHROME state, exactly like zoom and pan. It lives in
+ * the module for the life of the page and deliberately reaches neither the URL, the
+ * box model, nor a saved session; a reload puts the rail back on its docked edge.
+ * Shared by every free-canvas tool: one editor, one remembered spot for its tools.
+ */
+let railSession: { left: number; top: number } | null = null;
 
 // Weight menu (shared by the Text panel and the in-edit format bar). Mono cuts
 // rarely ship a Black — their variable axes top out at 800 — so the mono menu
@@ -536,7 +629,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     xField: cv.xField || 'x', yField: cv.yField || 'y',
     wField: cv.wField || 'w', hField: cv.hField || 'h',
     rotationField: cv.rotationField || 'rot',
-    fillField: cv.fillField, opacityField: cv.opacityField, shapeField: cv.shapeField,
+    fillField: cv.fillField, gradField: cv.gradField, opacityField: cv.opacityField, shapeField: cv.shapeField,
     radiusField: cv.radiusField, imageField: cv.imageField, fitField: cv.fitField, imgPosField: cv.imgPosField,
     blendField: cv.blendField, textField: cv.textField, textColorField: cv.textColorField,
     fontSizeField: cv.fontSizeField, alignField: cv.alignField, valignField: cv.valignField,
@@ -813,13 +906,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // True when the block already carries authored timing — the auto-open cue. This is a
   // field-presence check, not editing arithmetic, so it stays here rather than pulling
   // timeline-math in eagerly (that module is part of the lazy chunk).
-  function anyTimed(boxes: Box[]): boolean {
+  function isTimedBox(b: Box): boolean {
     if (!timeCfg) return false;
-    return boxes.some((b) => {
-      if (String(b[timeCfg.laneField] ?? '') === 'seq') return true;
-      const s = b[timeCfg.startField];
-      return Number.isFinite(typeof s === 'number' ? s : parseFloat(String(s ?? '')));
-    });
+    if (String(b[timeCfg.laneField] ?? '') === 'seq') return true;
+    const s = b[timeCfg.startField];
+    return Number.isFinite(typeof s === 'number' ? s : parseFloat(String(s ?? '')));
+  }
+  function anyTimed(boxes: Box[]): boolean {
+    return !!timeCfg && boxes.some(isTimedBox);
   }
 
   async function ensureTimeline(open: boolean): Promise<void> {
@@ -837,6 +931,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         stageEl, canvasEl, runtime,
         host: host as { log?(level: string, msg: string): void },
         blockId, cfg: timeCfg, getBoxes, commit, onDirty,
+        // The tool's OWN add-kinds, so the panel's plus offers exactly what the rail's
+        // does (audio included) instead of hardcoding a list it cannot know.
+        addKinds,
         // The canvas selection, adapted: read/write the same Set the overlay uses, and
         // subscribe to the single notifier fired from paintChrome.
         selection: {
@@ -856,26 +953,41 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * The panel's empty-sequence "Add a clip" button asks for a clip rather than
-   * reaching into this module: it dispatches `tl-add-clip`, which bubbles from the
-   * panel root to the stage. Arming create-mode is exactly what the rail's add menu
-   * does, so the next canvas click drops the clip. Without this listener the only
-   * affordance in an empty timeline did nothing at all.
+   * The panel asks THIS module for new boxes rather than reaching into it: its plus menu
+   * (and its empty-sequence "Add a clip" slot) dispatches `tl-add` with
+   * `{ kind, atMs }`, which bubbles from the panel root to the stage. Arming create-mode
+   * is exactly what the rail's add menu does, so the next canvas click drops the box —
+   * with the one difference the panel depends on: a box added FROM the timeline lands
+   * TIMED at the playhead, where the rail's plus leaves it as scenery. `pendingAddAtMs`
+   * carries that single bit through to the create commit and is cleared alongside the
+   * armed kind, so an abandoned arm can never time the next hand-drawn box.
+   *
+   * The detail is untrusted — a CustomEvent can be dispatched by anything on the page —
+   * so an unknown kind or a non-finite / negative / absurd `atMs` drops the whole event
+   * rather than guessing: nothing reaches the model on a bad one.
    */
-  function onTlAddClip(): void {
+  const MAX_ADD_AT_MS = 24 * 60 * 60 * 1000;   // a day of sequence; beyond that it is junk
+  let pendingAddAtMs: number | null = null;
+  function onTlAdd(e: Event): void {
     if (!timeCfg || disposed) return;
-    const kind = addKinds.find((k) => k.id === 'clip')
-      || addKinds.find((k) => String(k.seed?.[timeCfg.laneField] ?? '') === 'seq');
-    if (kind) setMode('create', { kind });
+    const d = (e as CustomEvent).detail as { kind?: unknown; atMs?: unknown } | null | undefined;
+    const kind = addKinds.find((k) => k.id === (typeof d?.kind === 'string' ? d.kind : ''));
+    if (!kind) return;
+    const atMs = typeof d?.atMs === 'number' ? d.atMs : Number.NaN;
+    if (!Number.isFinite(atMs) || atMs < 0 || atMs > MAX_ADD_AT_MS) return;
+    // AFTER setMode, never before: enterCreate clears the pending time so that an arm
+    // from anywhere else cannot inherit one. This is the single place that sets it.
+    setMode('create', { kind });
+    pendingAddAtMs = atMs;
   }
-  if (timeCfg) stageEl.addEventListener('tl-add-clip', onTlAddClip);
+  if (timeCfg) stageEl.addEventListener('tl-add', onTlAdd);
 
   /** Open the panel (used by the rail button and after creating a timed box). */
   function openTimeline(): void { void ensureTimeline(true); }
   function toggleTimeline(): void { void ensureTimeline(!timelinePanel?.isOpen()); }
 
   function destroyTimeline(): void {
-    try { stageEl.removeEventListener('tl-add-clip', onTlAddClip); } catch { /* stage detached */ }
+    try { stageEl.removeEventListener('tl-add', onTlAdd); } catch { /* stage detached */ }
     try { timelinePanel?.destroy(); } catch (e) { console.error(e); }
     timelinePanel = null;
     // Unconditional, even if destroy() above threw: a leaked reserve permanently shrinks
@@ -1107,9 +1219,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     chromeNodes = null;
   }
 
-  // Dock wrapper flex-centres the rail without a transform on the rail itself
-  // (a transform/backdrop-filter there would capture its colour popover's fixed
-  // positioning — see the .fc-toolbar-dock CSS note).
+  // Dock wrapper flex-centres the rail at rest without a transform on the rail
+  // itself, and carries the left/top of a DRAGGED rail for the same reason
+  // (a transform/backdrop-filter on either would capture the colour popover's
+  // fixed positioning — see the .fc-toolbar-dock CSS note).
   const toolbarDock = document.createElement('div');
   toolbarDock.className = 'fc-toolbar-dock';
   toolbarDock.setAttribute('data-export-hide', '');
@@ -1117,8 +1230,110 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   toolbar.className = 'fc-toolbar';
   toolbar.setAttribute('role', 'toolbar');
   toolbar.setAttribute('aria-label', t('Editor tools'));
+  // Grip at the very top — the rail is a floating palette, so it says so and gives a
+  // drag target that is not one of the buttons (every button stops pointerdown, which
+  // is what keeps a click on a tool from starting a drag).
+  const grip = document.createElement('div');
+  grip.className = 'fc-grip';
+  grip.title = t('Drag to move the tools');
+  grip.setAttribute('aria-hidden', 'true');
+  grip.innerHTML = '<span></span><span></span>';
+  toolbar.appendChild(grip);
   toolbarDock.appendChild(toolbar);
   stageEl.appendChild(toolbarDock);
+
+  // ── dragging the rail ────────────────────────────────────────────────────────
+  // Position is written as plain left/top on the DOCK. NEVER a transform: a
+  // transformed ancestor becomes the containing block for every position:fixed
+  // descendant, which throws the rail's colour popover off-screen. That bug has
+  // already been fixed once here — do not reintroduce it for a drag.
+  let railDrag: { pointerId: number; dx: number; dy: number } | null = null;
+  let railWant: { left: number; top: number } | null = null;
+  let railRaf = 0;
+  /**
+   * The stage band the rail must never be dragged into. Three things can live in the
+   * foot of the stage, and a rail parked under any of them is invisible (the rail is
+   * `opacity: 0` at rest) AND unclickable:
+   *   - the docked TIMELINE panel — `z-index: 22` and `pointer-events: auto`, well above
+   *     the dock's 16, so it both paints over the rail and swallows its pointer;
+   *   - the export pill, wherever a host still shows one;
+   *   - the recorder tools' "Warm the mic / Record" control at the stage foot.
+   * Measured live rather than read off `--stage-reserve-bottom`: that custom property is
+   * only an input to fitCanvas and does not shrink the stage box, so the stage rect still
+   * spans the panel band.
+   */
+  function railReserveBottom(sr: DOMRect): number {
+    let reserve = 0;
+    for (const sel of ['.tl-panel', '.render-pill', '.canvas-record-btn', '.canvas-record-timer']) {
+      for (const el of Array.from(viewEl.querySelectorAll<HTMLElement>(sel))) {
+        // getClientRects(), not offsetParent: a `position: fixed` element (the mobile
+        // export pill is exactly that) reports a null offsetParent while being perfectly
+        // visible, so the old guard could never see it.
+        if (el.hidden || !el.getClientRects().length) continue;
+        const r = el.getBoundingClientRect();
+        if (r.height > 0 && r.bottom > sr.bottom - 4) reserve = Math.max(reserve, sr.bottom - r.top);
+      }
+    }
+    return Math.max(0, Math.round(reserve));
+  }
+  function placeRail(want: { left: number; top: number }): void {
+    const rr = toolbar.getBoundingClientRect();
+    const sr = stageEl.getBoundingClientRect();
+    const pos = clampRailPos(want, { w: rr.width, h: rr.height }, { w: sr.width, h: sr.height },
+      { reserveBottom: railReserveBottom(sr) });
+    railSession = pos;
+    toolbarDock.classList.add('is-detached');
+    toolbarDock.style.left = pos.left + 'px';
+    toolbarDock.style.top = pos.top + 'px';
+  }
+  /** Keep a detached rail inside the stage when the stage itself changes size. */
+  function reclampRail(): void { if (railSession) placeRail(railSession); }
+  const onRailDown = (e: PointerEvent): void => {
+    if (e.button !== 0 || railDrag) return;
+    // Buttons/fields already stop pointerdown before it reaches here; this is the
+    // belt to that pair of braces, and it keeps the colour trigger draggable-proof.
+    if ((e.target as HTMLElement).closest?.('button, input, select, .fc-color-btn')) return;
+    const rr = toolbar.getBoundingClientRect();
+    railDrag = { pointerId: e.pointerId, dx: e.clientX - rr.left, dy: e.clientY - rr.top };
+    closePopover();
+    closeMorePanel();
+    toolbarDock.classList.add('is-dragging');
+    try { toolbar.setPointerCapture(e.pointerId); } catch { /* no pointer capture (jsdom) */ }
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const onRailMove = (e: PointerEvent): void => {
+    if (!railDrag || e.pointerId !== railDrag.pointerId) return;
+    // No button held any more → the pointerup was lost (a capture stolen by the export
+    // shutter's `pointer-events: none`, a devtools break). Finish the drag instead of
+    // letting a bare hover keep sliding the rail around the stage.
+    if (e.type === 'pointermove' && e.buttons === 0) { onRailUp(e); return; }
+    const sr = stageEl.getBoundingClientRect();
+    railWant = { left: e.clientX - sr.left - railDrag.dx, top: e.clientY - sr.top - railDrag.dy };
+    // One style write per frame (the timeline resize grip's shape). Live-mutating
+    // only — a rail position is never committed to the model.
+    if (railRaf) return;
+    railRaf = requestAnimationFrame(() => { railRaf = 0; if (railWant) placeRail(railWant); });
+  };
+  const onRailUp = (e: PointerEvent): void => {
+    if (!railDrag || e.pointerId !== railDrag.pointerId) return;
+    if (railRaf) { cancelAnimationFrame(railRaf); railRaf = 0; }
+    if (railWant) placeRail(railWant);
+    railWant = null;
+    try { toolbar.releasePointerCapture(railDrag.pointerId); } catch { /* never captured */ }
+    railDrag = null;
+    toolbarDock.classList.remove('is-dragging');
+  };
+  toolbar.addEventListener('pointerdown', onRailDown);
+  toolbar.addEventListener('pointermove', onRailMove);
+  toolbar.addEventListener('pointerup', onRailUp);
+  toolbar.addEventListener('pointercancel', onRailUp);
+  // The escape hatch the timeline panel's own grip already has: losing pointer capture
+  // fires NEITHER pointerup nor pointercancel (the export shutter sets `pointer-events:
+  // none` on the rail mid-drag, which releases capture implicitly). Without this the
+  // drag state sticks forever — `.is-dragging` stays on and onRailDown refuses to start
+  // a new drag — so the rail could never be released or re-grabbed.
+  toolbar.addEventListener('lostpointercapture', onRailUp);
 
   // ── toolbar ─────────────────────────────────────────────────────────────────
   let popover: HTMLDivElement | null = null;
@@ -1129,6 +1344,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     { select: null, create: null, pen: null, connect: null };
   function closePopover() { popover?.remove(); popover = null; }
   buildToolbar();   // after arrangeBtn exists (buildToolbar assigns it)
+  // Put the rail back where it was dragged to earlier in this page session, re-clamped
+  // against THIS stage (a different tool, a resized window).
+  if (railSession) placeRail(railSession);
 
   function toolBtn(label: string, svg: string, onClick: (b: HTMLButtonElement, e: MouseEvent) => void, extraClass = ''): HTMLButtonElement {
     const b = document.createElement('button');
@@ -1144,65 +1362,83 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   function buildToolbar(): void {
-    // Primary actions lead the rail — Export / Save / Copy / Share as prominent
-    // icons (Export filled in the brand accent). This is the chromeless editor's
-    // only surface for them; the floating bottom Export|Save pill is removed
-    // (see .tool-layout.is-editor .render-pill). Callbacks delegate to the tool's
-    // existing handlers (opts.actions) so there's no duplicated export/save logic.
-    if (actions) {
-      toolBtn(t('Export'), SVG.exportUp, () => actions.export(), 'fc-action fc-action-primary');
-      if (actions.canSave !== false) {
-        const saveBtn = toolBtn(t('Save to your library'), SVG.save, () => actions.save(), 'fc-action fc-action-save');
-        const ref = actions.dirtyRef;
-        if (ref) {
-          // Mirror the render pill's amber "unsaved" cue onto the rail Save icon.
-          const mirror = (): void => { saveBtn.classList.toggle('is-unsaved', ref.classList.contains('is-unsaved')); };
-          mirror();
-          dirtyObserver = new MutationObserver(mirror);
-          dirtyObserver.observe(ref, { attributes: true, attributeFilter: ['class'] });
-        }
-      }
-      // Copy / Copy-link fold into the "More" menu below (they're also in the export
-      // popup), so the rail leads with just the two primary actions.
-      const asep = document.createElement('div'); asep.className = 'fc-sep'; toolbar.appendChild(asep);
-    }
-    // Undo / redo — the chromeless editor has no sidebar header, so the rail is
-    // where the history control lives (the only touch trigger here: no keyboard on
-    // mobile). Combined into ONE indicator: two stacked halves of a single capsule
-    // (undo above, redo below) so it reads as one back/forward control rather than
-    // two separate icons. Wired to mountTool's shared history via opts.history, so
-    // each half shows the same toast and disables at its end of the stack.
+    // ONE menu at the top of the rail, behind Lolly's own mark: every DOCUMENT-level
+    // action — export, save, undo/redo, canvas size, copy, share, document info,
+    // import. The rail underneath it is tools only. The trigger is the brand-hued
+    // identity mark (--lolly-mark), never the verify verdict green.
+    //
+    // Export/Save still go through opts.actions (which .click() the hidden
+    // #render-fab / #render-save) — no duplicated export or save logic anywhere.
+    let histUndo = false, histRedo = false;
     if (history) {
-      const hist = document.createElement('div');
-      hist.className = 'fc-history';
-      hist.setAttribute('role', 'group');
-      hist.setAttribute('aria-label', t('History — go back or forward'));
-      hist.addEventListener('pointerdown', (e) => e.stopPropagation());
-      const histBtn = (label: string, svg: string, run: () => void): HTMLButtonElement => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'fc-btn fc-hist-btn';
-        b.title = label;
-        b.setAttribute('aria-label', label);
-        b.innerHTML = icon(svg);
-        b.addEventListener('click', (e) => { e.stopPropagation(); run(); });
-        hist.appendChild(b);
-        return b;
-      };
-      const undoBtn = histBtn(t('Undo — step back'), SVG.undo, () => history.undo());
-      const redoBtn = histBtn(t('Redo — step forward'), SVG.redo, () => history.redo());
       history.register((canUndo, canRedo) => {
-        // Same focus handoff as the header buttons: a half that disables itself
-        // under focus hands off to its enabled sibling instead of dropping focus
-        // to <body>.
+        histUndo = canUndo; histRedo = canRedo;
+        // The pair keeps the menu open so you can step back repeatedly, so its
+        // enabled state has to follow the stack live rather than freeze at open.
+        // (The Cmd/Ctrl-Z shortcuts are the shell's own and never touched the rail.)
+        const u = popover?.querySelector<HTMLButtonElement>('[data-pop="undo"]');
+        const r = popover?.querySelector<HTMLButtonElement>('[data-pop="redo"]');
         const active = document.activeElement;
-        if (active === undoBtn && !canUndo && canRedo) redoBtn.focus();
-        else if (active === redoBtn && !canRedo && canUndo) undoBtn.focus();
-        undoBtn.disabled = !canUndo;
-        redoBtn.disabled = !canRedo;
+        if (active === u && !canUndo && canRedo) r?.focus();
+        else if (active === r && !canRedo && canUndo) u?.focus();
+        if (u) u.disabled = !canUndo;
+        if (r) r.disabled = !canRedo;
       });
-      toolbar.appendChild(hist);
-      const hsep = document.createElement('div'); hsep.className = 'fc-sep'; toolbar.appendChild(hsep);
+    }
+    let lollyBtn: HTMLButtonElement | null = null;
+    const lollyItems = (): PopItem[] => {
+      const items: PopItem[] = [];
+      if (actions) {
+        items.push({ label: t('Export'), icon: icon(SVG.exportUp), key: 'export', run: () => actions.export() });
+        if (actions.canSave !== false) items.push({ label: t('Save to your library'), icon: icon(SVG.save), key: 'save', run: () => actions.save() });
+      }
+      if (history) {
+        if (items.length) items.push({ sep: true });
+        items.push({ label: t('Undo — step back'), icon: icon(SVG.undo), key: 'undo', disabled: !histUndo, keepOpen: true, run: () => history.undo() });
+        items.push({ label: t('Redo — step forward'), icon: icon(SVG.redo), key: 'redo', disabled: !histRedo, keepOpen: true, run: () => history.redo() });
+      }
+      if (pages || setCanvasSize) {
+        if (items.length) items.push({ sep: true });
+        if (pages) items.push({ label: t('Pages & page size'), icon: icon(SVG.pages), key: 'pages', run: () => openPagesMenu(lollyBtn!) });
+        else items.push({ label: t('Canvas size'), icon: icon(SVG.size), key: 'size', run: () => openSizeMenu(lollyBtn!) });
+      }
+      if (actions) {
+        items.push({ sep: true });
+        items.push({ label: t('Copy image to clipboard'), icon: icon(SVG.dup), key: 'copy', run: () => actions.copy() });
+        items.push({ label: t('Copy a shareable link'), icon: icon(SVG.shareLink), key: 'share', run: () => actions.share() });
+      }
+      if (info || importCfg) {
+        if (items.length) items.push({ sep: true });
+        if (info) items.push({ label: t('Document info'), icon: icon(SVG.info), key: 'info', run: () => openInfoPanel(lollyBtn!) });
+        // keepOpen, because openImportPanel closes this menu and then assigns its own
+        // panel to `popover`: without it fillPopover's trailing closePopover() would
+        // tear the freshly-mounted import panel down in the same click. (The pages /
+        // size / info rows are safe — those assign `morePanel`, a different variable.)
+        if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), key: 'import', keepOpen: true, run: () => openImportPanel(lollyBtn!) });
+      }
+      return items;
+    };
+    if (actions || history || info || importCfg || pages || setCanvasSize) {
+      // `fc-action-primary` is kept on the trigger because it is now the editor's
+      // primary action affordance — mountTool focuses it on open (tool.ts) — with
+      // .fc-btn-lolly restyling it back to the mark's own colour.
+      lollyBtn = toolBtn(t('Menu — export, save, undo, canvas size'), '',
+        () => { const items = lollyItems(); if (items.length) spawnPopover(lollyBtn!, items); },
+        'fc-action fc-action-primary fc-btn-lolly');
+      // The mark is a whole <svg>, not a path set, so it replaces toolBtn's icon().
+      lollyBtn.innerHTML = LOLLY_ICON(22);
+      lollyBtn.setAttribute('aria-haspopup', 'menu');
+      const ref = actions?.dirtyRef;
+      if (ref && actions && actions.canSave !== false) {
+        // The render pill's amber "unsaved" cue, mirrored onto the trigger — Save
+        // lives inside the menu now, so the mark is what has to carry the cue.
+        const mark = lollyBtn;
+        const mirror = (): void => { mark.classList.toggle('is-unsaved', ref.classList.contains('is-unsaved')); };
+        mirror();
+        dirtyObserver = new MutationObserver(mirror);
+        dirtyObserver.observe(ref, { attributes: true, attributeFilter: ['class'] });
+      }
+      const asep = document.createElement('div'); asep.className = 'fc-sep'; toolbar.appendChild(asep);
     }
     // Pointer leads the tools, and is the way OUT of every other one. Before it existed the
     // only exit from the pen or from connect mode was clicking that same tool's own button
@@ -1237,8 +1473,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       toolBtn(t('Auto-arrange the connected cards'), SVG.tidy, () => autoLayout());
     }
     // One "Arrange" menu — align + distribute + stacking order + group + clip
-    // (previously two separate rail buttons).
+    // (previously two separate rail buttons). Every one of those acts ON a selection,
+    // so the button only appears once there is one (syncArrangeUI, from the same
+    // paint that shows the object bar). The right-click menu and the keyboard keep
+    // their own gating — nothing here is the only way to reach an action.
     arrangeBtn = toolBtn(t('Arrange — align, distribute, order, group'), SVG.align, () => openArrangeMenu());
+    syncArrangeUI();
     // Snap-to-grid toggle (opt-in).
     if (cv.grid) {
       const gbtn = toolBtn(t('Snap to grid'), SVG.grid, () => {
@@ -1249,23 +1489,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       gbtn.setAttribute('aria-pressed', String(gridOn));
       if (gridOn) gbtn.classList.add('is-armed');
     }
-    if (pages) toolBtn(t('Pages & page size'), SVG.pages, (b) => openPagesMenu(b));
-    else if (setCanvasSize) toolBtn(t('Canvas size'), SVG.size, (b) => openSizeMenu(b));
-    // Overflow "More" — the occasional items (copy, copy-link, document info, import)
-    // collapse into one menu instead of a standalone icon each.
-    let moreBtn: HTMLButtonElement | null = null;
-    const openMore = (): void => {
-      const items: PopItem[] = [];
-      if (actions) {
-        items.push({ label: t('Copy image to clipboard'), icon: icon(SVG.dup), run: () => actions.copy() });
-        items.push({ label: t('Copy a shareable link'), icon: icon(SVG.shareLink), run: () => actions.share() });
-      }
-      if ((info || importCfg) && items.length) items.push({ sep: true });
-      if (info) items.push({ label: t('Document info'), icon: icon(SVG.info), run: () => openInfoPanel(moreBtn!) });
-      if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), run: () => openImportPanel(moreBtn!) });
-      if (items.length) spawnPopover(moreBtn!, items);
-    };
-    if (actions || info || importCfg) moreBtn = toolBtn(t('More'), SVG.more, () => openMore());
+    // Pages / canvas size, copy, share, document info and import all live in the
+    // Lolly menu at the top of the rail now — see lollyItems() above.
     const sep = document.createElement('div'); sep.className = 'fc-sep'; toolbar.appendChild(sep);
     // Canvas background — the app's shared colour picker (swatches + hex + alpha).
     const bgWrap = document.createElement('div');
@@ -1307,6 +1532,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'fc-pop-item' + (it.danger ? ' fc-pop-danger' : '');
+      if (it.key) b.dataset.pop = it.key;
       b.disabled = it.disabled === true;
       b.innerHTML = (it.icon ? `<span class="fc-pop-ic">${it.icon}</span>` : '') + `<span>${it.label}</span>`;
       b.addEventListener('click', (e) => { e.stopPropagation(); if (b.disabled) return; it.run(); if (!it.keepOpen) closePopover(); });
@@ -1322,8 +1548,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     stageEl.appendChild(popover);
     const ar = anchor.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
-    popover.style.left = (ar.right - sr.left + 8) + 'px';
-    popover.style.top = Math.max(6, ar.top - sr.top) + 'px';
+    const pr = popover.getBoundingClientRect();   // after append: it is laid out
+    const pos = placePopover(
+      { left: ar.left - sr.left, right: ar.right - sr.left, top: ar.top - sr.top },
+      { w: pr.width, h: pr.height },
+      { w: sr.width, h: sr.height },
+    );
+    popover.style.left = pos.left + 'px';
+    popover.style.top = pos.top + 'px';
   }
   // Import a design file (Figma SVG / Penpot). The heavy DOM parser is lazy-loaded so it
   // only ships to sessions that actually import. On success we REPLACE the whole boxes
@@ -1427,6 +1659,40 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       { label: t('Clip to bottom shape'), icon: icon(SVG.clip), run: () => clipSelection(), disabled: !multi },
       { label: t('Release clip'), icon: icon(SVG.unclip), run: () => releaseClip(), disabled: !selHasClip() },
     ];
+    // ── timeline ───────────────────────────────────────────────────────────────
+    // Right-click parity with the panel's own timing toggle. Present for any
+    // time-capable tool — `timeCfg` is null on Carousel Maker, Org Chart and Record, so
+    // their menu is byte-for-byte what it was. It deliberately does NOT also require a
+    // MOUNTED panel: a Layout Studio composition that has never opened its timeline is
+    // exactly the user who needs to discover this, and a menu whose height changes
+    // between two right-clicks on the same object is the thing the section above avoids.
+    // So the panel is loaded on demand and the writer runs once it exists.
+    // The two writers live in timeline-panel.ts (promote composes moveOverlay +
+    // setDuration in ONE commit; demote clears to '' and repacks a seq row) and are
+    // called, never reimplemented. Timing is per-box, so the items act on a single
+    // selection and disable rather than hide, like Ungroup above.
+    if (timeCfg) {
+      const rows = getBoxes();
+      const i = selection.size === 1 ? rows.findIndex((b, n) => selection.has(idOf(b, n))) : -1;
+      const one = i >= 0 ? rows[i]! : null;
+      const oneId = one ? idOf(one, i) : '';
+      const timed = !!one && isTimedBox(one);
+      // Open (loading the chunk if this is the first time), THEN write — `ensureTimeline`
+      // resolves only once `timelinePanel` is assigned, and bails silently if the module
+      // failed to load, so a broken chunk means no write rather than a half-written box.
+      const withPanel = (fn: (p: NonNullable<typeof timelinePanel>) => void) => () => {
+        void ensureTimeline(true).then(() => { if (timelinePanel) fn(timelinePanel); });
+      };
+      items.push({ sep: true });
+      items.push({
+        label: t('Add to the timeline'), icon: icon(SVG.timeline),
+        run: withPanel((p) => p.promote(oneId)), disabled: !one || timed,
+      });
+      items.push({
+        label: t('Make always on'), icon: icon(SVG.boxKind),
+        run: withPanel((p) => p.demote(oneId)), disabled: !timed,
+      });
+    }
     // ── vector operations ──────────────────────────────────────────────────────
     // Present only for tools whose manifest declares `canvas.pathField` (there is
     // nowhere to store a result otherwise); WITHIN the section every entry disables
@@ -1559,7 +1825,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const fillVal = cfg.fillField ? (first[cfg.fillField] || 'transparent') : '';
     const fgVal = cfg.textColorField ? (first[cfg.textColorField] || '#0c322c') : '#0c322c';
     const strokeVal = cfg.strokeField ? (first[cfg.strokeField] || 'transparent') : 'transparent';
-    return (cfg.fillField ? `<span class="fc-cfield" title="${escape(t('Fill'))}">${colorFieldHtml('fc-fill', fillVal, { float: true })}</span>` : '')
+    // While a gradient is being edited on the canvas, the SAME field edits the
+    // selected stop's colour instead of the flat fill — so the brand swatch palette
+    // (the whole reason to reuse this control) is one click from every stop.
+    const gradOn = gradEdit != null;
+    const fillTitle = gradOn ? t('Gradient stop colour') : t('Fill');
+    const fillShown = gradOn ? (gradStopColor(first) ?? fillVal) : fillVal;
+    return (cfg.fillField ? `<span class="fc-cfield" title="${escape(fillTitle)}">${colorFieldHtml('fc-fill', fillShown, { float: true })}</span>` : '')
+      + (cfg.gradField && !allPaths
+        ? `<button type="button" class="fc-cbtn${gradOn ? ' is-on' : ''}" data-cx="grad" aria-pressed="${gradOn}" title="${escape(t('Gradient — drag the stops on the canvas'))}" aria-label="${escape(t('Gradient fill'))}">${icon(SVG.gradIc)}</button>`
+        : '')
       + (cfg.textColorField && !allPaths ? `<span class="fc-cfield" title="${escape(t('Text colour'))}">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : '')
       + (allPaths && cfg.strokeField ? `<span class="fc-cfield" title="${escape(t('Stroke colour'))}">${colorFieldHtml('fc-stroke', strokeVal, { float: true })}</span>` : '')
       + (allPaths ? `<button type="button" class="fc-cbtn" data-cx="stroke" title="${escape(t('Stroke — width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
@@ -1570,7 +1845,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function wirePaintCtx(scope: HTMLElement): void {
     wireColorField(scope, {
       onChange: (id, val) => {
-        if (id === 'fc-fill') setField(cfg.fillField, unwrapColor(val));
+        if (id === 'fc-fill') {
+          if (gradEdit != null) setGradStopColor(unwrapColor(val));
+          else setField(cfg.fillField, unwrapColor(val));
+        }
         else if (id === 'fc-fg') setField(cfg.textColorField, unwrapColor(val));
         else if (id === 'fc-stroke') setField(cfg.strokeField, unwrapColor(val));
       },
@@ -1581,6 +1859,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // always offers every control. Rebuilt only when the selection set changes (so
   // the colour pickers show the selected box); positioned each frame elsewhere.
   function rebuildCtxBar(boxes: Box[], idx: number[]): void {
+    // The gradient panel outlives a ctx-bar rebuild. Selecting a stop (and picking a
+    // stop colour) deliberately rebuilds the bar so its Fill field shows that stop —
+    // and `closeMorePanel()` below would take the panel with it every time, so the
+    // panel vanished the moment you touched a handle. Re-request it instead; the sync
+    // that follows reopens it against the freshly built button.
+    if (gradEdit != null && morePanel?.classList.contains('fc-grad-panel')) gradPanelPending = true;
     closeMorePanel();
     const coarse = matchMedia('(pointer: coarse)').matches;   // touch → offer add-to-selection
     const first: Box = boxes[idx[0]!] || {};
@@ -1611,9 +1895,421 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       else if (cx === 'del') deleteSelection();
       else if (cx === 'setimg') pickImage();
       else if (cx === 'more') openMorePanel(b);
+      else if (cx === 'grad') toggleGradEdit(b);
       else if (cx === 'multi') { multiTapMode = !multiTapMode; b.classList.toggle('is-on', multiTapMode); b.setAttribute('aria-pressed', String(multiTapMode)); announce(multiTapMode ? t('Select more — tap cards to add them.') : t('Multi-select off.')); }
       else if (cx === 'dims') openDimsPanel(b);
     }));
+  }
+
+  // ── on-canvas gradient editing ────────────────────────────────────────────────
+  //
+  // A gradient is the one paint property that is genuinely spatial: its stops sit
+  // SOMEWHERE on the shape, and picking them off a list of numbers means guessing.
+  // So the stops are handles on the artboard, dragged along the gradient's own line,
+  // with the direction on a handle of its own.
+  //
+  // The model is the engine's gradient spec (a string on the box's `grad` field), and
+  // the CSS comes from `gradientSpecToCss` — the SAME call the tool's hooks make, so
+  // what the handles show and what the export writes cannot drift. The stops are
+  // interpolated in OKLab and baked to sRGB by the engine (plans/color-spaces.md §10),
+  // which is what keeps a two-colour gradient from going muddy through the middle.
+  //
+  // Colour picking deliberately reuses the ctx bar's Fill field: in gradient mode it
+  // edits the SELECTED STOP, so the brand palette is one click from every stop rather
+  // than being re-implemented here.
+  let gradEdit: string | null = null;   // box id being edited, or null
+  let gradStopIdx = 0;                  // which stop the Fill field + Delete act on
+  // The panel is opened by the SYNC, not by the click that asks for it. Entering
+  // gradient mode resets `ctxSelKey` so the ctx bar rebuilds (its Fill field changes
+  // meaning), and `rebuildCtxBar` begins with `closeMorePanel()` — so a panel opened
+  // synchronously was destroyed a frame later by the very re-sync that opening it
+  // required. Found in a browser, invisible to review: the handles appeared, the panel
+  // did not, and any click into it hit a detached node.
+  let gradPanelPending = false;
+  // The spec mid-drag. `writeGradSpec(…, live)` only touches the box's own
+  // backgroundImage (no setInput, so the tool does not re-render per pointermove), so
+  // without this the chrome kept repainting from the COMMITTED model: the grabbed
+  // handle was destroyed and rebuilt at its pre-drag position on every frame while the
+  // paint underneath followed the pointer. Same idea as `liveRects` for box gestures.
+  let gradLive: GradientSpec | null = null;
+
+  // The gradient line, as an SVG in STAGE px — redrawn each sync. Stage px rather than
+  // native-with-a-viewBox (the pen layer's trick) because the stop handles are DOM
+  // divs that must not scale with zoom, and one coordinate system for both is simpler
+  // to keep honest than two.
+  const gradLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  gradLayer.setAttribute('class', 'fc-grad-layer');
+  gradLayer.style.position = 'absolute';
+  gradLayer.style.left = '0';
+  gradLayer.style.top = '0';
+  gradLayer.style.overflow = 'visible';
+  gradLayer.style.pointerEvents = 'none';
+  gradLayer.style.display = 'none';
+  overlay.appendChild(gradLayer);
+  const gradChrome = document.createElement('div');
+  gradChrome.className = 'fc-grad-chrome';
+  overlay.appendChild(gradChrome);
+
+  /** The parsed spec on a box, or null when it has no (readable) gradient. */
+  const gradSpecOf = (b: Box | undefined): GradientSpec | null =>
+    (b && cfg.gradField ? parseGradientSpec(String(b[cfg.gradField] ?? '')) : null);
+
+  /** Index of the box being gradient-edited, or -1 (it may have been deleted). */
+  function gradIndex(boxes: Box[]): number {
+    if (gradEdit == null) return -1;
+    return boxes.findIndex((b, i) => idOf(b, i) === gradEdit);
+  }
+
+  /** Leave gradient mode and drop its chrome. Safe to call when not in it. */
+  function exitGradEdit(): void {
+    if (gradEdit == null) return;
+    gradEdit = null;
+    gradStopIdx = 0;
+    gradPanelPending = false;
+    gradLive = null;
+    gradLayer.style.display = 'none';
+    gradChrome.innerHTML = '';
+    ctxSelKey = '';        // force the ctx bar to rebuild without the stop-colour mode
+    scheduleSync();
+  }
+
+  /**
+   * A fresh gradient for a box that has none: its own fill, ramped toward white.
+   *
+   * Deliberately not fill→transparent: the point of the first click is to SHOW what a
+   * gradient does here, and an OKLab ramp to a light tint does that while staying
+   * on-brand (it keeps the fill's hue). A transparent second stop would look like
+   * nothing happened on a light artboard.
+   */
+  function seedGradSpec(b: Box): GradientSpec {
+    const fill = cfg.fillField ? String(b[cfg.fillField] ?? '') : '';
+    const base = parseColor(fill) ? fill : '#30ba78';
+    const light = colorToHexString(interpolateColor(parseColor(base)!, parseColor('#ffffff')!, 0.7));
+    return parseGradientSpec(`lin_90_${base.replace('#', '')}-0_${light.replace('#', '')}-100`)!;
+  }
+
+  /** Enter/leave gradient mode for the current selection. */
+  function toggleGradEdit(anchor: HTMLElement): void {
+    if (!cfg.gradField) return;
+    if (gradEdit != null) { exitGradEdit(); return; }
+    const boxes = getBoxes();
+    const idx = selIndices(boxes);
+    if (idx.length !== 1) {
+      announce(t('Select one card to edit its gradient.'));
+      return;
+    }
+    const b = boxes[idx[0]!]!;
+    gradEdit = idOf(b, idx[0]!);
+    gradStopIdx = 0;
+    // A box with no gradient yet gets one, in the same step that opens the editor —
+    // otherwise the handles would have nothing to sit on.
+    if (!gradSpecOf(b)) writeGradSpec(seedGradSpec(b), false);
+    ctxSelKey = '';
+    gradPanelPending = true;
+    void anchor;              // the panel anchors on the rebuilt button, not this one
+    scheduleSync();
+  }
+
+  /**
+   * Write a spec to the box being edited. `live` mutates only that box's DOM (a drag
+   * in progress — no setInput, so the tool does not re-render every pointermove, the
+   * same discipline every other gesture here follows); otherwise it commits one undo
+   * step through the model.
+   */
+  function writeGradSpec(spec: GradientSpec, live: boolean): void {
+    if (!cfg.gradField || gradEdit == null) return;
+    const value = formatGradientSpec(spec);
+    if (live) {
+      gradLive = spec;
+      const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(gradEdit)}"]`);
+      if (el) el.style.backgroundImage = gradientSpecToCss(spec) || '';
+      return;
+    }
+    gradLive = null;
+    const boxes = getBoxes();
+    const i = gradIndex(boxes);
+    if (i < 0) return;
+    commit(boxes.map((b, j) => (j === i ? { ...b, [cfg.gradField]: value } : b)));
+  }
+
+  /** The selected stop's colour, for the ctx bar's Fill field. */
+  function gradStopColor(b: Box | undefined): string | null {
+    const spec = gradSpecOf(b);
+    return spec ? (spec.stops[Math.min(gradStopIdx, spec.stops.length - 1)]?.color ?? null) : null;
+  }
+
+  /** Point the ctx bar's Fill field at the selected stop. */
+  function setGradStopColor(hex: unknown): void {
+    const boxes = getBoxes();
+    const i = gradIndex(boxes);
+    const spec = i >= 0 ? gradSpecOf(boxes[i]) : null;
+    if (!spec) return;
+    const at = Math.min(gradStopIdx, spec.stops.length - 1);
+    const colour = String(hex ?? '').trim();
+    if (!colour || !parseColor(colour)) return;
+    spec.stops[at] = { ...spec.stops[at]!, color: colour };
+    writeGradSpec(spec, false);
+  }
+
+  /** Add a stop at `pos`, coloured as the gradient already is there. */
+  function insertGradStop(spec: GradientSpec, pos: number): GradientSpec {
+    if (spec.stops.length >= MAX_GRADIENT_STOPS) return spec;
+    let at = spec.stops.findIndex((s) => s.pos > pos);
+    if (at < 0) at = spec.stops.length;
+    const before = spec.stops[Math.max(0, at - 1)]!;
+    const after = spec.stops[Math.min(spec.stops.length - 1, at)]!;
+    const span = after.pos - before.pos;
+    const f = span > 0 ? (pos - before.pos) / span : 0;
+    const ca = parseColor(before.color);
+    const cb = parseColor(after.color);
+    // Sampled through the engine in the spec's OWN space, so the new stop lands on the
+    // curve the user can see rather than on the sRGB chord through it.
+    const colour = ca && cb
+      ? colorToHexString(interpolateColor(ca, cb, f, { space: spec.space, hue: spec.hue }))
+      : before.color;
+    const stops = [...spec.stops];
+    stops.splice(at, 0, { color: colour, pos });
+    gradStopIdx = at;
+    return { ...spec, stops };
+  }
+
+  /** Remove the selected stop (a gradient needs two, so this refuses at two). */
+  function deleteGradStop(): boolean {
+    const boxes = getBoxes();
+    const i = gradIndex(boxes);
+    const spec = i >= 0 ? gradSpecOf(boxes[i]) : null;
+    if (!spec || spec.stops.length <= 2) return false;
+    const stops = spec.stops.filter((_, j) => j !== Math.min(gradStopIdx, spec.stops.length - 1));
+    gradStopIdx = Math.max(0, Math.min(gradStopIdx, stops.length - 1));
+    writeGradSpec({ ...spec, stops }, false);
+    ctxSelKey = '';
+    return true;
+  }
+
+  /**
+   * Draw the gradient line + one handle per stop + the direction handle.
+   *
+   * Rebuilt (not repositioned) each sync: a gradient has a handful of handles and the
+   * set changes whenever a stop is added or removed, so the build-once/reposition-many
+   * discipline the selection chrome needs would only buy bookkeeping here.
+   */
+  function paintGradChrome(boxes: Box[], m: Metrics): void {
+    if (gradEdit == null) {
+      if (gradLayer.style.display !== 'none') { gradLayer.style.display = 'none'; gradChrome.innerHTML = ''; }
+      return;
+    }
+    const i = gradIndex(boxes);
+    // Prefer the in-flight spec so the handles track the pointer, not the last commit.
+    const spec = i >= 0 ? (gradLive ?? gradSpecOf(boxes[i])) : null;
+    if (!spec) {
+      // The box (or its gradient) is gone — leave the mode rather than showing handles
+      // for something that no longer exists.
+      if (gradEdit != null) exitGradEdit();
+      return;
+    }
+    const r = boxRect(boxes[i]!, cfg);
+    const line = gradientLine(r.w, r.h, spec.angle);
+    const off = frameOffsetOfEl(canvasEl.querySelector(`.lolly-box[data-box-id="${cssEscape(gradEdit!)}"]`) ?? canvasEl);
+    // Through the box's ROTATION, not a plain translation: the same element that paints
+    // the gradient carries `transform: rotate()`, so an axis-aligned mapping left the
+    // line and swatches ~76px off the visible sweep on a 200×120 box at 45°, and every
+    // drag then wrote a position that did not match the point under the cursor.
+    const toStage = (p: { x: number; y: number }) => {
+      const f = localToFrame(r as PenFrame, p.x, p.y);
+      return nativeToStage(f.x + off.x, f.y + off.y, m);
+    };
+    const a = toStage(line.from);
+    const b = toStage(line.to);
+
+    gradLayer.style.display = '';
+    gradLayer.setAttribute('width', String(Math.max(1, m.sr.width)));
+    gradLayer.setAttribute('height', String(Math.max(1, m.sr.height)));
+    // Two strokes: a dark halo under a light rule, so the line stays visible over any
+    // artwork (the same reason the guides layer doubles up).
+    gradLayer.innerHTML =
+      `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="fc-grad-line-halo"/>`
+      + `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="fc-grad-line"/>`;
+
+    gradChrome.innerHTML = '';
+    const lerpStage = (t: number) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    spec.stops.forEach((st, si) => {
+      const p = lerpStage(Math.min(100, Math.max(0, st.pos)) / 100);
+      const h = document.createElement('div');
+      h.className = 'fc-grad-stop' + (si === Math.min(gradStopIdx, spec.stops.length - 1) ? ' is-on' : '');
+      h.style.left = `${p.x}px`;
+      h.style.top = `${p.y}px`;
+      // The handle IS its colour — a swatch you can see against the paint behind it.
+      h.style.setProperty('--stop', parseColor(st.color) ? st.color : 'transparent');
+      h.title = t('Stop {n} — {pos}%', { n: String(si + 1), pos: String(Math.round(st.pos)) });
+      h.setAttribute('aria-label', h.title);
+      h.addEventListener('pointerdown', (e) => onGradStopDown(e, si));
+      gradChrome.appendChild(h);
+    });
+    // Direction handle, past the 100% end — far enough that its fat touch target
+    // clears the last stop's. Appended FIRST so the stops paint (and hit-test) above
+    // it: at 18px the two overlapped, and dragging the 100% stop silently rotated the
+    // gradient instead of moving the stop.
+    const dirLen = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const dir = document.createElement('div');
+    dir.className = 'fc-grad-dir';
+    dir.style.left = `${b.x + ((b.x - a.x) / dirLen) * 30}px`;
+    dir.style.top = `${b.y + ((b.y - a.y) / dirLen) * 30}px`;
+    dir.title = t('Drag to set the gradient direction (hold Shift to snap)');
+    dir.setAttribute('aria-label', dir.title);
+    dir.addEventListener('pointerdown', onGradDirDown);
+    gradChrome.insertBefore(dir, gradChrome.firstChild);
+  }
+
+  // Native (box-local) coords for a pointer event, in the edited box's own frame.
+  function gradLocal(e: PointerEvent, boxes: Box[], i: number): { x: number; y: number; w: number; h: number } {
+    const r = boxRect(boxes[i]!, cfg);
+    const el = canvasEl.querySelector(`.lolly-box[data-box-id="${cssEscape(gradEdit!)}"]`);
+    const off = frameOffsetOfEl(el ?? canvasEl);
+    const n = clientToNative(e.clientX, e.clientY);
+    // The exact inverse of paintGradChrome's mapping, rotation included.
+    const l = frameToLocal(r as PenFrame, n.x - off.x, n.y - off.y);
+    return { x: l.x, y: l.y, w: r.w, h: r.h };
+  }
+
+  function onGradStopDown(e: PointerEvent, si: number): void {
+    e.stopPropagation();
+    e.preventDefault();
+    const boxes = getBoxes();
+    const i = gradIndex(boxes);
+    const spec0 = i >= 0 ? gradSpecOf(boxes[i]) : null;
+    if (!spec0) return;
+    gradStopIdx = si;
+    ctxSelKey = '';                    // the Fill field now shows THIS stop
+    let spec = spec0;
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      const l = gradLocal(ev, boxes, i);
+      const pos = Math.round(gradientPosAt(l.w, l.h, spec.angle, l.x, l.y));
+      const stops = [...spec.stops];
+      stops[si] = { ...stops[si]!, pos };
+      spec = { ...spec, stops };
+      moved = true;
+      writeGradSpec(spec, true);       // live: mutate the box's own background only
+      scheduleSync();
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      (ev.target as Element)?.releasePointerCapture?.(ev.pointerId);
+      // A tap with no movement just selects the stop; a drag commits one undo step.
+      if (moved) writeGradSpec(spec, false);
+      else scheduleSync();
+    };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    scheduleSync();
+  }
+
+  function onGradDirDown(e: PointerEvent): void {
+    e.stopPropagation();
+    e.preventDefault();
+    const boxes = getBoxes();
+    const i = gradIndex(boxes);
+    const spec0 = i >= 0 ? gradSpecOf(boxes[i]) : null;
+    if (!spec0) return;
+    let spec = spec0;
+    const move = (ev: PointerEvent) => {
+      const l = gradLocal(ev, boxes, i);
+      spec = { ...spec, angle: gradientAngleAt(l.w, l.h, l.x, l.y, ev.shiftKey ? 15 : 0) };
+      writeGradSpec(spec, true);
+      scheduleSync();
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      (ev.target as Element)?.releasePointerCapture?.(ev.pointerId);
+      writeGradSpec(spec, false);
+    };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  /**
+   * Gradient panel: kind, interpolation space, hue route, add/remove a stop, clear.
+   *
+   * The interpolation control is the reason this panel exists at all. Every other
+   * gradient tool bakes sRGB and leaves you to fight the grey middle; here the space
+   * is the user's choice, defaulting to OKLab. The options are named for what they
+   * give you — Smooth / Vivid — with sRGB named plainly rather than editorialised: it
+   * is the classic behaviour, and someone matching an existing asset wants it without
+   * being told off for asking.
+   */
+  function openGradPanel(anchor: HTMLElement): void {
+    closeMorePanel();
+    const boxes = getBoxes();
+    const i = gradIndex(boxes);
+    const spec = i >= 0 ? gradSpecOf(boxes[i]) : null;
+    if (!spec) return;
+    const polar = spec.space === 'oklch' || spec.space === 'lch' || spec.space === 'hsl';
+    const segRow = (lbl: string, seg: string): string =>
+      `<div class="fc-row"><span class="fc-row-lbl"><span>${escape(lbl)}</span></span>${seg}</div>`;
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-grad-panel';
+    p.innerHTML =
+      segRow(t('Gradient'), segHtml('gradkind', spec.kind, [
+        ['linear', t('Linear')], ['radial', t('Radial')], ['conic', t('Conic')]]))
+      + segRow(t('Blend'), segHtml('gradspace', spec.space, [
+        ['oklab', t('Smooth')], ['oklch', t('Vivid')], ['srgb', t('sRGB')]]))
+      + (polar ? segRow(t('Hue route'), segHtml('gradhue', spec.hue || 'shorter', [
+        ['shorter', t('Short')], ['longer', t('Long way')]])) : '')
+      + `<div class="fc-row fc-grad-row-btns">`
+      + `<button type="button" class="fc-pop-item" data-gp="add">${t('Add stop')}</button>`
+      + `<button type="button" class="fc-pop-item" data-gp="del"${spec.stops.length <= 2 ? ' disabled' : ''}>${t('Remove stop')}</button>`
+      + `<button type="button" class="fc-pop-item fc-danger" data-gp="clear">${t('No gradient')}</button>`
+      + `</div>`;
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    wireSegs(p, (field, v) => {
+      const cur = gradSpecOf(getBoxes()[gradIndex(getBoxes())]);
+      if (!cur || !v) return;
+      if (field === 'gradkind') writeGradSpec({ ...cur, kind: v as GradientSpec['kind'] }, false);
+      else if (field === 'gradspace') writeGradSpec({ ...cur, space: v as GradientSpec['space'] }, false);
+      else if (field === 'gradhue') writeGradSpec({ ...cur, hue: v as GradientSpec['hue'] }, false);
+      // Reopen so a space change can show/hide the hue row against the new state —
+      // through the pending flag, for the same reason the first open goes that way.
+      if (field === 'gradspace') { gradPanelPending = true; scheduleSync(); }
+    });
+    p.querySelectorAll<HTMLElement>('[data-gp]').forEach((btn) => btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = gradSpecOf(getBoxes()[gradIndex(getBoxes())]);
+      if (!cur) return;
+      if (btn.dataset.gp === 'add') {
+        // Halfway between the selected stop and the NEXT one. On the last stop there is
+        // no next, so go halfway back to the previous instead — the seeded gradient
+        // selects a stop at 100%, where "halfway to itself" is 100% and the button did
+        // nothing at all.
+        const at = Math.min(gradStopIdx, cur.stops.length - 1);
+        const here = cur.stops[at]!.pos;
+        const neighbour = at + 1 < cur.stops.length ? cur.stops[at + 1]!.pos : cur.stops[Math.max(0, at - 1)]!.pos;
+        const mid = (here + neighbour) / 2;
+        // Degenerate only if the neighbour sits exactly on top (a hard-edge pair):
+        // then nudge into whatever room the gradient has.
+        const pos = Math.abs(mid - here) < 0.5 ? (here >= 50 ? Math.max(0, here - 10) : Math.min(100, here + 10)) : mid;
+        writeGradSpec(insertGradStop(cur, pos), false);
+      } else if (btn.dataset.gp === 'del') {
+        deleteGradStop();
+      } else {
+        setField(cfg.gradField, '');
+        exitGradEdit();
+        closeMorePanel();
+        return;
+      }
+      ctxSelKey = '';
+      gradPanelPending = true;
+      scheduleSync();
+    }));
+    stageEl.appendChild(p);
+    morePanel = p;
+    const ar = anchor.getBoundingClientRect();
+    const sr = stageEl.getBoundingClientRect();
+    p.style.left = Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8) + 'px';
+    p.style.top = (ar.bottom - sr.top + 8) + 'px';
   }
 
   // ── "More" panel: shape / radius / opacity / image fit / blend ────────────────
@@ -2317,7 +3013,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.style.left = Math.max(6, Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8)) + 'px';
     p.style.top = Math.max(6, Math.min(ar.bottom - sr.top + 8, sr.height - p.offsetHeight - 8)) + 'px';
   }
-  async function pickImage(pickOpts?: { pickType?: 'lottie' | 'video' | 'audio' }): Promise<void> {
+  // `initialTab` is the picker pane this add-kind should OPEN on (picker.ts's
+  // PickerOpts.initialTab — a default the user can leave immediately, not a lock):
+  // 'tools' for the Tool kind, 'library' for the media kinds, whose `pickType` has
+  // already narrowed the library to just the assets that fit.
+  async function pickImage(
+    pickOpts?: { pickType?: 'lottie' | 'video' | 'audio'; initialTab?: 'library' | 'tools' },
+  ): Promise<void> {
     if (!cfg.imageField || !host.assets?.pick) return;
     const pickType = pickOpts?.pickType;
     const boxes0 = getBoxes();
@@ -2350,6 +3052,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         title: pickType === 'video' ? t('Choose a video')
           : pickType === 'lottie' ? t('Choose an animation')
           : pickType === 'audio' ? t('Choose a sound')
+          : pickOpts?.initialTab === 'tools' ? t('Choose a tool')
           : t('Choose an image'),
         // No type constraint by default: boxes take rasters AND vectors — logos and
         // the themable two-colour icons (with the picker's theme strip) included, plus
@@ -2357,6 +3060,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // "Video" add-kinds constrain the picker to lottie / video respectively; each
         // renders as a live player once placed (mediaHtmlFor dispatches on asset type).
         ...(pickType ? { type: pickType } : {}),
+        // Open on the pane that matches what the user asked to add (see the note on
+        // this function). Omitted → the picker's own default (Library).
+        ...(pickOpts?.initialTab ? { initialTab: pickOpts.initialTab } : {}),
         allowUpload: true,
         current: curImg?.id,
         // A box image that's already a Lolly render surfaces the picker's
@@ -3252,11 +3958,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   function enterCreate(kind?: AddKind): void {
     if (kind) armedKind = kind;
+    // Every arm starts UNTIMED, and the timeline path re-stamps its time right after
+    // calling setMode. Clearing here rather than only in exitCreate is what makes a
+    // create→create switch safe: setMode skips exitCreate when the mode does not
+    // change, so arming from the timeline `+` and then from the rail's add menu used
+    // to carry the stale playhead time into the box drawn by the SECOND arm.
+    pendingAddAtMs = null;
     deselectEdge();
     stageEl.classList.add('fc-arming');
   }
   function exitCreate(): void {
     armedKind = null;
+    pendingAddAtMs = null;   // an abandoned arm must not time the NEXT box drawn by hand
     stageEl.classList.remove('fc-arming');
   }
   function enterConnect(): void {
@@ -4618,26 +5331,41 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const wasVideo = armedKind?.id === 'video';
       // Sequence Studio's kinds. `clip` seeds kind:'image' too, so — like Animation and
       // Video — it must be recognised BEFORE wasImage or it would open the general image
-      // picker. `tool` also seeds kind:'image' and deliberately DOES fall through to the
-      // untyped picker: that is where the Lolly-link / saved-session path lives, and the
-      // picker is already handed `editTool` so a chosen tool opens its inputs first.
+      // picker. `tool` also seeds kind:'image', and it still opens the UNTYPED picker —
+      // that is where the Lolly-link / saved-session path lives, and the picker is
+      // already handed `editTool` so a chosen tool opens its inputs first — but it asks
+      // for the Tools pane, so the tool grid is what the user lands on. Same idea as the
+      // typed kinds above: the pane matches the kind that was added.
       // `card` seeds kind:'box' and takes no asset at all — it is authored like text.
       // An add-kind id this switch doesn't know keeps its seed-derived behaviour.
       const wasClip = armedKind?.id === 'clip';
       const wasAudio = armedKind?.id === 'audio' || g.seed?.[cfg.kindField] === 'audio';
       const wasCard = armedKind?.id === 'card';
-      const wasImage = !wasLottie && !wasVideo && !wasClip && !wasAudio
+      const wasTool = armedKind?.id === 'tool';
+      const wasImage = !wasLottie && !wasVideo && !wasClip && !wasAudio && !wasTool
         && ((g.seed?.[cfg.kindField] === 'image') || armedKind?.id === 'image');
       const wasText = (g.seed?.[cfg.kindField] === 'text') || armedKind?.id === 'text' || wasCard;
+      // Read BEFORE toPointer(): exitCreate clears the pending time with the armed kind.
+      const addAtMs = pendingAddAtMs;
       toPointer();                  // the gesture consumed the armed kind — back to the pointer
       endGesture();
       commit([...boxes, box]);
+      // Added from the timeline, so it lands TIMED at the playhead instead of as scenery
+      // (the rail's plus keeps that default). The panel's promote() owns the write — one
+      // commit through moveOverlay + setDuration — so no timing arithmetic lives here.
+      // `dur: null` is deliberate and load-shifting: this box was created a moment ago
+      // and its asset picker has not even opened, so nothing on the canvas knows how long
+      // its media is. Authoring a length HERE would pin a 45s audio track to 3s and would
+      // overwrite the `card` kind's own seeded 2.5s. Unauthored, the seq pack derives it
+      // from the media and an overlay runs to the sequence end — same as a canvas add.
+      if (addAtMs != null) timelinePanel?.promote(id, { start: addAtMs / 1000, dur: null });
       // A new timed box is only useful next to a timeline, so creating one opens it.
       if (timeCfg && (wasClip || wasCard || wasAudio)) openTimeline();
-      if (wasLottie) setTimeout(() => pickImage({ pickType: 'lottie' }), 0);
-      else if (wasVideo || wasClip) setTimeout(() => pickImage({ pickType: 'video' }), 0);
-      else if (wasAudio) setTimeout(() => pickImage({ pickType: 'audio' }), 0);
-      else if (wasImage) setTimeout(() => pickImage(), 0);
+      if (wasLottie) setTimeout(() => pickImage({ pickType: 'lottie', initialTab: 'library' }), 0);
+      else if (wasVideo || wasClip) setTimeout(() => pickImage({ pickType: 'video', initialTab: 'library' }), 0);
+      else if (wasAudio) setTimeout(() => pickImage({ pickType: 'audio', initialTab: 'library' }), 0);
+      else if (wasTool) setTimeout(() => pickImage({ initialTab: 'tools' }), 0);
+      else if (wasImage) setTimeout(() => pickImage({ initialTab: 'library' }), 0);
       else if (wasText && cfg.textField) editAfterPaint(id, { selectAll: true });
       return;
     }
@@ -5212,6 +5940,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     paintPen();
     const idx = selIndices(boxes);
     const m = metrics();
+    // Gradient handles sit UNDER the selection chrome in z-order but are painted here
+    // so they track the same pan/zoom sync (and self-exit if their box went away).
+    // Gradient mode belongs to ONE box. If the selection moved on, leave the mode —
+    // otherwise the ctx bar rebuilds for the new box while the Fill field and Delete
+    // still write to the old one, which is silent, wrong, and very hard to spot.
+    if (gradEdit != null && !(idx.length === 1 && idOf(boxes[idx[0]!], idx[0]!) === gradEdit)) {
+      exitGradEdit();
+      ctxSelKey = '';
+    }
+    paintGradChrome(boxes, m);
     // M1 — build the outline(s) + handles ONCE per selection set, then only reposition.
     const key = idx.length ? idx.map((i) => idOf(boxes[i], i)).sort().join(',') : '';
     if (key !== chromeKey) {
@@ -5225,6 +5963,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ctxSelKey = key;
       if (idx.length) rebuildCtxBar(boxes, idx);
       else { ctxbar.hidden = true; closeMorePanel(); multiTapMode = false; }
+    }
+    // Now that the ctx bar exists (and cannot close the panel again this frame), honour
+    // a pending request to open the gradient panel, anchored on the live button.
+    if (gradPanelPending && gradEdit != null) {
+      gradPanelPending = false;
+      const btn = ctxbar.querySelector<HTMLElement>('[data-cx="grad"]');
+      if (btn) openGradPanel(btn);
     }
     if (idx.length) positionCtxBar(boxes, idx, liveRects, m);
     updateToolbarState(idx.length);
@@ -5460,8 +6205,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   function updateToolbarState(count: number): void {
     // Nothing hard-disabled — align-to-canvas works on a single box; arrange/delete
-    // no-op when empty. Just reflect which tool is live.
+    // no-op when empty. Just reflect which tool is live, and whether the layout
+    // options have anything to act on.
     syncModeUI();
+    syncArrangeUI();
+  }
+  /** The Arrange button is layout options for a SELECTION — no selection, no button.
+   *  Hidden rather than disabled: an always-there control whose whole menu no-ops is
+   *  what made "arrange" read as broken. Nothing else reaches these actions through
+   *  it (right-click and the keyboard are unchanged), so hiding it removes no path. */
+  function syncArrangeUI(): void {
+    if (arrangeBtn) arrangeBtn.hidden = selection.size === 0;
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────────
@@ -5529,6 +6283,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Escape — the reported "Esc does not leave point editing". A floating surface that is
     // no longer in the document is not a rung.
     if (e.key === 'Escape') {
+      // Rung 1 stays the colour popover — it is the innermost surface, and it can be
+      // open over the gradient panel while picking a stop's brand swatch.
+      if (stageEl.querySelector('.color-popover:not([hidden])') && dismissFloating()) { e.preventDefault(); return; }
+      // Gradient editing is a MODE like point editing, and its panel is part of it:
+      // closing just the panel left the handles up with no way back to it (the toolbar
+      // button now reads as "leave"), so Escape takes the whole mode.
+      if (gradEdit != null) { e.preventDefault(); closeMorePanel(); exitGradEdit(); return; }
       if (dismissFloating()) { e.preventDefault(); return; }
       // Cancel, not commit: a draft dies here and Enter (or a tool switch) is what keeps it.
       if (penDraft) { e.preventDefault(); penCancelDraw(); return; }
@@ -5583,6 +6344,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if ((e.key === 'Enter' || e.key === 'F2') && !editing && selection.size && cfg.textField) {
       e.preventDefault();
       startTextEdit([...selection][0]!, { selectAll: e.key === 'Enter' });
+      return;
+    }
+    // In gradient mode the selected thing is a STOP, so Delete removes that — deleting
+    // the whole card here would be a nasty surprise mid-gradient. Falls through when the
+    // gradient is down to its last two stops (deleteGradStop refuses and says so).
+    if ((e.key === 'Delete' || e.key === 'Backspace') && gradEdit != null) {
+      e.preventDefault();
+      if (!deleteGradStop()) announce(t('A gradient needs at least two stops.'));
       return;
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdges.size) { e.preventDefault(); deleteSelectedEdge(); return; }
@@ -5647,7 +6416,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Geometry changed (pan/zoom/resize) — invalidate the metrics cache and mark the
   // frame scrim for repositioning (M2: paintChrome only moves the scrim when this is
   // set, so drag/hover/selection syncs skip the 100vmax shadow repaint).
-  const onStageMove = (e: any): void => { gestureMetrics = null; scrimDirty = true; if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY }; scheduleSync(); if (connectLayer.style.display !== 'none') placeConnectLayer(metrics()); };
+  const onStageMove = (e: any): void => { gestureMetrics = null; scrimDirty = true; if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY }; scheduleSync(); reclampRail(); if (connectLayer.style.display !== 'none') placeConnectLayer(metrics()); };
   // pointermove fires continuously while the cursor merely HOVERS the canvas. The old
   // handler rebuilt the whole selection chrome (2 getBoundingClientRect + innerHTML swap
   // + 10 handle nodes re-bound) every frame for zero visual change. Here we only track
@@ -5690,7 +6459,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Dismiss popover / more-panel on outside click.
   const onDocDown = (e: PointerEvent): void => {
     if (popover && !popover.contains(e.target as Node)) closePopover();
-    if (morePanel && !morePanel.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-cx="more"],[data-cx="text"]')) closeMorePanel();
+    // The colour popover is a companion of the panel, not an outside click: the whole
+    // point of the gradient panel is to pick stop colours from the brand palette, and
+    // closing the panel the moment you reached for a swatch made that a two-click
+    // dance. `[data-cx="grad"]` is exempt for the same reason as `more`/`text` — the
+    // button that opens a panel must not immediately close it.
+    const t = e.target as HTMLElement;
+    // Everything that IS the gradient-editing surface: the button that opens the panel,
+    // the on-canvas handles, and the colour popover the panel sends you to for a brand
+    // swatch. None of those are an "outside click" — treating the handles as one closed
+    // the panel the instant you selected a stop.
+    const companion = t.closest?.(
+      '[data-cx="more"],[data-cx="text"],[data-cx="grad"],.color-popover,[data-color-field],.fc-grad-stop,.fc-grad-dir');
+    if (morePanel && !morePanel.contains(e.target as Node) && !companion) closeMorePanel();
   };
   document.addEventListener('pointerdown', onDocDown, true);
 
@@ -5747,6 +6528,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       canvasEl.removeEventListener('contextmenu', onContextMenu);
       canvasEl.removeEventListener('focusin', onBoxFocus);
       window.removeEventListener('keydown', onKey);
+      toolbar.removeEventListener('pointerdown', onRailDown);
+      toolbar.removeEventListener('pointermove', onRailMove);
+      toolbar.removeEventListener('pointerup', onRailUp);
+      toolbar.removeEventListener('pointercancel', onRailUp);
+      toolbar.removeEventListener('lostpointercapture', onRailUp);
+      if (railRaf) { cancelAnimationFrame(railRaf); railRaf = 0; }
       document.removeEventListener('paste', onGlobalPaste);
       document.removeEventListener('copy', onCopy);
       stageEl.removeEventListener('pointermove', onStagePointerMove);
