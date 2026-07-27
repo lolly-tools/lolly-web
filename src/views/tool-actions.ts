@@ -27,6 +27,7 @@ import { songUrlToWavBlobUrl, renderSong } from '../lib/zzfxm-render.ts';
 import { pcmToWavBlob } from '../lib/pcm-wav.ts';
 import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { aspectWarning } from './export-size.js';
+import { MAX_TIME_S } from './timeline-math.ts';
 import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport } from '../bridge/format-support.js';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
@@ -292,7 +293,41 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     : (assetExportFormat() || formats[0]);
   const videoDefaults = (manifest.render.video ?? {}) as { wait?: number; duration?: number };
   const defaultWait     = videoDefaults.wait     ?? 1;
-  const defaultDuration = videoDefaults.duration ?? 5;
+
+  // ── Timed compositions (Sequence Studio) ───────────────────────────────────
+  // A timed artboard carries [data-sequence] plus data-seq-ms="<derived length>",
+  // restamped by the tool's hook on every paint (the same attribute the exporter's
+  // sequence planner and the on-canvas clock read). For those tools the manifest's
+  // render.video.duration is a constant that says nothing about the user's actual
+  // timeline — so the export bar takes its duration FROM the timeline instead, and
+  // keeps following it as clips are trimmed/added, until the user types their own
+  // value (see durationUserSet below).
+  const seqStageEl = (): HTMLElement | null => !canvasEl ? null
+    : (canvasEl.matches?.('[data-sequence]') ? canvasEl : canvasEl.querySelector<HTMLElement>('[data-sequence]'));
+  /** The live timeline length in seconds, or null when this isn't a timed composition. */
+  const seqDurationS = (): number | null => {
+    const stage = seqStageEl();
+    if (!stage) return null;
+    const msEl = stage.matches?.('[data-seq-ms]') ? stage
+      : (stage.querySelector<HTMLElement>('[data-seq-ms]') ?? canvasEl?.querySelector<HTMLElement>('[data-seq-ms]') ?? null);
+    const ms = parseFloat(msEl?.getAttribute('data-seq-ms') ?? '');
+    if (!Number.isFinite(ms) || ms <= 0) return null;
+    // Centisecond precision: exact for whole-second timelines, and never rounds a
+    // clip away. Clamped to the timeline's own ceiling (timeline-math MAX_TIME_S).
+    return Math.min(MAX_TIME_S, Math.max(0.1, Math.round(ms / 10) / 100));
+  };
+  // Hover copy for "Record live" on a timed composition. The compositor is the
+  // default (and the better output); a real-time capture is the low-power second
+  // choice, not a lesser one — hence a wording change only, never a gate.
+  const LIVE_SEQ_TITLE = 'Record the sequence in real time through a screen share instead of composing it frame by frame. '
+    + 'Composing is the default and gives the cleanest result; live capture is lighter on a slow device. '
+    + 'Pick this tab in the share dialog and keep it visible for the whole take.';
+  const seqInitialDuration = seqDurationS();
+  const defaultDuration = seqInitialDuration ?? videoDefaults.duration ?? 5;
+  // A sequence can legitimately run far past the 60s the recording field allows for
+  // ordinary "record the animation for a while" tools, so it takes the timeline's own
+  // ceiling (1 hour). Non-sequence tools keep the existing 60s cap.
+  const durationMax = seqInitialDuration != null ? MAX_TIME_S : 60;
 
   // Directional glyphs that live inside the dimension inputs: ↔ marks width,
   // ↕ marks height, so the two fields read as "wide × tall" without labels.
@@ -622,7 +657,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             <input type="number" data-action="video-wait" value="${defaultWait}" min="0" max="30" step="0.5"
                    aria-label="${escape(t('Wait before recording (seconds)'))}"><span>s</span></span>
           <span class="vp-field"><span>Duration</span>
-            <input type="number" data-action="video-duration" value="${defaultDuration}" min="1" max="60" step="0.5"
+            <input type="number" data-action="video-duration" value="${defaultDuration}" min="1" max="${durationMax}" step="0.5"
                    aria-label="${escape(t('Recording duration (seconds)'))}"><span>s</span></span>
           <label class="gif-dither-toggle" data-gif-only
                  style="display:${initialFmt === 'gif' ? 'flex' : 'none'}">
@@ -634,7 +669,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             <input type="checkbox" class="field-check" data-action="webm-60fps">
             60fps
           </label>
-          ${liveCaptureSupport() ? `<label class="gif-dither-toggle" data-video-only
+          ${liveCaptureSupport() ? `<label class="gif-dither-toggle" data-video-only data-live-capture
                  style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}"
                  title="Record the on-screen preview in real time through a screen share — motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.">
             <input type="checkbox" class="field-check" data-action="video-live">
@@ -760,6 +795,57 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const webm60El      = el.querySelector<HTMLElement>('[data-webm-only]');
   const formatEl      = el.querySelector<HTMLSelectElement>('[data-action="format"]');
   const aspectWarnEl  = el.querySelector<HTMLElement>('[data-aspect-warning]');
+  const durationEl    = el.querySelector<HTMLInputElement>('[data-action="video-duration"]');
+  const liveLabelEl   = el.querySelector<HTMLElement>('[data-live-capture]');
+
+  // ── Sequence duration: follow the timeline, yield to the user ──────────────
+  // ANDY'S RULE: the exported clip's duration matches the timeline's duration
+  // always, UNLESS the user changes it here on export. This flag is the "unless":
+  // it flips only on a real edit of the Duration field (a programmatic re-sync sets
+  // .value directly and dispatches nothing, so it can never set it), and it rides
+  // out to the export opts as `durationUserSet` — the tool hook keeps a deliberate
+  // user value and overwrites everything else with the derived length.
+  let durationUserSet = false;
+  durationEl?.addEventListener('input',  () => { durationUserSet = true; });
+  durationEl?.addEventListener('change', () => { durationUserSet = true; });
+
+  // Re-seed the Duration field (and its ceiling) from the live timeline. Called at
+  // mount and from the MutationObserver below, i.e. every time the artboard's
+  // derived length changes. Adds nothing else to the panel: no control is hidden,
+  // disabled or re-ordered for a sequence.
+  function syncSequenceUi(): void {
+    const isSeq = !!seqStageEl();
+    const secs  = seqDurationS();
+    if (durationEl) {
+      // A timeline may legitimately outrun the 60s recording cap — take the
+      // timeline's own ceiling while this is a sequence, restore 60s if it stops
+      // being one (every clip deleted).
+      const max = isSeq ? String(MAX_TIME_S) : '60';
+      if (durationEl.max !== max) durationEl.max = max;
+      if (secs != null && !durationUserSet) {
+        const next = String(secs);
+        if (durationEl.value !== next) durationEl.value = next;
+      }
+    }
+    // "Record live" stays a first-class choice for a sequence — the compositor is
+    // the default and the better output, but a real-time capture is the cheap route
+    // on a low-power device, so the control is never hidden, disabled or moved. The
+    // only sequence-specific touch is the hover copy, which says which is which.
+    if (liveLabelEl && isSeq) liveLabelEl.title = LIVE_SEQ_TITLE;
+  }
+  // Observation mechanism: the export bar has no existing hook that fires AFTER the
+  // canvas DOM is repainted — runtime.subscribe fires on model change, which is
+  // before the template rehydrates and restamps data-seq-ms, so it would read the
+  // previous length. A MutationObserver on the canvas is the event-driven read of
+  // the thing that actually changed: `attributes` catches an in-place restamp,
+  // `childList` catches the artboard being replaced wholesale by a re-render. It
+  // lives as long as canvasEl does (same lifetime as the runtime.subscribe above);
+  // there is no teardown seam here and none is needed — the node goes with the mount.
+  if (canvasEl && (durationEl || liveLabelEl)) {
+    new MutationObserver(() => syncSequenceUi())
+      .observe(canvasEl, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-seq-ms', 'data-sequence'] });
+  }
+  syncSequenceUi();
 
   // Fill the audio-track select from the catalog (music beds, type: 'audio').
   // Once per mount — the popup DOM persists across open/close. Tolerates an
@@ -1269,7 +1355,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     };
   }
 
-  function videoParams(): { wait: number; duration: number; fps: number | undefined; live: boolean } {
+  function videoParams(): { wait: number; duration: number; fps: number | undefined; live: boolean; durationUserSet: boolean } {
     const wait     = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-wait"]')?.value ?? '')     ?? 1;
     const duration = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-duration"]')?.value ?? '') ?? 5;
     const hiFps    = el!.querySelector<HTMLInputElement>('[data-action="webm-60fps"]')?.checked ?? false;
@@ -1279,7 +1365,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       fps:      hiFps ? 60 : undefined,
       // "Record live" (webm/mp4): capture the on-screen preview via a screen share
       // instead of the offline render — see bridge/live-capture.ts. Popup-local.
+      // Offered for timed compositions too — the compositor is the default, live
+      // capture the low-power alternative the user may deliberately pick.
       live:     el!.querySelector<HTMLInputElement>('[data-action="video-live"]')?.checked ?? false,
+      // The cross-agent contract: true only when the user typed their own duration,
+      // so a tool hook can safely overwrite an auto-derived one with the timeline's
+      // length (`if (!ctx.opts.durationUserSet) ctx.opts.duration = derived`).
+      durationUserSet,
     };
   }
 
@@ -1610,7 +1702,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         const v = Number(el!.querySelector<HTMLInputElement>(`[data-action="${action}"]`)?.value);
         return Number.isFinite(v) ? v : def;
       };
-      const opts: RunExportOpts = {
+      // RunExportOpts plus the durationUserSet contract flag: it belongs to the
+      // sequence path (the tool hook reads ctx.opts.durationUserSet), not to the
+      // generic shell-wide export options, so it's carried as a local widening
+      // rather than pushed into the shared interface.
+      const opts: RunExportOpts & { durationUserSet?: boolean } = {
         ...exportDims(),
         onProgress: (done, total) => {
           // Live take: (done, total) is a seconds countdown from the recorder. The
@@ -1707,7 +1803,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // (offsetWidth/Height — transform-independent, and the true possibly-resized page
         // size, not the tool's static render dims). One page → a single file; several → a zip.
         if (pageEls.length > 1) btn.textContent = `Exporting ${pageEls.length} pages…`;
-        const pageOpts: RunExportOpts = { ...opts };
+        const pageOpts: RunExportOpts & { durationUserSet?: boolean } = { ...opts };
         delete pageOpts.bundleFormats;
         const files = await exportUnscaled(async () => {
           const out: Array<{ name: string; blob: Blob }> = [];

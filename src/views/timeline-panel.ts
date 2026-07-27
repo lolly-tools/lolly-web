@@ -40,9 +40,10 @@ import { filmstrip, peaks, onIdle } from '../lib/clip-thumbs.ts';
 import { TRANSITIONS, TRANSITION_KINDS, isTransitionKind } from '../lib/transitions.ts';
 import { MAX_TRANSITION_MS, MIN_TRANSITION_MS, createSequenceClock, type SequenceClock } from './sequence-clock.ts';
 import {
-  MAX_TIME_S, MIN_DUR, SNAP_PX,
+  DEFAULT_CLIP_S, MAX_TIME_S, MIN_DUR, SNAP_PX,
   boxTiming, deriveDuration, fmtTime, indexOfId, isTimed,
-  dropIndexAt, moveOverlay, moveSeqClip, packSeq, removeAndRipple, seqBoxes, setClipIn, setDuration, setSpeed,
+  dropIndexAt, moveOverlay, moveSeqClip, packSeq, removeAndRipple, rippleOverlays, seqBoxes,
+  setClipIn, setDuration, setSpeed,
   snapTime, splitBox, trimClip,
   type Box, type MediaDurFn, type TimeCfg,
 } from './timeline-math.ts';
@@ -339,6 +340,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   let moveScheduled = false;
 
   const bars = new Map<string, HTMLElement>();
+  /**
+   * The scenery strip's chips, id → the chip BUTTON (its pill wrapper is the parent).
+   * A sibling of `bars` on purpose: together they are "every box the panel is showing",
+   * which is exactly the set the inspector may open on. Before this map existed the
+   * inspector keyed off `bars` alone, so selecting an untimed box showed nothing at all
+   * and there was no route from "always on" to "timed" anywhere in the UI.
+   */
+  const chips = new Map<string, HTMLElement>();
 
   // ── DOM ─────────────────────────────────────────────────────────────────────
   const root = document.createElement('div');
@@ -540,6 +549,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // Remember it and restore focus onto the new roving bar below.
     const hadFocus = root.contains(document.activeElement) && !!(document.activeElement as HTMLElement | null)?.closest('.tl-clip');
     bars.clear();
+    chips.clear();
     laneWrap.textContent = '';
     scenery.textContent = '';
 
@@ -621,12 +631,33 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       for (const b of untimed) {
         const id = String(b![cfg.idField] ?? '');
         if (!id) continue;
+        // A pill of TWO buttons rather than one: the label selects (which now opens a
+        // real inspector), and the `+` promotes the box onto an overlay lane. A button
+        // inside a button is not legal HTML, hence the wrapper — the pill's border and
+        // background live on the group so the two halves read as one control.
+        const group = document.createElement('span');
+        group.className = 'tl-chip-group';
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = 'tl-chip';
         chip.dataset.id = id;
         chip.textContent = labelFor(id);
-        scenery.appendChild(chip);
+        // The chip IS the selection state for a box with no bar, so it says so.
+        chip.setAttribute('aria-pressed', 'false');
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'tl-chip-add';
+        add.dataset.id = id;
+        add.innerHTML = glyph('plus');
+        const addLabel = t('Add to the timeline');
+        add.setAttribute('aria-label', `${addLabel}: ${labelFor(id)}`);
+        // `title`, not [data-tip]: the bubble primitive is a ::after drawn ABOVE the
+        // button, and this one lives inside the .tl-tracks scroller, which clips. A
+        // native tooltip is browser-drawn and cannot be sliced by an ancestor.
+        add.title = addLabel;
+        group.append(chip, add);
+        chips.set(id, chip);
+        scenery.appendChild(group);
       }
     }
     scenery.hidden = !untimed.length;
@@ -661,6 +692,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       el.title = `${text} · ${fmtTime(start)} → ${fmtTime(start + dur)}`;
       if (timing.speed !== 1) el.dataset.speed = String(timing.speed);
       else delete el.dataset.speed;
+    }
+    // Scenery chips carry the same selected state a bar does — otherwise selecting an
+    // untimed box changes the inspector with nothing on screen to say which box it is.
+    for (const [id, chip] of chips) {
+      const isSel = sel.has(id);
+      chip.classList.toggle('is-selected', isSel);
+      chip.setAttribute('aria-pressed', isSel ? 'true' : 'false');
     }
     // Seam chips ride the clip edges.
     for (const chip of Array.from(laneWrap.querySelectorAll<HTMLElement>('.tl-seam'))) {
@@ -741,12 +779,74 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     for (const el of list) el.tabIndex = el.dataset.id === focusedId ? 0 : -1;
   }
 
+  // ── promotion / demotion (scenery ⇄ timed) ──────────────────────────────────
+
+  /**
+   * Give an UNTIMED box (scenery: no lane, no start — what the `text` / `image` /
+   * `lottie` / `tool` add-kinds seed) a place on the timeline, in ONE commit.
+   *
+   * The defaults, spelled out because they are a product decision, not arithmetic:
+   *   • START, when the caller does not name one, is the PLAYHEAD. "Put it where I am
+   *     looking" is the mental model the rest of the panel already teaches (split and
+   *     seek both work off the playhead), and it is the only anchor that is on screen.
+   *   • LENGTH, when the caller does not name one, is the box's own media duration when
+   *     the live canvas knows it (a video or audio box plays in full), else
+   *     DEFAULT_CLIP_S — the same 3 s the magnetic pack hands a clip it cannot measure,
+   *     so a promoted box and a packed one never disagree.
+   *   • The box lands on an OVERLAY lane, never on the magnetic seq row: seq membership
+   *     is a separate, deliberate choice (it repacks the whole row), and silently
+   *     joining the spine because someone typed a start would move other clips.
+   *
+   * NO clamping arithmetic lives here. `moveOverlay` owns the start clamp and the
+   * millisecond grid; `setDuration` owns the length clamp and the media fit. Both are
+   * pure, so composing them on the intermediate array is ONE undo step, not two — and
+   * a promoted start lands on exactly the value a drag to the same time would.
+   */
+  function promote(id: string, want?: { start?: number; dur?: number }): void {
+    const rows = getBoxes();
+    if (!id || indexOfId(rows, cfg, id) < 0) return;
+    const media = mediaOf(id).dur;
+    const start = want?.start ?? clock.t() / 1000;
+    const dur = want?.dur ?? (media != null ? media : DEFAULT_CLIP_S);
+    write(setDuration(moveOverlay(rows, cfg, id, start), cfg, id, dur, media, mediaDur));
+    focusedId = id;
+    selection.set([id]);
+    announce(t('Added to the timeline'));
+  }
+
+  /**
+   * The reverse: take a timed box back to scenery ("always on"), in ONE commit, so that
+   * state stays reachable instead of being a one-way trap.
+   *
+   * `start: ''` — not 0 — is what makes it scenery: boxTiming reads an authored 0 as
+   * "enters at the top of the sequence" and only an EMPTY field as untimed. This is a
+   * VALUE write, which is exactly what patchBox is for.
+   */
+  function demote(id: string): void {
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0) return;
+    const wasSeq = boxTiming(rows[i]!, cfg).lane === 'seq';
+    const cleared = patchBox(rows, id, {
+      [cfg.startField]: '', [cfg.durField]: '', [cfg.laneField]: '',
+    });
+    // Pulling a clip off the magnetic row leaves a hole. Close it the way a delete
+    // does — same pack, same overlay ripple — inside the same commit.
+    write(wasSeq ? rippleOverlays(rows, packSeq(cleared, cfg, mediaDur), cfg) : cleared);
+    focusedId = '';
+    selection.set([id]);
+    announce(t('Now always on'));
+  }
+
   // ── the selected-clip inspector (precision + a11y fallback for every gesture) ──
 
   let inspectorKey = '\u0000';
 
   function renderInspector(boxes: Box[]): void {
-    const ids = selection.get().filter((id) => bars.has(id));
+    // Bars AND chips: an untimed box has no bar, and gating on `bars` alone is what
+    // made "always on" a dead end — selecting a scenery chip rendered an empty bar and
+    // there was no field anywhere in the UI that could give the box a time.
+    const ids = selection.get().filter((id) => bars.has(id) || chips.has(id));
     const id = ids.length === 1 ? ids[0]! : '';
     const i = id ? indexOfId(boxes, cfg, id) : -1;
     const box = i >= 0 ? boxes[i]! : null;
@@ -766,15 +866,31 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       wrap.append(lab, control);
       return wrap;
     };
-    const numField = (value: number, step: number, min: number, onCommit: (v: number) => void): HTMLInputElement => {
+    /**
+     * A numeric field. `value === null` means UNAUTHORED — the field renders empty with
+     * a placeholder rather than a misleading 0 (an untimed box does not start at zero,
+     * it has no start at all), and an empty field that is left empty commits nothing.
+     */
+    const numField = (
+      value: number | null, step: number, min: number, onCommit: (v: number) => void, placeholder?: string,
+    ): HTMLInputElement => {
       const el = document.createElement('input');
       el.className = 'field-input tl-num';
       el.type = 'number';
       el.step = String(step);
       el.min = String(min);
       el.max = String(MAX_TIME_S);
-      el.value = String(Math.round(value * 1000) / 1000);
-      el.addEventListener('change', () => onCommit(finite(el.value, value)));
+      if (value === null) {
+        el.value = '';
+        if (placeholder) el.placeholder = placeholder;
+      } else {
+        el.value = String(Math.round(value * 1000) / 1000);
+      }
+      el.addEventListener('change', () => {
+        const raw = el.value.trim();
+        if (value === null && raw === '') return;   // nothing typed, nothing to promote
+        onCommit(finite(raw, value ?? 0));
+      });
       return el;
     };
     const kindSelect = (value: unknown, onCommit: (v: string) => void): HTMLSelectElement => {
@@ -791,58 +907,96 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return el;
     };
 
-    // Numeric start / duration / trim-in.
-    //
-    // A seq clip's start is DERIVED by the pack (reorder it to move it), so the field is
-    // disabled rather than writable-but-ignored: the old shape committed the unchanged
-    // array, which dirtied the session and pushed an empty step onto the undo stack.
-    const startField = numField(timing.start ?? 0, 0.1, 0, (v) => {
-      write(moveOverlay(getBoxes(), cfg, id, v));
-    });
-    if (timing.lane === 'seq') {
-      startField.disabled = true;
-      startField.title = t('Set by the clip order. Drag the clip along the sequence row to move it.');
-    }
-    inspector.appendChild(row(t('Start'), startField));
-    // Length is ABSOLUTE (`setDuration`), seeded from the span the bar actually shows.
-    // The old shape seeded from `timing.dur ?? 0` and committed a DELTA against it,
-    // so on an open-ended clip — which displays as `total - start` and read 0 — typing
-    // 5 landed on trimClip's own 3 s fallback + 5 = 8 s.
-    inspector.appendChild(row(t('Length'), numField(span(box, durationSec()).dur, 0.1, MIN_DUR, (v) => {
-      write(setDuration(getBoxes(), cfg, id, v, mediaOf(id).dur, mediaDur));
-    })));
-    // Trim in and Speed go through the clamped setters, NOT patchBox: a raw write puts
-    // clipIn + dur x speed past the end of the source, which the player cannot recover
-    // from (it seeks past duration and the bar plays nothing).
-    inspector.appendChild(row(t('Trim in'), numField(timing.clipIn, 0.1, 0, (v) => {
-      write(setClipIn(getBoxes(), cfg, id, v, mediaOf(id).dur, mediaDur));
-    })));
+    const timed = isTimed(box, cfg);
 
-    // Speed.
-    const speed = document.createElement('select');
-    speed.className = 'field-select tl-select';
-    for (const v of [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]) {
-      const o = document.createElement('option');
-      o.value = String(v);
-      o.textContent = `×${v}`;
-      speed.appendChild(o);
-    }
-    speed.value = String(timing.speed);
-    speed.addEventListener('change', () => write(setSpeed(getBoxes(), cfg, id, finite(speed.value, 1), mediaOf(id).dur, mediaDur)));
-    inspector.appendChild(row(t('Speed'), speed));
+    if (!timed) {
+      // ── UNTIMED (scenery) ───────────────────────────────────────────────────
+      // Start and Length are the promotion route: this is the ONLY place in the UI a
+      // text/image/lottie/tool box could ever be given a time without hand-editing the
+      // ?boxes= URL. Both render EMPTY — a 0 would claim the box starts at the top of
+      // the sequence, which is a different (and authored) state.
+      const hint = t('Type a time to place this on the timeline');
+      const untimedStart = numField(null, 0.1, 0, (v) => promote(id, { start: v }), '—');
+      untimedStart.title = hint;
+      inspector.appendChild(row(t('Start'), untimedStart));
+      const untimedLen = numField(null, 0.1, MIN_DUR, (v) => promote(id, { dur: v }), '—');
+      untimedLen.title = hint;
+      inspector.appendChild(row(t('Length'), untimedLen));
+    } else {
+      // ── TIMED ───────────────────────────────────────────────────────────────
+      // Numeric start / duration / trim-in.
+      //
+      // A seq clip's start is DERIVED by the pack (reorder it to move it), so the field is
+      // disabled rather than writable-but-ignored: the old shape committed the unchanged
+      // array, which dirtied the session and pushed an empty step onto the undo stack.
+      const startField = numField(timing.start ?? 0, 0.1, 0, (v) => {
+        write(moveOverlay(getBoxes(), cfg, id, v));
+      });
+      if (timing.lane === 'seq') {
+        startField.disabled = true;
+        startField.title = t('Set by the clip order. Drag the clip along the sequence row to move it.');
+      }
+      inspector.appendChild(row(t('Start'), startField));
+      // Length is ABSOLUTE (`setDuration`), seeded from the span the bar actually shows.
+      // The old shape seeded from `timing.dur ?? 0` and committed a DELTA against it,
+      // so on an open-ended clip — which displays as `total - start` and read 0 — typing
+      // 5 landed on trimClip's own 3 s fallback + 5 = 8 s.
+      inspector.appendChild(row(t('Length'), numField(span(box, durationSec()).dur, 0.1, MIN_DUR, (v) => {
+        write(setDuration(getBoxes(), cfg, id, v, mediaOf(id).dur, mediaDur));
+      })));
+      // Trim in and Speed go through the clamped setters, NOT patchBox: a raw write puts
+      // clipIn + dur x speed past the end of the source, which the player cannot recover
+      // from (it seeks past duration and the bar plays nothing).
+      inspector.appendChild(row(t('Trim in'), numField(timing.clipIn, 0.1, 0, (v) => {
+        write(setClipIn(getBoxes(), cfg, id, v, mediaOf(id).dur, mediaDur));
+      })));
 
-    // Enter / exit + their durations.
+      // Speed.
+      const speed = document.createElement('select');
+      speed.className = 'field-select tl-select';
+      for (const v of [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]) {
+        const o = document.createElement('option');
+        o.value = String(v);
+        o.textContent = `×${v}`;
+        speed.appendChild(o);
+      }
+      speed.value = String(timing.speed);
+      speed.addEventListener('change', () => write(setSpeed(getBoxes(), cfg, id, finite(speed.value, 1), mediaOf(id).dur, mediaDur)));
+      inspector.appendChild(row(t('Speed'), speed));
+    }
+
+    // Enter / exit + their durations. Authorable either side of the timed line: a box
+    // that is always on can still be given the transition it will use once it is timed,
+    // and the fields are plain value writes, so nothing here depends on a bar existing.
     inspector.appendChild(row(t('Animate in'), kindSelect(box[cfg.enterField], (v) => write(patchBox(getBoxes(), id, { [cfg.enterField]: v })))));
     inspector.appendChild(row(t('In (ms)'), numField(finite(box[cfg.enterMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.enterMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
     inspector.appendChild(row(t('Animate out'), kindSelect(box[cfg.exitField], (v) => write(patchBox(getBoxes(), id, { [cfg.exitField]: v })))));
     inspector.appendChild(row(t('Out (ms)'), numField(finite(box[cfg.exitMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.exitMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
 
-    // Mute.
-    const muted = box[cfg.muteField] === true || box[cfg.muteField] === 'true';
-    const mute = btn('tl-mute', muted ? t('Unmute clip') : t('Mute clip'), icon(muted ? 'volumeOff' : 'volumeOn'));
-    mute.setAttribute('aria-pressed', muted ? 'true' : 'false');
-    mute.addEventListener('click', () => write(patchBox(getBoxes(), id, { [cfg.muteField]: muted ? '' : 'true' })));
-    inspector.appendChild(mute);
+    // Mute — a playback concern, so only on something that plays.
+    if (timed) {
+      const muted = box[cfg.muteField] === true || box[cfg.muteField] === 'true';
+      const mute = btn('tl-mute', muted ? t('Unmute clip') : t('Mute clip'), icon(muted ? 'volumeOff' : 'volumeOn'));
+      mute.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      mute.addEventListener('click', () => write(patchBox(getBoxes(), id, { [cfg.muteField]: muted ? '' : 'true' })));
+      inspector.appendChild(mute);
+    }
+
+    // The timed ⇄ always-on switch. Both directions, always, from the keyboard as well
+    // as the pointer: this is the affordance that makes "always on" a state rather than
+    // a trap, and the promotion route for anyone who would rather press than type.
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'tl-timing';
+    const toggleLabel = timed ? t('Make always on') : t('Add to the timeline');
+    toggle.textContent = toggleLabel;
+    // `title` for the same reason as the chip's `+`: .tl-inspector is an overflow
+    // scroller, so a [data-tip] bubble drawn above the control would be clipped.
+    toggle.title = timed
+      ? t('Clear the timing so this box is on screen for the whole sequence')
+      : t('Place this box on the timeline at the playhead');
+    toggle.addEventListener('click', () => (timed ? demote(id) : promote(id)));
+    inspector.appendChild(toggle);
   }
 
   // ── thumbnails (cache-owned bitmaps: draw synchronously, never retain) ───────
@@ -1001,7 +1155,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement | null;
     if (!target) return;
-    if (target.closest('.tl-btn, .tl-dropslot, .tl-chip, .tl-inspector, .tl-seam')) return;
+    if (target.closest('.tl-btn, .tl-dropslot, .tl-chip-group, .tl-inspector, .tl-seam')) return;
 
     if (target.closest('.tl-handle')) {
       e.preventDefault();
@@ -1421,7 +1575,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (chip?.dataset.id) selection.set([chip.dataset.id]);
   });
   scenery.addEventListener('click', (e) => {
-    const chip = (e.target as HTMLElement | null)?.closest<HTMLElement>('.tl-chip');
+    const target = e.target as HTMLElement | null;
+    // The `+` half of the pill promotes straight from the strip — no need to select
+    // first and then find a field. One commit, exactly like the inspector route.
+    const add = target?.closest<HTMLElement>('.tl-chip-add');
+    if (add?.dataset.id) { promote(add.dataset.id); return; }
+    const chip = target?.closest<HTMLElement>('.tl-chip');
     if (chip?.dataset.id) selection.set([chip.dataset.id]);
   });
   laneWrap.addEventListener('dblclick', (e) => {
@@ -1509,6 +1668,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     reserve(0);
     root.remove();
     bars.clear();
+    chips.clear();
     host.log?.('debug', 'timeline panel destroyed');
   }
 
