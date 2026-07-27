@@ -666,10 +666,28 @@
   .tl-bar { flex-wrap: wrap; gap: 6px; padding: 2px 8px 5px; }
   .tl-inspector { order: 3; flex-basis: 100%; justify-content: flex-start; }
   .tl-tools { margin-left: auto; }
-  .tl-field .field-label { display: none; }   /* the control keeps its own aria-label via the row */
+  /* The labels STAY. Hiding them here used to save horizontal room, but the inspector
+     carries up to nine fields (start, length, trim, speed, both transitions and their
+     durations, mute) and stripping the labels left a row of bare numbers — `4.6  2.4
+     0  ×1  Rise` — with nothing on screen saying which was which. The row is already
+     an `overflow-x: auto` scroller with `touch-action: pan-x`, so the labels cost
+     scroll distance, not comprehension, and the fields sit BESIDE their labels
+     (inline flex) so the row does not grow taller either. An aria-label serves a
+     screen reader; it does nothing for the person looking at the panel. */
   .tl-num { width: 60px; }
   .tl-lane { height: 30px; }
   .tl-lane-seq { height: 40px; }
+}
+/* Narrow AND touch: pinch the tracks to zoom (see the pinch handler in
+   timeline-panel.ts), so the two step buttons stop earning their place in the bar.
+   Dropping them is what lets the transport and the tools share ONE row here instead
+   of wrapping onto two — the single largest contributor to the panel being almost all
+   chrome on a phone. Fit stays: no gesture replaces "show me the whole sequence".
+   Deliberately NOT `pointer: coarse` alone — a touch laptop at full width has room for
+   them — and NOT width alone, since a narrow mouse window has no pinch to fall back on. */
+@media (max-width: 720px) and (pointer: coarse) {
+  .tl-zoom-in,
+  .tl-zoom-out { display: none; }
 }
 @media (pointer: coarse) {
   .tl-btn { width: 36px; height: 36px; }

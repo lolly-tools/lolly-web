@@ -64,7 +64,7 @@ const {
   tracksKey, snapCandidates, junctionAt, isTextControl, panelKeysActive,
   clampPanelH, tickStep, frameCountFor, packSeqRow, initTimelinePanel,
   isPaintedColor, thumbMode, canRasterBox, appearanceSig,
-  MIN_PPS, MAX_PPS, MIN_PANEL_H, EDGE_PX, TAKE_TIMING,
+  MIN_PPS, MAX_PPS, MIN_PANEL_H, ONE_LANE_H, EDGE_PX, TAKE_TIMING,
   MAX_NODE_RASTERS_PER_PASS, MAX_THUMB_PASSES,
 } = await import('./timeline-panel.ts');
 // The SAME module instance the panel holds (a dynamic import of an already-evaluated
@@ -263,6 +263,20 @@ test('clampPanelH keeps the panel between its floor and half the stage', () => {
   // A stage shorter than twice the floor still yields the floor, not something smaller.
   assert.equal(clampPanelH(200, 100), MIN_PANEL_H);
   assert.equal(clampPanelH(NaN, 1000), MIN_PANEL_H);
+});
+
+test('clampPanelH floors above the measured chrome so the tracks can never be crushed to zero', () => {
+  // Desktop-ish: one bar row, chrome well under MIN_PANEL_H — the constant still rules.
+  assert.equal(clampPanelH(10, 1000, 70), MIN_PANEL_H, 'chrome below the floor changes nothing');
+  // Phone-ish: .tl-bar has wrapped and a clip is selected, so the chrome alone (124px)
+  // exceeds MIN_PANEL_H. Dragging the grip all the way down must still leave a lane.
+  assert.equal(clampPanelH(10, 1000, 124), 124 + ONE_LANE_H);
+  assert.ok(clampPanelH(10, 1000, 124) - 124 >= ONE_LANE_H, 'at least one lane survives the floor');
+  // The floor also wins over a stage too short to halve into it.
+  assert.equal(clampPanelH(500, 200, 124), 124 + ONE_LANE_H);
+  // Absent/garbage chrome degrades to the two-argument behaviour rather than throwing.
+  assert.equal(clampPanelH(10, 1000, NaN), MIN_PANEL_H);
+  assert.equal(clampPanelH(10, 1000), MIN_PANEL_H);
 });
 
 test('tickStep picks the smallest step that keeps ruler labels ≥60px apart', () => {

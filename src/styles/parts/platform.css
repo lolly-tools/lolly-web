@@ -210,6 +210,15 @@
 .plat-kv .is-hero dt { flex: none; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; }
 .plat-kv dd.is-hero { font-size: 1.6rem; font-weight: 700; line-height: 1.1; color: hsl(var(--card-foreground)); word-break: break-word; }
 
+/* Mobile: these sub-cards sit INSIDE .plat-section-body, so their gutter is the third
+   term in the nesting stack that sheet's ≤640px block trims (page pad → fold → this).
+   Same reasoning: pull the side padding in, leave the vertical rhythm alone. */
+@media (max-width: 640px) {
+  .plat-client-card { padding: .85rem .8rem; }
+  .plat-font { padding: .95rem .85rem; }
+  .plat-theme { padding: .85rem .8rem; }
+}
+
 .plat-theme-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .85rem; }
 /* Surface composes .card--sub (chips.css) — padding + text colour are local deltas. */
 .plat-theme { padding: 1rem; color: hsl(var(--foreground)); }

@@ -43,9 +43,11 @@ import {
   PEN_DEFAULT_KIND, PEN_KINDS, closesOnClick, convertKind, decodePathContours,
   defaultContinuity, deleteNodes, denormNodes, dragHandle, encodePathField, encodePathFields,
   frameToLocal, handlePoint, insertNodeOnCurve, kindReadsHandles, localToFrame, lowerAuthored,
-  moveNodes, nearestOnPath, nodeAt, normNodes, penCommitFromNative, penFrame, pullHandles,
-  refitFrame, setNodeContinuity,
+  moveNodes, nearestOnPath, nodeAt, normNodes, pathPaintIsVisible, pathPaintSeed,
+  penCommitFromNative, penFrame, pickPathPaint, pullHandles,
+  refitFrame, resolveDrawnInk, setNodeContinuity,
 } from './free-canvas-pen.ts';
+import type { PathPaintFields } from './free-canvas-pen.ts';
 // Type-only (erased at build): the timeline modules are LAZY — importing their types
 // costs no chunk, and timeline-panel.ts pulls in styles/parts/timeline.css.
 import type { TimeCfg } from './timeline-math.ts';
@@ -365,8 +367,11 @@ const SVG = {
   anim: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M10 9l5 3-5 3z"/>',
   // Video add-kind — a film clap/frame with a play triangle (a fatter play than `anim`).
   video: '<rect x="2" y="5" width="15" height="14" rx="2.5"/><path d="M17 9l5-3v12l-5-3z"/><path d="M7 9.5l4 2.5-4 2.5z"/>',
-  // Timeline rail toggle — a clip bar sitting above a time ruler.
-  timeline: '<rect x="3" y="4" width="18" height="6" rx="2"/><path d="M3 14h18"/><path d="M7 14v3"/><path d="M12 14v4"/><path d="M17 14v3"/>',
+  // Timeline rail toggle — three staggered clip bars with the playhead crossing them,
+  // i.e. a picture of the panel it opens. The old glyph (one bar over a tick ruler) read
+  // as a comb/toaster at rail size: a ruler alone says "measure", not "clips over time",
+  // and nothing in it carried the playhead. Staggered bars are the part people recognise.
+  timeline: '<rect x="2.5" y="2.5" width="10" height="5" rx="1.8"/><rect x="7" y="9.5" width="14" height="5" rx="1.8"/><rect x="4" y="16.5" width="9" height="5" rx="1.8"/><path d="M9.5 1v22"/>',
   // Sequence add-kinds: a clip (film strip), a sound (level bars), a nested Lolly tool (spark).
   clipKind: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14"/><path d="M16 5v14"/>',
   audioKind: '<path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 8v8"/><path d="M20 11v2"/>',
@@ -429,9 +434,12 @@ const SVG = {
   // Pointer — the arrow cursor itself, outlined to sit with the rest of the line-art rail.
   // The one glyph in here that names a TOOL by drawing the cursor it gives you.
   pointer: '<path d="M5 2.8l10.9 10.9h-4.8l2.8 6-2.5 1.1-2.8-6L5 18.3z"/>',
-  // Pen — the nib, tip down-left, with the slit up its centre. Deliberately NOT the
-  // `pencil` glyph, which already means "edit this box's text" on the object bar.
-  pen: '<path d="M19.5 3.2 21 8l-9.5 9.5-4-4L17 4z"/><path d="m7.5 13.5-3.9 6.9 6.9-3.9"/><path d="m11.5 8.5 4 4"/>',
+  // Pen — the vector PEN TOOL: the wedge nib with its slit, the anchor point it drops,
+  // and the blade trailing behind. Deliberately NOT the `pencil` glyph, which already
+  // means "edit this box's text" on the object bar. The previous glyph was a fountain
+  // pen, which reads as "write/draw freehand" — the one thing this mode does not do;
+  // the anchor circle is what says "click to place points" at a glance.
+  pen: '<path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/>',
   // Edit nodes — a curve with its knots exposed, which is what the mode shows.
   nodes: '<path d="M4 18C4 9 12 15 12 9s8 0 8-3"/><rect x="2" y="16" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/><rect x="10" y="7" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/><rect x="18" y="4" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/>',
   // Continuity — the same node with the same two arms, changing only how they relate:
@@ -840,6 +848,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let penWarm: HyperbezierSolution | null = null;
   const PEN_HIT_PX = 9;                          // grab radius for a node/handle, SCREEN px
   const PEN_CURVE_PX = 7;                        // "on the curve" band for insert, SCREEN px
+  // The paint the user last put on a path, so the NEXT path they draw matches it — the
+  // drawing-app convention, and the reason a session of pen work doesn't mean recolouring
+  // every shape. Session-only (never persisted, never in the model): it is a memory of an
+  // action, not a property of the document. Set from a paint write to a path selection and
+  // from each commit, so consecutive draws agree even before anything is recoloured.
+  let penLastPaint: Box | null = null;
+  /** The canvas config's paint sub-field names, as the pure pen helpers want them. */
+  const penPaintFields: PathPaintFields = {
+    fill: cfg.fillField, stroke: cfg.strokeField,
+    strokeW: cfg.strokeWField, fillRule: cfg.fillRuleField,
+  };
 
   // ── model access ─────────────────────────────────────────────────────────
   const getBoxes = (): Box[] => {
@@ -2849,8 +2868,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function setField(field: string | undefined, value: any): void {
     if (!field) return;
     const boxes = getBoxes();
-    const sel = new Set(selIndices(boxes));
-    commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [field]: value } : b)));
+    const idx = selIndices(boxes);
+    const sel = new Set(idx);
+    const next = boxes.map((b, i) => (sel.has(i) ? { ...b, [field]: value } : b));
+    // Recolouring a path is what teaches the pen its next paint. Every paint control on
+    // both bars (and the whole stroke panel) writes through here, so this is the one place
+    // that has to notice — and it is gated on the selection being ALL paths so restyling a
+    // text box or an image can't hand the pen a fill that means nothing for a curve.
+    if (idx.length > 0 && selectionAllPaths(boxes, idx)) {
+      const remembered = pickPathPaint(penPaintFields, next[idx[0]!]);
+      if (remembered) penLastPaint = remembered;
+    }
+    commit(next);
   }
   // Is this box a circle? (An ellipse the geometry keeps square — see setShape.)
   const isCircle = (b: Box | undefined): boolean =>
@@ -3414,13 +3443,43 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!made || !value) { renderChrome(); return; }
     const boxes = getBoxes();
     const id = freshId(boxes);
-    const seed: Box = { ...(addKinds.find((k) => k.id === 'path')?.seed || {}) };
+    const pathSeed: Box = { ...(addKinds.find((k) => k.id === 'path')?.seed || {}) };
+    // Paint: what the user last used on a path, then this tool's own `path` seed — and
+    // nothing else. Other add-kinds are deliberately NOT consulted: a `path` seed's empty
+    // fill is a statement ("paths in this brand are stroke-only"), so letting a box seed
+    // fill it in would overrule the brand, and where there is no `path` seed at all the
+    // nearest kind's colour is chosen for a filled rectangle, not for a curve — Sequence
+    // Studio's card is #14181d on a #0b1220 artboard, i.e. invisible. The honest fallback
+    // for that case is the ink the path was drawn in, below.
+    const seed: Box = {
+      ...pathSeed,
+      ...pathPaintSeed(penPaintFields, [penLastPaint, pathSeed]),
+    };
+    // Last resort: stroke it in the colour it was DRAWN in. The preview strokes the draft
+    // in `currentColor` off .fc-pen-layer (the brand primary), so this is the shape the user
+    // was just looking at rather than an invented hue — and it is resolved to a concrete
+    // hex here because a box field has to render headlessly, where a CSS variable cannot.
+    if (cfg.strokeField && !pathPaintIsVisible(penPaintFields, seed)) {
+      seed[cfg.strokeField] = drawnInkHex();
+      if (cfg.strokeWField && !(Number(seed[cfg.strokeWField]) > 0)) seed[cfg.strokeWField] = 4;
+    }
     let box = seedBox(cfg, {}, seed, { x: made.x, y: made.y, w: made.w, h: made.h } as MathRect, id);
     box[cfg.kindField] = 'path';
     if (cfg.shapeField) box[cfg.shapeField] = 'rect';
     box[cfg.pathField] = value;
     selection = new Set([id]);
+    penLastPaint = pickPathPaint(penPaintFields, box);
     commit([...boxes, box]);
+  }
+
+  /** The colour the pen preview is drawn in, as a concrete hex — always a usable value, since
+   *  a shape in the wrong colour still beats a shape in none. Computed at commit time rather
+   *  than cached: the brand, and so this colour, can change mid-session. The resolution is
+   *  pure (`resolveDrawnInk`) so it can be tested without a stylesheet, which is also the one
+   *  case that reaches its fallback — jsdom applies no CSS, a real browser always resolves. */
+  function drawnInkHex(): string {
+    try { return resolveDrawnInk(getComputedStyle(penLayer).color); }
+    catch { return resolveDrawnInk(null); }
   }
 
   /** Abandon the draw. Nothing was ever written, so there is nothing to undo. */

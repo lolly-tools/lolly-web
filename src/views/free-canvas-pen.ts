@@ -42,8 +42,8 @@
 import {
   type AuthoredPath, type Continuity, type Cubic, type GeomPath, type HyperbezierSolution,
   type SplineKind, type SplineNode,
-  enforceContinuity, hyperbezierCubics,
-  nearestOnCubic, pathBounds, solveHyperbezier, splitCubic, toCubics,
+  colorToHexString, enforceContinuity, hyperbezierCubics,
+  nearestOnCubic, parseColor, pathBounds, solveHyperbezier, splitCubic, toCubics,
 } from '@lolly/engine';
 // The `path` sub-field's codec, via the wrappers the rest of the overlay already uses — one
 // codec, one set of shell-side signatures. See the file header on what it quantises.
@@ -591,4 +591,116 @@ export function closesOnClick(nodes: SplineNode[], x: number, y: number, tol: nu
   if (nodes.length < 3) return false;
   const first = nodes[0]!;
   return Math.hypot(first.x - x, first.y - y) <= tol;
+}
+
+// ── paint on a newly drawn path ───────────────────────────────────────────────
+//
+// A drawn path has to be BORN with paint. Editing one never loses it (penEditWrite
+// spreads the existing box and rewrites only the path and the frame), but the commit
+// that creates it starts from an empty object, so whatever it does not seed is simply
+// absent — and a path with no fill and no stroke renders as nothing at all. That is
+// not a hypothetical: a tool may declare `canvas.pathField` (which is what offers the
+// pen) without declaring a `path` add-kind (which is what carries a brand's idea of
+// what a path looks like), and Sequence Studio does exactly that.
+//
+// So paint is resolved per FIELD from a priority list rather than taken wholesale from
+// one seed: the paint the user last put on a path wins, then the tool's `path` seed,
+// then any other seed that has an opinion. Per-field because the two are genuinely
+// partial — lolly-start's path seed is stroke-only, SUSE's is fill-only — and a
+// wholesale "first non-empty seed" would drop the half the winner does not mention.
+
+/** The paint sub-field NAMES a path box can carry: a narrow view of the canvas config. */
+export interface PathPaintFields {
+  fill?: string | undefined;
+  stroke?: string | undefined;
+  strokeW?: string | undefined;
+  fillRule?: string | undefined;
+}
+
+type PaintBox = Record<string, InputValue | undefined>;
+
+/** Does this source actually express this paint field? `''`/null/undefined do not, and
+ *  neither does a zero stroke width — both are how a seed says "no stroke", which must
+ *  not out-rank a later source that does have one. */
+function statesPaint(src: PaintBox, field: string | undefined, isWidth: boolean): boolean {
+  if (!field) return false;
+  const v = src[field];
+  if (v == null || v === '') return false;
+  return isWidth ? Number(v) > 0 : true;
+}
+
+/**
+ * The paint a newly drawn path should be born with, resolved field by field from
+ * `sources` in priority order (earlier wins). Sources may be null and may each speak
+ * to only some of the fields.
+ *
+ * Stroke colour and stroke width travel TOGETHER: a stroke colour with no width paints
+ * nothing, and a width with no colour is just as invisible, so whichever source supplies
+ * the colour supplies the width too (falling back to `strokeWFallback`). Deciding them
+ * independently produced exactly those two dead states.
+ */
+export function pathPaintSeed(
+  f: PathPaintFields,
+  sources: ReadonlyArray<PaintBox | null | undefined>,
+  strokeWFallback = 4,
+): PaintBox {
+  const out: PaintBox = {};
+  const live = sources.filter((s): s is PaintBox => !!s);
+  if (f.fill) {
+    const src = live.find((s) => statesPaint(s, f.fill, false));
+    if (src) out[f.fill] = src[f.fill!];
+  }
+  if (f.stroke) {
+    const src = live.find((s) => statesPaint(s, f.stroke, false));
+    if (src) {
+      out[f.stroke] = src[f.stroke!];
+      if (f.strokeW) {
+        const w = Number(src[f.strokeW]);
+        out[f.strokeW] = Number.isFinite(w) && w > 0 ? w : strokeWFallback;
+      }
+    }
+  }
+  if (f.fillRule) {
+    const src = live.find((s) => statesPaint(s, f.fillRule, false));
+    if (src) out[f.fillRule] = src[f.fillRule!];
+  }
+  return out;
+}
+
+/** Would this paint render as something a user can actually see? */
+export function pathPaintIsVisible(f: PathPaintFields, paint: PaintBox): boolean {
+  const fill = f.fill ? paint[f.fill] : undefined;
+  if (fill != null && fill !== '' && String(fill) !== 'none') return true;
+  const stroke = f.stroke ? paint[f.stroke] : undefined;
+  if (stroke == null || stroke === '' || String(stroke) === 'none') return false;
+  return !f.strokeW || Number(paint[f.strokeW]) > 0;
+}
+
+/**
+ * The ink a paint-less path should be stroked in, from the pen preview's own resolved
+ * colour (`getComputedStyle(penLayer).color` — the brand primary, i.e. the colour the user
+ * literally just watched the curve being drawn in).
+ *
+ * Resolved to a concrete hex because a box field has to render headlessly, where a CSS
+ * variable cannot. `fallback` covers the case where the colour cannot be read at all — no
+ * stylesheet applied, a detached layer — which a real browser does not reach but a jsdom
+ * test does, and where a shape with no paint is still worse than a shape in the wrong one.
+ */
+export function resolveDrawnInk(computedColor: string | null | undefined, fallback = '#000000'): string {
+  const c = computedColor ? parseColor(computedColor) : null;
+  if (!c) return fallback;
+  // Alpha is dropped deliberately: the preview is translucent chrome, the committed shape
+  // is artwork, and a 60%-alpha stroke would look like a rendering bug rather than a choice.
+  const hex = colorToHexString({ ...c, alpha: 1 });
+  return hex || fallback;
+}
+
+/** Just the paint fields of a box, for remembering what the user last used. */
+export function pickPathPaint(f: PathPaintFields, box: PaintBox | null | undefined): PaintBox | null {
+  if (!box) return null;
+  const out: PaintBox = {};
+  for (const field of [f.fill, f.stroke, f.strokeW, f.fillRule]) {
+    if (field && box[field] != null) out[field] = box[field];
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }

@@ -176,6 +176,8 @@ export interface TimelinePanel {
 export const MIN_PANEL_H = 112;
 /** Panel height on first open, px. Session-local; never persisted. */
 export const DEFAULT_PANEL_H = 190;
+/** One ordinary lane plus its gap — the least a tracks area can usefully show. */
+export const ONE_LANE_H = 34;
 /** Gap between the reserved band and the fitted canvas (the deck-editor's +6). */
 export const RESERVE_PAD = 6;
 /** Zoom floor/ceiling and the per-click step. */
@@ -352,10 +354,20 @@ export function panelKeysActive(root: HTMLElement | null, active: Element | null
   return Boolean(hovered || (active && root.contains(active)));
 }
 
-/** Clamp a dragged panel height into the docking range ([112, half the stage]). */
-export function clampPanelH(h: number, stageH: number): number {
-  const hi = Math.max(MIN_PANEL_H, Math.floor(finite(stageH, 0) * 0.5));
-  return clamp(Math.round(finite(h, MIN_PANEL_H)), MIN_PANEL_H, hi);
+/**
+ * Clamp a dragged panel height into the docking range ([floor, half the stage]).
+ *
+ * The floor has to clear the panel's OWN chrome, which is why `chromeH` exists: at
+ * ≤720px `.tl-bar` wraps into three rows (transport / tools / inspector) where desktop
+ * fits one, so the flat 112px that still leaves ~42px of track on desktop leaves none
+ * at all on a phone — the resize grip could crush `.tl-tracks` to zero height and the
+ * panel became 100% chrome showing no timeline. Callers that can measure their live
+ * chrome pass it; the two-argument form keeps the original behaviour exactly.
+ */
+export function clampPanelH(h: number, stageH: number, chromeH = 0): number {
+  const floor = Math.max(MIN_PANEL_H, Math.round(finite(chromeH, 0)) + ONE_LANE_H);
+  const hi = Math.max(floor, Math.floor(finite(stageH, 0) * 0.5));
+  return clamp(Math.round(finite(h, floor)), floor, hi);
 }
 
 /** Ruler tick spacing (seconds) for a zoom level — the smallest step ≥ 60px apart. */
@@ -1982,11 +1994,24 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     });
   }
 
+  /**
+   * The panel's non-track chrome — grip + bar + ruler — MEASURED rather than derived
+   * from a constant, because `.tl-bar` wraps to two or three rows below 720px depending
+   * on how many tool buttons the host declared and whether a clip is selected (the
+   * inspector row only exists with a selection). This is what clampPanelH's floor is
+   * built from, so the grip can never drag `.tl-tracks` down to nothing.
+   */
+  function chromeH(): number {
+    return Math.round(
+      handle.getBoundingClientRect().height + bar.getBoundingClientRect().height + ruler.getBoundingClientRect().height,
+    );
+  }
+
   /** Live preview — PANEL DOM ONLY. The model is untouched until pointerup. */
   function paintGesture(g: Gesture): void {
     if (g.kind === 'resize') {
       const stageH = stageEl.getBoundingClientRect().height || 0;
-      panelH = clampPanelH(g.h0 + (g.y0 - g.y), stageH);
+      panelH = clampPanelH(g.h0 + (g.y0 - g.y), stageH, chromeH());
       root.style.height = `${panelH}px`;
       reserve(panelH + RESERVE_PAD);
       return;
@@ -2146,6 +2171,38 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     updatePlayhead(clock.t());
     scheduleThumbs();
   }
+
+  // ── Pinch to zoom ───────────────────────────────────────────────────────────
+  // TOUCH events, not pointer events, deliberately. `.tl-tracks` keeps `touch-action:
+  // pan-x pan-y` so ONE finger still pans a long sequence natively (the panel itself is
+  // `touch-action: none`, so without that opt-out a phone cannot reach past the fold at
+  // all). Under that value the browser claims a TWO-finger gesture as a pan and fires
+  // pointercancel on both pointers, which would kill a pointer-based pinch part-way
+  // through; a non-passive touchmove can preventDefault that pan and keep the gesture,
+  // without giving up single-finger scrolling. The zoom itself goes through the same
+  // zoom() → zoomAbout() path as the wheel and the buttons, so every route anchors on
+  // its cursor and clamps to [MIN_PPS, MAX_PPS] identically.
+  let pinchDist = 0;
+  const touchGap = (t: TouchList): number => Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
+
+  function onTouchStart(e: TouchEvent): void {
+    if (e.touches.length !== 2) { pinchDist = 0; return; }
+    pinchDist = touchGap(e.touches);
+    // A pinch is never also a clip drag. Whatever single-finger gesture the first touch
+    // started, drop it here rather than letting the second finger scale the timeline
+    // while the first keeps dragging a bar under it.
+    if (gesture) endGesture(gesture);
+  }
+  function onTouchMove(e: TouchEvent): void {
+    if (e.touches.length !== 2 || pinchDist <= 0) return;
+    const gap = touchGap(e.touches);
+    if (gap <= 0) return;
+    e.preventDefault();
+    const midX = (e.touches[0]!.clientX + e.touches[1]!.clientX) / 2;
+    zoom(gap / pinchDist, midX - tracks.getBoundingClientRect().left);
+    pinchDist = gap;
+  }
+  function onTouchEnd(e: TouchEvent): void { if (e.touches.length < 2) pinchDist = 0; }
 
   function fit(): void {
     pxPerSec = fitPxPerSec(durationSec(), tracks.clientWidth);
@@ -2900,6 +2957,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   root.addEventListener('pointerenter', () => { hovered = true; });
   root.addEventListener('pointerleave', () => { hovered = false; });
   tracks.addEventListener('scroll', () => { rulerInner.style.transform = `translateX(${-tracks.scrollLeft}px)`; }, { passive: true });
+  // Only touchmove is non-passive — it is the one that has to preventDefault the pan.
+  tracks.addEventListener('touchstart', onTouchStart, { passive: true });
+  tracks.addEventListener('touchmove', onTouchMove, { passive: false });
+  tracks.addEventListener('touchend', onTouchEnd, { passive: true });
+  tracks.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
   const unsubRuntime = runtime.subscribe(() => { scheduleSync(); });
   const unsubSelection = selection.onChange(() => {
@@ -2934,7 +2996,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     root.hidden = !open;
     if (open) {
       const stageH = stageEl.getBoundingClientRect().height || 0;
-      panelH = clampPanelH(panelH, stageH);
+      panelH = clampPanelH(panelH, stageH, chromeH());
       root.style.height = `${panelH}px`;
       reserve(panelH + RESERVE_PAD);
       lastKey = '\u0000';
@@ -2998,6 +3060,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     root.removeEventListener('keydown', onKey);
     root.removeEventListener('contextmenu', onContextMenu);
     root.removeEventListener('wheel', onWheel);
+    tracks.removeEventListener('touchstart', onTouchStart);
+    tracks.removeEventListener('touchmove', onTouchMove);
+    tracks.removeEventListener('touchend', onTouchEnd);
+    tracks.removeEventListener('touchcancel', onTouchEnd);
     try { clock.destroy(); } catch { /* already gone */ }
     reserve(0);
     root.remove();

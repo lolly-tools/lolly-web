@@ -50,12 +50,24 @@ function walkFrom(routeName: string, title: string, href: string): void {
   backNav.recordLeave(href);
 }
 
-test('a direct visit — no previous view — falls back to Tools → the gallery', () => {
+test('a direct visit — no previous view — falls back to Home → the gallery', () => {
   clearStored();
   const target = resolveBackTarget();
-  assert.equal(target.label, 'Tools');
-  assert.equal(target.href, '#/');
+  assert.equal(target.label, 'Home');
+  assert.equal(target.href, '/#/');
   assert.equal(target.useHistory, false, 'nothing to go back TO, so it must be a forward link');
+});
+
+// A tool's canonical URL is the PATH form /t/<id>, so a relative '#/' fallback
+// resolved to /t/<id>#/ — which parseRoute reads as the same tool (the '/' hash
+// is skipped, the path branch wins), stranding anyone who opened a shared tool
+// link inside the editor. Root-absolute or the pill isn't an exit.
+test('the fallback escapes a /t/<id> tool URL rather than resolving back into it', () => {
+  clearStored();
+  dom.reconfigure({ url: 'http://localhost/t/layout-studio' });
+  const { href } = resolveBackTarget();
+  assert.equal(href, '/#/');
+  assert.equal(new URL(href, dom.window.location.href).pathname, '/', 'must leave the tool path behind');
 });
 
 test('an in-app arrival wears the previous view’s name and returns there', () => {
@@ -68,10 +80,10 @@ test('an in-app arrival wears the previous view’s name and returns there', () 
   assert.equal(target.useHistory, true, 'a real history entry sits behind us');
 });
 
-test('the gallery is named "Tools" rather than the bare product name', () => {
+test('the gallery is named "Home" rather than the bare product name', () => {
   clearStored();
   walkFrom('gallery', 'Lolly', '/');
-  assert.equal(resolveBackTarget().label, 'Tools');
+  assert.equal(resolveBackTarget().label, 'Home');
 });
 
 test('a pinned target (the tool view’s launch folder) keeps its href', () => {
