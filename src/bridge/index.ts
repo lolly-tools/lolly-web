@@ -8,7 +8,7 @@
  */
 
 import type { HostV1, AssetRef, AssetPickerOpts } from '../../../../engine/src/bridge/host-v1.ts';
-import { makeColorApi } from '@lolly/engine';
+import { makeColorApi, makeGeomApi } from '@lolly/engine';
 import { createStateAPI } from './state.ts';
 import { createProfileAPI } from './profile.ts';
 import { createIdentityAPI } from './identity.ts';
@@ -141,6 +141,10 @@ export async function createBridge(): Promise<WebHost> {
   // Perceptual colour tools (v1.40) — pure engine math, attached verbatim so
   // web/CLI/Tauri can never drift.
   host.color = makeColorApi();
+  // Vector geometry (v1.64) — path booleans, offset, stroke-to-fill, spline lowering
+  // and hit testing. Pure engine math like color, attached verbatim for the same
+  // reason: one implementation, so web/CLI/Tauri cannot drift.
+  host.geom = makeGeomApi();
 
   // Lazy images facade (v1.60): decode/resize/re-encode wraps the upload path's
   // codec glue (and, inside it, the 3 MB lazy HEIC WASM decoder) — none of which

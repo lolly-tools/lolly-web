@@ -1735,9 +1735,16 @@ async function render(
     // placed. It only surfaces for untyped/`any`/`lottie` picks — an `image` slot is
     // already narrowed to raster/vector upstream by query()'s typeMatches().
     const VISUAL_TYPES = new Set(['raster', 'vector', 'video', 'lottie']);
+    // …with ONE exception: an explicit `type: 'audio'` pick (Sequence Studio's music
+    // bed) is asking for the catalog's audio assets by name, so widen the set for
+    // exactly that request. query()'s typeMatches has already narrowed the result to
+    // `audio`, and this stays keyed on opts.type — an untyped / `any` / `image` pick
+    // is unchanged, so audio never leaks into a slot that didn't ask for it. (The
+    // user-uploads path was already correct: its own typeOk filter is exact.)
+    const pickableTypes = opts.type === 'audio' ? new Set([...VISUAL_TYPES, 'audio']) : VISUAL_TYPES;
     // opts widens AssetPickerOpts with a web-only `type: 'image'` value; query only
     // reads the catalog-facing AssetQuery fields, so narrow at the boundary.
-    const queried = (await host.assets.query(opts as AssetPickerOpts)).filter(a => VISUAL_TYPES.has(a.type));
+    const queried = (await host.assets.query(opts as AssetPickerOpts)).filter(a => pickableTypes.has(a.type));
     // Drop the user's hidden assets before anything renders (profileReady populates
     // hiddenSet; it's fast and usually already resolved by the time the query lands).
     await profileReady;
@@ -1983,19 +1990,37 @@ function sessionThumb(thumb: string | null, iconSvg: string | null): string {
   return `<span class="asset-picker-thumb asset-picker-thumb-stub asset-picker-thumb-icon" aria-hidden="true">${iconSvg ?? ''}</span>`;
 }
 
+// m:ss for a clip length in milliseconds, rolling over to h:mm:ss past an hour (the
+// audio cap allows a ~60-minute upload, and "62:30" reads as broken or as 62 seconds).
+// Rounds to the nearest second — the badge has no room for sub-second precision, and
+// neither ffprobe-style tools nor a user glancing at a thumbnail need it.
+function fmtDur(ms: number): string {
+  const totalSec = Math.round(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor(totalSec / 60) % 60;
+  const s = totalSec % 60;
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+  return `${h > 0 ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}`;
+}
+
 function formatBadge(ref: AssetRef): string {
   // Generative-AI provenance badge — a sparkle-circle top-left (the format badge owns
   // bottom-right). Authored on catalog entries; auto-detected on uploads via C2PA.
   const ai = assetAiKind(ref);
   const aiBadge = ai ? genAiPill(ai, true) : '';
+  // Playback length, shown in the same corner badge as the format — video, lottie
+  // and audio only, and only when a duration actually resolved at ingest time.
+  const durMs = typeof ref.meta?.durationMs === 'number' && Number.isFinite(ref.meta.durationMs) && ref.meta.durationMs > 0
+    ? ref.meta.durationMs : undefined;
+  const durSuffix = durMs != null ? ` · ${fmtDur(durMs)}` : '';
   // A lottie card thumbnails as its static poster — badge the motion, not the
   // misleading underlying file format.
-  if (ref.type === 'lottie') return `<span class="asset-picker-fmt">▶ LOTTIE</span>${aiBadge}`;
+  if (ref.type === 'lottie') return `<span class="asset-picker-fmt">▶ LOTTIE${durSuffix}</span>${aiBadge}`;
   // Video and animated rasters (gif/apng/animated-webp) get a play glyph so their
   // motion reads at a glance (a still preview frame can look identical to a photo).
-  if (ref.type === 'video') return `<span class="asset-picker-fmt">▶ ${escapeHtml(String(ref.format ?? 'video').toUpperCase())}</span>${aiBadge}`;
-  if (ref.meta?.animated && ref.format) return `<span class="asset-picker-fmt">▶ ${escapeHtml(String(ref.format).toUpperCase())}</span>${aiBadge}`;
-  return (ref.format ? `<span class="asset-picker-fmt">${escapeHtml(String(ref.format).toUpperCase())}</span>` : '') + aiBadge;
+  if (ref.type === 'video') return `<span class="asset-picker-fmt">▶ ${escapeHtml(String(ref.format ?? 'video').toUpperCase())}${durSuffix}</span>${aiBadge}`;
+  if (ref.meta?.animated && ref.format) return `<span class="asset-picker-fmt">▶ ${escapeHtml(String(ref.format).toUpperCase())}${durSuffix}</span>${aiBadge}`;
+  return (ref.format ? `<span class="asset-picker-fmt">${escapeHtml(String(ref.format).toUpperCase())}${durSuffix}</span>` : '') + aiBadge;
 }
 
 // A user image: a pick button plus a delete affordance (siblings, not nested —
@@ -2300,6 +2325,56 @@ function audioFormatOf(file: File): string {
   return ext && ext !== 'bin' ? ext : 'mp3';
 }
 
+// How long a metadata probe may block an upload. An ingest probe is a nicety (it
+// only feeds a badge and the timeline's default clip length), so it must never be
+// the reason a file takes noticeably long to store.
+const MEDIA_PROBE_MS = 1500;
+
+// Probe a video's or audio file's real playback length in ms. Loads only METADATA
+// into a detached element on a blob URL — never the whole file into memory twice,
+// and (for audio) never a decode: decodeAudioData would expand a 30 MB Opus podcast
+// to gigabytes of Float32 PCM (2 ch × 48 kHz × 7500 s × 4 B ≈ 2.9 GB) to learn one
+// number, which is an OOM tab crash on mobile. A MediaRecorder-produced WebM reports
+// duration=Infinity until it's seeked to the end — the same force-seek workaround
+// export.ts uses for its composited-body duration probe (see stitchTakes's
+// `play.currentTime = 1e7` + `ontimeupdate` wait), attempted only when the metadata
+// load actually succeeded (an undecodable container would otherwise burn the whole
+// seek budget on an element that will never load). Never throws; resolves undefined
+// on any failure so a bad probe can't block the upload — element construction
+// included. Always revokes the object URL and detaches the element on every path.
+async function probeMediaDurationMs(file: Blob, kind: 'video' | 'audio'): Promise<number | undefined> {
+  let url: string | undefined;
+  let el: HTMLMediaElement | undefined;
+  try {
+    el = document.createElement(kind);
+    url = URL.createObjectURL(file);
+    el.preload = 'metadata';
+    el.muted = true;
+    if (kind === 'video') (el as HTMLVideoElement).playsInline = true;
+    el.src = url;
+    const loaded = await new Promise<boolean>((res) => {
+      const cap = setTimeout(() => res(false), MEDIA_PROBE_MS);
+      el!.onloadedmetadata = () => { clearTimeout(cap); res(true); };
+      el!.onerror = () => { clearTimeout(cap); res(false); };
+    });
+    if (loaded && (!Number.isFinite(el.duration) || el.duration === 0)) {
+      await new Promise<void>((res) => {
+        const to = setTimeout(res, MEDIA_PROBE_MS);
+        el!.ontimeupdate = () => {
+          if (Number.isFinite(el!.duration)) { clearTimeout(to); el!.ontimeupdate = null; res(); }
+        };
+        try { el!.currentTime = 1e7; } catch { clearTimeout(to); res(); }
+      });
+    }
+    return Number.isFinite(el.duration) && el.duration > 0 ? Math.round(el.duration * 1000) : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+    if (el) { el.removeAttribute('src'); el.load(); }
+  }
+}
+
 export async function storeUserUpload(host: PickerHost, file: File): Promise<AssetRef> {
   // Read the file as a blob, stash it in the user-assets IDB store, return
   // a `user/...` AssetRef. The bridge's assets.get() resolves these via the
@@ -2380,6 +2455,10 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   let format = extFromMime(file.type);
   let width: number | undefined, height: number | undefined;
   let animated = false;
+  // Playback length, ms — video/lottie/audio only, resolved at ingest so the picker
+  // badge never has to re-probe a stored blob. `fps` accompanies a lottie's duration
+  // (its own frame rate, not a video/audio concept). Absent (not 0) on failure.
+  let durationMs: number | undefined, fps: number | undefined;
 
   if (isLottie) {
     const text = isDotLottie ? await dotLottieToJson(file) : await file.text();
@@ -2398,6 +2477,13 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     format = 'json';
     if (typeof data!.w === 'number') width = data!.w;
     if (typeof data!.h === 'number') height = data!.h;
+    // op/ip are frame numbers, fr is frames-per-second — a Bodymovin/Lottie standard.
+    const op = data!.op, ip = data!.ip, fr = data!.fr;
+    if (typeof op === 'number' && typeof ip === 'number' && typeof fr === 'number'
+        && Number.isFinite(op) && Number.isFinite(ip) && Number.isFinite(fr) && fr > 0) {
+      const ms = Math.round((op - ip) / fr * 1000);
+      if (ms > 0) { durationMs = ms; fps = fr; }
+    }
   } else if (isVector) {
     // Vectors are resolution-independent — no raster resize. But an uploaded SVG
     // can carry <script>, on*= handlers or external refs, so sanitize on ingest
@@ -2417,7 +2503,14 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // skipped. Dimensions come from a <video>, not <img> (naturalWidth is 0 for video).
     assertVerbatimSize(file, MAX_VIDEO_BYTES, t('video'));
     format = videoFormatOf(file);
-    ({ width, height } = await readVideoDimensions(file));
+    // readVideoDimensions already loads the metadata and hands back `duration`, so the
+    // common case costs ONE metadata load; the extra probe is only for the
+    // Infinity/0 MediaRecorder-webm case it was written for.
+    let duration: number | undefined;
+    ({ width, height, duration } = await readVideoDimensions(file));
+    durationMs = duration != null && duration > 0
+      ? Math.round(duration * 1000)
+      : await probeMediaDurationMs(file, 'video');
   } else if (isMidi) {
     // Convert the SMF to a ZzFXM song on device and store the JSON (a few KB) as a
     // format:'zzfxm' audio asset — the browser can't play raw MIDI, but it renders
@@ -2449,6 +2542,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // skipped. No dimensions — audio has none.
     assertVerbatimSize(file, MAX_AUDIO_BYTES, t('audio track'));
     format = audioFormatOf(file);
+    durationMs = await probeMediaDurationMs(file, 'audio');
   } else if (animatedKind) {
     // Verbatim: re-encoding an animated gif/apng/webp through a canvas flattens it
     // to a single frame, so store the original bytes. It stays type:'raster' — it
@@ -2587,6 +2681,11 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       name: renameExt(file.name, format),
       ...(animated ? { animated: true } : {}),
       ...(isAudio || isMidi || isModule ? { tags: ['audio', 'neurospicy'] } : {}),
+      // Playback length — video (probed, incl. the MediaRecorder-webm force-seek
+      // workaround), lottie (derived from op/ip/fr), or pure-audio (decodeAudioData).
+      // Never 0/bogus: only ever set when resolved to a finite positive value.
+      ...(durationMs != null ? { durationMs } : {}),
+      ...(fps != null ? { fps } : {}),
     },
   };
 

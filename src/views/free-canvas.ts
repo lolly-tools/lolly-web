@@ -27,8 +27,24 @@ import {
 } from './free-canvas-math.ts';
 import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
 import { toCssPx } from '@lolly/engine';
+import type { BooleanOpName, VectorFieldConfig, VectorOpFailure, VectorOpResult } from './vector-ops.ts';
+import {
+  booleanBoxes, boxOutlineKind, offsetBoxes, replaceBoxes, simplifyBoxes, strokeBoxesToPath,
+} from './vector-ops.ts';
+import type { AuthoredPath, Continuity, Cubic, HyperbezierSolution, SplineKind, SplineNode } from '@lolly/engine';
+import type { PenFrame } from './free-canvas-pen.ts';
+import {
+  PEN_DEFAULT_KIND, PEN_KINDS, closesOnClick, convertKind, decodePathContours,
+  defaultContinuity, deleteNodes, denormNodes, dragHandle, encodePathField, encodePathFields,
+  frameToLocal, handlePoint, insertNodeOnCurve, kindReadsHandles, localToFrame, lowerAuthored,
+  moveNodes, nearestOnPath, nodeAt, normNodes, penCommitFromNative, penFrame, pullHandles,
+  refitFrame, setNodeContinuity,
+} from './free-canvas-pen.ts';
+// Type-only (erased at build): the timeline modules are LAZY — importing their types
+// costs no chunk, and timeline-panel.ts pulls in styles/parts/timeline.css.
+import type { TimeCfg } from './timeline-math.ts';
+import type { TimelinePanel } from './timeline-panel.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
-import { askLollyIntent } from './picker.ts';
 import { takePendingDesignImport } from '../lib/drop-router.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
@@ -78,6 +94,21 @@ interface CanvasCfg {
   padField?: string; fitTextField?: string; groupField?: string; clipField?: string;
   shadowField?: string; shadowColorField?: string;
   shadowXField?: string; shadowYField?: string; shadowBlurField?: string;
+  /** Vector sub-fields (the `boxes` fields Stage C appends: an authored path plus its
+   *  stroke paint and fill rule). `pathField` is the FEATURE FLAG for the whole
+   *  vector-operations section of the context menu — a tool that declares no path
+   *  sub-field has nowhere to put a boolean result, so it is not offered one. Every
+   *  entry degrades to "absent", never to "throws", on a manifest that predates them. */
+  pathField?: string; strokeField?: string; strokeWField?: string; fillRuleField?: string;
+  /** Stroke DECORATION sub-fields (appended after the timeline block): a dash-style
+   *  keyword plus the line cap and join. Keywords, not authored dash arrays — see the
+   *  hook's `dashArrayFor` for why the compact URL form cannot carry a comma. */
+  strokeDashField?: string; strokeCapField?: string; strokeJoinField?: string;
+  /** Timeline time-model sub-fields (phase 1: schema/manifest only — inert until a
+   *  timeline panel mounts and reads them; see engine 1.65.0 CHANGELOG entry). */
+  startField?: string; durField?: string; clipInField?: string; speedField?: string;
+  enterField?: string; exitField?: string; enterMsField?: string; exitMsField?: string;
+  muteField?: string; laneField?: string;
   minSize?: number;
   addKinds?: AddKind[];
   import?: unknown;
@@ -93,6 +124,16 @@ interface CanvasCfg {
    *  so the connector <svg>'s viewBox stays 1:1 with box coordinates. */
   fixedCanvas?: boolean;
 }
+
+/**
+ * The tool the rail says is live. One value, so entering a tool IS leaving every other one.
+ *
+ * These four are the modes that change what a canvas press MEANS. Point editing is not one
+ * of them (it is a sub-state of `'select'`, like a live text edit), and neither is the
+ * timeline: the docked panel is a second surface alongside the canvas, not a different
+ * reading of a canvas press, so it stays a plain toggle and outlives any tool change.
+ */
+type EditorMode = 'select' | 'create' | 'pen' | 'connect';
 
 /** `canvas.connect` — how the editor authors + stores connector edges. */
 interface ConnectCfg {
@@ -129,6 +170,8 @@ interface FieldCfg {
   shadowField: string; shadowColorField: string;
   shadowXField: string; shadowYField: string; shadowBlurField: string;
   kindField: string;
+  pathField: string; strokeField: string; strokeWField: string; fillRuleField: string;
+  strokeDashField: string; strokeCapField: string; strokeJoinField: string;
 }
 
 interface ModelItem { id: string; value: any }
@@ -252,7 +295,15 @@ interface ResizeGesture extends GestureBase { type: 'resize'; index: number; han
 interface RotateGesture extends GestureBase { type: 'rotate'; index: number; startRect: Rect; centerClient: Point; pointerStartDeg: number; liveRect?: Rect }
 interface GScaleGesture extends GestureBase { type: 'gscale'; sel: number[]; startBoxes: Box[]; anchor: Point; origDist: number; liveBoxes?: Box[] }
 interface GRotateGesture extends GestureBase { type: 'grotate'; sel: number[]; startBoxes: Box[]; centre: Point; centerClient: Point; pointerStartDeg: number; liveBoxes?: Box[] }
-type Gesture = TapGesture | MarqueeGesture | CreateGesture | MoveGesture | ResizeGesture | RotateGesture | GScaleGesture | GRotateGesture;
+// Pen tool (Stage D). Drawing is `pendraw` — one gesture per NODE, not one per path, since
+// the path itself is a draft that outlives any single press (see `penDraft`). The other
+// three belong to node-edit mode on an already-committed path box.
+interface PenDrawGesture extends GestureBase { type: 'pendraw'; origin: Point; index: number }
+interface PenNodeGesture extends GestureBase { type: 'pennode'; origin: Point; indices: number[]; start: SplineNode[]; moved?: boolean }
+interface PenHandleGesture extends GestureBase { type: 'penhandle'; origin: Point; index: number; which: 'in' | 'out'; moved?: boolean }
+interface PenMarqueeGesture extends GestureBase { type: 'penmarquee'; origin: Point; additive: boolean }
+type Gesture = TapGesture | MarqueeGesture | CreateGesture | MoveGesture | ResizeGesture | RotateGesture
+  | GScaleGesture | GRotateGesture | PenDrawGesture | PenNodeGesture | PenHandleGesture | PenMarqueeGesture;
 type FilledBaseFields = 'pointerId' | 'startClient';
 type GestureInit =
   | Omit<TapGesture, FilledBaseFields>
@@ -262,7 +313,11 @@ type GestureInit =
   | Omit<ResizeGesture, FilledBaseFields>
   | Omit<RotateGesture, FilledBaseFields>
   | Omit<GScaleGesture, FilledBaseFields>
-  | Omit<GRotateGesture, FilledBaseFields>;
+  | Omit<GRotateGesture, FilledBaseFields>
+  | Omit<PenDrawGesture, FilledBaseFields>
+  | Omit<PenNodeGesture, FilledBaseFields>
+  | Omit<PenHandleGesture, FilledBaseFields>
+  | Omit<PenMarqueeGesture, FilledBaseFields>;
 
 const HANDLES: HandleName[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const SNAP_PX = 6;          // snap threshold in SCREEN px
@@ -300,6 +355,12 @@ const SVG = {
   anim: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M10 9l5 3-5 3z"/>',
   // Video add-kind — a film clap/frame with a play triangle (a fatter play than `anim`).
   video: '<rect x="2" y="5" width="15" height="14" rx="2.5"/><path d="M17 9l5-3v12l-5-3z"/><path d="M7 9.5l4 2.5-4 2.5z"/>',
+  // Timeline rail toggle — a clip bar sitting above a time ruler.
+  timeline: '<rect x="3" y="4" width="18" height="6" rx="2"/><path d="M3 14h18"/><path d="M7 14v3"/><path d="M12 14v4"/><path d="M17 14v3"/>',
+  // Sequence add-kinds: a clip (film strip), a sound (level bars), a nested Lolly tool (spark).
+  clipKind: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14"/><path d="M16 5v14"/>',
+  audioKind: '<path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 8v8"/><path d="M20 11v2"/>',
+  toolKind: '<path d="M4 20 14 10"/><path d="m16.5 3.5 1.4 3.6 3.6 1.4-3.6 1.4-1.4 3.6-1.4-3.6L11.5 8.5l3.6-1.4z"/>',
   info: '<circle cx="12" cy="12" r="9"/><line x1="11" y1="11.5" x2="12" y2="11.5"/><line x1="12" y1="11.5" x2="12" y2="16"/><circle cx="12" cy="8" r="0.7" fill="currentColor" stroke="none"/>',
   // Import a design file (Figma SVG / Penpot) — an arrow rising UP out of a tray
   // (upload/import, not download: the arrowhead apexes at the top, not the tray).
@@ -341,6 +402,56 @@ const SVG = {
   ungroup: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>',
   clip: '<rect x="3" y="3" width="12" height="12" rx="2"/><circle cx="15.5" cy="15.5" r="5.5"/>',
   unclip: '<rect x="3" y="3" width="9" height="9" rx="2"/><circle cx="16.5" cy="16.5" r="4.5"/>',
+  // Boolean family — the Illustrator/Figma pictograms: two overlapping squares, A at
+  // (4,4)-(14,14) and B at (10,10)-(20,20), with the SURVIVING region filled and the
+  // discarded one left as a faint outline. Same two squares in all four, so the icons
+  // read as one set and the difference between them is only ever what's solid.
+  boolUnion: '<path d="M4 4h10v6h6v10H10v-6H4z" fill="currentColor" stroke="none"/>',
+  boolSubtract: '<path d="M4 4h10v6h-4v4H4z" fill="currentColor" stroke="none"/><rect x="10" y="10" width="10" height="10" opacity="0.4"/>',
+  boolIntersect: '<rect x="4" y="4" width="10" height="10" opacity="0.4"/><rect x="10" y="10" width="10" height="10" opacity="0.4"/><rect x="10" y="10" width="4" height="4" fill="currentColor" stroke="none"/>',
+  boolExclude: '<path d="M4 4h10v6h6v10H10v-6H4zM10 10h4v4h-4z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
+  // Outline stroke — a band between two concentric outlines (the stroke, now a shape).
+  outlineStroke: '<path d="M3 5h18v14H3zM7 9h10v6H7z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
+  // Offset path — the shape, plus a dashed larger copy of it standing off the edge.
+  offsetPath: '<rect x="7" y="9" width="10" height="6" rx="1.5"/><rect x="3.5" y="5.5" width="17" height="13" rx="4" stroke-dasharray="3 2.5" opacity="0.75"/>',
+  // Simplify — one smooth curve with only its two end nodes left on it.
+  simplify: '<path d="M4 17c4-11 12-11 16 0"/><circle cx="4" cy="17" r="1.8" fill="currentColor" stroke="none"/><circle cx="20" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
+  // Pointer — the arrow cursor itself, outlined to sit with the rest of the line-art rail.
+  // The one glyph in here that names a TOOL by drawing the cursor it gives you.
+  pointer: '<path d="M5 2.8l10.9 10.9h-4.8l2.8 6-2.5 1.1-2.8-6L5 18.3z"/>',
+  // Pen — the nib, tip down-left, with the slit up its centre. Deliberately NOT the
+  // `pencil` glyph, which already means "edit this box's text" on the object bar.
+  pen: '<path d="M19.5 3.2 21 8l-9.5 9.5-4-4L17 4z"/><path d="m7.5 13.5-3.9 6.9 6.9-3.9"/><path d="m11.5 8.5 4 4"/>',
+  // Edit nodes — a curve with its knots exposed, which is what the mode shows.
+  nodes: '<path d="M4 18C4 9 12 15 12 9s8 0 8-3"/><rect x="2" y="16" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/><rect x="10" y="7" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/><rect x="18" y="4" width="4" height="4" rx="0.8" fill="currentColor" stroke="none"/>',
+  // Continuity — the same node with the same two arms, changing only how they relate:
+  // hinged (corner), collinear (smooth), collinear and equal (symmetric).
+  contCorner: '<path d="M5 19 12 12l7 3"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/>',
+  contSmooth: '<path d="M4 15h8"/><path d="M12 15h8"/><circle cx="12" cy="15" r="2.4" fill="currentColor" stroke="none"/><circle cx="4" cy="15" r="1.4"/><circle cx="20" cy="15" r="1.4"/>',
+  contSymmetric: '<path d="M6 15h12"/><circle cx="12" cy="15" r="2.4" fill="currentColor" stroke="none"/><circle cx="6" cy="15" r="1.4"/><circle cx="18" cy="15" r="1.4"/><path d="M6 19v2"/><path d="M18 19v2"/><path d="M6 20h12"/>',
+  // Leave node-editing (the mode's explicit exit, mirroring how a text edit is committed).
+  penDone: '<polyline points="4 13 9 18 20 6"/>',
+  // Closed path — a loop whose ends have met, with the join node called out.
+  penClose: '<path d="M12 5c5 0 7 3 7 7s-2 7-7 7-7-3-7-7 2-7 7-7z"/><circle cx="12" cy="5" r="2.2" fill="currentColor" stroke="none"/>',
+  // Stroke — two rules of different weight, which is what the panel behind it sets.
+  strokeIc: '<path d="M4 8h16" stroke-width="4.5"/><path d="M4 16h16" stroke-width="1.3"/>',
+  // Stroke style: one rule, drawn in the style it names. The per-path dash/cap overrides
+  // the wrapper's round cap, so each glyph IS a sample of the thing it selects.
+  dashSolid: '<path d="M3 12h18" stroke-width="2.6"/>',
+  dashDashed: '<path d="M3 12h18" stroke-width="2.6" stroke-dasharray="6 4"/>',
+  dashDotted: '<path d="M3.5 12h17" stroke-width="3" stroke-dasharray="0 5"/>',
+  // Line ends + corners: a fat stub / elbow drawn WITH the cap or join it selects, so
+  // the difference between the three is visible rather than described.
+  capButt: '<path d="M7 12h10" stroke-width="7" stroke-linecap="butt"/><path d="M7 5.5v13M17 5.5v13" stroke-width="1" opacity="0.5"/>',
+  capRound: '<path d="M7 12h10" stroke-width="7" stroke-linecap="round"/><path d="M7 5.5v13M17 5.5v13" stroke-width="1" opacity="0.5"/>',
+  capSquare: '<path d="M7 12h10" stroke-width="7" stroke-linecap="square"/><path d="M7 5.5v13M17 5.5v13" stroke-width="1" opacity="0.5"/>',
+  joinMiter: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="miter" stroke-linecap="butt"/>',
+  joinRound: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="round" stroke-linecap="butt"/>',
+  joinBevel: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt"/>',
+  // Fill rule — the same two-contour shape, filled by each rule: non-zero fills the
+  // inner ring too (same winding), even-odd leaves it as a hole.
+  ruleNonzero: '<path d="M4 5h16v14H4zM9 9h6v6H9z" fill="currentColor" stroke="none"/>',
+  ruleEvenOdd: '<path d="M4 5h16v14H4zM9 9h6v6H9z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
   // Text alignment (lines of ragged copy) — distinct from the object-align icons.
   textL: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="17" y2="18"/>',
   textC: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="5.5" y1="18" x2="18.5" y2="18"/>',
@@ -435,7 +546,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     shadowField: cv.shadowField, shadowColorField: cv.shadowColorField,
     shadowXField: cv.shadowXField, shadowYField: cv.shadowYField, shadowBlurField: cv.shadowBlurField,
     kindField: 'kind',
+    // `pathField` is left un-defaulted on purpose: it is the feature flag, so a manifest
+    // that omits it must resolve to undefined. The other three DO default, to the same
+    // names as vector-ops' DEFAULT_VECTOR_FIELDS — the shipped Layout Studio manifests
+    // append the `stroke`/`strokeW`/`fillRule` sub-fields but only declare `pathField` on
+    // the canvas block, and the overlay has to read the same field the ops write.
+    pathField: cv.pathField,
+    strokeField: cv.strokeField || 'stroke',
+    strokeWField: cv.strokeWField || 'strokeW',
+    fillRuleField: cv.fillRuleField || 'fillRule',
+    strokeDashField: cv.strokeDashField || 'strokeDash',
+    strokeCapField: cv.strokeCapField || 'strokeCap',
+    strokeJoinField: cv.strokeJoinField || 'strokeJoin',
   }) as FieldCfg;
+  // The vector operations' own field view. `cfg` is a superset of `VectorFieldConfig`
+  // and vector-ops resolves each name defensively (a non-string falls back to the
+  // Layout Studio default), so the resolved config is handed over unchanged.
+  // Null until the manifest declares `canvas.pathField` — see CanvasCfg.pathField.
+  const vectorCfg: VectorFieldConfig | null = cv.pathField ? cfg : null;
   const unwrapColor = (v: ColorFieldValue) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
   const minSize = cv.minSize ?? 8;
   // ── Manifest-driven typography ────────────────────────────────────────────────
@@ -531,24 +659,94 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     defaultColor: cv.connect.defaultColor || '#94a3b8',
     defaultWidth: cv.connect.defaultWidth ?? 2.5,
   } : null;
+  // Opt-in TIME model (phase 1). A tool is "time-capable" only when its canvas config
+  // maps ALL TEN time sub-fields — a partial mapping would give the panel somewhere to
+  // read from but nowhere to write, so it is treated as absent.
+  //
+  // Two tools qualify today: Sequence Studio and Layout Studio (both declare the phase-1
+  // time model in their canvas block). Carousel Maker, Org Chart, Record and every other
+  // editor map none of them, so `timeCfg` is null there and every timeline branch below
+  // is dead code for them — no rail button, no lazy chunk, no stage reserve, no listener.
+  // On an UNTIMED Layout Studio composition the cost is one extra rail button and nothing
+  // else: `anyTimed()` is false, so the panel never auto-opens and its chunk is never
+  // fetched until the user asks for it.
+  //
+  // `idField` comes from the resolved cfg: the panel keys clips by the box id FIELD,
+  // exactly as the overlay's selection does.
+  const timeCfg: TimeCfg | null = (cv.startField && cv.durField && cv.clipInField && cv.speedField
+    && cv.enterField && cv.exitField && cv.enterMsField && cv.exitMsField && cv.muteField && cv.laneField)
+    ? {
+      startField: cv.startField, durField: cv.durField, clipInField: cv.clipInField,
+      speedField: cv.speedField, enterField: cv.enterField, exitField: cv.exitField,
+      enterMsField: cv.enterMsField, exitMsField: cv.exitMsField, muteField: cv.muteField,
+      laneField: cv.laneField, idField: cfg.idField,
+    } : null;
+
   // Opt-in snap-to-grid. gridOn is toggled from the rail; gridSize is native px.
   const gridSize = Math.max(2, Math.round(cv.grid?.size ?? 20));
   let gridOn = !!(cv.grid && cv.grid.default !== false);
 
   // ── state ──────────────────────────────────────────────────────────────────
   let selection = new Set<string>();   // box ids
+  // Selection change-notifier for the timeline panel. `selection` is assigned from ~20
+  // sites, but EVERY one of them reaches paintChrome (directly via renderChrome /
+  // renderChromeLive, or via commit → runtime.subscribe → scheduleSync), so the fire
+  // lives in exactly one place (top of paintChrome) and is guarded by a signature —
+  // a repaint with an unchanged selection is not a change. No write site is touched.
+  const selListeners = new Set<() => void>();
+  let selNotifyKey: string | null = null;
+  function notifySelection(): void {
+    if (!selListeners.size) return;
+    const k = [...selection].sort().join(',');
+    if (k === selNotifyKey) return;
+    selNotifyKey = k;
+    for (const f of [...selListeners]) { try { f(); } catch (e) { console.error(e); } }
+  }
   let multiTapMode = false;            // touch: taps ADD to the selection (Group/Align need ≥2)
-  let armedKind: AddKind | null = null;        // seed for the add-box create gesture
+  /**
+   * THE tool mode — see `setMode`. Every mode used to be its own boolean, which is exactly
+   * why they could all be true at once.
+   */
+  let mode: EditorMode = 'select';
+  let armedKind: AddKind | null = null;        // the create gesture's seed; set iff mode === 'create'
   let gesture: Gesture | null = null;          // active pointer gesture
   let editing: EditingState | null = null;     // { id, el, prev } while editing a box's text inline
   let disposed = false;
-  let armedConnect = false;                    // Connect mode is on (click cards to link)
   let connectSource: string | null = null;     // the pending source box id while linking
   let liveConnectHidden = false;                // the tool's real connector layer is hidden mid-drag
   let selectedEdges = new Set<string>();        // connector ids being inspected (click / shift-click / marquee)
   let edgePanel: HTMLElement | null = null;     // the connector-properties popover
   let hoverEdge: string | null = null;          // connector id under the cursor (hover affordance)
   let hoverRaf = 0;
+  let lastMenuAt: Point = { x: 0, y: 0 };       // where the context menu was last opened (client px)
+
+  // ── pen tool state (Stage D) ────────────────────────────────────────────────
+  // Two things, never both: `mode === 'pen'` DRAWS a new path; `penEdit` edits a committed
+  // one. Point editing is NOT a fifth mode — it is a sub-state of the pointer, entered by
+  // double-clicking a path exactly as a text edit is (see `setMode`).
+  //
+  // The draft lives here in NATIVE canvas px and NOT in the model, which is the whole
+  // answer to "what happens if the user pans/zooms or the model syncs mid-draw": a pan or
+  // zoom only changes the native→screen mapping, so the draft is unaffected and its
+  // preview is simply repainted from the same numbers; and a model sync (another actor, an
+  // undo) cannot disturb a draft that is not in the model. The single commit reads
+  // `getBoxes()` at commit time, so it appends to whatever the array is by then rather
+  // than to a stale snapshot.
+  let penDraft: AuthoredPath | null = null;      // nodes in NATIVE px; null = not drawing
+  let penCursor: Point | null = null;            // live end of the segment under the cursor
+  // `path` is the contour being edited and `rest` is every other contour in the same field
+  // (a boolean with a hole is several). `rest` is carried rather than dropped for two
+  // reasons: the write has to re-encode ALL of them or editing one loop would delete the
+  // others, and the frame has to be fitted to ALL of them or editing one would clip the
+  // others. Both are DENORMALISED to box-local px.
+  let penEdit: { id: string; path: AuthoredPath; rest: AuthoredPath[]; frame: PenFrame } | null = null;
+  let penSel = new Set<number>();                // selected node indices while editing
+  // The previous frame's hyperbezier solution, reused as the `warm` start. A 40-node solve
+  // re-converged from the chord-bend guess costs an O(n) Newton run per pointermove; warm,
+  // it costs one or two steps. This is exactly what `toCubics`' `warm` parameter is for.
+  let penWarm: HyperbezierSolution | null = null;
+  const PEN_HIT_PX = 9;                          // grab radius for a node/handle, SCREEN px
+  const PEN_CURVE_PX = 7;                        // "on the curve" band for insert, SCREEN px
 
   // ── model access ─────────────────────────────────────────────────────────
   const getBoxes = (): Box[] => {
@@ -583,6 +781,107 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function commit(nextBoxes: Box[]): void {
     onDirty?.(blockId);
     runtime.setInput(blockId, nextBoxes);
+  }
+
+  // ── timeline panel (opt-in: canvas time-model fields → `timeCfg`) ─────────────
+  // Every branch below is dead on a tool without `timeCfg`: no rail button, no lazy
+  // chunk fetch, no stage reserve, no listener.
+  let timelinePanel: TimelinePanel | null = null;
+  let timelineLoading = false;
+  let timelineWantOpen = false;
+  let timelineBtn: HTMLButtonElement | null = null;
+
+  // Reserve a bottom band of the stage for the docked panel, then re-fit the canvas.
+  // Mirrors deck-editor's syncFreeReserve exactly: a px STRING ('' releases), an
+  // equality guard so the stage ResizeObserver cannot loop, and a `canvas-resize`
+  // event (never a direct fitCanvas call) to trigger the re-fit.
+  function reserveBottom(px: number): void {
+    const next = px > 0 ? Math.round(px) + 'px' : '';
+    if (stageEl.style.getPropertyValue('--stage-reserve-bottom') === next) return;
+    if (next) stageEl.style.setProperty('--stage-reserve-bottom', next);
+    else stageEl.style.removeProperty('--stage-reserve-bottom');
+    canvasEl.dispatchEvent(new Event('canvas-resize'));
+  }
+
+  function syncTimelineBtn(): void {
+    if (!timelineBtn) return;
+    const on = !!timelinePanel?.isOpen();
+    timelineBtn.classList.toggle('is-armed', on);
+    timelineBtn.setAttribute('aria-pressed', String(on));
+  }
+
+  // True when the block already carries authored timing — the auto-open cue. This is a
+  // field-presence check, not editing arithmetic, so it stays here rather than pulling
+  // timeline-math in eagerly (that module is part of the lazy chunk).
+  function anyTimed(boxes: Box[]): boolean {
+    if (!timeCfg) return false;
+    return boxes.some((b) => {
+      if (String(b[timeCfg.laneField] ?? '') === 'seq') return true;
+      const s = b[timeCfg.startField];
+      return Number.isFinite(typeof s === 'number' ? s : parseFloat(String(s ?? '')));
+    });
+  }
+
+  async function ensureTimeline(open: boolean): Promise<void> {
+    if (!timeCfg || disposed) return;
+    timelineWantOpen = open;
+    if (timelinePanel) { timelinePanel.setOpen(open); syncTimelineBtn(); return; }
+    if (!open || timelineLoading) return;
+    timelineLoading = true;
+    try {
+      // Lazy for the picker.ts reason: timeline-panel.ts imports its own CSS chunk and
+      // the sequence clock, so a static import would ship both to every editor tool.
+      const { initTimelinePanel } = await import('./timeline-panel.ts');
+      if (disposed) return;   // torn down while the chunk was in flight
+      timelinePanel = initTimelinePanel({
+        stageEl, canvasEl, runtime,
+        host: host as { log?(level: string, msg: string): void },
+        blockId, cfg: timeCfg, getBoxes, commit, onDirty,
+        // The canvas selection, adapted: read/write the same Set the overlay uses, and
+        // subscribe to the single notifier fired from paintChrome.
+        selection: {
+          get: () => [...selection],
+          set: (ids: string[]) => { selection = new Set(ids); renderChrome(); },
+          onChange: (cb: () => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
+        },
+        reserve: reserveBottom,
+      });
+      timelinePanel.setOpen(timelineWantOpen);   // the intent may have flipped mid-load
+    } catch (err) {
+      console.error('[free-canvas] timeline panel failed to load:', err);
+    } finally {
+      timelineLoading = false;
+      syncTimelineBtn();
+    }
+  }
+
+  /**
+   * The panel's empty-sequence "Add a clip" button asks for a clip rather than
+   * reaching into this module: it dispatches `tl-add-clip`, which bubbles from the
+   * panel root to the stage. Arming create-mode is exactly what the rail's add menu
+   * does, so the next canvas click drops the clip. Without this listener the only
+   * affordance in an empty timeline did nothing at all.
+   */
+  function onTlAddClip(): void {
+    if (!timeCfg || disposed) return;
+    const kind = addKinds.find((k) => k.id === 'clip')
+      || addKinds.find((k) => String(k.seed?.[timeCfg.laneField] ?? '') === 'seq');
+    if (kind) setMode('create', { kind });
+  }
+  if (timeCfg) stageEl.addEventListener('tl-add-clip', onTlAddClip);
+
+  /** Open the panel (used by the rail button and after creating a timed box). */
+  function openTimeline(): void { void ensureTimeline(true); }
+  function toggleTimeline(): void { void ensureTimeline(!timelinePanel?.isOpen()); }
+
+  function destroyTimeline(): void {
+    try { stageEl.removeEventListener('tl-add-clip', onTlAddClip); } catch { /* stage detached */ }
+    try { timelinePanel?.destroy(); } catch (e) { console.error(e); }
+    timelinePanel = null;
+    // Unconditional, even if destroy() above threw: a leaked reserve permanently shrinks
+    // the stage for every other tool mounted in this session.
+    stageEl.style.removeProperty('--stage-reserve-bottom');
+    try { canvasEl.dispatchEvent(new Event('canvas-resize')); } catch { /* stage detached */ }
   }
 
   // ── connectors (opt-in via canvas.connect) ───────────────────────────────────
@@ -710,6 +1009,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   });
   overlay.appendChild(emptyHint);
 
+  // Transient VISIBLE status for an action that refused. The overlay had no such
+  // surface — `announce()` is screen-reader-only — and a vector operation that declines
+  // must not read as a silent no-op: the kernel throwing `GeomLimitError` means the
+  // answer exists and the engine will not guess it, which is a sentence the user needs
+  // to see. Pointer-transparent and aria-hidden: the a11y path stays `announce()`, the
+  // app's established mechanism, so nothing is announced twice.
+  const flashEl = document.createElement('div');
+  flashEl.className = 'fc-flash';
+  flashEl.setAttribute('aria-hidden', 'true');
+  flashEl.hidden = true;
+  overlay.appendChild(flashEl);
+  let flashTimer: ReturnType<typeof setTimeout> | 0 = 0;
+  function flash(message: string): void {
+    if (!message) return;
+    flashEl.textContent = message;
+    flashEl.hidden = false;
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { flashEl.hidden = true; flashEl.textContent = ''; flashTimer = 0; }, 5200);
+    announce(message, { assertive: true });
+  }
+
   // Connector preview layer (opt-in): the "rubber" line while linking two cards, and a
   // live redraw of every edge while a connected card is being dragged (so the lines
   // follow in real time — the tool's real connector <svg> only re-renders on commit).
@@ -724,9 +1044,40 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   connectLayer.style.display = 'none';
   overlay.appendChild(connectLayer);
 
+  // Pen preview layer — the draft path plus the segment under the cursor while drawing,
+  // and the edited path's own outline while node-editing. Same trick as the connector
+  // layer: an <svg> covering the artboard in stage px, drawn in NATIVE coords via its
+  // viewBox, so a pan/zoom only has to move and resize the element.
+  const penLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  penLayer.setAttribute('class', 'fc-pen-layer');
+  penLayer.style.position = 'absolute';
+  penLayer.style.left = '0';
+  penLayer.style.top = '0';
+  penLayer.style.overflow = 'visible';
+  penLayer.style.pointerEvents = 'none';
+  penLayer.style.display = 'none';
+  overlay.appendChild(penLayer);
+
   const chrome = document.createElement('div');   // selection outlines + handles
   chrome.className = 'fc-chrome';
   overlay.appendChild(chrome);
+
+  // Node/handle chrome, in its OWN container so it is built and torn down independently of
+  // the selection chrome — the two are never on screen together, but they key on different
+  // things (a node set vs a selection set) and sharing a container would make one rebuild
+  // the other. Same build-once/reposition-many discipline as `chromeNodes`, for the reason
+  // documented there: a 40-node path re-created per drag frame is far worse than the ~10
+  // selection nodes that motivated the optimisation in the first place.
+  const penChrome = document.createElement('div');
+  penChrome.className = 'fc-pen-chrome';
+  overlay.appendChild(penChrome);
+  let penChromeKey: string | null = null;
+  let penChromeNodes: { nodes: HTMLElement[]; arms: HTMLElement[]; dots: HTMLElement[] } | null = null;
+  function clearPenChrome(): void {
+    penChrome.innerHTML = '';
+    penChromeKey = null;
+    penChromeNodes = null;
+  }
 
   const ctxbar = document.createElement('div');    // contextual controls
   ctxbar.className = 'fc-ctxbar';
@@ -772,6 +1123,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── toolbar ─────────────────────────────────────────────────────────────────
   let popover: HTMLDivElement | null = null;
   let arrangeBtn: HTMLButtonElement | null = null;   // popover anchor (captured, not by index)
+  /** The mode buttons, captured by buildToolbar — see syncModeUI. Absent ones stay null:
+   *  pen and connect are opt-in, so not every tool has all four. */
+  const modeBtns: Record<'select' | 'create' | 'pen' | 'connect', HTMLButtonElement | null> =
+    { select: null, create: null, pen: null, connect: null };
   function closePopover() { popover?.remove(); popover = null; }
   buildToolbar();   // after arrangeBtn exists (buildToolbar assigns it)
 
@@ -849,14 +1204,36 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       toolbar.appendChild(hist);
       const hsep = document.createElement('div'); hsep.className = 'fc-sep'; toolbar.appendChild(hsep);
     }
+    // Pointer leads the tools, and is the way OUT of every other one. Before it existed the
+    // only exit from the pen or from connect mode was clicking that same tool's own button
+    // again — discoverable only if you already knew, which is what "trapped in the current
+    // tool" meant. Its own click is not a no-op even when it is already lit: it also leaves
+    // point editing and finishes a draft.
+    modeBtns.select = toolBtn(t('Pointer — select and move (V)'), SVG.pointer, () => pickPointer(), 'fc-btn-pointer');
     const add = toolBtn(t('Add a box'), SVG.add, () => openAddMenu(add), 'fc-btn-add');
-    if (armedKind) add.classList.add('is-armed');
+    modeBtns.create = add;
+    // Pen (opt-in via canvas.pathField — a tool with nowhere to store an authored path has
+    // no pen). The tooltip carries the corner modifier, which is otherwise undiscoverable;
+    // Alt is free here because a pen click returns long before `selectionForHit`, where Alt
+    // means "drill into the group".
+    if (cv.pathField) {
+      modeBtns.pen = toolBtn(t('Pen - click to place points, drag to curve, Alt for a corner'), SVG.pen,
+        () => { mode === 'pen' ? toPointer() : setMode('pen'); }, 'fc-btn-pen');
+    }
+    // Timeline (opt-in via the canvas time-model fields — a tool with nowhere to store
+    // a start/duration has no timeline). Toggles the docked panel; the panel module
+    // itself is only fetched the first time it is opened.
+    if (timeCfg) {
+      timelineBtn = toolBtn(t('Timeline — arrange clips over time'), SVG.timeline,
+        () => toggleTimeline(), 'fc-btn-timeline');
+      timelineBtn.setAttribute('data-tip', t('Timeline — arrange clips over time'));
+      timelineBtn.setAttribute('aria-pressed', String(!!timelinePanel?.isOpen()));
+    }
     // Connect mode (opt-in): link cards with routed connector lines. Click a source
     // card, then each target; click a card twice or hit Esc to stop.
     if (connectCfg) {
-      const cbtn = toolBtn(t('Connect cards — click a card, then the ones it links to'), SVG.connect,
-        () => { armedConnect ? disarmConnect() : armConnect(); }, 'fc-btn-connect');
-      if (armedConnect) cbtn.classList.add('is-armed');
+      modeBtns.connect = toolBtn(t('Connect cards — click a card, then the ones it links to'), SVG.connect,
+        () => { mode === 'connect' ? toPointer() : setMode('connect'); }, 'fc-btn-connect');
       toolBtn(t('Auto-arrange the connected cards'), SVG.tidy, () => autoLayout());
     }
     // One "Arrange" menu — align + distribute + stacking order + group + clip
@@ -900,6 +1277,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     wireColorField(bgWrap, {
       onChange: (_id, val) => { onDirty?.(bgInputId); runtime.setInput(bgInputId, unwrapColor(val)); },
     });
+    syncModeUI();     // Pointer lit on mount; the rail is never rebuilt after this
   }
 
   function fillPopover(el: HTMLElement, items: PopItem[]): void {
@@ -1049,6 +1427,38 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       { label: t('Clip to bottom shape'), icon: icon(SVG.clip), run: () => clipSelection(), disabled: !multi },
       { label: t('Release clip'), icon: icon(SVG.unclip), run: () => releaseClip(), disabled: !selHasClip() },
     ];
+    // ── vector operations ──────────────────────────────────────────────────────
+    // Present only for tools whose manifest declares `canvas.pathField` (there is
+    // nowhere to store a result otherwise); WITHIN the section every entry disables
+    // rather than hides, like Ungroup / Release clip above, so the menu keeps the same
+    // height between right-clicks.
+    if (vectorCfg) {
+      const regions = countSelected((b) => boxOutlineKind(b, vectorCfg) !== 'none');
+      const paths = countSelected((b) => boxOutlineKind(b, vectorCfg) === 'path');
+      // A boolean needs two operands that actually bound a region — two text boxes are
+      // two selected boxes and no shapes at all.
+      const boolItem = (op: BooleanOpName, label: string, ic: string): PopGridItem => ({
+        label, icon: icon(ic), disabled: regions < 2,
+        run: () => runVectorOp((ops, id) => booleanBoxes(ops, op, { cfg: vectorCfg, id }),
+          { skipNote: true, empty: boolEmptyMessage(op) }),
+      });
+      items.push({ sep: true });
+      items.push({ cols: 4, grid: [
+        boolItem('union', t('Union - merge into one shape'), SVG.boolUnion),
+        // Operand order is vector-ops' documented convention and Illustrator's/Figma's:
+        // the BOTTOMMOST selected shape is the base and everything above is taken away.
+        boolItem('difference', t('Subtract - remove the shapes above from the bottom one'), SVG.boolSubtract),
+        boolItem('intersect', t('Intersect - keep only where they overlap'), SVG.boolIntersect),
+        boolItem('xor', t('Exclude - keep everything but the overlap'), SVG.boolExclude),
+      ] });
+      items.push({ label: t('Outline stroke…'), icon: icon(SVG.outlineStroke), disabled: !regions, run: () => askOutlineStroke() });
+      items.push({ label: t('Offset path…'), icon: icon(SVG.offsetPath), disabled: !regions, run: () => askOffsetPath() });
+      items.push({
+        label: t('Simplify'), icon: icon(SVG.simplify), disabled: !paths,
+        run: () => runVectorOp((ops, id) => simplifyBoxes(ops, SIMPLIFY_TOL, { cfg: vectorCfg, id }), { each: true }),
+      });
+    }
+    lastMenuAt = { x: clientX, y: clientY };
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
     fillPopover(popover, items);
@@ -1060,25 +1470,35 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     popover.style.left = left + 'px';
     popover.style.top = top + 'px';
   }
-  function onContextMenu(e: MouseEvent): void {
-    e.preventDefault();
+  // Open the menu at a point, selecting whatever is under it first (a right-click on an
+  // unselected box acts on THAT box, not on the stale selection). Shared by the desktop
+  // `contextmenu` event and the touch two-finger tap below, so both behave identically.
+  function contextMenuAt(clientX: number, clientY: number, soloBox: boolean): void {
     if (editing) commitTextEdit();
-    const nat = clientToNative(e.clientX, e.clientY);
+    const nat = clientToNative(clientX, clientY);
     const boxes = getBoxes();
     const hit = hitTest(boxes, nat.x, nat.y, cfg);
     if (hit >= 0 && !selection.has(idOf(boxes[hit], hit))) {
-      selection = new Set(selectionForHit(boxes, hit, e.altKey));
+      selection = new Set(selectionForHit(boxes, hit, soloBox));
       renderChrome();
     }
-    openContextMenu(e.clientX, e.clientY);
+    openContextMenu(clientX, clientY);
+  }
+  function onContextMenu(e: MouseEvent): void {
+    e.preventDefault();
+    contextMenuAt(e.clientX, e.clientY, e.altKey);
   }
 
-  const ADD_KIND_ICON: Record<string, string> = { image: SVG.image, text: SVG.type, box: SVG.boxKind, lottie: SVG.anim, video: SVG.video };
+  const ADD_KIND_ICON: Record<string, string> = {
+    image: SVG.image, text: SVG.type, box: SVG.boxKind, lottie: SVG.anim, video: SVG.video,
+    // Sequence Studio's kinds — without these all three fell back to the generic "+".
+    clip: SVG.clipKind, card: SVG.boxKind, audio: SVG.audioKind, tool: SVG.toolKind,
+  };
   function openAddMenu(anchor: HTMLElement): void {
     spawnPopover(anchor, addKinds.map((k) => ({
       label: k.label ? t(k.label) : k.id,
       icon: icon(ADD_KIND_ICON[k.id] || SVG.add),
-      run: () => armCreate(k),
+      run: () => setMode('create', { kind: k }),
     })));
   }
   function openArrangeMenu(): void {
@@ -1115,6 +1535,48 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── contextual bar ───────────────────────────────────────────────────────────
+
+  /** Is every selected box a vector path box? Stroke paint only means something there —
+   *  every other kind is a styled div, whose "border" is a different mechanism entirely —
+   *  so a mixed selection gets no stroke controls rather than controls that write a field
+   *  half the selection ignores. */
+  function selectionAllPaths(boxes: Box[], idx: number[]): boolean {
+    if (!vectorCfg || !idx.length) return false;
+    return idx.every((i) => boxOutlineKind(boxes[i], vectorCfg!) === 'path');
+  }
+
+  /**
+   * The PAINT section of a contextual bar: fill, text colour, and — on a path selection —
+   * stroke colour plus the button onto the rest of the stroke (width, style, ends, corners,
+   * fill rule).
+   *
+   * Shared by the object bar and the pen's node-editing bar because the pen bar REPLACES
+   * `ctxbar.innerHTML`: without sharing, every paint control vanished at exactly the moment
+   * the user was shaping the thing they wanted to paint. Composed rather than appended so
+   * each bar keeps deciding its own order.
+   */
+  function paintCtxHtml(first: Box, allPaths: boolean): string {
+    const fillVal = cfg.fillField ? (first[cfg.fillField] || 'transparent') : '';
+    const fgVal = cfg.textColorField ? (first[cfg.textColorField] || '#0c322c') : '#0c322c';
+    const strokeVal = cfg.strokeField ? (first[cfg.strokeField] || 'transparent') : 'transparent';
+    return (cfg.fillField ? `<span class="fc-cfield" title="${escape(t('Fill'))}">${colorFieldHtml('fc-fill', fillVal, { float: true })}</span>` : '')
+      + (cfg.textColorField && !allPaths ? `<span class="fc-cfield" title="${escape(t('Text colour'))}">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : '')
+      + (allPaths && cfg.strokeField ? `<span class="fc-cfield" title="${escape(t('Stroke colour'))}">${colorFieldHtml('fc-stroke', strokeVal, { float: true })}</span>` : '')
+      + (allPaths ? `<button type="button" class="fc-cbtn" data-cx="stroke" title="${escape(t('Stroke — width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
+  }
+
+  /** One `wireColorField` call per bar — it binds delegated listeners on the scope, so a
+   *  second call on the same element would fire every change twice. */
+  function wirePaintCtx(scope: HTMLElement): void {
+    wireColorField(scope, {
+      onChange: (id, val) => {
+        if (id === 'fc-fill') setField(cfg.fillField, unwrapColor(val));
+        else if (id === 'fc-fg') setField(cfg.textColorField, unwrapColor(val));
+        else if (id === 'fc-stroke') setField(cfg.strokeField, unwrapColor(val));
+      },
+    });
+  }
+
   // Every box is ONE unified object (fill + shape + image + text), so the bar
   // always offers every control. Rebuilt only when the selection set changes (so
   // the colour pickers show the selected box); positioned each frame elsewhere.
@@ -1122,11 +1584,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closeMorePanel();
     const coarse = matchMedia('(pointer: coarse)').matches;   // touch → offer add-to-selection
     const first: Box = boxes[idx[0]!] || {};
-    const fillVal = cfg.fillField ? (first[cfg.fillField] || 'transparent') : '';
-    const fgVal = cfg.textColorField ? (first[cfg.textColorField] || '#0c322c') : '#0c322c';
+    const allPaths = selectionAllPaths(boxes, idx);
     ctxbar.innerHTML = `
-      ${cfg.fillField ? `<span class="fc-cfield" title="${escape(t('Fill'))}">${colorFieldHtml('fc-fill', fillVal, { float: true })}</span>` : ''}
-      ${cfg.textColorField ? `<span class="fc-cfield" title="${escape(t('Text colour'))}">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : ''}
+      ${paintCtxHtml(first, allPaths)}
+      ${vectorCfg && idx.length === 1 && boxOutlineKind(first, vectorCfg) === 'path'
+        ? `<button type="button" class="fc-cbtn" data-cx="nodes" title="${escape(t('Edit points (double-click)'))}" aria-label="${escape(t('Edit points'))}">${icon(SVG.nodes)}</button>`
+        : ''}
       <button type="button" class="fc-cbtn" data-cx="edit" title="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>
       <button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" title="${escape(t('Text — size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>
       <button type="button" class="fc-cbtn" data-cx="setimg" title="${escape(t('Set image'))}" aria-label="${escape(t('Set image'))}">${icon(SVG.image)}</button>
@@ -1136,16 +1599,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       <button type="button" class="fc-cbtn fc-danger" data-cx="del" title="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">${icon(SVG.trash)}</button>
       ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" title="${escape(t('Select more — tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
       <button type="button" class="fc-readout" data-cx="dims" data-cx-readout title="${escape(t('Edit position & size'))}" aria-label="${escape(t('Edit position and size'))}"></button>`;
-    wireColorField(ctxbar, {
-      onChange: (id, val) => {
-        if (id === 'fc-fill') setField(cfg.fillField, unwrapColor(val));
-        else if (id === 'fc-fg') setField(cfg.textColorField, unwrapColor(val));
-      },
-    });
+    wirePaintCtx(ctxbar);
     ctxbar.querySelectorAll<HTMLElement>('[data-cx]').forEach((b) => b.addEventListener('click', (e) => {
       e.stopPropagation();
       const cx = b.dataset.cx;
       if (cx === 'text') openTextPanel(b);
+      else if (cx === 'stroke') openStrokePanel(b);
+      else if (cx === 'nodes') { if (selection.size) startPenEdit([...selection][0]!); }
       else if (cx === 'edit') { if (selection.size) startTextEdit([...selection][0]!, { selectAll: true }); }
       else if (cx === 'dup') duplicateSelection();
       else if (cx === 'del') deleteSelection();
@@ -1159,6 +1619,35 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── "More" panel: shape / radius / opacity / image fit / blend ────────────────
   let morePanel: HTMLElement | null = null;
   function closeMorePanel() { morePanel?.remove(); morePanel = null; }
+  /**
+   * Close the innermost floating surface, and report whether there WAS one. This is rung 1
+   * of the Escape ladder (see `onKey`), and the honesty of the return value is the whole
+   * point: returning true when nothing closed is how Escape used to go missing.
+   *
+   * Three surfaces, innermost first. The colour popover is a child of its own field and
+   * closes itself when focus is inside it — but by the time the user reaches for Escape,
+   * focus is usually back on the canvas, so it needs a rung here too. Its teardown is not
+   * re-implemented: a non-bubbling Escape on the field lets color-field own its internals.
+   * It has to be non-bubbling — a bubbling one would arrive straight back here.
+   */
+  function dismissFloating(): boolean {
+    const colour = stageEl.querySelector<HTMLElement>('.color-popover:not([hidden])');
+    if (colour) {
+      const field = colour.closest<HTMLElement>('[data-color-field]');
+      if (field) { field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: false })); return true; }
+    }
+    // A reference to a detached element is not an open panel. Drop it rather than
+    // "closing" it, or it eats this press and every one after.
+    if (popover && !popover.isConnected) popover = null;
+    if (morePanel && !morePanel.isConnected) morePanel = null;
+    if (!popover && !morePanel) return false;
+    // Both together, as they always have been: closing a panel must NOT also drop the
+    // selection it was about to act on (the one-number prompt for Offset / Outline stroke
+    // is there to act on that selection), which is why this rung returns before the rest.
+    closePopover();
+    closeMorePanel();
+    return true;
+  }
 
   // ── canvas (document) size ────────────────────────────────────────────────────
   const SIZE_UNITS = ['px', 'mm', 'cm', 'in', 'pt'];
@@ -1338,6 +1827,186 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const sr = stageEl.getBoundingClientRect();
     p.style.left = Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8) + 'px';
     p.style.top = (ar.bottom - sr.top + 8) + 'px';
+  }
+
+  /**
+   * ── Stroke panel: width / style / ends / corners / fill rule ───────────────────
+   *
+   * A path box's stroke had a colour control and nothing else, so the width and the two
+   * decorations were unreachable from the canvas — which is the working surface for an
+   * `render.layout:"editor"` tool. Everything writes through `setField`, i.e. to EVERY
+   * selected box in one `commit()`, the same as the More panel's controls.
+   *
+   * Fill rule lives here rather than under More because it is a property of the path's
+   * paint, and it is what makes a hole a hole the moment anyone uses Subtract.
+   *
+   * Stroke ALIGNMENT (inside / centre / outside) is deliberately absent: SVG strokes on the
+   * centreline only, so inside/outside is not a paint setting but a real outline conversion —
+   * which the context menu already offers, exactly, as "Outline stroke".
+   */
+  function openStrokePanel(anchor: HTMLElement): void {
+    closeMorePanel();
+    const boxes = getBoxes();
+    const idx = selIndices(boxes);
+    if (!idx.length) return;
+    const b: Box = boxes[idx[0]!] || {};
+    const swCur = Math.max(0, Math.round(clampN(parseFloat(String(b[cfg.strokeWField])), 0, 0, 400)));
+    const dashCur = String(b[cfg.strokeDashField] ?? '');
+    const capCur = String(b[cfg.strokeCapField] || 'round');
+    const joinCur = String(b[cfg.strokeJoinField] || 'round');
+    const ruleCur = String(b[cfg.fillRuleField] || 'nonzero');
+    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" title="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-more-panel fc-stroke-panel';
+    p.innerHTML =
+      `<label class="fc-row"><span class="fc-row-lbl" title="${escape(t('Stroke width'))}">${icon(SVG.strokeIc)}<span>${t('Stroke width')}</span></span>` +
+        `<input type="range" class="field-range" data-sp="width" min="0" max="120" value="${swCur}"><b data-sp-val="width">${swCur}</b></label>` +
+      segRow(SVG.dashDashed, t('Stroke style'), segHtml(cfg.strokeDashField, dashCur, [
+        ['', t('Solid'), SVG.dashSolid],
+        ['dashed', t('Dashed'), SVG.dashDashed],
+        ['dotted', t('Dotted'), SVG.dashDotted],
+      ])) +
+      segRow(SVG.capRound, t('Line ends'), segHtml(cfg.strokeCapField, capCur, [
+        ['round', t('Round ends'), SVG.capRound],
+        ['butt', t('Flat ends'), SVG.capButt],
+        ['square', t('Square ends'), SVG.capSquare],
+      ])) +
+      segRow(SVG.joinRound, t('Corners'), segHtml(cfg.strokeJoinField, joinCur, [
+        ['round', t('Round corners'), SVG.joinRound],
+        ['miter', t('Sharp corners'), SVG.joinMiter],
+        ['bevel', t('Bevelled corners'), SVG.joinBevel],
+      ])) +
+      segRow(SVG.ruleEvenOdd, t('Fill rule'), segHtml(cfg.fillRuleField, ruleCur, [
+        ['nonzero', t('Fill overlaps (non-zero)'), SVG.ruleNonzero],
+        ['evenodd', t('Punch holes (even-odd)'), SVG.ruleEvenOdd],
+      ]));
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    wireSegs(p);
+    p.querySelectorAll<HTMLInputElement>('input[data-sp="width"]').forEach((rng) => rng.addEventListener('input', () => {
+      const valEl = p.querySelector<HTMLElement>('[data-sp-val="width"]');
+      if (valEl) valEl.textContent = rng.value;
+      setField(cfg.strokeWField, Number(rng.value));
+    }));
+    stageEl.appendChild(p);
+    morePanel = p;
+    const ar = anchor.getBoundingClientRect();
+    const sr = stageEl.getBoundingClientRect();
+    p.style.left = Math.min(ar.left - sr.left, Math.max(0, sr.width - p.offsetWidth - 8)) + 'px';
+    p.style.top = (ar.bottom - sr.top + 8) + 'px';
+  }
+
+  // ── one-number prompt ─────────────────────────────────────────────────────────
+  // A couple of menu actions need a number before they can run. There is no prompt() in
+  // this app and no dialog light enough for a menu item, so this is the same `fc-panel`
+  // recipe the size and dimensions panels already use — a labelled number field
+  // committed by Enter or by the button — positioned at the point the menu was opened
+  // from. It rides `morePanel`, so an outside click or Escape dismisses it like the rest.
+  interface NumberAsk {
+    at: Point;
+    title: string;
+    hint?: string;
+    value: number;
+    min?: number;
+    max?: number;
+    step?: number;
+    unit?: string;
+    confirm: string;
+    apply(value: number): void;
+  }
+  function askNumber(ask: NumberAsk): void {
+    closePopover();
+    closeMorePanel();
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-num-panel';
+    p.innerHTML =
+      `<div class="fc-panel-head">${escape(ask.title)}</div>` +
+      (ask.hint ? `<p class="fc-num-hint">${escape(ask.hint)}</p>` : '') +
+      '<div class="fc-num-row">' +
+        `<input type="number" data-num step="${ask.step ?? 1}"` +
+        (ask.min != null ? ` min="${ask.min}"` : '') + (ask.max != null ? ` max="${ask.max}"` : '') +
+        ` value="${ask.value}" aria-label="${escape(ask.title)}">` +
+        `<i>${escape(ask.unit || 'px')}</i>` +
+        `<button type="button" class="btn btn--primary btn--sm fc-num-go" data-num-go>${escape(ask.confirm)}</button>` +
+      '</div>';
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const inp = p.querySelector<HTMLInputElement>('[data-num]')!;
+    const go = (): void => {
+      const v = parseFloat(inp.value);
+      closeMorePanel();
+      if (Number.isFinite(v)) ask.apply(v);
+    };
+    // Enter is the only keyboard commit; Escape falls through to onKey, which closes the
+    // panel without applying.
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    p.querySelector<HTMLButtonElement>('[data-num-go]')!.addEventListener('click', (e) => { e.stopPropagation(); go(); });
+    stageEl.appendChild(p);
+    morePanel = p;
+    const sr = stageEl.getBoundingClientRect();
+    p.style.left = Math.max(6, Math.min(ask.at.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
+    p.style.top = Math.max(6, Math.min(ask.at.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+    inp.focus();
+    inp.select();
+  }
+
+  // ── are-you-sure ──────────────────────────────────────────────────────────────
+  // One action in this overlay destroys authored work rather than moving it: switching a
+  // path's spline kind to one that solves its own handles. There is no confirm dialog here
+  // and a modal would be far too much furniture for a control on the object bar, so this is
+  // the SAME `fc-panel` recipe as askNumber — a titled panel with a sentence and one
+  // primary button — riding `morePanel`, so an outside click or Escape dismisses it and
+  // that dismissal means "no".
+  interface ConfirmAsk {
+    at: Point;
+    title: string;
+    hint: string;
+    confirm: string;
+    apply(): void;
+    cancel?(): void;
+  }
+  function askConfirm(ask: ConfirmAsk): void {
+    closePopover();
+    closeMorePanel();
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-num-panel fc-confirm-panel';
+    p.innerHTML =
+      `<div class="fc-panel-head">${escape(ask.title)}</div>` +
+      `<p class="fc-num-hint">${escape(ask.hint)}</p>` +
+      '<div class="fc-num-row fc-confirm-row">' +
+        `<button type="button" class="btn btn--sm" data-confirm-no>${escape(t('Keep them'))}</button>` +
+        `<button type="button" class="btn btn--primary btn--sm" data-confirm-yes>${escape(ask.confirm)}</button>` +
+      '</div>';
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    // Exactly one of apply/cancel runs, exactly once, whichever way the panel goes away.
+    // The two buttons settle it synchronously; the observer only catches the INDIRECT
+    // dismissals (Escape, an outside click), which go through the generic closeMorePanel
+    // and so cannot call back here themselves. Synchronously matters: the caller usually has
+    // UI to put back — a <select> still showing the kind it did not switch to — and leaving
+    // that until a microtask would show the wrong value for a frame.
+    let settled = false;
+    const settle = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      if (ok) ask.apply(); else ask.cancel?.();
+    };
+    const observer = new MutationObserver(() => { if (!p.isConnected) settle(false); });
+    p.querySelector<HTMLButtonElement>('[data-confirm-yes]')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMorePanel();
+      settle(true);
+    });
+    p.querySelector<HTMLButtonElement>('[data-confirm-no]')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMorePanel();
+      settle(false);
+    });
+    stageEl.appendChild(p);
+    observer.observe(stageEl, { childList: true });
+    morePanel = p;
+    const sr = stageEl.getBoundingClientRect();
+    p.style.left = Math.max(6, Math.min(ask.at.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
+    p.style.top = Math.max(6, Math.min(ask.at.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+    p.querySelector<HTMLButtonElement>('[data-confirm-yes]')!.focus();
   }
 
   // Clamp a floating panel below-and-left of its anchor, inside the stage.
@@ -1648,7 +2317,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.style.left = Math.max(6, Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8)) + 'px';
     p.style.top = Math.max(6, Math.min(ar.bottom - sr.top + 8, sr.height - p.offsetHeight - 8)) + 'px';
   }
-  async function pickImage(pickOpts?: { pickType?: 'lottie' | 'video' }): Promise<void> {
+  async function pickImage(pickOpts?: { pickType?: 'lottie' | 'video' | 'audio' }): Promise<void> {
     if (!cfg.imageField || !host.assets?.pick) return;
     const pickType = pickOpts?.pickType;
     const boxes0 = getBoxes();
@@ -1659,6 +2328,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // opening the picker (same choice-first flow as the sidebar image slots).
     const curToolUrl = curImg?.meta?.toolUrl;
     if (curToolUrl && editTool) {
+      // Lazy: picker.ts pulls in the picker's own CSS chunk, and the overlay only needs
+      // it on this one branch — a static import would ship (and evaluate) it for every
+      // editor mount.
+      const { askLollyIntent } = await import('./picker.ts');
       const intent = await askLollyIntent(curImg?.meta?.name);
       if (!intent) return;
       if (intent === 'edit') {
@@ -1674,7 +2347,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     try {
       const ref = await host.assets!.pick({
-        title: pickType === 'video' ? t('Choose a video') : pickType === 'lottie' ? t('Choose an animation') : t('Choose an image'),
+        title: pickType === 'video' ? t('Choose a video')
+          : pickType === 'lottie' ? t('Choose an animation')
+          : pickType === 'audio' ? t('Choose a sound')
+          : t('Choose an image'),
         // No type constraint by default: boxes take rasters AND vectors — logos and
         // the themable two-colour icons (with the picker's theme strip) included, plus
         // animated rasters (gif/apng/webp, which are type:'raster'). The "Animation" /
@@ -1797,40 +2473,826 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     commit(boxes.filter((_, i) => !sel.has(i)));
   }
 
-  // ── create-mode arming ───────────────────────────────────────────────────────
-  function armCreate(kind: AddKind): void {
-    if (armedConnect) disarmConnect();         // add-mode and connect-mode are exclusive
-    deselectEdge();
-    armedKind = kind;
-    stageEl.classList.add('fc-arming');
-    toolbar.querySelector('.fc-btn-add')?.classList.add('is-armed');
-  }
-  function disarm(): void {
-    armedKind = null;
-    stageEl.classList.remove('fc-arming');
-    toolbar.querySelector('.fc-btn-add')?.classList.remove('is-armed');
+  // ── vector operations (opt-in via canvas.pathField) ───────────────────────────
+  // The geometry itself lives in vector-ops.ts (pure, DOM-free, engine-backed); this is
+  // only the menu wiring: gather the operands, run the op, and commit ONE model write.
+  //
+  // Failure never half-edits the model — `run` is called first and nothing is committed
+  // unless it answered `ok:true`.
+
+  /** Curve-fitting tolerance for Simplify, in native canvas px. Sub-pixel, so the result
+   *  is visually the same path with fewer nodes; not exposed as a prompt because the
+   *  useful range is narrow and "fewer nodes, same shape" is the whole request. */
+  const SIMPLIFY_TOL = 0.6;
+
+  /** How many selected boxes satisfy `pred`, in z-order. */
+  function countSelected(pred: (b: Box) => boolean): number {
+    const boxes = getBoxes();
+    return selIndices(boxes).reduce((n, i) => (pred(boxes[i]!) ? n + 1 : n), 0);
   }
 
-  // ── connect-mode arming (opt-in) ──────────────────────────────────────────────
-  function armConnect(): void {
-    if (!connectCfg) return;
-    disarm();                                  // add-mode and connect-mode are exclusive
-    deselectEdge();                            // and drop any connector selection
-    armedConnect = true;
+  /** The selection as vector operands: array order is Z-ORDER (bottom first), which is
+   *  what every operation in vector-ops.ts documents — Subtract's base is operand 0. */
+  function vectorOperands(): { boxes: Box[]; operands: Box[]; ids: string[] } {
+    const boxes = getBoxes();
+    const idx = selIndices(boxes);
+    return { boxes, operands: idx.map((i) => boxes[i]!), ids: idx.map((i) => idOf(boxes[i], i)) };
+  }
+
+  /**
+   * A refusal the user can read.
+   *
+   * vector-ops.ts does not import i18n at all — its `message` is diagnostic English
+   * for a log — so the translated sentence is owned here and keyed on `reason`.
+   *
+   * `empty-result` is the interesting one, and it is NOT an error: an intersection of two
+   * shapes that do not overlap is legitimately empty, and so is an inward offset deeper
+   * than the shape's own inradius. This REFUSES AND SAYS SO rather than deleting the
+   * operands. Deleting them is defensible — Illustrator's Intersect does exactly that —
+   * but on screen an empty result and a no-op are the same picture, so the destructive
+   * reading of an ambiguous gesture would remove the user's artwork and leave nothing
+   * behind to explain where it went. Stating the answer in words costs one more tap and
+   * never loses work.
+   */
+  function vectorFailureMessage(res: VectorOpFailure, empty?: string): string {
+    switch (res.reason) {
+      case 'too-complex':
+        // The kernel's GeomLimitError: the answer exists, the engine declines to guess it
+        // rather than hand back a plausible-looking wrong shape. That has to be said.
+        return t('These shapes are too intricate to combine exactly. Simplify them first, or combine fewer at a time.');
+      case 'no-outline':
+        return t('Text and image boxes have no outline to work with. Select shapes or pen paths.');
+      case 'needs-two':
+        return t('Select two or more shapes to combine them.');
+      case 'not-applicable':
+        return t('Only pen paths can be simplified.');
+      case 'empty-result':
+        return empty || t('That would leave nothing to draw, so the shapes were left as they are.');
+      case 'bad-input':
+        return t('One of the selected shapes has a path that cannot be read.');
+      default:
+        return t('That could not be worked out, so nothing was changed.');
+    }
+  }
+
+  /** The empty-result sentence for each boolean. Union of non-empty regions cannot be
+   *  empty, so it falls through to the generic line. */
+  function boolEmptyMessage(op: BooleanOpName): string | undefined {
+    if (op === 'intersect') return t('Those shapes do not overlap, so there is nothing to keep. Nothing was changed.');
+    if (op === 'difference') return t('The shapes above cover the bottom one completely, so nothing is left. Nothing was changed.');
+    if (op === 'xor') return t('Those shapes overlap exactly, so nothing is left. Nothing was changed.');
+    return undefined;
+  }
+
+  interface RunVectorOpts {
+    /** simplifyBoxes returns one box PER OPERAND, each of which keeps its own place in
+     *  the stack — so the result is applied operand by operand instead of as one swap. */
+    each?: boolean;
+    /** Mention boxes the operation left alone (text/image have no outline). */
+    skipNote?: boolean;
+    /** Override the `empty-result` sentence for this operation. */
+    empty?: string;
+  }
+
+  function runVectorOp(run: (operands: Box[], id: string) => VectorOpResult, opts: RunVectorOpts = {}): void {
+    if (!vectorCfg) return;
+    const { boxes, operands, ids } = vectorOperands();
+    if (!operands.length) return;
+    const res = run(operands, freshId(boxes));
+    if (!res.ok) { flash(vectorFailureMessage(res, opts.empty)); return; }
+
+    const nextSel = new Set<string>();
+    let next: Box[];
+    if (opts.each) {
+      // res.boxes lines up 1:1 with the operands NOT in `skipped`, in operand order.
+      const skipped = new Set(res.skipped);
+      const targets = operands.map((_, k) => k).filter((k) => !skipped.has(k));
+      next = boxes;
+      for (let k = 0; k < res.boxes.length; k++) {
+        const at = targets[k];
+        if (at === undefined) break;
+        const nb: Box = { ...res.boxes[k]! };
+        // Only the first result carries the id we minted; the rest are ours to allocate
+        // (checked against the array as it grows, so two results never collide).
+        const nid = nb[cfg.idField] != null && nb[cfg.idField] !== '' ? String(nb[cfg.idField]) : freshId(next);
+        nb[cfg.idField] = nid;
+        next = replaceBoxes(next, [ids[at]!], -1, nb, { cfg: vectorCfg });
+        nextSel.add(nid);
+      }
+    } else {
+      next = replaceBoxes(boxes, ids, -1, res.boxes, { cfg: vectorCfg });
+      for (const b of res.boxes) {
+        const v = b[cfg.idField];
+        if (v != null && v !== '') nextSel.add(String(v));
+      }
+    }
+    if (!nextSel.size) { flash(vectorFailureMessage({ ok: false, reason: 'internal', message: 'no result id' })); return; }
+    selection = nextSel;
+    commit(next);
+    if (opts.skipNote && res.skipped.length) {
+      flash(res.skipped.length === 1
+        ? t('One selected item has no outline, so it was left as it is.')
+        : t('{n} selected items have no outline, so they were left as they are.', { n: res.skipped.length }));
+    }
+  }
+
+  // Outline stroke — the width defaults to the topmost operand's OWN stroke width, which
+  // is the stroke the user is looking at.
+  function askOutlineStroke(): void {
+    if (!vectorCfg) return;
+    const { operands } = vectorOperands();
+    const seed = Math.max(0.1, num(operands[operands.length - 1]?.[cfg.strokeWField], 1));
+    askNumber({
+      at: lastMenuAt,
+      title: t('Outline stroke'),
+      hint: t('Replace the stroke with a filled shape of the same outline.'),
+      value: Math.round(seed * 100) / 100,
+      min: 0.1, step: 0.5, confirm: t('Outline'),
+      apply: (v) => runVectorOp((ops, id) => strokeBoxesToPath(ops, { cfg: vectorCfg, id, width: v }), { skipNote: true }),
+    });
+  }
+
+  // Offset — no `min` on the field, because a negative distance is an inset and that is
+  // half of what this control is for.
+  function askOffsetPath(): void {
+    if (!vectorCfg) return;
+    askNumber({
+      at: lastMenuAt,
+      title: t('Offset path'),
+      hint: t('Grow the shape outwards. A negative distance shrinks it inwards.'),
+      value: 8, step: 1, confirm: t('Offset'),
+      apply: (v) => runVectorOp((ops, id) => offsetBoxes(ops, v, { cfg: vectorCfg, id }), {
+        skipNote: true,
+        empty: t('Shrinking by that much removes the shape completely. Nothing was changed.'),
+      }),
+    });
+  }
+
+  // ── the pen tool (opt-in via canvas.pathField) ────────────────────────────────
+  // Geometry lives in free-canvas-pen.ts (pure, engine-backed); this is the gestures, the
+  // chrome and the one-commit-per-action wiring.
+  //
+  // Two exclusive modes. DRAWING builds `penDraft` in native px and writes the model
+  // exactly once, when the path ends. NODE-EDITING holds the box's path DENORMALISED to
+  // box-local px in `penEdit`, which is the space `hooks.js` lowers in, and writes the
+  // model once per completed edit (a drag, an insert, a delete, a continuity change).
+
+  /** The kind a NEW path is drawn in. Remembered across draws, seeded from the plan's
+   *  default — `hyperbezier`, whose node default is `'smooth'`, so plain click-click-click
+   *  draws a curve rather than a polyline. */
+  let penDrawKind: SplineKind = PEN_DEFAULT_KIND;
+
+  const penScale = (): number => metrics().scale || 1;
+  const penTol = (): number => PEN_HIT_PX / penScale();
+
+  // Entering/leaving pen mode. Neither is called directly — `setMode` owns the transition,
+  // which is what guarantees the other three modes are down before this one is up.
+  function enterPen(): void {
+    deselectEdge();
+    selection = new Set<string>();
+    stageEl.classList.add('fc-penning');
+    announce(t('Pen on - click to place points, drag to curve them, click the first point to close. Enter finishes, Esc cancels.'));
+    renderChrome();
+  }
+  function exitPen(): void {
+    penDraft = null;
+    penCursor = null;
+    penWarm = null;
+    stageEl.classList.remove('fc-penning');
+    clearGuides();
+    renderChrome();
+  }
+
+  // ── drawing ───────────────────────────────────────────────────────────────────
+
+  /** Place a node at a (already snapped) native point and start the drag that pulls its
+   *  handles out. `corner` is the Alt modifier — see the button's tooltip. */
+  function penPlaceNode(e: PointerEvent, at: Point, corner: boolean): void {
+    const kind = penDraft ? penDraft.kind : penDrawKind;
+    const nodes = penDraft ? penDraft.nodes.slice() : [];
+    nodes.push({ x: at.x, y: at.y, continuity: corner ? 'corner' : defaultContinuity(kind) });
+    penDraft = { kind, nodes, closed: false };
+    penCursor = null;
+    beginGesture(e, { type: 'pendraw', origin: at, index: nodes.length - 1 });
+    paintPen();
+    syncPenChrome();
+  }
+
+  /** Drop the last placed node (Backspace/Delete while drawing). The last one leaving
+   *  ends the draw, because an empty draft is not a draft. */
+  function penUndoNode(): void {
+    if (!penDraft) return;
+    const nodes = penDraft.nodes.slice(0, -1);
+    if (!nodes.length) { penDraft = null; penCursor = null; penWarm = null; renderChrome(); return; }
+    penDraft = { ...penDraft, nodes, closed: false };
+    penWarm = null;                             // the node count changed, so the warm start is stale
+    renderChrome();
+  }
+
+  /**
+   * End the draw and commit — ONE `setInput`, so one undo step removes the whole path.
+   *
+   * A draft with fewer than two nodes commits nothing: a single click with the pen selected
+   * is a mis-click, and materialising a one-node box for it would leave the user something
+   * invisible to find and delete.
+   */
+  function penFinishDraw(): void {
+    const draft = penDraft;
+    penDraft = null;
+    penCursor = null;
+    penWarm = null;
+    clearGuides();
+    if (!draft || !cfg.pathField) { renderChrome(); return; }
+    const made = penCommitFromNative(draft);
+    const value = made ? encodePathField(made.path) : '';
+    if (!made || !value) { renderChrome(); return; }
+    const boxes = getBoxes();
+    const id = freshId(boxes);
+    const seed: Box = { ...(addKinds.find((k) => k.id === 'path')?.seed || {}) };
+    let box = seedBox(cfg, {}, seed, { x: made.x, y: made.y, w: made.w, h: made.h } as MathRect, id);
+    box[cfg.kindField] = 'path';
+    if (cfg.shapeField) box[cfg.shapeField] = 'rect';
+    box[cfg.pathField] = value;
+    selection = new Set([id]);
+    commit([...boxes, box]);
+  }
+
+  /** Abandon the draw. Nothing was ever written, so there is nothing to undo. */
+  function penCancelDraw(): void {
+    penDraft = null;
+    penCursor = null;
+    penWarm = null;
+    clearGuides();
+    renderChrome();
+  }
+
+  // ── node-edit mode ────────────────────────────────────────────────────────────
+
+  /** Enter node editing on a path box. Entered like `startTextEdit` — a double-click or an
+   *  explicit affordance — and left just as explicitly, so ordinary selection behaviour is
+   *  never silently different. */
+  function startPenEdit(id: string): void {
+    if (!cfg.pathField) return;
+    if (editing) commitTextEdit();
+    if (mode === 'pen') toPointer();
+    const boxes = getBoxes();
+    const i = indexOfId(boxes, id);
+    if (i < 0) return;
+    const decoded = decodePathContours(boxes[i]![cfg.pathField]);
+    if (!decoded.length) { flash(t('That shape has no editable path.')); return; }
+    const frame = penFrame(boxes[i], cfg);
+    const local = decoded.map((p) => denormNodes(p, frame.w, frame.h));
+    penEdit = { id, frame, path: local[0]!, rest: local.slice(1) };
+    penSel = new Set<number>();
+    penWarm = null;
+    selection = new Set([id]);
+    stageEl.classList.add('fc-node-editing');
+    closeMorePanel(); closePopover();
+    announce(t('Editing points - drag a point or its handle, click the curve to add a point, Esc to finish.'));
+    renderChrome();
+  }
+
+  function endPenEdit(): void {
+    if (!penEdit) return;
+    setPathSvgHidden(false);
+    penEdit = null;
+    penSel = new Set<number>();
+    penWarm = null;
+    stageEl.classList.remove('fc-node-editing');
+    clearPenChrome();
+    paintPen();
+    ctxSelKey = null;                           // force the ordinary object bar to rebuild
+    scheduleSync();
+  }
+
+  /** Re-read the edited path from the MODEL, so an undo, a resize or a sibling edit while
+   *  node-editing is reflected rather than overwritten by stale local state. Skipped
+   *  mid-gesture, where the local path IS the truth until the drop commits. */
+  function penSyncFromModel(boxes: Box[]): void {
+    if (!penEdit || gesture) return;
+    const i = indexOfId(boxes, penEdit.id);
+    if (i < 0) { endPenEdit(); return; }
+    const decoded = decodePathContours(boxes[i]![cfg.pathField]);
+    if (!decoded.length) { endPenEdit(); return; }
+    const frame = penFrame(boxes[i], cfg);
+    const local = decoded.map((p) => denormNodes(p, frame.w, frame.h));
+    penEdit = { id: penEdit.id, frame, path: local[0]!, rest: local.slice(1) };
+    const n = penEdit.path.nodes.length;
+    if ([...penSel].some((k) => k >= n)) penSel = new Set([...penSel].filter((k) => k < n));
+  }
+
+  /**
+   * One completed edit → one model write, frame REFITTED to the curve.
+   *
+   * The frame is the curve's tight bounding box — that is the invariant every other part of
+   * the editor reads (selection chrome, marquee, align/distribute, group bounds, the export
+   * bbox) and the one `hooks.js` clips to. So an edit that put a node or a curve outside the
+   * old frame grows it and an edit that pulled the shape inward shrinks it, and either way
+   * `refitFrame` compensates the frame's own rotation so the RENDERED shape does not move by
+   * a pixel. See `refitFrame` for the rotation and rounding arithmetic.
+   *
+   * This is the commit, not the drag: refitting per pointermove would make the box chase the
+   * cursor. The live gesture paints on the native pen layer with the box's own `<svg>`
+   * hidden, so nothing clips in between.
+   *
+   * Every contour is re-encoded, not just the edited one — see `penEdit`.
+   */
+  function penEditWrite(next: AuthoredPath): void {
+    if (!penEdit || !cfg.pathField) return;
+    const all = [next, ...penEdit.rest];
+    // No refit when there is no curve to fit (an unlowerable kind): the old frame is then
+    // the only frame there is, and it is better than a frame invented from nothing.
+    const fit = refitFrame(all, penEdit.frame, penWarm);
+    const frame = fit ? fit.frame : penEdit.frame;
+    const paths = fit ? fit.paths : all;
+    const value = encodePathFields(paths.map((p) => normNodes(p, frame.w, frame.h)));
+    if (!value) { flash(t('That edit could not be saved, so nothing was changed.')); return; }
+    penEdit = { ...penEdit, frame, path: paths[0]!, rest: paths.slice(1) };
+    const boxes = getBoxes();
+    const i = indexOfId(boxes, penEdit.id);
+    if (i < 0) { endPenEdit(); return; }
+    commit(boxes.map((b, k) => (k === i
+      ? {
+        ...b, [cfg.pathField]: value,
+        [cfg.xField]: frame.x, [cfg.yField]: frame.y, [cfg.wField]: frame.w, [cfg.hField]: frame.h,
+      }
+      : b)));
+  }
+
+  /** The handle under a box-local point, or null. Handles are tested BEFORE nodes: they
+   *  are smaller and sit outside the curve, so a node would otherwise shadow one that
+   *  happens to be short. */
+  function penHandleAt(x: number, y: number, tol: number): { index: number; which: 'in' | 'out' } | null {
+    if (!penEdit || !kindReadsHandles(penEdit.path.kind)) return null;
+    let best: { index: number; which: 'in' | 'out' } | null = null;
+    let bestD = tol;
+    penEdit.path.nodes.forEach((n, i) => {
+      for (const which of ['in', 'out'] as const) {
+        const p = handlePoint(n, which);
+        if (!p) continue;
+        const d = Math.hypot(p.x - x, p.y - y);
+        if (d <= bestD) { bestD = d; best = { index: i, which }; }
+      }
+    });
+    return best;
+  }
+
+  /** Insert a node where the pointer met the curve. Exact for `cubic` (a de Casteljau
+   *  split), on-curve-but-reshaping for the derived kinds — see `insertNodeOnCurve`. */
+  function penInsertAt(x: number, y: number): void {
+    if (!penEdit) return;
+    const res = insertNodeOnCurve(penEdit.path, x, y, penWarm);
+    if (!res) return;
+    penWarm = null;                             // one more node → the warm start is stale
+    penSel = new Set([res.index]);
+    penEditWrite(res.path);
+  }
+
+  function penDeleteSelected(): void {
+    if (!penEdit || !penSel.size) return;
+    const next = deleteNodes(penEdit.path, penSel);
+    if (!next) { flash(t('A path needs at least two points, so those were kept.')); return; }
+    penWarm = null;
+    penSel = new Set<number>();
+    penEditWrite(next);
+  }
+
+  function penSetContinuity(c: Continuity): void {
+    if (!penEdit || !penSel.size) return;
+    penEditWrite(setNodeContinuity(penEdit.path, penSel, c));
+  }
+
+  function penToggleClosed(): void {
+    if (!penEdit) return;
+    penWarm = null;                             // open↔closed changes the segment count
+    penEditWrite({ ...penEdit.path, closed: !penEdit.path.closed });
+  }
+
+  /**
+   * Switch the edited path's spline kind, warning first when that discards authored work.
+   *
+   * The asymmetry is `convertKind`'s: to `cubic` bakes the current lowering into explicit
+   * handles and is lossless; to `hyperbezier` (or another derived kind) DROPS them and
+   * cannot get them back. So the lossy direction asks, in the same `fc-panel` recipe the
+   * one-number prompts use — the smallest confirmation this overlay has.
+   */
+  function penSetKind(to: SplineKind): void {
+    if (!penEdit) return;
+    const apply = (): void => {
+      const res = convertKind(penEdit!.path, to, penWarm);
+      penWarm = null;
+      penEditWrite(res.path);
+    };
+    if (!convertKind(penEdit.path, to).lossy) { apply(); return; }
+    askConfirm({
+      at: penCtxAnchorPoint(),
+      title: t('Discard the handles?'),
+      hint: t('This spline works out its own handle lengths, so the ones you set will be dropped. Switching back cannot bring them back.'),
+      confirm: t('Discard and switch'),
+      apply,
+      cancel: () => { ctxSelKey = null; renderChrome(); },   // put the menu back on the old kind
+    });
+  }
+
+  // ── pen preview + node chrome ─────────────────────────────────────────────────
+
+  /** Hide the box's own rendered `<svg>` while a node drag is live, so the (stale) committed
+   *  shape does not double up with the pen layer's live one. Mirrors
+   *  `setRealConnectorsHidden`; the commit re-renders it anyway. */
+  function setPathSvgHidden(hidden: boolean): void {
+    if (!penEdit) return;
+    const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(penEdit.id)}"] .lolly-box-path`);
+    if (el) el.style.visibility = hidden ? 'hidden' : '';
+  }
+
+  /**
+   * Lower a path to SVG path data for the preview, KEEPING the hyperbezier solution as the
+   * next frame's warm start.
+   *
+   * This is why `toCubics(path, warm)` grew that parameter and why the pen path does not use
+   * it: `toCubics` throws the solution it computed away, so every frame of a drag would
+   * re-converge a 40-node Newton run from the chord-bend guess. Solving here and holding
+   * the answer turns each subsequent frame into one or two steps.
+   */
+  function penPathD(p: AuthoredPath): string {
+    const low = lowerAuthored(p, penWarm);
+    if (low.solution) penWarm = low.solution;
+    return low.cubics.length ? cubicsToD(low.cubics, p.closed) : '';
+  }
+  /** Cubics → `d`, in native/box-local units. `M` once, then one `C` per curve; the close
+   *  is emitted as `Z` only when the contour really is closed, so an open path is not
+   *  silently filled. */
+  function cubicsToD(cubics: Cubic[], closed: boolean): string {
+    const first = cubics[0]!;
+    let d = `M${cf2(first[0])} ${cf2(first[1])}`;
+    for (const k of cubics) d += `C${cf2(k[2])} ${cf2(k[3])} ${cf2(k[4])} ${cf2(k[5])} ${cf2(k[6])} ${cf2(k[7])}`;
+    return closed ? d + 'Z' : d;
+  }
+
+  /** The pen layer: the draft (plus the segment under the cursor) while drawing, and the
+   *  edited path's live outline while node-editing. */
+  function paintPen(): void {
+    if (!penDraft && !penEdit) {
+      if (penLayer.style.display !== 'none') { penLayer.style.display = 'none'; penLayer.innerHTML = ''; }
+      return;
+    }
+    const m = metrics();
+    placeNativeLayer(penLayer, m);
+    const sw = 1.6 / (m.scale || 1);            // constant SCREEN width at any zoom
+    let body = '';
+    if (penDraft) {
+      // The cursor is included as a real node, so the preview is what committing here
+      // would actually produce — for a hyperbezier that means the WHOLE run re-solves,
+      // which is the honest picture and the reason the warm start matters.
+      const preview: AuthoredPath = penCursor
+        ? { ...penDraft, nodes: [...penDraft.nodes, { x: penCursor.x, y: penCursor.y, continuity: defaultContinuity(penDraft.kind) }] }
+        : penDraft;
+      const d = penPathD(preview);
+      if (d) body += `<path d="${escape(d)}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    } else if (penEdit) {
+      // The edited contour keeps the warm start; the others are lowered cold, because a
+      // solution belongs to the run it was solved for. All of them are drawn: the box's own
+      // `<svg>` is hidden for the gesture, so a contour left out here would just vanish.
+      const ds = [penPathD(penEdit.path), ...penEdit.rest.map((p) => {
+        const low = lowerAuthored(p);
+        return low.cubics.length ? cubicsToD(low.cubics, p.closed) : '';
+      })].filter(Boolean);
+      const fr = penEdit.frame;
+      if (ds.length) {
+        const tf = `translate(${cf2(fr.x)} ${cf2(fr.y)})` + (fr.rot ? ` rotate(${cf2(fr.rot)} ${cf2(fr.w / 2)} ${cf2(fr.h / 2)})` : '');
+        body += `<g transform="${tf}"><path d="${escape(ds.join(' '))}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/></g>`;
+      }
+    }
+    penLayer.innerHTML = body;
+    penLayer.style.display = '';
+  }
+
+  /** Every node's position in NATIVE px, in node order — the one place the two modes'
+   *  coordinate spaces are reconciled. */
+  function penNodePoints(): Array<{ node: SplineNode; at: Point; hIn: Point | null; hOut: Point | null }> {
+    const p = penEdit ? penEdit.path : penDraft;
+    if (!p) return [];
+    const fr = penEdit ? penEdit.frame : null;
+    const toNative = (x: number, y: number): Point => (fr ? localToFrame(fr, x, y) : { x, y });
+    return p.nodes.map((node) => {
+      const hi = handlePoint(node, 'in'), ho = handlePoint(node, 'out');
+      return {
+        node,
+        at: toNative(node.x, node.y),
+        hIn: hi ? toNative(hi.x, hi.y) : null,
+        hOut: ho ? toNative(ho.x, ho.y) : null,
+      };
+    });
+  }
+
+  /**
+   * Build-once / reposition-many for node chrome, keyed on the node COUNT plus which path
+   * is being edited — nothing else. Repositioning is pure style writes, so a drag, a pan
+   * and a zoom all cost the same handful of them; only placing or deleting a node (or
+   * changing which box is edited) recreates elements and rebinds their pointerdown. This
+   * is the discipline `chromeNodes` documents, and it matters more here: a 40-node path
+   * rebuilt per frame is 120 elements and 80 listeners per pointermove.
+   */
+  function syncPenChrome(): void {
+    const p = penEdit ? penEdit.path : penDraft;
+    if (!p) { if (penChromeKey) clearPenChrome(); return; }
+    const withHandles = !!penEdit && kindReadsHandles(p.kind);
+    const key = `${penEdit ? 'e:' + penEdit.id : 'd'}:${p.nodes.length}:${withHandles ? 'h' : '-'}`;
+    if (key !== penChromeKey) {
+      penChromeKey = key;
+      buildPenChrome(p.nodes.length, withHandles);
+    }
+    positionPenChrome();
+  }
+
+  /**
+   * The node chrome carries NO listeners, unlike the selection handles.
+   *
+   * Every pen hit test already has to happen in box-local coordinates and be
+   * rotation-aware — a handle can be anywhere, including under another node — so
+   * `onCanvasPointerDown` does it with `penHandleAt`/`nodeAt`/`nearestOnPath` against the
+   * real geometry. Binding a second, element-based path on top would give two answers to
+   * the same question, and it is precisely the per-node listener rebinding that the
+   * build-once discipline exists to avoid. The elements are therefore pointer-transparent
+   * (see `.fc-pen-chrome` in editor.css) and this function only ever mints divs.
+   */
+  function buildPenChrome(count: number, withHandles: boolean): void {
+    penChrome.innerHTML = '';
+    const arms: HTMLElement[] = [];
+    const dots: HTMLElement[] = [];
+    const nodes: HTMLElement[] = [];
+    // Arms below dots below nodes: paint order is tree order in this container.
+    for (let k = 0; withHandles && k < count * 2; k++) {
+      const arm = document.createElement('div');
+      arm.className = 'fc-pen-arm';
+      arm.hidden = true;
+      penChrome.appendChild(arm);
+      arms.push(arm);
+    }
+    for (let k = 0; withHandles && k < count * 2; k++) {
+      const dot = document.createElement('div');
+      dot.className = 'fc-pen-handle';
+      dot.hidden = true;
+      penChrome.appendChild(dot);
+      dots.push(dot);
+    }
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement('div');
+      el.className = 'fc-pen-node';
+      penChrome.appendChild(el);
+      nodes.push(el);
+    }
+    penChromeNodes = { nodes, arms, dots };
+  }
+
+  function positionPenChrome(): void {
+    const nodes = penChromeNodes;
+    if (!nodes) return;
+    const m = metrics();
+    const pts = penNodePoints();
+    for (let i = 0; i < nodes.nodes.length; i++) {
+      const el = nodes.nodes[i]!;
+      const pt = pts[i];
+      if (!pt) { el.hidden = true; continue; }
+      el.hidden = false;
+      const s = nativeToStage(pt.at.x, pt.at.y, m);
+      el.style.left = s.x + 'px';
+      el.style.top = s.y + 'px';
+      const cont = pt.node.continuity ?? defaultContinuity(penEdit ? penEdit.path.kind : penDraft!.kind);
+      el.classList.toggle('is-corner', cont === 'corner');
+      el.classList.toggle('is-symmetric', cont === 'symmetric');
+      el.classList.toggle('is-on', penSel.has(i));
+      // The first node of an OPEN draft is the one a click closes on, so it reads as a
+      // target rather than as another placed point.
+      el.classList.toggle('is-close-target', !!penDraft && i === 0 && pts.length >= 3);
+    }
+    for (let k = 0; k < nodes.dots.length; k++) {
+      const i = k >> 1;
+      const which: 'in' | 'out' = k % 2 === 0 ? 'in' : 'out';
+      const dot = nodes.dots[k]!;
+      const arm = nodes.arms[k]!;
+      const pt = pts[i];
+      const h = pt ? (which === 'in' ? pt.hIn : pt.hOut) : null;
+      if (!pt || !h) { dot.hidden = true; arm.hidden = true; continue; }
+      const a = nativeToStage(pt.at.x, pt.at.y, m);
+      const b = nativeToStage(h.x, h.y, m);
+      dot.hidden = false;
+      dot.style.left = b.x + 'px';
+      dot.style.top = b.y + 'px';
+      arm.hidden = false;
+      arm.style.left = a.x + 'px';
+      arm.style.top = a.y + 'px';
+      arm.style.width = Math.hypot(b.x - a.x, b.y - a.y) + 'px';
+      arm.style.transform = `rotate(${Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI}deg)`;
+    }
+  }
+
+  // ── the pen's contextual bar ───────────────────────────────────────────────────
+
+  /** Where the pen bar's own panels (the lossy-switch confirmation) anchor. */
+  function penCtxAnchorPoint(): Point {
+    const r = ctxbar.getBoundingClientRect();
+    return { x: r.left || lastMenuAt.x, y: r.bottom || lastMenuAt.y };
+  }
+
+  /**
+   * The paint section + kind switcher + continuity control, in `ctxbar` — which is the
+   * contextual control bar that already rebuilds on a selection-signature change, so the
+   * pen's signature just joins that scheme rather than inventing a second bar.
+   *
+   * The paint controls are the SAME `paintCtxHtml` the object bar uses. This bar replaces
+   * `ctxbar.innerHTML`, so before that sharing existed fill and stroke disappeared the
+   * instant node editing began — which is the thing the bug report was actually about.
+   */
+  function penCtxBar(): void {
+    const p = penEdit ? penEdit.path : penDraft;
+    if (!p) return;
+    const contSig = [...penSel].sort((a, b) => a - b).map((i) => p.nodes[i]?.continuity ?? '').join(',');
+    const key = `pen:${penEdit ? penEdit.id : 'draft'}:${p.kind}:${p.closed ? 'c' : 'o'}:${p.nodes.length}:${contSig}`;
+    if (key !== ctxSelKey) {
+      ctxSelKey = key;
+      buildPenCtxBar(p);
+    }
+    ctxbar.hidden = false;
+    positionPenCtxBar();
+  }
+
+  function buildPenCtxBar(p: AuthoredPath): void {
+    closeMorePanel();
+    const drawing = !!penDraft;
+    const selN = penSel.size;
+    const cont = selN ? String(p.nodes[[...penSel][0]!]?.continuity ?? defaultContinuity(p.kind)) : '';
+    const kindLabel: Record<string, string> = {
+      hyperbezier: t('Smooth (auto)'), cubic: t('Bezier handles'),
+      'catmull-rom': t('Through the points'), bspline: t('B-spline'), line: t('Straight lines'),
+    };
+    // Paint belongs to the BOX, so it only appears once there is one: a draft lives in JS
+    // state until it commits, and its paint comes from the add-kind's seed.
+    const painted = !drawing && !!penEdit;
+    let editBox: Box = {};
+    if (painted) {
+      const rows = getBoxes();
+      editBox = rows[indexOfId(rows, penEdit!.id)] || {};
+    }
+    ctxbar.innerHTML =
+      (painted ? paintCtxHtml(editBox, true) + '<span class="fc-sep fc-sep-v"></span>' : '') +
+      `<select class="field-select field-select--sm fc-pen-kind" data-pen="kind" title="${escape(t('Spline type'))}" aria-label="${escape(t('Spline type'))}">` +
+        PEN_KINDS.map((k) => `<option value="${k}"${k === p.kind ? ' selected' : ''}>${escape(kindLabel[k] || k)}</option>`).join('') +
+      '</select>' +
+      (drawing ? '' :
+        '<span class="fc-sep fc-sep-v"></span>' +
+        segHtml('pen-cont', cont, [
+          ['corner', t('Corner point - handles move independently'), SVG.contCorner],
+          ['smooth', t('Smooth point - handles stay in line'), SVG.contSmooth],
+          ['symmetric', t('Symmetric point - handles stay in line and equal'), SVG.contSymmetric],
+        ]) +
+        `<button type="button" class="fc-cbtn${p.closed ? ' is-on' : ''}" data-pen="closed" aria-pressed="${p.closed}" title="${escape(t('Closed path'))}" aria-label="${escape(t('Closed path'))}">${icon(SVG.penClose)}</button>` +
+        `<button type="button" class="fc-cbtn fc-danger" data-pen="del"${selN ? '' : ' disabled'} title="${escape(t('Delete the selected points'))}" aria-label="${escape(t('Delete the selected points'))}">${icon(SVG.trash)}</button>`) +
+      '<span class="fc-sep fc-sep-v"></span>' +
+      `<button type="button" class="fc-cbtn" data-pen="done" title="${escape(drawing ? t('Finish this path (Enter)') : t('Finish editing points (Esc)'))}" aria-label="${escape(drawing ? t('Finish this path') : t('Finish editing points'))}">${icon(SVG.penDone)}</button>` +
+      `<span class="fc-readout">${escape(drawing
+        ? (p.nodes.length === 1 ? t('1 point - hold Alt for a corner') : t('{n} points - hold Alt for a corner', { n: p.nodes.length }))
+        : (selN ? t('{k} of {n} points', { k: selN, n: p.nodes.length }) : t('{n} points', { n: p.nodes.length })))}</span>`;
+    const kindSel = ctxbar.querySelector<HTMLSelectElement>('[data-pen="kind"]');
+    kindSel?.addEventListener('change', () => {
+      const to = kindSel.value as SplineKind;
+      if (penDraft) { penDraft = { ...penDraft, kind: to }; penDrawKind = to; penWarm = null; renderChrome(); return; }
+      penSetKind(to);
+    });
+    wireSegs(ctxbar, (field, v) => { if (field === 'pen-cont' && v) penSetContinuity(v as Continuity); });
+    if (painted) {
+      wirePaintCtx(ctxbar);
+      ctxbar.querySelectorAll<HTMLElement>('[data-cx="stroke"]').forEach((b) => b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openStrokePanel(b);
+      }));
+    }
+    ctxbar.querySelectorAll<HTMLElement>('[data-pen]').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const which = b.dataset.pen;
+      if (which === 'closed') penToggleClosed();
+      else if (which === 'del') penDeleteSelected();
+      else if (which === 'done') { if (penDraft) penFinishDraw(); else endPenEdit(); }
+    }));
+  }
+
+  /** Above the edited box, or above the draft's own extent — the same perch the object bar
+   *  takes, so the bar does not jump when a draw becomes a selection. */
+  function positionPenCtxBar(): void {
+    const m = metrics();
+    let minX = 0, minY = 0, maxX = 0, maxY = 0;
+    if (penEdit) {
+      const fr = penEdit.frame;
+      minX = fr.x; minY = fr.y; maxX = fr.x + fr.w; maxY = fr.y + fr.h;
+    } else if (penDraft && penDraft.nodes.length) {
+      minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity;
+      for (const n of penDraft.nodes) {
+        minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+        minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+      }
+    } else {
+      const wh = canvasWH();
+      minX = 0; minY = 0; maxX = wh.w; maxY = wh.h;
+    }
+    const tl = nativeToStage(minX, minY, m);
+    const br = nativeToStage(maxX, maxY, m);
+    const bw = ctxbar.offsetWidth || 0;
+    ctxbar.style.left = Math.max(6, Math.min((tl.x + br.x) / 2 - bw / 2, m.sr.width - bw - 6)) + 'px';
+    ctxbar.style.top = Math.max(6, tl.y - 48) + 'px';
+  }
+
+  // ── the tool mode ─────────────────────────────────────────────────────────────
+  /**
+   * THE mode switch. Every enter/exit below is private to it, because the bug it fixes was
+   * not a missing button: the modes were four independent booleans, so each `armX` had to
+   * remember to disarm each of the others by hand — and `armConnect` never disarmed the pen,
+   * so Connect-over-Pen left two live tools, two lit rail buttons, and an Escape that took
+   * two presses to dismantle what looked like one state. Here "enter next" IS "leave
+   * everything else", once, in one place.
+   *
+   * `draft` decides an in-progress pen path's fate, and the two answers are deliberately
+   * opposite: a TOOL SWITCH finishes it ('commit', the default — the user asked for a
+   * different tool, not to throw the path away, which is what every mainstream design tool
+   * does), while Escape means cancel and passes 'discard'. Getting these the same way round
+   * either loses drawn work or resurrects work the user just abandoned. `penFinishDraw`
+   * still commits nothing for a draft under two nodes, so a stray single click on the way
+   * out leaves no invisible one-node box behind.
+   *
+   * Point editing is not a mode, but it IS something the user is inside, so any tool change
+   * leaves it — the same way switching tools leaves a text edit.
+   */
+  function setMode(next: EditorMode, o: { kind?: AddKind; draft?: 'commit' | 'discard' } = {}): void {
+    if (next === 'connect' && !connectCfg) return;
+    if (next === 'pen' && !cfg.pathField) return;
+    if (next === 'create' && !o.kind && !armedKind) return;
+    const from = mode;
+    if (penEdit) endPenEdit();
+    if (from === 'pen' && penDraft) { if (o.draft === 'discard') penCancelDraw(); else penFinishDraw(); }
+    mode = next;
+    if (from !== next) {
+      if (from === 'create') exitCreate();
+      else if (from === 'pen') exitPen();
+      else if (from === 'connect') exitConnect();
+      if (next === 'pen') enterPen();
+      else if (next === 'connect') enterConnect();
+    }
+    if (next === 'create') enterCreate(o.kind);
+    syncModeUI();
+  }
+  /** Back to the pointer, from anywhere — Escape's mode rung, and every internal "this
+   *  gesture consumed the tool" exit. */
+  const toPointer = (draft: 'commit' | 'discard' = 'commit'): void => { setMode('select', { draft }); };
+  /** The pointer as an EXPLICIT user choice (the rail button, `V`). Announced, because the
+   *  other two tools announce themselves and a mode change no screen reader hears is not a
+   *  mode change; the internal exits above stay quiet, or every edge click would speak. */
+  const pickPointer = (): void => {
+    toPointer();
+    announce(t('Pointer on - click to select, drag to move.'));
+  };
+
+  function enterCreate(kind?: AddKind): void {
+    if (kind) armedKind = kind;
+    deselectEdge();
+    stageEl.classList.add('fc-arming');
+  }
+  function exitCreate(): void {
+    armedKind = null;
+    stageEl.classList.remove('fc-arming');
+  }
+  function enterConnect(): void {
+    deselectEdge();                            // drop any connector selection
+    // …and its highlight with it. `deselectEdge` leaves the overlay layer alone while
+    // connect mode is on (the mode's own preview lives there), so the outgoing selection's
+    // highlight has to be cleared here or it hangs around over an empty selection.
+    hideConnectLayer();
     connectSource = null;
     selection = new Set<string>();
     stageEl.classList.add('fc-connecting');
-    toolbar.querySelector('.fc-btn-connect')?.classList.add('is-armed');
     setHoverEdge(null);
     announce(t('Connect mode on — click a card, then the card to link it to. Esc to finish.'));
     renderChrome();
   }
-  function disarmConnect(): void {
-    armedConnect = false;
+  function exitConnect(): void {
     connectSource = null;
     stageEl.classList.remove('fc-connecting');
-    toolbar.querySelector('.fc-btn-connect')?.classList.remove('is-armed');
     hideConnectLayer();
+  }
+
+  /**
+   * The rail's one job: say which tool is live. Attributes only, on buttons captured at
+   * build time — this runs on every chrome sync (so, every frame of a drag), and the rail
+   * follows the same build-once/touch-many discipline as the selection chrome.
+   */
+  function syncModeUI(): void {
+    const flag = (b: HTMLElement | null, on: boolean): void => {
+      if (!b) return;
+      b.classList.toggle('is-armed', on);
+      b.setAttribute('aria-pressed', String(on));
+    };
+    flag(modeBtns.select, mode === 'select');
+    flag(modeBtns.create, mode === 'create');
+    flag(modeBtns.pen, mode === 'pen');
+    flag(modeBtns.connect, mode === 'connect');
   }
 
   // Auto-arrange the connected cards into a tidy top-down hierarchy. Roots (cards with
@@ -2073,6 +3535,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let fmtbar: FmtBar | null = null;
 
   function onDblClick(e: MouseEvent): void {
+    // A double-click ends an open pen path — the polyline-ending gesture every tool with a
+    // multi-click primitive uses — and it never falls through to a text edit, because there
+    // is no box under the cursor yet to edit.
+    if (penDraft) { e.preventDefault(); penFinishDraw(); return; }
+    // On a committed path box it ENTERS node editing, the same way a double-click enters a
+    // text edit on a text box (see startTextEdit); one mode per kind of content.
+    if (vectorCfg && !penEdit) {
+      const pnat = clientToNative(e.clientX, e.clientY);
+      const pboxes = getBoxes();
+      const phit = hitTest(pboxes, pnat.x, pnat.y, cfg);
+      if (phit >= 0 && boxOutlineKind(pboxes[phit], vectorCfg) === 'path') {
+        e.preventDefault();
+        startPenEdit(idOf(pboxes[phit], phit));
+        return;
+      }
+    }
+    if (penEdit) return;                        // node-edit mode owns its own double-clicks
     if (!cfg.textField) return;
     // Already editing this box's text → let the browser's native double-click
     // word-selection stand. This listener is on the canvas, so a dblclick inside
@@ -2672,8 +4151,68 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     fmtbar.style.top = Math.max(6, top) + 'px';
   }
 
+  // ── two-finger tap → context menu (touch) ─────────────────────────────────────
+  // A touchscreen has no right-click, and `contextmenu` is not reliably synthesised for
+  // one: Android Chrome fires it on a long-press, iOS Safari does not fire it at all over
+  // ordinary elements, and NO mobile browser fires it for a two-finger tap. So the
+  // gesture is recognised here rather than waited for.
+  //
+  // It must not steal two-finger PAN or PINCH, which tool-stage-nav.ts owns on this same
+  // element through these same pointer events. That is what the two thresholds are for: a
+  // tap is two fingers down together, neither travelling more than TWO_TAP_SLOP, released
+  // inside TWO_TAP_MS. A pan travels, a pinch travels, and a two-finger hold outstays the
+  // window — each of those clears the candidate and stageNav keeps the gesture untouched.
+  // Nothing is taken away from it in the tap case either: stageNav's pinch dead-zone
+  // swallows a sub-pixel finger spread and a zero-delta two-finger pan is a no-op.
+  const TWO_TAP_MS = 500;
+  const TWO_TAP_SLOP = 14;                    // SCREEN px, per finger
+  interface TouchPt { x: number; y: number; moved: number }
+  const touchPts = new Map<number, TouchPt>();
+  let twoTapStart = 0;                        // when the second finger landed (0 = not a candidate)
+  let twoTapDone = false;                     // menu already opened for this touch sequence
+
+  // Capture phase on the STAGE, so this runs before onCanvasPointerDown (bound to the
+  // canvas, a descendant) and that handler can see the second finger has arrived.
+  function onStageTouchDown(e: PointerEvent): void {
+    if (e.pointerType === 'mouse') return;
+    touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: 0 });
+    if (touchPts.size === 2) { twoTapStart = e.timeStamp || Date.now(); twoTapDone = false; }
+    else if (touchPts.size > 2) twoTapStart = 0;   // three fingers is not a tap
+  }
+  function onStageTouchMove(e: PointerEvent): void {
+    const p = touchPts.get(e.pointerId);
+    if (!p) return;
+    p.moved = Math.max(p.moved, Math.hypot(e.clientX - p.x, e.clientY - p.y));
+    if (p.moved > TWO_TAP_SLOP) twoTapStart = 0;   // a pan or a pinch, not a tap
+  }
+  function onStageTouchUp(e: PointerEvent): void {
+    if (e.pointerType === 'mouse') return;
+    const pts = [...touchPts.values()];
+    const when = e.timeStamp || Date.now();
+    if (twoTapStart && !twoTapDone && pts.length === 2
+      && when - twoTapStart <= TWO_TAP_MS
+      && pts.every((p) => p.moved <= TWO_TAP_SLOP)) {
+      twoTapDone = true;                      // the OTHER finger's up must not re-open it
+      twoTapStart = 0;
+      if (gesture) endGesture();              // neither finger commits a (zero-delta) drag
+      contextMenuAt((pts[0]!.x + pts[1]!.x) / 2, (pts[0]!.y + pts[1]!.y) / 2, false);
+    }
+    touchPts.delete(e.pointerId);
+    if (!touchPts.size) { twoTapStart = 0; twoTapDone = false; }
+  }
+
   function onCanvasPointerDown(e: PointerEvent): void {
     if (e.button > 0) return;                 // primary button / touch only
+    // A second finger belongs to a stage gesture (pan / pinch / two-finger tap), never to
+    // a box drag — and the first finger's gesture is abandoned so no drag commits.
+    if (e.pointerType !== 'mouse' && touchPts.size > 1) {
+      // A node the FIRST finger placed is retracted, not just abandoned: the create gesture
+      // above commits nothing until release, but a pen node is already in the draft, and a
+      // two-finger pan must not litter the shape being drawn with the point it started on.
+      if (gesture?.type === 'pendraw') { endGesture(); penUndoNode(); return; }
+      if (gesture) endGesture();
+      return;
+    }
     if (editing) {
       if (editing.el.contains(e.target as Node)) return;   // let the caret move within the text
       commitTextEdit();                            // clicked elsewhere → commit, then select
@@ -2685,7 +4224,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Connect mode: click a source card, then each target it links to. Clicking the
     // same card again (or empty canvas) drops the pending source; Esc / the rail button
     // exits the mode. Never starts a drag gesture.
-    if (armedConnect) {
+    if (mode === 'connect') {
       const chit = hitTest(boxes, nat.x, nat.y, cfg);
       if (chit < 0) { connectSource = null; hideConnectLayer(); e.stopPropagation(); e.preventDefault(); return; }
       const cid = idOf(boxes[chit], chit);
@@ -2693,6 +4232,69 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       else if (connectSource === cid) { connectSource = null; hideConnectLayer(); e.stopPropagation(); e.preventDefault(); return; }
       else { toggleEdge(connectSource, cid); connectSource = cid; }   // chain from the same source
       drawConnectRubber(nat);
+      e.stopPropagation(); e.preventDefault();
+      return;
+    }
+
+    // Pen — DRAWING. Click places a node; the drag that follows pulls its handles out
+    // symmetrically; a click on the first node closes the path. Nothing about the box
+    // selection model runs here, which is why Alt is free to mean "corner".
+    if (mode === 'pen') {
+      const tol = penTol();
+      if (penDraft && closesOnClick(penDraft.nodes, nat.x, nat.y, tol)) {
+        penDraft = { ...penDraft, closed: true };
+        penFinishDraw();
+        e.stopPropagation(); e.preventDefault();
+        return;
+      }
+      // Same snapping as an armed create: the pointer snaps to sibling/artboard edges and
+      // centres and draws the SAME `.fc-guides`, rather than a second snapping system.
+      let px = nat.x, py = nat.y;
+      if (gridOn && !e.altKey) { px = gridRound(px); py = gridRound(py); }
+      const snap = snapPoint(px, py, otherAABBs(boxes, new Set<number>()) as MathAABB[], canvasWH(), snapThreshNative());
+      drawGuides(snap.guides);
+      penPlaceNode(e, { x: snap.x, y: snap.y }, e.altKey);
+      e.stopPropagation(); e.preventDefault();
+      return;
+    }
+
+    // Pen — NODE EDITING. Handles first (smaller, and outside the curve), then nodes, then
+    // the curve itself (a click on it inserts), and only then a marquee over the nodes.
+    if (penEdit) {
+      const fr = penEdit.frame;
+      const loc = frameToLocal(fr, nat.x, nat.y);
+      const tol = penTol();
+      const hh = penHandleAt(loc.x, loc.y, tol);
+      if (hh) {
+        setPathSvgHidden(true);
+        beginGesture(e, { type: 'penhandle', origin: nat, index: hh.index, which: hh.which });
+        e.stopPropagation(); e.preventDefault();
+        return;
+      }
+      const ni = nodeAt(penEdit.path, loc.x, loc.y, tol);
+      if (ni >= 0) {
+        if (e.shiftKey || e.metaKey || e.ctrlKey) { penSel.has(ni) ? penSel.delete(ni) : penSel.add(ni); }
+        else if (!penSel.has(ni)) penSel = new Set([ni]);
+        setPathSvgHidden(true);
+        beginGesture(e, {
+          type: 'pennode', origin: nat,
+          indices: penSel.size ? [...penSel] : [ni],
+          start: penEdit.path.nodes.map((n) => ({ ...n })),
+        });
+        ctxSelKey = null;                        // the continuity control reflects the new pick
+        renderChrome();
+        e.stopPropagation(); e.preventDefault();
+        return;
+      }
+      const { cubics } = lowerAuthored(penEdit.path, penWarm);
+      const hit = nearestOnPath(cubics, loc.x, loc.y);
+      if (hit && hit.distance <= PEN_CURVE_PX / penScale()) {
+        penInsertAt(loc.x, loc.y);
+        e.stopPropagation(); e.preventDefault();
+        return;
+      }
+      beginGesture(e, { type: 'penmarquee', origin: nat, additive: e.shiftKey || e.metaKey });
+      rubber.hidden = false;
       e.stopPropagation(); e.preventDefault();
       return;
     }
@@ -2756,6 +4358,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function onBackdropPointerDown(e: PointerEvent): void {
     if (e.button > 0 || e.target !== e.currentTarget) return;
     if (editing) commitTextEdit();
+    // Clicking right off the artboard is the natural "I'm done" for both pen modes, and it
+    // matches what the same click already does to a selection.
+    if (penDraft) { penFinishDraw(); return; }
+    if (penEdit) { endPenEdit(); return; }
     closePopover();
     deselectEdge();
     if (selection.size) selection = new Set<string>();
@@ -2784,8 +4390,56 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const dxN = nat.x - (gesture.origin?.x ?? clientToNative(gesture.startClient.x, gesture.startClient.y).x);
     const dyN = nat.y - (gesture.origin?.y ?? clientToNative(gesture.startClient.x, gesture.startClient.y).y);
 
-    if (gesture.type === 'marquee') {
+    if (gesture.type === 'marquee' || gesture.type === 'penmarquee') {
       drawRubber(gesture.origin, nat);
+      return;
+    }
+    // Pen: pull the just-placed node's handles out symmetrically, the universal
+    // click-and-drag idiom. A `corner` node ignores it (pullHandles says so), which is what
+    // makes Alt-click-drag place a hard corner rather than a curve.
+    if (gesture.type === 'pendraw') {
+      if (!penDraft) return;
+      const i = gesture.index;
+      const n = penDraft.nodes[i];
+      if (!n) return;
+      const nodes = penDraft.nodes.slice();
+      nodes[i] = pullHandles({ ...n, x: gesture.origin.x, y: gesture.origin.y }, nat.x - gesture.origin.x, nat.y - gesture.origin.y);
+      penDraft = { ...penDraft, nodes };
+      paintPen();
+      positionPenChrome();
+      return;
+    }
+    if (gesture.type === 'pennode') {
+      if (!penEdit) return;
+      // The pointer snaps against sibling boxes and the artboard exactly as a create/resize
+      // drag does — same helper, same `.fc-guides` layer, Alt suppresses it — so a node can
+      // be landed on a neighbour's edge without a second snapping system existing.
+      let sx = nat.x, sy = nat.y;
+      if (!e.altKey) {
+        if (gridOn) { sx = gridRound(sx); sy = gridRound(sy); }
+        const snap = snapPoint(sx, sy, otherAABBs(getBoxes(), new Set([indexOfId(getBoxes(), penEdit.id)])) as MathAABB[], canvasWH(), snapThreshNative());
+        sx = snap.x; sy = snap.y;
+        drawGuides(snap.guides);
+      } else clearGuides();
+      const fr = penEdit.frame;
+      const a = frameToLocal(fr, gesture.origin.x, gesture.origin.y);
+      const b = frameToLocal(fr, sx, sy);
+      gesture.moved = Math.hypot(sx - gesture.origin.x, sy - gesture.origin.y) > 0.01;
+      penEdit = { ...penEdit, path: moveNodes(penEdit.path, gesture.indices, b.x - a.x, b.y - a.y, gesture.start) };
+      paintPen();
+      positionPenChrome();
+      return;
+    }
+    if (gesture.type === 'penhandle') {
+      if (!penEdit) return;
+      // No snapping: a handle is not an object edge, so an alignment guide would be a lie.
+      // `dragHandle` re-applies the node's continuity on EVERY move, which is what
+      // `enforceContinuity` exists for.
+      const loc = frameToLocal(penEdit.frame, nat.x, nat.y);
+      gesture.moved = true;
+      penEdit = { ...penEdit, path: dragHandle(penEdit.path, gesture.index, gesture.which, loc.x, loc.y) };
+      paintPen();
+      positionPenChrome();
       return;
     }
     if (gesture.type === 'create') {
@@ -2890,13 +4544,51 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     if (g.type === 'tap') {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
-      if (moved < 6) { selection = new Set<string>(); disarm(); renderChrome(); }
+      if (moved < 6) { selection = new Set<string>(); toPointer(); renderChrome(); }
       gesture = null;
       return;
     }
 
     const nat = clientToNative(e.clientX, e.clientY);
     const boxes = getBoxes();
+
+    // Pen: placing a node commits NOTHING — the draft is a draft until the path ends, which
+    // is what makes the whole drawing one undo step (see `penFinishDraw`).
+    if (g.type === 'pendraw') {
+      endGesture();
+      penCursor = nat;
+      paintPen();
+      syncPenChrome();
+      penCtxBar();
+      return;
+    }
+    if (g.type === 'pennode' || g.type === 'penhandle') {
+      const moved = g.moved === true;
+      const next = penEdit ? penEdit.path : null;
+      setPathSvgHidden(false);
+      endGesture();
+      if (moved && next) penEditWrite(next);
+      else renderChrome();
+      return;
+    }
+    if (g.type === 'penmarquee') {
+      const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
+      if (penEdit) {
+        if (moved < 6) {
+          if (!g.additive) penSel = new Set<number>();
+        } else {
+          const r = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
+          const hits = penNodePoints().reduce<number[]>((acc, pt, i) =>
+            (pt.at.x >= r.x && pt.at.x <= r.x + r.w && pt.at.y >= r.y && pt.at.y <= r.y + r.h ? (acc.push(i), acc) : acc), []);
+          if (g.additive) for (const i of hits) penSel.add(i);
+          else penSel = new Set(hits);
+        }
+      }
+      endGesture();
+      ctxSelKey = null;
+      renderChrome();
+      return;
+    }
 
     if (g.type === 'create') {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
@@ -2924,13 +4616,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // type-constrained picker instead of the general image one.
       const wasLottie = armedKind?.id === 'lottie';
       const wasVideo = armedKind?.id === 'video';
-      const wasImage = !wasLottie && !wasVideo && ((g.seed?.[cfg.kindField] === 'image') || armedKind?.id === 'image');
-      const wasText = (g.seed?.[cfg.kindField] === 'text') || armedKind?.id === 'text';
-      disarm();
+      // Sequence Studio's kinds. `clip` seeds kind:'image' too, so — like Animation and
+      // Video — it must be recognised BEFORE wasImage or it would open the general image
+      // picker. `tool` also seeds kind:'image' and deliberately DOES fall through to the
+      // untyped picker: that is where the Lolly-link / saved-session path lives, and the
+      // picker is already handed `editTool` so a chosen tool opens its inputs first.
+      // `card` seeds kind:'box' and takes no asset at all — it is authored like text.
+      // An add-kind id this switch doesn't know keeps its seed-derived behaviour.
+      const wasClip = armedKind?.id === 'clip';
+      const wasAudio = armedKind?.id === 'audio' || g.seed?.[cfg.kindField] === 'audio';
+      const wasCard = armedKind?.id === 'card';
+      const wasImage = !wasLottie && !wasVideo && !wasClip && !wasAudio
+        && ((g.seed?.[cfg.kindField] === 'image') || armedKind?.id === 'image');
+      const wasText = (g.seed?.[cfg.kindField] === 'text') || armedKind?.id === 'text' || wasCard;
+      toPointer();                  // the gesture consumed the armed kind — back to the pointer
       endGesture();
       commit([...boxes, box]);
+      // A new timed box is only useful next to a timeline, so creating one opens it.
+      if (timeCfg && (wasClip || wasCard || wasAudio)) openTimeline();
       if (wasLottie) setTimeout(() => pickImage({ pickType: 'lottie' }), 0);
-      else if (wasVideo) setTimeout(() => pickImage({ pickType: 'video' }), 0);
+      else if (wasVideo || wasClip) setTimeout(() => pickImage({ pickType: 'video' }), 0);
+      else if (wasAudio) setTimeout(() => pickImage({ pickType: 'audio' }), 0);
       else if (wasImage) setTimeout(() => pickImage(), 0);
       else if (wasText && cfg.textField) editAfterPaint(id, { selectAll: true });
       return;
@@ -2951,7 +4657,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           selection = new Set(hits);
           selectedEdges = new Set(edgeHits);
         }
-        if (selectedEdges.size) { if (armedConnect) disarmConnect(); setHoverEdge(null); }
+        if (selectedEdges.size) { if (mode === 'connect') toPointer(); setHoverEdge(null); }
       }
       endGesture();
       renderChrome();                                  // card chrome + edge highlights (via renderChrome)
@@ -3064,17 +4770,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // omit the arrowheads/dashes (the real hook adds those on commit).
   const cf2 = (v: number): number => Math.round(v * 100) / 100;
   const cAttr = (s: string): string => String(s == null ? '' : s).replace(/[<>"]/g, '');
-  // Size + place the preview <svg> to cover the artboard in stage px (native viewBox).
-  function placeConnectLayer(m: Metrics): void {
+  // Size + place a preview <svg> to cover the artboard in stage px (native viewBox), so
+  // its contents can be written in native coordinates and a pan/zoom is one element move.
+  function placeNativeLayer(el: SVGSVGElement, m: Metrics): void {
     const cw = canvasWH();
     const o = nativeToStage(0, 0, m);
-    connectLayer.style.left = o.x + 'px';
-    connectLayer.style.top = o.y + 'px';
-    connectLayer.style.width = (cw.w * m.scale) + 'px';
-    connectLayer.style.height = (cw.h * m.scale) + 'px';
-    connectLayer.setAttribute('viewBox', `0 0 ${cw.w} ${cw.h}`);
-    connectLayer.setAttribute('preserveAspectRatio', 'none');
+    el.style.left = o.x + 'px';
+    el.style.top = o.y + 'px';
+    el.style.width = (cw.w * m.scale) + 'px';
+    el.style.height = (cw.h * m.scale) + 'px';
+    el.setAttribute('viewBox', `0 0 ${cw.w} ${cw.h}`);
+    el.setAttribute('preserveAspectRatio', 'none');
   }
+  const placeConnectLayer = (m: Metrics): void => placeNativeLayer(connectLayer, m);
   // Hide/show the tool's committed connector <svg> (so it doesn't double up with the
   // live preview mid-drag). Re-shown on gesture end; the commit re-renders it anyway.
   function setRealConnectorsHidden(hidden: boolean): void {
@@ -3175,7 +4883,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (disposed) return;
       setRealConnectorsHidden(false);
-      if (!armedConnect && !selectedEdges.size) hideConnectLayer();
+      if (mode !== 'connect' && !selectedEdges.size) hideConnectLayer();
     }));
   }
 
@@ -3235,7 +4943,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // so the edgeAt hit-test never runs more than once per frame.
   function updateHover(): void {
     hoverRaf = 0;
-    if (!connectCfg || armedConnect || selectedEdges.size || gesture || !lastPointer) { setHoverEdge(null); return; }
+    if (!connectCfg || mode === 'connect' || selectedEdges.size || gesture || !lastPointer) { setHoverEdge(null); return; }
     const nat = clientToNative(lastPointer.x, lastPointer.y);
     setHoverEdge(edgeAt(nat.x, nat.y));
   }
@@ -3253,7 +4961,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         connectLayer.innerHTML = `<path d="${d}" fill="none" stroke="#30ba78" stroke-width="${cf2(w + 6)}" stroke-linejoin="round" stroke-linecap="round" opacity="0.18"/>`;
         connectLayer.style.display = '';
       }
-    } else if (!selectedEdges.size && !armedConnect) {
+    } else if (!selectedEdges.size && mode !== 'connect') {
       hideConnectLayer();
     }
   }
@@ -3289,7 +4997,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // otherwise it becomes the sole selection. Either way it clears the card selection —
   // a marquee is what mixes cards + connectors (see the marquee gesture end).
   function selectEdge(eid: string, additive?: boolean): void {
-    if (armedConnect) disarmConnect();
+    if (mode === 'connect') toPointer();
     setHoverEdge(null);
     if (additive && selectedEdges.size) {
       if (selectedEdges.has(eid)) selectedEdges.delete(eid); else selectedEdges.add(eid);
@@ -3306,7 +5014,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!selectedEdges.size && !edgePanel) return;
     selectedEdges = new Set<string>();
     closeEdgePanel();
-    if (!armedConnect) hideConnectLayer();
+    if (mode !== 'connect') hideConnectLayer();
   }
   function closeEdgePanel(): void { edgePanel?.remove(); edgePanel = null; }
   // Redraw EVERY selected edge's highlight (native coords in the connect layer) + keep
@@ -3474,12 +5182,34 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   function paintChrome(boxes: Box[], liveRects: Map<number, Rect> | null): void {
+    // The one place a selection change is announced (see selListeners) — BEFORE the
+    // text-edit / pen early returns, so a listener never misses a change made in
+    // those modes. Inert (returns immediately) when nothing is listening.
+    notifySelection();
     // M2 — reposition the frame scrim only when the artboard geometry changed (pan/
     // zoom/resize set scrimDirty); a box drag/hover/selection change never moves it.
     if (scrimDirty) { positionFrameScrim(); scrimDirty = false; }
     // While editing text, suppress selection chrome + ctxbar; just keep the floating
     // format bar tracking the box as the stage pans/zooms.
     if (editing) { clearChrome(); ctxbar.hidden = true; positionFmtBar(); return; }
+    // Pen mode owns the chrome outright — no selection outline, no resize handles, and the
+    // object bar replaced by the pen's own. Same suppression a text edit does, for the same
+    // reason: the box's frame is not what is being manipulated.
+    if (penDraft || penEdit) {
+      clearChrome();
+      penSyncFromModel(boxes);
+      if (penDraft || penEdit) {
+        paintPen();
+        syncPenChrome();
+        penCtxBar();
+        updateToolbarState(0);
+        syncBoxA11y();
+        emptyHint.hidden = true;
+        return;
+      }
+    }
+    if (penChromeKey) clearPenChrome();
+    paintPen();
     const idx = selIndices(boxes);
     const m = metrics();
     // M1 — build the outline(s) + handles ONCE per selection set, then only reposition.
@@ -3730,8 +5460,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   function updateToolbarState(count: number): void {
     // Nothing hard-disabled — align-to-canvas works on a single box; arrange/delete
-    // no-op when empty. Just reflect the armed state.
-    toolbar.querySelector('.fc-btn-add')?.classList.toggle('is-armed', !!armedKind);
+    // no-op when empty. Just reflect which tool is live.
+    syncModeUI();
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────────
@@ -3785,8 +5515,70 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   function onKey(e: KeyboardEvent): void {
     if (disposed) return;
-    if (e.key === 'Escape') { if (armedConnect) { disarmConnect(); } else if (selectedEdges.size) { deselectEdge(); } else if (armedKind) { disarm(); } else if (selection.size) { selection = new Set<string>(); renderChrome(); } closePopover(); return; }
+    // The timeline panel binds its keys on its OWN root and owns them while focus is
+    // inside it (deck-editor's `.deck-strip, .deck-bar…` bail). Without this, Delete /
+    // arrows / ⌘A / Enter typed at a clip would also hit the canvas selection.
+    if (timelinePanel && (document.activeElement as HTMLElement | null)?.closest?.('.tl-panel')) return;
+    // ── Escape: ONE ladder, innermost rung first, one rung per press ───────────
+    // Escape is exempt from the typing bail below on purpose: it is how you get out of a
+    // text edit too (onEditKey owns that and stops here).
+    //
+    // The rule that matters is that a rung only swallows the key if it actually DID
+    // something. The old first rung returned on a merely non-null `popover` / `morePanel`
+    // reference, so a reference left pointing at a detached element silently ate the next
+    // Escape — the reported "Esc does not leave point editing". A floating surface that is
+    // no longer in the document is not a rung.
+    if (e.key === 'Escape') {
+      if (dismissFloating()) { e.preventDefault(); return; }
+      // Cancel, not commit: a draft dies here and Enter (or a tool switch) is what keeps it.
+      if (penDraft) { e.preventDefault(); penCancelDraw(); return; }
+      // Point editing ends and the rail is already the pointer, since it never left it.
+      if (penEdit) { e.preventDefault(); endPenEdit(); return; }
+      if (mode !== 'select') { e.preventDefault(); toPointer('discard'); return; }
+      if (selectedEdges.size) { e.preventDefault(); deselectEdge(); return; }
+      if (selection.size) { e.preventDefault(); selection = new Set<string>(); renderChrome(); return; }
+      return;                       // nothing left to back out of — leave the key alone
+    }
+    // ── the pen's other keys ───────────────────────────────────────────────────
+    // Each already means something on a box, so the pen takes them only while it is
+    // actually on, and hands them straight back when it is not. The split follows the
+    // meanings already in this handler rather than redefining them:
+    //   Enter   — "commit the thing you are in the middle of", as it commits a text edit;
+    //             it finishes the drawn path and leaves point editing.
+    //   Delete/Backspace — "remove what is selected", so it drops the last placed node
+    //             while drawing and the selected nodes while editing, never the box.
+    if ((penDraft || penEdit) && !typingTarget()) {
+      if (penDraft) {
+        if (e.key === 'Enter') { e.preventDefault(); penFinishDraw(); return; }
+        if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); penUndoNode(); return; }
+      } else if (penEdit) {
+        if (e.key === 'Enter') { e.preventDefault(); endPenEdit(); return; }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && penSel.size) { e.preventDefault(); penDeleteSelected(); return; }
+        if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          penSel = new Set(penEdit.path.nodes.map((_, i) => i));
+          ctxSelKey = null;
+          renderChrome();
+          return;
+        }
+      }
+    }
     if (typingTarget()) return;
+    // Tool shortcuts, the Illustrator/Figma letters: V pointer, P pen. Unmodified only —
+    // ⌘V is paste and ⌘P is print — and after `typingTarget()`, so a live text edit or any
+    // focused field gets the letter typed into it instead. Neither letter meant anything
+    // here before (the only unmodified keys taken are Escape/Enter/F2/Delete/arrows, and
+    // tool-stage-nav's 0/1/+/-).
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'v' || e.key === 'V')) {
+      e.preventDefault();
+      pickPointer();
+      return;
+    }
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'p' || e.key === 'P') && cfg.pathField) {
+      e.preventDefault();
+      if (mode !== 'pen') setMode('pen');
+      return;
+    }
     // Enter / F2 on a selected box → edit its text (select-all so typing replaces it).
     if ((e.key === 'Enter' || e.key === 'F2') && !editing && selection.size && cfg.textField) {
       e.preventDefault();
@@ -3827,6 +5619,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── wiring ────────────────────────────────────────────────────────────────────
+  // Two-finger-tap recognition — capture phase, so a second finger is already recorded by
+  // the time the canvas's own pointerdown handler runs (see onCanvasPointerDown).
+  stageEl.addEventListener('pointerdown', onStageTouchDown, true);
+  stageEl.addEventListener('pointermove', onStageTouchMove, true);
+  stageEl.addEventListener('pointerup', onStageTouchUp, true);
+  stageEl.addEventListener('pointercancel', onStageTouchUp, true);
   canvasEl.addEventListener('pointerdown', onCanvasPointerDown);
   stageEl.addEventListener('pointerdown', onBackdropPointerDown);   // deselect on backdrop click
   viewEl.addEventListener('pointerdown', onBackdropPointerDown);
@@ -3858,12 +5656,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // costs nothing.
   const onStagePointerMove = (e: any): void => {
     if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY };
+    // Pen: the segment from the last placed node to the cursor, previewed live. Only while
+    // no gesture is running — mid-drag the pointer is pulling a handle, not proposing a
+    // node. Works for `pointerType: 'touch'` too: a touch drag reports `buttons` while
+    // down, so this only fires between taps and never fights stageNav's pan/pinch.
+    if (mode === 'pen' && penDraft && !gesture && e && typeof e.clientX === 'number' && !e.buttons) {
+      penCursor = clientToNative(e.clientX, e.clientY);
+      paintPen();
+      return;
+    }
     // Connect mode: while a source card is pending, the "rubber" tracks the cursor.
-    if (armedConnect && connectSource && e && typeof e.clientX === 'number' && !e.buttons) {
+    if (mode === 'connect' && connectSource && e && typeof e.clientX === 'number' && !e.buttons) {
       drawConnectRubber(clientToNative(e.clientX, e.clientY));
     }
     // Hover affordance over connector lines (idle hover only, throttled to one rAF/frame).
-    if (connectCfg && !armedConnect && !selectedEdges.size && !gesture && e && !e.buttons && typeof e.clientX === 'number') {
+    if (connectCfg && mode !== 'connect' && !selectedEdges.size && !gesture && e && !e.buttons && typeof e.clientX === 'number') {
       if (!hoverRaf) hoverRaf = requestAnimationFrame(updateHover);
     }
     if (e && e.buttons) scheduleSync();
@@ -3888,6 +5695,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   document.addEventListener('pointerdown', onDocDown, true);
 
   renderChrome();
+
+  // A composition that already has timing opens with its timeline showing; an empty
+  // (or untimed) one leaves the stage whole until the user asks for it from the rail.
+  if (timeCfg && anyTimed(getBoxes())) openTimeline();
 
   // Universal drop front door (lib/drop-router.ts): a design file dropped on the
   // gallery/dashboard was stashed one-shot and is consumed here on mount, through
@@ -3917,7 +5728,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   return {
     destroy() {
       disposed = true;
+      // FIRST, so nothing that throws later in this teardown can leave the stage's
+      // bottom band reserved for a panel that no longer exists.
+      destroyTimeline();
       finishEdit();
+      if (flashTimer) clearTimeout(flashTimer);
+      stageEl.removeEventListener('pointerdown', onStageTouchDown, true);
+      stageEl.removeEventListener('pointermove', onStageTouchMove, true);
+      stageEl.removeEventListener('pointerup', onStageTouchUp, true);
+      stageEl.removeEventListener('pointercancel', onStageTouchUp, true);
       canvasEl.removeEventListener('pointerdown', onCanvasPointerDown);
       stageEl.removeEventListener('pointerdown', onBackdropPointerDown);
       viewEl.removeEventListener('pointerdown', onBackdropPointerDown);
@@ -3939,6 +5758,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       dirtyObserver?.disconnect();
       unsub?.();
       canvasEl.classList.remove('fc-open-canvas');
+      stageEl.classList.remove('fc-penning', 'fc-node-editing');
       overlay.remove(); toolbarDock.remove(); closePopover(); closeMorePanel(); closeEdgePanel();
       document.body.classList.remove('fc-manipulating');
     },

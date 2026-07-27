@@ -44,6 +44,7 @@ import { stackingRole, sortUnits, orderModifiedChildren, isFlexOrGridContainer }
 import type { StackingRole } from './stacking-order.ts';
 import { unscopeStyleEls } from '../lib/scope-css.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
+import { recTransition } from '../lib/transitions.ts';
 import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
 import { encodeMuxWebCodecs, type EncodeAudio } from './video-encode-core.ts';
 import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.ts';
@@ -316,7 +317,16 @@ export function createExportAPI(host: WebHost) {
       // paint live video, so a video box would otherwise export blank. One swap on
       // the live node here covers every format, including each ZIP sub-format (they
       // re-dispatch the same, already-swapped node).
-      const restoreMotion = snapshotMotion(node);
+      //
+      // ONE exception: a [data-sequence] stage exported to a MOTION format. There
+      // the sequence compositor decodes every clip itself, frame by frame, off the
+      // timeline — a frozen still would export a stuck picture instead of moving
+      // footage. Stills KEEP the freeze, deliberately: a still export of a sequence
+      // is the frame at the playhead, with each video exactly where the preview
+      // had it (the phase-2 WYSIWYG contract).
+      const restoreMotion = (SEQUENCE_MOTION_FORMATS.has(format) && isSequenceStage(node))
+        ? (): void => {}
+        : snapshotMotion(node);
 
       try {
         return await renderFormat(node, format, opts);
@@ -400,6 +410,26 @@ function isRecordStage(node: Element): boolean {
   return Boolean((node as HTMLElement).matches?.('[data-record-stage]') || node.querySelector?.('[data-record-stage]'));
 }
 
+// A timed composition's artboard carries [data-sequence] (on the node or a
+// descendant) — the all-or-nothing marker a tool stamps when anything on it has a
+// start/duration. Motion export then goes through the deterministic sequence
+// compositor (bridge/sequence-render.ts), which reads the timeline off the DOM and
+// decodes each clip frame-accurately instead of filming the preview in real time.
+function isSequenceStage(node: Element): boolean {
+  return Boolean((node as HTMLElement).matches?.('[data-sequence]') || node.querySelector?.('[data-sequence]'));
+}
+
+// The formats a sequence stage renders through the compositor. Everything else is
+// a STILL: the frame at the playhead, exactly as the preview shows it.
+const SEQUENCE_MOTION_FORMATS = new Set(['webm', 'mp4', 'gif', 'apng']);
+
+// Lazy so mediabunny + the compositor stay out of the initial bundle (the muxer
+// precedent) — they load the first time a timed composition is exported.
+async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts): Promise<Blob> {
+  const { renderSequence } = await import('./sequence-render.ts');
+  return renderSequence(node, format, opts, _host ?? null);
+}
+
 async function renderFormatDispatch(node: Element, format: string, opts: ExportOpts = {}): Promise<Blob> {
   switch (format) {
     case 'png':
@@ -460,17 +490,25 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
       return await renderZip(node, opts);
     case 'pptx':
       return await renderPptx(node, opts);
+    // A [data-sequence] stage is checked FIRST for every motion format — a timed
+    // composition is the most specific thing a render target can be. `opts.live`
+    // still wins for webm/mp4, exactly as it does over the record/top-tail sniffs:
+    // "Record live" means film the screen, not re-render the timeline.
     case 'webm':
+      if (!opts.live && isSequenceStage(node)) return await renderSequenceStage(node, 'webm', opts);
       return await (opts.live ? renderLive(node, opts, 'webm')
         : isRecordStage(node) ? renderRecord(node, opts, 'webm')
         : isTopTailStage(node) ? renderTopTail(node, opts, 'webm') : renderVideo(node, opts, 'webm'));
     case 'mp4':
+      if (!opts.live && isSequenceStage(node)) return await renderSequenceStage(node, 'mp4', opts);
       return await (opts.live ? renderLive(node, opts, 'mp4')
         : isRecordStage(node) ? renderRecord(node, opts, 'mp4')
         : isTopTailStage(node) ? renderTopTail(node, opts, 'mp4') : renderVideo(node, opts, 'mp4'));
     case 'gif':
+      if (isSequenceStage(node)) return await renderSequenceStage(node, 'gif', opts);
       return await renderGif(node, opts);
     case 'apng':
+      if (isSequenceStage(node)) return await renderSequenceStage(node, 'apng', opts);
       return await renderApng(node, opts);
     case 'webp-anim':
       return await renderWebpAnim(node, opts);
@@ -4597,16 +4635,19 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       if (fillRgb   && fillOp   < 0.999) fillRgb   = blendSvgWithWhite(fillRgb,   fillOp);
       if (strokeRgb && strkOp   < 0.999) strokeRgb = blendSvgWithWhite(strokeRgb, strkOp);
       if (fillRgb)   pdf.setFillColor(fillRgb[0], fillRgb[1], fillRgb[2]);
+      let restoreStroke: (() => void) | null = null;
       if (strokeRgb) {
         pdf.setDrawColor(strokeRgb[0], strokeRgb[1], strokeRgb[2]);
         const lw = strokeWidthOf(e) * strokeMul(e);
         pdf.setLineWidth(Math.max(0.1, lw));
+        restoreStroke = applySvgStrokeDecoration(pdf, e, strokeMul(e));
       }
       drawSvgPathToPdf(pdf, d, PX, PY);
       const fillRule = e.getAttribute('fill-rule') ?? 'nonzero';
       if (fillRgb && strokeRgb) pdf.fillStroke();
       else if (fillRgb) { fillRule === 'evenodd' ? pdf.fillEvenOdd() : pdf.fill(); }
       else pdf.stroke();
+      restoreStroke?.();
     };
 
     // Render this element — leaf geometry, or a container's children — under any own
@@ -6331,6 +6372,55 @@ export function strokeWidthOf(el: Element): number {
   return Number.isFinite(v) && v >= 0 ? v : 1;
 }
 
+/**
+ * Carry an SVG shape's stroke DECORATION — dash array, cap, join, miter limit — into the
+ * PDF graphics state, and hand back the undo. Without this the PDF walker reproduced only a
+ * stroke's colour and width, so a dashed or flat-capped outline exported as a plain round
+ * solid one: a control whose effect vanished on export, which is worse than not offering it.
+ *
+ * jsPDF's line state is STICKY (it writes the operator once and every later stroke inherits
+ * it), which is why the caller must run the returned restore — the same discipline the
+ * border path already follows. Every setter is feature-checked because older jsPDF builds
+ * ship only some of them.
+ *
+ * Lengths are multiplied by `mul`, the same user-unit → pt factor applied to stroke-width,
+ * so a dash keeps its proportion to the line. `stroke-dasharray` is read as numbers only:
+ * a non-finite or negative entry, or an all-zero pattern (which PDF rejects), drops the
+ * dash rather than emitting an invalid pattern.
+ */
+export function applySvgStrokeDecoration(pdf: any, el: Element, mul: number): (() => void) | null {
+  const undo: Array<() => void> = [];
+  const raw = el.getAttribute('stroke-dasharray') ?? resolveStyleProp(el, 'stroke-dasharray') ?? '';
+  if (raw && raw !== 'none' && typeof pdf.setLineDashPattern === 'function') {
+    const nums = raw.trim().split(/[\s,]+/).map((s) => parseFloat(s) * mul);
+    if (nums.length && nums.every((n) => Number.isFinite(n) && n >= 0) && nums.some((n) => n > 0)) {
+      pdf.setLineDashPattern(nums, 0);
+      undo.push(() => pdf.setLineDashPattern([], 0));
+    }
+  }
+  const cap = el.getAttribute('stroke-linecap') ?? resolveStyleProp(el, 'stroke-linecap') ?? '';
+  if ((cap === 'round' || cap === 'square') && typeof pdf.setLineCap === 'function') {
+    // jsPDF's CapJoinStyles understands the SVG keywords verbatim ('square' → projecting),
+    // and THROWS on anything it does not, which is why only the two are let through.
+    pdf.setLineCap(cap);
+    undo.push(() => pdf.setLineCap('butt'));
+  }
+  const join = el.getAttribute('stroke-linejoin') ?? resolveStyleProp(el, 'stroke-linejoin') ?? '';
+  if ((join === 'round' || join === 'bevel') && typeof pdf.setLineJoin === 'function') {
+    pdf.setLineJoin(join);
+    undo.push(() => pdf.setLineJoin('miter'));
+  }
+  // A miter join is PDF's default, but its default LIMIT is 10 against SVG's 4 — so a
+  // shape that says 4 has to say it here too, or a spike PDF keeps is one the browser and
+  // the SVG export both bevelled away.
+  const ml = parseFloat(el.getAttribute('stroke-miterlimit') ?? resolveStyleProp(el, 'stroke-miterlimit') ?? '');
+  if (Number.isFinite(ml) && ml >= 1 && typeof pdf.setLineMiterLimit === 'function') {
+    pdf.setLineMiterLimit(ml);
+    undo.push(() => pdf.setLineMiterLimit(10));
+  }
+  return undo.length ? () => { for (const fn of undo) fn(); } : null;
+}
+
 function resolveColor(el: any): Rgb | null {
   const attr = el.getAttribute('fill');
   if (attr && attr !== 'currentColor') return parseSvgColor(attr);
@@ -6405,6 +6495,11 @@ function snapshotMotion(node: Element): () => void {
       ctx.drawImage(video, 0, 0, w, h);                 // SecurityError if the video is cross-origin tainted
       const still = document.createElement('img');
       still.src = canvas.toDataURL('image/png');        // also throws SecurityError if tainted — caught below
+      // Marked so a renderer that decodes the video ITSELF can hide the freeze
+      // instead of baking it in. The sequence compositor needs exactly that on the
+      // ZIP path, where the guard above keys on the outer 'zip' format and the
+      // frozen still therefore already exists by the time mp4/webm re-dispatches.
+      still.setAttribute('data-motion-still', '1');
       // Reproduce the on-screen framing: the class + inline style carry sizing
       // (e.g. .lolly-box-img width/height + object-fit), and the computed
       // replaced-element props cover a tool that set them elsewhere.
@@ -7540,42 +7635,8 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
 // footage as overlays (lower-third, logo bug), entering at the head and leaving at the
 // tail. Detected via [data-record-stage].
 
-const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
-function easeOutBack(t: number): number {
-  const c1 = 1.70158, c3 = c1 + 1;
-  return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
-}
-
-// One object's animated offset at progress p∈[0,1] (0 = entrance start, 1 = at rest).
-// Distances scale with the object's own size so a small lower-third slides a small way.
-function recTransition(kind: string, p: number, w: number, h: number): { dx: number; dy: number; sc: number; alpha: number; rot: number } {
-  if (kind === 'none') return { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 0 };
-  const pc = Math.max(0, Math.min(1, p));
-  const ep = easeOutCubic(pc);
-  const eb = easeOutBack(pc);
-  const aFast = Math.min(1, pc / 0.6);   // opacity ramps in fast → crisp video/gif
-  const aSlide = Math.min(1, pc / 0.4);
-  let dx = 0, dy = 0, sc = 1, alpha = aFast, rot = 0;
-  switch (kind) {
-    case 'fade': break;
-    case 'pop': sc = 0.7 + 0.3 * eb; break;
-    case 'grow': sc = Math.max(0.02, ep); break;
-    case 'rise': dy = (1 - ep) * (h * 0.6 + 48); break;
-    case 'drop': dy = -(1 - ep) * (h * 0.6 + 48); break;
-    case 'slide-left':  dx = (1 - ep) * (w * 0.9 + 140); alpha = aSlide; break; // from the right
-    case 'slide-right': dx = -(1 - ep) * (w * 0.9 + 140); alpha = aSlide; break; // from the left
-    case 'slide-up':    dy = (1 - ep) * (h * 0.9 + 140); alpha = aSlide; break; // from below
-    case 'slide-down':  dy = -(1 - ep) * (h * 0.9 + 140); alpha = aSlide; break; // from above
-    case 'zoom-in': sc = 0.6 + 0.4 * ep; break;
-    case 'zoom-out': sc = 1.5 - 0.5 * ep; break;
-    case 'tilt': rot = (1 - ep) * -14; dy = (1 - ep) * 36; break;
-    case 'swoop': dx = (1 - ep) * (w * 0.6 + 140); rot = (1 - ep) * 10; break;
-    case 'spin': rot = (1 - ep) * -200; sc = 0.5 + 0.5 * ep; break;
-    case 'drift': dx = (1 - ep) * (w * 0.25); dy = (1 - ep) * (h * 0.12); alpha = Math.min(1, pc / 0.9); break;
-    default: break; // unknown → plain fade
-  }
-  return { dx, dy, sc, alpha, rot };
-}
+// The transition vocabulary + its maths live in ../lib/transitions.ts so the timeline
+// editing chrome can offer exactly the kinds this compositor implements.
 
 interface RecObject { bmp: HTMLCanvasElement | null; x: number; y: number; w: number; h: number; rot: number; transition: string; delay: number }
 
