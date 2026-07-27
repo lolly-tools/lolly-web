@@ -491,16 +491,21 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'pptx':
       return await renderPptx(node, opts);
     // A [data-sequence] stage is checked FIRST for every motion format — a timed
-    // composition is the most specific thing a render target can be. `opts.live`
-    // still wins for webm/mp4, exactly as it does over the record/top-tail sniffs:
-    // "Record live" means film the screen, not re-render the timeline.
+    // composition is the most specific thing a render target can be — and for a
+    // sequence the compositor also BEATS `opts.live`. Live capture films the real
+    // DOM in real time, but nothing animates a sequence stage on its own (the
+    // playhead only moves while the timeline panel drives it), so "Record live" on
+    // a sequence could only ever return the current frame, held. The compositor is
+    // deterministic, faster than realtime and higher quality, so it wins here.
+    // Precedence is UNCHANGED everywhere else: for a non-sequence stage `opts.live`
+    // still wins over the record/top-tail sniffs.
     case 'webm':
-      if (!opts.live && isSequenceStage(node)) return await renderSequenceStage(node, 'webm', opts);
+      if (isSequenceStage(node)) return await renderSequenceStage(node, 'webm', opts);
       return await (opts.live ? renderLive(node, opts, 'webm')
         : isRecordStage(node) ? renderRecord(node, opts, 'webm')
         : isTopTailStage(node) ? renderTopTail(node, opts, 'webm') : renderVideo(node, opts, 'webm'));
     case 'mp4':
-      if (!opts.live && isSequenceStage(node)) return await renderSequenceStage(node, 'mp4', opts);
+      if (isSequenceStage(node)) return await renderSequenceStage(node, 'mp4', opts);
       return await (opts.live ? renderLive(node, opts, 'mp4')
         : isRecordStage(node) ? renderRecord(node, opts, 'mp4')
         : isTopTailStage(node) ? renderTopTail(node, opts, 'mp4') : renderVideo(node, opts, 'mp4'));

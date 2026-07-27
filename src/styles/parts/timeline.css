@@ -475,12 +475,34 @@
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
-.tl-chip {
-  max-width: 160px;
-  padding: 3px 9px;
+/* Each entry is a PILL OF TWO BUTTONS: the label (selects the box, which opens the
+   inspector) and a `+` that promotes it onto the timeline. A button cannot nest
+   inside a button, so the pill's border/background/radius live on this wrapper and
+   the two halves are transparent.
+
+   No transform and NO `overflow: hidden` here: this element is the ancestor of two
+   hoverable buttons, and either one would clip a tooltip bubble or make itself the
+   containing block for a fixed popover (the trap .tl-panel's own `overflow: visible`
+   exists to avoid). The halves round their own outer corners instead. */
+.tl-chip-group {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 210px;
   border: 1px solid hsl(var(--border));
   border-radius: 999px;
   background: hsl(var(--muted) / 0.6);
+}
+.tl-chip-group:hover { border-color: hsl(var(--muted-foreground)); }
+.tl-chip {
+  min-width: 0;
+  max-width: 160px;
+  padding: 3px 9px;
+  border: 0;
+  /* Logical corners, so the pill still reads right in RTL. */
+  border-radius: 0;
+  border-start-start-radius: 999px;
+  border-end-start-radius: 999px;
+  background: transparent;
   color: hsl(var(--foreground));
   font: inherit;
   font-size: 11px;
@@ -490,7 +512,60 @@
   cursor: pointer;
 }
 .tl-chip:hover { background: hsl(var(--accent)); }
-.tl-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.tl-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+/* Selected: the chip is the only on-screen anchor for an untimed box, so it has to
+   show selection as plainly as a bar's ring does. */
+.tl-chip.is-selected {
+  background: color-mix(in srgb, var(--brand-primary, hsl(var(--primary))) 20%, transparent);
+  font-weight: 600;
+}
+
+/* The promote half. Divided by its own inline start border rather than a separator
+   element, which keeps the pill a two-child flex row. */
+.tl-chip-add {
+  flex: 0 0 auto;
+  width: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
+  border: 0;
+  border-inline-start: 1px solid hsl(var(--border));
+  border-radius: 0;
+  border-start-end-radius: 999px;
+  border-end-end-radius: 999px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.tl-chip-add .tl-glyph { width: 11px; height: 11px; }
+.tl-chip-add:hover {
+  background: var(--brand-primary, hsl(var(--primary)));
+  color: var(--brand-on-primary, hsl(var(--primary-foreground)));
+}
+.tl-chip-add:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+
+/* ─── The timed ⇄ always-on switch (inspector tail) ──────────────────────────
+   A labelled pill rather than an icon: there is no glyph that says "this box has
+   no timing" without a caption, and it is the last control in the inspector row
+   so it has the width. */
+.tl-timing {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+.tl-timing:hover {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.6);
+}
+.tl-timing:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 
 /* ─── Junction modal ─────────────────────────────────────────────────────────
    Mounted through components/modal.ts, so the dialog chrome is already there —
@@ -528,6 +603,9 @@
 }
 @media (pointer: coarse) {
   .tl-btn { width: 36px; height: 36px; }
+  .tl-chip { padding: 7px 11px; }
+  .tl-chip-add { width: 32px; }
+  .tl-timing { padding: 8px 12px; }
   .tl-play { width: 40px; height: 40px; }
   .tl-handle { height: 14px; }
   .tl-edge { width: 12px; }

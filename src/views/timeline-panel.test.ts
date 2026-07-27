@@ -294,6 +294,8 @@ interface Harness {
   root: HTMLElement;
   panel: { destroy(): void; setOpen(v: boolean): void; isOpen(): boolean };
   bar(id: string): HTMLElement;
+  /** Drive the shared canvas selection, exactly as free-canvas would. */
+  select(ids: string[]): void;
   reserves: number[];
   /** Fire the runtime notification a real commit would have caused. */
   notify(): void;
@@ -317,6 +319,7 @@ function mount(initial: Box[], pxPerSecHint = 40): Harness {
   const reserves: number[] = [];
   let boxes = initial.map((b) => ({ ...b }));
   let selected: string[] = [];
+  let setSelection = (_ids: string[]): void => { /* replaced below, once the panel owns it */ };
   const selListeners = new Set<() => void>();
   const subs = new Set<() => void>();
 
@@ -330,7 +333,7 @@ function mount(initial: Box[], pxPerSecHint = 40): Harness {
     commit: (next: Box[]) => { commits.push(next.map((b) => ({ ...b }))); boxes = next.map((b) => ({ ...b })); },
     selection: {
       get: () => selected,
-      set: (ids: string[]) => { selected = ids; for (const f of selListeners) f(); },
+      set: setSelection = (ids: string[]) => { selected = ids; for (const f of selListeners) f(); },
       onChange: (cb: () => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
     },
     reserve: (px: number) => { reserves.push(px); },
@@ -358,6 +361,7 @@ function mount(initial: Box[], pxPerSecHint = 40): Harness {
 
   return {
     commits, root, panel, bar, reserves,
+    select: (ids: string[]) => setSelection(ids),
     notify() { for (const f of subs) f(); },
     get boxes() { return boxes; },
     teardown() { try { panel.destroy(); } catch { /* already gone */ } stageEl.remove(); },
@@ -556,6 +560,178 @@ test('a lost pointer capture does not wedge the panel into ignoring the model fo
     h.notify();
     await frames(3);
     assert.ok(h.root.querySelector('.tl-clip[data-id="o"]'), 'the new row was picked up');
+  } finally { h.teardown(); }
+});
+
+// ── promotion / demotion: timing is reachable for ANY box ─────────────────────
+//
+// The regression these pin: the `text` / `image` / `lottie` / `tool` add-kinds seed
+// neither a lane nor a start, so the box is scenery — and before this the ONLY way to
+// give one a time was to hand-edit the ?boxes= URL. The inspector gated on `bars`
+// (timed clips only) and the scenery chip did nothing but select.
+
+/** The inspector control sitting under a given field label. */
+function field(root: HTMLElement, label: string): HTMLInputElement {
+  const rows = Array.from(root.querySelectorAll<HTMLElement>('.tl-inspector .tl-field'));
+  const r = rows.find((x) => x.querySelector('.field-label')?.textContent === label);
+  assert.ok(r, `the inspector has a "${label}" field (got ${JSON.stringify(rows.map((x) => x.querySelector('.field-label')?.textContent))})`);
+  return r!.querySelector('.field-input, .field-select') as HTMLInputElement;
+}
+
+/** Type into a field the way a user leaving it does: value, then `change`. */
+function type(el: HTMLInputElement, value: string): void {
+  el.value = value;
+  el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+}
+
+const timingBtn = (root: HTMLElement): HTMLButtonElement => {
+  const b = root.querySelector('.tl-inspector .tl-timing') as HTMLButtonElement;
+  assert.ok(b, 'the inspector offers the timed ⇄ always-on switch');
+  return b;
+};
+
+test('the inspector opens for an UNTIMED box, with empty Start/Length and the transitions', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), scenery('s')]);
+  try {
+    assert.ok(h.root.querySelector('.tl-chip[data-id="s"]'), 'precondition: s is a scenery chip, not a bar');
+    assert.equal(h.root.querySelector('.tl-clip[data-id="s"]'), null, 'precondition: s has no bar');
+    assert.equal(h.root.querySelectorAll('.tl-inspector .tl-field').length, 0, 'nothing selected, nothing shown');
+
+    h.select(['s']);
+    const start = field(h.root, 'Start');
+    const len = field(h.root, 'Length');
+    assert.equal(start.value, '', 'Start is EMPTY, not a misleading 0');
+    assert.equal(len.value, '', 'Length is EMPTY, not a misleading 0');
+    assert.equal(start.placeholder, '—');
+    // The animate controls are authorable before the box is timed.
+    assert.ok(field(h.root, 'Animate in'), 'Animate in is reachable');
+    assert.ok(field(h.root, 'Animate out'), 'Animate out is reachable');
+    assert.equal(timingBtn(h.root).textContent, 'Add to the timeline');
+    // Playback-only fields stay out of the way until there is something playing.
+    assert.equal(h.root.querySelector('.tl-inspector .tl-mute'), null, 'no mute on a box with no span');
+  } finally { h.teardown(); }
+});
+
+test('typing a Start promotes an untimed box in EXACTLY ONE commit, onto an overlay lane', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), scenery('s')]);
+  try {
+    const before = tracksKey(h.boxes, cfg);
+    h.select(['s']);
+    type(field(h.root, 'Start'), '2');
+    assert.equal(h.commits.length, 1, 'ONE commit — one undo step for the whole promotion');
+
+    const written = h.commits[0]!.find((b) => b.id === 's')!;
+    assert.equal(written.start, 2, 'the typed start landed');
+    // Documented default: no media on the canvas, so the length is DEFAULT_CLIP_S — the
+    // same 3 s the magnetic pack gives a clip it cannot measure.
+    assert.equal(written.dur, 3, 'the length defaulted to the pack default');
+    assert.equal(written.lane, '', 'promoted onto an OVERLAY lane, never onto the magnetic row');
+    // The seq row is untouched: promotion must not repack anyone else.
+    assert.deepEqual(h.commits[0]!.filter((b) => b.lane === 'seq').map((b) => [b.id, b.start, b.dur]), [['a', 0, 3], ['b', 3, 2]]);
+
+    assert.notEqual(tracksKey(h.boxes, cfg), before, 'the row STRUCTURE changed, so the panel must rebuild');
+    h.notify();
+    await frames(3);
+    assert.ok(h.root.querySelector('.tl-clip[data-id="s"]'), 'and it now has a bar on a lane');
+    assert.equal(h.root.querySelector('.tl-chip[data-id="s"]'), null, 'it left the scenery strip');
+  } finally { h.teardown(); }
+});
+
+test('typing only a Length promotes at the PLAYHEAD, still one commit', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), scenery('s')]);
+  try {
+    h.select(['s']);
+    type(field(h.root, 'Length'), '1.5');
+    assert.equal(h.commits.length, 1, 'ONE commit');
+    const written = h.commits[0]!.find((b) => b.id === 's')!;
+    // The clock has never been seeked in this harness, so the playhead is at 0 — which
+    // is the documented default for a Length-only promotion.
+    assert.equal(written.start, 0, 'start defaulted to the playhead');
+    assert.equal(written.dur, 1.5, 'the typed length landed');
+  } finally { h.teardown(); }
+});
+
+test('leaving the empty Start field untouched promotes nothing', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), scenery('s')]);
+  try {
+    h.select(['s']);
+    // Tabbing through a field fires `change` in some browsers; an empty field must not
+    // be read as "start at 0" and quietly time the box.
+    type(field(h.root, 'Start'), '');
+    type(field(h.root, 'Length'), '');
+    assert.equal(h.commits.length, 0, 'an untouched empty field writes nothing');
+  } finally { h.teardown(); }
+});
+
+test('the scenery chip\'s + button promotes straight from the strip, one commit', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), scenery('s')]);
+  try {
+    const add = h.root.querySelector('.tl-chip-add[data-id="s"]') as HTMLElement;
+    assert.ok(add, 'the chip carries a promote affordance');
+    add.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    assert.equal(h.commits.length, 1, 'ONE commit from the chip too');
+    const written = h.commits[0]!.find((b) => b.id === 's')!;
+    assert.equal(written.start, 0, 'placed at the playhead');
+    assert.equal(written.dur, 3, 'with the default length');
+    h.notify();
+    await frames(3);
+    assert.ok(h.root.querySelector('.tl-clip[data-id="s"]'), 'it is on a lane');
+  } finally { h.teardown(); }
+});
+
+test('a timed OVERLAY demotes back to scenery in one commit — "always on" is not a trap', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 1, 1)]);
+  try {
+    const before = tracksKey(h.boxes, cfg);
+    h.select(['o']);
+    const toggle = timingBtn(h.root);
+    assert.equal(toggle.textContent, 'Make always on', 'a timed box offers the reverse');
+    toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    assert.equal(h.commits.length, 1, 'ONE commit');
+
+    const written = h.commits[0]!.find((b) => b.id === 'o')!;
+    assert.equal(written.start, '', 'start CLEARED — an empty field, never a 0');
+    assert.equal(written.dur, '');
+    assert.equal(written.lane, '');
+    assert.notEqual(tracksKey(h.boxes, cfg), before, 'un-timing changes the row structure');
+
+    h.notify();
+    await frames(3);
+    assert.ok(h.root.querySelector('.tl-chip[data-id="o"]'), 'it is back in the scenery strip');
+    assert.equal(h.root.querySelector('.tl-clip[data-id="o"]'), null, 'and its bar is gone');
+  } finally { h.teardown(); }
+});
+
+test('demoting a SEQ clip closes the gap it leaves, inside the same commit', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), clip('c', 5, 1)]);
+  try {
+    h.select(['a']);
+    timingBtn(h.root).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    assert.equal(h.commits.length, 1, 'ONE commit');
+    const seq = h.commits[0]!.filter((b) => b.lane === 'seq');
+    assert.deepEqual(
+      seq.map((b) => [b.id, b.start, b.dur]),
+      [['b', 0, 2], ['c', 2, 1]],
+      'the magnetic row repacked gapless from zero',
+    );
+    assert.equal(h.commits[0]!.find((b) => b.id === 'a')!.start, '', 'and a is scenery');
+  } finally { h.teardown(); }
+});
+
+test('a promoted box round-trips: promote, demote, and the model is scenery again', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), scenery('s')]);
+  try {
+    h.select(['s']);
+    type(field(h.root, 'Start'), '4');
+    assert.equal(h.commits.length, 1);
+    // The inspector re-rendered against the now-timed box, so the switch flipped.
+    const toggle = timingBtn(h.root);
+    assert.equal(toggle.textContent, 'Make always on');
+    toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    assert.equal(h.commits.length, 2, 'one commit each way, never a compound step');
+    const written = h.commits[1]!.find((b) => b.id === 's')!;
+    assert.equal(written.start, '');
+    assert.equal(written.dur, '');
   } finally { h.teardown(); }
 });
 
