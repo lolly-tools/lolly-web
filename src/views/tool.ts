@@ -507,7 +507,8 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const redoStack: HistoryEntry[] = [];
   let applyingHistory = false;
   let historyControls: HistoryControls | null = null;   // ↶/↷ buttons — header pair, or the editor's toolbar pair (set on mount)
-  let historyToastEl: HTMLElement | null = null, historyToastTimer = 0;
+  let historyToastEl: HTMLElement | null = null;
+  let historyToastTimer: ReturnType<typeof setTimeout> | undefined;
   // Gesture continuity for coalescing, tracked SEPARATELY from stack entries: an
   // undo/redo leaves an old entry on top still carrying its original time, so if we
   // keyed coalescing off the entry the next edit could wrongly merge into it (losing

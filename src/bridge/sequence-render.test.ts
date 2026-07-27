@@ -31,12 +31,16 @@ test('contract: the raster pass clears the phase-2 clock\'s off-playhead class',
   // window, and dom-to-image copies the computed style wholesale — so without this
   // every clip but the scrubbed one exports blank.
   const render = strip(read('./sequence-render.ts'));
-  assert.match(render, /import\s*\{\s*OFF_CLASS\s*\}\s*from\s*'\.\.\/views\/sequence-clock\.ts'/,
-    'OFF_CLASS must be imported from the clock, never restated as a literal');
+  assert.match(render, /import\s*\{\s*OFF_CLASS\s*\}\s*from\s*'\.\/sequence-dom\.ts'/,
+    'OFF_CLASS must be imported from the DOM applier, never restated as a literal');
   assert.match(render, /classList\.remove\(OFF_CLASS\)/, 'the raster must clear it');
   assert.match(render, /classList\.add\(OFF_CLASS\)/, 'and put it back');
-  const clock = read('../views/sequence-clock.ts');
-  assert.match(clock, /export const OFF_CLASS = 'seq-off'/, 'the clock still owns the name');
+  // sequence-dom.ts owns the name now (the clock was refactored onto it and
+  // re-exports it, so the preview and every exporter still agree on one literal).
+  assert.match(read('./sequence-dom.ts'), /export const OFF_CLASS = 'seq-off'/,
+    'the applier owns the name');
+  assert.match(read('../views/sequence-clock.ts'), /OFF_CLASS,?[\s\S]{0,200}from '\.\.\/bridge\/sequence-dom\.ts'/,
+    'and the clock takes it from there rather than declaring a second one');
   assert.match(read('../styles/parts/timeline.css'), /\.seq-off\s*\{[^}]*display:\s*none/,
     'the class only matters because the stylesheet hides it');
 });

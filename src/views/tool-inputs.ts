@@ -2061,7 +2061,7 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
       applyBtn.disabled = false;
     };
 
-    let debounce: number | undefined;
+    let debounce: ReturnType<typeof setTimeout> | undefined;
     const schedulePreview = () => { clearTimeout(debounce); debounce = setTimeout(renderPreview, 300); };
 
     // The child runtime drives the source tool's input panel (the very same

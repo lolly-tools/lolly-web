@@ -47,7 +47,7 @@ export interface MetricsSnapshot extends MetricsData {
 
 let data: MetricsData | null = null;
 let dirty = false;
-let timer = 0;
+let timer: ReturnType<typeof setTimeout> | undefined;
 
 function normalize(d: unknown): MetricsData {
   const src: Record<string, unknown> = d && typeof d === 'object' ? d as Record<string, unknown> : {};
@@ -75,7 +75,7 @@ function load(): MetricsData {
 }
 
 function flush(): void {
-  timer = 0;
+  timer = undefined;
   if (!dirty || !data) return;
   dirty = false;
   try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* quota / disabled */ }
@@ -88,7 +88,7 @@ function schedule(): void {
 
 // Persist promptly when the tab is backgrounded or closed so nothing is lost.
 if (typeof window !== 'undefined') {
-  const flushNow = () => { if (timer) { clearTimeout(timer); timer = 0; } flush(); };
+  const flushNow = () => { if (timer) { clearTimeout(timer); timer = undefined; } flush(); };
   window.addEventListener('pagehide', flushNow);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushNow(); });
 }

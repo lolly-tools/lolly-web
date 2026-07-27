@@ -223,6 +223,13 @@ export interface ExportOpts {
   fullPage?: boolean;
   wait?: number;
   duration?: number;
+  /** True when the user actually EDITED the export bar's duration field for this
+   *  export — set by the shell, never inferred. It is what lets a derived length
+   *  (a sequence's timeline) stay the default while a direct intervention still
+   *  wins: the sequence tool's beforeExport only overwrites `duration` when this is
+   *  unset, and the compositor re-lengths the stage when it is (sequence-plan
+   *  applyDurationOverride). Popup-local, like wait/duration. */
+  durationUserSet?: boolean;
   /** Record the ON-SCREEN preview through a screen share instead of the offline
    *  frame-by-frame render, so frame pacing matches what the user watched. Opt-in
    *  via the export panel's "Record live" toggle; webm/mp4 only. Popup-local like
@@ -491,21 +498,21 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'pptx':
       return await renderPptx(node, opts);
     // A [data-sequence] stage is checked FIRST for every motion format — a timed
-    // composition is the most specific thing a render target can be — and for a
-    // sequence the compositor also BEATS `opts.live`. Live capture films the real
-    // DOM in real time, but nothing animates a sequence stage on its own (the
-    // playhead only moves while the timeline panel drives it), so "Record live" on
-    // a sequence could only ever return the current frame, held. The compositor is
-    // deterministic, faster than realtime and higher quality, so it wins here.
-    // Precedence is UNCHANGED everywhere else: for a non-sequence stage `opts.live`
-    // still wins over the record/top-tail sniffs.
+    // composition is the most specific thing a render target can be. `opts.live`
+    // still wins for webm/mp4, exactly as it does over the record/top-tail sniffs:
+    // "Record live" means film the screen, not re-render the timeline. The compositor
+    // is the better output (deterministic, faster than realtime, full quality) and
+    // stays the DEFAULT, but a real-time take is the cheap route on a low-power
+    // device, so it remains a deliberate opt-in — and renderLive drives the playhead
+    // itself for a sequence stage (see driveSequenceTime there), because nothing
+    // else moves it and the take would otherwise be one held frame.
     case 'webm':
-      if (isSequenceStage(node)) return await renderSequenceStage(node, 'webm', opts);
+      if (!opts.live && isSequenceStage(node)) return await renderSequenceStage(node, 'webm', opts);
       return await (opts.live ? renderLive(node, opts, 'webm')
         : isRecordStage(node) ? renderRecord(node, opts, 'webm')
         : isTopTailStage(node) ? renderTopTail(node, opts, 'webm') : renderVideo(node, opts, 'webm'));
     case 'mp4':
-      if (isSequenceStage(node)) return await renderSequenceStage(node, 'mp4', opts);
+      if (!opts.live && isSequenceStage(node)) return await renderSequenceStage(node, 'mp4', opts);
       return await (opts.live ? renderLive(node, opts, 'mp4')
         : isRecordStage(node) ? renderRecord(node, opts, 'mp4')
         : isTopTailStage(node) ? renderTopTail(node, opts, 'mp4') : renderVideo(node, opts, 'mp4'));
@@ -7383,6 +7390,15 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
 // motion, one take, no re-render). The module is lazy-imported so it loads only
 // when the option is actually used. wait/fps don't apply: capture starts when the
 // stage is located and frames arrive at the compositor's own cadence.
+//
+// A SEQUENCE STAGE gets a playhead driven for it. Live capture films whatever the
+// DOM is doing, and a timed composition does nothing on its own — the preview's
+// playhead only moves while the timeline panel drives it — so a live take of a
+// sequence used to be one frozen frame for the whole clip. `driveSequenceTime`
+// (bridge/sequence-dom.ts, the same applier the preview clock uses, never a second
+// copy of the maths) advances t from 0 across the capture window and restores every
+// authored style afterwards. It starts on `onRecordStart`, so the composition does
+// not play through the screen-share picker before the recorder is rolling.
 async function renderLive(node: Element, opts: ExportOpts, preferred: string): Promise<Blob> {
   const durationS = opts.duration ?? 5;
   const { audio, mimeType } = await prepareExportAudio(opts, preferred, durationS);
@@ -7392,13 +7408,18 @@ async function renderLive(node: Element, opts: ExportOpts, preferred: string): P
   // deliver. 60fps in the math (compositor rate); the clamp bounds a huge canvas.
   const { width, height } = node.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
+  // Lazy, like live-capture itself: the applier pulls in the plan module's clamps
+  // and the transition maths, which the initial bundle has no use for.
+  const playhead = isSequenceStage(node)
+    ? (await import('./sequence-dom.ts')).driveSequenceTime(node as HTMLElement, { durationMs: durationS * 1000 })
+    : null;
   try {
     const blob = await captureLiveClip(node, {
       durationMs: durationS * 1000,
       mimeType,
       videoBitsPerSecond: videoBitrate(Math.round(width * dpr), Math.round(height * dpr), 60, LIVE_BITS_PER_PIXEL),
       audioTrack: audio?.track ?? null,
-      onRecordStart: () => audio?.start(),
+      onRecordStart: () => { audio?.start(); playhead?.start(); },
       // Countdown for chrome OUTSIDE the capture (the export button) — the in-page
       // pill is skipped whenever it has no capture-safe spot next to the stage.
       onProgress: opts.onProgress,
@@ -7409,6 +7430,9 @@ async function renderLive(node: Element, opts: ExportOpts, preferred: string): P
     const container = videoContainer(blob.type || mimeType);
     return await withVideoMeta(new Blob([blob], { type: container }), container, opts.meta);
   } finally {
+    // Restores every class/inline style the playhead wrote, even if the capture threw
+    // or the user cancelled the share — the live canvas must be left as it was found.
+    playhead?.stop();
     audio?.stop();
   }
 }

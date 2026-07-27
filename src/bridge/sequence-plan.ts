@@ -233,6 +233,46 @@ export function parseSequenceStage(node: HTMLElement): SequenceStage | null {
   return { layers: els.map((el, i) => readLayer(el, i, totalMs)), totalMs };
 }
 
+/**
+ * The same stage, re-resolved against a different length.
+ *
+ * Only OPEN-ENDED layers change: they have no authored duration, so "runs to the end
+ * of the sequence" has to be re-read against the new end (that is exactly what
+ * readLayer did with the parsed `data-seq-ms`). A bounded clip keeps its authored
+ * span — a longer total gives whatever the composition shows past its last clip, a
+ * shorter one simply stops rendering before the tail, because the frame grid the
+ * caller builds from `totalMs` is what decides how far the render goes.
+ */
+export function withTotalMs(stage: SequenceStage, totalMs: number): SequenceStage {
+  const total = Math.round(clamp(totalMs, 0, MAX_TIME_MS));
+  if (!(total > 0) || total === stage.totalMs) return stage;
+  return {
+    totalMs: total,
+    layers: stage.layers.map(l => (l.openEnded ? { ...l, durMs: Math.max(0, total - l.startMs) } : l)),
+  };
+}
+
+/**
+ * Honour an explicit export-bar duration.
+ *
+ * The rule (Fable timeline): the clip's length IS the timeline's length, unless the
+ * user directly intervened on this export. The shell flags that intervention with
+ * `durationUserSet` — set when, and only when, the user actually edited the duration
+ * field — and the sequence tool's own beforeExport leaves `opts.duration` alone in
+ * that case instead of overwriting it with the derived length. Without the flag the
+ * stage keeps the length it declared in `data-seq-ms`, so the export tracks the
+ * timeline automatically.
+ */
+export function applyDurationOverride(
+  stage: SequenceStage,
+  opts: { duration?: unknown; durationUserSet?: unknown } | null | undefined,
+): SequenceStage {
+  if (!opts || opts.durationUserSet !== true) return stage;
+  const secs = typeof opts.duration === 'number' ? opts.duration : parseFloat(String(opts.duration ?? ''));
+  if (!Number.isFinite(secs) || secs <= 0) return stage;
+  return withTotalMs(stage, secs * 1000);
+}
+
 // ── the draw plan ───────────────────────────────────────────────────────────
 
 /** One layer's fully-resolved state at one instant. The executor just draws it. */

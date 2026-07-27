@@ -316,12 +316,6 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // clip away. Clamped to the timeline's own ceiling (timeline-math MAX_TIME_S).
     return Math.min(MAX_TIME_S, Math.max(0.1, Math.round(ms / 10) / 100));
   };
-  // Hover copy for "Record live" on a timed composition. The compositor is the
-  // default (and the better output); a real-time capture is the low-power second
-  // choice, not a lesser one — hence a wording change only, never a gate.
-  const LIVE_SEQ_TITLE = 'Record the sequence in real time through a screen share instead of composing it frame by frame. '
-    + 'Composing is the default and gives the cleanest result; live capture is lighter on a slow device. '
-    + 'Pick this tab in the share dialog and keep it visible for the whole take.';
   const seqInitialDuration = seqDurationS();
   const defaultDuration = seqInitialDuration ?? videoDefaults.duration ?? 5;
   // A sequence can legitimately run far past the 60s the recording field allows for
@@ -827,11 +821,25 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         if (durationEl.value !== next) durationEl.value = next;
       }
     }
-    // "Record live" stays a first-class choice for a sequence — the compositor is
-    // the default and the better output, but a real-time capture is the cheap route
-    // on a low-power device, so the control is never hidden, disabled or moved. The
-    // only sequence-specific touch is the hover copy, which says which is which.
-    if (liveLabelEl && isSeq) liveLabelEl.title = LIVE_SEQ_TITLE;
+    // "Record live" is HIDDEN for a timed composition (Andy, 2026-07-27, after
+    // testing it: "live record mode doesn't play or work but this method is fast").
+    // Live capture screen-records the preview in real time, which for a sequence has
+    // no advantage — the compositor renders the same thing deterministically at ~30x
+    // realtime — and in practice the take did not animate. Rather than ship a control
+    // that is slower AND wrong, it is suppressed here; the compositor is the only
+    // motion path for a sequence. Suppression is a data flag, not a style write,
+    // because the format-change handler re-shows every [data-video-only] control and
+    // would otherwise undo it. Un-tick on the way out so a box ticked before the tool
+    // became a sequence cannot leave opts.live set on a hidden control.
+    if (liveLabelEl) {
+      if (isSeq) liveLabelEl.dataset.suppressed = '1';
+      else delete liveLabelEl.dataset.suppressed;
+      if (isSeq) {
+        liveLabelEl.style.display = 'none';
+        const box = liveLabelEl.querySelector<HTMLInputElement>('[data-action="video-live"]');
+        if (box?.checked) box.checked = false;
+      }
+    }
   }
   // Observation mechanism: the export bar has no existing hook that fires AFTER the
   // canvas DOM is repainted — runtime.subscribe fires on model change, which is
@@ -1045,7 +1053,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       if (ditherEl)     ditherEl.style.display     = fmt === 'gif'  ? 'flex' : 'none';
       if (webm60El)     webm60El.style.display      = fmt === 'webm' ? 'flex' : 'none';
       el.querySelectorAll<HTMLElement>('[data-vector-only]').forEach(c => { c.style.display = isVectorFmt(fmt) ? 'flex' : 'none'; });
-      el.querySelectorAll<HTMLElement>('[data-video-only]').forEach(c => { c.style.display = isVideoFmt(fmt) ? 'flex' : 'none'; });
+      // `data-suppressed` wins over the video-format test: syncSequenceUi sets it on
+      // "Record live" for a timed composition, and without this check switching format
+      // would hand the control straight back.
+      el.querySelectorAll<HTMLElement>('[data-video-only]').forEach(c => {
+        c.style.display = (isVideoFmt(fmt) && c.dataset.suppressed !== '1') ? 'flex' : 'none';
+      });
       if (!isVideoFmt(fmt)) stopAudioPreview();   // the audio card is hidden — don't keep a preview playing under it
       el.querySelectorAll<HTMLElement>('[data-html-only]').forEach(c => { c.style.display = fmt === 'html' ? 'flex' : 'none'; });
       el.querySelectorAll<HTMLElement>('[data-cmyk-only]').forEach(c => { c.style.display = isCmykFmt(fmt) ? 'flex' : 'none'; });
@@ -1422,7 +1435,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // output, and removed shortly after the last change; the CSS handles the fade.
   // Re-armed on every change, so a continuous drag holds it on, then it lapses.
   const canvasOuterEl = canvasEl?.closest('.tool-canvas-outer') ?? canvasEl?.parentElement ?? null;
-  let dimPulseTimer = 0;
+  let dimPulseTimer: ReturnType<typeof setTimeout> | undefined;
   function pulseCanvasResize(): void {
     if (!canvasOuterEl) return;
     canvasOuterEl.classList.add('is-resizing');

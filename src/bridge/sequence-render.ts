@@ -44,6 +44,7 @@
 
 import {
   parseSequenceStage,
+  applyDurationOverride,
   sequenceDrawPlan,
   frameTimestamps,
   activeFrameWindow,
@@ -76,12 +77,13 @@ import {
   embedWebmMeta,
   iccProfileBytes,
 } from '@lolly/engine';
-// bridge → views, part two. The compositor photographs the LIVE artboard, and the
-// phase-2 clock has been writing `.seq-off` (display:none) onto every box that is
-// not under the playhead. Without clearing it, every clip except the one being
-// scrubbed rasterises blank. The class name is imported rather than restated so the
-// two can never drift apart.
-import { OFF_CLASS } from '../views/sequence-clock.ts';
+// The compositor photographs the LIVE artboard, and the phase-2 clock has been
+// writing `.seq-off` (display:none) onto every box that is not under the playhead.
+// Without clearing it, every clip except the one being scrubbed rasterises blank.
+// The class name is imported rather than restated so the two can never drift apart —
+// from sequence-dom.ts, which owns the DOM applier the clock itself now uses (that
+// also drops one of the bridge → views edges).
+import { OFF_CLASS } from './sequence-dom.ts';
 // bridge → views. Phase 3 already has this edge (sequence-providers.ts reuses the
 // clock's seek semantics); reusing the LIVE Lottie player instance is the only way
 // a Lottie box can be exported at all — re-mounting a second player would double
@@ -677,7 +679,13 @@ export async function renderSequence(
   node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts, host: SeqHost | null = null,
 ): Promise<Blob> {
   const log = (l: string, m: string): void => host?.log?.(l, m);
-  const stage = parseSequenceStage(node as HTMLElement);
+  // The stage declares its own length (data-seq-ms), which is the default and tracks
+  // the timeline. A duration the USER typed into the export bar overrides it — the
+  // override lands here, before the ceiling check and before anything is sized off
+  // totalMs, so the whole render (frame grid, open-ended layers, audio, the
+  // truncation verdict) is derived from one number.
+  const parsed = parseSequenceStage(node as HTMLElement);
+  const stage = parsed ? applyDurationOverride(parsed, opts) : null;
   if (!stage || !stage.totalMs) throw sequenceError('SEQ_DECODE_FAILED', 'not a timed sequence stage');
   if (stage.totalMs > MAX_SEQUENCE_MS) {
     throw sequenceError('SEQ_TOO_HEAVY', `sequence is ${Math.round(stage.totalMs / 1000)}s; the export ceiling is ${MAX_SEQUENCE_MS / 1000}s`);

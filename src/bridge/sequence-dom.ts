@@ -352,3 +352,168 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     }
   }
 }
+
+// ── a whole stage, at a time ────────────────────────────────────────────────
+
+/**
+ * The `[data-sequence]` artboard inside (or at) `root`, or null when the render
+ * target is not a timed composition. Same reading as sequence-plan's
+ * `parseSequenceStage`, so "is a sequence" means one thing everywhere.
+ */
+export function sequenceStageOf(root: HTMLElement | null): HTMLElement | null {
+  if (!root) return null;
+  return root.matches?.('[data-sequence]')
+    ? root
+    : (root.querySelector?.('[data-sequence]') as HTMLElement | null);
+}
+
+/** The declared sequence length in ms (`data-seq-ms`), or 0 when untimed. */
+export function sequenceDurationMs(root: HTMLElement | null): number {
+  const stage = sequenceStageOf(root) ?? root;
+  if (!stage) return 0;
+  const el = stage.matches?.('[data-seq-ms]')
+    ? stage
+    : (stage.querySelector?.('[data-seq-ms]') as HTMLElement | null)
+      ?? (root?.querySelector?.('[data-seq-ms]') as HTMLElement | null);
+  const v = parseFloat(el?.getAttribute('data-seq-ms') || '');
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/** A reversible run of applications against one root. Reuse it across frames. */
+export interface SequenceTimeSession {
+  /** Put every timed box into the state it should be in at `tMs`. */
+  apply(tMs: number): void;
+  /** The stage's declared length, ms (re-read each call — a repaint can change it). */
+  durationMs(): number;
+  /** Hand every touched element its authored class/styles back, and forget them. */
+  restore(): void;
+}
+
+/**
+ * Open a session over `root`.
+ *
+ * A session, not a bare function, because the authored styles have to be remembered
+ * ACROSS frames: capturing them per call would re-capture our own animated transform
+ * on frame 2 and bake it in. `restore()` is what makes the DOM byte-for-byte the
+ * caller's again — always call it in a `finally`.
+ */
+export function createSequenceTime(root: HTMLElement, opts: { media?: ApplyCtx['media'] } = {}): SequenceTimeSession {
+  const store = createAuthoredStore();
+  const boxes = (): HTMLElement[] => {
+    const stage = sequenceStageOf(root) ?? root;
+    return [...stage.querySelectorAll<HTMLElement>('[data-t-start]')];
+  };
+  return {
+    apply(tMs) {
+      const els = boxes();
+      // A repaint mints new nodes; dropping the dead entries keeps the store from
+      // handing a stale authored value to a fresh box at the same position.
+      store.prune(new Set(els));
+      applyTimeToElements(els, tMs, {
+        seqMs: sequenceDurationMs(root),
+        store,
+        ...(opts.media ? { media: opts.media } : {}),
+      });
+    },
+    durationMs: () => sequenceDurationMs(root),
+    restore() {
+      // The class is not part of the authored-style store (it is applied, not
+      // composed), so it has to be lifted separately — the same two-step the preview
+      // clock's destroy() does. Leaving it behind hides every box that was off screen
+      // at the last applied frame: a live capture would end with a blank canvas.
+      for (const el of boxes()) el.classList.remove(OFF_CLASS);
+      store.restoreAll();
+    },
+  };
+}
+
+// Sessions opened by the free-function form below, keyed by root so repeated calls
+// keep composing against the SAME captured authored styles.
+const AD_HOC = new WeakMap<HTMLElement, SequenceTimeSession>();
+
+/**
+ * Put `root`'s composition at `tMs`. The convenience form of `createSequenceTime`
+ * for callers that just want to step time (a contact sheet walking t across the
+ * sequence): the session is remembered per root, so the authored styles are captured
+ * once. Pair it with `restoreSequenceTime(root)` when finished.
+ */
+export function applySequenceTime(root: HTMLElement, tMs: number): void {
+  let s = AD_HOC.get(root);
+  if (!s) { s = createSequenceTime(root); AD_HOC.set(root, s); }
+  s.apply(tMs);
+}
+
+/** Undo every `applySequenceTime` write on `root`. A no-op if there were none. */
+export function restoreSequenceTime(root: HTMLElement): void {
+  const s = AD_HOC.get(root);
+  if (s) { s.restore(); AD_HOC.delete(root); }
+}
+
+/** A playhead someone else's clock is pacing. See `driveSequenceTime`. */
+export interface SequenceDriver {
+  /** Begin at t=0 and advance in real time. Idempotent. */
+  start(): void;
+  /** Stop advancing and restore the DOM. Idempotent, safe before `start`. */
+  stop(): void;
+}
+
+/** Frames per second the live driver steps the DOM at. */
+export const DRIVE_FPS = 30;
+
+/**
+ * Advance `root`'s playhead in REAL TIME for `durationMs`, then hold the last frame.
+ *
+ * Paced by setTimeout against a wall clock, deliberately NOT rAF — the same rule the
+ * rest of the export path follows: rAF stops entirely in a backgrounded tab, which
+ * would strand a live capture on one frame (the exact bug this exists to fix). Each
+ * tick reads the clock rather than counting frames, so a throttled timer skips
+ * ahead instead of drifting into slow motion.
+ */
+export function driveSequenceTime(
+  root: HTMLElement,
+  o: {
+    durationMs: number;
+    fps?: number;
+    /** Test seam: monotonic ms. */
+    now?: () => number;
+    /** Test seam: returns a canceller. */
+    schedule?: (fn: () => void, ms: number) => () => void;
+  },
+): SequenceDriver {
+  const session = createSequenceTime(root);
+  const now = o.now ?? (typeof performance !== 'undefined' && performance.now ? () => performance.now() : () => Date.now());
+  const schedule = o.schedule ?? ((fn, ms) => {
+    const h = setTimeout(fn, ms) as unknown as number;
+    return () => clearTimeout(h as unknown as ReturnType<typeof setTimeout>);
+  });
+  const step = 1000 / Math.max(1, o.fps ?? DRIVE_FPS);
+  const total = Math.max(0, o.durationMs);
+  let cancel: (() => void) | null = null;
+  let running = false;
+  let t0 = 0;
+
+  const tick = (): void => {
+    cancel = null;
+    if (!running) return;
+    const t = now() - t0;
+    // Past the end we hold the final frame rather than snapping back to 0 or
+    // clearing the stage: a recorder still rolling must keep seeing the composition.
+    try { session.apply(Math.min(t, total)); } catch { /* one bad frame never kills the take */ }
+    if (t >= total) { running = false; return; }
+    cancel = schedule(tick, step);
+  };
+
+  return {
+    start() {
+      if (running) return;
+      running = true;
+      t0 = now();
+      tick();
+    },
+    stop() {
+      running = false;
+      if (cancel) { cancel(); cancel = null; }
+      session.restore();
+    },
+  };
+}
