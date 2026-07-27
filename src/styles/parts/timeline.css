@@ -1,0 +1,543 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order.
+
+   Registered by its own view module: shells/web/src/views/timeline-panel.ts
+   does `import '../styles/parts/timeline.css'`, exactly like picker.css and
+   deck-editor.css. Nothing in app.css imports it — it must stay off the
+   critical path, since only sequence-studio-style timed tools ever mount it. */
+@layer views {
+
+/* ─── The clock's visibility contract ────────────────────────────────────────
+   sequence-clock.ts toggles ONE class, `seq-off`, on canvas boxes that are not
+   live at the playhead. Those boxes carry authored inline styles (position,
+   size, transform, opacity — written by the tool's hooks), so the hide has to
+   out-rank an inline declaration: !important is the only thing that does.
+   NOTE the scope — this element lives inside #tool-canvas, NOT inside
+   .tl-panel. Never nest this rule under the panel. */
+.seq-off { display: none !important; }
+
+/* ─── The docked band ────────────────────────────────────────────────────────
+   A stage sibling pinned to the bottom edge. Height is written inline by the
+   panel (clampPanelH) and the matching band is reserved on the stage via
+   --stage-reserve-bottom, so the fitted canvas floats above it rather than
+   under it.
+
+   NO transform / filter / backdrop-filter anywhere on this element or its
+   descendants that are ancestors of a trigger: either would become the
+   containing block for a `position:fixed` popover and knock it off-screen
+   (the same trap documented on .fc-toolbar). The frosted look here is a plain
+   translucent background, deliberately. */
+.tl-panel {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 22;                /* above the free-canvas overlay (12) and pen chrome (16),
+                                 below its toolbar popovers (24) and the modal top layer */
+  display: flex;
+  flex-direction: column;
+  min-height: 112px;          /* mirrors MIN_PANEL_H in timeline-panel.ts */
+  box-sizing: border-box;
+  pointer-events: auto;
+  /* NOT `hidden`. The [data-tip] primitive is a ::after pseudo-element on the button
+     itself, drawn ABOVE it (`bottom: calc(100% + 8px)`), so any clipping ancestor
+     slices the bubble in half — which is exactly what a docked band does to its own
+     toolbar, since the bar sits at the panel's top edge. The panel has no
+     border-radius and every child that can overflow (`.tl-tracks`, `.tl-inspector`)
+     carries its own scroller, so opening this up costs nothing and lets a tooltip
+     float over the canvas where it belongs. */
+  overflow: visible;
+  color: hsl(var(--card-foreground));
+  background: hsl(var(--card) / 0.96);
+  border-top: 1px solid hsl(var(--border));
+  box-shadow: 0 -10px 30px rgb(0 0 0 / 0.18);
+  font-size: 12px;
+  user-select: none;
+  touch-action: none;         /* the panel owns its own pointer gestures */
+}
+.tl-panel[hidden] { display: none; }
+/* While a gesture runs, kill hover affordances and the text caret everywhere. */
+.tl-panel.is-dragging,
+.tl-panel.is-dragging * { cursor: inherit; }
+
+/* ─── Resize grip ────────────────────────────────────────────────────────────
+   A full-width separator along the top edge; drag up to grow the panel. */
+.tl-handle {
+  flex: 0 0 auto;
+  height: 9px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+.tl-handle::after {
+  content: "";
+  width: 46px; height: 3px;
+  border-radius: 2px;
+  background: hsl(var(--border));
+  transition: background-color 0.14s ease, width 0.14s ease;
+}
+.tl-handle:hover::after { background: hsl(var(--muted-foreground)); width: 64px; }
+.tl-handle:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; border-radius: 4px; }
+
+/* ─── Top strip: transport | tools | inspector ───────────────────────────────*/
+.tl-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 10px 6px;
+  min-width: 0;
+}
+.tl-transport,
+.tl-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.tl-transport { gap: 6px; }
+.tl-time {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+/* Buttons — same silhouette as the editor rail's .fc-btn, one size down. */
+.tl-btn {
+  width: 30px; height: 30px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+  border: 0; border-radius: 9px;
+  background: transparent;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+.tl-btn svg { width: 16px; height: 16px; }
+.tl-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
+.tl-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.tl-btn:disabled { opacity: 0.35; cursor: default; }
+.tl-btn.is-active,
+.tl-btn[aria-pressed="true"] {
+  background: var(--brand-primary, hsl(var(--primary)));
+  color: var(--brand-on-primary, hsl(var(--primary-foreground)));
+}
+.tl-play { width: 34px; height: 34px; border-radius: 11px; background: hsl(var(--muted)); }
+.tl-play svg { width: 17px; height: 17px; }
+.tl-play:hover:not(:disabled) { background: hsl(var(--accent)); }
+
+/* CSS-drawn glyphs. `pause`, `scissors` and `plus` have no entry in
+   lib/icons.ts, and an inline 24×24 <svg> in the panel module would trip the R3
+   primitive guard — so they are drawn here instead. Everything is currentColor,
+   so they inherit the button's hover/active colours for free. */
+.tl-glyph {
+  position: relative;
+  display: inline-block;
+  width: 17px; height: 17px;
+}
+.tl-glyph::before,
+.tl-glyph::after { content: ""; position: absolute; background: currentColor; }
+
+.tl-glyph[data-glyph="pause"]::before,
+.tl-glyph[data-glyph="pause"]::after {
+  top: 2px; bottom: 2px; width: 3px; border-radius: 1.5px;
+}
+.tl-glyph[data-glyph="pause"]::before { left: 4px; }
+.tl-glyph[data-glyph="pause"]::after  { right: 4px; }
+
+.tl-glyph[data-glyph="plus"]::before { left: 2px; right: 2px; top: 7.5px; height: 2px; border-radius: 1px; }
+.tl-glyph[data-glyph="plus"]::after  { top: 2px; bottom: 2px; left: 7.5px; width: 2px; border-radius: 1px; }
+
+/* Scissors: two crossed blades (pseudo-elements) over two finger loops drawn as
+   ring gradients on the box itself. */
+.tl-glyph[data-glyph="scissors"] {
+  background-image:
+    radial-gradient(circle at 4.5px 14px, transparent 1.3px, currentColor 1.4px, currentColor 2.3px, transparent 2.4px),
+    radial-gradient(circle at 12.5px 14px, transparent 1.3px, currentColor 1.4px, currentColor 2.3px, transparent 2.4px);
+}
+.tl-glyph[data-glyph="scissors"]::before,
+.tl-glyph[data-glyph="scissors"]::after {
+  top: 1px; left: 7.5px; width: 2px; height: 11px;
+  border-radius: 1px;
+  transform-origin: 50% 100%;
+}
+.tl-glyph[data-glyph="scissors"]::before { transform: rotate(20deg); }
+.tl-glyph[data-glyph="scissors"]::after  { transform: rotate(-20deg); }
+
+/* ─── Inspector (selected-clip precision fields) ─────────────────────────────
+   The shared field primitive owns the control look (parts/fields.css) — this
+   sheet only lays the rows out and trims them to panel scale. Do NOT restate
+   padding / radius / shadow here. */
+.tl-inspector {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+  /* The panel takes `touch-action: none` so its drag gestures are never stolen by a
+     browser pan. The inspector is NOT a gesture surface — onPointerDown bails on
+     `.tl-inspector` — so hand its overflow row back to the browser, or a phone can't
+     reach the fields past the fold. */
+  touch-action: pan-x;
+}
+.tl-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.tl-field .field-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.tl-num  { width: 68px; font-size: 12px; padding: 5px 7px; font-variant-numeric: tabular-nums; }
+.tl-select { width: auto; font-size: 12px; padding: 5px 24px 5px 7px; }
+
+/* ─── Ruler ──────────────────────────────────────────────────────────────────
+   The inner strip is TRANSLATED to follow the tracks' scrollLeft (never
+   scrolled itself), so the ruler must clip. */
+.tl-ruler {
+  touch-action: none;         /* a finger on the ruler scrubs */
+  flex: 0 0 auto;
+  position: relative;
+  height: 19px;
+  overflow: hidden;
+  cursor: ew-resize;
+  border-top: 1px solid hsl(var(--border) / 0.7);
+  border-bottom: 1px solid hsl(var(--border) / 0.7);
+  background: hsl(var(--muted) / 0.4);
+}
+.tl-ruler:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.tl-ruler-inner { position: relative; height: 100%; }
+.tl-tick {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: hsl(var(--border));
+}
+.tl-tick-label {
+  position: absolute;
+  left: 4px; top: 2px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ─── Tracks scroller ────────────────────────────────────────────────────────*/
+.tl-tracks {
+  flex: 1 1 auto;
+  position: relative;
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 6px 0 4px;
+  /* Same reasoning as `.tl-inspector`: the panel takes `touch-action: none` so its
+     drag gestures survive, but THIS is a real scroller — a long sequence is
+     unreachable on a phone if no finger gesture can pan it. The surfaces that DO own
+     a drag (clips, the ruler, the resize handle) opt back out to `none` below, so a
+     finger on a clip still moves the clip and a finger on the background pans. */
+  touch-action: pan-x pan-y;
+}
+.tl-tracks-inner { position: relative; min-height: 100%; }
+
+.tl-lanes { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.tl-lane {
+  position: relative;
+  height: 34px;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(90deg, hsl(var(--border) / 0.28) 0 1px, transparent 1px 100%) 0 0 / 40px 100%,
+    hsl(var(--muted) / 0.35);
+}
+/* The magnetic sequence row reads as the spine: taller, a touch more present. */
+.tl-lane-seq { height: 46px; background-color: hsl(var(--muted) / 0.6); }
+
+/* Empty-sequence affordance. */
+.tl-dropslot {
+  position: absolute;
+  inset: 4px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 8px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.tl-dropslot:hover { color: hsl(var(--foreground)); border-color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.5); }
+.tl-dropslot:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+/* ─── Clips ──────────────────────────────────────────────────────────────────
+   left/width are written inline (timeToPx). Hue comes from the brand-derived
+   --store-* ramp so every theme and every loaded brand stays coherent. */
+.tl-clip {
+  touch-action: none;         /* a finger on a bar drags the bar, never the scroller */
+  --tl-hue: var(--store-other);
+  position: absolute;
+  top: 3px; bottom: 3px;
+  min-width: 3px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  border-radius: 7px;
+  background: hsl(var(--tl-hue) / 0.34);
+  box-shadow: inset 0 0 0 1px hsl(var(--tl-hue) / 0.6);
+  color: hsl(var(--foreground));
+  cursor: grab;
+  transition: box-shadow 0.12s ease, background-color 0.12s ease;
+}
+.tl-clip[data-kind="clip"]    { --tl-hue: var(--store-1); }
+.tl-clip[data-kind="video"]   { --tl-hue: var(--store-2); }
+.tl-clip[data-kind="image"]   { --tl-hue: var(--store-3); }
+.tl-clip[data-kind="audio"]   { --tl-hue: var(--store-4); }
+.tl-clip[data-kind="overlay"] { --tl-hue: var(--store-other); }
+.tl-clip-seq { top: 4px; bottom: 4px; }
+
+.tl-clip:hover { background: hsl(var(--tl-hue) / 0.44); }
+.tl-clip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.tl-clip.is-selected {
+  box-shadow: inset 0 0 0 2px var(--brand-primary, hsl(var(--primary))), 0 2px 10px rgb(0 0 0 / 0.25);
+  background: hsl(var(--tl-hue) / 0.5);
+}
+.tl-clip.is-dragging { cursor: grabbing; opacity: 0.85; z-index: 3; }
+.tl-clip.is-drop-target { box-shadow: inset 0 0 0 2px hsl(var(--muted-foreground)); }
+/* Muted: keep it legible, just visibly "off" — dimmed and hatched, so the state
+   survives a greyscale/colour-blind read rather than relying on tint alone. */
+.tl-clip.is-muted { opacity: 0.62; }
+.tl-clip.is-muted::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(135deg, hsl(var(--foreground) / 0.16) 0 3px, transparent 3px 8px);
+  pointer-events: none;
+}
+
+/* The filmstrip / waveform canvas, painted by lib/clip-thumbs.ts. Sized in JS. */
+.tl-clip-thumbs {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.tl-clip.has-thumbs .tl-clip-thumbs { opacity: 0.85; }
+/* With a filmstrip behind it the label needs its own scrim to stay readable. */
+.tl-clip.has-thumbs .tl-clip-label { background: hsl(var(--background) / 0.72); border-radius: 5px; }
+
+.tl-clip-label {
+  position: relative;
+  max-width: 100%;
+  margin: 0 4px 3px;
+  padding: 1px 4px;
+  font-size: 10.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+/* Speed badge — only present when the clip is not ×1. */
+.tl-clip[data-speed]::after {
+  content: "×" attr(data-speed);
+  position: absolute;
+  top: 2px; right: 4px;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.5;
+  color: hsl(var(--background));
+  background: hsl(var(--foreground) / 0.7);
+  pointer-events: none;
+}
+
+/* Trim handles. EDGE_PX in timeline-panel.ts is 8 — keep these in step. */
+.tl-edge {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  background: transparent;
+}
+.tl-edge-in  { left: 0; }
+.tl-edge-out { right: 0; }
+.tl-clip:hover .tl-edge::after,
+.tl-clip.is-selected .tl-edge::after {
+  content: "";
+  position: absolute;
+  top: 20%; bottom: 20%;
+  left: 2.5px;
+  width: 3px;
+  border-radius: 2px;
+  background: hsl(var(--foreground) / 0.55);
+}
+
+/* Junction (seam) chip — sits ON the cut between two sequence clips. Positioned
+   by an inline `left`; the half-width offset is a MARGIN, not a transform, so
+   the chip never becomes a containing block for anything it opens. */
+.tl-seam {
+  position: absolute;
+  top: 50%;
+  margin: -9px 0 0 -9px;
+  width: 18px; height: 18px;
+  z-index: 4;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 50%;
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.tl-seam::before {
+  content: "";
+  width: 8px; height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.tl-seam.is-fade {
+  border-color: var(--brand-primary, hsl(var(--primary)));
+  color: var(--brand-primary, hsl(var(--primary)));
+}
+.tl-seam.is-fade::before {
+  width: 10px; height: 8px; border-radius: 2px;
+  background: linear-gradient(90deg, currentColor, transparent);
+}
+.tl-seam:hover { color: hsl(var(--foreground)); border-color: hsl(var(--muted-foreground)); }
+.tl-seam:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+/* ─── Playhead + snap line ───────────────────────────────────────────────────*/
+.tl-playhead {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  z-index: 5;
+  background: var(--brand-primary, hsl(var(--primary)));
+  pointer-events: none;
+}
+.tl-playhead::before {
+  content: "";
+  position: absolute;
+  top: -4px; left: -4px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: inherit;
+}
+.tl-snapline {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  z-index: 5;
+  background: repeating-linear-gradient(180deg, hsl(var(--foreground) / 0.8) 0 4px, transparent 4px 8px);
+  pointer-events: none;
+}
+.tl-snapline[hidden] { display: none; }
+
+/* ─── Scenery strip (everything untimed — "Always on") ───────────────────────*/
+.tl-scenery {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px dashed hsl(var(--border));
+}
+.tl-scenery[hidden] { display: none; }
+.tl-scenery-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.tl-chip {
+  max-width: 160px;
+  padding: 3px 9px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--muted) / 0.6);
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.tl-chip:hover { background: hsl(var(--accent)); }
+.tl-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+/* ─── Junction modal ─────────────────────────────────────────────────────────
+   Mounted through components/modal.ts, so the dialog chrome is already there —
+   only the form's own layout belongs here. */
+.tl-junction-modal .tl-junction {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: min(300px, 78vw);
+}
+.tl-junction-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.tl-junction-kinds { display: flex; gap: 8px; }
+.tl-junction-kind { flex: 1 1 0; justify-content: center; }
+/* Selected kind: the brand fill lives in buttons.css (.btn--primary); this is the
+   lighter "chosen of two" state, so it tints rather than fills. */
+.tl-junction-kind.is-active {
+  box-shadow: inset 0 0 0 2px var(--brand-primary, hsl(var(--primary)));
+  background: color-mix(in srgb, var(--brand-primary, hsl(var(--primary))) 14%, transparent);
+}
+.tl-junction-dial { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; }
+.tl-junction-dial .tl-num { width: 92px; }
+.tl-junction-actions { display: flex; justify-content: flex-end; }
+
+/* ─── Narrow / touch ─────────────────────────────────────────────────────────
+   On a phone the inspector cannot share the bar with the transport — drop it to
+   its own scrolling row and give every hit target a finger-sized box. */
+@media (max-width: 720px) {
+  .tl-bar { flex-wrap: wrap; gap: 6px; padding: 2px 8px 5px; }
+  .tl-inspector { order: 3; flex-basis: 100%; justify-content: flex-start; }
+  .tl-tools { margin-left: auto; }
+  .tl-field .field-label { display: none; }   /* the control keeps its own aria-label via the row */
+  .tl-num { width: 60px; }
+  .tl-lane { height: 30px; }
+  .tl-lane-seq { height: 40px; }
+}
+@media (pointer: coarse) {
+  .tl-btn { width: 36px; height: 36px; }
+  .tl-play { width: 40px; height: 40px; }
+  .tl-handle { height: 14px; }
+  .tl-edge { width: 12px; }
+  .tl-seam { width: 22px; height: 22px; margin: -11px 0 0 -11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-panel *,
+  .tl-panel *::before,
+  .tl-panel *::after { transition: none !important; }
+}
+
+}

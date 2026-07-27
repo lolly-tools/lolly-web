@@ -153,6 +153,22 @@
 .fc-pop-gitem:hover:not(:disabled) { background: hsl(var(--muted)); }
 /* Right-click context menu — longer, so cap its height and scroll. */
 .fc-context-menu { max-height: min(80vh, 560px); overflow-y: auto; min-width: 210px; }
+/* The boolean row is 4 across, which is wider than the align grid's 3 — let the menu
+   grow to fit rather than clipping the fourth glyph. */
+.fc-context-menu .fc-pop-grid { justify-content: start; }
+
+/* One-number prompt (Offset path / Outline stroke) — the `fc-panel` recipe with the
+   field, its unit and the confirm button on one line, so the whole prompt is one row
+   under its heading. */
+.fc-num-panel { min-width: 250px; }
+.fc-num-panel .fc-panel-head { font-weight: 700; font-size: 13px; }
+.fc-num-hint { margin: -3px 0 0; font-size: 11.5px; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.fc-num-row { display: flex; align-items: center; gap: 7px; }
+.fc-num-row > i { font-style: normal; font-size: 11.5px; color: hsl(var(--muted-foreground)); }
+/* The confirm button is the shared `.btn .btn--primary` primitive (buttons.css) — only
+   its behaviour inside this one row is local. Restating the fill pair here would beat the
+   primitive from the `views` layer, which is what primitive-guards.test.ts ratchets. */
+.fc-num-go { flex: none; }
 
 /* Selection overlay — siblings of the canvas, never exported. */
 .fc-overlay { position: absolute; inset: 0; z-index: 12; pointer-events: none; }
@@ -259,8 +275,62 @@
 }
 .fc-empty-add:hover { border-color: hsl(var(--primary)); color: hsl(var(--foreground)); }
 .fc-empty-add:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+/* Transient refusal message (a vector operation the engine declined). Bottom-centre of
+   the stage, above the object bar's usual perch, pointer-transparent — it is a statement,
+   not a control, and it must never sit between the user and the artwork. */
+.fc-flash {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  max-width: min(430px, 88%); z-index: 26; pointer-events: none;
+  padding: 9px 14px; border-radius: 10px;
+  font-size: 12.5px; line-height: 1.45; text-wrap: pretty;
+  background: hsl(var(--card) / 0.92); color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border)); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.fc-flash[hidden] { display: none; }
 /* The connector preview <svg> (rubber line + live-drag lines) never eats pointers. */
 .fc-connect-layer { pointer-events: none; }
+
+/* ── pen tool (Stage D) ───────────────────────────────────────────────────────
+   Node/handle chrome is POINTER-TRANSPARENT throughout: every pen hit test happens in
+   box-local coordinates against the real geometry (a handle can sit under another node),
+   so free-canvas.ts owns it and there is no element-based second answer. That is also what
+   lets the chrome be built once per node COUNT and only repositioned. */
+.fc-pen-layer { pointer-events: none; color: hsl(var(--primary)); z-index: 13; }
+.fc-pen-chrome { position: absolute; inset: 0; pointer-events: none; z-index: 16; }
+/* A node: square for a corner, round for smooth, round + ringed for symmetric — so the
+   continuity a drag will honour is legible without opening the control that sets it. */
+.fc-pen-node {
+  position: absolute; box-sizing: border-box;
+  width: 9px; height: 9px; margin-left: -4.5px; margin-top: -4.5px;
+  border-radius: 50%;
+  background: #ffffff; border: 1.5px solid hsl(var(--primary));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+.fc-pen-node.is-corner { border-radius: 1px; }
+.fc-pen-node.is-symmetric { box-shadow: 0 0 0 2px hsl(var(--primary) / 0.28), 0 1px 3px rgba(0, 0, 0, 0.28); }
+.fc-pen-node.is-on { background: hsl(var(--primary)); border-color: #ffffff; }
+/* The first node of an open draft, i.e. the point a click closes the path on. */
+.fc-pen-node.is-close-target { width: 13px; height: 13px; margin-left: -6.5px; margin-top: -6.5px; border-width: 2px; }
+.fc-pen-node[hidden] { display: none; }
+.fc-pen-handle {
+  position: absolute; width: 7px; height: 7px;
+  margin-left: -3.5px; margin-top: -3.5px; border-radius: 50%;
+  background: hsl(var(--primary)); border: 1px solid #ffffff;
+}
+.fc-pen-handle[hidden] { display: none; }
+.fc-pen-arm {
+  position: absolute; height: 1px; background: hsl(var(--primary) / 0.6);
+  transform-origin: 0 50%; margin-top: -0.5px;
+}
+.fc-pen-arm[hidden] { display: none; }
+/* Armed pen / node-edit cursors, matching .fc-arming's vocabulary. */
+.tool-stage.fc-penning { cursor: crosshair; }
+.tool-stage.fc-node-editing { cursor: default; }
+.fc-pen-kind { max-width: 148px; }
+/* The lossy-switch confirmation reuses the one-number prompt's panel; only its row differs
+   (two buttons rather than a field + a button). */
+.fc-confirm-row { justify-content: flex-end; }
 body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 
 /* Hide the editor chrome while the export shutter is closing (belt-and-braces —
@@ -279,6 +349,11 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
   .fc-btn { width: 44px; height: 44px; }
   .fc-handle { width: 16px; height: 16px; margin-left: -8px; margin-top: -8px; }
   .fc-h-rotate { width: 18px; height: 18px; margin-left: -9px; margin-top: -9px; }
+  /* Pen nodes are hit-tested against the geometry with a SCREEN-px radius, so the chrome
+     only has to look grabbable at this size — the tolerance is already generous. */
+  .fc-pen-node { width: 13px; height: 13px; margin-left: -6.5px; margin-top: -6.5px; }
+  .fc-pen-node.is-close-target { width: 18px; height: 18px; margin-left: -9px; margin-top: -9px; }
+  .fc-pen-handle { width: 11px; height: 11px; margin-left: -5.5px; margin-top: -5.5px; }
 }
 
 /* ── Editor iteration 2: guides · unified controls · colour picker · text edit ── */

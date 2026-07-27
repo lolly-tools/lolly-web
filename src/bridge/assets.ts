@@ -29,6 +29,8 @@ interface AssetFormat {
   checksum?: string;
   width?: number;
   height?: number;
+  /** Playback length in ms for a video/audio/lottie entry (asset.schema.json). */
+  durationMs?: number;
 }
 
 /** A catalog asset's stored metadata (the 'asset-meta' IDB store). */
@@ -205,7 +207,18 @@ export function createAssetsAPI(db: AssetsDb) {
       const format = pickFormat(meta, opts.format);
       const version = opts.version ?? meta.version;
       const blobKey = `${baseId}:${format.format}:${version}`;
-      const refMeta = { name: meta.name, tags: meta.tags, ...(meta.aiGenerated ? { aiGenerated: meta.aiGenerated } : {}) };
+      // durationMs is authored on the FORMAT entry (beside width/height) but read from
+      // ref.meta, so it has to be lifted here — otherwise a catalog clip's authored
+      // length is invisible to the picker badge and the timeline. Same "finite and
+      // positive or absent" rule the upload path applies; never a 0 placeholder.
+      const durationMs = typeof format.durationMs === 'number' && Number.isFinite(format.durationMs) && format.durationMs > 0
+        ? format.durationMs : undefined;
+      const refMeta = {
+        name: meta.name,
+        tags: meta.tags,
+        ...(meta.aiGenerated ? { aiGenerated: meta.aiGenerated } : {}),
+        ...(durationMs != null ? { durationMs } : {}),
+      };
 
       const loadBlob = async (): Promise<Blob> => {
         let blob = await db.get('asset-blob', blobKey);
