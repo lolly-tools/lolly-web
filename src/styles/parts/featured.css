@@ -117,6 +117,23 @@
   padding: 0;
   list-style: none;
 }
+/* Mobile: the strip is the page hero (band top: 0 in BOTH hosts that put it there —
+   the Tools gallery and the Catalogue favourites strip), while the top row floats
+   OVER the page rather than occupying a bar. So the covers ran under it: measured at
+   390px the nav's bottom edge is y=54 with the cover starting at y=20 (gallery) or
+   y=0 (catalogue), i.e. the top 34–54px of every cover sat beneath the back pill and
+   the FAB cluster.
+   Pad the TRACK, not the viewport: setupLoop writes paddingLeft/paddingRight inline
+   for Cover Flow's centring, and never touches the block axis, so this survives it.
+   Safe against clipping too — the fixed height is on .ftile-link, so the track and
+   its auto-height viewport just grow.
+   Derived from the same tokens the row itself is built from rather than a flat 100px,
+   because --chrome-top carries env(safe-area-inset-top) and --chrome-h jumps to 44px
+   on coarse pointers: a hard-coded value would slide back under the nav on a notched
+   phone. Lands on 100px at these defaults. */
+@media (max-width: 640px) {
+  .featured-track { padding-top: calc(var(--chrome-top) + var(--chrome-h) + 2.25rem); }
+}
 
 .ftile {
   position: relative;               /* anchor for the optional corner ⋯ menu button */
@@ -440,20 +457,12 @@
        off a pile of overlapping filter/shadow transitions as covers cross centre.
    Depth is now carried by the brightness dimming + scale alone — both composited, no
    per-frame repaint. Desktop keeps the full glow and easing. */
-@media (max-width: 640px) {
-  .featured--coverflow .ftile {
-    -webkit-backdrop-filter: none;
-            backdrop-filter: none;
-  }
-  .featured--coverflow .ftile-link {
-    box-shadow: none;
-    transition: none;
-  }
-  .featured--coverflow .ftile.is-centred .ftile-link {
-    box-shadow: 0 0 0 1.5px hsl(var(--primary) / .55), inset 0 0 0 1px #fff2;background-color: #dfe3;
-  }
-  .featured--coverflow .ftile-img { filter: none; }
-}
+/* NOTE ON ORDER: this block MUST stay below every base `.featured--coverflow .ftile*`
+   rule it overrides. It used to sit above them, at equal specificity — so the base
+   `.ftile-link` rule further down silently re-applied the resting box-shadow and the
+   0.3s filter/box-shadow easing this block exists to remove, and the whole
+   optimisation was a no-op on the phones it was written for. Adding a mobile
+   `height` here was what surfaced it. Keep new mobile overrides in THIS block. */
 /* Covers read as floating cards here (the flush-strip framing is a Gallery-mode thing).
    Sized shorter than the strip so they float uncut; the whole fan sits back in shade
    (dimmed + a soft resting shadow) so the upright, fully-lit centre cover reads as the
@@ -493,6 +502,49 @@
 .featured--coverflow .ftile.is-centred .ftile-dots { pointer-events: auto; }
 .featured--coverflow .ftile-stage::after { opacity: 0; }
 .featured--coverflow .ftile.is-centred .ftile-open { opacity: 1; transform: translate(-50%, 0); }
+
+/* ── Cover Flow on a phone (see the order note above the base rules) ──────────
+   TWO things happen here, and both need to out-rank the base rules above.
+
+   1. PROPORTION. The base width and height cap against different budgets: the
+      width bottoms out at its 200px clamp floor (25vw is only ~97px at 390px wide)
+      while the height rides --ftile-h (60svh) up to its 360px cap. That made a
+      200×360 cover — w/h 0.56, a tall portrait card around landscape preview art,
+      the slack spent on empty floor. The base rule's "~square-ish" only holds at
+      the 320px max width, i.e. desktop. Drive BOTH axes off one vw basis so the
+      ratio is fixed by construction (~1.06) at every phone width, and let the band
+      follow the covers instead of the Gallery strip's hero-tile height.
+
+   2. PER-FRAME PAINT. A cover is re-transformed (scale + rotateY) every frame during
+      a drag/flick, so every paint effect on it is re-rasterised per frame — the
+      source of the coverflow judder on phones. Strip the fan back to the cheapest
+      thing that still reads as depth: the depth-of-field frost (backdrop-filter)
+      re-samples the covers behind it; the soft wide resting shadow and the lit
+      cover's Pine-Green glow have big blur radii, the costliest to redraw as the box
+      scales (replaced on the selected cover by a crisp 0-blur ring); the art's own
+      drop-shadow is the same per-frame filter cost the Ken Burns note above calls
+      out. The lit/dim state also stops easing, so a fast flick doesn't kick off a
+      pile of overlapping filter/shadow transitions as covers cross centre. Depth is
+      carried by the brightness dimming + scale alone — both composited. Desktop
+      keeps the full glow and easing. */
+@media (max-width: 640px) {
+  .featured--coverflow .ftile {
+    width: 66vw;
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+  }
+  .featured--coverflow .ftile-link {
+    height: 62vw;
+    box-shadow: none;
+    transition: none;
+  }
+  .featured--coverflow .featured-track { min-height: 72vw; }
+  .featured--coverflow .ftile.is-centred .ftile-link {
+    box-shadow: 0 0 0 1.5px hsl(var(--primary) / .55), inset 0 0 0 1px #fff2;
+    background-color: #dfe3;
+  }
+  .featured--coverflow .ftile-img { filter: none; }
+}
 
 /* ── Mobile drag handle ──────────────────────────────────────────────────────
    Matches the tool editor's sheet grip. A belt-and-braces explicit "grab here to

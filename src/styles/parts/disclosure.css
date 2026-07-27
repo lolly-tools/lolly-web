@@ -88,6 +88,19 @@
 .plat-section-summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -3px; border-radius: calc(var(--radius) * 1.25); }
 .section-card-body,
 .plat-section-body { padding: 0 1.4rem 1.4rem; }
+/* Mobile: the 1.4rem gutter is a desktop measure that never had a phone override, and
+   it COMPOUNDS — a page pad (.dash-layout/.platform-layout, 1rem) plus this fold plus
+   any sub-card nested in it. Measured on a 390px dashboard, the deepest text ran at
+   313px: 77px, a fifth of the screen, spent on nested gutters before a word is set.
+   Tighten the fold's own gutter (its widest contributor) rather than the page pad,
+   which is the one that keeps content off the screen edge. The vertical rhythm is
+   untouched — this is a width problem, not a density one. */
+@media (max-width: 640px) {
+  .section-card-summary,
+  .plat-section-summary { padding: 1rem .85rem; }
+  .section-card-body,
+  .plat-section-body { padding: 0 .85rem 1.1rem; }
+}
 @media (prefers-reduced-motion: reduce) {
   .section-card-chev, .plat-section-chev { transition: none; }
 }

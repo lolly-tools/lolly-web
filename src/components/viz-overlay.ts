@@ -171,13 +171,23 @@ const CSS = `
 /* With 200+ artist presets a flat list is unusable, so the menu is a SEARCH list: a filter
    field over a scrolling result set. The menu itself no longer scrolls — the list does, so
    the field and the action rows stay put while results change under them. */
-.viz-menu { display: flex; flex-direction: column; max-height: min(72vh, 520px); overflow: visible; }
+.viz-menu { display: flex; flex-direction: column; max-height: min(72vh, 520px);
+  overflow-y: auto; overscroll-behavior: contain; }
 .viz-search { flex: 0 0 auto; width: 100%; margin: 2px 0 6px; padding: 7px 10px;
   border: 1px solid rgb(255 255 255 / .18); border-radius: 8px;
   background: rgb(255 255 255 / .08); color: #fff; font-size: .8rem; }
 .viz-search::placeholder { color: rgb(255 255 255 / .45); }
 .viz-search:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
-.viz-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* The list is the ONLY child of the flex column that can shrink (every other row is sized
+   by its content), so it absorbs the whole overflow — which is why it needs a FLOOR rather
+   than min-height:0. With 0 the flex algorithm was free to shrink it to exactly 0px, and
+   did: a brand whose palette yields ~6+ colour-scheme rows below the list pushed the fixed
+   rows past max-height, the list took the entire difference, and the menu showed a search
+   field with NOTHING under it. The presets were all in the DOM the whole time, in a 0px-tall
+   box — so it read as "search finds nothing" rather than as a layout collapse. The floor
+   keeps ~4 rows visible no matter how tall the rest of the menu grows; leftover overflow
+   goes to the menu's own scroller above. */
+.viz-list { flex: 1 1 auto; min-height: 7rem; overflow-y: auto; overscroll-behavior: contain; }
 .viz-list-empty { padding: 8px 10px; color: rgb(255 255 255 / .55); font-size: .78rem; }
 /* Author, right-aligned and quiet — attribution without competing with the title. */
 .viz-menu-item .viz-by { margin-left: auto; padding-left: 10px; flex: 0 0 auto;
@@ -252,8 +262,10 @@ const CSS = `
    the inline surface's menu is PORTALLED to <body> as position:fixed instead, the same
    escape hatch the app's other clipped popovers use. */
 .viz-menu.is-portalled { position: fixed; z-index: ${TOP_Z}; }
-/* Long menus (a preset per row) must scroll rather than run off-screen. */
-.viz-menu { max-height: min(70vh, 460px); overflow-y: auto; overscroll-behavior: contain; }
+/* (A second .viz-menu max-height rule used to live here, left over from when the menu was
+   a flat preset list. Same specificity, later in the sheet, so it quietly beat the search-list
+   rule above and shaved 60px off the box for no reason. The one declaration up there owns the
+   menu's height and scrolling now.) */
 /* No instructional overlay. The panel is plainly interactive (it has a pointer cursor
    and a right-click menu); a caption explaining that is clutter on a small surface, and
    the actions are all in the menu anyway. Discovery over instruction. */

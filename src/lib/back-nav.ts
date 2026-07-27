@@ -21,7 +21,8 @@
  * Labels come from document.title (every routed view sets one, already
  * localised — e.g. the tool view's "{name} — Lolly", a Projects folder's
  * name), with the "· Lolly" / "— Lolly" suffix stripped; the gallery is
- * special-cased to t('Tools') since its title is the bare product name.
+ * special-cased to t('Home') since its title is the bare product name — the same
+ * word the no-previous-view fallback uses, so one destination has one name.
  *
  * sessionStorage-backed (same lifetime as the lolly:returnTo marker) so a
  * reload mid-studio keeps the pill honest; private-mode failures degrade to
@@ -113,7 +114,7 @@ export function getPrevView(): PrevView | null {
 }
 
 function labelFor(routeName: string): string {
-  if (routeName === 'gallery') return t('Tools');
+  if (routeName === 'gallery') return t('Home');
   const stripped = document.title.replace(/\s*[—–·-]\s*Lolly$/u, '').trim();
-  return stripped && stripped !== 'Lolly' ? stripped : t('Tools');
+  return stripped && stripped !== 'Lolly' ? stripped : t('Home');
 }

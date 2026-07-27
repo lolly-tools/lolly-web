@@ -13,7 +13,7 @@
  *    pressing back dumped you in the gallery. Now the pill reads the view you
  *    last left (lib/back-nav.ts, already fed by the router) and both NAMES and
  *    RETURNS to it — "← Campaign assets", "← QR Code" — falling back to
- *    "← Tools" → the gallery only when there is no previous view, i.e. you
+ *    "← Home" → the gallery only when there is no previous view, i.e. you
  *    opened the URL directly. It also behaves like a back button: when a real
  *    history entry sits behind us it calls history.back() rather than pushing
  *    another entry, so back-back-back doesn't build a zig-zag stack.
@@ -96,9 +96,16 @@ export function resolveBackTarget(opts: BackPillOpts = {}): BackTarget {
   if (prev) {
     return { href: prev.href, label: opts.label ?? prev.label, useHistory: canGoBack() };
   }
-  // No previous view — a direct visit / fresh session. "Tools" → the gallery is
-  // the honest answer here, and the only case where it's still the answer.
-  return { href: '#/', label: opts.label ?? t('Tools'), useHistory: false };
+  // No previous view — a direct visit / fresh session (a shared /t/<id> link, a
+  // reloaded editor). The only honest answer is the app's front door, so the pill
+  // says "Home" and goes there.
+  //
+  // The href MUST be root-absolute. A bare '#/' resolves against whatever path
+  // we're on, and a tool's canonical URL is the PATH form /t/<id> — so '#/'
+  // became /t/<id>#/, which parseRoute (main.ts) reads as … the same tool: hash
+  // '/' is skipped, the /t/<id> path branch wins. That left anyone who opened a
+  // tool link directly with no way out of the editor at all.
+  return { href: '/#/', label: opts.label ?? t('Home'), useHistory: false };
 }
 
 /** The pill's markup. `data-back-pill` carries the mode so mountBackPill()
@@ -130,7 +137,7 @@ function leave(el: HTMLElement): void {
     window.history.back();
     return;
   }
-  navigateTo(el.getAttribute('href') || '#/');
+  navigateTo(el.getAttribute('href') || '/#/');
 }
 
 /** Wire every back pill inside `root`. Idempotent per element — safe to call
