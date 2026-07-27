@@ -6,9 +6,9 @@
  * length>". The export bar must take its Duration from THAT, keep following it as
  * the timeline changes, stop following it the moment the user types their own
  * value, and flag that user value out to the export opts as `durationUserSet` so
- * the tool hook leaves it alone. "Record live" stays fully available for sequences
- * (the compositor is the default; live capture is the low-power alternative), so
- * there are guards below against it being hidden or gated.
+ * the tool hook leaves it alone. "Record live" is SUPPRESSED for a sequence — the
+ * compositor is the only motion path there — and untouched for every other tool;
+ * there are guards below for both halves of that.
  *
  * Everything here is driven through the REAL renderActions against a jsdom canvas:
  * the assertions read the rendered DOM and the opts object the export actually
@@ -226,42 +226,48 @@ test('durationUserSet reaches the export opts only after a user edit', async () 
   assert.equal(h.exports()[1]!.opts.duration, 20);
 });
 
-// ── 4. Record live stays a first-class choice, sequence or not ───────────────
-// The compositor is the default and the better output, but a real-time capture is
-// the cheap route on a low-power device — so the control must never be hidden,
-// disabled or re-ordered for a timed composition. These guard that decision.
+// ── 4. Record live is hidden for a sequence, offered everywhere else ─────────
+// Andy, 2026-07-27, after testing a real take: "live record mode doesn't play or
+// work but this method is fast". Screen-recording a sequence in real time has no
+// upside over the compositor (same output, deterministic, ~30x realtime) and did
+// not actually animate, so the control is suppressed for a timed composition
+// rather than shipped slower and wrong. Every OTHER tool keeps it untouched.
 
-test('Record live is offered for a sequence exactly as for any other tool', () => {
+test('Record live is hidden for a sequence and offered for every other tool', () => {
   const seq = mount({ seqMs: 6000 });
   const plain = mount({ seqMs: null });
-  assert.equal(seq.liveLabel()!.style.display, 'flex');
-  assert.equal(plain.liveLabel()!.style.display, 'flex');
-  assert.equal(seq.liveLabel()!.querySelector('input')!.disabled, false);
+  assert.equal(seq.liveLabel()!.style.display, 'none', 'suppressed for a timed composition');
+  assert.equal(seq.liveLabel()!.dataset.suppressed, '1');
+  assert.equal(plain.liveLabel()!.style.display, 'flex', 'untouched for an ordinary video tool');
+  assert.equal(plain.liveLabel()!.dataset.suppressed, undefined);
 });
 
-test('Record live survives a format switch on a sequence', () => {
+test('a format switch does not hand Record live back on a sequence', () => {
+  // The format-change handler re-shows every [data-video-only] control; without the
+  // data-suppressed check it would undo the hide on the first format change.
   const h = mount({ seqMs: 6000 });
   const fmt = h.panel.querySelector('[data-action="format"]') as HTMLSelectElement;
   fmt.value = 'mp4';
   fmt.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.equal(h.liveLabel()!.style.display, 'flex');
+  assert.equal(h.liveLabel()!.style.display, 'none');
 });
 
-test('a sequence gets the compositor-vs-live wording, not a different control', () => {
-  const seq = mount({ seqMs: 6000 });
-  const plain = mount({ seqMs: null });
-  assert.match(seq.liveLabel()!.title, /Composing is the default/);
-  assert.doesNotMatch(plain.liveLabel()!.title, /Composing is the default/);
-});
-
-test('a ticked Record live reaches the export opts of a sequence', async () => {
-  const h = mount({ seqMs: 6000 });
+test('a box ticked before the tool became a sequence cannot leave opts.live set', async () => {
+  // The suppression un-ticks on the way out: a hidden control must not still be
+  // steering the export away from the compositor.
+  const h = mount({ seqMs: null });
   (h.panel.querySelector('[data-action="video-live"]') as HTMLInputElement).checked = true;
-  h.stage!.setAttribute('data-seq-ms', '7000');
+  // The canvas only BECOMES a timed composition now — the harness builds no stage
+  // for a non-sequence tool, so this is what the MutationObserver has to notice.
+  const stage = dom.window.document.createElement('div');
+  stage.setAttribute('data-sequence', '');
+  stage.setAttribute('data-seq-ms', '7000');
+  h.canvas.appendChild(stage);
   await settle();
+  assert.equal((h.panel.querySelector('[data-action="video-live"]') as HTMLInputElement).checked, false);
   (h.panel.querySelector('[data-action="download"]') as HTMLElement)
     .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await settle();
-  assert.equal(h.exports()[0]!.opts.live, true, 'the user chose the low-power route — it must be honoured');
-  assert.equal(h.exports()[0]!.opts.duration, 7, 'and it still records the timeline length');
+  assert.notEqual(h.exports()[0]!.opts.live, true, 'the compositor must get the export');
+  assert.equal(h.exports()[0]!.opts.duration, 7, 'and it still renders the timeline length');
 });
