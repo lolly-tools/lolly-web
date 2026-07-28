@@ -20,9 +20,36 @@
 // set is the UNION over every importer — touching it here drags createRuntime
 // (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
 // scripts/check-bundle-budget.ts.
-import { isPptx, readPptx } from '../../../../engine/src/pptx-read.ts';
-import { rebrandPptxParts } from '../../../../engine/src/pptx-patch.ts';
-import { nearestBrandColor, mapFontsToBrand, suggestRebrandTheme } from '../../../../engine/src/brand-map.ts';
+// The engine's deck reader/patcher/brand-mapper are LAZY, like the fflate zip
+// codec below. bridge/index.ts constructs host.pptx at boot, so a static import
+// here puts pptx-read + pptx-patch + brand-map (~16 KB gz) in front of first
+// paint for every visitor, when only someone who actually opens a deck needs
+// them. Both entry points (inspect/rebrand) are already async. Memoised, so the
+// second call is free. See scripts/check-bundle-budget.ts.
+type PptxEngine = {
+  isPptx: typeof import('../../../../engine/src/pptx-read.ts')['isPptx'];
+  readPptx: typeof import('../../../../engine/src/pptx-read.ts')['readPptx'];
+  rebrandPptxParts: typeof import('../../../../engine/src/pptx-patch.ts')['rebrandPptxParts'];
+  nearestBrandColor: typeof import('../../../../engine/src/brand-map.ts')['nearestBrandColor'];
+  mapFontsToBrand: typeof import('../../../../engine/src/brand-map.ts')['mapFontsToBrand'];
+  suggestRebrandTheme: typeof import('../../../../engine/src/brand-map.ts')['suggestRebrandTheme'];
+};
+let PPTX_ENGINE: Promise<PptxEngine> | null = null;
+function loadPptxEngine(): Promise<PptxEngine> {
+  PPTX_ENGINE ??= Promise.all([
+    import('../../../../engine/src/pptx-read.ts'),
+    import('../../../../engine/src/pptx-patch.ts'),
+    import('../../../../engine/src/brand-map.ts'),
+  ]).then(([read, patch, map]) => ({
+    isPptx: read.isPptx,
+    readPptx: read.readPptx,
+    rebrandPptxParts: patch.rebrandPptxParts,
+    nearestBrandColor: map.nearestBrandColor,
+    mapFontsToBrand: map.mapFontsToBrand,
+    suggestRebrandTheme: map.suggestRebrandTheme,
+  }));
+  return PPTX_ENGINE;
+}
 import type { XmlParser, PptxReadColor } from '../../../../engine/src/pptx-read.ts';
 import type { RebrandPlan, RebrandTheme } from '../../../../engine/src/pptx-patch.ts';
 import type {
@@ -111,6 +138,7 @@ function hashThemeSuggestion(theme: RebrandTheme): PptxRebrandTheme {
 
 async function inspectPptx(bytes: Uint8Array, opts: PptxInspectOpts | undefined, parseXml: XmlParser): Promise<PptxInspectResult> {
   try {
+    const { isPptx, readPptx, nearestBrandColor, mapFontsToBrand, suggestRebrandTheme } = await loadPptxEngine();
     const parts = await inflatePptx(bytes);
     if (!isPptx(parts)) return emptyInspect();
     const deck = readPptx(parts, parseXml);
@@ -200,6 +228,7 @@ function hexKey(v: string): string | null {
 }
 
 async function rebrandPptx(bytes: Uint8Array, plan: PptxRebrandPlan | undefined): Promise<PptxRebrandResult> {
+  const { isPptx, rebrandPptxParts } = await loadPptxEngine();
   const parts = await inflatePptx(bytes);
   if (!isPptx(parts)) throw new Error('Not a PowerPoint (.pptx) file.');
 

@@ -91,3 +91,41 @@
   box-shadow: 0 0 0 2px hsl(var(--ring) / .55);
 }
 
+
+/* ─── `hidden` actually hides (@layer a11y) ───────────────────────────────────
+   `[hidden]` is the platform contract for "not rendered, and not in the
+   accessibility tree". base.css states it — but base.css sits in the `base`
+   layer, second from the bottom, so EVERY class rule that sets `display` in
+   `primitives` / `chrome` / `views` beats it outright. Not on specificity (a
+   single class and an attribute selector are both (0,1,0)) — on LAYER RANK, and
+   no amount of specificity in `base` can climb a layer. The result: any
+   component that says `.thing { display: flex }` and is later hidden with the
+   attribute keeps its box, and a screen reader stays silent about a control the
+   sighted user can still see — or, as in Colour Lab, a hidden card holds its
+   grid row open as a 79px void.
+
+   A survey of shells/web/src (2026-07-28) found 62 places that had already been
+   patched one at a time with a hand-written `.foo[hidden] { display: none }`
+   restatement, and 89 more classes with the same collision still unpatched.
+   That is 151 instances of one bug, so it is fixed once, here, in the top layer.
+
+   Why `!important`, given the layer alone already beats every sheet:
+     · Tool template CSS is injected UNLAYERED (tools are data, scoped to
+       #tool-canvas), and unlayered declarations outrank every layer. Without
+       `!important` a tool's own `display` would still defeat `hidden` inside the
+       canvas, where hooks set `el.hidden` constantly.
+     · An inline `el.style.display = 'flex'` also outranks every layer.
+   It is safe because nothing in the codebase wants a hidden element laid out:
+   there is not one rule in shells/web/src or tools/ where a `[hidden]` selector
+   sets `display` to anything but `none` (checked; the only two `!important`s
+   already present, multi-edit.css and saved-list.css, are this same fix applied
+   locally). `hidden="until-found"` is not used anywhere — it would need an
+   exemption, since it relies on `content-visibility`, not `display`.
+
+   NOT wrapped in `:where()`: keeping the real (0,1,0) specificity means an
+   intentional escape hatch has to out-specify it deliberately (a more specific
+   `!important` selector added to this sheet, or an inline `!important`) rather
+   than any stray element-level `!important` knocking it out by accident. */
+[hidden] {
+  display: none !important;
+}
