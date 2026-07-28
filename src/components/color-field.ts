@@ -286,14 +286,15 @@ const conicStops = (stops: readonly string[]): string => `conic-gradient(from 0d
  *
  * Tier 0 is the active limit and paints opaque; each ring out is fainter, so an
  * unreachable stretch reads as "the axis continues, this limit cannot reach it"
- * rather than as a hole. The VALUES live in CSS (`--track-tier-*` in
- * styles/parts/color-field.css) so the wash brightness is tunable without touching
- * this — the judgement of when a wash starts to look *available* is a design one.
+ * rather than as a hole. The VALUES live in CSS (`--track-tier-*` on `:root` in
+ * styles/tokens.css — on :root because lib/gamut-slider.ts's segments read the same
+ * scale) so the wash brightness is tunable without touching this — the judgement of
+ * when a wash starts to look *available* is a design one.
  */
 const tierVar = (t: number): string => (t === BEYOND_TIER ? '--track-tier-beyond' : `--track-tier-${t}`);
 
 /**
- * Can this browser parse a `color-mix()` carrying a `var()` inside a gradient stop?
+ * Can this browser parse a `color-mix()` inside a gradient stop?
  *
  * Asked once, in JS, because it has to be: the tiers are stops inside the single
  * `background` shorthand this module assigns, and if the wrapper fails to parse the
@@ -301,6 +302,15 @@ const tierVar = (t: number): string => (t === BEYOND_TIER ? '--track-tier-beyond
  * than today. `@supports` in the stylesheet cannot guard a value built here.
  * Verified true in Chromium; when it is false the tiers paint `transparent`, which
  * is exactly the behaviour that shipped before them.
+ *
+ * The probe carries a LITERAL percentage, not the `var()` the shipped stops use, and
+ * that is the whole point: a declaration containing `var()` cannot be validated
+ * before substitution, so `CSS.supports` answers TRUE for it unconditionally — it
+ * says yes to `totally-not-a-color(in oklab, red var(--x), transparent)` as well,
+ * which made the earlier form of this probe unable to fail. The literal form
+ * discriminates (verified both ways in Chromium 149), and it is a sound proxy: a
+ * `var()` is accepted syntactically wherever a value is, so if `color-mix` parses at
+ * all the shipped form parses too.
  */
 let tiersOk: boolean | null = null;
 const tiersSupported = (): boolean => {
@@ -309,7 +319,7 @@ const tiersSupported = (): boolean => {
   // import-time probe would then latch "unsupported" for the whole session.
   if (tiersOk === null) {
     tiersOk = typeof CSS === 'undefined' || CSS.supports?.(
-      'background', 'linear-gradient(to right, color-mix(in oklab, red var(--x), transparent), blue)',
+      'background', 'linear-gradient(to right, color-mix(in oklab, red 28%, transparent), blue)',
     ) !== false;
   }
   return tiersOk;

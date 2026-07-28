@@ -629,11 +629,17 @@
 }
 /* Out of the target gamut at the current value — a MARK, not a refusal, paired with
    the clamped readout beside it. An amber ring rather than a border style, for the
-   same reason as above. */
+   same reason as above.
+
+   An INSET SHADOW rather than an `outline`, because `outline` is also the only focus
+   affordance these sliders have (:focus-visible below) and an element has just one:
+   this selector is more specific, so an amber mark silently ate the keyboard focus
+   ring on exactly the sliders a user is most likely to be adjusting. A shadow also
+   survives the `background` shorthand JS assigns, and unlike the full-width rail
+   shadow rejected above, a 1.5px edge ring veils only the edge it draws. */
 .color-lch-row:has(.color-lch-val.is-clamped) > .color-lch-slider,
 .color-lch-row:has(.color-lch-val.is-clamped) > .color-mode-slider {
-  outline: 1.5px solid #d97706;
-  outline-offset: -1.5px;
+  box-shadow: inset 0 0 0 1.5px #d97706;
 }
 .color-lch-slider::-webkit-slider-thumb,
 .color-mode-slider::-webkit-slider-thumb,
