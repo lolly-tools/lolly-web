@@ -10,9 +10,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { lchTrackGradients, LCH_MAX, colorFieldHtml, wireColorField, setSwatches } from './color-field.ts';
-import type { ColorChangeDetail, ColorFieldValue } from './color-field.ts';
+import type { ColorChangeDetail, ColorFieldValue, WireColorFieldOpts } from './color-field.ts';
 import { colorSpaces } from './color-spaces.ts';
 
 test('each axis track sweeps its own range while holding the other two', () => {
@@ -38,15 +39,17 @@ test('the hue track floors chroma so the sweep stays visible near grey', () => {
 
 // ── jsdom harness ────────────────────────────────────────────────────────────
 
-const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', {
-  url: 'http://localhost/',
-  pretendToBeVisual: true,
-});
+const dom = new JSDOM(
+  '<!doctype html><html><body><div id="host"></div><button id="away">away</button></body></html>',
+  { url: 'http://localhost/', pretendToBeVisual: true },
+);
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
 globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.Element = dom.window.Element;
 globalThis.Event = dom.window.Event;
+// The focusout handler asks whether focus landed on a node inside the field.
+globalThis.Node = dom.window.Node;
 // positionPopover walks computed styles looking for a fixed containing block.
 globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
 globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
@@ -59,19 +62,36 @@ globalThis.CSS = (dom.window as unknown as { CSS: typeof globalThis.CSS }).CSS;
 interface Emitted { id: string; value: ColorFieldValue; detail: ColorChangeDetail }
 
 /** Render + wire one field, recording everything it emits. */
-function mount(value: unknown, opts: Parameters<typeof colorFieldHtml>[2] = {}): {
+function mount(value: unknown, opts: Parameters<typeof colorFieldHtml>[2] = {}, wire: WireColorFieldOpts = {}): {
   field: HTMLElement; seen: Emitted[];
 } {
   const host = document.getElementById('host')!;
   host.innerHTML = colorFieldHtml('cf', value, opts);
   const seen: Emitted[] = [];
-  wireColorField(host, { onChange: (id, v, detail) => { seen.push({ id, value: v, detail }); } });
+  wireColorField(host, { ...wire, onChange: (id, v, detail) => { seen.push({ id, value: v, detail }); } });
   return { field: host.querySelector<HTMLElement>('[data-color-field]')!, seen };
 }
 
 const fire = (el: Element, type = 'input'): void => {
   el.dispatchEvent(new dom.window.Event(type, { bubbles: true }));
 };
+
+/** Click a space tab. */
+const selectSpace = (field: HTMLElement, mode: string): void => {
+  field.querySelector<HTMLElement>(`[data-mode="${mode}"]`)!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+};
+
+/** Let the queued repaint (one rAF, mapped to a timer here) run. */
+const settlePaint = (): Promise<void> => new Promise(r => { dom.window.setTimeout(() => r(), 0); });
+
+const wait = (ms: number): Promise<void> => new Promise(r => { dom.window.setTimeout(() => r(), ms); });
+
+const noteText = (field: HTMLElement): string => field.querySelector('.color-space-note')!.textContent ?? '';
+
+/** One panel's slider values, in channel order. */
+const sliderValues = (field: HTMLElement, mode: string): string[] =>
+  [...field.querySelectorAll<HTMLInputElement>(`[data-space-group="${mode}"] [data-mode-ch]`)].map(i => i.value);
 
 /** Drag one channel slider of the active space panel to `to` (display units). */
 function drag(field: HTMLElement, mode: string, ch: string, to: number): void {
@@ -324,6 +344,247 @@ test('seeding is widened: any CSS colour is kept in its authored space', () => {
   drag(field, 'oklch', 'l', 70);
   assert.equal(seen.at(-1)!.detail.color.space, 'oklch', 'the drag lands in the space being dragged');
   assert.equal(field.dataset.colorCanon, seen.at(-1)!.detail.css, 'the handoff attribute stays truthful');
+});
+
+// ── Alpha is not a one-way ratchet ───────────────────────────────────────────
+
+test('typing an explicitly opaque colour restores opacity; an alpha-less one inherits', () => {
+  for (const opts of [{ inline: true, modes: true }, { float: true }] as const) {
+    const where = JSON.stringify(opts);
+    const { field, seen } = mount('oklch(70% 0.14 157.2 / 0.4)', opts);
+    // A notation that says nothing about opacity keeps what the slider shows.
+    type(field, '#30ba78');
+    assert.equal(seen.at(-1)!.detail.color.alpha, 0.4, `bare hex must inherit the field's alpha ${where}`);
+    // …and one that DOES state it is an instruction, `ff` / `/ 100%` / `/ 1` included.
+    // Inferring "stated nothing" from alpha === 1 made this a downward-only ratchet
+    // that only the alpha slider could undo.
+    for (const opaque of ['#30ba78ff', 'rgb(48 186 120 / 100%)', 'oklch(70% 0.14 157.2 / 1)']) {
+      type(field, '#30ba7866');                       // back down first
+      assert.equal(seen.at(-1)!.detail.color.alpha, 0.4, `${opaque}: the 66 step must land ${where}`);
+      type(field, opaque);
+      assert.equal(seen.at(-1)!.detail.color.alpha, 1, `${opaque} must make the colour opaque ${where}`);
+      assert.match(seen.at(-1)!.value as string, /^#[0-9a-f]{6}$/, `${opaque} drops the alpha pair ${where}`);
+    }
+    // Lowering still works, and a partial alpha is unaffected by any of this.
+    type(field, 'rgb(255 0 0 / 50%)');
+    assert.equal(seen.at(-1)!.detail.color.alpha, 0.5, `a partial alpha must land ${where}`);
+  }
+});
+
+// ── A field with no space tabs speaks hex, and is not capped at 9 characters ──
+
+test('a modes-less field shows a hex and still accepts any CSS colour', () => {
+  const { field, seen } = mount('#30ba78', { float: true });
+  const input = valueInput(field);
+  assert.equal(input.getAttribute('maxlength'), null,
+    'a 9-character cap truncated every CSS colour the field itself can now read');
+  // The live update path used to write the active space's notation into this box —
+  // 'oklch(70.085% 0.15123 157.2 / 0.7843)' in an input hinted '#rrggbbaa', which the
+  // user could then not re-enter.
+  const alpha = field.querySelector<HTMLInputElement>('.color-alpha-slider')!;
+  alpha.value = '200';
+  fire(alpha);
+  assert.match(input.value, /^#[0-9a-f]{8}$/, 'a modes-less field states the colour as a hex');
+  drag(field, 'oklch', 'l', 40);
+  assert.match(input.value, /^#[0-9a-f]{8}$/, 'still a hex after a slider drag');
+  // …and the widened parse is reachable here, not only in a modes picker.
+  type(field, 'color(display-p3 1 0 0)');
+  assert.equal(seen.at(-1)!.detail.color.space, 'display-p3');
+  assert.match(input.value, /^#ff0b0c[0-9a-f]{2}$/,
+    'and it comes back stated as the (gamut-mapped) hex the box is sized for, alpha kept');
+  // A field WITH tabs is the other half of the contract: it speaks its space.
+  const { field: tabbed } = mount('#30ba78', { inline: true, modes: true });
+  assert.match(valueInput(tabbed).value, /^oklch\(/);
+});
+
+// ── The dial can never disagree with the slider beneath it ────────────────────
+
+test('the dragged channel keeps painting its dial needle', async () => {
+  const { field } = mount('#30ba78', { inline: true, modes: true, dials: true });
+  const needle = (ch: string): string =>
+    field.querySelector<HTMLElement>(`[data-space-group="oklch"] .color-dial[data-dial-ch="${ch}"] .color-dial-needle`)!
+      .style.transform;
+  const before = needle('l');
+  drag(field, 'oklch', 'l', 20);
+  await settlePaint();
+  // The repaint skips the dragged channel's TRACK (its own ramp did not change), and
+  // used to drop that channel from the dial paint entirely — so the needle froze
+  // while the slider moved, and a dial drag stopped following the finger.
+  assert.notEqual(needle('l'), before, 'the L needle never moved');
+  assert.equal(needle('l'), 'rotate(72.0deg)', 'L=20 of 0–100 is 72° from 12 o’clock');
+  // The other channels' needles still land where their own values are.
+  drag(field, 'oklch', 'h', 90);
+  await settlePaint();
+  assert.equal(needle('h'), 'rotate(90.0deg)');
+  assert.equal(needle('l'), 'rotate(72.0deg)', 'L stayed put while H moved');
+});
+
+// ── The caution line ─────────────────────────────────────────────────────────
+
+test('the caution line names the space just switched to, on the leading edge', () => {
+  const { field } = mount('#30ba78', { inline: true, modes: true });
+  // Wiring writes the note, priming the throttle — so a switch inside 300ms used to
+  // be deferred and this role="status" line kept naming the space the user left.
+  selectSpace(field, 'cmyk');
+  assert.equal(noteText(field), 'CMYK — exact');
+  selectSpace(field, 'lab');
+  assert.equal(noteText(field), 'Lab — exact', 'each step of an arrow-key walk must announce its own space');
+  selectSpace(field, 'oklch');
+  assert.equal(noteText(field), 'OKLCH — exact');
+});
+
+test('a superseded caution never lands on top of the colour that contradicts it', async () => {
+  const { field } = mount('#30ba78', { inline: true, modes: true });
+  drag(field, 'oklch', 'c', 0.39);                 // far outside sRGB
+  await wait(400);
+  assert.equal(noteText(field), 'Outside sRGB');
+  drag(field, 'oklch', 'c', 0.05);                 // queues 'OKLCH — exact'
+  drag(field, 'oklch', 'c', 0.39);                 // same text as on screen: early return
+  await wait(400);
+  // The queued write used to survive the early return, so the line settled on
+  // "exact" over a colour nothing about it was exact.
+  assert.equal(noteText(field), 'Outside sRGB', 'a write for text the colour has left must be cancelled');
+  assert.equal(field.dataset.colorCanon, 'oklch(70.085% 0.39 157.2)');
+});
+
+// ── One state, one set of sliders ─────────────────────────────────────────────
+
+test('a transparent field seeds its sliders the same way whichever path re-seeds them', () => {
+  const { field } = mount('transparent', { inline: true, modes: true });
+  const seeded = sliderValues(field, 'oklch');
+  assert.notDeepEqual(seeded, ['0', '0', '250'], 'the neutral seed, not alpha-0 black');
+  type(field, 'transparent');                      // the afterEdit path
+  assert.deepEqual(sliderValues(field, 'oklch'), seeded,
+    'a transparent apply must seed the panel through panelSeed, like a mode switch does');
+  selectSpace(field, 'hsl');
+  selectSpace(field, 'oklch');                     // the selectMode path
+  assert.deepEqual(sliderValues(field, 'oklch'), seeded);
+});
+
+test('the CMYK value field states the ink split its own sliders state', () => {
+  const { field } = mount('#3c7a9f', { inline: true, modes: true });
+  selectSpace(field, 'cmyk');
+  for (const ch of ['c', 'm', 'y']) drag(field, 'cmyk', ch, 100);
+  const inks = sliderValues(field, 'cmyk');
+  // c=m=y=100% composes to black, which DECOMPOSES as k=100% — so re-deriving the
+  // text made the field read 'cmyk(0% 0% 0% 100%)' under sliders reading 100/100/100/38.
+  assert.equal(valueInput(field).value, 'cmyk(100% 100% 100% 38%)');
+  // …and a round trip through another tab must not rewrite the split either.
+  selectSpace(field, 'oklch');
+  selectSpace(field, 'cmyk');
+  assert.deepEqual(sliderValues(field, 'cmyk'), inks, 'a tab round trip is not an edit');
+  assert.equal(valueInput(field).value, 'cmyk(100% 100% 100% 38%)');
+  // The alpha is in the text, so copying it out of the field keeps the opacity.
+  const { field: half } = mount('#3c7a9f40', { inline: true, modes: true });
+  selectSpace(half, 'cmyk');
+  assert.equal(valueInput(half).value, 'cmyk(62% 23% 0% 38% / 0.251)');
+});
+
+// ── The host's interaction bracket ───────────────────────────────────────────
+
+test('the interaction ends when focus leaves the field, however it got there', () => {
+  const events: string[] = [];
+  const { field } = mount('#30ba78', { inline: true, modes: true }, {
+    onInteractStart: () => events.push('start'),
+    onInteractEnd: () => events.push('end'),
+  });
+  const input = valueInput(field);
+  input.focus();
+  assert.deepEqual(events, ['start']);
+  // Hopping to a control inside the field must NOT release: the host's
+  // drag-suppression is what keeps the picker alive through a slider drag.
+  field.querySelector<HTMLElement>('[data-mode="hsl"]')!.focus();
+  assert.deepEqual(events, ['start'], 'a hop inside the field is not the end of the interaction');
+  // …but leaving the field must, and used to not — the blur handler sat on the value
+  // input, which by then had long since lost focus, so the host stayed latched.
+  document.getElementById('away')!.focus();
+  assert.deepEqual(events, ['start', 'end']);
+});
+
+// ── Text that is not a colour ────────────────────────────────────────────────
+
+test('unparsable text is marked invalid and put back when focus leaves', () => {
+  const { field, seen } = mount('#30ba78', { inline: true, modes: true });
+  const input = valueInput(field);
+  input.focus();
+  const good = input.value;
+  input.value = 'not-a-colour';
+  fire(input);
+  // Held, not applied — but no longer silently: the field used to display a string
+  // that was not the colour while the caution line called that colour exact.
+  assert.equal(seen.length, 0, 'junk must not emit');
+  assert.equal(input.getAttribute('aria-invalid'), 'true');
+  assert.ok(input.classList.contains('color-input--invalid'));
+  assert.equal(input.value, 'not-a-colour', 'mid-edit text stays the user’s');
+  document.getElementById('away')!.focus();        // commit
+  assert.equal(input.value, good, 'on the way out the colour’s own notation comes back');
+  assert.equal(input.getAttribute('aria-invalid'), null);
+  // Something readable clears the flag immediately.
+  input.focus();
+  input.value = 'oklch(55% 0.13 145';
+  fire(input);
+  assert.equal(input.getAttribute('aria-invalid'), 'true');
+  type(field, '#c0392b');
+  assert.equal(input.getAttribute('aria-invalid'), null);
+});
+
+// ── Layout the picker promises not to shift ──────────────────────────────────
+
+test('every space panel reserves the widest space’s rows, and its dials size by slot', () => {
+  const { field } = mount('#30ba78', { inline: true, modes: true, dials: true });
+  const widest = Math.max(...colorSpaces().map(s => s.channels.length));
+  for (const spec of colorSpaces()) {
+    const panel = field.querySelector<HTMLElement>(`[data-space-group="${spec.mode}"]`)!;
+    const rows = panel.querySelectorAll('.color-lch-row');
+    assert.equal(rows.length, widest,
+      `${spec.mode} must carry ${widest} row slots so switching space shifts nothing below it`);
+    const fillers = [...panel.querySelectorAll('.color-lch-row--filler')];
+    assert.equal(fillers.length, widest - spec.channels.length);
+    for (const f of fillers) {
+      assert.equal(f.childElementCount, 0, 'a filler row holds no control');
+      assert.equal(f.getAttribute('aria-hidden'), 'true');
+    }
+    assert.equal(panel.querySelectorAll('input[data-mode-ch]').length, spec.channels.length,
+      'and it grows no extra sliders');
+    // The rings share the row by slot, not by sibling count, so a 3-channel space
+    // draws the same size ring as CMYK and the band's height stops moving.
+    assert.equal(panel.querySelector<HTMLElement>('.color-dials')!.style.getPropertyValue('--dial-slots'),
+      String(widest + 1), `${spec.mode}'s dial band must size for the widest space`);
+  }
+  // A lone panel has no sibling space to match, so it sizes for itself.
+  const { field: bare } = mount('#30ba78', { float: true, dials: true });
+  assert.equal(bare.querySelectorAll('.color-lch-row--filler').length, 0);
+  assert.equal(bare.querySelector<HTMLElement>('.color-dials')!.style.getPropertyValue('--dial-slots'), '4');
+});
+
+test('a long value keeps its whole string reachable', () => {
+  const { field } = mount('oklch(61.374% 0.13585 260.14)', { inline: true, modes: true });
+  const input = valueInput(field);
+  assert.ok(input.value.length > 22, `expected a long notation, got ${input.value}`);
+  // The narrow hosts (a 316px swatch editor) cut this off at the hue with no ellipsis
+  // and no title — the string the field itself wrote was unreadable and unrecoverable.
+  assert.ok(input.classList.contains('color-input--long'));
+  assert.equal(input.title, input.value);
+  // A hex is short, so it is not stepped down.
+  const { field: hex } = mount('#30ba78', { float: true });
+  assert.equal(valueInput(hex).classList.contains('color-input--long'), false);
+  assert.equal(valueInput(hex).title, '#30ba78');
+});
+
+test('the broken-track well and its clamp mark have a width to draw with', () => {
+  // The block's own comment asks for a DASHED outline of the full range, and the
+  // amber `.is-clamped` mark below it only sets a style + colour. Both were declared
+  // at width 0, so an out-of-gamut axis rendered as a bare thumb ring on the card.
+  const css = readFileSync(new URL('../styles/parts/color-field.css', import.meta.url), 'utf8');
+  const well = /\.color-lch-slider,\s*\.color-mode-slider \{([^}]*)\}/.exec(css);
+  assert.ok(well, 'the broken-track well rule moved — find it before deleting this test');
+  const border = /border:\s*([^;]+);/.exec(well![1]!)?.[1] ?? '';
+  assert.match(border, /dashed/, 'the well is dashed by design');
+  assert.ok(!/(^|\s)0(px)?(\s|$)/.test(border), `the well needs a non-zero width, got "${border}"`);
+  const clamp = /\.color-lch-row:has\(\.color-lch-val\.is-clamped\) > \.color-mode-slider \{([^}]*)\}/.exec(css);
+  assert.ok(clamp, 'the clamp-mark rule moved');
+  assert.match(clamp![1]!, /border-style:\s*solid/);
+  assert.match(clamp![1]!, /#d97706/);
 });
 
 test('a token-backed swatch emits a token value; editing afterwards de-links it', () => {
