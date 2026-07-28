@@ -41,6 +41,13 @@ dom.window.Element.prototype.hasPointerCapture = function () { return false; };
   escape: (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`),
 };
 globalThis.CSS = (dom.window as unknown as { CSS: typeof globalThis.CSS }).CSS;
+/** jsdom has no clipboard — record what the view tries to copy. `navigator` is a
+ *  getter-only global, so define the property rather than assigning it. */
+const copied: string[] = [];
+Object.defineProperty(globalThis, 'navigator', {
+  configurable: true,
+  value: { clipboard: { writeText: (v: string) => { copied.push(v); return Promise.resolve(); } } },
+});
 
 const { mountColorLab } = await import('./color-lab.ts');
 
@@ -423,4 +430,120 @@ test('each chart panel is named for the channel it sets, and sets it three ways'
   lNum.value = '99';
   lNum.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.ok(subjectOklch().l <= 1.0001, `clamped to 1, got ${subjectOklch().l}`);
+});
+
+test('bounds off lets you leave the gamut and marks it; bounds on yields chroma', async () => {
+  // The stance, pinned: leaving sRGB is usually the intent, so the default must not
+  // prevent it — it marks it. Turning bounds ON then pulls the colour in by giving
+  // up CHROMA rather than refusing the axis being dragged, because refusing would
+  // trap the thumb inside one segment of a broken track.
+  await mount('?c=' + encodeURIComponent('oklch(70% 0.19 317)'));
+  const box = $('[data-lab-bounds]') as HTMLInputElement;
+  assert.ok(box, 'the toggle exists');
+  assert.equal(box.checked, false, 'bounds are OFF by default');
+
+  // Narrow the target to sRGB so a modest chroma is genuinely out.
+  $('[data-lab-limit]')!.querySelector<HTMLElement>('[data-val="srgb"]')!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+
+  // Push chroma well past what sRGB holds at this lightness and hue.
+  const cNum = $('[data-lab-num="ch"]') as HTMLInputElement;
+  cNum.value = '0.34';
+  cNum.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  const free = subjectOklch();
+  assert.ok(free.c > 0.3, `bounds off keeps the requested chroma, got ${free.c}`);
+  assert.equal($('[data-lab-gamut]')!.dataset.gamut !== 'srgb', true, 'and it is out of sRGB');
+  // …and the slider says so, without having stopped anything.
+  assert.ok(view.querySelector('[data-lab-slider="ch"] .gsl.is-out'), 'the out-of-bounds mark is shown');
+
+  // Now hold the bounds: chroma gives, hue and lightness do not.
+  box.checked = true;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  const held = subjectOklch();
+  assert.ok(held.c < free.c, `chroma yielded: ${free.c} → ${held.c}`);
+  assert.ok(Math.abs(held.h - free.h) < 2, `hue held: ${free.h} → ${held.h}`);
+  assert.ok(Math.abs(held.l - free.l) < 0.02, `lightness held: ${free.l} → ${held.l}`);
+  assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb', 'and it is back inside sRGB');
+  assert.equal(view.querySelector('[data-lab-slider="ch"] .gsl.is-out'), null, 'the mark clears');
+
+  // With bounds on, a fresh out-of-range request is pulled in as it is made.
+  cNum.value = '0.39';
+  cNum.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb', 'held on the next edit too');
+});
+
+test('a blend stop copies; a tone step re-seeds', async () => {
+  await mount('?c=%23c0392b');
+  const before = subjectHex();
+  copied.length = 0;
+
+  // A BLEND stop is an output you take away — copying it must not move the subject,
+  // which would also destroy the blend it came from (its near end IS the subject).
+  const blendStop = view.querySelectorAll<HTMLElement>('[data-lab-blend] [data-lab-step]')[4]!;
+  blendStop.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => dom.window.setTimeout(r, 5));
+  assert.equal(copied.length, 1, `copied exactly once, got ${copied.length}`);
+  assert.match(copied[0]!, /^oklch\(/, `the stop's own notation, not a hex: ${copied[0]}`);
+  assert.equal(subjectHex(), before, 'and the subject did NOT move');
+  assert.match(blendStop.getAttribute('aria-label') ?? '', /^Copy /, 'it says so to AT');
+
+  // A TONE step is a point on the subject's own ramp, so it re-seeds and copies nothing.
+  copied.length = 0;
+  const toneStep = view.querySelectorAll<HTMLElement>('[data-lab-ramp] [data-lab-step]')[1]!;
+  const toneHex = toneStep.dataset.labStep!;
+  toneStep.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(subjectHex(), toneHex.toLowerCase(), 'the tone step re-seeded');
+  assert.deepEqual(copied, [], 'and copied nothing');
+});
+
+test('you get the notation you clicked, not a canonical one', async () => {
+  await mount('?c=%23c0392b');
+
+  // The swatch's leading line is OKLCH, so clicking it copies oklch(...).
+  copied.length = 0;
+  $('[data-lab-sw-primary]')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => dom.window.setTimeout(r, 5));
+  assert.equal(copied.length, 1);
+  assert.match(copied[0]!, /^oklch\(/, `oklch line copies oklch: ${copied[0]}`);
+
+  // Its hex alternate copies the hex.
+  copied.length = 0;
+  const hexCode = [...view.querySelectorAll<HTMLElement>('[data-lab-sw-alts] .lab-sw-alt')]
+    .find(li => (li.querySelector('.lab-sw-alt-space')?.textContent ?? '').trim() === 'hex')!
+    .querySelector<HTMLElement>('code')!;
+  hexCode.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => dom.window.setTimeout(r, 5));
+  assert.deepEqual(copied, ['#C0392B'], `hex line copies hex: ${copied}`);
+
+  // A tone step's hex sub-label copies the hex and does NOT re-seed, because the
+  // value you clicked was a value, not the swatch.
+  copied.length = 0;
+  const before = subjectHex();
+  const toneHexLabel = view.querySelector<HTMLElement>('[data-lab-ramp] [data-lab-step] .lab-step-hex')!;
+  toneHexLabel.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => dom.window.setTimeout(r, 5));
+  assert.equal(copied.length, 1, 'clicking a value copies it');
+  assert.equal(subjectHex(), before, 'and does not re-seed');
+});
+
+test('the blend target gets the expanded picker, dials included', async () => {
+  await mount('?c=%23c0392b');
+  const picker = $('[data-lab-blend-picker]')!;
+  // The dials are gated on the inline form inside the component, so a float
+  // popover can only ever show the hex field, alpha and swatches — which is what
+  // this used to be, and why a blend target could not be picked perceptually.
+  assert.ok(picker.querySelector('.color-field--inline'), 'mounted inline, not as a popover');
+  assert.ok(picker.querySelector('[data-color-modes]'), 'has the space tabs');
+  assert.ok(picker.querySelector('.color-lch'), 'has the L/C/H sliders');
+  assert.ok(picker.querySelectorAll('.color-dial').length >= 3, 'has the dials');
+
+  // And it still drives the blend.
+  const stops = (): string[] => [...view.querySelectorAll<HTMLElement>('[data-lab-blend] [data-lab-step]')]
+    .map(b => b.dataset.labStep!);
+  const before = stops();
+  const raw = $('[data-lab-blend-raw]') as HTMLInputElement;
+  raw.value = 'oklch(88% 0.14 120)';
+  raw.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.notEqual(stops()[8], before[8], 'the far end moved');
+  assert.equal(stops()[0], before[0], 'the near end is still the subject');
 });
