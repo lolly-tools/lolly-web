@@ -109,8 +109,17 @@
    near-white rail lands as a pastel; over a near-black one it lands as a dark
    low-contrast smudge, and in the picker's dials the rings all but vanished.
    Measured by eye on #/lab in both themes — the ratios between the rings are
-   unchanged, only the amount. */
-[data-theme="dark"] {
+   unchanged, only the amount.
+
+   `brand` is listed here because it IS a dark theme: its static block below declares
+   `color-scheme: dark`, and brand-vars.ts's generated version of that block declares
+   it unconditionally too, so no brand palette is ever a light ground. Left on the
+   dark-only selector its rail sat next to dark's while its rings paid light's amounts
+   — the faintest rings of the three themes, in the one that is the pre-JS default and
+   the standing look under the suse profile. Same grouping brand-vars.ts already uses
+   for --lolly-mark. */
+[data-theme="dark"],
+[data-theme="brand"] {
   --track-tier-1: 46%;
   --track-tier-2: 26%;
   --track-tier-3: 15%;

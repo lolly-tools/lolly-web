@@ -475,37 +475,74 @@ export interface ChannelRun { from: number; to: number; stops: string[]; tier: n
  *   apart, and CSS then interpolates an alpha fade across that sliver — blurring
  *   the very edge the bisection exists to sharpen. This one is for correctness
  *   first; the probes it saves are a bonus.
+ * - the refinement is where structure is DISCOVERED, so the blind sweep can stay
+ *   coarse: a halving that lands on a third tier has found a band the sweep stepped
+ *   over, and recursing into both halves costs only where there was something to
+ *   find. Raising the sweep to catch the same bands instead would pay on every
+ *   channel of every space.
  *
  * Measured per full panel repaint — all channels of one space, 3000 iterations,
- * node 24, seed `oklch(62% 0.19 260)` — before → after this change, in µs and in
- * probes: OKLCH 43 → 83 (107 → 121), XYZ 47 → 90 (102 → 116), Lab 36 → 66
- * (70 → 80), LCH 42 → 56 (75 → 77), HSL 24 → 23 (18, unchanged), CMYK 13.5 → 13.0
- * (28, unchanged), HEX/RGB/P3 8.3 → 8.6 (6, unchanged). The bounded spaces barely
- * move because their axes cannot leave their own gamut, so there is nothing to
- * classify. Worst case is bounded per channel by `n` samples (n ≤ 24, the same
- * sweep as before) + 5 halvings per boundary touching tier 0 + 2 per wash boundary
- * up to MAX_OUTER_BOUNDARIES → a ceiling around 82 probes per channel.
+ * node 24, seed `oklch(62% 0.19 260)` — in µs and in probes, against the earlier
+ * version of this function that classified from the paint grid alone: OKLCH 83 → 108
+ * (121 → 150), OKLab 100 → 111, XYZ 90 → 110 (116 → 147), Lab 66 → 111 (80 → 141),
+ * LCH 56 → 112 (77 → 126), HSL 23 → 29 (31), CMYK 13 → 18 (36), HEX/RGB/P3 8.6 →
+ * 14.6 (6 → 27). The bounded spaces move now where they did not before, and that is
+ * the fix: their `stops: 2` channels used to be classified from two endpoint samples,
+ * so their rings were mispositioned by up to 25% of the track or lost entirely.
+ * Worst measured single channel is 67 probes; the ceiling is `m` sweep samples
+ * (≤ 24) + MAX_REFINE_PROBES → 72. Worst full panel across every space and a spread
+ * of seeds: 118 µs.
  *
  * `paintTracks` is rAF-coalesced and skips the channel being dragged, so a drag
- * frame repaints 2 of 3 axes ≈ 55 µs: 0.33% of a 16.7 ms frame.
+ * frame repaints 2 of 3 axes ≈ 75 µs: 0.45% of a 16.7 ms frame.
  */
 
 /**
- * Halvings at a boundary that touches tier 0 — the reachable edge, which is the
+ * Tolerance at a boundary that touches tier 0 — the reachable edge, which is the
  * information. Sampling alone leaves it short by up to one whole step (4.3% of the
  * track at 24 stops), enough to leave the thumb in a gap while the caution line
- * calls the colour exact. Five halvings put it inside 0.15% of the track.
+ * calls the colour exact. 0.15% of the track is a boundary the eye cannot fault.
+ *
+ * A TOLERANCE, not a halving count, and that distinction is a bug fixed rather than
+ * a preference: a fixed count only bounds the error if the bracket width is fixed
+ * too. It is not — a channel with `stops: 2` (the hex/RGB/P3/Rec.2020 components,
+ * Lab/LCH/OKLab L, HSL S: 15 channels across 8 of the 11 registered spaces) samples
+ * only frac 0 and 1, so its one interior bracket is the WHOLE axis. Two halvings of
+ * that leave the edge off by up to 25% of the track, and when the true boundary sits
+ * in the far quarter the keep side never moves at all, so the run came back
+ * `from === to` — the ring was computed and then painted as nothing. Halving until
+ * the bracket is under a tolerance cannot do that, whatever the bracket started at.
  */
-const EDGE_STEPS = 5;
+const EDGE_TOL = 0.0015;
 
-/** Halvings between two washes. A wash edge is decoration, and 2 halvings is
- *  already inside ~1% of the track. */
-const OUTER_STEPS = 2;
+/** Tolerance between two washes. A wash edge is decoration, so 1% of the track is
+ *  plenty — but it still has to be a tolerance (see EDGE_TOL). */
+const OUTER_TOL = 0.01;
 
-/** After this many wash-to-wash boundaries on one axis, the rest are left at the
- *  sample midpoint (error ≤ half a step). The explicit ceiling on the added work:
- *  a high-chroma hue axis can cross tiers a dozen times. */
-const MAX_OUTER_BOUNDARIES = 12;
+/** Halvings ceiling per bracket, so a pathological tolerance cannot spin. A whole
+ *  axis (bracket 1) reaches EDGE_TOL in 10 and OUTER_TOL in 7. */
+const MAX_DEPTH = 12;
+
+/** Ceiling on the halvings spent refining ONE channel, whatever structure it has. The
+ *  explicit bound on the added work: a high-chroma hue axis can cross tiers a dozen
+ *  times, and each crossing is a bracket. Past it the remaining boundaries stand where
+ *  the last halving left them (error ≤ that bracket, never a collapsed run). */
+const MAX_REFINE_PROBES = 48;
+
+/**
+ * Floor on the tier SWEEP, independent of how many stops a channel paints.
+ *
+ * `stops` says how finely a ramp needs painting; it says nothing about how finely the
+ * axis crosses gamuts. Two samples cannot see structure at all, so a `stops: 2`
+ * channel (15 of them across 8 of the 11 registered spaces, including both default
+ * device tabs) was classified from its two endpoints: LCH L at `oklch(62% 0.19 260)`
+ * truly carries seven bands and reported four. The sweep only has to bracket a
+ * CHANGE — the refinement below finds bands hidden inside a bracket — so 9 is enough
+ * wherever the endpoints of some step differ. A band between two same-tier samples is
+ * still invisible, deliberately: see the sub-sample note in engine/src/gamut-tier.ts,
+ * and note that a finer blind sweep pays on every channel to catch it.
+ */
+const TIER_SAMPLES_MIN = 9;
 
 /**
  * Narrowness rank for "bisect from the narrower tier's side", so `crossing` always
@@ -525,7 +562,11 @@ export function channelRuns(
   vals: Record<string, number>,
   alpha = 1,
 ): ChannelRun[] {
+  // Two grids, deliberately: `n` is how many stops a solid ramp is worth painting,
+  // `m` is how finely the axis is asked WHERE it changes tier. They were one number,
+  // which is how a 2-stop channel ended up classified from its two endpoints.
   const n = Math.max(2, Math.min(24, Math.round(ch.stops)));
+  const m = Math.max(n, TIER_SAMPLES_MIN);
   const held = ch.hold ? ch.hold(vals) : vals;
   const valueAt = (frac: number): number => ch.min + frac * (ch.max - ch.min);
   const tierAt = gamutTierProbe(spec.limit);
@@ -536,48 +577,80 @@ export function channelRuns(
   const paintAt = (frac: number): string =>
     stopCss(spec, composeColor(spec, { ...held, [ch.ch]: valueAt(frac) }, alpha));
 
-  // 1. Sample the axis and group consecutive equal-tier samples. Tiers only here —
-  //    the stop colours are computed after the boundaries are known, so a wash
-  //    never pays for the samples it will not paint.
-  const parts: { tier: number; first: number; last: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    const tier = tierOf(i / (n - 1));
-    const open = parts[parts.length - 1];
-    if (open && open.tier === tier) open.last = i;
-    else parts.push({ tier, first: i, last: i });
-  }
+  // 1. Tiers only — the stop colours are computed once the boundaries are known, so a
+  //    wash never pays for the samples it will not paint. The parts list is built left
+  //    to right and each part is closed by the next one's opening fraction, so the runs
+  //    are contiguous BY CONSTRUCTION rather than by two estimates agreeing.
+  const parts: { tier: number; from: number; to: number }[] = [];
+  const open = (tier: number, frac: number): void => {
+    const last = parts[parts.length - 1];
+    if (!last) { parts.push({ tier, from: 0, to: 1 }); return; }
+    if (last.tier === tier) return;                       // the same band continues
+    last.to = frac;
+    parts.push({ tier, from: frac, to: 1 });
+  };
+  let budget = MAX_REFINE_PROBES;
 
-  // 2. Refine each interior boundary once, from the narrower side, and hand the one
-  //    crossing to both runs.
-  const edges: number[] = [];
-  let washEdges = 0;
-  for (let i = 0; i + 1 < parts.length; i++) {
-    const lo = parts[i]!, hi = parts[i + 1]!;
-    const mid = (lo.last / (n - 1) + hi.first / (n - 1)) / 2;
-    const touchesInside = lo.tier === 0 || hi.tier === 0;
-    const steps = touchesInside ? EDGE_STEPS : (washEdges++ < MAX_OUTER_BOUNDARIES ? OUTER_STEPS : 0);
-    if (steps === 0) { edges.push(mid); continue; }
-    const fromLo = narrowness(lo.tier) <= narrowness(hi.tier);
-    const keepTier = fromLo ? lo.tier : hi.tier;
-    let keep = (fromLo ? lo.last : hi.first) / (n - 1);
-    let other = (fromLo ? hi.first : lo.last) / (n - 1);
-    for (let k = 0; k < steps; k++) {
-      const m = (keep + other) / 2;
-      if (tierOf(m) === keepTier) keep = m; else other = m;
+  /**
+   * Locate the crossing(s) between two probed fractions of different tier, opening a
+   * part for every band found on the way.
+   *
+   * Halving to a TOLERANCE, not a fixed count: a count only bounds the error when the
+   * bracket width is fixed, and here it is one sample step on a 24-stop channel and
+   * the whole axis on a 2-stop one (which is how a ring came back `from === to` and
+   * painted as nothing). And when a halving lands on a THIRD tier, that is a band the
+   * sweep stepped over: recurse into both halves rather than discard the probe, which
+   * is what lets a 9-sample sweep resolve a 7-band LCH lightness axis.
+   */
+  const scan = (
+    loFrac: number, loTier: number, hiFrac: number, hiTier: number, depth: number, found = false,
+  ): void => {
+    // A band the sweep stepped over is, by definition, narrower than the bracket that
+    // hid it, so a 1% wash tolerance can land BOTH of its boundaries on one fraction —
+    // the collapsed run again. Once a third tier turns up, its edges get the tight
+    // tolerance; the cost is paid only where structure was actually found.
+    const tol = loTier === 0 || hiTier === 0 || found ? EDGE_TOL : OUTER_TOL;
+    if (hiFrac - loFrac > tol && depth > 0 && budget > 0) {
+      budget--;
+      const midFrac = (loFrac + hiFrac) / 2;
+      const midTier = tierOf(midFrac);
+      if (midTier === loTier) { scan(midFrac, midTier, hiFrac, hiTier, depth - 1, found); return; }
+      if (midTier === hiTier) { scan(loFrac, loTier, midFrac, midTier, depth - 1, found); return; }
+      scan(loFrac, loTier, midFrac, midTier, depth - 1, true);
+      scan(midFrac, midTier, hiFrac, hiTier, depth - 1, true);
+      return;
     }
-    // A boundary refined from the far side is still the same single fraction; the
-    // side only decides which tier owns the tolerance.
-    edges.push(keep);
+    // Inside the tolerance: the boundary is the endpoint held by the NARROWER tier, so
+    // tier 0 never claims a colour the limit cannot show and the wash beside it
+    // overstates its reach by at most one tolerance — the right direction for a hint.
+    open(hiTier, narrowness(loTier) <= narrowness(hiTier) ? loFrac : hiFrac);
+  };
+
+  // The sweep, taken whole before any refinement so each crossing can see whether the
+  // band on EITHER side spans a single sample — one that does is as narrow as a
+  // mid-bracket discovery and gets the same tight tolerance, or its two boundaries both
+  // round to that one sample's fraction and the run collapses.
+  const sweep: number[] = [];
+  for (let i = 0; i < m; i++) sweep.push(tierOf(i / (m - 1)));
+  const spansOneSample = (i: number): boolean =>
+    sweep[i] !== sweep[i - 1] && sweep[i] !== sweep[i + 1];   // undefined at the ends: never equal
+  open(sweep[0]!, 0);
+  for (let i = 1; i < m; i++) {
+    if (sweep[i] === sweep[i - 1]) continue;
+    const thin = spansOneSample(i - 1) || spansOneSample(i);
+    scan((i - 1) / (m - 1), sweep[i - 1]!, i / (m - 1), sweep[i]!, MAX_DEPTH, thin);
   }
 
-  // 3. Colours. A tier-0 run keeps one stop per sample (its ramp is the thing the
-  //    user reads); a wash gets start/mid/end and no more.
-  return parts.map((p, i) => {
-    const from = i === 0 ? 0 : edges[i - 1]!;
-    const to = i === parts.length - 1 ? 1 : edges[i]!;
+  // 2. Colours. A tier-0 run keeps roughly the `stops` density its channel asked for,
+  //    spread across its own stretch (`runParts` positions them that way, so reading
+  //    them off the sweep grid instead put each colour slightly beside its own
+  //    fraction); a wash gets start/mid/end and no more.
+  return parts.map((p) => {
+    const { from, to } = p;
     const stops: string[] = [];
     if (p.tier === 0) {
-      for (let k = p.first; k <= p.last; k++) stops.push(paintAt(k / (n - 1)));
+      const count = Math.max(2, Math.round((to - from) * (n - 1)) + 1);
+      for (let k = 0; k < count; k++) stops.push(paintAt(from + ((to - from) * k) / (count - 1)));
     } else {
       const seen = new Set<number>();
       for (const f of [from, (from + to) / 2, to]) if (!seen.has(f)) { seen.add(f); stops.push(paintAt(f)); }
