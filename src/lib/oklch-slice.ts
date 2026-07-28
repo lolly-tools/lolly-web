@@ -494,6 +494,13 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
   let moved = false;
   let startX = 0, startY = 0;
   let pointerId = -1;
+  /** True when the press was RETARGETED onto a dot it did not land on. The dot is
+   *  `touch-action: none`, and the browser reads that from the retargeted node, so
+   *  no native pan will ever start for this gesture however far the finger travels.
+   *  See `panFor`. */
+  let panBlocked = false;
+  /** Last client Y while we are carrying a scroll the browser refused to start. */
+  let panY = -1;
 
   /** Pointer → position on the plane, as 0–1 fractions of the plot box. */
   const posOf = (e: PointerEvent): { x: number; y: number } => {
@@ -543,13 +550,63 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     return best;
   };
 
+  /**
+   * Did this press actually land ON the dot the event was delivered to?
+   *
+   * `e.target` cannot answer that for a finger. Chrome's touch adjustment enlarges
+   * the hit region by the touch radius and RETARGETS the pointerdown onto a small
+   * button up to ~24px from its centre, so a pure vertical scroll swipe beside the
+   * 20px dot arrived as `target === dot`, took the direct-hit exemption below,
+   * skipped the axis lock and drove lightness to 100% with the page frozen —
+   * exactly the defect the lock exists to prevent, at every offset a thumb can
+   * realistically land on (measured 0–24px at 390×844, radiusX 18 / radiusY 22).
+   *
+   * So on touch the geometry decides, not the retarget: inside the dot's own box is
+   * a direct hit, anything else is at most an adopted guess. A mouse and a pen are
+   * delivered honestly and are taken at their word.
+   */
+  const pressedOn = (e: PointerEvent, el: HTMLElement): boolean => {
+    if (e.pointerType !== 'touch') return true;
+    const r = el.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right
+      && e.clientY >= r.top && e.clientY <= r.bottom;
+  };
+
+  /**
+   * The thing that should scroll when we hand a vertical swipe back.
+   *
+   * Normally nothing has to: the plot is `touch-action: pan-y`, so abandoning the
+   * adoption is enough and the browser pans. But a RETARGETED press is hit-tested
+   * against the dot, which is `touch-action: none` for its own 2D drag, and the
+   * browser decides that before our first `pointermove` ever runs — so for those
+   * gestures there is no native pan waiting to be handed anything, and letting go
+   * simply left the page dead under the finger. Carry it ourselves instead: nearest
+   * scrollable ancestor, else the window.
+   */
+  const panFor = (): { by: (dy: number) => void } | null => {
+    const win = plot.ownerDocument?.defaultView;
+    for (let el = plot.parentElement; el; el = el.parentElement) {
+      const oy = win?.getComputedStyle(el).overflowY ?? '';
+      if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) {
+        return { by: (dy) => { el!.scrollTop += dy; } };
+      }
+    }
+    return win ? { by: (dy) => win.scrollBy(0, dy) } : null;
+  };
+
   const onDown = (e: PointerEvent): void => {
-    const hit = (e.target as HTMLElement).closest<HTMLElement>('[data-okls-idx]');
-    const near = hit ?? dotNear(e);
+    const on = (e.target as HTMLElement).closest<HTMLElement>('[data-okls-idx]');
+    const hit = on && pressedOn(e, on) ? on : null;
+    // A retargeted touch is still evidence of INTENT even when it is not a hit: the
+    // browser aimed the finger at that dot, so keep it as the adoption candidate
+    // (it can sit slightly beyond TOUCH_SLOP, which `dotNear` would miss).
+    const near = hit ?? dotNear(e) ?? on;
     dragIdx = near ? Number(near.dataset.oklsIdx) : -1;
     // An ADOPTED dot (near the press, not under it) is a guess, and a guess must not
     // claim the gesture until the gesture says it is a drag. See `adopted` below.
     adopted = dragIdx >= 0 && !hit;
+    panBlocked = adopted && on != null;
+    panY = -1;
     moved = false; startX = e.clientX; startY = e.clientY; pointerId = e.pointerId;
     // Capture only for a real drag on a dot we are SURE about. Pressing bare plot is a
     // tap (or, on touch, the start of a page scroll — the plot is `touch-action:
@@ -564,6 +621,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     if (pointerId !== e.pointerId) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
+    if (panY >= 0) { panFor()?.by(panY - e.clientY); panY = e.clientY; return; }
     if (!moved && Math.hypot(dx, dy) < 4) return;
     // ── Axis lock, for an ADOPTED dot only ──────────────────────────────────
     // The near-miss slop fixed a real defect (a thumb 25px off did nothing at all)
@@ -579,7 +637,14 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     // pressing the dot itself is unambiguous, and dragging it up to change lightness
     // is the whole point of the control.
     if (adopted) {
-      if (Math.abs(dy) >= Math.abs(dx)) { dragIdx = -1; adopted = false; moved = true; return; }
+      if (Math.abs(dy) >= Math.abs(dx)) {
+        dragIdx = -1; adopted = false; moved = true;
+        // Give the page the travel it already spent deciding, then carry the rest —
+        // but only where the browser has been shut out (see `panFor`). Where it has
+        // not, it is already panning and doing this too would scroll twice.
+        if (panBlocked) { panFor()?.by(startY - e.clientY); panY = e.clientY; }
+        return;
+      }
       adopted = false;
       plot.setPointerCapture(e.pointerId);
     }
@@ -592,7 +657,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     if (plot.hasPointerCapture(e.pointerId)) plot.releasePointerCapture(e.pointerId);
     pointerId = -1;
     const wasAdopted = adopted;
-    adopted = false;
+    adopted = false; panBlocked = false; panY = -1;
     if (moved) { if (dragIdx >= 0) h.onCommit(dragIdx); }
     // An adoption that never travelled is a TAP near a dot — pick it, which is what
     // the slop is for. One that was abandoned by the axis lock has already cleared
@@ -618,7 +683,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     pointerId = -1;
     if (moved && dragIdx >= 0) h.onCommit(dragIdx);
     dragIdx = -1;
-    adopted = false;
+    adopted = false; panBlocked = false; panY = -1;
   };
 
   plot.addEventListener('pointerdown', onDown);

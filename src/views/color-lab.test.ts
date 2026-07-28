@@ -1036,6 +1036,26 @@ test('the print affordance appears only where there is somewhere to store a prof
   assert.equal(pressedVal(), 'rec2020');
 });
 
+test('the + names the panel it actually opens, and says what it does', async () => {
+  // The panel was renamed to "Colour profiles" (Print / Display / Other) precisely
+  // because the ingest path was never print-only — and this trigger kept announcing
+  // "Print profile", which is the claim the rename retracted and a dialog name that
+  // no longer exists. The control's ONLY accessible name was false.
+  const { host } = await seedProfile();
+  await mountWithHost(host, '?c=%23c0392b');
+  const add = $('[data-lab-limit] [data-lab-profiles]')!;
+  assert.equal(add.getAttribute('aria-label'), 'Colour profiles',
+    'the accessible name is the dialog’s own name');
+  assert.equal(add.getAttribute('title'), null,
+    'explained with data-tip, not a hover-only title no phone can open');
+  assert.equal(add.getAttribute('data-tip'), 'Colour profiles');
+  assert.ok(!/print/i.test(add.outerHTML), 'no trace of the retracted print claim');
+  // And it is no longer the one wordless control in the row: a lone `+` at the end of
+  // a segmented row reads as overflow, not as an invitation.
+  assert.match(add.textContent!, /\+/);
+  assert.match(add.textContent!, /[A-Za-z]/, 'the pill carries a word beside the glyph');
+});
+
 test('a link naming a stored profile charts against it', async () => {
   const { host, id } = await seedProfile();
   await mountWithHost(host, `?c=%23c0392b&limit=${encodeURIComponent(id)}`);

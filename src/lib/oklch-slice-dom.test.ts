@@ -443,6 +443,54 @@ test('a DIRECT press on the dot may still be dragged vertically — that is the 
   off();
 });
 
+test('a RETARGETED touch beside the dot is still axis-locked — target is not geometry', () => {
+  // THE SECOND HALF OF THE SAME REGRESSION. Chrome's touch adjustment enlarges the hit
+  // region by the touch radius and delivers a finger-sized pointerdown to the 20px dot
+  // from up to ~24px away, so `e.target === dot` for presses that never touched it. The
+  // direct-hit exemption then skipped the axis lock and a pure vertical scroll swipe
+  // drove lightness to 100% with the page frozen — measured at 390×844, radiusX 18 /
+  // radiusY 22, at every offset from 0 to 24px. Because TOUCH_SLOP is 22 and the
+  // retarget reaches 24, there was no offset at which the lock ran at all for a thumb.
+  const state: SliceChartState = { plane: 'lc', fixed: 30, cMax: SLICE_C_MAX };
+  const { root, plot } = mount(state, [{ idx: 0, hex: '#2f7d4f', label: 'Green' }]);
+  const { calls, h } = HANDLERS(state, { 0: '#2f7d4f' });
+  const off = wireSliceChart(root, h);
+  const dot = boxDot(root, 0, 20);   // a real 20px box, so "inside" means something
+  const r = dot.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+
+  // The dot is `touch-action: none` for its own 2D drag, and the browser reads that
+  // from the RETARGETED node before our first pointermove runs — so handing the
+  // gesture back is not enough here, there is no native pan waiting for it. The page
+  // stayed dead under the finger until the wiring carried the scroll itself.
+  const panned: number[] = [];
+  const realScrollBy = dom.window.scrollBy;
+  dom.window.scrollBy = ((_x: number, y: number) => { panned.push(y); }) as typeof realScrollBy;
+
+  // Vertical swipe, delivered TO THE DOT, from outside the dot's own box.
+  for (const dx of [12, 16, 20, 24]) {
+    calls.recolor.length = 0; calls.commit = 0; calls.add.length = 0; calls.pick.length = 0;
+    panned.length = 0;
+    gesture(root, plot, { x: cx + dx, y: cy },
+      [{ x: cx + dx, y: cy - 40 }, { x: cx + dx, y: cy - 120 }], 'touch', dot);
+    assert.equal(calls.recolor.length, 0, `retargeted at ${dx}px: no recolour on a scroll`);
+    assert.equal(calls.commit, 0, `retargeted at ${dx}px: nothing committed`);
+    assert.equal(calls.add.length, 0, `retargeted at ${dx}px: not a tap on empty space`);
+    assert.equal(panned.reduce((a, b) => a + b, 0), 120,
+      `retargeted at ${dx}px: the page gets the whole 120px of travel, not a dead gesture`);
+  }
+  // The adoption itself survives: sideways from the same retargeted press still drags,
+  // and a drag we DID take never scrolls the page under it.
+  panned.length = 0;
+  gesture(root, plot, { x: cx + 16, y: cy },
+    [{ x: cx + 70, y: cy + 3 }, { x: cx + 100, y: cy + 5 }], 'touch', dot);
+  assert.ok(calls.recolor.length > 0, 'a sideways retargeted drag still recolours');
+  assert.equal(calls.commit, 1);
+  assert.deepEqual(panned, [], 'a recolour never scrolls the page as well');
+  dom.window.scrollBy = realScrollBy;
+  off();
+});
+
 test('a MOUSE near-miss is not adopted, so “click near a swatch to add one” survives', () => {
   // The brand editor relies on it. A mouse is precise; only the imprecise pointer
   // gets slop.

@@ -10,7 +10,8 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString } from '@lolly/engine';
+import { parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString } from '@lolly/engine';
+import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { escape, NAV_EVENTS } from '../utils.js';
 import { mountModal } from '../components/modal.ts';
 import { announce } from '../a11y.js';

@@ -27,7 +27,8 @@
  */
 import '../styles/parts/tool.css';        // .tool-inputs control styles (shared chunk with the tool view)
 import '../styles/parts/multi-edit.css';
-import { createRuntime, UNITS } from '@lolly/engine';
+import { UNITS } from '@lolly/engine';
+import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
 import { createNetAPI } from '../bridge/net.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';

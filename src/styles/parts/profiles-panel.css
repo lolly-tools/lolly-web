@@ -61,10 +61,16 @@
   border-color: hsl(var(--primary) / 0.55);
   background: hsl(var(--primary) / 0.14);
   color: hsl(var(--primary));
-  /* The row's largest glyph — this is the one control in it that adds something. */
-  font-size: 1.15rem;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
+/* The row's largest glyph — this is the one control in it that adds something. The
+   size lives on the glyph rather than the button so the word beside it stays the
+   row's own type size; a 1.15rem WORD would out-shout the three gamut options it
+   sits next to, and this pill is an invitation, not a fourth option. */
+.lab-limit .view-seg-btn.lab-limit-add .lab-limit-add-g { font-size: 1.15rem; }
 .lab-limit .view-seg-btn.lab-limit-add:hover {
   border-color: hsl(var(--primary));
   background: hsl(var(--primary) / 0.24);

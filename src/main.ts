@@ -17,17 +17,16 @@ import { initTheme, applyTheme } from './theme.ts';
 import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { loadUserFonts } from './lib/load-user-fonts.ts';
-import { registerUserFonts } from './user-fonts.ts';
+import { registerUserFonts } from './lib/register-user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
-import { hydrateNeurospicy, armNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
+import { hydrateNeurospicy, armNeurospicy, getNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
 import { hydrateFeatureFlags, flagEnabledSync } from './feature-flags.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
 import { installRangeUpgrader } from './components/custom-slider.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
-import { syncNeuroDock } from './components/neuro-dock.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
 import { initShareTargetIngest } from './lib/drop-router.ts';
-import { maybeShowFirstRunInstanceSheet } from './components/instance-sheet.ts';
+import { maybeShowFirstRunInstanceSheet } from './lib/instance-choice.ts';
 import { initOrg } from './org/index.ts';
 import { initSelectPreview } from './select-preview.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
@@ -541,7 +540,16 @@ async function boot(): Promise<void> {
   hydrateNeurospicy((profile as { neurospicy?: unknown }).neurospicy);
   if (flagEnabledSync('neurospicy')) {
     armNeurospicy(host as unknown as Parameters<typeof armNeurospicy>[0]);
-    syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);   // show the bottom-right dock if the mode was left on
+    // Show the bottom-right dock if the mode was left on. The dock (and the music
+    // player inside it) is dynamic-imported and only when the mode is actually
+    // enabled: syncNeuroDock's off-branch is hideNeuroDock(), a no-op for a dock
+    // that was never built, so skipping the import is equivalent for everyone else
+    // — which is nearly everyone (lib/neurospicy.ts DEFAULTS to enabled: false).
+    // armNeurospicy stays static, so first-gesture audio arming is unchanged.
+    if (getNeurospicy().enabled) {
+      void import('./components/neuro-dock.ts')
+        .then(m => m.syncNeuroDock(host as unknown as Parameters<typeof m.syncNeuroDock>[0]));
+    }
   }
   // Jelly effects — start the lazy bundle load now, racing the rest of boot
   // (catalog sync + first view mount) rather than blocking or idle-deferring:

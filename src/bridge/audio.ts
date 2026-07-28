@@ -24,6 +24,7 @@ import type {
 import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 import { renderSong } from '../lib/zzfxm-render.ts';
 import { isZzfxmRef, parseZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
+import { isModuleFormat, renderMod } from '../lib/mod-render.ts';
 
 interface WorkerReply {
   id: number;
@@ -101,12 +102,23 @@ function isRef(src: AudioSource): src is AssetRef {
 /**
  * Source → decoded channel data.
  *
- * ZzFXM songs take a shortcut that matters: they are SYNTHESISED, so rendering them
- * yields Float32 PCM directly and encoding it to WAV just to hand it back to a
- * decoder would be pure waste. Two shapes exist — a catalog `.zzfxm.json` asset
- * (fetch the JSON) and the procedural `zzfxm:<seed>` scheme, which names a song no
- * file stores and whose composer is imported lazily because it is a large module
- * that most analyses never touch.
+ * Two source kinds are SONG DATA rather than encoded audio, and both would fail at
+ * `decodeAudioData` — no browser has a decoder for either. They are rendered instead,
+ * which yields Float32 PCM directly, so encoding it to WAV just to hand it back to a
+ * decoder would be pure waste:
+ *
+ *   ZzFXM — our own synthesised songs. Two shapes: a catalog `.zzfxm.json` asset
+ *   (fetch the JSON) and the procedural `zzfxm:<seed>` scheme, which names a song no
+ *   file stores and whose composer is imported lazily because it is a large module
+ *   that most analyses never touch.
+ *
+ *   TRACKER MODULES (.mod/.xm/.s3m/.it/…) — sample-based song data, decoded by the
+ *   libopenmpt worker the Neurospicy player and the video exporter already share
+ *   (lib/mod-render.ts). Worth stating plainly because it is what makes the result
+ *   honest: libopenmpt is a REAL decoder, so a module's waveform is that module's
+ *   actual audio — not a lossy re-synthesis that would look like a measurement while
+ *   being a guess. Without this branch a .mod reached decodeAudioData, threw, and the
+ *   asset fell back to a music-note glyph forever.
  */
 async function toPcm(src: AudioSource): Promise<{ channels: Float32Array[]; sampleRate: number }> {
   if (isRef(src) && src.format === 'zzfxm') {
@@ -118,6 +130,20 @@ async function toPcm(src: AudioSource): Promise<{ channels: Float32Array[]; samp
   if (typeof src === 'string' && isZzfxmRef(src)) {
     const { left, right, sampleRate } = await renderSong(await composeProceduralSong(src));
     if (!left.length) throw new Error('zzfxm song rendered empty');
+    return { channels: [left, right], sampleRate };
+  }
+
+  // A module is identified by the ref's FORMAT, not by sniffing the bytes: libopenmpt
+  // sniffs the real format itself, and an asset's `format` carries the true extension
+  // (mod/xm/s3m/…) precisely so the badge and filename stay honest.
+  if (isRef(src) && isModuleFormat(src.format)) {
+    // `.slice()` because renderMod TRANSFERS the buffer to its worker, and `toBytes` may
+    // hand back the caller's own ArrayBuffer — transferring that would detach a buffer
+    // the caller still holds. A copy of a tracker module is cheap; they are tiny by
+    // construction (sample-based song data, which is why they are kept verbatim).
+    const raw = await toBytes(src);
+    const { left, right, sampleRate } = await renderMod(new Uint8Array(raw.slice(0)), 44100);
+    if (!left.length) throw new Error('tracker module rendered empty');
     return { channels: [left, right], sampleRate };
   }
 
