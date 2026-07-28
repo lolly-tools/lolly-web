@@ -900,6 +900,19 @@ test('toHex: normalises hash-less + short hex, rejects non-hex', () => {
   assert.equal(toHex(null), '');
 });
 
+// A '' here makes coerceBox omit the key, which reverts the shape to inheriting the
+// slide — so a colour the picker can now hand over in its authored space has to bake,
+// not vanish. The deck's own wire format stays hex.
+test('toHex: bakes a named or wide-gamut colour instead of dropping it', () => {
+  assert.equal(toHex('rebeccapurple'), '#663399');
+  assert.equal(toHex('rgb(48 186 120)'), '#30ba78');
+  assert.equal(toHex('oklch(62% 0.19 260)').length, 7);
+  assert.equal(toHex('color(display-p3 1 0 0)'), '#ff0b0c');   // clipped into sRGB, not dropped
+  assert.equal(toHex('#11223344'), '#11223344');               // authored alpha survives
+  assert.equal(toHex('transparent'), '');                      // no fill is not a fill
+  assert.equal(toHex('oklch(nope)'), '');
+});
+
 test('coerceBox: a shape "box" defends fill / shape / radius / stroke', () => {
   const b = coerceBox({ kind: 'box', x: 10, y: 20, w: 300, h: 100, fill: '30BA78', shape: 'roundRect', radius: 24, lineColor: '#0c322c', lineWidth: 4 });
   assert.equal(b.kind, 'box');

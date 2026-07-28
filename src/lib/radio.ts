@@ -2,12 +2,20 @@
 /**
  * Free net-radio stations for the Neurospicy player — an OPT-IN source that needs
  * the internet (Lolly is otherwise offline-first). A handful of curated SomaFM
- * ambient/focus channels. Streams play through a bare <audio> element (see
- * neurospicy.ts), OUTSIDE the Web Audio graph — so no CORS is needed for playback
- * and the level meter (a local-song feature) stays dark for radio.
+ * ambient/focus channels. Streams play through an <audio> element (see neurospicy.ts)
+ * rather than the decoded-buffer path, but they are tapped INTO the Web Audio graph:
+ * SomaFM's icecast answers with `Access-Control-Allow-Origin: *`, so the level meter
+ * and the MilkDrop visualizer work on radio just like they do on a local track.
+ * neurospicy.ts falls back to an untapped element if a server ever omits the header.
  *
  * We resolve the actual stream URL from SomaFM's per-channel .pls at play time
  * (CORS is open on api.somafm.com), so we never ship a stale hard-coded server.
+ *
+ * DEV GOTCHA (verified 2026-07-28, curl against ice2/ice6.somafm.com): the icecast servers
+ * answer 403 to any request whose `Referer` contains `localhost` — so radio does not play at
+ * all on `http://localhost:5173`, tap or no tap. `http://127.0.0.1:5173` is fine, as is
+ * production. It's an anti-hotlink rule on their side, nothing to fix here; use the IP form
+ * when testing radio locally. (They also 403 a `HeadlessChrome` user-agent.)
  * Please keep the SomaFM attribution + support link in the UI — they're free and
  * listener-supported.
  */

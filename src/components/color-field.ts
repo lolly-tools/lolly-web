@@ -1,31 +1,60 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Shared SUSE colour picker — the ONE colour field used across the app.
+ * Shared colour picker — the ONE colour field used across the app.
  *
- * Renders the palette swatches + hex entry + alpha + native picker + current
- * swatch, and wires their behaviour. Both the single-tool sidebar (views/tool.js)
+ * Renders the palette swatches + value entry + alpha + native picker + current
+ * swatch, and wires their behaviour. Both the single-tool sidebar (views/tool.ts)
  * and the /pro batch grid use this, so there is a single implementation to
  * maintain (no per-view variations).
  *
- * Markup styling lives in styles/app.css (`.color-picker-field`, `.color-popover`,
- * `.color-swatch`, `.color-trigger`, …) — global, so it applies wherever this
- * markup is mounted.
+ * Markup styling lives in styles/parts/components.css (`.color-picker-field`,
+ * `.color-popover`, `.color-swatch`, `.color-trigger`, …) — global, so it applies
+ * wherever this markup is mounted.
  *
- *   colorFieldHtml(id, value, { float })   → HTML string for one field
+ *   colorFieldHtml(id, value, { float, modes, dials })   → HTML string for one field
  *   wireColorField(scopeEl, { onChange, onInteractStart, onInteractEnd })
  *
  * `float` makes the popover position itself (fixed) anchored to the trigger and
  * close on outside-click — for hosts where the field sits inside a clipping /
  * scrolling container (the /pro grid). Regular sidebar fields use plain CSS
  * positioning; block-colour fields keep their sidebar-spanning behaviour.
+ *
+ * ── ONE CssColor per field ───────────────────────────────────────────────────
+ * A field's truth is a single `CssColor` in `STATE`, in the space it was authored
+ * in. Everything on screen is a projection of it, and every space is DATA (see
+ * color-spaces.ts) rather than a hand-written state machine. What that replaced:
+ * an sRGB-hex spine — `genFromHex`/`genToHex` round-tripped every HSL/RGB/CMYK
+ * drag through `#rrggbb`, which is precisely why a wide-gamut or perceptual space
+ * could not exist here. A `color(display-p3 1 0 0)` handed to the picker came back
+ * as `#ff0b0c`, so Colour Lab reported every colour as sRGB.
+ *
+ * What is EMITTED is unchanged: `onChange(id, value)`'s `value` is still a
+ * lowercase `#rrggbb` / `#rrggbbaa` / `'transparent'` (or `{ref, value}` for a
+ * token swatch). The canonical colour rides along in an additive third argument,
+ * `detail`, so consumers upgrade one at a time. Widening the emitted string would
+ * corrupt data today: `engine/src/url-mode.ts` prefixes a non-`#` colour param
+ * with `'#'` on every compact-URL round trip, and three consumers silently
+ * DISCARD a non-hex rather than erroring.
+ *
+ * Exactly one function emits — `emit()` — and it is called only from a pointer /
+ * keyboard / `input` / click handler. Never from `selectMode`, `onSelect`, any
+ * `seed*` or any `paint*`. A mount-time emit is the bug that made every Colour Lab
+ * colour read "sRGB", and jsdom never fires `input`, so the only guard against
+ * reintroducing it is the zero-calls-after-wiring test in color-field.test.ts.
  */
-import { hexToOklch, oklchToHex, rgbToCmyk, cmykToRgbApprox, contrastRatio, deltaEOk } from '@lolly/engine';
-import type { Oklch } from '@lolly/engine';
+import { contrastRatio, deltaEOk, parseColor, formatColor, convertColor, colorToHexString } from '@lolly/engine';
+import type { CssColor } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
-import { hexToRgba, rgbaToHex, rgbToHsl, hslToRgb, formatColor, parseColor } from '../lib/color-formats.ts';
-import type { ColorFormat } from '../lib/color-formats.ts';
 import { escape } from '../utils.ts';
 import { wireTabs } from '../lib/tabs.ts';
+import {
+  colorSpaces, getColorSpace, composeColor, decomposeColor, channelRuns, pinValue,
+  spaceText, spaceParse, spaceExactness, spaceInGamut, spaceInkCoverage, limitLabel,
+  notationHasAlpha, hueOf, slugMode, DEFAULT_COLOR_MODE,
+} from './color-spaces.ts';
+import type { ChannelSpec, ChannelRun, ColorMode, ColorModeFamily, SpaceSpec } from './color-spaces.ts';
+
+export type { ColorMode, ColorModeFamily, ChannelSpec, SpaceSpec } from './color-spaces.ts';
 
 /** One swatch as the picker renders it (see SWATCHES below). */
 export interface ColorSwatchOption {
@@ -39,8 +68,28 @@ export interface ColorSwatchOption {
 /** What onChange receives: a plain colour string, or a token-linked value. */
 export type ColorFieldValue = string | { ref: string; value: string };
 
+/**
+ * The additive second half of a change: the colour the user actually authored.
+ *
+ * `value` (onChange's first payload) is a gamut-mapped sRGB hex and always will
+ * be — that is the contract 23 call sites and the compact-URL format depend on.
+ * `css` / `color` are the unflattened truth, for a host that wants to persist it.
+ * `baked` says whether the two differ, so a consumer never has to guess.
+ */
+export interface ColorChangeDetail {
+  /** `formatColor(canonical)` — 'oklch(64.857% 0.29949 28.96)', 'color(display-p3 1 0 0)'. */
+  css: string;
+  /** The canonical colour. Treat as frozen; it is cloned on the way out. */
+  color: CssColor;
+  /** The space the user was editing in. */
+  mode: ColorMode;
+  /** True when `value` is a gamut-mapped approximation of `color`. */
+  baked: boolean;
+  ref: string | null;
+}
+
 export interface WireColorFieldOpts {
-  onChange?(id: string, value: ColorFieldValue): void;
+  onChange?(id: string, value: ColorFieldValue, detail: ColorChangeDetail): void;
   onInteractStart?(): void;
   onInteractEnd?(): void;
 }
@@ -76,7 +125,7 @@ export function refreshSwatches(scope: HTMLElement): void {
 }
 
 // A colour value may be a token value object ({ ref, value }); the field UI works
-// in plain colour strings, so coerce to the (cached) hex for display.
+// in plain colour strings, so coerce to the (cached) colour for display.
 function toHex(value: unknown): string {
   const o = value as { ref?: unknown; value?: unknown };
   return ((value && typeof value === 'object' && typeof o.ref === 'string') ? (o.value ?? '') : value) as string;
@@ -131,7 +180,7 @@ function nearestSwatch(value: string): { value: string; ref: string | null; labe
 // #/start wizard), and escape() doesn't neutralise CSS metacharacters — so a
 // malicious $value like `#000; background-image:url(https://evil.example/x)`
 // would otherwise smuggle a live declaration into the attribute and fire an
-// external request. The engine's colorToHex is the primary gate upstream; this
+// external request. The engine's colour parser is the primary gate upstream; this
 // is the defense-in-depth at the sink.
 const SAFE_CSS_COLOR = /^(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([^();"'{}<>\\]*\)|[a-z][a-z0-9-]*)$/i;
 
@@ -141,41 +190,126 @@ function safeCssColor(v: unknown): string {
   return SAFE_CSS_COLOR.test(s) ? s : '';
 }
 
-// ── OKLCH sliders (the LCH-first custom-colour surface) ─────────────────────
-// The picker's custom-colour controls are OKLCH sliders — perceptual axes
-// (lightness / chroma / hue) instead of the RGB cube, matching the OKLCH-native
-// brand token system. The engine's brand-derive module is the conversion
-// authority: hexToOklch to seed the sliders, gamut-mapped oklchToHex (chroma
-// reduced until sRGB-representable) on the way out — so any slider position
-// yields a real, in-gamut hex.
+// ── One field's state ────────────────────────────────────────────────────────
+
+interface FieldColorState {
+  /** 'transparent' is NOT expressible as a CssColor — the engine's parseColor maps
+   *  it to opaque-black-at-alpha-0, which loses the sentinel. Any code path that
+   *  reads `color` without checking `kind` resurrects the black-transparent bug. */
+  kind: 'color' | 'transparent';
+  /** Authored space + components + alpha (0–1). The ONE truth. */
+  color: CssColor;
+  /** Active tab. */
+  mode: ColorMode;
+  /** Hue memory, degrees. ONE number shared by every space that has a hue: it is
+   *  written from whichever hue slider moved last (so it is in that space's
+   *  degrees) and read only when a conversion reports the hue POWERLESS, i.e. for
+   *  a grey — where any hue is as good as any other. */
+  lastHue: number;
+  /** Token ref from the last swatch pick, cleared by any manual edit. */
+  ref: string | null;
+}
+
+const STATE = new WeakMap<HTMLElement, FieldColorState>();
+
+/** One space panel's DISPLAY values. Held per panel rather than re-derived from
+ *  the colour, so a lossy space stays stable while dragging: CMYK↔RGB is
+ *  many-to-one on K, and re-decomposing mid-drag would make K jump. */
+const PANEL_VALS = new WeakMap<HTMLElement, Record<string, number>>();
+
+const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+
+const TRANSPARENT: CssColor = { space: 'srgb', components: [0, 0, 0], alpha: 0, missing: 0 };
+const BLACK: CssColor = { space: 'srgb', components: [0, 0, 0], alpha: 1, missing: 0 };
 
 /** Slider ranges. C's ceiling is CSS Color 4's practical sRGB chroma maximum. */
 export const LCH_MAX = { l: 100, c: 0.4, h: 360 } as const;
 
-/** Sliders' fallback when the current value has no colour to seed from
- * ('transparent', or an unparsable string): a pleasant mid-blue, not black —
- * black sits at C=0 where the H slider does nothing, a dead-feeling start. */
-const LCH_SEED: Oklch = { l: 0.62, c: 0.11, h: 250 };
+/** The sliders' fallback when the value has no colour to seed from ('transparent',
+ *  or an unparsable string): a pleasant mid-blue, not black — black sits at C=0
+ *  where the H slider does nothing, a dead-feeling start. */
+const SEED: CssColor = { space: 'oklch', components: [0.62, 0.11, 250], alpha: 1, missing: 0 };
 
-// An axis's colour ramp is generated ONCE, as a list of stops, and then poured
-// into two shapes: a linear-gradient (the slider track) and a conic-gradient (the
-// dial). Same stops, same colours, so the dial can never disagree with the slider
-// beneath it.
+/** The colour a field's SLIDERS start from. Same as the state's colour once the
+ *  field has one; the neutral seed while it does not, so an empty field opens on a
+ *  live-feeling blue instead of black's dead hue axis. */
+function panelSeed(field: HTMLElement, st: FieldColorState): CssColor {
+  if (st.kind === 'transparent') return SEED;       // alpha 0 black has no axes worth showing
+  return (field.dataset.colorCanon ?? '') ? st.color : SEED;
+}
+
+/** The field's emitted value: a gamut-mapped sRGB hex, or the transparent sentinel. */
+function bakedHex(st: FieldColorState): string {
+  return st.kind === 'transparent' ? 'transparent' : colorToHexString(st.color).toLowerCase();
+}
+
+// How far outside [0,1] an sRGB component may sit before the emitted hex counts
+// as an approximation rather than rounding noise.
+const BAKED_SLACK = 1e-4;
+
+/** The single value+detail production site — every emit goes through it. */
+function bake(st: FieldColorState): { value: string; detail: ColorChangeDetail } {
+  const srgb = convertColor(st.color, 'srgb').components;
+  return {
+    value: bakedHex(st),
+    detail: {
+      css: st.kind === 'transparent' ? 'transparent' : formatColor(st.color),
+      color: { ...st.color, components: [...st.color.components] as [number, number, number] },
+      mode: st.mode,
+      baked: st.kind !== 'transparent' && srgb.some(v => v < -BAKED_SLACK || v > 1 + BAKED_SLACK),
+      ref: st.ref,
+    },
+  };
+}
+
+// ── Track and dial ramps ─────────────────────────────────────────────────────
+// An axis's ramp is generated ONCE, as runs (see channelRuns), and poured into two
+// shapes: a linear-gradient (the slider track) and a conic-gradient (the dial).
+// Same runs, same positions, so the dial can never disagree with the slider
+// beneath it — gaps included.
+
 const linearStops = (stops: readonly string[]): string => `linear-gradient(to right, ${stops.join(', ')})`;
 /** `from 0deg` puts the range's start at 12 o'clock and sweeps it clockwise —
  *  which is exactly how the needle angle (frac × 360°) is measured. */
 const conicStops = (stops: readonly string[]): string => `conic-gradient(from 0deg, ${stops.join(', ')})`;
 
+/** Positioned stops for a run list: each run's colours across its own stretch,
+ *  with `transparent` hard stops over the gaps the gamut cannot reach. */
+function runParts(runs: readonly ChannelRun[]): string[] {
+  const at = (f: number): string => `${(clamp01(f) * 100).toFixed(2)}%`;
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const run of runs) {
+    if (run.from > cursor) parts.push(`transparent ${at(cursor)}`, `transparent ${at(run.from)}`);
+    const n = run.stops.length;
+    // A single-sample run still spans its (bisected) stretch, so state its one
+    // colour at BOTH ends — otherwise the band fades into the transparent gap
+    // beside it instead of reading as the solid sliver of reachable colour it is.
+    if (n < 2) parts.push(`${run.stops[0]} ${at(run.from)}`, `${run.stops[0]} ${at(run.to)}`);
+    else run.stops.forEach((css, i) => {
+      parts.push(`${css} ${at(run.from + (run.to - run.from) * (i / (n - 1)))}`);
+    });
+    cursor = Math.max(cursor, run.to);
+  }
+  if (cursor < 1) parts.push(`transparent ${at(cursor)}`, 'transparent 100%');
+  return parts;
+}
+
+const trackFromRuns = (runs: readonly ChannelRun[]): string =>
+  runs.length ? linearStops(runParts(runs)) : 'transparent';
+const dialFromRuns = (runs: readonly ChannelRun[]): string =>
+  runs.length ? conicStops(runParts(runs)) : 'transparent';
+
 /**
- * The three axis ramps for the current colour, as stop lists. Each axis sweeps
- * its own range while holding the other two at the current value, so the ramp
- * previews exactly what moving that axis will do. Stops are raw `oklch()`
- * strings — the browser renders and gamut-maps them; no per-stop JS conversion.
+ * The three OKLCH axis ramps as stop lists — the ORIGINAL full-range builder,
+ * kept because `lchTrackGradients` is a public export with pinned output (see
+ * color-field.test.ts). The picker's own tracks come from `channelRuns`, which
+ * breaks the ramp where the colour stops being displayable; this one never does.
  */
 function lchTrackStops(l: number, c: number, h: number): { l: string[]; c: string[]; h: string[] } {
   const ramp = (n: number, at: (t: number) => string): string[] =>
     Array.from({ length: n }, (_, i) => at(i / (n - 1)));
-  const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
+  const pct = (v: number): string => `${Math.round(v * 1000) / 10}%`;
   return {
     l: ramp(9, t => `oklch(${pct(t)} ${c} ${h})`),
     c: ramp(9, t => `oklch(${pct(l)} ${t * LCH_MAX.c} ${h})`),
@@ -197,159 +331,52 @@ export function contrastText(hex: string): string {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#000000' : '#ffffff';
 }
 
-// ── Colour-space slider modes (opt-in via `modes`) ──────────────────────────
-// The picker's default surface is the OKLCH sliders above. `modes` adds a tab
-// bar — OKLCH · HSL · RGB · CMYK — so the same colour can be set in whichever
-// space the user thinks in (the brand primary wants this). OKLCH keeps its own
-// dedicated state machine (.color-lch — its data-l/c/h avoids low-chroma hue
-// drift); the other three are "generic" groups driven by these helpers. Each
-// generic group holds its channels as data-* on the group element and only
-// round-trips to hex on the way OUT, so a lossy space (CMYK↔RGB is many-to-one
-// on K) stays stable while dragging — same discipline as the OKLCH group.
-// OKLCH is the DEFAULT tab — the perceptual dials + sliders make it the best
-// space to pick in. 'hex' is a first-class tab too — it has no sliders of its
-// own, so it BORROWS the RGB slider group (sliderMode below maps hex→rgb) while
-// its value field speaks plain #rrggbb. The active tab is the emphasised one
-// (bold pill), whichever space that is.
-export type ColorMode = 'hex' | 'oklch' | 'hsl' | 'rgb' | 'cmyk';
-/** The generic (non-OKLCH) spaces — those driven by MODE_AXES + gen* helpers. */
-type GenMode = 'hsl' | 'rgb' | 'cmyk';
-
-interface ModeAxis { ch: string; label: string; aria: string; min: number; max: number; step: number; }
-/** Channel spec per generic mode — UI units (RGB 0–255, HSL h 0–360 s/l 0–100, CMYK 0–100). */
-const MODE_AXES: Record<GenMode, ModeAxis[]> = {
-  hsl: [
-    { ch: 'h', label: 'H', aria: 'Hue', min: 0, max: 360, step: 1 },
-    { ch: 's', label: 'S', aria: 'Saturation', min: 0, max: 100, step: 1 },
-    { ch: 'l', label: 'L', aria: 'Lightness', min: 0, max: 100, step: 1 },
-  ],
-  rgb: [
-    { ch: 'r', label: 'R', aria: 'Red', min: 0, max: 255, step: 1 },
-    { ch: 'g', label: 'G', aria: 'Green', min: 0, max: 255, step: 1 },
-    { ch: 'b', label: 'B', aria: 'Blue', min: 0, max: 255, step: 1 },
-  ],
-  cmyk: [
-    { ch: 'c', label: 'C', aria: 'Cyan', min: 0, max: 100, step: 1 },
-    { ch: 'm', label: 'M', aria: 'Magenta', min: 0, max: 100, step: 1 },
-    { ch: 'y', label: 'Y', aria: 'Yellow', min: 0, max: 100, step: 1 },
-    { ch: 'k', label: 'K', aria: 'Black', min: 0, max: 100, step: 1 },
-  ],
-};
-
-/** A generic mode's channel values (UI units) read from an sRGB hex. */
-function genFromHex(mode: GenMode, hex: string): Record<string, number> {
-  const { r, g, b } = hexToRgba(hex) ?? { r: 0, g: 0, b: 0, a: 1 };
-  if (mode === 'rgb') return { r, g, b };
-  if (mode === 'hsl') { const [h, s, l] = rgbToHsl(r, g, b); return { h, s, l }; }
-  const [c, m, y, k] = rgbToCmyk(r / 255, g / 255, b / 255); // engine returns 0–1
-  return { c: c * 100, m: m * 100, y: y * 100, k: k * 100 };
-}
-
-/** A generic mode's channel values → an sRGB `#rrggbb` (gamut-safe, no alpha). */
-function genToHex(mode: GenMode, st: Record<string, number>): string {
-  if (mode === 'rgb') return rgbaToHex(st.r!, st.g!, st.b!, 1);
-  if (mode === 'hsl') { const [r, g, b] = hslToRgb(st.h!, st.s!, st.l!); return rgbaToHex(r, g, b, 1); }
-  const [r, g, b] = cmykToRgbApprox([st.c! / 100, st.m! / 100, st.y! / 100, st.k! / 100] as [number, number, number, number]);
-  return rgbaToHex(r * 255, g * 255, b * 255, 1);
-}
-
-/** Per-channel stop list for a generic mode: each sweeps its axis, others held. */
-function genTrackStops(mode: GenMode, st: Record<string, number>): Record<string, string[]> {
-  if (mode === 'rgb') return {
-    r: [`rgb(0,${st.g},${st.b})`, `rgb(255,${st.g},${st.b})`],
-    g: [`rgb(${st.r},0,${st.b})`, `rgb(${st.r},255,${st.b})`],
-    b: [`rgb(${st.r},${st.g},0)`, `rgb(${st.r},${st.g},255)`],
-  };
-  if (mode === 'hsl') return {
-    h: Array.from({ length: 13 }, (_, i) => `hsl(${i / 12 * 360} ${st.s}% ${st.l}%)`),
-    s: [`hsl(${st.h} 0% ${st.l}%)`, `hsl(${st.h} 100% ${st.l}%)`],
-    l: [`hsl(${st.h} ${st.s}% 0%)`, `hsl(${st.h} ${st.s}% 50%)`, `hsl(${st.h} ${st.s}% 100%)`],
-  };
-  // CMYK: no CSS cmyk() — sample the approx conversion at 7 stops per axis.
-  const sample = (vary: 'c' | 'm' | 'y' | 'k'): string[] => Array.from({ length: 7 }, (_, i) => {
-    const v = { ...st, [vary]: (i / 6) * 100 };
-    const [r, g, b] = cmykToRgbApprox([v.c! / 100, v.m! / 100, v.y! / 100, v.k! / 100] as [number, number, number, number]);
-    return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
-  });
-  return { c: sample('c'), m: sample('m'), y: sample('y'), k: sample('k') };
-}
-
-/** Per-channel track gradient for a generic mode. */
-function genTracks(mode: GenMode, st: Record<string, number>): Record<string, string> {
-  const stops = genTrackStops(mode, st);
-  return Object.fromEntries(Object.entries(stops).map(([ch, s]) => [ch, linearStops(s)]));
-}
-
-/** A generic channel's readout: hue in degrees, RGB as an integer, the rest as %. */
-function genValText(mode: GenMode, ch: string, v: number): string {
-  if (mode === 'rgb') return `${Math.round(v)}`;
-  if (mode === 'hsl' && ch === 'h') return `${Math.round(v)}°`;
-  return `${Math.round(v)}%`;
-}
-
 // ── Dials ────────────────────────────────────────────────────────────────────
-// INLINE HOSTS ONLY (the brand editor's spacious always-open panel). The trigger
-// popover is a narrow floating column where the rings cost a lot of height to
-// restate axes the sliders under them already show, and its result disc would
-// duplicate the eyedropper in the value field above — so it renders sliders only.
-//
 // A ring per channel, sitting above the sliders: the axis's ramp poured into a
-// conic gradient, with a needle at value → angle. Hue is genuinely circular, so
-// its dial is the real shape of that axis; the others are a sweep (the ramp's
-// start and end meet at 12 o'clock, which is why there's a visible seam there —
-// that's the range's edge, not an artefact).
+// conic gradient, with a needle at value → angle. A `circular` channel (a genuine
+// hue) is the real shape of that axis; the others are a sweep whose two ends meet
+// at 12 o'clock, which is why there is a visible seam there — that is the range's
+// edge, not an artefact.
 //
 // The dials are painted from the CURRENT colour, so they carry the context the
-// sliders do: with hue on green and saturation at zero, the S and L dials both
-// show their green-to-grey and black-to-white sweeps *for that hue*, and the
-// result disc reads mid-grey. Dragging one is a convenience — the slider under
-// it stays the control of record (it is the accessible one, and the precise one),
-// and a dial drag simply drives it.
+// sliders do. Dragging one is a convenience — the slider under it stays the
+// control of record (it is the accessible one, and the precise one), and a dial
+// drag simply drives it. Hence aria-hidden + tabindex="-1" on every ring.
 //
-// The fourth disc is the OUTPUT: the colour these three axes currently make. It's
-// split in half — the top picks a colour off the screen (eyedropper), the bottom
-// opens the swatch menu — with the glyphs struck through it in its own contrast
-// colour.
+// The fourth disc is the OUTPUT: the colour these axes currently make. It's split
+// in half — the top picks a colour off the screen (eyedropper), the bottom opens
+// the swatch menu — with the glyphs struck through it in its own contrast colour.
+//
+// Whether they render at all is the caller's `dials` option. It DEFAULTS to
+// `inline` (the spacious always-open panel), which is what it used to be hard-wired
+// to; a float popover can now ask for them.
 
-interface DialSpec { ch: string; label: string; aria: string; frac: number; stops: string[] }
-
-const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+/** `runs: null` = "leave this ring's gradient alone, only move its needle" — what a
+ *  repaint of the channel being dragged asks for, since that axis's own ramp did not
+ *  change. The needle must still move, or the ring stops following the finger. */
+interface DialSpec { ch: string; label: string; aria: string; frac: number; runs: ChannelRun[] | null }
 
 /** The needle's angle for a 0–1 position on the axis. Matches conicStops' `from 0deg`. */
 const needleDeg = (frac: number): string => `${(clamp01(frac) * 360).toFixed(1)}deg`;
 
 const EDIT_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
-/** The OKLCH group's three dials, for the current state. */
-function lchDials(l: number, c: number, h: number): DialSpec[] {
-  const s = lchTrackStops(l, c, h);
-  return [
-    { ch: 'l', label: 'L', aria: 'Lightness', frac: l, stops: s.l },
-    { ch: 'c', label: 'C', aria: 'Chroma', frac: c / LCH_MAX.c, stops: s.c },
-    { ch: 'h', label: 'H', aria: 'Hue', frac: h / 360, stops: s.h },
-  ];
-}
-
-/** A generic group's dials (one per channel), for the current state. */
-function genDials(mode: GenMode, st: Record<string, number>): DialSpec[] {
-  const stops = genTrackStops(mode, st);
-  return MODE_AXES[mode].map(a => ({
-    ch: a.ch, label: a.label, aria: a.aria,
-    frac: (st[a.ch]! - a.min) / (a.max - a.min),
-    stops: stops[a.ch]!,
-  }));
-}
-
 /** The dial row: one ring per channel + the output disc. `outHex` is machine-made
- *  (oklchToHex / genToHex), so it's always a safe `#rrggbb` for a CSS context. */
-function dialsHtml(dials: readonly DialSpec[], outHex: string): string {
+ *  (colorToHexString), so it's always a safe `#rrggbb` for a CSS context.
+ *
+ *  `slots` is how many discs the row must SIZE for — the widest space's channel
+ *  count + the output disc, not this row's own count. The rings share the width by
+ *  slot rather than by sibling count, so a 3-channel space and a 4-channel one draw
+ *  the same size ring and the band's height stops depending on which tab is open
+ *  (see `--dial-slots` in styles/parts/color-field.css). */
+function dialsHtml(dials: readonly DialSpec[], outHex: string, slots: number): string {
   const ring = (d: DialSpec): string => `
-      <button type="button" class="color-dial" data-dial-ch="${d.ch}" tabindex="-1"
-              style="background:${conicStops(d.stops)}" title="${d.aria}" aria-hidden="true">
+      <button type="button" class="color-dial" data-dial-ch="${escape(d.ch)}" tabindex="-1"
+              style="background:${dialFromRuns(d.runs ?? [])}" title="${escape(d.aria)}" aria-hidden="true">
         <span class="color-dial-needle" style="transform:rotate(${needleDeg(d.frac)})"></span>
-        <span class="color-dial-hub">${d.label}</span>
+        <span class="color-dial-hub">${escape(d.label)}</span>
       </button>`;
-  return `<div class="color-dials">
+  return `<div class="color-dials" style="--dial-slots:${Math.max(1, Math.round(slots))}">
       ${dials.map(ring).join('')}
       <div class="color-dial-out" data-dial-out style="--out:${outHex};--out-fg:${contrastText(outHex)}">
         <button type="button" class="color-dial-act" data-dial-act="eyedropper"
@@ -360,84 +387,20 @@ function dialsHtml(dials: readonly DialSpec[], outHex: string): string {
     </div>`;
 }
 
-/** Repaint a group's dials + output disc from its current state. */
-function paintDials(group: HTMLElement, dials: readonly DialSpec[], outHex: string): void {
+/** Repaint a panel's dials + output disc. */
+function paintDials(panel: HTMLElement, dials: readonly DialSpec[], outHex: string): void {
   for (const d of dials) {
-    const dial = group.querySelector<HTMLElement>(`.color-dial[data-dial-ch="${d.ch}"]`);
+    const dial = panel.querySelector<HTMLElement>(`.color-dial[data-dial-ch="${CSS.escape(d.ch)}"]`);
     if (!dial) continue;
-    dial.style.background = conicStops(d.stops);
+    if (d.runs) dial.style.background = dialFromRuns(d.runs);
     const needle = dial.querySelector<HTMLElement>('.color-dial-needle');
     if (needle) needle.style.transform = `rotate(${needleDeg(d.frac)})`;
   }
-  const out = group.querySelector<HTMLElement>('[data-dial-out]');
+  const out = panel.querySelector<HTMLElement>('[data-dial-out]');
   if (out) {
     out.style.setProperty('--out', outHex);
     out.style.setProperty('--out-fg', contrastText(outHex));
   }
-}
-
-/** One generic mode's slider group (channels as data-* on the wrapper). */
-function genGroupHtml(mode: GenMode, rgbHex: string, hidden: boolean, dials: boolean): string {
-  const st = genFromHex(mode, rgbHex);
-  const tracks = genTracks(mode, st);
-  const rows = MODE_AXES[mode].map(a => `
-      <div class="color-lch-row">
-        <span class="color-lch-label" aria-hidden="true">${a.label}</span>
-        <input type="range" class="color-mode-slider" data-mode-ch="${a.ch}"
-               min="${a.min}" max="${a.max}" step="${a.step}" value="${Math.round(st[a.ch]!)}"
-               style="background:${tracks[a.ch]}" aria-label="${a.aria}">
-        <span class="color-lch-val" data-mode-val="${a.ch}">${genValText(mode, a.ch, st[a.ch]!)}</span>
-      </div>`).join('');
-  const data = MODE_AXES[mode].map(a => `data-${a.ch}="${st[a.ch]}"`).join(' ');
-  return `<div class="color-modegroup" data-mode-group="${mode}" ${data}${hidden ? ' hidden' : ''}>${
-    dials ? dialsHtml(genDials(mode, st), genToHex(mode, st)) : ''
-  }${rows}</div>`;
-}
-
-/**
- * The mode tab bar + all slider groups. OKLCH is the DEFAULT active tab — its
- * .color-lch group starts visible; HEX/HSL/RGB/CMYK start hidden. The active tab
- * gets the bold pill (CSS aria-selected), whichever space it is. HEX has no
- * sliders of its own, so when picked it borrows the RGB group.
- */
-function colorModesHtml(eid: string, rgbHex: string | null, dials: boolean): string {
-  const seed = rgbHex ?? '#4f83cc'; // generic groups need a real hex; OKLCH seeds itself
-  const tab = (m: ColorMode, label: string, on: boolean): string =>
-    `<button type="button" class="color-mode-tab" role="tab" data-mode="${m}" aria-selected="${on}">${label}</button>`;
-  // OKLCH is the default space now that the perceptual dials + sliders make it the
-  // best one to pick in. Its .color-lch group starts visible; the others hidden.
-  return `<div class="color-modes" data-color-modes="${eid}" data-active-mode="oklch">
-      <div class="color-mode-tabs" role="tablist" aria-label="Colour space">
-        ${tab('hex', 'HEX', false)}${tab('oklch', 'OKLCH', true)}${tab('hsl', 'HSL', false)}${tab('rgb', 'RGB', false)}${tab('cmyk', 'CMYK', false)}
-      </div>
-      ${lchSlidersHtml(eid, rgbHex, false, dials)}
-      ${genGroupHtml('hsl', seed, true, dials)}
-      ${genGroupHtml('rgb', seed, true, dials)}
-      ${genGroupHtml('cmyk', seed, true, dials)}
-    </div>`;
-}
-
-/** Repaint a generic group's sliders + readouts + tracks from its data-* state. */
-function paintGenGroup(group: HTMLElement): void {
-  const mode = group.dataset.modeGroup as GenMode;
-  const st: Record<string, number> = {};
-  for (const a of MODE_AXES[mode]) st[a.ch] = parseFloat(group.dataset[a.ch] ?? '0');
-  const tracks = genTracks(mode, st);
-  for (const a of MODE_AXES[mode]) {
-    const slider = group.querySelector<HTMLInputElement>(`[data-mode-ch="${a.ch}"]`);
-    const val = group.querySelector<HTMLElement>(`[data-mode-val="${a.ch}"]`);
-    if (slider) { slider.value = String(Math.round(st[a.ch]!)); slider.style.background = tracks[a.ch]!; }
-    if (val) val.textContent = genValText(mode, a.ch, st[a.ch]!);
-  }
-  paintDials(group, genDials(mode, st), genToHex(mode, st));
-}
-
-/** Re-seed a generic group's channels from an sRGB hex (external colour change). */
-function seedGenGroup(group: HTMLElement, hex: string): void {
-  const mode = group.dataset.modeGroup as GenMode;
-  const st = genFromHex(mode, hex);
-  for (const [k, v] of Object.entries(st)) group.dataset[k] = String(v);
-  paintGenGroup(group);
 }
 
 // Pipette glyph for the screen eyedropper button (stroke follows the input's
@@ -492,20 +455,177 @@ function alphaTrackHex(v: string | null | undefined): string {
   return typeof v === 'string' && /^#[0-9a-fA-F]{6}/.test(v) ? v.slice(0, 7) : '#808080';
 }
 
-export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean } = {}): string {
+// ── Space panels ─────────────────────────────────────────────────────────────
+// One `.color-space` per registered mode: a channel row per ChannelSpec, plus the
+// optional dial row. There is no `switch (space)` anywhere in this path — the rows
+// come from the registry's data and the ramps from `channelRuns`, so a press
+// profile mounted at runtime renders with no new code.
+
+/** Numbers land in `value`/`style` attributes, so keep them short and finite. */
+const num = (v: number): string => (Number.isFinite(v) ? String(Math.round(v * 1e6) / 1e6) : '0');
+
+function channelRowHtml(eid: string, ch: ChannelSpec, vals: Record<string, number>, runs: ChannelRun[]): string {
+  const raw = vals[ch.ch] ?? ch.min;
+  const { at, pinned } = pinValue(ch, raw);
+  return `
+      <div class="color-lch-row">
+        <span class="color-lch-label" aria-hidden="true">${escape(ch.label)}</span>
+        <input type="range" class="color-lch-slider color-mode-slider" data-mode-ch="${escape(ch.ch)}"
+               min="${num(ch.min)}" max="${num(ch.max)}" step="${num(ch.step)}" value="${num(at)}"
+               style="background:${trackFromRuns(runs)}" aria-label="${escape(ch.aria)}">
+        <span class="color-lch-val${pinned ? ' is-clamped' : ''}" data-mode-val="${escape(ch.ch)}"
+              aria-describedby="${eid}-note"${pinned ? ` title="${escape(PIN_TITLE)}"` : ''}>${escape(ch.fmt(raw))}</span>
+      </div>`;
+}
+
+// The readout carrying this sits inside its own space's panel, so "this space" is
+// unambiguous there; the shared caution line names the space instead (pinNote).
+const PIN_TITLE = 'Outside this space — the slider is pinned, the value is unchanged';
+const pinNote = (label: string): string => `Outside ${label} — the slider is pinned, the value is unchanged`;
+
+/**
+ * One space's panel. `tabbed` adds the tabpanel ARIA that only makes sense when
+ * there is a tab strip above it; the non-modes popover renders the same panel
+ * bare.
+ *
+ * The OKLCH panel keeps `.color-lch` alongside `.color-space`: views/color-lab.test.ts
+ * asserts it is mounted, and the non-modes popover's focus-to-expand selector is
+ * `.color-popover > .color-lch[hidden]`. The other panels keep the legacy
+ * `.color-modegroup` so components.css's height reservation still applies to them.
+ */
+function spacePanelHtml(
+  eid: string, spec: SpaceSpec, seed: CssColor, lastHue: number,
+  o: { hidden: boolean; dials: boolean; tabbed: boolean },
+): string {
+  const vals = decomposeColor(spec, seed, lastHue);
+  const runs = spec.channels.map(ch => channelRuns(spec, ch, vals, seed.alpha));
+  const rows = spec.channels.map((ch, i) => channelRowHtml(eid, ch, vals, runs[i]!)).join('');
+  const dials = o.dials
+    ? dialsHtml(
+        spec.channels.map((ch, i) => {
+          const { at } = pinValue(ch, vals[ch.ch] ?? ch.min);
+          return { ch: ch.ch, label: ch.label, aria: ch.aria, frac: (at - ch.min) / (ch.max - ch.min || 1), runs: runs[i]! };
+        }),
+        colorToHexString(composeColor(spec, vals, 1)),
+      )
+    : '';
+  const slug = slugMode(spec.mode);
+  const cls = `color-space ${spec.mode === 'oklch' ? 'color-lch' : 'color-modegroup'}`;
+  const aria = o.tabbed
+    ? ` role="tabpanel" id="${eid}-grp-${slug}" aria-labelledby="${eid}-tab-${slug}" tabindex="-1"`
+    : '';
+  return `<div class="${cls}" data-space-group="${escape(spec.mode)}"${aria}${o.hidden ? ' hidden' : ''}>${dials}${rows}</div>`;
+}
+
+const FAMILY_LABEL: Record<ColorModeFamily, string> = {
+  perceptual: 'Perceptual', device: 'Device', output: 'Output',
+};
+
+/** One tab. Profile entries are two-line full-width rows — §11.6b wants the
+ *  profile name ON the tab, and a bare "CMYK" pill cannot carry it. */
+function modeTabHtml(eid: string, spec: SpaceSpec, active: boolean): string {
+  const slug = slugMode(spec.mode);
+  const wide = String(spec.mode).startsWith('icc:');
+  const aria = `${spec.label}, ${spec.family}${spec.ariaSuffix ? `, ${spec.ariaSuffix}` : spec.sub ? `, ${spec.sub}` : ''}`;
+  return `<button type="button" class="color-mode-tab${wide ? ' color-mode-tab--wide' : ''}" role="tab"
+              id="${eid}-tab-${slug}" data-mode="${escape(spec.mode)}" data-mode-family="${spec.family}"
+              aria-selected="${active}" tabindex="${active ? 0 : -1}" aria-controls="${eid}-grp-${slug}"
+              aria-label="${escape(aria)}">
+        <span class="color-mode-tab-label">${escape(spec.label)}</span>${
+    spec.sub ? `<span class="color-mode-tab-sub">${escape(spec.sub)}</span>` : ''}
+      </button>`;
+}
+
+/**
+ * The grouped tab strip + every space panel + the field's one caution line.
+ *
+ * ONE flat `role="tablist"`, visually grouped into three labelled rows. A
+ * two-level shape (family tabs → space tabs) was worked through and rejected:
+ * `wireTabs` scopes its roving tabindex to one container, so three inner
+ * instances would need a hand-written coordinator to clear the other two
+ * families' aria-selected, and an arrow press at a family boundary would land
+ * focus inside a `hidden` panel. One tablist gets one tab stop, arrows that walk
+ * every entry in visual order across group boundaries, and the grouping stays
+ * VISIBLE as headings — which serves "the grouping is real information" better
+ * than a control that hides two thirds of it.
+ *
+ * The family names reach assistive tech through each tab's aria-label
+ * ("OKLCH, perceptual"), because a `role="presentation"` wrapper cannot
+ * contribute a group name to a flat tablist.
+ */
+function colorModesHtml(eid: string, seed: CssColor, lastHue: number, active: ColorMode, dials: boolean): string {
+  const specs = colorSpaces();
+  const families = (['perceptual', 'device', 'output'] as const).map(family => {
+    const rows = specs.filter(s => s.family === family);
+    if (!rows.length) return '';
+    const wide = family === 'output' && rows.some(s => String(s.mode).startsWith('icc:'));
+    return `<div class="color-mode-fam${wide ? ' color-mode-fam--wide' : ''}" role="presentation" data-mode-family="${family}">
+        <span class="color-mode-fam-label" aria-hidden="true">${FAMILY_LABEL[family]}</span>
+        ${rows.map(s => modeTabHtml(eid, s, s.mode === active)).join('')}
+      </div>`;
+  }).join('');
+  const panels = specs
+    .map(s => spacePanelHtml(eid, s, seed, lastHue, { hidden: s.mode !== active, dials, tabbed: true }))
+    .join('');
+  return `<div class="color-modes" data-color-modes="${eid}" data-active-mode="${escape(active)}">
+      <div class="color-mode-tabs" role="tablist" aria-label="Colour space">${families}</div>
+      ${panels}
+      ${noteHtml(eid)}
+    </div>`;
+}
+
+/**
+ * The field's one caution line. `role="status"` so a mode switch or a gamut change
+ * is announced without stealing focus; written at most every 300ms and never with
+ * text it already carries, so a slider drag does not turn it into a firehose.
+ *
+ * It starts `hidden` and unhides when it has something to say: styling an empty
+ * live region is the stylesheet's business, and this component must not leave an
+ * empty paragraph taking up space before that CSS lands.
+ */
+const noteHtml = (eid: string): string =>
+  `<p class="color-space-note" data-color-note="${eid}" id="${eid}-note" role="status" aria-live="polite" hidden></p>`;
+
+export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false, dials }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean; dials?: boolean } = {}): string {
   const rawVal = toHex(value) ?? '';
-  const isTransparent = rawVal === 'transparent';
-  const isHex8 = /^#[0-9a-fA-F]{8}$/.test(rawVal);
-  const isHex6 = /^#[0-9a-fA-F]{6}$/.test(rawVal);
-  const rgbHex = isHex8 ? rawVal.slice(0, 7) : (isHex6 ? rawVal : '#000000');
-  const alphaInt = isHex8 ? parseInt(rawVal.slice(7, 9), 16) : (isTransparent ? 0 : 255);
+  const isTransparent = String(rawVal).trim().toLowerCase() === 'transparent';
+  // Seeding is strictly WIDENED: anything the engine's parseColor accepts (hex,
+  // named, rgb(), hsl(), hwb(), lab(), lch(), oklab(), oklch(), color(<space> …))
+  // is kept in its AUTHORED space. Everything that parsed before parses to the
+  // same colour, so nothing regresses; a host that persists `detail.css` now gets
+  // a lossless reopen.
+  const parsed = isTransparent ? null : parseColor(String(rawVal));
+  const color = isTransparent ? TRANSPARENT : (parsed ?? BLACK);
+  const st: FieldColorState = {
+    kind: isTransparent ? 'transparent' : 'color',
+    color,
+    mode: modes ? DEFAULT_COLOR_MODE : 'oklch',
+    lastHue: hueOf(color) ?? SEED.components[2],
+    ref: null,
+  };
+  const seed = parsed ? color : SEED;               // no colour yet ⇒ the neutral seed
+  const canon = isTransparent ? 'transparent' : (parsed ? formatColor(color) : '');
+
+  const hex = bakedHex(st);
+  const rgbHex = isTransparent ? '#000000' : hex.slice(0, 7);
+  const alphaInt = isTransparent ? 0 : Math.round(clamp01(color.alpha) * 255);
   const alphaPct = Math.round(alphaInt / 255 * 100);
-  const hexDisplay = isHex8 ? rawVal.toLowerCase() : (isHex6 ? rawVal.toLowerCase() : '');
-  const previewBg = isTransparent ? '' : `style="background:${escape(safeCssColor(rawVal) || '#000000')}"`;
+  // The value field shows the colour in the active space (with modes) or as a hex
+  // (without). An unparsable value keeps its own text — mid-edit junk is held, not
+  // silently replaced.
+  const shown = isTransparent ? 'transparent'
+    : parsed ? (modes ? spaceText(getColorSpace(st.mode)!, color) : hex)
+    : (String(rawVal) || '#000000');
+  const painted = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(shown);
+  // The trigger preview paints the BAKED hex, matching what updateTrigger writes
+  // on every later edit — a wide-gamut colour previews as the colour a screen can
+  // actually show, in one notation, rather than as `color(srgb …)` here and a hex
+  // a moment later.
+  const previewBg = isTransparent ? '' : `style="background:${escape(safeCssColor(parsed ? hex : String(rawVal)) || '#000000')}"`;
   const previewClass = `color-trigger-preview${isTransparent ? ' color-swatch--transparent' : ''}`;
   const eid = escape(id);
-  const hexText = hexDisplay || rawVal || '#000000';
   const name = swatchName(value);
+  const wantDials = dials ?? inline;
 
   // Swatches are NOT rendered here — they're the heaviest part (the whole
   // palette per field) and are built lazily on first popover open (see
@@ -524,34 +644,38 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   // out in flow (no floating/positioning) — for hosts with room to spare that
   // want the picker as a spacious inline panel, not a click-to-open popover (the
   // brand editor's Primary colour and swatch editor). CSS (.color-field--inline)
-  // turns the popover static and gives the dials the full width. It is also what
-  // gates the dials on at all: they're a panel affordance, and the narrow trigger
-  // popover shows sliders alone.
+  // turns the popover static and gives the dials the full width.
   //
   // It carries NO swatch palette: every inline host is the brand editor, where
   // the swatches would be the very palette being edited — offering the brand's
   // own colours as presets for a brand colour is circular. Omitted rather than
   // hidden: the grid is the heaviest part of the popover's DOM.
+  //
+  // `data-color-canon` is the server-render → wire handoff: the canonical colour
+  // as a CSS Color 4 string (or 'transparent', or empty for "no colour yet").
+  // wireColorField re-parses it with the engine's strict parseColor, which is why
+  // the hidden native input is now WRITE-ONLY — it is the OS picker's own control
+  // and can only speak `#rrggbb`, so it cannot be the authority.
   const cls = `color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}${inline ? ' color-field--inline' : ''}`;
-  return `<div class="${cls}" data-color-field="${eid}">
-    ${inline ? '' : `<button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(name ? name + ' ' : '')}${escape(hexText)}">
+  return `<div class="${cls}" data-color-field="${eid}" data-color-canon="${escape(canon)}">
+    ${inline ? '' : `<button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(name ? name + ' ' : '')}${escape(hex)}">
       <span class="${previewClass}" ${previewBg} aria-hidden="true"></span>
       <span class="color-trigger-name">${escape(name)}</span>
     </button>`}
     <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
-      ${swatchesOnly ? '' : `<div class="color-input-wrap"${isHex6 || isHex8 ? ` style="${Object.entries(colorInputPaint(hexDisplay)).map(([k, v]) => `${k}:${v}`).join(';')}"` : ''}>
-      <input type="text" class="color-input${isHex6 || isHex8 ? ' color-input--painted' : ''}" data-color-hex="${eid}"
-             value="${escape(hexDisplay || rawVal || '#000000')}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}"
+      ${swatchesOnly ? '' : `<div class="color-input-wrap"${painted ? ` style="${Object.entries(colorInputPaint(shown)).map(([k, v]) => `${k}:${v}`).join(';')}"` : ''}>
+      <input type="text" class="color-input${painted ? ' color-input--painted' : ''}" data-color-hex="${eid}"
+             value="${escape(shown)}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}"
              ${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
       <button type="button" class="color-eyedropper" data-color-eyedropper="${eid}" aria-label="Pick a colour from your screen" title="Pick a colour from your screen">${EYEDROPPER_ICON}</button>
       </div>
       ${modes
-        ? colorModesHtml(eid, isHex6 || isHex8 ? rgbHex : null, inline)
-        // In a click-to-open POPOVER (float / regular sidebar / block), the LCH sliders start
-        // COLLAPSED — the popover opens compact (hex + alpha + swatches), which keeps it in the
-        // viewport, and the sliders expand when the user focuses the .color-input. The INLINE
+        ? colorModesHtml(eid, seed, st.lastHue, st.mode, wantDials)
+        // In a click-to-open POPOVER (float / regular sidebar / block), the sliders start
+        // COLLAPSED — the popover opens compact (value + alpha + swatches), which keeps it in
+        // the viewport, and they expand when the user focuses the .color-input. The INLINE
         // panel (brand editor) is a dedicated always-open editor, so its sliders/dials stay shown.
-        : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null, !inline, inline)}
+        : spacePanelHtml(eid, getColorSpace('oklch')!, seed, st.lastHue, { hidden: !inline, dials: wantDials, tabbed: false }) + noteHtml(eid)}
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
         ${/* The gradient ends are emitted HERE as well as repainted from JS: nothing
@@ -573,37 +697,6 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
         : '<div class="color-swatches"></div>'}
     </div>
   </div>`;
-}
-
-/** Slider readout formatting per axis — L in %, C to 3 places, H in degrees. */
-function lchValText(axis: 'l' | 'c' | 'h', v: number): string {
-  return axis === 'l' ? `${Math.round(v)}%` : axis === 'c' ? v.toFixed(3) : `${Math.round(v)}°`;
-}
-
-/**
- * The OKLCH slider stack for one field, seeded from `rgbHex` (or the neutral
- * seed when the value has no colour, e.g. 'transparent'). The current OKLCH
- * state rides on data-l/c/h of the wrapper — the sliders are its projection,
- * and slider drags mutate the state directly (never a hex round-trip, which
- * would drift hue at low chroma).
- */
-function lchSlidersHtml(eid: string, rgbHex: string | null, hidden = false, dials = false): string {
-  const o = (rgbHex ? hexToOklch(rgbHex) : null) ?? LCH_SEED;
-  const tracks = lchTrackGradients(o.l, o.c, o.h);
-  const row = (axis: 'l' | 'c' | 'h', label: string, aria: string, max: number, step: number, value: number) => `
-      <div class="color-lch-row">
-        <span class="color-lch-label" aria-hidden="true">${label}</span>
-        <input type="range" class="color-lch-slider" data-lch-axis="${axis}"
-               min="0" max="${max}" step="${step}" value="${value}"
-               style="background:${tracks[axis]}" aria-label="${aria}">
-        <span class="color-lch-val" data-lch-val="${axis}">${lchValText(axis, value)}</span>
-      </div>`;
-  return `<div class="color-lch" data-color-lch="${eid}" data-l="${o.l}" data-c="${o.c}" data-h="${o.h}"${hidden ? ' hidden' : ''}>
-      ${dials ? dialsHtml(lchDials(o.l, o.c, o.h), oklchToHex(o)) : ''}
-      ${row('l', 'L', 'Lightness', LCH_MAX.l, 0.5, Math.round(o.l * 1000) / 10)}
-      ${row('c', 'C', 'Chroma', LCH_MAX.c, 0.004, Math.round(o.c * 1000) / 1000)}
-      ${row('h', 'H', 'Hue', LCH_MAX.h, 1, Math.round(o.h))}
-    </div>`;
 }
 
 /** The palette swatch buttons for a field — built lazily on first popover open. */
@@ -716,64 +809,212 @@ export function fixedContainingBlockOrigin(el: HTMLElement): { x: number; y: num
   return { x: 0, y: 0 };
 }
 
+// ── Repaint scheduling ───────────────────────────────────────────────────────
+// A panel's tracks cost up to 4 channels × 24 samples × a conversion + a gamut
+// test. The dragged channel's OWN track never changes (the other channels are
+// held), so it is skipped — the old paintLch repainted all three for nothing —
+// and the rest is coalesced to one paint per frame. The state write and the emit
+// stay synchronous with the event; only pixels wait.
+
+interface PaintJob { spec: SpaceSpec; alpha: number; dials: boolean; skip?: string }
+const PAINT_QUEUE = new Map<HTMLElement, PaintJob>();
+let paintScheduled = false;
+
+const nextFrame = (fn: () => void): void => {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn);
+  else setTimeout(fn, 0);
+};
+
+function schedulePaint(panel: HTMLElement, job: PaintJob): void {
+  PAINT_QUEUE.set(panel, job);
+  if (paintScheduled) return;
+  paintScheduled = true;
+  nextFrame(() => {
+    paintScheduled = false;
+    const jobs = [...PAINT_QUEUE];
+    PAINT_QUEUE.clear();
+    for (const [p, j] of jobs) paintTracks(p, j);
+  });
+}
+
+/** Repaint a panel's channel tracks (and its dials) from PANEL_VALS. */
+function paintTracks(panel: HTMLElement, { spec, alpha, dials, skip }: PaintJob): void {
+  const vals = PANEL_VALS.get(panel);
+  if (!vals) return;
+  const runs = spec.channels.map(ch => (ch.ch === skip ? null : channelRuns(spec, ch, vals, alpha)));
+  spec.channels.forEach((ch, i) => {
+    const r = runs[i];
+    if (!r) return;
+    const slider = panel.querySelector<HTMLInputElement>(`[data-mode-ch="${CSS.escape(ch.ch)}"]`);
+    if (slider) slider.style.background = trackFromRuns(r);
+  });
+  if (!dials) return;
+  // Every channel goes to paintDials, the skipped one included — with `runs: null`,
+  // which repaints its needle and leaves its gradient. Dropping it here is how the
+  // dragged channel's needle used to freeze while its slider moved, and how a dial
+  // drag stopped following the finger on the very ring being dragged.
+  paintDials(
+    panel,
+    spec.channels.map((ch, i) => {
+      const { at } = pinValue(ch, vals[ch.ch] ?? ch.min);
+      return { ch: ch.ch, label: ch.label, aria: ch.aria, frac: (at - ch.min) / (ch.max - ch.min || 1), runs: runs[i] ?? null };
+    }),
+    colorToHexString(composeColor(spec, vals, 1)),
+  );
+}
+
+/** Sync the readouts (and the pin flag) — cheap, so it runs synchronously. */
+function paintReadouts(panel: HTMLElement, spec: SpaceSpec, vals: Record<string, number>): boolean {
+  let anyPinned = false;
+  for (const ch of spec.channels) {
+    const raw = vals[ch.ch] ?? ch.min;
+    const { pinned } = pinValue(ch, raw);
+    anyPinned = anyPinned || pinned;
+    const out = panel.querySelector<HTMLElement>(`[data-mode-val="${CSS.escape(ch.ch)}"]`);
+    if (!out) continue;
+    out.textContent = ch.fmt(raw);
+    out.classList.toggle('is-clamped', pinned);
+    out.title = pinned ? PIN_TITLE : '';
+  }
+  return anyPinned;
+}
+
 /**
- * Wire every colour field within `scope`. Calls onChange(id, value) with the
- * canonical value string (#rrggbb, #rrggbbaa, or 'transparent'). The trigger
- * preview + sibling controls are kept in sync so the field reflects changes
- * without the host needing to re-render.
+ * Wire every colour field within `scope`. Calls onChange(id, value, detail) with
+ * an sRGB value string (#rrggbb, #rrggbbaa, or 'transparent') plus the canonical
+ * colour. The trigger preview + sibling controls are kept in sync so the field
+ * reflects changes without the host needing to re-render.
  */
 export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInteractStart, onInteractEnd }: WireColorFieldOpts = {}): void {
-  const interact = (on: boolean) => { (on ? onInteractStart : onInteractEnd)?.(); };
-  const q = <T extends Element = Element>(sel: string) => scope.querySelector<T>(sel);
+  const interact = (on: boolean): void => { (on ? onInteractStart : onInteractEnd)?.(); };
   armSwatchTip();
 
-  // ── The value field's format follows the active mode (when `modes` is on) ─────
-  // With a mode picker present, the big value input reads/writes in the active
-  // space (OKLCH string / HSL / RGB / CMYK) — like the swatch editor's set-by-value
-  // row — instead of always hex. Without modes it stays a plain hex field.
-  const MODE_FMT: Record<ColorMode, ColorFormat> = { hex: 'hex', oklch: 'oklch', hsl: 'hsl', rgb: 'rgb', cmyk: 'cmyk' };
-  /** The active value-field format for a field, or null (plain hex — no modes). */
-  const valueFmt = (field: HTMLElement | null): ColorFormat | null => {
-    const m = field?.querySelector<HTMLElement>('.color-modes');
-    return m ? MODE_FMT[(m.dataset.activeMode as ColorMode) || 'oklch'] : null;
+  const stateOf = (field: HTMLElement | null): FieldColorState | null => (field ? STATE.get(field) ?? null : null);
+
+  /** The space the field is currently editing in. */
+  const activeSpec = (field: HTMLElement): SpaceSpec => {
+    const st = STATE.get(field);
+    return getColorSpace(st?.mode ?? 'oklch') ?? getColorSpace('oklch')!;
   };
-  /** Write the shared value field for `id` — in the active mode's space, else hex.
-   *  Never clobbers the field's TEXT while the user is typing in it, but always
-   *  repaints its swatch chrome (background/border/contrast-flipped text). */
+
+  /** The panel for the field's active mode — NOT `:not([hidden])`: a popover whose
+   *  sliders have not been expanded yet still has to be kept in step, or opening
+   *  them later shows a stale colour. */
+  const activePanel = (field: HTMLElement, spec: SpaceSpec): HTMLElement | null =>
+    field.querySelector<HTMLElement>(`[data-space-group="${CSS.escape(spec.mode)}"]`);
+
+  const wantsDials = (panel: HTMLElement): boolean => Boolean(panel.querySelector('.color-dials'));
+
+  /** A panel's display values — cached, because re-decomposing mid-drag makes a
+   *  lossy space (CMYK's K) jump under the user's hand. */
+  const panelVals = (panel: HTMLElement, spec: SpaceSpec, st: FieldColorState): Record<string, number> => {
+    const cached = PANEL_VALS.get(panel);
+    if (cached) return cached;
+    const vals = decomposeColor(spec, st.color, st.lastHue);
+    PANEL_VALS.set(panel, vals);
+    return vals;
+  };
+
+  /** Re-seed a panel from a colour: display values, slider positions (pinned),
+   *  readouts, tracks, dials. Never emits. */
+  const seedPanel = (panel: HTMLElement, spec: SpaceSpec, color: CssColor, lastHue: number): void => {
+    const vals = decomposeColor(spec, color, lastHue);
+    PANEL_VALS.set(panel, vals);
+    for (const ch of spec.channels) {
+      const slider = panel.querySelector<HTMLInputElement>(`[data-mode-ch="${CSS.escape(ch.ch)}"]`);
+      if (slider) slider.value = num(pinValue(ch, vals[ch.ch] ?? ch.min).at);
+    }
+    paintReadouts(panel, spec, vals);
+    paintTracks(panel, { spec, alpha: clamp01(color.alpha), dials: wantsDials(panel) });
+  };
+
+  // ── The caution line ───────────────────────────────────────────────────────
+  const NOTE_MS = 300;
+  const NOTES = new WeakMap<HTMLElement, { last: string; at: number; timer?: ReturnType<typeof setTimeout> }>();
+
+  const noteText = (spec: SpaceSpec, st: FieldColorState, pinned: boolean): string => {
+    if (st.kind === 'transparent') return `${spec.label} — transparent`;
+    // The pin explains what the user can SEE, so it leads.
+    if (pinned) return pinNote(spec.label);
+    if (!spaceInGamut(spec, st.color)) {
+      const ink = spaceInkCoverage(spec, st.color);
+      const label = limitLabel(spec.limit);
+      return ink == null ? `Outside ${label}` : `Outside ${label} — ${Math.round(ink * 100)}% ink`;
+    }
+    return `${spec.label} — ${spaceExactness(spec, st.color) === 'exact' ? 'exact' : 'approximated from a wider colour'}`;
+  };
+
+  /** Write the caution line: leading-edge, so a mode switch lands immediately and
+   *  a slider drag is throttled to one update every NOTE_MS. Identical text is a
+   *  no-op, so a live region never re-announces what it already says. */
+  const setNote = (field: HTMLElement, text: string): void => {
+    const el = field.querySelector<HTMLElement>('[data-color-note]');
+    if (!el) return;
+    let rec = NOTES.get(field);
+    if (!rec) { rec = { last: '', at: 0 }; NOTES.set(field, rec); }
+    const r = rec;
+    if (text === r.last) return;
+    if (r.timer) { clearTimeout(r.timer); r.timer = undefined; }
+    const write = (): void => {
+      r.timer = undefined;
+      if (text === r.last) return;
+      r.last = text;
+      r.at = Date.now();
+      el.hidden = text.length === 0;
+      el.textContent = text;
+    };
+    const wait = NOTE_MS - (Date.now() - r.at);
+    if (wait <= 0) write();
+    else r.timer = setTimeout(write, wait);
+  };
+
+  // ── Projections of the state ──────────────────────────────────────────────
   /**
    * Paint the alpha track: this colour fading to nothing, over the checkerboard.
    *
-   * The slider is otherwise identical to its L/C/H siblings above it, and it used
+   * The slider is otherwise identical to its channel siblings above it, and it used
    * to be a 4px native rail with `accent-color` — which made the one control whose
    * subject IS transparency the only one that showed you nothing about it. The two
    * custom properties are the gradient's ends; the checkerboard lives in CSS
    * because it never changes.
    */
-  const paintAlphaTrack = (field: HTMLElement | null, fullHex: string): void => {
-    const slider = field?.querySelector<HTMLElement>('.color-alpha-slider');
+  const paintAlphaTrack = (field: HTMLElement, fullHex: string): void => {
+    const slider = field.querySelector<HTMLElement>('.color-alpha-slider');
     if (!slider) return;
-    // Only an #rrggbb(aa) value has a colour to fade; 'transparent' and idents fall
-    // back to a neutral so the track never renders as an accidental black.
     const rgb = alphaTrackHex(fullHex);
     slider.style.setProperty('--alpha-from', `${rgb}00`);
     slider.style.setProperty('--alpha-to', `${rgb}ff`);
   };
 
-  const writeValueField = (id: string, field: HTMLElement | null, fullHex: string): void => {
-    const input = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
-    if (!input) return;
-    paintColorInput(input, fullHex);
-    // Every update path funnels through here, so this is the one place the alpha
-    // track needs repainting from.
-    paintAlphaTrack(field, fullHex);
-    if (input === document.activeElement) return;
-    const fmt = valueFmt(field);
-    input.value = fmt ? formatColor(fmt, fullHex) : fullHex;
+  /** Write the value field — in the active space's notation. Never clobbers its
+   *  TEXT while the user is typing in it, but always repaints its swatch chrome. */
+  const writeValueField = (field: HTMLElement, st: FieldColorState): void => {
+    const input = field.querySelector<HTMLInputElement>('.color-input[data-color-hex]');
+    const hex = bakedHex(st);
+    paintColorInput(input, hex);
+    paintAlphaTrack(field, hex);
+    if (!input || input === document.activeElement) return;
+    input.value = st.kind === 'transparent' ? 'transparent' : spaceText(activeSpec(field), st.color);
   };
 
-  function updateTrigger(field: HTMLElement | null, value: string): void {
-    const preview = field?.querySelector<HTMLElement>('.color-trigger-preview');
-    const nameText = field?.querySelector<HTMLElement>('.color-trigger-name');
+  const syncNative = (field: HTMLElement, st: FieldColorState): void => {
+    // Write-only: the OS picker's own control can hold nothing but #rrggbb, so it
+    // is kept in step for the (never-opened) native dialog and never READ back.
+    const native = field.querySelector<HTMLInputElement>('input.color-popover-native');
+    if (native) native.value = bakedHex(st).slice(0, 7);
+  };
+
+  const syncAlphaRow = (field: HTMLElement, st: FieldColorState): void => {
+    const byte = st.kind === 'transparent' ? 0 : Math.round(clamp01(st.color.alpha) * 255);
+    const slider = field.querySelector<HTMLInputElement>('.color-alpha-slider');
+    const pct = field.querySelector<HTMLElement>('.color-alpha-pct');
+    if (slider) slider.value = String(byte);
+    if (pct) pct.textContent = `${Math.round(byte / 255 * 100)}%`;
+  };
+
+  function updateTrigger(field: HTMLElement, value: string): void {
+    const preview = field.querySelector<HTMLElement>('.color-trigger-preview');
+    const nameText = field.querySelector<HTMLElement>('.color-trigger-name');
     const isTrans = value === 'transparent';
     if (preview) {
       preview.classList.toggle('color-swatch--transparent', isTrans);
@@ -781,7 +1022,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     }
     const name = swatchName(value);
     if (nameText) nameText.textContent = name;             // :empty CSS hides it for custom colours
-    const trigger = field?.querySelector('.color-trigger');
+    const trigger = field.querySelector('.color-trigger');
     if (trigger) trigger.setAttribute('aria-label', `Colour: ${name ? name + ' ' : ''}${value || '#000000'}`);
     updateNearest(field, value);
   }
@@ -792,8 +1033,8 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // (ΔEOK > a rounding hair) and the nearest one is close enough to be the
   // intended colour (≤ 0.12 ≈ clearly-related); clicking re-emits through
   // applySwatch, so a token-backed swatch RE-LINKS the value to its ref.
-  function updateNearest(field: HTMLElement | null, value: string): void {
-    const btn = field?.querySelector<HTMLElement>('.color-nearest');
+  function updateNearest(field: HTMLElement, value: string): void {
+    const btn = field.querySelector<HTMLElement>('.color-nearest');
     if (!btn) return;
     const near = value && value !== 'transparent' ? nearestSwatch(value) : null;
     if (!near || near.d < 0.005 || near.d > 0.12) { btn.hidden = true; return; }
@@ -805,6 +1046,59 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     btn.title = `Nearest brand colour (ΔE ${near.d.toFixed(3)}) — use ${near.label}`;
   }
 
+  // ── THE one emit ──────────────────────────────────────────────────────────
+  /**
+   * The ONLY place onChange is called. Reachable exclusively from a pointer /
+   * keyboard / `input` / click handler — never from selectMode, onSelect, a seed*
+   * or a paint*. See the module header: a mount-time emit made every Colour Lab
+   * colour report "sRGB", and jsdom cannot catch it for us.
+   */
+  const emit = (field: HTMLElement): void => {
+    const st = STATE.get(field);
+    if (!st) return;
+    const { value, detail } = bake(st);
+    onChange(field.dataset.colorField ?? '', st.ref ? { ref: st.ref, value } : value, detail);
+  };
+
+  /**
+   * Everything that follows a real edit, once the state has been written: the
+   * handoff attribute, the sibling controls, the trigger, the visible panel, the
+   * caution line, then the emit. `owner` is the panel currently being dragged —
+   * it owns its own display values, so it must not be re-seeded from the colour
+   * (that is what makes a lossy space stable under the hand). Every other
+   * projection is idempotent, so it is written unconditionally.
+   */
+  const afterEdit = (field: HTMLElement, st: FieldColorState, owner?: HTMLElement): void => {
+    const { value, detail } = bake(st);
+    field.dataset.colorCanon = detail.css;
+    syncNative(field, st);
+    syncAlphaRow(field, st);
+    writeValueField(field, st);
+    updateTrigger(field, value);
+    const spec = activeSpec(field);
+    const panel = activePanel(field, spec);
+    let pinned = false;
+    if (panel && panel !== owner) seedPanel(panel, spec, st.color, st.lastHue);
+    if (panel) {
+      const vals = PANEL_VALS.get(panel);
+      pinned = vals ? spec.channels.some(ch => pinValue(ch, vals[ch.ch] ?? ch.min).pinned) : false;
+    }
+    setNote(field, noteText(spec, st, pinned));
+    emit(field);
+  };
+
+  /** Replace the field's colour wholesale (swatch, typed value, eyedropper, native). */
+  const applyColor = (field: HTMLElement, next: { kind: 'color' | 'transparent'; color: CssColor; ref: string | null }): void => {
+    const st = STATE.get(field);
+    if (!st) return;
+    st.kind = next.kind;
+    st.color = next.color;
+    st.ref = next.ref;
+    const h = hueOf(next.color);
+    if (h != null) st.lastHue = h;
+    afterEdit(field, st);
+  };
+
   scope.querySelectorAll<HTMLElement>('.color-nearest').forEach(btn => {
     btn.addEventListener('click', () => {
       const field = btn.closest<HTMLElement>('[data-color-field]');
@@ -813,75 +1107,23 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     });
   });
 
-  /** Seed the hint from the field's current colour (the canonical native input)
-   *  when the popover opens — updateTrigger only runs on later edits. */
+  /** Seed the nearest-brand hint from the field's own colour when the popover
+   *  opens — updateTrigger only runs on later edits. */
   function seedNearest(field: HTMLElement | null): void {
-    if (!field) return;
-    const hex = field.querySelector<HTMLInputElement>('input.color-popover-native')?.value || '';
-    updateNearest(field, hex);
-  }
-
-  // ── OKLCH sliders ────────────────────────────────────────────────────────────
-  // The wrapper's data-l/c/h is the single OKLCH state; sliders read AND write
-  // it. Drags convert state → hex (gamut-mapped) for the output; hex/swatch/
-  // native edits convert hex → state to re-seat the sliders. State only ever
-  // crosses through hex in that one direction, so low-chroma hue never drifts.
-
-  /** Repaint the three tracks + readouts from the wrapper's current state. */
-  function paintLch(box: HTMLElement): void {
-    const l = parseFloat(box.dataset.l!), c = parseFloat(box.dataset.c!), h = parseFloat(box.dataset.h!);
-    const tracks = lchTrackGradients(l, c, h);
-    for (const [axis, value] of [['l', l * 100], ['c', c], ['h', h]] as const) {
-      const slider = box.querySelector<HTMLInputElement>(`[data-lch-axis="${axis}"]`);
-      const val = box.querySelector<HTMLElement>(`[data-lch-val="${axis}"]`);
-      if (slider) { slider.value = String(value); slider.style.background = tracks[axis]; }
-      if (val) val.textContent = axis === 'l' ? `${Math.round(value)}%` : axis === 'c' ? value.toFixed(3) : `${Math.round(value)}°`;
-    }
-    paintDials(box, lchDials(l, c, h), oklchToHex({ l, c, h }));
-    // Out-of-gamut flag: oklchToHex silently reduces chroma when the position
-    // leaves sRGB — surface it on the chroma readout instead of pretending the
-    // slider position is the emitted colour. 0.01 margin absorbs byte rounding.
-    const emitted = hexToOklch(oklchToHex({ l, c, h }));
-    const clamped = !!emitted && emitted.c < c - 0.01;
-    const cVal = box.querySelector<HTMLElement>('[data-lch-val="c"]');
-    if (cVal) {
-      cVal.classList.toggle('is-clamped', clamped);
-      cVal.title = clamped ? 'Outside sRGB — showing the nearest displayable colour (chroma reduced)' : '';
-    }
-  }
-
-  /** Re-seed the sliders from a hex chosen elsewhere (swatch / hex box / native).
-   *  Re-seeds the OKLCH group AND — when a colour-space mode is active (`modes`)
-   *  — the visible generic group, so RGB/HSL/CMYK sliders catch up to the change. */
-  function seedLch(field: HTMLElement, hex: string): void {
-    const rgb = hex.startsWith('#') ? hex.slice(0, 7) : hex;
-    const box = field.querySelector<HTMLElement>('.color-lch');
-    if (box) {
-      const o = hexToOklch(rgb);
-      // 'transparent' / invalid — leave the sliders where they were
-      if (o) { box.dataset.l = String(o.l); box.dataset.c = String(o.c); box.dataset.h = String(o.h); paintLch(box); }
-    }
-    const active = field.querySelector<HTMLElement>('.color-modegroup:not([hidden])');
-    if (active && /^#[0-9a-fA-F]{6}$/.test(rgb)) seedGenGroup(active, rgb);
+    const st = stateOf(field);
+    if (field && st) updateNearest(field, bakedHex(st));
   }
 
   // ── Palette swatches (lazy) ──────────────────────────────────────────────────
   // Apply a swatch's colour to the field, syncing the popover controls + trigger.
   // A swatch carrying a token `ref` emits a token value ({ ref, value }) so the
-  // colour stays linked to the token; a plain swatch emits the hex string. Editing
-  // the hex/native/alpha afterwards emits a plain string, de-linking from the token.
-  function applySwatch(field: HTMLElement, hex: string, ref: string | null = null): void {
-    const id = field.dataset.colorField;
-    const native = field.querySelector<HTMLInputElement>('input.color-popover-native');
-    const alphaSlider = field.querySelector<HTMLInputElement>('.color-alpha-slider');
-    const alphaPctEl = field.querySelector<HTMLElement>('.color-alpha-pct');
-    if (native && hex.startsWith('#')) native.value = hex.slice(0, 7);
-    if (id) writeValueField(id, field, hex);
-    if (alphaSlider) alphaSlider.value = hex === 'transparent' ? '0' : '255';
-    if (alphaPctEl) alphaPctEl.textContent = (hex === 'transparent' ? 0 : 100) + '%';
-    seedLch(field, hex);
-    updateTrigger(field, hex);
-    onChange(id!, ref ? { ref, value: hex } : hex);
+  // colour stays linked to the token; a plain swatch emits the value string.
+  // Editing the value/native/alpha afterwards clears the ref, de-linking.
+  function applySwatch(field: HTMLElement, value: string, ref: string | null = null): void {
+    const transparent = String(value).trim().toLowerCase() === 'transparent';
+    const parsed = transparent ? TRANSPARENT : parseColor(value);
+    if (!parsed) return;
+    applyColor(field, { kind: transparent ? 'transparent' : 'color', color: parsed, ref });
   }
 
   // Build the swatch grid the first time a field's popover opens — deferring the
@@ -913,13 +1155,16 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     const menu = field.querySelector<HTMLElement>('[data-swatch-menu]');
     if (!menu || menu.hidden) return;
     menu.hidden = true;
-    field.querySelector('[data-dial-act="native"]')?.setAttribute('aria-expanded', 'false');
+    // Every space panel carries its own disc, so clear the flag on all of them.
+    field.querySelectorAll('[data-dial-act="native"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
     if (swatchMenuOff) { swatchMenuOff(); swatchMenuOff = null; }
   }
   function toggleSwatchMenu(field: HTMLElement, menu: HTMLElement, btn: HTMLElement): void {
     if (!menu.hidden) { closeSwatchMenu(field); return; }
     buildSwatches(field);
-    const disc = field.querySelector<HTMLElement>('[data-dial-out]');
+    // Anchor to the VISIBLE panel's disc — a hidden panel's offsets are zero.
+    const disc = field.querySelector<HTMLElement>('[data-space-group]:not([hidden]) [data-dial-out]')
+      ?? field.querySelector<HTMLElement>('[data-dial-out]');
     if (disc) { menu.style.top = `${disc.offsetTop + disc.offsetHeight + 6}px`; menu.style.left = `${disc.offsetLeft}px`; }
     menu.hidden = false;
     btn.setAttribute('aria-expanded', 'true');
@@ -940,7 +1185,28 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     };
   }
 
-  // Inline fields have no trigger, so the on-open hooks above never fire — seed
+  // ── Seed each field's state from the server-render handoff ───────────────────
+  // data-color-canon is the authority (S1–S4/S7 used to be: the native input, the
+  // hex text, the alpha slider, the OKLCH dataset — four places to disagree).
+  // Re-parsed with the engine's STRICT parseColor, so an unreadable attribute
+  // yields black rather than a guess.
+  scope.querySelectorAll<HTMLElement>('[data-color-field]').forEach(field => {
+    const canon = (field.dataset.colorCanon ?? '').trim();
+    const transparent = canon.toLowerCase() === 'transparent';
+    const parsed = transparent ? TRANSPARENT : (canon ? parseColor(canon) : null);
+    const color = parsed ?? BLACK;
+    const modesEl = field.querySelector<HTMLElement>('.color-modes');
+    const mode = (modesEl?.dataset.activeMode as ColorMode | undefined) ?? DEFAULT_COLOR_MODE;
+    STATE.set(field, {
+      kind: transparent ? 'transparent' : 'color',
+      color,
+      mode: getColorSpace(mode) ? mode : DEFAULT_COLOR_MODE,
+      lastHue: hueOf(color) ?? SEED.components[2],
+      ref: null,
+    });
+  });
+
+  // Inline fields have no trigger, so the on-open hooks below never fire — seed
   // their nearest-brand hint up front. (They carry no swatch grid to build.)
   scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(f => seedNearest(f));
 
@@ -976,9 +1242,9 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     });
   });
 
-  // Off-screen height of the popover measured as if the collapsed LCH sliders were EXPANDED.
+  // Off-screen height of the popover measured as if the collapsed sliders were EXPANDED.
   // Positioning uses this so the popover opens in the direction its full (expanded) size fits
-  // and reserves that room — then revealing the sliders (hex-input focus) grows into the
+  // and reserves that room — then revealing the sliders (value-field focus) grows into the
   // reserved space and NEVER re-positions. Repositioning on reveal was the cause of both the
   // "swatch component jumps" flip and the "clicking a slider closes the picker" miss (the
   // popover moved out from under the pointer between press and release).
@@ -1065,11 +1331,11 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   let onScroll: (() => void) | null = null;
   function armOutside(field: HTMLElement, popover: HTMLElement): void {
     disarmOutside();
-    const close = () => { popover.hidden = true; popover.style.cssText = ''; field.querySelector('.color-trigger')?.setAttribute('aria-expanded', 'false'); disarmOutside(); };
+    const close = (): void => { popover.hidden = true; popover.style.cssText = ''; field.querySelector('.color-trigger')?.setAttribute('aria-expanded', 'false'); disarmOutside(); };
     outside = (e) => { if (!field.contains(e.target as Node | null)) close(); };
     // A fixed popover doesn't follow the field — close it on scroll rather than leave it
     // stranded over unrelated controls (capture catches the sidebar's own scroll). BUT don't
-    // close while the user is actively inside the popover: pressing a range slider (or the hex
+    // close while the user is actively inside the popover: pressing a range slider (or the value
     // input) can trigger a browser scroll-into-view, and closing on THAT dropped the picker
     // out from under a slider drag ("clicking the sliders just closes it"). Focus inside the
     // popover ⇒ the scroll is the interaction's own, not a dismiss.
@@ -1084,55 +1350,63 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     if (onScroll) { window.removeEventListener('scroll', onScroll, true); onScroll = null; }
   }
 
-  // ── OKLCH sliders (the primary custom-colour control) ───────────────────────
-  scope.querySelectorAll<HTMLElement>('.color-lch[data-color-lch]').forEach(box => {
-    const id = box.dataset.colorLch!;
-    const field = box.closest<HTMLElement>('[data-color-field]');
-    box.querySelectorAll<HTMLInputElement>('.color-lch-slider').forEach(slider => {
+  // ── Channel sliders (every space, one handler) ───────────────────────────────
+  // A drag reads the panel's display values, writes the dragged channel, composes
+  // straight to a CssColor and assigns it. There is no hex in this path, which is
+  // why the old low-chroma hue drift cannot come back — and why it cannot appear
+  // in any of the other spaces with a hue either.
+  scope.querySelectorAll<HTMLElement>('[data-space-group]').forEach(panel => {
+    const field = panel.closest<HTMLElement>('[data-color-field]');
+    const spec = getColorSpace(panel.dataset.spaceGroup ?? '');
+    if (!field || !spec) return;
+    const dials = wantsDials(panel);
+    panel.querySelectorAll<HTMLInputElement>('input[data-mode-ch]').forEach(slider => {
+      const ch = spec.channels.find(c => c.ch === slider.dataset.modeCh);
+      if (!ch) return;
       slider.addEventListener('pointerdown', () => interact(true));
       slider.addEventListener('pointerup', () => interact(false));
       slider.addEventListener('input', () => {
-        const axis = slider.dataset.lchAxis as 'l' | 'c' | 'h';
+        const st = STATE.get(field);
+        if (!st) return;
+        const vals = { ...panelVals(panel, spec, st) };
         const raw = parseFloat(slider.value);
-        box.dataset[axis] = String(axis === 'l' ? raw / 100 : raw);
-        const state = { l: parseFloat(box.dataset.l!), c: parseFloat(box.dataset.c!), h: parseFloat(box.dataset.h!) };
-        paintLch(box); // repaint the OTHER two tracks around the new position
-        const rgbHex = oklchToHex(state); // gamut-mapped — always a real sRGB hex
-        const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
-        const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
-        const fullHex = alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex;
-        writeValueField(id, field, fullHex);
-        const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
-        if (native) native.value = rgbHex;
-        updateTrigger(field, fullHex);
-        onChange(id, fullHex);
+        vals[ch.ch] = Number.isFinite(raw) ? raw : ch.min;
+        PANEL_VALS.set(panel, vals);
+        // Hue memory is written from the hue slider, and only ever READ for a
+        // colour whose hue is powerless. Never the other way round.
+        if (ch.hue) st.lastHue = vals[ch.ch]!;
+        st.kind = 'color';
+        st.color = composeColor(spec, vals, st.color.alpha);
+        st.ref = null;                                   // a manual edit de-links from the token
+        paintReadouts(panel, spec, vals);
+        schedulePaint(panel, { spec, alpha: clamp01(st.color.alpha), dials, skip: ch.ch });
+        afterEdit(field, st, panel);
       });
     });
   });
 
   // ── Dials ────────────────────────────────────────────────────────────────────
   // A dial never emits a colour itself: it converts the pointer's angle to a value
-  // and drives the slider for that axis, whose `input` handler already owns the
-  // whole emit path (state → gamut-mapped hex → value field → native input →
-  // trigger → onChange). One control of record per axis; the dial is a second way
-  // to move it. The output disc's two halves delegate to the eyedropper button the
-  // popover already carries and to the swatch menu. No-ops where no dials render
-  // (the trigger popover) — the row simply isn't there.
+  // and drives the slider for that channel, whose `input` handler already owns the
+  // whole path. One control of record per channel; the dial is a second way to move
+  // it. The output disc's two halves delegate to the eyedropper button the popover
+  // already carries and to the swatch menu. No-ops where no dials render — the row
+  // simply isn't there.
   scope.querySelectorAll<HTMLElement>('.color-dials').forEach(row => {
     const field = row.closest<HTMLElement>('[data-color-field]');
-    const group = row.closest<HTMLElement>('.color-lch, .color-modegroup');
+    const panel = row.closest<HTMLElement>('[data-space-group]');
 
     row.querySelectorAll<HTMLElement>('.color-dial').forEach(dial => {
       const ch = dial.dataset.dialCh!;
-      const slider = group?.querySelector<HTMLInputElement>(`[data-lch-axis="${ch}"], [data-mode-ch="${ch}"]`);
+      const slider = panel?.querySelector<HTMLInputElement>(`[data-mode-ch="${CSS.escape(ch)}"]`);
       if (!slider) return;
       const min = parseFloat(slider.min || '0');
       const max = parseFloat(slider.max || '1');
 
       // Angle → value, measured the same way the needle and the conic are: 0° at
-      // 12 o'clock, clockwise. The range's two ends meet at the top, so a drag
-      // across that seam jumps min↔max — inherent to putting a linear axis on a
-      // ring, and precisely why the slider stays.
+      // 12 o'clock, clockwise. A non-circular range's two ends meet at the top, so
+      // a drag across that seam jumps min↔max — inherent to putting a linear axis
+      // on a ring, and precisely why the slider stays.
       const setFromPointer = (e: PointerEvent): void => {
         const r = dial.getBoundingClientRect();
         const dx = e.clientX - (r.left + r.width / 2);
@@ -1164,108 +1438,60 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     row.querySelectorAll<HTMLElement>('.color-dial-act').forEach(btn => {
       btn.addEventListener('click', () => {
         if (btn.dataset.dialAct === 'eyedropper') { field?.querySelector<HTMLButtonElement>('.color-eyedropper')?.click(); return; }
-        // The edit half opens the swatch context menu. Dials render only on inline
-        // fields, and those are exactly the ones carrying that menu in place of an
-        // always-open grid — so there is no other case to fall back to.
+        // The edit half opens the swatch context menu. Dials render only where that
+        // menu exists (the inline panel), so there is no other case to fall back to.
         const menu = field?.querySelector<HTMLElement>('[data-swatch-menu]');
         if (menu && field) toggleSwatchMenu(field, menu, btn);
       });
     });
   });
 
-  // ── Colour-space modes (opt-in `modes`: OKLCH · HSL · RGB · CMYK) ────────────
-  // The tab bar swaps which slider group is visible; the OKLCH group is the
-  // dedicated .color-lch (wired above), the other three are generic groups
-  // driven by the gen* helpers. Each group re-seeds from the current hex on
-  // entry, so switching spaces never loses the colour.
+  // ── The space tab strip ──────────────────────────────────────────────────────
+  // ONE wireTabs call for the whole strip: one tab stop, one roving tabindex, and
+  // arrows that cross family boundaries in DOM order. A mode switch is cheap and,
+  // critically, emits NOTHING — it changes which numbers you are looking at, not
+  // the colour.
   scope.querySelectorAll<HTMLElement>('.color-modes[data-color-modes]').forEach(modes => {
-    const id = modes.dataset.colorModes!;
     const field = modes.closest<HTMLElement>('[data-color-field]');
-    const lchGroup = modes.querySelector<HTMLElement>('.color-lch');
-    const genGroups = modes.querySelectorAll<HTMLElement>('.color-modegroup');
-
-    /** The field's current sRGB hex. The hidden native input always holds the
-     *  canonical `#rrggbb` (every handler syncs it), so it's the reliable source
-     *  even when the value field is showing a non-hex space (OKLCH/HSL/CMYK). */
-    const currentHex = (): string => {
-      const nv = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`)?.value.trim();
-      if (nv && /^#[0-9a-fA-F]{6}$/.test(nv)) return nv;
-      const raw = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`)?.value.trim() || '';
-      const parsed = parseColor(valueFmt(field) ?? 'hex', raw);
-      return parsed ? parsed.slice(0, 7) : oklchToHex(LCH_SEED);
-    };
-
-    /** Current sRGB hex + the alpha slider's byte → the full value for the field. */
-    const currentFullHex = (): string => {
-      const rgb = currentHex();
-      const alpha = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
-      const a = alpha ? parseInt(alpha.value, 10) : 255;
-      return a < 255 ? rgb + a.toString(16).padStart(2, '0') : rgb;
-    };
-    // lib/tabs.ts's shared roving-tabindex machinery (component audit rec 1) —
-    // was a hand-rolled click-only listener with no arrow-key nav despite the
-    // role="tablist"/role="tab" markup; wireTabs adds that (Left/Right/Home/End
-    // + one tab stop) for free. `onSelect` owns everything mode-switch-specific.
+    if (!field) return;
+    const panels = [...modes.querySelectorAll<HTMLElement>('[data-space-group]')];
     const selectMode = wireTabs(modes, {
       key: 'mode',
-      onSelect: (modeValue) => {
-        const mode = modeValue as ColorMode;
-        // HEX has no sliders of its own — it shows the RGB group. Every group-
-        // visibility decision below keys off sliderMode so hex and rgb share it.
-        const sliderMode = mode === 'hex' ? 'rgb' : mode;
-        modes.dataset.activeMode = mode; // drives the value field's format (valueFmt)
-        if (lchGroup) lchGroup.hidden = sliderMode !== 'oklch';
-        genGroups.forEach(g => {
-          const on = g.dataset.modeGroup === sliderMode;
-          g.hidden = !on;
-          if (on) seedGenGroup(g, currentHex()); // catch up to the current colour
-        });
-        if (sliderMode === 'oklch' && field) seedLch(field, currentHex());
-        writeValueField(id, field, currentFullHex()); // reformat the value field to the new space
+      onSelect: (value) => {
+        const st = STATE.get(field);
+        const spec = getColorSpace(value);
+        if (!st || !spec) return;
+        st.mode = spec.mode;
+        modes.dataset.activeMode = spec.mode;
+        for (const p of panels) p.hidden = p.dataset.spaceGroup !== spec.mode;
+        const panel = panels.find(p => p.dataset.spaceGroup === spec.mode);
+        if (panel) {
+          PANEL_VALS.delete(panel);                 // decompose afresh into the space being entered
+          seedPanel(panel, spec, panelSeed(field, st), st.lastHue);
+        }
+        writeValueField(field, st);                 // reformat the value field into the new space
+        const vals = panel ? PANEL_VALS.get(panel) : undefined;
+        setNote(field, noteText(spec, st, vals ? spec.channels.some(c => pinValue(c, vals[c.ch] ?? c.min).pinned) : false));
       },
     });
-    // Establish the roving tabindex for the server-rendered active mode, and
-    // seed the value field in that space on wire.
-    selectMode(modes.dataset.activeMode ?? 'oklch');
-
-    genGroups.forEach(group => {
-      const mode = group.dataset.modeGroup as GenMode;
-      group.querySelectorAll<HTMLInputElement>('.color-mode-slider').forEach(slider => {
-        slider.addEventListener('pointerdown', () => interact(true));
-        slider.addEventListener('pointerup', () => interact(false));
-        slider.addEventListener('input', () => {
-          group.dataset[slider.dataset.modeCh!] = slider.value;
-          const st: Record<string, number> = {};
-          for (const a of MODE_AXES[mode]) st[a.ch] = parseFloat(group.dataset[a.ch] ?? '0');
-          paintGenGroup(group); // repaint the other tracks around the new position
-          const rgbHex = genToHex(mode, st);
-          const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
-          const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
-          const fullHex = alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex;
-          writeValueField(id, field, fullHex);
-          const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
-          if (native) native.value = rgbHex;
-          updateTrigger(field, fullHex);
-          onChange(id, fullHex);
-        });
-      });
-    });
+    // Establish the roving tabindex for the server-rendered active mode and seed
+    // that panel. This runs at WIRE time, so it must not emit — and does not.
+    selectMode(modes.dataset.activeMode ?? DEFAULT_COLOR_MODE);
   });
 
-  // ── Native colour input (RGB) ────────────────────────────────────────────────
+  // ── Native colour input ──────────────────────────────────────────────────────
+  // Write-only in practice (it is display:none and the shell never opens the OS
+  // picker), but if a host does surface it, a change is a real edit.
   scope.querySelectorAll<HTMLInputElement>('input.color-popover-native[data-input-id]').forEach(native => {
-    const id = native.dataset.inputId!;
     const field = native.closest<HTMLElement>('[data-color-field]');
+    if (!field) return;
     native.addEventListener('pointerdown', () => interact(true));
     native.addEventListener('pointerup', () => interact(false));
     native.addEventListener('input', () => {
-      const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
-      const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
-      const fullHex = (alphaInt < 255 ? native.value + alphaInt.toString(16).padStart(2, '0') : native.value).toLowerCase();
-      writeValueField(id, field, fullHex);
-      if (field) seedLch(field, native.value);
-      updateTrigger(field, fullHex);
-      onChange(id, fullHex);
+      const st = STATE.get(field);
+      const parsed = parseColor(native.value);
+      if (!st || !parsed) return;
+      applyColor(field, { kind: 'color', color: { ...parsed, alpha: st.kind === 'transparent' ? 1 : st.color.alpha }, ref: null });
     });
   });
 
@@ -1273,113 +1499,108 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // The EyeDropper API's overlay samples ANYWHERE on screen — other windows and
   // the desktop included, not just this page (Chromium; secure contexts). Where
   // it doesn't exist (Firefox/Safari, the Tauri WebViews) the button is removed,
-  // never a dead control. The picked colour applies exactly like a native-picker
-  // change: current alpha kept, sliders re-seeded, trigger + host notified. The
-  // OS overlay swallows pointer events, so the popover's close-on-outside never
-  // fires mid-pick; interact() still brackets it like a slider drag so hosts
-  // hold their popover/undo grouping open.
+  // never a dead control. The picked colour applies exactly like a swatch: current
+  // alpha kept, sliders re-seeded, trigger + host notified. The OS overlay swallows
+  // pointer events, so the popover's close-on-outside never fires mid-pick;
+  // interact() still brackets it like a slider drag so hosts hold their
+  // popover/undo grouping open.
   scope.querySelectorAll<HTMLButtonElement>('.color-eyedropper[data-color-eyedropper]').forEach(btn => {
     type EyeDropperCtor = new () => { open(): Promise<{ sRGBHex: string }> };
     const EyeDropper = (window as { EyeDropper?: EyeDropperCtor }).EyeDropper;
     if (!EyeDropper) { btn.remove(); return; }
-    const id = btn.dataset.colorEyedropper!;
     const field = btn.closest<HTMLElement>('[data-color-field]');
+    if (!field) return;
     btn.addEventListener('click', async () => {
       interact(true);
       try {
-        const rgbHex = (await new EyeDropper().open()).sRGBHex.toLowerCase();
-        const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
-        const alphaInt = alphaSlider ? parseInt(alphaSlider.value, 10) : 255;
-        const fullHex = alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex;
-        const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
-        if (native) native.value = rgbHex;
-        writeValueField(id, field, fullHex);
-        if (field) seedLch(field, fullHex);
-        updateTrigger(field, fullHex);
-        onChange(id, fullHex);
+        const picked = parseColor((await new EyeDropper().open()).sRGBHex);
+        const st = STATE.get(field);
+        if (picked && st) {
+          applyColor(field, { kind: 'color', color: { ...picked, alpha: st.kind === 'transparent' ? 1 : st.color.alpha }, ref: null });
+        }
       } catch { /* Esc / dismissed — nothing picked */ }
       finally { interact(false); }
     });
   });
 
-  // ── Hex text entry ───────────────────────────────────────────────────────────
-  scope.querySelectorAll<HTMLInputElement>('.color-input[data-color-hex]').forEach(hexInput => {
-    const id = hexInput.dataset.colorHex!;
-    const field = hexInput.closest<HTMLElement>('[data-color-field]');
-    hexInput.addEventListener('focus', () => {
+  // ── Value text entry ─────────────────────────────────────────────────────────
+  scope.querySelectorAll<HTMLInputElement>('.color-input[data-color-hex]').forEach(input => {
+    const field = input.closest<HTMLElement>('[data-color-field]');
+    if (!field) return;
+    input.addEventListener('focus', () => {
       interact(true);
-      // Expand the collapsed LCH sliders on first focus/tap of the hex input. Only the simple
-      // popover's sliders (a DIRECT child of .color-popover) — never the modes-tab picker's
-      // nested .color-lch, whose visibility the tabs own. NO re-position here: the popover was
-      // already laid out for its expanded height (measuredFullHeight), so the sliders grow into
+      // Expand the collapsed sliders on first focus/tap of the value input. Only the simple
+      // popover's panel (a DIRECT child of .color-popover) — never the modes picker's nested
+      // panels, whose visibility the tabs own. NO re-position here: the popover was already
+      // laid out for its expanded height (measuredFullHeight), so the sliders grow into
       // reserved space. Repositioning on reveal is exactly what caused the popover to jump and
       // to slip out from under a slider press (closing instead of dragging).
-      const lch = field?.querySelector<HTMLElement>('.color-popover > .color-lch[hidden]');
-      if (lch) lch.hidden = false;
+      const panel = field.querySelector<HTMLElement>('.color-popover > .color-lch[hidden]');
+      if (panel) panel.hidden = false;
     });
-    hexInput.addEventListener('blur', (e) => {
-      // Moving focus to another control INSIDE the picker (grabbing a slider right after the
-      // hex input revealed it) must NOT end the interaction: interact(false) here drops the
-      // host's drag-suppression (tool-inputs' _sliderDragging), so the slider's very first
-      // change rebuilds the sidebar row and the picker vanishes mid-drag. Only end when focus
-      // truly leaves the field.
-      if (field && e.relatedTarget instanceof Node && field.contains(e.relatedTarget)) return;
+    input.addEventListener('blur', (e) => {
+      // Moving focus to another control INSIDE the picker (grabbing a slider, or a space tab,
+      // right after the value input revealed them) must NOT end the interaction: interact(false)
+      // here drops the host's drag-suppression (tool-inputs' _sliderDragging), so the slider's
+      // very first change rebuilds the sidebar row and the picker vanishes mid-drag. Only end
+      // when focus truly leaves the field — the tab strip lives inside it, so this check must
+      // not be narrowed.
+      if (e.relatedTarget instanceof Node && field.contains(e.relatedTarget)) return;
       interact(false);
     });
-    hexInput.addEventListener('input', () => {
-      const raw = hexInput.value.trim();
-      const fmt = valueFmt(field);
-      const alphaSlider = q<HTMLInputElement>(`[data-color-alpha="${CSS.escape(id)}"]`);
-      const alphaPctEl = q<HTMLElement>(`[data-alpha-pct="${CSS.escape(id)}"]`);
-      const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
-      // When a mode is active the value field speaks that space (LCH/HSL/RGB/CMYK);
-      // parse in it. `parseColor` may return a hex8 (oklch/rgba can carry alpha);
-      // otherwise keep the alpha slider's current value.
-      const parsed = fmt ? parseColor(fmt, raw) : (/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(raw) ? raw : null);
-      if (!parsed) return; // unparseable mid-edit — hold the last good colour
-      const rgbHex = parsed.slice(0, 7);
-      const alphaInt = parsed.length === 9 ? parseInt(parsed.slice(7, 9), 16)
-        : (fmt && alphaSlider ? parseInt(alphaSlider.value, 10) : 255);
-      if (native) native.value = rgbHex;
-      if (alphaSlider) alphaSlider.value = String(alphaInt);
-      if (alphaPctEl) alphaPctEl.textContent = Math.round(alphaInt / 255 * 100) + '%';
-      const finalVal = (alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex).toLowerCase();
-      paintColorInput(hexInput, finalVal);   // typing repaints the swatch chrome live
-      if (field) seedLch(field, finalVal);
-      updateTrigger(field, finalVal);
-      onChange(id, finalVal);
+    input.addEventListener('input', () => {
+      const st = STATE.get(field);
+      if (!st) return;
+      const raw = input.value.trim();
+      if (/^transparent$/i.test(raw)) { applyColor(field, { kind: 'transparent', color: TRANSPARENT, ref: null }); return; }
+      // The active space's own notation first, then a bare component list in its
+      // display units, then the FULL CSS parser — so a hex pasted while OKLCH is
+      // active, or an `oklch()`/`color(display-p3 …)` pasted anywhere, lands
+      // instead of being silently held as unparseable.
+      const parsed = spaceParse(activeSpec(field), raw);
+      if (!parsed) return;                            // unparseable mid-edit — hold the last good colour
+      // A notation with no alpha of its own keeps the alpha the slider is showing
+      // (typing `#30ba78` over a 60% colour must not make it opaque), which is what
+      // this did when it could only read hex.
+      const alpha = parsed.alpha < 1 ? parsed.alpha : st.color.alpha;
+      applyColor(field, { kind: 'color', color: { ...parsed, alpha }, ref: null });
     });
   });
 
   // ── Alpha slider ─────────────────────────────────────────────────────────────
   scope.querySelectorAll<HTMLInputElement>('.color-alpha-slider[data-color-alpha]').forEach(alphaSlider => {
-    const id = alphaSlider.dataset.colorAlpha!;
     const field = alphaSlider.closest<HTMLElement>('[data-color-field]');
+    if (!field) return;
     alphaSlider.addEventListener('pointerdown', () => interact(true));
     alphaSlider.addEventListener('pointerup', () => interact(false));
     alphaSlider.addEventListener('input', () => {
-      const alphaInt = parseInt(alphaSlider.value, 10);
-      const alphaPctEl = q<HTMLElement>(`[data-alpha-pct="${CSS.escape(id)}"]`);
-      if (alphaPctEl) alphaPctEl.textContent = Math.round(alphaInt / 255 * 100) + '%';
-      const native = q<HTMLInputElement>(`input.color-popover-native[data-input-id="${CSS.escape(id)}"]`);
-      const rgbHex = native?.value || '#000000';
-      const fullHex = (alphaInt < 255 ? rgbHex + alphaInt.toString(16).padStart(2, '0') : rgbHex).toLowerCase();
-      writeValueField(id, field, fullHex);
-      updateTrigger(field, fullHex);
-      onChange(id, fullHex);
+      const st = STATE.get(field);
+      if (!st) return;
+      const byte = parseInt(alphaSlider.value, 10);
+      // Byte-exact both ways: alpha = byte/255 in, Math.round(alpha*255) out.
+      st.color = { ...st.color, alpha: clamp01((Number.isFinite(byte) ? byte : 255) / 255) };
+      // Touching the alpha of a transparent swatch turns it into a real colour at
+      // that opacity (black, since that is what transparent's components are) —
+      // the same thing it did when the native input was the source.
+      st.kind = 'color';
+      st.ref = null;
+      afterEdit(field, st);
     });
   });
 }
 
 export interface MountColorFieldOpts {
-  /** Initial colour (#rrggbb / #rrggbbaa / 'transparent' / token value). */
+  /** Initial colour (#rrggbb / #rrggbbaa / any CSS colour / 'transparent' / token value). */
   value?: unknown;
-  /** Called with the canonical value string on every change. */
-  onChange(value: string): void;
+  /** Called with the sRGB value string on every change; `detail` carries the
+   *  canonical (possibly wider-than-sRGB) colour and is safe to ignore. */
+  onChange(value: string, detail?: ColorChangeDetail): void;
   float?: boolean;
   swatchesOnly?: boolean;
   inline?: boolean;
   modes?: boolean;
+  /** Show the conic dials. Defaults to `inline` — a float popover can opt in. */
+  dials?: boolean;
   onInteractStart?(): void;
   onInteractEnd?(): void;
 }
@@ -1395,15 +1616,16 @@ export interface MountColorFieldOpts {
  */
 export function mountColorField(container: HTMLElement, id: string, opts: MountColorFieldOpts): HTMLElement {
   container.innerHTML = colorFieldHtml(id, opts.value ?? '', {
-    float: opts.float, swatchesOnly: opts.swatchesOnly, inline: opts.inline, modes: opts.modes,
+    float: opts.float, swatchesOnly: opts.swatchesOnly, inline: opts.inline, modes: opts.modes, dials: opts.dials,
   });
   wireColorField(container, {
     // A token-backed swatch emits a token value OBJECT ({ ref, value }) so the sidebar can keep
     // the colour linked to its brand token. mountColorField's callers all speak plain colour
     // STRINGS (MountColorFieldOpts.onChange(value: string)), so unwrap to the hex here — a bare
     // String() would hand them "[object Object]", which then stores as an invalid CSS colour.
-    onChange: (_id, value) => opts.onChange(
+    onChange: (_id, value, detail) => opts.onChange(
       value && typeof value === 'object' ? String((value as { value?: unknown }).value ?? '') : String(value),
+      detail,
     ),
     onInteractStart: opts.onInteractStart,
     onInteractEnd: opts.onInteractEnd,

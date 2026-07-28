@@ -1,0 +1,641 @@
+// SPDX-License-Identifier: MPL-2.0
+/**
+ * The colour picker's space registry — what spaces exist, what channels each one
+ * has, and the four generic operations the picker performs on any of them.
+ *
+ * Before this module the picker had one hand-written state machine for OKLCH and
+ * a second, "generic" one for HSL/RGB/CMYK that round-tripped every drag through
+ * an sRGB hex (`genFromHex`/`genToHex`). That round trip is why wide-gamut and
+ * perceptual spaces were impossible: a `color(display-p3 1 0 0)` handed to the
+ * picker came back as `#ff0b0c` and the authored colour was gone. Here a field
+ * holds ONE `CssColor` and every space is data — a channel list plus, for the
+ * spaces the engine has no tag for, a compose/decompose pair.
+ *
+ * The registry is a Map rather than a record literal so a press profile × intent
+ * can be mounted at runtime (`registerColorProfile`) without an enum edit: a
+ * `GamutSource`'s id already carries its intent, so profile × intent is naturally
+ * one key. Nothing calls that in this pass — it is the seam, exercised by tests.
+ *
+ * DOM-free and dependency-free on purpose: it runs under bare `node --test`, and
+ * every pure function the picker needs lives here rather than in color-field.ts.
+ */
+
+import {
+  parseColor, formatColor, convertColor, colorToHexString, colorToSrgb,
+  inGamut, resolveGamutSource, MISSING_C2, rgbToCmyk, cmykToRgbApprox,
+} from '@lolly/engine';
+import type { CssColor, ColorSpaceTag, GamutLimit, GamutSource } from '@lolly/engine';
+
+// ─── The mode set ─────────────────────────────────────────────────────────────
+
+export type ColorModeFamily = 'perceptual' | 'device' | 'output';
+
+/** The built-in spaces. Stable strings — they persist in `data-active-mode`. */
+export type BuiltinColorMode =
+  | 'oklch' | 'oklab' | 'lch' | 'lab' | 'xyz-d65'   // family: perceptual
+  | 'hex' | 'rgb' | 'hsl'                            // family: device
+  | 'display-p3' | 'rec2020' | 'cmyk';               // family: output
+
+/** One press profile × rendering intent. Verbatim `GamutSource.id`
+ *  ('icc:<sha256-prefix>:<intent>' — engine/src/gamut-source.ts). */
+export type ProfileColorMode = `icc:${string}`;
+
+export type ColorMode = BuiltinColorMode | ProfileColorMode;
+
+/** Family order = visual order = arrow-key order. */
+const FAMILY_ORDER: readonly ColorModeFamily[] = ['perceptual', 'device', 'output'];
+
+export interface ChannelSpec {
+  /** Unique within its space; the dataset key and `data-mode-ch` / `data-dial-ch` value. */
+  ch: string;
+  /** The row's glyph — 'L'. */
+  label: string;
+  /** 'Lightness' — the slider's accessible name. */
+  aria: string;
+  /** Range in DISPLAY units (what the slider and the readout speak). */
+  min: number; max: number; step: number;
+  /** display → CssColor component. Omit when identical. */
+  toComp?(v: number): number;
+  /** CssColor component → display. Omit when identical. */
+  fromComp?(v: number): number;
+  /** Readout text, display units. */
+  fmt(v: number): string;
+  /** Samples for the track ramp: 2 linear, 13 hue, up to 24 curved. */
+  stops: number;
+  /** A genuine hue axis — only these have no 12-o'clock seam on a dial. */
+  circular?: boolean;
+  /** This channel is the space's hue → powerless-hue memory applies. */
+  hue?: boolean;
+  /**
+   * Rewrite the values the OTHER channels are held at while THIS channel's ramp
+   * is sampled — for painting only, never for the gamut test. OKLCH's hue floors
+   * chroma so the sweep is still visible when the colour is near grey.
+   */
+  hold?(vals: Record<string, number>): Record<string, number>;
+}
+
+export interface SpaceSpec {
+  mode: ColorMode;
+  family: ColorModeFamily;
+  /** 'OKLCH' — the tab's pill text. */
+  label: string;
+  /** 'reference' | 'uncalibrated' | 'Coated FOGRA39 · perceptual'. */
+  sub?: string;
+  /** Extra words for the tab's aria-label, after the family. */
+  ariaSuffix?: string;
+  /** The engine space the channels live in; null = pseudo-space (compose/decompose own it). */
+  tag: ColorSpaceTag | null;
+  channels: readonly ChannelSpec[];
+  /** What the broken track and the out-of-gamut caution are measured against. */
+  limit: GamutLimit;
+  /** Bounded-space check for the exact/approximated badge, in CssColor units. Omit = unbounded. */
+  bounds?: readonly (readonly [number, number])[];
+  /** Space the bounds are expressed in, when it is not `tag` (a pseudo-space's is). */
+  boundsIn?: ColorSpaceTag;
+  /** Only pseudo-spaces override these two. */
+  compose?(vals: Record<string, number>, alpha: number): CssColor;
+  decompose?(c: CssColor): Record<string, number>;
+  /** Value-field notation + parse. Default: formatColor/parseColor via `tag`. */
+  text?(c: CssColor): string;
+  /**
+   * Value-field notation from the PANEL's own display values, for a space whose
+   * conversion is many-to-one: CMYK's c=m=y=100 composes to black, which decomposes
+   * back as k=100, so `text` (a fresh decomposition) would state a different ink
+   * split from the sliders the user just dragged. Where this exists the picker
+   * prefers it while the panel holds cached values.
+   */
+  textFrom?(vals: Record<string, number>, alpha: number): string;
+  parse?(raw: string): CssColor | null;
+  /** CSS for one gradient stop. Default: formatColor(c) in the colour's own space. */
+  stopCss?(c: CssColor): string;
+}
+
+// ─── Channel-spec helpers ─────────────────────────────────────────────────────
+
+const deg = (v: number): string => `${Math.round(v)}°`;
+const pct = (v: number): string => `${Math.round(v)}%`;
+const int = (v: number): string => `${Math.round(v)}`;
+const dp3 = (v: number): string => v.toFixed(3);
+
+/** At most two decimals, no trailing zeros — a byte-exact colour reads as `48`. */
+const short = (v: number): string => String(Math.round(v * 100) / 100);
+
+/** ` / 0.5`, or '' for an opaque colour. */
+const alphaPart = (a: number): string => (a < 1 ? ` / ${Math.round(a * 1000) / 1000}` : '');
+
+/** A 0–255 display channel over a 0–1 component — the RGB spaces' three. */
+const rgbChannels = (): ChannelSpec[] => [
+  { ch: 'r', label: 'R', aria: 'Red', min: 0, max: 255, step: 1, toComp: v => v / 255, fromComp: v => v * 255, fmt: int, stops: 2 },
+  { ch: 'g', label: 'G', aria: 'Green', min: 0, max: 255, step: 1, toComp: v => v / 255, fromComp: v => v * 255, fmt: int, stops: 2 },
+  { ch: 'b', label: 'B', aria: 'Blue', min: 0, max: 255, step: 1, toComp: v => v / 255, fromComp: v => v * 255, fmt: int, stops: 2 },
+];
+
+// ─── The registry ─────────────────────────────────────────────────────────────
+
+const SPACES = new Map<ColorMode, SpaceSpec>();
+
+const register = (spec: SpaceSpec): void => { SPACES.set(spec.mode, spec); };
+
+const SRGB_CUBE: readonly (readonly [number, number])[] = [[0, 1], [0, 1], [0, 1]];
+
+// Perceptual — "describes the colour itself, independent of any device". XYZ is
+// linear-light rather than perceptual, but it answers that same question, so it
+// sits here with the sublabel "reference" instead of earning a fourth family.
+// None of these are bounded, so a wide-gamut colour is EXACT in all of them —
+// which is the whole reason the picker now keeps one CssColor.
+
+// OKLCH samples at the 24-stop ceiling rather than the 9/9/13 its smooth
+// full-range ramp used: it is the one UNBOUNDED space whose tracks break against
+// sRGB, and at 9 samples a run's edge lands up to 12.5% of the track away from
+// the truth — for #30ba78 the lightness axis holds its chroma from L 65% to 96%
+// but a 9-sample scan reports 75%–87.5%, hiding displayable colour. The other
+// spaces keep cheap stop counts because their tracks cannot break (an in-range
+// sRGB/P3/Rec.2020 component is by definition inside that gamut).
+register({
+  mode: 'oklch', family: 'perceptual', label: 'OKLCH', tag: 'oklch', limit: 'srgb',
+  channels: [
+    { ch: 'l', label: 'L', aria: 'Lightness', min: 0, max: 100, step: 0.5, toComp: v => v / 100, fromComp: v => v * 100, fmt: pct, stops: 24 },
+    { ch: 'c', label: 'C', aria: 'Chroma', min: 0, max: 0.4, step: 0.004, fmt: dp3, stops: 24 },
+    {
+      ch: 'h', label: 'H', aria: 'Hue', min: 0, max: 360, step: 1, fmt: deg, stops: 24,
+      circular: true, hue: true,
+      hold: v => ({ ...v, c: Math.max(v.c ?? 0, 0.08) }),
+    },
+  ],
+});
+
+register({
+  mode: 'oklab', family: 'perceptual', label: 'OKLab', tag: 'oklab', limit: 'srgb',
+  channels: [
+    { ch: 'l', label: 'L', aria: 'Lightness', min: 0, max: 100, step: 0.5, toComp: v => v / 100, fromComp: v => v * 100, fmt: pct, stops: 2 },
+    { ch: 'a', label: 'a', aria: 'Green to red', min: -0.4, max: 0.4, step: 0.002, fmt: dp3, stops: 24 },
+    { ch: 'b', label: 'b', aria: 'Blue to yellow', min: -0.4, max: 0.4, step: 0.002, fmt: dp3, stops: 24 },
+  ],
+});
+
+// CIELAB-D50 LCH. NOTE the collision: `StorageFormat`'s 'lch' (lib/color-formats.ts)
+// means OKLCH, this one means CIELAB LCH — two different colours behind one
+// four-letter string. Nothing here converts between them, but wiring a picker mode
+// id straight into a token's storage format would produce silently wrong colours.
+register({
+  mode: 'lch', family: 'perceptual', label: 'LCH', tag: 'lch', limit: 'srgb',
+  channels: [
+    { ch: 'l', label: 'L', aria: 'Lightness', min: 0, max: 100, step: 0.5, fmt: pct, stops: 2 },
+    { ch: 'c', label: 'C', aria: 'Chroma', min: 0, max: 150, step: 0.5, fmt: int, stops: 24 },
+    { ch: 'h', label: 'H', aria: 'Hue', min: 0, max: 360, step: 0.5, fmt: deg, stops: 24, circular: true, hue: true },
+  ],
+});
+
+register({
+  mode: 'lab', family: 'perceptual', label: 'Lab', tag: 'lab', limit: 'srgb',
+  channels: [
+    { ch: 'l', label: 'L', aria: 'Lightness', min: 0, max: 100, step: 0.5, fmt: pct, stops: 2 },
+    { ch: 'a', label: 'a', aria: 'Green to red', min: -125, max: 125, step: 0.5, fmt: int, stops: 24 },
+    { ch: 'b', label: 'b', aria: 'Blue to yellow', min: -125, max: 125, step: 0.5, fmt: int, stops: 24 },
+  ],
+});
+
+// The three maxima are D65 white's own tristimulus values, to enough digits that
+// white itself lands INSIDE the axis: rounded to 1.089, Z's ceiling sits below the
+// 1.08905775 plain white converts to, and the picker then cautioned that white was
+// outside XYZ.
+register({
+  mode: 'xyz-d65', family: 'perceptual', label: 'XYZ', sub: 'reference', tag: 'xyz-d65', limit: 'srgb',
+  channels: [
+    { ch: 'x', label: 'X', aria: 'X tristimulus', min: 0, max: 0.95046, step: 0.002, fmt: dp3, stops: 24 },
+    { ch: 'y', label: 'Y', aria: 'Y tristimulus (luminance)', min: 0, max: 1, step: 0.002, fmt: dp3, stops: 24 },
+    { ch: 'z', label: 'Z', aria: 'Z tristimulus', min: 0, max: 1.08906, step: 0.002, fmt: dp3, stops: 24 },
+  ],
+});
+
+// Device — the sRGB notations. Bounded, so a wider colour reads "approximated".
+
+register({
+  mode: 'hex', family: 'device', label: 'HEX', tag: 'srgb', limit: 'srgb',
+  channels: rgbChannels(),                 // hex has no sliders of its own
+  bounds: SRGB_CUBE,
+  text: c => colorToHexString(c),
+  // A user pasting a hex usually omits the '#'; everything else falls through to
+  // the full CSS parser in spaceParse.
+  parse: raw => parseColor(/^[0-9a-f]{3,8}$/i.test(raw.trim()) ? `#${raw.trim()}` : raw),
+});
+
+/** The sliders' own units — 0–255 per channel, in the legacy CSS form. Left
+ *  UNCLAMPED on purpose: `rgb()` parses an out-of-range component as-is, so this
+ *  states exactly what the readouts beside the sliders state and reads back as the
+ *  same colour. The default (`formatColor(convertColor(c,'srgb'))`) would speak
+ *  0–1 fractions while the sliders speak 0–255 — one colour, two unit systems in
+ *  one panel. */
+const rgbText = (c: CssColor): string => {
+  const s = convertColor(c, 'srgb');
+  const [r, g, b] = s.components;
+  return `rgb(${short(r * 255)} ${short(g * 255)} ${short(b * 255)}${alphaPart(s.alpha)})`;
+};
+
+register({
+  mode: 'rgb', family: 'device', label: 'RGB', tag: 'srgb', limit: 'srgb',
+  channels: rgbChannels(), bounds: SRGB_CUBE,
+  text: rgbText,
+});
+
+/** HSL's saturation, CLAMPED for display. The engine's srgbToHsl reports the true
+ *  (possibly >100%) saturation of a wider colour, but `hsl()` is legacy syntax and
+ *  clamps s/l on the way back in — so writing the unclamped number would put a
+ *  string in the field that no consumer, this one included, resolves to the colour
+ *  shown. Same convention as HEX: the text says what this space can actually say,
+ *  and the caution line says it is outside sRGB. The COLOUR is untouched. */
+const hslText = (c: CssColor): string => {
+  const h = convertColor(c, 'hsl');
+  const cl = (v: number): number => Math.min(100, Math.max(0, v));
+  return formatColor({ ...h, components: [h.components[0] ?? 0, cl(h.components[1] ?? 0), cl(h.components[2] ?? 0)] });
+};
+
+register({
+  mode: 'hsl', family: 'device', label: 'HSL', tag: 'hsl', limit: 'srgb',
+  text: hslText,
+  channels: [
+    { ch: 'h', label: 'H', aria: 'Hue', min: 0, max: 360, step: 1, fmt: deg, stops: 13, circular: true, hue: true },
+    { ch: 's', label: 'S', aria: 'Saturation', min: 0, max: 100, step: 1, fmt: pct, stops: 2 },
+    { ch: 'l', label: 'L', aria: 'Lightness', min: 0, max: 100, step: 1, fmt: pct, stops: 3 },
+  ],
+  // HSL's own components go out of range for a wider colour in ways that are hard
+  // to read (saturation past 100); the honest question is whether sRGB holds it.
+  bounds: SRGB_CUBE, boundsIn: 'srgb',
+});
+
+// Output — what a device or a press can actually put down.
+
+register({
+  mode: 'display-p3', family: 'output', label: 'P3', tag: 'display-p3', limit: 'p3',
+  channels: rgbChannels(), bounds: SRGB_CUBE,
+});
+
+register({
+  mode: 'rec2020', family: 'output', label: 'Rec.2020', tag: 'rec2020', limit: 'rec2020',
+  channels: rgbChannels(), bounds: SRGB_CUBE,
+});
+
+const CMYK_CHANNELS: readonly ChannelSpec[] = [
+  { ch: 'c', label: 'C', aria: 'Cyan', min: 0, max: 100, step: 1, fmt: pct, stops: 7 },
+  { ch: 'm', label: 'M', aria: 'Magenta', min: 0, max: 100, step: 1, fmt: pct, stops: 7 },
+  { ch: 'y', label: 'Y', aria: 'Yellow', min: 0, max: 100, step: 1, fmt: pct, stops: 7 },
+  { ch: 'k', label: 'K', aria: 'Black', min: 0, max: 100, step: 1, fmt: pct, stops: 7 },
+];
+
+/** Four ink percentages → an sRGB CssColor, via the engine's naive substitution. */
+function cmykCompose(vals: Record<string, number>, alpha: number): CssColor {
+  const [r, g, b] = cmykToRgbApprox([
+    (vals.c ?? 0) / 100, (vals.m ?? 0) / 100, (vals.y ?? 0) / 100, (vals.k ?? 0) / 100,
+  ]);
+  return { space: 'srgb', components: [r, g, b], alpha, missing: 0 };
+}
+
+function cmykDecompose(c: CssColor): Record<string, number> {
+  const [ci, mi, yi, ki] = rgbToCmyk(...colorToSrgb(c));
+  return { c: ci * 100, m: mi * 100, y: yi * 100, k: ki * 100 };
+}
+
+/** `cmyk(62% 23% 0% 38%)` — the alpha rides along, because text copied out of the
+ *  value field is the one place the field's opacity would otherwise be dropped. */
+const cmykTextFrom = (vals: Record<string, number>, alpha: number): string =>
+  `cmyk(${['c', 'm', 'y', 'k'].map(k => `${Math.round(vals[k] ?? 0)}%`).join(' ')}${alphaPart(alpha)})`;
+
+const cmykText = (c: CssColor): string => cmykTextFrom(cmykDecompose(c), c.alpha);
+
+// CMYK survives the profile work rather than being deleted with it — the brand
+// editor reads CMYK today — but the sublabel says what §11.6b insists on: without
+// a profile these four numbers describe no press that exists.
+register({
+  mode: 'cmyk', family: 'output', label: 'CMYK', sub: 'uncalibrated', tag: null, limit: 'srgb',
+  channels: CMYK_CHANNELS,
+  bounds: SRGB_CUBE, boundsIn: 'srgb',
+  compose: cmykCompose, decompose: cmykDecompose,
+  text: cmykText, textFrom: cmykTextFrom,
+  stopCss: c => colorToHexString(c),
+});
+
+/**
+ * Mount one press profile × rendering intent as a tab. `src.id` already carries
+ * the intent, so a second intent for the same profile is simply a second key and
+ * nothing here changes. `SpaceSpec.limit` is the source itself, which is what
+ * makes the broken tracks and the ink-coverage caution work on a press profile
+ * with no extra code path.
+ *
+ * The device transform is Phase 8's: until it exists a four-ink profile composes
+ * through the same naive substitution CMYK uses, and any other ink count declines
+ * to convert (`compose` returns the colour unchanged) rather than invent numbers.
+ * Pass `extra` to supply the real pair.
+ */
+export function registerColorProfile(
+  src: GamutSource,
+  inks: readonly ChannelSpec[],
+  extra: Partial<SpaceSpec> = {},
+): void {
+  const intent = src.id.split(':')[2] ?? '';
+  const base = src.label.replace(/\s*\([^)]*\)\s*$/, '');
+  const four = inks.length === 4;
+  register({
+    mode: src.id as ProfileColorMode,
+    family: 'output',
+    label: 'CMYK',
+    sub: intent ? `${base} · ${intent}` : base,
+    ariaSuffix: intent ? `${base}, ${intent} intent` : base,
+    tag: null,
+    channels: inks,
+    limit: src,
+    compose: four ? cmykCompose : (_v, alpha) => ({ space: 'srgb', components: [0, 0, 0], alpha, missing: 0 }),
+    decompose: four ? cmykDecompose : () => Object.fromEntries(inks.map(i => [i.ch, 0])),
+    text: four ? cmykText : (c => colorToHexString(c)),
+    ...(four ? { textFrom: cmykTextFrom } : {}),
+    stopCss: c => colorToHexString(c),
+    ...extra,
+  });
+}
+
+/** Unmount a profile tab. Stored overrides keyed on the same id are untouched. */
+export function unregisterColorProfile(id: string): void {
+  if (id.startsWith('icc:')) SPACES.delete(id as ProfileColorMode);
+}
+
+/** Built-ins ∪ profiles, in family order (which is tab order and arrow order). */
+export function colorSpaces(): readonly SpaceSpec[] {
+  const out: SpaceSpec[] = [];
+  for (const family of FAMILY_ORDER) {
+    for (const spec of SPACES.values()) if (spec.family === family) out.push(spec);
+  }
+  return out;
+}
+
+/** One space by mode, or undefined (an unmounted profile, or junk in a URL). */
+export function getColorSpace(mode: string): SpaceSpec | undefined {
+  return SPACES.get(mode as ColorMode);
+}
+
+/** The default space — OKLCH, the one worth picking in. */
+export const DEFAULT_COLOR_MODE: ColorMode = 'oklch';
+
+/**
+ * A mode id as an HTML id fragment. Profile ids contain colons, which are legal
+ * in an `id` but hostile in a selector, so every non-alphanumeric becomes a dash:
+ * 'icc:ab12cd:perceptual' → 'icc-ab12cd-perceptual'.
+ */
+export function slugMode(mode: string): string {
+  return String(mode).toLowerCase().replace(/[^a-z0-9-]/g, '-');
+}
+
+// ─── The four generics ────────────────────────────────────────────────────────
+
+const identity = (v: number): number => v;
+
+/** Display values → one CssColor. The ONLY way a drag produces a colour: there
+ *  is no hex in this path, which is what kills the old genFromHex/genToHex spine. */
+export function composeColor(spec: SpaceSpec, vals: Record<string, number>, alpha: number): CssColor {
+  const a = Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1;
+  if (spec.compose) return spec.compose(vals, a);
+  const comps = spec.channels.map(c => {
+    const raw = vals[c.ch];
+    const v = Number.isFinite(raw) ? raw! : c.min;
+    return (c.toComp ?? identity)(v);
+  });
+  return {
+    space: spec.tag!,
+    components: [comps[0] ?? 0, comps[1] ?? 0, comps[2] ?? 0],
+    alpha: a,
+    missing: 0,
+  };
+}
+
+/**
+ * One CssColor → this space's display values.
+ *
+ * `lastHue` stands in for any hue channel the conversion reports as POWERLESS
+ * (grey has no hue, so `convertColor` marks it missing). Reading the hue back out
+ * of an achromatic conversion instead is the low-chroma hue drift — a near-grey's
+ * hue wandering as you drag lightness — and it is now impossible in EVERY space
+ * with a hue, not just OKLCH.
+ */
+export function decomposeColor(spec: SpaceSpec, canonical: CssColor, lastHue: number): Record<string, number> {
+  if (spec.decompose) return spec.decompose(canonical);
+  const conv = convertColor(canonical, spec.tag!);
+  const out: Record<string, number> = {};
+  spec.channels.forEach((c, i) => {
+    const powerless = c.hue && (conv.missing & (1 << i)) !== 0;
+    out[c.ch] = powerless ? lastHue : (c.fromComp ?? identity)(conv.components[i] ?? 0);
+  });
+  return out;
+}
+
+/** The CSS for one stop of a track/dial ramp. */
+function stopCss(spec: SpaceSpec, c: CssColor): string {
+  return spec.stopCss ? spec.stopCss(c) : formatColor(c);
+}
+
+/** One contiguous displayable stretch of a channel's axis, in 0–1 track fractions. */
+export interface ChannelRun { from: number; to: number; stops: string[] }
+
+/**
+ * The displayable runs along one channel, with the other channels held.
+ *
+ * The generalisation of lib/gamut-slider.ts's `gamutRuns` to any space and any
+ * gamut limit — including a press profile, since `inGamut` takes a `GamutSource`.
+ * In-gamut runs paint solid and the gaps stay empty, so the shape of the track
+ * says where you can actually go. A two-stop gradient across the whole axis would
+ * instead go flat wherever the colours all map to the same boundary colour, which
+ * looks like a rendering bug and hides the information.
+ *
+ * The gamut test uses the TRUE held values; only the painted colour takes
+ * `ChannelSpec.hold` (OKLCH's hue floors chroma so its sweep stays visible at
+ * grey — a display trick that must not invent gamut gaps).
+ *
+ * A run's EDGES are then bisected against the out-of-gamut neighbour rather than
+ * left on the last in-gamut sample. Sampling alone makes every edge short by up to
+ * one whole step — 4.3% of the track at 24 stops — which is enough to leave the
+ * thumb sitting in a transparent gap while the caution line calls the colour exact,
+ * and collapses a one-sample run to zero width so a reachable band paints as
+ * nothing. Five halvings put the edge inside 0.15% of the track.
+ */
+const EDGE_STEPS = 5;
+
+export function channelRuns(
+  spec: SpaceSpec,
+  ch: ChannelSpec,
+  vals: Record<string, number>,
+  alpha = 1,
+): ChannelRun[] {
+  const n = Math.max(2, Math.min(24, Math.round(ch.stops)));
+  const held = ch.hold ? ch.hold(vals) : vals;
+  const valueAt = (frac: number): number => ch.min + frac * (ch.max - ch.min);
+  const okAt = (frac: number): boolean => {
+    const probe = convertColor(composeColor(spec, { ...vals, [ch.ch]: valueAt(frac) }, alpha), 'oklch');
+    return inGamut(probe.components[0], probe.components[1], probe.components[2], spec.limit);
+  };
+  /** The gamut crossing between an in-gamut fraction and an out-of-gamut one,
+   *  approached from the inside so the paint never claims a colour it cannot show. */
+  const crossing = (inside: number, outside: number): number => {
+    let a = inside, b = outside;
+    for (let k = 0; k < EDGE_STEPS; k++) {
+      const m = (a + b) / 2;
+      if (okAt(m)) a = m; else b = m;
+    }
+    return a;
+  };
+  const runs: ChannelRun[] = [];
+  const sampled: { first: number; last: number }[] = [];
+  let open: ChannelRun | null = null;
+  for (let i = 0; i < n; i++) {
+    const frac = i / (n - 1);
+    if (!okAt(frac)) { open = null; continue; }
+    const css = stopCss(spec, composeColor(spec, { ...held, [ch.ch]: valueAt(frac) }, alpha));
+    if (open) { open.to = frac; open.stops.push(css); sampled[sampled.length - 1]!.last = i; }
+    else { open = { from: frac, to: frac, stops: [css] }; runs.push(open); sampled.push({ first: i, last: i }); }
+  }
+  const step = 1 / (n - 1);
+  runs.forEach((run, i) => {
+    const s = sampled[i]!;
+    if (s.first > 0) run.from = crossing(run.from, run.from - step);
+    if (s.last < n - 1) run.to = crossing(run.to, run.to + step);
+  });
+  return runs;
+}
+
+/** Slack on a range test: conversion float noise, not a real excursion. Relative to
+ *  the channel's own range so it means the same thing on a 0–255 axis and a 0–0.4
+ *  one. `BOUNDS_SLACK` below is the same idea in component units — the two
+ *  disagreeing is what made plain white report "Outside Lab". */
+const RANGE_SLACK = 1e-6;
+
+/**
+ * A display value pinned into its slider's range — `convertColor` leaves RGB
+ * components unclamped (P3 red is `color(rec2020 0.869 0.175 -0.005)`), so a
+ * decomposed value can genuinely fall outside the axis. The slider goes to the
+ * edge; the COLOUR is never rewritten, because looking at a colour in a narrower
+ * space must not alter it.
+ */
+export function pinValue(ch: ChannelSpec, v: number): { at: number; pinned: boolean } {
+  if (!Number.isFinite(v)) return { at: ch.min, pinned: false };
+  const slack = Math.abs(ch.max - ch.min) * RANGE_SLACK;
+  if (v < ch.min - slack) return { at: ch.min, pinned: true };
+  if (v > ch.max + slack) return { at: ch.max, pinned: true };
+  return { at: Math.min(ch.max, Math.max(ch.min, v)), pinned: false };
+}
+
+/** The value field's text for this colour in this space. */
+export function spaceText(spec: SpaceSpec, c: CssColor): string {
+  if (spec.text) return spec.text(c);
+  return formatColor(convertColor(c, spec.tag!));
+}
+
+// A bare component list — '62% 0.11 250', '255, 0, 0', '40, 0, 30, 10 / 0.5' —
+// in the space's own DISPLAY units. This is the notation the picker's value field
+// spoke before it spoke full CSS, and people have it in muscle memory.
+const BARE = /^[\d\s.,%/+-]+$/;
+
+function bareComponents(spec: SpaceSpec, raw: string): CssColor | null {
+  if (!BARE.test(raw)) return null;
+  const slash = raw.split('/');
+  if (slash.length > 2) return null;
+  const nums = (slash[0]!.match(/[+-]?\d*\.?\d+/g) ?? []).map(Number);
+  if (nums.length !== spec.channels.length || nums.some(n => !Number.isFinite(n))) return null;
+  const alphaNums = slash.length === 2 ? (slash[1]!.match(/[+-]?\d*\.?\d+/g) ?? []).map(Number) : [];
+  const alpha = alphaNums.length === 1
+    ? (/%/.test(slash[1]!) ? alphaNums[0]! / 100 : alphaNums[0]!)
+    : 1;
+  const vals: Record<string, number> = {};
+  spec.channels.forEach((c, i) => { vals[c.ch] = nums[i]!; });
+  return composeColor(spec, vals, alpha);
+}
+
+/**
+ * Parse whatever the user typed into the value field: this space's own notation
+ * first, then a bare component list in its display units, then the full CSS
+ * parser. The last step is the point — a hex pasted while OKLCH is active, or an
+ * `oklch()`/`color(display-p3 …)` pasted anywhere, must land rather than be
+ * silently held as unparseable.
+ */
+export function spaceParse(spec: SpaceSpec, raw: string): CssColor | null {
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (spec.parse) { const own = spec.parse(s); if (own) return own; }
+  const bare = bareComponents(spec, s);
+  if (bare) return bare;
+  const css = parseColor(s);
+  if (css) return css;
+  // A space with no CSS notation of its own writes `cmyk(40% 0% 30% 10%)`. Accept
+  // its own output back by unwrapping the label the engine cannot parse.
+  const fn = /^[a-z][a-z0-9-]*\((.*)\)$/i.exec(s);
+  return fn ? bareComponents(spec, fn[1]!) : null;
+}
+
+/**
+ * Did the text the user typed state an alpha of its own?
+ *
+ * The parsed colour cannot answer this: every parser defaults a missing alpha to 1,
+ * so `alpha === 1` covers both "`#30ba78`, say nothing about opacity" and "`ff`,
+ * make it opaque". The picker needs the difference — the first inherits the alpha
+ * the slider is showing, the second is an instruction — and reading it off the
+ * NOTATION is the only place the difference still exists.
+ */
+export function notationHasAlpha(raw: string): boolean {
+  const s = String(raw).trim();
+  if (!s) return false;
+  const hex = /^#?([0-9a-f]+)$/i.exec(s);
+  if (hex) return hex[1]!.length === 4 || hex[1]!.length === 8;   // #rgba / #rrggbbaa
+  // Modern syntax puts alpha after a slash — inside the parens for a colour
+  // function, bare for the picker's own component list ('62% 0.11 250 / 0.5').
+  const args = /\(([^)]*)\)\s*$/.exec(s);
+  const body = args ? args[1]! : s;
+  if (body.includes('/')) return true;
+  // …and the legacy comma forms carry it as a fourth component.
+  return /^(?:rgba?|hsla?)\(/i.test(s) && body.split(',').length === 4;
+}
+
+/** Slack on a bounds test — a byte-rounded channel lands a hair outside. */
+const BOUNDS_SLACK = 1e-4;
+
+/**
+ * Can this space state the colour exactly, or only approximate it? Unbounded
+ * spaces (the perceptual ones) can always state it; a bounded one cannot when a
+ * component falls outside its range. This drives the "exact / approximated from a
+ * wider colour" half of the caution line — the gamut half is `inGamut` against
+ * `SpaceSpec.limit`, which is a different question (a press profile is bounded by
+ * ink, not by component range).
+ */
+export function spaceExactness(spec: SpaceSpec, canonical: CssColor): 'exact' | 'approx' {
+  if (!spec.bounds) return 'exact';
+  const tag = spec.boundsIn ?? spec.tag;
+  if (!tag) return 'exact';
+  const comps = convertColor(canonical, tag).components;
+  for (let i = 0; i < spec.bounds.length && i < 3; i++) {
+    const b = spec.bounds[i];
+    if (!b) continue;
+    const v = comps[i] ?? 0;
+    if (v < b[0] - BOUNDS_SLACK || v > b[1] + BOUNDS_SLACK) return 'approx';
+  }
+  return 'exact';
+}
+
+/** Is the colour reproducible by this space's limit? */
+export function spaceInGamut(spec: SpaceSpec, canonical: CssColor): boolean {
+  const o = convertColor(canonical, 'oklch');
+  return inGamut(o.components[0], o.components[1], o.components[2], spec.limit);
+}
+
+/** The limit's human name ('sRGB', 'Coated FOGRA39 (perceptual)'). */
+export function limitLabel(limit: GamutLimit): string {
+  return resolveGamutSource(limit).label;
+}
+
+/** Total ink for this colour on this space's limit, in channels (1.0 = one ink
+ *  at full), or null where the concept does not apply — every RGB gamut. */
+export function spaceInkCoverage(spec: SpaceSpec, canonical: CssColor): number | null {
+  const src = resolveGamutSource(spec.limit);
+  if (!src.inkCoverage) return null;
+  const o = convertColor(canonical, 'oklch');
+  return src.inkCoverage(o.components[0], o.components[1], o.components[2]);
+}
+
+/** Hue memory's seed: the colour's OKLCH hue, or null when it is powerless. */
+export function hueOf(c: CssColor): number | null {
+  const o = convertColor(c, 'oklch');
+  return (o.missing & MISSING_C2) !== 0 ? null : o.components[2];
+}

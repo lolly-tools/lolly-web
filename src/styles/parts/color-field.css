@@ -1,0 +1,690 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* ═══ Colour picker (components/color-field.ts) ═══════════════════════════════
+   Trigger, popover, colour-space tabs, per-space slider groups, dials, alpha,
+   swatch grid. Split out of parts/components.css (2026-07-28) when the picker
+   grew from one OKLCH slider stack to a registry of colour spaces — it was ~450
+   of that file's lines and is the part still growing. Same cascade layer
+   (`chrome`), imported immediately after components.css, so nothing about who
+   beats whom changed.
+
+   Two files still hold picker-adjacent rules on purpose: `.swatch-name-tip`
+   (the floating swatch label) stays in components.css, and the slider geometry
+   note lives in parts/fields.css:302 — these sliders paint their own tracks and
+   deliberately do NOT take the `.field-range` primitive.
+   Host-specific overrides live with their hosts: parts/editor.css (free-canvas
+   toolbars), parts/brand-studio.css, parts/document.css, parts/notfound.css. */
+
+/* ─── Color picker with swatches ────────────────────────────────────────────── */
+
+/* ─── Color picker (trigger + popover) ─────────────────────────────────── */
+
+.color-picker-field {
+  position: relative;
+}
+
+.color-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 .2rem .3rem #0001;
+  transition: all 0.12s;
+  justify-content: end;
+  /* Query container: the trigger collapses to just the swatch circle when squeezed
+     next to other controls, and shows the colour name (+ hex) when there's room. Named
+     + scoped to the button so it can't clash with other @container rules — and crucially
+     the popover is a SIBLING of this button, not a descendant, so making the button a
+     container never turns it into the fixed popover's containing block. */
+  container: colortrig / inline-size;
+}
+
+.color-trigger:hover {
+  border-color: hsl(var(--ring) / 0.4);
+}
+
+.color-trigger-preview {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: 0 .1rem .2rem -.05rem #0004;
+
+  flex-shrink: 0;
+}
+
+/* The friendly colour name ("Persimmon 3") — small, muted SUSE Mono. The hex value is
+   NOT shown here; it lives only inside the popover picker. */
+.color-trigger-name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .01em;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.color-trigger-name:empty { display: none; }   /* custom colours have no name → just the circle */
+
+/* When the field is squeezed in next to other controls, drop the name and collapse to
+   just the swatch circle — centred in whatever box the trigger keeps (auto margins beat
+   justify-content:end, so the lone circle isn't stranded against the right edge with a
+   lopsided gap on the left). */
+@container colortrig (max-width: 120px) {
+  .color-trigger-name { display: none; }
+  .color-trigger-preview { margin-inline: auto; }
+}
+
+.color-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 10px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px hsl(0 0% 0% / 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Inline mode — the picker as a spacious, always-open panel (no trigger, no
+   floating): the popover flows in place and sheds its own card chrome (the host
+   panel already is one). It carries no swatch palette (see colorFieldHtml: every
+   inline host is the brand editor, where the swatches ARE the palette being
+   edited), so it's a single column top-to-bottom — value field, dials + sliders,
+   alpha — and the dials get the host panel's whole width to spread across.
+   `inline` no longer IMPLIES dials: colorFieldHtml has its own `dials` option, so
+   the sizing below keys off the dials row being present, and `--inline` only says
+   how generous it gets. */
+.color-field--inline .color-popover {
+  position: static;
+  z-index: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  gap: 12px;
+}
+/* The dials share the row's width equally instead of sitting at their fixed size:
+   flex-basis 0 + grow, with the aspect ratio holding them round. The cap is what
+   stops a wide panel (or a 3-dial space where CMYK's 4 fit) blowing them up — and
+   in a FLOAT popover it stays near the old fixed 3.25em, because a click-to-open
+   popover that opted into dials must not grow 7rem rings under the tab strip. */
+.color-dials .color-dial,
+.color-dials .color-dial-out {
+  flex: 1 1 0;
+  width: auto;
+  height: auto;
+  min-width: 2.25rem;
+  max-width: 3.25rem;
+  aspect-ratio: 1 / 1;
+}
+/* Scale the dial furniture up with the dial — the inline panel is the host with
+   room to spend on rings that restate the sliders under them. */
+.color-field--inline .color-dials { gap: 0.9rem; }
+.color-field--inline .color-dials .color-dial,
+.color-field--inline .color-dials .color-dial-out { max-width: 7rem; }
+.color-field--inline .color-dial-hub { font-size: 12px; }
+.color-field--inline .color-dial-act svg { width: 1.6em; height: 1.6em; }
+
+/* ── Colour-space modes: grouped tab strip + per-space slider groups ─────────
+   ONE flat role="tablist" (one tab stop, arrow keys walking every space in
+   visual order) laid out as three labelled family rows: Perceptual, Device,
+   Output. The families are visible information, not a control — the headings say
+   what kind of numbers you are about to edit, and nothing is hidden behind a
+   disclosure.
+
+   The family heading takes its own line at EVERY width. The alternative — the
+   heading as a leading item on the pills' first line — costs ~70px of the first
+   line, which at the ~250px the sidebar popover actually gets pushes 5 perceptual
+   pills onto three ragged lines whose wrapped rows sit under the heading with no
+   indent. Three headings cost ~42px of height; they are 9.5px, tight-leaded, and
+   that is the trade. */
+.color-modes { display: flex; flex-direction: column; gap: 10px; }
+/* The trough is now one box around all three rows, not a 999px pill around one —
+   a full box, never a single divider line between families (spacing separates
+   them). */
+.color-mode-tabs {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 6px; border-radius: calc(var(--radius) * 1.25);
+  background: hsl(var(--muted) / .5);
+}
+/* One family. `align-items: stretch` so every pill on a line matches the tallest
+   on that line — the sublabels below make some of them two-line. */
+.color-mode-fam {
+  display: flex; flex-wrap: wrap; align-items: stretch;
+  gap: 3px 4px; min-width: 0;
+}
+.color-mode-fam-label {
+  flex: 0 0 100%;
+  font-family: var(--font-mono); font-size: 9.5px; line-height: 1;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+/* A family with no tabs collapses to nothing — heading, gap and any scroll well
+   with it. Today only a build with the Output entries stripped hits this, but the
+   Output group is the one that is populated at runtime, and an empty scroll area
+   with a stray edge is exactly what must not appear. */
+.color-mode-fam:not(:has(.color-mode-tab)) { display: none; }
+/* Output is the one unbounded group: N registered press profiles arrive as rows.
+   Cap it at about five rows and let it scroll inside its own group rather than
+   growing the popover; contain the overscroll so a flick doesn't scroll the
+   sidebar behind it. */
+.color-mode-fam[data-mode-family="output"],
+.color-mode-fam--wide {
+  max-height: 11.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* A persistent thin bar, not macOS's overlay one: a cut-off row at the bottom
+     edge is the only other hint that there are more profiles below it. */
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+/* The inline panel has the height to show more before scrolling. */
+.color-field--inline .color-mode-fam[data-mode-family="output"],
+.color-field--inline .color-mode-fam--wide { max-height: 16rem; }
+/* Pills size to CONTENT (no flex: 1 1 0): a 5-entry row and a 3-entry row must
+   read as the same widget, which equal-share pills of different widths per row
+   would not. Everything else is today's pill recipe unchanged. */
+.color-mode-tab {
+  flex: 0 0 auto; min-width: 0; padding: 5px 8px; border: 0; cursor: pointer;
+  background: transparent; color: hsl(var(--muted-foreground));
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em;
+  border-radius: 999px; transition: background .12s, color .12s;
+  /* A column so a sublabel stacks under the glyph, centred so a one-line pill
+     sits level with a two-line neighbour instead of riding up against its top. */
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  text-align: center;
+}
+.color-mode-tab:hover { color: hsl(var(--foreground)); }
+/* The ACTIVE tab is the bold one — the pill + dark text + weight mark whichever
+   space you're in (OKLCH by default). Bold belongs to the selection, not to any
+   one space. aria-selected is the state (a tab bar, not a segmented control —
+   never aria-pressed; see lib/tabs.ts and lib/seg.ts). */
+.color-mode-tab[aria-selected="true"] {
+  background: hsl(var(--card)); color: hsl(var(--foreground)); font-weight: 700;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / .12);
+}
+.color-mode-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.color-mode-tab-label { display: block; }
+/* The second line ("reference", "uncalibrated", "Coated FOGRA39 · perceptual").
+   Off on a compact pill in a float/sidebar popover — there is no room for it and
+   the caution reaches AT through the tab's aria-label and the live note line.
+   It IS shown on the wide profile rows, and in the inline panel where the width
+   exists, so "uncalibrated" is on screen wherever it can be. */
+.color-mode-tab-sub {
+  display: none;
+  font-size: 9px; line-height: 1.25; font-weight: 400; letter-spacing: .02em;
+  color: hsl(var(--muted-foreground));
+}
+.color-mode-tab--wide .color-mode-tab-sub,
+.color-field--inline .color-mode-tab-sub { display: block; }
+/* One press profile × intent: a full-width two-line row, because the profile name
+   has to be ON the tab and a bare "CMYK" pill cannot carry it. Same selected and
+   focus treatment as the pills. */
+.color-mode-tab--wide {
+  flex: 1 1 100%;
+  padding: 5px 10px;
+  align-items: flex-start;
+  text-align: left;
+  border-radius: calc(var(--radius) * 1.1);
+}
+.color-mode-tab--wide .color-mode-tab-sub {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.color-mode-tab[aria-selected="true"] .color-mode-tab-sub { color: hsl(var(--foreground) / .75); }
+
+/* One panel per registered space. `.color-space` replaces `.color-modegroup`;
+   the alias stays for one release so the two files can land in either order. */
+.color-space,
+.color-modegroup { display: flex; flex-direction: column; gap: 8px; }
+/* An author-origin display:flex beats the UA [hidden] rule, so hiding the
+   inactive panels needs saying explicitly. */
+.color-space[hidden],
+.color-modegroup[hidden] { display: none; }
+/* Same reason, and the oklch panel carries BOTH classes: .color-lch also survives
+   alone in the non-modes picker, whose group never carries [hidden]. */
+.color-lch[hidden] { display: none; }
+/* Reserve the tallest space's height (CMYK, or any 4-ink profile = 4 rows) on
+   EVERY panel, so switching a 3-channel space ↔ a 4-channel one never shifts the
+   layout. One row = the 18px thumb; 4 rows + 3 × 8px gaps. Rows stay top-aligned. */
+.color-modes .color-space,
+.color-modes .color-lch,
+.color-modes .color-modegroup {
+  min-height: calc(4 * 18px + 3 * 8px);
+  justify-content: flex-start;
+}
+/* The dial band is reserved only where dials are actually rendered — colorFieldHtml
+   gates them on its own `dials` option now, so a float popover no longer pays 3.25em
+   for a row it does not draw. (3.25em ring + its 4px margin + the panel's 8px gap.) */
+.color-modes .color-space:has(.color-dials),
+.color-modes .color-lch:has(.color-dials),
+.color-modes .color-modegroup:has(.color-dials) {
+  min-height: calc(3.25em + 12px + 4 * 18px + 3 * 8px);
+}
+
+/* The live note under the panels (role="status") — the space + whether the value
+   is exact, and the out-of-gamut caution that used to be a `title` on the chroma
+   readout alone. It reserves its own line so text appearing never shifts the
+   popover, and takes the amber the clamped readout already uses when it cautions.
+   A caution, never a blocked control: the target the user asked for decides. */
+.color-space-note {
+  margin: 0;
+  min-height: 1.25em;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.25;
+  color: hsl(var(--muted-foreground));
+}
+.color-space-note.is-caution,
+.color-modes:has(.color-lch-val.is-clamped) .color-space-note { color: #d97706; }
+
+/* The value field is a live swatch of the current colour: the picker toggles
+   .color-input--painted and sets --color-input-bg/-border to the colour (alpha
+   included) and --color-input-fg to white or black, whichever contrasts more
+   (color-field.ts paintColorInput). While painted, the colour sits on the same
+   checkerboard the transparent swatch chip uses, so a translucent value
+   previews its alpha. The un-painted fallbacks are the neutral chrome for
+   valueless states (transparent, mid-edit junk). */
+/* Wrap = positioning context for the eyedropper button inside the field. */
+.color-input-wrap { position: relative; }
+.color-input {
+  width: 100%;
+  background: var(--color-input-bg, hsl(var(--input) / 0.3));
+  color: var(--color-input-fg, hsl(var(--foreground)));
+  caret-color: var(--color-input-fg, hsl(var(--foreground)));
+  border: 1px solid var(--color-input-border, hsl(var(--input)));
+  border-radius: calc(var(--radius) *2);
+  text-align:center;
+  font-family: var(--font-mono);
+  font-size: 17px;
+  padding: 16px 44px;   /* symmetric so the centred value clears the eyedropper */
+  outline: none;
+  transition: background-color .12s, color .12s, border-color .12s;
+}
+/* Screen eyedropper — sits inside the field's left edge, coloured by the same
+   contrast-flipped --color-input-fg as the value text so it reads on any paint.
+   Removed at wire time where the EyeDropper API doesn't exist. */
+.color-eyedropper {
+  position: absolute;
+  left: 8px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  border: 0; border-radius: calc(var(--radius) * 1.5);
+  background: transparent; cursor: pointer;
+  color: var(--color-input-fg, hsl(var(--foreground)));
+  opacity: .7;
+  transition: opacity .12s, background .12s;
+}
+.color-eyedropper:hover { opacity: 1; background: hsl(0 0% 50% / .22); }
+.color-eyedropper:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.color-eyedropper svg { display: block; width: 16px; height: 16px; }
+.color-input--painted {
+  background-image:
+    linear-gradient(var(--color-input-bg), var(--color-input-bg)),
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: auto, 8px 8px, 8px 8px, 8px 8px, 8px 8px;
+  background-position: 0 0, 0 0, 0 4px, 4px -4px, -4px 0;
+  background-color: #fff;
+}
+.color-input:focus {
+  border-color: hsl(var(--ring) / 0.6);
+}
+
+.color-alpha-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.color-alpha-label {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  width: 12px;
+  flex-shrink: 0;
+  text-align: center;
+}
+/* Geometry and thumb come from the shared .color-lch-slider rule below, so alpha
+   matches its siblings in size, position and indicator. What is specific to it is
+   the track: the colour fading to nothing over a checkerboard, with the two
+   gradient ends set from JS (paintAlphaTrack in color-field.ts).
+
+   It was a 4px native rail with `accent-color` — which left the one control whose
+   whole subject is transparency as the only one that showed none of it. */
+.color-alpha-slider {
+  background:
+    linear-gradient(90deg, var(--alpha-from, #80808000), var(--alpha-to, #808080)),
+    repeating-conic-gradient(hsl(0 0% 60% / 0.9) 0% 25%, hsl(0 0% 96%) 0% 50%) 50% / 10px 10px;
+}
+.color-alpha-pct {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  /* 40px, matching .color-lch-val — the readouts must form a column. */
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Dials — a ring per channel, above that channel's slider ─────────────────
+   Inline (brand-editor) pickers only — see .color-field--inline above.
+   The ring's background is the SAME stop list as the slider track under it,
+   poured into a conic gradient instead of a linear one (color-field.ts), and the
+   needle sits at value → angle. The hub covers the point where the conic's stops
+   converge (always a muddy pinch) and carries the channel's letter. Leading the
+   row is the output disc: the colour the axes currently make, split into an
+   eyedropper half and a swatch-menu half. */
+.color-dials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;              /* + the group's own 8px gap = 12px of air */
+}
+.color-dial,
+.color-dial-out {
+  position: relative;
+  flex: 0 0 auto;
+  width: 3.25em;
+  height: 3.25em;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0px hsl(var(--border)), 0 1px 3px hsl(0 0% 0% / 0.18);
+}
+.color-dial {
+  padding: 0;
+  cursor: grab;
+  touch-action: none;              /* the dial owns the drag, not the scroller */
+}
+.color-dial:active { cursor: grabbing; }
+/* The needle rotates as a whole; the mark itself is a notch pinned at 12 o'clock. */
+.color-dial-needle {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: transform 0.08s linear;
+}
+.color-dial-needle::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 3px;
+  height: 30%;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px hsl(0 0% 0% / 0.55);
+}
+.color-dial-hub {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  width: 46%;
+  height: 46%;
+  border-radius: 50%;
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 0px hsl(var(--border));
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+/* The output disc — the picked colour, with its two actions struck through it in
+   whichever of black/white reads on that colour (--out-fg, set by color-field.ts). */
+.color-dial-out {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--out, hsl(var(--muted)));
+  color: var(--out-fg, hsl(var(--foreground)));
+  order: -1;                       /* the result swatch LEADS the channel dials */
+}
+.color-dial-act {
+  flex: 1 1 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.color-dial-act svg {
+  width: 1.25em;
+  height: 1.25em;
+}
+.color-dial-act:hover,
+.color-dial-act:focus-visible {
+  opacity: 1;
+  background: color-mix(in oklab, currentColor 18%, transparent);
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .color-dial-needle, .color-dial-act { transition: none; }
+  /* The tab strip and its panels swap instantly too. */
+  .color-mode-tab { transition: none; }
+}
+
+/* ── Channel sliders — the per-space custom-colour surface ───────────────────
+   Each track paints its own axis sweep (an inline gradient set by
+   color-field.ts), so the input needs appearance:none + a custom thumb; the
+   gradient IS the input's background. */
+.color-lch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.color-lch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.color-lch-label {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  width: 12px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.color-lch-val {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Chroma slider position left sRGB — the emitted colour is the gamut-mapped
+   (chroma-reduced) one. No --warning token exists, so the amber is inline. */
+.color-lch-val.is-clamped { color: #d97706; }
+
+/* Nearest-brand snap hint: a custom colour that drifted near a brand swatch
+   offers a one-click return (token-backed swatches re-link their ref). Hidden
+   whenever the value IS a swatch or nothing is close (see updateNearest). */
+.color-nearest {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 6px 0;
+  padding: 3px 8px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  background: none;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.color-nearest:hover {
+  color: hsl(var(--foreground));
+  border-style: solid;
+}
+.color-nearest-chip {
+  width: 1em;
+  height: 1em;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px #0003;
+}
+/* Geometry is ONE recipe under two names (see parts/fields.css:302) — keep both
+   selectors alive; `.color-lch-slider` is the non-modes picker's, `.color-mode-slider`
+   the registry's, and they must stay indistinguishable. */
+.color-lch-slider,
+.color-mode-slider,
+.color-alpha-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 2em;
+  border-radius: var(--radius);
+  border: 0px solid hsl(var(--border));
+  cursor: pointer;
+  /* background = the axis gradient, inline from JS */
+}
+/* ── Broken tracks ───────────────────────────────────────────────────────────
+   A channel track paints only the runs of the axis that the target gamut can
+   actually reach (channelRuns composes them into the inline `background`); the
+   gaps stay EMPTY. So the track needs a well the emptiness reads against: a
+   DASHED outline of the full range, which is the same language as the 2D charts'
+   sliders (`.gsl-well` in lib/oklch-slice.css) — the outline is the whole axis,
+   present even where no segment is, and the shape of the track tells you where
+   you can go before you drag.
+
+   The outline has to be the BORDER, not a background: JS assigns the `background`
+   shorthand, which would wipe any background-color declared here. border-box
+   sizing keeps the 2em height. Alpha is excluded — its track is continuous by
+   definition, and a dashed frame there would claim breaks that do not exist. */
+.color-lch-slider,
+.color-mode-slider {
+  border: 0 solid hsl(var(--border));
+  background-color: transparent;   /* gaps show the popover card through */
+}
+/* Out of the target gamut at the current value: the well goes solid amber — a
+   MARK, not a refusal, matching `.gsl.is-out .gsl-well` and paired with the
+   clamped readout beside it. */
+.color-lch-row:has(.color-lch-val.is-clamped) > .color-lch-slider,
+.color-lch-row:has(.color-lch-val.is-clamped) > .color-mode-slider {
+  border-style: solid;
+  border-color: #d97706;
+}
+.color-lch-slider::-webkit-slider-thumb,
+.color-mode-slider::-webkit-slider-thumb,
+.color-alpha-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;          /* the track colour shows through the ring */
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px #0006, inset 0 0 0 1px #0006, 0 1px 3px #0004;
+}
+.color-lch-slider::-moz-range-thumb,
+.color-mode-slider::-moz-range-thumb,
+.color-alpha-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: transparent;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px #0006, inset 0 0 0 1px #0006, 0 1px 3px #0004;
+}
+.color-lch-slider:focus-visible,
+.color-mode-slider:focus-visible,
+.color-alpha-slider:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.color-popover-native {
+    width: 3em;
+    height: 3em;
+    padding: 0;
+    border: 1px solid hsl(var(--input));
+    border-radius: var(--radius);
+    cursor: pointer;
+    background: none;
+    position: absolute;
+    top: 1.5em;
+    left: 1.5em;
+    display:none;
+}
+
+.color-swatches {
+  display: flex;
+  flex-flow:wrap;
+
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border));
+  padding:6px; 
+}
+
+/* The result disc's swatch context menu (inline pickers) — a floating card of the
+   brand swatch grid, anchored under the disc (color-field.ts sets top/left). The
+   inline popover is the positioned ancestor those offsets are measured against. */
+.color-field--inline .color-popover { position: relative; }
+.color-swatch-menu {
+  position: absolute;
+  z-index: 20;
+  width: max-content;
+  max-width: min(320px, 92%);
+  background: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 10px 28px hsl(var(--foreground) / .18);
+}
+.color-swatch-menu[hidden] { display: none; }
+.color-swatch-menu .color-swatches { max-height: 216px; }
+
+.color-popover-native::part{border-radius: var(--radius)}
+.color-swatch {
+  
+  height: 2em;
+  width:2em;border-radius:var(--radius);
+ 
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: transform 0.1s, border-color 0.1s;
+  box-shadow: inset 0 0 0 .1rem #fff0, inset 0 .1rem  .25rem #fff4, 0 .1rem .2rem -.05rem #0004;
+}
+[pseudo="-webkit-color-swatch"]{border-radius: var(--radius)}
+.color-swatch:hover {
+  transform: scale(1.18);
+  border-color: hsl(var(--foreground) / 0.5);
+  box-shadow:  0 .1em .5em #0003;
+}
+
+.color-swatch:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.color-swatch--transparent {
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  background-color: #fff;
+}

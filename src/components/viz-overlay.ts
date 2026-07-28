@@ -45,7 +45,10 @@
  *
  */
 import { mountViz, vizAudioReady, vizHasSignal, type VizHandle } from '../lib/butterchurn-viz.ts';
-import { getNeurospicy, isNeurospicyPlaying, type NeurospicyHost } from '../lib/neurospicy.ts';
+import {
+  getNeurospicy, neurospicySignalState,
+  type NeurospicyHost, type NeuroSignalState,
+} from '../lib/neurospicy.ts';
 import {
   musicPlayerBodyHtml, trackPickerHtml, wireMusicPlayerBody, refreshMusicPlayer,
 } from './music-player.ts';
@@ -577,6 +580,15 @@ function setNote(s: Surface, html: string | null): void {
  * The inline panel stays QUIET about the transport: it's two centimetres under a play
  * button, so "press play" there states the obvious in a space too small to spare.
  */
+/** What to say when there's no signal, per the reason there isn't one. Only the panel/overlay
+ *  shows these; the inline strip is too small to explain anything (see below). */
+const NOTE_BY_SIGNAL: Record<NeuroSignalState, string | null> = {
+  live: null,
+  idle: 'Paused &mdash; the visualizer follows the music.',
+  connecting: 'Connecting to the stream&hellip;',
+  unanalysable: 'This station won&rsquo;t let its audio be analysed, so there&rsquo;s nothing to visualise. Try another station, or a local track.',
+};
+
 function refreshNote(s: Surface): void {
   // Blank out the surface when there is genuinely nothing to draw, so the dock shows its
   // own background instead of an opaque black panel.
@@ -590,11 +602,9 @@ function refreshNote(s: Surface): void {
   if (!vizAudioReady() || !vizHasSignal()) {
     if (s.kind === 'inline') { setNote(s, null); return; }
     if (!vizAudioReady()) { setNote(s, 'Press play to start the visualizer.'); return; }
-    // Paused and radio both leave the analyser flat, but only one is fixable by pressing
-    // play — so say which it is rather than blaming the wrong thing.
-    setNote(s, isNeurospicyPlaying()
-      ? 'Internet radio streams outside the audio graph, so there&rsquo;s no signal to visualise. Pick a local track to see it move.'
-      : 'Paused &mdash; the visualizer follows the music.');
+    // Several different things leave the analyser flat and they have different fixes, so
+    // name the actual one rather than blaming the transport for a stream's CORS policy.
+    setNote(s, NOTE_BY_SIGNAL[neurospicySignalState()]);
     return;
   }
   setNote(s, null);

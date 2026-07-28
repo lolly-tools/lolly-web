@@ -87,12 +87,17 @@ function tokenValueEditor(tok: StudioToken): string {
     }
     case 'shadow': {
       const raw = (tok.raw ?? {}) as Record<string, unknown>;
+      // The colour holder below carries the stored string VERBATIM. It used to be
+      // flattened through colorToHex(...).slice(0, 7) for an <input type=color> that no
+      // longer receives it, which dropped an authored alpha ('#00000040' → '#000000')
+      // and any non-hex space on every re-render — only shadowFromRow's preference for
+      // the stored value hid it. normShadow still gates validity on the way back in.
       const f = (k: string): string => escape(String(raw[k] ?? (k === 'color' ? '#00000040' : '0px')));
       return `<span class="be-tok-shadow-chip" style="box-shadow:${escape(formatStudioValue(tok))}" aria-hidden="true"></span>
         ${(['offsetX', 'offsetY', 'blur', 'spread'] as const).map(k =>
           `<label class="be-tok-shadow-in"><span>${k === 'offsetX' ? t('x') : k === 'offsetY' ? t('y') : k === 'blur' ? t('blur') : t('spread')}</span><input type="text" value="${f(k)}" data-tok-input="shadow" data-tok-field="${k}" data-tok-path="${p}" size="5" aria-label="${escape(t('{name} {field}', { name: tok.name, field: k === 'offsetX' ? t('x') : k === 'offsetY' ? t('y') : k === 'blur' ? t('blur') : t('spread') }))}"></label>`).join('')}
         <span class="be-tok-shadow-cf" data-shadow-cf data-tok-path="${p}" aria-label="${escape(t('{name} colour', { name: tok.name }))}"></span>
-        <input type="hidden" data-tok-input="shadow" data-tok-field="color" data-tok-path="${p}" value="${escape((colorToHex(String(raw.color ?? '')) ?? '#000000').slice(0, 7))}">`;
+        <input type="hidden" data-tok-input="shadow" data-tok-field="color" data-tok-path="${p}" value="${f('color')}">`;
     }
     default: // the dimension kinds: spacing / sizing / stroke
       return `<input type="text" class="be-tok-dim" value="${escape(String(tok.raw ?? ''))}" data-tok-input="dimension" data-tok-path="${p}" size="7" inputmode="decimal" aria-label="${escape(t('{name} value', { name: tok.name }))}" placeholder="8px">`;
@@ -131,10 +136,12 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
   const err = mount.querySelector<HTMLElement>('[data-tok-err]');
   const showErr = (m: string): void => { if (err) { err.textContent = m; err.hidden = !m; } if (m) announce(m, { assertive: true }); };
 
-  // A shadow token's colour uses our own picker (never the OS one) — mounted over
-  // a hidden holder input that carries the #rrggbb so the delegated shadow commit
-  // (which reads [data-tok-field="color"] and fires on `change`) keeps working
-  // untouched. Re-run after every render(), which replaces the list's markup.
+  // A shadow token's colour uses our own picker (never the OS one) — mounted over a
+  // hidden holder input that carries the stored colour string so the delegated shadow
+  // commit (which reads [data-tok-field="color"] and fires on `change`) keeps working
+  // untouched. The holder is not an <input type=color>, so it seeds the picker with
+  // whatever was authored — alpha and space intact. Re-run after every render(), which
+  // replaces the list's markup.
   const wireShadowFields = (): void => {
     list.querySelectorAll<HTMLElement>('[data-shadow-cf]').forEach(span => {
       const row = span.closest<HTMLElement>('[data-tok-row]');

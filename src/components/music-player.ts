@@ -14,7 +14,7 @@
 import {
   getNeurospicy, setNeurospicyLoop, setNeurospicyVolume, listLoops, isNeurospicyPlaying,
   toggleNeurospicyPlay, cycleNeurospicyLoop, setNeurospicyRepeat,
-  getNeurospicyAnalyser, getNeurospicyProgress, seekNeurospicy,
+  getNeurospicyAnalyser, getNeurospicyProgress, seekNeurospicy, neurospicySignalState,
   trackCategory, NEURO_CATEGORY_ORDER,
   type NeurospicyHost, type NeuroTrack,
 } from '../lib/neurospicy.ts';
@@ -615,23 +615,24 @@ function startMeter(root: ParentNode): void {
     // Stop when detached OR not visible (offsetParent is null for display:none — a
     // hidden or collapsed dock) so a minimized player doesn't spin rAF forever.
     if (!canvas.isConnected || canvas.offsetParent === null) { canvas.dataset.running = 'false'; return; }
-    const p = getNeurospicyProgress();
-    updateProgress(root, p); // the skip-to bar advances with the same loop
+    // Progress and signal are SEPARATE questions now that radio drives the meter: a live
+    // stream has no duration (bar hidden) but does have samples (bars moving).
+    updateProgress(root, getNeurospicyProgress()); // the skip-to bar advances with the same loop
     const a = getNeurospicyAnalyser();
     const w = canvas.width;
     const h = canvas.height;
     c2d.clearRect(0, 0, w, h);
     const color = getComputedStyle(canvas).color || '#888';
-    if (isNeurospicyPlaying() && p) {
-      // A LOCAL source is actually sounding (progress non-null). Reduced motion parks
-      // the meter on its baseline but keeps looping, so the (slow, informational)
-      // progress bar still tracks the track.
+    if (neurospicySignalState() === 'live') {
+      // Something is actually sounding — a local track or a tapped radio stream. Reduced
+      // motion parks the meter on its baseline but keeps looping, so the (slow,
+      // informational) progress bar still tracks the track.
       if (a && !reducedMotion) drawMeterBars(c2d, w, h, a, color);
       else drawMeterBaseline(c2d, w, h, color);
       requestAnimationFrame(draw);
     } else {
-      // Idle/paused, radio (plays outside the graph — meter dark, bar hidden), or the
-      // pre-gesture boot state: nothing to animate, so park on the baseline and stop.
+      // Idle/paused, a stream still connecting, a station that refused the analyser tap, or
+      // the pre-gesture boot state: nothing to animate, so park on the baseline and stop.
       // notifyPlaying ('lolly:neuro-playing') / the next transport action restarts it.
       drawMeterBaseline(c2d, w, h, color);
       canvas.dataset.running = 'false';

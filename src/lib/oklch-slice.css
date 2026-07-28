@@ -248,6 +248,13 @@
      stops dead at the gamut boundary. */
 }
 
+/* The unreachable stretches, as a faint wash rather than a hole.
+   It hints that the axis continues without promising a colour we cannot deliver —
+   and it keeps a broken hue track readable as one continuous 0–360 instead of a
+   row of floating fragments. Deliberately low: at much above this it starts to
+   look available. */
+.gsl-seg--ghost { opacity: 0.13; }
+
 /* The real input sits over the top and stays the only thing that handles
    interaction — keyboard, touch and AT come free. Its track is invisible; the
    thumb is ours. */

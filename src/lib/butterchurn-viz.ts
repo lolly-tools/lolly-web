@@ -19,16 +19,18 @@
  *   - the visualizer is dead until audio has actually started once (the analyser
  *     doesn't exist before then), hence `vizAudioReady()` and the retry the overlay
  *     does on 'lolly:neuro-playing';
- *   - internet radio shows NOTHING, by construction: it plays through a bare
- *     <audio> element outside the graph (a deliberate CORS dodge in neurospicy.ts),
- *     so no samples reach the analyser. `vizHasSignal()` reports that so the
- *     overlay can say so instead of looking broken.
+ *   - internet radio DOES drive it: the stream's <audio> element is tapped into the
+ *     same graph via createMediaElementSource (SomaFM sends the CORS header that
+ *     needs), so a station looks exactly like a local track here. A station whose
+ *     server refuses the tap falls back to untapped playback and reports
+ *     'unanalysable' — `vizHasSignal()` is false then, and the overlay says why
+ *     instead of looking broken.
  *
  * WebGL2 is a hard requirement of butterchurn 2.x, so every entry point here is
  * gated on `vizSupported()` from the dependency-free lib/viz-support.ts (which the
  * dock also reads, synchronously, to decide whether to show its button at all).
  */
-import { getNeurospicyAnalyser, getNeurospicyProgress, isNeurospicyPlaying } from './neurospicy.ts';
+import { getNeurospicyAnalyser, neurospicySignalState } from './neurospicy.ts';
 import { vizSupported } from './viz-support.ts';
 import { vizPalette, vizPaletteDiagnostics, type VizPalette, type VizPaletteHost } from './viz-palette.ts';
 import { vizPresetById, type VizPreset } from './viz-presets.ts';
@@ -85,13 +87,13 @@ export function vizAudioReady(): boolean {
 }
 
 /**
- * Will the visualizer actually see samples right now? False while paused/idle, and
- * false for internet radio — which plays outside the Web Audio graph, so the
- * analyser stays flat no matter how loud it is. `getNeurospicyProgress()` is null in
- * exactly those two cases (radio has no duration), the same test the level meter uses.
+ * Will the visualizer actually see samples right now? False while paused/idle, while a
+ * stream is still connecting, and for a station whose server wouldn't allow the analyser
+ * tap. `neurospicySignalState()` is the single source of truth the level meter shares, so
+ * the two views never disagree about whether there's a signal.
  */
 export function vizHasSignal(): boolean {
-  return isNeurospicyPlaying() && getNeurospicyProgress() !== null;
+  return neurospicySignalState() === 'live';
 }
 
 export interface VizHandle {

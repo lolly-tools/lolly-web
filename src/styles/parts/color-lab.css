@@ -93,23 +93,34 @@
    nothing here restyles it, only gives it room. */
 .lab-subject {
   display: grid;
-  /* The picker gets the extra room — it is the control, the other two columns are
-     readouts. Plain fractions rather than minmax floors so the whole row grows
-     with the page instead of stalling at a fixed measure on a large display. */
-  grid-template-columns: 1.5fr 1fr 1fr;
+  /* TWO columns, not three: the picker on the left, and the swatch STACKED above
+     the brand palette on the right.
+
+     As three columns the swatch had about a quarter of the page, and it holds
+     values like `color(display-p3 0.390131 0.780583 0.903738)` — which wrapped over
+     three lines. Stacking gives the swatch AND the palette roughly double the
+     width and costs only vertical space, which a scrolling report has to spare.
+     Fractions rather than minmax floors so the row grows with the page instead of
+     stalling at a fixed measure on a large display.
+
+     Areas rather than `order`: they place the picker across both rows, which
+     source order alone cannot express. */
+  grid-template-columns: 1.5fr 1fr;
+  grid-template-areas:
+    'picker swatch'
+    'picker brand';
   gap: 1rem;
   align-items: start;
 }
-.lab-subject .lab-picker{order:-1}
-.lab-subject .lab-swatch{order:1}
-
-.lab-subject .lab-swatch{    max-height: 26em;}
+.lab-subject .lab-picker { grid-area: picker; }
+.lab-subject .lab-swatch { grid-area: swatch; max-height: 26em; }
+.lab-subject .lab-entry { grid-area: brand; }
 .lab-swatch {
-  /* Square-ish, but free to grow: it now carries a stack of notations, and a hard
-     aspect ratio would clip them on a narrow column. */
-  aspect-ratio: 1 / 1;
+  /* NOT square. It is a panel of values that happens to be coloured, so its height
+     follows its content and its width goes to keeping each value on one line. The
+     min-height keeps it reading as a colour rather than as a label. */
   height: auto;
-  min-height: 12rem;
+  min-height: 11rem;
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
@@ -151,7 +162,10 @@
   gap: 0.4rem;
   align-items: baseline;
   font-size: clamp(0.6rem, 0.7cqw + 0.42rem, 0.72rem);
+  /* One line each now there is width for it; `anywhere` stays as the last resort on
+     a narrow viewport, where a broken line beats a clipped one. */
   overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 .lab-sw-alt-space {
   flex: 0 0 auto;
@@ -385,6 +399,14 @@
   grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
   gap: 1.5rem 1.25rem;
 }
+.lab-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 1.5rem 1.25rem;
+}
+@media(max-width:800px){.lab-charts{grid-template-columns: 1fr 1fr;}}
+@media(max-width:500px){.lab-charts{grid-template-columns: 1fr;}}
+
 .lab-chart {
   display: flex;
   flex-direction: column;
@@ -531,7 +553,7 @@
   gap: 0.15rem;
   align-items: flex-start;
   cursor: pointer;
-  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12);
+  box-shadow:  0 1 3px hsl(0 0% 0% / 0.12);
   transition: transform 0.12s ease;
 }
 .lab-step:hover, .lab-step:focus-visible { transform: translateY(-2px); outline: none; }
@@ -616,8 +638,12 @@
    narrow screen, so it gets its own scroller rather than widening the page. */
 @media (max-width: 640px) {
   .lab { padding: 0.75rem 0.85rem 5rem; gap: 1.75rem; }
-  .lab-subject { grid-template-columns: 1fr; }
-  .lab-swatch { aspect-ratio: 16 / 9; }
+  .lab-subject {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'swatch' 'brand' 'picker';
+  }
+  /* Too narrow for a value to fit on one line, so let them break again. */
+  .lab-sw-alt { white-space: normal; }
   .lab-notations { display: block; overflow-x: auto; white-space: nowrap; }
 }
 

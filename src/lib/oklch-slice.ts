@@ -36,7 +36,7 @@
 // into a second file to get any coverage). Mounting surfaces import
 // `lib/oklch-slice.css` themselves — brand-editor.ts does, alongside the rest of
 // the studio's sheet — and this module stays testable as a whole.
-import { hexToOklch, oklchSlice, sliceGamutRegion } from '@lolly/engine';
+import { hexToOklch, oklchSlice, sliceGamutRegion, gamutSourceId } from '@lolly/engine';
 import type { SlicePlane, GamutName } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
 import {
@@ -199,7 +199,10 @@ export function paintSliceChart(
   const h = Math.max(1, Math.round(box.height * scale));
 
   const limit = state.limit ?? 'rec2020';
-  const key = `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${limit}|${w}x${h}`;
+  // `gamutSourceId(limit)`, not the limit itself: a GamutSource object stringifies
+  // to '[object Object]', so every profile would share one cache key and the second
+  // one charted would silently reuse the first one's pixels.
+  const key = `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${gamutSourceId(limit)}|${w}x${h}`;
   if (PAINTED.get(canvas) === key) return;
 
   const ctx = canvas.getContext('2d');
@@ -241,7 +244,11 @@ function paintEdges(
     // Don't trace a boundary the fill stops short of: on an sRGB-only chart a P3
     // contour would float in empty space. And the widest gamut needs no contour —
     // the edge of the fill IS its boundary.
-    const skip = edge === limit || (edge === 'p3' && limit === 'srgb');
+    //
+    // Compared by ID rather than by value, so this still holds when `limit` is a
+    // GamutSource (an ICC profile) rather than one of the three built-in names.
+    const limitId = gamutSourceId(limit);
+    const skip = edge === limitId || (edge === 'p3' && limitId === 'srgb');
     const rings = skip ? [] : sliceGamutRegion(state.plane, state.fixed, edge, 128, cMax);
     path.setAttribute('d', rings.map(ring =>
       `${ring.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(5)} ${p.y.toFixed(5)}`).join(' ')} Z`,
