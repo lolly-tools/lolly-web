@@ -1238,3 +1238,138 @@ test('an intent that cannot be activated is not reported as if it had been', asy
     'and the button does not claim they did');
   closePanels();
 });
+
+// ─── Layout and touch, from the four-device audit ─────────────────────────────
+
+test('the blend picker sits BESIDE the ramp it changes, not above it', async () => {
+  // Andy's report: "in color lab it would be good to have the picker side by side the
+  // blend color swatches." Stacked, the expanded picker's ~554px of tabs, dials,
+  // channel sliders and alpha pushed the style pills, the stop count and every
+  // swatch about 600px down the page — so the ramp moving under your hands, the one
+  // thing worth watching while you pick, was the one thing off screen.
+  //
+  // Structural rather than pixel-measured on purpose: jsdom has no layout, and the
+  // fold to one column is a media query. What this pins is that the two are SIBLING
+  // columns of one container, which is what the grid needs to be able to place them
+  // side by side at all.
+  await mount('?c=%23c0392b');
+  const grid = $('.lab-blend')!;
+  assert.ok(grid, 'the blend has a two-column container');
+  const picker = $('[data-lab-blend-picker]')!;
+  const ramp = $('[data-lab-blend]')!;
+  assert.ok(grid.contains(picker), 'the far-end picker is in it');
+  assert.ok(grid.contains(ramp), 'so is the ramp');
+  // Neither may contain the other, or no grid can put them side by side.
+  assert.ok(!picker.contains(ramp) && !ramp.contains(picker), 'they are separate columns');
+  // Source order stays pick-then-result, which is what the stacked case reads as.
+  assert.equal(
+    picker.compareDocumentPosition(ramp) & 4 /* DOCUMENT_POSITION_FOLLOWING */, 4,
+    'the picker comes first, so folding to one column still reads pick → result',
+  );
+  // The style pills and the stop slider travel with the ramp, not with the picker.
+  const side = ramp.parentElement!;
+  assert.ok(side.querySelector('[data-lab-blend-space]'), 'the style pills are on the ramp side');
+  assert.ok(side.querySelector('[data-lab-blend-steps]'), '…and so is the stop count');
+});
+
+test('“Keep in bounds” is built from the shared field recipe', async () => {
+  // It was a bare <input type=checkbox>, which the UA drew at 13×13 — outside
+  // styles/parts/fields.css, so it missed the recipe's coarse-pointer bump to 20px
+  // and was a fingertip miss on a phone. Every form control comes from the one
+  // recipe; this is the assertion that keeps this one in it.
+  await mount();
+  const box = $('[data-lab-bounds]') as HTMLInputElement;
+  assert.ok(box.classList.contains('field-check'), 'the tick is a .field-check');
+  const row = box.closest('label')!;
+  assert.ok(row.classList.contains('field-toggle'), 'and its row is a .field-toggle');
+});
+
+test('the copy affordances are reachable without a mouse', async () => {
+  // `title=` is invisible to touch and to the keyboard, and the swatch's value lines
+  // look like plain text — nothing else says pressing one copies it. So they carry
+  // the tooltip primitive (`data-tip`, styles/parts/tooltip.css, which opens on plain
+  // focus where there is no hover), announce themselves as buttons, and — since a
+  // thing that says "button" has to answer Enter — copy from the keyboard too.
+  await mount('?c=%23c0392b');
+  const primary = $('[data-lab-sw-primary]')!;
+  assert.ok(primary.dataset.tip, 'the leading value carries a tooltip');
+  assert.equal(primary.hasAttribute('title'), false, 'and not a hover-only title');
+  assert.equal(primary.getAttribute('role'), 'button');
+  assert.equal(primary.tabIndex, 0, 'focusable, or the bubble can never open on touch');
+  assert.ok((primary.getAttribute('aria-label') ?? '').length > 0,
+    'the bubble is a pseudo-element, so the name has to be on the element');
+
+  for (const code of view.querySelectorAll<HTMLElement>('[data-lab-sw-alts] code')) {
+    assert.ok(code.dataset.tip, 'every alternate notation too');
+    assert.equal(code.hasAttribute('title'), false);
+    assert.equal(code.tabIndex, 0);
+  }
+
+  // Enter copies exactly what the line shows.
+  copied.length = 0;
+  primary.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await new Promise(r => setTimeout(r, 0));
+  assert.deepEqual(copied, [primary.dataset.labCopy]);
+});
+
+test('the blend styles explain themselves on a phone, and the clamp marker does too', async () => {
+  // A blend style's ENTIRE rationale was in `title=t(b.why)` — the pills are labelled
+  // in one word each precisely because the tooltip carries the reason, and on touch
+  // there was no tooltip. Same for the notation table's "clamped", where the
+  // explanation is the whole content of the marker.
+  await mount('?c=color(display-p3%201%200%200)');
+  const pills = [...view.querySelectorAll<HTMLElement>('[data-lab-blend-space] [data-val]')];
+  assert.ok(pills.length >= 3);
+  for (const p of pills) {
+    assert.ok(p.dataset.tip, `${p.dataset.val}: the rationale is on data-tip`);
+    assert.equal(p.hasAttribute('title'), false, `${p.dataset.val}: no hover-only title`);
+    // The bubble is presentation only, so the reason has to reach a screen reader
+    // by another route.
+    assert.match(p.getAttribute('aria-label') ?? '', /—/);
+  }
+  const clamp = view.querySelector<HTMLElement>('.lab-note-fit span');
+  assert.ok(clamp, 'a P3 red clamps somewhere');
+  assert.ok(clamp!.dataset.tip, 'the marker explains itself on data-tip');
+  assert.equal(clamp!.hasAttribute('title'), false);
+  assert.equal(clamp!.tabIndex, 0, 'and can be focused to open it');
+});
+
+test('the 64 brand swatches are NOT given 64 tooltips', async () => {
+  // Deliberate, and the reason is worth keeping: a swatch's tooltip would say its
+  // name, and TAPPING it makes the colour the subject of the whole report — which
+  // names it, in every notation, better than a bubble could. Sixty-four bubbles
+  // stacked over a rail is noise, so the rail keeps `title` as a pointer nicety and
+  // the accessible name as the real answer.
+  await mount();
+  const rail = $('[data-lab-brand]')!;
+  const tips = rail.querySelectorAll('[data-tip]');
+  assert.equal(tips.length, 0, 'no tooltips on the rail');
+});
+
+test('the report never lays out two rules for one grid, and holds the touch contract', async () => {
+  // A CSS drift guard for the three defects that were invisible from jsdom:
+  //
+  //  · A DUPLICATE `.lab-charts` block dead-overrode the auto-fit grid with four
+  //    fixed columns, which crushed every plot to 122×76 CSS px at 840px wide.
+  //  · `white-space: nowrap` on `.lab-sw-alt` defeated its own `overflow-wrap`, and
+  //    a long `color(display-p3 …)` then scrolled the DOCUMENT sideways — 71px at
+  //    660px wide, 47px at 720px.
+  //  · `touch-action: none` on the 3D solid froze the page under a control taking
+  //    ~60% of a phone's viewport height.
+  // Comments stripped first: this file explains WHY each of the three is what it is,
+  // and a guard that reads the explanation as the declaration fails on its own prose.
+  const css = readFileSync(new URL('../styles/parts/color-lab.css', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = css.match(/^\.lab-charts\s*\{/gm) ?? [];
+  assert.equal(rules.length, 1, 'exactly ONE .lab-charts layout rule');
+  assert.match(css, /\.lab-charts\s*\{[^}]*auto-fit/, 'and it is the auto-fit one');
+
+  const swAlt = /\.lab-sw-alt\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+  assert.ok(swAlt.includes('overflow-wrap'), '.lab-sw-alt still wraps as a last resort');
+  assert.doesNotMatch(swAlt, /white-space\s*:\s*nowrap/,
+    'nothing may re-add a nowrap that defeats it — that is the sideways scroll');
+
+  const solid = /\.lab-solid\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+  assert.match(solid, /touch-action\s*:\s*pan-y/,
+    'the solid hands vertical gestures back to the page (the JS locks the axis)');
+});

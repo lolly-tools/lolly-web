@@ -325,7 +325,11 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
               never meant: any class mounts, and the count depends on what is loaded. */''}
         <p class="labp-intro">${escape(t('A press condition or a display profile from this device becomes a comparison target beside the built-in gamuts. Nothing leaves this device.'))}</p>
         <label class="updz labp-drop">
-          <input type="file" class="updz-input visually-hidden" data-labp-file
+          ${/* `multiple` because `take` has always looped a FileList — a DROP can carry
+                several files and was handled, while the picker refused a second one for
+                no reason. A print reader adding their shop's conditions has more than
+                one, and each is an independent ingest. */''}
+          <input type="file" class="updz-input visually-hidden" data-labp-file multiple
             accept=".icc,.icm,application/vnd.iccprofile"
             aria-label="${escape(t('Add an ICC profile'))}">
           <span class="updz-icon" aria-hidden="true">${icon('upload')}</span>

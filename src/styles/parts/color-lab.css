@@ -257,6 +257,44 @@
   opacity: 0.8;
 }
 
+/* ── Tooltips on WIDE hosts ────────────────────────────────────────────────
+   The bubble (styles/parts/tooltip.css) is a laid-out pseudo-element even at
+   opacity 0, so an uncapped one EXTENDS THE PAGE: measured 39px of document
+   horizontal scroll at 390px wide and 117px at 840px, the latter because
+   tooltip.css only drops `white-space: nowrap` below 40rem and a blend style's
+   rationale is ~500px on one line. The primitive's hosts elsewhere are small
+   chrome buttons where that never showed; here every host is a block.
+
+   So the Lab caps its own: wrapped at every width, never wider than the phone
+   case allows. The proper fix belongs in the primitive — a bubble nobody is
+   looking at should be `display: none` and out of layout entirely — and is
+   written up as a handoff rather than reached for from here. */
+.lab [data-tip]::after {
+  white-space: normal;
+  width: max-content;
+  max-width: min(13rem, 56vw);
+  line-height: 1.3;
+  text-align: center;
+}
+/* …and a pill at the END of a segmented row sits close enough to the page edge that
+   even a capped bubble runs off it — measured 23px of document scroll at 390px wide
+   and 6px at 840px, both from the blend row's last pill alone. Anchored to the row's
+   edge rather than the pill's centre it travels LEFT instead, which costs nothing:
+   a page cannot be scrolled that way. */
+.lab .view-seg > :last-child[data-tip]::after {
+  left: auto;
+  right: 0;
+  transform: translateY(3px);
+}
+.lab .view-seg > :last-child[data-tip]:hover::after,
+.lab .view-seg > :last-child[data-tip]:focus::after,
+.lab .view-seg > :last-child[data-tip]:focus-visible::after { transform: translateY(0); }
+.lab .view-seg > :last-child[data-tip]::before {
+  left: auto;
+  right: 1.25rem;
+  transform: none;
+}
+
 .lab-entry { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 .lab-field { display: flex; flex-direction: column; gap: 0.3rem; }
 .lab-field-label {
