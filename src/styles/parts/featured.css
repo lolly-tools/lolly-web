@@ -349,6 +349,10 @@
 }
 .ftile-open svg { display: block; }
 
+/* Cover Flow's Open button (see tileMarkup) — gallery mode never shows it; the
+   coverflow block below places and reveals it. */
+.ftile-go { display: none; }
+
 /* Optional per-tile ⋯ actions button (Projects' Uncategorised ribbon) — a real, tappable
    handle in the top-right corner, ABOVE the link, so it works on touch and in Cover Flow where
    drag-to-folder can't. Revealed on hover; always shown on touch and on the centred cover. */
@@ -501,7 +505,61 @@
 .featured--coverflow .ftile.is-centred .ftile-dots { opacity: 1; }
 .featured--coverflow .ftile.is-centred .ftile-dots { pointer-events: auto; }
 .featured--coverflow .ftile-stage::after { opacity: 0; }
-.featured--coverflow .ftile.is-centred .ftile-open { opacity: 1; transform: translate(-50%, 0); }
+
+/* ── The Open control in Cover Flow ──────────────────────────────────────────
+   Gallery's `.ftile-open` is a pointer-events:none cue floating mid-stage, because
+   there the whole tile is one unobstructed link. In the fan it can't work that way:
+   each neighbour is scaled to CF_MIN_SCALE and vertically centred, then tucked
+   CF_TUCK of a width inward, so it overlaps the centred cover from both sides to
+   within a few per cent of its middle — a mid-stage cue sits UNDER the neighbour,
+   which takes the press (its "click a side cover to centre it" handler wins) and the
+   Open cue reads as dead. What the neighbours can never cover is the band above and
+   below them: `.ftile-menu` already exploits that at the top; `.ftile-go` is the same
+   trick at the bottom, and unlike the cue it is a real, pointer-accepting button, so
+   the pill itself is the hit target rather than the cover behind it.
+   Sized against the free band, which is (1 - CF_MIN_SCALE)/2 ≈ 14% of the cover
+   height (~42px desktop, ~34px on a phone) — hence the modest 30/26px bar. */
+.featured--coverflow .ftile { --cf-go-h: 30px; }
+.featured--coverflow .ftile-open { display: none; }
+.featured--coverflow .ftile-go {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: var(--cf-go-h);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #000a;
+  border: 1px solid #ffffff2e;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  padding: 0 14px;
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px #0005;
+  cursor: pointer;
+  /* Only the centred cover's button is live — a side cover's must not swallow the
+     click that centres it (mirrors .ftile-menu / .ftile-dots). */
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity .16s ease, transform .16s ease, background .12s;
+}
+.featured--coverflow .ftile-go svg { display: block; }
+.featured--coverflow .ftile.is-centred .ftile-go {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+.featured--coverflow .ftile-go:hover { background: #000d; }
+/* The dots row is the cover's bottom edge, which the button now owns — lift it clear
+   so the two never overlap (and a look-pick stays clickable). */
+.featured--coverflow .ftile-dots { padding-bottom: calc(var(--cf-go-h) + 10px); }
 
 /* ── Cover Flow on a phone (see the order note above the base rules) ──────────
    TWO things happen here, and both need to out-rank the base rules above.
@@ -544,6 +602,19 @@
     background-color: #dfe3;
   }
   .featured--coverflow .ftile-img { filter: none; }
+  /* Shorter cover → shorter free band at the bottom (~34px at 390px wide), so the Open
+     bar comes down with it. No blur/transition here either — same per-frame paint budget
+     as the covers themselves. */
+  .featured--coverflow .ftile {
+    --cf-go-h: 26px;
+  }
+  .featured--coverflow .ftile-go {
+    font-size: 11px;
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+    background: #000c;
+    transition: none;
+  }
 }
 
 /* ── Mobile drag handle ──────────────────────────────────────────────────────
