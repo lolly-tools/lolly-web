@@ -143,6 +143,14 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
   // otherwise let the icon show through behind it). '' when the tool has no icon.
   const iconFill = entry.icon ? `<span class="ftile-iconfill" aria-hidden="true">${entry.icon}</span>` : '';
   const href = entry.href ?? `#/tool/${entry.id}`;
+  // `.ftile-go` is Cover Flow's Open control (hidden in gallery mode, which uses the
+  // stage-level `.ftile-open` cue). It's a REAL button, a sibling of the link rather than
+  // a child of it, pinned to the very bottom edge of the cover: the fanned neighbours are
+  // scaled down and vertically centred, so they overlap the centred cover everywhere
+  // EXCEPT a band at its top and bottom — a cue floating in the middle of the cover gets
+  // its clicks taken by the neighbour cover painting over it (same reason `.ftile-menu`
+  // lives in the top band). aria-hidden + tabindex -1: it duplicates the tile link's own
+  // action, and keyboard users activate the link itself.
   // `data-basehref` is the tool's default route — the fallback the tile's href reverts to
   // while the committed placeholder is showing (a rendered look then points href at its own
   // seeded URL, so opening the tile lands in the look you're watching; see refreshLinkHref).
@@ -162,6 +170,7 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
         <span class="ftile-dots" aria-hidden="true"></span>
       </a>
       ${menu ? `<button type="button" class="ftile-menu" aria-label="Actions for ${escape(entry.name)}" title="Actions">${MENU_DOTS}</button>` : ''}
+      <button type="button" class="ftile-go" tabindex="-1" aria-hidden="true">Open ${ARROW}</button>
     </li>`;
 }
 
@@ -613,11 +622,12 @@ export function mountFeaturedRow(
   // strip's native scroller, vertical scrolls the page — never captured). Either
   // way the grab lights up the backdrop (see .is-grabbing). ──
   viewport.addEventListener('pointerdown', (e) => {
-    // A press on the ⋯ menu button or an example dot is neither a pan nor a tile open —
-    // leave it to its own click handling (the consumer's actions menu / the dot branch of
-    // the capture click handler below), whatever the view mode / device. Skipping here
-    // also keeps pressLink unset, so the pointerup deterministic-open never fires for it.
-    if ((e.target as Element | null)?.closest?.('.ftile-menu, .ftile-dot')) return;
+    // A press on the ⋯ menu button, an example dot, or Cover Flow's Open button is neither
+    // a pan nor a bare tile open — leave it to its own click handling (the consumer's
+    // actions menu / the dot or .ftile-go branch of the capture click handler below),
+    // whatever the view mode / device. Skipping here also keeps pressLink unset, so the
+    // pointerup deterministic-open never fires for it (the .ftile-go branch opens instead).
+    if ((e.target as Element | null)?.closest?.('.ftile-menu, .ftile-dot, .ftile-go')) return;
     // Drag-out mode: a mouse/pen press ON a tile is a click-to-open or the start of a
     // native drag-to-folder — never a pan grab. Yield to the browser (no preventDefault /
     // pointer capture / dragging state) so HTML5 drag can begin; panning stays available
@@ -709,6 +719,22 @@ export function mountFeaturedRow(
     // Let a ⋯ menu-button click through untouched — it must reach the consumer's delegated
     // handler, and (in Cover Flow) must NOT be treated as a "centre this side cover" click.
     if ((e.target as Element | null)?.closest?.('.ftile-menu')) return;
+    // Cover Flow's Open button — the one control that opens its cover no matter what the
+    // fan is doing. It sits OUTSIDE the tile's <a>, so neither the anchor nor the
+    // side-cover-centring branch below would act on it; open its tile's link here.
+    const go = (e.target as Element | null)?.closest?.<HTMLElement>('.ftile-go');
+    if (go) {
+      e.preventDefault();
+      e.stopPropagation();
+      // This click IS the open — clear the drag/suppress flags a prior gesture may have
+      // left set (their usual consumer is the very click we're swallowing here), so they
+      // can't leak into the next one when openLink hands off to onActivate rather than
+      // navigating away.
+      suppressNextClick = false;
+      dragMoved = false;
+      openLink(go.closest('.ftile')?.querySelector<HTMLAnchorElement>('.ftile-link') ?? null);
+      return;
+    }
     // An example dot picks that look directly — swallow the click so the wrapping
     // <a> doesn't also navigate. (The non-hijacking replacement for the old
     // vertical-scroll shift gesture.)

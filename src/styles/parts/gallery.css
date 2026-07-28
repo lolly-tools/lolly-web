@@ -767,6 +767,7 @@ stroke-width:.81;
 .gallery.hide-previews .ftile-stage { flex: 0 0 auto; min-height: 0; }
 .gallery.hide-previews .ftile-img,
 .gallery.hide-previews .ftile-open,
+.gallery.hide-previews .ftile-go,
 .gallery.hide-previews .ftile-dots,
 .gallery.hide-previews .ftile-stage::after { display: none; }
 /* Keep the icon visible even once real art has loaded (.ftile.has-art hides it),
