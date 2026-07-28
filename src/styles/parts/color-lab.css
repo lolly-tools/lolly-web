@@ -1,0 +1,550 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
+/* Colour Lab (#/lab, views/color-lab.ts).
+
+   A report, not a workspace: one column that scrolls, no stage, no sidebar. The
+   page's own scrollbar is the only one — nothing here is an inner scroller, so
+   Cmd-F, print and "scroll to the bottom" all behave the way a document does. */
+
+.lab {
+  /* Nearly the whole viewport rather than a measure-capped column: this is an
+     instrument panel, not prose, and on a large display the charts are what the
+     extra width is for. The 2em keeps it clear of the edges (and absorbs the
+     scrollbar, which 100vw includes). */
+  max-width: calc(100vw - 2em);
+  margin: 0 auto;
+  padding: 1rem 1.25rem 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2.25rem;
+}
+
+.lab-back { align-self: flex-start; }
+
+.lab-head h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 2.75rem);
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.lab-sub {
+  margin: 0.5rem 0 0;
+  max-width: 46rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+
+.lab-h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+}
+.lab-section { display: flex; flex-direction: column; gap: 0.85rem; }
+
+/* ── The five steps ────────────────────────────────────────────────────────
+   The page is a numbered sequence (set a colour → what to see it against →
+   the charts → every notation → tones and blends), so each block is titled and
+   numbered. The numbers are decorative for AT (the headings already carry the
+   order) but they are what makes the hierarchy readable at a glance. */
+.lab-step-block { display: flex; flex-direction: column; gap: 0.85rem; }
+.lab-step-h { display: flex; align-items: center; gap: 0.55rem; }
+.lab-step-n {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  background: hsl(var(--primary) / 0.14);
+  color: hsl(var(--primary));
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* A step whose control belongs beside its title rather than under it. */
+.lab-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.lab-h3 {
+  margin: 0.5rem 0 0;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+}
+.lab-section-note {
+  margin: -0.35rem 0 0;
+  max-width: 52rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+
+/* ── The subject: swatch, any-value field, and the real picker ─────────────
+   Three columns on a wide screen, stacked on a narrow one. The picker is the
+   shell's own mountColorField, so it brings its own rings and slider styling —
+   nothing here restyles it, only gives it room. */
+.lab-subject {
+  display: grid;
+  /* The picker gets the extra room — it is the control, the other two columns are
+     readouts. Plain fractions rather than minmax floors so the whole row grows
+     with the page instead of stalling at a fixed measure on a large display. */
+  grid-template-columns: 1fr 1fr 1.5fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.lab-swatch {
+  /* Square-ish, but free to grow: it now carries a stack of notations, and a hard
+     aspect ratio would clip them on a narrow column. */
+  aspect-ratio: 1 / 1;
+  height: auto;
+  min-height: 12rem;
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.15rem;
+  padding: 1rem;
+  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12);
+  /* The swatch's own text colour is set inline from the engine's contrast
+     ratio, so the label is readable on any subject. */
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.lab-sw-vals { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.lab-sw-primary {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  /* Shrinks as the value gets longer: this holds whatever the user authored, and
+     `color(display-p3 0.482 0.213 0.876)` is a lot more characters than a hex. */
+  font-size: clamp(0.78rem, 1.4cqw + 0.55rem, 1.2rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* The alternate expressions. Quieter than the authored one — they are the same
+   colour said differently, not competing values. */
+.lab-sw-alts {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  /* Full strength. The ink is already the better of black/white for this swatch,
+     and dimming it on top of that is what made the alternates unreadable on a
+     mid-contrast colour like a saturated red. Only the space LABEL is dimmed. */
+  opacity: 1;
+}
+.lab-sw-alt {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  font-size: clamp(0.6rem, 0.7cqw + 0.42rem, 0.72rem);
+  overflow-wrap: anywhere;
+}
+.lab-sw-alt-space {
+  flex: 0 0 auto;
+  min-width: 4.2em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.lab-sw-alt code { font-family: 'SUSE Mono', ui-monospace, monospace; }
+.lab-swatch { container-type: inline-size; }
+.lab-sw-space {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+}
+
+.lab-entry { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.lab-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.lab-field-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.lab-raw {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+.lab-hint, .lab-err, .lab-clamp {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.lab-hint { color: hsl(var(--muted-foreground)); }
+.lab-err { color: hsl(var(--destructive, 0 72% 51%)); font-weight: 500; }
+/* The out-of-gamut notice. It has to be impossible to miss: the swatch and the
+   picker below it are showing a DIFFERENT colour from the one being described. */
+.lab-clamp {
+  padding: 0.6rem 0.75rem;
+  border-radius: calc(var(--radius) * 0.7);
+  background: hsl(var(--muted) / 0.6);
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+.lab-picker { min-width: 0; }
+
+/* ── Brand rail — a third way IN, so it sits inside step 1 ─────────────────── */
+.lab-brand-rail { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.35rem; }
+.lab-brand { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.lab-brand-sw {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius) * 0.6);
+  /* Hex first as the universally-parseable fallback, then the token's authored
+     value — a browser that understands it renders the real wide-gamut colour and
+     does its own per-display mapping. */
+  background: var(--sw);
+  background: var(--sw-real, var(--sw));
+  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.15);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.lab-brand-sw:hover, .lab-brand-sw:focus-visible {
+  transform: scale(1.12);
+  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.2), 0 0 0 3px hsl(var(--primary) / 0.4);
+  outline: none;
+}
+
+/* ── Verdict cards ────────────────────────────────────────────────────────── */
+.lab-verdict {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.85rem;
+}
+.lab-card {
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.lab-card-label {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.lab-card-value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.lab-card-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+}
+
+/* The gamut card wears its own verdict: an accent stripe whose colour says how
+   far from universally-displayable this is. */
+.lab-gamut { border-left: 3px solid hsl(var(--border)); }
+.lab-gamut[data-gamut="srgb"] { border-left-color: oklch(0.62 0.16 150); }
+.lab-gamut[data-gamut="p3"] { border-left-color: oklch(0.72 0.16 85); }
+.lab-gamut[data-gamut="rec2020"] { border-left-color: oklch(0.62 0.18 35); }
+.lab-gamut[data-gamut="none"] { border-left-color: oklch(0.55 0.2 25); }
+
+.lab-headroom[data-state="over"] .lab-card-value { color: oklch(0.58 0.19 25); }
+.lab-headroom[data-state="under"] .lab-card-value { color: oklch(0.55 0.14 150); }
+
+.lab-ceilings { margin: 0.1rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.2rem; }
+.lab-ceil {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.lab-ceil-name { color: hsl(var(--muted-foreground)); }
+.lab-ceil-val { font-weight: 600; }
+.lab-ceil-gain { font-weight: 400; color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
+/* A gamut this colour has already overshot. */
+.lab-ceil.is-past .lab-ceil-val { text-decoration: line-through; opacity: 0.55; }
+
+/* ── Readability ──────────────────────────────────────────────────────────── */
+.lab-contrast {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.85rem;
+}
+.lab-contrast-card {
+  padding: 1.1rem;
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.lab-contrast-card.is-best { box-shadow: inset 0 0 0 2px currentColor; }
+.lab-contrast-sample { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.lab-best {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.lab-contrast-ratio {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.lab-contrast-badges { margin: 0; display: flex; gap: 0.35rem; }
+.lab-wcag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  /* Outlined in the card's own ink rather than filled with a fixed colour: the
+     card's background IS the subject colour, so the badge has to stay legible
+     without knowing what that colour is. */
+  color: inherit;
+  background: hsl(0 0% 100% / 0.16);
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.lab-wcag[data-level="fail"] { opacity: 0.65; text-decoration: line-through; }
+.lab-contrast-note {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* ── The four charts ──────────────────────────────────────────────────────── */
+/* Full width above the charts — it governs the whole row, so it spans it. The
+   shared segmented control is normally content-width; these three options split
+   the space evenly instead. */
+.lab-limit {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 100%;
+}
+.lab-limit .view-seg-btn { width: 100%; }
+
+/* As many charts per row as fit at a readable size — 2-up on a laptop, all four
+   in a row on a wide display. A 20rem floor is about where a plot stops being
+   worth reading; `min(…, 100%)` keeps it from overflowing a narrow screen, where
+   auto-fit would otherwise hold the track wider than its container. */
+.lab-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: 1.5rem 1.25rem;
+}
+.lab-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+  /* The plot comes FIRST and the caption sits under it, so every plot's top edge
+     lines up across the row. With the caption above, a two-line description
+     pushed its chart down and the row read as ragged. `margin: 0` on the figure
+     because it is only here for the caption relationship, not for spacing. */
+  margin: 0;
+}
+/* The axis slider between the plot and its caption. */
+.lab-chart-slider { margin: 0.15rem 0 0.1rem; }
+
+.lab-chart-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  /* A figcaption is inline-ish by default; make it fill the column. */
+  margin: 0;
+  width: 100%;
+  /* Pushed to the bottom of the cell so the captions line up across the row too.
+     Without this the 3D chart's caption rides higher than the other three, since
+     it has no axis or legend row above it to pad the difference. */
+  margin-top: auto;
+}
+.lab-chart-head h3 { margin: 0; font-size: 1rem; letter-spacing: -0.01em; }
+.lab-chart-why {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: hsl(var(--muted-foreground));
+}
+.lab-chart-at {
+  margin: 0;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.lab-chart-at strong { color: hsl(var(--foreground)); }
+.lab-chart-hint { opacity: 0.8; }
+
+/* The 3D solid. It has no axis gutter or legend, so rather than matching the 2D
+   plots' aspect ratio and leaving a gap below, it GROWS into the space they spend
+   on those — the chart gets bigger and the captions still align. */
+.lab-solid {
+  display: block;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 11rem;
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.35);
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  cursor: grab;
+  touch-action: none;
+}
+.lab-solid.is-turning { cursor: grabbing; }
+.lab-solid:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+
+/* ── Ramp controls: stop count, and the blend's far end ───────────────────── */
+.lab-steps { display: flex; align-items: center; gap: 0.5rem; flex: 0 0 auto; }
+.lab-steps-range { width: 9rem; }
+.lab-steps-out {
+  min-width: 1.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.lab-blend-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.lab-blend-to { display: flex; align-items: center; gap: 0.45rem; }
+/* The second colour gets the compact float picker — same component, less weight,
+   because it is not the subject of the page. */
+.lab-blend-picker { flex: 0 0 auto; }
+.lab-blend-raw {
+  width: 13rem;
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.82rem;
+}
+.lab-blend-raw[aria-invalid="true"] { border-color: hsl(var(--destructive, 0 72% 51%)); }
+
+/* The continuous gradient beside the discrete stops — same two ends, so you can
+   see what the steps are sampling from. */
+.lab-blend-preview {
+  height: 1.75rem;
+  border-radius: calc(var(--radius) * 0.6);
+  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12);
+}
+
+/* ── Tone ramp ────────────────────────────────────────────────────────────── */
+.lab-ramp {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  gap: 0.35rem;
+}
+.lab-step {
+  border: 0;
+  padding: 0.9rem 0.7rem;
+  border-radius: calc(var(--radius) * 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: flex-start;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12);
+  transition: transform 0.12s ease;
+}
+.lab-step:hover, .lab-step:focus-visible { transform: translateY(-2px); outline: none; }
+.lab-step:focus-visible { box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12), 0 0 0 3px hsl(var(--primary) / 0.45); }
+/* OKLCH leads, hex supports — hex is sRGB-only, the weakest way to name a colour
+   on a page about colour spaces. */
+.lab-step-oklch {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lab-step-hex {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.68rem;
+  opacity: 0.7;
+}
+
+/* ── Notations ────────────────────────────────────────────────────────────── */
+.lab-notations {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.lab-notations th, .lab-notations td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid hsl(var(--border));
+  vertical-align: baseline;
+}
+.lab-notations thead th {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.lab-notations tbody th {
+  font-weight: 600;
+  white-space: nowrap;
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+}
+.lab-notations code {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+/* A space too narrow to hold the colour: shown, but never as if it were the value. */
+.lab-notations tr.is-inexact code { opacity: 0.62; }
+.lab-note-fit {
+  font-size: 0.72rem;
+  color: oklch(0.58 0.16 40);
+  white-space: nowrap;
+}
+.lab-copy {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  color: inherit;
+  cursor: pointer;
+}
+.lab-copy:hover { background: hsl(var(--muted)); }
+.lab-copy.is-copied { background: hsl(var(--primary) / 0.15); border-color: hsl(var(--primary) / 0.5); }
+
+/* Wide-content guard: the notation table is the one thing that can outgrow a
+   narrow screen, so it gets its own scroller rather than widening the page. */
+@media (max-width: 640px) {
+  .lab { padding: 0.75rem 0.85rem 5rem; gap: 1.75rem; }
+  .lab-subject { grid-template-columns: 1fr; }
+  .lab-swatch { aspect-ratio: 16 / 9; }
+  .lab-notations { display: block; overflow-x: auto; white-space: nowrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-swatch, .lab-brand-sw, .lab-step { transition: none; }
+}
+}

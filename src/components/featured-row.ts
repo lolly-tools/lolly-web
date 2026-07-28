@@ -143,14 +143,6 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
   // otherwise let the icon show through behind it). '' when the tool has no icon.
   const iconFill = entry.icon ? `<span class="ftile-iconfill" aria-hidden="true">${entry.icon}</span>` : '';
   const href = entry.href ?? `#/tool/${entry.id}`;
-  // `.ftile-go` is Cover Flow's Open control (hidden in gallery mode, which uses the
-  // stage-level `.ftile-open` cue). It's a REAL button, a sibling of the link rather than
-  // a child of it, pinned to the very bottom edge of the cover: the fanned neighbours are
-  // scaled down and vertically centred, so they overlap the centred cover everywhere
-  // EXCEPT a band at its top and bottom — a cue floating in the middle of the cover gets
-  // its clicks taken by the neighbour cover painting over it (same reason `.ftile-menu`
-  // lives in the top band). aria-hidden + tabindex -1: it duplicates the tile link's own
-  // action, and keyboard users activate the link itself.
   // `data-basehref` is the tool's default route — the fallback the tile's href reverts to
   // while the committed placeholder is showing (a rendered look then points href at its own
   // seeded URL, so opening the tile lands in the look you're watching; see refreshLinkHref).
@@ -170,7 +162,6 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
         <span class="ftile-dots" aria-hidden="true"></span>
       </a>
       ${menu ? `<button type="button" class="ftile-menu" aria-label="Actions for ${escape(entry.name)}" title="Actions">${MENU_DOTS}</button>` : ''}
-      <button type="button" class="ftile-go" tabindex="-1" aria-hidden="true">Open ${ARROW}</button>
     </li>`;
 }
 
@@ -211,6 +202,7 @@ export function mountFeaturedRow(
       <div class="featured-viewport">
         <ul class="featured-track">${entries.map((e, i) => tileMarkup(e, i === 0, tileMenu)).join('')}</ul>
       </div>
+      <button type="button" class="featured-go" tabindex="-1" aria-hidden="true">Open ${ARROW}</button>
       <div class="featured-grip" aria-hidden="true"><span class="featured-grip-bar"></span></div>
     </section>`;
 
@@ -424,7 +416,11 @@ export function mountFeaturedRow(
   // offsetLeft/offsetWidth read mid-loop would flush a style recalc after each is-centred
   // class toggle (a per-tile-per-frame cost — felt most on mobile). Rebuilt on resize,
   // view-switch, and the post-decode relayout.
-  let cfGeom: Array<{ el: HTMLElement; center: number; w: number }> = [];
+  // `vc` is the cover's centre as DRAWN (layout centre + this frame's tuck) — the fan
+  // pulls each cover toward the middle, so a pointer x can only be mapped back to a cover
+  // through it (see coverAtClientX). Written by layoutCoverflow, which computes the tuck
+  // anyway; undefined until the first fan layout.
+  let cfGeom: Array<{ el: HTMLElement; center: number; w: number; vc?: number }> = [];
 
   function layoutCoverflow(): void {
     if (!coverflow) return;
@@ -455,6 +451,7 @@ export function mountFeaturedRow(
       // instead of going coplanar and leaving the overlap to z-index alone.
       const back = (g.w / 2) * scale * Math.abs(Math.sin((angle * Math.PI) / 180)) + Math.abs(td) * 8 + 2;
       g.el.style.transform = `translateX(${tuck.toFixed(1)}px) translateZ(${(-back).toFixed(1)}px) rotateY(${angle.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+      g.vc = g.center + tuck;                             // where this cover now READS (see coverAtClientX)
       g.el.style.zIndex = String(1000 - Math.round(Math.abs(d) * 20));
       g.el.classList.toggle('is-centred', Math.abs(d) < 0.5);
     }
@@ -464,6 +461,25 @@ export function mountFeaturedRow(
 
   // scrollLeft that centres a given cover (offsetLeft includes the track's centring pad).
   const coverScrollLeft = (el: HTMLElement): number => el.offsetLeft + el.offsetWidth / 2 - viewport.clientWidth / 2;
+
+  // Which cover a press at viewport-x `clientX` was aimed at. Needed because the fan is
+  // not hit-testable: every cover is z-translated inside the track's preserve-3d context,
+  // so Chrome resolves each press in the strip to the track itself and `closest('.ftile')`
+  // finds nothing (see the .featured-go note). Matched against the covers' DRAWN centres,
+  // not their layout ones — the fan tucks each cover CF_TUCK of a width toward the middle,
+  // so at the third cover out the two are more than a full cover apart. Nearest drawn
+  // centre wins: the covers stay in order across the strip, and the boundary between two
+  // of them lands on the overlap where the nearer one starts hiding the further.
+  function coverAtClientX(clientX: number): HTMLElement | null {
+    if (!coverflow || !cfGeom.length) return null;
+    const x = clientX - viewport.getBoundingClientRect().left + viewport.scrollLeft;  // → track coords
+    let best: HTMLElement | null = null, bestD = Infinity;
+    for (const g of cfGeom) {
+      const d = Math.abs((g.vc ?? g.center) - x);
+      if (d < bestD) { bestD = d; best = g.el; }
+    }
+    return best;
+  }
 
   function nearestCoverScrollLeft(): number {
     const half = viewport.clientWidth / 2;
@@ -622,12 +638,11 @@ export function mountFeaturedRow(
   // strip's native scroller, vertical scrolls the page — never captured). Either
   // way the grab lights up the backdrop (see .is-grabbing). ──
   viewport.addEventListener('pointerdown', (e) => {
-    // A press on the ⋯ menu button, an example dot, or Cover Flow's Open button is neither
-    // a pan nor a bare tile open — leave it to its own click handling (the consumer's
-    // actions menu / the dot or .ftile-go branch of the capture click handler below),
-    // whatever the view mode / device. Skipping here also keeps pressLink unset, so the
-    // pointerup deterministic-open never fires for it (the .ftile-go branch opens instead).
-    if ((e.target as Element | null)?.closest?.('.ftile-menu, .ftile-dot, .ftile-go')) return;
+    // A press on the ⋯ menu button or an example dot is neither a pan nor a tile open —
+    // leave it to its own click handling (the consumer's actions menu / the dot branch of
+    // the capture click handler below), whatever the view mode / device. Skipping here
+    // also keeps pressLink unset, so the pointerup deterministic-open never fires for it.
+    if ((e.target as Element | null)?.closest?.('.ftile-menu, .ftile-dot')) return;
     // Drag-out mode: a mouse/pen press ON a tile is a click-to-open or the start of a
     // native drag-to-folder — never a pan grab. Yield to the browser (no preventDefault /
     // pointer capture / dragging state) so HTML5 drag can begin; panning stays available
@@ -719,22 +734,6 @@ export function mountFeaturedRow(
     // Let a ⋯ menu-button click through untouched — it must reach the consumer's delegated
     // handler, and (in Cover Flow) must NOT be treated as a "centre this side cover" click.
     if ((e.target as Element | null)?.closest?.('.ftile-menu')) return;
-    // Cover Flow's Open button — the one control that opens its cover no matter what the
-    // fan is doing. It sits OUTSIDE the tile's <a>, so neither the anchor nor the
-    // side-cover-centring branch below would act on it; open its tile's link here.
-    const go = (e.target as Element | null)?.closest?.<HTMLElement>('.ftile-go');
-    if (go) {
-      e.preventDefault();
-      e.stopPropagation();
-      // This click IS the open — clear the drag/suppress flags a prior gesture may have
-      // left set (their usual consumer is the very click we're swallowing here), so they
-      // can't leak into the next one when openLink hands off to onActivate rather than
-      // navigating away.
-      suppressNextClick = false;
-      dragMoved = false;
-      openLink(go.closest('.ftile')?.querySelector<HTMLAnchorElement>('.ftile-link') ?? null);
-      return;
-    }
     // An example dot picks that look directly — swallow the click so the wrapping
     // <a> doesn't also navigate. (The non-hijacking replacement for the old
     // vertical-scroll shift gesture.)
@@ -762,15 +761,43 @@ export function mountFeaturedRow(
       if (link && centredOrGallery) { e.preventDefault(); e.stopPropagation(); openLink(link); return; }
     }
     // Cover Flow: clicking a side cover brings it to the centre (select it) rather than
-    // opening; only the already-centred cover opens its tool.
+    // opening; the centred cover is opened from the Open button (see .featured-go).
+    // `closest('.ftile')` can't be trusted here — inside the fan Chrome's event hit test
+    // resolves to the TRACK, never a cover (see coverAtClientX) — so fall back to which
+    // cover the pointer's x lands on.
     if (coverflow) {
-      const tile = (e.target as Element | null)?.closest?.<HTMLElement>('.ftile');
+      const tile = (e.target as Element | null)?.closest?.<HTMLElement>('.ftile') ?? coverAtClientX(e.clientX);
       if (tile && !tile.classList.contains('is-centred')) {
         e.preventDefault(); e.stopPropagation();
         snapTarget = coverScrollLeft(tile);
       }
     }
   }, { signal, capture: true });
+
+  // ── Cover Flow's Open button ─────────────────────────────────────────────────
+  // The one control that opens the selected cover, and the reason it lives out here in
+  // the section rather than inside the cover it belongs to: Chrome cannot target
+  // anything inside the fan. Every cover carries a `translateZ` (layoutCoverflow recedes
+  // each one so the fan can't paint over the centred cover), and a z-translated plane
+  // inside a `transform-style: preserve-3d` context is not hit-testable — the event's
+  // target is the preserve-3d root, `.featured-track`, wherever in the fan you press.
+  // (Verified in Chrome 141: `rotateY` alone hit-tests fine, adding any translateZ makes
+  // the subtree untargetable; elementsFromPoint still reports the covers, so it's the
+  // event hit test specifically.) So the button sits OUTSIDE the 3D context, absolutely
+  // positioned over the bottom edge of the centred cover (see featured.css), where it is
+  // an ordinary, reliably clickable button — and it reads the cover to open off
+  // `.is-centred` at click time.
+  const goBtn = section.querySelector<HTMLElement>('.featured-go');
+  goBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Mid-flick no cover is close enough to be `.is-centred`, and the button is always
+    // there to be pressed — fall back to whichever cover is nearest the slot it sits in,
+    // so a press during the settle opens that cover rather than nothing.
+    const centred = section.querySelector<HTMLElement>('.ftile.is-centred')
+      ?? coverAtClientX(viewport.getBoundingClientRect().left + viewport.clientWidth / 2);
+    openLink(centred?.querySelector<HTMLAnchorElement>('.ftile-link') ?? null);
+  }, { signal });
   // A middle-drag that actually panned must NOT also open the pressed tile in a new tab; a
   // stationary middle-click still gets its native open-in-new-tab (dragMoved stays false).
   viewport.addEventListener('auxclick', (e) => {

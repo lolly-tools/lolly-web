@@ -767,7 +767,7 @@ stroke-width:.81;
 .gallery.hide-previews .ftile-stage { flex: 0 0 auto; min-height: 0; }
 .gallery.hide-previews .ftile-img,
 .gallery.hide-previews .ftile-open,
-.gallery.hide-previews .ftile-go,
+.gallery.hide-previews .featured-go,
 .gallery.hide-previews .ftile-dots,
 .gallery.hide-previews .ftile-stage::after { display: none; }
 /* Keep the icon visible even once real art has loaded (.ftile.has-art hides it),
@@ -1641,3 +1641,14 @@ a.gtile-name:focus-visible::after {
 }
 .is-file-drag .drop-hint { opacity: 1; transform: translateX(-50%); }
 
+
+/* ── View-backed utility tiles (#/u) ────────────────────────────────────────
+   A page rather than a tool (Colour Lab). Same tile shape as its neighbours, so
+   it reads as a peer in the grid; it just has no actions row, because favourite
+   / keep-offline / saved-sessions are all tool-store concepts. The lack of that
+   row would otherwise leave the tile short, so it stretches instead. */
+.gtile--view { justify-content: center; }
+.gtile--view .gtile-body { cursor: pointer; }
+.gtile--view .gtile-name { font-size: inherit; }
+
+@media (prefers-reduced-motion: reduce) { .gtile--view { transition: none; } }

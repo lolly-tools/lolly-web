@@ -60,9 +60,11 @@
 }
 .okls-edges.is-empty { display: none; }
 
-/* The two boundary lines. They must stay legible over every colour the plot can
-   paint underneath them, at both ends of the lightness axis — hence a dark line
-   with a light halo rather than a single flat stroke. */
+/* The two boundary lines. Both SOLID — a dashed line reads as provisional, and
+   these are the most definite thing on the chart. They are told apart by weight
+   and opacity instead: sRGB is the heavier, brighter line because it is the one
+   you actually have to design within. Each carries a dark halo so it stays
+   legible over both the pale top-left and the near-black bottom of a plot. */
 .okls-edge {
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -74,9 +76,8 @@
   filter: drop-shadow(0 0 1.5px hsl(0 0% 0% / 0.8));
 }
 .okls-edge--p3 {
-  stroke: hsl(0 0% 100% / 0.6);
-  stroke-width: 1.5px;
-  stroke-dasharray: 4 3;
+  stroke: hsl(0 0% 100% / 0.55);
+  stroke-width: 1.25px;
   filter: drop-shadow(0 0 1.5px hsl(0 0% 0% / 0.6));
 }
 
@@ -165,23 +166,29 @@
   font-size: 0.66rem;
   color: hsl(var(--muted-foreground));
 }
-.okls-key { display: inline-flex; align-items: center; gap: 0.3rem; }
-.okls-key::before {
+.okls-key { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+/* A line key, drawn the way the contour is drawn: a white bar with a dark halo,
+   so it reads on either theme AND matches what's on the chart. Thickness is the
+   whole signal — sRGB is the heavier line, Display-P3 the finer one. */
+.okls-key--line::before {
+  content: '';
+  width: 1rem;
+  height: var(--key-w, 2px);
+  border-radius: 2px;
+  background: hsl(0 0% 100%);
+  box-shadow: 0 0 0 1px hsl(0 0% 0% / 0.55);
+}
+.okls-key--srgb { --key-w: 3px; }
+.okls-key--p3 { --key-w: 1.5px; }
+
+.okls-key--none::before {
   content: '';
   width: 0.7rem;
   height: 0.7rem;
   border-radius: 3px;
-  /* One hue at the three chroma levels the bands are drained to (BAND_DRAIN in
-     oklch-slice.ts), so each key looks like the band it names instead of being
-     an arbitrary legend colour. Same lightness throughout — the bands lose
-     chroma only, never lightness. */
-  background: oklch(0.66 var(--key-c) 28);
   box-shadow: inset 0 0 0 1px hsl(var(--border));
-}
-.okls-key--srgb { --key-c: 0.18; }
-.okls-key--p3 { --key-c: 0.137; }     /* 0.18 × (1 − 0.24) */
-.okls-key--rec2020 { --key-c: 0.094; } /* 0.18 × (1 − 0.48) */
-.okls-key--none::before {
+
   background:
     repeating-conic-gradient(hsl(var(--muted) / 0.55) 0% 25%, hsl(var(--background)) 0% 50%)
     50% / 6px 6px;
@@ -196,4 +203,95 @@
 @media (prefers-reduced-motion: reduce) {
   .okls-dot { transition: none; }
 }
+}
+
+/* ── Broken gamut sliders (gamut-slider.ts) ─────────────────────────────────
+   One axis of OKLCH, with the track cut where the colour stops being
+   displayable. The dashed well is the FULL range; the solid segments inside it
+   are what you can actually reach. A hue track at high chroma shows several
+   arcs with real gaps — which is the point. */
+.gsl {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.gsl-key {
+  flex: 0 0 auto;
+  width: 1rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+  text-align: center;
+}
+.gsl-well {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 1.35rem;
+  border-radius: 999px;
+  /* The dashed outline is the whole axis, present even where no segment is. */
+  border: 1px dashed hsl(var(--border));
+}
+.gsl-track {
+  position: absolute;
+  inset: 1px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.gsl-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Square ends: a rounded segment would imply the range tapers off, when it
+     stops dead at the gamut boundary. */
+}
+
+/* The real input sits over the top and stays the only thing that handles
+   interaction — keyboard, touch and AT come free. Its track is invisible; the
+   thumb is ours. */
+.gsl-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.gsl-input::-webkit-slider-runnable-track { background: transparent; height: 100%; }
+.gsl-input::-moz-range-track { background: transparent; height: 100%; }
+/* A diamond, so the handle reads as a position marker rather than a knob you
+   could mistake for a segment end. */
+.gsl-input::-webkit-slider-thumb {
+  appearance: none;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  background: hsl(var(--background));
+  box-shadow: 0 0 0 2px hsl(var(--foreground)), 0 1px 3px hsl(0 0% 0% / 0.4);
+}
+.gsl-input::-moz-range-thumb {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 0;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  background: hsl(var(--background));
+  box-shadow: 0 0 0 2px hsl(var(--foreground)), 0 1px 3px hsl(0 0% 0% / 0.4);
+}
+.gsl-input:focus-visible { outline: none; }
+.gsl-input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px hsl(var(--primary)), 0 0 0 5px hsl(var(--primary) / 0.35); }
+.gsl-input:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px hsl(var(--primary)), 0 0 0 5px hsl(var(--primary) / 0.35); }
+
+.gsl-val {
+  flex: 0 0 auto;
+  min-width: 3.1rem;
+  text-align: right;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
 }
