@@ -24,6 +24,7 @@
 import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
+import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { createFolderStore, childFolders, folderPath, descendantFolderIds } from '../folders.ts';
 import type { Folder } from '../folders.ts';
 import {
@@ -67,7 +68,9 @@ import type { BatchFile } from '../pro/batch.ts';
 interface ProjectsHost extends HostV1 {
   state: WebStateAPI;
   assets: HostV1['assets'] & {
-    _listUserAssets(): Promise<ReadonlyArray<{ id: string }>>;
+    // `type` is read here to keep the non-visual user assets (fonts, tokens, ICC
+    // profiles) out of surfaces that tile the list as images.
+    _listUserAssets(): Promise<ReadonlyArray<{ id: string; type: string }>>;
     _deleteUserAsset(id: string): Promise<void>;
   };
   profile: HostV1['profile'] & { set(profile: object): Promise<unknown> };
@@ -913,7 +916,10 @@ export async function mountProjects(
     // move/rename folders behind the page, so refresh Projects when it closes.
     // Reached from the history button AND, on mobile, the consolidated profile menu.
     async function openHistory(): Promise<void> {
-      const imageRefs = await (host as ProjectsHost).assets._listUserAssets?.().catch(() => []) ?? [];
+      // Filtered: the user-asset store also holds fonts, the tokens doc and ICC
+      // profiles, and the overlay tiles whatever it is handed as an image.
+      const stored = await (host as ProjectsHost).assets._listUserAssets?.().catch(() => []) ?? [];
+      const imageRefs = stored.filter(isPlaceableAsset);
       openFolderOverlay(host as ProjectsHost, {
         context: 'projects',
         sessionEntries: [...entries].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),

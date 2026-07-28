@@ -38,6 +38,14 @@ globalThis.sessionStorage = dom.window.sessionStorage;
 globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
   dom.window.setTimeout(() => cb(0), 0) as unknown as number) as typeof requestAnimationFrame;
 globalThis.cancelAnimationFrame = ((id: number) => dom.window.clearTimeout(id)) as typeof cancelAnimationFrame;
+// jsdom has no <dialog> showModal/close — shim the surface mountModal uses, so the
+// profile panel (components/profiles-manager.ts) can open here.
+const Dlg = dom.window.HTMLDialogElement.prototype as unknown as { showModal(): void; close(): void };
+Dlg.showModal = function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
+Dlg.close = function (this: HTMLDialogElement) {
+  this.removeAttribute('open');
+  this.dispatchEvent(new dom.window.Event('close'));
+};
 // jsdom has neither of these; the view's picker and drag paths touch both.
 dom.window.Element.prototype.setPointerCapture = function () {};
 dom.window.Element.prototype.releasePointerCapture = function () {};
@@ -55,6 +63,7 @@ Object.defineProperty(globalThis, 'navigator', {
 });
 
 const { mountColorLab } = await import('./color-lab.ts');
+const { contrastText } = await import('../components/color-field.ts');
 
 const view = document.getElementById('view')!;
 
@@ -300,6 +309,51 @@ test('the gamut limit narrows the charts and their legends', async () => {
   seg.querySelector<HTMLElement>('[data-val="rec2020"]')!
     .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   assert.equal(legendKeys(), atWidest, 'and back');
+});
+
+test('a narrower target narrows the CHARTS, never the controls or the colour', async () => {
+  // The pill is a lens, not an editor. `oklch(50% 0.38 328)` is a real Rec.2020
+  // colour, and pressing sRGB to see where sRGB stops must not take it away — that
+  // would be the comparison target rewriting the subject, and it did: the chroma
+  // range's own `max` dropped to sRGB's axis ceiling and the browser clamped the
+  // value under it while the readout still said 0.380.
+  await mount('?c=' + encodeURIComponent('oklch(50% 0.38 328)'));
+  const num = (): HTMLInputElement => $('[data-lab-num="ch"]') as HTMLInputElement;
+  const rng = (): HTMLInputElement => $('[data-lab-slider="ch"] [data-gsl-input]') as HTMLInputElement;
+  /** Every chroma tick on the C×H chart, biggest first — the axis the chart draws. */
+  const axisTop = (): number => Math.max(...[...view.querySelectorAll('[data-lab-chart="ch"] .okls-tick')]
+    .map(el => Number(el.textContent)).filter(n => Number.isFinite(n) && n <= 1));
+
+  const wideNum = num().max, wideRng = rng().max, wideAxis = axisTop();
+  assert.equal(Number(rng().value).toFixed(3), '0.380', 'the thumb starts on the authored chroma');
+
+  $('[data-lab-limit]')!.querySelector<HTMLElement>('[data-val="srgb"]')!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+
+  assert.equal(num().max, wideNum, 'the typed box keeps its reach');
+  assert.equal(rng().max, wideRng, 'so does the slider');
+  assert.equal(Number(rng().value).toFixed(3), '0.380', 'and the thumb is still ON the value');
+  assert.ok(Math.abs(subjectOklch().c - 0.38) < 1e-6, `the colour is untouched, got ${subjectOklch().c}`);
+
+  // Typing it again is honoured rather than pulled back to sRGB's ceiling.
+  num().value = '0.38';
+  num().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.ok(Math.abs(subjectOklch().c - 0.38) < 1e-6, `re-typing 0.38 sticks, got ${subjectOklch().c}`);
+
+  // The chart's axis is the part that SHOULD follow the tab — that is what makes the
+  // envelope fill the plot — so this is not a "nothing changed" test.
+  assert.ok(axisTop() < wideAxis, `the chart axis narrowed (${axisTop()} < ${wideAxis})`);
+});
+
+test('a chroma past every axis stays expressible, and the slider stretches to it', async () => {
+  // A chroma ceiling is a choice, not a bound. A range input cannot hold a value
+  // above its own max, so the axis has to grow — otherwise a shared link at 0.7
+  // opens with the thumb pinned at the end reporting a colour it is not on.
+  await mount('?c=' + encodeURIComponent('oklch(50% 0.7 328)'));
+  const rng = $('[data-lab-slider="ch"] [data-gsl-input]') as HTMLInputElement;
+  assert.ok(Number(rng.max) >= Number(rng.value), `the axis reaches the thumb, max ${rng.max}`);
+  assert.equal(Number(rng.value).toFixed(3), '0.700');
+  assert.ok(Math.abs(subjectOklch().c - 0.7) < 1e-6, `and the value survived, got ${subjectOklch().c}`);
 });
 
 test('the report opens in OKLCH, not hex', async () => {
@@ -680,9 +734,19 @@ test('the out-of-bounds diamond carries an upright exclamation mark', () => {
   const svg = decodeURIComponent(glyph![1]!.replace(/^data:image\/svg\+xml,/, ''));
   assert.match(svg, /rotate\(-45 6 6\)/, 'the glyph is counter-rotated about the viewBox centre');
   assert.match(svg, /<rect[^>]*\/>[\s\S]*<circle[^>]*\/>/, 'a bar over a dot — an exclamation mark');
-  // Sized to the diamond's UPRIGHT inscribed square (0.85rem / √2 ≈ 0.6rem), so the
-  // mark cannot overrun the rotated corners.
-  assert.match(css, /background-size:\s*0\.6rem 0\.6rem/, 'the mark fits the inscribed square');
+  // Sized to the diamond's UPRIGHT inscribed square, so the mark cannot overrun the
+  // rotated corners. Both lengths are custom properties now — a coarse pointer scales
+  // the whole slider up — so what has to hold is the RATIO between their defaults
+  // (thumb / √2) and the fact that a bigger thumb takes a bigger mark with it.
+  const thumb = /width:\s*var\(--gsl-thumb,\s*([\d.]+)rem\)/.exec(css);
+  const bang = /background-size:\s*var\(--gsl-bang-size,\s*([\d.]+)rem\)/.exec(css);
+  assert.ok(thumb && bang, 'the thumb and mark sizes are both declared');
+  assert.ok(Math.abs(Number(bang![1]) - Number(thumb![1]) / Math.SQRT2) < 0.03,
+    `the mark fits the inscribed square: ${bang![1]}rem against ${thumb![1]}rem / √2`);
+  const coarse = /@media \(pointer: coarse\) \{\s*\.gsl \{([^}]*)\}/.exec(css);
+  assert.ok(coarse, 'the coarse-pointer bump is there');
+  assert.match(coarse![1]!, /--gsl-thumb:/, 'a thumb-sized thumb on touch');
+  assert.match(coarse![1]!, /--gsl-bang-size:/, 'and the mark grows with it');
 });
 
 test('a blend stop copies; a tone step re-seeds', async () => {
@@ -817,4 +881,360 @@ test('the third surface’s picker survives its own change — the card is score
   await new Promise(r => setTimeout(r, 0));
   assert.equal($('[data-lab-ink-pick]'), host, 'still the same host after a re-seed');
   assert.equal(sliders(), before, 'and still its sliders');
+});
+
+test('one inversion rule: the swatch, the ramp labels and the picker flip together', async () => {
+  // Andy's report: he liked the dial disc's flip point and wanted the value pill and
+  // the big swatch — which flipped a good deal earlier — to match. There were three
+  // rules: contrastText's luma threshold (the disc), a WCAG-ratio winner (the pill),
+  // and `>= 4.5 against white` (the swatch and the ramp labels). The last two both
+  // cross around relative luminance 0.18, far darker than the first.
+  //
+  // These two pinks sit either side of contrastText's threshold (luma 144.6 and
+  // 157.9 against a 150 cut) but on the SAME side of the other two — so if any
+  // surface reverts to an old rule, one of these two mounts disagrees.
+  for (const [hex, want] of [['%23cf6ca9', '#ffffff'], ['%23dd79b6', '#000000']] as const) {
+    await mount('?c=' + hex);
+    const subject = decodeURIComponent(hex);
+    assert.equal(contrastText(subject), want, `the fixture is on the right side: ${subject}`);
+    assert.equal($('[data-lab-swatch]')!.style.color, want === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)',
+      `the big swatch's ink at ${subject}`);
+  }
+});
+
+test('no surface re-implements the ink inversion', async () => {
+  // A drift guard, because this drifted once already: three rules, silently, across
+  // two files. Any new black-or-white-over-a-colour decision must call contrastText.
+  const { readFileSync } = await import('node:fs');
+  const files = [
+    'shells/web/src/views/color-lab.ts',
+    'shells/web/src/components/color-field.ts',
+  ];
+  for (const f of files) {
+    const src = readFileSync(new URL('../../../../' + f, import.meta.url), 'utf8');
+    // The two forms that were replaced.
+    assert.doesNotMatch(src, /contrastRatio\([^)]*'#ffffff'\)\s*>=\s*4\.5\s*\?/,
+      `${f}: the ">= 4.5 against white" rule is back`);
+    assert.doesNotMatch(src, /contrastRatio\('#ffffff',[^)]*\)\s*>=\s*contrastRatio\('#000000'/,
+      `${f}: the WCAG-ratio-winner rule is back`);
+  }
+});
+
+test('the charts open on Rec.2020, whatever the display claims', async () => {
+  // The tab is a COMPARISON TARGET — the question the reader is asking — so it opens
+  // at the widest gamut we classify and nothing narrows it for them. It was briefly
+  // seeded from the display (a P3 screen opened on the P3 tab); Andy asked for
+  // Rec.2020 back, and the reasoning is that answering "how far past sRGB is this?"
+  // with the reader's own hardware hides colour before they have asked anything.
+  //
+  // The display still decides what it should — the tier opacity anchor and the canvas
+  // encoding — which is why those live behind different functions.
+  const claims: Array<string | null> = ['(color-gamut: p3)', '(color-gamut: rec2020)', null];
+  const realMatchMedia = window.matchMedia;
+  try {
+    for (const claim of claims) {
+      (window as unknown as { matchMedia: unknown }).matchMedia = (q: string) => ({
+        matches: claim != null && q === claim,
+        media: q,
+        addEventListener() {}, removeEventListener() {},
+      });
+      await mount('?c=%23c0392b');
+      const seg = $('[data-lab-limit]')!;
+      const pressed = [...seg.querySelectorAll<HTMLElement>('[data-val]')]
+        .find(b => b.getAttribute('aria-pressed') === 'true');
+      assert.equal(pressed?.dataset.val, 'rec2020', `claim ${claim}: opens on Rec.2020`);
+      assert.equal($('[data-lab-gamut]') != null, true);
+    }
+  } finally {
+    (window as unknown as { matchMedia: unknown }).matchMedia = realMatchMedia;
+  }
+});
+
+test('a link carrying &limit= still wins over the default', async () => {
+  // A shared link is a decision someone made; the default is only what happens when
+  // nobody has.
+  await mount('?c=%23c0392b&limit=srgb');
+  const pressed = [...$('[data-lab-limit]')!.querySelectorAll<HTMLElement>('[data-val]')]
+    .find(b => b.getAttribute('aria-pressed') === 'true');
+  assert.equal(pressed?.dataset.val, 'srgb');
+});
+
+// ─── The print side: a press profile as a comparison target ───────────────────
+//
+// The Lab's fourth pill. Everything below is about the one rule the print work
+// most easily breaks: the limit tab is the READER's question, so pressing a press
+// profile must change what the charts are compared against and NOTHING about what
+// the controls can express.
+
+const {
+  ingestProfile: labIngest, _resetProfileCache: labResetProfiles,
+} = await import('../lib/color-profiles.ts');
+const {
+  buildProfile: labBuildProfile, mft2: labMft2, ascii: labAscii, u32: labU32,
+} = await import('../../../../tests/helpers/icc-fixture.ts');
+
+/** A four-ink press profile carrying perceptual + relative, but no saturation. */
+const pressIcc = (): Uint8Array => labBuildProfile({
+  deviceClass: 'prtr', space: 'CMYK',
+  tags: [
+    ['A2B0', labMft2(4, 3, [0x8000, 0x8080, 0x8080])],
+    ['B2A0', labMft2(3, 4, [0x4000, 0x4000, 0x4000, 0])],
+    ['A2B1', labMft2(4, 3, [0x8000, 0x8080, 0x8080])],
+    ['B2A1', labMft2(3, 4, [0x4000, 0x4000, 0x4000, 0])],
+    ['desc', [...labAscii('desc'), 0, 0, 0, 0, ...labU32(11), ...labAscii('Test Press'), 0]],
+  ],
+});
+
+interface LabStored { id: string; type: string; format: string; blob: Blob; meta?: Record<string, unknown> }
+
+/** The user-asset rail, in memory — the same four methods the real bridge has. */
+function profileHost(): { assets: Record<string, (...a: never[]) => unknown> } & { store: Map<string, LabStored> } {
+  const store = new Map<string, LabStored>();
+  return {
+    store,
+    assets: {
+      async _uploadUserAsset(rec: LabStored) { store.set(rec.id, rec); },
+      async _deleteUserAsset(id: string) { store.delete(id); },
+      async _listUserAssets() { return [...store.values()].map(r => ({ id: r.id, type: r.type, meta: r.meta })); },
+      async _getBlob(id: string) { return store.get(id)?.blob ?? null; },
+    },
+  } as never;
+}
+
+/** Mount with a host that owns a user-asset rail. */
+async function mountWithHost(hostLike: object, params = ''): Promise<void> {
+  (view as HTMLElement & { _cleanup?: () => void })._cleanup?.();
+  delete (view as HTMLElement & { _cleanup?: () => void })._cleanup;
+  view.innerHTML = '';
+  await mountColorLab(view, hostLike as never, params);
+}
+
+const pressedVal = (): string | undefined =>
+  [...$('[data-lab-limit]')!.querySelectorAll<HTMLElement>('[data-val]')]
+    .find(b => b.getAttribute('aria-pressed') === 'true')?.dataset.val;
+
+/** Store the fixture on a fresh host and return its `&limit=` id. */
+async function seedProfile(intent = 'relative'): Promise<{ host: object; id: string; digest: string }> {
+  labResetProfiles();
+  const host = profileHost();
+  const file = new File([pressIcc() as unknown as BlobPart], 'press.icc', { type: 'application/vnd.iccprofile' });
+  const entry = await labIngest(host as never, file);
+  assert.ok(!('error' in entry), 'the fixture ingests');
+  const digest = (entry as { digest: string }).digest;
+  return { host, id: `icc:${digest}:${intent}`, digest };
+}
+
+test('the print affordance appears only where there is somewhere to store a profile', async () => {
+  await mount('?c=%23c0392b');
+  assert.equal($('[data-lab-limit] [data-lab-profiles]'), null,
+    'a host with no user-asset rail offers no + button rather than one that cannot work');
+  const { host } = await seedProfile();
+  await mountWithHost(host, '?c=%23c0392b');
+  assert.ok($('[data-lab-limit] [data-lab-profiles]'), 'the + is there when profiles can be stored');
+  // Still the three display gamuts, and still opening on Rec.2020: adding the
+  // affordance must not move the default target.
+  assert.equal(pressedVal(), 'rec2020');
+});
+
+test('a link naming a stored profile charts against it', async () => {
+  const { host, id } = await seedProfile();
+  await mountWithHost(host, `?c=%23c0392b&limit=${encodeURIComponent(id)}`);
+
+  assert.equal(pressedVal(), id, 'the press pill is the pressed one');
+  const pill = $(`[data-lab-limit] [data-val="${id}"]`)!;
+  assert.match(pill.textContent!, /Test Press/, 'the pill wears the profile’s OWN name');
+  assert.match(pill.textContent!, /rel/, '…and the intent, because a gamut without one is under-specified');
+
+  // The press card: measured numbers, named after the file.
+  const card = $('[data-lab-press]')!;
+  assert.equal(card.hidden, false);
+  assert.match(card.querySelector('[data-lab-press-name]')!.textContent!, /Test Press/);
+  const rows = new Map([...card.querySelectorAll('.lab-press-row')].map(r => [
+    r.querySelector('.lab-press-k')!.textContent!.trim(),
+    r.querySelector('.lab-press-v')!.textContent!.trim(),
+  ]));
+  assert.match(rows.get('Shift') ?? '', /^ΔE \d+\.\d$/, `a Shift row: ${JSON.stringify([...rows])}`);
+  assert.match(rows.get('Ink') ?? '', /^\d+%$/, `an Ink row in the trade’s 0–400%: ${JSON.stringify([...rows])}`);
+  assert.match(rows.get('Paper') ?? '', /^L\* \d+\.\d$/, `a Paper row: ${JSON.stringify([...rows])}`);
+  assert.ok(card.querySelector('.lab-press-chip'), 'the substrate is shown as a colour, not only as a number');
+
+  // A fourth ceiling, and its gain carries an explicit sign — a press is
+  // frequently NARROWER than sRGB, which is the reason to show it at all.
+  const ceils = [...$('[data-lab-ceilings]')!.querySelectorAll('.lab-ceil')];
+  assert.equal(ceils.length, 4);
+  assert.match(ceils[3]!.textContent!, /Test Press/);
+  assert.match(ceils[3]!.querySelector('.lab-ceil-gain')!.textContent!, /^[+−]\d+%$/);
+
+  // One notation row for the press, after the CSS spaces, and it is the ONLY
+  // CMYK the table ever prints — nothing generic is added.
+  const heads = [...$('[data-lab-notations]')!.querySelectorAll('th')].map(h => h.textContent!.trim());
+  assert.equal(heads.filter(h => /Test Press/.test(h)).length, 1);
+  assert.equal(heads.indexOf(heads.find(h => /Test Press/.test(h))!), heads.length - 1);
+  const cmyk = [...$('[data-lab-notations]')!.querySelectorAll('tr')]
+    .find(r => /Test Press/.test(r.querySelector('th')!.textContent!))!;
+  assert.match(cmyk.querySelector('code')!.textContent!, /^cmyk\(\d+% \d+% \d+% \d+%\)$/);
+});
+
+test('pressing a press pill never takes chroma away from the controls', async () => {
+  // The bug this guards: a comparison target that also scaled the sliders meant
+  // pressing a narrow one silently rewrote the subject on the way down. Controls
+  // stay at CONTROL_LIMIT whichever tab is pressed.
+  const { host, id } = await seedProfile();
+  await mountWithHost(host, `?c=${encodeURIComponent('oklch(62% 0.28 260)')}&limit=${encodeURIComponent(id)}`);
+  const chroma = $('[data-lab-num="ch"]') as HTMLInputElement;
+  const before = { max: chroma.max, value: chroma.value };
+
+  $('[data-lab-limit] [data-val="rec2020"]')!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  assert.equal(chroma.max, before.max, 'the typed chroma box keeps its ceiling');
+  assert.equal(chroma.value, before.value, 'and the colour is untouched');
+  assert.equal(pressedVal(), 'rec2020');
+  assert.equal($('[data-lab-press]')!.hidden, false,
+    'the press card stays: the profile is still mounted, only the target moved');
+});
+
+test('a link whose profile is absent keeps the link intact and falls back to Rec.2020', async () => {
+  labResetProfiles();
+  const host = profileHost();
+  const id = 'icc:0123456789abcdef:relative';
+  await mountWithHost(host, `?c=%23c0392b&limit=${encodeURIComponent(id)}`);
+
+  // The charts are drawn against the default…
+  assert.equal(pressedVal(), 'rec2020');
+  // …and the absent profile is SHOWN rather than silently dropped.
+  const absent = $('[data-lab-limit] [data-lab-limit-absent]')!;
+  assert.ok(absent, 'the fourth pill states that the link named a profile');
+  assert.equal(absent.getAttribute('aria-pressed'), 'false');
+  assert.equal(absent.dataset.state, 'absent');
+  assert.match(absent.textContent!, /^icc 012345… · rel$/);
+  assert.equal($('[data-lab-press]')!.hidden, true, 'no press card without a profile to measure with');
+
+  // The URL is NEVER rewritten to rec2020: downgrading someone's link the moment
+  // they open it would make the link lie the next time it was copied.
+  $('[data-lab-num="lc"]')!.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.match(window.location.hash, new RegExp(`limit=${encodeURIComponent(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+});
+
+test('a profile the device does not have is not mistaken for one it does', async () => {
+  // Same digest shape, wrong intent: the fixture has no saturation table, so the
+  // link must read absent rather than quietly answering from a different table.
+  const { host, digest } = await seedProfile();
+  const id = `icc:${digest}:saturation`;
+  await mountWithHost(host, `?c=%23c0392b&limit=${encodeURIComponent(id)}`);
+  assert.ok($('[data-lab-limit] [data-lab-limit-absent]'), 'an unusable intent is not a gamut');
+  assert.equal(pressedVal(), 'rec2020');
+});
+
+test('junk in &limit= falls back rather than being carried into the URL', async () => {
+  const { host } = await seedProfile();
+  await mountWithHost(host, '?c=%23c0392b&limit=icc:nothexadecimal:relative');
+  assert.equal(pressedVal(), 'rec2020');
+  assert.equal($('[data-lab-limit] [data-lab-limit-absent]'), null);
+  $('[data-lab-num="lc"]')!.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.ok(!/limit=/.test(window.location.hash), 'nothing pins a target nobody chose');
+});
+
+// ─── The two things a profile tab must not do ─────────────────────────────────
+
+/** The panel is a <dialog> appended to the body; view teardown does not own it,
+ *  so a test that opens one clears it rather than leaving it for the next. */
+const closePanels = (): void => {
+  for (const d of document.querySelectorAll('.labp-modal')) d.remove();
+};
+
+test('a display profile gets its own name and no ΔE it is not decided by', async () => {
+  // A matrix/TRC profile has no B2A table, so `iccGamutSource` decides it on the
+  // device cube and the round-trip ΔE is near zero well outside the gamut. The
+  // card used to print "Outside the gamut / Shift ΔE 0.1" directly above "in gamut
+  // is decided by a round trip within ΔE 3.0" — a rule and its own refutation.
+  const { srgbIccProfile } = await import('@lolly/engine');
+  labResetProfiles();
+  const host = profileHost();
+  const file = new File([srgbIccProfile() as unknown as BlobPart], 'srgb.icc',
+    { type: 'application/vnd.iccprofile' });
+  const entry = await labIngest(host as never, file);
+  assert.ok(!('error' in entry), 'a monitor profile is a perfectly good comparison target');
+  const id = `icc:${(entry as { digest: string }).digest}:relative`;
+  // Well outside sRGB, so the verdict is 'outside' and the contradiction would show.
+  await mountWithHost(host, `?c=${encodeURIComponent('oklch(0.5 0.3 250)')}&limit=${encodeURIComponent(id)}`);
+
+  const card = $('[data-lab-press]')!;
+  assert.equal(card.hidden, false);
+  const keys = [...card.querySelectorAll('.lab-press-k')].map(k => k.textContent!.trim());
+  assert.ok(!keys.includes('Shift'), `no Shift row for a cube-decided profile: ${keys.join()}`);
+  assert.ok(!keys.includes('Ink'), 'and no ink on an additive profile');
+  assert.equal(card.querySelector<HTMLElement>('[data-lab-press-note]')!.hidden, true,
+    'the ΔE tolerance sentence goes with the number it explains');
+
+  // The picker tab wears the file's OWN space. Labelling a three-channel RGB
+  // profile 'CMYK' was a false claim, and its sliders composed to black.
+  const { getColorSpace, composeColor } = await import('../components/color-spaces.ts');
+  const spec = getColorSpace(id)!;
+  assert.ok(spec, 'the profile is a picker tab');
+  assert.equal(spec.label, 'RGB');
+  assert.equal(spec.channels.length, 3);
+  const c = composeColor(spec, { c1: 90, c2: 10, c3: 20 }, 1);
+  assert.ok(c.components.some(v => Math.abs(v) > 1e-6),
+    `a channel value reaches the colour rather than composing to black: ${JSON.stringify(c)}`);
+});
+
+test('activating a profile widens EVERY picker on the page, not only the subject’s', async () => {
+  // A field bakes its tab strip at mount and subscribes to nothing, so only the
+  // re-mounted ones grow the tab. The blend and ink pickers used to be left with
+  // the strip they were born with — the same page showing two different tab rows
+  // depending on whether the reader arrived by link or by drop.
+  closePanels();
+  const { host, digest } = await seedProfile();
+  const id = `icc:${digest}:relative`;
+  await mountWithHost(host, '?c=%23c0392b');
+  const tabs = (field: string): string[] =>
+    [...document.querySelectorAll(`[data-color-modes="${field}"] [data-mode]`)]
+      .map(b => (b as HTMLElement).dataset.mode!);
+  for (const f of ['lab-color', 'lab-other', 'lab-ink']) {
+    assert.ok(!tabs(f).includes(id), `${f} has no press tab before one is mounted`);
+  }
+
+  $('[data-lab-limit] [data-lab-profiles]')!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  // The panel lists from IndexedDB, so let its refresh land before pressing.
+  await new Promise(r => setTimeout(r, 0));
+  const row = document.querySelector(`[data-labp-digest="${digest}"]`)!;
+  row.querySelector<HTMLElement>('[data-lab-intent="relative"]')!
+    .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 0));
+
+  for (const f of ['lab-color', 'lab-other', 'lab-ink']) {
+    assert.ok(tabs(f).includes(id), `${f} gained the press tab in-session`);
+  }
+  // Re-queried: pressing re-renders the list, so the row above is detached.
+  assert.equal(
+    document.querySelector(`[data-labp-digest="${digest}"] [data-lab-intent="relative"]`)!
+      .getAttribute('aria-pressed'),
+    'true');
+  closePanels();
+});
+
+test('an intent that cannot be activated is not reported as if it had been', async () => {
+  // The row is drawn from stored meta; the bytes behind it can be gone by the time
+  // the button is pressed. Adopting the press regardless left the panel and the
+  // pill row asserting opposite things, and erased the line that said so.
+  closePanels();
+  const { host, digest } = await seedProfile();
+  // The bytes go, and so does this document's parse cache — otherwise the profile
+  // is still live in memory and activating it legitimately succeeds.
+  (host as { store: Map<string, unknown> }).store.delete(`user/profiles/${digest}`);
+  await mountWithHost(host, '?c=%23c0392b');
+  labResetProfiles();
+
+  $('[data-lab-limit] [data-lab-profiles]')!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 0));
+  const row = document.querySelector(`[data-labp-digest="${digest}"]`);
+  if (!row) return;                       // the list re-read first: nothing to press
+  row.querySelector<HTMLElement>('[data-lab-intent="relative"]')!
+    .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 0));
+
+  assert.equal(pressedVal(), 'rec2020', 'the charts did not move');
+  const live = document.querySelector(`[data-labp-digest="${digest}"] [data-lab-intent="relative"]`);
+  assert.notEqual(live?.getAttribute('aria-pressed'), 'true',
+    'and the button does not claim they did');
+  closePanels();
 });

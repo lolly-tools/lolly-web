@@ -74,6 +74,12 @@
   .color-trigger-name { display: none; }
   .color-trigger-preview { margin-inline: auto; }
 }
+/* The same case arrives from the other direction: a CUSTOM colour has no friendly
+   name, so the label collapses at ANY width and `justify-content: end` stranded a
+   lone 18px circle against the right edge of a 192px button — which reads as a
+   toggle switch in the "on" position, not as a colour you can change. Centre it,
+   exactly as the squeezed case above already does. */
+.color-trigger:has(.color-trigger-name:empty) .color-trigger-preview { margin-inline: auto; }
 
 .color-popover {
   position: absolute;
@@ -214,18 +220,39 @@
 }
 .color-mode-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .color-mode-tab-label { display: block; }
-/* The second line ("reference", "uncalibrated", "Coated FOGRA39 · perceptual").
-   Off on a compact pill in a float/sidebar popover — there is no room for it and
-   the caution reaches AT through the tab's aria-label and the live note line.
+/* The second line ("reference", "Coated FOGRA39 · relative"). Off on a compact
+   pill in a float/sidebar popover — there is no room for it, and what the sub
+   line says still reaches AT through the tab's aria-label and the live note line.
    It IS shown on the wide profile rows, and in the inline panel where the width
-   exists, so "uncalibrated" is on screen wherever it can be. */
+   exists, so a profile's name and intent are on screen wherever they can be. */
 .color-mode-tab-sub {
   display: none;
   font-size: 9px; line-height: 1.25; font-weight: 400; letter-spacing: .02em;
   color: hsl(var(--muted-foreground));
+  /* One line, always. "reference" under XYZ used to wrap on a phone, which made
+     the whole Perceptual row 32% taller than its siblings and lifted "XYZ" off the
+     baseline the other four pills sit on — a two-line pill in a row of one-line
+     pills, over a word that has to be short precisely because it is a footnote. */
+  white-space: nowrap;
 }
 .color-mode-tab--wide .color-mode-tab-sub,
 .color-field--inline .color-mode-tab-sub { display: block; }
+/* …but not on a narrow viewport. `nowrap` stopped "reference" WRAPPING, which was the
+   loud half of the bug; the quiet half remained — a one-line footnote still makes the
+   XYZ pill two lines tall in a row of one-line pills, so the Perceptual row measured
+   24% taller than Device and Output and "XYZ" sat visibly above the baseline its four
+   siblings share. Measured at 390px: 57.8 / 46.5 / 46.5.
+
+   The sub-label was granted `display: block` here "where the width exists" — on a
+   phone it does not. So drop it below the wide breakpoint and let the tab's
+   `aria-label` and the live note line carry the meaning, exactly as they already do
+   for the compact popover. A wide PROFILE row keeps its sub-label at every width: the
+   profile's name cannot live anywhere else, and that row is two lines by design. */
+@media (max-width: 640px) {
+  .color-field--inline .color-mode-tab:not(.color-mode-tab--wide) .color-mode-tab-sub {
+    display: none;
+  }
+}
 /* One press profile × intent: a full-width two-line row, because the profile name
    has to be ON the tab and a bare "CMYK" pill cannot carry it. Same selected and
    focus treatment as the pills. */
@@ -352,7 +379,13 @@
   transition: opacity .12s, background .12s;
 }
 .color-eyedropper:hover { opacity: 1; background: hsl(0 0% 50% / .22); }
-.color-eyedropper:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.color-eyedropper:focus-visible { opacity: 1; outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+/* Full strength was hover-gated, so on a phone the icon spent its whole life at
+   .7 — dimmed to indicate a state the device can never leave. Where there is no
+   hover there is nothing to reserve it for. */
+@media (hover: none) {
+  .color-eyedropper { opacity: 1; }
+}
 .color-eyedropper svg { display: block; width: 16px; height: 16px; }
 .color-input--painted {
   background-image:
@@ -455,6 +488,58 @@
   background: #fff;
   box-shadow: 0 0 0 1px hsl(0 0% 0% / 0.55);
 }
+/* ── Gamut boundary hairlines on a dial ──────────────────────────────────────
+   One radial hairline per tier crossing (color-field.ts dialEdgesHtml), rotated
+   to the SAME fraction the ring's gradient breaks at — so a dial and the slider
+   under it never disagree about where a gamut ends.
+
+   The colour runs at full strength on BOTH sides of the line: a dial says "this
+   is where your display stops", it does not withhold the colour past it. The
+   sliders keep their opacity ladder; this is the dials' answer, not a
+   replacement for it.
+
+   Every crossing gets one, not just the first — a hue ring at high chroma leaves
+   and re-enters a gamut several times.
+
+   An element per crossing rather than a stop pair in the conic gradient because a
+   stop pair spans an ANGLE: hair-thin at the hub, several pixels wide at the rim.
+   A rotated element holds one width at every radius. It also keeps the whole
+   appearance HERE, tunable like the tier opacities — the ring's `background` is a
+   shorthand JS assigns, so nothing declared in this file survives inside it.
+
+   Plain white, at full opacity. It was a white line over a dark hairline shadow —
+   the reasoning being that a light line needs help reading on a pale band — but Andy
+   asked for just white: the outline muddied a 1px feature, and the dials it crosses
+   are saturated enough that white alone separates. Not a border, and not dashed. */
+.color-dials {
+  --dial-edge-w: 1px;
+  /* Rim to the hub's edge: the hub is 46% of the diameter, so its radius is 23%
+     of the diameter — the spoke stops there rather than running under it. */
+  --dial-edge-len: 27%;
+  --dial-edge-c: #fff;
+  /* Kept as a token so it can be dialled back in per-theme if a pale band ever needs
+     it, but empty by default — see the note above. */
+  --dial-edge-shadow: none;
+}
+.color-dial-edges,
+.color-dial-edge {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.color-dial-edge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--dial-edge-w);
+  height: var(--dial-edge-len);
+  margin-left: calc(var(--dial-edge-w) / -2);
+  background: var(--dial-edge-c);
+  box-shadow: var(--dial-edge-shadow);
+}
+
 .color-dial-hub {
   position: absolute;
   inset: 0;
@@ -747,4 +832,19 @@
   background-size: 8px 8px;
   background-position: 0 0, 0 4px, 4px -4px, -4px 0;
   background-color: #fff;
+}
+
+/* ─── Touch ──────────────────────────────────────────────────────────────── */
+
+/* The space tabs are the picker's densest control — 30 pills at 29×23 on a tablet,
+   with a 3px gap between rows. The sliders in this picker already have their own
+   coarse-pointer treatment (parts/fields.css does it for `.field-range`, and the
+   painted tracks do it themselves); the tab strip was the one component in here
+   outside that. Padding and gap only: the type stays 10.5px, because a pill row
+   that grows its text stops fitting the popover it lives in. */
+@media (pointer: coarse) {
+  .color-mode-tab { padding: 9px 10px; }
+  .color-mode-tab--wide { padding: 9px 10px; }
+  .color-mode-fam { gap: 6px; }
+  .color-eyedropper { width: 36px; height: 36px; }
 }

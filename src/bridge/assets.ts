@@ -16,7 +16,20 @@
 
 import { parseThemedAssetId, applyIconTheme, parseIconThemesDoc } from '../../../../engine/src/icon-theme.ts';
 import { parseTreatedAssetId, parsePhotoTreatmentsDoc, wrapRasterWithTreatment, stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
-import { extractC2paStore, prepareC2paIngredientFromStore, aiKind } from '../../../../engine/src/c2pa-verify.ts';
+// c2pa-verify is LAZY on purpose. It is the entry to the whole provenance
+// cluster (c2pa + c2pa-extract + c2pa-containers + c2pa-verdict + c2pa-trust +
+// video-meta, ~65 KB gz), and this module is on the boot path — a static import
+// here puts all of it in front of first paint. Nothing at boot reads a
+// credential: the two callers below (asset ingest and the user-asset listing)
+// are both already async and both skip the load entirely when no record
+// actually carries a credential. Memoised, so the second caller is free.
+// See scripts/check-bundle-budget.ts.
+type C2paVerifyModule = typeof import('../../../../engine/src/c2pa-verify.ts');
+let C2PA_VERIFY_MODULE: Promise<C2paVerifyModule> | null = null;
+function loadC2paVerify(): Promise<C2paVerifyModule> {
+  C2PA_VERIFY_MODULE ??= import('../../../../engine/src/c2pa-verify.ts');
+  return C2PA_VERIFY_MODULE;
+}
 import { instanceFetch } from '../lib/instance.ts';
 // Derived scrub proxies (lib/clip-proxy.ts) are keyed by asset id and are NEVER
 // resolvable through this API — a proxy must not be able to reach an export. The
@@ -432,8 +445,8 @@ export function createAssetsAPI(db: AssetsDb) {
     async _uploadUserAsset(record: UserAssetRecord): Promise<void> {
       await assertQuotaRoom(record.blob?.size ?? 0);
       // Compute the AI-provenance flag once, at ingest, from the captured credential.
-      if (record.aiGenerated === undefined) {
-        const kind = detectAiGenerated(record);
+      if (record.aiGenerated === undefined && record.credential && record.credentialFormat) {
+        const kind = detectAiGenerated(record, await loadC2paVerify());
         if (kind) record.aiGenerated = kind;
       }
       await db.put('user-assets', record);
@@ -465,13 +478,17 @@ export function createAssetsAPI(db: AssetsDb) {
     /** Internal: list the user's saved images, newest first, as resolved AssetRefs. */
     async _listUserAssets(): Promise<AssetRef[]> {
       const all = await db.getAll('user-assets');
+      // Only older records (pre-dating the persisted flag) need the provenance
+      // reader; when none do, the whole c2pa cluster is never fetched.
+      const needsRead = all.some(r => r.aiGenerated === undefined && r.credential && r.credentialFormat);
+      const c2pa = needsRead ? await loadC2paVerify() : null;
       return all
         .sort((a, b) => String(b.id).localeCompare(String(a.id)))
         .map(rec => {
           const ref = toAssetRef(rec, 'user');
           // Surface the AI flag on the ref (persisted on the record for new uploads;
           // recomputed from `credential` for older ones that predate this).
-          const ai = detectAiGenerated(rec);
+          const ai = detectAiGenerated(rec, c2pa);
           if (ai) ref.meta = { ...(ref.meta ?? {}), aiGenerated: ai };
           return ref;
         });
@@ -757,6 +774,7 @@ export function createAssetsAPI(db: AssetsDb) {
         const ref = await api.get(stripAssetModifiers(id));
         const blob = await (await fetch(ref.url)).blob();
         if (blob.size <= MAX_CREDENTIAL_SCAN_BYTES) {
+          const { extractC2paStore } = await loadC2paVerify();
           const ex = extractC2paStore(new Uint8Array(await blob.arrayBuffer()));
           if (ex) out = { store: ex.store, format: ex.format };
         }
@@ -870,14 +888,23 @@ function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRe
 // drives the GEN AI badge on uploaded assets (Claude, OpenAI, Gemini, …). Memoised by asset
 // id (a credential never changes for a given upload) so the catalog/picker don't re-parse.
 const AI_KIND_MEMO = new Map<string, 'full' | 'partial' | undefined>();
-function detectAiGenerated(rec: UserAssetRecord): 'full' | 'partial' | undefined {
+// `c2pa` is the lazily-loaded reader (null when the caller determined no record
+// needs one) — passed in rather than imported so this module stays off the boot
+// path; a record that already carries the persisted flag never touches it.
+function detectAiGenerated(
+  rec: UserAssetRecord,
+  c2pa: C2paVerifyModule | null,
+): 'full' | 'partial' | undefined {
   if (rec.aiGenerated) return rec.aiGenerated;             // already computed + persisted
   if (AI_KIND_MEMO.has(rec.id)) return AI_KIND_MEMO.get(rec.id);
+  // No reader → answer "unknown" WITHOUT memoising, so a later call that does have
+  // the reader still gets a real answer for this record.
+  if (!c2pa) return undefined;
   let kind: 'full' | 'partial' | undefined;
   if (rec.credential && rec.credentialFormat) {
     try {
-      const dst = prepareC2paIngredientFromStore(rec.credential, rec.credentialFormat)?.digitalSourceType;
-      const k = aiKind(dst);
+      const dst = c2pa.prepareC2paIngredientFromStore(rec.credential, rec.credentialFormat)?.digitalSourceType;
+      const k = c2pa.aiKind(dst);
       kind = k === 'generated' ? 'full' : k === 'composite' ? 'partial' : undefined;
     } catch { kind = undefined; }
   }

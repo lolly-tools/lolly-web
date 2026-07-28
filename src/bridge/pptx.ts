@@ -15,7 +15,14 @@
  * resolves as { ok:false }. rebrand() throws instead: by the time it runs the
  * tool has committed to the file, so failure is exceptional.
  */
-import { isPptx, readPptx, rebrandPptxParts, nearestBrandColor, mapFontsToBrand, suggestRebrandTheme } from '@lolly/engine';
+// Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
+// boot path, and engine/src/index.ts is one shared facade whose retained export
+// set is the UNION over every importer — touching it here drags createRuntime
+// (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
+// scripts/check-bundle-budget.ts.
+import { isPptx, readPptx } from '../../../../engine/src/pptx-read.ts';
+import { rebrandPptxParts } from '../../../../engine/src/pptx-patch.ts';
+import { nearestBrandColor, mapFontsToBrand, suggestRebrandTheme } from '../../../../engine/src/brand-map.ts';
 import type { XmlParser, PptxReadColor } from '../../../../engine/src/pptx-read.ts';
 import type { RebrandPlan, RebrandTheme } from '../../../../engine/src/pptx-patch.ts';
 import type {

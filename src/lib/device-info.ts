@@ -16,6 +16,7 @@
 
 import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
+import { displayGamutClaim } from './display-gamut.ts';
 
 const DASH = '—';
 const yesNo = (v: boolean | null | undefined): string => (v === true ? t('Yes') : v === false ? t('No') : DASH);
@@ -471,7 +472,11 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
 
   const dpr = window.devicePixelRatio;
   // Gamut names are proper nouns (sRGB, Display P3, Rec. 2020) — never translated.
-  const gamut = GAMUT_LABELS[matchPref('color-gamut', ['rec2020', 'p3', 'srgb'])] || DASH;
+  // One detector for the whole shell (lib/display-gamut.ts), which the colour
+  // charts also anchor their pixels to — so this readout and what is on screen can
+  // never come from two different answers. Unlike the charts, this one reports the
+  // rec2020 claim as-is: it is a diagnostic, not a promise about pixels.
+  const gamut = GAMUT_LABELS[displayGamutClaim()] || DASH;
   const dynRangeRaw = matchPref('dynamic-range', ['high', 'standard']);
   const dynRange =
     dynRangeRaw === 'high' ? t('High (HDR)') : dynRangeRaw === 'standard' ? t('Standard') : DASH;

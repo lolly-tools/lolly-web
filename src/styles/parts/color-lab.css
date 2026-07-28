@@ -23,24 +23,32 @@
   gap: 2.25rem;
 }
 
-/* The back pill is POSITION-FIXED (it floats over the page, by design), so it takes
-   no space in this row and `space-between` had nothing to separate — the chrome
-   capsule collapsed to the left edge. The row therefore stretches to the column and
-   pushes its in-flow contents to the right explicitly. */
+/* The back pill is POSITION-FIXED and floats over the page (top: 8px, left: 32px,
+   z-index 99999 — .tools-home.home-full). The chrome capsule now floats to match, at
+   the same top and z so the two read as one row of page furniture: an author can
+   scroll the whole report and still switch theme, which is the point of having it
+   here at all. Both being out of flow, .lab-back keeps only a small reserve so the
+   heading below does not start underneath them. */
 .lab-back {
   align-self: stretch;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.75rem;
   min-height: 2rem;
+}
+.lab-chrome {
+  position: fixed;
+  top: 8px;
+  right: 32px;
+  z-index: 99999;
 }
 
 /* The capsule the theme toggle sits in — modelled on the canvas zoom HUD
    (.stage-nav in editor.css), which this view cannot borrow because that file is
    only loaded on the editor routes. Same idiom: a soft-bordered pill of 26px
-   icon-only buttons that light up on hover. Room for a second control later. */
+   icon-only buttons that light up on hover. Room for a second control later.
+   Its floating position is set with .lab-back above. Backdrop-blurred like the back
+   pill's glass, since it now sits over scrolling content rather than over the page
+   background. */
 .lab-chrome {
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   gap: 2px;
@@ -343,6 +351,189 @@
    unmistakable at a glance. It marks a boundary crossed, not a value rejected. */
 .lab-ceil.is-past .lab-ceil-val { text-decoration: line-through; opacity: 0.55; }
 
+/* The press card — MEASURED numbers, so it wears the profile's own name and
+   nothing derived or approximate is allowed into it. The stripe follows the same
+   rule as the gamut card's: it reports where you are, it does not scold. */
+.lab-press[data-state="in"] { box-shadow: 0 0 0 2px oklch(0.62 0.16 150); }
+.lab-press[data-state="out"] { box-shadow: 0 0 0 2px oklch(0.72 0.16 85); }
+.lab-press-name {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
+}
+.lab-press-verdict { font-size: 1.15rem; }
+.lab-press-rows { margin: 0.1rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.2rem; }
+.lab-press-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.lab-press-k { color: hsl(var(--muted-foreground)); }
+.lab-press-v { font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; }
+/* The substrate, painted in CSS lab() — the space the number beside it is in. */
+.lab-press-chip {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+
+/* ── The print-profile panel (components/profiles-manager.ts) ─────────────── */
+.labp-modal { max-width: 34rem; width: min(34rem, calc(100vw - 2rem)); }
+.labp { display: flex; flex-direction: column; gap: 0.7rem; }
+.labp-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.labp-title { margin: 0; font-size: 1.1rem; }
+.labp-close {
+  border: 0;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.labp-close:hover { color: hsl(var(--foreground)); }
+.labp-intro, .labp-hint, .labp-msg {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+}
+/* The ONE place a dashed border is correct in this design language: it is a drop
+   area. `.updz` (styles/parts/dropzone.css) is that treatment, reused verbatim. */
+.labp-drop { margin-bottom: 0; }
+/* Prompt over hint, not run together on one line: `.updz` is a row by default and
+   only its `--empty` modifier stacks, which is a layout this panel does not want
+   (it is not the whole section). */
+.labp-drop .updz-copy { display: grid; gap: 2px; }
+.labp-msg[hidden] { display: none; }
+
+/* Where a real press profile already lives on this machine. Below the drop zone
+   rather than inside it: as an `.updz-hint` the wrapped path made the target three
+   lines taller and read as instructions rather than as an aside. */
+.labp-where {
+  margin: 0.4rem 0 0;
+  font-size: 0.72rem;
+  color: hsl(var(--muted-foreground));
+}
+.labp-where code {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+/* ── Press conditions ──────────────────────────────────────────────────────
+   The bridge between what a Print PDF DECLARES and what the Lab can EVALUATE.
+   Declaring needs no file; comparing needs the profile's measurements. The two
+   states are carried by weight and a dot, never by a border — and a condition with
+   no profile is not an error, so nothing here is red. */
+.labp-conds { margin-top: 1rem; }
+.labp-conds-h {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.labp-conds-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+.labp-cond { display: grid; }
+/* The whole row is the control — a real <button>, so it is focusable, Enter/Space
+   activated and announced with its own action. Solid tint, never a dashed border:
+   this is not a drop area. */
+.labp-cond-btn {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.1rem 0.55rem;
+  align-items: baseline;
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: calc(var(--radius) * 0.6);
+  background: hsl(var(--muted) / 0.4);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.labp-cond-btn:hover { background: hsl(var(--muted) / 0.85); }
+.labp-cond-btn:focus-visible {
+  outline: 2px solid hsl(var(--ring, var(--primary)));
+  outline-offset: 2px;
+}
+/* A fetch in flight: the row keeps its place and stops taking presses. */
+.labp-cond[data-busy] .labp-cond-btn { cursor: progress; opacity: 0.7; }
+.labp-cond-id {
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.labp-cond-name { font-size: 0.78rem; }
+.labp-cond-note {
+  grid-column: 2;
+  font-size: 0.72rem;
+  color: hsl(var(--muted-foreground));
+}
+/* A loaded condition is the stronger state, so it gets the mark and the full-strength
+   identifier; an unloaded one is simply quieter. */
+.labp-cond[data-state="loaded"] .labp-cond-btn { background: hsl(var(--muted) / 0.7); }
+.labp-cond[data-state="loaded"] .labp-cond-id::before {
+  content: '●';
+  margin-inline-end: 0.35rem;
+  color: hsl(var(--primary));
+}
+.labp-cond:not([data-state="loaded"]) .labp-cond-id { opacity: 0.75; }
+.labp-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.labp-empty { font-size: 0.85rem; color: hsl(var(--muted-foreground)); }
+.labp-row {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+.labp-row.is-active { box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.6); }
+.labp-row-head { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
+.labp-row-id { display: grid; gap: 0.1rem; min-width: 0; }
+.labp-row-name { font-size: 0.92rem; overflow-wrap: anywhere; }
+.labp-row-meta { font-size: 0.75rem; color: hsl(var(--muted-foreground)); }
+.labp-remove {
+  flex: 0 0 auto;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 0.78rem;
+  color: hsl(var(--muted-foreground));
+  text-decoration: underline;
+  cursor: pointer;
+}
+.labp-remove:hover { color: oklch(0.58 0.19 25); }
+/* Intents the file has no table for stay VISIBLE and focusable: "this profile has no
+   saturation table" is a fact about the file worth stating, and a `disabled` button
+   could not state it to a keyboard or touch reader.
+
+   The buttons say the whole word (Perceptual / Relative / Saturation / Absolute), so
+   the control WRAPS rather than squeezing four words onto one line: four across at the
+   modal's full width, an even 2×2 on a phone. The narrow case is a media query and not
+   a flex basis because a basis that folds a 390px screen to two rows leaves a 414px one
+   at an lopsided 3+1. */
+.labp-intents { display: flex; flex-wrap: wrap; }
+.labp-intents .view-seg-btn {
+  flex: 1 1 5.5rem;
+  min-width: 0;
+  font-size: 0.78rem;
+  padding-inline: 0.4rem;
+}
+@media (max-width: 30rem) {
+  .labp-intents { display: grid; grid-template-columns: 1fr 1fr; }
+}
+.labp-intents .view-seg-btn[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+
 /* ── Readability ──────────────────────────────────────────────────────────── */
 .lab-contrast {
   display: grid;
@@ -414,14 +605,44 @@
 }
 
 /* Full width above the charts — it governs the whole row, so it spans it. The
-   shared segmented control is normally content-width; these three options split
-   the space evenly instead. */
+   shared segmented control is normally content-width; these options split the
+   space evenly instead.
+   Flex rather than a fixed 3-column grid: the row carries the three display
+   gamuts, then AT MOST ONE press-profile pill, then the `+` that opens the
+   profile panel — so the count is 3, 4 or 5 and only the first four share the
+   width. `+` is a fixed-width affordance, not a fourth option. */
 .lab-limit {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
   width: 100%;
 }
-.lab-limit .view-seg-btn { width: 100%; }
+.lab-limit .view-seg-btn { flex: 1 1 0; min-width: 0; }
+/* The press pill can carry a long profile name; it gets a little more room than
+   an even share and truncates rather than wrapping the row onto two lines.
+   Both of these carry the class of the rule above, because a bare .lab-limit-press
+   loses the flex shorthand to it on specificity and the `+` was silently taking a
+   full fifth of the row while the profile name ellipsed beside it. */
+.lab-limit .view-seg-btn.lab-limit-press {
+  flex-grow: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A link's profile that is not on this device: shown, never pressed, and it
+   opens the panel instead of switching to a gamut nothing here can compute.
+   Carried by weight and colour, NOT by a dashed border: in this design language a
+   dashed border means drop area and nothing else, and the real drop zone for this
+   very file is one click away behind the `+` (.labp-drop). */
+.lab-limit-press[data-state="absent"] {
+  opacity: 0.65;
+  border-color: hsl(var(--border) / 0.6);
+  font-style: italic;
+}
+.lab-limit .view-seg-btn.lab-limit-add { flex: 0 0 auto; font-weight: 700; }
+
+/* The solid's two embeddings — a compact pair under the figure's own caption,
+   not a page-level control: it changes one picture. */
+.lab-embed { display: flex; margin: 0.15rem 0; }
+.lab-embed .view-seg-btn { flex: 1 1 0; font-size: 0.75rem; padding-block: 0.3rem; }
 
 /* As many charts per row as fit at a readable size — 2-up on a laptop, all four
    in a row on a wide display. A 20rem floor is about where a plot stops being
@@ -462,6 +683,11 @@
 }
 .lab-chart-title { margin: 0; font-size: 0.95rem; letter-spacing: -0.01em; }
 .lab-chart-num {
+  /* Drag the number sideways to change it (lib/scrub.ts). `pan-y` is the load-bearing
+     half of touch support: it hands us horizontal gestures while leaving vertical ones
+     to scroll the page. `touch-action: none` would trap the page scroll on a phone. */
+  cursor: ew-resize;
+  touch-action: pan-y;
   flex: 0 0 auto;
   width: 6.5rem;
   padding: 0.2rem 0.35rem;

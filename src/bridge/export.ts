@@ -19,7 +19,6 @@ import {
   parseClipShape, parseRadialGradient, parseConicGradient, parseDropShadowFilter, type ConicGradient,
   splitCssArgs, parseGradientAngle, parseGradientStop,
   parseColor, interpolateColor, colorToSrgb8,
-  buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION,
   embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
   buildExportMeta,
   embedWatermark, canCarryWatermark, LOSSLESS_STRENGTH,
@@ -54,6 +53,7 @@ import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.t
 // without pulling this rasteriser onto the tool-open path. Re-exported here for
 // dynamic callers (e.g. bridge/compose.ts does `await import('./export.ts')`).
 import { canRecord } from './format-support.ts';
+import { chromePaintsOverLive, countToolMutations, createStaticChromeGuard, staticChromeFrameAction, staticChromeVerdict, type Box, type ChromeEl } from './frame-static.ts';
 export { videoSupport, cmykTiffSupport, tiffSupport } from './format-support.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
 import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from '../../../../engine/src/pptx.ts';
@@ -80,6 +80,11 @@ import {
   svgLen, preserveAspectRatioAlign, parseSvgColor,
 } from './export-pdf-vector.ts';
 import type { BrandPaletteEntry, PaletteHit } from './export-pdf-vector.ts';
+// The PDF/X-4 metadata pass + its claim gate (moved out of this file verbatim).
+import { applyPdfX } from './export-pdfx.ts';
+// The user's own CMYK profile → the bytes a PDF/X-4 DestOutputProfile embeds.
+import { isOwnProfile, resolveEmbeddedProfile } from '../lib/press-profile-embed.ts';
+import type { EmbedResolution } from '../lib/press-profile-embed.ts';
 // Moved to export-pdf-vector.ts; re-exported because export-pptx.ts imports it from here.
 export { pureRotationDeg };
 
@@ -126,7 +131,7 @@ export interface ExportOpts {
   c2paTextAdded?: { sample?: string };   // text over an opened asset → a c2pa.edited "Added text" step (runtime-supplied)
   colorProfile?: string;
   thumbnail?: boolean;
-  audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number };
+  audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number; start?: number };
   c2pa?: boolean;
   c2paDays?: number | string;
   /** Embed the Lolly pixel watermark into raster exports (png/jpg/webp/avif/tiff).
@@ -939,7 +944,7 @@ async function renderCmykTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   // provenance credit text is composited as K-only ink (see drawPrintMarksCmyk).
   if (geo) drawPrintMarksCmyk(cmyk, W, H, geo, d.dpi, provenanceLabels(opts.meta));
 
-  const tiff = encodeCmykTiff(cmyk, W, H, d.dpi, opts.meta, pressConditionLabel(opts.colorProfile));
+  const tiff = encodeCmykTiff(cmyk, W, H, d.dpi, opts.meta, await pressConditionLabel(opts.colorProfile));
   return new Blob([tiff as BlobPart], { type: 'image/tiff' });
 }
 
@@ -1182,8 +1187,18 @@ function drawPrintMarksCmyk(
 // target — but as metadata only: the pixels stay untagged (no embedded profile), so
 // the file is never mislabelled. 'none' opts out; anything else resolves via the
 // engine registry (unknown / 'srgb' fall back to the default condition).
-function pressConditionLabel(profile: string | undefined): string | null {
+//
+// 'own' (the user's own profile, the PDF's embed route) must NOT reach
+// cmykCondition: it would silently fall back to the DEFAULT condition and write
+// "Coated FOGRA39" into a TIFF made for a different press. A TIFF cannot embed a
+// profile, so the label is the profile's own description — and when that profile
+// cannot be resolved, no label at all rather than a wrong one.
+async function pressConditionLabel(profile: string | undefined): Promise<string | null> {
   if (profile === 'none') return null;
+  if (isOwnProfile(profile)) {
+    const embed = await embeddedProfile(profile);
+    return embed ? (embed.pairedCondition ? embed.info : embed.desc) : null;
+  }
   return cmykCondition(profile).info;
 }
 
@@ -4361,6 +4376,22 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
   return await finishPdfX(blob, opts, { intentKind: 'srgb' });
 }
 
+// The PDF/X pass logs a withheld conformance claim through the live host, and
+// takes the logger as an argument so export-pdfx.ts stays free of this module.
+const pdfxLog = (level: 'debug' | 'info' | 'warn' | 'error', msg: string): void => {
+  _host?.log?.(level, msg);
+};
+
+// The user's own profile for this export, or null. Only ever consulted for an
+// `own` / `own:<digest>` selection — every registry-name condition resolves to
+// null and produces exactly the file it produced before. A miss (profile deleted,
+// unreadable, or not an eligible output profile) is also null, and the pass then
+// writes no intent rather than declaring a condition nobody chose.
+async function embeddedProfile(colorProfile: string | undefined): Promise<EmbedResolution | null> {
+  if (!isOwnProfile(colorProfile) || !_host) return null;
+  return resolveEmbeddedProfile(_host as never, colorProfile, 'CMYK').catch(() => null);
+}
+
 // Re-save a jsPDF blob through one pdf-lib pass: print page boxes + marks (when
 // print geometry is supplied) and the PDF/X-4 metadata set. Subsumes the old
 // finishPrintPdf so the plain RGB path loads pdf-lib exactly once; the CMYK path
@@ -4383,127 +4414,12 @@ async function finishPdfX(
     setPageBoxes(page, geo);
     await drawPrintMarks(page, geo, { space, labels });
   }
-  await applyPdfX(pdfDoc, opts, intentKind);
+  await applyPdfX(pdfDoc, opts, intentKind, { log: pdfxLog });
   // The C2PA embedder only parses a classic xref table; pdf-lib's default save
   // (object streams) writes a cross-reference stream it refuses. Only flipped
   // when credentials are requested, so ordinary PDFs keep the compact form.
   const out = await pdfDoc.save(opts.c2pa ? { useObjectStreams: false } : undefined);
   return new Blob([out], { type: 'application/pdf' });
-}
-
-// PDF/X-4 metadata pass over an already-loaded pdf-lib document — shared by the
-// plain, multi-page and CMYK PDF paths. WHAT X-4 requires comes from the engine
-// (pdfx.js); this maps it onto pdf-lib objects:
-//  - every page carries a TrimBox (pages the print path already boxed keep their
-//    computed trim/bleed; unmarked pages trim at the full page),
-//  - a catalog /Metadata XMP packet,
-//  - Info dict: CreationDate == ModDate (one clock read, matching the XMP dates),
-//    Trapped /False, and the GTS_PDFXVersion claim,
-//  - trailer /ID: two identical 16-byte ids sharing the XMP DocumentID's bytes,
-//  - a single GTS_PDFX OutputIntent from pdfxOutputIntentSpec.
-// intentKind null/'none' writes the metadata but no intent and no claim (X-4
-// requires an output intent, so claiming without one would be false).
-// Honesty gate: a CMYK intent is registered-name only (no embedded ICC), so if
-// the document still contains unmanaged /DeviceRGB image pixels the whole set is
-// written EXCEPT the conformance claim (no Info/XMP GTS_PDFXVersion). The sRGB
-// intent claims unconditionally — DeviceRGB content matches an sRGB intent.
-async function applyPdfX(pdfDoc: any, opts: ExportOpts, intentKind: string | null): Promise<void> {
-  const { PDFName, PDFString, PDFHexString } = await import('pdf-lib') as any;
-
-  // TrimBox is not inheritable, so the leaf dict says whether setPageBoxes ran.
-  for (const page of pdfDoc.getPages()) {
-    if (!page.node.get(PDFName.of('TrimBox'))) {
-      const mb = page.getMediaBox();
-      page.setTrimBox(mb.x, mb.y, mb.width, mb.height);
-    }
-  }
-
-  const spec = intentKind && intentKind !== 'none' ? pdfxOutputIntentSpec(intentKind) : null;
-  let claim = Boolean(spec);
-  if (spec && !spec.iccBytes && hasDeviceRgbImage(pdfDoc, PDFName)) {
-    claim = false;
-    _host?.log?.('info', 'PDF/X metadata written without conformance claim: unmanaged RGB image content');
-  }
-  // A strong-locked export gets AES-256-encrypted after this pass — and PDF/X-4
-  // forbids encryption, so the file cannot honestly claim conformance. Keep the
-  // CMYK / output-intent / marks metadata, but drop the GTS_PDFXVersion claim.
-  if (claim && opts.strongPassword) {
-    claim = false;
-    _host?.log?.('info', 'PDF/X conformance claim dropped: document is AES-256 encrypted (PDF/X-4 forbids encryption)');
-  }
-  if (spec) setPdfxOutputIntent(pdfDoc, spec, { PDFName, PDFString });
-
-  const now = new Date();
-  const producer = opts.meta?.software || 'Lolly';
-  const documentId = makeDocumentId();
-  let xmp = buildPdfXXmp({
-    createDate: now.toISOString(),
-    title: opts.meta?.tool || '',
-    creatorTool: producer,
-    producer,
-    documentId,
-    instanceId: makeDocumentId(),
-  });
-  // Withholding the claim means no GTS_PDFXVersion anywhere — Info or XMP (the
-  // packet builder always writes the property, so strip its one known line).
-  if (!claim) xmp = xmp.replace(/[ \t]*<pdfxid:GTS_PDFXVersion>[^<]*<\/pdfxid:GTS_PDFXVersion>\n/, '');
-  // The XMP stream stays uncompressed so non-PDF-aware scanners can find the
-  // xpacket markers (the point of the packet's writable padding).
-  const meta = pdfDoc.context.stream(new TextEncoder().encode(xmp), { Type: 'Metadata', Subtype: 'XML' });
-  pdfDoc.catalog.set(PDFName.of('Metadata'), pdfDoc.context.register(meta));
-
-  // getInfoDict is private in the d.ts but a plain method at runtime.
-  const info = pdfDoc.getInfoDict();
-  const pdfDate = PDFString.of(formatPdfDate(now));
-  info.set(PDFName.of('Producer'), PDFString.of(producer));
-  info.set(PDFName.of('CreationDate'), pdfDate);
-  info.set(PDFName.of('ModDate'), pdfDate);       // == CreationDate: untouched since export
-  info.set(PDFName.of('Trapped'), PDFName.of('False'));
-  if (claim) info.set(PDFName.of('GTS_PDFXVersion'), PDFString.of(PDFX_VERSION));
-
-  // Trailer /ID: two identical entries (a fresh document, not a revision) reusing
-  // the XMP DocumentID's 16 bytes so file identity agrees end to end.
-  const idHex = documentId.replace(/^uuid:/, '').replace(/-/g, '');
-  const id = PDFHexString.of(idHex);
-  pdfDoc.context.trailerInfo.ID = pdfDoc.context.obj([id, id]);
-}
-
-// True when any image XObject draws in plain /DeviceRGB — jsPDF embeds rasters
-// this way, and unmanaged RGB pixels under a CMYK output intent are exactly what
-// the PDF/X conformance claim is meant to rule out. Indirect (ICCBased/Indexed)
-// colour spaces don't stringify to /DeviceRGB and count as managed.
-function hasDeviceRgbImage(pdfDoc: any, PDFName: any): boolean {
-  for (const [, obj] of pdfDoc.context.enumerateIndirectObjects()) {
-    const dict = obj?.dict;
-    if (!dict?.get) continue;
-    const sub = dict.get(PDFName.of('Subtype'));
-    if (!sub || !String(sub).includes('Image')) continue;
-    const cs = dict.get(PDFName.of('ColorSpace'));
-    if (cs && String(cs).includes('DeviceRGB')) return true;
-  }
-  return false;
-}
-
-// Materialise the engine's OutputIntent spec (pdfx.js) into the catalog,
-// REPLACING any existing intents so an export carries exactly one. Field map:
-// S ← subtype, OutputConditionIdentifier ← identifier, OutputCondition/Info ←
-// info, RegistryName ← registry, DestOutputProfile ← iccBytes as a compressed
-// stream with /N components ('srgb' ships profile bytes; the CMYK press
-// conditions are registered-name only and get no profile).
-function setPdfxOutputIntent(pdfDoc: any, spec: ReturnType<typeof pdfxOutputIntentSpec>, { PDFName, PDFString }: any): void {
-  const intent = pdfDoc.context.obj({
-    Type: 'OutputIntent',
-    S: spec.subtype,
-    OutputConditionIdentifier: PDFString.of(spec.identifier),
-    OutputCondition: PDFString.of(spec.info),
-    Info: PDFString.of(spec.info),
-    RegistryName: PDFString.of(spec.registry),
-  });
-  if (spec.iccBytes) {
-    const icc = pdfDoc.context.flateStream(spec.iccBytes, { N: spec.components });
-    intent.set(PDFName.of('DestOutputProfile'), pdfDoc.context.register(icc));
-  }
-  pdfDoc.catalog.set(PDFName.of('OutputIntents'), pdfDoc.context.obj([intent]));
 }
 
 // Compose the proof-margin credit strings from the export's provenance metadata.
@@ -6394,15 +6310,21 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
     await drawPrintMarks(page, marksGeo, { space: 'cmyk', labels: provenanceLabels(opts.meta) });
   }
 
-  // PDF/X-4 finishing runs AFTER the colour substitution so the honesty gate
-  // sees the final image set. The press-condition intent declares what the
-  // DeviceCMYK values mean to a RIP; 'none' (user opted out of a condition)
-  // writes the metadata without an intent or conformance claim, and anything
-  // non-CMYK ('srgb'/absent) falls back to the default condition — mirroring
-  // the old addCmykOutputIntent guard.
+  // PDF/X-4 finishing runs AFTER the colour substitution so the claim gate sees
+  // the final image set. The press-condition intent declares what the DeviceCMYK
+  // values mean to a RIP; 'none' (user opted out of a condition) writes the
+  // metadata without an intent or conformance claim, and anything non-CMYK
+  // ('srgb'/absent) falls back to the default condition — mirroring the old
+  // addCmykOutputIntent guard. 'own' is the embed route: the DestOutputProfile
+  // bytes come from a profile on THIS device, and the intent's identity is read
+  // off that profile rather than off the picker (press-profile-embed.ts).
   const intentKind = opts.colorProfile === 'none' ? null
+    : isOwnProfile(opts.colorProfile) ? 'own'
     : (opts.colorProfile && opts.colorProfile !== 'srgb' ? opts.colorProfile : 'fogra39');
-  await applyPdfX(pdfDoc, opts, intentKind);
+  await applyPdfX(pdfDoc, opts, intentKind, {
+    embed: await embeddedProfile(opts.colorProfile),
+    log: pdfxLog,
+  });
 
   // The C2PA embedder only parses a classic xref table — same flag finishPdfX
   // threads for the RGB path when a credential is requested.
@@ -6728,6 +6650,9 @@ interface LoopedAudio { track: MediaStreamTrack; start(): void; stop(): void; }
  *   fadeIn/fadeOut — linear ramps from/to silence at the ends
  *   duck — a window over which the bed dips to volume·duck.level, then restores,
  *          so foreground audio (an uploaded clip's own sound) stays intelligible.
+ *   start — in-point into the SOURCE (not the clip): playback begins there, and a
+ *          looping bed repeats from there. Independent of the envelope, which is
+ *          always timed from t0 against clipSec.
  */
 interface AudioFade {
   fadeIn?: number;
@@ -6735,6 +6660,22 @@ interface AudioFade {
   clipSec?: number;
   volume?: number;
   duck?: { level: number; startSec: number; endSec: number };
+  start?: number;
+}
+
+/**
+ * Clamp a requested bed in-point into a decoded source. A start at or past the end
+ * of the track can't be honoured: with loop off it records pure silence, with loop on
+ * the spec snaps playback back to loopStart — either way the user gets an unexplained
+ * result, so it degrades to 0:00 with a warning.
+ */
+export function bedStartOffset(start: number | undefined, duration: number): number {
+  if (typeof start !== 'number' || !Number.isFinite(start) || start <= 0) return 0;
+  if (!(duration > 0) || start >= duration) {
+    _host?.log?.('warn', `Audio starts at ${start}s but the track is only ${duration.toFixed(2)}s long; playing it from 0:00.`);
+    return 0;
+  }
+  return start;
 }
 
 // Connect a looping music buffer into `dest` within `ctx`, through a GainNode that
@@ -6742,7 +6683,7 @@ interface AudioFade {
 // ctx.currentTime (so it must be called when playback actually begins); stop() halts
 // the source. Shared by createLoopedAudio (the renderVideo music bed) and the
 // top-&-tail compositor, which mixes it with the footage's own audio in one context.
-function connectMusic(
+export function connectMusic(
   ctx: BaseAudioContext,   // AudioContext (live path) OR OfflineAudioContext (WebCodecs bed render)
   buffer: AudioBuffer,
   dest: AudioNode,
@@ -6751,6 +6692,12 @@ function connectMusic(
   const src  = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop   = true;
+  // In-point: start playback `offset` into the source, and move the loop window with
+  // it — loopStart defaults to 0, so a wrap would otherwise throw the in-point away
+  // and play the head of the track the visuals deliberately skipped. loopEnd must be
+  // set explicitly too; it only means "end of buffer" while untouched.
+  const offset = bedStartOffset(fade.start, buffer.duration);
+  if (offset > 0) { src.loopStart = offset; src.loopEnd = buffer.duration; }
   const gain = ctx.createGain();
   src.connect(gain).connect(dest);
   let started = false;
@@ -6789,7 +6736,7 @@ function connectMusic(
         g.setValueAtTime(vol, fs);
         g.linearRampToValueAtTime(0, t0 + clip);
       }
-      src.start(0);
+      src.start(0, offset);
     },
     stop() { try { src.stop(); } catch { /* never started */ } },
   };
@@ -6854,7 +6801,7 @@ async function prepareExportAudio(opts: ExportOpts, preferred: string, clipSec?:
   if (!opts.audio?.url) return { audio: null, mimeType: videoMimeType(preferred) };
   let audio: LoopedAudio | null = null;
   try {
-    audio = await createLoopedAudio(opts.audio.url, { fadeIn: opts.audio.fadeIn, fadeOut: opts.audio.fadeOut, clipSec, volume: opts.audio.volume });
+    audio = await createLoopedAudio(opts.audio.url, { fadeIn: opts.audio.fadeIn, fadeOut: opts.audio.fadeOut, clipSec, volume: opts.audio.volume, start: opts.audio.start });
   } catch (err) {
     _host?.log?.('warn', `Audio track unavailable (${(err as any)?.message ?? err}); exporting silent video.`);
   }
@@ -7002,6 +6949,58 @@ async function captureViaExternalScreenshot(
   return canvas;
 }
 
+// ── Static-chrome fast path (see ./frame-static.ts for the decision rules) ───
+// Every <canvas> that actually paints pixels. A tool's clock anchor is NOT one:
+// slides/deck-builder (`.sl-clock`) and all six filter-* tools (`[data-ov-clock]`)
+// carry `__lollyFrameRender` on a 0×0 aria-hidden canvas that draws nothing, and
+// audiogram's `style=milkdrop` leaves the fallback `#ag-wave` in the DOM at
+// display:none next to the mounted viz canvas — so both the backing-store size
+// and the computed visibility have to be checked, not just presence.
+function visibleCanvases(node: Element): HTMLCanvasElement[] {
+  const all: HTMLCanvasElement[] = [];
+  if (node instanceof HTMLCanvasElement) all.push(node);
+  for (const c of Array.from(node.querySelectorAll?.('canvas') ?? [])) all.push(c as HTMLCanvasElement);
+  return all.filter(c => {
+    if (!(c.width > 0 && c.height > 0)) return false;   // inert clock anchor — drawImage would throw on it anyway
+    const s = window.getComputedStyle(c);
+    if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) return false;
+    const r = c.getBoundingClientRect();
+    return r.width > 0.5 && r.height > 0.5;
+  });
+}
+
+// Everything under the node that is neither a live canvas nor an ancestor of one,
+// tagged with whether it contributes pixels at all. url-shot's `.shot-refresh` /
+// `.shot-compose` buttons sit right over the canvas at opacity:0 until hover, so
+// treating "has a box" as "paints" would reject the best-case tool.
+function chromeElements(node: Element, live: HTMLCanvasElement[]): { liveBoxes: Box[]; chrome: ChromeEl[] } {
+  const related = new Set<Element>();
+  for (const c of live) for (let e: Element | null = c; e; e = e.parentElement) { related.add(e); if (e === node) break; }
+  const liveBoxes = live.map(c => c.getBoundingClientRect() as Box);
+  const chrome: ChromeEl[] = [];
+  for (const el of Array.from(node.querySelectorAll('*'))) {
+    if (related.has(el)) { chrome.push({ box: el.getBoundingClientRect(), paints: false, relatedToLive: true }); continue; }
+    const s = window.getComputedStyle(el);
+    const paints = s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) !== 0;
+    chrome.push({ box: el.getBoundingClientRect(), paints, relatedToLive: false });
+  }
+  return { liveBoxes, chrome };
+}
+
+// visibility:hidden, not display:none — layout must be preserved so the chrome
+// rasterises at exactly the geometry the live canvases will be blitted into.
+// !important because it has to beat the tool's own stylesheet.
+function hideLiveCanvases(live: HTMLCanvasElement[]): () => void {
+  const prev = live.map(c => ({ c, v: c.style.getPropertyValue('visibility'), p: c.style.getPropertyPriority('visibility') }));
+  for (const c of live) c.style.setProperty('visibility', 'hidden', 'important');
+  return () => {
+    for (const { c, v, p } of prev) {
+      if (v) c.style.setProperty('visibility', v, p);
+      else c.style.removeProperty('visibility');
+    }
+  };
+}
+
 async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
@@ -7024,6 +7023,106 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
   // Raise the driven flag now (before the first capture) so a frame-clock tool's
   // rAF loop stops advancing on its own; frame(t) then paints the exact phase.
   const frameClock = beginFrameClock(node);
+
+  // ── Static-chrome fast path ────────────────────────────────────────────────
+  // Watch from construction, not from the probe: for a tool with NO export clock
+  // the only available evidence that its chrome is static is that nothing mutated
+  // across the settle wait and a whole real capture, and that is exactly the
+  // window this observer covers. Canvas pixel writes raise no records, so "zero
+  // records" is positive proof the only per-frame change is canvas pixels.
+  //
+  // It also stays connected AFTER a yes. For a clockless tool the probe's window is
+  // one settle wait plus one capture, so a slow setInterval that retouches the DOM
+  // between samples would be missed and frozen into the cached layer for the whole
+  // clip. Draining per frame turns the sample into continuous evidence.
+  const watcher = typeof MutationObserver === 'function' ? new MutationObserver(() => { /* records read via takeRecords */ }) : null;
+  watcher?.observe(node, { subtree: true, childList: true, attributes: true, characterData: true });
+  type FastPath = { chrome: HTMLCanvasElement; live: HTMLCanvasElement[]; own: Set<Element>; out: HTMLCanvasElement; nodeW: number; nodeH: number };
+  let framesTaken = 0;
+  let decided = false;          // the probe runs at most once; a "no" is never retried
+  let fast: FastPath | null = null;
+  const guard = createStaticChromeGuard();
+
+  // The one-off chrome shot. visibility:hidden keeps the canvases' LAYOUT intact, so
+  // the blit lands exactly where dom-to-image would have drawn them, and their pixels
+  // don't get baked into the cached layer underneath the live ones.
+  //
+  // It does NOT skip dom-to-image's canvas handling: `makeNodeCopy` calls
+  // `original.toDataURL()` for every canvas whatever its computed style, so this shot
+  // still pays that ~30.8 ms — once, instead of on all 240 frames. That is also why a
+  // tainted canvas still throws here rather than silently degrading.
+  //
+  // Restores on EVERY exit including a throw: a tool left with a hidden canvas after a
+  // failed export is a black preview.
+  const rasterChrome = async (live: HTMLCanvasElement[]): Promise<HTMLCanvasElement> => {
+    const unhide = hideLiveCanvases(live);
+    try { return normalizeCanvas(await lib.toCanvas(node, dtoOpts), targetW, targetH); }
+    finally { unhide(); }
+  };
+
+  const probeStaticChrome = async (): Promise<FastPath | null> => {
+    const live = visibleCanvases(node);
+    // Drive the clock to two DIFFERENT phases before reading the records: if any
+    // chrome is a function of frame time, this is what makes it move where the
+    // observer can see it. filter-*'s `[data-ov-clock]` rewrites an SVG overlay
+    // from its hook and slides/deck-builder seek CSS keyframes — both are caught
+    // here rather than silently frozen into the cached layer.
+    if (frameClock) { renderFrameAt(frameClock, 0.37); renderFrameAt(frameClock, 0.71); }
+    const geom = live.length ? chromeElements(node, live) : null;
+    const verdict = staticChromeVerdict({
+      externalScreenshot: !!window.__lollyCaptureScreenshot,
+      liveCanvases: live.length,
+      // No MutationObserver (a non-browser host) means no proof, so no fast path.
+      mutationRecords: watcher ? watcher.takeRecords().length : 1,
+      animations: node.getAnimations?.({ subtree: true })?.length ?? 0,
+      chromeOverlaps: geom ? chromePaintsOverLive(geom.liveBoxes, geom.chrome) : true,
+    });
+    if (!verdict.ok) {
+      _host?.log?.('info', `frame capture: full rasterise per frame (${verdict.reason})`);
+      return null;
+    }
+    const rect = node.getBoundingClientRect();
+    const out = document.createElement('canvas');
+    out.width = targetW; out.height = targetH;
+    return { chrome: await rasterChrome(live), live, own: new Set<Element>(live), out, nodeW: rect.width, nodeH: rect.height };
+  };
+
+  // At 4K the chrome raster plus the composite is tens of MB of backing store, and a
+  // mid-export stand-down drops the path with the whole encode still to run.
+  const releaseFast = (f: FastPath): void => {
+    f.chrome.width = f.chrome.height = 0;
+    f.out.width = f.out.height = 0;
+  };
+
+  const composeFrame = async (f: FastPath): Promise<HTMLCanvasElement> => {
+    const rect = node.getBoundingClientRect();
+    // Re-measuring each canvas's box every frame is free; re-rasterising the
+    // chrome is the ~31.9 ms this path exists to avoid. So the cached layer is
+    // only redone when the NODE's own box changed, which is the one case where
+    // the chrome behind the canvases can genuinely have reflowed.
+    if (Math.abs(rect.width - f.nodeW) > 0.5 || Math.abs(rect.height - f.nodeH) > 0.5) {
+      f.chrome = await rasterChrome(f.live);
+      f.nodeW = rect.width; f.nodeH = rect.height;
+    }
+    // Node space → target space is the single UNIFORM factor dtoOpts already applies
+    // to dom-to-image's clone: rasterStyle sets `transform: scale(targetW / node.w)`
+    // and never scales height independently. Deriving a separate `sy = targetH/nodeH`
+    // looks more correct and is not — the two layers then disagree vertically the
+    // moment the target aspect differs from the node's (ask for 1920 wide on a square
+    // 1280x1280 stage and the blitted canvas stretches away from the chrome behind
+    // it). Taken at construction, so both layers are built from one number.
+    const s = targetW / nodeW;
+    const ctx = f.out.getContext('2d')!;
+    ctx.clearRect(0, 0, targetW, targetH);
+    ctx.drawImage(f.chrome, 0, 0);
+    for (const c of f.live) {
+      const r = c.getBoundingClientRect();
+      if (!(c.width > 0 && c.height > 0) || r.width <= 0 || r.height <= 0) continue;   // drawImage throws on a 0-sized source
+      ctx.drawImage(c, (r.x - rect.x) * s, (r.y - rect.y) * s, r.width * s, r.height * s);
+    }
+    return f.out;
+  };
+
   return {
     width: targetW,
     height: targetH,
@@ -7034,11 +7133,60 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
       // frameClock — a clocked canvas can still share the DOM with CSS-animated
       // chrome around it. No-op when the node has none.
       scrubAnimations(node, t * durationMs);
-      return window.__lollyCaptureScreenshot
-        ? captureViaExternalScreenshot(targetW, targetH, window.__lollyCaptureScreenshot)
-        : lib.toCanvas(node, dtoOpts);
+      if (window.__lollyCaptureScreenshot)
+        return captureViaExternalScreenshot(targetW, targetH, window.__lollyCaptureScreenshot);
+      framesTaken++;
+      // Probe on the SECOND frame, never the first: renderIco takes exactly one
+      // frame per size, where caching a chrome layer is pure overhead, and by the
+      // second call the observer has watched a whole real capture go by.
+      if (!decided && framesTaken > 1) {
+        decided = true;
+        try { fast = await probeStaticChrome(); }
+        catch (e) {
+          fast = null;
+          _host?.log?.('warn', `static-chrome probe failed, keeping full rasterise: ${(e as Error)?.message ?? e}`);
+        }
+        // The probe drove the clock to its own phases to shake out time-dependent
+        // chrome, so the real one has to be repainted — and that is true WHATEVER the
+        // verdict. Gating this on `fast` meant every clocked tool that DECLINED the
+        // fast path (slides and deck-builder on their CSS animations, the filter-*
+        // tools on their overlay hook's mutations) captured frame 1 at the probe's
+        // 0.71 phase instead of its own: a visible time-jump one frame into the clip,
+        // on exactly the tools the fast path never touches.
+        if (frameClock) renderFrameAt(frameClock, t);
+        // Nothing reads records once the fast path is out of the picture, and an
+        // observer nobody drains queues every record of a 240-frame export.
+        if (!fast) watcher?.disconnect();
+      }
+      if (fast) {
+        // The cached chrome is only usable while nothing but canvas pixels has
+        // changed since it was taken. rasterChrome's own visibility swap shows up
+        // here as attribute records on those same canvases, so it is filtered out —
+        // otherwise the path would invalidate itself on its first composited frame.
+        const mutated = watcher ? countToolMutations(watcher.takeRecords(), fast.own) : 0;
+        const action = staticChromeFrameAction(guard, mutated);
+        if (action === 'stand-down') {
+          _host?.log?.('info', `frame capture: standing down to full rasterise per frame (chrome mutated ${guard.invalidations}x mid-export)`);
+          releaseFast(fast);
+          fast = null;
+          watcher?.disconnect();
+        } else if (action === 'refresh') {
+          fast.chrome = await rasterChrome(fast.live);
+          // Re-baseline the box in the same breath: a mutation that also reflowed the
+          // node would otherwise make composeFrame rasterise the chrome a second time
+          // for this one frame.
+          const r = node.getBoundingClientRect();
+          fast.nodeW = r.width; fast.nodeH = r.height;
+        }
+      }
+      return fast ? composeFrame(fast) : lib.toCanvas(node, dtoOpts);
     },
-    dispose() { endFrameClock(frameClock); restore(); },
+    dispose() {
+      endFrameClock(frameClock);
+      watcher?.disconnect();
+      if (fast) { releaseFast(fast); fast = null; }
+      restore();
+    },
   };
 }
 
@@ -7378,8 +7526,8 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       try {
         if (wantAudio && audioPick) {
           const bed = await renderMusicBed(opts.audio!.url, clipSec, audioPick.sampleRate, {
-            fadeIn: opts.audio!.fadeIn, fadeOut: opts.audio!.fadeOut, clipSec, volume: opts.audio!.volume,
-          });                                       // matches prepareExportAudio's envelope (renderVideo beds don't duck)
+            fadeIn: opts.audio!.fadeIn, fadeOut: opts.audio!.fadeOut, clipSec, volume: opts.audio!.volume, start: opts.audio!.start,
+          });                                     // matches prepareExportAudio's envelope (renderVideo beds don't duck)
           if (bed) track = { ...audioPick, buffer: bed };
         }
       } catch { bedOk = false; }
@@ -7649,6 +7797,7 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
           fadeOut: opts.audio.fadeOut ?? 1.4,
           clipSec: totalMs / 1000,
           volume:  opts.audio.volume,
+          start:   opts.audio.start,
           duck: footageHasAudio && (opts.audio.duck ?? 1) < 1
             ? { level: opts.audio.duck ?? 1, startSec: introMs / 1000, endSec: (introMs + bodyMs) / 1000 }
             : undefined,

@@ -46,8 +46,34 @@ export interface StockPresetInfo {
   id: string;
   name: string;
   author: string;
-  /** In butterchurn's own default pack — the closest thing to a popularity signal. */
+  /** In butterchurn's minimal pack — the 29 butterchurnviz.com opens with. */
   popular: boolean;
+  /**
+   * Popularity tier, 1 (best) … 6. Which of butterchurn's own packs ships a preset is the
+   * only real popularity signal that exists for MilkDrop — there is no download count or
+   * rating — and the packs were chosen by people who know the corpus:
+   * 1 minimal, 2 the rest of the default pack, 3 extra, 4 extra2, 5 the MilkDrop 1
+   * originals, 6 in no pack at all (kept only so an id already in someone's saved session
+   * keeps resolving). Sort by this; `popular` is just `tier === 1`.
+   * Optional because an index staged before tiers existed does not carry it.
+   */
+  tier?: number;
+  /**
+   * False for a preset that was measured rendering nothing usable — pure black, or blown
+   * out to a flat white field. Do not OFFER these in a picker or include them in a cycle;
+   * they are still staged and still resolve by id, because an id already saved in someone's
+   * session has to keep working.
+   *
+   * Pack membership says a preset is admired, not that it renders: 31 of the 452 fail, and
+   * they fail identically with the brand wrapper bypassed, so this is how butterchurn draws
+   * them rather than something the brand blend does. The blacks are pure feedback
+   * amplifiers with no light source — they come alive only by inheriting the previous
+   * preset's field, which means they can look fine in a cycling overlay and render black in
+   * an export, which always starts cold.
+   *
+   * Optional for the same reason as `tier`; treat a missing value as true.
+   */
+  ok?: boolean;
 }
 
 /**

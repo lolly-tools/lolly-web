@@ -69,7 +69,7 @@ function setToolIndex(tools: unknown[]): void {
   (dom.window as unknown as Record<string, unknown>).__toolIndex = { tools };
 }
 
-function makeHost(assets: AssetRef[]) {
+function makeHost(assets: AssetRef[], userAssets: AssetRef[] = []) {
   return {
     capabilities: [],
     log() {},
@@ -84,7 +84,7 @@ function makeHost(assets: AssetRef[]) {
       query: async () => assets,
       get: async (id: string) => assets.find(a => a.id === id) ?? null,
       isAvailable: async () => true,
-      _listUserAssets: async () => [],
+      _listUserAssets: async () => userAssets,
       _userAssetsCount: async () => 0,
       _deleteUserAsset: async () => {},
       _iconThemes: async () => [],
@@ -108,8 +108,12 @@ interface Open {
   close(): Promise<void>;
 }
 
-async function open(opts: Record<string, unknown>, assets: AssetRef[] = [asset('a/one'), asset('a/two')]): Promise<Open> {
-  const done = openPicker(makeHost(assets) as never, opts as never);
+async function open(
+  opts: Record<string, unknown>,
+  assets: AssetRef[] = [asset('a/one'), asset('a/two')],
+  userAssets: AssetRef[] = [],
+): Promise<Open> {
+  const done = openPicker(makeHost(assets, userAssets) as never, opts as never);
   await settle();
   const panel = dom.window.document.querySelector<HTMLElement>('.asset-picker-panel');
   assert.ok(panel, 'the picker mounted a panel');
@@ -217,5 +221,29 @@ test('the user can switch away from the requested tab immediately', async () => 
   p.tab('tools')!.dispatchEvent(new W.MouseEvent('click', { bubbles: true }));
   await settle();
   assert.equal(p.visiblePane(), 'tools');
+  await p.close();
+});
+
+
+// ── the user rail is not all pictures ─────────────────────────────────────────
+
+test('an untyped pick tiles only the user assets that HAVE a picture', async () => {
+  setToolIndex(TOOLS);
+  // The user-asset rail is universal storage: fonts, tokens and (1.73) ICC profiles
+  // ride it beside uploaded images. An untyped pick used to accept every type, so a
+  // profile tiled as a broken image with a delete button that removed the bytes
+  // behind the Colour Lab's back.
+  const mine = [
+    asset('user/images/photo', 'raster'),
+    asset('user/profiles/0c8a584b288a306e', 'profile'),
+    asset('user/fonts/inter', 'font'),
+  ];
+  const p = await open({ allowUpload: true }, [], mine);
+  const ids = [...p.panel.querySelectorAll<HTMLElement>('.asset-picker-card-user [data-asset-id]')]
+    .map(c => c.dataset.assetId);
+  assert.deepEqual(ids, ['user/images/photo'],
+    `only the image tiles: ${ids.join()}`);
+  assert.equal(p.panel.querySelector('[data-delete-id="user/profiles/0c8a584b288a306e"]'), null,
+    'and nothing offers to delete a profile from here');
   await p.close();
 });

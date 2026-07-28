@@ -20,9 +20,10 @@
  *
  *   1. **Set a colour** — in any space. The picker, a free-text field, the brand
  *      rail. This is the only thing a first-time visitor has to understand.
- *   2. **The charts** — where it sits, four ways, with the sRGB/P3/Rec.2020
- *      control that governs what they draw. High up, because they are the reason
- *      to open the page.
+ *   2. **The charts** — where it sits, four ways, with the comparison-target
+ *      control that governs what they draw: sRGB, Display-P3, Rec.2020, and a
+ *      press profile of your own if you have added one. High up, because they
+ *      are the reason to open the page.
  *   3. **Every notation** — the same colour written for each space, copyable.
  *   4. **Tones and blends** — ramps out of it: through its own lightness, and
  *      across to a second colour you choose, at a step count you set.
@@ -47,9 +48,12 @@
  * colour as CSS wrote it, so a wide-gamut display shows the real thing and only a
  * narrower one falls back — the browser does that mapping itself, per display,
  * which is strictly better than us deciding in advance that nobody can see it.
- * `srgbHex` is used only where a hex is structurally unavoidable — the chart and 3D
- * canvases, since a 2D canvas is 8-bit sRGB. It is labelled where it shows, rather
- * than silently standing in for the value.
+ * `srgbHex` is used only where a hex is structurally unavoidable — the dots drawn
+ * over the charts and the 3D canvas, which take a colour as a hex. The chart FILLS
+ * are no longer among those places: they are painted in the display's own space
+ * (lib/display-gamut.ts), so on a P3 screen the plot shows the real colour out to
+ * P3's boundary. Where a hex does stand in, it is labelled rather than passed off
+ * as the value.
  *
  * The picker is no longer one of those places: it is seeded with the authored string
  * and read back through its `detail.css`, so the subject survives a round trip
@@ -63,25 +67,38 @@ import {
   describeColor, contrastVsExtremes, wcagLevel, oklchToHex, formatOklch, rampOklab,
   apcaVerdict, APCA_SRGB_ONLY,
   gamutSolid, projectGamutSolid, projectSolidPoint, contrastRatio, GAMUTS,
-  parseColor, colorToHexString, interpolateColor,
+  parseColor, colorToHexString, interpolateColor, chromaAxisMax,
+  gamutSourceId, resolveGamutSource, fastRgbContains, inGamut, maxChroma, convertColor,
+  iccRoundTripDeltaE, iccRoundTripDecides, ICC_GAMUT_DELTA_E,
 } from '@lolly/engine';
 import type {
-  ColorDescription, ContrastVerdict, GamutName, GamutSolid, SlicePlane,
-  ColorSpaceTag, HueDirection,
+  ColorDescription, GamutName, GamutSolid, SlicePlane,
+  ColorSpaceTag, HueDirection, GamutLimit, GamutSource, IccProfile, RenderingIntent,
+  SolidEmbed,
 } from '@lolly/engine';
 import {
   BLEND_STYLES, HUE_ROUTES, isPolarSpace, cssInterpolation,
 } from '../lib/blend-style.ts';
 import {
   renderSliceChart, paintSliceChart, wireSliceChart, updateSliceDot,
-  sliceFixedOf, SLICE_AXES, SLICE_C_MAX, formatFixed,
+  sliceFixedOf, formatFixed,
 } from '../lib/oklch-slice.ts';
 import type { SliceChartState } from '../lib/oklch-slice.ts';
 import {
   renderGamutSlider, paintGamutSlider, wireGamutSlider, channelRange, clampIntoGamut,
 } from '../lib/gamut-slider.ts';
 import type { GamutChannel } from '../lib/gamut-slider.ts';
-import { mountColorField } from '../components/color-field.ts';
+import {
+  onDisplayGamutChange,
+} from '../lib/display-gamut.ts';
+import {
+  activateProfile, deactivateProfile, getProfile, parseProfileLimit, profileFor,
+  removeProfile, shortLabel, absentLabel,
+} from '../lib/color-profiles.ts';
+import type { ColorProfilesHost, ProfileEntry } from '../lib/color-profiles.ts';
+import { openProfilesPanel } from '../components/profiles-manager.ts';
+import { mountColorField, contrastText } from '../components/color-field.ts';
+import { attachScrub } from '../lib/scrub.ts';
 import type { MountColorFieldOpts } from '../components/color-field.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
@@ -96,6 +113,9 @@ export interface ColorLabHost {
    *  it just is not remembered. */
   profile?: { get(): Promise<object>; set?(profile: object): Promise<unknown> };
   tokens?: { colors?(): Promise<Array<{ id?: string; name?: string; value?: string }>> | Array<{ id?: string; name?: string; value?: string }> };
+  /** The user-asset rail, only for the stored ICC profiles (lib/color-profiles.ts).
+   *  Optional: a host without it simply has no print pill and no `+` affordance. */
+  assets?: ColorProfilesHost['assets'];
 }
 
 /** The three 2D planes, in the order they are laid out. */
@@ -144,6 +164,18 @@ const GAMUT_TITLE: Record<GamutName, string> = {
  * displays genuinely reach. Only the last case is a warning, and it earns it by
  * being true regardless of what the user was targeting.
  */
+/**
+ * A comparison target's name, whatever kind it is: the display gamut's title, or
+ * a profile source's own label ('Coated FOGRA39 (relative)').
+ *
+ * A NAME is the claim, and that is the whole honesty model here — a measured
+ * target carries the profile's own name and an intent, a derived one carries a
+ * standard's name, and an approximate one (the picker's bare CMYK) carries no
+ * name at all. So this never invents a label for a source that has one.
+ */
+const limitTitle = (limit: GamutLimit): string =>
+  (typeof limit === 'string' ? GAMUT_TITLE[limit] : resolveGamutSource(limit).label);
+
 const GAMUT_BLURB: Record<GamutName, string> = {
   srgb: 'Reproducible everywhere — every screen, every browser, every print pipeline.',
   p3: 'More vivid than sRGB reaches. Shown in full on most phones and recent laptops; older monitors fall back.',
@@ -170,7 +202,9 @@ const SWATCH_ALT_SPACES: readonly string[] = ['oklch', 'lch', 'display-p3'];
  *
  * `cmyk` maps to null: there is no CSS `cmyk()`, and the picker's own CMYK is an
  * approximate conversion for print rather than a colour notation — so the swatch
- * falls back to hex there rather than inventing a syntax.
+ * falls back to hex there rather than inventing a syntax. A press profile's tab
+ * (`icc:…`) is the same case and is not listed at all; {@link pickerSpaceFor}
+ * answers null for it, and for anything else the registry grows.
  */
 const PICKER_MODE_SPACE: Record<string, string | null> = {
   oklch: 'oklch',
@@ -180,6 +214,11 @@ const PICKER_MODE_SPACE: Record<string, string | null> = {
   cmyk: null,
 };
 
+/** The CSS space a picker tab speaks, or null when it speaks none.
+ *  `Object.hasOwn`, so an unregistered mode cannot resolve to a prototype key. */
+const pickerSpaceFor = (mode: string): string | null =>
+  (Object.hasOwn(PICKER_MODE_SPACE, mode) ? PICKER_MODE_SPACE[mode]! : null);
+
 /** A colour to seed with when nothing else is available. Written in oklch() on
  *  purpose: the report is an OKLCH instrument, and opening on a hex would put the
  *  least informative notation in the field the user is most likely to edit. */
@@ -188,6 +227,58 @@ const FALLBACK = 'oklch(62% 0.19 260)';
 /** The persistent `#view`, onto which a mounted view stamps its teardown. */
 interface ViewElement extends HTMLElement { _cleanup?: () => void }
 
+/**
+ * The gamut the Lab opens on: **always Rec.2020**, the widest one we classify, so
+ * nothing is hidden until the reader narrows it. `&limit=` in a link still wins.
+ *
+ * It was briefly seeded from the display — a P3 screen opened on the P3 tab — and
+ * Andy asked for Rec.2020 back. The reasoning holds up: the tab is a *comparison
+ * target*, a question the reader is asking ("how far past sRGB is this?"), and
+ * answering it with the reader's hardware narrows the picture before they have asked
+ * anything. Opening at the widest shows the whole envelope, and the tier wash already
+ * says which parts of it this display can actually deliver — so nothing is lost by
+ * starting wide, while starting narrow hides colour that exists.
+ *
+ * The display still decides everything it should: the opacity anchor (so a P3 band is
+ * fully opaque on a P3 screen) and the canvas encoding. Those are "what can you see",
+ * which is the display's business; the tab is "what am I comparing against", which is
+ * not. Keeping `displayGamutClaim` out of this line is the whole reason those two are
+ * separate functions.
+ */
+const DEFAULT_LIMIT: Exclude<GamutName, 'none'> = 'rec2020';
+
+/**
+ * The chroma ceiling the CONTROLS are scaled to — the sliders, the typed boxes and
+ * their scrub gesture — which is deliberately NOT the ceiling the charts are drawn
+ * to.
+ *
+ * A chart's axis follows the comparison target, because a chart is a picture OF that
+ * gamut: the envelope should fill the plot. A control is not a picture of anything;
+ * it is how the colour gets edited. Scale it to the target and pressing "sRGB" — a
+ * lens, not an editor — takes away chroma that was reachable a moment earlier, and
+ * the range input's own `max` silently rewrites the subject on the way down. So the
+ * controls stay at the widest gamut we classify, whichever tab is pressed, and the
+ * chart says where that gamut stops. Indicate, never clamp.
+ */
+const CONTROL_LIMIT: Exclude<GamutName, 'none'> = 'rec2020';
+
+/** A press profile mounted as the Lab's comparison target. */
+interface ActiveProfile {
+  entry: ProfileEntry;
+  intent: RenderingIntent;
+  src: GamutSource;
+  profile: IccProfile;
+  /** The substrate: zero ink for an ink space, device white otherwise. PCS Lab. */
+  paper: [number, number, number] | null;
+  /**
+   * Is the round-trip ΔE what decides membership for this file? False for a
+   * matrix/TRC or gray profile, whose device cube is tested directly — so the
+   * `Shift` readout and the card's tolerance sentence are both withheld rather
+   * than stating a rule the verdict beside them does not follow.
+   */
+  roundTripDecides: boolean;
+}
+
 export async function mountColorLab(view: HTMLElement, host: ColorLabHost, params = ''): Promise<void> {
   document.title = 'Colour Lab · Lolly';
 
@@ -195,8 +286,83 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /** The colour as AUTHORED — any CSS colour, not necessarily inside sRGB. */
   let subject = seedFrom(params) ?? FALLBACK;
   let desc = describeColor(subject) ?? describeColor(FALLBACK)!;
-  /** Which gamut the charts and the solid extend to. */
-  let limit: Exclude<GamutName, 'none'> = 'rec2020';
+  /**
+   * Which gamut the charts and the solid extend to — the comparison target.
+   *
+   * Seeded ONCE, before any markup exists: `&limit=` if the link carried one, else
+   * {@link DEFAULT_LIMIT}. Computed here rather than inside `shellHtml` because the
+   * pressed pill, the typed inputs' bounds, the legend and the charts all read it and
+   * must not be able to disagree on first paint.
+   *
+   * The tab is a comparison target, so it is the USER's choice and nothing else's — not
+   * the display's, and not the subject's. A later monitor change repaints (see
+   * `onDisplayGamutChange`) and does not move the tab.
+   *
+   * A {@link GamutLimit} rather than a name, so a press profile is the comparison
+   * target by the same route a display gamut is — the whole point of the engine's
+   * gamut-source abstraction.
+   */
+  const urlLimit = limitFrom(params);
+  let limit: GamutLimit = urlLimit && !parseProfileLimit(urlLimit)
+    ? urlLimit as Exclude<GamutName, 'none'>
+    : DEFAULT_LIMIT;
+  /**
+   * What `&limit=` should say, VERBATIM — not derived from `limit` on the way out.
+   *
+   * The difference only shows for a link naming a profile this device does not
+   * have: the charts fall back to {@link DEFAULT_LIMIT}, but rewriting the URL to
+   * `rec2020` would silently downgrade someone's link the next time it was copied.
+   * The id stays, the pill says the profile is absent, and adding the file heals it.
+   */
+  let limitParam: string | null = urlLimit;
+  /** Whether the URL should carry `&limit=` — true once the reader has chosen one
+   *  (or arrived on a link that had). A detected default is not worth pinning into
+   *  a shared link; a decision is. */
+  let limitPinned = urlLimit != null;
+  /** The mounted press profile, when there is one. At most one at a time — see
+   *  `renderLimitSeg` for why the row carries exactly one profile pill. */
+  let activeProfile: ActiveProfile | null = null;
+  /** A `&limit=icc:…` from a link whose profile is not on this device. */
+  let absentLimit: string | null = null;
+
+  // A link that names a profile is resolved BEFORE the first paint: it is one
+  // keyed IDB read and a parse measured in microseconds, and doing it later would
+  // show the reader a Rec.2020 chart that then flipped to a press gamut.
+  if (urlLimit && parseProfileLimit(urlLimit)) {
+    const src = await adoptProfileLimit(urlLimit);
+    if (src) limit = src;
+    else absentLimit = urlLimit;
+  }
+
+  /**
+   * Mount the profile a `limit` id names and adopt it as {@link activeProfile}.
+   * Null when the file is not on this device, will not parse, or cannot answer
+   * under that intent — never a source that quietly used a different table.
+   */
+  async function adoptProfileLimit(id: string): Promise<GamutSource | null> {
+    const parsed = parseProfileLimit(id);
+    if (!parsed || !host.assets) return null;
+    const h = host as ColorProfilesHost;
+    try {
+      const entry = await getProfile(h, parsed.digest);
+      if (!entry) return null;
+      const src = await activateProfile(h, parsed.digest, parsed.intent);
+      const profile = profileFor(parsed.digest);
+      if (!src || !profile) return null;
+      // One profile mounted at a time: switching profiles unmounts the last one,
+      // so the picker's output row cannot accumulate tabs the Lab's single pill
+      // has no way to switch between.
+      if (activeProfile && activeProfile.entry.digest !== parsed.digest) {
+        deactivateProfile(activeProfile.entry.digest);
+      }
+      activeProfile = {
+        entry, intent: parsed.intent, src, profile, paper: paperWhite(profile, parsed.intent),
+        roundTripDecides: iccRoundTripDecides(profile),
+      };
+      absentLimit = null;
+      return src;
+    } catch { return null; }
+  }
   /**
    * Whether dragging is held inside the target gamut.
    *
@@ -254,6 +420,18 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /** The 3D view angles, and the solid meshes (cached — each costs a build). */
   const solidView = { yaw: 28, pitch: 18, scale: 0.92 };
   const solidCache = new Map<string, GamutSolid>();
+  /**
+   * How the solid is embedded. Default 'landscape' — hue laid out flat, so the
+   * peaks and troughs per hue are directly comparable.
+   *
+   * 'lab' is the ColorSync/iccview view: the opponent axes on the floor,
+   * lightness standing up, and — the reason it matters here — ONE scale for all
+   * three axes. The cylinder divides chroma by the gamut's own peak, which makes
+   * every gamut fill the frame identically and destroys exactly the comparison a
+   * press profile is loaded to make; in 'lab' sRGB stays squat and Rec.2020 wide,
+   * and a press solid is visibly the smaller object it is.
+   */
+  let solidEmbed: SolidEmbed = 'landscape';
 
   const cleanups: Array<() => void> = [];
 
@@ -337,20 +515,160 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   // ── The gamut-limit control ──────────────────────────────────────────────
   const limitSeg = $('[data-lab-limit]')!;
-  limitSeg.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
-    if (!btn) return;
-    const next = btn.dataset.val as Exclude<GamutName, 'none'>;
-    if (next === limit) return;
+  /** The charts' container, marked `aria-busy` while an expensive target builds. */
+  const chartsSection = $('[data-lab-charts]');
+
+  /**
+   * The comparison row: the three display gamuts, then AT MOST ONE press pill,
+   * then the `+` that opens the profile panel.
+   *
+   * One profile pill however many are stored, deliberately. Every mounted profile
+   * gets a picker tab for free (the output family widens for it), but this row is
+   * a comparison-target selector and a fifth, sixth and seventh pill is precisely
+   * the failure §11.6b describes. Which profile is live is chosen in the panel,
+   * where the intent buttons and the remove buttons already live.
+   *
+   * The row holds no mounted control, so rebuilding its markup is safe.
+   */
+  function renderLimitSeg(): void {
+    const id = gamutSourceId(limit);
+    const btn = (val: string, label: string, pressed: boolean, extra = ''): string =>
+      `<button type="button" class="view-seg-btn${extra}" data-val="${escape(val)}"
+        aria-pressed="${pressed}">${escape(label)}</button>`;
+    const pills = GAMUTS.map(g => btn(g, GAMUT_TITLE[g], id === g));
+    if (activeProfile) {
+      pills.push(btn(
+        activeProfile.src.id, shortLabel(activeProfile.entry, activeProfile.intent),
+        id === activeProfile.src.id, ' lab-limit-press',
+      ));
+    } else if (absentLimit) {
+      // Never pressed, and clicking it opens the panel rather than switching to a
+      // gamut we cannot compute. The URL is untouched — see `limitParam`.
+      pills.push(`<button type="button" class="view-seg-btn lab-limit-press"
+        data-lab-limit-absent aria-pressed="false" data-state="absent"
+        title="${escape(t('This link compares against a profile that isn’t on this device.'))}"
+        >${escape(absentLabel(absentLimit))}</button>`);
+    }
+    if (host.assets) {
+      pills.push(`<button type="button" class="view-seg-btn lab-limit-add" data-lab-profiles
+        aria-label="${escape(t('Print profile'))}" title="${escape(t('Print profile'))}">+</button>`);
+    }
+    limitSeg.innerHTML = pills.join('');
+  }
+
+  /**
+   * Adopt a comparison target and repaint everything that reads it.
+   *
+   * Split in two for one reason: a profile-backed target is EXPENSIVE the first
+   * time. Its ceiling grid is ~9.4k bisections against a CLUT (`ceilingGrid` in
+   * engine/src/gamut.ts) and the 3D solid another 3.8k probes, measured at
+   * 400–700 ms per profile × intent in Chrome — one blocking task with no
+   * feedback if it runs inside the click. So the cheap half (the pressed pill, the
+   * press card, the URL) paints first, the section is marked `aria-busy`, and the
+   * charts follow on the next frame. The work still blocks once; it no longer
+   * blocks BEFORE the reader has been told their press was pressed.
+   *
+   * A built-in gamut goes the straight-through path — its grid is a millisecond,
+   * and deferring would make a synchronous tab press stop being synchronous for
+   * everything that reads it, tests included.
+   */
+  function setLimit(next: GamutLimit, param: string | null): void {
     limit = next;
-    limitSeg.querySelectorAll<HTMLElement>('[data-val]')
-      .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+    limitParam = param;
+    limitPinned = param != null;   // a chosen target travels with the link
+    renderLimitSeg();
+    renderReadouts();              // the ceilings list and the press card follow the target
+    syncUrl();
+    const heavy = fastRgbContains(resolveGamutSource(next)) == null
+      && typeof requestAnimationFrame === 'function';
+    if (!heavy) { repaintForLimit(); return; }
+    chartsSection?.setAttribute('aria-busy', 'true');
+    // Two frames: one to get the pressed state and the busy attribute on screen,
+    // the second to run in. One frame is not enough — the callback of the first
+    // still lands before that frame's paint.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      repaintForLimit();
+      chartsSection?.removeAttribute('aria-busy');
+    }));
+  }
+
+  /** The half of a target change that costs: the charts and the solid. */
+  function repaintForLimit(): void {
     // The legend keys are part of the chart's markup, so the limit change needs a
     // rebuild, not just a repaint.
     buildCharts();
     paintCharts();
     paintSolid();
+  }
+
+  /**
+   * Open the profile library.
+   *
+   * Every callback reports back honestly: `onActivate` returns whether the charts
+   * actually moved, so a row whose bytes have gone since the list was read cannot
+   * leave the panel reading pressed while the pill row says the profile is absent.
+   */
+  function openProfiles(): void {
+    if (!host.assets) return;
+    const h = host as ColorProfilesHost;
+    void openProfilesPanel({
+      host: h,
+      active: activeProfile ? { digest: activeProfile.entry.digest, intent: activeProfile.intent } : null,
+      absent: absentLimit != null,
+      onActivate: async (digest, intent) => {
+        const id = `icc:${digest}:${intent}`;
+        const src = await adoptProfileLimit(id);
+        // Pressing an intent is a choice of comparison target, so it moves the
+        // charts as well as the tab — that is the whole reason the button is here.
+        if (!src) return false;
+        setLimit(src, id);
+        remountPickers();
+        return true;
+      },
+      onIngest: async (digest) => {
+        // A dropped file only stocks the library — EXCEPT when it is the one a
+        // link was waiting for, in which case the pill goes live where it stood.
+        // Nothing else needs doing: the id in the URL already matches.
+        const want = absentLimit ? parseProfileLimit(absentLimit) : null;
+        if (!want || want.digest !== digest) return;
+        const src = await adoptProfileLimit(absentLimit!);
+        if (src) { setLimit(src, src.id); remountPickers(); }
+      },
+      onRemove: async (digest) => {
+        const wasActive = activeProfile?.entry.digest === digest;
+        await removeProfile(h, digest);
+        if (wasActive) {
+          activeProfile = null;
+          setLimit(DEFAULT_LIMIT, null);
+        }
+        // Unconditionally: the tab is gone from the registry whether or not this
+        // was the charted profile, and a field still showing it would resolve a
+        // mode nothing answers for.
+        remountPickers();
+      },
+    });
+  }
+
+  renderLimitSeg();
+
+  limitSeg.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-lab-profiles]') || target.closest('[data-lab-limit-absent]')) {
+      openProfiles();
+      return;
+    }
+    const btn = target.closest<HTMLElement>('[data-val]');
+    const next = btn?.dataset.val;
+    if (!next || next === gamutSourceId(limit)) return;
+    if (activeProfile && next === activeProfile.src.id) setLimit(activeProfile.src, next);
+    else if ((GAMUTS as readonly string[]).includes(next)) setLimit(next as Exclude<GamutName, 'none'>, next);
   });
+
+  // A display change (a window dragged to another monitor, or a surface refusing
+  // the wide-gamut option) only REPAINTS: the encode space is part of the paint
+  // key, and the "your display" contour is set during the paint. It must not move
+  // the tab — the display changing is not the reader changing their comparison.
+  cleanups.push(onDisplayGamutChange(() => { paintCharts(); }));
 
   const boundsBox = $<HTMLInputElement>('[data-lab-bounds]');
   if (boundsBox) {
@@ -370,13 +688,30 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   const chartState = new Map<SlicePlane, SliceChartState>();
   const chartTeardowns: Array<() => void> = [];
 
+  /**
+   * The chroma ceiling for a CONTROL: {@link CONTROL_LIMIT}'s, stretched if the
+   * subject is already past it.
+   *
+   * The stretch is what makes "never clamp" literal. A range input cannot hold a
+   * value above its own `max`, so any ceiling that could sit below the subject is a
+   * value-destroying ceiling — `?c=oklch(0.5 0.7 328)` from a link, or a typed 0.6,
+   * has to remain expressible and draggable rather than being pulled back to 0.5.
+   */
+  const controlCMax = (): number => Math.max(chromaAxisMax(CONTROL_LIMIT), desc.oklch.c);
+
   function chartStateFor(plane: SlicePlane): SliceChartState {
     const st = chartState.get(plane)
-      ?? { plane, fixed: 0, cMax: SLICE_C_MAX } as SliceChartState;
+      ?? { plane, fixed: 0 } as SliceChartState;
     // Every plane is sliced AT the subject, so the three of them are three
     // orthogonal cuts through one colour rather than three unrelated views.
     st.fixed = sliceFixedOf(plane, desc.oklch);
     st.limit = limit;
+    // The chroma axis reaches exactly as far as this gamut does — 0.34 on sRGB,
+    // 0.5 on Rec.2020 — so the envelope fills the plot instead of being squashed
+    // into the lower half (sRGB) or clipped flat at the top (Rec.2020). Derived
+    // from the LIMIT alone, never from the subject's lightness, so it cannot
+    // rescale under the cursor mid-drag.
+    st.cMax = chromaAxisMax(limit);
     chartState.set(plane, st);
     return st;
   }
@@ -388,7 +723,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       if (!mount) continue;
       const st = chartStateFor(plane);
       mount.innerHTML = renderSliceChart(st, [
-        { idx: 0, hex: desc.srgbHex, label: t('This colour') },
+        // `hex` paints the dot; `oklch` PLACES it. Placing from the hex — which is
+        // gamut-mapped, chroma reduced — sat an out-of-sRGB marker exactly on the sRGB
+        // contour on the two planes with a chroma axis, while L×H (whose axes both
+        // survive the clamp) showed it outside and the 3D panel said "off the surface".
+        { idx: 0, hex: desc.srgbHex, oklch: desc.oklch, label: t('This colour') },
       ], { editable: true });
       chartTeardowns.push(wireSliceChart(mount, {
         stateOf: () => chartStateFor(plane),
@@ -437,14 +776,48 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const num = $<HTMLInputElement>(`[data-lab-num="${plane}"]`);
       if (num) {
         const ch2 = PANEL_CHANNEL[plane];
+        // Scaled to CONTROL_LIMIT, not to the pressed tab: see controlCMax(). The
+        // bounds are still re-derived on every build, because the subject may have
+        // moved past them.
+        const rNum = channelRange(ch2, controlCMax());
+        num.min = String(rNum.min);
+        num.max = String(rNum.max);
         const onNum = (): void => {
           const v = Number(num.value);
           if (!Number.isFinite(v)) return;
-          const r = channelRange(ch2, SLICE_C_MAX);
-          setOklch({ ...desc.oklch, [ch2]: Math.max(r.min, Math.min(r.max, v)) });
+          const r = channelRange(ch2, controlCMax());
+          // Lightness and hue have real ends (0–1, 0–360°). Chroma does not: its
+          // ceiling is an axis choice, so a typed value above it is honoured and the
+          // axis grows to hold it, rather than the number being taken off the user.
+          const clamped = ch2 === 'c'
+            ? Math.max(r.min, v)
+            : Math.max(r.min, Math.min(r.max, v));
+          setOklch({ ...desc.oklch, [ch2]: clamped });
         };
         num.addEventListener('change', onNum);
         chartTeardowns.push(() => num.removeEventListener('change', onNum));
+
+        // Drag the number sideways to change it — the design-tool gesture, on the
+        // shared primitive (lib/scrub.ts). Sensitivity is per channel because the
+        // three axes are nothing like each other in scale: at the default 1/px,
+        // chroma would cross its whole range inside a pixel. These give roughly a
+        // full range per ~380px of travel, so a comfortable drag covers the axis and
+        // Shift/Alt still coarsen and refine it.
+        const SCRUB_PER_PX: Record<GamutChannel, number> = { l: 0.0025, c: 0.001, h: 1 };
+        const DECIMALS: Record<GamutChannel, number> = { l: 4, c: 4, h: 2 };
+        chartTeardowns.push(attachScrub(num, {
+          selector: `[data-lab-num="${plane}"]`,
+          min: rNum.min,
+          max: rNum.max,
+          unitPerPx: SCRUB_PER_PX[ch2],
+          decimals: DECIMALS[ch2],
+          touch: true,                  // paired with `touch-action: pan-y` in the CSS
+          getFallback: () => desc.oklch[ch2],
+          // Live while dragging, at draft quality — the same treatment a chart drag
+          // and a slider drag get, so all three feel like one control surface.
+          onDrag: (_el, v) => setOklch({ ...desc.oklch, [ch2]: v }, { silent: true, live: true }),
+          onCommit: onNum,
+        }));
       }
     }
   }
@@ -466,10 +839,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   const setOklch = (o: { l: number; c: number; h: number }, opts?: { silent?: boolean; live?: boolean }): void =>
     setSubject(formatOklch(bounded(o)), opts);
 
-  /** The slider's world: the other two channels held at the subject, at the
-   *  gamut the charts are currently drawn to. */
+  /** The slider's world: the other two channels held at the subject, tiered against
+   *  the gamut the charts are drawn to — but scaled to controlCMax(), so pressing a
+   *  narrower tab recolours the track without shortening it. */
   function sliderState(ch: GamutChannel) {
-    return { channel: ch, base: desc.oklch, limit, cMax: SLICE_C_MAX };
+    return { channel: ch, base: desc.oklch, limit, cMax: controlCMax() };
   }
 
   /** Repaint the broken tracks — their segments depend on the OTHER two channels,
@@ -480,6 +854,13 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const mount = $(`[data-lab-slider="${plane}"]`);
       if (mount) paintGamutSlider(mount, sliderState(ch), desc.oklch[ch]);
       const num = $<HTMLInputElement>(`[data-lab-num="${plane}"]`);
+      // Keep the typed box's ceiling in step with the slider's, so a chroma the user
+      // pushed past the axis is not reported as out of range by the box that accepted
+      // it (and so the scrub gesture, which reads this attribute, can reach it).
+      if (num) {
+        const top = String(channelRange(ch, controlCMax()).max);
+        if (num.max !== top) num.max = top;
+      }
       // Never fight the user mid-type.
       if (num && document.activeElement !== num) {
         num.value = ch === 'h' ? desc.oklch.h.toFixed(2)
@@ -495,7 +876,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       if (!mount) continue;
       const st = chartStateFor(plane);
       paintSliceChart(mount, st, { quality });
-      updateSliceDot(mount, 0, desc.srgbHex, st);
+      updateSliceDot(mount, 0, desc.srgbHex, st, desc.oklch);
       const label = $(`[data-lab-slice-at="${plane}"]`);
       if (label) label.textContent = formatFixed(plane, st.fixed);
     }
@@ -506,15 +887,31 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   const solidCanvas = $<HTMLCanvasElement>('[data-lab-solid]');
   let solidFrame = 0;
 
-  function solidFor(l: Exclude<GamutName, 'none'>): GamutSolid {
-    let s = solidCache.get(l);
+  function solidFor(lim: GamutLimit): GamutSolid {
+    // Keyed by `gamutSourceId` AND the embedding: a GamutSource stringifies to
+    // '[object Object]', so two profiles would share one cache entry and the
+    // second would silently show the first one's mesh — and two embeddings of one
+    // gamut are two different meshes.
+    const key = `${gamutSourceId(lim)}|${solidEmbed}`;
+    let s = solidCache.get(key);
     // 'landscape': hue laid out flat, lightness in depth, chroma standing up.
     // The peaks and troughs per hue are then directly comparable — on a cylinder
     // half of them are round the back.
     // 192x80 ≈ 15k quads. The ridges are where the mesh shows, and they run along
     // hue, so hue gets the higher count. Built once per gamut and cached (~50ms),
     // then only projected + filled per frame.
-    if (!s) { s = gamutSolid(l, 192, 80, 'landscape'); solidCache.set(l, s); }
+    //
+    // A profile-backed source gets a COARSER mesh (96x40, ~3.8k quads). Its
+    // boundary comes from `maxChroma` bisections against a CLUT rather than a
+    // matrix, so the full mesh is ~280ms — long enough that pressing the press
+    // pill would look stuck. The press gamut's silhouette is smooth and its
+    // ridges are shallower than a display gamut's, so the coarser mesh costs
+    // little of what the picture is for.
+    if (!s) {
+      const fine = typeof lim === 'string';
+      s = gamutSolid(lim, fine ? 192 : 96, fine ? 80 : 40, solidEmbed);
+      solidCache.set(key, s);
+    }
     return s;
   }
 
@@ -575,7 +972,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     if (note) {
       note.textContent = m.inside
         ? t('{deg}° · drag to turn', { deg: String(Math.round(((solidView.yaw % 360) + 360) % 360)) })
-        : t('Outside {g} — the marker sits off the surface', { g: GAMUT_TITLE[limit] });
+        : t('Outside {g} — the marker sits off the surface', { g: limitTitle(limit) });
     }
   }
 
@@ -632,6 +1029,21 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       solidCanvas.removeEventListener('pointercancel', onUp);
       solidCanvas.removeEventListener('keydown', onKey);
     });
+  }
+
+  const embedSeg = $('[data-lab-embed]');
+  if (embedSeg) {
+    const onEmbed = (e: Event): void => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
+      const next = btn?.dataset.val as SolidEmbed | undefined;
+      if (!next || next === solidEmbed) return;
+      solidEmbed = next;
+      embedSeg.querySelectorAll<HTMLElement>('[data-val]')
+        .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+      paintSolid();
+    };
+    embedSeg.addEventListener('click', onEmbed);
+    cleanups.push(() => embedSeg.removeEventListener('click', onEmbed));
   }
 
   // ── Ramps: tones, and a blend to a second colour ─────────────────────────
@@ -712,23 +1124,49 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // function is defined further down with the rest of the render helpers.)
   mountInkPicker();
 
-  const blendPicker = $('[data-lab-blend-picker]');
-  if (blendPicker) {
-    // The SAME expanded picker as the subject's — tabs, dials and sliders.
-    //
-    // It was a compact `float` popover, on the theory that a secondary control
-    // should carry less weight. But the dials are gated on `inline` inside the
-    // component (colorModesHtml's third parameter is passed `inline`), so a float
-    // popover can only ever offer the hex field, alpha and swatches — you cannot
-    // pick a blend target perceptually, which is the whole reason the dials exist.
-    // Hierarchy is better carried by placement and heading than by crippling the
-    // control.
+  /**
+   * The blend target's picker — the SAME expanded picker as the subject's, with
+   * tabs, dials and sliders.
+   *
+   * It was a compact `float` popover, on the theory that a secondary control
+   * should carry less weight. But the dials are gated on `inline` inside the
+   * component (colorModesHtml's third parameter is passed `inline`), so a float
+   * popover can only ever offer the hex field, alpha and swatches — you cannot
+   * pick a blend target perceptually, which is the whole reason the dials exist.
+   * Hierarchy is better carried by placement and heading than by crippling the
+   * control.
+   */
+  function mountBlendPicker(): void {
+    const blendPicker = $('[data-lab-blend-picker]');
+    if (!blendPicker) return;
     mountColorField(blendPicker, 'lab-other', {
       value: describeColor(other)?.srgbHex ?? '#e0b64d',
       inline: true,
       modes: true,
       onChange: (value) => { other = value; renderBlend(); },
     });
+  }
+  mountBlendPicker();
+
+  /**
+   * Re-generate every mounted colour field against the CURRENT space registry.
+   *
+   * A field bakes its whole tab strip at mount time (`colorModesHtml` reads
+   * `colorSpaces()` once) and subscribes to nothing, so mounting or unmounting a
+   * profile leaves any field that is not re-mounted holding a stale strip. Only
+   * the subject picker used to be re-seeded: the blend and ink pickers never grew
+   * the profile tab in-session — the same page showed two different tab rows
+   * depending on whether the reader arrived by link or by drop — and after a
+   * remove they kept a tab `getColorSpace` no longer resolves.
+   *
+   * Safe here and not from `renderContrast`: no drag can be in flight while the
+   * profile panel is open, which is what made re-mounting the ink picker mid-score
+   * destroy the slider under the pointer.
+   */
+  function remountPickers(): void {
+    reseedPicker();
+    mountBlendPicker();
+    mountInkPicker();
   }
   const blendRaw = $<HTMLInputElement>('[data-lab-blend-raw]');
   if (blendRaw) {
@@ -826,9 +1264,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     seeding = false;
   }
 
-  /** Keep the URL shareable, without a history entry per change. */
+  /** Keep the URL shareable, without a history entry per change.
+   *
+   *  `&limit=` rides along only once the target has been chosen: then the link
+   *  reproduces the sender's comparison verbatim on any display, instead of the
+   *  recipient's own screen re-deciding it. */
   function syncUrl(): void {
-    const url = `#/lab?c=${encodeURIComponent(subject)}`;
+    const url = `#/lab?c=${encodeURIComponent(subject)}`
+      + (limitPinned && limitParam ? `&limit=${encodeURIComponent(limitParam)}` : '');
     if (window.location.hash !== url) window.history.replaceState(null, '', url);
   }
 
@@ -840,7 +1283,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     // the same number. The authored form is never lost: it stays in the entry
     // field, in the alternates below, and in the notation table.
     const mode = pickerMode();
-    const leadSpace = PICKER_MODE_SPACE[mode] ?? null;
+    const leadSpace = pickerSpaceFor(mode);
     const lead = leadSpace ? desc.notations.find(n => n.space === leadSpace)?.css : null;
     const primary = $('[data-lab-sw-primary]');
     if (primary) {
@@ -890,7 +1333,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     } else if (!announcedOut) {
       announcedOut = true;
       showGamutToast(t(
-        'Outside sRGB. The swatches on this page ask your browser for the real colour, so a wide-gamut display shows it — a narrower one falls back to <strong>{hex}</strong>. The charts are drawn on an 8-bit canvas and always show the fallback.',
+        'Outside sRGB. The swatches on this page ask your browser for the real colour, so a wide-gamut display shows it and a narrower one falls back to <strong>{hex}</strong>. The charts are drawn in your display’s own space, so they reach exactly as far as it does.',
         { hex: escape(desc.srgbHex.toUpperCase()) },
       ));
     }
@@ -912,17 +1355,31 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       : t('of chroma still available within sRGB at this lightness and hue (ceiling {max})', { max: desc.ceiling.srgb.toFixed(3) });
 
     const ceils = $('[data-lab-ceilings]')!;
-    ceils.innerHTML = GAMUTS.map((lim) => {
-      const c = desc.ceiling[lim];
-      const gain = lim === 'srgb' ? '' :
-        ` <span class="lab-ceil-gain">+${Math.round((c / (desc.ceiling.srgb || 1) - 1) * 100)}%</span>`;
+    // A ceiling row per comparison target — the three display gamuts, and the
+    // mounted press profile when there is one. Its gain is frequently NEGATIVE
+    // against sRGB, which is the point of showing it, so the sign is explicit
+    // rather than a hard-coded '+'.
+    const rows: Array<{ name: string; c: number }> = GAMUTS.map(g => ({
+      name: GAMUT_TITLE[g], c: desc.ceiling[g],
+    }));
+    if (activeProfile) {
+      rows.push({
+        name: limitTitle(activeProfile.src),
+        c: maxChroma(desc.oklch.l, desc.oklch.h, activeProfile.src),
+      });
+    }
+    ceils.innerHTML = rows.map(({ name, c }, i) => {
+      const pct = Math.round((c / (desc.ceiling.srgb || 1) - 1) * 100);
+      const gain = i === 0 ? '' :
+        ` <span class="lab-ceil-gain">${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%</span>`;
       const reached = desc.oklch.c <= c;
       return `<li class="lab-ceil${reached ? '' : ' is-past'}">
-        <span class="lab-ceil-name">${escape(GAMUT_TITLE[lim])}</span>
+        <span class="lab-ceil-name">${escape(name)}</span>
         <span class="lab-ceil-val">${c.toFixed(3)}${gain}</span>
       </li>`;
     }).join('');
 
+    renderPress();
     renderContrast();
     renderNotations();
     renderRamp();
@@ -1019,9 +1476,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * secondary control on a card wants: the card is already carrying two numbers,
    * and the expanded form's rings would dominate it.
    *
-   * Mounted ONCE. It used to be re-mounted from `renderContrast`, which meant its
-   * own first `onChange` destroyed it: the slider under the pointer disappeared and
-   * the drag died with it. A re-score now only writes text into the card around it.
+   * Never re-mounted from `renderContrast`, which is what used to destroy it: its
+   * own first `onChange` re-ran the score, the slider under the pointer disappeared
+   * and the drag died with it. A re-score only writes text into the card around it.
+   * `remountPickers` is the one other caller, and it runs from the profile panel
+   * where no drag can be in flight.
    */
   function mountInkPicker(): void {
     const host = $('[data-lab-ink-pick]');
@@ -1038,16 +1497,118 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     });
   }
 
+  /**
+   * The press card: what this colour costs on the mounted profile.
+   *
+   * Rendered only while a profile is active, and every number in it is
+   * MEASURED — it comes from that file's own tables under the named intent.
+   * Nothing derived and nothing approximate appears here, which is what lets the
+   * card carry the profile's own name as its claim.
+   *
+   * `Shift` is the round-trip ΔE the membership threshold is applied to. Showing
+   * it turns {@link ICC_GAMUT_DELTA_E} from a hidden rule into a readable
+   * quantity: at 0.4 the colour is solidly inside, at 2.8 it "passes" and will
+   * visibly move. No traffic lights — the number is the finding.
+   *
+   * It is ABSENT, with the card's tolerance note, for a matrix/TRC or gray
+   * profile. `iccGamutSource` decides those on their device cube instead, so the
+   * round trip is near zero well outside the gamut — printing it would put
+   * "Outside the gamut / Shift ΔE 0.1" directly above a sentence saying ΔE 3.0
+   * decides, which is a rule the card visibly breaks. Any RGB or gray display
+   * profile is this case, and they mount like any other.
+   *
+   * `Ink` is total area coverage in the trade's own units (channels × 100, so
+   * 0–400%), never normalised, and the row is ABSENT rather than zeroed for a
+   * profile that has no ink — every RGB and display profile. There is no ink
+   * LIMIT control: a press's limit is the pressroom's number, not the profile's,
+   * and a control for it here would be either a policing device or a decoration.
+   */
+  function renderPress(): void {
+    const card = $('[data-lab-press]');
+    if (!card) return;
+    const ap = activeProfile;
+    card.hidden = !ap;
+    if (!ap) return;
+    const { l, c, h } = desc.oklch;
+    const fits = inGamut(l, c, h, ap.src);
+    const shift = ap.roundTripDecides ? iccRoundTripDeltaE(ap.profile, ap.intent, l, c, h) : null;
+    const ink = ap.src.inkCoverage?.(l, c, h) ?? null;
+
+    card.dataset.state = fits ? 'in' : 'out';
+    const note = card.querySelector<HTMLElement>('[data-lab-press-note]');
+    if (note) note.hidden = !ap.roundTripDecides;
+    card.querySelector('[data-lab-press-name]')!.textContent = limitTitle(ap.src);
+    card.querySelector('[data-lab-press-verdict]')!.textContent =
+      fits ? t('Reproducible') : t('Outside the gamut');
+
+    const rows: string[] = [];
+    const row = (label: string, value: string, chip = ''): string =>
+      `<li class="lab-press-row"><span class="lab-press-k">${escape(label)}</span>`
+      + `<span class="lab-press-v">${escape(value)}${chip}</span></li>`;
+    if (shift != null) rows.push(row(t('Shift'), `ΔE ${shift.toFixed(1)}`));
+    if (ink != null) rows.push(row(t('Ink'), `${Math.round(ink * 100)}%`));
+    if (ap.paper) {
+      // Painted as CSS lab(), which is the space the number is IN — no hop
+      // through a hex, so a paper whiter or warmer than sRGB's white shows as
+      // itself wherever the display can reach it.
+      const [pl, pa, pb] = ap.paper;
+      const chip = ` <span class="lab-press-chip" style="background:lab(${pl.toFixed(2)} ${pa.toFixed(2)} ${pb.toFixed(2)})"></span>`;
+      rows.push(row(t('Paper'), `L* ${pl.toFixed(1)}`, chip));
+    }
+    card.querySelector('[data-lab-press-rows]')!.innerHTML = rows.join('');
+  }
+
   function renderNotations(): void {
     const mount = $('[data-lab-notations]');
     if (!mount) return;
-    mount.innerHTML = desc.notations.map(n => `
+    const rows = desc.notations.map(n => `
       <tr${n.exact ? '' : ' class="is-inexact"'}>
         <th scope="row">${escape(n.space)}</th>
         <td><code>${escape(n.css)}</code></td>
         <td class="lab-note-fit">${n.exact ? '' : `<span title="${escape(t('This space cannot hold the colour — CSS would clamp these numbers.'))}">${escape(t('clamped'))}</span>`}</td>
         <td><button type="button" class="lab-copy" data-lab-copy="${escape(n.css)}">${escape(t('Copy'))}</button></td>
-      </tr>`).join('');
+      </tr>`);
+    // …then the press, after the CSS spaces. The ONLY CMYK numbers this table
+    // ever prints are profile-backed: `describeColor` is untouched and no generic
+    // CMYK row is added, because four numbers with no profile behind them describe
+    // no press that exists.
+    const press = pressNotation();
+    if (press) rows.push(press);
+    mount.innerHTML = rows.join('');
+  }
+
+  /** The mounted profile's device numbers for this colour, as a table row. */
+  function pressNotation(): string | null {
+    const ap = activeProfile;
+    if (!ap) return null;
+    const parsed = parseColor(subject);
+    if (!parsed) return null;
+    const lab = convertColor(parsed, 'lab').components as [number, number, number];
+    const dev = ap.profile.fromLab(ap.intent, lab);
+    if (!dev) return null;
+    // Four inks in a CMYK space get the trade's own notation; any other channel
+    // count gets `device(...)` rather than a syntax invented for the occasion.
+    const four = dev.length === 4 && ap.entry.colourSpace.toUpperCase() === 'CMYK';
+    const css = four
+      ? `cmyk(${dev.map(v => `${Math.round(Math.min(1, Math.max(0, v)) * 100)}%`).join(' ')})`
+      : `device(${dev.map(v => v.toFixed(2)).join(' ')})`;
+    const fits = inGamut(desc.oklch.l, desc.oklch.c, desc.oklch.h, ap.src);
+    // The ΔE wording only where the ΔE is what decided it (see renderPress): a
+    // matrix/TRC profile is refused by its device cube, and "round-trips 0.0 ΔE
+    // away — past the 3.0 tolerance" is a sentence that refutes itself.
+    const shift = ap.roundTripDecides
+      ? iccRoundTripDeltaE(ap.profile, ap.intent, desc.oklch.l, desc.oklch.c, desc.oklch.h)
+      : null;
+    const fit = fits ? '' : `<span title="${escape(shift != null
+      ? t('Round-trips {de} ΔE away — past the {tol} tolerance.', { de: shift.toFixed(1), tol: ICC_GAMUT_DELTA_E.toFixed(1) })
+      : t('Outside this profile’s gamut.'))}">${escape(t('outside'))}</span>`;
+    return `
+      <tr${fits ? '' : ' class="is-inexact"'}>
+        <th scope="row">${escape(limitTitle(ap.src))}</th>
+        <td><code>${escape(css)}</code></td>
+        <td class="lab-note-fit">${fit}</td>
+        <td><button type="button" class="lab-copy" data-lab-copy="${escape(css)}">${escape(t('Copy'))}</button></td>
+      </tr>`;
   }
 
   /**
@@ -1060,7 +1621,9 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    */
   function stepHtml(hex: string, action: 'use' | 'copy' = 'use'): string {
     const o = describeColor(hex)?.oklch;
-    const ink = contrastRatio(hex, '#ffffff') >= 4.5 ? '#ffffff' : '#111111';
+    // The shared inversion rule (contrastText), so a ramp step's label flips at the
+  // same lightness as the picker's dial disc and the value pill.
+  const ink = contrastText(hex);
     const label = o
       ? `${Math.round(o.l * 100)}% ${o.c.toFixed(3)} ${Math.round(o.h)}`
       : hex.toUpperCase();
@@ -1254,6 +1817,41 @@ function seedFrom(params: string): string | null {
 }
 
 /**
+ * `?…&limit=` from the route params — an explicit comparison target, which beats
+ * every kind of detection. One of the three display gamut names, or a profile id
+ * exactly as `iccGamutSource` mints it (`icc:<16 hex>:<intent>`).
+ *
+ * Returned as the RAW string, not resolved: a profile id has to survive into the
+ * URL unchanged even on a device that does not have that profile, so resolving it
+ * here would throw away the only thing that keeps a shared link honest.
+ * Anything else is junk and falls back to null → {@link DEFAULT_LIMIT}.
+ */
+function limitFrom(params: string): string | null {
+  try {
+    const q = new URLSearchParams(params.startsWith('?') ? params.slice(1) : params);
+    const v = q.get('limit');
+    if (!v) return null;
+    if ((GAMUTS as readonly string[]).includes(v)) return v;
+    return parseProfileLimit(v) ? v : null;
+  } catch { return null; }
+}
+
+/**
+ * A profile's substrate as PCS Lab: zero ink for an ink space (no ink IS the
+ * paper), device white otherwise.
+ *
+ * This is the one number that explains why absolute colorimetric looks different
+ * on newsprint, and it is measured rather than assumed — a coated stock and an
+ * uncoated one differ by several ΔE at the white point alone. Null when the
+ * profile cannot answer under this intent.
+ */
+function paperWhite(p: IccProfile, intent: RenderingIntent): [number, number, number] | null {
+  const ink = /^(CMYK|CMY|[2-9A-F]CLR)$/i.test(p.dataColourSpace.trim());
+  const dev = Array.from({ length: p.nChannels }, () => (ink ? 0 : 1));
+  return p.toLab(intent, dev);
+}
+
+/**
  * Paint an element with the colour as AUTHORED, falling back to its sRGB
  * approximation only where the browser can't take the authored form.
  *
@@ -1268,7 +1866,9 @@ function paintSwatch(el: HTMLElement, d: ColorDescription): void {
   el.style.background = d.input;
   // Ink is chosen against the RENDERED fallback: it has to be readable on the
   // narrow-gamut result too, and the two are close enough that one choice serves.
-  el.style.color = contrastRatio(d.srgbHex, '#ffffff') >= 4.5 ? '#ffffff' : '#111111';
+  // The shared inversion rule (contrastText) — the big swatch used to flip to black
+  // a good deal earlier than the dial disc sitting right below it.
+  el.style.color = contrastText(d.srgbHex);
 }
 
 /** Multiply a hex toward black by `k` — the solid's soft top-light. */
@@ -1300,17 +1900,31 @@ function contrastCardShell(key: string, label: string, pickable = false): string
       </div>`;
 }
 
+/**
+ * The view's static frame.
+ *
+ * The comparison row is an EMPTY group here, filled by `renderLimitSeg` before
+ * the first paint. It used to be written from a `limit` parameter, which worked
+ * while a limit was one of three names; a mounted press profile makes the row's
+ * contents depend on state this function cannot see (which profile, which intent,
+ * whether a link's profile is absent), and two places building the same row is
+ * exactly the drift this file's comments keep warning about. One owner.
+ *
+ * Nothing here reaches the typed inputs' bounds either — those are scaled to
+ * CONTROL_LIMIT, because a comparison target must not change what is editable.
+ */
 function shellHtml(): string {
-  const seg = (): string => `
-    <div class="view-seg lab-limit" role="group" aria-label="${escape(t('See it against'))}" data-lab-limit>
-      ${GAMUTS.map(g => `<button type="button" class="view-seg-btn" data-val="${g}" aria-pressed="${g === 'rec2020'}">${escape(GAMUT_TITLE[g])}</button>`).join('')}
-    </div>`;
+  const seg = (): string =>
+    `<div class="view-seg lab-limit" role="group" aria-label="${escape(t('See it against'))}" data-lab-limit></div>`;
 
   // Plot first, caption under it — a figure/figcaption, so "this text describes
   // the thing above" is in the markup and not just in the CSS order.
   const chart = (plane: SlicePlane): string => {
     const ch = PANEL_CHANNEL[plane];
-    const r = channelRange(ch, SLICE_C_MAX);
+    // CONTROL_LIMIT, not the pressed pill: a control's reach must not depend on
+    // which gamut is being compared against. buildCharts() re-derives these against
+    // the subject, which is the only thing that can widen them.
+    const r = channelRange(ch, chromaAxisMax(CONTROL_LIMIT));
     return `
     <figure class="lab-chart">
       <div class="lab-chart-bar">
@@ -1413,6 +2027,15 @@ function shellHtml(): string {
           <figcaption class="lab-chart-head">
             <h3>${escape(t('The whole gamut'))}</h3>
             <p class="lab-chart-why">${escape(t('The shape the three flat charts are slicing. Turn it once and their curves stop looking arbitrary.'))}</p>
+            ${/* Two embeddings of one solid, not two pictures. Landscape lays hue
+                  out flat so per-hue peaks line up; Lab axes is the ColorSync view,
+                  and the one to compare gamuts in — it holds ONE scale across all
+                  three axes, so a press solid is visibly smaller than sRGB instead
+                  of being normalised to the same frame. */''}
+            <div class="view-seg lab-embed" role="group" aria-label="${escape(t('How the solid is drawn'))}" data-lab-embed>
+              <button type="button" class="view-seg-btn" data-val="landscape" aria-pressed="true">${escape(t('Landscape'))}</button>
+              <button type="button" class="view-seg-btn" data-val="lab" aria-pressed="false">${escape(t('Lab axes'))}</button>
+            </div>
             <p class="lab-chart-at"><strong data-lab-solid-note></strong></p>
           </figcaption>
         </figure>
@@ -1529,6 +2152,28 @@ function shellHtml(): string {
           <p class="lab-card-label">${escape(t('Chroma ceiling here'))}</p>
           <ul class="lab-ceilings" data-lab-ceilings></ul>
           <p class="lab-card-note">${escape(t('The most chroma each gamut allows at this lightness and hue.'))}</p>
+        </div>
+        ${/* The press card. Present but hidden until a profile is mounted, so its
+              slot in the grid is stable and adding one does not reflow the row's
+              first three cards. Filled by renderPress(); no mounted control in it. */''}
+        <div class="lab-card lab-press" data-lab-press hidden>
+          <p class="lab-card-label">${escape(t('On press'))}</p>
+          <p class="lab-press-name" data-lab-press-name></p>
+          <p class="lab-card-value lab-press-verdict" data-lab-press-verdict></p>
+          <ul class="lab-press-rows" data-lab-press-rows></ul>
+          ${/* The one caveat that is genuinely load-bearing, per card rather than
+                per readout: the tolerance is a TOLERANCE, and this reader's round
+                trip is markedly conservative in light yellows and deep shadows.
+                The number is interpolated, not typed, because a threshold stated
+                twice in two places is a threshold that will disagree with itself.
+
+                Hidden for a matrix/TRC or gray profile: those are decided by their
+                device cube, not by the round trip (iccRoundTripDecides), so the
+                sentence would state a rule the verdict above it does not follow. */''}
+          <p class="lab-card-note" data-lab-press-note hidden>${escape(t(
+            'In gamut is decided by a round trip within ΔE {tol} — a colour can pass and still shift visibly.',
+            { tol: ICC_GAMUT_DELTA_E.toFixed(1) },
+          ))}</p>
         </div>
       </div>
       <h3 class="lab-h3">${escape(t('Readability'))}</h3>

@@ -14,8 +14,13 @@
  * inline script in index.html), reconciled from the profile in main.ts's boot().
  */
 
-import { LANGS, LANG_META, normalizeLang, flagEmoji, sortedLangs } from '@lolly/engine';
-import type { Lang, LangSort } from '@lolly/engine';
+// Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
+// boot path, and engine/src/index.ts is one shared facade whose retained export
+// set is the UNION over every importer — touching it here drags createRuntime
+// (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
+// scripts/check-bundle-budget.ts.
+import { LANGS, LANG_META, normalizeLang, flagEmoji, sortedLangs } from '../../../engine/src/lang.ts';
+import type { Lang, LangSort } from '../../../engine/src/lang.ts';
 
 export { LANGS, LANG_META, normalizeLang, flagEmoji, sortedLangs };
 export type { Lang, LangSort };

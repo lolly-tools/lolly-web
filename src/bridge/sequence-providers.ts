@@ -116,11 +116,8 @@ import { ZZFXM_SCHEME, parseZzfxmRef, type ZzfxmRef } from '../../../../engine/s
 // one. Pure, DOM-free and seeded, so it is safe to import eagerly; the *renderer*
 // (a Worker) is the heavy half and stays lazy, below.
 import {
-  SCALES,
   composeSong,
-  mulberry32,
-  type Archetype,
-  type SongSpec,
+  generatedSongSpec,
 } from '../../../../engine/src/zzfx-compose.ts';
 import type { RenderedPcm, ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 
@@ -1506,31 +1503,6 @@ export const ZZFXM_MAX_TARGET_SEC = 600;
 export const ZZFXM_TARGET_QUANTUM_SEC = 0.5;
 
 /**
- * The archetypes the SEED may choose from.
- *
- * A deliberate subset of the twelve: these are the ones that read as a bed under
- * speech and picture. The other four (drum'n'bass, jungle, classical, spanish
- * guitar) are reachable only by naming them as an explicit `<style>`. This list
- * and its order are FROZEN — changing either would repoint every existing seed
- * at a different tune, which is the one thing this whole scheme exists to
- * prevent. It matches the export bar's picker (`views/tool-actions.ts`) so a
- * seed means the same song in both places.
- */
-const ZZFXM_SEEDED_ARCHETYPES = [
-  'melodic', 'ambient', 'lofi', 'bossaNova', 'rhythmic', 'whimsical', 'chiptune', 'cuban',
-] as const;
-
-/** Tempo window per archetype, in BPM. Frozen for the same reason as the list above. */
-const ZZFXM_BPM: Record<Archetype, readonly [number, number]> = {
-  melodic: [60, 84], ambient: [48, 60], lofi: [66, 84], bossaNova: [108, 126],
-  rhythmic: [96, 120], whimsical: [84, 108], chiptune: [132, 160], cuban: [96, 116],
-  drumAndBass: [160, 176], jungle: [158, 174], classical: [72, 96], spanishGuitar: [90, 120],
-};
-
-/** Scales the seed may choose from. Frozen (see above). */
-const ZZFXM_SCALES = ['majorPent', 'minorPent', 'suspended'] as const;
-
-/**
  * Slack subtracted before rounding up, so a length that IS on the grid stays on
  * it when it arrives a float-bit long. Without this, `ceil` would send 20.000000001s
  * to 20.5 and 20s to 20 — the exact boundary jitter the grid exists to absorb.
@@ -1549,33 +1521,10 @@ export function zzfxmTargetSec(wantedSec: number): number {
   return Math.round(clamped * 2) / 2;
 }
 
-/**
- * Seed → song spec. TOTALLY determined by (seed, targetSec, style).
- *
- * Every draw comes from one `mulberry32(seed)` stream, consumed in a FIXED order
- * — archetype, scale, tempo, three progression roots, pan — and a named `style`
- * overrides only the archetype AFTER its draw has happened, so naming a style
- * never shifts the rest of the stream. That is what lets `zzfxm:7` and
- * `zzfxm:7:lofi` share a progression while differing in arrangement.
- */
-export function generatedSongSpec(seed: number, targetSec: number, style?: Archetype): SongSpec {
-  const rng = mulberry32(seed >>> 0);
-  const pick = <T>(a: readonly T[]): T => a[Math.floor(rng() * a.length)] as T;
-  // The draw happens EVEN WHEN it is about to be overridden — the stream's
-  // position is part of the contract, so naming a style must not shift the scale,
-  // the progression or the pan out from under a seed.
-  const drawn: Archetype = pick(ZZFXM_SEEDED_ARCHETYPES);
-  const archetype: Archetype = style ?? drawn;
-  const scale = pick(ZZFXM_SCALES);
-  const pool = SCALES[scale].slice(0, 6);   // low register — melodies walk upward from the roots
-  const [lo, hi] = ZZFXM_BPM[archetype];
-  return {
-    archetype, seed: seed >>> 0, scale, targetSec,
-    bpm: Math.round(lo + rng() * (hi - lo)),
-    roots: [12, pick(pool), pick(pool), pick(pool)],
-    pan: Math.round((rng() - 0.5) * 30) / 100,
-  };
-}
+// The seed → spec draw lives in the engine (its order is a frozen contract, and a
+// `zzfxm:<seed>` ref must name the same song in every shell). Re-exported so this
+// stays the ONE import site for "the procedural bed", as it was before the hoist.
+export { generatedSongSpec };
 
 /** The shipped renderer, imported lazily so the Worker chunk is not in this module's eager graph. */
 async function defaultRenderSong(song: ZzfxSong): Promise<RenderedPcm> {

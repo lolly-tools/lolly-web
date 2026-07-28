@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { lchTrackGradients, LCH_MAX, colorFieldHtml, wireColorField, setSwatches } from './color-field.ts';
+import { lchTrackGradients, LCH_MAX, colorFieldHtml, wireColorField, setSwatches, runBoundaries } from './color-field.ts';
 import type { ColorChangeDetail, ColorFieldValue, WireColorFieldOpts } from './color-field.ts';
 import { colorSpaces } from './color-spaces.ts';
 
@@ -176,7 +176,7 @@ test('one flat tablist, grouped into three labelled families, wired to its panel
   assert.match(field.querySelector<HTMLElement>('[data-mode="oklch"]')!.getAttribute('aria-label')!,
     /^OKLCH, perceptual$/);
   assert.match(field.querySelector<HTMLElement>('[data-mode="cmyk"]')!.getAttribute('aria-label')!,
-    /^CMYK, output, uncalibrated$/);
+    /^CMYK, output, no profile$/);
   // Every tab controls a real tabpanel, and that panel points back.
   for (const tab of tabs) {
     const panel = field.querySelector(`#${tab.getAttribute('aria-controls')!}`);
@@ -419,6 +419,141 @@ test('the dragged channel keeps painting its dial needle', async () => {
   assert.equal(needle('l'), 'rotate(72.0deg)', 'L stayed put while H moved');
 });
 
+// ── The boundary hairlines on the dials ───────────────────────────────────────
+
+/** Every stop fraction in a gradient, in percent. Positions are the only numbers
+ *  followed by a ',' or the closing ')' — a colour's own `62.00%` lightness is
+ *  followed by a space. (Same trick as the tier test above.) */
+const stopFracs = (bg: string): number[] =>
+  [...bg.matchAll(/(\d+\.\d\d)%(?=[,)]|$)/g)].map(m => Number(m[1]));
+
+/**
+ * Where a run list' gradient actually BREAKS, read off the gradient itself: each
+ * run closes at the fraction the next one opens at, so a boundary is the one place
+ * a position repeats. Deriving the expectation this way rather than by recomputing
+ * `channelRuns` is the point — it pins the hairline to the same edge the eye sees.
+ */
+const gradientBreaks = (bg: string): number[] => {
+  const f = stopFracs(bg);
+  return f.filter((v, i) => i > 0 && f[i - 1] === v && v > 0 && v < 100);
+};
+
+const ringBg = (field: HTMLElement, ch: string): string =>
+  field.querySelector<HTMLElement>(`[data-space-group="oklch"] .color-dial[data-dial-ch="${ch}"]`)!.style.background;
+
+const edgeAngles = (field: HTMLElement, ch: string): number[] =>
+  [...field.querySelectorAll<HTMLElement>(`[data-space-group="oklch"] .color-dial[data-dial-ch="${ch}"] .color-dial-edge`)]
+    .map(e => Number(/rotate\(([\d.]+)deg\)/.exec(e.style.transform)![1]));
+
+/** The angles the hairlines WOULD have if they sat on the gradient's own breaks. */
+const breakAngles = (bg: string): number[] =>
+  gradientBreaks(bg).map(p => p / 100 * 360);
+
+/**
+ * Same boundaries, same order, same angles — within the width of the gradient's own
+ * quantisation. A stop position is printed at two decimals of a percent, so a
+ * fraction read back out of the gradient can differ from the one the hairline was
+ * rotated by by 0.036° (0.01% of 360°), and the rotation itself is written to a tenth
+ * of a degree (±0.05°). Anything past their sum is a hairline sitting beside its own
+ * edge, which is the thing being pinned — and 0.09° of a 3.25rem ring is a tenth of a
+ * device pixel.
+ */
+const assertSameAngles = (got: number[], want: number[], what: string): void => {
+  assert.equal(got.length, want.length, `${what}: ${got.length} hairlines for ${want.length} breaks`);
+  got.forEach((a, i) => {
+    assert.ok(Math.abs(a - want[i]!) <= 0.09, `${what}: hairline ${i} at ${a}°, break at ${want[i]}°`);
+  });
+};
+
+test('runBoundaries reports every interior tier crossing, once', () => {
+  const run = (from: number, to: number, tier: number) => ({ from, to, stops: ['red', 'red'], tier });
+  // A single-band axis crosses nothing: the ends are where the axis stops, not
+  // where a gamut does.
+  assert.deepEqual(runBoundaries([run(0, 1, 0)]), []);
+  assert.deepEqual(runBoundaries([]), []);
+  // Three bands → the two crossings between them, and never 0 or 1.
+  assert.deepEqual(runBoundaries([run(0, 0.25, 1), run(0.25, 0.8, 0), run(0.8, 1, 1)]), [0.25, 0.8]);
+  // A hue ring leaving and re-entering a gamut several times: EVERY crossing, not
+  // the first one.
+  assert.deepEqual(
+    runBoundaries([run(0, 0.1, 0), run(0.1, 0.2, 1), run(0.2, 0.5, 0), run(0.5, 0.6, 2), run(0.6, 1, 0)]),
+    [0.1, 0.2, 0.5, 0.6],
+  );
+  // A duplicate fraction (two boundaries the bisection landed on the same spot)
+  // is one hairline, not two stacked.
+  assert.deepEqual(runBoundaries([run(0, 0.4, 0), run(0.4, 0.4, 1), run(0.4, 1, 2)]), [0.4]);
+});
+
+test('a dial marks every gamut crossing with a hairline, at the gradient’s own fraction', () => {
+  // What Andy asked for: "a hairline indicator at the boundary on the dials … but
+  // they should see the full color".
+  const { field } = mount('oklch(62% 0.19 260)', { inline: true, modes: true, dials: true });
+
+  // 1. The full colour, both sides. The ring pours the SAME runs as the slider, at
+  //    the same fractions, but with no tier wash on it — the ladder is the
+  //    sliders' answer, not the dials'.
+  const c = ringBg(field, 'c');
+  const track = field.querySelector<HTMLElement>('[data-space-group="oklch"] [data-mode-ch="c"]')!.style.background;
+  assert.ok(track.includes('color-mix(in oklab,'), `the slider still washes its rings: ${track}`);
+  assert.ok(!c.includes('color-mix('), `a dial shows the full colour past the boundary: ${c}`);
+  assert.deepEqual(stopFracs(c), stopFracs(track), 'ring and slider must still break together');
+
+  // 2. A hairline on each break, at the break's own angle.
+  const expected = breakAngles(c);
+  assert.ok(expected.length >= 1, `a chroma axis past sRGB has a boundary: ${c}`);
+  assertSameAngles(edgeAngles(field, 'c'), expected, 'chroma');
+
+  // 3. More than one crossing on an axis that crosses more than once. A hue ring at
+  //    high chroma leaves and re-enters sRGB several times, and each of those is a
+  //    place the display stops.
+  const { field: wide } = mount('oklch(60% 0.22 0)', { inline: true, modes: true, dials: true });
+  const h = ringBg(wide, 'h');
+  const many = breakAngles(h);
+  assert.ok(many.length >= 2, `a high-chroma hue ring crosses repeatedly: ${many.length} in ${h}`);
+  assertSameAngles(edgeAngles(wide, 'h'), many, 'hue');
+  // …and none of them is stacked on 12 o'clock, where the axis merely ends.
+  assert.ok(many.every(a => a > 0 && a < 360));
+});
+
+test('the hairlines move with the ramp they mark', async () => {
+  const { field } = mount('oklch(62% 0.19 260)', { inline: true, modes: true, dials: true });
+  const before = edgeAngles(field, 'c');
+  // Lightness up near white: the chroma axis reaches far less, so its sRGB edge
+  // moves. The repaint has to rebuild the hairlines with the gradient — a stale set
+  // would sit beside its own edge.
+  drag(field, 'oklch', 'l', 95);
+  await settlePaint();
+  const after = edgeAngles(field, 'c');
+  assert.notDeepEqual(after, before, 'the chroma hairlines never moved');
+  assertSameAngles(after, breakAngles(ringBg(field, 'c')), 'chroma after L=95');
+  // The needle and the hub survive the rebuild — they are siblings of the hairline
+  // container, which is the only innerHTML target.
+  const dial = field.querySelector<HTMLElement>('[data-space-group="oklch"] .color-dial[data-dial-ch="c"]')!;
+  assert.ok(dial.querySelector('.color-dial-needle') && dial.querySelector('.color-dial-hub'));
+});
+
+test('the dial hairline is a rotated element, styled entirely from CSS', () => {
+  const css = readFileSync(new URL('../styles/parts/color-field.css', import.meta.url), 'utf8');
+  const rule = /\.color-dial-edge::before \{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'the dial hairline rule moved — find it before deleting this test');
+  const body = rule![1]!;
+  // Not dashed (that means DROP AREA here) and not a border — it is a mark of its own.
+  assert.ok(!/dashed/.test(body), `no dashed hairline: ${body.trim()}`);
+  assert.ok(!/\bborder\s*:/.test(body), `not a border: ${body.trim()}`);
+  // Tunable the way the tier opacities are: JS writes the rotation and nothing else.
+  for (const v of ['--dial-edge-w', '--dial-edge-len', '--dial-edge-c']) {
+    assert.ok(body.includes(`var(${v}`), `${v} carries the hairline's ${v}: ${body.trim()}`);
+    assert.match(css, new RegExp(`${v}:\\s*\\S`), `${v} has a value declared in this file`);
+  }
+  // A stop pair inside the conic would be a wedge (thin at the hub, wide at the
+  // rim) — the width has to be a length, not an angle.
+  assert.match(body, /width:\s*var\(--dial-edge-w/);
+  const src = readFileSync(new URL('./color-field.ts', import.meta.url), 'utf8');
+  const emit = /function dialEdgesHtml\([^)]*\): string \{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(emit, 'dialEdgesHtml moved — find it before deleting this test');
+  assert.ok(!/background|color-mix|border/.test(emit![1]!), `JS writes the angle only: ${emit![1]!}`);
+});
+
 // ── The caution line ─────────────────────────────────────────────────────────
 
 test('the caution line names the space just switched to, on the leading edge', () => {
@@ -610,6 +745,35 @@ test('the stretches the gamut cannot show are painted as fainter rings, not hole
   assert.ok(t1 > t2 && t2 > t3, `the rings must fade outward, got ${t1}/${t2}/${t3}`);
   assert.ok(t1 < 60, 'an unreachable band must never read as available');
   assert.equal(pctOf('beyond'), 0, 'past every gamut the browser would clamp the colour: rail only');
+
+  // The boost for dark grounds covers EVERY dark theme. `brand` declares
+  // `color-scheme: dark` (statically, and in every block brand-vars.ts generates), so
+  // left off this selector it paid the light amounts over a near-black rail — the
+  // faintest rings of the three shipped themes, in the one that is the pre-JS default.
+  const boost = /(\[data-theme[^{]*)\{[^}]*--track-tier-1:/.exec(tokens);
+  assert.ok(boost, 'the dark tier boost moved — find it before deleting this test');
+  for (const theme of ['dark', 'brand']) {
+    assert.match(boost![1]!, new RegExp(`\\[data-theme="${theme}"\\]`),
+      `${theme} is a dark ground and must get the dark tier amounts: ${boost![1]!.trim()}`);
+  }
+});
+
+test('the color-mix support probe can actually fail', () => {
+  // It could not before: the probe string carried a `var()`, and a declaration holding
+  // one cannot be validated until substitution — so CSS.supports answers TRUE for it
+  // unconditionally (it says yes to `totally-not-a-color(in oklab, red var(--x),
+  // transparent)` as well). The fallback the probe exists to reach was unreachable,
+  // and on a browser without color-mix the whole `background` shorthand — rail
+  // included — would have been dropped.
+  // Asserted against the source because jsdom has no CSS.supports to ask (which is why
+  // the caller optional-chains it), and Chromium — where it was verified both ways —
+  // is not available here.
+  const src = readFileSync(new URL('./color-field.ts', import.meta.url), 'utf8');
+  const arg = /CSS\.supports\?\.\(\s*'background', '([^']+)'/.exec(src);
+  assert.ok(arg, 'the support probe moved — find it before deleting this test');
+  assert.ok(!arg![1]!.includes('var('), `a var() makes the probe vacuous: ${arg![1]}`);
+  assert.match(arg![1]!, /color-mix\(in oklab, [^,]+ \d+%, transparent\)/,
+    'a literal percentage is what makes it discriminate');
 });
 
 test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', () => {
@@ -619,7 +783,8 @@ test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', (
   // renders as a bare thumb ring floating on the card with no rail at all. But it
   // must not be a dashed border: in this design language dashed means DROP AREA and
   // nothing else, so a dashed rail is a false affordance on every slider in the app.
-  // The rail is therefore a faint inset fill, and the clamp mark an outline.
+  // The rail is therefore a faint bottom background layer, and the clamp mark an inset
+  // ring — NOT an `outline`, see the focus assertion below.
   //
   // It cannot be a background-color: JS assigns the `background` SHORTHAND for the
   // track gradient, which would wipe one declared here. Nor an inset box-shadow: an
@@ -659,6 +824,15 @@ test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', (
   assert.ok(clamp, 'the clamp-mark rule moved');
   assert.ok(!/dashed/.test(clamp![1]!), 'the clamp mark is not dashed either');
   assert.match(clamp![1]!, /#d97706/, 'the clamp mark still marks in amber');
+  // …and it must not be an `outline`. An element has exactly one, this selector is more
+  // specific than :focus-visible, and that outline is the sliders' ONLY focus
+  // affordance — so an amber outline silently removed the keyboard focus ring from
+  // precisely the sliders an out-of-gamut colour is being dragged on.
+  assert.ok(!/outline/.test(clamp![1]!),
+    `the clamp mark must not use outline — it would eat the focus ring: "${clamp![1]!.trim()}"`);
+  assert.match(clamp![1]!, /box-shadow:\s*inset/, 'an inset ring coexists with the focus outline');
+  assert.match(css, /:focus-visible[^{]*\{[^}]*outline:\s*2px solid hsl\(var\(--ring\)\)/,
+    'the focus ring is still an outline, and now nothing outranks it');
 
   // And the rule holds across the whole colour surface, not just here.
   for (const [file, url] of [

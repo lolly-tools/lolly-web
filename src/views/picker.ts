@@ -49,6 +49,7 @@ import { categoryGlyph } from '../lib/category-icons.ts';
 import { icon } from '../lib/icons.ts';
 import { isChromium } from '../capabilities.ts';
 import { loadFavouriteAssets, loadHiddenAssets, assetBaseId } from '../lib/asset-favourites.ts';
+import { VISUAL_TYPES, isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
@@ -1695,8 +1696,16 @@ async function render(
     ])
       .then(([list]) => {
         // An `image` slot accepts raster OR vector (SVG); every other type is exact.
-        const typeOk = (t: string): boolean => !opts.type || t === opts.type
-          || (opts.type === 'image' && (t === 'raster' || t === 'vector'));
+        //
+        // An UNTYPED pick used to accept everything, which tiled the engine-data
+        // assets that share this rail as broken images: an installed font, and
+        // since 1.73 an ICC profile — with a delete button that removed the bytes
+        // behind the Colour Lab's back, leaving a registered gamut and picker tab
+        // for a file that was gone. A caller that names a data type still gets it;
+        // it is only "everything" that means "everything with a picture".
+        const typeOk = (t: string): boolean => (opts.type
+          ? t === opts.type || (opts.type === 'image' && (t === 'raster' || t === 'vector'))
+          : isPlaceableAsset({ type: t }));
         userAssets = list.filter(a => typeOk(a.type)).filter(a => !hiddenSet.has(assetBaseId(a.id)));
         renderUserAssets();
         renderFavourites();
@@ -1751,13 +1760,13 @@ async function render(
     // Lottie counts as visual: it thumbnails as a static poster and plays live once
     // placed. It only surfaces for untyped/`any`/`lottie` picks — an `image` slot is
     // already narrowed to raster/vector upstream by query()'s typeMatches().
-    const VISUAL_TYPES = new Set(['raster', 'vector', 'video', 'lottie']);
     // …with ONE exception: an explicit `type: 'audio'` pick (Sequence Studio's music
     // bed) is asking for the catalog's audio assets by name, so widen the set for
     // exactly that request. query()'s typeMatches has already narrowed the result to
     // `audio`, and this stays keyed on opts.type — an untyped / `any` / `image` pick
     // is unchanged, so audio never leaks into a slot that didn't ask for it. (The
-    // user-uploads path was already correct: its own typeOk filter is exact.)
+    // user-uploads path filters too — see its own typeOk, which for an untyped
+    // pick asks the same lib/asset-kinds.ts question.)
     const pickableTypes = opts.type === 'audio' ? new Set([...VISUAL_TYPES, 'audio']) : VISUAL_TYPES;
     // opts widens AssetPickerOpts with a web-only `type: 'image'` value; query only
     // reads the catalog-facing AssetQuery fields, so narrow at the boundary.

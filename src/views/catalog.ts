@@ -38,6 +38,7 @@ import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { segHtml } from '../lib/seg.ts';
+import { VISUAL_TYPES } from '../lib/asset-kinds.ts';
 import { wireDisclosure } from '../components/body-popover.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { playSfx, playCatalogAah, cancelArrivalAah } from '../lib/sfx.ts';
@@ -84,9 +85,9 @@ import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 // The user's headshot is a user asset but is managed on /profile (and backs
 // profile.headshot) — keep it out of the Catalog grid so it can't be orphaned here.
 const HEADSHOT_ID = 'user/headshot';
-// Only assets that thumbnail as an image belong in the grid; palette/tokens/font/audio
-// entries are engine data (Swatches + Fonts panels cover those below).
-const VISUAL_TYPES = new Set(['raster', 'vector', 'video', 'lottie']);
+// Only assets that thumbnail as an image belong in the grid; palette/tokens/font/
+// profile entries are engine data (Swatches + Fonts panels cover those below).
+// Shared with the folder overlays, which had no filter at all — see lib/asset-kinds.ts.
 
 /** A font as the catalogue renders it — a bundled spec or an on-device user font. */
 interface CatFont {

@@ -10,13 +10,14 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, SCALES, mulberry32, HDR_DEFAULTS } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS } from '@lolly/engine';
 import { escape } from '../utils.js';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
 import { livePalette } from '../lib/live-palette.ts';
+import { isOwnProfile, ownDigest, listEligible, embedRowLabel } from '../lib/press-profile-embed.ts';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { mountBodyPopover } from '../components/body-popover.ts';
 import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.js';
@@ -34,7 +35,6 @@ import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
 
 import type { InputValue } from '../../../../engine/src/inputs.js';
-import type { SongSpec } from '../../../../engine/src/zzfx-compose.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 import type { Unit } from '../../../../engine/src/units.js';
@@ -321,6 +321,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // clip away. Clamped to the timeline's own ceiling (timeline-math MAX_TIME_S).
     return Math.min(MAX_TIME_S, Math.max(0.1, Math.round(ms / 10) / 100));
   };
+  /** The bed in-point in seconds a tool stamps on its stage as data-audio-start
+   *  (0 when it doesn't, or the value is unusable) — see the export handler. */
+  const stageAudioStart = (): number => {
+    const elS = canvasEl?.matches?.('[data-audio-start]') ? canvasEl : canvasEl?.querySelector<HTMLElement>('[data-audio-start]');
+    const s = parseFloat(elS?.getAttribute('data-audio-start') ?? '');
+    return Number.isFinite(s) && s > 0 ? s : 0;
+  };
   const seqInitialDuration = seqDurationS();
   const defaultDuration = seqInitialDuration ?? videoDefaults.duration ?? 5;
   // A sequence can legitimately run far past the 60s the recording field allows for
@@ -397,10 +404,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       <div class="section-card export-cmyk" data-cmyk-only style="display:${isCmykFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="cmyk-head">${ICON_DROP}<span>Color profile</span></span>
         <select class="field-select" data-action="cmyk-profile" aria-label="CMYK press profile"
-                title="The CMYK press condition your printer targets — embedded as the Print PDF's output intent, recorded in the Print TIFF's metadata.">
+                title="The CMYK press condition your printer targets — named in the Print PDF's output intent, recorded in the Print TIFF's metadata. An “Embed” row puts that profile inside the PDF.">
           ${cmykOptions}
         </select>
-        <p class="cmyk-hint">Names the CMYK press standard your printer targets — the Print PDF embeds it as its output intent; the Print TIFF records it in metadata (the pixels stay untagged DeviceCMYK).</p>
+        <p class="cmyk-hint">Names the CMYK press standard your printer targets — the Print PDF's output intent, the Print TIFF's metadata (the pixels stay untagged DeviceCMYK). An <b>Embed</b> row carries a profile from this device inside the PDF, which is what PDF/X-4 conformance needs — the file then claims it unless something else in the export can't (RGB artwork, the <b>prov</b> credit text, a strong password).</p>
       </div>` : '';
 
   // Tier 2.6 — PDF password (standard "PDF" only). A non-empty value locks the
@@ -909,6 +916,42 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   }
   syncSequenceUi();
 
+  // Fill the colour-profile select with the profiles loaded on THIS device — the
+  // only route to an embedded /DestOutputProfile, and therefore to a genuinely
+  // PDF/X-4-conformant Print PDF (see lib/press-profile-embed.ts). The four
+  // registry rows above keep their exact meaning: the condition's NAME, no bytes.
+  // The size in each label is arithmetic off the stored asset, so it cannot rot
+  // into a lie the way a written figure would.
+  const cmykSel = el.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]');
+  if (cmykSel) {
+    const askedOwn = isOwnProfile(exportDefaults.profile);
+    listEligible(host as never, 'CMYK').then(rows => {
+      for (const e of rows) {
+        const o = document.createElement('option');
+        o.value = `own:${e.digest}`;
+        o.textContent = embedRowLabel(e);
+        cmykSel.append(o);
+      }
+      if (!askedOwn) return;
+      // A link carries bare `own` (a digest is device-local): one eligible profile
+      // resolves it, several or none does not — and guessing would let storage
+      // order decide what a file DECLARES. Unresolved, the export embeds nothing
+      // and declares nothing rather than falling back to a condition nobody chose,
+      // so the row must SAY that instead of promising an embed: it stays selected
+      // (the link still round-trips, and nothing is refused) but it is named after
+      // the outcome, not the intention.
+      const asked = ownDigest(exportDefaults.profile ?? '') ?? (rows.length === 1 ? rows[0]!.digest : null);
+      if (asked && rows.some(r => r.digest === asked)) { cmykSel.value = `own:${asked}`; return; }
+      const o = document.createElement('option');
+      o.value = 'own';
+      o.textContent = rows.length
+        ? 'Choose which profile to embed'
+        : 'No profile on this device to embed';
+      cmykSel.append(o);
+      cmykSel.value = 'own';
+    }).catch(() => { /* no profile store on this host — the registry rows stand alone */ });
+  }
+
   // Fill the audio-track select from the catalog (music beds, type: 'audio').
   // Once per mount — the popup DOM persists across open/close. Tolerates an
   // empty store (first visit before catalog sync finishes) and offline: the
@@ -978,29 +1021,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   // "Generate music": a transient ZzFXM bed, seeded so the SAME tune deterministically
   // re-renders at any length (export re-renders at the clip's duration). Regenerate
-  // rolls a new seed. The spec is derived entirely from the seed via the engine's
-  // seeded PRNG — archetype, tempo, scale and progression all replayable.
+  // rolls a new seed. The draw is the engine's `generatedSongSpec` — the same one a
+  // `zzfxm:<seed>` asset id resolves through — so a seed rolled here names the same
+  // tune in a share link and in the CLI.
   let genSeed = (Math.random() * 0x7fffffff) >>> 0;
   let genWavUrl: string | null = null;   // cached preview WAV blob URL
   let genWavKey = '';                    // "seed:targetSec" the cache was rendered for
   const genDur = (): number => Math.max(8, Math.min(90, videoParams().duration));
-  function generatedSongSpec(seed: number, targetSec: number): SongSpec {
-    const rng = mulberry32(seed);
-    const pick = <T>(a: readonly T[]): T => a[Math.floor(rng() * a.length)]!;
-    const archetype = pick(['melodic', 'ambient', 'lofi', 'bossaNova', 'rhythmic', 'whimsical', 'chiptune', 'cuban'] as const);
-    const bpm: Record<typeof archetype, [number, number]> = {
-      melodic: [60, 84], ambient: [48, 60], lofi: [66, 84], bossaNova: [108, 126],
-      rhythmic: [96, 120], whimsical: [84, 108], chiptune: [132, 160], cuban: [96, 116],
-    };
-    const scale = pick(['majorPent', 'minorPent', 'suspended'] as const);
-    const pool = SCALES[scale].slice(0, 6);   // low register — melodies walk upward from the roots
-    return {
-      archetype, seed, scale, targetSec,
-      bpm: Math.round(bpm[archetype][0] + rng() * (bpm[archetype][1] - bpm[archetype][0])),
-      roots: [12, pick(pool), pick(pool), pick(pool)],
-      pan: Math.round((rng() - 0.5) * 30) / 100,
-    };
-  }
   async function generatedWavUrl(targetSec: number): Promise<string> {
     const key = `${genSeed}:${targetSec}`;
     if (genWavUrl && genWavKey === key) return genWavUrl;
@@ -1721,7 +1748,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // URL before the recording starts — the export bridge stays catalog-
       // agnostic, and a missing/undownloadable track fails here in the UI
       // instead of mid-record. On-demand tier fetches + caches the bytes.
-      let audioOpt: RunExportOpts = {};
+      let audioOpt: { audio?: NonNullable<RunExportOpts['audio']> } = {};
       if (isVideoFmt(fmt)) {
         const audioId = el!.querySelector<HTMLSelectElement>('[data-action="video-audio"]')?.value;
         if (audioId) {
@@ -1755,7 +1782,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           const fadeOut = numCtl('audio-fadeout', 0);
           const volume  = Math.max(0, Math.min(100, numCtl('audio-volume', 100))) / 100;
           const duck    = Math.max(0, Math.min(100, numCtl('audio-duck', 100))) / 100;
-          if (audioUrl) audioOpt = { audio: { id: audioTrackId, url: audioUrl, fadeIn, fadeOut, volume, duck } };
+          // In-point: a tool whose visuals begin partway into its own clip (the
+          // audiogram's "Start at") stamps that offset on its stage as
+          // data-audio-start, the same read-the-stage contract as data-seq-ms — so
+          // the soundtrack starts where the picture does instead of at 0:00. Skipped
+          // for generated music, which is composed to fit the clip and has no
+          // meaningful in-point.
+          const start = audioId === '__generate__' ? 0 : stageAudioStart();
+          if (audioUrl) audioOpt = { audio: { id: audioTrackId, url: audioUrl, fadeIn, fadeOut, volume, duck, start } };
         }
       }
       // Surface progress on the button for slow non-animated exports — the CMYK
@@ -1778,7 +1812,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // sequence path (the tool hook reads ctx.opts.durationUserSet), not to the
       // generic shell-wide export options, so it's carried as a local widening
       // rather than pushed into the shared interface.
-      const opts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } = {
+      const opts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } & typeof audioOpt = {
         ...exportDims(),
         onProgress: (done, total) => {
           // Live take: (done, total) is a seconds countdown from the recorder. The

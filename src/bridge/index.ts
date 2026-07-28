@@ -8,7 +8,13 @@
  */
 
 import type { HostV1, AssetRef, AssetPickerOpts } from '../../../../engine/src/bridge/host-v1.ts';
-import { makeColorApi, makeGeomApi } from '@lolly/engine';
+// Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
+// boot path, and engine/src/index.ts is one shared facade whose retained export
+// set is the UNION over every importer — touching it here drags createRuntime
+// (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
+// scripts/check-bundle-budget.ts.
+import { makeColorApi } from '../../../../engine/src/color-tools.ts';
+import { makeGeomApi } from '../../../../engine/src/geom-api.ts';
 import { createStateAPI } from './state.ts';
 import { createProfileAPI } from './profile.ts';
 import { createIdentityAPI } from './identity.ts';
@@ -27,6 +33,7 @@ import { createPdfAPI } from './pdf.ts';
 import { createPptxAPI } from './pptx.ts';
 import { createCaptureAPI } from './capture.ts';
 import { createMediaAPI } from './media.ts';
+import { createVizAPI } from './viz.ts';
 import { createRecorderAPI } from './recorder.ts';
 import { hasCaptureExtension, createExtensionCaptureAPI } from './capture-extension.ts';
 import { PROVIDED_CAPABILITIES } from './capabilities-provided.ts';
@@ -145,6 +152,10 @@ export async function createBridge(): Promise<WebHost> {
   // and hit testing. Pure engine math like color, attached verbatim for the same
   // reason: one implementation, so web/CLI/Tauri cannot drift.
   host.geom = makeGeomApi();
+  // MilkDrop availability + preset attribution (v1.72). Nothing heavy loads here:
+  // isAvailable is one WebGL2 probe and the preset list is dynamic-imported on first
+  // ask. A tool feature-detects it and falls back to its own canvas style without.
+  host.viz = createVizAPI();
 
   // Lazy images facade (v1.60): decode/resize/re-encode wraps the upload path's
   // codec glue (and, inside it, the 3 MB lazy HEIC WASM decoder) — none of which
@@ -159,6 +170,23 @@ export async function createBridge(): Promise<WebHost> {
     decode: async (input) => (await loadImages()).decode(input),
     resize: async (input, opts) => (await loadImages()).resize(input, opts),
     encode: async (input, opts) => (await loadImages()).encode(input, opts),
+  };
+
+  // Lazy audio facade (v1.71) — decode + per-frame analysis. Lazy for the same
+  // reason as images: it reaches the ZzFXM renderer and (for procedural song refs)
+  // the sequence providers, none of which belongs in the boot chunk. `isAvailable`
+  // is contractually SYNCHRONOUS, so it is answered here from feature detection
+  // rather than behind the import — the same two things audio.ts itself checks.
+  let audioImpl: NonNullable<WebHost['audio']> | null = null;
+  const loadAudio = async (): Promise<NonNullable<WebHost['audio']>> => {
+    if (!audioImpl) { const { createAudioAPI } = await import('./audio.ts'); audioImpl = createAudioAPI(); }
+    return audioImpl;
+  };
+  host.audio = {
+    isAvailable: () => typeof Worker === 'function'
+      && (typeof window.OfflineAudioContext === 'function'
+        || typeof (window as { webkitOfflineAudioContext?: unknown }).webkitOfflineAudioContext === 'function'),
+    analyse: async (src, opts) => (await loadAudio()).analyse(src, opts),
   };
 
   // pick is a bridge-level concern: it needs the full host (logging, assets.get,

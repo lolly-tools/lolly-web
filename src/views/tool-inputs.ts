@@ -170,6 +170,27 @@ function focusSidebarBlock(blocksEl: Element, index: number | string): void {
 }
 
 /**
+ * Drop the caret in a block's first editable field — used right after "+ Add" so a
+ * new row is ready to type into. Text and textarea only: a new block's first field
+ * being a colour swatch or an image button is not somewhere a caret belongs, and
+ * silently focusing a button would swallow the next keypress as a click. Silent
+ * no-op when the block or the field isn't there (the block may have been folded, or
+ * the panel re-rendered again in the meantime).
+ */
+function focusBlockFirstField(panel: PanelEl, blockId: string, index: number): void {
+  const wrap = panel.querySelector(`.blocks-input[data-input-id="${CSS.escape(blockId)}"]`);
+  // The index is an integer we produced — no escaping (CSS.escape would turn "0"
+  // into the "\30 " identifier escape, which is a needless round-trip here).
+  const item = wrap?.querySelector(`.block-item[data-block-index="${index}"]`);
+  const field = item?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    '.block-fields input.block-field:not([type]), .block-fields textarea.block-field');
+  if (!field) return;
+  field.focus();
+  const end = field.value?.length ?? 0;
+  try { field.setSelectionRange(end, end); } catch { /* not a text field after all */ }
+}
+
+/**
  * Reflect a model change in the sidebar with the least work. renderInputs()
  * rebuilds the whole panel's innerHTML and re-wires every listener (and
  * destroys/recreates each flatpickr) — necessary on first render or a structural
@@ -178,9 +199,36 @@ function focusSidebarBlock(blocksEl: Element, index: number | string): void {
  * skipped entirely. Returns the model to remember as the new baseline.
  */
 function syncInputs(el: PanelEl, model: InputModelItem[], prevModel: InputModelItem[] | null | undefined, runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void, toolId?: string): InputModelItem[] {
-  if (canSkipInputsRebuild(el, model, prevModel)) return model;
+  if (canSkipInputsRebuild(el, model, prevModel)) { patchEditedBlockPreview(el); return model; }
   renderInputs(el, model, runtime, host, onDirty, toolId);
   return model;
+}
+
+/**
+ * Keep the collapsed-pill preview of the block being typed into up to date without
+ * rebuilding the panel — the one thing the skipped rebuild used to refresh (see
+ * isEditingBlockField). Reads the LIVE fields rather than the model: the focused
+ * control is the authoritative value mid-keystroke, and the rendered field order
+ * already mirrors the manifest's `fields` order with showFor/showIf applied, so
+ * "first non-empty text field" resolves the same way `previewOf` computes it at
+ * render time. A no-op unless a block field holds focus.
+ *
+ * One accepted divergence: `previewOf` also counts an `optionsFrom` field that
+ * declares no type (it renders as a <select>, which this can't read). That block's
+ * pill can lag by a keystroke until the next full render corrects it — cosmetic,
+ * and only while typing.
+ */
+function patchEditedBlockPreview(panel: PanelEl): void {
+  const active = panel.ownerDocument?.activeElement as HTMLElement | null;
+  if (!active?.dataset?.fieldId || !panel.contains(active)) return;
+  const item = active.closest('.block-item');
+  const preview = item?.querySelector('.block-head-preview');
+  if (!preview) return;
+  // A block text field renders with no `type` attribute; a textarea is its
+  // multiline form. Range/number/checkbox/colour carry a type and are excluded.
+  const fields = item!.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+    '.block-fields input.block-field:not([type]), .block-fields textarea.block-field');
+  preview.textContent = [...fields].map(f => (f.value ?? '').trim()).find(Boolean) ?? '';
 }
 
 /**
@@ -816,7 +864,15 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       for (const f of inp.fields ?? []) block[f.id] = blockFieldDefault(f);
       const type = btn.dataset.blockAddType;
       if (inp.addMenu && type !== undefined) block[inp.addMenu.field] = type;
-      runtime.setInput(blockId, [...arr, block]);
+      const index = arr.length;
+      // Focus is not restorable across the rebuild here: the pressed control is the
+      // "+ Add" button, which the new panel recreates as a *different* button (and
+      // renderInputs only restores [data-input-id] / [data-field-id] controls). So
+      // land the caret in the new block's first editable field — you asked for a
+      // row, you get somewhere to type. rAF, because the rebuild happens in the
+      // model subscriber and the new markup has to exist first.
+      void runtime.setInput(blockId, [...arr, block])
+        .then(() => requestAnimationFrame(() => focusBlockFirstField(el, blockId, index)));
       onDirty?.(blockId);
     });
   });

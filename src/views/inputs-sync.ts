@@ -67,22 +67,38 @@ export function domReflectsValue(el: HTMLElement, input: SyncableInput): boolean
 }
 
 /**
- * True while the user is mid-typing in a block NUMBER field. Such a field's live
- * <input> holds the authoritative value — including a half-typed decimal like "1."
- * that an <input type=number> reports back as "" (validity.badInput). Rebuilding
- * the panel now recreates that input, and number inputs can't have their caret
- * restored (setSelectionRange is a no-op on type=number), so the caret jumps and
- * characters scramble ("1.2" lands as "2.1", and Backspace deletes the wrong end).
- * Scoped to number fields: text/select/colour block fields restore their caret
- * fine, so they keep the per-keystroke rebuild that refreshes block header previews
- * (a number's value never appears in a header preview or swatch).
+ * True while the user is mid-typing in an editable block field — number or text.
+ * Such a field's live control holds the authoritative value, so rebuilding the
+ * panel on the keystroke is at best redundant and at worst destructive:
+ *
+ *  · NUMBER: a half-typed decimal like "1." reports back as "" (validity.badInput),
+ *    and a recreated number input can't have its caret restored (setSelectionRange
+ *    is a no-op on type=number) — so the caret jumps and characters scramble
+ *    ("1.2" lands as "2.1", Backspace deletes the wrong end).
+ *  · TEXT / TEXTAREA: the caret DOES survive (renderInputs restores it by
+ *    data-field-id), but the rebuild replaces every row in the panel, so focus is
+ *    lost and re-established within the frame — which restarts the focus-spotlight
+ *    opacity transition on every other row and section. The whole sidebar visibly
+ *    pulses once per keypress. The only thing the rebuild refreshed here is the
+ *    collapsed-pill preview, which syncInputs now patches in place instead.
+ *
+ * The model still updates on every keystroke either way, so the canvas stays live;
+ * the panel repaints from the model on the next interaction.
  */
-function isEditingBlockNumberField(el: HTMLElement): boolean {
+function isEditingBlockField(el: HTMLElement): boolean {
   // Structural, NOT instanceof: the unit tests drive this with plain stubs (no
-  // DOM globals), and only <input type="number"> carries this shape.
+  // DOM globals). `type` is the discriminator for inputs; textareas report none.
   const active = (el && el.ownerDocument && el.ownerDocument.activeElement) as
-    (Element & { type?: string; dataset?: DOMStringMap }) | null;
-  return !!(active && active.type === 'number' && active.dataset && active.dataset.fieldId && el.contains(active));
+    (Element & { type?: string; tagName?: string; dataset?: DOMStringMap }) | null;
+  if (!active || !active.dataset || !active.dataset.fieldId || !el.contains(active)) return false;
+  if (active.type === 'number') return true;
+  // A block text field renders with NO type attribute (see blockField), so `type`
+  // reads back as 'text'; a textarea has no type at all. Everything else a block
+  // can hold — range, checkbox, colour, select, asset button — is a discrete
+  // commit rather than typing, and keeps the full rebuild.
+  const tag = String(active.tagName || '').toLowerCase();
+  if (tag === 'textarea') return true;
+  return tag === 'input' && (active.type === undefined || active.type === 'text');
 }
 
 /**
@@ -93,10 +109,8 @@ function isEditingBlockNumberField(el: HTMLElement): boolean {
  */
 export function canSkipInputsRebuild(el: HTMLElement, model: SyncableInput[], prevModel: SyncableInput[] | null | undefined): boolean {
   if (!prevModel) return false;
-  // Defer the rebuild while a block number field is focused (see above). The model
-  // still updates on every keystroke, so the canvas stays live; the panel repaints
-  // from the model on the next interaction, once the field is blurred.
-  if (isEditingBlockNumberField(el)) return true;
+  // Defer the rebuild while a block field is being typed into (see above).
+  if (isEditingBlockField(el)) return true;
   if (model.length !== prevModel.length) return false;
   if (visibleInputKey(model) !== visibleInputKey(prevModel)) return false;
   const prevById = new Map(prevModel.map(i => [i.id, i]));

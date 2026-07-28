@@ -350,10 +350,19 @@ const wash = (css: string, t: number): string => {
   return `color-mix(in oklab, ${css} var(${tierVar(t)}, 0%), transparent)`;
 };
 
-/** Positioned stops for a run list: each run's colours across its own stretch, the
- *  rings out washed back by their tier's token. */
-function runParts(runs: readonly ChannelRun[]): string[] {
+/**
+ * Positioned stops for a run list: each run's colours across its own stretch.
+ *
+ * `washed` is what separates the two shapes this feeds. A TRACK washes the rings
+ * out by their tier's token (the onion), because a slider is the control of record
+ * and the shape of its solid band is the information. A DIAL does not: Andy asked
+ * for the full colour on both sides of the boundary there, with the crossing
+ * carried by a hairline instead (see dialEdgesHtml) — so the same run list, at the
+ * same fractions, pours into the ring at full strength.
+ */
+function runParts(runs: readonly ChannelRun[], washed = true): string[] {
   const at = (f: number): string => `${(clamp01(f) * 100).toFixed(2)}%`;
+  const paint = (css: string, tier: number): string => (washed ? wash(css, tier) : css);
   const parts: string[] = [];
   let cursor = 0;
   for (const run of runs) {
@@ -365,15 +374,40 @@ function runParts(runs: readonly ChannelRun[]): string[] {
     // colour at BOTH ends — otherwise the band fades into the transparent gap
     // beside it instead of reading as the solid sliver of reachable colour it is.
     if (n < 2) {
-      const one = wash(String(run.stops[0]), run.tier);
+      const one = paint(String(run.stops[0]), run.tier);
       parts.push(`${one} ${at(run.from)}`, `${one} ${at(run.to)}`);
     } else run.stops.forEach((css, i) => {
-      parts.push(`${wash(css, run.tier)} ${at(run.from + (run.to - run.from) * (i / (n - 1)))}`);
+      parts.push(`${paint(css, run.tier)} ${at(run.from + (run.to - run.from) * (i / (n - 1)))}`);
     });
     cursor = Math.max(cursor, run.to);
   }
   if (cursor < 1) parts.push(`transparent ${at(cursor)}`, 'transparent 100%');
   return parts;
+}
+
+/**
+ * Every tier crossing along an axis, as 0–1 fractions — the boundaries the dial
+ * hairlines stand on.
+ *
+ * Read off the SAME run list the ramp is poured from, which is the whole point: a
+ * boundary computed any other way (a second bisection, a fresh gamut test) would
+ * land a hair off the fraction the gradient actually breaks at, and the hairline
+ * would sit beside its own edge on the dial while the slider beneath disagreed.
+ * `channelRuns` makes adjacent runs share their boundary exactly and only opens a
+ * run where the tier CHANGES, so every interior `from` is a crossing.
+ *
+ * There is deliberately no "first boundary" special case: a hue ring at high
+ * chroma leaves and re-enters a gamut several times, and each of those crossings
+ * is a place the display stops. 0 and 1 are excluded — the axis ends there, it does
+ * not cross there.
+ */
+export function runBoundaries(runs: readonly ChannelRun[]): number[] {
+  const out: number[] = [];
+  for (let i = 1; i < runs.length; i++) {
+    const f = runs[i]!.from;
+    if (f > 0 && f < 1 && !out.includes(f)) out.push(f);
+  }
+  return out;
 }
 
 /** The rail the gaps read against, as the BOTTOM background layer — the axis
@@ -387,7 +421,7 @@ const RAIL = 'linear-gradient(var(--track-rail, transparent), var(--track-rail, 
 const trackFromRuns = (runs: readonly ChannelRun[]): string =>
   runs.length ? `${linearStops(runParts(runs))}, ${RAIL}` : RAIL;
 const dialFromRuns = (runs: readonly ChannelRun[]): string =>
-  runs.length ? `${conicStops(runParts(runs))}, ${RAIL}` : RAIL;
+  runs.length ? `${conicStops(runParts(runs, false))}, ${RAIL}` : RAIL;
 
 /**
  * The three OKLCH axis ramps as stop lists — the ORIGINAL full-range builder,
@@ -412,7 +446,25 @@ export function lchTrackGradients(l: number, c: number, h: number): { l: string;
   return { l: linearStops(s.l), c: linearStops(s.c), h: linearStops(s.h) };
 }
 
-/** Black or white — whichever reads on `hex`. Perceptual luminance threshold. */
+/**
+ * Black or white — whichever reads on `hex`. Perceptual luminance threshold.
+ *
+ * **This is the ONE inversion rule for ink sitting on a colour**, and every surface
+ * that flips ink must use it: the dial's output disc, the value pill, the swatch
+ * tips, and Colour Lab's big swatch and ramp step labels. There were three
+ * different rules before — this luma threshold, a WCAG-ratio winner, and a
+ * `>= 4.5 against white` test — and the last two both flip around relative
+ * luminance 0.18, far darker than this one. The visible result was ink flipping to
+ * black on the pill and the swatch while the disc beside them was still white:
+ * `#CF6CA9` (luma 144.6) and `#DD79B6` (157.9) sit either side of THIS threshold
+ * but on the same side of the other two. Andy asked for the disc's flip point
+ * everywhere, so this is it.
+ *
+ * Why the luma threshold rather than the WCAG ratio: the ratio's crossover is where
+ * the two ratios are numerically equal, which is a contrast-compliance question, not
+ * a legibility one — it hands black to almost every mid-tone. 0.299/0.587/0.114 at
+ * 150 flips where the eye flips.
+ */
 export function contrastText(hex: string): string {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
   if (!m) return '#000000';
@@ -448,6 +500,38 @@ interface DialSpec { ch: string; label: string; aria: string; frac: number; runs
 /** The needle's angle for a 0–1 position on the axis. Matches conicStops' `from 0deg`. */
 const needleDeg = (frac: number): string => `${(clamp01(frac) * 360).toFixed(1)}deg`;
 
+/**
+ * The boundary hairlines for one ring — one radial line per tier crossing.
+ *
+ * The colour continues at full strength on BOTH sides of it (see runParts' `washed`):
+ * this marks where a display stops, it does not withhold anything. The dials'
+ * counterpart to the sliders' opacity ladder, not a replacement for it.
+ *
+ * ELEMENTS rather than stops inside the conic gradient, for three reasons, in order
+ * of weight:
+ *
+ * - a gradient stop pair spans an ANGLE, so its mark is a wedge — hair-thin at the
+ *   hub and several pixels wide at the rim. A rotated element carries one width at
+ *   every radius, which is what "hairline" means, and it is the geometry the needle
+ *   beside it already uses.
+ * - the appearance then lives entirely in CSS. JS writes one `transform` per
+ *   crossing and nothing else, so the colour, the width and the length are tunable
+ *   the way the tier opacities are. Stops would have to be assembled here, in the
+ *   one `background` shorthand this module assigns — where a stylesheet
+ *   `background-color` is wiped, which is exactly why the rail rides in the
+ *   shorthand as a layer (see RAIL).
+ * - interpolation would fight it: gradient stops premultiply, so a mark meeting a
+ *   translucent wash smears rather than staying a line.
+ *
+ * They go in their own container, and that container is the innerHTML target —
+ * never the dial, which hosts the needle and the hub.
+ */
+function dialEdgesHtml(runs: readonly ChannelRun[] | null): string {
+  return (runs ? runBoundaries(runs) : [])
+    .map(f => `<span class="color-dial-edge" style="transform:rotate(${needleDeg(f)})"></span>`)
+    .join('');
+}
+
 const EDIT_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
 /** The dial row: one ring per channel + the output disc. `outHex` is machine-made
@@ -462,6 +546,7 @@ function dialsHtml(dials: readonly DialSpec[], outHex: string, slots: number): s
   const ring = (d: DialSpec): string => `
       <button type="button" class="color-dial" data-dial-ch="${escape(d.ch)}" tabindex="-1"
               style="background:${dialFromRuns(d.runs ?? [])}" title="${escape(d.aria)}" aria-hidden="true">
+        <span class="color-dial-edges" data-dial-edges>${dialEdgesHtml(d.runs)}</span>
         <span class="color-dial-needle" style="transform:rotate(${needleDeg(d.frac)})"></span>
         <span class="color-dial-hub">${escape(d.label)}</span>
       </button>`;
@@ -481,7 +566,15 @@ function paintDials(panel: HTMLElement, dials: readonly DialSpec[], outHex: stri
   for (const d of dials) {
     const dial = panel.querySelector<HTMLElement>(`.color-dial[data-dial-ch="${CSS.escape(d.ch)}"]`);
     if (!dial) continue;
-    if (d.runs) dial.style.background = dialFromRuns(d.runs);
+    if (d.runs) {
+      dial.style.background = dialFromRuns(d.runs);
+      // Only when this axis's ramp changed — `runs: null` is the dragged channel,
+      // whose own boundaries stand where they were. The container holds nothing but
+      // these spans, so it is a safe innerHTML target; the dial itself is not (the
+      // needle and the hub live there).
+      const edges = dial.querySelector<HTMLElement>('[data-dial-edges]');
+      if (edges) edges.innerHTML = dialEdgesHtml(d.runs);
+    }
     const needle = dial.querySelector<HTMLElement>('.color-dial-needle');
     if (needle) needle.style.transform = `rotate(${needleDeg(d.frac)})`;
   }
@@ -513,7 +606,10 @@ function colorInputPaint(hex: string): Record<string, string> {
     const c = parseInt(rgb.slice(i, i + 2), 16);
     return Math.round(c * a + CHECKER_AVG * (1 - a)).toString(16).padStart(2, '0');
   }).join('');
-  const fg = contrastRatio('#ffffff', eff) >= contrastRatio('#000000', eff) ? '#ffffff' : '#000000';
+  // The shared inversion rule — see contrastText. The compositing above still
+  // matters (a translucent value is judged as the eye sees it, over the
+  // checkerboard); only the black/white DECISION is now shared.
+  const fg = contrastText(eff);
   return {
     '--color-input-bg': hex,
     '--color-input-border': `color-mix(in oklab, ${rgb}, ${fg} 25%)`,

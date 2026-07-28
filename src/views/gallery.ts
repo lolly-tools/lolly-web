@@ -17,6 +17,7 @@
 import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
+import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
@@ -1378,7 +1379,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // User images are loaded lazily so folders that also hold images render here too.
   const historyFab = viewEl.querySelector<HTMLButtonElement>('.history-fab');
   async function openHistoryOverlay(): Promise<void> {
-    const imageRefs = await host.assets._listUserAssets?.().catch(() => []) ?? [];
+    // Filtered: the user-asset store also holds fonts, the tokens doc and ICC
+    // profiles, and the overlay tiles whatever it is handed as an image.
+    const stored = await host.assets._listUserAssets?.().catch(() => []) ?? [];
+    const imageRefs = stored.filter(isPlaceableAsset);
     // Lazy: folder-overlay (+ folders/folder-tiles chunks) only loads on this
     // deliberate click, not on the gallery boot preload. main.ts's idle prewarm
     // of projects.ts already warms it, so the click still resolves instantly.
