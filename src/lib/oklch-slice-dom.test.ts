@@ -33,6 +33,7 @@ dom.window.Element.prototype.hasPointerCapture = function () { return false; };
 
 const { renderSliceChart, wireSliceChart, updateSliceDot } = await import('./oklch-slice.ts');
 const { SLICE_C_MAX } = await import('./oklch-slice-geom.ts');
+const { hexToOklch } = await import('@lolly/engine');
 import type { SliceChartState } from './oklch-slice.ts';
 
 const PLOT = { left: 0, top: 0, width: 400, height: 250 };
@@ -186,4 +187,54 @@ test('the chart announces the plane and the value it is sliced at', () => {
 
   const { root: r2 } = mount({ plane: 'ch', fixed: 0.7 }, []);
   assert.match(r2.querySelector('[data-okls-plot]')!.getAttribute('aria-label')!, /lightness 70%/);
+});
+
+test('a drag holds the AUTHORED fixed channel, not a gamut-mapped bake of it', () => {
+  // The shake this pins: on the chroma × hue plane the held channel is LIGHTNESS,
+  // and it used to be recovered from `hexOf` — which in Colour Lab is the subject's
+  // sRGB bake. Outside sRGB that bake has a different lightness from the colour
+  // being described, so every frame of a drag re-derived the plane from a colour
+  // that was not the subject, the dot left the pointer, and the next frame
+  // re-derived it from the new bake. It only misbehaved past the gamut boundary.
+  const state: SliceChartState = { plane: 'ch', fixed: 0.5, cMax: SLICE_C_MAX };
+  const { root } = mount(state, [{ idx: 0, hex: '#ff0000', label: 'Wide red' }]);
+  // A wide-gamut red: L 0.72. Its sRGB bake is a DIFFERENT lightness — that gap is
+  // the whole bug, so assert the fixture actually has one before relying on it.
+  const authored = { l: 0.72, c: 0.31, h: 29 };
+  // hexToOklch is nullable (a bad hex ⇒ null); this literal is fine, so pin it once.
+  const baked = hexToOklch('#ff0000')!;
+  assert.ok(Math.abs(baked.l - authored.l) > 0.01,
+    `the fixture's bake really does differ in lightness: ${baked.l} vs ${authored.l}`);
+
+  const { calls, h } = HANDLERS(state, { 0: '#ff0000' });
+  const off = wireSliceChart(root, { ...h, oklchOf: () => authored });
+  const dot = root.querySelector('[data-okls-idx="0"]')!;
+  pointer('pointerdown', 0.5, 0.5, dot);
+  pointer('pointermove', 0.3, 0.4);
+  pointer('pointerup', 0.3, 0.4);
+
+  assert.equal(calls.recolor.length, 1);
+  const o = calls.recolor[0]!.o;
+  assert.ok(Math.abs(o.l - authored.l) < 1e-9, `lightness held at the authored value: ${o.l}`);
+  assert.notEqual(o.l, baked.l);
+  // And the two moving channels still come straight off the pointer.
+  assert.ok(Math.abs(o.h - 0.3 * 360) < 1e-6, `hue from x: ${o.h}`);
+  assert.ok(Math.abs(o.c - 0.6 * SLICE_C_MAX) < 1e-6, `chroma from y: ${o.c}`);
+  off();
+});
+
+test('without oklchOf the hex is still the fallback, so hex-native callers are unchanged', () => {
+  // The brand editor's swatches genuinely ARE hex, so nothing there needed to change.
+  const state: SliceChartState = { plane: 'ch', fixed: 0.5, cMax: SLICE_C_MAX };
+  const { root } = mount(state, [{ idx: 0, hex: '#2f7d4f', label: 'Green' }]);
+  const { calls, h } = HANDLERS(state, { 0: '#2f7d4f' });
+  const off = wireSliceChart(root, h);
+  const dot = root.querySelector('[data-okls-idx="0"]')!;
+  pointer('pointerdown', 0.5, 0.5, dot);
+  pointer('pointermove', 0.3, 0.4);
+  pointer('pointerup', 0.3, 0.4);
+  assert.equal(calls.recolor.length, 1);
+  assert.ok(Math.abs(calls.recolor[0]!.o.l - hexToOklch('#2f7d4f')!.l) < 1e-9,
+    'lightness held at the hex’s own lightness');
+  off();
 });

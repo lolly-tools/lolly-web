@@ -69,6 +69,53 @@
   --vf-ai-1: 276 86% 67%;  --vf-ai-2: 262 74% 48%;  --vf-ai: 270 80% 58%;
 }
 
+/* The RAIL behind any gamut-sliced axis — the picker's tracks and dials
+   (parts/color-field.css, where JS appends it as the bottom background layer) and
+   the Colour Lab sliders' wells (lib/oklch-slice.css). One declaration because the
+   two surfaces must not disagree about what "the axis continues here" looks like,
+   and because the beyond-every-gamut stretch paints NOTHING: the rail is the only
+   thing left saying the axis carries on. */
+:root {
+  --track-rail: hsl(var(--muted) / 0.55);
+}
+
+/* Onion-ring gamut washes — the ONE opacity scale for "outside the active gamut".
+   Tier 0 is the limit itself and always paints fully opaque, so it has no token;
+   each ring out is roughly half the previous, which keeps the onion order readable
+   while the reachable stretch keeps the prominence.
+
+   Written as PERCENTAGES on purpose: the same token serves `color-mix()`'s amount
+   (the picker's tracks and dials, where the tiers are stops inside one JS-assigned
+   `background` and there is no element to give an opacity to) and plain `opacity`
+   (the Colour Lab sliders, where each run IS an element). One scale, two
+   mechanisms, no drift.
+
+   `beyond` is 0% — past Rec.2020 the browser clamps the stop colour, so a visible
+   band there would be a flat wrong colour, and the rail already says the axis
+   continues without naming one. It is an ordinary run and disappears only because
+   of this value, which is the point: raising it later is a token edit.
+
+   On :root rather than on the picker's own rule so `lib/gamut-slider.ts`'s segments
+   read the same numbers — they are nowhere near a `.color-lch-slider`. Tuning these
+   is a design judgement (if a ring starts to look AVAILABLE, lower it); no code
+   needs to change. */
+:root {
+  --track-tier-1: 28%;
+  --track-tier-2: 14%;
+  --track-tier-3: 8%;
+  --track-tier-beyond: 0%;
+}
+/* Dark needs more of the colour for the SAME apparent hint. A 28% wash over a
+   near-white rail lands as a pastel; over a near-black one it lands as a dark
+   low-contrast smudge, and in the picker's dials the rings all but vanished.
+   Measured by eye on #/lab in both themes — the ratios between the rings are
+   unchanged, only the amount. */
+[data-theme="dark"] {
+  --track-tier-1: 46%;
+  --track-tier-2: 26%;
+  --track-tier-3: 15%;
+}
+
 /* ─── Light ─────────────────────────────────────────────────────────────── */
 :root,
 [data-theme="light"] {

@@ -23,6 +23,7 @@
 import {
   parseColor, formatColor, convertColor, colorToHexString, colorToSrgb,
   inGamut, resolveGamutSource, MISSING_C2, rgbToCmyk, cmykToRgbApprox,
+  gamutTierProbe, BEYOND_TIER,
 } from '@lolly/engine';
 import type { CssColor, ColorSpaceTag, GamutLimit, GamutSource } from '@lolly/engine';
 
@@ -430,31 +431,93 @@ function stopCss(spec: SpaceSpec, c: CssColor): string {
   return spec.stopCss ? spec.stopCss(c) : formatColor(c);
 }
 
-/** One contiguous displayable stretch of a channel's axis, in 0–1 track fractions. */
-export interface ChannelRun { from: number; to: number; stops: string[] }
+/**
+ * One contiguous equal-tier stretch of a channel's axis, in 0–1 track fractions.
+ *
+ * `tier` 0 is inside `spec.limit`; 1.. are the rings out (the gamut reachable one
+ * step wider, then the one after that); {@link BEYOND_TIER} is the stretch no
+ * display gamut holds. The runs cover [0,1] by construction — adjacent runs share
+ * their boundary fraction exactly.
+ */
+export interface ChannelRun { from: number; to: number; stops: string[]; tier: number }
 
 /**
- * The displayable runs along one channel, with the other channels held.
+ * Every run along one channel — reachable AND not — with the other channels held.
  *
  * The generalisation of lib/gamut-slider.ts's `gamutRuns` to any space and any
- * gamut limit — including a press profile, since `inGamut` takes a `GamutSource`.
- * In-gamut runs paint solid and the gaps stay empty, so the shape of the track
- * says where you can actually go. A two-stop gradient across the whole axis would
- * instead go flat wherever the colours all map to the same boundary colour, which
- * looks like a rendering bug and hides the information.
+ * gamut limit, including a press profile (a `GamutSource` is a valid limit). The
+ * tier-0 runs paint solid, so the shape of the track still says where you can
+ * actually go; the rest paint as washes of decreasing opacity as they go up gamuts
+ * (color-field.ts's `runParts`), so an unreachable stretch reads as "the axis
+ * continues, your limit cannot reach it" instead of as a hole. A two-stop gradient
+ * across the whole axis would instead go flat wherever the colours all map to the
+ * same boundary colour, which looks like a rendering bug and hides the information.
  *
  * The gamut test uses the TRUE held values; only the painted colour takes
  * `ChannelSpec.hold` (OKLCH's hue floors chroma so its sweep stays visible at
  * grey — a display trick that must not invent gamut gaps).
  *
- * A run's EDGES are then bisected against the out-of-gamut neighbour rather than
- * left on the last in-gamut sample. Sampling alone makes every edge short by up to
- * one whole step — 4.3% of the track at 24 stops — which is enough to leave the
- * thumb sitting in a transparent gap while the caution line calls the colour exact,
- * and collapses a one-sample run to zero width so a reachable band paints as
- * nothing. Five halvings put the edge inside 0.15% of the track.
+ * Three cost decisions, because this runs for every channel of the mounted space
+ * on every colour change (`paintTracks`, rAF-coalesced):
+ *
+ * - a probe is ONE `composeColor` + ONE `convertColor` to oklch, then the hoisted
+ *   membership tests inside `gamutTierProbe`. Calling `inGamut` once per tier
+ *   instead needs 243 membership calls per OKLCH panel against this version's 121,
+ *   and measures 87.7 µs against 82.5. Worth having, but note how SMALL that gap
+ *   is: the conversion dominates, so the way to make this cheaper is fewer probes,
+ *   never a cheaper membership test.
+ * - a wash carries at most 3 stops (start, mid, end): it is a faint low-contrast
+ *   band, and 24 `formatColor` calls across it buy nothing (88.8 µs with full
+ *   stops, ~8%).
+ * - a boundary is refined ONCE and shared by the two runs it separates, which
+ *   roughly halves the halvings AND keeps the runs exactly contiguous. Refining
+ *   each run's own edges independently lands the two estimates up to a tolerance
+ *   apart, and CSS then interpolates an alpha fade across that sliver — blurring
+ *   the very edge the bisection exists to sharpen. This one is for correctness
+ *   first; the probes it saves are a bonus.
+ *
+ * Measured per full panel repaint — all channels of one space, 3000 iterations,
+ * node 24, seed `oklch(62% 0.19 260)` — before → after this change, in µs and in
+ * probes: OKLCH 43 → 83 (107 → 121), XYZ 47 → 90 (102 → 116), Lab 36 → 66
+ * (70 → 80), LCH 42 → 56 (75 → 77), HSL 24 → 23 (18, unchanged), CMYK 13.5 → 13.0
+ * (28, unchanged), HEX/RGB/P3 8.3 → 8.6 (6, unchanged). The bounded spaces barely
+ * move because their axes cannot leave their own gamut, so there is nothing to
+ * classify. Worst case is bounded per channel by `n` samples (n ≤ 24, the same
+ * sweep as before) + 5 halvings per boundary touching tier 0 + 2 per wash boundary
+ * up to MAX_OUTER_BOUNDARIES → a ceiling around 82 probes per channel.
+ *
+ * `paintTracks` is rAF-coalesced and skips the channel being dragged, so a drag
+ * frame repaints 2 of 3 axes ≈ 55 µs: 0.33% of a 16.7 ms frame.
+ */
+
+/**
+ * Halvings at a boundary that touches tier 0 — the reachable edge, which is the
+ * information. Sampling alone leaves it short by up to one whole step (4.3% of the
+ * track at 24 stops), enough to leave the thumb in a gap while the caution line
+ * calls the colour exact. Five halvings put it inside 0.15% of the track.
  */
 const EDGE_STEPS = 5;
+
+/** Halvings between two washes. A wash edge is decoration, and 2 halvings is
+ *  already inside ~1% of the track. */
+const OUTER_STEPS = 2;
+
+/** After this many wash-to-wash boundaries on one axis, the rest are left at the
+ *  sample midpoint (error ≤ half a step). The explicit ceiling on the added work:
+ *  a high-chroma hue axis can cross tiers a dozen times. */
+const MAX_OUTER_BOUNDARIES = 12;
+
+/**
+ * Narrowness rank for "bisect from the narrower tier's side", so `crossing` always
+ * belongs to the narrower tier.
+ *
+ * At a tier-0 boundary that is the original invariant verbatim — tier 0 never
+ * claims a colour the limit cannot show, and the wash beside it overstates its
+ * reach by at most one tolerance, which is the right direction for a hint.
+ * BEYOND_TIER is numerically the lowest but describes the WIDEST region (no gamut
+ * at all), so it ranks last rather than first.
+ */
+const narrowness = (tier: number): number => (tier === BEYOND_TIER ? Number.POSITIVE_INFINITY : tier);
 
 export function channelRuns(
   spec: SpaceSpec,
@@ -465,37 +528,62 @@ export function channelRuns(
   const n = Math.max(2, Math.min(24, Math.round(ch.stops)));
   const held = ch.hold ? ch.hold(vals) : vals;
   const valueAt = (frac: number): number => ch.min + frac * (ch.max - ch.min);
-  const okAt = (frac: number): boolean => {
+  const tierAt = gamutTierProbe(spec.limit);
+  const tierOf = (frac: number): number => {
     const probe = convertColor(composeColor(spec, { ...vals, [ch.ch]: valueAt(frac) }, alpha), 'oklch');
-    return inGamut(probe.components[0], probe.components[1], probe.components[2], spec.limit);
+    return tierAt(probe.components[0]!, probe.components[1]!, probe.components[2]!);
   };
-  /** The gamut crossing between an in-gamut fraction and an out-of-gamut one,
-   *  approached from the inside so the paint never claims a colour it cannot show. */
-  const crossing = (inside: number, outside: number): number => {
-    let a = inside, b = outside;
-    for (let k = 0; k < EDGE_STEPS; k++) {
-      const m = (a + b) / 2;
-      if (okAt(m)) a = m; else b = m;
-    }
-    return a;
-  };
-  const runs: ChannelRun[] = [];
-  const sampled: { first: number; last: number }[] = [];
-  let open: ChannelRun | null = null;
+  const paintAt = (frac: number): string =>
+    stopCss(spec, composeColor(spec, { ...held, [ch.ch]: valueAt(frac) }, alpha));
+
+  // 1. Sample the axis and group consecutive equal-tier samples. Tiers only here —
+  //    the stop colours are computed after the boundaries are known, so a wash
+  //    never pays for the samples it will not paint.
+  const parts: { tier: number; first: number; last: number }[] = [];
   for (let i = 0; i < n; i++) {
-    const frac = i / (n - 1);
-    if (!okAt(frac)) { open = null; continue; }
-    const css = stopCss(spec, composeColor(spec, { ...held, [ch.ch]: valueAt(frac) }, alpha));
-    if (open) { open.to = frac; open.stops.push(css); sampled[sampled.length - 1]!.last = i; }
-    else { open = { from: frac, to: frac, stops: [css] }; runs.push(open); sampled.push({ first: i, last: i }); }
+    const tier = tierOf(i / (n - 1));
+    const open = parts[parts.length - 1];
+    if (open && open.tier === tier) open.last = i;
+    else parts.push({ tier, first: i, last: i });
   }
-  const step = 1 / (n - 1);
-  runs.forEach((run, i) => {
-    const s = sampled[i]!;
-    if (s.first > 0) run.from = crossing(run.from, run.from - step);
-    if (s.last < n - 1) run.to = crossing(run.to, run.to + step);
+
+  // 2. Refine each interior boundary once, from the narrower side, and hand the one
+  //    crossing to both runs.
+  const edges: number[] = [];
+  let washEdges = 0;
+  for (let i = 0; i + 1 < parts.length; i++) {
+    const lo = parts[i]!, hi = parts[i + 1]!;
+    const mid = (lo.last / (n - 1) + hi.first / (n - 1)) / 2;
+    const touchesInside = lo.tier === 0 || hi.tier === 0;
+    const steps = touchesInside ? EDGE_STEPS : (washEdges++ < MAX_OUTER_BOUNDARIES ? OUTER_STEPS : 0);
+    if (steps === 0) { edges.push(mid); continue; }
+    const fromLo = narrowness(lo.tier) <= narrowness(hi.tier);
+    const keepTier = fromLo ? lo.tier : hi.tier;
+    let keep = (fromLo ? lo.last : hi.first) / (n - 1);
+    let other = (fromLo ? hi.first : lo.last) / (n - 1);
+    for (let k = 0; k < steps; k++) {
+      const m = (keep + other) / 2;
+      if (tierOf(m) === keepTier) keep = m; else other = m;
+    }
+    // A boundary refined from the far side is still the same single fraction; the
+    // side only decides which tier owns the tolerance.
+    edges.push(keep);
+  }
+
+  // 3. Colours. A tier-0 run keeps one stop per sample (its ramp is the thing the
+  //    user reads); a wash gets start/mid/end and no more.
+  return parts.map((p, i) => {
+    const from = i === 0 ? 0 : edges[i - 1]!;
+    const to = i === parts.length - 1 ? 1 : edges[i]!;
+    const stops: string[] = [];
+    if (p.tier === 0) {
+      for (let k = p.first; k <= p.last; k++) stops.push(paintAt(k / (n - 1)));
+    } else {
+      const seen = new Set<number>();
+      for (const f of [from, (from + to) / 2, to]) if (!seen.has(f)) { seen.add(f); stops.push(paintAt(f)); }
+    }
+    return { from, to, stops, tier: p.tier };
   });
-  return runs;
 }
 
 /** Slack on a range test: conversion float noise, not a real excursion. Relative to

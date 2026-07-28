@@ -9,6 +9,8 @@
 // anything is missing, so a non-paged tool (or a shell change) can never be broken by it.
 // Thumbnails are scaled clones of the real [data-pdf-page] nodes, rebuilt on each render.
 
+import { isTypingTarget } from './typing-target.ts';
+
 export interface Filmstrip {
   /** Rebuild the thumbnails from the current pages (call after the tool re-renders). */
   refresh(): void;
@@ -82,8 +84,10 @@ export function mountFilmstrip(outer: HTMLElement, canvas: HTMLElement, inputs: 
   // typing in a field, so we never fight normal input or page scrolling.
   function onKey(e: KeyboardEvent): void {
     if (!thumbs.length) return;
+    // Shadow-aware: a focused jelly field reports its HOST as the active element,
+    // so a plain tagName test would let arrow keys page the strip mid-typing.
     const ae = document.activeElement as HTMLElement | null;
-    if (ae && (ae.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))) return;
+    if (isTypingTarget(ae)) return;
     const withinCanvas = host!.matches(':hover') || (ae ? host!.contains(ae) : false);
     if (!withinCanvas) return;
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') { step(1); e.preventDefault(); }

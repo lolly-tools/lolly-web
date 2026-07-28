@@ -207,9 +207,9 @@
 
 /* ── Broken gamut sliders (gamut-slider.ts) ─────────────────────────────────
    One axis of OKLCH, with the track cut where the colour stops being
-   displayable. The dashed well is the FULL range; the solid segments inside it
-   are what you can actually reach. A hue track at high chroma shows several
-   arcs with real gaps — which is the point. */
+   displayable: the vivid stretches are reachable, the faint ones hint at the rest
+   of the axis without promising it. A hue track at high chroma shows several vivid
+   arcs — which is the point. */
 .gsl {
   display: flex;
   align-items: center;
@@ -231,12 +231,19 @@
   min-width: 0;
   height: 1.35rem;
   border-radius: 999px;
-  /* The dashed outline is the whole axis, present even where no segment is. */
-  border: 1px solid hsl(var(--border));
+  /* The same faint rail the picker's tracks carry (--track-rail, styles/tokens.css).
+     It used to be unnecessary because the ghost segments covered the full axis at a
+     flat 13%; now the stretch beyond EVERY gamut paints nothing at all — the honest
+     thing to paint, since past Rec.2020 the browser would clamp the colour — so the
+     rail is what keeps the pill's shape and says the axis continues.
+
+     No border on top of it: the edge is already apparent from the fill, and an
+     outline there would be a line doing nothing. */
+  background: var(--track-rail, hsl(var(--muted) / 0.55));
 }
 .gsl-track {
   position: absolute;
-  inset: 1px;
+  inset: 0;
   border-radius: 999px;
   overflow: hidden;
 }
@@ -246,14 +253,20 @@
   bottom: 0;
   /* Square ends: a rounded segment would imply the range tapers off, when it
      stops dead at the gamut boundary. */
-}
 
-/* The unreachable stretches, as a faint wash rather than a hole.
-   It hints that the axis continues without promising a colour we cannot deliver —
-   and it keeps a broken hue track readable as one continuous 0–360 instead of a
-   row of floating fragments. Deliberately low: at much above this it starts to
-   look available. */
-.gsl-seg--ghost { opacity: 0.13; }
+  /* The unreachable stretches paint as a faint wash rather than a hole: the axis
+     continues, this gamut just cannot reach it, and a broken hue track stays
+     readable as one continuous 0–360 instead of a row of floating fragments.
+     paintGamutSlider sets --seg-a per segment from the --track-tier-* scale in
+     styles/tokens.css — the ring it belongs to, so a stretch a wider screen could
+     show reads brighter than one nothing can. Deliberately low: much above that
+     scale and a wash starts to look available.
+
+     The 100% DEFAULT matters: views/color-lab.ts hand-builds a .gsl-seg for
+     the blend-steps gradient preview, which is not a gamut axis and must stay fully
+     opaque. */
+  opacity: var(--seg-a, 100%);
+}
 
 /* The real input sits over the top and stays the only thing that handles
    interaction — keyboard, touch and AT come free. Its track is invisible; the
@@ -303,11 +316,40 @@
   color: hsl(var(--foreground));
 }
 
-/* Out of the target gamut. A MARK, not a refusal — the thumb picks up a ring so
-   you can see you have left the reachable range at the moment you leave it,
-   without anything stopping you. Paired with the "Keep in bounds" toggle, which
-   is off by default. */
-.gsl.is-out .gsl-well { border-style: solid; border-color: oklch(0.65 0.19 45); }
-.gsl.is-out .gsl-input::-webkit-slider-thumb { box-shadow: 0 0 0 2px oklch(0.65 0.19 45), 0 1px 3px hsl(0 0% 0% / 0.4); }
-.gsl.is-out .gsl-input::-moz-range-thumb { box-shadow: 0 0 0 2px oklch(0.65 0.19 45), 0 1px 3px hsl(0 0% 0% / 0.4); }
+/* Out of the target gamut. A MARK, not a refusal — the thumb picks up a ring AND
+   an exclamation mark so you can see you have left the reachable range at the
+   moment you leave it, without anything stopping you. Paired with the "Keep in
+   bounds" toggle, which is off by default.
+
+   The glyph rides in as a background-image because a native range thumb cannot
+   hold child content, and it is drawn PRE-ROTATED -45deg inside the SVG so it
+   lands upright once the thumb's own rotate(45deg) applies. Its colour is baked
+   (#e85e00 = the ring's oklch(0.65 0.19 45) — data URIs cannot read a custom
+   property); mid-lightness, so it carries on the light AND dark thumb fill.
+   Sized to the diamond's UPRIGHT inscribed square (0.85rem / √2 ≈ 0.6rem), not
+   to the rotated box, or the mark would overrun the corners.
+
+   Scoped to `.gsl` deliberately: this is the charts' indicator. The LCH colour
+   picker marks the same state its own way (a round thumb over an amber track
+   outline — styles/parts/color-field.css), and the .lab-mix stop-count slider
+   borrows the `.gsl` skin but counts stops, so it never carries `is-out`. */
+.gsl.is-out .gsl-input::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px oklch(0.65 0.19 45), 0 1px 3px hsl(0 0% 0% / 0.4);
+  background-image: var(--gsl-bang);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 0.6rem 0.6rem;
+}
+.gsl.is-out .gsl-input::-moz-range-thumb {
+  box-shadow: 0 0 0 2px oklch(0.65 0.19 45), 0 1px 3px hsl(0 0% 0% / 0.4);
+  background-image: var(--gsl-bang);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 0.6rem 0.6rem;
+}
 .gsl.is-out .gsl-val { color: oklch(0.58 0.19 40); }
+/* Declared on the component root so both vendor thumbs share one copy of the
+   glyph, and a theme could override it without touching the rules above. */
+.gsl {
+  --gsl-bang: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cg transform='rotate(-45 6 6)' fill='%23e85e00'%3E%3Crect x='5' y='2' width='2' height='5' rx='1'/%3E%3Ccircle cx='6' cy='9.2' r='1.15'/%3E%3C/g%3E%3C/svg%3E");
+}

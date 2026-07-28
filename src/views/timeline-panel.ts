@@ -59,6 +59,7 @@ import {
   type Box, type MediaDurFn, type TimeCfg,
 } from './timeline-math.ts';
 import type { AssetRef, AudioLevel, RecorderAPI, RecordSession } from '../../../../engine/src/bridge/host-v1.ts';
+import { isTypingTarget } from '../lib/typing-target.ts';
 import '../styles/parts/timeline.css';
 
 // ── local structural types (kept minimal so free-canvas can pass its own objects) ──
@@ -338,9 +339,9 @@ export function junctionAt(
 /** Is `el` something the user types into? Typing must never trigger a shortcut. */
 export function isTextControl(el: Element | null | undefined): boolean {
   if (!el) return false;
-  const node = el as HTMLElement;
-  if (node.isContentEditable) return true;
-  return /^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName || '');
+  // isTypingTarget descends shadow roots: a focused jelly field reports its HOST as
+  // the active element, and the host is neither an INPUT nor contentEditable.
+  return isTypingTarget(el);
 }
 
 /**

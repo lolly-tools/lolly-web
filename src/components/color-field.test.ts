@@ -571,20 +571,105 @@ test('a long value keeps its whole string reachable', () => {
   assert.equal(valueInput(hex).title, '#30ba78');
 });
 
-test('the broken-track well and its clamp mark have a width to draw with', () => {
-  // The block's own comment asks for a DASHED outline of the full range, and the
-  // amber `.is-clamped` mark below it only sets a style + colour. Both were declared
-  // at width 0, so an out-of-gamut axis rendered as a bare thumb ring on the card.
+test('the stretches the gamut cannot show are painted as fainter rings, not holes', () => {
+  // What Andy asked for: the transparent regions stay VISIBLE, with opacity dropping
+  // onion-ring style as you go up gamuts. The tier tokens carry the opacity, so the
+  // assertions are about STRUCTURE — a ring exists, an outer ring is fainter than an
+  // inner one, and the numbers themselves live in CSS where they can be tuned.
+  const { field } = mount('oklch(62% 0.19 260)', { inline: true, modes: true, dials: true });
+  const track = field.querySelector<HTMLElement>('[data-space-group="oklch"] [data-mode-ch="c"]')!;
+  const bg = track.style.background;
+  assert.ok(bg.includes('color-mix(in oklab,'), `a chroma axis past sRGB must paint washes: ${bg}`);
+  assert.ok(bg.includes('var(--track-tier-1'), 'the first ring out reads its own token');
+  // The dial above it is the SAME run list poured into a conic gradient, so it breaks
+  // at the same fractions — that is what keeps the ring and the slider in register.
+  const dial = field.querySelector<HTMLElement>('[data-space-group="oklch"] [data-dial-ch="c"] .color-dial-ring')
+    ?? field.querySelector<HTMLElement>('[data-space-group="oklch"] [data-dial-ch="c"]')!;
+  const ring = dial.style.background || dial.querySelector<HTMLElement>('[style*="conic"]')?.style.background || '';
+  assert.ok(ring.includes('conic-gradient'), `the dial paints a conic ramp: ${ring}`);
+  const fracs = (v: string): string[] => [...v.matchAll(/(\d+\.\d\d)%(?=[,)]|$)/g)].map(m => m[1]!);
+  assert.deepEqual(fracs(ring), fracs(bg), 'the dial and its slider must break at the same fractions');
+
+  // A hue axis at high chroma crosses more than one gamut, so more than one ring is
+  // named on the same track — the onion.
+  const { field: wide } = mount('oklch(60% 0.22 0)', { inline: true, modes: true, dials: true });
+  const hue = wide.querySelector<HTMLElement>('[data-space-group="oklch"] [data-mode-ch="h"]')!.style.background;
+  assert.ok(hue.includes('var(--track-tier-1') && hue.includes('var(--track-tier-2'),
+    `a high-chroma hue axis shows at least two rings: ${hue}`);
+
+  // The scale is a token scale, and it decreases outward. Read from the stylesheet
+  // rather than pinned as literals here: which value stops looking *available* is a
+  // design judgement, and this test must not become the reason it cannot be changed.
+  const tokens = readFileSync(new URL('../styles/tokens.css', import.meta.url), 'utf8');
+  const pctOf = (name: string): number => {
+    const m = new RegExp(`--track-tier-${name}:\\s*([\\d.]+)%`).exec(tokens);
+    assert.ok(m, `--track-tier-${name} is missing from tokens.css`);
+    return Number(m![1]);
+  };
+  const [t1, t2, t3] = [pctOf('1'), pctOf('2'), pctOf('3')];
+  assert.ok(t1 > t2 && t2 > t3, `the rings must fade outward, got ${t1}/${t2}/${t3}`);
+  assert.ok(t1 < 60, 'an unreachable band must never read as available');
+  assert.equal(pctOf('beyond'), 0, 'past every gamut the browser would clamp the colour: rail only');
+});
+
+test('a gamut-sliced track has a visible rail, and it is NOT a dashed border', () => {
+  // Two requirements pulling against each other, which is why this is pinned.
+  //
+  // A track with gaps needs SOMETHING behind it, or a fully out-of-gamut axis
+  // renders as a bare thumb ring floating on the card with no rail at all. But it
+  // must not be a dashed border: in this design language dashed means DROP AREA and
+  // nothing else, so a dashed rail is a false affordance on every slider in the app.
+  // The rail is therefore a faint inset fill, and the clamp mark an outline.
+  //
+  // It cannot be a background-color: JS assigns the `background` SHORTHAND for the
+  // track gradient, which would wipe one declared here. Nor an inset box-shadow: an
+  // inset shadow paints OVER the background, so a full-width one veils the very
+  // gradient it frames and leaves every slider paler than the dial above it. So the
+  // rail is the BOTTOM LAYER of that same shorthand, out of --track-rail.
   const css = readFileSync(new URL('../styles/parts/color-field.css', import.meta.url), 'utf8');
-  const well = /\.color-lch-slider,\s*\.color-mode-slider \{([^}]*)\}/.exec(css);
-  assert.ok(well, 'the broken-track well rule moved — find it before deleting this test');
-  const border = /border:\s*([^;]+);/.exec(well![1]!)?.[1] ?? '';
-  assert.match(border, /dashed/, 'the well is dashed by design');
-  assert.ok(!/(^|\s)0(px)?(\s|$)/.test(border), `the well needs a non-zero width, got "${border}"`);
+  const rail = /\.color-lch-slider,\s*\.color-mode-slider,\s*\.color-dial \{([^}]*)\}/.exec(css);
+  assert.ok(rail, 'the track rail rule moved — find it before deleting this test');
+  const body = rail![1]!;
+  assert.ok(!/dashed/.test(body), `no dashed border on a slider, got "${body.trim()}"`);
+  assert.ok(!/box-shadow:\s*inset/.test(body), 'an inset rail would paint over the runs');
+  // The rail colour itself is a :root token, because the Colour Lab sliders' wells
+  // need the SAME rail — the stretch beyond every gamut paints nothing at all, so
+  // the rail is the only thing left saying the axis continues there.
+  const tokenCss = readFileSync(new URL('../styles/tokens.css', import.meta.url), 'utf8');
+  assert.match(tokenCss, /--track-rail:\s*hsl\(var\(--muted\)/, 'a faint rail colour is present');
+
+  // …and every track carries it, empty axis or not, always UNDER the runs — which is
+  // the claim that still holds. An axis with nothing reachable is no longer bare: it
+  // paints the onion-ring washes for the gamuts that could show it, over the rail.
+  const { field } = mount('color(display-p3 1 0 0)', { inline: true, modes: true, dials: true });
+  selectSpace(field, 'hex');                        // all three RGB axes are outside sRGB here
+  const empty = [...field.querySelectorAll<HTMLElement>('[data-space-group="hex"] input[data-mode-ch]')];
+  assert.equal(empty.length, 3);
+  for (const t of empty) {
+    assert.match(t.style.background, /, linear-gradient\(var\(--track-rail[^;]*\)$/,
+      'an axis with no reachable colour still shows its rail, underneath');
+  }
+  const { field: green } = mount('#30ba78', { inline: true, modes: true, dials: true });
+  const bg = green.querySelector<HTMLElement>('[data-space-group="oklch"] [data-mode-ch="l"]')!.style.background;
+  assert.match(bg, /^linear-gradient\(to right, (transparent|oklch\(|color-mix\()/, 'the runs come first…');
+  assert.ok(bg.includes('oklch('), 'the reachable stretch paints its own colours');
+  assert.match(bg, /, linear-gradient\(var\(--track-rail[^;]*\)$/, '…and the rail is the bottom layer');
+
   const clamp = /\.color-lch-row:has\(\.color-lch-val\.is-clamped\) > \.color-mode-slider \{([^}]*)\}/.exec(css);
   assert.ok(clamp, 'the clamp-mark rule moved');
-  assert.match(clamp![1]!, /border-style:\s*solid/);
-  assert.match(clamp![1]!, /#d97706/);
+  assert.ok(!/dashed/.test(clamp![1]!), 'the clamp mark is not dashed either');
+  assert.match(clamp![1]!, /#d97706/, 'the clamp mark still marks in amber');
+
+  // And the rule holds across the whole colour surface, not just here.
+  for (const [file, url] of [
+    ['color-field.css', new URL('../styles/parts/color-field.css', import.meta.url)],
+    ['oklch-slice.css', new URL('../lib/oklch-slice.css', import.meta.url)],
+  ] as [string, URL][]) {
+    const text = readFileSync(url, 'utf8');
+    const offenders = text.split('\n')
+      .filter(line => /border(-style)?:[^;]*dashed/.test(line) && !line.trim().startsWith('*'));
+    assert.deepEqual(offenders, [], `${file} has a dashed border: ${offenders.join(' | ')}`);
+  }
 });
 
 test('a token-backed swatch emits a token value; editing afterwards de-links it', () => {

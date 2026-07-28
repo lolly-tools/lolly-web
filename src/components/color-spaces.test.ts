@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseColor, convertColor, colorToHexString, SRGB_SOURCE } from '@lolly/engine';
+import { parseColor, convertColor, colorToHexString, SRGB_SOURCE, BEYOND_TIER } from '@lolly/engine';
 import type { GamutSource } from '@lolly/engine';
 import {
   colorSpaces, getColorSpace, composeColor, decomposeColor, channelRuns, pinValue,
@@ -59,13 +59,76 @@ test('a chroma track is truncated by the gamut it is measured against', () => {
   const oklch = getColorSpace('oklch')!;
   const chroma = { ...oklch.channels[1]!, stops: 24 };
   const at = { l: 90, c: 0.2, h: 140 };   // a light green — where the gamuts differ most
+  // Only the TIER-0 runs are what the limit can show. The list now covers the whole
+  // axis (the rest are the onion-ring washes), so summing every run would total 1
+  // under every limit and measure nothing.
   const total = (limit: 'srgb' | 'rec2020'): number =>
-    channelRuns({ ...oklch, limit }, chroma, at).reduce((t, r) => t + (r.to - r.from), 0);
+    channelRuns({ ...oklch, limit }, chroma, at)
+      .filter(r => r.tier === 0)
+      .reduce((t, r) => t + (r.to - r.from), 0);
   const srgb = total('srgb');
   const wide = total('rec2020');
   assert.ok(srgb > 0, 'the grey axis is inside every gamut, so a run must exist');
   assert.ok(srgb < 1, 'a light green cannot hold 0.4 chroma in sRGB');
   assert.ok(wide > srgb, `Rec.2020 must reach further than sRGB (${wide} vs ${srgb})`);
+});
+
+test('the runs cover the whole axis, and adjacent ones share a boundary EXACTLY', () => {
+  // Contiguity is pinned because it is easy to lose: refining each run's own two
+  // edges independently (which is what this replaced) lands the two estimates of one
+  // boundary up to a tolerance apart, and CSS then interpolates an alpha fade across
+  // that sliver — a soft, wrong-looking gamut edge where the whole purpose of the
+  // bisection was to sharpen it.
+  const oklch = getColorSpace('oklch')!;
+  const vals = decomposeColor(oklch, parseColor('oklch(62% 0.19 260)')!, 260);
+  for (const limit of ['srgb', 'p3', 'rec2020'] as const) {
+    for (const ch of oklch.channels) {
+      const runs = channelRuns({ ...oklch, limit }, ch, vals, 1);
+      assert.ok(runs.length >= 1, `${limit}/${ch.ch} has no runs at all`);
+      assert.equal(runs[0]!.from, 0, `${limit}/${ch.ch} does not start at 0`);
+      assert.equal(runs[runs.length - 1]!.to, 1, `${limit}/${ch.ch} does not end at 1`);
+      for (let i = 0; i + 1 < runs.length; i++) {
+        assert.equal(runs[i]!.to, runs[i + 1]!.from,
+          `${limit}/${ch.ch} runs ${i}/${i + 1} disagree about their shared boundary`);
+        assert.notEqual(runs[i]!.tier, runs[i + 1]!.tier, 'adjacent runs must differ in tier');
+      }
+    }
+  }
+});
+
+test('an unreachable stretch is a RING, ranked by membership, not a hole', () => {
+  // The point of the whole exercise: what the limit cannot show is still painted, at
+  // the tier of the narrowest gamut that CAN — so the band a wider screen would carry
+  // reads brighter than the band nothing carries.
+  const oklch = getColorSpace('oklch')!;
+  const chroma = { ...oklch.channels[1]!, stops: 24 };
+  const at = { l: 65, c: 0.2, h: 29 };            // through the P3 red corner
+  const tiers = (limit: 'srgb' | 'rec2020'): number[] =>
+    channelRuns({ ...oklch, limit }, chroma, at).map(r => r.tier);
+  const srgb = tiers('srgb');
+  assert.deepEqual(srgb.slice(0, 2), [0, 1],
+    `past sRGB the axis enters the first ring before anything else: ${srgb.join(',')}`);
+  assert.equal(srgb[srgb.length - 1], BEYOND_TIER, 'chroma 0.4 at this hue is past every gamut');
+  // A second ring appears where a second gamut genuinely adds reach. On THIS chroma
+  // axis it does not — at hue 29 Rec.2020 stops short of P3's red corner, so the axis
+  // goes from ring 1 straight to beyond, which is the truth and not a missing case.
+  // The hue axis at a chroma both wider gamuts can partly hold shows all four.
+  const hue = { ...oklch.channels[2]!, stops: 24, hold: undefined };
+  const sweep = channelRuns(oklch, hue, { l: 60, c: 0.22, h: 0 }).map(r => r.tier);
+  for (const ring of [0, 1, 2, BEYOND_TIER]) {
+    assert.ok(sweep.includes(ring), `expected a tier ${ring} around the hue circle: ${sweep.join(',')}`);
+  }
+  // Every ring carries colours to paint — a tierless hole is what this replaced.
+  for (const r of channelRuns(oklch, chroma, at)) {
+    assert.ok(r.stops.length >= 1 && r.stops.every(s => typeof s === 'string' && s.length > 0));
+    // …and a wash is capped at three, because 24 stops across a faint low-contrast
+    // band is most of the cost for none of the information.
+    if (r.tier !== 0) assert.ok(r.stops.length <= 3, `a wash carried ${r.stops.length} stops`);
+  }
+  // Under Rec.2020 the P3-only region is still a ring rather than "beyond" — the
+  // membership question, asked of P3, not an index into an ordering.
+  assert.ok(tiers('rec2020').every(t => t === 0 || t === 2 || t === BEYOND_TIER),
+    `Rec.2020 cannot produce a tier 1 (its own subset answers 0): ${tiers('rec2020').join(',')}`);
 });
 
 test('a run leaves gaps where the axis is not displayable', () => {
@@ -74,8 +137,11 @@ test('a run leaves gaps where the axis is not displayable', () => {
   // High chroma at mid lightness fits some hues and not others, so the hue track
   // becomes several arcs — the shape that tells you where you can go.
   const runs = channelRuns(oklch, hue, { l: 60, c: 0.15, h: 0 });
-  assert.ok(runs.length >= 2, `expected several arcs, got ${runs.length}`);
+  const solid = runs.filter(r => r.tier === 0);
+  assert.ok(solid.length >= 2, `expected several arcs, got ${solid.length}`);
   assert.ok(runs.every(r => r.stops.length >= 1));
+  // The arcs are separated by washes, not by holes.
+  assert.ok(runs.length > solid.length, 'the unreachable stretches must be painted too');
 });
 
 test('exactness is a bounded-space question, not a gamut one', () => {
@@ -185,15 +251,17 @@ test('a run reaches the gamut edge, so the thumb never stands on emptiness', () 
   for (const ch of oklch.channels) {
     const runs = channelRuns(oklch, ch, vals, 1);
     const frac = ((vals[ch.ch] ?? ch.min) - ch.min) / (ch.max - ch.min);
-    assert.ok(runs.some(r => r.from - 1e-9 <= frac && frac <= r.to + 1e-9),
-      `the ${ch.ch} thumb at ${frac.toFixed(4)} sits in a gap: ${JSON.stringify(runs.map(r => [r.from, r.to]))}`);
+    // The thumb must sit in a REACHABLE run, not merely in some run — every axis is
+    // fully covered now, so "in a run" no longer says anything.
+    assert.ok(runs.some(r => r.tier === 0 && r.from - 1e-9 <= frac && frac <= r.to + 1e-9),
+      `the ${ch.ch} thumb at ${frac.toFixed(4)} sits outside the reachable band: ${JSON.stringify(runs.map(r => [r.from, r.to, r.tier]))}`);
     // And no run is a zero-width sliver — a single reachable sample used to paint
     // as literally nothing.
     for (const r of runs) assert.ok(r.to > r.from, `${ch.ch} has a zero-width run at ${r.from}`);
   }
   // The refined edge is close to the truth, not a sample position: the L axis holds
   // 0.19 chroma at hue 260 up to L ≈ 0.645, which no 24-sample grid lands on.
-  const l = channelRuns(oklch, oklch.channels[0]!, vals, 1);
+  const l = channelRuns(oklch, oklch.channels[0]!, vals, 1).filter(r => r.tier === 0);
   assert.ok(Math.abs((l[0]?.to ?? 0) - 0.645) < 0.005, `L run ends at ${l[0]?.to}, not ~0.645`);
 });
 

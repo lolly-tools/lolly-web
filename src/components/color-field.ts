@@ -42,7 +42,7 @@
  * colour read "sRGB", and jsdom never fires `input`, so the only guard against
  * reintroducing it is the zero-calls-after-wiring test in color-field.test.ts.
  */
-import { contrastRatio, deltaEOk, parseColor, formatColor, convertColor, colorToHexString } from '@lolly/engine';
+import { contrastRatio, deltaEOk, parseColor, formatColor, convertColor, colorToHexString, BEYOND_TIER } from '@lolly/engine';
 import type { CssColor } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
 import { escape } from '../utils.ts';
@@ -281,21 +281,84 @@ const linearStops = (stops: readonly string[]): string => `linear-gradient(to ri
  *  which is exactly how the needle angle (frac × 360°) is measured. */
 const conicStops = (stops: readonly string[]): string => `conic-gradient(from 0deg, ${stops.join(', ')})`;
 
-/** Positioned stops for a run list: each run's colours across its own stretch,
- *  with `transparent` hard stops over the gaps the gamut cannot reach. */
+/**
+ * Onion rings: the alpha token for a run's tier.
+ *
+ * Tier 0 is the active limit and paints opaque; each ring out is fainter, so an
+ * unreachable stretch reads as "the axis continues, this limit cannot reach it"
+ * rather than as a hole. The VALUES live in CSS (`--track-tier-*` in
+ * styles/parts/color-field.css) so the wash brightness is tunable without touching
+ * this — the judgement of when a wash starts to look *available* is a design one.
+ */
+const tierVar = (t: number): string => (t === BEYOND_TIER ? '--track-tier-beyond' : `--track-tier-${t}`);
+
+/**
+ * Can this browser parse a `color-mix()` carrying a `var()` inside a gradient stop?
+ *
+ * Asked once, in JS, because it has to be: the tiers are stops inside the single
+ * `background` shorthand this module assigns, and if the wrapper fails to parse the
+ * WHOLE declaration is dropped — the track would lose even its rail, which is worse
+ * than today. `@supports` in the stylesheet cannot guard a value built here.
+ * Verified true in Chromium; when it is false the tiers paint `transparent`, which
+ * is exactly the behaviour that shipped before them.
+ */
+let tiersOk: boolean | null = null;
+const tiersSupported = (): boolean => {
+  // Asked on first paint rather than at import: `CSS` is not guaranteed to exist
+  // yet when this module is evaluated (it does not under the jsdom harness), and an
+  // import-time probe would then latch "unsupported" for the whole session.
+  if (tiersOk === null) {
+    tiersOk = typeof CSS === 'undefined' || CSS.supports?.(
+      'background', 'linear-gradient(to right, color-mix(in oklab, red var(--x), transparent), blue)',
+    ) !== false;
+  }
+  return tiersOk;
+};
+
+/**
+ * One stop's CSS at its tier's opacity.
+ *
+ * `color-mix` rather than the two alternatives, deliberately:
+ *
+ * - element `opacity` is unavailable — there is no element per band, and a conic
+ *   ring cannot be split into positioned children the way `.gsl-seg` can without
+ *   giving the dial and the slider two different paint paths.
+ * - relative colour syntax is wrong here: `rgb(from X r g b / var(--a))` CLIPS a
+ *   wide-gamut stop to sRGB, and a tier-1 band's whole point is that it is a P3
+ *   colour. `oklch(from …)` avoids the clip but the channel keywords differ per
+ *   space, and `stopCss` legitimately emits `oklch()`, `lab()`,
+ *   `color(display-p3 …)` or a hex.
+ *
+ * `in oklab` takes any of those notations unchanged and keeps the result out of
+ * sRGB. Gradient interpolation is premultiplied, so an opaque tier-0 stop meeting a
+ * translucent tier-1 stop at the same position is a clean hard stop with no grey
+ * mud between them.
+ */
+const wash = (css: string, t: number): string => {
+  if (t === 0) return css;
+  if (!tiersSupported()) return 'transparent';
+  return `color-mix(in oklab, ${css} var(${tierVar(t)}, 0%), transparent)`;
+};
+
+/** Positioned stops for a run list: each run's colours across its own stretch, the
+ *  rings out washed back by their tier's token. */
 function runParts(runs: readonly ChannelRun[]): string[] {
   const at = (f: number): string => `${(clamp01(f) * 100).toFixed(2)}%`;
   const parts: string[] = [];
   let cursor = 0;
   for (const run of runs) {
+    // Dead defence: `channelRuns` covers [0,1] by construction now. Kept so a
+    // caller that hands over a sparse list still gets a well-formed gradient.
     if (run.from > cursor) parts.push(`transparent ${at(cursor)}`, `transparent ${at(run.from)}`);
     const n = run.stops.length;
     // A single-sample run still spans its (bisected) stretch, so state its one
     // colour at BOTH ends — otherwise the band fades into the transparent gap
     // beside it instead of reading as the solid sliver of reachable colour it is.
-    if (n < 2) parts.push(`${run.stops[0]} ${at(run.from)}`, `${run.stops[0]} ${at(run.to)}`);
-    else run.stops.forEach((css, i) => {
-      parts.push(`${css} ${at(run.from + (run.to - run.from) * (i / (n - 1)))}`);
+    if (n < 2) {
+      const one = wash(String(run.stops[0]), run.tier);
+      parts.push(`${one} ${at(run.from)}`, `${one} ${at(run.to)}`);
+    } else run.stops.forEach((css, i) => {
+      parts.push(`${wash(css, run.tier)} ${at(run.from + (run.to - run.from) * (i / (n - 1)))}`);
     });
     cursor = Math.max(cursor, run.to);
   }
@@ -303,10 +366,18 @@ function runParts(runs: readonly ChannelRun[]): string[] {
   return parts;
 }
 
+/** The rail the gaps read against, as the BOTTOM background layer — the axis
+ *  carries on there, the gamut just cannot reach it. It rides in the same
+ *  `background` shorthand as the runs because that shorthand is what JS assigns:
+ *  a `background-color` from the stylesheet would be wiped by it, and an inset
+ *  box-shadow (which paints over the background) veiled the gradient it framed.
+ *  The colour itself stays in CSS, as --track-rail. */
+const RAIL = 'linear-gradient(var(--track-rail, transparent), var(--track-rail, transparent))';
+
 const trackFromRuns = (runs: readonly ChannelRun[]): string =>
-  runs.length ? linearStops(runParts(runs)) : 'transparent';
+  runs.length ? `${linearStops(runParts(runs))}, ${RAIL}` : RAIL;
 const dialFromRuns = (runs: readonly ChannelRun[]): string =>
-  runs.length ? conicStops(runParts(runs)) : 'transparent';
+  runs.length ? `${conicStops(runParts(runs))}, ${RAIL}` : RAIL;
 
 /**
  * The three OKLCH axis ramps as stop lists — the ORIGINAL full-range builder,

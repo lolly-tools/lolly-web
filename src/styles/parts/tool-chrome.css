@@ -44,6 +44,11 @@
 .toast-icon svg { width: 16px; height: 16px; display: block; }
 .toast-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toast-label { color: hsl(var(--muted-foreground)); }
+/* A toast carrying a sentence rather than a label. The default message is
+   nowrap + ellipsis, which is right for "Copied link" and silently eats anything
+   longer — so a multi-line notice has to opt in rather than be truncated. */
+.toast--wrap { max-width: min(92vw, 34rem); border-radius: var(--radius); padding: 10px 14px; }
+.toast--wrap .toast-message { white-space: normal; overflow: visible; line-height: 1.45; }
 .toast.is-muted { padding: 6px 14px; }
 .toast.is-muted .toast-message { color: hsl(var(--muted-foreground)); }
 .toast-action {
