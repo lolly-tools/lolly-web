@@ -60,7 +60,7 @@
 import '../styles/parts/color-lab.css';
 import '../lib/oklch-slice.css';           // the .okls-* chart rules (see oklch-slice.ts)
 import {
-  describeColor, contrastVsExtremes, wcagLevel, oklchToHex, rampOklab,
+  describeColor, contrastVsExtremes, wcagLevel, oklchToHex, formatOklch, rampOklab,
   gamutSolid, projectGamutSolid, projectSolidPoint, contrastRatio, GAMUTS,
 } from '@lolly/engine';
 import type {
@@ -72,7 +72,7 @@ import {
 } from '../lib/oklch-slice.ts';
 import type { SliceChartState } from '../lib/oklch-slice.ts';
 import {
-  renderGamutSlider, paintGamutSlider, wireGamutSlider, channelRange,
+  renderGamutSlider, paintGamutSlider, wireGamutSlider, channelRange, clampIntoGamut,
 } from '../lib/gamut-slider.ts';
 import type { GamutChannel } from '../lib/gamut-slider.ts';
 import { mountColorField } from '../components/color-field.ts';
@@ -124,11 +124,19 @@ const GAMUT_TITLE: Record<GamutName, string> = {
   rec2020: 'Rec.2020',
   none: 'Beyond every display',
 };
+/**
+ * What each verdict MEANS, stated as capability rather than as a restriction.
+ *
+ * Leading with the limitation ("needs a wide-gamut screen") frames reaching past
+ * sRGB as a problem, when it is usually the intent — a vivid colour that modern
+ * displays genuinely reach. Only the last case is a warning, and it earns it by
+ * being true regardless of what the user was targeting.
+ */
 const GAMUT_BLURB: Record<GamutName, string> = {
-  srgb: 'Every screen, every print pipeline, every browser can show this.',
-  p3: 'Needs a wide-gamut screen. Most phones and recent laptops have one; older monitors and CMYK print do not.',
-  rec2020: 'Beyond Display-P3. Almost no consumer screen shows this today.',
-  none: 'No display can reproduce this colour. It will always be mapped down before it reaches anyone.',
+  srgb: 'Reproducible everywhere — every screen, every browser, every print pipeline.',
+  p3: 'More vivid than sRGB reaches. Shown in full on most phones and recent laptops; older monitors fall back.',
+  rec2020: 'More vivid still — beyond Display-P3. Very few screens show all of this today.',
+  none: 'Beyond every display and print process we can describe. This one will always be mapped down.',
 };
 
 /** The alternate notations shown ON the swatch, in order. A short list on
@@ -165,6 +173,16 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   let desc = describeColor(subject) ?? describeColor(FALLBACK)!;
   /** Which gamut the charts and the solid extend to. */
   let limit: Exclude<GamutName, 'none'> = 'rec2020';
+  /**
+   * Whether dragging is held inside the target gamut.
+   *
+   * Default OFF, deliberately: reaching past sRGB is usually the intent, not a
+   * mistake, and the app's job is to show the consequence rather than prevent it.
+   * ON is for the times you must stay reproducible — proofing to a press, or
+   * keeping a palette sRGB-safe — and then chroma yields rather than the axis you
+   * are dragging (see clampIntoGamut).
+   */
+  let boundsOn = false;
   /** The far end of the blend ramp, and how many stops both ramps carry. */
   let other = 'oklch(85% 0.13 85)';
   let steps = 9;
@@ -224,6 +242,19 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     paintSolid();
   });
 
+  const boundsBox = $<HTMLInputElement>('[data-lab-bounds]');
+  if (boundsBox) {
+    const onBounds = (): void => {
+      boundsOn = boundsBox.checked;
+      // Turning it ON pulls the CURRENT colour in, rather than waiting for the next
+      // drag — otherwise the report would sit out of bounds while claiming to hold them.
+      if (boundsOn) setSubject(formatOklch(clampIntoGamut(desc.oklch, limit)));
+      else paintSliders();
+    };
+    boundsBox.addEventListener('change', onBounds);
+    cleanups.push(() => boundsBox.removeEventListener('change', onBounds));
+  }
+
   // ── The 2D charts ────────────────────────────────────────────────────────
   /** Per-plane chart state, all three sliced through the subject. */
   const chartState = new Map<SlicePlane, SliceChartState>();
@@ -254,7 +285,9 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         hexOf: () => desc.srgbHex,
         // Dragging the dot or clicking empty space both pick — on a report,
         // every chart is an input as well as a readout.
-        onRecolor: (_idx, o) => setSubject(oklchToHex(o), { silent: true, live: true }),
+        // Dragging into a chart's P3 band should GIVE you that P3 colour, not its
+        // sRGB bake — so this goes through setOklch like the sliders do.
+        onRecolor: (_idx, o) => setOklch(o, { silent: true, live: true }),
         onCommit: () => {
           // The one full-fidelity pass per gesture: re-seed the picker, repaint
           // the charts sharp, and write the URL.
@@ -264,7 +297,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
           announce(t('Colour set to {c}', { c: desc.srgbHex }));
         },
         onPick: () => {},
-        onAdd: (seed) => setSubject(oklchToHex(seed)),
+        onAdd: (seed) => setOklch(seed),
       }));
       const label = $(`[data-lab-slice-at="${plane}"]`);
       if (label) label.textContent = formatFixed(plane, st.fixed);
@@ -276,9 +309,9 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         sliderMount.innerHTML = renderGamutSlider(plane, sliderState(ch), desc.oklch[ch]);
         chartTeardowns.push(wireGamutSlider(sliderMount, {
           // Continuous: move the colour and repaint at draft quality.
-          onInput: (v) => setSubject(oklchToHex({ ...desc.oklch, [ch]: v }), { silent: true, live: true }),
+          onInput: (v) => setOklch({ ...desc.oklch, [ch]: v }, { silent: true, live: true }),
           onChange: (v) => {
-            setSubject(oklchToHex({ ...desc.oklch, [ch]: v }));
+            setOklch({ ...desc.oklch, [ch]: v });
             announce(t('Colour set to {c}', { c: desc.srgbHex }));
           },
         }));
@@ -293,16 +326,30 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
           const v = Number(num.value);
           if (!Number.isFinite(v)) return;
           const r = channelRange(ch2, SLICE_C_MAX);
-          setSubject(oklchToHex({
-            ...desc.oklch,
-            [ch2]: Math.max(r.min, Math.min(r.max, v)),
-          }));
+          setOklch({ ...desc.oklch, [ch2]: Math.max(r.min, Math.min(r.max, v)) });
         };
         num.addEventListener('change', onNum);
         chartTeardowns.push(() => num.removeEventListener('change', onNum));
       }
     }
   }
+
+  /** Apply the bounds rule, if it is on. Off, the value passes through untouched —
+   *  the report then says where it landed rather than stopping it getting there. */
+  const bounded = (o: { l: number; c: number; h: number }): { l: number; c: number; h: number } =>
+    (boundsOn ? clampIntoGamut(o, limit) : o);
+
+  /**
+   * An OKLCH triple → the subject, as an `oklch()` STRING.
+   *
+   * Not via `oklchToHex`: that gamut-maps into sRGB, so handing it a wide-gamut
+   * request quietly returns the sRGB bake — which made "bounds off" meaningless
+   * (asking for chroma 0.34 came back as 0.2672, the sRGB ceiling) and is exactly
+   * the silent collapse this whole view exists to avoid. The string keeps the
+   * authored value; `describeColor` parses it back losslessly.
+   */
+  const setOklch = (o: { l: number; c: number; h: number }, opts?: { silent?: boolean; live?: boolean }): void =>
+    setSubject(formatOklch(bounded(o)), opts);
 
   /** The slider's world: the other two channels held at the subject, at the
    *  gamut the charts are currently drawn to. */
@@ -474,11 +521,15 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   // ── Ramps: tones, and a blend to a second colour ─────────────────────────
   const rampMount = $('[data-lab-ramp]');
-  // Both ramps delegate to the same handler — a step is a step wherever it sits.
-  view.addEventListener('click', (e) => {
-    const step = (e.target as HTMLElement).closest<HTMLElement>('[data-lab-step]');
-    if (step?.dataset.labStep) setSubject(step.dataset.labStep);
-  });
+  // The two ramps mean different things, so a click on them does different things.
+  //
+  //  · TONES are derived from the subject, so picking one is "move along my own
+  //    ramp" — it re-seeds the report.
+  //  · A BLEND stop is an output: an intermediate between this colour and another
+  //    one you chose. You want to take it away and use it, not make it the new
+  //    subject — doing that would also destroy the blend it came from, since the
+  //    near end IS the subject.
+
 
   const stepsInput = $<HTMLInputElement>('[data-lab-steps]');
   if (stepsInput) {
@@ -494,12 +545,19 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   const blendPicker = $('[data-lab-blend-picker]');
   if (blendPicker) {
-    // A compact float picker, not the full inline one: this is the SECOND colour,
-    // and giving it the same weight as the subject would flatten the hierarchy the
-    // page is built on.
+    // The SAME expanded picker as the subject's — tabs, dials and sliders.
+    //
+    // It was a compact `float` popover, on the theory that a secondary control
+    // should carry less weight. But the dials are gated on `inline` inside the
+    // component (colorModesHtml's third parameter is passed `inline`), so a float
+    // popover can only ever offer the hex field, alpha and swatches — you cannot
+    // pick a blend target perceptually, which is the whole reason the dials exist.
+    // Hierarchy is better carried by placement and heading than by crippling the
+    // control.
     mountColorField(blendPicker, 'lab-other', {
       value: describeColor(other)?.srgbHex ?? '#e0b64d',
-      float: true,
+      inline: true,
+      modes: true,
       onChange: (value) => { other = value; renderRamp(); },
     });
   }
@@ -590,7 +648,13 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const leadSpace = PICKER_MODE_SPACE[mode] ?? null;
     const lead = leadSpace ? desc.notations.find(n => n.space === leadSpace)?.css : null;
     const primary = $('[data-lab-sw-primary]');
-    if (primary) primary.textContent = lead ?? desc.srgbHex.toUpperCase();
+    if (primary) {
+      const shown = lead ?? desc.srgbHex.toUpperCase();
+      primary.textContent = shown;
+      // Click the value you can see and get exactly it.
+      primary.dataset.labCopy = shown;
+      primary.title = t('Copy {v}', { v: shown });
+    }
     const swSpace = $('[data-lab-sw-space]');
     if (swSpace) {
       const shown = leadSpace ?? 'hex';
@@ -620,7 +684,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // than a peer — but it is still the one most tools demand.
       if (leadSpace) want.push(['hex', desc.srgbHex.toUpperCase()]);
       alts.innerHTML = want.map(([space, css]) =>
-        `<li class="lab-sw-alt"><span class="lab-sw-alt-space">${escape(space)}</span><code>${escape(css)}</code></li>`,
+        `<li class="lab-sw-alt"><span class="lab-sw-alt-space">${escape(space)}</span>`
+        + `<code data-lab-copy="${escape(css)}" title="${escape(t('Copy {v}', { v: css }))}">${escape(css)}</code></li>`,
       ).join('');
     }
 
@@ -645,8 +710,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     head.querySelector('[data-lab-headroom-val]')!.textContent =
       `${over ? '' : '+'}${desc.headroom.toFixed(3)}`;
     head.querySelector('[data-lab-headroom-note]')!.textContent = over
-      ? t('past the sRGB ceiling of {max} at this lightness and hue', { max: desc.ceiling.srgb.toFixed(3) })
-      : t('of chroma still available before sRGB runs out (ceiling {max})', { max: desc.ceiling.srgb.toFixed(3) });
+      ? t('beyond sRGB’s ceiling of {max} at this lightness and hue — reach a wider gamut to keep it', { max: desc.ceiling.srgb.toFixed(3) })
+      : t('of chroma still available within sRGB at this lightness and hue (ceiling {max})', { max: desc.ceiling.srgb.toFixed(3) });
 
     const ceils = $('[data-lab-ceilings]')!;
     ceils.innerHTML = GAMUTS.map((lim) => {
@@ -728,17 +793,25 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * spaces — useful to have, wrong to lead with. The step's own OKLCH says what it
    * IS; the hex is what you paste into something that can't take better.
    */
-  function stepHtml(hex: string): string {
+  function stepHtml(hex: string, action: 'use' | 'copy' = 'use'): string {
     const o = describeColor(hex)?.oklch;
     const ink = contrastRatio(hex, '#ffffff') >= 4.5 ? '#ffffff' : '#111111';
     const label = o
       ? `${Math.round(o.l * 100)}% ${o.c.toFixed(3)} ${Math.round(o.h)}`
       : hex.toUpperCase();
+    const oklchStr = o ? formatOklch(o) : hex;
+    const aria = action === 'copy'
+      ? t('Copy {v}', { v: oklchStr })
+      : t('Use oklch({v})', { v: label });
+    // Each line carries its OWN value to copy, so the notation you click is the
+    // notation you get.
     return `<button type="button" class="lab-step" data-lab-step="${escape(hex)}"
       style="background:${escape(hex)};color:${escape(ink)}"
-      aria-label="${escape(t('Use oklch({v})', { v: label }))}">
-      <span class="lab-step-oklch">${escape(label)}</span>
-      <span class="lab-step-hex">${escape(hex.toUpperCase())}</span>
+      aria-label="${escape(aria)}">
+      <span class="lab-step-oklch" data-lab-copy="${escape(oklchStr)}"
+        title="${escape(t('Copy {v}', { v: oklchStr }))}">${escape(label)}</span>
+      <span class="lab-step-hex" data-lab-copy="${escape(hex.toUpperCase())}"
+        title="${escape(t('Copy {v}', { v: hex.toUpperCase() }))}">${escape(hex.toUpperCase())}</span>
     </button>`;
   }
 
@@ -753,7 +826,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         [oklchToHex({ l: 0.97, c: o.c * 0.22, h: o.h }), desc.srgbHex, oklchToHex({ l: 0.13, c: o.c * 0.5, h: o.h })],
         steps, { correctLightness: true },
       );
-      rampMount.innerHTML = tones.map(stepHtml).join('');
+      rampMount.innerHTML = tones.map(hex => stepHtml(hex)).join('');
     }
     const blendMount = $('[data-lab-blend]');
     if (blendMount) {
@@ -764,7 +837,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const blend = far
         ? rampOklab([desc.srgbHex, far.srgbHex], steps, { correctLightness: false })
         : [];
-      blendMount.innerHTML = blend.map(stepHtml).join('');
+      blendMount.innerHTML = blend.map(hex => stepHtml(hex, 'copy')).join('');
       const preview = $('[data-lab-blend-preview]');
       if (preview && far) {
         // A real CSS gradient beside the discrete stops: same two ends, so you can
@@ -777,15 +850,43 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     }
   }
 
-  // Copy buttons, delegated once.
-  view.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-lab-copy]');
-    if (!btn?.dataset.labCopy) return;
-    void navigator.clipboard?.writeText(btn.dataset.labCopy).then(() => {
-      announce(t('Copied {v}', { v: btn.dataset.labCopy! }));
-      btn.classList.add('is-copied');
-      setTimeout(() => btn.classList.remove('is-copied'), 1200);
+  /** A hex's oklch() form — what a step's body copies, matching its visible label. */
+  const oklchStringFor = (hex: string): string => {
+    const o = describeColor(hex)?.oklch;
+    return o ? formatOklch(o) : hex;
+  };
+
+  /** Put a value on the clipboard and confirm it on the element that was clicked. */
+  function copyValue(value: string, on: HTMLElement): void {
+    void Promise.resolve(navigator.clipboard?.writeText(value)).then(() => {
+      announce(t('Copied {v}', { v: value }));
+      on.classList.add('is-copied');
+      setTimeout(() => on.classList.remove('is-copied'), 1200);
     }).catch(() => announce(t('Copy failed')));
+  }
+
+  // ONE delegated click handler, on the `.lab` root — which shellHtml replaces on
+  // every mount. Bound to `view` instead, the listeners survived the innerHTML
+  // swap and stacked up, so a single click fired once per previous mount.
+  const labRoot = $('.lab');
+  labRoot?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+
+    // Most specific first: anything showing a value copies THAT value. Clicking the
+    // oklch line gives you oklch, clicking the hex line gives you the hex — you get
+    // what you pointed at, rather than whichever form we decided was canonical.
+    const copy = target.closest<HTMLElement>('[data-lab-copy]');
+    if (copy?.dataset.labCopy) { copyValue(copy.dataset.labCopy, copy); return; }
+
+    // Then the ramps. The two mean different things: a TONE step is a point on the
+    // subject's own ramp, so it re-seeds; a BLEND stop is an output between this
+    // colour and another, so it copies — re-seeding would destroy the blend it came
+    // from, since the near end IS the subject.
+    const step = target.closest<HTMLElement>('[data-lab-step]');
+    const hex = step?.dataset.labStep;
+    if (!hex) return;
+    if (step!.closest('[data-lab-blend]')) copyValue(oklchStringFor(hex), step!);
+    else setSubject(hex);
   });
 
   // ── Brand swatches, when there is a brand ────────────────────────────────
@@ -956,7 +1057,15 @@ function shellHtml(): string {
       ${/* Full width, directly above the charts: it governs all four of them, so
             it reads as a control over the whole row rather than a setting tucked
             beside the heading. */''}
-      ${seg()}
+      <div class="lab-target">
+        ${seg()}
+        ${/* Bounds sits WITH the gamut tabs: "bounds" means the bounds of whichever
+              target those tabs select, so separating them would orphan it. */''}
+        <label class="lab-bounds">
+          <input type="checkbox" data-lab-bounds>
+          <span>${escape(t('Keep in bounds'))}</span>
+        </label>
+      </div>
       <div class="lab-charts" data-lab-charts>
         ${PLANES.map(chart).join('')}
         <figure class="lab-chart lab-chart--solid">
@@ -1001,22 +1110,25 @@ function shellHtml(): string {
           <output class="lab-steps-out" data-lab-steps-out>9</output>
         </label>
       </div>
-      <p class="lab-section-note">${escape(t('Click any step to make it the colour under inspection.'))}</p>
+      <p class="lab-section-note">${escape(t('Tone steps re-seed the report; blend stops copy to the clipboard.'))}</p>
 
       <h3 class="lab-h3">${escape(t('Tones'))}</h3>
       <p class="lab-section-note">${escape(t('A perceptually even ramp through this colour, pale to dark.'))}</p>
       <div class="lab-ramp" data-lab-ramp></div>
 
       <h3 class="lab-h3">${escape(t('Blend to another colour'))}</h3>
-      <div class="lab-blend-head">
-        <p class="lab-section-note">${escape(t('Interpolated in OKLab, so the middle stays colourful instead of going grey.'))}</p>
-        <div class="lab-blend-to">
-          <span class="lab-field-label">${escape(t('To'))}</span>
-          <div class="lab-blend-picker" data-lab-blend-picker></div>
+      <p class="lab-section-note">${escape(t('Interpolated in OKLab, so the middle stays colourful instead of going grey. Click a stop to copy it.'))}</p>
+      <div class="lab-blend-to">
+        <div class="lab-blend-to-head">
+          <span class="lab-field-label">${escape(t('Blend to'))}</span>
+          ${/* Still the only way to type a far end in a space the picker has no tab
+                for — same reason the subject keeps one, and it goes when the picker
+                gains those tabs. */''}
           <input type="text" class="field-input lab-blend-raw" data-lab-blend-raw spellcheck="false"
             autocapitalize="off" autocomplete="off"
             aria-label="${escape(t('The far end of the blend, in any colour space'))}">
         </div>
+        <div class="lab-blend-picker" data-lab-blend-picker></div>
       </div>
       <div class="lab-blend-preview" data-lab-blend-preview aria-hidden="true"></div>
       <div class="lab-ramp" data-lab-blend></div>

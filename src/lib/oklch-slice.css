@@ -295,3 +295,12 @@
   font-variant-numeric: tabular-nums;
   color: hsl(var(--foreground));
 }
+
+/* Out of the target gamut. A MARK, not a refusal — the thumb picks up a ring so
+   you can see you have left the reachable range at the moment you leave it,
+   without anything stopping you. Paired with the "Keep in bounds" toggle, which
+   is off by default. */
+.gsl.is-out .gsl-well { border-style: solid; border-color: oklch(0.65 0.19 45); }
+.gsl.is-out .gsl-input::-webkit-slider-thumb { box-shadow: 0 0 0 2px oklch(0.65 0.19 45), 0 1px 3px hsl(0 0% 0% / 0.4); }
+.gsl.is-out .gsl-input::-moz-range-thumb { box-shadow: 0 0 0 2px oklch(0.65 0.19 45), 0 1px 3px hsl(0 0% 0% / 0.4); }
+.gsl.is-out .gsl-val { color: oklch(0.58 0.19 40); }

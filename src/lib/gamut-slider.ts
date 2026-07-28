@@ -19,7 +19,7 @@
  * it stays testable under `node --test` — see the note in oklch-slice.ts.
  */
 
-import { inGamut, oklchToHex } from '@lolly/engine';
+import { inGamut, maxChroma, oklchToHex } from '@lolly/engine';
 import type { GamutName } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
 
@@ -127,7 +127,13 @@ export function renderGamutSlider(id: string, state: GamutSliderState, value: nu
     </div>`;
 }
 
-/** Paint (or repaint) the broken track and the readout. */
+/**
+ * Paint (or repaint) the broken track and the readout.
+ *
+ * `outOfBounds` marks the thumb when the current value sits in one of the gaps —
+ * the small indicator that makes free dragging honest. It is a mark, not a
+ * refusal: leaving the gamut is frequently the intent.
+ */
 export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, value: number): void {
   const track = root.querySelector<HTMLElement>('[data-gsl-track]');
   if (track) {
@@ -144,6 +150,35 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
   if (out) out.textContent = formatChannel(state.channel, value);
   const input = root.querySelector<HTMLInputElement>('[data-gsl-input]');
   if (input && document.activeElement !== input) input.value = String(value);
+
+  // Is the value itself reachable? Asked of the whole colour, not just this axis,
+  // because a hue is only "out" in combination with the chroma and lightness held.
+  //
+  // The flag goes on the COMPONENT root (.gsl), not on whatever container the
+  // caller handed us — the CSS targets `.gsl.is-out`, and putting it on a mount
+  // wrapper instead means the styling silently never applies.
+  const o = colorAt(state, value);
+  const el = root.classList.contains('gsl') ? root : root.querySelector<HTMLElement>('.gsl');
+  el?.classList.toggle('is-out', !inGamut(o.l, o.c, o.h, state.limit));
+}
+
+/**
+ * The nearest reachable colour when bounds are ON: keep the channel the user is
+ * dragging, and let CHROMA give.
+ *
+ * The obvious alternative — refuse a value that leaves the gamut — behaves badly
+ * on a broken track, because it traps the thumb inside whichever segment it
+ * started in and makes most of the hue circle unreachable. Yielding chroma
+ * instead matches how the request is actually meant: *this hue, as vivid as it
+ * can be*. Lightness is preserved for the same reason — it is the axis a designer
+ * is usually holding fixed on purpose.
+ */
+export function clampIntoGamut(
+  o: { l: number; c: number; h: number },
+  limit: Exclude<GamutName, 'none'>,
+): { l: number; c: number; h: number } {
+  if (inGamut(o.l, o.c, o.h, limit)) return o;
+  return { ...o, c: Math.min(o.c, maxChroma(o.l, o.h, limit)) };
 }
 
 export interface GamutSliderHandlers {

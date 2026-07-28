@@ -96,10 +96,13 @@
   /* The picker gets the extra room — it is the control, the other two columns are
      readouts. Plain fractions rather than minmax floors so the whole row grows
      with the page instead of stalling at a fixed measure on a large display. */
-  grid-template-columns: 1fr 1fr 1.5fr;
-  gap: 1.25rem;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: 1rem;
   align-items: start;
 }
+.lab-subject .lab-picker{order:-1}
+.lab-subject .lab-swatch{order:1}
+
 .lab-subject .lab-swatch{    max-height: 26em;}
 .lab-swatch {
   /* Square-ish, but free to grow: it now carries a stack of notations, and a hard
@@ -207,13 +210,13 @@
   height: 2rem;
   padding: 0;
   border: 0;
-  border-radius: calc(var(--radius) * 0.6);
+  border-radius: calc(var(--radius) * 1);
   /* Hex first as the universally-parseable fallback, then the token's authored
      value — a browser that understands it renders the real wide-gamut colour and
      does its own per-display mapping. */
   background: var(--sw);
   background: var(--sw-real, var(--sw));
-  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.15);
+  box-shadow:  0 1px 3px hsl(0 0% 0% / 0.15);
   cursor: pointer;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
@@ -260,13 +263,20 @@
   color: hsl(var(--muted-foreground));
 }
 
-/* The gamut card wears its own verdict: an accent stripe whose colour says how
-   far from universally-displayable this is. */
-.lab-gamut { border-left: 3px solid hsl(var(--border)); }
-.lab-gamut[data-gamut="srgb"] { border-left-color: oklch(0.62 0.16 150); }
-.lab-gamut[data-gamut="p3"] { border-left-color: oklch(0.72 0.16 85); }
-.lab-gamut[data-gamut="rec2020"] { border-left-color: oklch(0.62 0.18 35); }
-.lab-gamut[data-gamut="none"] { border-left-color: oklch(0.55 0.2 25); }
+/* The gamut card wears its own verdict as an accent stripe, and the headroom
+   number is coloured too. SEEING THE BOUNDS is the point of the card, so the
+   signalling stays — a colour that leaves sRGB should be visibly different from
+   one that doesn't.
+   The line to hold: caution, never block, and never scold. A colour outside sRGB
+   is frequently the intent — a vivid colour modern displays genuinely reach — and
+   for print the right target depends on the technique and profile in play rather
+   than on sRGB as a default yardstick. So this stripe reports where you are; it
+   does not tell you that you are wrong, and nothing here refuses a value. */
+.lab-gamut { box-shadow: 0 0 0 2px hsl(var(--border)); }
+.lab-gamut[data-gamut="srgb"] { box-shadow: 0 0 0 2px oklch(0.62 0.16 150); }
+.lab-gamut[data-gamut="p3"] { box-shadow: 0 0 0 2px oklch(0.72 0.16 85); }
+.lab-gamut[data-gamut="rec2020"] { box-shadow: 0 0 0 2px oklch(0.62 0.18 35); }
+.lab-gamut[data-gamut="none"] { box-shadow: 0 0 0 2px oklch(0.55 0.2 25); }
 
 .lab-headroom[data-state="over"] .lab-card-value { color: oklch(0.58 0.19 25); }
 .lab-headroom[data-state="under"] .lab-card-value { color: oklch(0.55 0.14 150); }
@@ -282,7 +292,8 @@
 .lab-ceil-name { color: hsl(var(--muted-foreground)); }
 .lab-ceil-val { font-weight: 600; }
 .lab-ceil-gain { font-weight: 400; color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
-/* A gamut this colour has already overshot. */
+/* A ceiling this colour is already beyond — struck through so the bound is
+   unmistakable at a glance. It marks a boundary crossed, not a value rejected. */
 .lab-ceil.is-past .lab-ceil-val { text-decoration: line-through; opacity: 0.55; }
 
 /* ── Readability ──────────────────────────────────────────────────────────── */
@@ -337,6 +348,24 @@
 }
 
 /* ── The four charts ──────────────────────────────────────────────────────── */
+/* The target row: which gamut, and whether dragging is held inside it. */
+.lab-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+}
+.lab-target .lab-limit { flex: 1 1 20rem; }
+.lab-bounds {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 /* Full width above the charts — it governs the whole row, so it spans it. The
    shared segmented control is normally content-width; these three options split
    the space evenly instead. */
@@ -462,17 +491,16 @@
   font-weight: 600;
 }
 
-.lab-blend-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
+/* The far end of the blend: the SAME expanded picker as the subject's, because
+   the dials only exist in the inline form. Its lesser weight comes from sitting
+   under a sub-heading late in the page, not from being a reduced control. */
+.lab-blend-to {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 34rem;
 }
-.lab-blend-to { display: flex; align-items: center; gap: 0.45rem; }
-/* The second colour gets the compact float picker — same component, less weight,
-   because it is not the subject of the page. */
-.lab-blend-picker { flex: 0 0 auto; }
+.lab-blend-to-head { display: flex; align-items: center; gap: 0.6rem; }
+.lab-blend-picker { min-width: 0; }
 .lab-blend-raw {
   width: 13rem;
   font-family: 'SUSE Mono', ui-monospace, monospace;
@@ -510,6 +538,19 @@
 .lab-step:focus-visible { box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12), 0 0 0 3px hsl(var(--primary) / 0.45); }
 /* OKLCH leads, hex supports — hex is sRGB-only, the weakest way to name a colour
    on a page about colour spaces. */
+/* Each value line is its own copy target, so it needs to look clickable without
+   turning the step into a wall of buttons. */
+.lab-step-oklch, .lab-step-hex, .lab-sw-primary, .lab-sw-alt code { cursor: copy; }
+.lab-step-oklch:hover, .lab-step-hex:hover,
+.lab-sw-primary:hover, .lab-sw-alt code:hover { text-decoration: underline dotted; }
+.lab-step-oklch.is-copied, .lab-step-hex.is-copied,
+.lab-sw-primary.is-copied, .lab-sw-alt code.is-copied {
+  text-decoration: none;
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .lab-step-oklch {
   font-family: 'SUSE Mono', ui-monospace, monospace;
   font-size: 0.78rem;
