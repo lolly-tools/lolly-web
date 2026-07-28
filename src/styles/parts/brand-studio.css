@@ -232,6 +232,27 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
    hidden mount measures 0×0). Reuses the .be-subst-details folding chrome. */
 .be-chart-details { margin-top: 1rem; }
 .be-chart-details .be-pal-wheel { max-width: 380px; margin: .8rem auto 0; }
+/* Wheel ⇄ Gamut, the two views of the same swatches. */
+.be-chartview { margin: .8rem auto 0; max-width: 380px; }
+/* The gamut chart wants the room the wheel doesn't: it is a wide plane, not a
+   disc, and the boundary curve is what's being read off it. */
+.be-chart-details .be-pal-slice { max-width: 520px; margin: .8rem auto 0; }
+.be-slice-ctl {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem;
+  margin-bottom: .7rem;
+}
+.be-sliceplane { flex: 0 0 auto; }
+/* The fixed-channel scrubber — which plane you're looking through. */
+.be-slice-fixed { display: flex; align-items: center; gap: .45rem; flex: 1 1 11rem; min-width: 0; }
+.be-slice-fixed-label {
+  font-size: .62rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
+  color: hsl(var(--muted-foreground)); white-space: nowrap;
+}
+.be-slice-range { flex: 1 1 auto; min-width: 4rem; }
+.be-slice-fixed-val {
+  font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap;
+  min-width: 2.6rem; text-align: right; color: hsl(var(--foreground));
+}
 
 /* Palette: grouped shape-only swatch tiles — name + hex live in title/aria
    (and in the editor popover a click opens), never on the tile itself. */

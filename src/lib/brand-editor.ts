@@ -39,7 +39,8 @@
  */
 
 import '../styles/parts/brand-studio.css'; // every .be-* rule — rides this module's lazy chunk
-import { deriveBrandTokens, createTokenSet, colorToHex, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
+import './oklch-slice.css';                // the gamut chart's .okls-* rules (see oklch-slice.ts)
+import { deriveBrandTokens, createTokenSet, colorToHex, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
 import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
 import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
@@ -62,6 +63,12 @@ import {
   renderBrandWheel, wireBrandWheel, updateWheelDot, oklchToStored, oklchHex,
 } from './palette-wheel.ts';
 import type { WheelDot } from './palette-wheel.ts';
+import {
+  renderSliceChart, paintSliceChart, wireSliceChart, updateSliceDot,
+  sliceFixedOf, SLICE_AXES, SLICE_C_MAX, formatFixed,
+} from './oklch-slice.ts';
+import type { SliceChartState, SliceDot } from './oklch-slice.ts';
+import type { SlicePlane } from '@lolly/engine';
 import type { PaletteEntry } from '../palette.ts';
 import { swatchTile, tileLabel } from './swatches.ts';
 import {
@@ -719,11 +726,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <div class="be-panel be-palette">
         ${panelHead(t('Palette'), t('Every colour your brand carries. Click a swatch to recolour, rename or remove it; each section folds and grows with its own <strong>+ Add</strong>. The <strong>Colour chart</strong> below plots the same swatches by hue and chroma. Changes flow to every picker, tool and export.'))}
         <div class="be-pal" data-be-pal></div>
-        <!-- The OKLCH wheel, demoted to a folded card — repainted on open, since
-             a hidden mount measures 0×0 (see the toggle wiring below). -->
+        <!-- The colour charts, demoted to a folded card — repainted on open,
+             since a hidden mount measures 0×0 (see the toggle wiring below).
+             Two views of the SAME swatches: the wheel reads a palette's spread
+             at a glance, the gamut chart shows where the displayable range
+             actually ends. Wheel stays the default so the ?wheel deep-link and
+             everyone's muscle memory land where they always did. -->
         <details class="be-subst-details be-chart-details" data-be-chart>
           <summary><span class="be-subst-details-label">${t('Colour chart')}</span></summary>
+          ${segHtml('chartview', [
+            { id: 'wheel', label: t('Wheel') },
+            { id: 'slices', label: t('Gamut') },
+          ], 'wheel', t('Chart view'), { attr: 'data-be-chartview', extraClass: 'be-chartview' })}
           <div class="be-pal-wheel" data-be-wheel-mount></div>
+          <div class="be-pal-slice" data-be-slice-mount hidden></div>
         </details>
         <p class="be-err" data-be-pal-err hidden></p>
       </div>
@@ -853,6 +869,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const wheelMount = $('[data-be-wheel-mount]') as HTMLElement | null;
   let wheelTeardown: (() => void) | undefined;
   let paintWheel: () => void = () => {};
+  // The gamut chart — the same swatches again, on a plane through OKLCH space
+  // where the sRGB/P3/Rec.2020 boundaries are visible. Only ONE of the two
+  // charts is mounted at a time (the hidden one measures 0×0 and would paint
+  // nothing anyway), so `chartView` gates both the markup and the repaints.
+  const sliceMount = $('[data-be-slice-mount]') as HTMLElement | null;
+  let sliceTeardown: (() => void) | undefined;
+  let chartView: 'wheel' | 'slices' = 'wheel';
+  const sliceState: SliceChartState = { plane: 'lc', fixed: 30, cMax: SLICE_C_MAX };
+  let paintSlices: () => void = () => {};
 
   // Hooks run at the end of every repaintPalette (the generator's candidate
   // "added" states + applied-previews subscribe here, so any palette change —
@@ -898,6 +923,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       }
     }
     paintWheel();
+    paintSlices();
     syncPickerSwatches();
     for (const fn of paletteHooks) fn();
     notifyPaletteObservers();
@@ -1621,11 +1647,208 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     });
   };
   cleanups.push(() => wheelTeardown?.());
+
+  // ── The gamut chart ────────────────────────────────────────────────────────
+  // A plane through OKLCH space with the sRGB / Display-P3 / Rec.2020 bands
+  // drawn on it. The wheel shows what a palette IS; this shows what it can
+  // still become — the sRGB boundary is a curve in lightness×chroma that moves
+  // with hue, so it only becomes visible on a plane that has one of those as a
+  // real axis. Same swatches, same drag/click/add gestures, same persist path.
+
+  /** The range the fixed-channel slider covers, per plane. */
+  const FIXED_RANGE: Record<SlicePlane, { min: number; max: number; step: number }> = {
+    lc: { min: 0, max: 359, step: 1 },        // hue°
+    ch: { min: 0, max: 1, step: 0.01 },       // lightness
+    lh: { min: 0, max: SLICE_C_MAX, step: 0.005 }, // chroma
+  };
+  const FIXED_LABEL: Record<SlicePlane, string> = {
+    lc: t('Hue'), ch: t('Lightness'), lh: t('Chroma'),
+  };
+  const sliceDots = (): SliceDot[] =>
+    swatches.map((s, idx) => ({ idx, hex: s.hex, label: s.name }));
+
+  /** Move every dot to where the CURRENT slice puts it, without a re-render —
+   *  the off-plane fade changes on every tick of the fixed slider. */
+  const refreshSliceDots = (): void => {
+    if (!sliceMount) return;
+    for (const s of swatches.keys()) updateSliceDot(sliceMount, s, swatches[s]!.hex, sliceState);
+  };
+
+  // Repaint at most once per frame while the fixed slider is scrubbed, at half
+  // resolution — three engine slices is ~17ms of real work, too much to run
+  // synchronously inside a pointermove.
+  let sliceFrame = 0;
+  const schedulePaint = (quality: 'full' | 'draft'): void => {
+    if (sliceFrame) cancelAnimationFrame(sliceFrame);
+    sliceFrame = requestAnimationFrame(() => {
+      sliceFrame = 0;
+      if (sliceMount) paintSliceChart(sliceMount, sliceState, { quality });
+    });
+  };
+  cleanups.push(() => { if (sliceFrame) cancelAnimationFrame(sliceFrame); });
+
+  paintSlices = (): void => {
+    if (!sliceMount || chartView !== 'slices') return;
+    const axes = SLICE_AXES[sliceState.plane];
+    const range = FIXED_RANGE[sliceState.plane];
+    sliceMount.innerHTML = `
+      <div class="be-slice-ctl">
+        ${segHtml('sliceplane', [
+          { id: 'lc', label: t('L × C') },
+          { id: 'ch', label: t('C × H') },
+          { id: 'lh', label: t('L × H') },
+        ], sliceState.plane, t('Slice plane'), { attr: 'data-be-plane', extraClass: 'be-sliceplane' })}
+        <label class="be-slice-fixed">
+          <span class="be-slice-fixed-label">${escape(FIXED_LABEL[sliceState.plane])}</span>
+          <input type="range" class="be-slice-range" data-be-slice-fixed
+            min="${range.min}" max="${range.max}" step="${range.step}" value="${sliceState.fixed}"
+            aria-label="${escape(FIXED_LABEL[sliceState.plane])}">
+          <output class="be-slice-fixed-val" data-be-slice-out>${escape(formatFixed(sliceState.plane, sliceState.fixed))}</output>
+        </label>
+      </div>
+      ${renderSliceChart(sliceState, sliceDots(), { editable: true })}
+      <p class="be-wheel-hint">${t('Colour inside the bright region is displayable everywhere; the drained bands need a Display-P3 or Rec.2020 screen, and the checkerboard is beyond every display. The solid line is the sRGB edge, the dashed one Display-P3. Drag a dot to recolour · click to edit · click empty space to add.')}</p>`;
+
+    sliceTeardown?.();
+    const teardowns: Array<() => void> = [];
+
+    teardowns.push(wireSliceChart(sliceMount, {
+      stateOf: () => sliceState,
+      hexOf: (idx) => swatches[idx]?.hex ?? '#888888',
+      onRecolor: (idx, o) => {
+        const cur = swatches[idx]; if (!cur) return;
+        // Same storage-notation contract as the wheel: an LCH swatch keeps the
+        // exact oklch(), a hex/rgb/hsl one keeps its own notation.
+        const fmt = storageFormatOf(cur.raw);
+        const hex = oklchHex(o);
+        const stored = fmt === 'lch' ? oklchToStored(o) : serializeColor(hex, fmt);
+        setSwatchValue(doc, cur.path, stored);
+        cur.raw = stored; cur.hex = hex;
+        updateSliceDot(sliceMount, idx, hex, sliceState);
+        liveTile(idx, hex);
+        if (selected === idx && editorChip) editorChip.style.setProperty('--sw', hex);
+      },
+      onCommit: () => persist(),
+      onPick: (idx) => {
+        // Clicking an off-plane dot brings the SLICE to the colour rather than
+        // the colour to the slice — the palette is what's being read here, and
+        // silently rotating a swatch's hue to match the chart would be the
+        // chart editing something the user only pointed at.
+        const s = swatches[idx];
+        if (s) {
+          const o = hexToOklch(s.hex);
+          if (o) {
+            const want = sliceFixedOf(sliceState.plane, o);
+            if (Math.abs(want - sliceState.fixed) > (axes.fixed === 'h' ? 0.5 : 0.005)) {
+              sliceState.fixed = want;
+              paintSlices();
+              return; // the re-render replaced the dot; let the user click again to edit
+            }
+          }
+        }
+        const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`);
+        const anchor = (tile && tile.offsetParent !== null ? tile : null)
+          ?? sliceMount.querySelector<HTMLElement>(`[data-okls-idx="${idx}"]`);
+        if (anchor) openEditor(idx, anchor);
+      },
+      onAdd: (seed) => {
+        const path = addSwatch(doc, 'custom', t('New swatch'), oklchHex(seed));
+        if (path) setSwatchValue(doc, path, oklchToStored(seed));
+        repaintPalette(); persist(true);
+        const newIdx = path ? swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i])) : -1;
+        const anchor = newIdx >= 0
+          ? (palMount?.querySelector<HTMLElement>(`[data-be-tile="${newIdx}"]`)
+            ?? sliceMount.querySelector<HTMLElement>(`[data-okls-idx="${newIdx}"]`))
+          : null;
+        if (newIdx >= 0 && anchor) openEditor(newIdx, anchor);
+      },
+    }));
+
+    // Plane switch: a full re-render, since the axes, ticks and slider range all
+    // change. Carry the fixed value across by reading it off the palette's
+    // primary, so the new plane opens somewhere useful rather than at zero.
+    const planeSeg = sliceMount.querySelector<HTMLElement>('[data-be-seg="sliceplane"]');
+    if (planeSeg) {
+      const onPlane = (e: Event): void => {
+        const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
+        const next = btn.dataset.val as SlicePlane;
+        if (next === sliceState.plane) return;
+        sliceState.plane = next;
+        const anchorHex = swatches.find(s => (hexToOklch(s.hex)?.c ?? 0) > 0.02)?.hex ?? swatches[0]?.hex;
+        const o = anchorHex ? hexToOklch(anchorHex) : null;
+        sliceState.fixed = o ? sliceFixedOf(next, o) : FIXED_RANGE[next].min;
+        paintSlices();
+      };
+      planeSeg.addEventListener('click', onPlane);
+      teardowns.push(() => planeSeg.removeEventListener('click', onPlane));
+    }
+
+    const fixedInput = sliceMount.querySelector<HTMLInputElement>('[data-be-slice-fixed]');
+    const fixedOut = sliceMount.querySelector<HTMLElement>('[data-be-slice-out]');
+    if (fixedInput) {
+      const onInput = (): void => {
+        sliceState.fixed = Number(fixedInput.value);
+        if (fixedOut) fixedOut.textContent = formatFixed(sliceState.plane, sliceState.fixed);
+        refreshSliceDots();
+        schedulePaint('draft');
+      };
+      // `change` fires when the scrub ends (and on a keyboard step) — the moment
+      // to spend the full-resolution repaint.
+      const onChange = (): void => { onInput(); schedulePaint('full'); };
+      fixedInput.addEventListener('input', onInput);
+      fixedInput.addEventListener('change', onChange);
+      teardowns.push(() => {
+        fixedInput.removeEventListener('input', onInput);
+        fixedInput.removeEventListener('change', onChange);
+      });
+    }
+
+    // The plot's box is set by the pane width, which the split divider can drag.
+    const plot = sliceMount.querySelector<HTMLElement>('[data-okls-plot]');
+    if (plot && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => schedulePaint('full'));
+      ro.observe(plot);
+      teardowns.push(() => ro.disconnect());
+    }
+
+    sliceTeardown = () => { for (const fn of teardowns) fn(); };
+    paintSliceChart(sliceMount, sliceState, { quality: 'full' });
+  };
+  cleanups.push(() => sliceTeardown?.());
+
   // The Colour chart card folds closed by default, and a hidden mount measures
-  // 0×0 — repaint the wheel the moment the card opens so the first reveal (and
-  // any palette change that happened while it was folded) renders true.
+  // 0×0 — repaint the moment the card opens so the first reveal (and any palette
+  // change that happened while it was folded) renders true.
   const chartDetails = $('[data-be-chart]') as HTMLDetailsElement | null;
-  chartDetails?.addEventListener('toggle', () => { if (chartDetails.open) paintWheel(); });
+  const paintChart = (): void => { paintWheel(); paintSlices(); };
+  chartDetails?.addEventListener('toggle', () => { if (chartDetails.open) paintChart(); });
+
+  // Wheel ⇄ Gamut. Only the visible chart is mounted: the hidden one would
+  // measure 0×0 and paint nothing, and leaving three engine slices' worth of
+  // work wired up behind a `hidden` attribute is exactly the kind of cost that
+  // never shows up in a profile until the pane is resized.
+  const chartSeg = $('[data-be-seg="chartview"]') as HTMLElement | null;
+  chartSeg?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]'); if (!btn) return;
+    const next = btn.dataset.val === 'slices' ? 'slices' : 'wheel';
+    if (next === chartView) return;
+    chartView = next;
+    chartSeg.querySelectorAll<HTMLElement>('[data-val]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+    if (wheelMount) wheelMount.hidden = chartView !== 'wheel';
+    if (sliceMount) sliceMount.hidden = chartView !== 'slices';
+    if (chartView === 'wheel') {
+      sliceTeardown?.(); sliceTeardown = undefined;
+      if (sliceMount) sliceMount.innerHTML = '';
+      paintWheel();
+    } else {
+      // Seed the plane's fixed channel from the palette's first chromatic
+      // colour, so the first switch opens on the brand rather than on hue 30.
+      const anchorHex = swatches.find(s => (hexToOklch(s.hex)?.c ?? 0) > 0.02)?.hex ?? swatches[0]?.hex;
+      const o = anchorHex ? hexToOklch(anchorHex) : null;
+      if (o) sliceState.fixed = sliceFixedOf(sliceState.plane, o);
+      paintSlices();
+    }
+  });
 
   repaintPalette();
 

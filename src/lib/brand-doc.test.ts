@@ -38,11 +38,19 @@ test('walkSwatches finds the starter brand’s ramps, spectrum and one theme’s
   const spectrum = s.filter(x => x.kind === 'spectrum');
   const roles = s.filter(x => x.kind === 'semantic');
 
-  // 3 ramps × 9 steps, 6 spectrum hues, 7 semantic slots (light only).
+  // 3 ramps × 9 steps and 7 semantic slots (light only) are contract shape, so they
+  // are pinned. The spectrum SIZE is a palette choice, not a contract — the starter
+  // grew from 6 hues to the full Harmony wheel — so count it from the doc rather than
+  // re-pinning a number every time the palette is retuned. What matters is that every
+  // spectrum leaf is walked and nothing else lands in the bucket.
+  const spectrumLeaves = Object.keys(
+    (doc as { base: { color: { spectrum: Record<string, unknown> } } }).base.color.spectrum,
+  ).filter(k => !k.startsWith('$'));
   assert.equal(ramps.length, 27, 'primary + neutral + secondary, 9 steps each');
-  assert.equal(spectrum.length, 6);
+  assert.equal(spectrum.length, spectrumLeaves.length);
+  assert.ok(spectrum.length >= 6, 'the starter always ships a usable chart palette');
   assert.equal(roles.length, 7);
-  assert.equal(s.length, 40);
+  assert.equal(s.length, ramps.length + spectrum.length + roles.length, 'no swatch is walked twice or missed');
 
   // Dark roles are filtered out entirely (they'd duplicate primary/surface/…).
   assert.ok(!s.some(x => x.set === 'dark'));
@@ -156,10 +164,13 @@ test('addSwatch creates the custom group, slugs collide-safely, and is findable'
 
 test('addSwatch can grow the spectrum, and lands in the spectrum group', () => {
   const doc = load();
+  const before = walkSwatches(doc, 'light').filter(x => x.kind === 'spectrum').length;
   const p = addSwatch(doc, 'spectrum', 'Chartreuse', '#7fff00');
   assert.deepEqual(p, ['base', 'color', 'spectrum', 'chartreuse']);
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
-  assert.equal(s.filter(x => x.kind === 'spectrum').length, 7);
+  // Relative to the starter's own palette size — the point is that the group GREW by
+  // one, not how many hues the starter happens to ship.
+  assert.equal(s.filter(x => x.kind === 'spectrum').length, before + 1);
   assert.equal(s.find(x => x.key === 'color.spectrum.chartreuse')!.group, 'Spectrum');
 });
 
