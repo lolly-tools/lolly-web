@@ -1085,7 +1085,11 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // / category / sort / direction go through applyView() instead — nodes stay live.
   function render(): void {
     if (!masonry) return;
-    masonry.innerHTML = allTools
+    // View-backed tiles lead the utility grid; they carry no data-tool-id, so the
+    // sort pass below (which re-appends tool tiles in order) leaves them in place
+    // at the front rather than shuffling them among the tools.
+    const viewCards = opts.only === 'utility' ? utilityViews().map(viewCardMarkup).join('') : '';
+    masonry.innerHTML = viewCards + allTools
       .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), isPinned(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility'))
       .join('');
     masonry.append(noResults);
@@ -1130,6 +1134,16 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       const el = tileById.get(t.id);
       if (!el) continue;
       const match = matchesQuery(t);
+      el.classList.toggle('is-filtered', !match);
+      if (match) shown++;
+    }
+    // The view tiles aren't in `allTools`, so match them on their own text. Without
+    // this a search for "qr" would leave Colour Lab sitting above zero results.
+    for (const v of (opts.only === 'utility' ? utilityViews() : [])) {
+      const el = masonry.querySelector<HTMLElement>(`[data-view-card="${v.id}"]`);
+      if (!el) continue;
+      const q = query.trim().toLowerCase();
+      const match = !q || `${v.name} ${v.description}`.toLowerCase().includes(q);
       el.classList.toggle('is-filtered', !match);
       if (match) shown++;
     }
@@ -1528,6 +1542,47 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 }
 
 // ── Card markup ───────────────────────────────────────────────────────────
+
+/**
+ * Utility surfaces that are VIEWS rather than tools — pages in the app that
+ * belong in the Utilities grid but have no manifest, no render and no session.
+ *
+ * They get a real tile, the same shape as a tool's, because to a user they are
+ * the same kind of thing: something you open from this grid. What they DON'T get
+ * is the actions row — favourite, keep-offline and saved-sessions are all
+ * tool-store concepts keyed by tool id, and wiring a view into them would mean
+ * inventing a fake tool for three subsystems to believe in.
+ */
+interface UtilityView {
+  id: string;
+  href: string;
+  icon: Parameters<typeof icon>[0];
+  name: string;
+  description: string;
+}
+
+const utilityViews = (): UtilityView[] => [{
+  id: 'color-lab',
+  href: '#/lab',
+  icon: 'palette',
+  name: t('Colour Lab'),
+  description: t('Inspect any colour: where it sits in OKLCH, which displays can show it, how much chroma is left, and every notation.'),
+}];
+
+function viewCardMarkup(v: UtilityView): string {
+  return `
+    <article class="gtile gtile--utility gtile--view" data-view-card="${escape(v.id)}">
+      <div class="gtile-body gtile-body--link">
+        <div class="gtile-cap">
+          <span class="tool-card-icon" aria-hidden="true">${icon(v.icon, { size: 24 })}</span>
+          <span class="gtile-meta">
+            <a class="gtile-name" href="${escape(v.href)}">${escape(v.name)}</a>
+            <p class="gtile-desc">${escape(v.description)}</p>
+          </span>
+        </div>
+      </div>
+    </article>`;
+}
 
 function cardMarkup(
   tool: GalleryTool,

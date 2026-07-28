@@ -11,31 +11,23 @@
  * why a yellow can be twice as chromatic as a blue, why an evenly-stepped ramp
  * goes lopsided across hues, and why a colour "changes" when exported.
  *
- * ## How the bands are drawn
+ * ## How it's drawn: one fill, contour lines on top
  *
- * Three passes of the SAME engine primitive (`host.color.slice` / `oklchSlice`)
- * at the three limits, merged into one buffer. A pixel is painted at full
- * strength inside sRGB, progressively DESATURATED in the P3-only and
- * Rec.2020-only rings, and left transparent past Rec.2020 (the plot's
- * checkerboard shows through, so "no display can do this" reads as absence).
+ * A single pass of the engine primitive (`host.color.slice` / `oklchSlice`) at
+ * the widest gamut being charted, painted at FULL strength, with each narrower
+ * gamut's boundary stroked over it as a thin contour — the way oklch.com reads,
+ * and the way a topographic map reads.
  *
- * Desaturation rather than transparency, for two reasons. It survives both
- * themes without knowing the background colour — alpha would let the
- * checkerboard bleed into the bands — and it means the right thing: the bands
- * mark where you cannot have this much chroma, so draining chroma is the
- * literal statement. The band edges are per-pixel exact on every plane,
- * including 'lh', where the in-gamut region is not a single-valued curve and no
- * polyline could describe it.
- *
- * On top of that, for the two planes whose sRGB/P3 edges ARE single-valued
- * ('lc' and 'ch'), `sliceGamutEdge` traces them as crisp polylines. The line is
- * what you read a value off; the band is what you see at a glance.
+ * An earlier version drained chroma from the wide-gamut bands to mark them as
+ * unshowable. It was defensible but wrong in practice: going outward past a line
+ * made the colour look DULLER, which is backwards from what the axis says, and it
+ * cost three slice passes instead of one — the bulk of the lag while dragging.
+ * The contour carries the same information without editing the colour.
  *
  * Honesty note, and it matters: the canvas is 8-bit sRGB, so every pixel outside
- * sRGB is painted GAMUT-MAPPED — the nearest sRGB colour, not the real one. The
- * bands tell you a wider display would carry that colour; they cannot show it to
- * you. That is why the boundary is a drawn line rather than something you are
- * expected to infer from where the fill stops changing.
+ * sRGB is painted GAMUT-MAPPED — the nearest sRGB colour, not the real one. What
+ * the chart shows past the sRGB contour is therefore approximate by construction;
+ * the contour is the fact.
  */
 
 // No `import './oklch-slice.css'` here, deliberately: the node test runner has
@@ -44,7 +36,7 @@
 // into a second file to get any coverage). Mounting surfaces import
 // `lib/oklch-slice.css` themselves — brand-editor.ts does, alongside the rest of
 // the studio's sheet — and this module stays testable as a whole.
-import { hexToOklch, oklchSlice, sliceGamutEdge } from '@lolly/engine';
+import { hexToOklch, oklchSlice, sliceGamutRegion } from '@lolly/engine';
 import type { SlicePlane, GamutName } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
 import {
@@ -61,18 +53,15 @@ export interface SliceChartState {
   /** The channel the plane holds constant: hue° for 'lc', lightness for 'ch', chroma for 'lh'. */
   fixed: number;
   cMax?: number;
+  /** The widest gamut to chart. Default 'rec2020' — everything we can classify.
+   *  Narrowing it stops the fill (and the legend, and the P3 edge) at that
+   *  gamut, for a caller that wants the chart to answer one display's question. */
+  limit?: Exclude<GamutName, 'none'>;
 }
 
 /** Human names for the axes, used in labels and the hint line. */
 const CHANNEL_NAME: Record<'l' | 'c' | 'h', string> = {
   l: 'Lightness', c: 'Chroma', h: 'Hue',
-};
-
-/** How much chroma each band loses relative to the in-sRGB fill (0 = untouched). */
-const BAND_DRAIN: Record<Exclude<GamutName, 'none'>, number> = {
-  srgb: 0,
-  p3: 0.24,
-  rec2020: 0.48,
 };
 
 const PLANE_LABEL: Record<SlicePlane, string> = {
@@ -150,14 +139,32 @@ export function renderSliceChart(
         ${ticksHtml(axes.x, 'x', cMax)}
         <span class="okls-axis-name">${escapeHtml(CHANNEL_NAME[axes.x])}</span>
       </div>
-      <p class="okls-legend">
-        <span class="okls-key okls-key--srgb">sRGB</span>
-        <span class="okls-key okls-key--p3">Display-P3</span>
-        <span class="okls-key okls-key--rec2020">Rec.2020</span>
-        <span class="okls-key okls-key--none">no display</span>
-      </p>
+      <p class="okls-legend">${legendHtml(state.limit ?? 'rec2020')}</p>
     </div>`;
 }
+
+/**
+ * A key per CONTOUR actually drawn, plus one for the empty area.
+ *
+ * The keys are LINE WEIGHTS, not colour chips, because that is what distinguishes
+ * the boundaries on the chart: every contour is the same white line and they are
+ * told apart by thickness. A coloured dot would be describing a rendering the
+ * chart no longer uses. The widest gamut gets no line key either — its boundary
+ * is where the colour stops, so the checkerboard key is the one that names it.
+ */
+function legendHtml(limit: Exclude<GamutName, 'none'>): string {
+  const keys: string[] = [];
+  for (const g of ['srgb', 'p3', 'rec2020'] as const) {
+    if (g === limit) break; // no contour is drawn for the limit itself
+    keys.push(`<span class="okls-key okls-key--line okls-key--${g}">${GAMUT_KEY_LABEL[g]}</span>`);
+  }
+  keys.push(`<span class="okls-key okls-key--none">past ${GAMUT_KEY_LABEL[limit]} — no display</span>`);
+  return keys.join('');
+}
+
+const GAMUT_KEY_LABEL: Record<Exclude<GamutName, 'none'>, string> = {
+  srgb: 'sRGB', p3: 'Display-P3', rec2020: 'Rec.2020',
+};
 
 // ── Painting ──────────────────────────────────────────────────────────────────
 
@@ -191,7 +198,8 @@ export function paintSliceChart(
   const w = Math.max(1, Math.round(box.width * scale));
   const h = Math.max(1, Math.round(box.height * scale));
 
-  const key = `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${w}x${h}`;
+  const limit = state.limit ?? 'rec2020';
+  const key = `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${limit}|${w}x${h}`;
   if (PAINTED.get(canvas) === key) return;
 
   const ctx = canvas.getContext('2d');
@@ -199,55 +207,47 @@ export function paintSliceChart(
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   ctx.clearRect(0, 0, w, h);
 
-  // The three limits give the same RGB at any pixel they share — they differ
-  // only in where they stop — so their alpha channels are exactly the band
-  // masks. Merge in one pass rather than three putImageData calls: that API
-  // REPLACES pixels and ignores globalAlpha, so it cannot composite at all.
-  const box3 = { plane: state.plane, fixed: state.fixed, width: w, height: h, cMax };
-  const wide = oklchSlice({ ...box3, limit: 'rec2020' });
-  const mid = oklchSlice({ ...box3, limit: 'p3' });
-  const narrow = oklchSlice({ ...box3, limit: 'srgb' });
-
+  // One pass, at the widest gamut being charted, at full strength. Anything past
+  // it comes back transparent and the plot's checkerboard shows through, so "no
+  // display can do this" reads as absence rather than as a colour choice.
+  const img = oklchSlice({ plane: state.plane, fixed: state.fixed, width: w, height: h, cMax, limit });
   const out = ctx.createImageData(w, h);
-  const px = out.data;
-  for (let i = 0; i < px.length; i += 4) {
-    if (!wide.data[i + 3]) continue;              // past every gamut — stay transparent
-    const drain = narrow.data[i + 3] ? BAND_DRAIN.srgb
-      : mid.data[i + 3] ? BAND_DRAIN.p3
-        : BAND_DRAIN.rec2020;
-    const r = wide.data[i] as number, g = wide.data[i + 1] as number, b = wide.data[i + 2] as number;
-    if (drain === 0) {
-      px[i] = r; px[i + 1] = g; px[i + 2] = b;
-    } else {
-      // Toward the pixel's own luma, so only chroma is lost — the band gets
-      // greyer, never lighter or darker than the colour it stands for.
-      const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      px[i] = r + (y - r) * drain;
-      px[i + 1] = g + (y - g) * drain;
-      px[i + 2] = b + (y - b) * drain;
-    }
-    px[i + 3] = 255;
-  }
+  out.data.set(img.data);
   ctx.putImageData(out, 0, 0);
   PAINTED.set(canvas, key);
 
-  paintEdges(root, state, cMax);
+  paintEdges(root, state, cMax, limit);
 }
 
 /** Trace the sRGB and P3 boundaries as polylines, where the plane has one. */
-function paintEdges(root: HTMLElement, state: SliceChartState, cMax: number): void {
+/**
+ * Stroke each narrower gamut's boundary as a contour over the fill.
+ *
+ * Built from `sliceGamutRegion` (closed rings) rather than the open-curve
+ * `sliceGamutEdge`, because rings exist for ALL THREE planes — 'lh' has no
+ * single-valued boundary curve, and it used to be left with no contour at all.
+ * The ring also runs along the achromatic edge, which lands on the plot border
+ * where it reads as part of the frame.
+ */
+function paintEdges(
+  root: HTMLElement, state: SliceChartState, cMax: number,
+  limit: Exclude<GamutName, 'none'>,
+): void {
   const svg = root.querySelector<SVGSVGElement>('[data-okls-edges]');
   if (!svg) return;
-  for (const limit of ['srgb', 'p3'] as const) {
-    const path = svg.querySelector<SVGPathElement>(`[data-okls-edge="${limit}"]`);
+  for (const edge of ['srgb', 'p3'] as const) {
+    const path = svg.querySelector<SVGPathElement>(`[data-okls-edge="${edge}"]`);
     if (!path) continue;
-    const pts = sliceGamutEdge(state.plane, state.fixed, limit, 128, cMax);
-    path.setAttribute('d', pts.length
-      ? pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(5)} ${p.y.toFixed(5)}`).join(' ')
-      : '');
+    // Don't trace a boundary the fill stops short of: on an sRGB-only chart a P3
+    // contour would float in empty space. And the widest gamut needs no contour —
+    // the edge of the fill IS its boundary.
+    const skip = edge === limit || (edge === 'p3' && limit === 'srgb');
+    const rings = skip ? [] : sliceGamutRegion(state.plane, state.fixed, edge, 128, cMax);
+    path.setAttribute('d', rings.map(ring =>
+      `${ring.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(5)} ${p.y.toFixed(5)}`).join(' ')} Z`,
+    ).join(' '));
   }
-  // 'lh' has no single-valued edge; the band alphas carry the boundary there.
-  svg.classList.toggle('is-empty', SLICE_AXES[state.plane].fixed === 'c');
+  svg.classList.remove('is-empty');
 }
 
 /** Reposition + recolour one dot in place during a drag, without re-rendering. */

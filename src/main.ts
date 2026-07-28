@@ -39,7 +39,7 @@ import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from '
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components' | 'lab';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -54,6 +54,7 @@ type Route =
   | { name: 'multi'; params?: string }
   | { name: 'components' }
   | { name: 'utilities' }
+  | { name: 'lab'; params?: string }
   | { name: 'gallery' };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
@@ -76,7 +77,7 @@ let mountedRouteSig = '';
 // Announce client-side route changes (the view swaps via innerHTML, which
 // assistive tech wouldn't otherwise notice).
 function announceRoute(name: RouteName): void {
-  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', utilities: 'Utilities', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit', components: 'Component library' };
+  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', utilities: 'Utilities', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit', components: 'Component library', lab: 'Colour Lab' };
   announce(`${labels[name] ?? 'Page'} loaded`);
 }
 
@@ -85,6 +86,10 @@ function navKeyForRoute(name: RouteName): ViewToggleKey | null {
   switch (name) {
     case 'gallery': return 'tools';
     case 'utilities': return 'utilities';
+    // NOT the Lab. It's a utility you open and come back from, like any tool
+    // page — so it gets the back pill and no tab bar. Lighting the Utilities tab
+    // here would suggest the pill is where you are rather than where you'd go,
+    // and the tabs would compete with the report's own numbered sequence.
     case 'projects': return 'projects';
     case 'catalog': return 'catalog';
     default: return null;
@@ -301,6 +306,13 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     case 'start': {
       const { mountStart } = await import('./views/start.ts');
       await mountStart(view, host as unknown as Parameters<typeof mountStart>[1], route.params ?? '');
+      break;
+    }
+    case 'lab': {
+      // Colour Lab (#/lab) — a scrolling single-colour report. Lazy: it pulls the
+      // gamut solid and the slice charts, which no other view on a cold path needs.
+      const { mountColorLab } = await import('./views/color-lab.ts');
+      await mountColorLab(view, host as unknown as Parameters<typeof mountColorLab>[1], route.params ?? '');
       break;
     }
     case 'components': {
@@ -769,6 +781,7 @@ function parseRoute(): Route {
     if (parts[0] === 'p') return { name: 'projects', folderId: parts[1] || null, params: query || '' };
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
     if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities' }; // gallery filtered to the utility category
+    if (parts[0] === 'lab') return { name: 'lab', params: query || '' }; // Colour Lab (?c=<any css colour>)
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
     return { name: 'gallery' };
   }

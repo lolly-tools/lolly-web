@@ -661,7 +661,7 @@
   height: 3.25em;
   border: 0;
   border-radius: 50%;
-  box-shadow: 0 0 0 1px hsl(var(--border)), 0 1px 3px hsl(0 0% 0% / 0.18);
+  box-shadow: 0 0 0 0px hsl(var(--border)), 0 1px 3px hsl(0 0% 0% / 0.18);
 }
 .color-dial {
   padding: 0;
@@ -699,7 +699,7 @@
   height: 46%;
   border-radius: 50%;
   background: hsl(var(--card));
-  box-shadow: 0 0 0 1px hsl(var(--border));
+  box-shadow: 0 0 0 0px hsl(var(--border));
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
@@ -810,7 +810,7 @@
   flex: 1;
   height: 2em;
   border-radius: var(--radius);
-  border: 1px solid hsl(var(--border));
+  border: 0px solid hsl(var(--border));
   cursor: pointer;
   /* background = the axis gradient, inline from JS */
 }
