@@ -38,6 +38,7 @@ import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
 import { livePalette } from '../lib/live-palette.ts';
+import { urlProfileValue } from '../lib/press-profile-embed.ts';
 import { setSwatches, colorFieldHtml, wireColorField, fixedContainingBlockOrigin } from '../components/color-field.ts';
 import { askLollyIntent } from './picker.ts';
 import { applyBrandVars } from '../brand-vars.ts';
@@ -193,6 +194,9 @@ interface BarSeq { v: number; }
 type LottieModule = typeof import('./lottie-mount.ts');
 /** The video-mount module, loaded lazily the first paint that emits a keyed <video>. */
 type VideoModule = typeof import('./video-mount.ts');
+/** The MilkDrop enhancer, loaded lazily the first paint that emits a [data-lolly-viz]
+ *  placeholder — butterchurn and the preset builders are a chunk of their own. */
+type VizModule = typeof import('../lib/viz-tool-mount.ts');
 
 /**
  * The superset of export options this view assembles and hands to runtime.export —
@@ -236,7 +240,7 @@ export interface RunExportOpts {
   wait?: number;
   duration?: number;
   live?: boolean;
-  audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number };
+  audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number; start?: number };
   filename?: string;
   bundleFormats?: string[];
   convertPaths?: boolean;
@@ -1448,6 +1452,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     actionsApi?.stopAudioPreview?.(); // a detached <audio> keeps playing — stop it on navigation
     lottieModule?.destroyLottiePlayers(); // else animationManager ticks detached trees
     videoModule?.destroyVideoPlayers();   // drop remembered <video> positions
+    vizModule?.destroyToolViz();          // else a WebGL2 context stays pinned per visited tool
     styleEl.remove(); shutterEl?.remove(); ro.disconnect(); stageZoom?.destroy(); exportTeardown?.();
     filmstrip?.destroy();
     window.removeEventListener('keydown', onHistoryKey);
@@ -1488,6 +1493,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // And for video: snapshotMotion (export.js) needs a decoded frame or it skips
     // the <video> and exports blank — videoPending resolves once frames are ready.
     await videoPending;
+    // And for the visualizer: an artist preset is fetched, so an export that didn't wait
+    // would capture whichever brand-native preset was up while that was in flight.
+    await vizPending;
     // Full-bleed tools (hideSidebar: export:false utilities and canvas-layout tools) have
     // no fixed-size artboard scaled-to-fit — canvasEl/outerEl are null — so there's no
     // transform to un-scale. Run the export directly (still behind the shutter). This is the
@@ -1694,7 +1702,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // Meaningful for the CMYK print formats (Print PDF / Print TIFF); share it only
       // when one is selected and it isn't the default condition (keeps links clean).
       const fmt = actionsEl?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value;
-      const prof = actionsEl?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value;
+      // `own:<digest>` is device-local — urlProfileValue flattens it to bare `own`.
+      const prof = urlProfileValue(actionsEl?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value);
       if (isCmykFmt(fmt) && prof && prof !== DEFAULT_CMYK_CONDITION) params.set('profile', prof);
     }
     if (dirtyParams.has('password')) {
@@ -2436,6 +2445,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // reads a decoded frame rather than a blank one.
   let videoPending: Promise<unknown> = Promise.resolve();
   let videoModule: VideoModule | null = null;
+  // Same contract again for the MilkDrop enhancer (lib/viz-tool-mount.js): the tool
+  // renders a placeholder and the shell owns the WebGL canvas inside it, across paints.
+  let vizPending: Promise<unknown> = Promise.resolve();
+  let vizModule: VizModule | null = null;
 
   // The RENDER half of the subscriber is coalesced behind requestAnimationFrame:
   // a full canvas rebuild swaps innerHTML, re-walks annotations, and re-executes
@@ -2500,6 +2513,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             : import('./video-mount.ts').then(m => (videoModule = m)))
             .then(m => m.mountVideoPlayers(contentEl, { isCurrent: () => gen === renderGen }))
             .catch(err => console.warn('video mount failed:', err));
+        }
+        // MilkDrop placeholders. Run the pass on marker-less paints too once the module
+        // is loaded, so switching the style away gives the WebGL context back instead of
+        // leaving it parked on a canvas nothing is drawing into.
+        if (vizModule || contentEl.querySelector('[data-lolly-viz]')) {
+          vizPending = (vizModule
+            ? Promise.resolve(vizModule)
+            : import('../lib/viz-tool-mount.ts').then(m => (vizModule = m)))
+            .then(m => m.mountToolViz(contentEl, { isCurrent: () => gen === renderGen }))
+            .catch(err => console.warn('viz mount failed:', err));
         }
         clearCanvasError();
         lastPainted = hydrated;
@@ -3236,7 +3259,7 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
   }
   // Colour profile is only meaningful for the CMYK print formats (Print PDF / Print
   // TIFF); carry it only when one is selected and it isn't the default condition.
-  const prof = exportScope?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value;
+  const prof = urlProfileValue(exportScope?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value);
   if (isCmykFmt(fmtEl?.value) && prof && prof !== DEFAULT_CMYK_CONDITION) {
     parts.push(`profile=${encodeURIComponent(prof)}`);
   }

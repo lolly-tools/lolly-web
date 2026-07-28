@@ -65,7 +65,7 @@ import {
 import type { WheelDot } from './palette-wheel.ts';
 import {
   renderSliceChart, paintSliceChart, wireSliceChart, updateSliceDot,
-  sliceFixedOf, SLICE_AXES, SLICE_C_MAX, formatFixed,
+  sliceFixedOf, SLICE_AXES, sliceCMax, formatFixed,
 } from './oklch-slice.ts';
 import type { SliceChartState, SliceDot } from './oklch-slice.ts';
 import type { SlicePlane } from '@lolly/engine';
@@ -876,7 +876,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const sliceMount = $('[data-be-slice-mount]') as HTMLElement | null;
   let sliceTeardown: (() => void) | undefined;
   let chartView: 'wheel' | 'slices' = 'wheel';
-  const sliceState: SliceChartState = { plane: 'lc', fixed: 30, cMax: SLICE_C_MAX };
+  // No cMax: the chart derives its chroma ceiling from the gamut it charts
+  // (Rec.2020 by default, so 0.5), which is what stops the wide-gamut spikes
+  // being drawn with flat tops.
+  const sliceState: SliceChartState = { plane: 'lc', fixed: 30 };
   let paintSlices: () => void = () => {};
 
   // Hooks run at the end of every repaintPalette (the generator's candidate
@@ -1673,7 +1676,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const FIXED_RANGE: Record<SlicePlane, { min: number; max: number; step: number }> = {
     lc: { min: 0, max: 359, step: 1 },        // hue°
     ch: { min: 0, max: 1, step: 0.01 },       // lightness
-    lh: { min: 0, max: SLICE_C_MAX, step: 0.005 }, // chroma
+    // Chroma — the same ceiling the chart's own axis uses, so the slider cannot
+    // ask for a slice the plot has no room to show.
+    lh: { min: 0, max: sliceCMax(sliceState), step: 0.005 },
   };
   const FIXED_LABEL: Record<SlicePlane, string> = {
     lc: t('Hue'), ch: t('Lightness'), lh: t('Chroma'),

@@ -23,7 +23,7 @@ import { renderGridHtml, bodyRow } from './grid.ts';
 import { createGridNav } from './grid-nav.ts';
 import { attachResize, isOnResizeEdge } from './resize.ts';
 import { attachReorder } from './reorder.ts';
-import { attachScrub } from './scrub.ts';
+import { attachScrub } from '../lib/scrub.ts';
 import { controlHtml, readControlValue } from './controls.ts';
 import { openBlocksEditor, closeBlocksPanel } from './blocks-editor.ts';
 import { colorFieldHtml, wireColorField, type ColorFieldValue } from '../components/color-field.ts';

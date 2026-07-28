@@ -209,6 +209,8 @@ const PATHS = {
   // magnifying glass with a sign in the lens, not a bare +/− : a lone plus next to
   // the panel's other add affordances read as "add", not "zoom".
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  // Lucide `upload` — the tray-and-arrow every drop zone in the app wears.
+  upload: '<path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
   zoomIn: `${MAGNIFIER}<path d="M8 11h6"/><path d="M11 8v6"/>`,
   zoomOut: `${MAGNIFIER}<path d="M8 11h6"/>`,
   // Lucide pause / scissors.

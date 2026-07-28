@@ -24,10 +24,18 @@
  * `sliceGamutEdge` returns points in the same space.
  */
 
+import { chromaTickStep } from '@lolly/engine';
 import type { SlicePlane } from '@lolly/engine';
 
-/** Ceiling of the chroma axis. Matches the colour picker's C slider maximum, so
- *  a colour cannot sit off the edge of one surface and on another. */
+/**
+ * Fallback ceiling of the chroma axis, for a caller that has no gamut in hand.
+ *
+ * The real ceiling comes from the gamut being charted — `chromaAxisMax(limit)` in
+ * engine/src/gamut-axis.ts — because a single constant cannot serve sRGB (whose
+ * chroma stops at 0.321) and Rec.2020 (0.464, which this number would CLIP) at
+ * once. Every surface in the Lab passes that derived value in as `cMax`; this
+ * remains only as the default for a bare geometry call.
+ */
 export const SLICE_C_MAX = 0.4;
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
@@ -130,6 +138,50 @@ export function sliceTicks(ch: 'l' | 'c' | 'h', cMax = SLICE_C_MAX): { at: numbe
   if (ch === 'l') {
     return [0, 0.25, 0.5, 0.75, 1].map(l => ({ at: l, label: `${Math.round(l * 100)}%` }));
   }
-  const step = cMax / 4;
-  return [0, 1, 2, 3, 4].map(i => ({ at: i / 4, label: (i * step).toFixed(2) }));
+  // Chroma. The ceiling now moves with the gamut (0.34 on sRGB, 0.5 on Rec.2020),
+  // so the labels come from a ROUND step under it — 0, 0.10, 0.20, 0.30 — rather
+  // than from cMax/4, which would print 0.085 / 0.17 / 0.255 on an sRGB axis.
+  const step = chromaTickStep(cMax);
+  const n = Math.floor(cMax / step + 1e-9); // multiplied, not accumulated: 0.1*3 ≠ 0.1+0.1+0.1
+  const ticks: { at: number; label: string }[] = [];
+  for (let i = 0; i <= n; i++) {
+    const v = i * step;
+    ticks.push({ at: Math.min(1, v / cMax), label: v.toFixed(2) });
+  }
+  // Label the ceiling itself when the last round tick left room for it: it is the
+  // number that says how far this gamut goes, and the axis is unreadable without
+  // an end. Skipped when it would crowd its neighbour.
+  if (cMax - n * step >= step / 2) ticks.push({ at: 1, label: cMax.toFixed(2) });
+  return ticks;
+}
+
+/**
+ * Which of `n` axis labels to DROP when the chart is too narrow to print them all
+ * — one flag per tick, in the order {@link sliceTicks} returns them.
+ *
+ * **Both ends always survive.** An axis is read from its ends: the ceiling is the
+ * number the chart is about, and the origin is where the scale starts. This rule has
+ * now been wrong in both directions, which is why it is worth stating as an invariant
+ * rather than as an algorithm:
+ *
+ *  - v1 dropped every EVEN index, which on a six-tick chroma axis took out 0.10, 0.30
+ *    and **0.50** — the ceiling.
+ *  - v2 counted back from the last tick to protect the ceiling, and dropped index 0
+ *    on every even count instead. A six-tick chroma axis then read `0.10 0.30 0.50`
+ *    with the plot's left edge — chroma zero — unlabelled.
+ *
+ * So: keep `ceil(n/2)` labels, placed by rounding evenly across `[0, n-1]`, which
+ * pins both ends by construction and leaves the survivors as close to evenly spaced
+ * as an integer grid allows (exactly even for odd `n`; one wider gap for even `n`,
+ * which reads as a scale where a missing end does not).
+ *
+ * Four labels or fewer are never thinned: they fit, and three numbers is already the
+ * floor at which an axis says anything.
+ */
+export function tickThinned(n: number): boolean[] {
+  if (n <= 4) return new Array(n).fill(false);
+  const keep = Math.ceil(n / 2);
+  const wanted = new Set<number>();
+  for (let k = 0; k < keep; k++) wanted.add(Math.round((k * (n - 1)) / (keep - 1)));
+  return Array.from({ length: n }, (_, i) => !wanted.has(i));
 }

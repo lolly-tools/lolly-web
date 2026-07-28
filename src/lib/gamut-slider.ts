@@ -19,8 +19,8 @@
  * it stays testable under `node --test` — see the note in oklch-slice.ts.
  */
 
-import { inGamut, maxChroma, oklchToHex, gamutTierProbe, BEYOND_TIER } from '@lolly/engine';
-import type { GamutName } from '@lolly/engine';
+import { inGamut, maxChroma, oklchToHex, gamutTierProbe, BEYOND_TIER, chromaAxisMax } from '@lolly/engine';
+import type { GamutLimit } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
 
 /** Which channel a slider drives. */
@@ -30,13 +30,37 @@ export interface GamutSliderState {
   channel: GamutChannel;
   /** The colour the OTHER two channels are held at. */
   base: { l: number; c: number; h: number };
-  /** The widest gamut a value may reach and still count as displayable. */
-  limit: Exclude<GamutName, 'none'>;
-  /** Ceiling of the chroma axis. Default 0.4. */
+  /** The gamut a value must reach to count as reproducible — a display gamut by
+   *  name, or any {@link GamutLimit}, so a press profile breaks the track the same
+   *  way a narrow screen does. */
+  limit: GamutLimit;
+  /** Ceiling of the chroma axis. Defaults to the ceiling `limit` itself implies
+   *  (`chromaAxisMax`), so a chroma track never runs past the gamut it is drawn
+   *  for — nor stops short of it. */
   cMax?: number;
 }
 
+/** Only for a caller with no gamut in hand; see SLICE_C_MAX in oklch-slice-geom.ts. */
 const DEFAULT_C_MAX = 0.4;
+
+/** The chroma ceiling a slider should use: explicit if given, else derived from
+ *  the gamut it is limited to. */
+const cMaxOf = (state: GamutSliderState): number => state.cMax ?? chromaAxisMax(state.limit);
+
+/**
+ * The ceiling to actually draw against, given the value the thumb has to sit on.
+ *
+ * A chroma axis maximum is a CHOICE, not a bound — OKLCH will name c = 0.7 quite
+ * happily — and a range input cannot express a value above its own `max`. So a value
+ * past the ceiling stretches the axis rather than being pulled back to the end of the
+ * track: the alternative is the control quietly editing the colour it is reporting.
+ * The runs are built from the same number, so the track and the thumb stay in
+ * register. Lightness and hue have real ends and are left alone.
+ */
+const drawCMax = (state: GamutSliderState, value: number): number => {
+  const base = cMaxOf(state);
+  return state.channel === 'c' && Number.isFinite(value) && value > base ? value : base;
+};
 
 /** The axis range and step for a channel, in that channel's own units. */
 export function channelRange(ch: GamutChannel, cMax = DEFAULT_C_MAX): { min: number; max: number; step: number } {
@@ -91,7 +115,7 @@ export interface GamutRun {
  * sample is a handful of matrix multiplies, not a bisection.
  */
 export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
-  const { min, max } = channelRange(state.channel, state.cMax ?? DEFAULT_C_MAX);
+  const { min, max } = channelRange(state.channel, cMaxOf(state));
   const n = Math.max(8, Math.floor(samples));
   const tierAt = gamutTierProbe(state.limit);
   const runs: GamutRun[] = [];
@@ -139,7 +163,7 @@ export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
  * segments are decoration behind it.
  */
 export function renderGamutSlider(id: string, state: GamutSliderState, value: number): string {
-  const r = channelRange(state.channel, state.cMax ?? DEFAULT_C_MAX);
+  const r = channelRange(state.channel, drawCMax(state, value));
   const label = CHANNEL_LABEL[state.channel];
   return `
     <div class="gsl" data-gsl="${escapeHtml(id)}" data-channel="${state.channel}">
@@ -162,9 +186,12 @@ export function renderGamutSlider(id: string, state: GamutSliderState, value: nu
  * refusal: leaving the gamut is frequently the intent.
  */
 export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, value: number): void {
+  // One ceiling for the whole repaint — the runs, the range's bounds and the thumb
+  // all read it, so they cannot land on different scales.
+  const drawn: GamutSliderState = { ...state, cMax: drawCMax(state, value) };
   const track = root.querySelector<HTMLElement>('[data-gsl-track]');
   if (track) {
-    track.innerHTML = gamutRuns(state).map((run) => {
+    track.innerHTML = gamutRuns(drawn).map((run) => {
       const left = (run.from * 100).toFixed(3);
       const width = ((run.to - run.from) * 100).toFixed(3);
       const grad = run.stops.length > 1
@@ -184,7 +211,20 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
   const out = root.querySelector<HTMLElement>('[data-gsl-val]');
   if (out) out.textContent = formatChannel(state.channel, value);
   const input = root.querySelector<HTMLInputElement>('[data-gsl-input]');
-  if (input && document.activeElement !== input) input.value = String(value);
+  if (input) {
+    // The chroma axis ceiling can move between repaints (a caller changed its scale,
+    // or the value itself stretched it), so keep the range's bounds in step here as
+    // well as at render time — otherwise the thumb sits on the old scale while the
+    // track behind it shows the new one.
+    //
+    // Set before the value. `drawn` guarantees max >= value, which is what makes the
+    // order safe in BOTH directions: writing a lower max first would clamp the value
+    // being written, and writing the value first against a lower old max would clamp
+    // it just the same.
+    const r = channelRange(drawn.channel, cMaxOf(drawn));
+    if (input.max !== String(r.max)) input.max = String(r.max);
+    if (document.activeElement !== input) input.value = String(value);
+  }
 
   // Is the value itself reachable? Asked of the whole colour, not just this axis,
   // because a hue is only "out" in combination with the chroma and lightness held.
@@ -210,7 +250,7 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
  */
 export function clampIntoGamut(
   o: { l: number; c: number; h: number },
-  limit: Exclude<GamutName, 'none'>,
+  limit: GamutLimit,
 ): { l: number; c: number; h: number } {
   if (inGamut(o.l, o.c, o.h, limit)) return o;
   return { ...o, c: Math.min(o.c, maxChroma(o.l, o.h, limit)) };

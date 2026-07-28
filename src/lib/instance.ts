@@ -57,7 +57,12 @@
  *     remote index's checksums travel with its format entries.
  */
 
-import { ENGINE_VERSION } from '@lolly/engine';
+// Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
+// boot path, and engine/src/index.ts is one shared facade whose retained export
+// set is the UNION over every importer — touching it here drags createRuntime
+// (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
+// scripts/check-bundle-budget.ts.
+import { ENGINE_VERSION } from '../../../../engine/src/version.ts';
 import { openDB } from '../bridge/db.ts';
 
 /** Key of the persisted base inside the 'profile' KV store. */

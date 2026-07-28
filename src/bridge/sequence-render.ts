@@ -305,19 +305,35 @@ interface BedFade {
   clipSec?: number;
   volume?: number;
   duck?: { level: number; startSec: number; endSec: number };
+  /** In-point into the SOURCE, seconds. Independent of the envelope, which is
+   *  still timed from t0 against clipSec. */
+  start?: number;
 }
 
 /**
  * Connect a looping music bed through a gain envelope, scheduled at t=0.
  *
  * Byte-for-byte the same automation as export.ts's connectMusic (fade in, duck
- * window with 0.25 s ramps, fade out), started immediately because an
- * OfflineAudioContext's currentTime is 0 and never advances until rendering.
+ * window with 0.25 s ramps, fade out, and the same in-point + loop window),
+ * started immediately because an OfflineAudioContext's currentTime is 0 and never
+ * advances until rendering.
  */
-function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode, fade: BedFade): void {
+function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode, fade: BedFade, log: (l: string, m: string) => void): void {
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = true;
+  // In-point, reproduced from export.ts:bedStartOffset (importing it would drag that
+  // module's whole graph into this lazy chunk — the same reason rasterBox is copied).
+  // loopStart/loopEnd move with it: loopStart defaults to 0, so a wrap would otherwise
+  // replay the head of the track the visuals deliberately skipped, and loopEnd only
+  // means "end of buffer" while untouched.
+  let offset = fade.start ?? 0;
+  if (!Number.isFinite(offset) || offset <= 0) offset = 0;
+  else if (offset >= buffer.duration) {
+    log('warn', `Audio starts at ${offset}s but the track is only ${buffer.duration.toFixed(2)}s long; playing it from 0:00.`);
+    offset = 0;
+  }
+  if (offset > 0) { src.loopStart = offset; src.loopEnd = buffer.duration; }
   const gain = ctx.createGain();
   src.connect(gain).connect(dest);
   const t0 = ctx.currentTime;
@@ -347,7 +363,7 @@ function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode,
     g.setValueAtTime(vol, fs);
     g.linearRampToValueAtTime(0, t0 + clip);
   }
-  src.start(0);
+  src.start(0, offset);
 }
 
 // ── rasterisation (the renderRecord technique) ──────────────────────────────
@@ -533,8 +549,8 @@ async function mixSequenceAudio(
         : undefined;
       connectBed(octx, bed, octx.destination, {
         fadeIn: opts.audio.fadeIn, fadeOut: opts.audio.fadeOut,
-        clipSec: totalSec, volume: opts.audio.volume, duck,
-      });
+        clipSec: totalSec, volume: opts.audio.volume, duck, start: opts.audio.start,
+      }, log);
     } catch (err) {
       log('warn', `Music bed unavailable (${(err as { message?: string })?.message ?? err}); exporting without it.`);
     }

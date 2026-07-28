@@ -56,3 +56,13 @@ body > svg:not([style]) {
   background: hsl(var(--primary) / 0.16);
   box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.34);
 }
+
+/* While a drag-scrub is live (lib/scrub.ts) every surface shows the ew-resize cursor
+   and nothing selects — otherwise dragging a number field paints a text selection
+   across whatever the pointer crosses. In the overrides layer because an `!important`
+   only beats `!important` in EARLIER layers, and this has to win over the field's own
+   cursor wherever that is declared. */
+body.is-scrubbing, body.is-scrubbing * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+}

@@ -23,8 +23,8 @@ globalThis.document = dom.window.document;
 globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.Element = dom.window.Element;
 
-const { gamutRuns, renderGamutSlider, paintGamutSlider } = await import('./gamut-slider.ts');
-const { BEYOND_TIER, inGamut } = await import('@lolly/engine');
+const { gamutRuns, renderGamutSlider, paintGamutSlider, channelRange } = await import('./gamut-slider.ts');
+const { BEYOND_TIER, inGamut, maxChroma, chromaAxisMax, GAMUTS } = await import('@lolly/engine');
 import type { GamutSliderState } from './gamut-slider.ts';
 
 /** A chroma axis at a mid-lightness blue: reachable near grey, then out. */
@@ -94,4 +94,61 @@ test('the wash opacity defaults to fully opaque, for the non-gamut sliders', () 
   const css = readFileSync(new URL('./oklch-slice.css', import.meta.url), 'utf8');
   assert.match(css, /opacity:\s*var\(--seg-a,\s*100%\)/, 'the 100% default keeps the blend preview opaque');
   assert.ok(!/gsl-seg--ghost/.test(css), 'the single flat ghost class is retired');
+});
+
+test('a chroma slider reaches exactly as far as its gamut, in both directions', () => {
+  // The old flat 0.4 was wrong twice over: it stops short of Rec.2020's real reach
+  // (so the widest colours could not be dialled in at all) and runs a quarter past
+  // sRGB's (so a quarter of the travel did nothing but repeat the boundary colour).
+  // Asserted against maxChroma, not against literals.
+  for (const g of GAMUTS) {
+    const max = channelRange('c', chromaAxisMax(g)).max;
+    let peak = 0;
+    for (let i = 1; i < 100; i++) {
+      for (let h = 0; h < 360; h += 2) peak = Math.max(peak, maxChroma(i / 100, h, g));
+    }
+    assert.ok(max > peak, `${g}: a chroma slider stopping at ${max} cannot reach ${peak}`);
+    assert.ok(max < peak * 1.2, `${g}: ${max} leaves dead travel above ${peak}`);
+  }
+  // Not stated per name: a narrower gamut simply gets a shorter axis.
+  assert.ok(channelRange('c', chromaAxisMax('srgb')).max < channelRange('c', chromaAxisMax('rec2020')).max);
+});
+
+test('a slider with no explicit cMax takes its ceiling from its limit', () => {
+  const mount = document.getElementById('mount')!;
+  const state: GamutSliderState = { channel: 'c', base: { l: 0.7, c: 0.2, h: 328 }, limit: 'srgb' };
+  mount.innerHTML = renderGamutSlider('c', state, 0.2);
+  const input = mount.querySelector('input')!;
+  assert.equal(input.max, String(chromaAxisMax('srgb')));
+  // Repainting under a WIDER limit moves the bounds with it, so a repaint without a
+  // rebuild cannot leave the thumb on the old scale while the track shows the new.
+  paintGamutSlider(mount, { ...state, limit: 'rec2020' }, 0.45);
+  assert.equal(input.max, String(chromaAxisMax('rec2020')));
+  assert.equal(input.value, '0.45');
+});
+
+test('a chroma value past the axis stretches it instead of being clamped away', () => {
+  // A range input cannot hold a value above its own `max`, so any ceiling that could
+  // sit below the value is a value-destroying ceiling: the thumb pins at the end and
+  // reports a colour it is not on. Chroma's ceiling is an axis CHOICE, not a bound,
+  // so it gives. Lightness and hue have real ends and do not.
+  const mount = document.getElementById('mount')!;
+  const state: GamutSliderState = { channel: 'c', base: { l: 0.5, c: 0.7, h: 328 }, limit: 'srgb' };
+  mount.innerHTML = renderGamutSlider('c', state, 0.7);
+  const input = mount.querySelector('input')!;
+  assert.ok(Number(input.max) >= 0.7, `the axis holds the value, max ${input.max}`);
+  assert.equal(input.value, '0.7');
+  // The runs are built from the same stretched ceiling, so the track behind the thumb
+  // is on the thumb's scale: the last segment must end at the track's end.
+  paintGamutSlider(mount, state, 0.7);
+  assert.ok(Number(input.max) >= 0.7, `the repaint keeps the reach, max ${input.max}`);
+  const segs = [...mount.querySelectorAll<HTMLElement>('.gsl-seg')];
+  const last = segs[segs.length - 1]!;
+  const end = parseFloat(last.style.left) + parseFloat(last.style.width);
+  assert.ok(Math.abs(end - 100) < 0.01, `the painted track spans the whole axis, ended at ${end}%`);
+
+  // Back inside, the axis returns to the gamut's own ceiling.
+  paintGamutSlider(mount, state, 0.2);
+  assert.equal(input.max, String(chromaAxisMax('srgb')));
+  assert.equal(input.value, '0.2');
 });

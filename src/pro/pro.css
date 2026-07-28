@@ -238,7 +238,9 @@
 /* Lock the cursor + suppress selection while dragging. */
 body.pro-row-resizing, body.pro-row-resizing * { cursor: row-resize !important; user-select: none !important; }
 body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; user-select: none !important; }
-body.pro-scrubbing, body.pro-scrubbing * { cursor: ew-resize !important; user-select: none !important; }
+/* The while-dragging cursor/selection lock moved to parts/overrides.css as
+   `body.is-scrubbing` — it is shared with Colour Lab's channel entries now, and an
+   `!important` in a lazily-loaded view sheet loses to one in a later layer. */
 /* Numeric scrub cells (Width/Height) hint the drag affordance; typing restores the caret. */
 .pro-cell input.pro-num { cursor: ew-resize; }
 .pro-cell input.pro-num:focus { cursor: text; }

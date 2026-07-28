@@ -22,7 +22,13 @@
  * to template authors.
  */
 
-import { colorToHex, isAlias, parseOklch, oklchToHex, hexToOklch, contrastRatio } from '@lolly/engine';
+// Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
+// boot path, and engine/src/index.ts is one shared facade whose retained export
+// set is the UNION over every importer — touching it here drags createRuntime
+// (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
+// scripts/check-bundle-budget.ts.
+import { colorToHex, isAlias } from '../../../engine/src/tokens.ts';
+import { parseOklch, oklchToHex, hexToOklch, contrastRatio } from '../../../engine/src/brand-derive.ts';
 
 /** The seven semantic slots (token leaf under `color.semantic`) → CSS var. */
 const SLOTS = [

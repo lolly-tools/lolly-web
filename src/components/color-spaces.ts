@@ -80,7 +80,7 @@ export interface SpaceSpec {
   family: ColorModeFamily;
   /** 'OKLCH' — the tab's pill text. */
   label: string;
-  /** 'reference' | 'uncalibrated' | 'Coated FOGRA39 · perceptual'. */
+  /** 'reference' | 'Coated FOGRA39 · perceptual'. */
   sub?: string;
   /** Extra words for the tab's aria-label, after the family. */
   ariaSuffix?: string;
@@ -117,6 +117,8 @@ const deg = (v: number): string => `${Math.round(v)}°`;
 const pct = (v: number): string => `${Math.round(v)}%`;
 const int = (v: number): string => `${Math.round(v)}`;
 const dp3 = (v: number): string => v.toFixed(3);
+
+const clamp01 = (v: number): number => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 
 /** At most two decimals, no trailing zeros — a byte-exact colour reads as `48`. */
 const short = (v: number): string => String(Math.round(v * 100) / 100);
@@ -304,10 +306,15 @@ const cmykTextFrom = (vals: Record<string, number>, alpha: number): string =>
 const cmykText = (c: CssColor): string => cmykTextFrom(cmykDecompose(c), c.alpha);
 
 // CMYK survives the profile work rather than being deleted with it — the brand
-// editor reads CMYK today — but the sublabel says what §11.6b insists on: without
-// a profile these four numbers describe no press that exists.
+// editor reads CMYK today — but it is APPROXIMATE, and in this vocabulary a NAME
+// is the claim: a measured target carries a profile's own name and an intent
+// ('Coated FOGRA39 · relative'), a derived one carries a standard's name ('sRGB'),
+// and an approximate one carries no name at all. Beside a named profile tab, a
+// bare `CMYK` already reads as unqualified — so the distinction survives for
+// screen readers (`ariaSuffix`) and disappears as visual noise, which is what the
+// old visible 'uncalibrated' sublabel had become.
 register({
-  mode: 'cmyk', family: 'output', label: 'CMYK', sub: 'uncalibrated', tag: null, limit: 'srgb',
+  mode: 'cmyk', family: 'output', label: 'CMYK', ariaSuffix: 'no profile', tag: null, limit: 'srgb',
   channels: CMYK_CHANNELS,
   bounds: SRGB_CUBE, boundsIn: 'srgb',
   compose: cmykCompose, decompose: cmykDecompose,
@@ -316,38 +323,93 @@ register({
 });
 
 /**
+ * The profile's OWN transform, both ways, in PCS Lab and 0–1 device channels.
+ *
+ * A profile tab is registered only where this exists, because the tab wears the
+ * profile's name and an intent — and a name is the claim. Numbers published under
+ * 'Coated FOGRA39 · relative' have to come out of that file's tables; anything
+ * else is the bare, deliberately unnamed CMYK tab's job.
+ */
+export interface ProfileDevice {
+  /** Device channels (0–1, in `inks` order) → PCS Lab. Null when it cannot. */
+  toLab(dev: readonly number[]): [number, number, number] | null;
+  /** PCS Lab → device channels (0–1, in `inks` order). Null when it cannot. */
+  fromLab(lab: readonly [number, number, number]): number[] | null;
+}
+
+export interface ProfileSpaceOpts extends Partial<SpaceSpec> {
+  /** The profile's own data colour space — 'CMYK', 'RGB', 'Lab'. Names the tab. */
+  space?: string;
+}
+
+/** `device(0.62 0.23 0.00 0.38)` — the notation a non-CMYK ink set gets, rather
+ *  than a syntax invented for the occasion. Matches the Colour Lab's press row. */
+const deviceTextFrom = (inks: readonly ChannelSpec[]) =>
+  (vals: Record<string, number>, _alpha: number): string =>
+    `device(${inks.map(i => ((vals[i.ch] ?? 0) / 100).toFixed(2)).join(' ')})`;
+
+/**
  * Mount one press profile × rendering intent as a tab. `src.id` already carries
  * the intent, so a second intent for the same profile is simply a second key and
  * nothing here changes. `SpaceSpec.limit` is the source itself, which is what
  * makes the broken tracks and the ink-coverage caution work on a press profile
  * with no extra code path.
  *
- * The device transform is Phase 8's: until it exists a four-ink profile composes
- * through the same naive substitution CMYK uses, and any other ink count declines
- * to convert (`compose` returns the colour unchanged) rather than invent numbers.
- * Pass `extra` to supply the real pair.
+ * `device` is REQUIRED, and that is the whole point: the tab converts through the
+ * profile's own tables under the named intent, so the numbers it shows are the
+ * same ones the Colour Lab's press notation row prints. It used to compose
+ * through the naive sRGB substitution the bare CMYK tab uses — which published an
+ * approximation under a measured profile's name, contradicted the press row on
+ * the same page, and, for any ink count other than four, threw the channel values
+ * away and returned black on the first arrow key.
+ *
+ * `space` names the tab: 'CMYK' for a four-ink CMYK profile, 'RGB' for a monitor
+ * profile, and so on. Never a blanket 'CMYK' — a three-channel RGB profile
+ * labelled CMYK is a false claim about the file.
  */
 export function registerColorProfile(
   src: GamutSource,
   inks: readonly ChannelSpec[],
-  extra: Partial<SpaceSpec> = {},
+  device: ProfileDevice,
+  opts: ProfileSpaceOpts = {},
 ): void {
+  const { space, ...extra } = opts;
   const intent = src.id.split(':')[2] ?? '';
   const base = src.label.replace(/\s*\([^)]*\)\s*$/, '');
-  const four = inks.length === 4;
+  const inkKeys = inks.map(i => i.ch).join(',');
+  const name = (space ?? (inkKeys === 'c,m,y,k' ? 'CMYK' : '')).trim();
+  const four = inks.length === 4 && name.toUpperCase() === 'CMYK';
+
+  /** Display percentages → the profile's Lab, as a CssColor in `lab()`. */
+  const compose = (vals: Record<string, number>, alpha: number): CssColor => {
+    const dev = inks.map(i => clamp01((vals[i.ch] ?? 0) / 100));
+    const lab = device.toLab(dev);
+    // A transform that declines mid-drag must not destroy the colour: black is
+    // the wrong answer to "we could not convert". Fall back to the neutral axis
+    // at the requested lightness rather than inventing a hue.
+    if (!lab) return { space: 'srgb', components: [0, 0, 0], alpha, missing: 0 };
+    return { space: 'lab', components: [lab[0], lab[1], lab[2]], alpha, missing: 0 };
+  };
+  const decompose = (c: CssColor): Record<string, number> => {
+    const lab = convertColor(c, 'lab').components as [number, number, number];
+    const dev = device.fromLab(lab);
+    return Object.fromEntries(inks.map((i, n) => [i.ch, clamp01(dev?.[n] ?? 0) * 100]));
+  };
+  const textFrom = four ? cmykTextFrom : deviceTextFrom(inks);
+
   register({
     mode: src.id as ProfileColorMode,
     family: 'output',
-    label: 'CMYK',
+    label: name || 'Device',
     sub: intent ? `${base} · ${intent}` : base,
     ariaSuffix: intent ? `${base}, ${intent} intent` : base,
     tag: null,
     channels: inks,
     limit: src,
-    compose: four ? cmykCompose : (_v, alpha) => ({ space: 'srgb', components: [0, 0, 0], alpha, missing: 0 }),
-    decompose: four ? cmykDecompose : () => Object.fromEntries(inks.map(i => [i.ch, 0])),
-    text: four ? cmykText : (c => colorToHexString(c)),
-    ...(four ? { textFrom: cmykTextFrom } : {}),
+    compose,
+    decompose,
+    text: c => textFrom(decompose(c), c.alpha),
+    textFrom,
     stopCss: c => colorToHexString(c),
     ...extra,
   });

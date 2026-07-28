@@ -182,6 +182,12 @@ export default defineConfig({
             // entry import from this light chunk while the lazy views still get the
             // helpers on demand. MUST precede engine-render so these files land here.
             { name: 'engine-util', test: /engine\/src\/(tokens|tool-url|embed)\.ts$/, minSize: 0, minShareCount: 1 },
+            // ENGINE_VERSION — one string constant, but loader.ts imports it too, so
+            // default chunking parks version.ts INSIDE engine-render. lib/instance.ts
+            // (sync base URL, boot) and the geom kernel both read it, and that single
+            // edge drags engine-render + Handlebars + Ajv + engine-c2pa (~156 KB gz)
+            // onto the preload set. MUST precede engine-render.
+            { name: 'engine-version', test: /engine\/src\/version\.ts$/, minSize: 0, minShareCount: 1 },
             // x509 cert parser. bridge/identity.ts needs pemToDer at boot, so isolate
             // it in a tiny (~2 KB gz) chunk. MUST precede engine-c2pa so x509.ts lands
             // here — otherwise it co-locates into the c2pa chunk and pemToDer's boot

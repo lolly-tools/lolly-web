@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseColor, convertColor, colorToHexString, SRGB_SOURCE, BEYOND_TIER } from '@lolly/engine';
+import { parseColor, convertColor, colorToHexString, SRGB_SOURCE, BEYOND_TIER, gamutTierProbe } from '@lolly/engine';
 import type { GamutSource } from '@lolly/engine';
 import {
   colorSpaces, getColorSpace, composeColor, decomposeColor, channelRuns, pinValue,
@@ -28,9 +28,12 @@ test('the eleven built-ins register in family order', () => {
     'hex', 'rgb', 'hsl',                          // device
     'display-p3', 'rec2020', 'cmyk',              // output
   ]);
-  // The two judgement calls that need to be visible on screen.
+  // The two judgement calls. XYZ says 'reference' on screen; bare CMYK says
+  // nothing on screen — a name is the claim, so the space with no profile behind
+  // it carries no name, and the qualification reaches AT through `ariaSuffix`.
   assert.equal(getColorSpace('xyz-d65')!.sub, 'reference');
-  assert.equal(getColorSpace('cmyk')!.sub, 'uncalibrated');
+  assert.equal(getColorSpace('cmyk')!.sub, undefined);
+  assert.equal(getColorSpace('cmyk')!.ariaSuffix, 'no profile');
 });
 
 test('compose(decompose(c)) is the same colour, in every registered space', () => {
@@ -129,6 +132,59 @@ test('an unreachable stretch is a RING, ranked by membership, not a hole', () =>
   // membership question, asked of P3, not an index into an ordering.
   assert.ok(tiers('rec2020').every(t => t === 0 || t === 2 || t === BEYOND_TIER),
     `Rec.2020 cannot produce a tier 1 (its own subset answers 0): ${tiers('rec2020').join(',')}`);
+});
+
+test('a ring on a two-stop channel has real WIDTH and lands where the tier changes', () => {
+  // `stops` is a paint density, and it used to double as the tier sweep — so the 15
+  // channels declaring `stops: 2` (hex/RGB/P3/Rec.2020 components, Lab/LCH/OKLab L,
+  // HSL S — both DEFAULT tabs among them) were classified from frac 0 and frac 1 alone.
+  // Two consequences, both pinned here: the single bracket was the whole axis, so a
+  // fixed halving count left the edge off by up to 25% of the track and often produced
+  // `from === to` — a ring computed and then painted as nothing; and a band neither
+  // endpoint landed in was invisible however hard the edge was refined.
+  const truth = (spec: Parameters<typeof channelRuns>[0], ch: ChannelSpec, vals: Record<string, number>) => {
+    const probe = gamutTierProbe(spec.limit);
+    const out: { tier: number; from: number; to: number }[] = [];
+    const N = 2000;
+    for (let i = 0; i < N; i++) {
+      const f = i / (N - 1);
+      const c = convertColor(composeColor(spec, { ...vals, [ch.ch]: ch.min + f * (ch.max - ch.min) }, 1), 'oklch');
+      const t = probe(c.components[0]!, c.components[1]!, c.components[2]!);
+      const open = out[out.length - 1];
+      if (open && open.tier === t) open.to = f; else out.push({ tier: t, from: f, to: f });
+    }
+    return out.filter(r => r.to - r.from > 0.02);          // bands a sweep can be expected to see
+  };
+  const cases: [string, string, string][] = [
+    ['hex', 'g', 'color(display-p3 1 0 0)'],               // 10.7 points out before
+    ['hex', 'r', 'oklch(17.3% 0.353 254.6)'],              // ring lost entirely before
+    ['rgb', 'g', 'oklch(47.0% 0.293 131.8)'],              // three bands, one seen before
+    ['lch', 'l', 'oklch(62% 0.19 260)'],                   // seven bands, four seen before
+  ];
+  for (const [mode, chName, seed] of cases) {
+    const spec = getColorSpace(mode)!;
+    const ch = spec.channels.find(c => c.ch === chName)!;
+    assert.equal(ch.stops, 2, `${mode}/${chName} is the two-stop case this test is about`);
+    const vals = decomposeColor(spec, parseColor(seed)!, 200);
+    const runs = channelRuns(spec, ch, vals, 1);
+    for (const r of runs) {
+      assert.ok(r.to - r.from > 1e-9,
+        `${mode}/${chName} tier ${r.tier} came back zero-width: ${JSON.stringify(runs)}`);
+    }
+    // Every band the axis really carries is painted, at its tier, over nearly all of
+    // its true extent. Stated as overlap rather than as a run list, because a band
+    // thinner than a sample step may legitimately be missing (or present, and then it
+    // splits a run in two) — that is the documented sub-sample limit, not this defect.
+    for (const band of truth(spec, ch, vals)) {
+      const covered = runs
+        .filter(r => r.tier === band.tier)
+        .reduce((t, r) => t + Math.max(0, Math.min(r.to, band.to) - Math.max(r.from, band.from)), 0);
+      const width = band.to - band.from;
+      assert.ok(covered / width > 0.85,
+        `${mode}/${chName}: tier ${band.tier} over ${band.from.toFixed(3)}–${band.to.toFixed(3)} is ` +
+        `${(100 * covered / width).toFixed(0)}% painted — ${JSON.stringify(runs.map(r => [r.tier, r.from, r.to]))}`);
+    }
+  }
 });
 
 test('a run leaves gaps where the axis is not displayable', () => {
@@ -292,8 +348,17 @@ test('a profile x intent is one registry entry, added and removed at runtime', (
     contains: (l, c, h) => SRGB_SOURCE.contains(l, c, h),
     inkCoverage: () => 2.4,
   };
+  // A stand-in for the profile's own transform. Required, because a tab wearing a
+  // profile's name has to state that profile's numbers: a bare naive substitution
+  // under a measured name is the thing this parameter exists to make impossible.
+  const device = {
+    toLab: (dev: readonly number[]): [number, number, number] =>
+      [100 - (dev[3] ?? 0) * 100, (dev[0] ?? 0) * 60 - 30, (dev[2] ?? 0) * 60 - 30],
+    fromLab: (lab: readonly [number, number, number]): number[] =>
+      [(lab[1] + 30) / 60, 0, (lab[2] + 30) / 60, 1 - lab[0] / 100],
+  };
   const before = colorSpaces().length;
-  registerColorProfile(src, inks);
+  registerColorProfile(src, inks, device);
   const spaces = colorSpaces();
   assert.equal(spaces.length, before + 1);
   const spec = spaces[spaces.length - 1]!;
@@ -307,6 +372,16 @@ test('a profile x intent is one registry entry, added and removed at runtime', (
   assert.ok(channelRuns(spec, spec.channels[0]!, { c: 0, m: 0, y: 0, k: 0 }).length >= 1);
   // Selector-hostile colons become dashes for the tab/panel ids.
   assert.equal(slugMode(spec.mode), 'icc-ab12cd-perceptual');
+
+  // The tab converts through the PROFILE, not through the naive CMYK the bare tab
+  // uses: a drag on any channel is that file's answer, and it round-trips.
+  const round = decomposeColor(spec, composeColor(spec, { c: 50, m: 0, y: 25, k: 20 }, 1), 0);
+  assert.ok(Math.abs((round.c ?? 0) - 50) < 1e-6 && Math.abs((round.k ?? 0) - 20) < 1e-6,
+    `the profile's own transform round-trips: ${JSON.stringify(round)}`);
+  // …and the values are not thrown away. This composed to pure black for every
+  // channel count but four, so one arrow key destroyed the colour.
+  const composed = composeColor(spec, { c: 100, m: 0, y: 0, k: 0 }, 1);
+  assert.ok(composed.components.some(v => Math.abs(v) > 1e-6), 'a channel value reaches the colour');
 
   unregisterColorProfile(src.id);
   assert.equal(colorSpaces().length, before);

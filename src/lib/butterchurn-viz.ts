@@ -26,6 +26,15 @@
  *     'unanalysable' — `vizHasSignal()` is false then, and the overlay says why
  *     instead of looking broken.
  *
+ * INJECTED AUDIO — the second mode. butterchurn's renderer takes per-frame
+ * time-domain bytes when you hand it any (`render({ audioLevels })`), and only falls
+ * back to reading its own AnalyserNode when you don't. That is what lets a tool drive
+ * the same visualizer from a DECODED FILE (host.audio) rather than from live playback:
+ * pass `opts.audio.frame` and there is no analyser, no AudioContext and no focus-loop
+ * graph in the picture at all. Paired with `opts.driven` (no rAF loop of our own, one
+ * frame per `renderFrame()` call) that makes the visualizer reproducible frame by
+ * frame, which is what an offline video export needs.
+ *
  * WebGL2 is a hard requirement of butterchurn 2.x, so every entry point here is
  * gated on `vizSupported()` from the dependency-free lib/viz-support.ts (which the
  * dock also reads, synchronously, to decide whether to show its button at all).
@@ -46,8 +55,99 @@ const BLEND_SECONDS = 2.2;
 /** The shortest blend we ever ask for. Must be > 0 — see the `load()` call site: a
  *  zero blend duration divides by zero and wedges the renderer on NaN. */
 const MIN_BLEND_SECONDS = 0.05;
+/**
+ * The length butterchurn's AudioProcessor allocates for its time-domain arrays
+ * (`numSamps = 512`, `fftSize = numSamps * 2`). Injected windows are copied into
+ * buffers of exactly this length before `updateAudio` sees them, because it does a
+ * bare `.set()`: a LONGER source throws RangeError inside render (the loop catches it
+ * once and stands the whole visualizer down), and a SHORTER one silently leaves the
+ * previous frame's tail in place, which reads as a stuck low-frequency ghost.
+ */
+const FFT_SIZE = 1024;
 
 type Butterchurn = { createVisualizer: typeof import('butterchurn').createVisualizer };
+
+/** One frame of time-domain audio in the webaudio byte form (0..255, 128 = silence).
+ *  `waveL`/`waveR` may be omitted for a mono source — both then read `wave`. */
+export interface VizAudioFrame {
+  wave: Uint8Array;
+  waveL?: Uint8Array;
+  waveR?: Uint8Array;
+  /** Seed for this frame under `deterministic` — pass the frame INDEX, so replaying a
+   *  stretch of the clip replays the same randomness. */
+  seed?: number;
+}
+
+/** mulberry32 — 4 lines, uniform enough for jitter, and identical everywhere. */
+function seededRandom(seed: number): () => number {
+  let a = (seed | 0) + 0x6d2b79f5;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Run `fn` with Math.random replaced by a seeded stream. Synchronous by contract:
+ *  an async body would leave the global swapped for other code to observe. */
+function withSeed<T>(seed: number | null, fn: () => T): T {
+  if (seed === null) return fn();
+  const real = Math.random;
+  Math.random = seededRandom(seed);
+  try { return fn(); } finally { Math.random = real; }
+}
+
+export interface VizMountOpts {
+  /**
+   * Where the samples come from. Omitted (or with neither field) means the app's
+   * default: tap the focus-loop analyser. `frame` supplies them per rendered frame
+   * instead — return null to draw the frame against silence rather than to fail.
+   */
+  audio?: {
+    analyser?: AnalyserNode | null;
+    frame?: () => VizAudioFrame | null;
+  };
+  /**
+   * Don't start a rAF loop; the caller renders one frame at a time via
+   * `handle.renderFrame()`. The only way to get a reproducible sequence out of this
+   * thing — a self-driven loop renders as many frames as the display happened to give
+   * it, so the same clip exports differently every run.
+   */
+  driven?: boolean;
+  /**
+   * Replace Math.random with a seeded stream for the duration of each preset load and
+   * each driven frame.
+   *
+   * butterchurn is genuinely random in its hot path — the `rand()` equation helper,
+   * the mesh jitter, the wave randomisation, and `rand_preset`/`rand_start` at load —
+   * all straight `Math.random()`. So the same clip rendered twice does not produce the
+   * same video, which for an EXPORT is a defect rather than a flourish: re-exporting
+   * after a title tweak silently gives you a different visual. Seeding is contained to
+   * the synchronous render call and restored in a finally, so nothing else in the page
+   * can observe it.
+   */
+  deterministic?: boolean;
+  /**
+   * Acquire the WebGL2 context with `preserveDrawingBuffer` before butterchurn does.
+   * Its own `getContext` omits the flag, and a second `getContext` on the same canvas
+   * returns the first context and IGNORES the new attributes — so this has to happen
+   * here, before the Visualizer is constructed. Without it `canvas.toDataURL()` (which
+   * is how dom-to-image snapshots a canvas) reads a buffer the compositor already
+   * cleared, and every exported frame is blank.
+   */
+  capture?: boolean;
+}
+
+/** The renderer's real signature. vendor.d.ts declares the no-argument `render()` the
+ *  live path uses; the options form is butterchurn's own (renderer.render destructures
+ *  `{ audioLevels, elapsedTime }`) and is what the injected path needs. */
+type InjectableViz = {
+  render(opts?: {
+    audioLevels?: { timeByteArray: Uint8Array; timeByteArrayL: Uint8Array; timeByteArrayR: Uint8Array };
+    elapsedTime?: number;
+  }): void;
+};
 
 /**
  * Dig `createVisualizer` out of however the bundler chose to present the package.
@@ -115,6 +215,27 @@ export interface VizHandle {
   presetId(): string;
   /** Re-read the canvas's box and resize the renderer to match. */
   resize(): void;
+  /**
+   * Put the visualizer back to the state it had the moment the current preset loaded:
+   * the preset re-loaded from scratch (its equations carry INTEGRATED state — rotation,
+   * zoom, q variables — that no amount of replaying audio unwinds) and the feedback
+   * buffers cleared.
+   *
+   * MilkDrop is a feedback simulation: the previous frame is an input to this one, and
+   * for a preset with a slow echo decay it is still faintly visible a hundred frames
+   * later, and the frame equations integrate. Without this an export inherits whatever
+   * the live preview happened to have on screen, and two exports of the SAME clip
+   * differ — the visual equivalent of an uninitialised buffer. Recompiles the preset's
+   * shaders, so it belongs before a warm-up, not in a per-frame path.
+   */
+  reset(): void;
+  /**
+   * Draw exactly one frame — the `driven: true` counterpart of the internal loop.
+   * `elapsed` is the seconds this frame stands for; feed a CONSTANT (1/fps) for an
+   * offline render, because butterchurn only uses it to estimate fps and advances the
+   * preset clock by `1/fps`, so a jittery value makes the preset's own time wander.
+   */
+  renderFrame(elapsed?: number): void;
   /** Stop rendering, unhook the audio branch, and drop the GL context's canvas use. */
   destroy(): void;
 }
@@ -138,20 +259,27 @@ export async function mountViz(
   presetId: string,
   onError?: (err: unknown) => void,
   initialPalette?: VizPalette | null,
+  opts?: VizMountOpts,
 ): Promise<VizHandle | null> {
-  const analyser = getNeurospicyAnalyser();
-  if (!analyser || !vizSupported()) return null;
+  const inject = opts?.audio?.frame ?? null;
+  // Only the live path needs the focus-loop graph. An injected caller must NOT be
+  // gated on it: a tool canvas visualising a decoded file has nothing to do with
+  // whether the app happens to be playing music.
+  const analyser = inject ? (opts?.audio?.analyser ?? null) : (opts?.audio?.analyser ?? getNeurospicyAnalyser());
+  if ((!analyser && !inject) || !vizSupported()) return null;
 
-  const [mod, derived] = await Promise.all([loadButterchurn(), vizPalette(host)]);
-  // A caller that has already chosen a SCHEME passes its palette; otherwise fall back
-  // to the brand's default derivation.
-  let palette = initialPalette ?? derived;
+  const mod = await loadButterchurn();
+  // A caller that already has a palette (a chosen SCHEME, or a tool's own colours)
+  // passes it, and then we never touch `vizPalette` — which reads the APP's computed
+  // root custom properties for its accent hint, the wrong document entirely for a
+  // tool canvas, and costs a token read for an answer that is already in hand.
+  let palette = initialPalette ?? await vizPalette(host);
   // One line per mount saying where the brand colour came from. A mis-resolved accent
   // shows up as "the whole visualizer is the wrong colour" with nothing to explain it,
   // which is exactly the kind of bug that costs a round trip to diagnose.
   if (!loggedPalette) {
     loggedPalette = true;
-    console.info('[lolly:viz]', vizPaletteDiagnostics(derived));
+    console.info('[lolly:viz]', vizPaletteDiagnostics(palette));
   }
 
   /**
@@ -189,19 +317,58 @@ export async function mountViz(
   };
   applySize(first.w, first.h);
 
-  const viz = mod.createVisualizer(analyser.context, canvas, {
+  // Must precede createVisualizer — see VizMountOpts.capture for why a later
+  // getContext can't add the flag.
+  if (opts?.capture) canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+
+  // A null context is legal: butterchurn's AudioProcessor only builds its analyser
+  // graph `if (context)` and allocates its sample arrays either way, which is exactly
+  // the analyser-free instance the injected path wants. vendor.d.ts types the app's
+  // live path, where there is always one.
+  const viz = mod.createVisualizer(analyser?.context as BaseAudioContext, canvas, {
     width: first.w,
     height: first.h,
     pixelRatio: 1,
     meshWidth: MESH.width,
     meshHeight: MESH.height,
   });
-  viz.connectAudio(analyser);
+  if (analyser) viz.connectAudio(analyser);
 
+  // Reused across frames and pre-filled with silence, so a provider that returns a
+  // short window (or nothing at all) can't leave the previous frame's tail behind —
+  // see FFT_SIZE. Allocated only on the injected path.
+  const silent = (): Uint8Array => new Uint8Array(FFT_SIZE).fill(128);
+  const buf = inject ? { c: silent(), l: silent(), r: silent() } : null;
+  const copy = (dst: Uint8Array, src: Uint8Array | undefined): void => {
+    if (!src || !src.length) { dst.fill(128); return; }
+    if (src.length >= FFT_SIZE) dst.set(src.subarray(0, FFT_SIZE));
+    else { dst.fill(128); dst.set(src); }
+  };
+  const drawOne = (elapsed: number): void => {
+    if (!buf || !inject) { (viz as unknown as InjectableViz).render(); return; }
+    const f = inject();
+    copy(buf.c, f?.wave);
+    copy(buf.l, f?.waveL ?? f?.wave);
+    copy(buf.r, f?.waveR ?? f?.wave);
+    withSeed(opts?.deterministic ? (f?.seed ?? 0) : null, () => {
+      (viz as unknown as InjectableViz).render({
+        audioLevels: { timeByteArray: buf.c, timeByteArrayL: buf.l, timeByteArrayR: buf.r },
+        elapsedTime: elapsed,
+      });
+    });
+  };
+
+  // A fixed seed for preset LOADS, so `rand_preset`/`rand_start` — which a preset bakes
+  // into its whole look — are the same on every mount rather than per-session luck.
+  const loadSeed = opts?.deterministic ? 0x10dd : null;
   let currentId = presetId;
+  // The last preset object handed to setRawPreset (an artist preset), so reset() can
+  // reinstate it — those don't come from our registry and can't be rebuilt from an id.
+  let lastRaw: VizPreset | null = null;
   const load = (id: string, blend: number): void => {
     const def = vizPresetById(id);
-    viz.loadPreset(def.build(palette), blend);
+    withSeed(loadSeed, () => viz.loadPreset(def.build(palette), blend));
+    lastRaw = null;
     currentId = def.id;
   };
   // NEVER pass 0 as the blend time. `loadPreset` unconditionally sets `blending = true`,
@@ -239,7 +406,7 @@ export async function mountViz(
     // leaves a black canvas with nothing logged near the cause. Report it once and
     // stand down, so the surface can say what happened instead of looking dead.
     try {
-      viz.render();
+      drawOne(1 / 60);
     } catch (err) {
       alive = false;
       raf = 0;
@@ -248,7 +415,10 @@ export async function mountViz(
     }
     raf = clock.requestAnimationFrame(frame);
   };
-  raf = clock.requestAnimationFrame(frame);
+  // `driven` callers step the clock themselves; starting a loop as well would race
+  // their frames and make the sequence depend on how many rAFs happened to land
+  // between two renderFrame() calls.
+  if (!opts?.driven) raf = clock.requestAnimationFrame(frame);
 
   return {
     setPreset(id: string): void {
@@ -262,7 +432,8 @@ export async function mountViz(
     },
     setRawPreset(id: string, preset: VizPreset): void {
       try {
-        viz.loadPreset(preset, BLEND_SECONDS);
+        withSeed(loadSeed, () => viz.loadPreset(preset, BLEND_SECONDS));
+        lastRaw = preset;
         currentId = id;
       } catch (err) {
         onError?.(err);
@@ -282,6 +453,56 @@ export async function mountViz(
     },
     presetId: () => currentId,
     running: () => alive,
+    reset(): void {
+      // Reaches butterchurn's own framebuffers, which are plain fields on the renderer
+      // and not part of its API. Guarded rather than asserted: a version that renames
+      // them should cost reproducibility, not the visualizer.
+      try {
+        const gl = canvas.getContext('webgl2');
+        const r = (viz as unknown as { renderer?: Record<string, unknown> }).renderer;
+        if (!gl || !r) return;
+        // The renderer's clock. `time` is a running accumulator (`time += 1/fps`) that
+        // nothing else resets, and presets read it in both their equations and their
+        // shaders — so a preview that has been up for two minutes renders a different
+        // image at the same frame index than a freshly mounted one. fps starts at 30 and
+        // is damped toward the history, so the history has to go back with it.
+        r.time = 0;
+        r.frameNum = 0;
+        r.fps = 30;
+        r.timeHist = [0];
+        for (const key of ['targetFrameBuffer', 'prevFrameBuffer', 'compFrameBuffer']) {
+          const fb = r[key] as WebGLFramebuffer | undefined;
+          if (!fb) continue;
+          gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+          gl.clearColor(0, 0, 0, 1);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // Re-load AFTER the clear: loadPreset resets the equation state, and a preset
+        // arriving on a cleared field is exactly the state a fresh mount would be in.
+        if (lastRaw) withSeed(loadSeed, () => viz.loadPreset(lastRaw!, MIN_BLEND_SECONDS));
+        else load(currentId, MIN_BLEND_SECONDS);
+        // loadPreset always starts a cross-fade, and the frames it mixes in come from the
+        // OUTGOING preset's equation state — the very state this is trying to forget. Ending
+        // it here is the one safe way to skip it: a 0-second blend duration divides by zero
+        // and wedges the renderer on NaN (see MIN_BLEND_SECONDS).
+        r.blending = false;
+      } catch (err) {
+        onError?.(err);
+      }
+    },
+    renderFrame(elapsed = 1 / 30): void {
+      if (!alive) return;
+      try {
+        drawOne(elapsed);
+      } catch (err) {
+        // Same one-strike rule as the loop: a preset the renderer won't accept throws
+        // every frame, and a caller stepping an export would otherwise take the throw
+        // once per exported frame with a black image for each.
+        alive = false;
+        onError?.(err);
+      }
+    },
     resize(): void {
       const { w, h } = box();
       lastW = w; lastH = h;
@@ -294,7 +515,7 @@ export async function mountViz(
       raf = 0;
       // Selective disconnect: drops only analyser→butterchurn, never the
       // analyser→destination edge the player's audio actually flows through.
-      try { viz.disconnectAudio(analyser); } catch { /* already gone */ }
+      if (analyser) try { viz.disconnectAudio(analyser); } catch { /* already gone */ }
     },
   };
 }
