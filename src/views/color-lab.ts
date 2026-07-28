@@ -985,14 +985,49 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   if (solidCanvas) {
     let dragging = -1;
     let lastX = 0, lastY = 0;
-    const onDown = (e: PointerEvent): void => {
-      dragging = e.pointerId; lastX = e.clientX; lastY = e.clientY;
+    /**
+     * A TOUCH press that has not yet been resolved into a rotation.
+     *
+     * The canvas is `touch-action: pan-y` (see color-lab.css) so the page can still
+     * be scrolled through it — it takes ~60% of a phone's viewport height, and under
+     * the previous `touch-action: none` a vertical swipe anywhere on it moved
+     * nothing whatsoever: the page was frozen and the solid does not turn on
+     * vertical travel alone. Allowing the pan on its own is not enough either, or
+     * the rotation would be gone — so the FIRST movement decides, the same axis lock
+     * the 2D plots use (lib/oklch-slice.ts): mostly sideways is a turn and the
+     * pointer is captured; mostly vertical is the page scrolling past and the
+     * gesture is abandoned. A mouse or pen is exempt — a press with a button down is
+     * unambiguous, and there is no page pan to protect.
+     */
+    let pending = false;
+    let startX = 0, startY = 0;
+    /** Past this much travel the direction is meant rather than jitter, in CSS px. */
+    const AXIS_SLOP = 6;
+    const beginTurn = (e: PointerEvent): void => {
       solidCanvas.setPointerCapture(e.pointerId);
       solidCanvas.classList.add('is-turning');
+    };
+    const onDown = (e: PointerEvent): void => {
+      dragging = e.pointerId;
+      lastX = e.clientX; lastY = e.clientY;
+      startX = e.clientX; startY = e.clientY;
+      pending = e.pointerType === 'touch';
+      if (pending) return;   // capturing now would claim a pan we may be handing back
+      beginTurn(e);
       e.preventDefault();
     };
     const onMove = (e: PointerEvent): void => {
       if (dragging !== e.pointerId) return;
+      if (pending) {
+        const dx = e.clientX - startX, dy = e.clientY - startY;
+        if (Math.hypot(dx, dy) < AXIS_SLOP) return;
+        if (Math.abs(dy) >= Math.abs(dx)) { dragging = -1; pending = false; return; }
+        pending = false;
+        beginTurn(e);
+        // From HERE, not from the press: the slop travel belongs to deciding what the
+        // gesture was, and spending it as yaw makes the solid jump on first contact.
+        lastX = e.clientX; lastY = e.clientY;
+      }
       solidView.yaw += (e.clientX - lastX) * 0.5;
       // Pitch is clamped by the engine, but clamp here too so the gesture stops
       // accumulating invisible travel the user then has to undo.
@@ -1004,6 +1039,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       if (dragging !== e.pointerId) return;
       if (solidCanvas.hasPointerCapture(e.pointerId)) solidCanvas.releasePointerCapture(e.pointerId);
       dragging = -1;
+      pending = false;
       solidCanvas.classList.remove('is-turning');
     };
     // Keyboard equivalent: a drag-only control is unusable without one.
@@ -1295,8 +1331,15 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // text, nothing else says pressing it copies, and a `title` is invisible to
       // exactly the touch users who cannot hover to discover it. aria-label carries
       // the same sentence — the bubble is a pseudo-element and never read.
+      // Focusable with a button role, which is what makes the bubble reachable at
+      // all: the primitive opens on `:focus` where there is no hover, and a bare
+      // <code> can take neither hover nor focus from a finger. The delegated keydown
+      // below completes the bargain — announcing a button and then ignoring Enter
+      // would be worse than the tooltip being hidden.
       primary.dataset.tip = t('Copy {v}', { v: shown });
       primary.setAttribute('aria-label', t('Copy {v}', { v: shown }));
+      primary.setAttribute('role', 'button');
+      primary.tabIndex = 0;
       primary.removeAttribute('title');
     }
     const swSpace = $('[data-lab-sw-space]');
@@ -1327,9 +1370,12 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // Hex last and always: sRGB-only, so it is the fallback expression rather
       // than a peer — but it is still the one most tools demand.
       if (leadSpace) want.push(['hex', desc.srgbHex.toUpperCase()]);
+      // Same treatment as the primary value above, and for the same reason: a
+      // `title` on a <code> is an affordance no touch or keyboard user can reach.
       alts.innerHTML = want.map(([space, css]) =>
         `<li class="lab-sw-alt"><span class="lab-sw-alt-space">${escape(space)}</span>`
-        + `<code data-lab-copy="${escape(css)}" title="${escape(t('Copy {v}', { v: css }))}">${escape(css)}</code></li>`,
+        + `<code data-lab-copy="${escape(css)}" data-tip="${escape(t('Copy {v}', { v: css }))}"`
+        + ` role="button" tabindex="0" aria-label="${escape(t('Copy {v}', { v: css }))}">${escape(css)}</code></li>`,
       ).join('');
     }
 
@@ -1571,7 +1617,9 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       <tr${n.exact ? '' : ' class="is-inexact"'}>
         <th scope="row">${escape(n.space)}</th>
         <td><code>${escape(n.css)}</code></td>
-        <td class="lab-note-fit">${n.exact ? '' : `<span title="${escape(t('This space cannot hold the colour — CSS would clamp these numbers.'))}">${escape(t('clamped'))}</span>`}</td>
+        ${/* The marker's explanation IS its content — "clamped" alone means nothing —
+              so it goes on `data-tip` rather than `title`, which no phone can open. */''}
+        <td class="lab-note-fit">${n.exact ? '' : `<span data-tip="${escape(t('This space cannot hold the colour — CSS would clamp these numbers.'))}" tabindex="0">${escape(t('clamped'))}</span>`}</td>
         <td><button type="button" class="lab-copy" data-lab-copy="${escape(n.css)}">${escape(t('Copy'))}</button></td>
       </tr>`);
     // …then the press, after the CSS spaces. The ONLY CMYK numbers this table
@@ -1605,7 +1653,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const shift = ap.roundTripDecides
       ? iccRoundTripDeltaE(ap.profile, ap.intent, desc.oklch.l, desc.oklch.c, desc.oklch.h)
       : null;
-    const fit = fits ? '' : `<span title="${escape(shift != null
+    const fit = fits ? '' : `<span tabindex="0" data-tip="${escape(shift != null
       ? t('Round-trips {de} ΔE away — past the {tol} tolerance.', { de: shift.toFixed(1), tol: ICC_GAMUT_DELTA_E.toFixed(1) })
       : t('Outside this profile’s gamut.'))}">${escape(t('outside'))}</span>`;
     return `
@@ -1758,6 +1806,21 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     if (!hex) return;
     if (step!.closest('[data-lab-blend]')) copyValue(oklchStringFor(hex), step!);
     else setSubject(hex);
+  });
+
+  // The keyboard half of the copy affordances. The swatch's value lines announce
+  // themselves as buttons (role + tabindex, so the touch tooltip can open on focus),
+  // and a thing that says "button" has to answer Enter and Space. Nothing else needs
+  // this: every other copy target on the page already IS a <button>.
+  labRoot?.addEventListener('keydown', (e) => {
+    const ev = e as KeyboardEvent;
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const el = ev.target as HTMLElement;
+    if (el.getAttribute('role') !== 'button') return;
+    const value = el.closest<HTMLElement>('[data-lab-copy]')?.dataset.labCopy;
+    if (!value) return;
+    ev.preventDefault();
+    copyValue(value, el);
   });
 
   // ── Brand swatches, when there is a brand ────────────────────────────────
