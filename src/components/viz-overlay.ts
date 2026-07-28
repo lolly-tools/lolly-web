@@ -63,7 +63,6 @@ import { icon } from '../lib/icons.ts';
 import { escape } from '../utils.ts';
 
 const STYLE_ID = 'lolly-viz-overlay-styles';
-const PRESET_KEY = 'lolly:vizPreset';
 const CYCLE_KEY = 'lolly:vizCycle';
 const SCHEME_KEY = 'lolly:vizScheme';
 const MODE_KEY = 'lolly:vizMode';
@@ -299,15 +298,21 @@ function ensureStyles(doc: Document): void {
   doc.head.appendChild(style);
 }
 
-function readPresetPref(reducedMotion: boolean): string {
-  try {
-    const saved = localStorage.getItem(PRESET_KEY);
-    if (saved && VIZ_PRESETS.some((d) => d.id === saved)) return saved;
-  } catch { /* private mode — fall through to the default */ }
-  return defaultVizPresetId(reducedMotion);
-}
-function writePresetPref(id: string): void {
-  try { localStorage.setItem(PRESET_KEY, id); } catch { /* best-effort */ }
+/**
+ * The preset the visualizer opens on: a random one, every time.
+ *
+ * Nothing is remembered across sessions on purpose — the point of a 200+ preset library is
+ * that opening the visualizer lands somewhere different, and persisting the last pick meant
+ * most people only ever saw one. Reduced motion still opens on a `calm` brand-native preset;
+ * the artist set is uniformly intense.
+ *
+ * Called twice per session: once synchronously (brand-native pool only, so there IS a preset
+ * before the artist index loads) and once after `initStock`, over the whole library.
+ */
+function randomStartPresetId(): string {
+  if (reducedMotion) return defaultVizPresetId(true);
+  const pool = presetPool();
+  return pool[Math.floor(Math.random() * pool.length)] ?? defaultVizPresetId(false);
 }
 
 /**
@@ -339,15 +344,18 @@ const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-
 type SurfaceKind = 'inline' | 'panel';
 
 /**
- * Which visualiser is drawing. `meter` is the frequency-bar view that catalog audio
+ * Which visualiser is drawing. `meter` is the frequency-bar analyser that catalog audio
  * previews use — same `drawMeterBars` that paints the player's strip meter — so the two
  * surfaces speak one visual language. Left-click flips between them; right-click still
  * opens the options menu.
+ *
+ * `meter` is the DEFAULT: it's the quiet, cheap, always-readable view (no WebGL context, no
+ * preset download), and MilkDrop is the thing you opt into.
  */
 type VizMode = 'milkdrop' | 'meter';
 
 function readModePref(): VizMode {
-  try { return localStorage.getItem(MODE_KEY) === 'meter' ? 'meter' : 'milkdrop'; } catch { return 'milkdrop'; }
+  try { return localStorage.getItem(MODE_KEY) === 'milkdrop' ? 'milkdrop' : 'meter'; } catch { return 'meter'; }
 }
 function writeModePref(m: VizMode): void {
   try { localStorage.setItem(MODE_KEY, m); } catch { /* best-effort */ }
@@ -397,6 +405,10 @@ let expanded: Surface | null = null;
 /** Preset + cycling are MODULE state, shared by every surface, so escalating from the
  *  dock panel to fullscreen continues the same picture instead of restarting. */
 let currentPresetId = '';
+/** Whether the session's opening preset has been drawn from the FULL library (which needs
+ *  the artist index loaded), or is still the synchronous brand-native stand-in. A deliberate
+ *  pick also sets it, so nothing overwrites a choice already made. */
+let startPicked = false;
 /** Seconds between automatic preset changes; 0 = off. */
 let cycleSeconds = 0;
 let cycleTimer: ReturnType<typeof setInterval> | undefined;
@@ -706,15 +718,17 @@ function replaceCanvas(s: Surface): void {
 // ── preset + auto-cycling (module-level, shared by every surface) ─────────────
 
 /**
- * Switch preset on every live surface. `remember` distinguishes a deliberate choice
- * (persisted, and the cycle clock restarts so the pick gets its full turn) from an
- * automatic rotation — otherwise cycling would overwrite the user's saved preset with
- * wherever the timer happened to stop.
+ * Switch preset on every live surface. `remember` distinguishes a deliberate choice (the
+ * cycle clock restarts so the pick gets its full turn) from an automatic rotation, which
+ * must not push the timer out and stall the rotation it was started by.
+ *
+ * Nothing is written to storage either way — the visualizer always opens on a random preset
+ * (see `randomStartPresetId`), so a remembered pick would only ever be ignored.
  */
 function applyPreset(id: string, opts: { remember: boolean }): void {
   currentPresetId = id;
   if (opts.remember) {
-    writePresetPref(id);
+    startPicked = true;
     startCycle();
   }
   for (const s of liveSurfaces()) {
@@ -755,6 +769,12 @@ function setBrandTint(t: BrandTint): void {
   }
 }
 
+/** Every preset that can be shown: ours and the artists'. Empty of artist entries until
+ *  `initStock` has run, which is why the opening pick happens twice. */
+function presetPool(): string[] {
+  return [...VIZ_PRESETS.map((d) => d.id), ...stock.map((x) => x.id)];
+}
+
 /**
  * The next preset for auto-cycling, drawn at random from the WHOLE library — ours and the
  * artists' — because that breadth is the point of having them. Random rather than
@@ -766,7 +786,7 @@ function setBrandTint(t: BrandTint): void {
  */
 function nextCyclePresetId(): string {
   if (reducedMotion) return nextVizPresetId(currentPresetId, true);
-  const pool: string[] = [...VIZ_PRESETS.map((d) => d.id), ...stock.map((x) => x.id)];
+  const pool = presetPool();
   if (pool.length <= 1) return currentPresetId;
   const others = pool.filter((id) => id !== currentPresetId);
   return others[Math.floor(Math.random() * others.length)]!;
@@ -1248,6 +1268,14 @@ async function mountOnce(s: Surface): Promise<void> {
   const forCanvas = s.canvas;
   const forMode = s.mode;
   await initStock();
+  // `initPrefs` could only draw from the brand-native handful; now that the artist index is
+  // in, re-draw over the whole library so the FIRST preset of the session is as varied as
+  // every one the cycle picks after it. Once per session, and never over a pick the user
+  // (or the cycle) has already made — that would yank the picture out from under them.
+  if (!startPicked) {
+    startPicked = true;
+    currentPresetId = randomStartPresetId();
+  }
   const scheme = await initSchemes();
   let handle: VizHandle | null = null;
   try {
@@ -1263,7 +1291,7 @@ async function mountOnce(s: Surface): Promise<void> {
     return;
   }
   s.handle = handle;
-  // A saved ARTIST preset isn't in our registry, so mountViz opened on the fallback —
+  // An ARTIST preset isn't in our registry, so mountViz opened on the fallback —
   // fetch and apply the real one now that there's a renderer to give it to.
   if (isStockId(currentPresetId)) void applyStockPreset(s, currentPresetId);
   startCycle();
@@ -1284,9 +1312,9 @@ function destroySurface(s: Surface): void {
 
 // ── public API ───────────────────────────────────────────────────────────────
 
-/** Seed the module's shared preset/cycle state from storage, once. */
+/** Seed the module's shared preset/cycle state, once. */
 function initPrefs(): void {
-  if (!currentPresetId) currentPresetId = readPresetPref(reducedMotion);
+  if (!currentPresetId) currentPresetId = randomStartPresetId();
   cycleSeconds = readCyclePref();
 }
 
