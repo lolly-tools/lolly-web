@@ -1291,7 +1291,13 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       primary.textContent = shown;
       // Click the value you can see and get exactly it.
       primary.dataset.labCopy = shown;
-      primary.title = t('Copy {v}', { v: shown });
+      // `data-tip` (styles/parts/tooltip.css), not `title`: this value looks like
+      // text, nothing else says pressing it copies, and a `title` is invisible to
+      // exactly the touch users who cannot hover to discover it. aria-label carries
+      // the same sentence — the bubble is a pseudo-element and never read.
+      primary.dataset.tip = t('Copy {v}', { v: shown });
+      primary.setAttribute('aria-label', t('Copy {v}', { v: shown }));
+      primary.removeAttribute('title');
     }
     const swSpace = $('[data-lab-sw-space]');
     if (swSpace) {
@@ -2014,8 +2020,11 @@ function shellHtml(): string {
         ${seg()}
         ${/* Bounds sits WITH the gamut tabs: "bounds" means the bounds of whichever
               target those tabs select, so separating them would orphan it. */''}
-        <label class="lab-bounds">
-          <input type="checkbox" data-lab-bounds>
+        ${/* `.field-toggle` + `.field-check` — the ONE form-control recipe
+              (styles/parts/fields.css). A bare checkbox was drawn by the UA at 13×13
+              and so missed the recipe's coarse-pointer bump to 20px. */''}
+        <label class="lab-bounds field-toggle">
+          <input type="checkbox" class="field-check" data-lab-bounds>
           <span>${escape(t('Keep in bounds'))}</span>
         </label>
       </div>
@@ -2087,48 +2096,66 @@ function shellHtml(): string {
 
       <h3 class="lab-h3">${escape(t('Blend to another colour'))}</h3>
       <p class="lab-section-note">${escape(t('The space it travels through decides what the middle looks like. Click a stop to copy it.'))}</p>
-      <div class="lab-blend-to">
-        <div class="lab-blend-to-head">
-          <span class="lab-field-label">${escape(t('Blend to'))}</span>
-          ${/* Still the only way to type a far end in a space the picker has no tab
-                for — same reason the subject keeps one, and it goes when the picker
-                gains those tabs. */''}
-          <input type="text" class="field-input lab-blend-raw" data-lab-blend-raw spellcheck="false"
-            autocapitalize="off" autocomplete="off"
-            aria-label="${escape(t('The far end of the blend, in any colour space'))}">
+      ${/* TWO COLUMNS: the far-end picker BESIDE the ramp it changes, stacking on a
+            narrow viewport. Stacked everywhere, the expanded picker's ~554px of tabs,
+            dials, channel sliders and alpha pushed the style pills, the stop count and
+            every swatch off the bottom of the screen — so the one thing you need while
+            picking, the ramp changing under your hands, was the one thing you could not
+            see. Source order still reads pick-then-result when it folds. */''}
+      <div class="lab-blend">
+        <div class="lab-blend-to">
+          <div class="lab-blend-to-head">
+            <span class="lab-field-label">${escape(t('Blend to'))}</span>
+            ${/* Still the only way to type a far end in a space the picker has no tab
+                  for — same reason the subject keeps one, and it goes when the picker
+                  gains those tabs. */''}
+            <input type="text" class="field-input lab-blend-raw" data-lab-blend-raw spellcheck="false"
+              autocapitalize="off" autocomplete="off"
+              aria-label="${escape(t('The far end of the blend, in any colour space'))}">
+          </div>
+          <div class="lab-blend-picker" data-lab-blend-picker></div>
         </div>
-        <div class="lab-blend-picker" data-lab-blend-picker></div>
+
+        <div class="lab-blend-side">
+          ${/* Full width of its column, above the ramp — the same shape as the gamut
+                control above the charts: it governs everything under it, so it reads
+                as a heading row rather than as one more field. */''}
+          <div class="lab-blend-styles">
+            <div class="view-seg lab-limit" role="group" aria-label="${escape(t('Blend'))}" data-lab-blend-space>
+              ${/* `data-tip`, not `title`: the rationale for each style is the whole
+                    reason the pills are labelled so briefly, and a `title` is invisible
+                    to every touch and keyboard user. The tooltip primitive
+                    (styles/parts/tooltip.css) opens on plain focus where there is no
+                    hover, so a tap shows it. aria-label carries the same text, since
+                    the bubble is a pseudo-element and never read. */''}
+              ${BLEND_STYLES.map(b => `<button type="button" class="view-seg-btn" data-val="${b.space}"
+                data-tip="${escape(t(b.why))}" aria-label="${escape(`${t(b.label)} — ${t(b.why)}`)}"
+                aria-pressed="${b.space === BLEND_DEFAULT_SPACE}">${escape(t(b.label))}</button>`).join('')}
+            </div>
+            ${/* Hue travel only means anything in a polar space, so the row is present but
+                  inert until one is chosen — hidden rather than absent, so choosing Vivid
+                  does not reflow the section. */''}
+            <div class="view-seg lab-blend-hue" role="group" aria-label="${escape(t('Hue route'))}"
+              data-lab-blend-hue${isPolarSpace(BLEND_DEFAULT_SPACE) ? '' : ' hidden'}>
+              ${HUE_ROUTES.map(r => `<button type="button" class="view-seg-btn" data-val="${r.dir}"
+                aria-pressed="${r.dir === BLEND_DEFAULT_HUE}">${escape(t(r.label))}</button>`).join('')}
+            </div>
+          </div>
+          ${/* The stops slider wears the colour-mixer sliders' skin (.gsl, from
+                oklch-slice.css) and its rail is painted with the blend itself — so the
+                control shows the thing it is subdividing. */''}
+          <div class="gsl lab-mix" data-lab-blend-steps>
+            <span class="gsl-key" aria-hidden="true">${escape(t('Stops').charAt(0))}</span>
+            <div class="gsl-well">
+              <div class="gsl-track" data-gsl-track aria-hidden="true"></div>
+              <input type="range" class="gsl-input" data-gsl-input min="2" max="24" step="1" value="9"
+                aria-label="${escape(t('Number of blend stops'))}">
+            </div>
+            <output class="gsl-val" data-gsl-val>9</output>
+          </div>
+          <div class="lab-ramp" data-lab-blend></div>
+        </div>
       </div>
-      ${/* Full width above the ramp, the same shape as the gamut control above the
-            charts: it governs everything under it, so it reads as a heading row
-            rather than as one more field. */''}
-      <div class="lab-blend-styles">
-        <div class="view-seg lab-limit" role="group" aria-label="${escape(t('Blend'))}" data-lab-blend-space>
-          ${BLEND_STYLES.map(b => `<button type="button" class="view-seg-btn" data-val="${b.space}"
-            title="${escape(t(b.why))}" aria-pressed="${b.space === BLEND_DEFAULT_SPACE}">${escape(t(b.label))}</button>`).join('')}
-        </div>
-        ${/* Hue travel only means anything in a polar space, so the row is present but
-              inert until one is chosen — hidden rather than absent, so choosing Vivid
-              does not reflow the section. */''}
-        <div class="view-seg lab-blend-hue" role="group" aria-label="${escape(t('Hue route'))}"
-          data-lab-blend-hue${isPolarSpace(BLEND_DEFAULT_SPACE) ? '' : ' hidden'}>
-          ${HUE_ROUTES.map(r => `<button type="button" class="view-seg-btn" data-val="${r.dir}"
-            aria-pressed="${r.dir === BLEND_DEFAULT_HUE}">${escape(t(r.label))}</button>`).join('')}
-        </div>
-      </div>
-      ${/* The stops slider wears the colour-mixer sliders' skin (.gsl, from
-            oklch-slice.css) and its rail is painted with the blend itself — so the
-            control shows the thing it is subdividing. */''}
-      <div class="gsl lab-mix" data-lab-blend-steps>
-        <span class="gsl-key" aria-hidden="true">${escape(t('Stops').charAt(0))}</span>
-        <div class="gsl-well">
-          <div class="gsl-track" data-gsl-track aria-hidden="true"></div>
-          <input type="range" class="gsl-input" data-gsl-input min="2" max="24" step="1" value="9"
-            aria-label="${escape(t('Number of blend stops'))}">
-        </div>
-        <output class="gsl-val" data-gsl-val>9</output>
-      </div>
-      <div class="lab-ramp" data-lab-blend></div>
     </section>
     <!-- 5 · WHAT IT COSTS YOU. The verdict and the readability scores: real, but
          reference material rather than the reason you opened the page — so they

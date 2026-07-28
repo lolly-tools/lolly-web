@@ -23,32 +23,50 @@
   gap: 2.25rem;
 }
 
-/* The back pill is POSITION-FIXED and floats over the page (top: 8px, left: 32px,
-   z-index 99999 — .tools-home.home-full). The chrome capsule now floats to match, at
-   the same top and z so the two read as one row of page furniture: an author can
-   scroll the whole report and still switch theme, which is the point of having it
-   here at all. Both being out of flow, .lab-back keeps only a small reserve so the
-   heading below does not start underneath them. */
+/* The page furniture row: back pill on the left, theme capsule on the right.
+   STICKY, not fixed — and that is a fix, not a preference.
+
+   Both used to be out of flow (.tools-home.home-full is `position: fixed` in
+   tool.css; the capsule matched it) over a `.lab-back` that reserved 2rem. Out of
+   flow they overlaid live controls for the WHOLE length of the report and won the
+   hit-test against them: measured, `elementFromPoint(120, 28)` returned the back
+   pill rather than the picker's value field under it, so ~95px of a 335px control
+   could not be pressed while the page sat near the top — and the pill's part-opaque
+   glass put its label on top of chart ink.
+
+   Sticky keeps every property that made floating attractive (the theme switch stays
+   reachable the whole way down, which is the point of having it on a page about how
+   a colour READS) and drops the one that broke: the row occupies real height, so
+   nothing is ever underneath it unseen, and the strip is opaque, so content scrolls
+   UNDER the bar rather than through it. `position: static` beats tool.css's fixed
+   rule on specificity (0,3,0 vs 0,2,0) rather than on load order — both sheets are
+   in the `views` layer, so order between two lazy chunks is not something to rely on. */
 .lab-back {
+  position: sticky;
+  top: 0;
+  z-index: 50;
   align-self: stretch;
-  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.25rem;
+  /* Bled to the page's own padding so the opaque strip reaches the edges and no
+     sliver of scrolling content shows beside it. */
+  margin: -1rem -1.25rem 0;
+  padding: 0.4rem 1.25rem;
+  background: hsl(var(--background));
 }
-.lab-chrome {
-  position: fixed;
-  top: 8px;
-  right: 32px;
-  z-index: 99999;
-}
+.lab-back .tools-home.home-full { position: static; }
+.lab-chrome { position: static; }
 
 /* The capsule the theme toggle sits in — modelled on the canvas zoom HUD
    (.stage-nav in editor.css), which this view cannot borrow because that file is
    only loaded on the editor routes. Same idiom: a soft-bordered pill of 26px
    icon-only buttons that light up on hover. Room for a second control later.
-   Its floating position is set with .lab-back above. Backdrop-blurred like the back
-   pill's glass, since it now sits over scrolling content rather than over the page
-   background. */
+   Its place in the row is set with .lab-back above. No backdrop-filter: it sits on
+   that row's own opaque strip now, so there is nothing behind it to blur. */
 .lab-chrome {
-  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   gap: 2px;
@@ -212,10 +230,15 @@
   gap: 0.4rem;
   align-items: baseline;
   font-size: clamp(0.6rem, 0.7cqw + 0.42rem, 0.72rem);
-  /* One line each now there is width for it; `anywhere` stays as the last resort on
-     a narrow viewport, where a broken line beats a clipped one. */
+  /* `anywhere` and nothing fighting it. A `white-space: nowrap` used to sit here to
+     get "one line each now there is width for it" — but nowrap defeats its own
+     overflow-wrap, and where the width was NOT there the value simply left the page:
+     measured 71px of horizontal document scroll at 660px wide and 47px at 720px,
+     from `color(display-p3 0.390131 0.780583 0.903738)` in this list. The band was
+     invisible below 640px only because a media query put the wrap back.
+     Nothing is lost by wrapping: with room the value still takes one line, and
+     without it a broken line beats a page that scrolls sideways. */
   overflow-wrap: anywhere;
-  white-space: nowrap;
 }
 .lab-sw-alt-space {
   flex: 0 0 auto;
@@ -594,13 +617,13 @@
   gap: 0.5rem 0.9rem;
 }
 .lab-target .lab-limit { flex: 1 1 20rem; }
+/* The row is a `.field-toggle` and the box a `.field-check` — the ONE form-control
+   recipe (styles/parts/fields.css). It was a bare `<input type=checkbox>`, which the
+   UA drew at 13×13 and which therefore missed the recipe's coarse-pointer bump to
+   20px. This rule is left with only what is specific to sitting in the target row. */
 .lab-bounds {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
   flex: 0 0 auto;
   font-size: 0.78rem;
-  cursor: pointer;
   white-space: nowrap;
 }
 
@@ -647,19 +670,17 @@
 /* As many charts per row as fit at a readable size — 2-up on a laptop, all four
    in a row on a wide display. A 20rem floor is about where a plot stops being
    worth reading; `min(…, 100%)` keeps it from overflowing a narrow screen, where
-   auto-fit would otherwise hold the track wider than its container. */
+   auto-fit would otherwise hold the track wider than its container.
+   A second `.lab-charts` block used to follow this one and dead-override it with a
+   hard `1fr 1fr 1fr 1fr` plus two width breakpoints. Same specificity, later in the
+   file, so it always won — and four fixed columns crushed every plot to 122×76 CSS
+   px on a 840px window, which are the charts this whole view exists for. The loser
+   is deleted rather than out-specified: two rules for one grid is how this happened. */
 .lab-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
   gap: 1.5rem 1.25rem;
 }
-.lab-charts {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 1.5rem 1.25rem;
-}
-@media(max-width:800px){.lab-charts{grid-template-columns: 1fr 1fr;}}
-@media(max-width:500px){.lab-charts{grid-template-columns: 1fr;}}
 
 .lab-chart {
   display: flex;
@@ -756,12 +777,42 @@
   background: hsl(var(--muted) / 0.35);
   box-shadow: inset 0 0 0 1px hsl(var(--border));
   cursor: grab;
-  touch-action: none;
+  /* `pan-y`, exactly as the 2D plots do (lib/oklch-slice.css), and for the same
+     reason: this canvas takes ~60% of a phone's viewport height, so with
+     `touch-action: none` a vertical swipe anywhere on it moved NOTHING — the page
+     was frozen and the solid does not turn on vertical travel alone. The rotation
+     survives because the gesture is axis-locked in JS (see the pointerdown handler
+     in views/color-lab.ts): mostly-sideways travel claims the pointer and turns the
+     solid, mostly-vertical travel is handed back to the page. */
+  touch-action: pan-y;
 }
 .lab-solid.is-turning { cursor: grabbing; }
 .lab-solid:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 
 /* ── Ramp controls: stop count, and the blend's far end ───────────────────── */
+
+/* The blend, as two columns: the far-end PICKER beside the ramp it is changing.
+   Stacked, the expanded picker (tab strip, four dials, three channel sliders, the
+   alpha rail) is ~554px tall, which pushed the style pills, the stop slider and
+   every swatch about 600px down the page — so you could not see the ramp move while
+   you picked, which is the entire point of picking here. Side by side you can.
+
+   The picker column is capped rather than fractional: it is a fixed-size control, so
+   past ~24rem the extra width is dead space, and the ramp is what should take it. */
+.lab-blend {
+  display: grid;
+  grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+  gap: 1rem 1.5rem;
+  align-items: start;
+}
+/* One column when there is not room for two side by side — below this the picker
+   and the ramp would each be too narrow to read, so they stack in source order (pick
+   first, then the result). 48rem is where 18rem + gutter + 18rem stops fitting inside
+   the page's own padding. */
+@media (max-width: 48rem) {
+  .lab-blend { grid-template-columns: minmax(0, 1fr); }
+}
+.lab-blend-side { min-width: 0; display: flex; flex-direction: column; }
 
 /* The far end of the blend: the SAME expanded picker as the subject's, because
    the dials only exist in the inline form. Its lesser weight comes from sitting
@@ -769,7 +820,7 @@
 .lab-blend-to {
   display: grid;
   gap: 0.5rem;
-  max-width: 34rem;
+  min-width: 0;
 }
 .lab-blend-to-head { display: flex; align-items: center; gap: 0.6rem; }
 .lab-blend-picker { min-width: 0; }
@@ -942,17 +993,54 @@
 .lab-copy:hover { background: hsl(var(--muted)); }
 .lab-copy.is-copied { background: hsl(var(--primary) / 0.15); border-color: hsl(var(--primary) / 0.5); }
 
-/* Wide-content guard: the notation table is the one thing that can outgrow a
-   narrow screen, so it gets its own scroller rather than widening the page. */
 @media (max-width: 640px) {
   .lab { padding: 0.75rem 0.85rem 5rem; gap: 1.75rem; }
+  .lab-back { margin: -0.75rem -0.85rem 0; padding: 0.4rem 0.85rem; }
   .lab-subject {
     grid-template-columns: 1fr;
     grid-template-areas: 'swatch' 'brand' 'picker';
   }
-  /* Too narrow for a value to fit on one line, so let them break again. */
-  .lab-sw-alt { white-space: normal; }
-  .lab-notations { display: block; overflow-x: auto; white-space: nowrap; }
+
+  /* ── The notation table becomes a row PER SPACE ──────────────────────────
+     Four columns do not fit in 390px, and the previous answer — one inner
+     `overflow-x` scroller with `nowrap` — kept the body from widening (good) at the
+     cost of putting the step's primary action off-screen: the Copy button sat at
+     x 557–604 in a 390px viewport, with nothing on the page saying the table
+     scrolled sideways at all. So it stops being a table on a phone: the space name
+     is a label, the value wraps under it, and Copy is where it can be pressed.
+
+     No borders ADDED: the divider the cells were drawing just moves to the row that
+     now owns the record. */
+  .lab-notations,
+  .lab-notations tbody { display: block; }
+  .lab-notations thead { display: none; }
+  .lab-notations tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'space  copy'
+                         'value  copy'
+                         'fit    copy';
+    align-items: center;
+    gap: 0.1rem 0.6rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .lab-notations th,
+  .lab-notations td { display: block; padding: 0; border: 0; }
+  .lab-notations tbody th {
+    grid-area: space;
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  .lab-notations td:nth-of-type(1) { grid-area: value; }
+  .lab-notations td:nth-of-type(2) { grid-area: fit; }
+  .lab-notations td:nth-of-type(3) { grid-area: copy; justify-self: end; }
+  /* An exact row has no fit note, and an empty grid area would still spend a gap. */
+  .lab-notations td:nth-of-type(2):empty { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
