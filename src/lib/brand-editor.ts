@@ -40,7 +40,7 @@
 
 import '../styles/parts/brand-studio.css'; // every .be-* rule — rides this module's lazy chunk
 import './oklch-slice.css';                // the gamut chart's .okls-* rules (see oklch-slice.ts)
-import { deriveBrandTokens, createTokenSet, colorToHex, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
+import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
 import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
 import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
@@ -1059,9 +1059,23 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     renderGenerator();
   };
 
+  /** The last primary that resolved to a real hex — what an unreadable primary
+   *  falls back to, so the generator never sees a broken string. */
+  let goodPrimaryHex = /^#[0-9a-fA-F]{6,8}$/.test(primary) ? primary.slice(0, 7) : DEFAULT_PRIMARY;
   /** The current primary as a `#`-prefixed hex (shared by the generator + the
-   *  screen/print readout below). */
-  const primaryHex = (): string => (/^#/.test(primary) ? primary : `#${primary}`);
+   *  screen/print readout below). `primary` is whatever the picker or a token
+   *  resolution handed over — a named colour, `oklch()`, or a wide-gamut
+   *  `color()` all reach here — and generateSchemeAccents throws on anything that
+   *  is not a hex, which empties the candidate list. So parse it properly:
+   *  concatenating a `#` onto `oklch(62% 0.19 260)` produced a string nothing
+   *  downstream could read. */
+  const primaryHex = (): string => {
+    const p = (primary || '').trim();
+    if (/^#[0-9a-fA-F]{6,8}$/.test(p)) { goodPrimaryHex = p.slice(0, 7).toLowerCase(); return goodPrimaryHex; }
+    const parsed = p && p.toLowerCase() !== 'transparent' ? parseCssColor(p) : null;
+    if (parsed) goodPrimaryHex = colorToHexString(parsed).slice(0, 7);
+    return goodPrimaryHex;
+  };
 
   // ── Build your palette: generate harmony accents (named) + live "applied" previews ──
   // Each accent is a candidate the user must explicitly + Add to officiate it

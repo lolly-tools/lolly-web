@@ -47,14 +47,14 @@
  * colour as CSS wrote it, so a wide-gamut display shows the real thing and only a
  * narrower one falls back — the browser does that mapping itself, per display,
  * which is strictly better than us deciding in advance that nobody can see it.
- * `srgbHex` is used only where a hex is structurally unavoidable:
+ * `srgbHex` is used only where a hex is structurally unavoidable — the chart and 3D
+ * canvases, since a 2D canvas is 8-bit sRGB. It is labelled where it shows, rather
+ * than silently standing in for the value.
  *
- *   - the chart and 3D canvases (a 2D canvas is 8-bit sRGB)
- *   - our colour picker, whose chroma slider gamut-maps
- *
- * Both are labelled where they show, rather than silently standing in for the
- * value. Widening the picker is the next step, and the same work the brand studio
- * needs for wider colour spaces.
+ * The picker is no longer one of those places: it is seeded with the authored string
+ * and read back through its `detail.css`, so the subject survives a round trip
+ * through the control at its real chroma. Its sliders still gamut-map what they
+ * PAINT, which is a display honesty question, not a value one.
  */
 
 import '../styles/parts/color-lab.css';
@@ -62,6 +62,7 @@ import '../lib/oklch-slice.css';           // the .okls-* chart rules (see oklch
 import {
   describeColor, contrastVsExtremes, wcagLevel, oklchToHex, formatOklch, rampOklab,
   gamutSolid, projectGamutSolid, projectSolidPoint, contrastRatio, GAMUTS,
+  parseColor, colorToHexString,
 } from '@lolly/engine';
 import type {
   ColorDescription, ContrastVerdict, GamutName, GamutSolid, SlicePlane,
@@ -76,6 +77,7 @@ import {
 } from '../lib/gamut-slider.ts';
 import type { GamutChannel } from '../lib/gamut-slider.ts';
 import { mountColorField } from '../components/color-field.ts';
+import type { MountColorFieldOpts } from '../components/color-field.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
@@ -205,6 +207,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   /** True while the picker is being re-seeded, so its own onChange is ignored. */
   let seeding = false;
+  /** The hex the picker emits when it merely restates the colour it was handed —
+   *  the seed baked to sRGB. NOT `srgbHex`, which is gamut-MAPPED (chroma reduced),
+   *  so the two differ for a wide-gamut subject and both have to be recognised. */
+  let seedBake = '';
 
   /** The picker's active space tab ('oklch' by default). */
   const pickerMode = (): string =>
@@ -608,25 +614,51 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     if (!opts.live) syncUrl();
   }
 
-  /** Rebuild the picker so it shows the current subject, mapped into sRGB. */
+  /** The picker's additive second onChange argument, read structurally: only `css`
+   *  is wanted here, and only its presence distinguishes a picker that speaks the
+   *  authored space from one that only has the sRGB bake. */
+  type PickerDetail = { css?: string };
+
+  /**
+   * A pick from the colour field. Guarded three ways, because every one of them
+   * catches a different echo of a value the picker was HANDED, and letting one
+   * through replaces the authored colour with the picker's restatement of it:
+   *
+   *   - `seeding` — the emit that fires synchronously during wiring.
+   *   - `seedBake` / `srgbHex` — an emit that arrives after the flag has cleared,
+   *     recognised by its sRGB hex. Both, because the seed and the mapped fallback
+   *     are the same string for an sRGB subject and different for a wider one.
+   *   - `detail.css` vs `desc.input` — the same echo in the authored space, which
+   *     is the only form that survives a picker holding a P3 or OKLCH value.
+   *
+   * Past those it is a real interaction, and `detail.css` is preferred over `value`
+   * so a wide pick becomes the subject in the space it was made in rather than as
+   * the sRGB approximation the emitted value has to be.
+   */
+  function onPickerChange(value: string, detail?: PickerDetail): void {
+    if (seeding) return;
+    const v = value.trim().toLowerCase();
+    if (v === seedBake || v === desc.srgbHex.toLowerCase()) return;
+    const css = detail?.css?.trim();
+    if (css && css.toLowerCase() === desc.input.trim().toLowerCase()) return;
+    setSubject(css || value, { fromPicker: true });
+  }
+
+  /** Rebuild the picker so it shows the current subject. */
   function reseedPicker(): void {
     seeding = true;
+    const parsed = parseColor(desc.input);
+    seedBake = (parsed ? colorToHexString(parsed) : desc.srgbHex).toLowerCase();
     mountColorField(pickerMount, 'lab-color', {
-      value: desc.srgbHex,
+      // The AUTHORED string, not its sRGB restatement: the field keeps a value in the
+      // space it arrives in, so a P3 or OKLCH subject reopens at its real chroma
+      // instead of being flattened before the report describes it.
+      value: desc.input,
       inline: true,   // the always-open editor form: rings + sliders shown
       modes: true,    // the tabbed multi-space picker
-      onChange: (value) => {
-        // Two guards, because one is not enough. `seeding` catches the emit that
-        // happens synchronously during wiring; the echo check catches one that
-        // arrives later, after the flag has been cleared. Either way, a value the
-        // picker was just HANDED must not come back as a user edit — that would
-        // replace the authored colour with its sRGB approximation.
-        if (seeding) return;
-        if (value.toLowerCase() === desc.srgbHex.toLowerCase()) return;
-        // Past those, this is a real interaction. The picker is sRGB-bounded, so
-        // what it emits genuinely becomes the subject.
-        setSubject(value, { fromPicker: true });
-      },
+      // The cast bridges to the additive second onChange parameter; it can go once
+      // ColorChangeDetail is part of MountColorFieldOpts' declared signature.
+      onChange: onPickerChange as MountColorFieldOpts['onChange'],
     });
     seeding = false;
   }

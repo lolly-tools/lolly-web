@@ -48,6 +48,7 @@
 @import './parts/projects.css'     layer(chrome);
 @import './parts/catalog.css'      layer(chrome); /* Catalog view (a primary tab; kept on the landing sheet) */
 @import './parts/components.css'   layer(chrome);
+@import './parts/color-field.css'  layer(chrome); /* colour picker — split out of components.css; same layer, so host overrides keep winning */
 @import './parts/dialogs.css'      layer(chrome);
 @import './parts/saved-list.css'   layer(chrome); /* saved-session rows — history modal + drawer + /profile */
 @import './parts/notfound.css'     layer(chrome);

@@ -149,6 +149,23 @@ test('setColor / rangeColor over a range (skips newlines, clears on null)', () =
   assert.equal(rangeColor(chars, 0, 5), null);   // cleared
 });
 
+// The run-colour wire format is hex, deliberately, and the colour picker's emitted
+// value stays a lowercase #rrggbb(aa) — free-canvas pipes it straight into setColor
+// via applyRunColor. This pins both halves: a hex survives into the char model AND
+// into the markdown serialiser, and a wider CSS colour is REFUSED rather than stored
+// half-way (setColor's isHex gate reads it as "clear the run"). Widening the markup
+// format is a separate pass; until then a caller must bake to hex first.
+test('setColor stores plain hex and refuses a wider CSS colour', () => {
+  let chars: any[] = plain('ab');
+  chars = setColor(chars, 0, 2, '#112233ff');
+  assert.equal(rangeColor(chars, 0, 2), '#112233ff');
+  assert.match(markdownFromChars(chars), /\{#112233ff\|/);   // {#hex|…} markup round-trips
+  chars = setColor(chars, 0, 2, 'oklch(62% 0.19 260)');
+  assert.equal(rangeColor(chars, 0, 2), null);               // cleared, never stored raw
+  chars = setColor(chars, 0, 2, 'rebeccapurple');
+  assert.equal(rangeColor(chars, 0, 2), null);
+});
+
 // ── per-run weight ────────────────────────────────────────────────────────────
 test('setWeight / rangeWeight over a range (clamps, skips newlines, clears on null)', () => {
   let chars: any[] = plain('ab\ncd');

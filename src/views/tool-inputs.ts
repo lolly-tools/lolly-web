@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef } from '@lolly/engine';
+import { createRuntime, parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString } from '@lolly/engine';
 import { escape, NAV_EVENTS } from '../utils.js';
 import { mountModal } from '../components/modal.ts';
 import { announce } from '../a11y.js';
@@ -1781,6 +1781,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           if (f.type === 'color') {
             const v = String(item[f.id] ?? '').trim();
             if (/^#[0-9a-fA-F]{3,8}$/.test(v)) return v;
+            // Display only, and hex only: a stored named or wide-gamut colour used to
+            // lose its chip entirely. What the row STORES is untouched.
+            const parsed = v && v.toLowerCase() !== 'transparent' ? parseColor(v) : null;
+            if (parsed) return colorToHexString(parsed);
           }
         }
         return '';

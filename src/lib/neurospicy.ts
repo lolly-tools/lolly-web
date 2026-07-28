@@ -55,10 +55,10 @@ export function hydrateNeurospicy(fromProfile: unknown): void {
 type WinAudio = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
 let ctx: AudioContext | null = null;
 let gain: GainNode | null = null;
-// A pass-through analyser between the gain and the speakers, so the player can
-// draw a level meter. Only our LOCAL buffer sources (zzfxm/opus) flow through
-// this graph — a future web-radio <audio> stream plays outside it, so it never
-// lights the meter (matching "meter vis, local songs only").
+// A pass-through analyser between the gain and the speakers, so the player can draw a
+// level meter and the MilkDrop visualizer has something to react to. Everything audible
+// flows through it: local buffer sources (zzfxm/opus/mod) AND, when the station's server
+// allows it, the radio <audio> element (see `radioSource`).
 let analyser: AnalyserNode | null = null;
 let src: AudioBufferSourceNode | null = null;
 // Progress bookkeeping for the current LOCAL source: position within the looping
@@ -66,9 +66,26 @@ let src: AudioBufferSourceNode | null = null;
 // (a live stream has no duration), so the seek bar hides for it.
 let srcStartedAt = 0;
 let srcOffset = 0;
-// Radio plays through a plain <audio> element, OUTSIDE the Web Audio graph — no
-// CORS needed, and the analyser/meter (a local-song feature) stays dark for it.
+// Radio plays through an <audio> element (a live stream has no buffer to decode), but it
+// is routed INTO the graph via createMediaElementSource so the meter and the visualizer
+// see it — SomaFM's icecast sends `Access-Control-Allow-Origin: *`, which is exactly what
+// a MediaElementSource needs, and radio is where people end up once they've heard their
+// own catalogue enough times.
+//
+// The tap is FAIL-CLOSED: `crossOrigin` must be set before `src`, and an element loading a
+// stream whose server omits the header refuses to play at all — silence, not just a dark
+// meter. So a refused load remembers that host and replays the same URL on a fresh,
+// untapped element. An element can only ever produce ONE MediaElementSource, so the
+// element and its node are created and dropped together.
 let radioEl: HTMLAudioElement | null = null;
+let radioSource: MediaElementAudioSourceNode | null = null;
+/** Stream hosts that refused a tapped load. Keyed by HOST, not a session-wide flag: the
+ *  header is a property of the server, so one station without it must not cost every other
+ *  station its meter for the rest of the session. */
+const untappedHosts = new Set<string>();
+/** There's no graph to tap into at all (no Web Audio in this browser) — then nothing is
+ *  ever tapped, and that IS session-wide. */
+let graphTapUnavailable = false;
 let playingId = '';
 let paused = false;   // transient transport pause (the play/pause button) — mode stays enabled
 const buffers = new Map<string, AudioBuffer>();
@@ -126,6 +143,34 @@ function audio(): { ctx: AudioContext; gain: GainNode } | null {
 /** The analyser on the focus-loop graph, for a level meter. Null until audio starts. */
 export function getNeurospicyAnalyser(): AnalyserNode | null { return analyser; }
 
+/** Is the current selection a live stream rather than a decodable track? */
+export function isNeurospicyRadio(): boolean {
+  return isRadioId(state.loopId) || formatById.get(state.loopId) === 'stream';
+}
+
+/**
+ * Whether anything is actually reaching the analyser, and if not, why — the one predicate
+ * the level meter and the visualizer both branch on, so they can never disagree about
+ * whether there's a signal.
+ *
+ *   live          — a local buffer source, or a tapped radio stream, is sounding
+ *   idle          — paused, disabled, or interface sound is muted
+ *   connecting    — playing, but the track/stream hasn't started producing samples yet
+ *   unanalysable  — a radio stream whose server wouldn't allow the tap, so it plays but
+ *                   can't be drawn. A UI that shows a meter has to say this out loud, or
+ *                   it just looks broken.
+ */
+export type NeuroSignalState = 'live' | 'idle' | 'connecting' | 'unanalysable';
+export function neurospicySignalState(): NeuroSignalState {
+  if (src?.buffer) return 'live';
+  if (radioSource && radioEl && !radioEl.paused && radioEl.readyState >= 2) return 'live';
+  if (!isNeurospicyPlaying()) return 'idle';
+  // An untapped element on a radio selection can never produce samples, however well it's
+  // playing — say so rather than leaving the UI on "connecting" forever.
+  if (isNeurospicyRadio() && radioEl && !radioSource) return 'unanalysable';
+  return 'connecting';
+}
+
 /** Position within the current LOCAL track (a looping buffer, so it wraps). Null for
  *  radio or while no local source is sounding — callers hide their seek bar then. */
 export function getNeurospicyProgress(): { position: number; duration: number } | null {
@@ -157,27 +202,128 @@ export function seekNeurospicy(seconds: number): void {
 
 function stopSource(): void {
   if (src) { src.onended = null; try { src.stop(); } catch { /* already stopped */ } src.disconnect(); src = null; }
-  if (radioEl) { try { radioEl.pause(); } catch { /* ignore */ } radioEl.removeAttribute('src'); }
+  // The element (and its one-per-element source node) is kept for reuse; only the stream
+  // is dropped. `onerror` goes first: clearing `src` can itself fire an error event, and
+  // the tap-demotion path must not read a deliberate stop as a CORS refusal.
+  if (radioEl) {
+    radioEl.onerror = null;
+    try { radioEl.pause(); } catch { /* ignore */ }
+    radioEl.removeAttribute('src');
+  }
   playingId = '';
 }
 
-// Play a live radio stream via a bare <audio> element (resolving the current
-// stream URL from the station's .pls). Silent no-op offline or on stream error.
+function streamHost(url: string): string {
+  try { return new URL(url, location.href).host; } catch { return url; }
+}
+
+/** Is this stream one we should try to tap? */
+function shouldTap(url: string): boolean {
+  return !graphTapUnavailable && !untappedHosts.has(streamHost(url));
+}
+
+/**
+ * The <audio> element radio streams through, tapped into the graph if it can be.
+ *
+ * Order matters: `crossOrigin` before any `src`, and `createMediaElementSource` while the
+ * element is still fresh. With the tap in place the element's output goes gain → analyser →
+ * destination like everything else, so volume and the meter come for free.
+ *
+ * A change of tap state needs a NEW element: an element that has produced a
+ * MediaElementSource can never produce another, and can never be rid of the one it has.
+ */
+function ensureRadioEl(tap: boolean): HTMLAudioElement {
+  if (radioEl && !!radioSource === tap) return radioEl;
+  dropRadioEl();
+  const el = new Audio();
+  el.preload = 'none';
+  if (tap) {
+    el.crossOrigin = 'anonymous';
+    const a = audio();
+    try {
+      if (!a) throw new Error('no audio graph');
+      radioSource = a.ctx.createMediaElementSource(el);
+      radioSource.connect(a.gain);
+    } catch {
+      // No Web Audio at all (or the node was refused): play it bare rather than not at all.
+      radioSource = null;
+      graphTapUnavailable = true;
+      el.removeAttribute('crossorigin');
+    }
+  }
+  radioEl = el;
+  return el;
+}
+
+/** Drop the element AND its source node together — the only way to un-tap, since an element
+ *  that has produced a MediaElementSource can never produce another. */
+function dropRadioEl(): void {
+  if (radioSource) { try { radioSource.disconnect(); } catch { /* already gone */ } radioSource = null; }
+  if (radioEl) {
+    radioEl.onerror = null;
+    try { radioEl.pause(); } catch { /* ignore */ }
+    radioEl.removeAttribute('src');
+    try { radioEl.load(); } catch { /* ignore */ }   // abort the in-flight connection
+    radioEl = null;
+  }
+}
+
+/** Volume lives on the graph's gain when the stream is tapped, and on the element itself
+ *  when it isn't — otherwise the slider would move nothing in one of the two paths. */
+function applyRadioVolume(): void {
+  if (!radioEl) return;
+  if (radioSource) {
+    radioEl.volume = 1;
+    if (gain) gain.gain.value = state.volume;
+  } else {
+    radioEl.volume = state.volume;
+  }
+}
+
+/**
+ * Point the radio element at a resolved stream URL and play.
+ *
+ * A load error on a TAPPED element is treated as the CORS refusal it almost always is: drop
+ * the tap and replay the same URL untapped, so the worst case is a dark visualizer rather
+ * than silence. Exactly one retry — the rebuilt element is untapped, so a second error falls
+ * through as the genuine stream failure it then is.
+ */
+function startRadioStream(url: string, id: string): void {
+  audio();   // build/resume the context: a tapped element is silent while it's suspended
+  const el = ensureRadioEl(shouldTap(url));
+  el.onerror = (): void => {
+    el.onerror = null;
+    // A cleared src (our own stop) is not a failure, and an already-untapped element that
+    // errors is a real stream problem — leave it silent, as before.
+    if (!el.getAttribute('src') || !radioSource) return;
+    console.warn('[lolly:neuro] the station refused a CORS-tapped load — replaying it without the analyser tap');
+    untappedHosts.add(streamHost(url));
+    dropRadioEl();
+    if (state.loopId === id && state.enabled && !paused && !isSfxMuted()) startRadioStream(url, id);
+  };
+  // A stream takes a moment to connect and buffer, so it is NOT yet 'live' when play() is
+  // called. The meter and the visualizer both stand themselves down when there's no signal
+  // and restart on this event — without it they'd park on the baseline for the whole track.
+  el.onplaying = (): void => notifyPlaying();
+  el.src = url;
+  applyRadioVolume();
+  void el.play().catch(() => { /* needs a gesture or a live connection */ });
+  playingId = id;
+  notifyPlaying();
+}
+
+// Play a live radio stream (resolving the current stream URL from the station's .pls).
+// Silent no-op offline or on stream error.
 async function playRadio(): Promise<void> {
   const id = state.loopId;
   const station = radioStation(id);
   if (!station) return;
-  if (playingId === id && radioEl && !radioEl.paused) { radioEl.volume = state.volume; return; }
+  if (playingId === id && radioEl && !radioEl.paused) { applyRadioVolume(); return; }
   stopSource();
   try {
     const streamUrl = await resolveStreamUrl(station.pls);
     if (state.loopId !== id || !state.enabled || paused || isSfxMuted()) return; // state changed while resolving
-    if (!radioEl) { radioEl = new Audio(); radioEl.preload = 'none'; }
-    radioEl.src = streamUrl;
-    radioEl.volume = state.volume;
-    void radioEl.play().catch(() => { /* needs a gesture or a live connection */ });
-    playingId = id;
-    notifyPlaying();
+    startRadioStream(streamUrl, id);
   } catch { /* offline / stream unavailable — leave silent */ }
 }
 
@@ -301,7 +447,7 @@ export async function setNeurospicyLoop(host: NeurospicyHost, id: string): Promi
 export function setNeurospicyVolume(host: NeurospicyHost, v: number): void {
   state.volume = Math.max(0, Math.min(1, v)); persistLocal(); void persistProfile(host);
   if (gain) gain.gain.value = state.volume;
-  if (radioEl) radioEl.volume = state.volume;
+  applyRadioVolume();
 }
 /** Switch between repeat (loop the current track) and forward (advance through
  *  the list when a track ends). Re-arms the live source so it takes effect at once

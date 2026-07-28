@@ -133,6 +133,24 @@ test('a wide-gamut seed is described unclamped, and the clamp is disclosed', asy
   assert.equal($('[data-lab-swatch]')!.style.background, 'color(display-p3 1 0 0)');
 });
 
+test('the picker is handed the authored colour, not its sRGB restatement', async () => {
+  const subject = 'color(display-p3 1 0 0)';
+  await mount('?c=' + encodeURIComponent(subject));
+  // Read what the field was SEEDED with — the canonical attribute when the component
+  // publishes one, otherwise the rendered value attribute. Not the live input value:
+  // that is the picker's own working notation, which is its business, not the view's.
+  const field = $('[data-lab-picker] [data-color-field]') ?? $('[data-lab-picker]')!;
+  const seeded = field.getAttribute('data-color-canon')
+    ?? $('[data-lab-picker] input.color-input')!.getAttribute('value') ?? '';
+  const seededDesc = describeColor(seeded);
+  assert.ok(seededDesc, `the picker's seed is a readable colour: ${seeded}`);
+  // Seeding it with srgbHex is what used to flatten the subject: the picker echoes
+  // its value back, and the echo then BECAME the subject. So the seed must still be
+  // the wide colour, and must not be the gamut-mapped hex.
+  assert.equal(seededDesc!.gamut, 'p3', `seeded at its real gamut: ${seeded}`);
+  assert.notEqual(seeded.trim().toLowerCase(), describeColor(subject)!.srgbHex.toLowerCase());
+});
+
 test('an in-gamut colour hides the clamp notice entirely', async () => {
   await mount('?c=%23c0392b');
   assert.equal($('[data-lab-clamp]')!.hidden, true);

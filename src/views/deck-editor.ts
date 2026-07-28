@@ -32,7 +32,7 @@ import type { IconName } from '../lib/icons.ts';
 import { mountColorField } from '../components/color-field.ts';
 import { parsePptxGenJs, inchesToNative } from '../lib/pptxgen-import.ts';
 import type { TextRun } from '../lib/pptxgen-import.ts';
-import { nearestBrandColor, isPptx, readPptx } from '@lolly/engine';
+import { nearestBrandColor, isPptx, readPptx, parseColor, colorToHexString } from '@lolly/engine';
 import type { PptxDeckRead, PptxReadPara, PptxParts } from '@lolly/engine';
 import { escape as escapeHtml } from '../utils.ts';
 
@@ -218,13 +218,19 @@ export function coerceSlide(o: Record<string, unknown>): Slide {
 
 let boxSeq = 0;
 let colourSeq = 0;   // unique-enough id per mounted inspector colour picker
-/** A colour value (hex, with or without the leading #) → a safe `#rrggbb(aa)` or '' if not a
- *  hex. Accepts the hash-less 6-hex pptxgenjs uses. */
+/** Any CSS colour → a safe `#rrggbb(aa)`, or '' when it isn't a colour at all.
+ *  Accepts the hash-less 6-hex pptxgenjs uses, and passes hex through untouched so
+ *  an authored `#fff` stays short. Anything else — a named colour, `oklch()`, a
+ *  wide-gamut `color()` — resolves through the engine parser instead of being
+ *  rejected: '' makes coerceBox omit the key, which silently reverted the shape to
+ *  inheriting the slide. The deck wire format itself stays hex. */
 export function toHex(v: unknown): string {
   const s = asText(v).trim();
   if (/^#[0-9a-fA-F]{3,8}$/.test(s)) return s;
   if (/^[0-9a-fA-F]{6}$/.test(s) || /^[0-9a-fA-F]{3}$/.test(s) || /^[0-9a-fA-F]{8}$/.test(s)) return '#' + s;
-  return '';
+  if (!s || s.toLowerCase() === 'transparent') return '';
+  const parsed = parseColor(s);
+  return parsed ? colorToHexString(parsed) : '';
 }
 const SHAPE_NORM: Record<string, 'rect' | 'round' | 'pill' | 'ellipse'> = {
   rect: 'rect', square: 'rect', round: 'round', rounded: 'round', roundrect: 'round',

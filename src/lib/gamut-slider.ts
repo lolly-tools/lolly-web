@@ -59,47 +59,65 @@ export function formatChannel(ch: GamutChannel, v: number): string {
   return v.toFixed(3);
 }
 
+/** One stretch of the axis: `inside` says whether it is reachable. */
+export interface GamutRun {
+  from: number;
+  to: number;
+  stops: string[];
+  inside: boolean;
+}
+
 /**
- * The displayable runs along the axis, as `{ from, to }` in 0–1 fractions of the
- * track, each with the colours to paint across it.
+ * Every run along the axis — reachable AND not — as `{ from, to }` fractions of
+ * the track with the colours to paint across each.
  *
- * `samples` is the resolution of the in/out test. 180 is enough that a run's
- * edges land within half a percent of the track — finer than the eye reads on a
- * slider, and cheap: each sample is one matrix multiply, not a bisection.
+ * The unreachable runs are returned too, so the caller can render them as a faint
+ * ghost rather than as a hole. An empty gap says "nothing here"; the truthful
+ * message is "more range, just not reachable at this lightness and chroma", and a
+ * ~12% wash says that without promising a colour it cannot deliver. It also keeps
+ * the axis legible as an axis: a hue track broken into four floating fragments is
+ * hard to read as one continuous 0–360.
+ *
+ * `samples` is the resolution of the in/out test. 180 puts a run's edges within
+ * half a percent of the track — finer than the eye reads on a slider, and cheap:
+ * each sample is one matrix multiply, not a bisection.
  */
-export function gamutRuns(
-  state: GamutSliderState,
-  samples = 180,
-): Array<{ from: number; to: number; stops: string[] }> {
+export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
   const { min, max } = channelRange(state.channel, state.cMax ?? DEFAULT_C_MAX);
   const n = Math.max(8, Math.floor(samples));
-  const runs: Array<{ from: number; to: number; stops: string[] }> = [];
-  let start = -1;
+  const runs: GamutRun[] = [];
+  let start = 0;
+  let startInside: boolean | null = null;
 
-  const close = (endIdx: number): void => {
-    if (start < 0) return;
+  const close = (endIdx: number, inside: boolean): void => {
     const from = start / n;
     const to = endIdx / n;
+    if (to <= from) return;
     // A handful of stops across the run is plenty — the ramp is smooth, and one
     // stop per sample would put 180 colour stops in a style attribute.
     const stops: string[] = [];
     const steps = Math.max(1, Math.min(12, Math.round((to - from) * 24)));
     for (let k = 0; k <= steps; k++) {
       const v = min + (from + ((to - from) * k) / steps) * (max - min);
+      // Out-of-gamut positions are mapped, so a ghost still shades in the right
+      // direction rather than flat-lining at the boundary colour.
       stops.push(oklchToHex(colorAt(state, v)));
     }
-    runs.push({ from, to, stops });
-    start = -1;
+    runs.push({ from, to, stops, inside });
   };
 
   for (let i = 0; i <= n; i++) {
     const v = min + (i / n) * (max - min);
     const o = colorAt(state, v);
     const ok = inGamut(o.l, o.c, o.h, state.limit);
-    if (ok && start < 0) start = i;
-    if (!ok) close(i);
+    if (startInside === null) { startInside = ok; start = i; continue; }
+    if (ok !== startInside) {
+      close(i, startInside);
+      startInside = ok;
+      start = i;
+    }
   }
-  close(n);
+  if (startInside !== null) close(n, startInside);
   return runs;
 }
 
@@ -143,7 +161,10 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
       const grad = run.stops.length > 1
         ? `linear-gradient(90deg, ${run.stops.join(',')})`
         : (run.stops[0] ?? 'transparent');
-      return `<span class="gsl-seg" style="left:${left}%;width:${width}%;background:${grad}"></span>`;
+      // A ghost keeps the axis readable as a whole while staying clearly a hint —
+      // the opacity is in CSS so it is tunable without touching this.
+      const cls = run.inside ? 'gsl-seg' : 'gsl-seg gsl-seg--ghost';
+      return `<span class="${cls}" style="left:${left}%;width:${width}%;background:${grad}"></span>`;
     }).join('');
   }
   const out = root.querySelector<HTMLElement>('[data-gsl-val]');
