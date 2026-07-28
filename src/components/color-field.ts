@@ -485,6 +485,13 @@ function paintColorInput(input: HTMLInputElement | null, value: string): void {
   }
 }
 
+/** The #rrggbb an alpha track fades out from. A non-hex value ('transparent', an
+ *  ident, a token that has not resolved) has no colour to fade, so it falls back to
+ *  a neutral rather than rendering as an accidental black. */
+function alphaTrackHex(v: string | null | undefined): string {
+  return typeof v === 'string' && /^#[0-9a-fA-F]{6}/.test(v) ? v.slice(0, 7) : '#808080';
+}
+
 export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean } = {}): string {
   const rawVal = toHex(value) ?? '';
   const isTransparent = rawVal === 'transparent';
@@ -547,7 +554,12 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
         : lchSlidersHtml(eid, isHex6 || isHex8 ? rgbHex : null, !inline, inline)}
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
+        ${/* The gradient ends are emitted HERE as well as repainted from JS: nothing
+              calls writeValueField on first render, so a field that is never
+              touched would otherwise show the CSS fallback grey instead of its own
+              colour fading out. */''}
         <input type="range" class="color-alpha-slider" data-color-alpha="${eid}"
+               style="--alpha-from:${alphaTrackHex(rgbHex)}00;--alpha-to:${alphaTrackHex(rgbHex)}ff"
                min="0" max="255" value="${alphaInt}" aria-label="Opacity">
         <span class="color-alpha-pct" data-alpha-pct="${eid}">${alphaPct}%</span>
       </div>
@@ -728,10 +740,32 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   /** Write the shared value field for `id` — in the active mode's space, else hex.
    *  Never clobbers the field's TEXT while the user is typing in it, but always
    *  repaints its swatch chrome (background/border/contrast-flipped text). */
+  /**
+   * Paint the alpha track: this colour fading to nothing, over the checkerboard.
+   *
+   * The slider is otherwise identical to its L/C/H siblings above it, and it used
+   * to be a 4px native rail with `accent-color` — which made the one control whose
+   * subject IS transparency the only one that showed you nothing about it. The two
+   * custom properties are the gradient's ends; the checkerboard lives in CSS
+   * because it never changes.
+   */
+  const paintAlphaTrack = (field: HTMLElement | null, fullHex: string): void => {
+    const slider = field?.querySelector<HTMLElement>('.color-alpha-slider');
+    if (!slider) return;
+    // Only an #rrggbb(aa) value has a colour to fade; 'transparent' and idents fall
+    // back to a neutral so the track never renders as an accidental black.
+    const rgb = alphaTrackHex(fullHex);
+    slider.style.setProperty('--alpha-from', `${rgb}00`);
+    slider.style.setProperty('--alpha-to', `${rgb}ff`);
+  };
+
   const writeValueField = (id: string, field: HTMLElement | null, fullHex: string): void => {
     const input = q<HTMLInputElement>(`[data-color-hex="${CSS.escape(id)}"]`);
     if (!input) return;
     paintColorInput(input, fullHex);
+    // Every update path funnels through here, so this is the one place the alpha
+    // track needs repainting from.
+    paintAlphaTrack(field, fullHex);
     if (input === document.activeElement) return;
     const fmt = valueFmt(field);
     input.value = fmt ? formatColor(fmt, fullHex) : fullHex;

@@ -619,22 +619,26 @@
   flex-shrink: 0;
   text-align: center;
 }
-/* Stays a NATIVE range — like its two siblings above it, this slider is part of
-   the colour picker's own visual language and deliberately does not take
-   `.field-range` (whose 14px thumb would overflow this 4px rail). `accent-color`
-   therefore still works here. */
+/* Geometry and thumb come from the shared .color-lch-slider rule below, so alpha
+   matches its siblings in size, position and indicator. What is specific to it is
+   the track: the colour fading to nothing over a checkerboard, with the two
+   gradient ends set from JS (paintAlphaTrack in color-field.ts).
+
+   It was a 4px native rail with `accent-color` — which left the one control whose
+   whole subject is transparency as the only one that showed none of it. */
 .color-alpha-slider {
-  flex: 1;
-  height: 4px;
-  cursor: pointer;
-  accent-color: hsl(var(--ring));
+  background:
+    linear-gradient(90deg, var(--alpha-from, #80808000), var(--alpha-to, #808080)),
+    repeating-conic-gradient(hsl(0 0% 60% / 0.9) 0% 25%, hsl(0 0% 96%) 0% 50%) 50% / 10px 10px;
 }
 .color-alpha-pct {
   font-family: ui-monospace, monospace;
   font-size: 11px;
   color: hsl(var(--muted-foreground));
-  min-width: 30px;
+  /* 40px, matching .color-lch-val — the readouts must form a column. */
+  min-width: 40px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Dials — a ring per channel, above that channel's slider ─────────────────
@@ -804,7 +808,8 @@
   box-shadow: inset 0 0 0 1px #0003;
 }
 .color-lch-slider,
-.color-mode-slider {
+.color-mode-slider,
+.color-alpha-slider {
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
@@ -815,7 +820,8 @@
   /* background = the axis gradient, inline from JS */
 }
 .color-lch-slider::-webkit-slider-thumb,
-.color-mode-slider::-webkit-slider-thumb {
+.color-mode-slider::-webkit-slider-thumb,
+.color-alpha-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 18px;
@@ -826,7 +832,8 @@
   box-shadow: 0 0 0 1px #0006, inset 0 0 0 1px #0006, 0 1px 3px #0004;
 }
 .color-lch-slider::-moz-range-thumb,
-.color-mode-slider::-moz-range-thumb {
+.color-mode-slider::-moz-range-thumb,
+.color-alpha-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -835,7 +842,8 @@
   box-shadow: 0 0 0 1px #0006, inset 0 0 0 1px #0006, 0 1px 3px #0004;
 }
 .color-lch-slider:focus-visible,
-.color-mode-slider:focus-visible {
+.color-mode-slider:focus-visible,
+.color-alpha-slider:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
