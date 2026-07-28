@@ -1,0 +1,199 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
+/* OKLCH gamut charts (oklch-slice.ts). */
+
+.okls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+/* The plot and its vertical axis, side by side. The axis is a fixed gutter so
+   the plot's own box stays the coordinate space the dots are placed in — every
+   position is a % of THIS element, and the canvas is measured off it. */
+.okls-frame {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-height: 0;
+}
+
+.okls-plot {
+  position: relative;
+  flex: 1 1 auto;
+  aspect-ratio: 8 / 5;
+  min-width: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  /* The checkerboard shows through wherever no display can reach — the
+     transparent region past Rec.2020 — so "nothing here" reads as absence
+     rather than as a colour choice. */
+  background:
+    repeating-conic-gradient(hsl(var(--muted) / 0.55) 0% 25%, hsl(var(--background)) 0% 50%)
+    50% / 10px 10px;
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+.okls-plot.is-editable { cursor: crosshair; touch-action: none; }
+
+.okls-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* The backing store is deliberately lower-resolution than the box during a
+     scrub; let the browser smooth it rather than showing the blocks. */
+  image-rendering: auto;
+}
+
+.okls-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.okls-edges.is-empty { display: none; }
+
+/* The two boundary lines. They must stay legible over every colour the plot can
+   paint underneath them, at both ends of the lightness axis — hence a dark line
+   with a light halo rather than a single flat stroke. */
+.okls-edge {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  paint-order: stroke;
+}
+.okls-edge--srgb {
+  stroke: hsl(0 0% 100% / 0.95);
+  stroke-width: 2.5px;
+  filter: drop-shadow(0 0 1.5px hsl(0 0% 0% / 0.8));
+}
+.okls-edge--p3 {
+  stroke: hsl(0 0% 100% / 0.6);
+  stroke-width: 1.5px;
+  stroke-dasharray: 4 3;
+  filter: drop-shadow(0 0 1.5px hsl(0 0% 0% / 0.6));
+}
+
+/* ── Dots — the palette, projected onto the plane ───────────────────────────
+   `--off` is how far the swatch is from this slice (0 on it … 1 opposite).
+   A dot that isn't really on the plane fades and shrinks rather than
+   disappearing: you still need to see the palette while scrubbing, but a
+   full-strength dot on a plane it doesn't belong to would be a lie. */
+.okls-dot {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;   /* centre the dot on its point */
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background:
+    linear-gradient(var(--dot), var(--dot)),
+    repeating-conic-gradient(hsl(0 0% 60% / 0.9) 0% 25%, hsl(0 0% 96%) 0% 50%) 50% / 6px 6px;
+  box-shadow: 0 0 0 1.5px hsl(0 0% 0% / 0.55), 0 1px 3px hsl(0 0% 0% / 0.4);
+  opacity: calc(1 - var(--off, 0) * 0.72);
+  transform: scale(calc(1 - var(--off, 0) * 0.3));
+  cursor: pointer;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
+}
+.okls-dot.is-light { box-shadow: 0 0 0 1.5px hsl(0 0% 0% / 0.35), 0 1px 3px hsl(0 0% 0% / 0.3); }
+.okls-dot:hover,
+.okls-dot:focus-visible {
+  opacity: 1;
+  transform: scale(1.5);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.45), 0 2px 8px hsl(0 0% 0% / 0.45);
+  z-index: 3;
+  outline: none;
+}
+
+/* ── Axes ─────────────────────────────────────────────────────────────────── */
+
+.okls-axis {
+  position: relative;
+  font-size: 0.62rem;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.okls-axis--y {
+  flex: 0 0 2.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.okls-axis--x {
+  height: 1.9rem;
+  margin-left: 3rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.okls-tick {
+  position: absolute;
+  white-space: nowrap;
+}
+.okls-axis--y .okls-tick { right: 0; transform: translateY(-50%); }
+.okls-axis--x .okls-tick { top: 0; transform: translateX(-50%); }
+
+/* The axis NAME sits along the axis, clear of the ticks. */
+.okls-axis-name {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.58rem;
+  color: hsl(var(--foreground) / 0.75);
+}
+.okls-axis--y .okls-axis-name {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  margin-right: 1.9rem;
+}
+.okls-axis--x .okls-axis-name { margin-top: 0.95rem; }
+
+/* ── Legend ───────────────────────────────────────────────────────────────── */
+
+.okls-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.8rem;
+  margin: 0.1rem 0 0 3rem;
+  font-size: 0.66rem;
+  color: hsl(var(--muted-foreground));
+}
+.okls-key { display: inline-flex; align-items: center; gap: 0.3rem; }
+.okls-key::before {
+  content: '';
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  /* One hue at the three chroma levels the bands are drained to (BAND_DRAIN in
+     oklch-slice.ts), so each key looks like the band it names instead of being
+     an arbitrary legend colour. Same lightness throughout — the bands lose
+     chroma only, never lightness. */
+  background: oklch(0.66 var(--key-c) 28);
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+.okls-key--srgb { --key-c: 0.18; }
+.okls-key--p3 { --key-c: 0.137; }     /* 0.18 × (1 − 0.24) */
+.okls-key--rec2020 { --key-c: 0.094; } /* 0.18 × (1 − 0.48) */
+.okls-key--none::before {
+  background:
+    repeating-conic-gradient(hsl(var(--muted) / 0.55) 0% 25%, hsl(var(--background)) 0% 50%)
+    50% / 6px 6px;
+}
+
+@media (max-width: 640px) {
+  .okls-axis--y { flex-basis: 2.1rem; }
+  .okls-axis--x, .okls-legend { margin-left: 2.5rem; }
+  .okls-dot { width: 20px; height: 20px; margin: -10px 0 0 -10px; } /* touch target */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .okls-dot { transition: none; }
+}
+}
