@@ -109,25 +109,28 @@
   box-shadow: none;
   gap: 12px;
 }
-/* The dials share the row's width equally instead of sitting at their fixed size:
-   flex-basis 0 + grow, with the aspect ratio holding them round. The cap is what
-   stops a wide panel (or a 3-dial space where CMYK's 4 fit) blowing them up — and
-   in a FLOAT popover it stays near the old fixed 3.25em, because a click-to-open
-   popover that opted into dials must not grow 7rem rings under the tab strip. */
+/* The dials share the row's width by SLOT, not by sibling count: --dial-slots is the
+   widest space's channel count + the output disc (color-field.ts dialsHtml), so a
+   3-channel space draws the same size ring as CMYK's 4 and the band's height stops
+   depending on which tab is open — the shift that made switching spaces move
+   everything below the panel. The cap stops a wide panel blowing them up, and in a
+   FLOAT popover it stays near the old fixed 3.25em, because a click-to-open popover
+   that opted into dials must not grow 7rem rings under the tab strip. */
+.color-dials {
+  --dial-gap: 10px;
+  --dial-cap: 3.25rem;
+}
 .color-dials .color-dial,
 .color-dials .color-dial-out {
-  flex: 1 1 0;
-  width: auto;
+  flex: 0 0 auto;
+  width: min(var(--dial-cap), calc((100% - (var(--dial-slots, 5) - 1) * var(--dial-gap)) / var(--dial-slots, 5)));
   height: auto;
   min-width: 2.25rem;
-  max-width: 3.25rem;
   aspect-ratio: 1 / 1;
 }
 /* Scale the dial furniture up with the dial — the inline panel is the host with
    room to spend on rings that restate the sliders under them. */
-.color-field--inline .color-dials { gap: 0.9rem; }
-.color-field--inline .color-dials .color-dial,
-.color-field--inline .color-dials .color-dial-out { max-width: 7rem; }
+.color-field--inline .color-dials { --dial-gap: 0.9rem; --dial-cap: 7rem; }
 .color-field--inline .color-dial-hub { font-size: 12px; }
 .color-field--inline .color-dial-act svg { width: 1.6em; height: 1.6em; }
 
@@ -249,22 +252,20 @@
 /* Same reason, and the oklch panel carries BOTH classes: .color-lch also survives
    alone in the non-modes picker, whose group never carries [hidden]. */
 .color-lch[hidden] { display: none; }
-/* Reserve the tallest space's height (CMYK, or any 4-ink profile = 4 rows) on
-   EVERY panel, so switching a 3-channel space ↔ a 4-channel one never shifts the
-   layout. One row = the 18px thumb; 4 rows + 3 × 8px gaps. Rows stay top-aligned. */
+/* Every panel in a tab strip is rendered with the WIDEST space's row count — the
+   short ones get empty filler rows (color-field.ts spacePanelHtml) — so switching a
+   3-channel space ↔ a 4-channel one never shifts what is below the panel. The
+   reservation used to be a min-height guessing 18px per row (the thumb) against a
+   real row of 2em, so it never bound and the shift was ~39px. Rows stay top-aligned. */
 .color-modes .color-space,
 .color-modes .color-lch,
 .color-modes .color-modegroup {
-  min-height: calc(4 * 18px + 3 * 8px);
   justify-content: flex-start;
 }
-/* The dial band is reserved only where dials are actually rendered — colorFieldHtml
-   gates them on its own `dials` option now, so a float popover no longer pays 3.25em
-   for a row it does not draw. (3.25em ring + its 4px margin + the panel's 8px gap.) */
-.color-modes .color-space:has(.color-dials),
-.color-modes .color-lch:has(.color-dials),
-.color-modes .color-modegroup:has(.color-dials) {
-  min-height: calc(3.25em + 12px + 4 * 18px + 3 * 8px);
+/* A filler row is the empty slot: exactly one channel row tall, nothing in it. */
+.color-lch-row--filler {
+  height: 2em;
+  pointer-events: none;
 }
 
 /* The live note under the panels (role="status") — the space + whether the value
@@ -280,8 +281,11 @@
   line-height: 1.25;
   color: hsl(var(--muted-foreground));
 }
+/* Only the VISIBLE panel's clamp cautions: every space's panel is in the DOM
+   (hidden, not removed), so an unscoped :has() painted the line amber for a pin in
+   a space the user is not looking at — while the line itself read "exact". */
 .color-space-note.is-caution,
-.color-modes:has(.color-lch-val.is-clamped) .color-space-note { color: #d97706; }
+.color-modes:has(.color-space:not([hidden]) .color-lch-val.is-clamped) .color-space-note { color: #d97706; }
 
 /* The value field is a live swatch of the current colour: the picker toggles
    .color-input--painted and sets --color-input-bg/-border to the colour (alpha
@@ -304,7 +308,23 @@
   font-size: 17px;
   padding: 16px 44px;   /* symmetric so the centred value clears the eyedropper */
   outline: none;
-  transition: background-color .12s, color .12s, border-color .12s;
+  text-overflow: ellipsis;
+  transition: background-color .12s, color .12s, border-color .12s, font-size .12s;
+}
+/* A full CSS colour at machine precision ('oklch(61.374% 0.13585 260.14)') does not
+   fit the narrow hosts — a 316px swatch editor cut it off at the hue, with an input's
+   own scroll giving no hint anything was missing. Step the type down for a long
+   value (color-field.ts toggles the class at 22 characters, and puts the whole
+   string in a `title` as well). */
+.color-input--long {
+  font-size: 13px;
+  letter-spacing: -.01em;
+}
+/* Text that did not parse: the field keeps the characters — mid-edit text is the
+   user's — but it must not sit there unmarked, claiming to be the colour. */
+.color-input--invalid {
+  border-color: #d97706;
+  border-style: dashed;
 }
 /* Screen eyedropper — sits inside the field's left edge, coloured by the same
    contrast-flipped --color-input-fg as the value text so it reads on any paint.
@@ -385,7 +405,7 @@
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--dial-gap);            /* the slot maths above divides by the same value */
   margin-bottom: 4px;              /* + the group's own 8px gap = 12px of air */
 }
 .color-dial,
@@ -567,10 +587,14 @@
    The outline has to be the BORDER, not a background: JS assigns the `background`
    shorthand, which would wipe any background-color declared here. border-box
    sizing keeps the 2em height. Alpha is excluded — its track is continuous by
-   definition, and a dashed frame there would claim breaks that do not exist. */
+   definition, and a dashed frame there would claim breaks that do not exist.
+
+   The width is the whole affordance: at `border: 0 solid` (what this said) neither
+   the well nor the amber mark below drew at all, so a fully out-of-gamut axis
+   rendered as a bare thumb ring floating on the card with no rail. */
 .color-lch-slider,
 .color-mode-slider {
-  border: 0 solid hsl(var(--border));
+  border: 1px dashed hsl(var(--border));
   background-color: transparent;   /* gaps show the popover card through */
 }
 /* Out of the target gamut at the current value: the well goes solid amber — a

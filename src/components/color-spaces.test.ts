@@ -6,11 +6,11 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseColor, convertColor, SRGB_SOURCE } from '@lolly/engine';
+import { parseColor, convertColor, colorToHexString, SRGB_SOURCE } from '@lolly/engine';
 import type { GamutSource } from '@lolly/engine';
 import {
-  colorSpaces, getColorSpace, composeColor, decomposeColor, channelRuns,
-  spaceExactness, spaceText, spaceParse, slugMode,
+  colorSpaces, getColorSpace, composeColor, decomposeColor, channelRuns, pinValue,
+  spaceExactness, spaceText, spaceParse, slugMode, notationHasAlpha,
   registerColorProfile, unregisterColorProfile,
   type ChannelSpec,
 } from './color-spaces.ts';
@@ -109,6 +109,106 @@ test('the value field accepts any CSS colour, whatever space is active', () => {
   assert.equal(spaceText(cmyk, spaceParse(cmyk, 'cmyk(40% 0% 30% 10%)')!), 'cmyk(40% 0% 30% 10%)');
   assert.equal(spaceParse(oklch, ''), null);
   assert.equal(spaceParse(oklch, 'not a colour'), null);
+});
+
+test('a value field states the colour in its own sliders\' units', () => {
+  const green = parseColor('#30ba78')!;
+  // RGB's sliders are 0–255, so its text is too. It used to fall through to
+  // `color(srgb 0.188235 …)`, stating one colour in two unit systems in one panel.
+  assert.equal(spaceText(getColorSpace('rgb')!, green), 'rgb(48 186 120)',
+    "RGB's text must speak the 0–255 its sliders and readouts speak");
+  assert.ok(srgbDelta(spaceParse(getColorSpace('rgb')!, 'rgb(48 186 120)')!, green) < 1e-9,
+    "RGB's own text must read back as the same colour");
+  // Out of sRGB it stays unclamped, matching the (clamped-slider, unclamped-readout)
+  // convention — rgb() parses an out-of-range component as-is, so this round-trips.
+  const p3red = parseColor('color(display-p3 1 0 0)')!;
+  const wide = spaceText(getColorSpace('rgb')!, p3red);
+  assert.match(wide, /^rgb\(278\.73 -57\.82 -38\.28\)$/);
+  assert.ok(srgbDelta(spaceParse(getColorSpace('rgb')!, wide)!, p3red) < 1e-4,
+    "RGB's unclamped text must still read back as the colour it states");
+  // Alpha rides along in both, so text copied out of the field keeps its opacity —
+  // CMYK dropped it entirely.
+  assert.equal(spaceText(getColorSpace('rgb')!, parseColor('#3c7a9f40')!), 'rgb(60 122 159 / 0.251)');
+  assert.equal(spaceText(getColorSpace('cmyk')!, parseColor('#3c7a9f40')!), 'cmyk(62% 23% 0% 38% / 0.251)');
+  assert.equal(spaceParse(getColorSpace('cmyk')!, 'cmyk(62% 23% 0% 38% / 0.251)')!.alpha, 0.251,
+    'CMYK must read its own alpha back');
+});
+
+test('the HSL tab states a saturation hsl() can actually reproduce', () => {
+  const hsl = getColorSpace('hsl')!;
+  // srgbToHsl reports the TRUE saturation of a wider colour (152% for P3 red) while
+  // hsl() clamps s/l on the way in, so an unclamped string is a notation no consumer
+  // — this field included — resolves to the colour shown. Clamp the DISPLAY only.
+  const shown = spaceText(hsl, parseColor('color(display-p3 1 0 0)')!);
+  const nums = (shown.match(/[\d.]+(?=%)/g) ?? []).map(Number);
+  assert.equal(nums.length, 2, `expected s% and l% in ${shown}`);
+  assert.ok(nums.every(n => n <= 100), `hsl() cannot reproduce ${shown}`);
+  // …so retyping the field's own text lands on the colour that text describes.
+  const back = spaceParse(hsl, shown)!;
+  assert.ok(srgbDelta(back, spaceParse(hsl, spaceText(hsl, back))!) < 1e-9,
+    "the HSL tab's text must be a fixed point — retyping it must not move the colour");
+  // An in-gamut colour is untouched by the clamp and round-trips exactly.
+  assert.equal(colorToHexString(spaceParse(hsl, spaceText(hsl, parseColor('#30ba78')!))!), '#30ba78');
+});
+
+test('pinValue tolerates conversion noise: plain white is inside every space', () => {
+  // Lab/LCH L convert to 100.00000139, Rec.2020 R to 255.00000000000006, XYZ Z to
+  // 1.08905775 — float noise and a rounded axis ceiling, not an excursion. An
+  // untoleranced compare flagged all four, so the caution line said "Outside Lab"
+  // for a colour spaceExactness (BOUNDS_SLACK 1e-4) calls exact, with the flagged
+  // readout printing the in-range bound.
+  for (const seed of ['#ffffff', 'white', 'color(srgb 1 1 1)', 'oklch(100% 0 0)']) {
+    const c = parseColor(seed)!;
+    for (const spec of colorSpaces()) {
+      const vals = decomposeColor(spec, c, 250);
+      for (const ch of spec.channels) {
+        const { at, pinned } = pinValue(ch, vals[ch.ch] ?? ch.min);
+        assert.equal(pinned, false, `${seed} reported outside ${spec.mode} on ${ch.ch} (${vals[ch.ch]})`);
+        assert.ok(at >= ch.min && at <= ch.max, `${spec.mode}/${ch.ch} must still land a legal slider value`);
+      }
+      assert.equal(spaceExactness(spec, c), 'exact', `${spec.mode} disagrees with the pin`);
+    }
+  }
+  // A GENUINE excursion still pins: P3 red's blue is -1.39 of 255 in Rec.2020.
+  const rec = getColorSpace('rec2020')!;
+  const p3 = decomposeColor(rec, parseColor('color(display-p3 1 0 0)')!, 250);
+  assert.equal(pinValue(rec.channels[2]!, p3.b!).pinned, true, 'a real out-of-range value must still pin');
+});
+
+test('a run reaches the gamut edge, so the thumb never stands on emptiness', () => {
+  // Runs used to end at the last IN-GAMUT SAMPLE, leaving every edge short by up to
+  // one step (4.3% of the track at 24 stops). At #/lab's own default the L track
+  // stopped at 60.87% with the thumb at 62% and the note reading "exact".
+  const oklch = getColorSpace('oklch')!;
+  const seed = parseColor('oklch(62% 0.19 260)')!;
+  const vals = decomposeColor(oklch, seed, 260);
+  for (const ch of oklch.channels) {
+    const runs = channelRuns(oklch, ch, vals, 1);
+    const frac = ((vals[ch.ch] ?? ch.min) - ch.min) / (ch.max - ch.min);
+    assert.ok(runs.some(r => r.from - 1e-9 <= frac && frac <= r.to + 1e-9),
+      `the ${ch.ch} thumb at ${frac.toFixed(4)} sits in a gap: ${JSON.stringify(runs.map(r => [r.from, r.to]))}`);
+    // And no run is a zero-width sliver — a single reachable sample used to paint
+    // as literally nothing.
+    for (const r of runs) assert.ok(r.to > r.from, `${ch.ch} has a zero-width run at ${r.from}`);
+  }
+  // The refined edge is close to the truth, not a sample position: the L axis holds
+  // 0.19 chroma at hue 260 up to L ≈ 0.645, which no 24-sample grid lands on.
+  const l = channelRuns(oklch, oklch.channels[0]!, vals, 1);
+  assert.ok(Math.abs((l[0]?.to ?? 0) - 0.645) < 0.005, `L run ends at ${l[0]?.to}, not ~0.645`);
+});
+
+test('notationHasAlpha reads the intent off the NOTATION, not off alpha === 1', () => {
+  // The parsers default a missing alpha to 1, so the value field cannot tell "#30ba78
+  // says nothing about opacity" (inherit the slider's) from "#30ba78ff says be
+  // opaque" (an instruction) without looking at the text.
+  for (const stated of ['#30ba78ff', '30ba78ff', '#3bad', 'rgb(255 0 0 / 100%)', 'rgba(1,2,3,1)',
+    'oklch(70% 0.1 200 / 1)', 'color(srgb 1 0 0 / 1)', '62% 0.11 250 / 0.5', 'cmyk(0% 0% 0% 0% / 0.5)']) {
+    assert.equal(notationHasAlpha(stated), true, `${stated} states an alpha`);
+  }
+  for (const silent of ['#30ba78', '30ba78', '#3ba', 'rgb(1 2 3)', 'rgba(1,2,3)', 'oklch(70% 0.1 200)',
+    'rebeccapurple', '62% 0.11 250', '']) {
+    assert.equal(notationHasAlpha(silent), false, `${silent} states no alpha`);
+  }
 });
 
 test('a profile x intent is one registry entry, added and removed at runtime', () => {

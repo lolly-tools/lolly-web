@@ -262,6 +262,14 @@ function bake(st: FieldColorState): { value: string; detail: ColorChangeDetail }
   };
 }
 
+/** Do these two land on the same screen colour? Compared in sRGB, because that is
+ *  where a pseudo-space (CMYK, a press profile) composes. */
+function sameColor(a: CssColor, b: CssColor): boolean {
+  const x = convertColor(a, 'srgb').components;
+  const y = convertColor(b, 'srgb').components;
+  return x.every((v, i) => Math.abs(v - (y[i] ?? 0)) < 1e-6);
+}
+
 // ── Track and dial ramps ─────────────────────────────────────────────────────
 // An axis's ramp is generated ONCE, as runs (see channelRuns), and poured into two
 // shapes: a linear-gradient (the slider track) and a conic-gradient (the dial).
@@ -448,6 +456,12 @@ function paintColorInput(input: HTMLInputElement | null, value: string): void {
   }
 }
 
+/** Past this many characters the value field's 17px mono text no longer fits the
+ *  narrow hosts (a 316px brand-studio swatch editor cuts `oklch(61.374% 0.13585 260.14)`
+ *  off at the hue), and an input gives no ellipsis of its own. The stylesheet steps
+ *  the type down at this class, and the full string also rides in a `title`. */
+const LONG_VALUE = 22;
+
 /** The #rrggbb an alpha track fades out from. A non-hex value ('transparent', an
  *  ident, a token that has not resolved) has no colour to fade, so it falls back to
  *  a neutral rather than rendering as an accidental black. */
@@ -495,11 +509,18 @@ const pinNote = (label: string): string => `Outside ${label} — the slider is p
  */
 function spacePanelHtml(
   eid: string, spec: SpaceSpec, seed: CssColor, lastHue: number,
-  o: { hidden: boolean; dials: boolean; tabbed: boolean },
+  o: { hidden: boolean; dials: boolean; tabbed: boolean; rows?: number },
 ): string {
   const vals = decomposeColor(spec, seed, lastHue);
   const runs = spec.channels.map(ch => channelRuns(spec, ch, vals, seed.alpha));
-  const rows = spec.channels.map((ch, i) => channelRowHtml(eid, ch, vals, runs[i]!)).join('');
+  // Every panel in a tab strip carries the same number of row slots — the widest
+  // space's — so switching a 3-channel space ↔ a 4-channel one moves nothing below
+  // the panel. The fillers are real (empty) rows rather than a CSS min-height
+  // guess: the reservation is then exactly one row tall at any width or font size,
+  // which the guessed 18px-per-row constant never was (a row is 2em).
+  const slots = Math.max(o.rows ?? spec.channels.length, spec.channels.length);
+  const rows = spec.channels.map((ch, i) => channelRowHtml(eid, ch, vals, runs[i]!)).join('')
+    + '<div class="color-lch-row color-lch-row--filler" aria-hidden="true"></div>'.repeat(slots - spec.channels.length);
   const dials = o.dials
     ? dialsHtml(
         spec.channels.map((ch, i) => {
@@ -507,6 +528,7 @@ function spacePanelHtml(
           return { ch: ch.ch, label: ch.label, aria: ch.aria, frac: (at - ch.min) / (ch.max - ch.min || 1), runs: runs[i]! };
         }),
         colorToHexString(composeColor(spec, vals, 1)),
+        slots + 1,
       )
     : '';
   const slug = slugMode(spec.mode);
@@ -564,8 +586,9 @@ function colorModesHtml(eid: string, seed: CssColor, lastHue: number, active: Co
         ${rows.map(s => modeTabHtml(eid, s, s.mode === active)).join('')}
       </div>`;
   }).join('');
+  const widest = Math.max(...specs.map(s => s.channels.length));
   const panels = specs
-    .map(s => spacePanelHtml(eid, s, seed, lastHue, { hidden: s.mode !== active, dials, tabbed: true }))
+    .map(s => spacePanelHtml(eid, s, seed, lastHue, { hidden: s.mode !== active, dials, tabbed: true, rows: widest }))
     .join('');
   return `<div class="color-modes" data-color-modes="${eid}" data-active-mode="${escape(active)}">
       <div class="color-mode-tabs" role="tablist" aria-label="Colour space">${families}</div>
@@ -664,9 +687,13 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
     </button>`}
     <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
       ${swatchesOnly ? '' : `<div class="color-input-wrap"${painted ? ` style="${Object.entries(colorInputPaint(shown)).map(([k, v]) => `${k}:${v}`).join(';')}"` : ''}>
-      <input type="text" class="color-input${painted ? ' color-input--painted' : ''}" data-color-hex="${eid}"
-             value="${escape(shown)}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}"
-             ${modes ? '' : 'maxlength="9" '}spellcheck="false" autocomplete="off" aria-label="Colour value">
+      ${/* NO maxlength: this field takes any CSS colour ('rebeccapurple',
+            'color(display-p3 1 0 0)'), and the 9-character hex cap silently
+            truncated every one of them mid-paste. What it SHOWS is still a hex
+            where there are no space tabs to say otherwise — see writeValueField. */''}
+      <input type="text" class="color-input${painted ? ' color-input--painted' : ''}${shown.length > LONG_VALUE ? ' color-input--long' : ''}" data-color-hex="${eid}"
+             value="${escape(shown)}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}" title="${escape(shown)}"
+             spellcheck="false" autocomplete="off" aria-label="Colour value">
       <button type="button" class="color-eyedropper" data-color-eyedropper="${eid}" aria-label="Pick a colour from your screen" title="Pick a colour from your screen">${EYEDROPPER_ICON}</button>
       </div>
       ${modes
@@ -887,6 +914,9 @@ function paintReadouts(panel: HTMLElement, spec: SpaceSpec, vals: Record<string,
  */
 export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInteractStart, onInteractEnd }: WireColorFieldOpts = {}): void {
   const interact = (on: boolean): void => { (on ? onInteractStart : onInteractEnd)?.(); };
+  /** Fields whose FOCUS opened an interaction — so the matching release fires once,
+   *  wherever inside the field the focus wandered first (see the focusout handler). */
+  const FOCUS_HELD = new WeakSet<HTMLElement>();
   armSwatchTip();
 
   const stateOf = (field: HTMLElement | null): FieldColorState | null => (field ? STATE.get(field) ?? null : null);
@@ -944,28 +974,38 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     return `${spec.label} — ${spaceExactness(spec, st.color) === 'exact' ? 'exact' : 'approximated from a wider colour'}`;
   };
 
-  /** Write the caution line: leading-edge, so a mode switch lands immediately and
-   *  a slider drag is throttled to one update every NOTE_MS. Identical text is a
-   *  no-op, so a live region never re-announces what it already says. */
-  const setNote = (field: HTMLElement, text: string): void => {
+  /**
+   * Write the caution line. A slider drag is throttled to one update every NOTE_MS;
+   * a SPACE SWITCH passes `now` and jumps the queue, because the line names the space
+   * and it is `role="status"` — deferring it makes assistive tech announce the space
+   * the user just left, and an arrow-key walk across the strip announces nothing but
+   * the first step.
+   *
+   * Two orderings matter. A pending write is cancelled BEFORE the identical-text
+   * early return: without that, going out of gamut → in → out inside 300ms left the
+   * superseded "exact" write queued, and it landed on top of a colour that is not
+   * exact and stayed there. And `at` is stamped only by a THROTTLED write, so an
+   * immediate one cannot prime the throttle against the next switch.
+   */
+  const setNote = (field: HTMLElement, text: string, now = false): void => {
     const el = field.querySelector<HTMLElement>('[data-color-note]');
     if (!el) return;
     let rec = NOTES.get(field);
     if (!rec) { rec = { last: '', at: 0 }; NOTES.set(field, rec); }
     const r = rec;
-    if (text === r.last) return;
     if (r.timer) { clearTimeout(r.timer); r.timer = undefined; }
-    const write = (): void => {
+    if (text === r.last) return;
+    const write = (throttled: boolean): void => {
       r.timer = undefined;
       if (text === r.last) return;
       r.last = text;
-      r.at = Date.now();
+      if (throttled) r.at = Date.now();
       el.hidden = text.length === 0;
       el.textContent = text;
     };
-    const wait = NOTE_MS - (Date.now() - r.at);
-    if (wait <= 0) write();
-    else r.timer = setTimeout(write, wait);
+    const wait = now ? 0 : NOTE_MS - (Date.now() - r.at);
+    if (wait <= 0) write(!now);
+    else r.timer = setTimeout(() => write(true), wait);
   };
 
   // ── Projections of the state ──────────────────────────────────────────────
@@ -986,7 +1026,39 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     slider.style.setProperty('--alpha-to', `${rgb}ff`);
   };
 
-  /** Write the value field — in the active space's notation. Never clobbers its
+  /**
+   * The text the value field shows.
+   *
+   * With a tab strip, the ACTIVE space's notation — that is the point of the strip.
+   * Without one, a hex: those hosts (the sidebar, the /pro grid, free-canvas) render
+   * a ~150px field whose placeholder is `#rrggbbaa`, and writing `oklch(70.085%
+   * 0.15123 157.2 / 0.7843)` into it left the user unable to re-enter the string the
+   * component itself had just written.
+   *
+   * `textFrom` wins where a space has one and the panel is holding display values:
+   * CMYK→RGB is many-to-one, so a fresh decomposition would state a different ink
+   * split from the sliders the user is looking at.
+   */
+  const valueText = (field: HTMLElement, st: FieldColorState): string => {
+    if (st.kind === 'transparent') return 'transparent';
+    if (!field.querySelector('.color-modes')) return bakedHex(st);
+    const spec = activeSpec(field);
+    const panel = activePanel(field, spec);
+    const vals = panel ? PANEL_VALS.get(panel) : undefined;
+    return spec.textFrom && vals ? spec.textFrom(vals, clamp01(st.color.alpha)) : spaceText(spec, st.color);
+  };
+
+  /** Flag text that did not parse. Live-marked while typing rather than only on
+   *  commit, and cleared the moment something readable arrives; the field keeps the
+   *  characters either way (mid-edit text is the user's, not ours to rewrite). */
+  const markInvalid = (input: HTMLInputElement | null, on: boolean): void => {
+    if (!input) return;
+    if (on) input.setAttribute('aria-invalid', 'true');
+    else input.removeAttribute('aria-invalid');
+    input.classList.toggle('color-input--invalid', on);
+  };
+
+  /** Write the value field — in the notation valueText picks. Never clobbers its
    *  TEXT while the user is typing in it, but always repaints its swatch chrome. */
   const writeValueField = (field: HTMLElement, st: FieldColorState): void => {
     const input = field.querySelector<HTMLInputElement>('.color-input[data-color-hex]');
@@ -994,7 +1066,11 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     paintColorInput(input, hex);
     paintAlphaTrack(field, hex);
     if (!input || input === document.activeElement) return;
-    input.value = st.kind === 'transparent' ? 'transparent' : spaceText(activeSpec(field), st.color);
+    const text = valueText(field, st);
+    input.value = text;
+    input.title = text;
+    input.classList.toggle('color-input--long', text.length > LONG_VALUE);
+    markInvalid(input, false);       // whatever was in there, this text parses
   };
 
   const syncNative = (field: HTMLElement, st: FieldColorState): void => {
@@ -1078,7 +1154,12 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     const spec = activeSpec(field);
     const panel = activePanel(field, spec);
     let pinned = false;
-    if (panel && panel !== owner) seedPanel(panel, spec, st.color, st.lastHue);
+    // panelSeed, not st.color: a transparent state has no axes worth showing, and
+    // seeding the sliders from its alpha-0 black is the dead-hue start panelSeed
+    // exists to avoid. The mode-switch path already went through it, so a
+    // transparent field showed two different slider sets depending on which path
+    // re-seeded it last.
+    if (panel && panel !== owner) seedPanel(panel, spec, panelSeed(field, st), st.lastHue);
     if (panel) {
       const vals = PANEL_VALS.get(panel);
       pinned = vals ? spec.channels.some(ch => pinValue(ch, vals[ch.ch] ?? ch.min).pinned) : false;
@@ -1466,12 +1547,24 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
         for (const p of panels) p.hidden = p.dataset.spaceGroup !== spec.mode;
         const panel = panels.find(p => p.dataset.spaceGroup === spec.mode);
         if (panel) {
-          PANEL_VALS.delete(panel);                 // decompose afresh into the space being entered
-          seedPanel(panel, spec, panelSeed(field, st), st.lastHue);
+          // Re-decompose only when the panel's cached display values no longer
+          // describe the colour. CMYK→RGB is many-to-one, so discarding them on
+          // every switch rewrote a dragged ink split (c=m=y=100% k=38% became
+          // 0/0/0/100%) on a round trip in which the user edited nothing.
+          const cached = PANEL_VALS.get(panel);
+          const describes = cached && st.kind === 'color'
+            && sameColor(composeColor(spec, cached, clamp01(st.color.alpha)), st.color);
+          if (describes) {
+            paintReadouts(panel, spec, cached!);
+            paintTracks(panel, { spec, alpha: clamp01(st.color.alpha), dials: wantsDials(panel) });
+          } else {
+            PANEL_VALS.delete(panel);
+            seedPanel(panel, spec, panelSeed(field, st), st.lastHue);
+          }
         }
         writeValueField(field, st);                 // reformat the value field into the new space
         const vals = panel ? PANEL_VALS.get(panel) : undefined;
-        setNote(field, noteText(spec, st, vals ? spec.channels.some(c => pinValue(c, vals[c.ch] ?? c.min).pinned) : false));
+        setNote(field, noteText(spec, st, vals ? spec.channels.some(c => pinValue(c, vals[c.ch] ?? c.min).pinned) : false), true);
       },
     });
     // Establish the roving tabindex for the server-rendered active mode and seed
@@ -1528,7 +1621,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     const field = input.closest<HTMLElement>('[data-color-field]');
     if (!field) return;
     input.addEventListener('focus', () => {
-      interact(true);
+      if (!FOCUS_HELD.has(field)) { FOCUS_HELD.add(field); interact(true); }
       // Expand the collapsed sliders on first focus/tap of the value input. Only the simple
       // popover's panel (a DIRECT child of .color-popover) — never the modes picker's nested
       // panels, whose visibility the tabs own. NO re-position here: the popover was already
@@ -1538,15 +1631,25 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       const panel = field.querySelector<HTMLElement>('.color-popover > .color-lch[hidden]');
       if (panel) panel.hidden = false;
     });
-    input.addEventListener('blur', (e) => {
-      // Moving focus to another control INSIDE the picker (grabbing a slider, or a space tab,
-      // right after the value input revealed them) must NOT end the interaction: interact(false)
-      // here drops the host's drag-suppression (tool-inputs' _sliderDragging), so the slider's
-      // very first change rebuilds the sidebar row and the picker vanishes mid-drag. Only end
-      // when focus truly leaves the field — the tab strip lives inside it, so this check must
-      // not be narrowed.
-      if (e.relatedTarget instanceof Node && field.contains(e.relatedTarget)) return;
-      interact(false);
+    // The release is bracketed on the FIELD, not on the input. Moving focus to another
+    // control INSIDE the picker (grabbing a slider, or a space tab, right after the value
+    // input revealed them) must NOT end the interaction: interact(false) there drops the
+    // host's drag-suppression (tool-inputs' _sliderDragging), so the slider's very first
+    // change rebuilds the sidebar row and the picker vanishes mid-drag. But a blur handler
+    // on the input alone can only fire when focus goes STRAIGHT from it to the outside
+    // world — hop via a tab or a swatch first and the release never came at all, leaving
+    // the host latched and its sidebar frozen until some unrelated drag freed it.
+    // `focusout` on the field sees every hop and fires once, when focus really leaves.
+    field.addEventListener('focusout', (e) => {
+      const to = (e as FocusEvent).relatedTarget;
+      if (to instanceof Node && field.contains(to)) return;
+      if (FOCUS_HELD.delete(field)) interact(false);
+      // Text that never parsed is left on screen while typing — deliberately, so the
+      // user can keep going — but on the way out it would sit there claiming to be a
+      // colour it is not. Put the colour's own notation back; the invalid flag was
+      // the warning, not a state to leave behind.
+      const st = STATE.get(field);
+      if (st && input.hasAttribute('aria-invalid')) writeValueField(field, st);
     });
     input.addEventListener('input', () => {
       const st = STATE.get(field);
@@ -1558,11 +1661,15 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       // active, or an `oklch()`/`color(display-p3 …)` pasted anywhere, lands
       // instead of being silently held as unparseable.
       const parsed = spaceParse(activeSpec(field), raw);
-      if (!parsed) return;                            // unparseable mid-edit — hold the last good colour
-      // A notation with no alpha of its own keeps the alpha the slider is showing
-      // (typing `#30ba78` over a 60% colour must not make it opaque), which is what
-      // this did when it could only read hex.
-      const alpha = parsed.alpha < 1 ? parsed.alpha : st.color.alpha;
+      if (!parsed) { markInvalid(input, true); return; }   // hold the last good colour, and say so
+      markInvalid(input, false);
+      // A notation with no alpha of its own keeps the alpha the slider is showing —
+      // typing `#30ba78` over a 60% colour must not make it opaque. An alpha it DID
+      // state is an instruction, `ff` / `/ 1` included: inferring "stated nothing"
+      // from `alpha === 1` made the field a one-way ratchet downward, with no typed
+      // notation able to bring a colour back to full opacity. A transparent field has
+      // no alpha worth inheriting, so a colour typed over it arrives opaque.
+      const alpha = notationHasAlpha(raw) ? parsed.alpha : (st.kind === 'transparent' ? 1 : st.color.alpha);
       applyColor(field, { kind: 'color', color: { ...parsed, alpha }, ref: null });
     });
   });
