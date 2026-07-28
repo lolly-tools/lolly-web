@@ -294,8 +294,11 @@
    checkerboard the transparent swatch chip uses, so a translucent value
    previews its alpha. The un-painted fallbacks are the neutral chrome for
    valueless states (transparent, mid-edit junk). */
-/* Wrap = positioning context for the eyedropper button inside the field. */
-.color-input-wrap { position: relative; }
+/* Wrap = positioning context for the eyedropper button inside the field, and the
+   query container the value field's own width is measured against (see
+   .color-input--long) — the same field is 565px in the brand studio's Primary and
+   316px in its swatch editor, and only the narrow one needs the type stepped down. */
+.color-input-wrap { position: relative; container-type: inline-size; }
 .color-input {
   width: 100%;
   background: var(--color-input-bg, hsl(var(--input) / 0.3));
@@ -306,6 +309,10 @@
   text-align:center;
   font-family: var(--font-mono);
   font-size: 17px;
+  /* A fixed line box, so stepping the type down for a long value (below) cannot
+     change the field's height — the controls under it must not move because the
+     colour is now stated in a longer notation. */
+  line-height: 20px;
   padding: 16px 44px;   /* symmetric so the centred value clears the eyedropper */
   outline: none;
   text-overflow: ellipsis;
@@ -313,18 +320,22 @@
 }
 /* A full CSS colour at machine precision ('oklch(61.374% 0.13585 260.14)') does not
    fit the narrow hosts — a 316px swatch editor cut it off at the hue, with an input's
-   own scroll giving no hint anything was missing. Step the type down for a long
-   value (color-field.ts toggles the class at 22 characters, and puts the whole
-   string in a `title` as well). */
-.color-input--long {
-  font-size: 13px;
-  letter-spacing: -.01em;
+   own scroll giving no hint anything was missing. Step the type down for a long value
+   (color-field.ts toggles the class at 22 characters, and puts the whole string in a
+   `title` as well); the line box is fixed above, so this never changes the field's
+   height. Wide hosts keep the full 17px — they have the room. */
+@container (max-width: 460px) {
+  .color-input--long {
+    font-size: 13px;
+    letter-spacing: -.01em;
+  }
 }
 /* Text that did not parse: the field keeps the characters — mid-edit text is the
    user's — but it must not sit there unmarked, claiming to be the colour. */
 .color-input--invalid {
+  /* Amber alone carries it. Not a dashed border — that means DROP AREA here, and an
+     invalid value is not a place to drop something. */
   border-color: #d97706;
-  border-style: dashed;
 }
 /* Screen eyedropper — sits inside the field's left edge, coloured by the same
    contrast-flipped --color-input-fg as the value text so it reads on any paint.
@@ -541,7 +552,8 @@
   gap: 6px;
   margin: 4px 6px 0;
   padding: 3px 8px;
-  border: 1px dashed hsl(var(--border));
+  /* Solid and quiet: it is a button offering a snap, not a drop target. */
+  border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: none;
   color: hsl(var(--muted-foreground));
@@ -569,41 +581,59 @@
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
+  /* font-size + margin are declared so a channel row is EXACTLY 2em of the panel's
+     own font: a range input carries a UA font-size (13.3px) and a 2px vertical UA
+     margin, which made the row 4px taller than its slider and left the reserved
+     filler row a different height from a real one — the layout shift the reservation
+     exists to prevent. */
+  font-size: inherit;
+  margin: 0;
   height: 2em;
   border-radius: var(--radius);
   border: 0px solid hsl(var(--border));
   cursor: pointer;
   /* background = the axis gradient, inline from JS */
 }
-/* ── Broken tracks ───────────────────────────────────────────────────────────
-   A channel track paints only the runs of the axis that the target gamut can
-   actually reach (channelRuns composes them into the inline `background`); the
-   gaps stay EMPTY. So the track needs a well the emptiness reads against: a
-   DASHED outline of the full range, which is the same language as the 2D charts'
-   sliders (`.gsl-well` in lib/oklch-slice.css) — the outline is the whole axis,
-   present even where no segment is, and the shape of the track tells you where
-   you can go before you drag.
+/* The RAIL behind a gamut-sliced track.
+   
+   A track with gaps needs something to show where the axis continues, or a fully
+   out-of-gamut axis renders as a bare thumb ring floating on the card. That used to
+   be a dashed border. It cannot be: in this design language a dashed border means
+   DROP AREA and nothing else, so it was a false affordance on every slider.
 
-   The outline has to be the BORDER, not a background: JS assigns the `background`
-   shorthand, which would wipe any background-color declared here. border-box
-   sizing keeps the 2em height. Alpha is excluded — its track is continuous by
-   definition, and a dashed frame there would claim breaks that do not exist.
+   A faint fill does the job instead. The gaps read as "the axis carries on, you just
+   cannot reach it here" rather than as holes, and the reachable stretches take the
+   prominence on their own.
 
-   The width is the whole affordance: at `border: 0 solid` (what this said) neither
-   the well nor the amber mark below drew at all, so a fully out-of-gamut axis
-   rendered as a bare thumb ring floating on the card with no rail. */
+   The fill is the BOTTOM background layer, appended to the gradient by JS
+   (trackFromRuns) out of --track-rail (declared on :root in styles/tokens.css, since
+   lib/oklch-slice.css's sliders need the same rail) — it cannot be a `background-color`
+   (the `background` shorthand JS assigns would wipe it) and it cannot be an
+   `inset box-shadow` either: an inset shadow paints OVER the background, so a
+   full-width one veils the very gradient it is there to frame, muting every track
+   and leaving each slider a paler colour than the dial above it.
+
+   Alpha is excluded — its track is continuous by definition, so it needs no rail.
+
+   The stretches themselves are no longer empty: each one paints the colour it WOULD
+   be in the next gamut out, washed back by the --track-tier-* scale on :root
+   (styles/tokens.css) — onion rings of decreasing opacity around the reachable band.
+   The rail stays underneath them, and the beyond-Rec.2020 stretch is rail alone. */
 .color-lch-slider,
-.color-mode-slider {
-  border: 1px dashed hsl(var(--border));
-  background-color: transparent;   /* gaps show the popover card through */
+.color-mode-slider,
+.color-dial {
+  border: 0;
+  /* --track-rail and the --track-tier-* scale are inherited from :root
+     (styles/tokens.css) — one declaration each, shared with the Colour Lab
+     sliders. Keep this rule borderless — see the note above. */
 }
-/* Out of the target gamut at the current value: the well goes solid amber — a
-   MARK, not a refusal, matching `.gsl.is-out .gsl-well` and paired with the
-   clamped readout beside it. */
+/* Out of the target gamut at the current value — a MARK, not a refusal, paired with
+   the clamped readout beside it. An amber ring rather than a border style, for the
+   same reason as above. */
 .color-lch-row:has(.color-lch-val.is-clamped) > .color-lch-slider,
 .color-lch-row:has(.color-lch-val.is-clamped) > .color-mode-slider {
-  border-style: solid;
-  border-color: #d97706;
+  outline: 1.5px solid #d97706;
+  outline-offset: -1.5px;
 }
 .color-lch-slider::-webkit-slider-thumb,
 .color-mode-slider::-webkit-slider-thumb,

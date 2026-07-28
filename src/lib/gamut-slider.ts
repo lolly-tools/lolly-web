@@ -7,8 +7,8 @@
  * most of a chroma track at high lightness names colours no screen can show, and
  * the ramp goes flat there because every one of them maps to the same boundary
  * colour. This one samples the axis, keeps the runs that fit the gamut, and
- * leaves the rest as gaps inside a dashed outline of the full range. So the
- * shape of the track tells you where you can actually go before you drag.
+ * and washes the rest back to a faint hint. So the track tells you where you can
+ * actually go before you drag, while still reading as one continuous axis.
  *
  * On a hue track the effect is the most useful: at a fixed lightness and chroma
  * you get several solid arcs with real gaps between them — the hues that can
@@ -19,7 +19,7 @@
  * it stays testable under `node --test` — see the note in oklch-slice.ts.
  */
 
-import { inGamut, maxChroma, oklchToHex } from '@lolly/engine';
+import { inGamut, maxChroma, oklchToHex, gamutTierProbe, BEYOND_TIER } from '@lolly/engine';
 import type { GamutName } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
 
@@ -59,12 +59,16 @@ export function formatChannel(ch: GamutChannel, v: number): string {
   return v.toFixed(3);
 }
 
-/** One stretch of the axis: `inside` says whether it is reachable. */
+/** One stretch of the axis. `tier` 0 is reachable under `state.limit`; 1.. are the
+ *  rings out (the gamut one step wider, then the next), and {@link BEYOND_TIER} is
+ *  the stretch no display gamut holds. Same classifier the picker's tracks use
+ *  (engine/src/gamut-tier.ts), so the two surfaces cannot disagree about how far
+ *  out a colour is. */
 export interface GamutRun {
   from: number;
   to: number;
   stops: string[];
-  inside: boolean;
+  tier: number;
 }
 
 /**
@@ -72,24 +76,29 @@ export interface GamutRun {
  * the track with the colours to paint across each.
  *
  * The unreachable runs are returned too, so the caller can render them as a faint
- * ghost rather than as a hole. An empty gap says "nothing here"; the truthful
+ * wash rather than as a hole. An empty gap says "nothing here"; the truthful
  * message is "more range, just not reachable at this lightness and chroma", and a
- * ~12% wash says that without promising a colour it cannot deliver. It also keeps
- * the axis legible as an axis: a hue track broken into four floating fragments is
- * hard to read as one continuous 0–360.
+ * wash says that without promising a colour it cannot deliver. It also keeps the
+ * axis legible as an axis: a hue track broken into four floating fragments is hard
+ * to read as one continuous 0–360.
  *
- * `samples` is the resolution of the in/out test. 180 puts a run's edges within
- * half a percent of the track — finer than the eye reads on a slider, and cheap:
- * each sample is one matrix multiply, not a bisection.
+ * Each unreachable run carries HOW FAR out it is rather than a bare boolean, so a
+ * stretch a wider screen could show reads brighter than one nothing can — the same
+ * onion rings the picker paints, from the same classifier.
+ *
+ * `samples` is the resolution of the tier test. 180 puts a run's edges within half
+ * a percent of the track — finer than the eye reads on a slider, and cheap: each
+ * sample is a handful of matrix multiplies, not a bisection.
  */
 export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
   const { min, max } = channelRange(state.channel, state.cMax ?? DEFAULT_C_MAX);
   const n = Math.max(8, Math.floor(samples));
+  const tierAt = gamutTierProbe(state.limit);
   const runs: GamutRun[] = [];
   let start = 0;
-  let startInside: boolean | null = null;
+  let startTier: number | null = null;
 
-  const close = (endIdx: number, inside: boolean): void => {
+  const close = (endIdx: number, tier: number): void => {
     const from = start / n;
     const to = endIdx / n;
     if (to <= from) return;
@@ -99,25 +108,25 @@ export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
     const steps = Math.max(1, Math.min(12, Math.round((to - from) * 24)));
     for (let k = 0; k <= steps; k++) {
       const v = min + (from + ((to - from) * k) / steps) * (max - min);
-      // Out-of-gamut positions are mapped, so a ghost still shades in the right
+      // Out-of-gamut positions are mapped, so a wash still shades in the right
       // direction rather than flat-lining at the boundary colour.
       stops.push(oklchToHex(colorAt(state, v)));
     }
-    runs.push({ from, to, stops, inside });
+    runs.push({ from, to, stops, tier });
   };
 
   for (let i = 0; i <= n; i++) {
     const v = min + (i / n) * (max - min);
     const o = colorAt(state, v);
-    const ok = inGamut(o.l, o.c, o.h, state.limit);
-    if (startInside === null) { startInside = ok; start = i; continue; }
-    if (ok !== startInside) {
-      close(i, startInside);
-      startInside = ok;
+    const tier = tierAt(o.l, o.c, o.h);
+    if (startTier === null) { startTier = tier; start = i; continue; }
+    if (tier !== startTier) {
+      close(i, startTier);
+      startTier = tier;
       start = i;
     }
   }
-  if (startInside !== null) close(n, startInside);
+  if (startTier !== null) close(n, startTier);
   return runs;
 }
 
@@ -161,10 +170,15 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
       const grad = run.stops.length > 1
         ? `linear-gradient(90deg, ${run.stops.join(',')})`
         : (run.stops[0] ?? 'transparent');
-      // A ghost keeps the axis readable as a whole while staying clearly a hint —
-      // the opacity is in CSS so it is tunable without touching this.
-      const cls = run.inside ? 'gsl-seg' : 'gsl-seg gsl-seg--ghost';
-      return `<span class="${cls}" style="left:${left}%;width:${width}%;background:${grad}"></span>`;
+      // A wash keeps the axis readable as a whole while staying clearly a hint, and
+      // the ring it belongs to says how far out it is. The opacity is a CSS token
+      // (--track-tier-*, styles/tokens.css) so it is tunable without touching this,
+      // and it is the SAME scale the picker's color-mix stops read — one scale, two
+      // mechanisms (here an element really can carry an `opacity`).
+      const alpha = run.tier === 0
+        ? ''
+        : `--seg-a:var(${run.tier === BEYOND_TIER ? '--track-tier-beyond' : `--track-tier-${run.tier}`}, 0%);`;
+      return `<span class="gsl-seg" style="${alpha}left:${left}%;width:${width}%;background:${grad}"></span>`;
     }).join('');
   }
   const out = root.querySelector<HTMLElement>('[data-gsl-val]');

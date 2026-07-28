@@ -57,6 +57,8 @@ import { takePendingDesignImport } from '../lib/drop-router.ts';
 import { LOLLY_ICON } from '../lib/lolly-badge.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
+import { isTypingTarget } from '../lib/typing-target.ts';
+import { BLEND_STYLES, HUE_ROUTES, isPolarSpace } from '../lib/blend-style.ts';
 import { t } from '../i18n.ts';
 import type { ColorFieldValue } from '../components/color-field.ts';
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
@@ -2259,6 +2261,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * give you — Smooth / Vivid — with sRGB named plainly rather than editorialised: it
    * is the classic behaviour, and someone matching an existing asset wants it without
    * being told off for asking.
+   *
+   * Those names now come from `lib/blend-style.ts`, because Colour Lab's blend ramp
+   * offers the same choice and the vocabulary is only worth having if it is the same
+   * one in both places.
    */
   function openGradPanel(anchor: HTMLElement): void {
     closeMorePanel();
@@ -2266,7 +2272,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const i = gradIndex(boxes);
     const spec = i >= 0 ? gradSpecOf(boxes[i]) : null;
     if (!spec) return;
-    const polar = spec.space === 'oklch' || spec.space === 'lch' || spec.space === 'hsl';
+    const polar = isPolarSpace(spec.space);
     const segRow = (lbl: string, seg: string): string =>
       `<div class="fc-row"><span class="fc-row-lbl"><span>${escape(lbl)}</span></span>${seg}</div>`;
     const p = document.createElement('div');
@@ -2274,10 +2280,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.innerHTML =
       segRow(t('Gradient'), segHtml('gradkind', spec.kind, [
         ['linear', t('Linear')], ['radial', t('Radial')], ['conic', t('Conic')]]))
-      + segRow(t('Blend'), segHtml('gradspace', spec.space, [
-        ['oklab', t('Smooth')], ['oklch', t('Vivid')], ['srgb', t('sRGB')]]))
-      + (polar ? segRow(t('Hue route'), segHtml('gradhue', spec.hue || 'shorter', [
-        ['shorter', t('Short')], ['longer', t('Long way')]])) : '')
+      + segRow(t('Blend'), segHtml('gradspace', spec.space,
+        BLEND_STYLES.map(b => [b.space, t(b.label)] as [string, string])))
+      + (polar ? segRow(t('Hue route'), segHtml('gradhue', spec.hue || 'shorter',
+        HUE_ROUTES.map(r => [r.dir, t(r.label)] as [string, string]))) : '')
       + `<div class="fc-row fc-grad-row-btns">`
       + `<button type="button" class="fc-pop-item" data-gp="add">${t('Add stop')}</button>`
       + `<button type="button" class="fc-pop-item" data-gp="del"${spec.stops.length <= 2 ? ' disabled' : ''}>${t('Remove stop')}</button>`
@@ -6308,11 +6314,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── keyboard ─────────────────────────────────────────────────────────────────
+  // Shadow-aware: jelly text fields keep their real <input> in a shadow root, so a
+  // host-only tagName test reads as "not typing" and shortcuts eat the keystroke.
   function typingTarget(): boolean {
-    const el = document.activeElement as HTMLElement | null;
-    if (!el) return false;
-    const t = el.tagName;
-    return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable;
+    return isTypingTarget();
   }
   // Keyboard focus on a card selects it, so Tab / Shift-Tab cycle the cards and the onKey
   // actions (Delete, arrows, duplicate, group…) apply. Pointer focus is ignored here —

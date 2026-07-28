@@ -35,6 +35,7 @@ import type { TextRun } from '../lib/pptxgen-import.ts';
 import { nearestBrandColor, isPptx, readPptx, parseColor, colorToHexString } from '@lolly/engine';
 import type { PptxDeckRead, PptxReadPara, PptxParts } from '@lolly/engine';
 import { escape as escapeHtml } from '../utils.ts';
+import { isTypingTarget } from '../lib/typing-target.ts';
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -2262,9 +2263,10 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
   function onFreeKey(e: KeyboardEvent): void {
     if (editingBox >= 0 || gesture) return;
     if (asText(activeSlide()?.mode) !== 'freeform') return;
+    // Shadow-aware (lib/typing-target.ts) so jelly fields, whose real <input> sits
+    // in a shadow root, still count as typing and keep their keystrokes.
     const ae = document.activeElement as HTMLElement | null;
-    const tag = ae?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae?.isContentEditable) return;
+    if (isTypingTarget(ae)) return;
     if (ae?.closest?.('.deck-strip, .deck-bar, .deck-load, .deck-fmt')) return;   // their own keys
     const nudges: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (nudges[e.key] && selection.size) {

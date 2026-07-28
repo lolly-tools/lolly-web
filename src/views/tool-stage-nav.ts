@@ -12,6 +12,7 @@
  */
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import type { ZoomHud } from '../components/zoom-hud.ts';
+import { isTypingTarget } from '../lib/typing-target.ts';
 
 /** A client-space point. */
 export interface Point { x: number; y: number; }
@@ -19,12 +20,10 @@ export interface Point { x: number; y: number; }
 export interface StageNav { reset(): void; isZoomed(): boolean; sync(): void; destroy(): void; }
 
 // True when focus is in a text field, so global canvas shortcuts don't hijack typing.
-function isTyping(): boolean {
-  const el = document.activeElement;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el as HTMLElement).isContentEditable;
-}
+// Shadow-aware (lib/typing-target.ts): the sidebar's fields are <jelly-input> custom
+// elements whose real <input> is in a shadow root, and a host-only test used to read
+// as "not typing" — which is why `0` and `1` could not be typed into any text field.
+const isTyping = (): boolean => isTypingTarget();
 
 /**
  * Touch pinch-to-zoom + pan for the canvas stage.

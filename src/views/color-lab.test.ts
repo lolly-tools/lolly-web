@@ -17,6 +17,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
+import { readFileSync } from 'node:fs';
 import { describeColor } from '@lolly/engine';
 
 const dom = new JSDOM('<!doctype html><html><body><main id="view"></main></body></html>', {
@@ -28,6 +29,10 @@ globalThis.document = dom.window.document;
 globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.Element = dom.window.Element;
 globalThis.MutationObserver = dom.window.MutationObserver;
+// jsdom rejects an Event built by Node's own constructor (different realm), and
+// `applyTheme` dispatches one on window — so the jsdom versions have to win here.
+globalThis.CustomEvent = dom.window.CustomEvent;
+globalThis.Event = dom.window.Event;
 globalThis.localStorage = dom.window.localStorage;
 globalThis.sessionStorage = dom.window.sessionStorage;
 globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
@@ -55,6 +60,11 @@ const view = document.getElementById('view')!;
 
 /** Mount the view fresh with an optional `?c=` seed. */
 async function mount(params = ''): Promise<void> {
+  // Tear the previous mount down the way the router does — `#view` is persistent,
+  // so clearing its children alone leaves the last view's rAF loop, observers and
+  // its body-level toast behind (which is exactly what used to leak in the app).
+  (view as HTMLElement & { _cleanup?: () => void })._cleanup?.();
+  delete (view as HTMLElement & { _cleanup?: () => void })._cleanup;
   view.innerHTML = '';
   await mountColorLab(view, {}, params);
 }
@@ -112,9 +122,11 @@ test('a wide-gamut seed is described unclamped, and the clamp is disclosed', asy
   assert.equal($('[data-lab-headroom]')!.dataset.state, 'over');
   assert.match(text('[data-lab-headroom] [data-lab-headroom-val]'), /^-/);
   // And the report SAYS the swatch is showing something else.
-  const clamp = $('[data-lab-clamp]')!;
-  assert.equal(clamp.hidden, false, 'the clamp notice is shown');
-  assert.match(clamp.textContent ?? '', /outside sRGB/i);
+  // The notice is a toast — the nudge on crossing the boundary. The standing
+  // record is the gamut card in step 5, so nothing sits in the flow.
+  const toast = document.querySelector('[data-lab-toast]');
+  assert.ok(toast, 'the out-of-gamut toast was raised');
+  assert.match(toast!.textContent ?? '', /outside sRGB/i);
   // The swatch leads with the space the PICKER is set to (OKLCH by default), and
   // says where the colour was actually authored so it can't read as if it were
   // typed in OKLCH. The authored form itself stays in the field and the alternates.
@@ -123,7 +135,7 @@ test('a wide-gamut seed is described unclamped, and the clamp is disclosed', asy
   const altSpaces = [...view.querySelectorAll('[data-lab-sw-alts] .lab-sw-alt-space')]
     .map(el => (el.textContent ?? '').trim());
   assert.ok(altSpaces.includes('display-p3'), `the authored space is an alternate: ${altSpaces}`);
-  assert.match($('[data-lab-clamp]')!.textContent ?? '', /#FF/i);
+  assert.match(toast!.textContent ?? '', /#FF/i);
   // The authored form survives as an alternate even though nothing echoes it back
   // in a text field any more.
   const altCodes = [...view.querySelectorAll('[data-lab-sw-alts] code')].map(c => (c.textContent ?? '').trim());
@@ -151,9 +163,9 @@ test('the picker is handed the authored colour, not its sRGB restatement', async
   assert.notEqual(seeded.trim().toLowerCase(), describeColor(subject)!.srgbHex.toLowerCase());
 });
 
-test('an in-gamut colour hides the clamp notice entirely', async () => {
+test('an in-gamut colour raises no gamut toast at all', async () => {
   await mount('?c=%23c0392b');
-  assert.equal($('[data-lab-clamp]')!.hidden, true);
+  assert.equal(document.querySelector('[data-lab-toast]'), null);
   assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb');
   assert.equal($('[data-lab-headroom]')!.dataset.state, 'under');
   assert.match(text('[data-lab-headroom] [data-lab-headroom-val]'), /^\+/);
@@ -162,7 +174,7 @@ test('an in-gamut colour hides the clamp notice entirely', async () => {
 test('a junk seed falls back instead of rendering an empty report', async () => {
   await mount('?c=not-a-colour');
   assert.ok(text('[data-lab-gamut] [data-lab-gamut-name]').length > 0, 'still describes something');
-  assert.equal($('[data-lab-clamp]')!.hidden, true);
+  assert.equal(document.querySelector('[data-lab-toast]'), null);
 });
 
 test('any CSS space still arrives via ?c=, and junk falls back', async () => {
@@ -197,17 +209,63 @@ test('the notation table lists every space and marks the ones that clamp', async
   assert.ok(srgbRow?.classList.contains('is-inexact'), 'the sRGB row is flagged');
 });
 
-test('readability is scored both ways, with the better one marked', async () => {
+test('readability leads with APCA and follows with WCAG, on three surfaces', async () => {
   await mount('?c=%23c0392b');
   const cards = [...view.querySelectorAll('.lab-contrast-card')];
-  assert.equal(cards.length, 2, 'white text and black text');
+  assert.equal(cards.length, 3, 'white text, black text, and a surface you choose');
   assert.equal(cards.filter(c => c.classList.contains('is-best')).length, 1,
-    'exactly one is marked best');
+    'exactly one of the two extremes is marked best');
+
   for (const c of cards) {
+    // APCA first — an Lc and the band it falls in.
+    const apca = c.querySelector('[data-lab-apca]');
+    assert.ok(apca, 'every card carries an Lc');
+    assert.match(apca!.textContent ?? '', /Lc \d+\.\d/, 'the Lc is shown');
+    assert.ok((apca as HTMLElement).dataset.use, 'and the band it falls in');
+    // WCAG second — still present, still with both badges.
     assert.match(c.textContent ?? '', /\d+\.\d+:1/, 'shows a ratio');
     assert.equal(c.querySelectorAll('.lab-wcag').length, 2, 'body and large badges');
+    // The order in the DOM IS the hierarchy — APCA must come first.
+    const kids = [...c.children].map(k => k.className);
+    const iApca = kids.findIndex(k => k.includes('lab-apca'));
+    const iWcag = kids.findIndex(k => k.includes('lab-contrast-wcag'));
+    assert.ok(iApca >= 0 && iWcag > iApca, `APCA precedes WCAG: ${kids.join(' | ')}`);
   }
-  assert.match(text('[data-lab-contrast-note]'), /Best pairing/);
+
+  // The summary line leads with the Lc too, and names WCAG's number second.
+  const note = text('[data-lab-contrast-note]');
+  assert.match(note, /Best pairing/);
+  assert.match(note, /Lc \d+\.\d/);
+  assert.ok(note.indexOf('Lc') < note.indexOf('WCAG'), `APCA first in the summary: ${note}`);
+});
+
+test('the third surface is pickable and re-scores when it changes', async () => {
+  await mount('?c=%23c0392b');
+  const third = [...view.querySelectorAll('.lab-contrast-card')][2]!;
+  // A popover picker, which is what a secondary control on a card wants — the
+  // expanded form's rings would dominate the two numbers beside them.
+  const pick = third.querySelector('[data-lab-ink-pick]');
+  assert.ok(pick, 'the third card carries its own picker');
+  assert.ok(pick!.querySelector('[data-color-field], .color-field, input'),
+    'and the picker actually mounted');
+
+  // Re-query after every change: a re-score REPLACES the cards, so a held
+  // reference goes stale and would report the old number forever.
+  const lcOf = (): string => (
+    view.querySelectorAll('.lab-contrast-card')[2]?.querySelector('.lab-apca-lc')?.textContent ?? ''
+  ).trim();
+  const before = lcOf();
+  // Drive it the way the component reports a pick — its own value field.
+  const field = pick!.querySelector('input[data-color-hex]') as HTMLInputElement | null;
+  assert.ok(field, 'the popover has a value field');
+  field!.value = '#111111';
+  field!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 0));
+  assert.notEqual(lcOf(), before, `a new surface re-scores the card: ${before} → ${lcOf()}`);
+  // A near-black surface under a mid red is a far worse pairing than white was, so
+  // the direction is checkable, not just the fact that something moved.
+  assert.ok(Number(lcOf().replace(/[^\d.]/g, '')) < Number(before.replace(/[^\d.]/g, '')),
+    `and it re-scores in the right direction: ${before} → ${lcOf()}`);
 });
 
 test('the tone ramp is pickable and every step re-seeds the report', async () => {
@@ -335,23 +393,128 @@ test('the blend ramp spans the subject to a second colour the user sets', async 
   assert.deepEqual(blendSteps(), after, 'an invalid far end changes nothing');
 });
 
-test('the stop count drives both ramps', async () => {
+test('each ramp carries its own stop count, and both are clamped', async () => {
   await mount('?c=%23c0392b');
   const count = (sel: string): number => view.querySelectorAll(`${sel} [data-lab-step]`).length;
   assert.equal(count('[data-lab-ramp]'), 9);
   assert.equal(count('[data-lab-blend]'), 9);
 
-  const range = $('[data-lab-steps]') as HTMLInputElement;
-  range.value = '5';
-  range.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-  assert.equal(count('[data-lab-ramp]'), 5, 'tones follow the stop count');
-  assert.equal(count('[data-lab-blend]'), 5, 'and so does the blend');
+  // The counts are separate on purpose: a tone ramp is a palette of a handful, a
+  // blend gets cut finely to find one particular intermediate. So moving one must
+  // NOT move the other.
+  const tones = $('[data-lab-steps]') as HTMLInputElement;
+  tones.value = '5';
+  tones.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(count('[data-lab-ramp]'), 5, 'tones follow their own count');
+  assert.equal(count('[data-lab-blend]'), 9, 'and the blend is left alone');
   assert.equal(($('[data-lab-steps-out]')!.textContent ?? '').trim(), '5');
 
+  const mix = $('[data-lab-blend-steps] [data-gsl-input]') as HTMLInputElement;
+  mix.value = '4';
+  mix.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(count('[data-lab-blend]'), 4, 'the blend follows the mixer slider');
+  assert.equal(count('[data-lab-ramp]'), 5, 'and the tones are left alone');
+  assert.equal(($('[data-lab-blend-steps] [data-gsl-val]')!.textContent ?? '').trim(), '4');
+
   // Clamped, not trusted: the range is the UI but the value is guarded.
-  range.value = '999';
-  range.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-  assert.ok(count('[data-lab-ramp]') <= 24, 'an absurd count is clamped');
+  for (const [el, sel] of [[tones, '[data-lab-ramp]'], [mix, '[data-lab-blend]']] as const) {
+    el.value = '999';
+    el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    assert.ok(count(sel) <= 24, `an absurd count is clamped (${sel})`);
+  }
+});
+
+test('the blend style tabs change what the middle looks like', async () => {
+  // Subject and target are far apart in hue, which is where the spaces diverge most.
+  await mount('?c=%23c0392b');
+  const midHex = (): string => {
+    const steps = [...view.querySelectorAll('[data-lab-blend] [data-lab-step]')];
+    return (steps[Math.floor(steps.length / 2)]?.querySelector('.lab-step-hex')?.textContent ?? '').trim();
+  };
+  const seg = $('[data-lab-blend-space]')!;
+  const pick = (val: string): void => {
+    seg.querySelector<HTMLElement>(`[data-val="${val}"]`)!.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true }));
+  };
+
+  // VIVID is the default on this page — it is where you come to see how much colour
+  // a blend can hold — and the tab says so.
+  assert.equal(seg.querySelector('[data-val="oklch"]')!.getAttribute('aria-pressed'), 'true');
+  const vivid = midHex();
+  assert.match(vivid, /^#[0-9A-F]{6}$/);
+
+  // Smooth goes through the middle instead of round, so the midpoint differs.
+  pick('oklab');
+  const smooth = midHex();
+  assert.notEqual(smooth, vivid, 'Smooth is not Vivid');
+  assert.equal(seg.querySelector('[data-val="oklab"]')!.getAttribute('aria-pressed'), 'true');
+  assert.equal(seg.querySelector('[data-val="oklch"]')!.getAttribute('aria-pressed'), 'false');
+
+  // sRGB is the classic behaviour, named plainly. Also distinct.
+  pick('srgb');
+  assert.notEqual(midHex(), vivid, 'sRGB is not Vivid');
+
+  // The ends are exact in every style — a blend that does not start at the subject
+  // is describing a different colour from the one the page is about.
+  const ends = (): [string, string] => {
+    const steps = [...view.querySelectorAll('[data-lab-blend] [data-lab-step] .lab-step-hex')];
+    return [(steps[0]?.textContent ?? '').trim(), (steps[steps.length - 1]?.textContent ?? '').trim()];
+  };
+  for (const style of ['oklch', 'oklab', 'srgb']) {
+    pick(style);
+    assert.equal(ends()[0], '#C0392B', `${style} starts at the subject`);
+  }
+});
+
+test('the hue route appears only where hue travel is a real choice', async () => {
+  await mount('?c=%23c0392b');
+  const hue = $('[data-lab-blend-hue]') as HTMLElement;
+  const pickSpace = (val: string): void => {
+    $('[data-lab-blend-space]')!.querySelector<HTMLElement>(`[data-val="${val}"]`)!
+      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  };
+  // Vivid is the default and IS polar, so the row starts visible. OKLab and sRGB are
+  // rectangular — no circle to go round, and CSS would reject `in oklab longer hue`.
+  assert.equal(hue.hidden, false, 'shown for the default Vivid');
+  pickSpace('srgb');
+  assert.equal(hue.hidden, true, 'hidden for sRGB');
+  pickSpace('oklab');
+  assert.equal(hue.hidden, true, 'hidden for Smooth');
+  pickSpace('oklch');
+  assert.equal(hue.hidden, false, 'shown again for Vivid');
+
+  const midHex = (): string => {
+    const steps = [...view.querySelectorAll('[data-lab-blend] [data-lab-step] .lab-step-hex')];
+    return (steps[Math.floor(steps.length / 2)]?.textContent ?? '').trim();
+  };
+  const short = midHex();
+  hue.querySelector<HTMLElement>('[data-val="longer"]')!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.notEqual(midHex(), short, 'the long way round is a different midpoint');
+});
+
+test('the blend slider rail carries the gradient it subdivides', async () => {
+  await mount('?c=%23c0392b');
+  // The rail IS the preview — there is no separate strip — so it has to be painted,
+  // in the chosen space, from the AUTHORED values rather than their sRGB hexes.
+  const seg = $('[data-lab-blend-steps] [data-gsl-track] .gsl-seg') as HTMLElement;
+  assert.ok(seg, 'the rail has a painted segment');
+  assert.match(seg.getAttribute('style') ?? '', /linear-gradient\(90deg in oklch,/);
+  $('[data-lab-blend-space]')!.querySelector<HTMLElement>('[data-val="oklab"]')!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.match(
+    view.querySelector('[data-lab-blend-steps] [data-gsl-track] .gsl-seg')!.getAttribute('style') ?? '',
+    /in oklab/);
+  $('[data-lab-blend-space]')!.querySelector<HTMLElement>('[data-val="oklch"]')!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  const after = view.querySelector('[data-lab-blend-steps] [data-gsl-track] .gsl-seg')!;
+  // `shorter` is the CSS default and must be left OFF; `longer` must be stated.
+  assert.doesNotMatch(after.getAttribute('style') ?? '', /shorter/);
+  $('[data-lab-blend-hue]')!.querySelector<HTMLElement>('[data-val="longer"]')!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.match(
+    view.querySelector('[data-lab-blend-steps] [data-gsl-track] .gsl-seg')!.getAttribute('style') ?? '',
+    /in oklch longer hue/);
 });
 
 test('the swatch leads in the picker’s space and lists popular alternates', async () => {
@@ -490,6 +653,38 @@ test('bounds off lets you leave the gamut and marks it; bounds on yields chroma'
   assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb', 'held on the next edit too');
 });
 
+// The out-of-bounds MARK itself lives entirely in vendor thumb pseudo-elements that
+// jsdom neither applies nor exposes, so the only honest way to pin it is against the
+// stylesheet text — the precedent set by color-field.test.ts's dashed-border sweep.
+// What matters is the COUPLING: the glyph is baked into an SVG pre-rotated -45deg so
+// it lands upright once the thumb's own rotate(45deg) applies. Drop or change either
+// rotation and the exclamation mark silently sits on its side.
+test('the out-of-bounds diamond carries an upright exclamation mark', () => {
+  const css = readFileSync(new URL('../lib/oklch-slice.css', import.meta.url), 'utf8');
+
+  for (const thumb of ['-webkit-slider-thumb', '-moz-range-thumb']) {
+    const base = new RegExp(`\\.gsl-input::${thumb} \\{([^}]*)\\}`).exec(css);
+    assert.ok(base, `the base ${thumb} rule moved`);
+    assert.match(base![1]!, /transform:\s*rotate\(45deg\)/,
+      `${thumb} must still rotate 45deg — the glyph's -45deg counter-rotation assumes it`);
+
+    const out = new RegExp(`\\.gsl\\.is-out \\.gsl-input::${thumb} \\{([^}]*)\\}`).exec(css);
+    assert.ok(out, `the is-out ${thumb} rule moved`);
+    assert.match(out![1]!, /background-image:\s*var\(--gsl-bang\)/, `${thumb} shows the mark`);
+    assert.match(out![1]!, /background-position:\s*center/, `${thumb} centres it in the diamond`);
+    assert.match(out![1]!, /oklch\(0\.65 0\.19 45\)/, `${thumb} keeps its warning ring`);
+  }
+
+  const glyph = /--gsl-bang:\s*url\("([^"]*)"\)/.exec(css);
+  assert.ok(glyph, 'the --gsl-bang glyph moved');
+  const svg = decodeURIComponent(glyph![1]!.replace(/^data:image\/svg\+xml,/, ''));
+  assert.match(svg, /rotate\(-45 6 6\)/, 'the glyph is counter-rotated about the viewBox centre');
+  assert.match(svg, /<rect[^>]*\/>[\s\S]*<circle[^>]*\/>/, 'a bar over a dot — an exclamation mark');
+  // Sized to the diamond's UPRIGHT inscribed square (0.85rem / √2 ≈ 0.6rem), so the
+  // mark cannot overrun the rotated corners.
+  assert.match(css, /background-size:\s*0\.6rem 0\.6rem/, 'the mark fits the inscribed square');
+});
+
 test('a blend stop copies; a tone step re-seeds', async () => {
   await mount('?c=%23c0392b');
   const before = subjectHex();
@@ -564,4 +759,62 @@ test('the blend target gets the expanded picker, dials included', async () => {
   raw.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.notEqual(stops()[8], before[8], 'the far end moved');
   assert.equal(stops()[0], before[0], 'the near end is still the subject');
+});
+
+test('the theme toggle rides the top-right chrome, icon-only, and cycles', async () => {
+  // Why it is here at all: this page is about how a colour READS, and a colour reads
+  // differently in each screen theme. So the switch belongs next to the report, not
+  // three clicks away in a profile menu.
+  await mount('?c=%23c0392b');
+  const chrome = $('[data-lab-chrome]')!;
+  assert.ok(chrome, 'the chrome capsule exists');
+  // Opposite the back pill, in the same row — not stacked above the heading.
+  assert.ok($('.lab-back .back-pill, .lab-back [data-back-pill]'), 'the back pill shares the row');
+  const btn = chrome.querySelector('button')!;
+  assert.ok(btn, 'the toggle is mounted');
+  assert.ok(btn.querySelector('svg'), 'icon-only — a glyph, not a label');
+  assert.equal((btn.textContent ?? '').trim(), '', 'no text beside the glyph');
+  // The theme name rides the accessible name instead, since the glyph carries it visually.
+  assert.match(btn.getAttribute('aria-label') ?? '', /theme/i);
+  assert.equal(btn.getAttribute('aria-label'), btn.title, 'tooltip and accessible name agree');
+
+  const before = document.documentElement.dataset.theme || 'light';
+  btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 0));
+  assert.notEqual(document.documentElement.dataset.theme, before, 'a click moves the theme on');
+  assert.equal(btn.dataset.theme, document.documentElement.dataset.theme,
+    'and the glyph shows the theme now in force');
+});
+
+test('the third surface’s picker survives its own change — the card is scored, not rebuilt', async () => {
+  // The bug this pins, reported from the browser: "the sliders on the your surface
+  // card disappear when clicked, they won't drag". `onChange` re-rendered the card
+  // with innerHTML, which destroyed the live popover on its own FIRST input event —
+  // so the slider under the pointer vanished and the gesture died with it.
+  await mount('?c=%23c0392b');
+  const host = $('[data-lab-ink-pick]')!;
+  const field = host.querySelector('input[data-color-hex]') as HTMLInputElement;
+  const sliders = () => host.querySelectorAll('input[data-mode-ch]').length;
+  const before = sliders();
+  assert.ok(before > 0, 'the popover mounted its channel sliders');
+
+  // A whole drag's worth of events — a real gesture is many, and the first one is
+  // what used to kill it.
+  for (const v of ['#111111', '#222222', '#333333']) {
+    field.value = v;
+    field.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 0));
+    assert.equal($('[data-lab-ink-pick]'), host, 'the picker host is the SAME element');
+    assert.equal(sliders(), before, `the sliders are still there after ${v}`);
+  }
+  // And the scoring still happened — in place.
+  assert.match(
+    view.querySelector('[data-lab-card="ink"] .lab-apca-lc')?.textContent ?? '', /Lc \d/);
+
+  // A subject change must not tear it out either: the whole point of stable markup.
+  const step = view.querySelector<HTMLElement>('[data-lab-ramp] [data-lab-step]')!;
+  step.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal($('[data-lab-ink-pick]'), host, 'still the same host after a re-seed');
+  assert.equal(sliders(), before, 'and still its sliders');
 });

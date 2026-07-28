@@ -194,7 +194,10 @@ export function paintSliceChart(
   const draft = opts.quality === 'draft';
   // Cap the backing store: past ~2 device pixels per CSS pixel the extra detail
   // is invisible on a gradient field but the paint cost is real.
-  const scale = draft ? 0.5 : Math.min(2, window.devicePixelRatio || 1);
+  // 0.75 rather than 0.5: at half resolution the draft was visibly blocky while
+  // dragging, and the engine's hoisted membership test made the finer draft cheap
+  // — 5.4ms a chart against 13.9ms before it, for 2.25x the pixels.
+  const scale = draft ? 0.75 : Math.min(2, window.devicePixelRatio || 1);
   const w = Math.max(1, Math.round(box.width * scale));
   const h = Math.max(1, Math.round(box.height * scale));
 
@@ -287,8 +290,25 @@ export interface SliceChartHandlers {
   onPick(idx: number): void;
   /** Empty space was clicked — drop a new swatch at this colour. */
   onAdd(seed: { l: number; c: number; h: number }): void;
-  /** Current hex of a dot, so a drag can keep the channels the plane doesn't move. */
+  /** Current hex of a dot, so a drag can keep the channels the plane doesn't move.
+   *  Lossy for anything outside sRGB — see `oklchOf`, which supersedes it. */
   hexOf(idx: number): string;
+  /**
+   * The dot's colour as OKLCH, when the caller has one that is not a hex.
+   *
+   * A drag holds the plane's FIXED channel — lightness while you move around the
+   * chroma × hue plane, and so on — and that value has to come from the colour
+   * itself. Recovering it from `hexOf` means recovering it from a **gamut-mapped**
+   * bake whenever the subject sits outside sRGB, which is a feedback loop and not a
+   * subtle one: each frame re-derives the plane from a colour that is not the
+   * subject, the dot lands somewhere the pointer is not, and the next frame
+   * re-derives it again from the new bake. It shakes, and it only shakes past the
+   * gamut boundary — which is exactly where a wide-gamut pick lives.
+   *
+   * Optional so a caller whose colours genuinely ARE hex (the brand editor's
+   * swatches) needs no change; when present it wins.
+   */
+  oklchOf?(idx: number): { l: number; c: number; h: number; alpha?: number } | null;
   /** The chart's current state, read fresh on each event (plane/fixed can change under it). */
   stateOf(): SliceChartState;
 }
@@ -319,11 +339,17 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   };
 
-  /** The colour at a position, keeping `keep`'s value on the fixed channel. */
-  const colorAt = (e: PointerEvent, keep?: string): { l: number; c: number; h: number; alpha?: number } => {
+  /**
+   * The colour at a position, holding the dragged dot's value on the fixed channel.
+   *
+   * `oklchOf` is preferred over `hexOf` for that held value: see the note on the
+   * handler. Falls back to the hex, then to the chart's own `fixed`.
+   */
+  const colorAt = (e: PointerEvent, idx?: number): { l: number; c: number; h: number; alpha?: number } => {
     const st = h.stateOf();
     const { x, y } = posOf(e);
-    const cur = keep ? hexToOklch(keep) : null;
+    const cur = idx == null ? null
+      : (h.oklchOf?.(idx) ?? (() => { const hex = h.hexOf(idx); return hex ? hexToOklch(hex) : null; })());
     const fixedCh = SLICE_AXES[st.plane].fixed;
     const fixed = cur ? (fixedCh === 'h' ? cur.h : fixedCh === 'l' ? cur.l : cur.c) : st.fixed;
     const o = sliceXYToOklch(st.plane, x, y, fixed, st.cMax ?? SLICE_C_MAX);
@@ -342,7 +368,7 @@ export function wireSliceChart(root: HTMLElement, h: SliceChartHandlers): () => 
     if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 4) return;
     moved = true;
     if (dragIdx < 0) return; // a drag across empty space isn't a recolour
-    h.onRecolor(dragIdx, colorAt(e, h.hexOf(dragIdx)));
+    h.onRecolor(dragIdx, colorAt(e, dragIdx));
   };
   const onUp = (e: PointerEvent): void => {
     if (pointerId !== e.pointerId) return;

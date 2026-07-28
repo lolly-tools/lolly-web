@@ -61,12 +61,17 @@ import '../styles/parts/color-lab.css';
 import '../lib/oklch-slice.css';           // the .okls-* chart rules (see oklch-slice.ts)
 import {
   describeColor, contrastVsExtremes, wcagLevel, oklchToHex, formatOklch, rampOklab,
+  apcaVerdict, APCA_SRGB_ONLY,
   gamutSolid, projectGamutSolid, projectSolidPoint, contrastRatio, GAMUTS,
-  parseColor, colorToHexString,
+  parseColor, colorToHexString, interpolateColor,
 } from '@lolly/engine';
 import type {
   ColorDescription, ContrastVerdict, GamutName, GamutSolid, SlicePlane,
+  ColorSpaceTag, HueDirection,
 } from '@lolly/engine';
+import {
+  BLEND_STYLES, HUE_ROUTES, isPolarSpace, cssInterpolation,
+} from '../lib/blend-style.ts';
 import {
   renderSliceChart, paintSliceChart, wireSliceChart, updateSliceDot,
   sliceFixedOf, SLICE_AXES, SLICE_C_MAX, formatFixed,
@@ -79,12 +84,17 @@ import type { GamutChannel } from '../lib/gamut-slider.ts';
 import { mountColorField } from '../components/color-field.ts';
 import type { MountColorFieldOpts } from '../components/color-field.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { createThemeToggle } from '../components/theme-toggle.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { t } from '../i18n.ts';
 
 /** The host surface this view needs — only the brand palette, and optionally. */
 export interface ColorLabHost {
+  /** Only what the theme toggle persists through — the profile is the canonical
+   *  theme store. Optional: without it the switch still applies and still sings,
+   *  it just is not remembered. */
+  profile?: { get(): Promise<object>; set?(profile: object): Promise<unknown> };
   tokens?: { colors?(): Promise<Array<{ id?: string; name?: string; value?: string }>> | Array<{ id?: string; name?: string; value?: string }> };
 }
 
@@ -141,6 +151,15 @@ const GAMUT_BLURB: Record<GamutName, string> = {
   none: 'Beyond every display and print process we can describe. This one will always be mapped down.',
 };
 
+/**
+ * The blend's default style — Vivid, not the gradient spec's OKLab.
+ *
+ * Module level because `shellHtml()` writes the pressed state and the mount's own
+ * state initialises from it, and those two must not be able to disagree.
+ */
+const BLEND_DEFAULT_SPACE: ColorSpaceTag = 'oklch';
+const BLEND_DEFAULT_HUE: HueDirection = 'shorter';
+
 /** The alternate notations shown ON the swatch, in order. A short list on
  *  purpose — the full set lives in the notation table. */
 const SWATCH_ALT_SPACES: readonly string[] = ['oklch', 'lch', 'display-p3'];
@@ -166,6 +185,9 @@ const PICKER_MODE_SPACE: Record<string, string | null> = {
  *  least informative notation in the field the user is most likely to edit. */
 const FALLBACK = 'oklch(62% 0.19 260)';
 
+/** The persistent `#view`, onto which a mounted view stamps its teardown. */
+interface ViewElement extends HTMLElement { _cleanup?: () => void }
+
 export async function mountColorLab(view: HTMLElement, host: ColorLabHost, params = ''): Promise<void> {
   document.title = 'Colour Lab · Lolly';
 
@@ -185,9 +207,50 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * are dragging (see clampIntoGamut).
    */
   let boundsOn = false;
-  /** The far end of the blend ramp, and how many stops both ramps carry. */
-  let other = 'oklch(85% 0.13 85)';
+  /** The tone ramp's step count. The blend carries its own — see `blendStops`. */
   let steps = 9;
+  /**
+   * The blend: its far end, how it interpolates, and how many stops it is cut into.
+   *
+   * The style vocabulary is the canvas gradient panel's (Smooth / Vivid / sRGB —
+   * see lib/blend-style.ts), so the two surfaces name the same thing the same way.
+   * The stop count is separate from the tone ramp's on purpose: they answer
+   * different questions — a tone ramp is usually a palette of 5–9, while a blend
+   * gets cut finely to find one particular intermediate.
+   *
+   * **Vivid is the default here**, unlike the gradient spec's OKLab (which is a wire
+   * format defaulting to what `color-mix()` does). This page is where someone comes
+   * to see how much colour a blend can hold, and going round the hue circle is the
+   * answer that shows it — travelling through the middle is the thing they came to
+   * avoid. sRGB stays one click away for matching an existing asset.
+   *
+   * The TONE ramp needs no style knob to match: its anchors are all at the subject's
+   * own hue, and interpolating between two colours of equal hue is the same operation
+   * in OKLab and OKLCH (a = C·cos h, b = C·sin h — a lerp of a and b at fixed h is a
+   * lerp of C). It is hue-locked, so it is already vivid by construction, and adding
+   * a control that provably changes nothing would be a lie.
+   */
+  let other = 'oklch(85% 0.13 85)';
+  let blendSpace: ColorSpaceTag = BLEND_DEFAULT_SPACE;
+  let blendHue: HueDirection = BLEND_DEFAULT_HUE;
+  let blendStops = 9;
+
+  /**
+   * The third surface the colour is read against, beyond black and white.
+   *
+   * Defaults to an ordinary light UI surface — near-white but not white, because
+   * that is what most colours actually sit on and because the white card already
+   * covers the extreme.
+   *
+   * Three defaults were tried and rejected first, and the rejections are the useful
+   * part: the page's own `--background`, which on a light theme IS white and made
+   * this card an exact duplicate of the white one; black, the same problem inverted;
+   * and a mid grey (#767676, WCAG's 4.5:1 boundary against white), which is the most
+   * *interesting* surface but scores Lc 0.0 against any mid-tone subject — true,
+   * since the two are near-isoluminant, but it reads as a broken card rather than as
+   * a finding.
+   */
+  let ink = '#f4f4f5';
   /** The 3D view angles, and the solid meshes (cached — each costs a build). */
   const solidView = { yaw: 28, pitch: 18, scale: 0.92 };
   const solidCache = new Map<string, GamutSolid>();
@@ -200,10 +263,51 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   const $ = <T extends HTMLElement = HTMLElement>(sel: string): T | null =>
     view.querySelector<T>(sel);
 
+  // The theme cycle, icon-only. `host.profile` may be absent (the components view
+  // mounts this bare, and so do the tests), and the shared tail treats the profile
+  // write as best-effort — but the call itself needs an object, so stub it.
+  const chrome = $('[data-lab-chrome]');
+  if (chrome) {
+    chrome.appendChild(createThemeToggle(
+      host.profile ? (host as { profile: NonNullable<ColorLabHost['profile']> }) : { profile: { get: async () => ({}) } },
+      { className: 'lab-chrome-btn' },
+    ));
+  }
+
   // ── The subject block ────────────────────────────────────────────────────
   const swatch = $('[data-lab-swatch]')!;
   const pickerMount = $('[data-lab-picker]')!;
-  const clampNote = $('[data-lab-clamp]')!;
+  // ── The out-of-gamut toast ───────────────────────────────────────────────
+  // Transient by design: the toast is the nudge when you cross the boundary, and
+  // the gamut card in step 5 is the standing record. A latch means a drag that
+  // wanders in and out does not strobe it — it fires once per excursion.
+  let toastEl: HTMLElement | null = null;
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  let announcedOut = false;
+
+  function showGamutToast(html: string): void {
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.className = 'toast toast--wrap is-muted';
+      toastEl.setAttribute('role', 'status');
+      toastEl.setAttribute('data-lab-toast', 'gamut');
+      document.body.appendChild(toastEl);
+    }
+    toastEl.innerHTML = `<span class="toast-message">${html}</span>`;
+    // Two frames: the element must be in the layout before the transition can run.
+    requestAnimationFrame(() => requestAnimationFrame(() => toastEl?.classList.add('is-visible')));
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl?.classList.remove('is-visible'), 7000);
+  }
+  function hideGamutToast(): void {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastEl?.classList.remove('is-visible');
+  }
+  cleanups.push(() => {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastEl?.remove();
+    toastEl = null;
+  });
 
   /** True while the picker is being re-seeded, so its own onChange is ignored. */
   let seeding = false;
@@ -289,6 +393,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       chartTeardowns.push(wireSliceChart(mount, {
         stateOf: () => chartStateFor(plane),
         hexOf: () => desc.srgbHex,
+        // The AUTHORED colour, so the plane's fixed channel is held at the value the
+        // report is describing rather than at its sRGB bake. Without this a drag past
+        // a gamut boundary feeds the mapped colour back in every frame and the dot
+        // shakes away from the pointer.
+        oklchOf: () => desc.oklch,
         // Dragging the dot or clicking empty space both pick — on a report,
         // every chart is an input as well as a readout.
         // Dragging into a chart's P3 band should GIVE you that P3 colour, not its
@@ -549,6 +658,60 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     cleanups.push(() => stepsInput.removeEventListener('input', onSteps));
   }
 
+  // ── The blend's style, hue route, and stop count ─────────────────────────
+  const spaceSeg = $('[data-lab-blend-space]');
+  const hueSeg = $('[data-lab-blend-hue]');
+  /** Show the hue row only where hue travel is a real choice. */
+  const syncHueRow = (): void => { if (hueSeg) hueSeg.hidden = !isPolarSpace(blendSpace); };
+  const press = (seg: HTMLElement, btn: HTMLElement): void => {
+    seg.querySelectorAll<HTMLElement>('[data-val]')
+      .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+  };
+  if (spaceSeg) {
+    const onSpace = (e: Event): void => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
+      if (!btn || !btn.dataset.val) return;
+      blendSpace = btn.dataset.val as ColorSpaceTag;
+      press(spaceSeg, btn);
+      syncHueRow();
+      renderBlend();
+    };
+    spaceSeg.addEventListener('click', onSpace);
+    cleanups.push(() => spaceSeg.removeEventListener('click', onSpace));
+  }
+  if (hueSeg) {
+    const onHue = (e: Event): void => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
+      if (!btn || !btn.dataset.val) return;
+      blendHue = btn.dataset.val as HueDirection;
+      press(hueSeg, btn);
+      renderBlend();
+    };
+    hueSeg.addEventListener('click', onHue);
+    cleanups.push(() => hueSeg.removeEventListener('click', onHue));
+  }
+  syncHueRow();
+
+  const blendStepsBox = $('[data-lab-blend-steps]');
+  if (blendStepsBox) {
+    // The mixer slider's own input — the same `.gsl` markup the channel sliders use,
+    // so it inherits their skin, but its axis is a count rather than a colour and it
+    // has no gamut runs to break the rail into.
+    const wired = wireGamutSlider(blendStepsBox, {
+      onInput: (v) => {
+        blendStops = Math.max(2, Math.min(24, Math.round(v)));
+        renderBlend();
+      },
+      onChange: () => {},
+    });
+    cleanups.push(wired);
+  }
+
+  // Once, at mount: the readability cards are stable markup, so this picker is
+  // never torn down and re-created by a re-score. (Hoisted declaration — the
+  // function is defined further down with the rest of the render helpers.)
+  mountInkPicker();
+
   const blendPicker = $('[data-lab-blend-picker]');
   if (blendPicker) {
     // The SAME expanded picker as the subject's — tabs, dials and sliders.
@@ -564,7 +727,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       value: describeColor(other)?.srgbHex ?? '#e0b64d',
       inline: true,
       modes: true,
-      onChange: (value) => { other = value; renderRamp(); },
+      onChange: (value) => { other = value; renderBlend(); },
     });
   }
   const blendRaw = $<HTMLInputElement>('[data-lab-blend-raw]');
@@ -574,7 +737,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       if (!describeColor(blendRaw.value)) { blendRaw.setAttribute('aria-invalid', 'true'); return; }
       blendRaw.removeAttribute('aria-invalid');
       other = blendRaw.value.trim();
-      renderRamp();
+      renderBlend();
     };
     blendRaw.addEventListener('change', onBlendRaw);
     blendRaw.addEventListener('keydown', (e) => { if (e.key === 'Enter') onBlendRaw(); });
@@ -721,12 +884,15 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       ).join('');
     }
 
-    clampNote.hidden = desc.inSrgb;
-    if (!desc.inSrgb) {
-      clampNote.innerHTML = t(
+    if (desc.inSrgb) {
+      announcedOut = false;
+      hideGamutToast();
+    } else if (!announcedOut) {
+      announcedOut = true;
+      showGamutToast(t(
         'Outside sRGB. The swatches on this page ask your browser for the real colour, so a wide-gamut display shows it — a narrower one falls back to <strong>{hex}</strong>. The charts are drawn on an 8-bit canvas and always show the fallback.',
         { hex: escape(desc.srgbHex.toUpperCase()) },
-      );
+      ));
     }
 
     // Gamut verdict.
@@ -763,46 +929,113 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   function renderContrast(): void {
-    const mount = $('[data-lab-contrast]');
-    if (!mount) return;
     const v = contrastVsExtremes(subject);
-    if (!v) { mount.innerHTML = ''; return; }
-    mount.innerHTML = `
-      ${contrastCard(t('White text'), '#ffffff', v.onWhite, v.against === '#ffffff')}
-      ${contrastCard(t('Black text'), '#000000', v.onBlack, v.against === '#000000')}`;
+    if (!v) return;
+    // Scored on `srgbHex`, not on the authored value: APCA is fitted to sRGB
+    // (APCA_SRGB_ONLY), and it keeps the Lc and the ratio describing one colour.
+    scoreCard('white', '#ffffff', v.onWhite, v.against === '#ffffff');
+    scoreCard('black', '#000000', v.onBlack, v.against === '#000000');
+    scoreCard('ink', ink, contrastRatio(desc.srgbHex, ink), false);
+
     // The cards carry the authored colour as their background, with the hex as a
     // CSS fallback for displays that can't reach it.
-    for (const el of mount.querySelectorAll<HTMLElement>('.lab-contrast-card')) {
+    for (const el of view.querySelectorAll<HTMLElement>('.lab-contrast-card')) {
       el.style.background = desc.srgbHex;
       el.style.background = subject;
     }
+
     const floor = $('[data-lab-contrast-note]');
     if (floor) {
-      floor.textContent = t(
-        'Best pairing: {ink} at {ratio}:1 — {level} for body text, {large} for large text.',
-        {
-          ink: v.against === '#ffffff' ? t('white') : t('black'),
+      // APCA leads. The pairing named is the one APCA prefers, which is NOT always
+      // the one WCAG prefers — that disagreement is the whole reason both are here,
+      // so when they part company the line says so instead of quietly picking one.
+      const white = apcaVerdict('#ffffff', desc.srgbHex);
+      const black = apcaVerdict('#000000', desc.srgbHex);
+      const apcaWinner = (white && black && white.abs >= black.abs) ? 'white' : 'black';
+      const wcagWinner = v.against === '#ffffff' ? 'white' : 'black';
+      const best = apcaWinner === 'white' ? white : black;
+      floor.textContent = best
+        ? t('Best pairing: {ink} at Lc {lc} — {use}. WCAG says {ratio}:1, {level} for body text.', {
+          ink: t(apcaWinner),
+          lc: best.abs.toFixed(1),
+          use: t(best.label),
           ratio: v.ratio.toFixed(2),
           level: v.level === 'fail' ? t('below AA') : v.level,
-          large: v.largeLevel === 'fail' ? t('below AA') : v.largeLevel,
-        },
-      );
+        }) + (apcaWinner === wcagWinner ? ''
+          : ` ${t('The two disagree here — WCAG prefers {other}.', { other: t(wcagWinner) })}`)
+        : '';
     }
   }
 
-  /** One text-on-colour card. The background is applied by the caller, so this
-   *  stays a pure string builder. */
-  function contrastCard(label: string, ink: string, ratio: number, best: boolean): string {
-    const body = wcagLevel(ratio);
-    const large = wcagLevel(ratio, { large: true });
-    const badge = (name: string, level: string): string =>
-      `<span class="lab-wcag" data-level="${escape(level)}">${escape(name)} ${escape(level === 'fail' ? '✗' : level)}</span>`;
-    return `
-      <div class="lab-contrast-card${best ? ' is-best' : ''}" style="color:${escape(ink)}">
-        <p class="lab-contrast-sample">${escape(label)}${best ? ` <span class="lab-best">${escape(t('best'))}</span>` : ''}</p>
-        <p class="lab-contrast-ratio">${ratio.toFixed(2)}:1</p>
-        <p class="lab-contrast-badges">${badge(t('Body'), body)} ${badge(t('Large'), large)}</p>
-      </div>`;
+  /**
+   * Fill one card's numbers, in place. APCA first, WCAG second.
+   *
+   * That order is deliberate and it is the opposite of how most tools present it.
+   * APCA models polarity — light text on dark reads worse than the same pair
+   * inverted, which WCAG 2's ratio cannot express at all, since it scores both
+   * directions identically. So the Lc is the number to design against and the ratio
+   * is the number to report to a conformance checklist. Both are shown because both
+   * are true; the size tells you which to trust.
+   */
+  function scoreCard(key: string, textColor: string, ratio: number, best: boolean): void {
+    const card = $(`[data-lab-card="${key}"]`);
+    if (!card) return;
+    card.style.color = textColor;
+    card.classList.toggle('is-best', best);
+    const bestTag = card.querySelector<HTMLElement>('[data-lab-card-best]');
+    if (bestTag) bestTag.hidden = !best;
+
+    const apca = apcaVerdict(textColor, desc.srgbHex);
+    const apcaRow = card.querySelector<HTMLElement>('[data-lab-apca]');
+    if (apcaRow) {
+      apcaRow.hidden = !apca;
+      if (apca) apcaRow.dataset.use = apca.use;
+      const lc = card.querySelector<HTMLElement>('[data-lab-apca-lc]');
+      if (lc) lc.textContent = apca ? `${t('Lc')} ${apca.abs.toFixed(1)}` : '';
+      const use = card.querySelector<HTMLElement>('[data-lab-apca-use]');
+      if (use) use.textContent = apca ? t(apca.label) : '';
+      const pol = card.querySelector<HTMLElement>('[data-lab-apca-pol]');
+      if (pol) {
+        // Shown only when the text is LIGHTER than its ground — precisely the case
+        // WCAG's ratio cannot see.
+        pol.hidden = !apca?.reversed;
+        pol.textContent = t('light on dark');
+        pol.title = t('Light text on a dark background — APCA scores this polarity differently, WCAG cannot tell.');
+      }
+    }
+
+    const out = card.querySelector<HTMLElement>('[data-lab-ratio]');
+    if (out) out.textContent = `${ratio.toFixed(2)}:1`;
+    const badges = card.querySelector<HTMLElement>('[data-lab-badges]');
+    if (badges) {
+      const badge = (name: string, level: string): string =>
+        `<span class="lab-wcag" data-level="${escape(level)}">${escape(name)} ${escape(level === 'fail' ? '✗' : level)}</span>`;
+      badges.innerHTML = `${badge(t('Body'), wcagLevel(ratio))} ${badge(t('Large'), wcagLevel(ratio, { large: true }))}`;
+    }
+  }
+
+  /**
+   * The third surface's picker — the compact `float` popover, which is what a
+   * secondary control on a card wants: the card is already carrying two numbers,
+   * and the expanded form's rings would dominate it.
+   *
+   * Mounted ONCE. It used to be re-mounted from `renderContrast`, which meant its
+   * own first `onChange` destroyed it: the slider under the pointer disappeared and
+   * the drag died with it. A re-score now only writes text into the card around it.
+   */
+  function mountInkPicker(): void {
+    const host = $('[data-lab-ink-pick]');
+    if (!host) return;
+    mountColorField(host, 'lab-ink', {
+      value: ink,
+      float: true,
+      modes: true,
+      onChange: (value) => {
+        if (!describeColor(value)) return;
+        ink = value;
+        renderContrast();
+      },
+    });
   }
 
   function renderNotations(): void {
@@ -859,27 +1092,64 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         steps, { correctLightness: true },
       );
       rampMount.innerHTML = tones.map(hex => stepHtml(hex)).join('');
+      // The rail: the same three anchors as one continuous CSS gradient, in OKLab
+      // (which is what rampOklab interpolates in), so the bar above the swatches is
+      // the ramp they were cut from rather than a decorative approximation.
+      const rail = $('[data-lab-tone-steps] [data-gsl-track]');
+      if (rail) {
+        const [pale, dark] = [
+          oklchToHex({ l: 0.97, c: o.c * 0.22, h: o.h }),
+          oklchToHex({ l: 0.13, c: o.c * 0.5, h: o.h }),
+        ];
+        rail.innerHTML = `<span class="gsl-seg" style="left:0;width:100%;background:`
+          + `linear-gradient(90deg in oklab, ${escape(pale)}, ${escape(subject)}, ${escape(dark)})"></span>`;
+      }
+      const out = $('[data-lab-tone-steps] [data-gsl-val]');
+      if (out) out.textContent = String(steps);
     }
+    renderBlend();
+  }
+
+  /**
+   * The blend ramp, its continuous rail, and the stop count's readout.
+   *
+   * Cut with the engine's `interpolateColor` rather than `rampOklab`, because the
+   * space is the user's choice here and `rampOklab` is — by name and by contract —
+   * OKLab only. It is also the same primitive the canvas gradient panel and the
+   * gradient spec bake through, so a blend previewed here and a gradient authored
+   * on canvas with the same style agree stop for stop.
+   */
+  function renderBlend(): void {
     const blendMount = $('[data-lab-blend]');
-    if (blendMount) {
-      const far = describeColor(other);
-      // Interpolated in OKLab, so the midpoint is the colour halfway between as
-      // the eye reads it — an sRGB lerp between complements goes grey through the
-      // middle, which is the classic muddy-gradient problem.
-      const blend = far
-        ? rampOklab([desc.srgbHex, far.srgbHex], steps, { correctLightness: false })
-        : [];
-      blendMount.innerHTML = blend.map(hex => stepHtml(hex, 'copy')).join('');
-      const preview = $('[data-lab-blend-preview]');
-      if (preview && far) {
-        // A real CSS gradient beside the discrete stops: same two ends, so you can
-        // see what the steps are sampling.
-        preview.style.background =
-          `linear-gradient(90deg in oklab, ${desc.srgbHex}, ${far.srgbHex})`;
-        preview.style.background =
-          `linear-gradient(90deg in oklab, ${subject}, ${other})`;
+    if (!blendMount) return;
+    const far = describeColor(other);
+    const a = parseColor(subject);
+    const b = far ? parseColor(other) : null;
+    const mix = { space: blendSpace, hue: blendHue };
+    const blend: string[] = [];
+    if (a && b) {
+      for (let i = 0; i < blendStops; i++) {
+        // The ends are exact: t hits 0 and 1, so the first and last stop ARE the two
+        // colours rather than something a hair inside them.
+        const k = blendStops === 1 ? 0 : i / (blendStops - 1);
+        blend.push(colorToHexString(interpolateColor(a, b, k, mix)));
       }
     }
+    blendMount.innerHTML = blend.map(hex => stepHtml(hex, 'copy')).join('');
+
+    // The rail: one continuous CSS gradient in the same space, so the slider shows
+    // what the stops are sampling. Painted from the AUTHORED values, not their
+    // sRGB hexes, so a wide-gamut end stays wide on a display that can show it.
+    const railBox = $('[data-lab-blend-steps]');
+    const track = railBox?.querySelector<HTMLElement>('[data-gsl-track]');
+    if (track) {
+      track.innerHTML = far
+        ? `<span class="gsl-seg" style="left:0;width:100%;background:linear-gradient(90deg `
+          + `${cssInterpolation(blendSpace, blendHue)}, ${escape(subject)}, ${escape(other)})"></span>`
+        : '';
+    }
+    const out = railBox?.querySelector<HTMLElement>('[data-gsl-val]');
+    if (out) out.textContent = String(blendStops);
   }
 
   /** A hex's oklch() form — what a step's body copies, matching its visible label. */
@@ -960,11 +1230,16 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     cleanups.push(() => ro.disconnect());
   }
 
-  // The view element is replaced on navigation; run teardown when it goes.
-  const mo = new MutationObserver(() => {
-    if (!view.isConnected) { for (const fn of cleanups) fn(); mo.disconnect(); }
-  });
-  mo.observe(document.body, { childList: true, subtree: true });
+  // `#view` is PERSISTENT — the router calls `view.replaceChildren()` and mounts the
+  // next view into the same element, so waiting for it to disconnect never fires and
+  // this view's rAF loop, ResizeObserver and body-level toast would outlive it.
+  // `view._cleanup` is the shell's supported hook (main.ts:148). Chain any existing
+  // one rather than clobbering it.
+  const prevCleanup = (view as ViewElement)._cleanup;
+  (view as ViewElement)._cleanup = () => {
+    prevCleanup?.();
+    for (const fn of cleanups) fn();
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1001,6 +1276,28 @@ function shade(hex: string, k: number): string {
   const n = (i: number): number =>
     Math.round(Math.min(255, Math.max(0, parseInt(hex.slice(i, i + 2), 16) * k)));
   return `rgb(${n(1)} ${n(3)} ${n(5)})`;
+}
+
+/**
+ * One readability card's fixed structure. Every number in it is filled by
+ * `renderContrast`; nothing here is regenerated, so the third card's mounted
+ * picker survives every re-score.
+ */
+function contrastCardShell(key: string, label: string, pickable = false): string {
+  return `
+      <div class="lab-contrast-card" data-lab-card="${escape(key)}">
+        <p class="lab-contrast-sample"><span data-lab-card-label>${escape(label)}</span><span class="lab-best" data-lab-card-best hidden>${escape(t('best'))}</span></p>
+        ${pickable ? `<div class="lab-ink-pick" data-lab-ink-pick></div>` : ''}
+        <p class="lab-apca" data-lab-apca>
+          <span class="lab-apca-lc" data-lab-apca-lc></span>
+          <span class="lab-apca-use" data-lab-apca-use></span>
+          <span class="lab-apca-pol" data-lab-apca-pol hidden></span>
+        </p>
+        <p class="lab-contrast-wcag">
+          <span class="lab-contrast-ratio" data-lab-ratio></span>
+          <span data-lab-badges></span>
+        </p>
+      </div>`;
 }
 
 function shellHtml(): string {
@@ -1043,7 +1340,14 @@ function shellHtml(): string {
   // header. Each numbered step below is one of those questions.
   return `
   <div class="lab">
-    <div class="lab-back">${backPillHtml()}</div>
+    ${/* Back on the left, screen-context controls on the right — the same division the
+          editor's stage HUD uses, and the reason the theme toggle is here at all: this
+          page is about how a colour READS, and a colour reads differently in each
+          theme. Icon-only, like the zoom controls it is modelled on. */''}
+    <div class="lab-back">
+      ${backPillHtml()}
+      <div class="lab-chrome" data-lab-chrome></div>
+    </div>
 
     <header class="lab-head">
       <h1>${escape(t('Colour Lab'))}</h1>
@@ -1069,7 +1373,10 @@ function shellHtml(): string {
                 and two of them was one too many. Wide-gamut values still arrive by
                 `?c=`, and will be typeable directly once the picker carries tabs
                 for those spaces. */''}
-          <p class="lab-clamp" data-lab-clamp hidden></p>
+          ${/* The out-of-gamut notice is a TOAST, not a block here — see labToast.
+                In the flow it pushed the whole column around whenever a colour
+                crossed the sRGB boundary, which is most of what you do in this
+                tool. The persistent record of the fact is the gamut card. */''}
           <div class="lab-brand-rail" data-lab-brand-section>
             <span class="lab-field-label">${escape(t('Or from your brand'))}</span>
             <div class="lab-brand" data-lab-brand></div>
@@ -1135,21 +1442,28 @@ function shellHtml(): string {
         <h2 class="lab-h2 lab-step-h">
           <span class="lab-step-n" aria-hidden="true">4</span>${escape(t('Tones and blends'))}
         </h2>
-        <label class="lab-steps">
-          <span class="lab-field-label">${escape(t('Stops'))}</span>
-          <input type="range" class="lab-steps-range" data-lab-steps min="2" max="24" step="1" value="9"
-            aria-label="${escape(t('Number of ramp stops'))}">
-          <output class="lab-steps-out" data-lab-steps-out>9</output>
-        </label>
+
       </div>
       <p class="lab-section-note">${escape(t('Tone steps re-seed the report; blend stops copy to the clipboard.'))}</p>
 
       <h3 class="lab-h3">${escape(t('Tones'))}</h3>
       <p class="lab-section-note">${escape(t('A perceptually even ramp through this colour, pale to dark.'))}</p>
+      ${/* The same mixer slider the blend carries, for the same reason: its rail is
+            the continuous ramp the swatches below are sampling, so the control shows
+            what it is subdividing. Two ramps, one idiom. */''}
+      <div class="gsl lab-mix" data-lab-tone-steps>
+        <span class="gsl-key" aria-hidden="true">${escape(t('Stops').charAt(0))}</span>
+        <div class="gsl-well">
+          <div class="gsl-track" data-gsl-track aria-hidden="true"></div>
+          <input type="range" class="gsl-input" data-gsl-input min="2" max="24" step="1" value="9"
+            data-lab-steps aria-label="${escape(t('Number of tone steps'))}">
+        </div>
+        <output class="gsl-val" data-gsl-val data-lab-steps-out>9</output>
+      </div>
       <div class="lab-ramp" data-lab-ramp></div>
 
       <h3 class="lab-h3">${escape(t('Blend to another colour'))}</h3>
-      <p class="lab-section-note">${escape(t('Interpolated in OKLab, so the middle stays colourful instead of going grey. Click a stop to copy it.'))}</p>
+      <p class="lab-section-note">${escape(t('The space it travels through decides what the middle looks like. Click a stop to copy it.'))}</p>
       <div class="lab-blend-to">
         <div class="lab-blend-to-head">
           <span class="lab-field-label">${escape(t('Blend to'))}</span>
@@ -1162,7 +1476,35 @@ function shellHtml(): string {
         </div>
         <div class="lab-blend-picker" data-lab-blend-picker></div>
       </div>
-      <div class="lab-blend-preview" data-lab-blend-preview aria-hidden="true"></div>
+      ${/* Full width above the ramp, the same shape as the gamut control above the
+            charts: it governs everything under it, so it reads as a heading row
+            rather than as one more field. */''}
+      <div class="lab-blend-styles">
+        <div class="view-seg lab-limit" role="group" aria-label="${escape(t('Blend'))}" data-lab-blend-space>
+          ${BLEND_STYLES.map(b => `<button type="button" class="view-seg-btn" data-val="${b.space}"
+            title="${escape(t(b.why))}" aria-pressed="${b.space === BLEND_DEFAULT_SPACE}">${escape(t(b.label))}</button>`).join('')}
+        </div>
+        ${/* Hue travel only means anything in a polar space, so the row is present but
+              inert until one is chosen — hidden rather than absent, so choosing Vivid
+              does not reflow the section. */''}
+        <div class="view-seg lab-blend-hue" role="group" aria-label="${escape(t('Hue route'))}"
+          data-lab-blend-hue${isPolarSpace(BLEND_DEFAULT_SPACE) ? '' : ' hidden'}>
+          ${HUE_ROUTES.map(r => `<button type="button" class="view-seg-btn" data-val="${r.dir}"
+            aria-pressed="${r.dir === BLEND_DEFAULT_HUE}">${escape(t(r.label))}</button>`).join('')}
+        </div>
+      </div>
+      ${/* The stops slider wears the colour-mixer sliders' skin (.gsl, from
+            oklch-slice.css) and its rail is painted with the blend itself — so the
+            control shows the thing it is subdividing. */''}
+      <div class="gsl lab-mix" data-lab-blend-steps>
+        <span class="gsl-key" aria-hidden="true">${escape(t('Stops').charAt(0))}</span>
+        <div class="gsl-well">
+          <div class="gsl-track" data-gsl-track aria-hidden="true"></div>
+          <input type="range" class="gsl-input" data-gsl-input min="2" max="24" step="1" value="9"
+            aria-label="${escape(t('Number of blend stops'))}">
+        </div>
+        <output class="gsl-val" data-gsl-val>9</output>
+      </div>
       <div class="lab-ramp" data-lab-blend></div>
     </section>
     <!-- 5 · WHAT IT COSTS YOU. The verdict and the readability scores: real, but
@@ -1190,8 +1532,18 @@ function shellHtml(): string {
         </div>
       </div>
       <h3 class="lab-h3">${escape(t('Readability'))}</h3>
-      <p class="lab-section-note">${escape(t('Scored against black and white — the two extremes, so this is the ceiling on what the colour can carry. A real surface will do worse.'))}</p>
-      <div class="lab-contrast" data-lab-contrast></div>
+      <p class="lab-section-note">${escape(t('APCA first, WCAG second: APCA models polarity — light text on dark reads worse than the same pair inverted — which the WCAG ratio scores identically. Black and white are the ceiling on what the colour can carry; the third surface is yours to set.'))}</p>
+      <p class="lab-section-note">${escape(t(APCA_SRGB_ONLY))}</p>
+      ${/* The three cards are STABLE markup, scored in place — they are NOT rebuilt on
+            every change. The third one hosts a live popover picker, and re-rendering
+            the card destroyed that picker on its own first `input` event: the slider
+            you were dragging vanished mid-gesture. Anything that owns a mounted
+            control cannot be an innerHTML target. */''}
+      <div class="lab-contrast" data-lab-contrast>
+        ${contrastCardShell('white', t('White text'))}
+        ${contrastCardShell('black', t('Black text'))}
+        ${contrastCardShell('ink', t('Your surface'), true)}
+      </div>
       <p class="lab-contrast-note" data-lab-contrast-note></p>
     </section>
 

@@ -23,7 +23,49 @@
   gap: 2.25rem;
 }
 
-.lab-back { align-self: flex-start; }
+/* The back pill is POSITION-FIXED (it floats over the page, by design), so it takes
+   no space in this row and `space-between` had nothing to separate — the chrome
+   capsule collapsed to the left edge. The row therefore stretches to the column and
+   pushes its in-flow contents to the right explicitly. */
+.lab-back {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  min-height: 2rem;
+}
+
+/* The capsule the theme toggle sits in — modelled on the canvas zoom HUD
+   (.stage-nav in editor.css), which this view cannot borrow because that file is
+   only loaded on the editor routes. Same idiom: a soft-bordered pill of 26px
+   icon-only buttons that light up on hover. Room for a second control later. */
+.lab-chrome {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: hsl(var(--card) / 0.85);
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+.lab-chrome-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: hsl(var(--foreground));
+  border-radius: 999px;
+  transition: background 0.12s, color 0.12s;
+}
+.lab-chrome-btn svg { width: 16px; height: 16px; }
+.lab-chrome-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.lab-chrome-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 
 .lab-head h1 {
   margin: 0;
@@ -197,22 +239,13 @@
   font-family: 'SUSE Mono', ui-monospace, monospace;
   font-size: 0.85rem;
 }
-.lab-hint, .lab-err, .lab-clamp {
+.lab-hint, .lab-err {
   margin: 0;
   font-size: 0.78rem;
   line-height: 1.45;
 }
 .lab-hint { color: hsl(var(--muted-foreground)); }
 .lab-err { color: hsl(var(--destructive, 0 72% 51%)); font-weight: 500; }
-/* The out-of-gamut notice. It has to be impossible to miss: the swatch and the
-   picker below it are showing a DIFFERENT colour from the one being described. */
-.lab-clamp {
-  padding: 0.6rem 0.75rem;
-  border-radius: calc(var(--radius) * 0.7);
-  background: hsl(var(--muted) / 0.6);
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
-  color: hsl(var(--foreground));
-}
 
 .lab-picker { min-width: 0; }
 
@@ -503,15 +536,6 @@
 .lab-solid:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 
 /* ── Ramp controls: stop count, and the blend's far end ───────────────────── */
-.lab-steps { display: flex; align-items: center; gap: 0.5rem; flex: 0 0 auto; }
-.lab-steps-range { width: 9rem; }
-.lab-steps-out {
-  min-width: 1.5rem;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
 
 /* The far end of the blend: the SAME expanded picker as the subject's, because
    the dials only exist in the inline form. Its lesser weight comes from sitting
@@ -530,13 +554,71 @@
 }
 .lab-blend-raw[aria-invalid="true"] { border-color: hsl(var(--destructive, 0 72% 51%)); }
 
-/* The continuous gradient beside the discrete stops — same two ends, so you can
-   see what the steps are sampling from. */
-.lab-blend-preview {
-  height: 1.75rem;
-  border-radius: calc(var(--radius) * 0.6);
-  box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12);
+/* ── The blend's style, and its stop count ─────────────────────────────────
+   The style tabs sit full width above the ramp, the same shape as the gamut
+   control above the charts: both govern everything under them, so both read as
+   a heading row rather than as one more field in a form. */
+.lab-blend-styles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.85rem 0 0.6rem;
 }
+.lab-blend-styles .lab-limit { flex: 1 1 18rem; }
+.lab-blend-hue { flex: 0 1 12rem; }
+.lab-blend-hue .view-seg-btn { width: 100%; }
+
+/* The stop count wears the channel sliders' skin (.gsl, in lib/oklch-slice.css)
+   so the two read as the same kind of control, and its rail carries the blend
+   itself — the continuous gradient the stops are sampling from. That rail is why
+   there is no separate preview strip: one gradient, with the thumb on it. */
+.lab-mix { margin-bottom: 0.7rem; }
+.lab-mix .gsl-key { font-variant-numeric: normal; }
+
+/* ── Readability: APCA leads, WCAG follows ─────────────────────────────────
+   The order is the hierarchy. APCA models polarity — which WCAG 2's ratio cannot
+   express, since it scores dark-on-light and light-on-dark identically — so the Lc
+   is the number to design against and the ratio is the one to report. Hence the Lc
+   is set large and the ratio sits under it at body size. */
+.lab-apca {
+  margin: 0.35rem 0 0.15rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.55rem;
+}
+.lab-apca-lc {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.lab-apca-use { font-size: 0.76rem; opacity: 0.9; }
+/* The polarity marker: present only when the text is lighter than its ground,
+   which is exactly the case WCAG cannot see. */
+.lab-apca-pol {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px currentColor;
+  opacity: 0.7;
+}
+.lab-contrast-wcag {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+/* The third surface's popover trigger, on the card it scores. Width-capped: the
+   float picker's trigger is a block field by default and stretched to the full card,
+   where it read as the card's main content rather than as one control on it. */
+.lab-ink-pick { margin: 0.15rem 0 0.1rem; max-width: 12rem; }
+.lab-ink-pick .color-field, .lab-ink-pick .color-trigger { width: 100%; }
 
 /* ── Tone ramp ────────────────────────────────────────────────────────────── */
 .lab-ramp {

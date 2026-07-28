@@ -69,6 +69,7 @@ import type { Unit } from '../../../../engine/src/units.js';
 import { icon } from '../lib/icons.ts';
 import { asRow } from './tool-types.ts';
 import { setupStageNav, type StageNav } from './tool-stage-nav.ts';
+import { isTextEditingTarget } from '../lib/typing-target.ts';
 import {
   syncInputs, openEmbedEditor, scrollToControl, focusSidebarBlock,
   fileToRef, fmtBytes, makeBlocksDropper, _sliderDragging, asStr,
@@ -2917,13 +2918,8 @@ function setupCanvasBlocksDrop({ viewEl, contentEl, runtime, host, input, onDirt
 // through to the browser's per-character undo). Deliberately NARROWER than
 // isTyping: a focused range slider / colour / checkbox / number IS an <input>
 // but has no native undo, so our input-history undo should still fire there.
-function isTextEditing(): boolean {
-  const el = document.activeElement;
-  if (!el) return false;
-  if ((el as HTMLElement).isContentEditable || el.tagName === 'TEXTAREA') return true;
-  if (el.tagName !== 'INPUT') return false;
-  return ['text', 'search', 'url', 'tel', 'email', 'password'].includes(((el as HTMLInputElement).type || 'text').toLowerCase());
-}
+// Shadow-aware, so a jelly field (real <input> inside a shadow root) is recognised.
+const isTextEditing = (): boolean => isTextEditingTarget();
 
 function makeFetchFile(toolId: string): (path: string) => Promise<string> {
   return async (path: string) => {

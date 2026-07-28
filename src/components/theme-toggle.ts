@@ -14,20 +14,30 @@
  * kept in sync by applyTheme), so each switch is persisted there too — mirroring
  * the profile view's segmented control.
  *
- * createThemeToggle(host) → HTMLButtonElement
+ * createThemeToggle(host, opts?) → HTMLButtonElement
+ *
+ * `opts.className` exists because the `.stage-nav-*` presentation lives in
+ * editor.css, which only the editor routes load. A view that wants the same
+ * icon-only cycle without pulling the whole editor chrome in (Colour Lab, whose
+ * users switch theme to see a colour in each screen context) passes its own class
+ * and styles it locally — the cycling, the sting and the profile write are the
+ * parts worth sharing, not the skin.
  */
 import { THEMES, THEME_LABELS, THEME_ICONS, nextTheme, currentTheme } from '../theme.ts';
 import { setTheme, type SetThemeHost as ThemeToggleHost } from '../lib/set-theme.ts';
 import { t } from '../i18n.ts';
 import { segHtml } from '../lib/seg.ts';
 
-export function createThemeToggle(host: ThemeToggleHost): HTMLButtonElement {
+export function createThemeToggle(
+  host: ThemeToggleHost,
+  opts: { className?: string } = {},
+): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   // Rides the zoom HUD's button idiom; stage-nav-theme handles its ordering /
   // separator within the capsule. No data-nav attr, so the HUD's zoom click
   // delegation ignores it and only this button's own handler fires.
-  btn.className = 'stage-nav-btn stage-nav-theme';
+  btn.className = opts.className ?? 'stage-nav-btn stage-nav-theme';
 
   // Widened views: the stored theme is an arbitrary string until validated.
   const icons: Record<string, string> = THEME_ICONS;
