@@ -550,8 +550,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         >${escape(absentLabel(absentLimit))}</button>`);
     }
     if (host.assets) {
+      // The name has to be the panel's own: it opens "Colour profiles" (Print /
+      // Display / Other), and announcing "Print profile" reinstated exactly the
+      // restriction that rename retracted. `data-tip`, not `title`, which no phone
+      // can open — and a word beside the glyph, because a lone `+` at the end of a
+      // segmented row reads as an overflow control rather than an invitation.
       pills.push(`<button type="button" class="view-seg-btn lab-limit-add" data-lab-profiles
-        aria-label="${escape(t('Print profile'))}" title="${escape(t('Print profile'))}">+</button>`);
+        aria-label="${escape(t('Colour profiles'))}" data-tip="${escape(t('Colour profiles'))}"
+        ><span class="lab-limit-add-g" aria-hidden="true">+</span>${escape(t('Add'))}</button>`);
     }
     limitSeg.innerHTML = pills.join('');
   }

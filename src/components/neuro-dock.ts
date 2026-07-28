@@ -17,10 +17,9 @@ import { getNeurospicy, setNeurospicyEnabled, stopNeurospicy, type NeurospicyHos
 import { flagEnabledSync } from '../feature-flags.ts';
 import { icon } from '../lib/icons.ts';
 import { vizSupported } from '../lib/viz-support.ts';
+import { isNeuroDockCollapsed, setNeuroDockCollapsed } from '../lib/neuro-dock-pref.ts';
 
 const DOCK_ID = 'neuro-dock';
-const COLLAPSE_KEY = 'lolly:neuroDockCollapsed';
-
 // Path data lives in lib/icons.ts as 'neuroBeat' — deduped against sound-toggle.ts's
 // identical NEURO_ICON glyph (component-audit rec 5).
 const NOTE = icon('neuroBeat', { size: 18 });
@@ -98,12 +97,11 @@ function ensureStyles(): void {
   document.head.appendChild(style);
 }
 
-function isCollapsed(): boolean {
-  try { return localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { return false; }
-}
-function setCollapsedPref(v: boolean): void {
-  try { localStorage.setItem(COLLAPSE_KEY, v ? '1' : '0'); } catch { /* best-effort */ }
-}
+// The collapsed pref itself lives in lib/neuro-dock-pref.ts so sound-toggle.ts can
+// READ it while building markup without importing this module (and, through it, the
+// music player) onto the boot path. See that file's header.
+const isCollapsed = isNeuroDockCollapsed;
+const setCollapsedPref = setNeuroDockCollapsed;
 
 let dock: HTMLElement | null = null;
 /** Set by build(): re-mounts the dock's inline visualizer. Module-level so show/hide
@@ -237,11 +235,6 @@ export function showNeuroDock(host: NeurospicyHost, animateIn = false): void {
 /** Hide the dock without destroying it (audio + collapse state persist). */
 export function hideNeuroDock(): void {
   dock?.classList.add('is-hidden');
-}
-
-/** Is the dock collapsed? (On mobile, collapsed = hidden — see the "Show player" button.) */
-export function isNeuroDockCollapsed(): boolean {
-  return isCollapsed();
 }
 
 /** Re-show + expand the dock — the "Show player" action for a mobile-hidden collapsed dock. */

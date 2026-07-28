@@ -181,7 +181,15 @@ export default defineConfig({
             // static graph so it modulepreloads at first paint. Isolating them lets the
             // entry import from this light chunk while the lazy views still get the
             // helpers on demand. MUST precede engine-render so these files land here.
-            { name: 'engine-util', test: /engine\/src\/(tokens|tool-url|embed)\.ts$/, minSize: 0, minShareCount: 1 },
+            { name: 'engine-util', test: /engine\/src\/tokens\.ts$/, minSize: 0, minShareCount: 1 },
+            // tool-url.ts + embed.ts used to share the engine-util group above. They
+            // belong OFF that group: nothing on the boot path imports either (a grep
+            // of shells/web/src finds only lazy views and comment references), but
+            // tokens.ts IS a boot import, so co-locating them meant their ~10 KB of
+            // source rode the preload set for free. Same isolation reasoning as
+            // engine-util itself — a separate group, still ahead of engine-render, so
+            // the lazy views get them on demand without dragging Handlebars/Ajv.
+            { name: 'engine-toolurl', test: /engine\/src\/(tool-url|embed)\.ts$/, minSize: 0, minShareCount: 1 },
             // ENGINE_VERSION — one string constant, but loader.ts imports it too, so
             // default chunking parks version.ts INSIDE engine-render. lib/instance.ts
             // (sync base URL, boot) and the geom kernel both read it, and that single
@@ -199,6 +207,20 @@ export default defineConfig({
             // blob (+ Handlebars + Ajv) back onto the preload set. MUST precede
             // engine-render. Its only engine dep is pemToDer (engine-x509, above).
             { name: 'engine-integrity', test: /engine\/src\/catalog-integrity\.ts$/, minSize: 0, minShareCount: 1 },
+            // Vector geometry kernel (host.geom, v1.64): bezier flattening, the
+            // polynomial root solver, path booleans/offset/stroke-to-fill/spline
+            // lowering — ~28 KB gz. Nothing in the shell reads host.geom; only tool
+            // hooks and the (lazy) free-canvas vector-ops do. Without its OWN group
+            // these files co-locate with the small icon-theme/photo-treatment/
+            // session-record helpers the gallery genuinely needs at first paint, so
+            // deferring the bridge's import alone would not move the bytes — same
+            // mechanism the engine-util/engine-version notes above describe.
+            { name: 'engine-geom', test: /engine\/src\/(geom-api\.ts|geom\/)/, minSize: 0, minShareCount: 1 },
+            // Perceptual colour tools (host.color, v1.40) + the ICC/gamut machinery
+            // makeColorApi eagerly reaches (icc.ts alone is 62 KB of source). Same
+            // story as geom: tool-hook-only, installed by lib/mount-runtime.ts before
+            // the first runtime, and a separate group so it can actually leave boot.
+            { name: 'engine-color', test: /engine\/src\/(color-tools|gamut|icc|gamut-source|gradient-spec|brand-schemes)\.ts$/, minSize: 0, minShareCount: 1 },
             // On-device C2PA sign/verify + CBOR codec (~17 KB gz). Only the lazy
             // /valid view and export-with-provenance run these — keep them off the
             // render-blocking gallery boot path.

@@ -1785,10 +1785,15 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           // In-point: a tool whose visuals begin partway into its own clip (the
           // audiogram's "Start at") stamps that offset on its stage as
           // data-audio-start, the same read-the-stage contract as data-seq-ms — so
-          // the soundtrack starts where the picture does instead of at 0:00. Skipped
-          // for generated music, which is composed to fit the clip and has no
-          // meaningful in-point.
-          const start = audioId === '__generate__' ? 0 : stageAudioStart();
+          // the soundtrack starts where the picture does instead of at 0:00.
+          //
+          // ONLY for `__tool__`, and that distinction is the whole point: the offset
+          // is a property of the tool's OWN clip ("the picture starts 12s into THIS
+          // audio"), not of the export. Applied to any other selection it silently
+          // skips the first 12 seconds of an unrelated catalog music bed — a track
+          // that knows nothing about the tool's in-point. Generated music is composed
+          // to fit the clip and has no meaningful in-point either.
+          const start = audioId === '__tool__' ? stageAudioStart() : 0;
           if (audioUrl) audioOpt = { audio: { id: audioTrackId, url: audioUrl, fadeIn, fadeOut, volume, duck, start } };
         }
       }

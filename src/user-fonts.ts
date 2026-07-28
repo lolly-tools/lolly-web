@@ -25,11 +25,11 @@
 import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
 import { applyChromeBrandVars, brandRadiusValue } from './brand-vars.ts';
 import { bustFontRegistry } from './bridge/font-registry.ts';
+import { REGISTERED, USER_FONT_PREFIX, brandFontFamilies, registerUserFonts, setBrandFontFamilyCache } from './lib/register-user-fonts.ts';
 import { fetchGoogleFont, GOOGLE_FAMILY_RE } from './lib/google-fonts.ts';
 import type { DownloadedFontFace } from './lib/google-fonts.ts';
 
 /** Every user font asset id starts with this (headshot-style fixed namespace). */
-export const USER_FONT_PREFIX = 'user/fonts/';
 
 /** The slice of the web bridge this module drives. The upload record is typed
  *  loosely (`type: string`) so one signature serves both the font faces this
@@ -70,80 +70,19 @@ export interface UserFontFamily {
 const slugOf = (family: string): string =>
   family.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-// ── Brand-font family cache (for tool selectors that list every added font) ────
-// A SYNCHRONOUS snapshot of the installed brand-font family names, so a tool's
-// input renderer (which runs sync) can offer them as select options without an
-// async round-trip. Refreshed at boot (registerUserFonts) and after every
-// install / removal; a change fires 'lolly:brand-fonts' for anything that wants
-// to react (mounted tools re-read it on their next render regardless).
-let brandFontFamilyCache: string[] = [];
-/** The installed brand-font family names (a copy — safe to mutate). */
-export function brandFontFamilies(): string[] { return brandFontFamilyCache.slice(); }
-function setBrandFontFamilyCache(families: string[]): void {
-  const next = [...new Set(families.filter(Boolean))];
-  const changed = next.length !== brandFontFamilyCache.length || next.some((f, i) => f !== brandFontFamilyCache[i]);
-  brandFontFamilyCache = next;
-  if (changed && typeof document !== 'undefined') document.dispatchEvent(new Event('lolly:brand-fonts'));
-}
+// The brand-font family cache, the REGISTERED FontFace map and registerUserFonts
+// itself live in lib/register-user-fonts.ts — the boot-path slice, so main.ts can
+// call registerUserFonts without dragging this module's other ~24 exports (and,
+// through installGoogleFont, the whole Google-font fetcher) onto first paint. They
+// must stay a SINGLE module instance: two copies of the cache would hand a tool's
+// font select an empty list while boot populated the other one. Re-exported here so
+// every existing import path keeps working.
+export { USER_FONT_PREFIX, brandFontFamilies, registerUserFonts, REGISTERED };
+
 /** Recompute the family cache from stored user fonts (best-effort; never throws). */
 export async function refreshBrandFontFamilies(host: UserFontsHost): Promise<void> {
   try { setBrandFontFamilyCache((await listUserFonts(host)).map(f => f.family)); }
   catch { /* leave the last-known cache in place */ }
-}
-
-// ── FontFace registration ─────────────────────────────────────────────────────
-
-// Track what this document already registered (asset id → FontFace) so boot +
-// install + import can all call register without duplicating faces, and delete
-// can unload the exact faces it removes.
-const REGISTERED = new Map<string, FontFace>();
-
-async function registerFace(
-  assetId: string,
-  family: string,
-  blob: Blob,
-  desc: { weight?: string; style?: string; unicodeRange?: string },
-): Promise<void> {
-  if (REGISTERED.has(assetId) || typeof FontFace === 'undefined') return;
-  const face = new FontFace(family, await blob.arrayBuffer(), {
-    weight: desc.weight || '400',
-    style: desc.style || 'normal',
-    ...(desc.unicodeRange ? { unicodeRange: desc.unicodeRange } : {}),
-  });
-  await face.load();
-  (document.fonts as any).add(face);
-  REGISTERED.set(assetId, face);
-}
-
-/**
- * Load every stored user font into document.fonts. Call at boot (before the
- * brand vars land there's nothing to render in the face yet — it's async and
- * best-effort) and after a backup import. Idempotent per document.
- */
-export async function registerUserFonts(host: UserFontsHost): Promise<void> {
-  // The installed set may have just changed (install, brand pack, backup restore
-  // — every path funnels through here), so the vector-export font registry must
-  // re-read it rather than serve a stale family map. See bridge/font-registry.ts.
-  bustFontRegistry();
-  let records: Array<{ id: string; type: string; blob?: Blob; meta?: Record<string, unknown> }>;
-  try { records = await host.assets._exportUserAssets(); }
-  catch { return; }
-  // Refresh the family cache FIRST, off the records' meta — it needs only the
-  // family names, not loaded FontFaces, so populating it before the (awaited)
-  // face-load below means a tool that renders during boot (a deep link straight
-  // to a font-picking tool) already sees the installed brand fonts in its select,
-  // instead of racing the parse. Covers boot, install (installGoogleFont calls us)
-  // and backup import; one store read for both.
-  setBrandFontFamilyCache(records
-    .filter(r => r.type === 'font' && r.id.startsWith(USER_FONT_PREFIX))
-    .map(r => String(r.meta?.family ?? r.meta?.name ?? '')));
-  await Promise.all(records
-    .filter(r => r.type === 'font' && r.id.startsWith(USER_FONT_PREFIX) && r.blob)
-    .map(r => registerFace(r.id, String(r.meta?.family ?? r.meta?.name ?? ''), r.blob!, {
-      weight: typeof r.meta?.weight === 'string' ? r.meta.weight : undefined,
-      style: typeof r.meta?.style === 'string' ? r.meta.style : undefined,
-      unicodeRange: typeof r.meta?.unicodeRange === 'string' ? r.meta.unicodeRange : undefined,
-    }).catch(() => { /* one broken face never blocks the rest */ })));
 }
 
 // ── The primary font = the brand's font.brand token ───────────────────────────

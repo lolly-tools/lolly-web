@@ -10,6 +10,8 @@
  *   - user-assets   — user-uploaded assets (headshots, custom images)
  *   - derived-media — DERIVED, evictable bytes computed on device FROM a user
  *                     asset (today: timeline scrub proxies, lib/clip-proxy.ts)
+ *   - audio-peaks   — DERIVED overview waveforms for audio assets, ~128 bytes
+ *                     each (lib/audio-peaks.ts)
  *
  * Why IndexedDB over localStorage: blobs (images), no 5MB ceiling, structured
  * queries. The capability bridge hides this from tools — they call
@@ -20,7 +22,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -122,6 +124,20 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // into wiping the user's real data) and NOT part of the portable backup
         // (it isn't user data — it is recomputable from data that IS backed up).
         db.createObjectStore('derived-media', { keyPath: 'key' });
+      }
+      if (oldVersion < 9) {
+        // Overview waveforms for audio assets — one row per asset id, holding a
+        // byte-per-bucket peak array (~128 bytes) plus the measured duration, so
+        // the asset picker and catalog can draw a REAL waveform thumbnail instead
+        // of a broken <img> pointing at an .mp3 (see lib/audio-peaks.ts).
+        // Records carry their own `id`, so this is a keyPath store like
+        // 'user-assets'. Derived, evictable, regenerable: a missing row just means
+        // "show the honest glyph and re-derive later", so — like 'derived-media'/
+        // 'generated-previews' — it is intentionally NOT in REQUIRED_STORES (its
+        // absence must never escalate into wiping the user's real data) and NOT
+        // part of the portable backup (it is recomputable from the audio itself,
+        // which IS backed up).
+        db.createObjectStore('audio-peaks', { keyPath: 'id' });
       }
     },
     blocking() {

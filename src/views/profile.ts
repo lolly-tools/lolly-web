@@ -1254,7 +1254,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       // 'derived-media' rides with the asset cache: it is the same kind of thing
       // (downloaded/derived bytes that regenerate on demand), so it is counted in
       // the same slice — see measure() — and must be cleared by the same button.
-      if (cacheBtn) { await clearRegenerable(cacheBtn, () => clearIdbStores(['asset-blob', 'asset-meta', 'derived-media']).then(() => { resetScrubCache(); }), t('Cleared asset cache')); return; }
+      if (cacheBtn) { await clearRegenerable(cacheBtn, () => clearIdbStores(['asset-blob', 'asset-meta', 'derived-media', 'audio-peaks']).then(() => { resetScrubCache(); }), t('Cleared asset cache')); return; }
 
       const prevBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-previews-btn');
       if (prevBtn) { await clearRegenerable(prevBtn, () => host.previews?.clear(), t('Cleared tool previews')); return; }
@@ -1371,7 +1371,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
         localStorage.clear();
         sessionStorage.clear();
-        await clearIdbStores(['state', 'profile', 'user-assets', 'asset-blob', 'asset-meta', 'derived-media']);
+        // 'audio-peaks' belongs in this list for a PRIVACY reason, not a tidiness one:
+        // its rows are keyed by asset id, and an upload's id embeds the user's original
+        // filename ("user/upload/…-therapy_session.mp3"), alongside a measured envelope
+        // of the audio. Leaving it out means "Delete everything" leaves behind both the
+        // name of a file and the shape of its sound. Every derived cache added here in
+        // future needs the same check: does its KEY or its VALUE say anything about the
+        // user's own content?
+        await clearIdbStores(['state', 'profile', 'user-assets', 'asset-blob', 'asset-meta', 'derived-media', 'audio-peaks']);
         resetScrubCache();
         // The 'profile' wipe above dropped the pin RECORDS; also drop the pinned
         // tools' Cache Storage bucket so no orphaned bytes survive the clear.

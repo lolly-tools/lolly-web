@@ -31,7 +31,8 @@
 
 import '../styles/picker.css';   // async CSS chunk (lazy view — not on the landing)
 import DOMPurify from 'dompurify';
-import { createRuntime, serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef } from '@lolly/engine';
+import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef } from '@lolly/engine';
+import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { fmtBytes } from '../lib/format.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -43,6 +44,8 @@ import { choiceDialog, confirmDialog } from '../components/confirm-dialog.ts';
 import { maybeNudgeAssetMilestone } from '../lib/asset-milestone.ts';
 import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { onIdle } from '../lib/clip-thumbs.ts';
+import { audioThumbShape, audioThumbSvg, audioThumbPlaceholder } from '../lib/audio-thumb.ts';
+import { cachedPeaks, derivePeaks, deletePeaks, MAX_CONCURRENT_DERIVES, peaksFingerprint } from '../lib/audio-peaks.ts';
 import { libCategory, LIB_GROUPS, loadAssetCategories, categoryLabel } from '../lib/asset-category.ts';
 import type { LibGroup } from '../lib/asset-category.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
@@ -488,11 +491,15 @@ async function render(
   // On-screen-gated lottie autoplayer over the whole library pane (see refreshLottieThumbs);
   // torn down when the picker closes so no player keeps ticking after the dialog is gone.
   let lottieThumbs: { destroy(): void } | null = null;
+  // On-screen-gated waveform upgrader over the whole picker body (see refreshAudioThumbs);
+  // torn down with the dialog so an in-flight decode can't paint into a dead grid.
+  let audioThumbs: { destroy(): void } | null = null;
   let trap: FocusTrap | undefined;
   const close = (value: AssetRef | null): void => {
     NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
     trap?.release();
     lottieThumbs?.destroy();
+    audioThumbs?.destroy();
     root.innerHTML = '';
     if (opener instanceof HTMLElement) opener.focus();
     resolve(value);
@@ -516,6 +523,20 @@ async function render(
   const refreshLottieThumbs = (): void => {
     lottieThumbs?.destroy();
     lottieThumbs = autoplayLottieThumbs(libraryPane, { isCurrent: () => libraryPane.isConnected });
+  };
+  // (Re)arm the waveform upgrader. Scoped to the whole picker BODY, not just the library
+  // pane: audio tiles also appear in Favourites, "Your images" and inside a project folder,
+  // and a fix that lands on one grid and not the others is the bug we're removing. Called
+  // after each grid (re)renders; the previous observer is destroyed first so re-renders
+  // don't stack them.
+  const refreshAudioThumbs = (): void => {
+    audioThumbs?.destroy();
+    audioThumbs = mountAudioThumbs(
+      body,
+      host,
+      (id) => candidateById.get(id) ?? userAssets.find(a => a.id === id),
+      () => body.isConnected,
+    );
   };
   const libraryEl    = root.querySelector<HTMLElement>('.asset-picker-library')!;
   const favEl        = root.querySelector<HTMLElement>('.asset-picker-favourites');
@@ -742,6 +763,12 @@ async function render(
         // The bridge announces the delete ('lolly:user-asset-deleted', wired in
         // main.ts), which also drops an audio upload from the Neurospicy player.
         await host.assets._deleteUserAsset(id);
+        // The measured waveform is keyed by asset id and nothing else deletes it, so
+        // without this every deleted audio upload leaves an orphan row in the
+        // 'audio-peaks' store that no code path can ever read or reclaim. Awaited
+        // after the asset delete succeeded and never able to reject (deletePeaks
+        // swallows), so it cannot turn a successful delete into the error branch.
+        await deletePeaks(id);
         userAssets = userAssets.filter(a => a.id !== id);
         renderUserAssets();
         renderFavourites();
@@ -901,6 +928,7 @@ async function render(
       inner,
     );
     refreshLottieThumbs();
+    refreshAudioThumbs();
   }
 
   function updateUploadAffordance(): void {
@@ -1124,6 +1152,7 @@ async function render(
     retintThemableCards(); // re-applied after every innerHTML rebuild (search, tab return)
     retreatPhotoCards();
     refreshLottieThumbs();
+    refreshAudioThumbs();
   }
 
   // ── Icon theme strip ────────────────────────────────────────────────────────
@@ -1275,6 +1304,7 @@ async function render(
     retintThemableCards();
     retreatPhotoCards();
     refreshLottieThumbs();
+    refreshAudioThumbs();
   }
 
   // ── Saved creations (previous single-tool sessions) ────────────────────────
@@ -1328,7 +1358,9 @@ async function render(
       ? (lottieThumb(ref, 'asset-picker-thumb') ?? `<span class="asset-picker-thumb asset-picker-thumb-stub" aria-hidden="true">▶</span>`)
       : ref.type === 'video'
         ? videoThumb(ref.url, 'asset-picker-thumb')
-        : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
+        : ref.type === 'audio'
+          ? audioThumb(ref, 'asset-picker-thumb')
+          : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
     return `
       <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}" title="${escapeHtml(name)}">
         ${thumb}
@@ -1384,6 +1416,7 @@ async function render(
     projectsPane.innerHTML = crumbs + (parts.length
       ? parts.join('')
       : `<p class="asset-picker-empty">${q ? t('Nothing here matches.') : (cur ? t('This folder is empty.') : t('No folders yet.'))}</p>`);
+    refreshAudioThumbs();
   }
 
   // ── Tools (configure first, then insert) ───────────────────────────────────
@@ -1932,20 +1965,153 @@ function lottieThumb(ref: AssetRef, className: string): string | null {
   return `<span class="${className} asset-picker-thumb-motion" data-lottie-src="${escapeHtml(json)}" data-lottie-fit="contain"${style} aria-hidden="true">${poster ? '' : '▶'}</span>`;
 }
 
+// An audio thumbnail: the honest glyph now, a REAL waveform once peaks exist.
+//
+// An <img src="…mp3"> can never load, so every audio tile used to render the broken-image
+// icon — and in the lolly-start profile that is 20 of 23 assets, i.e. nearly the whole
+// picker. What ships in the markup is `audioThumbPlaceholder` (a glyph, never a fabricated
+// waveform); `mountAudioThumbs` swaps in `audioThumbSvg` drawn from measured peaks when
+// they arrive. The shape is derived from the asset id so a given track always looks the
+// same and a grid of 52 doesn't read as 52 identical tiles — the id picks the FORM only,
+// never the data.
+//
+// The wrapper span carries the id (the observer's handle) and reuses
+// .asset-picker-thumb-motion, whose `> svg { width:100%; height:100% }` rule already sizes
+// an inline SVG into the 100px thumb box — the same job it does for a Lottie player.
+function audioThumb(ref: AssetRef, className: string): string {
+  const label = String(ref.meta?.name ?? ref.id);
+  return `<span class="${className} asset-picker-thumb-motion asset-picker-thumb-audio" data-audio-thumb="${escapeHtml(ref.id)}" data-audio-fp="${escapeHtml(peaksFingerprint(ref))}">`
+    + audioThumbPlaceholder({ label })
+    + `</span>`;
+}
+
+/**
+ * Upgrade every `[data-audio-thumb]` tile under `root` to a real waveform, decoding only
+ * what the user actually looks at.
+ *
+ * Two gates, because decoding is the expensive part and a catalog holds 52 tracks:
+ *   - ON SCREEN — an IntersectionObserver, like autoplayLottieThumbs. This is the gate
+ *     audio-peaks CANNOT provide: its own queue, once a tile has asked, will eventually
+ *     decode everything asked for, so a fast scroll past 52 tiles would still decode 52
+ *     songs — just later. Leaving the viewport pulls a tile back OUT of the queue.
+ *   - BOUNDED PARALLELISM — MAX_CONCURRENT_DERIVES workers drain that queue, matching
+ *     audio-peaks' own ceiling so a grid fills in visibly without ever holding more than
+ *     that many decoded files. Cached peaks skip the queue entirely — no decode, nothing
+ *     to bound.
+ *
+ * `destroy()` is mandatory before a re-render or on close: it disconnects the observer and
+ * flips `live`, so a decode still in flight resolves into nothing instead of painting into
+ * a torn-down grid.
+ *
+ * Exported because the catalog grid needs exactly this behaviour, and it already pulls this
+ * module in (lib/upload-dropzone.ts imports storeUserUpload from here), so sharing it costs
+ * no extra chunk — whereas a second copy would be a second thing to keep correct.
+ */
+export function mountAudioThumbs(
+  root: Element,
+  host: unknown,
+  lookup: (id: string) => AssetRef | undefined,
+  isCurrent: () => boolean,
+): { destroy(): void } {
+  let live = true;
+  const queue: HTMLElement[] = [];
+  const done = new WeakSet<HTMLElement>();
+  let workers = 0;
+
+  const paint = (el: HTMLElement, peaks: Float32Array | number[]): void => {
+    if (!live || !isCurrent() || !el.isConnected) return;
+    const id = el.dataset.audioThumb ?? '';
+    el.innerHTML = audioThumbSvg(peaks, {
+      shape: audioThumbShape(id),
+      label: String(lookup(id)?.meta?.name ?? id),
+    });
+  };
+
+  const drain = async (): Promise<void> => {
+    if (workers >= MAX_CONCURRENT_DERIVES) return;
+    workers++;
+    try {
+      while (live) {
+        // Take from the back: the tile the user has just scrolled to matters more than one
+        // they passed on the way there.
+        const el = queue.pop();
+        if (!el) break;
+        if (!el.isConnected || done.has(el)) continue;
+        const id = el.dataset.audioThumb;
+        const ref = id ? lookup(id) : undefined;
+        if (!id || !ref) continue;
+        done.add(el);
+        try {
+          const res = await derivePeaks(host, ref, id);
+          if (res) paint(el, res.peaks);
+        } catch { /* no peaks: the honest glyph stays, which is the correct answer */ }
+      }
+    } finally {
+      workers--;
+    }
+  };
+
+  const consider = (el: HTMLElement): void => {
+    if (done.has(el)) return;
+    const id = el.dataset.audioThumb;
+    if (!id) return;
+    void cachedPeaks(id, el.dataset.audioFp ?? '').then((hit) => {
+      if (!live || done.has(el)) return;
+      if (hit) { done.add(el); paint(el, hit.peaks); return; }
+      if (!queue.includes(el)) queue.push(el);
+      void drain();
+    }).catch(() => { /* a stored-peaks read failure just means "derive it" */ });
+  };
+
+  const els = Array.from(root.querySelectorAll<HTMLElement>('[data-audio-thumb]'));
+  if (typeof IntersectionObserver !== 'function') {
+    // No observer (jsdom, ancient browsers): still never decode a whole grid — read the
+    // cache for every tile, but leave uncached ones on the glyph rather than eagerly
+    // decoding 52 songs nobody asked for.
+    for (const el of els) {
+      const id = el.dataset.audioThumb;
+      if (!id) continue;
+      void cachedPeaks(id, el.dataset.audioFp ?? '').then((hit) => { if (hit && live) { done.add(el); paint(el, hit.peaks); } }).catch(() => {});
+    }
+    return { destroy() { live = false; } };
+  }
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const el = e.target as HTMLElement;
+      if (e.isIntersecting) consider(el);
+      else {
+        const i = queue.indexOf(el);
+        if (i >= 0) queue.splice(i, 1);   // scrolled away before its turn — don't decode it
+      }
+    }
+  }, { rootMargin: '200px' });
+  for (const el of els) io.observe(el);
+  return {
+    destroy() {
+      live = false;
+      queue.length = 0;
+      io.disconnect();
+    },
+  };
+}
+
 function card(ref: AssetRef): string {
   const isPlaceholder = ref.meta?._placeholder;
   const name = ref.meta?.name ?? ref.id;
   // A user-uploaded lottie's url is JSON (no still poster), so an <img> would 404 — show
   // a play glyph, matching userCard. (Catalog lotties resolve to a poster url upstream.)
-  // A video plays itself in a muted looping <video>; everything else is an <img>
-  // (gif/apng/animated-webp animate natively there).
+  // A video plays itself in a muted looping <video>; audio draws its own waveform
+  // (audioThumb — an <img> at an .mp3 is the broken-image icon); everything else is an
+  // <img> (gif/apng/animated-webp animate natively there).
   const thumb = isPlaceholder
     ? `<div class="asset-picker-thumb asset-picker-thumb-stub">${escapeHtml(ref.type)}</div>`
     : ref.type === 'lottie'
       ? (lottieThumb(ref, 'asset-picker-thumb') ?? `<span class="asset-picker-thumb asset-picker-thumb-stub" aria-hidden="true">▶</span>`)
       : ref.type === 'video'
         ? videoThumb(ref.url, 'asset-picker-thumb')
-        : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
+        : ref.type === 'audio'
+          ? audioThumb(ref, 'asset-picker-thumb')
+          : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
   return `
     <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}">
       ${thumb}
@@ -2055,11 +2221,14 @@ function userCard(ref: AssetRef): string {
   const name = ref.meta?.name ?? t('Image');
   // A user-uploaded lottie's url is the JSON itself, so it plays as a looping motion marker
   // (autoplayLottieThumbs mounts it on screen); the ▶ stub is only the pre-mount resting frame.
+  // An uploaded track shows its measured waveform once mountAudioThumbs has peaks for it.
   const thumb = ref.type === 'lottie'
     ? (lottieThumb(ref, 'asset-picker-thumb') ?? `<span class="asset-picker-thumb asset-picker-thumb-stub" aria-hidden="true">▶</span>`)
     : ref.type === 'video'
       ? videoThumb(ref.url, 'asset-picker-thumb')
-      : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
+      : ref.type === 'audio'
+        ? audioThumb(ref, 'asset-picker-thumb')
+        : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
   return `
     <div class="asset-picker-card asset-picker-card-user">
       <button type="button" class="asset-picker-card-pick" data-asset-id="${escapeHtml(ref.id)}">

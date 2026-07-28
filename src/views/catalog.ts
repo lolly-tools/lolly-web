@@ -56,6 +56,9 @@ import {
 import { mountUploadDropzone } from '../lib/upload-dropzone.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
 import type { PickerHost } from './picker.ts';
+import { mountAudioThumbs } from './picker.ts';
+import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
+import { peaksFingerprint } from '../lib/audio-peaks.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
 import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
@@ -287,8 +290,6 @@ const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 // Filled play/pause glyphs for the details-modal Lottie playback overlay.
 const PLAY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 const PAUSE_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
-// Music-note glyph for an audio-upload tile (audio can't thumbnail as an image).
-const AUDIO_GLYPH = '<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
 // Shield-check glyph for the "Check Content Credentials" action.
 const SHIELD_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>';
 
@@ -585,6 +586,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let favStripOn = true;
   let featuredHandle: FeaturedRowHandle | null = null;   // the mounted favourites strip, if any
   let lottieThumbs: { destroy(): void } | null = null;   // on-screen-gated lottie grid autoplayer
+  let audioThumbs: { destroy(): void } | null = null;    // on-screen-gated waveform upgrader
   let viewOptsOpen = false;
   let closeViewOpts: () => void = () => {};              // set in wire(); called on teardown
   try {
@@ -772,11 +774,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (ref.type === 'video') {
       return `<video class="cat-thumb" src="${escape(ref.url)}" muted loop autoplay playsinline preload="metadata"></video>`;
     }
-    // Audio (a user's own music upload) can't thumbnail. In the details modal (full) it
-    // gets a real <audio controls> player to preview; on a grid tile it shows a music-note
-    // glyph. The grid tile nests the thumb inside a <button>, where an interactive <audio>
-    // control is invalid — so the player is the `full` path only (the modal preview isn't a
-    // button). Both use `tag` (span inside a button, div in the modal).
+    // Audio. In the details modal (full) it gets a real <audio controls> player to preview;
+    // on a grid tile it draws its own MEASURED waveform (mountAudioThumbs swaps the glyph
+    // for one once peaks exist — a glyph, never an invented shape, until then). The grid
+    // tile nests the thumb inside a <button>, where an interactive <audio> control is
+    // invalid — so the player is the `full` path only (the modal preview isn't a button).
+    // Both use `tag` (span inside a button, div in the modal).
     if (ref.type === 'audio') {
       if (full) {
         // zzfxm songs and tracker modules are song data, not a playable audio file —
@@ -795,7 +798,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           + `<audio ${srcAttr} controls preload="metadata" data-audio-preview></audio>`
           + `<p class="cat-audio-note" role="status" hidden></p></${tag}>`;
       }
-      return `<${tag} class="cat-thumb cat-thumb-stub cat-thumb-audio" aria-hidden="true">${AUDIO_GLYPH}</${tag}>`;
+      // .cat-thumb-motion is the "an inline SVG fills this box" rule (`> svg` at 100%),
+      // written for the Lottie player and doing the identical job here.
+      return `<${tag} class="cat-thumb cat-thumb-motion cat-thumb-audio" data-audio-thumb="${escape(ref.id)}" data-audio-fp="${escape(peaksFingerprint(ref))}">`
+        + audioThumbPlaceholder({ label: String(ref.meta?.name ?? ref.id) })
+        + `</${tag}>`;
     }
     // Grid tiles show the small `thumb` derivative (query() puts its url on meta.thumbUrl);
     // the details/zoom modal passes full=true to keep the original for close inspection.
@@ -1245,6 +1252,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     syncBulkBar();
     reapplyTreatment();
     mountLottieThumbs();
+    mountAudioThumbGrid();
     mountDropzone();
     if (firstPaint) { armViewEnter(viewEl, '.cat-assets, .cat-group--ref'); firstPaint = false; }
   }
@@ -1258,6 +1266,18 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     lottieThumbs?.destroy();
     const body = viewEl.querySelector<HTMLElement>('.catalog-body');
     lottieThumbs = body ? autoplayLottieThumbs(body, { isCurrent: () => mounted }) : null;
+  }
+
+  // (Re)mount the waveform upgrader over the current grid — the audio sibling of
+  // mountLottieThumbs, called from the same places. Only tiles the user scrolls to are
+  // decoded: SUSE ships 52 audio assets, and analysing all of them because a grid painted
+  // would be minutes of decoding nobody asked for.
+  function mountAudioThumbGrid(): void {
+    audioThumbs?.destroy();
+    const body = viewEl.querySelector<HTMLElement>('.catalog-body');
+    audioThumbs = body
+      ? mountAudioThumbs(body, host, (id) => assetById.get(id), () => mounted)
+      : null;
   }
 
   // The mounted upload dropzone's teardown, if any (lib/upload-dropzone.ts).
@@ -1290,6 +1310,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     syncBulkBar();
     reapplyTreatment();
     mountLottieThumbs();
+    mountAudioThumbGrid();
     mountDropzone();
   }
 
@@ -2969,6 +2990,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     featuredHandle = null;
     lottieThumbs?.destroy();
     lottieThumbs = null;
+    // Leaving the view must also abandon any waveform decode still running, or a finished
+    // analysis paints into a grid that is no longer on screen.
+    audioThumbs?.destroy();
+    audioThumbs = null;
     closeViewOpts();
     closeDetails();
     closeDownloadDialog();

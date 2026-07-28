@@ -225,7 +225,7 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'pro/grid.ts': 5,
   'pro/run-overlay.ts': 1,
   'theme.ts': 3,
-  'views/catalog.ts': 22,
+  'views/catalog.ts': 21,   // 22 → 21: AUDIO_GLYPH retired for lib/audio-thumb.ts (2026-07-28)
   'views/dashboard.ts': 5,
   'views/doc-editor.ts': 23,
   'views/free-canvas.ts': 1,

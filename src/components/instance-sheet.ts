@@ -37,41 +37,13 @@ import { escape, NAV_EVENTS } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
 import { mountModal } from './modal.ts';
-import { openDB } from '../bridge/db.ts';
+import { markInstanceChoiceMade } from '../lib/instance-choice.ts';
 import { getInstanceBase, setInstanceBase, instanceFetch } from '../lib/instance.ts';
 import { validateInstanceUrl, shapeProbeResult, type ProbeOutcome } from '../lib/instance-probe.ts';
 import { syncCatalog } from '../catalog/sync.ts';
 import { importBackup, MAX_RESTORE_TOTAL_BYTES } from '../data-transfer.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 
-/** Key of the "user has been asked" flag inside the 'profile' KV store — same
- *  store lib/instance.ts keeps its own 'instance-base' key in. Distinct from
- *  the base itself: choosing "bundled" also settles the question (base stays
- *  '') without it, so this needs its own marker. */
-const CHOICE_KEY = 'instance-choice-made';
-
-/** True inside any Tauri shell (desktop or mobile) — same feature-detect
- *  lib/instance.ts's own (unexported) hasTauriInternals() uses. */
-export function isTauriShell(): boolean {
-  return typeof window !== 'undefined'
-    && typeof (window as { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__?.invoke === 'function';
-}
-
-/** Has the user ever settled the first-run instance choice? Unreadable
- *  storage counts as "yes" — same reasoning as welcome-dialog's
- *  isWelcomeDismissed: re-prompting every single boot would be worse than
- *  never prompting. */
-export async function hasMadeInstanceChoice(): Promise<boolean> {
-  try {
-    return (await (await openDB()).get('profile', CHOICE_KEY)) === true;
-  } catch {
-    return true;
-  }
-}
-
-async function markInstanceChoiceMade(): Promise<void> {
-  try { await (await openDB()).put('profile', true, CHOICE_KEY); } catch { /* best-effort */ }
-}
 
 // validateInstanceUrl / shapeProbeResult (the pure URL-validation and probe-
 // shaping logic) live in lib/instance-probe.ts — unit-tested there, in
@@ -353,14 +325,9 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
   });
 }
 
-/**
- * Boot-time gate (main.ts's boot(), called before the first catalog sync):
- * show the sheet once, Tauri shells only, before the choice is ever
- * recorded. A no-op (one fast IndexedDB read) on every later boot and on
- * every non-Tauri shell (the web PWA never gates on this).
- */
-export async function maybeShowFirstRunInstanceSheet(host: HostV1): Promise<void> {
-  if (!isTauriShell()) return;
-  if (await hasMadeInstanceChoice()) return;
-  await openInstanceSheet(host, { firstRun: true });
-}
+/* maybeShowFirstRunInstanceSheet + the isTauriShell/hasMadeInstanceChoice
+ * probes it gates on now live in lib/instance-choice.ts, a leaf module main.ts
+ * can import for ~0 bytes; it dynamic-imports this file only when the sheet is
+ * actually shown. See that file's header. Re-exported here so the historical
+ * import path keeps working. */
+export { isTauriShell, hasMadeInstanceChoice, maybeShowFirstRunInstanceSheet } from '../lib/instance-choice.ts';

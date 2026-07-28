@@ -40,7 +40,7 @@
 
 import '../styles/parts/brand-studio.css'; // every .be-* rule — rides this module's lazy chunk
 import './oklch-slice.css';                // the gamut chart's .okls-* rules (see oklch-slice.ts)
-import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
+import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, convertColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
 import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
 import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
@@ -1683,14 +1683,37 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const FIXED_LABEL: Record<SlicePlane, string> = {
     lc: t('Hue'), ch: t('Lightness'), lh: t('Chroma'),
   };
+  /**
+   * A swatch's AUTHORED colour, for positioning its dot on the slice charts.
+   *
+   * `s.hex` is the resolved sRGB bake — gamut-MAPPED, so for a swatch stored as
+   * `oklch()` past sRGB it carries a reduced chroma. Positioning from it plots the
+   * sRGB ceiling instead of the colour (the same defect just fixed in the Colour
+   * Lab), and worse, a drag then reads back that clamped value and ratchets the
+   * swatch's real chroma down a step at a time.
+   *
+   * `s.raw` is the stored `$value`, which is `oklch()` for anything the wheel wrote.
+   * An alias (`{color.x}`) or an unparseable value has no authored colour of its own
+   * — those fall back to the hex, which is what they were always positioned by.
+   */
+  const swatchOklch = (s: { raw: string; isAlias: boolean }): { l: number; c: number; h: number } | undefined => {
+    if (s.isAlias) return undefined;
+    const parsed = parseCssColor(s.raw);
+    if (!parsed) return undefined;
+    const [l, c, h] = convertColor(parsed, 'oklch').components;
+    return Number.isFinite(l) && Number.isFinite(c) && Number.isFinite(h) ? { l, c, h } : undefined;
+  };
+
   const sliceDots = (): SliceDot[] =>
-    swatches.map((s, idx) => ({ idx, hex: s.hex, label: s.name }));
+    swatches.map((s, idx) => ({ idx, hex: s.hex, label: s.name, oklch: swatchOklch(s) }));
 
   /** Move every dot to where the CURRENT slice puts it, without a re-render —
    *  the off-plane fade changes on every tick of the fixed slider. */
   const refreshSliceDots = (): void => {
     if (!sliceMount) return;
-    for (const s of swatches.keys()) updateSliceDot(sliceMount, s, swatches[s]!.hex, sliceState);
+    for (const s of swatches.keys()) {
+      updateSliceDot(sliceMount, s, swatches[s]!.hex, sliceState, swatchOklch(swatches[s]!));
+    }
   };
 
   // Repaint at most once per frame while the fixed slider is scrubbed, at half

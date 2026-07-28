@@ -13,11 +13,8 @@ import type { HostV1, AssetRef, AssetPickerOpts } from '../../../../engine/src/b
 // set is the UNION over every importer — touching it here drags createRuntime
 // (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
 // scripts/check-bundle-budget.ts.
-import { makeColorApi } from '../../../../engine/src/color-tools.ts';
-import { makeGeomApi } from '../../../../engine/src/geom-api.ts';
 import { createStateAPI } from './state.ts';
 import { createProfileAPI } from './profile.ts';
-import { createIdentityAPI } from './identity.ts';
 import { createPreviewsAPI } from './previews.ts';
 import { createAssetsAPI } from './assets.ts';
 import { createTokensAPI } from './tokens.ts';
@@ -27,15 +24,16 @@ import { createClipboardAPI } from './clipboard.ts';
 // imported statically: they'd land in the boot chunk that the gallery landing loads
 // before first paint, yet neither runs until a tool exports or composes. Both are
 // wired below as lazy facades (dynamic import on first use), like host.assets.pick.
-import { createNetAPI } from './net.ts';
-import { createTextAPI } from './text.ts';
-import { createPdfAPI } from './pdf.ts';
-import { createPptxAPI } from './pptx.ts';
-import { createCaptureAPI } from './capture.ts';
+// net / text / pdf / pptx / capture / viz are wired below as LAZY FACADES for the
+// same reason export and compose are: every one of their methods is async, none
+// of them is read anywhere on the boot path (the gallery gates tools on
+// PROVIDED_CAPABILITIES, a plain const, not on these objects), and between them
+// they drag the HarfBuzz glue, pdf-lib's entry, the OOXML zip caps and the WebGL
+// probe into the chunk that renders first paint. See scripts/check-bundle-budget.ts.
 import { createMediaAPI } from './media.ts';
-import { createVizAPI } from './viz.ts';
 import { createRecorderAPI } from './recorder.ts';
-import { hasCaptureExtension, createExtensionCaptureAPI } from './capture-extension.ts';
+import { hasCaptureExtension } from './capture-extension.ts';
+import { vizSupported } from '../lib/viz-support.ts';
 import { PROVIDED_CAPABILITIES } from './capabilities-provided.ts';
 import { openDB } from './db.ts';
 
@@ -48,8 +46,15 @@ import { openDB } from './db.ts';
  */
 interface WebHost extends HostV1 {
   readonly shell: 'web';
-  identity: ReturnType<typeof createIdentityAPI>;
+  identity: Awaited<ReturnType<typeof import('./identity.ts')['createIdentityAPI']>>;
   previews: ReturnType<typeof createPreviewsAPI>;
+}
+
+/** One-shot memoiser for the lazy-facade loaders below: the first call starts the
+ *  dynamic import, every later call reuses the same promise. */
+function memo<T>(load: () => Promise<T>): () => Promise<T> {
+  let p: Promise<T> | null = null;
+  return () => (p ??= load());
 }
 
 export async function createBridge(): Promise<WebHost> {
@@ -83,8 +88,20 @@ export async function createBridge(): Promise<WebHost> {
   // Order matters: assets depends on db; export depends on host for watermark style.
   host.state = createStateAPI(db);
   host.profile = createProfileAPI(db);
-  // Shell-internal like previews (not part of HostV1): Content Credentials device identity + CA cert.
-  host.identity = createIdentityAPI(db);
+  // Shell-internal like previews (not part of HostV1): Content Credentials device
+  // identity + CA cert. A lazy facade — all five methods are async, and its only
+  // callers are the /profile view's credentials card and tool-actions' signer
+  // choice, both far past first paint. Its cross-tab BroadcastChannel is built
+  // with the impl, which is correct: a tab that never touches identity has no
+  // cached record to invalidate.
+  const loadIdentity = memo(async () => (await import('./identity.ts')).createIdentityAPI(db));
+  host.identity = {
+    status: async () => (await loadIdentity()).status(),
+    completeEnrollment: async (token, days) => (await loadIdentity()).completeEnrollment(token, days),
+    enroll: async (provider, opts) => (await loadIdentity()).enroll(provider, opts),
+    signer: async () => (await loadIdentity()).signer(),
+    forget: async () => (await loadIdentity()).forget(),
+  } as WebHost['identity'];
   // Web-only host-UI helper (not in the tool-facing contract): cache of
   // profile-personalized gallery thumbnails. The gallery feature-detects it.
   host.previews = createPreviewsAPI(db);
@@ -129,13 +146,40 @@ export async function createBridge(): Promise<WebHost> {
   // declares network.allowlist gets a per-mount HOST CLONE with a scoped net
   // instead: views/tool.ts (the live canvas), views/multi-edit.ts (each member's
   // runtime), and pro/render-export.ts withToolNet (offscreen batch/zip/compose).
-  host.net = createNetAPI({ allowlist: [] });
-  host.text = createTextAPI();
-  host.pdf = createPdfAPI(); // on-device PDF metadata inspect + strip (pdf-lib, lazy-loaded)
-  host.pptx = createPptxAPI(); // on-device .pptx inspect + surgical rebrand (fflate + engine pptx-read/pptx-patch, lazy-loaded)
+  const loadNet = memo(async () => (await import('./net.ts')).createNetAPI({ allowlist: [] }));
+  host.net = { fetch: async (url, init) => (await loadNet()).fetch(url, init) };
+
+  const loadText = memo(async () => (await import('./text.ts')).createTextAPI());
+  host.text = {
+    toPath: async (opts) => (await loadText()).toPath(opts),
+    preload: async (fontUrl) => (await loadText()).preload(fontUrl),
+    axisDefaults: async (fontUrl) => (await loadText()).axisDefaults!(fontUrl),
+    fontUrl: async (family, opts) => (await loadText()).fontUrl!(family, opts),
+  } as WebHost['text'];
+
+  // on-device PDF metadata inspect + strip/compress (pdf-lib, itself lazy inside)
+  const loadPdf = memo(async () => (await import('./pdf.ts')).createPdfAPI());
+  host.pdf = {
+    analyze: async (bytes) => (await loadPdf()).analyze(bytes),
+    strip: async (bytes) => (await loadPdf()).strip(bytes),
+    compress: async (bytes, opts) => (await loadPdf()).compress!(bytes, opts),
+  } as WebHost['pdf'];
+
+  // on-device .pptx inspect + surgical rebrand (fflate + engine pptx-read/pptx-patch)
+  const loadPptx = memo(async () => (await import('./pptx.ts')).createPptxAPI());
+  host.pptx = {
+    inspect: async (bytes, o) => (await loadPptx()).inspect(bytes, o),
+    rebrand: async (bytes, plan) => (await loadPptx()).rebrand(bytes, plan),
+  } as WebHost['pptx'];
+
   // Extension when installed (real capture in the browser); otherwise the stub
   // that throws a clear error. In Tauri, capture.js is overridden to the native impl.
-  host.capture = extCapture ? createExtensionCaptureAPI() : createCaptureAPI();
+  // Which of the two it is stays a SYNCHRONOUS decision (the extension sets its flag
+  // at document_start, and `capabilities` above already read it) — only the impl is lazy.
+  const loadCapture = memo(async () => extCapture
+    ? (await import('./capture-extension.ts')).createExtensionCaptureAPI()
+    : (await import('./capture.ts')).createCaptureAPI());
+  host.capture = { page: async (spec) => (await loadCapture()).page(spec) } as WebHost['capture'];
   // Live camera frames (v1.4) for motion-reactive tools. Progressive enhancement,
   // NOT a gated capability: a tool with an onFrame hook offers a "live" toggle only
   // where the camera is available, and runs as a still tool otherwise.
@@ -145,17 +189,27 @@ export async function createBridge(): Promise<WebHost> {
   // because record() prompts for a grant; the meter/record affordances still
   // feature-detect host.recorder.isAvailable() at the point of use.
   host.recorder = createRecorderAPI();
-  // Perceptual colour tools (v1.40) — pure engine math, attached verbatim so
-  // web/CLI/Tauri can never drift.
-  host.color = makeColorApi();
-  // Vector geometry (v1.64) — path booleans, offset, stroke-to-fill, spline lowering
-  // and hit testing. Pure engine math like color, attached verbatim for the same
-  // reason: one implementation, so web/CLI/Tauri cannot drift.
-  host.geom = makeGeomApi();
-  // MilkDrop availability + preset attribution (v1.72). Nothing heavy loads here:
-  // isAvailable is one WebGL2 probe and the preset list is dynamic-imported on first
-  // ask. A tool feature-detects it and falls back to its own canvas style without.
-  host.viz = createVizAPI();
+  // host.color (perceptual colour tools, v1.40) and host.geom (path booleans,
+  // offset, stroke-to-fill, spline lowering, hit testing, v1.64) are pure engine
+  // math attached verbatim so web/CLI/Tauri can never drift — but they are also
+  // ~39 KB gz between them (makeColorApi eagerly reaches the ICC/gamut parsers;
+  // makeGeomApi reaches the whole bezier/boolean kernel), and NOTHING in this
+  // shell reads either one: `grep -rn 'host\.color\|host\.geom' shells/web/src`
+  // finds only this file. Their only consumers are TOOL HOOKS, which cannot run
+  // before a runtime exists. So they are installed by installToolApis() below,
+  // awaited at the single chokepoint every runtime goes through
+  // (lib/mount-runtime.ts's createToolRuntime). Both contracts are SYNCHRONOUS
+  // (`deltaE` returns a number, `union` returns a path — not promises), so a
+  // lazy facade like host.images is not available here; a pre-mount await is.
+  // MilkDrop availability + preset attribution (v1.72). `isAvailable` is
+  // contractually SYNCHRONOUS, so — exactly like host.audio below — it is answered
+  // here by the same lib/viz-support probe the real impl calls, imported directly
+  // rather than re-typed so the two cannot drift; `presets` is async and lazy.
+  const loadViz = memo(async () => (await import('./viz.ts')).createVizAPI());
+  host.viz = {
+    isAvailable: () => vizSupported(),
+    presets: async () => (await loadViz()).presets(),
+  } as WebHost['viz'];
 
   // Lazy images facade (v1.60): decode/resize/re-encode wraps the upload path's
   // codec glue (and, inside it, the 3 MB lazy HEIC WASM decoder) — none of which
@@ -198,4 +252,39 @@ export async function createBridge(): Promise<WebHost> {
   };
 
   return host;
+}
+
+/**
+ * Install the two synchronous, tool-hook-only engine APIs — `host.color`
+ * (v1.40) and `host.geom` (v1.64) — that createBridge() deliberately leaves
+ * off the boot path (see the comment where they used to be attached).
+ *
+ * Idempotent and safe to call concurrently: the in-flight promise is cached, so
+ * N runtimes mounting at once share one import. Every path that mounts a tool
+ * MUST await this first; do not call it directly — go through
+ * lib/mount-runtime.ts's createToolRuntime(), which is the enforced chokepoint.
+ *
+ * Failure is non-fatal by design: both APIs are OPTIONAL in the v1 contract and
+ * tools feature-detect them, so a failed import degrades a colour/vector tool to
+ * its own fallback rather than blocking the mount.
+ */
+let toolApiModules: Promise<{ color: HostV1['color']; geom: HostV1['geom'] }> | null = null;
+export async function installToolApis(host: HostV1): Promise<void> {
+  // Cache the MODULES, not the install: multi-edit and pro/render-export mount
+  // runtimes against per-mount host CLONES (scoped net, thumb assets), so the
+  // attach step has to run for whichever host object this call was handed.
+  if (!toolApiModules) {
+    toolApiModules = Promise.all([
+      import('../../../../engine/src/color-tools.ts'),
+      import('../../../../engine/src/geom-api.ts'),
+    ]).then(([c, g]) => ({ color: c.makeColorApi(), geom: g.makeGeomApi() }));
+  }
+  try {
+    const apis = await toolApiModules;
+    host.color ??= apis.color;
+    host.geom ??= apis.geom;
+  } catch (err) {
+    toolApiModules = null; // let a later mount retry
+    console.warn('[warn] could not install host.color/host.geom', err);
+  }
 }

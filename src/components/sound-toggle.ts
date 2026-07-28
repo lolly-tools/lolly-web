@@ -16,7 +16,13 @@ import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { isSfxMuted, setSfxMuted, playSfx } from '../lib/sfx.ts';
 import { getNeurospicy, setNeurospicyEnabled, applyNeurospicy } from '../lib/neurospicy.ts';
-import { syncNeuroDock, isNeuroDockCollapsed, reopenNeuroDock } from './neuro-dock.ts';
+import { isNeuroDockCollapsed } from '../lib/neuro-dock-pref.ts';
+// The dock itself (and, through it, components/music-player.ts) is dynamic-imported:
+// every use below is inside a click handler or a post-render sync, and the module
+// would otherwise sit on the boot path for every visitor — including the majority
+// who have never turned Neurospicy on. `isNeuroDockCollapsed` is the one read that
+// happens synchronously while building markup, so it lives in its own leaf module.
+const neuroDock = () => import('./neuro-dock.ts');
 import { flagEnabledSync } from '../feature-flags.ts';
 
 /** Phone-width viewport — the collapsed dock is hidden here and reopened from this menu. */
@@ -213,7 +219,10 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
   const sw = wrap.querySelector<HTMLButtonElement>('[data-neurospicy-switch]');
   const swWrap = sw?.closest<HTMLElement>('.sound-switch');
   paintNeurospicy(root);   // sync the initial dimmed/off look to the current mute state
-  syncNeuroDock(host);     // if the mode is already on, the dock should already be showing
+  // If the mode is already on, the dock should already be showing. Skipped entirely
+  // when it is off — syncNeuroDock's else-branch is hideNeuroDock(), a no-op for a
+  // dock that was never built, so not importing is exactly equivalent.
+  if (getNeurospicy().enabled) void neuroDock().then(m => m.syncNeuroDock(host));
   // Repaint whenever the shared enabled state changes elsewhere (e.g. the dock's close
   // button). Popovers get rebuilt/rewired each time they open, so self-unhook once this
   // instance's root is no longer in the document instead of leaking one listener per open.
@@ -225,7 +234,7 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
   // Mobile "Show player" — reopen the dock that was collapsed (hidden on phones).
   wrap.querySelector<HTMLButtonElement>('[data-neuro-show]')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    reopenNeuroDock(host);
+    void neuroDock().then(m => m.reopenNeuroDock(host));
     (e.currentTarget as HTMLElement).remove(); // dock is visible now — drop the button
   });
   sw?.addEventListener('click', async (e) => {
@@ -248,7 +257,7 @@ function wireNeurospicy(root: ParentNode, host: NeuroHost): void {
           host as import('../lib/particles.ts').ChipPairsHost));
     }
     await setNeurospicyEnabled(host, on);
-    syncNeuroDock(host, on);   // show (with a spring-in + corner confetti on enable) / hide the dock
+    void neuroDock().then(m => m.syncNeuroDock(host, on));   // show (with a spring-in + corner confetti on enable) / hide the dock
   });
 }
 
