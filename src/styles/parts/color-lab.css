@@ -100,7 +100,7 @@
   gap: 1.25rem;
   align-items: start;
 }
-
+.lab-subject .lab-swatch{    max-height: 26em;}
 .lab-swatch {
   /* Square-ish, but free to grow: it now carries a stack of notations, and a hard
      aspect ratio would clip them on a narrow column. */
@@ -367,8 +367,44 @@
      because it is only here for the caption relationship, not for spacing. */
   margin: 0;
 }
+/* Title bar: the channel this panel sets, and its typed value. Above the plot,
+   because it names the control rather than describing the picture. */
+.lab-chart-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.lab-chart-title { margin: 0; font-size: 0.95rem; letter-spacing: -0.01em; }
+.lab-chart-num {
+  flex: 0 0 auto;
+  width: 6.5rem;
+  padding: 0.2rem 0.35rem;
+  font: inherit;
+  font-family: 'SUSE Mono', ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 0.5);
+  background: hsl(var(--muted) / 0.5);
+  color: inherit;
+}
+.lab-chart-num:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 1px;
+}
+
 /* The axis slider between the plot and its caption. */
 .lab-chart-slider { margin: 0.15rem 0 0.1rem; }
+
+.lab-chart-plane {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 
 .lab-chart-head {
   display: flex;

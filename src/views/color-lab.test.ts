@@ -17,6 +17,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
+import { describeColor } from '@lolly/engine';
 
 const dom = new JSDOM('<!doctype html><html><body><main id="view"></main></body></html>', {
   url: 'http://localhost/#/lab',
@@ -54,10 +55,24 @@ async function mount(params = ''): Promise<void> {
 const $ = (sel: string): HTMLElement | null => view.querySelector<HTMLElement>(sel);
 const text = (sel: string): string => ($(sel)?.textContent ?? '').trim();
 
+/** The subject's sRGB hex, read off the swatch's hex alternate. There is no text
+ *  field to read any more — the picker's own value pill is the single entry. */
+function subjectHex(): string {
+  const li = [...view.querySelectorAll('[data-lab-sw-alts] .lab-sw-alt')]
+    .find(x => (x.querySelector('.lab-sw-alt-space')?.textContent ?? '').trim() === 'hex');
+  return (li?.querySelector('code')?.textContent ?? '').trim().toLowerCase();
+}
+/** The subject's OKLCH, read off the panels' numeric inputs. */
+function subjectOklch(): { l: number; c: number; h: number } {
+  const num = (plane: string): number =>
+    Number(($(`[data-lab-num="${plane}"]`) as HTMLInputElement).value);
+  return { l: num('lc'), c: num('ch'), h: num('lh') };
+}
+
 test('the report mounts with every section present', async () => {
   await mount();
   for (const sel of [
-    '[data-lab-swatch]', '[data-lab-raw]', '[data-lab-picker]', '[data-lab-limit]',
+    '[data-lab-swatch]', '[data-lab-picker]', '[data-lab-limit]',
     '[data-lab-gamut]', '[data-lab-headroom]', '[data-lab-ceilings]',
     '[data-lab-contrast]', '[data-lab-ramp]', '[data-lab-notations]',
     '[data-lab-chart="lc"]', '[data-lab-chart="ch"]', '[data-lab-chart="lh"]',
@@ -93,9 +108,6 @@ test('a wide-gamut seed is described unclamped, and the clamp is disclosed', asy
   const clamp = $('[data-lab-clamp]')!;
   assert.equal(clamp.hidden, false, 'the clamp notice is shown');
   assert.match(clamp.textContent ?? '', /outside sRGB/i);
-  // The raw field holds what the user AUTHORED, not the mapped hex — on the
-  // first paint as much as after an edit.
-  assert.equal(($('[data-lab-raw]') as HTMLInputElement).value, 'color(display-p3 1 0 0)');
   // The swatch leads with the space the PICKER is set to (OKLCH by default), and
   // says where the colour was actually authored so it can't read as if it were
   // typed in OKLCH. The authored form itself stays in the field and the alternates.
@@ -105,6 +117,10 @@ test('a wide-gamut seed is described unclamped, and the clamp is disclosed', asy
     .map(el => (el.textContent ?? '').trim());
   assert.ok(altSpaces.includes('display-p3'), `the authored space is an alternate: ${altSpaces}`);
   assert.match($('[data-lab-clamp]')!.textContent ?? '', /#FF/i);
+  // The authored form survives as an alternate even though nothing echoes it back
+  // in a text field any more.
+  const altCodes = [...view.querySelectorAll('[data-lab-sw-alts] code')].map(c => (c.textContent ?? '').trim());
+  assert.ok(altCodes.some(c => c === 'color(display-p3 1 0 0)'), `authored form listed: ${altCodes}`);
   // The swatch asks the browser for the REAL colour, with the hex only as the
   // CSS fallback underneath it.
   assert.equal($('[data-lab-swatch]')!.style.background, 'color(display-p3 1 0 0)');
@@ -124,27 +140,20 @@ test('a junk seed falls back instead of rendering an empty report', async () => 
   assert.equal($('[data-lab-clamp]')!.hidden, true);
 });
 
-test('the free-text field accepts any space and rejects junk visibly', async () => {
-  await mount();
-  const raw = $('[data-lab-raw]') as HTMLInputElement;
-  const err = $('[data-lab-raw-err]')!;
-
-  raw.value = 'oklch(70% 0.30 145)';
-  raw.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.equal(err.hidden, true, 'a valid wide-gamut value is accepted');
-  assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'rec2020');
-
-  raw.value = 'lab(55% 70 50)';
-  raw.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.equal(err.hidden, true, 'lab() is accepted');
-  assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb');
-
-  raw.value = 'chartreuse-ish';
-  raw.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.equal(err.hidden, false, 'junk reports an error');
-  assert.match(err.textContent ?? '', /colour I can read/i);
-  // …and does NOT change the subject.
-  assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb');
+test('any CSS space still arrives via ?c=, and junk falls back', async () => {
+  // The removed text field was the only in-page way to type a wide-gamut value;
+  // the URL param remains, and becomes redundant once the picker carries tabs for
+  // those spaces. Junk must fall back rather than render an empty report.
+  for (const [seed, gamut] of [
+    ['oklch(70% 0.30 145)', 'rec2020'],
+    ['lab(55% 70 50)', 'srgb'],
+    ['color(display-p3 1 0 0)', 'p3'],
+  ] as [string, string][]) {
+    await mount('?c=' + encodeURIComponent(seed));
+    assert.equal($('[data-lab-gamut]')!.dataset.gamut, gamut, seed);
+  }
+  await mount('?c=' + encodeURIComponent('chartreuse-ish'));
+  assert.ok(text('[data-lab-gamut-name]').length > 0, 'junk still renders a report');
 });
 
 test('the notation table lists every space and marks the ones that clamp', async () => {
@@ -186,12 +195,8 @@ test('the tone ramp is pickable and every step re-seeds the report', async () =>
   const wanted = target.dataset.labStep!;
   target.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   assert.notEqual(text('[data-lab-sw-primary]'), before, 'the subject moved');
-  // The swatch reads in OKLCH, so check the step landed via the raw field and the
-  // hex alternate rather than expecting a hex on the swatch.
-  assert.equal(($('[data-lab-raw]') as HTMLInputElement).value.toLowerCase(), wanted.toLowerCase());
-  const hexAlt = [...view.querySelectorAll('[data-lab-sw-alts] .lab-sw-alt')]
-    .find(li => (li.querySelector('.lab-sw-alt-space')?.textContent ?? '').trim() === 'hex');
-  assert.equal((hexAlt?.querySelector('code')?.textContent ?? '').toLowerCase(), wanted.toLowerCase());
+  // The swatch reads in OKLCH, so the step is confirmed through the hex alternate.
+  assert.equal(subjectHex(), wanted.toLowerCase(), 'to the step that was clicked');
 });
 
 test('the gamut limit narrows the charts and their legends', async () => {
@@ -214,10 +219,12 @@ test('the gamut limit narrows the charts and their legends', async () => {
   assert.equal(legendKeys(), atWidest, 'and back');
 });
 
-test('the report opens on an oklch() value, not a hex', async () => {
+test('the report opens in OKLCH, not hex', async () => {
   await mount();
-  const raw = ($('[data-lab-raw]') as HTMLInputElement).value;
-  assert.match(raw, /^oklch\(/, `default seed is OKLCH, got ${raw}`);
+  // The swatch leads in the picker's space, which defaults to OKLCH — hex is the
+  // sRGB-only fallback expression and must not be what greets you.
+  assert.match(text('[data-lab-sw-primary]'), /^oklch\(/, text('[data-lab-sw-primary]'));
+  assert.match(text('[data-lab-sw-space]'), /^oklch/);
 });
 
 test('all three planes are sliced through the SAME colour', async () => {
@@ -237,11 +244,11 @@ test('all three planes are sliced through the SAME colour', async () => {
 test('the URL keeps the subject shareable without stacking history', async () => {
   await mount('?c=%23c0392b');
   const before = dom.window.history.length;
-  const raw = $('[data-lab-raw]') as HTMLInputElement;
-  raw.value = 'oklch(70% 0.12 200)';
-  raw.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  const step = view.querySelector<HTMLElement>('[data-lab-ramp] [data-lab-step]')!;
+  const wanted = step.dataset.labStep!;
+  step.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   assert.match(dom.window.location.hash, /^#\/lab\?c=/);
-  assert.match(decodeURIComponent(dom.window.location.hash), /oklch\(70% 0\.12 200\)/);
+  assert.equal(decodeURIComponent(dom.window.location.hash), `#/lab?c=${wanted}`);
   assert.equal(dom.window.history.length, before, 'replaceState, not pushState');
 });
 
@@ -274,7 +281,7 @@ test('the page reads as one narrowing sequence, in order', async () => {
 
   // Setting a colour is step 1, and all three ways in are there together.
   const setStep = view.querySelectorAll('.lab-step-block')[0]!;
-  for (const sel of ['[data-lab-raw]', '[data-lab-picker]', '[data-lab-brand]']) {
+  for (const sel of ['[data-lab-picker]', '[data-lab-brand]']) {
     assert.ok(setStep.querySelector(sel), `${sel} is a way into step 1`);
   }
 });
@@ -365,7 +372,7 @@ test('a picker echo of the mapped hex does not collapse a wide-gamut subject', a
   // here: feed the picker's value field the mapped hex and assert nothing moves.
   await mount('?c=' + encodeURIComponent('color(display-p3 1 0 0)'));
   assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'p3', 'precondition: P3 subject');
-  const mapped = describeHex();
+  const mapped = subjectHex();
 
   const valueField = view.querySelector<HTMLInputElement>('[data-lab-picker] .color-input[data-color-hex]');
   assert.ok(valueField, 'the picker has a value field');
@@ -373,7 +380,7 @@ test('a picker echo of the mapped hex does not collapse a wide-gamut subject', a
   valueField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 
   assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'p3', 'still P3 after the echo');
-  assert.equal(($('[data-lab-raw]') as HTMLInputElement).value, 'color(display-p3 1 0 0)');
+  assert.match(text('[data-lab-sw-space]'), /set in display-p3/, 'the authored space survives');
 
   // …but a DIFFERENT value from the picker is a real edit and must land. Written
   // in the ACTIVE MODE's format (OKLCH by default), because that is what the
@@ -381,12 +388,39 @@ test('a picker echo of the mapped hex does not collapse a wide-gamut subject', a
   valueField.value = '55% 0.13 145';
   valueField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   assert.equal($('[data-lab-gamut]')!.dataset.gamut, 'srgb', 'a real pick still works');
-  assert.match(($('[data-lab-raw]') as HTMLInputElement).value, /^#/, 'and becomes an sRGB hex');
+  assert.match(subjectHex(), /^#[0-9a-f]{6}$/, 'and becomes an sRGB hex');
 });
 
-/** The mapped sRGB hex currently shown in the swatch's hex alternate. */
-function describeHex(): string {
-  const li = [...view.querySelectorAll('[data-lab-sw-alts] .lab-sw-alt')]
-    .find(x => (x.querySelector('.lab-sw-alt-space')?.textContent ?? '').trim() === 'hex');
-  return (li?.querySelector('code')?.textContent ?? '').trim();
-}
+test('each chart panel is named for the channel it sets, and sets it three ways', async () => {
+  await mount('?c=' + encodeURIComponent('oklch(70% 0.19 317)'));
+  // Panel titles are CHANNELS — the thing the panel's slider and number control —
+  // not the plane the chart happens to draw.
+  const titles = [...view.querySelectorAll('.lab-chart-title')].map(h => (h.textContent ?? '').trim());
+  assert.deepEqual(titles, ['Lightness', 'Chroma', 'Hue']);
+
+  // Each panel has a slider AND a typed input for its own channel.
+  for (const plane of ['lc', 'ch', 'lh']) {
+    assert.ok($(`[data-lab-slider="${plane}"] [data-gsl-input]`), `${plane} has a slider`);
+    assert.ok($(`[data-lab-num="${plane}"]`), `${plane} has a number`);
+  }
+
+  // The Hue panel's controls move HUE, not the plane's fixed channel.
+  const hueNum = $('[data-lab-num="lh"]') as HTMLInputElement;
+  assert.ok(Math.abs(Number(hueNum.value) - 317) < 0.5, `hue input shows the hue: ${hueNum.value}`);
+  hueNum.value = '120';
+  hueNum.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  const after = subjectOklch();
+  assert.ok(Math.abs(after.h - 120) < 1.5, `hue moved to 120, got ${after.h}`);
+  assert.ok(Math.abs(after.l - 0.7) < 0.02, 'lightness held');
+
+  // The Lightness panel's number moves lightness.
+  const lNum = $('[data-lab-num="lc"]') as HTMLInputElement;
+  lNum.value = '0.4';
+  lNum.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.ok(Math.abs(subjectOklch().l - 0.4) < 0.02, `lightness moved to 0.4, got ${subjectOklch().l}`);
+
+  // Out-of-range typing is clamped, not obeyed.
+  lNum.value = '99';
+  lNum.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.ok(subjectOklch().l <= 1.0001, `clamped to 1, got ${subjectOklch().l}`);
+});

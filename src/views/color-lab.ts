@@ -89,6 +89,24 @@ export interface ColorLabHost {
 /** The three 2D planes, in the order they are laid out. */
 const PLANES: SlicePlane[] = ['lc', 'ch', 'lh'];
 
+/**
+ * Each panel is named for the CHANNEL it sets, not for the plane it draws.
+ *
+ * That pairing is the whole interactive model: a panel is "Lightness" because its
+ * slider and its number set lightness, and its chart happens to be the plane with
+ * lightness as an axis. Titling them by plane ("Lightness × Chroma") described the
+ * picture instead of the control, and — worse — invited the slider under it to
+ * drive the plane's FIXED channel, which is a different knob from the one the
+ * panel is about.
+ */
+const PANEL_CHANNEL: Record<SlicePlane, GamutChannel> = { lc: 'l', ch: 'c', lh: 'h' };
+
+const PANEL_TITLE: Record<SlicePlane, string> = {
+  lc: 'Lightness',
+  ch: 'Chroma',
+  lh: 'Hue',
+};
+/** The plane each panel draws, said plainly under the title. */
 const PLANE_TITLE: Record<SlicePlane, string> = {
   lc: 'Lightness × Chroma',
   ch: 'Chroma × Hue',
@@ -164,8 +182,6 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   // ── The subject block ────────────────────────────────────────────────────
   const swatch = $('[data-lab-swatch]')!;
-  const rawInput = $<HTMLInputElement>('[data-lab-raw]')!;
-  const rawErr = $('[data-lab-raw-err]')!;
   const pickerMount = $('[data-lab-picker]')!;
   const clampNote = $('[data-lab-clamp]')!;
 
@@ -190,22 +206,6 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // authored subject with the picker's sRGB hex before the first paint. jsdom
   // never fires that event, so the test suite was blind to it.
   reseedPicker();
-
-  const onRaw = (): void => {
-    const next = describeColor(rawInput.value);
-    if (!next) {
-      rawErr.textContent = t('Not a colour I can read. Try a hex, oklch(), lab(), or color(display-p3 …).');
-      rawErr.hidden = false;
-      return;
-    }
-    rawErr.hidden = true;
-    setSubject(rawInput.value);
-  };
-  rawInput.addEventListener('change', onRaw);
-  rawInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') onRaw(); });
-  cleanups.push(() => {
-    rawInput.removeEventListener('change', onRaw);
-  });
 
   // ── The gamut-limit control ──────────────────────────────────────────────
   const limitSeg = $('[data-lab-limit]')!;
@@ -269,10 +269,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const label = $(`[data-lab-slice-at="${plane}"]`);
       if (label) label.textContent = formatFixed(plane, st.fixed);
 
-      // The slider for this plane's fixed channel.
+      // The slider drives the channel the PANEL is named for.
       const sliderMount = $(`[data-lab-slider="${plane}"]`);
       if (sliderMount) {
-        const ch = SLICE_AXES[plane].fixed as GamutChannel;
+        const ch = PANEL_CHANNEL[plane];
         sliderMount.innerHTML = renderGamutSlider(plane, sliderState(ch), desc.oklch[ch]);
         chartTeardowns.push(wireGamutSlider(sliderMount, {
           // Continuous: move the colour and repaint at draft quality.
@@ -282,6 +282,24 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
             announce(t('Colour set to {c}', { c: desc.srgbHex }));
           },
         }));
+      }
+
+      // Typed entry for the same channel. `change` rather than `input`, so a
+      // half-typed number doesn't drag the whole report through nonsense values.
+      const num = $<HTMLInputElement>(`[data-lab-num="${plane}"]`);
+      if (num) {
+        const ch2 = PANEL_CHANNEL[plane];
+        const onNum = (): void => {
+          const v = Number(num.value);
+          if (!Number.isFinite(v)) return;
+          const r = channelRange(ch2, SLICE_C_MAX);
+          setSubject(oklchToHex({
+            ...desc.oklch,
+            [ch2]: Math.max(r.min, Math.min(r.max, v)),
+          }));
+        };
+        num.addEventListener('change', onNum);
+        chartTeardowns.push(() => num.removeEventListener('change', onNum));
       }
     }
   }
@@ -296,10 +314,16 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *  so every one of them changes whenever the colour does. */
   function paintSliders(): void {
     for (const plane of PLANES) {
+      const ch = PANEL_CHANNEL[plane];
       const mount = $(`[data-lab-slider="${plane}"]`);
-      if (!mount) continue;
-      const ch = SLICE_AXES[plane].fixed as GamutChannel;
-      paintGamutSlider(mount, sliderState(ch), desc.oklch[ch]);
+      if (mount) paintGamutSlider(mount, sliderState(ch), desc.oklch[ch]);
+      const num = $<HTMLInputElement>(`[data-lab-num="${plane}"]`);
+      // Never fight the user mid-type.
+      if (num && document.activeElement !== num) {
+        num.value = ch === 'h' ? desc.oklch.h.toFixed(2)
+          : ch === 'l' ? desc.oklch.l.toFixed(4)
+            : desc.oklch.c.toFixed(4);
+      }
     }
   }
 
@@ -557,10 +581,6 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   /** Everything that is text or a swatch, rebuilt from `desc`. */
   function renderReadouts(): void {
-    // Echo the authored value back, unless the user is mid-edit — this runs on
-    // the first paint too, so the field is never blank on arrival.
-    if (document.activeElement !== rawInput) rawInput.value = subject;
-
     paintSwatch(swatch, desc);
     // The swatch leads with the value in the space the PICKER is set to — OKLCH by
     // default — so the number on the swatch and the number under your hands are
@@ -858,8 +878,19 @@ function shellHtml(): string {
 
   // Plot first, caption under it — a figure/figcaption, so "this text describes
   // the thing above" is in the markup and not just in the CSS order.
-  const chart = (plane: SlicePlane): string => `
+  const chart = (plane: SlicePlane): string => {
+    const ch = PANEL_CHANNEL[plane];
+    const r = channelRange(ch, SLICE_C_MAX);
+    return `
     <figure class="lab-chart">
+      <div class="lab-chart-bar">
+        <h3 class="lab-chart-title">${escape(PANEL_TITLE[plane])}</h3>
+        ${/* Typed entry with steppers, for the times a slider cannot be precise
+              enough — matching a hue to a spec, nudging a ramp step by 0.001. */''}
+        <input type="number" class="lab-chart-num" data-lab-num="${plane}"
+          min="${r.min}" max="${r.max}" step="${ch === 'h' ? 0.01 : ch === 'l' ? 0.001 : 0.0001}"
+          aria-label="${escape(PANEL_TITLE[plane])}">
+      </div>
       <div data-lab-chart="${plane}"></div>
       ${/* The axis this plane is sliced along, as a broken track: the solid runs
             are the values that stay displayable, the gaps are the ones that do
@@ -867,12 +898,13 @@ function shellHtml(): string {
             slice, the drag moves the colour within it. */''}
       <div class="lab-chart-slider" data-lab-slider="${plane}"></div>
       <figcaption class="lab-chart-head">
-        <h3>${escape(PLANE_TITLE[plane])}</h3>
+        <p class="lab-chart-plane">${escape(PLANE_TITLE[plane])} · ${escape(t('at'))}
+          <strong data-lab-slice-at="${plane}"></strong></p>
         <p class="lab-chart-why">${escape(PLANE_WHY[plane])}</p>
-        <p class="lab-chart-at">${escape(t('sliced at'))} <strong data-lab-slice-at="${plane}"></strong>
-          <span class="lab-chart-hint">${escape(t('· click or drag to pick'))}</span></p>
+        <p class="lab-chart-at"><span class="lab-chart-hint">${escape(t('Click or drag the chart to pick'))}</span></p>
       </figcaption>
     </figure>`;
+  };
 
   // The page reads top to bottom as one narrowing sequence — see the module
   // header. Each numbered step below is one of those questions.
@@ -900,17 +932,10 @@ function shellHtml(): string {
         </div>
 
         <div class="lab-entry">
-          ${/* One unlabelled entry, not a titled block: the picker beside it is the
-                main way in, so this is the overflow for values the picker cannot
-                take — anything in a space it has no tab for. It stays until the
-                picker gains those tabs, because it is currently the ONLY way to
-                enter a wide-gamut colour (the picker's own field parses a hex or
-                the active mode's triple, and resolves to sRGB either way). */''}
-          <input type="text" class="field-input lab-raw" data-lab-raw spellcheck="false"
-            autocapitalize="off" autocomplete="off"
-            aria-label="${escape(t('Paste a colour in any CSS space'))}"
-            placeholder="${escape(t('Paste any CSS colour — oklch(), lab(), color(display-p3 …)'))}">
-          <p class="lab-err" data-lab-raw-err hidden></p>
+          ${/* No text field of our own: the picker's value pill IS the manual entry,
+                and two of them was one too many. Wide-gamut values still arrive by
+                `?c=`, and will be typeable directly once the picker carries tabs
+                for those spaces. */''}
           <p class="lab-clamp" data-lab-clamp hidden></p>
           <div class="lab-brand-rail" data-lab-brand-section>
             <span class="lab-field-label">${escape(t('Or from your brand'))}</span>
