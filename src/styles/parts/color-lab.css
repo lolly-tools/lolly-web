@@ -1235,4 +1235,31 @@
    turn-only control and a pointer cursor would promise a pick that does nothing. */
 .lab-chart--solid.has-cloud .lab-solid { cursor: crosshair; }
 
+/* ── "This screen" — the device cards at the foot of the page ──────────────
+   The cards themselves are the Dashboard's (.plat-client-* in platform.css,
+   rendered by lib/device-info.ts), imported unchanged so the two readouts look
+   the same as well as saying the same thing. Only the block around them is
+   local: it is the page's colophon rather than a sixth step, so it is quieter
+   than the numbered blocks above and separated from them by a rule.
+   The grid's own floor is 290px in platform.css — three cards side by side on a
+   laptop, stacking themselves on a phone; nothing to restate here. */
+.lab-device {
+  margin-top: 0.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid hsl(var(--border));
+}
+.lab-device .lab-h2 { font-size: 1rem; color: hsl(var(--muted-foreground)); }
+.lab-device-grid { margin-top: 0.15rem; }
+.lab-device-more { margin: 0; }
+/* A quiet text link, not a button: this is a way OUT of the page for someone who
+   wants the rest of the snapshot, not an action the report is asking for. */
+.lab-device-link {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  text-decoration: none;
+}
+.lab-device-link:hover { color: hsl(var(--foreground)); text-decoration: underline; }
+.lab-device-link:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: 3px; }
+
 }

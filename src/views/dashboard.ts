@@ -54,7 +54,7 @@ import { currentTheme } from '../theme.ts';
 import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, hexToOklch, formatOklch, createTokenSet } from '@lolly/engine';
 import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
-import { collectDevice, renderDeviceCards, renderDeviceStat, liveValue, fmtBytes } from '../lib/device-info.ts';
+import { collectDevice, renderDeviceCards, renderDeviceStat, wireDeviceLive, fmtBytes } from '../lib/device-info.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { wireTabs } from '../lib/tabs.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
@@ -1245,26 +1245,15 @@ function wireReadout(viewEl: HTMLElement): void {
 }
 
 // Keep the live device rows (viewport, orientation) current while mounted. The
-// device panel is never collapsed here, so listeners run for the view's life and
-// are torn down via viewEl._cleanup. rAF-coalesced so a resize drag updates once
-// per frame.
+// wiring itself is the shared one in lib/device-info.ts (Colour Lab shows the
+// same rows); this only chains its disposer onto viewEl._cleanup, since the
+// device panel is never collapsed here and so the listeners run for the view's
+// whole life.
 function wireLive(viewEl: HTMLElement): void {
-  const liveEls = [...viewEl.querySelectorAll<HTMLElement>('[data-live]')];
-  if (!liveEls.length) return;
-  let raf = 0;
-  const refresh = () => {
-    raf = 0;
-    for (const el of liveEls) el.textContent = liveValue(el.dataset.live!);
-  };
-  const schedule = () => { if (!raf) raf = requestAnimationFrame(refresh); };
-  const orientation = screen.orientation;
-  window.addEventListener('resize', schedule);
-  orientation?.addEventListener?.('change', schedule);
+  const dispose = wireDeviceLive(viewEl);
   const prev = (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup;
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     prev?.();
-    cancelAnimationFrame(raf);
-    window.removeEventListener('resize', schedule);
-    orientation?.removeEventListener?.('change', schedule);
+    dispose();
   };
 }

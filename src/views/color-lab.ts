@@ -62,6 +62,7 @@
  */
 
 import '../styles/parts/color-lab.css';
+import '../styles/parts/platform.css';     // the .plat-client-* device cards at the foot of the page
 import '../lib/oklch-slice.css';           // the .okls-* chart rules (see oklch-slice.ts)
 import {
   describeColor, contrastVsExtremes, wcagLevel, oklchToHex, formatOklch, rampOklab,
@@ -105,6 +106,8 @@ import { mountColorField, contrastText } from '../components/color-field.ts';
 import { attachScrub } from '../lib/scrub.ts';
 import type { MountColorFieldOpts } from '../components/color-field.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { collectDevice, renderDeviceCards, wireDeviceLive } from '../lib/device-info.ts';
+import type { ClientGroup, ClientGroupKey } from '../lib/device-info.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
@@ -2377,6 +2380,33 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     cleanups.push(() => ro.disconnect());
   }
 
+  // ── "This screen" ────────────────────────────────────────────────────────
+  // Off the first-paint path: the probe touches WebGL and UA-hints, neither of
+  // which the charts wait on. The cards come from lib/device-info.ts verbatim —
+  // the Dashboard's renderer, so the gamut named here and the one named at
+  // #/d?tab=device are the same read, not two implementations of it.
+  //
+  // Display leads: its "Colour gamut" row is the one fact on the page that
+  // decides whether what you see IS what the chart claims. Then the GPU (which
+  // machine) and the graphics API (how it got to the glass).
+  collectDevice()
+    .then((snap) => {
+      const sec = $('[data-lab-device]');
+      const grid = $('[data-lab-device-grid]');
+      // A late probe from a superseded mount must not paint over the live one.
+      if (!sec || !grid || !view.contains(grid)) return;
+      const order: ClientGroupKey[] = ['display', 'gpu', 'graphics'];
+      const cards = order
+        .map((k) => snap.groups.find((g) => g.key === k))
+        .filter((g): g is ClientGroup => !!g);
+      if (!cards.length) return; // no probe answered — say nothing rather than show an empty rail
+      grid.innerHTML = renderDeviceCards(cards);
+      grid.classList.add('plat-hydrated');
+      sec.hidden = false;
+      cleanups.push(wireDeviceLive(grid)); // the Display card's viewport rows are live
+    })
+    .catch(() => { /* device snapshot is best-effort — the section stays hidden */ });
+
   // `#view` is PERSISTENT — the router calls `view.replaceChildren()` and mounts the
   // next view into the same element, so waiting for it to disconnect never fires and
   // this view's rAF loop, ResizeObserver and body-level toast would outlive it.
@@ -2853,6 +2883,23 @@ function shellHtml(): string {
         ${contrastCardShell('ink', t('Your surface'), true)}
       </div>
       <p class="lab-contrast-note" data-lab-contrast-note></p>
+    </section>
+
+    ${/* 6 · WHAT YOU ARE JUDGING IT ON. Deliberately unnumbered and last: every
+          step above is something you DO to the colour, and this is the one thing
+          on the page you can't change — the screen the whole page is being read
+          through. It matters here more than anywhere else in the app (a P3 pixel
+          on an sRGB panel is a promise the display can't keep), so the same three
+          device cards the Dashboard draws sit at the foot of the tool that
+          depends on them, rather than only a tab away. Same renderer, so the two
+          readouts cannot drift; hidden entirely if the probe finds nothing. */''}
+    <section class="lab-step-block lab-device" data-lab-device hidden>
+      <h2 class="lab-h2">${escape(t('This screen'))}</h2>
+      <p class="lab-section-note">${escape(t('What the charts above are being judged on. Read live from this session; nothing is stored or sent anywhere.'))}</p>
+      <div class="plat-client-grid lab-device-grid" data-lab-device-grid></div>
+      <p class="lab-device-more">
+        <a class="lab-device-link" href="#/d?tab=device">${escape(t('Full device readout'))} →</a>
+      </p>
     </section>
 
   </div>`;

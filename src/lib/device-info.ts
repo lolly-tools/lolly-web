@@ -6,12 +6,15 @@
  * and whole groups (Network, Graphics) are omitted when their API is absent.
  *
  * Extracted from the old Platform view so the merged Dashboard (#/d) can reuse
- * it. It exposes three things:
+ * it. It exposes four things:
  *   - collectDevice()   → { headline, groups } — the full snapshot
  *   - renderDeviceCards(groups) → the KV-card grid (all rows, nothing dropped)
  *   - liveValue(key)    → the values that change mid-session (viewport, orientation)
+ *   - wireDeviceLive(root) → keep those [data-live] rows current; returns a disposer
  * The Dashboard owns layout and the hero band; this module owns the data + the
- * detailed cards, so the two can't drift.
+ * detailed cards, so the two can't drift. A view wanting only part of the
+ * snapshot (Colour Lab takes Display + the two Graphics cards) filters
+ * `groups` by `key` — never by `title`, which is translated.
  */
 
 import { escape } from '../utils.ts';
@@ -379,8 +382,18 @@ export interface ClientRow {
   note?: string;
 }
 
+/**
+ * A stable identity for one card, independent of its (translated) title — the
+ * handle a view uses to take a subset of the snapshot. Adding a group means
+ * adding a key here; the titles stay free to be reworded or localised.
+ */
+export type ClientGroupKey =
+  | 'browser' | 'system' | 'display' | 'locale' | 'capabilities'
+  | 'network' | 'render' | 'gpu' | 'graphics';
+
 /** One device card. */
 export interface ClientGroup {
+  key: ClientGroupKey;
   title: string;
   icon?: string | null;
   note?: string;
@@ -438,6 +451,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   const os = osFromHints || parseOS(ua);
 
   groups.push({
+    key: 'browser',
     title: t('Browser'),
     icon: browserIcon(browser) ?? ICONS.browser!,
     rows: [
@@ -458,6 +472,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
     ? `${hints.architecture}${hints.bitness ? ` · ${t('{n}-bit', { n: hints.bitness })}` : ''}`
     : DASH;
   groups.push({
+    key: 'system',
     title: t('System'),
     icon: osIcon(os) ?? ICONS.system!,
     rows: [
@@ -481,6 +496,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   const dynRange =
     dynRangeRaw === 'high' ? t('High (HDR)') : dynRangeRaw === 'standard' ? t('Standard') : DASH;
   groups.push({
+    key: 'display',
     title: t('Display'),
     icon: ICONS.display!,
     rows: [
@@ -503,6 +519,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
     /* ignore */
   }
   groups.push({
+    key: 'locale',
     title: t('Locale & preferences'),
     icon: ICONS.locale!,
     rows: [
@@ -532,11 +549,12 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   } catch {
     /* ignore */
   }
-  groups.push({ title: t('Capabilities & privacy'), icon: ICONS.capabilities!, rows: capRows });
+  groups.push({ key: 'capabilities', title: t('Capabilities & privacy'), icon: ICONS.capabilities!, rows: capRows });
 
   const conn = nav.connection || nav.mozConnection || nav.webkitConnection;
   if (conn) {
     groups.push({
+      key: 'network',
       title: t('Network'),
       icon: ICONS.network!,
       rows: [
@@ -551,6 +569,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   const stack = renderStack(engine, os);
   if (stack) {
     groups.push({
+      key: 'render',
       title: t('Rendering stack'),
       icon: ICONS.render!,
       note: t('The engine’s native 2D and text libraries — inferred from engine + OS, not reported by any web API.'),
@@ -573,11 +592,13 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
     hwVendor = g.hwVendor;
     gpuApi = g.api;
     groups.push({
+      key: 'gpu',
       title: t('System Graphics'),
       icon: gpuIcon(g.hwVendor) ?? ICONS.graphics!,
       rows: [{ k: t('GPU'), v: g.chip, hero: true }],
     });
     groups.push({
+      key: 'graphics',
       title: t('Browser Graphics'),
       icon: ICONS.layers!,
       rows: [
@@ -666,6 +687,36 @@ function clientCard(group: ClientGroup): string {
 /** The full grid of device cards. */
 export function renderDeviceCards(groups: ClientGroup[]): string {
   return groups.map(clientCard).join('');
+}
+
+/**
+ * Keep the `[data-live]` rows inside `root` current for as long as the view is
+ * mounted — viewport size and orientation are the only values in the snapshot
+ * that move while you watch them, and a stale "1440 × 900" beside a window you
+ * just resized reads as a bug in the readout rather than a stale render.
+ *
+ * Call AFTER the rows exist (the snapshot is async, so that's inside the
+ * `collectDevice()` continuation). Returns a disposer; every caller must run it
+ * on unmount — `#view` is persistent, so nothing detaches these listeners for us.
+ */
+export function wireDeviceLive(root: HTMLElement): () => void {
+  const liveEls = [...root.querySelectorAll<HTMLElement>('[data-live]')];
+  if (!liveEls.length) return () => { /* nothing wired */ };
+  let raf = 0;
+  const refresh = (): void => {
+    raf = 0;
+    for (const el of liveEls) el.textContent = liveValue(el.dataset.live!); // the selector guarantees the attribute
+  };
+  // Coalesce a resize drag's flood of events into one read per frame.
+  const schedule = (): void => { if (!raf) raf = requestAnimationFrame(refresh); };
+  const orientation = screen.orientation;
+  window.addEventListener('resize', schedule);
+  orientation?.addEventListener?.('change', schedule);
+  return () => {
+    cancelAnimationFrame(raf);
+    window.removeEventListener('resize', schedule);
+    orientation?.removeEventListener?.('change', schedule);
+  };
 }
 
 /** One big hero readout. */
