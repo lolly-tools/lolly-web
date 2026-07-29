@@ -40,7 +40,13 @@
 
 import '../styles/parts/brand-studio.css'; // every .be-* rule — rides this module's lazy chunk
 import './oklch-slice.css';                // the gamut chart's .okls-* rules (see oklch-slice.ts)
-import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, convertColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents } from '@lolly/engine';
+import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, convertColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents,
+  // `formatColor` is ALIASED: this module already imports a different one from
+  // ./color-formats.ts (`formatColor('cmyk', hex)`), and letting the two share a
+  // name is how a call silently gets the wrong function.
+  gamutMapSrgb, colorToSrgb, formatColor as formatCssColor, colorFaces } from '@lolly/engine';
+import type { StoredFace } from '@lolly/engine';
+import { parseProfileLimit, profileFor, mountedSources } from './color-profiles.ts';
 import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
 import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
@@ -50,6 +56,7 @@ import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
   isRec, prettify, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
+  getSwatchFaces, setSwatchFace,
   getExcludedSwatches, setSwatchExcluded,
 } from './brand-doc.ts';
 import type { BrandSwatch, PrintLock } from './brand-doc.ts';
@@ -331,6 +338,183 @@ function printLockHtml(): string {
       </div>
     </div>`;
 }
+
+// ── Per-space faces: what this colour becomes everywhere else ────────────────
+// The generalisation of the print lock, per plans/color-spaces.md §11.3. Each
+// row is a target the swatch can be expressed in; each is either DERIVED from
+// the canonical value or AUTHORED, and an authored one wins at export.
+//
+// The sRGB row is the one that earns this feature. It is the BAKE — what most
+// viewers, most print pipelines and every older browser actually receive — and
+// the automatic §14.2 map picks the nearest colour by ΔE, while a brand will
+// often prefer a DIFFERENT sRGB green: one that reads as the same brand colour
+// to a human even though it is not the closest by measurement. So the row is
+// editable, and the drift from the automatic answer is shown rather than hidden.
+//
+// Press profiles appear as derived rows and are deliberately NOT editable here.
+// Authoring a CMYK build already has a home two rows up (the print lock), and
+// two editors writing the same target is how the two silently disagree. When
+// the press side moves onto this model the lock moves with it, in one change.
+
+/** Screen targets every swatch has, in the order they are keyed elsewhere. */
+const FACE_SPACES: readonly { target: string; label: string }[] = [
+  { target: 'srgb', label: 'sRGB' },
+  { target: 'display-p3', label: 'Display-P3' },
+  { target: 'rec2020', label: 'Rec.2020' },
+];
+
+/**
+ * Derive one target's value from a canonical colour, or null when this build
+ * cannot answer for it.
+ *
+ * sRGB is gamut-MAPPED rather than clipped, because the row is the bake and a
+ * clip is not what the platform does. The wider spaces are plain conversions:
+ * a colour inside them needs no mapping, and one outside them is reported as it
+ * is so the drift number stays meaningful.
+ */
+function deriveFace(canonical: string, target: string): string | [number, number, number, number] | null {
+  const c = parseCssColor(canonical);
+  if (!c) return null;
+  if (target === 'srgb') {
+    // MAPPED, not clipped. `colorToHexString` alone would clip each channel, and a
+    // clip is not what the platform does to an out-of-gamut colour — CSS Color 4
+    // §14.2 preserves L and H and reduces C. This row IS that bake, so it has to
+    // show the same answer a browser would.
+    const rgb = gamutMapSrgb(colorToSrgb(c));
+    return colorToHexString({ space: 'srgb', components: rgb, alpha: c.alpha, missing: 0 });
+  }
+  if (target === 'display-p3' || target === 'rec2020') {
+    // Rounded to 4 decimals. `formatColor` emits full float precision, which wraps
+    // the row onto three lines and — because pressing Set SEEDS the input from this
+    // — would put `0.044335162...` in front of someone about to hand-edit it. Four
+    // decimals is ~1/10000 of a channel: far finer than any display step, so
+    // nothing reachable is lost.
+    const cc = convertColor(c, target);
+    const n = (v: unknown): string => String(Math.round((v as number) * 1e4) / 1e4);
+    return `color(${target} ${n(cc.components[0])} ${n(cc.components[1])} ${n(cc.components[2])})`;
+  }
+  const press = parseProfileLimit(target);
+  if (!press) return null;
+  const profile = profileFor(press.digest);
+  // Four inks only. A row of six or seven device channels is not a CMYK build
+  // and rendering it as one would be a lie about what the press does.
+  if (!profile || profile.nChannels !== 4) return null;
+  const lab = convertColor(c, 'lab').components;
+  const dev = profile.fromLab(press.intent, [lab[0] as number, lab[1] as number, lab[2] as number] as const);
+  if (!dev || dev.length !== 4) return null;
+  return dev.map((v: number) => Math.round(Math.min(1, Math.max(0, v)) * 100)) as [number, number, number, number];
+}
+
+/** Every target on offer right now: the screen spaces, plus each mounted press. */
+function faceTargets(): { target: string; label: string }[] {
+  const out = [...FACE_SPACES];
+  // The source's own label, not a ProfileEntry lookup: that is async, and this
+  // runs inside a synchronous render. A GamutSource already carries the label the
+  // profile panel shows, so the two cannot disagree either.
+  for (const src of mountedSources()) out.push({ target: src.id, label: src.label });
+  return out;
+}
+
+const faceText = (v: string | [number, number, number, number]): string =>
+  Array.isArray(v) ? `C${v[0]} M${v[1]} Y${v[2]} K${v[3]}` : v;
+
+interface FacesCtx {
+  /** The subject's canonical colour, in any CSS notation. '' when there is none. */
+  canonical: () => string;
+  get: () => Map<string, StoredFace>;
+  set: (target: string, face: StoredFace | null) => void;
+}
+
+/**
+ * Render the faces list into `mount`. Returns a handle whose `render()` the
+ * caller calls when the subject changes underneath it.
+ *
+ * Rebuilt wholesale on render, which is safe because the only mounted state is
+ * the row inputs — and the focused one is left alone, so typing an override does
+ * not fight the re-render its own commit triggers.
+ */
+function mountFaces(mount: HTMLElement, ctx: FacesCtx): { render: () => void } {
+  const commit = (target: string, raw: string): void => {
+    const v = raw.trim();
+    if (!v) return;                       // nothing typed yet; not a clear
+    if (!parseCssColor(v)) return;         // not a colour yet — wait for more typing
+    ctx.set(target, { value: v });
+    render();
+  };
+
+  mount.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-be-face-act]');
+    if (!btn) return;
+    const target = btn.dataset.beFaceTarget ?? '';
+    if (!target) return;
+    if (btn.dataset.beFaceAct === 'auto') { ctx.set(target, null); render(); return; }
+    // "Set" seeds from the derived value, so the row never sits in a limbo where
+    // it claims to be authored but holds nothing.
+    const derived = deriveFace(ctx.canonical(), target);
+    if (derived === null || Array.isArray(derived)) return;
+    ctx.set(target, { value: derived });
+    render();
+    mount.querySelector<HTMLInputElement>(`[data-be-face-in="${cssEscape(target)}"]`)?.focus();
+  });
+  mount.addEventListener('input', (e) => {
+    const inp = e.target as HTMLInputElement;
+    const target = inp.dataset?.beFaceIn;
+    if (target) commit(target, inp.value);
+  });
+
+  function render(): void {
+    const canonical = ctx.canonical();
+    const focused = document.activeElement as HTMLElement | null;
+    const keepFocus = focused?.dataset?.beFaceIn ?? null;
+    const faces = colorFaces(canonical, faceTargets(), ctx.get(), deriveFace);
+    if (!faces.length) { mount.innerHTML = ''; return; }
+    mount.innerHTML = `<div class="be-faces">${faces.map(f => {
+      const editable = !Array.isArray(f.value) && FACE_SPACES.some(s => s.target === f.target);
+      const isSet = f.origin === 'set';
+      const absent = !faceTargets().some(t => t.target === f.target);
+      return `<div class="be-face${isSet ? ' is-set' : ''}${absent ? ' is-absent' : ''}">
+        <span class="be-face-key">${escape(f.label ?? f.target)}</span>
+        <code class="be-face-val">${escape(faceText(f.value))}</code>
+        ${/* ΔEOK, not "ΔE", and three decimals — both deliberate. `deltaEOkColor`
+              is Euclidean distance in OKLab, where a just-noticeable difference is
+              around 0.02; labelling it "ΔE" invites reading it as CIE ΔE, on which
+              2.3 is a JND, so a genuinely enormous difference reads as "0.5, near
+              enough". One decimal made it worse: every real override rounded to
+              0.0. `ΔEOK` is the vocabulary the rest of this codebase already uses
+              (components/color-field.ts's nearest-swatch tooltip). Ink builds are
+              percentage POINTS, which is why they get their own unit. */''}
+        ${f.drift !== undefined && f.drift > 0.0005
+          ? `<span class="be-face-drift" title="${escape(Array.isArray(f.value)
+            ? t('Largest single-ink difference from the automatic separation, in points')
+            : t('Perceptual distance from the automatic conversion (OKLab; about 0.02 is just noticeable)'))}">${
+            Array.isArray(f.value) ? `${Math.round(f.drift)}pt` : `ΔEOK ${f.drift.toFixed(3)}`}</span>`
+          : ''}
+        ${absent
+          ? `<span class="be-face-tag">${escape(t('profile not on this device'))}</span>`
+          : editable
+            ? `<span class="be-face-acts">
+                <button type="button" class="be-face-btn" data-be-face-act="auto" data-be-face-target="${escape(f.target)}" aria-pressed="${!isSet}">${escape(t('Auto'))}</button>
+                <button type="button" class="be-face-btn" data-be-face-act="set" data-be-face-target="${escape(f.target)}" aria-pressed="${isSet}">${escape(t('Set'))}</button>
+              </span>`
+            : `<span class="be-face-tag">${escape(t('derived'))}</span>`}
+        ${isSet && editable
+          ? `<input type="text" class="field-input be-face-in" data-be-face-in="${escape(f.target)}" value="${escape(String(f.value))}" spellcheck="false" autocomplete="off" aria-label="${escape(t('Value for {t}', { t: f.label ?? f.target }))}">`
+          : ''}
+      </div>`;
+    }).join('')}</div>`;
+    if (keepFocus) {
+      const back = mount.querySelector<HTMLInputElement>(`[data-be-face-in="${cssEscape(keepFocus)}"]`);
+      if (back) { back.focus(); back.setSelectionRange(back.value.length, back.value.length); }
+    }
+  }
+
+  render();
+  return { render };
+}
+
+/** Attribute-selector-safe form of a target id (they contain `:`). */
+const cssEscape = (s: string): string =>
+  (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(s) : s.replace(/[^\w-]/g, '\\$&'));
 
 interface PrintLockCtx {
   /** The subject's current screen colour — feeds the Auto CMYK conversion. */
@@ -838,6 +1022,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             <details class="be-subst-details" data-be-subst-details>
               <summary><span class="be-subst-details-label">${t('Print substitutes')}</span><span class="be-subst-chips" data-be-subst-chips></span></summary>
               <div data-be-subst-mount></div>
+            </details>
+            ${/* What this colour becomes everywhere else (plans/color-spaces.md
+                  §11.3). Folded, and BELOW the print substitutes: those are the
+                  established control and this widens the same idea, so leading
+                  with it would make the familiar row look like the afterthought. */''}
+            <details class="be-subst-details be-faces-details" data-be-faces-details>
+              <summary><span class="be-subst-details-label">${t('In other spaces')}</span><span class="be-subst-chips" data-be-faces-chips></span></summary>
+              <div data-be-faces-mount></div>
             </details>
           </div>
           <div class="be-editor-actions">
@@ -1354,6 +1546,38 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     setSpot: (spot) => { if (selected >= 0) { setSwatchSpotLock(doc, swatches[selected]!.path, spot); afterSwatchLockChange(); } },
   }) : null;
 
+  // The faces list, mounted beside the print lock. Its ctx reads the doc LIVE for
+  // the same reason the lock's does: the popover and a re-derive can both change
+  // a swatch's overrides, and a cached copy would show a stale row.
+  const facesMount = $('[data-be-faces-mount]') as HTMLElement | null;
+  const facesChips = $('[data-be-faces-chips]') as HTMLElement | null;
+  const facesDetails = $('[data-be-faces-details]') as HTMLDetailsElement | null;
+  const swatchFaces = facesMount ? mountFaces(facesMount, {
+    canonical: () => {
+      const cur = selected >= 0 ? swatches[selected] : null;
+      if (!cur) return '';
+      // The stored `$value` where it is a literal, NOT the resolved hex: the hex is
+      // the sRGB bake, and deriving a wide-gamut face from a bake would clamp the
+      // very chroma the face exists to carry. An alias has no literal, so it falls
+      // back to the hex — a role's colour lives on the swatch it points at.
+      return cur.isAlias ? cur.hex : (cur.raw || cur.hex);
+    },
+    get: () => (selected >= 0 ? getSwatchFaces(doc, swatches[selected]!.path) : new Map()),
+    set: (target, face) => {
+      if (selected < 0) return;
+      setSwatchFace(doc, swatches[selected]!.path, target, face);
+      renderFacesChips();
+      persist();
+    },
+  }) : null;
+
+  /** How many faces this swatch has authored — the folded summary. */
+  function renderFacesChips(): void {
+    if (!facesChips) return;
+    const n = selected >= 0 ? [...getSwatchFaces(doc, swatches[selected]!.path).keys()].length : 0;
+    facesChips.textContent = n ? t('{n} set', { n: String(n) }) : '';
+  }
+
   // "Stored as" — re-serialise the open swatch's $value in the picked notation.
   // An alias role has no literal of its own to re-write, so the row hides for
   // those (recolouring detaches the alias first, which re-shows it).
@@ -1474,6 +1698,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     renderSubstChips();
     if (substDetails) substDetails.open = false; // folded until asked — the lock chips say enough
     swatchSubst?.render();
+    renderFacesChips();
+    if (facesDetails) facesDetails.open = false; // folded, like the print section
+    swatchFaces?.render();
     editorAnchor = tile;
     editorEl.hidden = false; // before positioning — the clamp measures offsetHeight
     positionEditor(tile);

@@ -13,6 +13,70 @@ export interface FontMetadata {
 export type FontFormat = 'ttf' | 'otf' | 'woff' | 'woff2' | 'unknown';
 
 /**
+ * What a font's OWN `OS/2.fsType` says about embedding and reuse.
+ *
+ * This is the font vendor's machine-readable statement of intent, and it is the
+ * only licence signal a font file carries. It is NOT the licence — a permissive
+ * fsType does not grant rights the actual EULA withholds — but a restrictive one
+ * is an unambiguous "no", and it is the thing to show anyone about to pull a font
+ * out of a document they were merely sent.
+ *
+ * Bits 0–3 are a small exclusive set (§OS/2 fsType); bits 8 and 9 are separate
+ * flags that ride alongside.
+ */
+export type FontEmbedding =
+  | 'installable'   // 0x0000 — no restriction stated
+  | 'restricted'    // 0x0002 — must not be embedded or reused at all
+  | 'preview-print' // 0x0004 — may be embedded to view/print, not to edit
+  | 'editable'      // 0x0008 — may be embedded for editing too
+  | 'unknown';      // no OS/2 table (Type1 / bare CFF), so nothing is stated
+
+export interface FontEmbeddingInfo {
+  permission: FontEmbedding;
+  /** Bit 8 — the vendor forbids subsetting. */
+  noSubsetting: boolean;
+  /** Bit 9 — only a bitmap may be embedded, never outlines. */
+  bitmapOnly: boolean;
+  /** The raw value, so a report can be audited rather than trusted. */
+  fsType: number | null;
+}
+
+/**
+ * Read `OS/2.fsType`. Returns `permission: 'unknown'` when the font states
+ * nothing — a Type1 or bare-CFF program has no OS/2 table at all, and absence of
+ * a restriction is not the same as permission.
+ */
+export function readFontEmbedding(buffer: ArrayBuffer): FontEmbeddingInfo {
+  const none: FontEmbeddingInfo = { permission: 'unknown', noSubsetting: false, bitmapOnly: false, fsType: null };
+  try {
+    const format = detectFontFormat(buffer);
+    if (format !== 'ttf' && format !== 'otf') return none;
+    const view = new DataView(buffer);
+    if (buffer.byteLength < 12) return none;
+
+    const numTables = view.getUint16(4, false);
+    let os2 = 0;
+    for (let i = 0, off = 12; i < numTables && off + 16 <= buffer.byteLength; i++, off += 16) {
+      if (readTag(view, off) === 'OS/2') { os2 = view.getUint32(off + 8, false); break; }
+    }
+    // fsType is a uint16 at OS/2 offset 8: version(2) + xAvgCharWidth(2) +
+    // usWeightClass(2) + usWidthClass(2).
+    if (!os2 || os2 + 10 > buffer.byteLength) return none;
+    const fsType = view.getUint16(os2 + 8, false);
+
+    const bits = fsType & 0x000f;
+    const permission: FontEmbedding =
+      bits === 0 ? 'installable'
+        : bits & 0x0002 ? 'restricted'
+          : bits & 0x0004 ? 'preview-print'
+            : bits & 0x0008 ? 'editable'
+              : 'unknown';
+
+    return { permission, noSubsetting: !!(fsType & 0x0100), bitmapOnly: !!(fsType & 0x0200), fsType };
+  } catch { return none; }
+}
+
+/**
  * Detect font file format by magic bytes.
  */
 export function detectFontFormat(buffer: ArrayBuffer): FontFormat {

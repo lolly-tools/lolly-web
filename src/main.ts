@@ -199,6 +199,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   view.classList.toggle('verify-view', route.name === 'verify');
   view.classList.toggle('start-view', route.name === 'start');
   view.classList.toggle('multi-view', route.name === 'multi');
+  view.classList.toggle('pdfx-view', route.name === 'pdf');
   view.classList.toggle('is-returning', returning);
 
   // When the route NAME changes, the view-scoping class above changes with it

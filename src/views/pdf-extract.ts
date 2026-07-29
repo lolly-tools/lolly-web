@@ -15,10 +15,10 @@
  * which carries a picture of text and no text at all; those are reported as such
  * per page rather than quietly contributing nothing.
  *
- * Structure note: the tab strip exists with one tab today. That is deliberate —
- * Images, Fonts and Attachments are separate extraction passes still to land,
- * and giving them their home now keeps each one a data change rather than a
- * re-layout. A tab with nothing behind it is never rendered.
+ * Structure: one tab per extraction pass — Text, Images, Fonts, Attachments. A
+ * tab whose pass found nothing is not rendered at all, so the strip reflects what
+ * this document actually contains rather than what a PDF could contain, and a
+ * plain text-only document still reads as a single uncluttered column.
  */
 
 import '../styles/parts/pdf-extract.css';   // async CSS chunk (lazy view)
@@ -32,7 +32,7 @@ import { playSfx } from '../lib/sfx.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
-import type { PdfHandle } from './pdf-import.ts';
+import type { PdfHandle, EmbeddedFont, EmbeddedImage, EmbeddedAttachment } from './pdf-import.ts';
 
 /** Beyond this a page-by-page reconstruction stops being interactive. */
 const MAX_PAGES = 400;
@@ -46,6 +46,18 @@ interface Extracted {
   truncated: number;
   /** Text an opaque shape is painted over — the failed-redaction check. */
   hidden: HiddenTextFinding[];
+  fonts: EmbeddedFont[];
+  images: EmbeddedImage[];
+  /** Rasters found but not decodable here (JPX, CCITT, JBIG2, …). */
+  imagesSkipped: number;
+  attachments: EmbeddedAttachment[];
+}
+
+/** Object URLs minted for image previews, revoked when the report is replaced. */
+let previewUrls: string[] = [];
+function releasePreviews(): void {
+  for (const u of previewUrls) URL.revokeObjectURL(u);
+  previewUrls = [];
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -58,6 +70,13 @@ function download(host: HostV1, text: string, filename: string, mime: string): v
 
 /** Words in a page's reconstructed prose — the honest measure of what came out. */
 const wordCount = (p: PageText): number => (p.text.match(/\S+/g) ?? []).length;
+
+// Counts. Two whole keys per phrase behind a ternary — the app-wide convention
+// (see catalog.ts / gallery.ts), because a translator needs the whole sentence,
+// not "{n}" glued to a noun that inflects differently at one.
+const nPages = (n: number): string => (n === 1 ? t('1 page') : t('{n} pages', { n }));
+const nWords = (n: number): string => (n === 1 ? t('1 word') : t('{n} words', { n }));
+const nPlaces = (n: number): string => (n === 1 ? t('1 place') : t('{n} places', { n }));
 
 // ── rendering ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +118,7 @@ function pageMarkup(p: PageText, index: number): string {
     <section class="pdfx-page" data-page="${index}">
       <h3 class="pdfx-page-n">
         ${t('Page {n}', { n: index + 1 })}
-        <span class="pdfx-page-meta">${escape(t('{n} words', { n: wordCount(p) }))}${notes.length ? ` · ${escape(notes.join(' · '))}` : ''}</span>
+        <span class="pdfx-page-meta">${escape(nWords(wordCount(p)))}${notes.length ? ` · ${escape(notes.join(' · '))}` : ''}</span>
         <button type="button" class="btn btn--ghost pdfx-page-copy" data-copy-page="${index}">${t('Copy')}</button>
       </h3>
       <div class="pdfx-page-body">${body}</div>
@@ -135,23 +154,141 @@ function hiddenMarkup(hidden: HiddenTextFinding[]): string {
         <span aria-hidden="true">${icon('eye', { size: 20 })}</span>
         ${t('Text is hidden behind shapes in this document')}
       </h2>
-      <p class="pdfx-hidden-lede">${t('{words} words in {runs} places are covered by opaque shapes on {pages} pages. They are still in the file, and any PDF reader can pull them back out — including this one, below. If these were meant to be redacted, drawing boxes over them did not remove them.', {
-        words, runs: hidden.length, pages,
-      })}</p>
+      <p class="pdfx-hidden-lede">${escape(t('{words} in {runs} are covered by opaque shapes on {pages}. They are still in the file, and any PDF reader can pull them back out, including this one below. If these were meant to be redacted, drawing boxes over them did not remove them.', {
+        words: nWords(words), runs: nPlaces(hidden.length), pages: nPages(pages),
+      }))}</p>
       <ul class="pdfx-hidden-list">${rows}</ul>
     </section>`;
+}
+
+
+/** Bytes → a short human size. */
+function sizeLabel(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * The Images panel — every raster at its STORED resolution.
+ *
+ * Stored, not displayed: a logo placed at 20mm may be a 4000px original, and the
+ * original is what someone extracting assets actually wants. Each tile previews
+ * from an object URL minted here and released when the report is replaced.
+ */
+function imagesMarkup(x: Extracted): string {
+  if (!x.images.length && !x.imagesSkipped) return '';
+  const tiles = x.images.map((im, i) => {
+    const url = URL.createObjectURL(new Blob([im.bytes as BlobPart], { type: im.mime }));
+    previewUrls.push(url);
+    const dims = `${im.width}×${im.height}`;
+    return `
+      <figure class="pdfx-asset" data-image="${i}">
+        <div class="pdfx-asset-art"><img src="${escape(url)}" alt="" loading="lazy" decoding="async"></div>
+        <figcaption class="pdfx-asset-meta">
+          <span class="pdfx-asset-name">${escape(dims)}</span>
+          <span class="pdfx-asset-sub">${escape(`${im.mime.replace(/^image\//, '')} · ${sizeLabel(im.bytes.length)} · ${t('page {n}', { n: im.page + 1 })}`)}</span>
+        </figcaption>
+        <div class="pdfx-asset-actions">
+          <button type="button" class="btn btn--ghost" data-save-image="${i}">${t('Download')}</button>
+          <button type="button" class="btn btn--ghost" data-catalog-image="${i}">${t('Add to catalogue')}</button>
+        </div>
+      </figure>`;
+  }).join('');
+
+  // Undecodable rasters are STATED, never silently dropped — otherwise a page of
+  // JPEG2000 scans looks like a document with no images in it.
+  const note = x.imagesSkipped
+    ? `<p class="pdfx-note">${t('{n} more images use a compression this browser cannot decode (JPEG 2000, CCITT fax or JBIG2), so they cannot be shown or saved here.', { n: x.imagesSkipped })}</p>`
+    : '';
+
+  return `<div class="pdfx-panel" data-panel="images" hidden>${note}<div class="pdfx-assets">${tiles}</div></div>`;
+}
+
+/**
+ * The Fonts panel.
+ *
+ * Two caveats ride on every row, and they are the honest part of this feature.
+ * A SUBSET carries only the glyphs the document printed, so it will silently
+ * lose characters anywhere else — it is not a usable font, whatever its name
+ * says. And `fsType` is the font's own machine-readable statement about reuse;
+ * a restrictive one is an unambiguous no, and a permissive one still is not the
+ * licence. Both are shown per font rather than buried in a general disclaimer.
+ */
+function fontsMarkup(x: Extracted): string {
+  if (!x.fonts.length) return '';
+
+  const PERMISSION: Record<string, string> = {
+    installable: t('The font itself states no embedding restriction, which is not the same as a licence to reuse it.'),
+    restricted: t('The font forbids reuse outside this document.'),
+    'preview-print': t('The font allows viewing and printing only, not reuse.'),
+    editable: t('The font allows embedding for editing.'),
+    unknown: t('This format carries no embedding statement, so nothing is stated either way.'),
+  };
+
+  const rows = x.fonts.map((f, i) => {
+    const tags: string[] = [];
+    if (f.subset) tags.push(`<span class="pdfx-tag pdfx-tag--warn">${t('subset')}</span>`);
+    if (!f.installable) tags.push(`<span class="pdfx-tag">${t('not installable')}</span>`);
+    if (f.embedding.permission === 'restricted') tags.push(`<span class="pdfx-tag pdfx-tag--warn">${t('reuse forbidden')}</span>`);
+
+    const caveats: string[] = [];
+    if (f.subset) caveats.push(t('Only the glyphs this document used are embedded, so it will be missing characters anywhere else.'));
+    if (!f.installable) caveats.push(t('These are raw font-program bytes, not a file a system can install.'));
+    caveats.push(PERMISSION[f.embedding.permission] ?? PERMISSION.unknown!);
+
+    return `
+      <li class="pdfx-font">
+        <div class="pdfx-font-head">
+          <span class="pdfx-font-name">${escape(f.family)}</span>
+          ${tags.join('')}
+          <span class="pdfx-font-sub">${escape(`.${f.ext} · ${sizeLabel(f.bytes.length)}`)}</span>
+          <button type="button" class="btn btn--ghost pdfx-font-save" data-save-font="${i}">${t('Download')}</button>
+        </div>
+        <p class="pdfx-font-caveat">${escape(caveats.join(' '))}</p>
+      </li>`;
+  }).join('');
+
+  return `<div class="pdfx-panel" data-panel="fonts" hidden><ul class="pdfx-fonts">${rows}</ul></div>`;
+}
+
+/** The Attachments panel — the files the document carries inside it. */
+function attachmentsMarkup(x: Extracted): string {
+  if (!x.attachments.length) return '';
+  const rows = x.attachments.map((a, i) => `
+    <li class="pdfx-att">
+      <span class="pdfx-att-icon" aria-hidden="true">${icon('package', { size: 18 })}</span>
+      <span class="pdfx-att-name">${escape(a.name)}</span>
+      <span class="pdfx-att-sub">${escape(sizeLabel(a.bytes.length))}</span>
+      <button type="button" class="btn btn--ghost" data-save-att="${i}">${t('Download')}</button>
+    </li>`).join('');
+
+  return `
+    <div class="pdfx-panel" data-panel="attachments" hidden>
+      <p class="pdfx-note">${t('These files ride inside the PDF. Opening one runs whatever it is, so treat an attachment from a document you did not make the way you would treat any other unexpected file.')}</p>
+      <ul class="pdfx-atts">${rows}</ul>
+    </div>`;
 }
 
 function resultMarkup(x: Extracted): string {
   const words = x.pages.reduce((a, p) => a + wordCount(p), 0);
   const scans = x.pages.filter((p) => p.scanned).length;
 
-  const summary: string[] = [t('{n} pages', { n: x.pages.length }), t('{n} words', { n: words })];
+  const summary: string[] = [nPages(x.pages.length), nWords(words)];
   if (scans) summary.push(t('{n} scanned', { n: scans }));
 
   // An all-scan document deserves the headline, not a footnote: the user's next
   // move (find an OCR tool) is completely different from "read the text".
   const allScans = scans > 0 && scans === x.pages.length;
+
+  // Only passes that FOUND something get a tab, so the strip describes this
+  // document rather than what a PDF could theoretically hold.
+  const tabs = [
+    { id: 'text', label: t('Text'), n: 0 },
+    ...(x.images.length ? [{ id: 'images', label: t('Images'), n: x.images.length }] : []),
+    ...(x.fonts.length ? [{ id: 'fonts', label: t('Fonts'), n: x.fonts.length }] : []),
+    ...(x.attachments.length ? [{ id: 'attachments', label: t('Attachments'), n: x.attachments.length }] : []),
+  ].map((tb) => ({ ...tb, label: tb.n ? `${tb.label} (${tb.n})` : tb.label }));
 
   return `
     <div class="pdfx-result">
@@ -170,16 +307,19 @@ function resultMarkup(x: Extracted): string {
 
       ${hiddenMarkup(x.hidden)}
 
-      ${x.truncated ? `<p class="pdfx-note">${t('Only the first {n} pages were read — the rest of this document is too long to take apart here.', { n: x.pages.length })}</p>` : ''}
+      ${x.truncated ? `<p class="pdfx-note">${t('Only the first {n} pages were read. The rest of this document is too long to take apart here.', { n: x.pages.length })}</p>` : ''}
       ${allScans ? `<p class="pdfx-note pdfx-note--warn">${t('Every page in this document is a scanned image. There is no text layer to extract, and reading it would need OCR, which does not run on-device.')}</p>` : ''}
 
       <div class="pdfx-tabs" role="tablist">
-        <button type="button" class="pdfx-tab is-active" role="tab" aria-selected="true" data-tab="text">${t('Text')}</button>
+        ${tabs.map((tb, i) => `<button type="button" class="pdfx-tab${i ? '' : ' is-active'}" role="tab" aria-selected="${i ? 'false' : 'true'}" data-tab="${tb.id}">${escape(tb.label)}</button>`).join('')}
       </div>
 
-      <div class="pdfx-pages" data-panel="text">
+      <div class="pdfx-pages pdfx-panel" data-panel="text">
         ${x.pages.map(pageMarkup).join('')}
       </div>
+      ${imagesMarkup(x)}
+      ${fontsMarkup(x)}
+      ${attachmentsMarkup(x)}
     </div>`;
 }
 
@@ -187,13 +327,13 @@ function resultMarkup(x: Extracted): string {
 
 export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promise<void> {
   viewEl.innerHTML = `
-    <div class="tools-home pdfx-view">
-      ${backPillHtml()}
-      ${langFabHtml()}
+    ${backPillHtml()}
+    <div class="gallery-topright">${langFabHtml()}</div>
+    <div class="platform-layout pdfx-layout">
       <header class="plat-header">
         <h1 class="plat-title">${t('Take a PDF apart')}</h1>
         <div class="plat-header-text">
-          <p class="plat-sub">${t('Pull the words out of any PDF, page by page, and keep them as plain text or markdown. Runs entirely on this device; the file is never uploaded.')}</p>
+          <p class="plat-sub">${t('Pull the words, images, fonts and attachments out of any PDF and keep what you need. Runs entirely on this device; the file is never uploaded.')}</p>
         </div>
       </header>
 
@@ -201,7 +341,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
         <input type="file" accept=".pdf,.ai,application/pdf" hidden>
         <span class="pdfx-drop-icon" aria-hidden="true">${icon('document', { size: 32 })}</span>
         <strong>${t('Drop a PDF here')}</strong>
-        <span>${t('pdf · ai — nothing leaves your device')}</span>
+        <span>${t('pdf · ai · nothing leaves your device')}</span>
       </div>
 
       <div class="pdfx-out" data-out hidden></div>
@@ -272,18 +412,65 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       host.log('warn', 'pdf-extract: hidden-text scan failed', { error: (err as Error)?.message });
     }
 
-    current = { fileName: file.name, pages, truncated: Math.max(0, total - count), hidden };
+    // Assets. Each pass is independently guarded — a document with an
+    // unwalkable font table should still hand over its images.
+    let fonts: EmbeddedFont[] = [];
+    try { fonts = handle.listFonts?.() ?? []; }
+    catch (err) { host.log('warn', 'pdf-extract: font scan failed', { error: (err as Error)?.message }); }
+
+    let images: EmbeddedImage[] = [];
+    let imagesSkipped = 0;
+    try {
+      const scan = await handle.listImages?.();
+      images = scan?.images ?? [];
+      imagesSkipped = scan?.skipped ?? 0;
+    } catch (err) { host.log('warn', 'pdf-extract: image scan failed', { error: (err as Error)?.message }); }
+
+    let attachments: EmbeddedAttachment[] = [];
+    try { attachments = handle.listAttachments?.() ?? []; }
+    catch (err) { host.log('warn', 'pdf-extract: attachment scan failed', { error: (err as Error)?.message }); }
+
+    releasePreviews();
+    current = {
+      fileName: file.name, pages, truncated: Math.max(0, total - count), hidden,
+      fonts, images, imagesSkipped, attachments,
+    };
     drop.hidden = true;
     out.innerHTML = resultMarkup(current);
     playSfx('land');
   }
 
   function reset(): void {
+    releasePreviews();
     current = null;
     out.hidden = true;
     out.innerHTML = '';
     drop.hidden = false;
     input.value = '';
+  }
+
+  /**
+   * Put an extracted raster into the user's asset library.
+   *
+   * This is the point of the whole view over any other PDF tool: an extracted
+   * asset lands somewhere it can be used, instead of in a downloads folder.
+   */
+  async function addToCatalogue(im: EmbeddedImage, index: number, btn: HTMLElement): Promise<void> {
+    const was = btn.textContent;
+    btn.textContent = t('Adding…');
+    try {
+      const { storeUserUpload } = await import('./picker.ts');
+      const ext = im.mime.replace(/^image\//, '').replace('jpeg', 'jpg');
+      const name = `${stem(current!.fileName)}-image-${index + 1}.${ext}`;
+      const file = new File([im.bytes as BlobPart], name, { type: im.mime });
+      await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file);
+      btn.textContent = t('Added');
+      playSfx('save');
+    } catch (err) {
+      host.log('warn', 'pdf-extract: catalogue add failed', { error: (err as Error)?.message });
+      btn.textContent = t('Could not add');
+    }
+    setTimeout(() => { btn.textContent = was; }, 1800);
   }
 
   async function copy(text: string, btn: HTMLElement | null): Promise<void> {
@@ -322,9 +509,28 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     if (f) void open(f);
   });
 
+  /** Show one panel and light its tab. */
+  function showPanel(id: string): void {
+    for (const panel of out.querySelectorAll<HTMLElement>('.pdfx-panel')) {
+      panel.hidden = panel.dataset.panel !== id;
+    }
+    for (const tab of out.querySelectorAll<HTMLElement>('.pdfx-tab')) {
+      const on = tab.dataset.tab === id;
+      tab.classList.toggle('is-active', on);
+      tab.setAttribute('aria-selected', String(on));
+    }
+  }
+
+  function saveBytes(bytes: Uint8Array, filename: string, mime: string): void {
+    void host.export.download(new Blob([bytes as BlobPart], { type: mime }), filename);
+  }
+
   out.addEventListener('click', (e) => {
     const el = e.target as HTMLElement;
     if (!current) return;
+
+    const tab = el.closest<HTMLElement>('[data-tab]');
+    if (tab?.dataset.tab) { showPanel(tab.dataset.tab); return; }
 
     const pageBtn = el.closest<HTMLElement>('[data-copy-page]');
     if (pageBtn) {
@@ -333,9 +539,41 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       return;
     }
 
+    const base = stem(current.fileName);
+
+    const saveImg = el.closest<HTMLElement>('[data-save-image]');
+    if (saveImg) {
+      const im = current.images[Number(saveImg.dataset.saveImage)];
+      if (im) saveBytes(im.bytes, `${base}-image-${Number(saveImg.dataset.saveImage) + 1}.${im.mime.replace(/^image\//, '').replace('jpeg', 'jpg')}`, im.mime);
+      return;
+    }
+
+    const toCatalog = el.closest<HTMLElement>('[data-catalog-image]');
+    if (toCatalog) {
+      const i = Number(toCatalog.dataset.catalogImage);
+      const im = current.images[i];
+      if (im) void addToCatalogue(im, i, toCatalog);
+      return;
+    }
+
+    const saveFont = el.closest<HTMLElement>('[data-save-font]');
+    if (saveFont) {
+      const f = current.fonts[Number(saveFont.dataset.saveFont)];
+      // The stored name keeps the subset prefix when there is one — the file IS a
+      // subset, and naming it plainly would invite installing it as the real face.
+      if (f) saveBytes(f.bytes, `${f.name.replace(/[^a-z0-9.+-]/gi, '_')}.${f.ext}`, 'font/otf');
+      return;
+    }
+
+    const saveAtt = el.closest<HTMLElement>('[data-save-att]');
+    if (saveAtt) {
+      const a = current.attachments[Number(saveAtt.dataset.saveAtt)];
+      if (a) saveBytes(a.bytes, a.name.replace(/[^a-z0-9._-]/gi, '_') || 'attachment', a.mime);
+      return;
+    }
+
     const act = el.closest<HTMLElement>('[data-act]')?.dataset.act;
     if (!act) return;
-    const base = stem(current.fileName);
     if (act === 'copy') void copy(joinPageText(current.pages, { markdown: false }), el.closest<HTMLElement>('[data-act]'));
     else if (act === 'md') download(host, joinPageText(current.pages), `${base}.md`, 'text/markdown');
     else if (act === 'txt') download(host, joinPageText(current.pages, { markdown: false }), `${base}.txt`, 'text/plain');

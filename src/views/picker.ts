@@ -45,7 +45,10 @@ import { maybeNudgeAssetMilestone } from '../lib/asset-milestone.ts';
 import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { onIdle } from '../lib/clip-thumbs.ts';
 import { audioThumbShape, audioThumbSvg, audioThumbPlaceholder } from '../lib/audio-thumb.ts';
-import { cachedPeaks, derivePeaks, deletePeaks, MAX_CONCURRENT_DERIVES, peaksFingerprint } from '../lib/audio-peaks.ts';
+import { audioThumbPool, type ThumbTheme } from '../lib/audio-thumb-colour.ts';
+import { loadAudioCovers, resolveAudioLook, type AudioCover } from '../lib/audio-covers.ts';
+import { livePalette } from '../lib/live-palette.ts';
+import { cachedPeaks, derivePeaks, memoPeaks, deletePeaks, MAX_CONCURRENT_DERIVES, peaksFingerprint } from '../lib/audio-peaks.ts';
 import { libCategory, LIB_GROUPS, loadAssetCategories, categoryLabel } from '../lib/asset-category.ts';
 import type { LibGroup } from '../lib/asset-category.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
@@ -2018,13 +2021,107 @@ export function mountAudioThumbs(
   const done = new WeakSet<HTMLElement>();
   let workers = 0;
 
+  // The brand's colour pool, resolved ONCE per mount and shared by every tile — a
+  // per-tile resolve would re-read the tokens doc dozens of times for one grid. Starts
+  // empty so the first paints are simply uncoloured (inheriting currentColor, exactly
+  // as before) rather than deferred; the fill lands well within a scroll.
+  let pool: string[] = [];
+  let covers: Map<string, AudioCover> = new Map();
+  /** Tiles this mount has already painted, so a late palette can colour them instead of
+   *  leaving the grid half grey. Weak refs: a tile dropped by a re-render must not be
+   *  held alive by this list. */
+  const painted = new Set<WeakRef<HTMLElement>>();
+
+  const repaintPainted = (): void => {
+    for (const ref of painted) {
+      const el = ref.deref();
+      if (!el?.isConnected) { painted.delete(ref); continue; }
+      const id = el.dataset.audioThumb ?? '';
+      const p = id ? memoPeaks(id) : null;
+      if (p) paint(el, p);
+    }
+  };
+
+  /** Which tile surface we are actually on, MEASURED rather than named — the theme
+   *  attribute has three values and a `brand` theme can be either. */
+  const measuredTheme = (): ThumbTheme => {
+    try {
+      const bg = getComputedStyle(root as Element).backgroundColor
+        || getComputedStyle(document.body).backgroundColor;
+      const m = /rgba?\(([^)]+)\)/.exec(bg);
+      if (m) {
+        const [r, g, b] = m[1]!.split(',').map(v => Number.parseFloat(v));
+        if (Number.isFinite(r!) && Number.isFinite(g!) && Number.isFinite(b!)) {
+          // Rec.601 luma is ample for a light/dark decision.
+          return (0.299 * r! + 0.587 * g! + 0.114 * b!) < 128 ? 'dark' : 'light';
+        }
+      }
+    } catch { /* fall through to the attribute */ }
+    return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  };
+
+  void (async () => {
+    // The pool is theme-dependent: a colour is judged against the surface it will
+    // actually sit on, so the light and dark pools legitimately differ.
+    // The app has THREE themes — light, dark and `brand` — so `=== 'dark'` was wrong: it
+    // classified a brand theme (usually dark) as light, then chose colours legible on
+    // WHITE, i.e. near-black maroons on a dark tile. Measure the real surface instead of
+    // inferring it from a name; a future theme then needs no change here.
+    const theme = measuredTheme();
+    // `host` is `unknown` here on purpose — this helper is called from three views with
+    // three different host shapes. Both callees take a narrow structural slice and
+    // feature-detect what they read, so the assertion asserts nothing they do not check.
+    const h = host as Parameters<typeof livePalette>[0] & Parameters<typeof audioThumbPool>[1];
+    try { pool = audioThumbPool(await livePalette(h), h, theme); } catch { pool = []; }
+    try { covers = loadAudioCovers(await (h as { profile?: { get(): Promise<unknown> } }).profile?.get() as never); } catch { covers = new Map(); }
+    // The pool arrives AFTER the first tiles have painted, and a tile painted without it
+    // silently inherits `--muted-foreground` — the grey tiles sitting among coloured ones.
+    // Repaint what already landed rather than leaving a half-coloured grid.
+    repaintPainted();
+  })();
+
   const paint = (el: HTMLElement, peaks: Float32Array | number[]): void => {
     if (!live || !isCurrent() || !el.isConnected) return;
     const id = el.dataset.audioThumb ?? '';
+    // Colour is the SECOND identity axis: shape alone gives five looks, and catalog
+    // music is loudness-maximised enough that two same-shape tiles read alike at 100px.
+    // An empty pool (no brand colours, or none legible here) just means no ink.
+    // ONE read path: a user's cover wins, the generated look renders everywhere else.
+    // `covers` is empty unless the profile carries overrides, so the overwhelmingly
+    // common case is untouched.
+    const look = resolveAudioLook(id, pool, covers);
+    if (look.ink) el.style.setProperty('--audio-thumb-ink', look.ink.hex);
+    // A MilkDrop cover is the one look that cannot be drawn here — it needs a GL context
+    // and a grid cannot hold one per tile. Its BAKE is fetched instead; until that lands
+    // (or if it never does — no WebGL2, an evicted cache, a fresh device) the tile shows
+    // the asset's generated waveform, which is a real cover rather than a blank box.
     el.innerHTML = audioThumbSvg(peaks, {
-      shape: audioThumbShape(id),
+      shape: look.shape,
       label: String(lookup(id)?.meta?.name ?? id),
     });
+    painted.add(new WeakRef(el));
+    if (look.viz) void paintBakedCover(el, id, look.viz);
+  };
+
+  /** Swap in a MilkDrop cover's baked image, if one has been rendered for this asset,
+   *  preset and brand. A pure cache read — never renders, so a grid can never trigger a
+   *  GL mount. Missing simply means the waveform underneath stays. */
+  const paintBakedCover = async (el: HTMLElement, id: string, presetId: string): Promise<void> => {
+    try {
+      const { cachedBake, bakeKey, brandKeyFor } = await import('../lib/audio-cover-bake.ts');
+      const blob = await cachedBake(bakeKey(id, presetId, brandKeyFor(pool)));
+      if (!blob || !live || !isCurrent() || !el.isConnected) return;
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.alt = '';
+      img.decoding = 'async';
+      img.className = 'audio-cover-baked';
+      // Revoke on load AND on error: an object URL leaked per tile adds up across a grid
+      // the user scrolls through repeatedly.
+      img.onload = img.onerror = () => URL.revokeObjectURL(url);
+      img.src = url;
+      el.replaceChildren(img);
+    } catch { /* no bake, no change — the waveform stands */ }
   };
 
   const drain = async (): Promise<void> => {

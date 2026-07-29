@@ -70,9 +70,10 @@ import {
   parseColor, colorToHexString, interpolateColor, chromaAxisMax,
   gamutSourceId, resolveGamutSource, fastRgbContains, inGamut, maxChroma, convertColor,
   iccRoundTripDeltaE, iccRoundTripDecides, ICC_GAMUT_DELTA_E, encodeOklch,
+  projectSolidPoints, imageColorCloud,
 } from '@lolly/engine';
 import type {
-  EncodeSpace,
+  EncodeSpace, ImageCloud,
   ColorDescription, GamutName, GamutSolid, SlicePlane,
   ColorSpaceTag, HueDirection, GamutLimit, GamutSource, IccProfile, RenderingIntent,
   SolidEmbed,
@@ -971,6 +972,18 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   let solidCanvas = $<HTMLCanvasElement>('[data-lab-solid]');
   let solidFrame = 0;
 
+  /**
+   * The loaded image's colours, or null. When set, the solid stops being the
+   * subject and becomes the reference frame it is drawn against.
+   *
+   * `screen` is the last painted projection of `cloud.points`, kept so a click
+   * can be hit-tested without re-projecting — the paint has just done that work
+   * for the exact view the reader is looking at, and re-deriving it at click time
+   * is how a pick lands on a different point than the one under the cursor.
+   */
+  let cloud: (ImageCloud & { assumedSpace: boolean }) | null = null;
+  let cloudScreen: { x: number; y: number; depth: number }[] = [];
+
   function solidFor(lim: GamutLimit): GamutSolid {
     // Keyed by `gamutSourceId` AND the embedding: a GamutSource stringifies to
     // '[object Object]', so two profiles would share one cache entry and the
@@ -1077,6 +1090,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     // stroke buys nothing. So it is spent only where it shows.
     const areaPerQuad = (w * h) / Math.max(1, fills.length);
     const seal = areaPerQuad > 24; // ≈ 5px per side
+    // With a cloud loaded the gamut stops being the subject and becomes the frame
+    // the cloud is read against, so it is painted as a ghost of itself. An opaque
+    // surface would simply hide every point inside it, which is most of them —
+    // the interesting ones are near and past the boundary, and those are exactly
+    // the ones you would still see. Dimming the surface rather than making the
+    // POINTS translucent keeps each point's own colour true, which is the one
+    // thing on this chart that must not be tinted by its rendering.
+    if (cloud) ctx.globalAlpha = 0.28;
     for (const q of quads) {
       const [p0, ...rest] = q.points;
       if (!p0) continue;
@@ -1117,6 +1138,9 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       ctx.fill();
       if (seal) { ctx.strokeStyle = rgb; ctx.lineWidth = 1; ctx.stroke(); }
     }
+    ctx.globalAlpha = 1;
+
+    paintCloud(ctx, w, h, solid, dpr);
 
     // "You are here". Drawn hollow when the subject is outside the solid being
     // shown, since a filled dot floating off the surface reads as a glitch.
@@ -1153,6 +1177,42 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     }
   }
 
+  /**
+   * The image's colours as dots in the same space the solid is drawn in.
+   *
+   * Painted far-to-near so a near point covers a far one, the same painter's
+   * order the mesh uses — without it the cloud reads as a flat spray and the
+   * rotation stops carrying any depth.
+   *
+   * A dot's radius follows how much of the image it is, on a cube root: linear
+   * area would make one dominant colour a disc that swallows the plot, and equal
+   * radii would say a single stray pixel matters as much as the sky. The cube
+   * root is the compromise that keeps a rare-but-vivid colour visible while still
+   * ranking it below the mass.
+   */
+  function paintCloud(
+    ctx: CanvasRenderingContext2D, w: number, h: number, solid: GamutSolid, dpr: number,
+  ): void {
+    cloudScreen = [];
+    if (!cloud || !cloud.points.length) return;
+    const pts = projectSolidPoints(solid, cloud.points, solidView);
+    cloudScreen = pts;
+    const order = pts.map((_, i) => i).sort((a, b) => pts[a]!.depth - pts[b]!.depth);
+    const heaviest = cloud.points[0]?.n ?? 1;
+    for (const i of order) {
+      const p = pts[i]!, c = cloud.points[i]!;
+      const r = (1.4 + 3.1 * Math.cbrt(c.n / heaviest)) * dpr;
+      ctx.beginPath();
+      ctx.arc(p.x * w, p.y * h, r, 0, Math.PI * 2);
+      // The point's own colour. It is a bake when the source was wider than the
+      // surface, which is honest here for the same reason it is everywhere else on
+      // this page: only a displayable colour can be painted, and the gamut shell
+      // around the cloud is what says where the painting stopped being the truth.
+      ctx.fillStyle = c.hex;
+      ctx.fill();
+    }
+  }
+
   const scheduleSolid = (): void => {
     if (solidFrame) return;
     solidFrame = requestAnimationFrame(() => { solidFrame = 0; paintSolid(); });
@@ -1175,6 +1235,38 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   let unbindTurn: (() => void) | null = null;
+
+  /**
+   * Adopt the cloud point nearest the press, if one is close enough.
+   *
+   * Nearest in SCREEN space using the projection the last paint produced, which
+   * is the only definition that matches what the reader saw. Ties are broken by
+   * depth, taking the NEARER point — two dots overlapping on screen are one in
+   * front of the other, and the front one is the one that was pointed at.
+   *
+   * A miss does nothing at all. Snapping to the closest point however far away
+   * would make an idle tap on empty space silently rewrite the subject.
+   */
+  function pickFromCloud(e: PointerEvent, el: HTMLCanvasElement): void {
+    if (!cloud || !cloudScreen.length) return;
+    const box = el.getBoundingClientRect();
+    if (box.width < 2 || box.height < 2) return;
+    const px = (e.clientX - box.left) / box.width;
+    const py = (e.clientY - box.top) / box.height;
+    // In fractions of the box, so the tolerance scales with the figure rather
+    // than being generous on a phone and mean on a large display.
+    const slop = 0.035;
+    let best = -1, bestD = slop * slop, bestDepth = -Infinity;
+    for (let i = 0; i < cloudScreen.length; i++) {
+      const p = cloudScreen[i]!;
+      const d = (p.x - px) ** 2 + (p.y - py) ** 2;
+      if (d > bestD) continue;
+      if (d < bestD || p.depth > bestDepth) { best = i; bestD = d; bestDepth = p.depth; }
+    }
+    if (best < 0) return;
+    const c = cloud.points[best]!;
+    setSubject(formatOklch({ l: c.l, c: c.c, h: c.h }));
+  }
 
   function bindTurn(el: HTMLCanvasElement): () => void {
     let dragging = -1;
@@ -1235,6 +1327,12 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       dragging = -1;
       pending = false;
       el.classList.remove('is-turning');
+      // A press that never became a turn is a PICK. Measured from the press, not
+      // from a click event: the canvas captures the pointer as soon as a turn
+      // starts, so a drag that ends over the canvas still fires `click`, and
+      // hanging the pick on that would move the subject every time someone let go
+      // of a rotation.
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) < AXIS_SLOP) pickFromCloud(e, el);
     };
     // Keyboard equivalent: a drag-only control is unusable without one.
     const onKey = (e: KeyboardEvent): void => {
@@ -1263,6 +1361,107 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   if (solidCanvas) unbindTurn = bindTurn(solidCanvas);
   cleanups.push(() => { unbindTurn?.(); unbindTurn = null; });
+
+  // ── The image cloud ──────────────────────────────────────────────────────
+  const cloudFig = solidCanvas?.closest<HTMLElement>('.lab-chart--solid') ?? null;
+  const cloudFile = $<HTMLInputElement>('[data-lab-cloud-file]');
+  const cloudClear = $<HTMLElement>('[data-lab-cloud-clear]');
+  const cloudStats = $<HTMLElement>('[data-lab-cloud-stats]');
+
+  function showCloudStats(name: string): void {
+    if (!cloudStats) return;
+    if (!cloud) { cloudStats.hidden = true; cloudStats.textContent = ''; return; }
+    const pct = (v: number): string => `${(v * 100).toFixed(v >= 0.1 ? 0 : 1)}%`;
+    const bits: string[] = [
+      t('{n} colours', { n: `${cloud.uniqueCapped ? '>' : ''}${cloud.unique.toLocaleString()}` }),
+    ];
+    // Only the gamuts that are actually reached. Listing "0% Rec.2020" on every
+    // photograph is noise, and the absence is already told by the shell the cloud
+    // sits inside.
+    for (const [g, label] of [['p3', 'Display-P3'], ['rec2020', 'Rec.2020']] as const) {
+      const share = cloud.coverage[g];
+      if (share > 0.0005) bits.push(t('{p} beyond sRGB, in {g}', { p: pct(share), g: t(label) }));
+    }
+    if (cloud.clipped > 0.01) bits.push(t('{p} already clipped', { p: pct(cloud.clipped) }));
+    if (cloud.dominantHue) bits.push(t('mostly {h}°', { h: String(Math.round(cloud.dominantHue.h)) }));
+    // The honesty clause, and it goes LAST so it reads as a caveat on the numbers
+    // rather than as the headline. An untagged file is sRGB by convention only,
+    // and every figure above rests on that.
+    bits.push(cloud.assumedSpace
+      ? t('no profile — read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') })
+      : t('read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') }));
+    cloudStats.textContent = `${name} · ${bits.join(' · ')}`;
+    cloudStats.hidden = false;
+  }
+
+  async function loadCloud(file: File): Promise<void> {
+    try {
+      // Only the DECODER is deferred: it reaches image-resize.ts, which pulls the
+      // bitmap/codec machinery. `imageColorCloud` is pure maths already in the
+      // engine barrel this view imports anyway.
+      const { sampleImageFile } = await import('../lib/image-sample.ts');
+      const img = await sampleImageFile(file);
+      cloud = { ...imageColorCloud(img.data, img.width, img.height, { space: img.space }), assumedSpace: img.assumed };
+      if (cloudClear) cloudClear.hidden = false;
+      cloudFig?.classList.add('has-cloud');
+      showCloudStats(file.name);
+      paintSolid();
+    } catch (err) {
+      // A file that will not decode is the user's file being wrong, not the app
+      // breaking — one line, no stack, and the previous cloud (if any) survives.
+      showGamutToast(escape(t('That image could not be read.')));
+      console.warn('lab: image cloud failed', err);
+    }
+  }
+
+  if (cloudFile) {
+    const onFile = (): void => {
+      const f = cloudFile.files?.[0];
+      // Cleared so re-choosing the SAME file fires `change` again — otherwise a
+      // reader who cleared the plot cannot put the same image back.
+      cloudFile.value = '';
+      if (f) void loadCloud(f);
+    };
+    cloudFile.addEventListener('change', onFile);
+    cleanups.push(() => cloudFile.removeEventListener('change', onFile));
+  }
+  if (cloudClear) {
+    const onClear = (): void => {
+      cloud = null;
+      cloudScreen = [];
+      cloudClear.hidden = true;
+      cloudFig?.classList.remove('has-cloud');
+      showCloudStats('');
+      paintSolid();
+    };
+    cloudClear.addEventListener('click', onClear);
+    cleanups.push(() => cloudClear.removeEventListener('click', onClear));
+  }
+  // Dropping onto the figure is the same act as choosing the file. The FIGURE is
+  // the target, not a separate box: the plot is what you are dropping onto.
+  if (cloudFig) {
+    const over = (e: DragEvent): void => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      cloudFig.classList.add('is-drop');
+    };
+    const leave = (): void => cloudFig.classList.remove('is-drop');
+    const drop = (e: DragEvent): void => {
+      const f = e.dataTransfer?.files?.[0];
+      if (!f) return;
+      e.preventDefault();
+      leave();
+      if (f.type.startsWith('image/')) void loadCloud(f);
+    };
+    cloudFig.addEventListener('dragover', over);
+    cloudFig.addEventListener('dragleave', leave);
+    cloudFig.addEventListener('drop', drop);
+    cleanups.push(() => {
+      cloudFig.removeEventListener('dragover', over);
+      cloudFig.removeEventListener('dragleave', leave);
+      cloudFig.removeEventListener('drop', drop);
+    });
+  }
 
   const embedSeg = $('[data-lab-embed]');
   if (embedSeg) {
@@ -2384,6 +2583,21 @@ function shellHtml(): string {
               <button type="button" class="view-seg-btn" data-val="landscape" aria-pressed="true">${escape(t('Landscape'))}</button>
               <button type="button" class="view-seg-btn" data-val="lab" aria-pressed="false">${escape(t('Lab axes'))}</button>
             </div>
+            ${/* The second way in (plans/color-spaces.md §11.5): a colour, or an
+                  image. It sits on the solid rather than up in step 1 because the
+                  result appears HERE — the cloud is drawn in this figure, and an
+                  affordance three sections away from its own effect reads as an
+                  unrelated upload. Not a dashed box: in this design language a
+                  dashed border means drop area and nothing else, and the whole
+                  figure is the drop area, so the button must not impersonate one. */''}
+            <div class="lab-cloud-row">
+              <label class="lab-cloud-add">
+                <input type="file" accept="image/*" data-lab-cloud-file hidden>
+                <span>${escape(t('Plot an image'))}</span>
+              </label>
+              <button type="button" class="lab-cloud-clear" data-lab-cloud-clear hidden>${escape(t('Clear'))}</button>
+            </div>
+            <p class="lab-cloud-stats" data-lab-cloud-stats hidden></p>
             <p class="lab-chart-at"><strong data-lab-solid-note></strong></p>
           </figcaption>
         </figure>

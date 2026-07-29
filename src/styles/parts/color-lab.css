@@ -885,7 +885,7 @@
    past ~24rem the extra width is dead space, and the ramp is what should take it. */
 .lab-blend {
   display: grid;
-  grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+  grid-template-columns: 1fr 1.75fr;
   gap: 1rem 1.5rem;
   align-items: start;
 }
@@ -984,7 +984,7 @@
 /* ── Tone ramp ────────────────────────────────────────────────────────────── */
 .lab-ramp {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.35rem;
 }
 .lab-step {
@@ -1130,4 +1130,45 @@
 @media (prefers-reduced-motion: reduce) {
   .lab-swatch, .lab-brand-sw, .lab-step { transition: none; }
 }
+
+/* ── The image cloud ──────────────────────────────────────────────────────
+   The second way into the report: a colour, or an image plotted in the solid.
+   The control sits in the solid's own caption because that is where its result
+   appears. */
+.lab-cloud-row { display: flex; align-items: center; gap: 0.4rem; margin: 0.35rem 0 0; }
+.lab-cloud-add,
+.lab-cloud-clear {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.lab-cloud-add:hover,
+.lab-cloud-clear:hover { border-color: hsl(var(--primary) / 0.5); background: hsl(var(--accent)); }
+/* The file input is `hidden`, so the LABEL has to carry the focus ring — without
+   this a keyboard user gets no indication at all that the control is focused. */
+.lab-cloud-add:focus-within { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+.lab-cloud-stats {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+}
+/* Drop feedback on the whole figure. Dashed IS correct here and only here: this
+   is a real drop area, which is exactly what the convention reserves it for. */
+.lab-chart--solid.is-drop {
+  outline: 2px dashed hsl(var(--primary) / 0.7);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+}
+/* A cloud makes every dot a target, so say so. Without a cloud the canvas is a
+   turn-only control and a pointer cursor would promise a pick that does nothing. */
+.lab-chart--solid.has-cloud .lab-solid { cursor: crosshair; }
+
 }

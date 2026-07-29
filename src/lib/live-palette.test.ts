@@ -65,3 +65,49 @@ test('a swatch can carry both a CMYK anchor and a spot lock independently', () =
   assert.deepEqual(entry.cmyk, [0, 100, 79, 4]);
   assert.deepEqual(entry.spot, spot);
 });
+
+/**
+ * The authored sRGB face reaches the CMYK export.
+ *
+ * The chain is long enough to be worth pinning end to end: a brand token's
+ * override → `toSwatch` (engine) → `toPaletteEntry` → `buildCmykPaletteMap` →
+ * the ink substituted into the PDF content stream. Every link is already tested
+ * in isolation; what this asserts is that they are actually connected, which is
+ * the failure mode that would ship an override nobody honours.
+ *
+ * The palette map is keyed by QUANTISED RGB derived from the entry's hex — so if
+ * `value` carried the automatic bake instead of the authored face, the export
+ * would key on the wrong colour and the swatch's own ink would never be found.
+ */
+test('an authored sRGB face is the hex the CMYK export keys on', async () => {
+  const { createTokenSet, TOKEN_EXT } = await import('@lolly/engine');
+  const { buildCmykPaletteMap, pdfColorHit } = await import('../bridge/export-pdf-vector.ts');
+
+  const ts = createTokenSet({
+    color: {
+      brand: {
+        $type: 'color',
+        $value: 'oklch(70% 0.25 145)',                 // wide-gamut; bakes to something else
+        $extensions: { [TOKEN_EXT]: { faces: { srgb: { value: '#00b050' } }, cmyk: [90, 0, 90, 0] } },
+      },
+    },
+  });
+  const entry = toPaletteEntry(ts.colors()[0]! as Parameters<typeof toPaletteEntry>[0]);
+  assert.equal(entry.hex, '#00b050', 'the palette entry carries the AUTHORED bake');
+
+  const map = buildCmykPaletteMap([{ hex: entry.hex, cmyk: entry.cmyk ? [...entry.cmyk] : undefined }]);
+  // Look the colour up the way the export does: by the RGB it is about to write.
+  const hit = pdfColorHit(0 / 255, 176 / 255, 80 / 255, map);
+  assert.ok(hit, 'the export finds the swatch by its authored hex');
+  assert.deepEqual(hit!.cmyk.map(v => Math.round(v * 100)), [90, 0, 90, 0]);
+
+  // Anti-vacuity. The automatic bake of that same colour is a DIFFERENT rgb, and
+  // the export must not find the swatch there — otherwise this test would pass
+  // just as well with the face ignored.
+  const auto = createTokenSet({ color: { brand: { $type: 'color', $value: 'oklch(70% 0.25 145)' } } })
+    .colors()[0]!.value;
+  assert.notEqual(auto.toLowerCase(), '#00b050', 'the two hexes genuinely differ');
+  const n = (i: number): number => parseInt(auto.slice(i, i + 2), 16) / 255;
+  assert.equal(pdfColorHit(n(1), n(3), n(5), map), null,
+    'the automatic bake is NOT what the export keys on any more');
+});

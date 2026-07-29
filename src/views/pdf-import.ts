@@ -26,7 +26,7 @@
 // to a neutral box rather than being dropped.
 
 import {
-  PDFDocument, PDFName, PDFDict, PDFArray, PDFNumber, PDFRawStream, decodePDFRawStream,
+  PDFDocument, PDFName, PDFDict, PDFArray, PDFNumber, PDFRef, PDFRawStream, decodePDFRawStream,
 } from 'pdf-lib';
 import type { PDFContext, PDFObject } from 'pdf-lib';
 import {
@@ -39,6 +39,7 @@ import type { CullWindow } from '../../../../engine/src/pdf-svg.ts';
 import type { PdfNode, PdfFontInfo, PdfXObject, PdfShading, PdfPattern, PdfGradientStop, PdfSoftMaskDef } from '../../../../engine/src/pdf-map.ts';
 import type { AssetRef, HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
 import { renderTilePixels, type TileSource } from '../lib/pdf-shading.ts';
+import { readFontEmbedding, type FontEmbeddingInfo } from '../lib/font-utils.ts';
 import {
   backdropLuminosity, buildPattern, buildShading, colorSpaceName, decodedText, dictOf, getKey,
   groupColorSpace, nameOf, numArray, numOf, softMaskId,
@@ -746,6 +747,260 @@ export interface PdfPageSvgOpts {
   rasterFallback?: boolean;
 }
 
+// ── embedded font programs ────────────────────────────────────────────────────
+
+/** Which /FontFile* key holds the program, and what the bytes therefore are. */
+const FONT_FILE_KEYS = [
+  { key: 'FontFile', ext: 'pfb' as const },   // Type1
+  { key: 'FontFile2', ext: 'ttf' as const },  // TrueType
+  { key: 'FontFile3', ext: 'cff' as const },  // CFF — /Subtype refines this below
+];
+
+/**
+ * Pull every embedded font program out of a document.
+ *
+ * Enumerating indirect objects (rather than crawling page resources) is
+ * deliberate: a /FontDescriptor is reachable from pages, form XObjects,
+ * annotation appearance streams, Type3 CharProcs resources and pattern
+ * resources, and a resource crawl that misses one silently under-reports.
+ *
+ * Deduped by the font program's own object ref — the same face referenced from
+ * forty pages is one font, and listing it forty times would be noise.
+ */
+function collectEmbeddedFonts(doc: PDFDocument): EmbeddedFont[] {
+  const ctx = doc.context;
+  const out: EmbeddedFont[] = [];
+  const seen = new Set<string>();
+
+  let entries: [unknown, PDFObject][] = [];
+  try { entries = ctx.enumerateIndirectObjects() as unknown as [unknown, PDFObject][]; } catch { return out; }
+
+  for (const [, obj] of entries) {
+    const d = obj instanceof PDFDict ? obj : null;
+    if (!d) continue;
+    // A FontDescriptor is identifiable by /Type, but plenty of writers omit it —
+    // holding a /FontFile* key is the reliable signal.
+    for (const { key, ext } of FONT_FILE_KEYS) {
+      const ref = d.get(PDFName.of(key));
+      if (!ref) continue;
+      const tag = ref instanceof PDFRef ? ref.tag : '';
+      if (tag && seen.has(tag)) continue;
+      if (tag) seen.add(tag);
+
+      let stream: PDFObject | undefined;
+      try { stream = ctx.lookup(ref); } catch { continue; }
+      if (!(stream instanceof PDFRawStream)) continue;
+
+      let bytes: Uint8Array;
+      try { bytes = decodePDFRawStream(stream).decode(); } catch { continue; }
+      if (!bytes.length) continue;
+
+      const name = nameOf(ctx, d.get(PDFName.of('FontName'))) || '(unnamed font)';
+      // /FontFile3 covers three different things; its /Subtype says which, and
+      // only /OpenType is a complete, installable file.
+      const sub = nameOf(ctx, stream.dict.get(PDFName.of('Subtype'))) || '';
+      const realExt = key === 'FontFile3' ? (sub === 'OpenType' ? 'otf' : 'cff') : ext;
+
+      const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      const embedding = readFontEmbedding(buf);
+
+      out.push({
+        name,
+        family: name.replace(/^[A-Z]{6}\+/, ''),
+        ext: realExt,
+        bytes,
+        // The "ABCDEF+" prefix is the PDF spec's own subset marker (§9.6.4).
+        subset: /^[A-Z]{6}\+/.test(name),
+        // A bare CFF or a Type1 PFB fragment is a font PROGRAM, not a font FILE:
+        // no system will install it without being wrapped in an sfnt container.
+        installable: realExt === 'ttf' || realExt === 'otf',
+        embedding,
+      });
+    }
+  }
+  out.sort((a, b) => a.family.localeCompare(b.family));
+  return out;
+}
+
+// ── embedded rasters ──────────────────────────────────────────────────────────
+
+/** One image XObject, decoded to bytes a browser can show and save. */
+export interface EmbeddedImage {
+  bytes: Uint8Array;
+  mime: string;
+  /** Stored pixel dimensions — NOT the size it is drawn at on the page. */
+  width: number;
+  height: number;
+  colorSpace: string | null;
+  /** 0-based page it was first reached from. */
+  page: number;
+}
+
+export interface EmbeddedImageScan {
+  images: EmbeddedImage[];
+  /** Image XObjects found but not decodable here (JPX, CCITT, JBIG2, …). */
+  skipped: number;
+  skippedFilters: string[];
+}
+
+/**
+ * Every raster the document embeds, at its STORED resolution.
+ *
+ * Stored resolution, not display size, is the honest thing to hand back: a logo
+ * placed at 20mm may be a 4000px original, and someone extracting assets wants
+ * the original. Deduped by stream, so a header image repeated on every page is
+ * one image.
+ */
+async function collectEmbeddedImages(doc: PDFDocument, max: number): Promise<EmbeddedImageScan> {
+  const ctx = doc.context;
+  const images: EmbeddedImage[] = [];
+  const skippedFilters = new Set<string>();
+  let skipped = 0;
+  const seen = new Set<PDFRawStream>();
+  const pageCount = doc.getPageCount();
+
+  for (let p = 0; p < pageCount && images.length < max; p++) {
+    const streams = new Map<string, ImageDesc>();
+    try {
+      const node = doc.getPage(p).node;
+      extractResources(makeExtractCtx(ctx, streams, new Map(), () => {}), getKey(ctx, node, 'Resources'), 0);
+    } catch { continue; }  // a malformed page's resources — keep scanning the rest
+    for (const desc of streams.values()) {
+      if (images.length >= max) break;
+      if (seen.has(desc.stream)) continue;
+      seen.add(desc.stream);
+      const got = await imageBytes(desc, () => {});
+      if (got) images.push({ bytes: got.bytes, mime: got.mime, width: desc.width, height: desc.height, colorSpace: desc.colorSpace, page: p });
+      else { skipped++; skippedFilters.add(desc.filter[desc.filter.length - 1] || 'raw'); }
+    }
+  }
+  return { images, skipped, skippedFilters: [...skippedFilters] };
+}
+
+// ── attachments ───────────────────────────────────────────────────────────────
+
+/** A file riding inside the PDF — the payload half of the structural scan. */
+export interface EmbeddedAttachment {
+  name: string;
+  bytes: Uint8Array;
+  /** Best-effort media type from /Subtype, else sniffed from the extension. */
+  mime: string;
+}
+
+const EXT_MIME: Record<string, string> = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  gif: 'image/gif', svg: 'image/svg+xml', txt: 'text/plain', csv: 'text/csv',
+  json: 'application/json', xml: 'application/xml', zip: 'application/zip',
+};
+
+/**
+ * Pull out the files a document carries.
+ *
+ * `bridge/pdf-structure.ts` REPORTS these as a finding ("this PDF carries a
+ * payload"); this hands over the actual bytes so a reader can look at what it
+ * is. Same three places in the graph — the /EmbeddedFiles name tree, /AF
+ * associated files, and /FileAttachment annotations — because a document that
+ * hides something rarely puts it in the obvious one.
+ */
+function collectAttachments(doc: PDFDocument): EmbeddedAttachment[] {
+  const ctx = doc.context;
+  const out: EmbeddedAttachment[] = [];
+  const seen = new Set<string>();
+
+  const takeSpec = (spec: Ref, fallback = ''): void => {
+    const d = dictOf(ctx, spec);
+    if (!d) return;
+    const name = strOfPdf(ctx, d.get(PDFName.of('UF'))) || strOfPdf(ctx, d.get(PDFName.of('F'))) || fallback;
+    const ef = dictOf(ctx, d.get(PDFName.of('EF')));
+    const ref = ef ? (ef.get(PDFName.of('UF')) ?? ef.get(PDFName.of('F'))) : undefined;
+    if (!ref) return;                       // an external LINK, not a payload
+    const tag = ref instanceof PDFRef ? ref.tag : '';
+    if (tag && seen.has(tag)) return;
+    if (tag) seen.add(tag);
+
+    let stream: PDFObject | undefined;
+    try { stream = ctx.lookup(ref); } catch { return; }
+    if (!(stream instanceof PDFRawStream)) return;
+    let bytes: Uint8Array;
+    try { bytes = decodePDFRawStream(stream).decode(); } catch { return; }
+
+    const declared = nameOf(ctx, stream.dict.get(PDFName.of('Subtype')))?.replace(/#2F/gi, '/') ?? '';
+    const ext = /\.([a-z0-9]+)$/i.exec(name)?.[1]?.toLowerCase() ?? '';
+    out.push({
+      name: name || '(unnamed attachment)',
+      bytes,
+      mime: declared.includes('/') ? declared : (EXT_MIME[ext] ?? 'application/octet-stream'),
+    });
+  };
+
+  // 1. The /Names → /EmbeddedFiles tree (with /Kids interior nodes).
+  const walk = (node: Ref, depth: number): void => {
+    if (depth > 32) return;
+    const d = dictOf(ctx, node);
+    if (!d) return;
+    const names = ctx.lookup(d.get(PDFName.of('Names')));
+    if (names instanceof PDFArray) {
+      const arr = names.asArray();
+      for (let i = 0; i + 1 < arr.length; i += 2) takeSpec(arr[i + 1], strOfPdf(ctx, arr[i]) ?? '');
+    }
+    const kids = ctx.lookup(d.get(PDFName.of('Kids')));
+    if (kids instanceof PDFArray) for (const k of kids.asArray()) walk(k, depth + 1);
+  };
+  walk(getKey(ctx, doc.catalog.get(PDFName.of('Names')), 'EmbeddedFiles'), 0);
+
+  // 2. /AF associated files, on the catalog and on every page.
+  const afRoots: Ref[] = [doc.catalog.get(PDFName.of('AF'))];
+  try { for (const p of doc.getPages()) afRoots.push((p.node as unknown as PDFDict).get(PDFName.of('AF'))); } catch { /* malformed pages */ }
+  for (const root of afRoots) {
+    const arr = ctx.lookup(root as PDFObject | undefined);
+    if (arr instanceof PDFArray) for (const spec of arr.asArray()) takeSpec(spec);
+  }
+
+  // 3. /FileAttachment annotations.
+  try {
+    for (const p of doc.getPages()) {
+      const annots = ctx.lookup((p.node as unknown as PDFDict).get(PDFName.of('Annots')));
+      if (!(annots instanceof PDFArray)) continue;
+      for (const a of annots.asArray()) {
+        if (nameOf(ctx, getKey(ctx, a, 'Subtype')) !== 'FileAttachment') continue;
+        takeSpec(getKey(ctx, a, 'FS'));
+      }
+    }
+  } catch { /* malformed annots */ }
+
+  return out;
+}
+
+/** A PDF text string → its text. Named apart from the shading helpers' `nameOf`. */
+function strOfPdf(ctx: PDFContext, o: Ref): string | null {
+  const v = ctx.lookup(o as PDFObject | undefined);
+  const s = v as unknown as { decodeText?: () => string };
+  if (v && typeof s.decodeText === 'function') { try { return s.decodeText(); } catch { return null; } }
+  return null;
+}
+
+/** An embedded font PROGRAM lifted out of a document, with its own caveats. */
+export interface EmbeddedFont {
+  /** /FontName, subset prefix and all — "ABCDEF+Inter-Regular". */
+  name: string;
+  /** The family with any "ABCDEF+" subset prefix removed. */
+  family: string;
+  /** File extension the bytes actually are. */
+  ext: 'ttf' | 'otf' | 'cff' | 'pfb';
+  bytes: Uint8Array;
+  /**
+   * The document embeds only the glyphs it used. A subset font renders the
+   * document it came from and little else — reusing it elsewhere silently drops
+   * every character the original never printed, which is the single most
+   * important thing to tell someone about to download it.
+   */
+  subset: boolean;
+  /** Whether the bytes are a font a system can actually install. */
+  installable: boolean;
+  /** The font's own OS/2 fsType statement, when it has one. */
+  embedding: FontEmbeddingInfo;
+}
+
 /** An opened document: page count + cached page→SVG / page→text converters. */
 export interface PdfHandle {
   pageCount: number;
@@ -775,6 +1030,19 @@ export interface PdfHandle {
    * checked. Optional for the same reason as `pageToText`.
    */
   findHiddenText?(opts?: { maxPages?: number; minCoverage?: number }): { findings: HiddenTextFinding[]; scanned: number };
+  /**
+   * Every font PROGRAM the document embeds, deduped.
+   *
+   * Walks the object graph rather than the page resources: a font can be reached
+   * through any page, any nested form XObject, any annotation appearance stream,
+   * and enumerating indirect objects finds all of them without a recursive
+   * resource crawl that could still miss one.
+   */
+  listFonts?(): EmbeddedFont[];
+  /** Every raster the document embeds, at its STORED resolution. */
+  listImages?(opts?: { max?: number }): Promise<EmbeddedImageScan>;
+  /** Every file the document carries, with its bytes. */
+  listAttachments?(): EmbeddedAttachment[];
 }
 
 function makeHandle(doc: PDFDocument): PdfHandle {
@@ -789,6 +1057,15 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       const out = extractPageText(nodes, { width, height });
       textCache.set(index, out);
       return out;
+    },
+    listFonts(): EmbeddedFont[] {
+      return collectEmbeddedFonts(doc);
+    },
+    listImages({ max = 200 }: { max?: number } = {}): Promise<EmbeddedImageScan> {
+      return collectEmbeddedImages(doc, max);
+    },
+    listAttachments(): EmbeddedAttachment[] {
+      return collectAttachments(doc);
     },
     findHiddenText({ maxPages, minCoverage }: { maxPages?: number; minCoverage?: number } = {}):
       { findings: HiddenTextFinding[]; scanned: number } {

@@ -420,6 +420,63 @@ button.cat-download { font: inherit; cursor: pointer; }
    overflow:hidden, and the <audio> controls below must stay visible on short screens. */
 .cat-audio-meter { width: 100%; height: min(160px, 24vh); display: block; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); color: hsl(var(--primary)); }
 .cat-audio-meter[hidden] { display: none; }
+
+/* The audio surface's escalation: analyser → visualiser → immersive. The visualiser and
+   the meter occupy the same box (one is hidden at a time), so the panel never jumps
+   height as you move up the ladder. */
+.cat-audio-viz { width: 100%; height: min(160px, 24vh); display: block; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); color: var(--audio-thumb-ink, hsl(var(--primary))); }
+.cat-audio-viz[hidden] { display: none; }
+.cat-audio-viz > svg { width: 100%; height: 100%; display: block; }
+
+/* IMMERSIVE BREAKS OUT OF THE THUMBNAIL BOX. Choosing cover art inside a 160px strip is
+   choosing blind — you cannot judge a visual at the size of a favicon. So the surface
+   escapes its container and takes the viewport, while staying a STATE of the same
+   element: Escape lands you back on the player rather than closing the modal out from
+   under you, and the audio never stops. */
+.cat-thumb-audio.is-immersive {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; gap: .5rem;
+  margin: 0; padding: clamp(.75rem, 3vw, 2rem);
+  background: hsl(var(--background));
+}
+.cat-thumb-audio.is-immersive .cat-audio-viz,
+.cat-thumb-audio.is-immersive .cat-audio-meter { flex: 1 1 auto; height: auto; min-height: 0; }
+.cat-thumb-audio.is-immersive .cat-audio-vizbar,
+.cat-thumb-audio.is-immersive .cat-viz-colours,
+.cat-thumb-audio.is-immersive audio { flex: 0 0 auto; }
+.cat-thumb-audio.is-immersive audio { width: 100%; }
+/* The meter/viz fills the space it was given rather than a fixed box. */
+.cat-audio-viz > canvas { width: 100%; height: 100%; display: block; border-radius: inherit; }
+
+/* A cover the user has baked, shown on a grid tile. Fills the tile the same way a
+   waveform SVG does, so a MilkDrop cover and a drawn one sit at identical sizes. */
+.audio-cover-baked { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
+
+/* The tap affordance. Quiet — it is a hint, not a control, since the picture itself is
+   the button. */
+.cat-viz-hint { align-self: flex-start; margin-top: .3rem; border: 0; background: none; color: inherit; opacity: .6; font: inherit; font-size: .72rem; cursor: pointer; padding: 0; }
+.cat-viz-hint:hover { opacity: .9; }
+.cat-audio-meter[role="button"] { cursor: pointer; }
+
+.cat-audio-vizbar { display: flex; align-items: center; gap: .35rem; margin-top: .4rem; flex-wrap: wrap; }
+.cat-audio-vizbar[hidden] { display: none; }
+.cat-viz-name { flex: 1 1 auto; font-size: .78rem; opacity: .75; text-transform: capitalize; }
+/* Say when what you're looking at IS the saved cover, so the button is never a mystery. */
+.cat-viz-name[data-pinned="true"]::after { content: " · saved as cover"; opacity: .7; text-transform: none; }
+.cat-viz-btn { border: 1px solid hsl(var(--border)); background: transparent; color: inherit; border-radius: calc(var(--radius) * .5); padding: .15rem .5rem; font: inherit; font-size: .78rem; cursor: pointer; }
+.cat-viz-btn:hover { background: hsl(var(--muted) / .6); }
+.cat-viz-btn.is-primary { border-color: hsl(var(--primary) / .5); }
+.cat-viz-toggle { align-self: flex-start; margin-top: .4rem; border: 1px solid hsl(var(--border)); background: transparent; color: inherit; border-radius: calc(var(--radius) * .5); padding: .15rem .5rem; font: inherit; font-size: .78rem; cursor: pointer; }
+.cat-viz-toggle[aria-pressed="true"] { background: hsl(var(--muted) / .6); }
+
+/* The colour strip. `Auto` sits first and is the default — letting the brand pick is the
+   normal case, so it is a named choice rather than the absence of one. */
+.cat-viz-colours { display: flex; align-items: center; gap: .3rem; margin-top: .35rem; flex-wrap: wrap; }
+.cat-viz-colours[hidden] { display: none; }
+.cat-viz-swatch { width: 1.15rem; height: 1.15rem; border-radius: 50%; border: 2px solid transparent; background: var(--sw, transparent); box-shadow: inset 0 0 0 1px hsl(var(--border)); cursor: pointer; padding: 0; }
+.cat-viz-swatch.is-auto { width: auto; height: auto; border-radius: calc(var(--radius) * .5); padding: .1rem .4rem; font: inherit; font-size: .72rem; color: inherit; box-shadow: none; border-color: hsl(var(--border)); }
+.cat-viz-swatch.is-on { border-color: hsl(var(--primary)); }
+.cat-viz-swatch:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 .cat-details-body { padding: 18px 20px 22px; }
 
 /* Desktop: a wide two-column inspector. The dialog becomes the grid; the close button is
