@@ -24,6 +24,7 @@ import type { HdrSettings } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
+import { getToolIntegrity } from '../catalog/integrity.ts';
 
 // Above this readable-query length the address bar and the Share dialog switch to
 // the packed `z=` form (when it's actually shorter). Kept well under the ~2000-char
@@ -337,7 +338,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       loadTimer = setTimeout(() => reject(new Error('Failed to fetch tool — network timeout')), LOAD_TIMEOUT_MS);
     });
     try {
-      tool = await Promise.race([loadTool(toolId, fetchFile, { lang: currentLang() }), timeout]);
+      tool = await Promise.race([loadTool(toolId, fetchFile, { lang: currentLang(), integrity: (await getToolIntegrity()) ?? undefined }), timeout]);
     } finally {
       clearTimeout(loadTimer);
     }

@@ -44,15 +44,23 @@ export const PRO_FLAG: FeatureFlag = { id: 'pro-batch', label: 'Pro', pill: 'bat
 export const NEUROSPICY_FLAG: FeatureFlag = { id: 'neurospicy', label: 'Neurospicy Mode', pill: 'focus music' };
 
 // Jelly effects — flag-gated soft-body chrome controls (the vendored Jelly UI web
-// components, see lib/jelly.ts). ON by default like every historic flag, so the
-// plain `flagEnabled`/`flagEnabledSync` reads apply. Turning it off reverts the
-// upgraded controls to the plain CSS primitives and skips loading the bundle.
+// components, see lib/jelly.ts). The default is BRAND-AWARE, resolved at boot by
+// setJellyDefault (main.ts): OFF on a locked brand build (SUSE — its chrome stays
+// stock), ON for the customisable start profile (lolly.art). A user's explicit
+// toggle always wins over the default. Turning it off reverts the upgraded
+// controls to the plain CSS primitives and skips loading the bundle.
 export const JELLY_FLAG: FeatureFlag = {
   id: 'jelly-effects',
   label: 'Jelly effects',
   pill: 'squishy',
   info: 'Gives some controls a soft, springy feel, starting with the switches on this page. Follows your theme and brand colours, respects reduced-motion, and never touches tool output.',
 };
+
+/** Set the Jelly flag's built-in default from the brand signal (main.ts, before
+ *  hydrateFeatureFlags so the sync mirror bakes it in). Locked brand ⇒ false. */
+export function setJellyDefault(on: boolean): void {
+  JELLY_FLAG.default = on;
+}
 
 // Opt-IN (default OFF): strip EXIF/XMP/GPS from images uploaded to the catalog. C2PA
 // content credentials are ALWAYS preserved regardless — this only governs other metadata.
@@ -115,6 +123,13 @@ export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
     if (!gov) continue;
     if (gov.hidden) { if (gov.default !== undefined) eff[id] = gov.default; }
     else if (eff[id] === undefined && gov.default !== undefined) eff[id] = gov.default;
+  }
+  // Bake non-ON built-in defaults for flags still unset after governance, so the
+  // sync reads agree with isFlagOn: opt-in flags, and the brand-aware Jelly
+  // default (setJellyDefault runs before this at boot). flagEnabledSync's own
+  // fallback for a missing key stays ON, matching the historic flags.
+  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG]) {
+    if (eff[f.id] === undefined && f.default === false) eff[f.id] = false;
   }
   try { localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify(eff)); } catch { /* best-effort */ }
 }

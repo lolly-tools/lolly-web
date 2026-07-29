@@ -292,7 +292,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Forward-compatible', desc: 'Pin a tool version with <code>_v</code> so a saved link keeps rendering the way it did when you made it.' },
       ] },
       { icon: ICONS.shield, title: 'Auditable', features: [
-        { name: 'Reviewable output', desc: 'No model, no server, no randomness — outputs are inspectable and version-controllable.' },
+        { name: 'Reviewable output', desc: 'No model, no server and no randomness in the render path — outputs are inspectable and version-controllable.' },
       ] },
     ],
   },
@@ -322,10 +322,10 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
   },
   {
     flag: 'privacy', id: 'cap-privacy', title: 'Privacy & data ownership', icon: ICONS.shield,
-    desc: 'Creative production stays on the device, under your control — there is no place for a file to leak to.',
+    desc: 'Creative production stays on the device, under your control — rendering, storage and export never require a server. The optional hosted add-ons are listed separately.',
     cards: [
       { icon: ICONS.shield, title: 'On-device by default', features: [
-        { name: 'Nothing transmitted', desc: 'No cloud rendering, no analytics, no telemetry. What you create stays on your machine.' },
+        { name: 'No cloud rendering', desc: 'No analytics, no telemetry, and rendering happens locally — what you create is stored on your machine, not on a server.' },
       ] },
       { icon: ICONS.device, title: 'Local storage', features: [
         { name: 'Your browser’s database', desc: 'Profile, saved sessions, uploaded images and the catalogue cache live in IndexedDB; Storage tools show usage and let you clear it.' },
@@ -340,13 +340,13 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'File in → clean file out', desc: 'Content-transform utilities take a file you supply, process it entirely on your device and hand back a cleaned copy — never uploaded, never watermarked. Strip Hidden Data removes EXIF/GPS, camera, author and editor metadata from JPEG, PNG, SVG and PDF. This replaces handing confidential files to single-purpose websites.' },
       ] },
       { icon: ICONS.lock, title: 'Self-host / air-gap', features: [
-        { name: 'No backend', desc: 'No server-side processing or database — deploy on your own infrastructure and run entirely behind your firewall.' },
+        { name: 'No backend for rendering', desc: 'The shells render, export and store everything on-device — no server-side render pipeline, no database. Deploy on your own infrastructure and run entirely behind your firewall; the optional hosted add-ons (the MCP endpoint, identity enrolment) are separate opt-in services you can omit.' },
       ] },
     ],
   },
   {
     flag: 'security encryption', id: 'cap-security', title: 'Security & access control', icon: ICONS.lock,
-    desc: 'When work does leave the device — a share link, a download, a PDF — you decide who can open it. Every lock is applied on-device; passwords and keys are never sent to a server, and no tool can reach the page, your storage or the network on its own.',
+    desc: 'When work does leave the device — a share link, a download, a PDF — you decide who can open it. Every lock is applied on-device, and passwords and keys are never sent to a server.',
     cards: [
       { icon: ICONS.link, title: 'Password-gated links', features: [
         { name: 'Encrypted share links', desc: 'Any share link can be encrypted: the design is AES-256-GCM-encrypted under a key stretched from the password with PBKDF2-SHA256 (210k iterations). The link carries <em>only</em> the ciphertext — opening it prompts the recipient for the password and rebuilds the design in their browser. The password never travels in the link and nothing is sent to a server.' },
@@ -357,9 +357,9 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.zip, title: 'Locked downloads', features: [
         { name: 'Whole-zip encryption (defense-in-depth)', desc: 'A folder or multi-file download can lock the whole zip — <strong>Standard</strong> (ZipCrypto; opens in any unzip tool including Windows Explorer) or <strong>Strong</strong> (WinZip AES-256; needs 7-Zip / WinZip / macOS, not Windows Explorer’s built-in extract). One password protects <em>every</em> member — images and all — and any PDFs inside are <em>also</em> individually AES-256-locked, so they stay locked even after the zip is unpacked.' },
       ] },
-      { icon: ICONS.shield, title: 'Sandboxed tools', features: [
-        { name: 'A tool can’t reach out', desc: 'A tool’s optional logic runs with only the <code>host.*</code> bridge in scope — no <code>window</code>, no ambient <code>fetch</code>, no DOM or filesystem access — and each call is time-boxed. A malicious or buggy template can’t touch the page, read your storage or phone home.' },
-        { name: 'Allowlisted network only', desc: 'The one network path a tool has is the host’s allowlisted fetch, which the host can deny per the tool’s manifest. There is no other route out, so a template can’t exfiltrate what you type.' },
+      { icon: ICONS.shield, title: 'Reviewed tools', features: [
+        { name: 'One portable contract', desc: 'A tool’s optional logic is written against the <code>host.*</code> bridge — the supported, portable API for storage, network and export — and its calls are time-boxed. This is a portability contract, not an isolation boundary: every tool in the catalogue is first-party and reviewed before it ships, and stronger Worker-based isolation is on the roadmap.' },
+        { name: 'Allowlisted network by policy', desc: '<code>host.net</code> is the sanctioned network path for tools, allowlisted per the tool’s manifest, and tool templates are logic-less with escaping on by default. Network use outside the allowlist is a review failure, caught before a tool ships.' },
       ] },
       { icon: ICONS.mcp, title: 'Access-controlled agent endpoint', features: [
         { name: 'OAuth 2.1 on the MCP server', desc: 'The optional hosted MCP server is gated by <strong>OAuth 2.1</strong> — register it as a custom connector in any MCP client, or bring a bearer token from an MCP-capable agent or IDE. Client registration, authorization codes and tokens are short-lived signed values (PKCE-protected) verified on each call, so there is no session store to breach. The on-device shells need no server at all and stay behind your firewall.' },

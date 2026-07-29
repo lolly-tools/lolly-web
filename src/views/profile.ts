@@ -38,7 +38,7 @@ import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, flagEnabled, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
 import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
 import { syncNeuroDock } from '../components/neuro-dock.ts';
@@ -238,7 +238,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // the flag rows render their final control with no post-mount swap. `jellyOn`
   // and `liveProfile` are mutable — the flag list re-renders in place when the
   // jelly flag itself is toggled (see the change listener below).
-  let jellyOn = await ensureJelly(flagEnabled(profile, JELLY_FLAG.id));
+  // isFlagOn (not flagEnabled): the Jelly flag's built-in default is brand-aware
+  // (OFF on a locked brand — see setJellyDefault in main.ts), and only the
+  // default-aware read honours it.
+  let jellyOn = await ensureJelly(isFlagOn(profile, JELLY_FLAG));
   let liveProfile = profile;
   const fields = ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
   // The theme in force right now (applied at boot from the profile; localStorage

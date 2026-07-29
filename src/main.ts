@@ -20,7 +20,7 @@ import { loadUserFonts } from './lib/load-user-fonts.ts';
 import { registerUserFonts } from './lib/register-user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateNeurospicy, armNeurospicy, getNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
-import { hydrateFeatureFlags, flagEnabledSync } from './feature-flags.ts';
+import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
 import { installRangeUpgrader } from './components/custom-slider.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
@@ -539,6 +539,14 @@ async function boot(): Promise<void> {
   hydrateSfxVolume((profile as { sfxVolume?: number }).sfxVolume);
   installGlobalSfx();
   installGlobalReveal();
+  // Jelly effects default is brand-aware: OFF on a locked brand build (SUSE keeps
+  // its stock chrome), ON for the customisable start profile (lolly.art). A user
+  // who has toggled the flag keeps their choice either way. Resolved BEFORE the
+  // flag mirror below so jellyEnabled()/flagEnabledSync agree from first paint;
+  // isLocked() is memoised catalog metadata (IDB, index fetch only on a cold
+  // first load) so the await is cheap. Unreachable tokens ⇒ unlocked ⇒ ON.
+  const jellyHost = host as { tokens?: { isLocked?(): Promise<boolean> } };
+  setJellyDefault(!(await jellyHost.tokens?.isLocked?.().catch(() => false)));
   // Mirror the profile's feature flags to localStorage so surfaces that render before
   // (or without) the profile — the Sound control's Neurospicy player in popovers — can
   // gate synchronously.
