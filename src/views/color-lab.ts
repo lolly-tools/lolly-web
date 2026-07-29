@@ -94,6 +94,7 @@ import {
   onDisplayGamutChange, acquire2d,
 } from '../lib/display-gamut.ts';
 import { jellyActive, ensureJelly } from '../lib/jelly.ts';
+import { icon } from '../lib/icons.ts';
 import {
   activateProfile, deactivateProfile, getProfile, parseProfileLimit, profileFor,
   removeProfile, shortLabel, absentLabel,
@@ -1362,6 +1363,59 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   if (solidCanvas) unbindTurn = bindTurn(solidCanvas);
   cleanups.push(() => { unbindTurn?.(); unbindTurn = null; });
 
+  // ── Pop a figure out ─────────────────────────────────────────────────────
+  // Delegated at the charts container, so the three slice figures and the solid
+  // share one handler and a figure added later needs no wiring.
+  //
+  // What pops out is the whole `<figure>`, not just its canvas: the solid's
+  // embedding tabs, the image controls and each chart's slider are how you USE
+  // the thing, and a popped-out plot without them is a picture rather than an
+  // instrument.
+  const chartsRoot = $('[data-lab-charts]');
+  if (chartsRoot) {
+    const openPanels = new Map<HTMLElement, { close(): void }>();
+    const onPop = (e: Event): void => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-lab-pop]');
+      if (!btn) return;
+      const fig = btn.closest<HTMLElement>('figure');
+      if (!fig) return;
+      const existing = openPanels.get(fig);
+      if (existing) { existing.close(); return; }
+      const title = fig.querySelector('.lab-chart-title')?.textContent?.trim() ?? t('Chart');
+      void import('../lib/float-panel.ts').then(({ popOut }) => {
+        const panel = popOut(fig, {
+          title,
+          restoreLabel: t('Put back'),
+          // INSIDE the view, not on the body. `$` here is `view.querySelector`, so
+          // a figure parked on the body is invisible to every lookup this file
+          // makes — measured: the popped chart's canvas stayed at its old backing
+          // size through four resizes because `paintCharts` could no longer find
+          // its mount. Verified there is no transform/filter/contain between `.lab`
+          // and `<body>`, so `position: fixed` still floats it.
+          mount: view,
+          // Every canvas in this view sizes itself from `getBoundingClientRect`,
+          // so a resize is only real once something repaints. Both are called
+          // unconditionally — the charts' own paint no-ops when nothing changed
+          // (see paintSliceChart's PAINTED key), and the solid's is rAF-gated.
+          onResize: () => { paintCharts(); scheduleSolid(); },
+          onClose: () => { openPanels.delete(fig); btn.setAttribute('aria-pressed', 'false'); },
+        });
+        if (!panel) return;
+        openPanels.set(fig, panel);
+        btn.setAttribute('aria-pressed', 'true');
+      });
+    };
+    chartsRoot.addEventListener('click', onPop);
+    cleanups.push(() => {
+      chartsRoot.removeEventListener('click', onPop);
+      // Leaving the view must take the panels with it — they are mounted at body
+      // level, so the router replacing `#view` would otherwise leave them floating
+      // over whatever comes next, holding a canvas nothing repaints.
+      for (const p of openPanels.values()) p.close();
+      openPanels.clear();
+    });
+  }
+
   // ── The image cloud ──────────────────────────────────────────────────────
   const cloudFig = solidCanvas?.closest<HTMLElement>('.lab-chart--solid') ?? null;
   const cloudFile = $<HTMLInputElement>('[data-lab-cloud-file]');
@@ -2463,6 +2517,27 @@ function shellHtml(): string {
 
   // Plot first, caption under it — a figure/figcaption, so "this text describes
   // the thing above" is in the markup and not just in the CSS order.
+  /**
+   * The "pop this figure out" affordance.
+   *
+   * On the figure's own title bar rather than floating over the plot: the plot is
+   * a drag surface (picking a colour, turning the solid), and a control sitting on
+   * it would eat presses meant for the chart.
+   */
+  /** The entry point's own glyph, so it reads as an invitation rather than as one
+   *  more text button in a caption. Through `icon()` rather than inlined — the
+   *  glyph is already in its registry, and the primitive guard exists precisely to
+   *  stop a second copy of a Lucide path drifting from the first. */
+  const IMG_GLYPH = icon('image');
+
+  const popBtn = (label: string): string =>
+    `<button type="button" class="lab-pop-btn" data-lab-pop
+      aria-label="${escape(t('Pop out {p}', { p: label }))}"
+      ${/* Short, because this tooltip is a pseudo-element that cannot be flipped
+            back inside the viewport: at the right edge of a phone the longer text
+            ran off screen. The full description lives on the aria-label. */''}
+      data-tip="${escape(t('Pop out'))}">⤢</button>`;
+
   const chart = (plane: SlicePlane): string => {
     const ch = PANEL_CHANNEL[plane];
     // CONTROL_LIMIT, not the pressed pill: a control's reach must not depend on
@@ -2478,6 +2553,7 @@ function shellHtml(): string {
         <input type="number" class="lab-chart-num" data-lab-num="${plane}"
           min="${r.min}" max="${r.max}" step="${ch === 'h' ? 0.01 : ch === 'l' ? 0.001 : 0.0001}"
           aria-label="${escape(PANEL_TITLE[plane])}">
+        ${popBtn(t('{p} chart', { p: PANEL_TITLE[plane] }))}
       </div>
       <div data-lab-chart="${plane}"></div>
       ${/* The axis this plane is sliced along, as a broken track: the solid runs
@@ -2572,7 +2648,10 @@ function shellHtml(): string {
           <canvas class="lab-solid" data-lab-solid tabindex="0"
             role="img" aria-label="${escape(t('The displayable colour volume in OKLCH. Drag or use the arrow keys to turn it.'))}"></canvas>
           <figcaption class="lab-chart-head">
-            <h3>${escape(t('The whole gamut'))}</h3>
+            <div class="lab-chart-bar">
+              <h3 class="lab-chart-title">${escape(t('The whole gamut'))}</h3>
+              ${popBtn(t('The whole gamut'))}
+            </div>
             <p class="lab-chart-why">${escape(t('The shape the three flat charts are slicing. Turn it once and their curves stop looking arbitrary.'))}</p>
             ${/* Two embeddings of one solid, not two pictures. Landscape lays hue
                   out flat so per-hue peaks line up; Lab axes is the ColorSync view,
@@ -2593,7 +2672,11 @@ function shellHtml(): string {
             <div class="lab-cloud-row">
               <label class="lab-cloud-add">
                 <input type="file" accept="image/*" data-lab-cloud-file hidden>
-                <span>${escape(t('Plot an image'))}</span>
+                <span class="lab-cloud-add-ic" aria-hidden="true">${IMG_GLYPH}</span>
+                <span class="lab-cloud-add-txt">
+                  <strong>${escape(t('Plot an image'))}</strong>
+                  <em>${escape(t('or drop one on the chart — see its colours in here'))}</em>
+                </span>
               </label>
               <button type="button" class="lab-cloud-clear" data-lab-cloud-clear hidden>${escape(t('Clear'))}</button>
             </div>

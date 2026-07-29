@@ -404,6 +404,14 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-details-nav:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .cat-details-prev { left: 12px; }
 .cat-details-next { right: 12px; }
+/* ONE CANVAS, EVERY ASSET TYPE — the expanded Neurospicy player's model applied here.
+   Before this, each type invented its own layout inside this pane: an image centred a
+   contained <img>, audio grew a flex column of meter + bar + swatches + player, lottie
+   added a floating toggle. Same container, four different shapes, so the view never read
+   as one thing.
+   Now the pane is a STAGE (the media fills it) plus a BAR (the controls sit on it), and a
+   type only decides what goes in the bar. That is why the player felt coherent: its
+   chrome is always in the same place and only its contents change. */
 .cat-details-preview {
   position: relative;
   display: grid; place-items: center; min-height: 200px; max-height: 46vh; padding: 20px;
@@ -411,11 +419,70 @@ button.cat-download { font: inherit; cursor: pointer; }
   border-radius: calc(var(--radius) * 1.4) calc(var(--radius) * 1.4) 0 0;
   overflow: hidden;
 }
+/* The bar: one row, bottom-anchored, over the media rather than pushing it around — so
+   the stage is the same size whatever chrome a type needs, and a control never changes
+   the preview's height. Mirrors .viz-bar. */
+.cat-stage-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  /* NEVER wrap. A long preset name (some run to 40+ characters) pushed the trailing
+     buttons onto a second row that rendered OUTSIDE the stage, over the page behind it.
+     One row, and the flexible parts shrink instead. */
+  display: flex; align-items: center; gap: .4rem; flex-wrap: nowrap; min-width: 0;
+  padding: .45rem .6rem;
+  background: linear-gradient(to top, hsl(var(--background) / .92), hsl(var(--background) / 0));
+  color: hsl(var(--foreground));
+}
+.cat-stage-bar:empty { display: none; }
+/* Idle-fade like the player's: the chrome gets out of the way of the thing you are
+   looking at, and comes back on hover or keyboard focus. Never on touch (no hover), and
+   never under reduced motion. */
+@media (hover: hover) {
+  .cat-details-preview:not(:hover) .cat-stage-bar:not(:focus-within) { opacity: .35; }
+  .cat-stage-bar { transition: opacity .18s ease; }
+}
+@media (prefers-reduced-motion: reduce) { .cat-stage-bar { transition: none; opacity: 1 !important; } }
 .cat-details-preview .cat-thumb { max-width: 100%; max-height: 40vh; object-fit: contain; }
 /* Audio details preview: a big live level meter above the <audio> controls — the same
    bar look + theming as the Neurospicy player's meter (lib/audio-meter.ts draws both). */
-.cat-details-preview .cat-thumb-audio { display: flex; flex-direction: column; justify-content: center; gap: 14px; width: min(560px, 100%); }
-.cat-thumb-audio audio { width: 100%; }
+/* A STAGE, like every other type: the media fills the pane and the controls sit on the
+   shared bar. Previously this was a bespoke flex column whose meter, control rows and
+   player all competed for the pane's height — which is what made an audio asset's modal
+   a different shape from an image's. */
+/* A definite box for the stage. `place-items:center` on the pane means the child is
+   sized by its own content, so an absolutely-positioned rest layer had nothing to fill
+   and the glyph inside it grew to whatever space was going. Stating the height here is
+   what keeps every asset type's pane the same size. */
+.cat-details-preview .cat-thumb-audio { display: block; width: 100%; height: 100%; }
+/* An explicit HEIGHT, not `100%`. The pane is `place-items:center` with a max-height, so
+   a percentage height resolves against nothing, the canvas collapses to zero, and the
+   stage renders empty — while the bar still pushed the pane past its 46vh cap. A stated
+   height gives the media a box and keeps the pane inside its bounds. */
+.cat-details-preview .cat-audio-meter,
+.cat-details-preview .cat-audio-viz {
+  position: absolute; inset: 0 0 44px; width: 100%; height: auto;
+  border-radius: calc(var(--radius) * .6);
+}
+/* A stage type STRETCHES rather than centring. `place-items:center` sizes the child to
+   its own content, which is right for a contained <img> but wrong for a stage: the
+   waveform then drew at whatever height it liked and spilled past the pane, with the bar
+   stranded across the middle of it. `stretch` plus a definite pane height is what makes
+   every type's preview the same size. */
+/* A stage type STRETCHES rather than centring: `place-items:center` sizes the child to
+   its own content, which suits a contained <img> but lets a stage spill past the pane.
+   NO height here — the pane already gets one (46vh on mobile, `100%` of the desktop grid
+   row), and overriding it left the pane short of the dialog with a dead area beneath. */
+.cat-details-preview:has(.cat-stage) { place-items: stretch; padding: 0; }
+/* The resting waveform and the live meter share one box — the meter is transparent until
+   it paints, so the artwork shows through until playback starts and replaces it. */
+.cat-details-preview .cat-thumb-audio { position: relative; }
+/* A GLYPH is a stand-in, so it stays small and quiet rather than filling the stage the
+   way a real waveform legitimately does. */
+.cat-details-preview .cat-audio-meter { position: relative; z-index: 1; background: transparent; }
+/* The player takes the room the bar's other controls leave, and never less than half —
+   it is the primary control here, not an afterthought squeezed by a long preset name. */
+.cat-stage-bar audio { flex: 1 1 min(320px, 55%); min-width: 0; height: 34px; }
+.cat-viz-group { display: contents; }
+.cat-viz-group[hidden] { display: none; }
 /* Big, but never bigger than the preview pane allows: the pane caps at 46vh with
    overflow:hidden, and the <audio> controls below must stay visible on short screens. */
 .cat-audio-meter { width: 100%; height: min(160px, 24vh); display: block; border-radius: calc(var(--radius) * .6); background: hsl(var(--muted) / .5); color: hsl(var(--primary)); }
@@ -454,12 +521,9 @@ button.cat-download { font: inherit; cursor: pointer; }
 
 /* The tap affordance. Quiet — it is a hint, not a control, since the picture itself is
    the button. */
-.cat-viz-hint { align-self: flex-start; margin-top: .3rem; border: 0; background: none; color: inherit; opacity: .6; font: inherit; font-size: .72rem; cursor: pointer; padding: 0; }
 .cat-viz-hint:hover { opacity: .9; }
 .cat-audio-meter[role="button"] { cursor: pointer; }
 
-.cat-audio-vizbar { display: flex; align-items: center; gap: .35rem; margin-top: .4rem; flex-wrap: wrap; }
-.cat-audio-vizbar[hidden] { display: none; }
 .cat-viz-name { flex: 1 1 auto; font-size: .78rem; opacity: .75; text-transform: capitalize; }
 /* Say when what you're looking at IS the saved cover, so the button is never a mystery. */
 .cat-viz-name[data-pinned="true"]::after { content: " · saved as cover"; opacity: .7; text-transform: none; }
@@ -471,8 +535,15 @@ button.cat-download { font: inherit; cursor: pointer; }
 
 /* The colour strip. `Auto` sits first and is the default — letting the brand pick is the
    normal case, so it is a named choice rather than the absence of one. */
-.cat-viz-colours { display: flex; align-items: center; gap: .3rem; margin-top: .35rem; flex-wrap: wrap; }
+.cat-viz-colours { display: inline-flex; align-items: center; gap: .25rem; }
 .cat-viz-colours[hidden] { display: none; }
+.cat-viz-hint { border: 1px solid hsl(var(--border)); background: transparent; color: inherit; border-radius: calc(var(--radius) * .5); padding: .12rem .45rem; font: inherit; font-size: .72rem; cursor: pointer; }
+/* The name is the one part that may shrink to nothing: every button beside it is an
+   action, and losing a control to fit a label would be the wrong trade. */
+.cat-viz-name { flex: 0 1 auto; min-width: 0; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .74rem; }
+.cat-stage-bar .cat-viz-btn { flex: 0 0 auto; }
+/* The motion toggle is now an ordinary bar button rather than a floating overlay, so a
+   lottie and an audio asset carry their chrome in the same place. */
 .cat-viz-swatch { width: 1.15rem; height: 1.15rem; border-radius: 50%; border: 2px solid transparent; background: var(--sw, transparent); box-shadow: inset 0 0 0 1px hsl(var(--border)); cursor: pointer; padding: 0; }
 .cat-viz-swatch.is-auto { width: auto; height: auto; border-radius: calc(var(--radius) * .5); padding: .1rem .4rem; font: inherit; font-size: .72rem; color: inherit; box-shadow: none; border-color: hsl(var(--border)); }
 .cat-viz-swatch.is-on { border-color: hsl(var(--primary)); }
@@ -544,13 +615,21 @@ button.cat-download { font: inherit; cursor: pointer; }
      track the pointer 1:1, and a CSS transition on transform here also prevents the
      JS-set transform from taking effect at all. Zoom updates apply immediately. */
 }
+/* The zoom controls RIDE THE SHARED BAR rather than floating as their own pill. They
+   used to position themselves (bottom-centre) while the motion toggle positioned itself
+   somewhere else (bottom-left) and audio grew a third arrangement — three types, three
+   places to look for the chrome. Now every type's controls sit in one row in one place,
+   and the pane keeps a single bar however many types contribute to it. */
+/* The zoom controls sit IN the shared bar, so they get its position and background and
+   own neither. They used to place themselves bottom-centre while the motion toggle placed
+   itself bottom-left and audio arranged a third way — three types, three places to look.
+   They must also stay their OWN element: mountZoomHud (shared with the crop dialog) does
+   `container.innerHTML = ''`, so anything parked in the same box is wiped. */
 .cat-zoom-hud {
-  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 3;
   display: inline-flex; align-items: center; gap: 2px;
-  padding: 3px; border-radius: 999px;
-  background: #000a; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  box-shadow: 0 2px 8px #0005;
+  margin-inline: auto;
 }
+.cat-zoom-hud:empty { display: none; }
 .cat-zoom-btn {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 30px; height: 30px; padding: 0 8px;
@@ -564,15 +643,26 @@ button.cat-download { font: inherit; cursor: pointer; }
    the centred zoom HUD and the vertically-centred prev/next chevrons. z-index above the stage so
    the stage's wheel/drag surface doesn't swallow the click. */
 .cat-motion-toggle {
-  position: absolute; bottom: 12px; left: 12px; z-index: 4;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; padding: 0;
-  border: none; border-radius: 999px; cursor: pointer; color: #fff;
-  background: #000000b3; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  box-shadow: 0 2px 8px #0005;
+  width: 30px; height: 30px; padding: 0;
+  border: 1px solid hsl(var(--border)); border-radius: 999px; cursor: pointer;
+  color: inherit; background: transparent;
 }
-.cat-motion-toggle:hover { background: #000000d9; }
-.cat-motion-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.cat-motion-toggle:hover { background: hsl(var(--muted) / .6); }
+.cat-motion-toggle:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+/* The asset's own artwork, in the DETAILS panel under the title — spatial reinforcement.
+   It used to sit behind the analyser in the stage, where it overlapped the live meter and
+   read as a second, competing visualisation. Here it is an identity mark: the same art
+   the grid tile carries, so a track you recognised in the grid is recognisably the same
+   thing in its detail view. Sized to sit under the title, never to compete with it. */
+.cat-details-art {
+  width: min(6em, 40%); aspect-ratio: 1; margin: .5rem 0 .25rem;
+  color: var(--audio-thumb-ink, hsl(var(--primary)));
+  border-radius: calc(var(--radius) * .8); overflow: hidden;
+}
+.cat-details-art svg, .cat-details-art > * { width: 100%; height: 100%; display: block; }
+.cat-details-art svg[data-audio-shape="none"] { opacity: .5; }
+
 .cat-details-name { font-size: 1.25rem; font-weight: 700; margin: 0 0 12px; }
 .cat-details-meta { margin: 0 0 16px; display: grid; gap: 6px; }
 .cat-details-meta > div { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: baseline; font-size: .85rem; }

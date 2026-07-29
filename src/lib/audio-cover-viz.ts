@@ -22,7 +22,7 @@
  */
 import { BAKE_WARMUP } from './audio-cover-bake.ts';
 import { buildVizPalette } from './viz-palette.ts';
-import { vizSupported } from './viz-support.ts';
+import { vizSupported, vizPossible } from './viz-support.ts';
 
 /** Time-domain window length. NOT a free choice: butterchurn's AudioProcessor allocates
  *  `numSamps * 2 = 1024` and `updateAudio` copies in with a bare `.set()`, so a longer
@@ -44,7 +44,8 @@ export interface VizAudio {
 /** Can this browser render a MilkDrop cover at all? Callers use it to decide whether to
  *  OFFER the option — a missing WebGL2 must degrade to "not shown", never to a failure. */
 export function canBakeViz(): boolean {
-  return vizSupported();
+  // The LAX probe: this is a surface someone tapped, not ambient chrome. See vizPossible.
+  return vizPossible();
 }
 
 /**
@@ -61,7 +62,7 @@ export async function renderVizFrame(
   audio: VizAudio,
   size: number,
 ): Promise<HTMLCanvasElement | null> {
-  if (!vizSupported() || !audio.count || !audio.samples) return null;
+  if (!vizPossible() || !audio.count || !audio.samples) return null;
 
   const canvas = document.createElement('canvas');
   // Device pixels throughout, and the drawing buffer set to exactly the width/height the
@@ -75,6 +76,10 @@ export async function renderVizFrame(
 
   const { mountViz } = await import('./butterchurn-viz.ts');
   let cur = 0;
+  // Mount on a preset id we KNOW resolves, then swap an artist preset in below. Handing
+  // mountViz an unrecognised id is not an error — vizPresetById falls back to
+  // VIZ_PRESETS[0] silently — so a stock id passed here would bake a cover of an entirely
+  // different preset, and nothing would say so.
   const handle = await mountViz(canvas, undefined, presetId, undefined, buildVizPalette(pool), {
     driven: true,          // no rAF loop — we advance it ourselves
     deterministic: true,   // seed Math.random so two bakes of one preset agree
@@ -89,6 +94,14 @@ export async function renderVizFrame(
   if (!handle) { canvas.remove(); return null; }
 
   try {
+    // An artist preset lives in the staged pack, not the registry: fetch it and hand the
+    // object over. `presetId` here is the BARE id stored in the cover recipe.
+    const { stockPresetIndex, loadStockPreset } = await import('./viz-stock.ts');
+    const isStock = (await stockPresetIndex().catch(() => [])).some(p => p.id === presetId);
+    if (isStock) {
+      const raw = await loadStockPreset(presetId, handle.palette(), 'strong');
+      if (raw) handle.setRawPreset(presetId, raw);
+    }
     // Warm from a CLEARED field, not from whatever the context inherited, so the cover
     // does not depend on what was rendered before it.
     handle.reset();

@@ -1135,13 +1135,56 @@
    The second way into the report: a colour, or an image plotted in the solid.
    The control sits in the solid's own caption because that is where its result
    appears. */
-.lab-cloud-row { display: flex; align-items: center; gap: 0.4rem; margin: 0.35rem 0 0; }
-.lab-cloud-add,
+/* The image entry is a WAY IN to the report, not one more caption button — Andy:
+   "make the plot an image feature more prominent". So it gets a full-width card
+   with its own glyph and a line saying what it does, while Clear stays a quiet
+   pill beside it: one is an invitation, the other is an undo. */
+.lab-cloud-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0;
+}
+.lab-cloud-add {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius);
+  border: 1px solid hsl(var(--primary) / 0.45);
+  background: hsl(var(--primary) / 0.07);
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.lab-cloud-add-ic {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2rem; height: 2rem;
+  border-radius: 999px;
+  background: hsl(var(--primary) / 0.14);
+  color: hsl(var(--primary));
+}
+.lab-cloud-add-ic svg { width: 1.05rem; height: 1.05rem; }
+.lab-cloud-add-txt { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.lab-cloud-add-txt strong { font-size: 0.85rem; font-weight: 650; }
+.lab-cloud-add-txt em {
+  font-style: normal;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: hsl(var(--muted-foreground));
+}
+/* The file input is `hidden`, so the LABEL carries the focus ring — without this
+   a keyboard user gets no indication the control is focused at all. */
+.lab-cloud-add:hover { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.12); }
 .lab-cloud-clear {
+  flex: 0 0 auto;
   font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.3rem 0.7rem;
+  padding: 0.3rem 0.8rem;
   border-radius: 999px;
   border: 1px solid hsl(var(--border));
   background: hsl(var(--card));
@@ -1149,11 +1192,32 @@
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
 }
-.lab-cloud-add:hover,
 .lab-cloud-clear:hover { border-color: hsl(var(--primary) / 0.5); background: hsl(var(--accent)); }
-/* The file input is `hidden`, so the LABEL has to carry the focus ring — without
-   this a keyboard user gets no indication at all that the control is focused. */
 .lab-cloud-add:focus-within { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+
+/* The pop-out affordance, on each figure's title bar. */
+.lab-pop-btn {
+  flex: 0 0 auto;
+  width: 1.9rem; height: 1.9rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  font: inherit; font-size: 0.9rem; line-height: 1;
+  cursor: pointer;
+}
+.lab-pop-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.lab-pop-btn[aria-pressed="true"] { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
+.lab-pop-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+/* Inside the panel the figure's own pop button is redundant — the panel's bar
+   already carries fullscreen and put-back — and two ⤢ glyphs one above the other
+   read as two different actions. */
+.floatp .lab-pop-btn { display: none; }
+/* The solid's caption head is a plain stack; give its new title row the same
+   shape the slice charts' bar already has. */
+.lab-chart--solid .lab-chart-bar { display: flex; align-items: center; gap: 0.4rem; }
+.lab-chart--solid .lab-chart-bar .lab-chart-title { flex: 1 1 auto; margin: 0; }
 .lab-cloud-stats {
   margin: 0.35rem 0 0;
   font-size: 0.72rem;
