@@ -1399,3 +1399,34 @@ test('the report never lays out two rules for one grid, and holds the touch cont
   assert.match(solid, /touch-action\s*:\s*pan-y/,
     'the solid hands vertical gestures back to the page (the JS locks the axis)');
 });
+
+test('"This screen" hydrates from the same device probe the Dashboard uses', async () => {
+  // The colophon at the foot of the report: the display the charts are being read
+  // on. It is hidden in the served markup and only appears once the probe answers,
+  // so the guard is that it (a) unhides, (b) carries the Display card's live gamut
+  // row rather than a hand-written copy of it, and (c) offers the way out to the
+  // full readout. jsdom has no WebGL, so the two Graphics cards are legitimately
+  // absent here — which is the degradation the section is meant to survive.
+  // The snapshot reads the bare `screen` global (as a browser has it); this file's
+  // header only wires `window`, so give it one for the duration of this test.
+  Object.defineProperty(globalThis, 'screen', { configurable: true, value: dom.window.screen });
+
+  await mount();
+  const sec = $('[data-lab-device]') as HTMLElement;
+  assert.ok(sec, 'the section is in the markup');
+  assert.equal(sec.hidden, true, 'and starts hidden — nothing is claimed before the probe answers');
+
+  // The probe is async (UA hints + storage estimate); let its continuation run.
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert.equal(sec.hidden, false, 'the probe answered, so the section is shown');
+  const cards = sec.querySelectorAll('.plat-client-card');
+  assert.ok(cards.length >= 1, 'at least the Display card rendered');
+  const rows = [...sec.querySelectorAll('.plat-kv dt')].map((d) => (d.textContent ?? '').trim());
+  assert.ok(rows.includes('Colour gamut'), 'the gamut row is present — the fact the charts depend on');
+  // Live rows exist here, so the disposer must be chained onto the view's cleanup.
+  assert.ok(sec.querySelector('[data-live]'), 'the Display card carries live rows');
+
+  const link = sec.querySelector<HTMLAnchorElement>('.lab-device-link');
+  assert.equal(link?.getAttribute('href'), '#/d?tab=device', 'a quick link to the full readout');
+});

@@ -182,6 +182,27 @@ const apcaOf = (fg: string, bg: string): string => {
  * in the Palette panel below. Omitted (the Primary ramp — it's already driven
  * by the colour field above) they stay plain, non-interactive swatches.
  */
+// One-time, informed opt-in before any Google Fonts request. Adding a Google
+// Font sends the family name and — unavoidably — the user's IP address to
+// Google's servers. That is a third-party transfer the user gets to refuse, so
+// it is gated here rather than only described in docs/privacy.md. Asked once and
+// remembered: consent is per-purpose, not per-font, and re-prompting for every
+// family would be nagging rather than informing.
+const GOOGLE_FONTS_ACK = 'lolly-google-fonts-ok';
+
+async function ensureGoogleFontsConsent(): Promise<boolean> {
+  try { if (localStorage.getItem(GOOGLE_FONTS_ACK) === '1') return true; }
+  catch { /* storage blocked — ask every time rather than assume yes */ }
+  const ok = await confirmDialog({
+    title: t('Fetch this font from Google?'),
+    message: t('Google Fonts are hosted by Google, so downloading one tells Google the family name and your IP address. The file is then stored on this device and used offline — nothing further is sent. Everything else in Lolly stays on your device; this is the one step that reaches a third party, so we ask first.'),
+    confirmLabel: t('Fetch from Google'),
+  });
+  if (!ok) return false;
+  try { localStorage.setItem(GOOGLE_FONTS_ACK, '1'); } catch { /* not fatal */ }
+  return true;
+}
+
 function rampRow(set: TokenSet, ramp: string, label: string, steps: number, selected?: number): string {
   let cells = '';
   for (let i = 1; i <= steps; i++) {
@@ -2206,6 +2227,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const input = $('[data-be-font-input]') as HTMLInputElement | null;
     const btn = $('[data-be-font-btn]') as HTMLButtonElement | null;
     const family = input?.value.trim(); if (!family || !btn || !input) return;
+    // Fetching a Google Font is the one thing in the brand editor that reaches a
+    // third party, and it is not strictly necessary — so it is consented, once,
+    // rather than merely disclosed in the privacy policy. (A German court has
+    // awarded damages over exactly this transfer: LG München I, 3 O 17493/20.)
+    if (!(await ensureGoogleFontsConsent())) return;
     showFontErr(''); const prev = btn.textContent;
     btn.disabled = input.disabled = true; btn.textContent = t('Downloading…');
     try {

@@ -26,7 +26,6 @@ import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on t
 import { verifyC2pa, verifySeal, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, detectWatermarkSearch, analyzeLsb, isPptx, pptxMediaImages } from '@lolly/engine';
 import type { FileMetadata, MetaField, MetaGroup, StripFormat, SealVerifyResult } from '@lolly/engine';
 import { looksLikePptxFile, inflatePptx, PPTX_MIME } from '../bridge/pptx.ts';
-import { resolveSealKey } from '../lib/seal-dns.ts';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
@@ -1201,11 +1200,15 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       }
       const bytes = new Uint8Array(await file.arrayBuffer());
       const report = await verifyC2pa(bytes, VERIFY_OPTS);
-      // SEAL runs on the same bytes, on-device. verifySeal parses first and only
-      // reaches out for a DNS public-key lookup when a SEAL record is actually
-      // present — so a normal (non-SEAL) file triggers zero network I/O. The
-      // image itself is never sent; only the domain the record names is looked up.
-      const seal = await verifySeal(bytes, resolveSealKey);
+      // SEAL runs on the same bytes, fully on-device and with NO key resolver:
+      // the web shell deliberately passes none, so verification here makes zero
+      // network requests of any kind. A record carrying its key inline (`pk=`)
+      // still verifies completely offline; one whose key lives in DNS reports
+      // "no key resolver" rather than reaching out to a third-party DoH service.
+      // Browsers can't do raw DNS, so any web-side lookup would mean handing a
+      // resolver operator the domain plus the user's IP — see docs/privacy.md.
+      // The Node shells (CLI/TUI/Tauri) can resolve natively and do.
+      const seal = await verifySeal(bytes);
       const meta = await readMetadata(bytes, file.name);
       let { watermark, lsb } = await pixelChecks(file, report.format) ?? {};
       // A container file (.pptx / PDF) can carry the Imprint inside an embedded
