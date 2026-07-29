@@ -109,6 +109,10 @@ const BYPASS_PATTERNS = [
   /^\/catalog\//,
   /^\/api\//,
   /^\/models\//,
+  // /.well-known/ (security.txt, the MCP OAuth metadata routes) is plain-text /
+  // JSON policy data: a NAVIGATION to it must not run through the document
+  // branch below, which would cache a non-HTML body as the app shell.
+  /^\/\.well-known\//,
 ];
 
 self.addEventListener('install', event => {

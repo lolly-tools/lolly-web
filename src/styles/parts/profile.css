@@ -536,7 +536,11 @@
   .profile-view .profile-details-main,
   .profile-view .profile-side { display: contents; }
   .profile-view .profile-side .profile-field:has(.headshot) { order: 1; }
-  .profile-view .profile-fields { grid-template-columns: 1fr; order: 2; margin-bottom: 0; }
+  /* Explicit width: the centred flex column above sizes children to fit-content,
+     and in jelly mode a <jelly-input>'s width:100% contributes no intrinsic width
+     — so without this the whole grid (and every field in it) collapses to the
+     widest label. Native inputs mask it with their own intrinsic size. */
+  .profile-view .profile-fields { grid-template-columns: 1fr; order: 2; margin-bottom: 0; width: 100%; }
   .profile-view .profile-side .profile-field--sound { order: 3; }
   .profile-view .profile-actions { order: 4; padding-top: 0; justify-content: center; }
   .profile-view .activity-split { grid-template-columns: 1fr; gap: 1.1rem; }

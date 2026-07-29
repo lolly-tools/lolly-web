@@ -11,6 +11,7 @@ import { loadTool } from '@lolly/engine';
 import type { LoadedTool, ToolManifest } from '../../../../engine/src/loader.ts';
 import { currentLang } from '../i18n.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
+import { getToolIntegrity } from '../catalog/integrity.ts';
 
 // Loaded tools are cached so selecting the same template across many rows — the
 // primary power-user workflow — loads each template only once.
@@ -35,7 +36,8 @@ function makeFetchFile(toolId: string): (path: string) => Promise<string> {
  *  doesn't need lang in its key. */
 export async function getTool(toolId: string): Promise<LoadedTool> {
   if (toolCache.has(toolId)) return toolCache.get(toolId)!;
-  const promise = loadTool(toolId, makeFetchFile(toolId), { lang: currentLang() });
+  const promise = getToolIntegrity().then((integrity) =>
+    loadTool(toolId, makeFetchFile(toolId), { lang: currentLang(), integrity: integrity ?? undefined }));
   toolCache.set(toolId, promise);
   try {
     const tool = await promise;
