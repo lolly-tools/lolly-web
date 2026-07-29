@@ -23,7 +23,7 @@
 
 import '../styles/parts/pdf-extract.css';   // async CSS chunk (lazy view)
 import { joinPageText } from '@lolly/engine';
-import type { PageText } from '@lolly/engine';
+import type { PageText, HiddenTextFinding } from '@lolly/engine';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { t } from '../i18n.ts';
@@ -44,6 +44,8 @@ interface Extracted {
   pages: PageText[];
   /** Pages we refused to walk because the document is enormous. */
   truncated: number;
+  /** Text an opaque shape is painted over — the failed-redaction check. */
+  hidden: HiddenTextFinding[];
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -104,6 +106,42 @@ function pageMarkup(p: PageText, index: number): string {
     </section>`;
 }
 
+/**
+ * The failed-redaction banner.
+ *
+ * Leads the report when it fires, because it changes what the user should do
+ * next more than anything else on the page: a document whose black bars do not
+ * actually remove the words underneath must not be sent anywhere.
+ *
+ * It shows the hidden words. That is the whole point — the words are already
+ * trivially readable by any extractor, and seeing them is what makes the problem
+ * believable rather than theoretical. The wording stays an observation ("not
+ * visible"), never an accusation about why.
+ */
+function hiddenMarkup(hidden: HiddenTextFinding[]): string {
+  if (!hidden.length) return '';
+  const words = hidden.reduce((a, f) => a + (f.text.match(/\S+/g) ?? []).length, 0);
+  const pages = new Set(hidden.map((f) => f.page ?? 0)).size;
+
+  const rows = hidden.map((f) => `
+    <li class="pdfx-hidden-row">
+      <span class="pdfx-hidden-where">${escape(t('Page {n}', { n: (f.page ?? 0) + 1 }))}</span>
+      <code class="pdfx-hidden-text">${escape(f.text)}</code>
+    </li>`).join('');
+
+  return `
+    <section class="pdfx-hidden" role="alert">
+      <h2 class="pdfx-hidden-head">
+        <span aria-hidden="true">${icon('eye', { size: 20 })}</span>
+        ${t('Text is hidden behind shapes in this document')}
+      </h2>
+      <p class="pdfx-hidden-lede">${t('{words} words in {runs} places are covered by opaque shapes on {pages} pages. They are still in the file, and any PDF reader can pull them back out — including this one, below. If these were meant to be redacted, drawing boxes over them did not remove them.', {
+        words, runs: hidden.length, pages,
+      })}</p>
+      <ul class="pdfx-hidden-list">${rows}</ul>
+    </section>`;
+}
+
 function resultMarkup(x: Extracted): string {
   const words = x.pages.reduce((a, p) => a + wordCount(p), 0);
   const scans = x.pages.filter((p) => p.scanned).length;
@@ -129,6 +167,8 @@ function resultMarkup(x: Extracted): string {
           <button type="button" class="btn btn--ghost" data-act="clear">${t('Open another')}</button>
         </div>
       </div>
+
+      ${hiddenMarkup(x.hidden)}
 
       ${x.truncated ? `<p class="pdfx-note">${t('Only the first {n} pages were read — the rest of this document is too long to take apart here.', { n: x.pages.length })}</p>` : ''}
       ${allScans ? `<p class="pdfx-note pdfx-note--warn">${t('Every page in this document is a scanned image. There is no text layer to extract, and reading it would need OCR, which does not run on-device.')}</p>` : ''}
@@ -223,7 +263,16 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       if (i % 8 === 7) await new Promise((r) => setTimeout(r, 0));
     }
 
-    current = { fileName: file.name, pages, truncated: Math.max(0, total - count) };
+    // The redaction check reuses the interpreted nodes the text pass just built,
+    // so it costs almost nothing here — and it is the finding most worth having.
+    let hidden: HiddenTextFinding[] = [];
+    try {
+      hidden = handle.findHiddenText?.({ maxPages: count })?.findings ?? [];
+    } catch (err) {
+      host.log('warn', 'pdf-extract: hidden-text scan failed', { error: (err as Error)?.message });
+    }
+
+    current = { fileName: file.name, pages, truncated: Math.max(0, total - count), hidden };
     drop.hidden = true;
     out.innerHTML = resultMarkup(current);
     playSfx('land');

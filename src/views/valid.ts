@@ -24,7 +24,7 @@
 
 import '../styles/parts/valid.css';   // async CSS chunk (lazy view — not on the landing)
 import { verifyC2pa, verifySeal, pemToDer, c2paTrustAnchors, extractFileMetadata, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, detectWatermarkSearch, analyzeLsb, isPptx, pptxMediaImages } from '@lolly/engine';
-import type { FileMetadata, MetaGroup, StripFormat, SealVerifyResult } from '@lolly/engine';
+import type { FileMetadata, MetaField, MetaGroup, StripFormat, SealVerifyResult } from '@lolly/engine';
 import { looksLikePptxFile, inflatePptx, PPTX_MIME } from '../bridge/pptx.ts';
 import { resolveSealKey } from '../lib/seal-dns.ts';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
@@ -1206,7 +1206,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
       // present — so a normal (non-SEAL) file triggers zero network I/O. The
       // image itself is never sent; only the domain the record names is looked up.
       const seal = await verifySeal(bytes, resolveSealKey);
-      const meta = await readMetadata(bytes);
+      const meta = await readMetadata(bytes, file.name);
       let { watermark, lsb } = await pixelChecks(file, report.format) ?? {};
       // A container file (.pptx / PDF) can carry the Imprint inside an embedded
       // raster even though the file itself isn't one Lolly signs directly. Only
@@ -1707,17 +1707,64 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
     return 'description';
   };
 
+  // Pages interpreted for the failed-redaction check. Bounded: it walks a page's
+  // whole content stream, and a viewer waiting on a 900-page report has been let
+  // down more than they've been helped. The row says how far it got.
+  const REDACTION_PAGE_CAP = 30;
+
+  /**
+   * Text an opaque shape is painted over — words present in the file that the
+   * page does not show. The classic failed redaction: black bars are graphics,
+   * and the sentence underneath is untouched.
+   *
+   * Lives here rather than in `host.pdf.analyze` because it needs the CONTENT
+   * STREAM interpreter, and pulling that into the metadata bridge would drag the
+   * whole PDF import path onto it. valid.ts already reaches into pdf-import.ts
+   * lazily for the imprint scan; this follows the same seam.
+   */
+  async function readHiddenText(bytes: Uint8Array, fileName: string): Promise<MetaField | undefined> {
+    try {
+      const { openPdfFile } = await import('./pdf-import.ts');
+      const handle = await openPdfFile(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
+      const scan = handle.findHiddenText?.({ maxPages: REDACTION_PAGE_CAP });
+      if (!scan?.findings.length) return undefined;
+
+      const { findings, scanned } = scan;
+      const words = findings.reduce((a, f) => a + (f.text.match(/\S+/g) ?? []).length, 0);
+      const pages = new Set(findings.map((f) => f.page ?? 0)).size;
+      const scope = scanned < handle.pageCount ? t(' (first {n} pages checked)', { n: scanned }) : '';
+      // The words themselves are the evidence — quoting a couple of them is what
+      // turns "a warning" into "look what is still in your file". Bounded, and
+      // the whole recovered text is available in the extraction view.
+      const sample = findings.slice(0, 2).map((f) => `“${f.text}”`).join(', ');
+
+      return {
+        label: t('Hidden text'),
+        value: t('{words} words in {runs} places on {pages} pages are covered by opaque shapes — still in the file, not visible on the page{scope}. For example: {sample}', {
+          words, runs: findings.length, pages, scope, sample,
+        }),
+        group: 'structure',
+        sensitive: true,
+      };
+    } catch (err) {
+      host.log('warn', 'valid: hidden-text scan failed', { file: fileName, error: (err as Error)?.message });
+      return undefined;
+    }
+  }
+
   // PDF is parsed by the shell (pdf-lib, via host.pdf.analyze); every other format
   // is read by the DOM-free engine extractor. Never throws — worst case, undefined.
-  async function readMetadata(bytes: Uint8Array): Promise<FileMetadata | undefined> {
+  async function readMetadata(bytes: Uint8Array, fileName = ''): Promise<FileMetadata | undefined> {
     const isPdf = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
     if (!isPdf) return extractFileMetadata(bytes);
     try {
       const findings = (await host.pdf?.analyze(bytes))?.findings ?? [];
-      return {
-        format: 'PDF',
-        fields: findings.map((f) => ({ label: f.label, value: f.detail, group: pdfGroup(f.label), sensitive: f.tone === 'warn' })),
-      };
+      const fields: MetaField[] = findings.map((f) => ({ label: f.label, value: f.detail, group: pdfGroup(f.label), sensitive: f.tone === 'warn' }));
+      // Prepended, not appended: within its section this is the row that matters
+      // most, and it should not sit below the page count.
+      const hidden = await readHiddenText(bytes, fileName);
+      if (hidden) fields.unshift(hidden);
+      return { format: 'PDF', fields };
     } catch { return undefined; }
   }
 
