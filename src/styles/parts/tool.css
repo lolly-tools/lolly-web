@@ -2724,14 +2724,14 @@ background-color:hsl(var(--background) / 1);
   100% { box-shadow: 0 0 0 2px hsl(var(--primary) / 0); }
 }
 
-/* Export shutter — a CSS camera-iris that sweeps in to COVER the whole stage
+/* Export shutter — a canvas camera-iris that closes to COVER the whole stage
    while the brief full-res resize during export (the "shake") happens, then
-   sweeps back out. Template-agnostic: the live canvas is what's exported
+   opens again. Template-agnostic: the live canvas is what's exported
    underneath, so canvas/WebGL document roots keep their real pixels.
-   (Adapted from a one-shot keyframe — codepen.io/shshaw/pen/yLMMBxa — to a held
-   open↔closed transition so it can stay covered for the variable export time.) */
+   The blades, shading and cast shadow are painted in lib/shutter.ts; this file
+   only positions the surfaces. (Replaced six skewed CSS flaps, which could not
+   lap each other and closed as a rotating hexagram rather than a polygon.) */
 .export-shutter {
-  --flaps: 6;
   position: absolute;
   inset: 0;
   z-index: 6;
@@ -2744,27 +2744,30 @@ background-color:hsl(var(--background) / 1);
    covers the whole screen — above the sidebar sheet, export popup and FAB — while
    the system download/share sheet appears. Desktop keeps the in-stage shutter. */
 .export-shutter--fullscreen { position: fixed; inset: 0; z-index: 100000; }
-.export-shutter .flap {
+/* The iris itself. Every blade, its shading and the cast shadow are painted by
+   lib/shutter.ts; this only has to size the surface. */
+.export-shutter__iris {
   position: absolute;
-  width: 150vmax; height: 150vmax;
-  bottom: 50%; right: 50%;                 /* pivot at the stage centre */
-  transform-origin: bottom right;
+  inset: 0;
+  width: 100%; height: 100%;
+  display: block;
   pointer-events: none;
-  will-change: transform;
-  background: linear-gradient(35deg, hsl(var(--card)), hsl(var(--secondary)));
-  border: 1.5px solid hsl(var(--border));
-  /* Directional shadow away from the centre pivot (bottom-right) for blade depth,
-     plus a hairline inset highlight on the trailing edge. Baked into the layer
-     once → no per-frame cost; flip the outer offset if it casts the wrong way. */
-  box-shadow: -3px -3px 16px rgba(0, 0, 0, 0.22), inset 0 -1px rgba(255, 255, 255, 0.2);
-  --p: calc(var(--i) / var(--flaps));      /* this blade's share of the circle */
-  transition: transform 0.42s cubic-bezier(0.5, 0, 0.5, 1);
-  /* Resting (open): blades fanned off-screen. */
-  transform: rotate(-0.5turn) rotate(calc(1turn * var(--p))) skewX(30deg) translateX(-100%) translateY(90%);
 }
-/* Closed: blades swept into the centre, fully covering the stage. */
-.export-shutter.is-closed .flap {
-  transform: rotate(-0.25turn) rotate(calc(1turn * var(--p))) skewX(30deg) translateX(0%) translateY(0%);
+/* Shutter-closed flash. Sits ABOVE the iris canvas so the sealed blades flash
+   too, not just the artwork behind them. Fast in, long out — over this duration
+   a plain two-stop fade reads as a slow dip rather than a flash, which is why
+   the decay is stepped. Fires only at the end of a close. */
+.export-shutter__flash {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  background: var(--brand-primary, hsl(var(--primary)));
+}
+.export-shutter__flash.is-on { animation: export-shutter-flash 1.05s cubic-bezier(0.16, 0.8, 0.3, 1) both; }
+@keyframes export-shutter-flash {
+  0% { opacity: 0; } 6% { opacity: 1; } 22% { opacity: 0.5; } 48% { opacity: 0.18; } 100% { opacity: 0; }
 }
 
 /* Inline render-failure notice — overlays the stage when a template script throws
