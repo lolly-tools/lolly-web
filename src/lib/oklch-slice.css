@@ -34,6 +34,20 @@
   position: relative;
   aspect-ratio: 8 / 5;
   min-width: 0;
+  /* `start`, NOT the grid's default stretch — and this is a WebKit correctness
+     fix, not a preference.
+     Stretched, the plot has a definite height from its row, and `aspect-ratio`
+     then resolves the WIDTH from that height instead of the other way round. The
+     row's height is itself only known from the plot, so the circularity falls back
+     to a min-content guess: measured in WebKit at a 390px viewport the plot came
+     out 83x52 inside a 284px column, while its own x-axis spanned the full 284 —
+     the tiny-chart-with-full-width-labels Andy screenshotted on iOS. Chrome
+     happened to resolve it width-first and looked correct, which is why it stood.
+     Unstretched, the width is definite (the 1fr column), the height follows from
+     the ratio, and the row height follows from that — no circularity, and both
+     engines agree. The y-axis still stretches to it, which is what its absolutely
+     positioned ticks need. */
+  align-self: start;
   border-radius: var(--radius);
   overflow: hidden;
   /* The checkerboard shows through wherever no display can reach — the

@@ -40,7 +40,7 @@
  * dock also reads, synchronously, to decide whether to show its button at all).
  */
 import { getNeurospicyAnalyser, neurospicySignalState } from './neurospicy.ts';
-import { vizSupported } from './viz-support.ts';
+import { vizSupported, vizPossible } from './viz-support.ts';
 import { vizPalette, vizPaletteDiagnostics, type VizPalette, type VizPaletteHost } from './viz-palette.ts';
 import { vizPresetById, type VizPreset } from './viz-presets.ts';
 
@@ -266,7 +266,11 @@ export async function mountViz(
   // gated on it: a tool canvas visualising a decoded file has nothing to do with
   // whether the app happens to be playing music.
   const analyser = inject ? (opts?.audio?.analyser ?? null) : (opts?.audio?.analyser ?? getNeurospicyAnalyser());
-  if ((!analyser && !inject) || !vizSupported()) return null;
+  // The LAX probe here: mountViz is only ever called deliberately, and the strict
+  // performance-caveat test turns a machine on integrated graphics into "the button does
+  // nothing" rather than "a slower visualiser". The dock still gates its ambient BUTTON
+  // on the strict vizSupported().
+  if ((!analyser && !inject) || !vizPossible()) return null;
 
   const mod = await loadButterchurn();
   // A caller that already has a palette (a chosen SCHEME, or a tool's own colours)

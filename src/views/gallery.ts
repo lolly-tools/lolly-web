@@ -498,8 +498,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 
   // Featured hero view mode (Gallery strip vs Cover Flow), persisted like the sort.
   // Declared here (before the markup) since the popover's segmented control reads it.
-  // New users (no stored preference) default to Cover Flow; an explicit choice wins.
-  let featuredView: FeaturedViewMode = 'coverflow';
+  // New users (no stored preference) default to Cover Flow on desktop, but Gallery on a
+  // mobile viewport — the coverflow fan is still buggy at that size. An explicit choice wins.
+  const mobileViewport = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 640px)').matches;
+  let featuredView: FeaturedViewMode = mobileViewport ? 'gallery' : 'coverflow';
   try {
     const savedView = localStorage.getItem(FEATURED_VIEW_STORAGE);
     if (savedView && (FEATURED_VIEWS as readonly string[]).includes(savedView)) featuredView = savedView as FeaturedViewMode;

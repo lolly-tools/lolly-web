@@ -74,6 +74,19 @@ export interface StockPresetInfo {
    * Optional for the same reason as `tier`; treat a missing value as true.
    */
   ok?: boolean;
+  /**
+   * Measured mean luminance, 0..255, on a real GPU with the brand wrapper bypassed.
+   *
+   * Distinct from `ok`, which only rules out the pure blacks and the blown-out whites. A
+   * FIFTH of the presets that pass that gate still measure under 25 — sparse wireframes
+   * that are perfectly good once you have chosen them and a poor thing to hand someone
+   * unasked, because a near-black field is indistinguishable from a visualiser that
+   * failed to start. Use it to weight what opens, never to hide anything: every preset
+   * stays reachable by stepping, and one already saved in a cover must keep resolving.
+   *
+   * Optional for the same reason as `tier` — an index staged before it existed omits it.
+   */
+  luma?: number;
 }
 
 /**

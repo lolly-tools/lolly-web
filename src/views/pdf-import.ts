@@ -32,8 +32,8 @@ import type { PDFContext, PDFObject } from 'pdf-lib';
 import {
   interpretPdfPage, parseToUnicode, toUnicodeDecoder, finalizeBoxes, safeColor, pdfNodesToSvg,
   unfilterPng, isShadowPlate, cullPdfNodes, extractPageText,
-  findHiddenText as engineFindHiddenText,
-  type DesignMapOptions, type PageText, type HiddenTextFinding,
+  findHiddenText as engineFindHiddenText, findVectorArtwork, windowPdfSvg,
+  type DesignMapOptions, type PageText, type HiddenTextFinding, type TaggedElement, type VectorArtwork,
 } from '@lolly/engine';
 import type { CullWindow } from '../../../../engine/src/pdf-svg.ts';
 import type { PdfNode, PdfFontInfo, PdfXObject, PdfShading, PdfPattern, PdfGradientStop, PdfSoftMaskDef } from '../../../../engine/src/pdf-map.ts';
@@ -714,6 +714,9 @@ export interface PdfPageSvg {
 
 export interface PdfPageSvgOpts {
   warn?: (msg: string) => void;
+  /** Namespace for generated <defs> ids — see PdfSvgOptions.idPrefix. Callers
+   *  emitting several SVGs bound for one canvas MUST vary this. */
+  idPrefix?: string;
   /** Crop hint in the page's own (point) space: nodes that provably cannot paint
    *  inside it are dropped before raster decode / tile raster / text outlining. */
   cull?: CullWindow;
@@ -819,6 +822,171 @@ function collectEmbeddedFonts(doc: PDFDocument): EmbeddedFont[] {
     }
   }
   out.sort((a, b) => a.family.localeCompare(b.family));
+  return out;
+}
+
+// ── vector artwork ────────────────────────────────────────────────────────────
+
+/** Cap on extracted marks — a pathological page must not produce hundreds. */
+const MAX_VECTORS = 40;
+/** Breathing room around a mark's bounding box, in points. */
+const VECTOR_PAD = 2;
+
+/** One piece of vector artwork lifted out of a page, as standalone SVG. */
+export interface ExtractedVector {
+  /** Self-contained SVG, cropped to the mark and sized in points. */
+  svg: string;
+  width: number;
+  height: number;
+  /** 0-based page it was found on. */
+  page: number;
+  /** Distinct fill colours, most-used first — a palette preview. */
+  fills: string[];
+  /** How many shapes make up the mark. */
+  shapes: number;
+  /** Plain-language reason it was believed to be artwork. */
+  reason: string;
+}
+
+/**
+ * Extract each mark on one page as its own SVG.
+ *
+ * Built on pageToSvg + windowPdfSvg rather than a bespoke serialiser, so a mark
+ * inherits every fidelity the page path already has — gradients, clip paths,
+ * soft masks, inlined rasters and outlined text. The crop is applied HERE and
+ * not later: storeUserUpload's normaliser strips the root width/height, after
+ * which windowPdfSvg's regex no longer matches and it silently returns the input
+ * unchanged, shipping the whole page with the mark lost in the middle of it.
+ *
+ * Each mark gets its own `idPrefix`. Def ids are otherwise plain counters
+ * (`pgrad0`, `pclip0`, `pmask0`), and stored SVG assets get inlined as nested
+ * `<svg>` on export — where ids do NOT scope — so two marks from one page would
+ * quietly cross-reference each other's gradients and masks.
+ */
+async function vectorsOnPage(
+  handle: PdfHandle, doc: PDFDocument, pageIndex: number, idBase: number,
+): Promise<ExtractedVector[]> {
+  const { nodes, width, height } = interpretPage(doc, pageIndex);
+  const marks = findVectorArtwork(nodes, { width, height });
+  const out: ExtractedVector[] = [];
+
+  for (let m = 0; m < marks.length && idBase + out.length < MAX_VECTORS; m++) {
+    const mark = marks[m]!;
+    const x = Math.max(0, mark.rect.x - VECTOR_PAD);
+    const y = Math.max(0, mark.rect.y - VECTOR_PAD);
+    const w = Math.min(width - x, mark.rect.w + VECTOR_PAD * 2);
+    const h = Math.min(height - y, mark.rect.h + VECTOR_PAD * 2);
+    if (!(w > 0) || !(h > 0)) continue;
+
+    try {
+      // Cull to the mark first (bytes + decode time), then window to the exact
+      // rect — both derived from ONE crop so they cannot disagree.
+      const page = await handle.pageToSvg(pageIndex, {
+        cull: { x, y, width: w, height: h },
+        idPrefix: `v${idBase + out.length}`,
+      });
+      const svg = windowPdfSvg(page.svg, { x, y, width: w, height: h });
+      out.push({
+        svg, width: Math.max(1, Math.round(w)), height: Math.max(1, Math.round(h)),
+        page: pageIndex, fills: mark.fills, shapes: mark.indices.length, reason: mark.reason,
+      });
+    } catch { /* a mark that will not serialise is dropped, not fatal */ }
+  }
+  return out;
+}
+
+// ── the structure tree (tagged reading order) ─────────────────────────────────
+
+/** Depth cap for the struct-tree walk — the tree is a graph and can cycle. */
+const MAX_STRUCT_DEPTH = 64;
+
+/**
+ * Flatten a page's `/StructTreeRoot` into elements in DOCUMENT order.
+ *
+ * A tagged PDF states its own reading order, which is the thing geometry can
+ * only ever guess at: which paragraph follows which, where a block ends, and
+ * what is a heading. The tree is walked depth-first because that IS document
+ * order — `/K` arrays are ordered, and the order of the walk is the order the
+ * author intended the content to be read.
+ *
+ * Only elements belonging to `pageRef` are returned: one structure tree spans
+ * the whole document, and an element's `/Pg` (inherited from its ancestors when
+ * absent) says which page its content sits on.
+ *
+ * Returns [] for an untagged document, which is the signal to stay geometric.
+ */
+function readStructOrder(doc: PDFDocument, pageIndex: number): TaggedElement[] {
+  const ctx = doc.context;
+  const out: TaggedElement[] = [];
+
+  let pageRef: PDFRef | null = null;
+  try { pageRef = doc.getPage(pageIndex).ref; } catch { return out; }
+  const root = doc.catalog.get(PDFName.of('StructTreeRoot'));
+  if (!root || !pageRef) return out;
+
+  const seen = new Set<string>();
+
+  /** Collect the MCIDs a /K entry contributes, for an element already on our page. */
+  const mcidsOf = (k: Ref, acc: number[], depth: number): void => {
+    if (depth > MAX_STRUCT_DEPTH || acc.length > 4096) return;
+    const v = ctx.lookup(k as PDFObject | undefined);
+    // A bare integer in /K IS a marked-content id.
+    if (v instanceof PDFNumber) { acc.push(v.asNumber()); return; }
+    if (v instanceof PDFArray) { for (const e of v.asArray()) mcidsOf(e, acc, depth + 1); return; }
+    const d = dictOf(ctx, v);
+    if (!d) return;
+    const type = nameOf(ctx, d.get(PDFName.of('Type')));
+    // /MCR — an explicit marked-content reference.
+    if (type === 'MCR') {
+      const n = numOf(ctx, d.get(PDFName.of('MCID')));
+      if (n != null) acc.push(n);
+      return;
+    }
+    // /OBJR points at an object (a form field, an annotation), not at content.
+    if (type === 'OBJR') return;
+  };
+
+  const walk = (node: Ref, inheritedPg: PDFRef | null, depth: number): void => {
+    if (depth > MAX_STRUCT_DEPTH || out.length > 4096) return;
+    const tag = node instanceof PDFRef ? node.tag : '';
+    if (tag) {
+      if (seen.has(tag)) return;
+      seen.add(tag);
+    }
+    const d = dictOf(ctx, node);
+    if (!d) return;
+
+    const ownPg = d.get(PDFName.of('Pg'));
+    const pg = ownPg instanceof PDFRef ? ownPg : inheritedPg;
+    const kids = d.get(PDFName.of('K'));
+    const structType = nameOf(ctx, d.get(PDFName.of('S'))) ?? '';
+
+    // This element's own content, if it sits on the page we are reading.
+    if (structType && pg && pageRef && pg.tag === pageRef.tag) {
+      const mcids: number[] = [];
+      mcidsOf(kids, mcids, 0);
+      if (mcids.length) out.push({ mcids, type: structType });
+    }
+
+    // Then descend, in array order — depth-first IS document order.
+    const arr = ctx.lookup(kids as PDFObject | undefined);
+    if (arr instanceof PDFArray) {
+      for (const kid of arr.asArray()) {
+        // Skip bare mcids/MCRs here: they were this element's own content, not
+        // children to recurse into.
+        const kv = ctx.lookup(kid);
+        if (kv instanceof PDFNumber) continue;
+        const kd = dictOf(ctx, kv);
+        if (!kd || nameOf(ctx, kd.get(PDFName.of('Type'))) === 'MCR') continue;
+        walk(kid, pg, depth + 1);
+      }
+    } else if (kids && !(ctx.lookup(kids as PDFObject | undefined) instanceof PDFNumber)) {
+      const kd = dictOf(ctx, kids);
+      if (kd && nameOf(ctx, kd.get(PDFName.of('Type'))) !== 'MCR') walk(kids, pg, depth + 1);
+    }
+  };
+
+  try { walk(root, null, 0); } catch { return []; }
   return out;
 }
 
@@ -1041,6 +1209,14 @@ export interface PdfHandle {
   listFonts?(): EmbeddedFont[];
   /** Every raster the document embeds, at its STORED resolution. */
   listImages?(opts?: { max?: number }): Promise<EmbeddedImageScan>;
+  /**
+   * Vector artwork (logos, icons, marks) as standalone SVG, cropped to itself.
+   *
+   * Most logos in a PDF are vector, not raster — a group of paths — so this is
+   * the asset most worth recovering, and the only one that stays useful at any
+   * size.
+   */
+  listVectors?(opts?: { maxPages?: number }): Promise<ExtractedVector[]>;
   /** Every file the document carries, with its bytes. */
   listAttachments?(): EmbeddedAttachment[];
 }
@@ -1054,7 +1230,12 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       const hit = textCache.get(index);
       if (hit) return hit;
       const { nodes, width, height } = interpretPage(doc, index, warn);
-      const out = extractPageText(nodes, { width, height });
+      // A tagged document states its reading order; [] means untagged, and
+      // extractPageText falls back to geometry on its own.
+      let tagged: TaggedElement[] = [];
+      try { tagged = readStructOrder(doc, index); }
+      catch (err) { warn(`struct-tree walk failed (${(err as Error)?.message})`); }
+      const out = extractPageText(nodes, { width, height, tagged });
       textCache.set(index, out);
       return out;
     },
@@ -1063,6 +1244,16 @@ function makeHandle(doc: PDFDocument): PdfHandle {
     },
     listImages({ max = 200 }: { max?: number } = {}): Promise<EmbeddedImageScan> {
       return collectEmbeddedImages(doc, max);
+    },
+    async listVectors({ maxPages }: { maxPages?: number } = {}): Promise<ExtractedVector[]> {
+      const total = doc.getPageCount();
+      const pages = Math.max(0, Math.min(total, maxPages ?? total));
+      const out: ExtractedVector[] = [];
+      for (let p = 0; p < pages && out.length < MAX_VECTORS; p++) {
+        try { out.push(...await vectorsOnPage(this as PdfHandle, doc, p, out.length)); }
+        catch { /* one bad page must not cost the rest of the document */ }
+      }
+      return out;
     },
     listAttachments(): EmbeddedAttachment[] {
       return collectAttachments(doc);
@@ -1082,8 +1273,8 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       }
       return { findings, scanned };
     },
-    async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText, rasterFallback = true, cull }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
-      const ckey = `${index}|${cull ? `${cull.x},${cull.y},${cull.width},${cull.height},${cull.pad ?? ''}` : ''}`;
+    async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText, rasterFallback = true, cull, idPrefix }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
+      const ckey = `${index}|${cull ? `${cull.x},${cull.y},${cull.width},${cull.height},${cull.pad ?? ''}` : ''}|${idPrefix ?? ''}`;
       const hit = cache.get(ckey);
       if (hit) return hit;
       const { nodes: allNodes, width, height, imageStreams, tiles } = interpretPage(doc, index, warn);
@@ -1160,7 +1351,7 @@ function makeHandle(doc: PDFDocument): PdfHandle {
         }
       }
       const out: PdfPageSvg = {
-        svg: pdfNodesToSvg(nodes, { width, height, images }),
+        svg: pdfNodesToSvg(nodes, { width, height, images, ...(idPrefix ? { idPrefix } : {}) }),
         width: Math.max(1, Math.round(width)),
         height: Math.max(1, Math.round(height)),
         elementCount: allNodes.length,

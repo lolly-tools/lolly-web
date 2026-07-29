@@ -850,6 +850,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let penWarm: HyperbezierSolution | null = null;
   const PEN_HIT_PX = 9;                          // grab radius for a node/handle, SCREEN px
   const PEN_CURVE_PX = 7;                        // "on the curve" band for insert, SCREEN px
+  const PEN_PULL_MIN = 2;                        // drag past this and a click became a handle PULL, SCREEN px
   // The paint the user last put on a path, so the NEXT path they draw matches it — the
   // drawing-app convention, and the reason a session of pen work doesn't mean recolouring
   // every shape. Session-only (never persisted, never in the model): it is a memory of an
@@ -5180,8 +5181,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const i = gesture.index;
       const n = penDraft.nodes[i];
       if (!n) return;
+      // A click-DRAG is the Bézier idiom: it names a direction AND a length. `hyperbezier`
+      // can only honour the direction, and only within a right angle of its chord — past
+      // that `hbArm`'s signed shape function puts the control arm on the far side of the
+      // node, so the curve leaves in the OPPOSITE direction to the drag, and approaching
+      // 90° the arm collapses to zero so the drag stops mattering at all. That is
+      // deliberate in the solver (see `hbArm`'s comment: clamping costs convergence), so
+      // the fix belongs here: the first real pull promotes the draft to `cubic`, whose
+      // lowering honours the handle exactly. The bake is lossless (see `convertKind`), so
+      // the shape drawn so far does not move, and the kind pill flips to say what happened.
+      if (penDraft.kind === 'hyperbezier' && (n.continuity ?? 'smooth') !== 'corner'
+          && Math.hypot(nat.x - gesture.origin.x, nat.y - gesture.origin.y) > PEN_PULL_MIN / penScale()) {
+        penDraft = convertKind(penDraft, 'cubic', penWarm).path;
+        penWarm = null;
+        announce(t('Switched to Bezier handles - this curve kind honours the handle you drag.'));
+        renderChrome();
+      }
       const nodes = penDraft.nodes.slice();
-      nodes[i] = pullHandles({ ...n, x: gesture.origin.x, y: gesture.origin.y }, nat.x - gesture.origin.x, nat.y - gesture.origin.y);
+      const cur = nodes[i] ?? n;   // re-read: the promotion above rebuilds the node array
+      nodes[i] = pullHandles({ ...cur, x: gesture.origin.x, y: gesture.origin.y }, nat.x - gesture.origin.x, nat.y - gesture.origin.y);
       penDraft = { ...penDraft, nodes };
       paintPen();
       positionPenChrome();

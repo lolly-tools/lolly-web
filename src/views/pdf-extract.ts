@@ -32,7 +32,7 @@ import { playSfx } from '../lib/sfx.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
-import type { PdfHandle, EmbeddedFont, EmbeddedImage, EmbeddedAttachment } from './pdf-import.ts';
+import type { PdfHandle, EmbeddedFont, EmbeddedImage, EmbeddedAttachment, ExtractedVector } from './pdf-import.ts';
 
 /** Beyond this a page-by-page reconstruction stops being interactive. */
 const MAX_PAGES = 400;
@@ -51,6 +51,7 @@ interface Extracted {
   /** Rasters found but not decodable here (JPX, CCITT, JBIG2, …). */
   imagesSkipped: number;
   attachments: EmbeddedAttachment[];
+  vectors: ExtractedVector[];
 }
 
 /** Object URLs minted for image previews, revoked when the report is replaced. */
@@ -206,6 +207,41 @@ function imagesMarkup(x: Extracted): string {
 }
 
 /**
+ * The Vectors panel — the logos.
+ *
+ * Most logos in a PDF are vector, so this is usually the most valuable tab:
+ * what comes out stays sharp at any size, unlike the raster in the Images tab.
+ * Each mark previews as the actual SVG (inline, so it scales in the tile) and
+ * carries the reason it was believed to be artwork rather than page furniture —
+ * the judgement is a heuristic and the user should be able to see it was made.
+ */
+function vectorsMarkup(x: Extracted): string {
+  if (!x.vectors.length) return '';
+  const tiles = x.vectors.map((v, i) => {
+    const url = URL.createObjectURL(new Blob([v.svg], { type: 'image/svg+xml' }));
+    previewUrls.push(url);
+    const swatches = v.fills.slice(0, 6).map((f) =>
+      `<span class="pdfx-swatch" style="background:${escape(f)}" title="${escape(f)}"></span>`).join('');
+    return `
+      <figure class="pdfx-asset" data-vector="${i}">
+        <div class="pdfx-asset-art"><img src="${escape(url)}" alt="" loading="lazy" decoding="async"></div>
+        <figcaption class="pdfx-asset-meta">
+          <span class="pdfx-asset-name">${escape(`${v.width}×${v.height} pt`)}</span>
+          <span class="pdfx-asset-sub">${escape(t('{n} shapes · page {p}', { n: v.shapes, p: v.page + 1 }))}</span>
+          <span class="pdfx-swatches">${swatches}</span>
+          <span class="pdfx-asset-why">${escape(t('Detected by {reason}', { reason: v.reason }))}</span>
+        </figcaption>
+        <div class="pdfx-asset-actions">
+          <button type="button" class="btn btn--ghost" data-save-vector="${i}">${t('Download SVG')}</button>
+          <button type="button" class="btn btn--ghost" data-catalog-vector="${i}">${t('Add to catalogue')}</button>
+        </div>
+      </figure>`;
+  }).join('');
+
+  return `<div class="pdfx-panel" data-panel="vectors" hidden><div class="pdfx-assets">${tiles}</div></div>`;
+}
+
+/**
  * The Fonts panel.
  *
  * Two caveats ride on every row, and they are the honest part of this feature.
@@ -285,6 +321,7 @@ function resultMarkup(x: Extracted): string {
   // document rather than what a PDF could theoretically hold.
   const tabs = [
     { id: 'text', label: t('Text'), n: 0 },
+    ...(x.vectors.length ? [{ id: 'vectors', label: t('Logos'), n: x.vectors.length }] : []),
     ...(x.images.length ? [{ id: 'images', label: t('Images'), n: x.images.length }] : []),
     ...(x.fonts.length ? [{ id: 'fonts', label: t('Fonts'), n: x.fonts.length }] : []),
     ...(x.attachments.length ? [{ id: 'attachments', label: t('Attachments'), n: x.attachments.length }] : []),
@@ -317,6 +354,7 @@ function resultMarkup(x: Extracted): string {
       <div class="pdfx-pages pdfx-panel" data-panel="text">
         ${x.pages.map(pageMarkup).join('')}
       </div>
+      ${vectorsMarkup(x)}
       ${imagesMarkup(x)}
       ${fontsMarkup(x)}
       ${attachmentsMarkup(x)}
@@ -426,6 +464,10 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       imagesSkipped = scan?.skipped ?? 0;
     } catch (err) { host.log('warn', 'pdf-extract: image scan failed', { error: (err as Error)?.message }); }
 
+    let vectors: ExtractedVector[] = [];
+    try { vectors = await handle.listVectors?.({ maxPages: Math.min(count, 40) }) ?? []; }
+    catch (err) { host.log('warn', 'pdf-extract: vector scan failed', { error: (err as Error)?.message }); }
+
     let attachments: EmbeddedAttachment[] = [];
     try { attachments = handle.listAttachments?.() ?? []; }
     catch (err) { host.log('warn', 'pdf-extract: attachment scan failed', { error: (err as Error)?.message }); }
@@ -433,7 +475,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     releasePreviews();
     current = {
       fileName: file.name, pages, truncated: Math.max(0, total - count), hidden,
-      fonts, images, imagesSkipped, attachments,
+      fonts, images, imagesSkipped, attachments, vectors,
     };
     drop.hidden = true;
     out.innerHTML = resultMarkup(current);
@@ -468,6 +510,33 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       playSfx('save');
     } catch (err) {
       host.log('warn', 'pdf-extract: catalogue add failed', { error: (err as Error)?.message });
+      btn.textContent = t('Could not add');
+    }
+    setTimeout(() => { btn.textContent = was; }, 1800);
+  }
+
+  /**
+   * Put an extracted logo into the asset library.
+   *
+   * The File MUST carry an explicit image/svg+xml MIME: storeUserUpload detects
+   * vectors by MIME *or* extension so the SVG would still be sanitised, but the
+   * stored `format` comes from the MIME alone — without it the asset is recorded
+   * as 'bin' and displayed as "logo.bin". The name is counter-unique because the
+   * asset id is minted from `Date.now()` plus the filename, so two same-named
+   * files stored in one millisecond silently overwrite each other.
+   */
+  async function addVectorToCatalogue(v: ExtractedVector, index: number, btn: HTMLElement): Promise<void> {
+    const was = btn.textContent;
+    btn.textContent = t('Adding…');
+    try {
+      const { storeUserUpload } = await import('./picker.ts');
+      const name = `${stem(current!.fileName)}-logo-${index + 1}.svg`;
+      const file = new File([v.svg], name, { type: 'image/svg+xml' });
+      await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file);
+      btn.textContent = t('Added');
+      playSfx('save');
+    } catch (err) {
+      host.log('warn', 'pdf-extract: vector catalogue add failed', { error: (err as Error)?.message });
       btn.textContent = t('Could not add');
     }
     setTimeout(() => { btn.textContent = was; }, 1800);
@@ -553,6 +622,22 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       const i = Number(toCatalog.dataset.catalogImage);
       const im = current.images[i];
       if (im) void addToCatalogue(im, i, toCatalog);
+      return;
+    }
+
+    const saveVec = el.closest<HTMLElement>('[data-save-vector]');
+    if (saveVec) {
+      const i = Number(saveVec.dataset.saveVector);
+      const v = current.vectors[i];
+      if (v) saveBytes(new TextEncoder().encode(v.svg), `${base}-logo-${i + 1}.svg`, 'image/svg+xml');
+      return;
+    }
+
+    const catVec = el.closest<HTMLElement>('[data-catalog-vector]');
+    if (catVec) {
+      const i = Number(catVec.dataset.catalogVector);
+      const v = current.vectors[i];
+      if (v) void addVectorToCatalogue(v, i, catVec);
       return;
     }
 

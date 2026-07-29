@@ -637,7 +637,13 @@ test('each chart panel is named for the channel it sets, and sets it three ways'
   await mount('?c=' + encodeURIComponent('oklch(70% 0.19 317)'));
   // Panel titles are CHANNELS — the thing the panel's slider and number control —
   // not the plane the chart happens to draw.
-  const titles = [...view.querySelectorAll('.lab-chart-title')].map(h => (h.textContent ?? '').trim());
+  // Scoped to the SLICE figures. A bare `.lab-chart-title` sweep was exhaustive
+  // over every titled figure, so giving the 3D solid a title bar (for its pop-out
+  // button) failed this test without anything being wrong — the assertion was
+  // pinning "these are the only figures" when it means "these three are named for
+  // their channels".
+  const titles = [...view.querySelectorAll('.lab-chart:not(.lab-chart--solid) .lab-chart-title')]
+    .map(h => (h.textContent ?? '').trim());
   assert.deepEqual(titles, ['Lightness', 'Chroma', 'Hue']);
 
   // Each panel has a slider AND a typed input for its own channel.

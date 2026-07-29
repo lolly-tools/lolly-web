@@ -9,6 +9,7 @@
  */
 
 let cached: boolean | null = null;
+let cachedLax: boolean | null = null;
 
 /**
  * Is a MilkDrop visualizer possible here? butterchurn 2.x is WebGL2-or-nothing —
@@ -29,4 +30,28 @@ export function vizSupported(): boolean {
     cached = false;
   }
   return cached;
+}
+
+/**
+ * The same question, without the performance-caveat requirement.
+ *
+ * `vizSupported` deliberately refuses a software rasteriser, because the DOCK renders
+ * its visualizer ambiently and a crawling full-screen mesh reads as a broken feature.
+ * That is the wrong test for a surface the user has explicitly asked for: on a machine
+ * where the strict probe fails — a laptop on integrated graphics, a browser with partial
+ * hardware acceleration — the strict answer turns a deliberate tap into nothing
+ * happening at all, which is worse than a slow visualiser.
+ *
+ * So: strict where it is ambient, lax where it was asked for.
+ */
+export function vizPossible(): boolean {
+  if (vizSupported()) return true;
+  if (cachedLax !== null) return cachedLax;
+  if (typeof document === 'undefined') return false;
+  try {
+    cachedLax = document.createElement('canvas').getContext('webgl2') !== null;
+  } catch {
+    cachedLax = false;
+  }
+  return cachedLax;
 }
