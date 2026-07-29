@@ -240,8 +240,13 @@ const limitTitle = (limit: GamutLimit): string =>
  * boundary) or when the fill stops short of it — a P3 contour on an sRGB chart
  * would float in empty space. Everything else is drawn, which for a profile
  * limit means BOTH, because a press gamut contains neither.
+ *
+ * Exported because the Lab's 3D solid draws its comparison cages by the SAME
+ * rule. Two views of one colour cannot be allowed to disagree about which
+ * boundaries are worth showing — and the 3D view is where "FOGRA39 is inside
+ * sRGB in the cyans and outside it in the yellows" stops being a sentence.
  */
-function contourGamuts(limit: GamutLimit): ('srgb' | 'p3')[] {
+export function contourGamuts(limit: GamutLimit): ('srgb' | 'p3')[] {
   const id = gamutSourceId(limit);
   return (['srgb', 'p3'] as const).filter(g => g !== id && !(g === 'p3' && id === 'srgb'));
 }

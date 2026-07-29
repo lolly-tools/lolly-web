@@ -69,9 +69,10 @@ import {
   gamutSolid, projectGamutSolid, projectSolidPoint, contrastRatio, GAMUTS,
   parseColor, colorToHexString, interpolateColor, chromaAxisMax,
   gamutSourceId, resolveGamutSource, fastRgbContains, inGamut, maxChroma, convertColor,
-  iccRoundTripDeltaE, iccRoundTripDecides, ICC_GAMUT_DELTA_E,
+  iccRoundTripDeltaE, iccRoundTripDecides, ICC_GAMUT_DELTA_E, encodeOklch,
 } from '@lolly/engine';
 import type {
+  EncodeSpace,
   ColorDescription, GamutName, GamutSolid, SlicePlane,
   ColorSpaceTag, HueDirection, GamutLimit, GamutSource, IccProfile, RenderingIntent,
   SolidEmbed,
@@ -81,7 +82,7 @@ import {
 } from '../lib/blend-style.ts';
 import {
   renderSliceChart, paintSliceChart, wireSliceChart, updateSliceDot,
-  sliceFixedOf, formatFixed,
+  sliceFixedOf, formatFixed, contourGamuts,
 } from '../lib/oklch-slice.ts';
 import type { SliceChartState } from '../lib/oklch-slice.ts';
 import {
@@ -89,8 +90,9 @@ import {
 } from '../lib/gamut-slider.ts';
 import type { GamutChannel } from '../lib/gamut-slider.ts';
 import {
-  onDisplayGamutChange,
+  onDisplayGamutChange, acquire2d,
 } from '../lib/display-gamut.ts';
+import { jellyActive, ensureJelly } from '../lib/jelly.ts';
 import {
   activateProfile, deactivateProfile, getProfile, parseProfileLimit, profileFor,
   removeProfile, shortLabel, absentLabel,
@@ -528,9 +530,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * the failure §11.6b describes. Which profile is live is chosen in the panel,
    * where the intent buttons and the remove buttons already live.
    *
-   * The row holds no mounted control, so rebuilding its markup is safe.
+   * The native row holds no mounted control, so rebuilding its markup is safe.
+   * The JELLY row does — see `renderJellyLimit`.
    */
   function renderLimitSeg(): void {
+    if (jellyActive()) { renderJellyLimit(); return; }
     const id = gamutSourceId(limit);
     const btn = (val: string, label: string, pressed: boolean, extra = ''): string =>
       `<button type="button" class="view-seg-btn${extra}" data-val="${escape(val)}"
@@ -560,6 +564,61 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         ><span class="lab-limit-add-g" aria-hidden="true">+</span>${escape(t('Add'))}</button>`);
     }
     limitSeg.innerHTML = pills.join('');
+  }
+
+  /**
+   * The same row under Jelly effects — one <jelly-segmented> for the choices,
+   * with the `+ Add` left as an ordinary button beside it.
+   *
+   * `+` is deliberately NOT a segment. A segmented control's pill means "this is
+   * the one you are on", and sliding it onto a button that opens a dialog and
+   * then slides back would say the opposite of what happened. It is an action
+   * sitting next to a choice, and the native row already treats it that way.
+   *
+   * Rebuilt only when the SET of options changes, never on an ordinary
+   * selection — the whole reason to mount a jelly control is that its pill
+   * travels from the old choice to the new one, and re-writing innerHTML would
+   * throw that away and park a fresh pill at the destination. Steering the
+   * `value` attribute is what makes it slide. Same rule as the nav pill
+   * (components/view-toggle.ts), for the same reason.
+   *
+   * An absent profile (a shared link naming a profile this device does not have)
+   * cannot be a segment either: it is not selectable, so it stays a button.
+   */
+  function renderJellyLimit(): void {
+    const id = gamutSourceId(limit);
+    const opts: { val: string; label: string }[] =
+      GAMUTS.map(g => ({ val: g, label: GAMUT_TITLE[g] }));
+    if (activeProfile) {
+      opts.push({
+        val: activeProfile.src.id,
+        label: shortLabel(activeProfile.entry, activeProfile.intent),
+      });
+    }
+    const keys = opts.map(o => o.val).join();
+    const seg = limitSeg.querySelector('jelly-segmented');
+    if (seg && limitSeg.dataset.keys === keys) {
+      seg.setAttribute('value', id);
+      return;
+    }
+    limitSeg.dataset.keys = keys;
+    const tail: string[] = [];
+    if (!activeProfile && absentLimit) {
+      tail.push(`<button type="button" class="view-seg-btn lab-limit-press"
+        data-lab-limit-absent aria-pressed="false" data-state="absent"
+        title="${escape(t('This link compares against a profile that isn’t on this device.'))}"
+        >${escape(absentLabel(absentLimit))}</button>`);
+    }
+    if (host.assets) {
+      tail.push(`<button type="button" class="view-seg-btn lab-limit-add" data-lab-profiles
+        aria-label="${escape(t('Colour profiles'))}" data-tip="${escape(t('Colour profiles'))}"
+        ><span class="lab-limit-add-g" aria-hidden="true">+</span>${escape(t('Add'))}</button>`);
+    }
+    limitSeg.innerHTML =
+      `<jelly-segmented class="lab-limit-seg" value="${escape(id)}"
+        label="${escape(t('See it against'))}">${
+        opts.map(o => `<jelly-segment value="${escape(o.val)}">${escape(o.label)}</jelly-segment>`).join('')
+      }</jelly-segmented>${tail.join('')}`;
   }
 
   /**
@@ -656,6 +715,25 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   renderLimitSeg();
+  // The flag can be on while the bundle is still loading (`jellyActive` is the
+  // sync gate), in which case the row above rendered its plain buttons. Re-render
+  // once the elements are defined, so the reader does not have to navigate away
+  // and back to see the control they turned on.
+  void ensureJelly().then(ok => { if (ok && limitSeg.isConnected) renderLimitSeg(); });
+
+  const pickLimit = (next: string | undefined): void => {
+    if (!next || next === gamutSourceId(limit)) return;
+    if (activeProfile && next === activeProfile.src.id) setLimit(activeProfile.src, next);
+    else if ((GAMUTS as readonly string[]).includes(next)) setLimit(next as Exclude<GamutName, 'none'>, next);
+  };
+
+  // Jelly's segmented control reports through `change`, not a click on a button —
+  // its segments are canvas-painted inside a shadow root, so the delegation below
+  // never sees them.
+  limitSeg.addEventListener('change', (e) => {
+    if (!(e.target instanceof Element) || e.target.tagName !== 'JELLY-SEGMENTED') return;
+    pickLimit((e as CustomEvent<{ value?: string }>).detail?.value);
+  });
 
   limitSeg.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
@@ -663,11 +741,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       openProfiles();
       return;
     }
-    const btn = target.closest<HTMLElement>('[data-val]');
-    const next = btn?.dataset.val;
-    if (!next || next === gamutSourceId(limit)) return;
-    if (activeProfile && next === activeProfile.src.id) setLimit(activeProfile.src, next);
-    else if ((GAMUTS as readonly string[]).includes(next)) setLimit(next as Exclude<GamutName, 'none'>, next);
+    pickLimit(target.closest<HTMLElement>('[data-val]')?.dataset.val);
   });
 
   // A display change (a window dragged to another monitor, or a surface refusing
@@ -890,7 +964,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   // ── The 3D solid ─────────────────────────────────────────────────────────
-  const solidCanvas = $<HTMLCanvasElement>('[data-lab-solid]');
+  // `let`, because `acquire2d` replaces the node when the display's gamut changes
+  // under us — a 2D context cannot change colour space after creation. Everything
+  // that touches it must go through `adoptSolidCanvas`, or the turn gesture would
+  // stay bound to a detached node and die silently.
+  let solidCanvas = $<HTMLCanvasElement>('[data-lab-solid]');
   let solidFrame = 0;
 
   function solidFor(lim: GamutLimit): GamutSolid {
@@ -921,21 +999,75 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     return s;
   }
 
+  /**
+   * A COARSE mesh of a comparison gamut, stroked as a cage rather than filled.
+   *
+   * Deliberately not a second filled solid: two translucent surfaces over each
+   * other read as one muddy shape and lie about which is in front. A cage says
+   * the same thing the 2D charts already say with a hairline contour — this is
+   * where that gamut stops — in the language the reader has already learned two
+   * panels above.
+   *
+   * Coarse on purpose. The cage is a reference, not the subject, and a dense one
+   * would hide the surface it is drawn over.
+   */
+  function cageFor(lim: GamutLimit): GamutSolid {
+    const key = `cage|${gamutSourceId(lim)}|${solidEmbed}`;
+    let s = solidCache.get(key);
+    if (!s) {
+      // The two counts trade off differently per embedding, because only one of
+      // them becomes the NUMBER of lines and the other becomes their smoothness.
+      // Landscape draws one contour per lightness row (few, but each traced across
+      // every hue); the closed embeddings draw one meridian per hue (few, each
+      // traced up through every lightness). Using one pair of counts for both gives
+      // either a coarse polygon or a thicket.
+      s = solidEmbed === 'landscape' ? gamutSolid(lim, 64, 10, solidEmbed)
+        : gamutSolid(lim, 16, 40, solidEmbed);
+      solidCache.set(key, s);
+    }
+    return s;
+  }
+
   function paintSolid(): void {
     if (!solidCanvas) return;
     const box = solidCanvas.getBoundingClientRect();
     if (box.width < 2) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = Math.round(box.width * dpr), h = Math.round(box.height * dpr);
+    // Ask the platform for the widest surface it will give us, and let its ANSWER
+    // decide how the fills are written — the same order the slice charts use, so
+    // the context and the colours can never name different spaces. A browser that
+    // refuses hands back 'srgb' and every fill below is today's rendering.
+    const acquired = acquire2d(solidCanvas);
+    if (!acquired) return;
+    adoptSolidCanvas(acquired.canvas);
+    const { ctx, encode } = acquired;
     if (solidCanvas.width !== w || solidCanvas.height !== h) {
       solidCanvas.width = w; solidCanvas.height = h;
     }
-    const ctx = solidCanvas.getContext('2d');
-    if (!ctx) return;
     ctx.clearRect(0, 0, w, h);
 
     const solid = solidFor(limit);
-    const quads = projectGamutSolid(solid, solidView);
+    const fills = projectGamutSolid(solid, solidView);
+    // The comparison cage — a reference gamut's surface as ribs over the fill.
+    //
+    // Only against a PROFILE limit, and that restriction is the whole design.
+    // Between the three screen gamuts the nesting is already told, better, by the
+    // 2D contours and the tier ladder, and measuring it here (by looking at the
+    // render) it came out as scribble over the surface it was meant to annotate.
+    // A press gamut is the case no other panel can tell: it is inside sRGB in the
+    // cyans and OUTSIDE it in the yellows, so "which is bigger" has no answer and
+    // the crossing itself is the information.
+    //
+    // Merged into ONE depth-sorted list rather than drawn as a layer on top: a rib
+    // that is genuinely behind the surface has to be occluded by it, or the picture
+    // claims the press gamut escapes sRGB everywhere instead of only where it does.
+    const wires = typeof limit === 'string' ? [] : contourGamuts(limit)
+      .flatMap(g => projectGamutSolid(cageFor(g), solidView).map(q => ({ ...q, wire: g })));
+    const quads = wires.length
+      ? [...fills.map(q => ({ ...q, wire: null as 'srgb' | 'p3' | null })), ...wires]
+        .sort((a, b) => a.depth - b.depth)
+      : fills.map(q => ({ ...q, wire: null as 'srgb' | 'p3' | null }));
     // Painter's algorithm, already sorted far-to-near by the engine.
     //
     // A quad is stroked in its own colour as well as filled, to close the hairline
@@ -943,7 +1075,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     // chicken wire. But stroking doubles the path work, and on a dense mesh each
     // quad is only a few pixels across — the gaps are then sub-pixel and the
     // stroke buys nothing. So it is spent only where it shows.
-    const areaPerQuad = (w * h) / Math.max(1, quads.length);
+    const areaPerQuad = (w * h) / Math.max(1, fills.length);
     const seal = areaPerQuad > 24; // ≈ 5px per side
     for (const q of quads) {
       const [p0, ...rest] = q.points;
@@ -952,7 +1084,35 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       ctx.moveTo(p0.x * w, p0.y * h);
       for (const p of rest) ctx.lineTo(p.x * w, p.y * h);
       ctx.closePath();
-      const rgb = shade(q.hex, q.shade);
+      if (q.wire) {
+        // RIBS, not a grid. A full lattice of both cages over a fine surface is
+        // unreadable — measured by looking at it: the Rec.2020 view with sRGB and
+        // P3 inside it came out as scribble. One edge per quad, the one running
+        // along lightness, leaves a set of hoops that read as a shape at a glance
+        // while still being drawn strictly in depth order.
+        //
+        // White, the ink every gamut boundary is drawn in across this view; the
+        // wider reference reads heavier, the same key the 2D legend already uses.
+        ctx.beginPath();
+        // Which edge, by embedding. On the landscape hue runs across the picture
+        // and lightness into it, so the hue-direction edge draws contour lines
+        // along the ridge — the topographic reading. On the closed embeddings the
+        // lightness-direction edge draws meridians, which is what gives a turnable
+        // body its shape. Picking the wrong one for the embedding gives hatching.
+        const [a, b] = solidEmbed === 'landscape'
+          ? [q.points[0], q.points[1]]
+          : [q.points[1], q.points[2]];
+        if (!a || !b) continue;
+        ctx.moveTo(a.x * w, a.y * h);
+        ctx.lineTo(b.x * w, b.y * h);
+        ctx.strokeStyle = q.wire === 'p3' ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = (q.wire === 'p3' ? 1.1 : 0.9) * dpr;
+        ctx.stroke();
+        continue;
+      }
+      // From the patch's AUTHORED colour, not its sRGB bake: on a P3 surface the
+      // bake is precisely the clamp this chart exists to draw the boundary of.
+      const rgb = shadedFill(q.oklch, q.shade, encode);
       ctx.fillStyle = rgb;
       ctx.fill();
       if (seal) { ctx.strokeStyle = rgb; ctx.lineWidth = 1; ctx.stroke(); }
@@ -964,7 +1124,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     ctx.beginPath();
     ctx.arc(m.x * w, m.y * h, 6 * dpr, 0, Math.PI * 2);
     if (m.inside) {
-      ctx.fillStyle = desc.srgbHex;
+      // Same reasoning as the quads, and it matters most here: the marker is the
+      // subject itself, so filling it from `desc.srgbHex` would show a P3 colour
+      // as its sRGB fallback on the one screen that did not need the fallback.
+      ctx.fillStyle = shadedFill(desc.oklch, 1, encode);
       ctx.fill();
     }
     ctx.lineWidth = 2.5 * dpr;
@@ -976,9 +1139,17 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
     const note = $('[data-lab-solid-note]');
     if (note) {
-      note.textContent = m.inside
+      const base = m.inside
         ? t('{deg}° · drag to turn', { deg: String(Math.round(((solidView.yaw % 360) + 360) % 360)) })
         : t('Outside {g} — the marker sits off the surface', { g: limitTitle(limit) });
+      // Unlabelled white lines over a coloured surface read as decoration. One
+      // clause, only when they are actually drawn, naming them in the order they
+      // are keyed everywhere else on the page.
+      const refs = [...new Set(wires.map(q => q.wire))]
+        .map(g => (g === 'p3' ? t('Display-P3') : t('sRGB')));
+      note.textContent = refs.length
+        ? `${base} · ${t('white lines: {g}', { g: refs.join(' + ') })}`
+        : base;
     }
   }
 
@@ -988,7 +1159,24 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   };
   cleanups.push(() => { if (solidFrame) cancelAnimationFrame(solidFrame); });
 
-  if (solidCanvas) {
+  /**
+   * Point the turn gesture at `next` when the canvas node has been swapped.
+   *
+   * A no-op in the overwhelmingly common case (same node), so it is safe to call
+   * on every frame. The swap only happens when the window moves to a monitor of a
+   * different gamut, which is rare enough that the cost of getting it wrong —
+   * a solid that silently stops turning — is worth this much ceremony.
+   */
+  function adoptSolidCanvas(next: HTMLCanvasElement): void {
+    if (next === solidCanvas) return;
+    unbindTurn?.();
+    solidCanvas = next;
+    unbindTurn = bindTurn(next);
+  }
+
+  let unbindTurn: (() => void) | null = null;
+
+  function bindTurn(el: HTMLCanvasElement): () => void {
     let dragging = -1;
     let lastX = 0, lastY = 0;
     /**
@@ -1010,8 +1198,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     /** Past this much travel the direction is meant rather than jitter, in CSS px. */
     const AXIS_SLOP = 6;
     const beginTurn = (e: PointerEvent): void => {
-      solidCanvas.setPointerCapture(e.pointerId);
-      solidCanvas.classList.add('is-turning');
+      el.setPointerCapture(e.pointerId);
+      el.classList.add('is-turning');
     };
     const onDown = (e: PointerEvent): void => {
       dragging = e.pointerId;
@@ -1043,10 +1231,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     };
     const onUp = (e: PointerEvent): void => {
       if (dragging !== e.pointerId) return;
-      if (solidCanvas.hasPointerCapture(e.pointerId)) solidCanvas.releasePointerCapture(e.pointerId);
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       dragging = -1;
       pending = false;
-      solidCanvas.classList.remove('is-turning');
+      el.classList.remove('is-turning');
     };
     // Keyboard equivalent: a drag-only control is unusable without one.
     const onKey = (e: KeyboardEvent): void => {
@@ -1059,19 +1247,22 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       e.preventDefault();
       scheduleSolid();
     };
-    solidCanvas.addEventListener('pointerdown', onDown);
-    solidCanvas.addEventListener('pointermove', onMove);
-    solidCanvas.addEventListener('pointerup', onUp);
-    solidCanvas.addEventListener('pointercancel', onUp);
-    solidCanvas.addEventListener('keydown', onKey);
-    cleanups.push(() => {
-      solidCanvas.removeEventListener('pointerdown', onDown);
-      solidCanvas.removeEventListener('pointermove', onMove);
-      solidCanvas.removeEventListener('pointerup', onUp);
-      solidCanvas.removeEventListener('pointercancel', onUp);
-      solidCanvas.removeEventListener('keydown', onKey);
-    });
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    el.addEventListener('keydown', onKey);
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+      el.removeEventListener('keydown', onKey);
+    };
   }
+
+  if (solidCanvas) unbindTurn = bindTurn(solidCanvas);
+  cleanups.push(() => { unbindTurn?.(); unbindTurn = null; });
 
   const embedSeg = $('[data-lab-embed]');
   if (embedSeg) {
@@ -1113,36 +1304,101 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   }
 
   // ── The blend's style, hue route, and stop count ─────────────────────────
+  /**
+   * Make a static `.view-seg` row selectable, and upgrade it to a Jelly control
+   * where the flag is on — one selection API either way, so the caller never
+   * learns which form it got.
+   *
+   * The row's own markup is the source of truth for the options: the upgrade
+   * reads the buttons already there rather than taking a parallel list, so the
+   * two forms cannot drift apart when a style is added.
+   *
+   * `tipFor` exists because of a real loss. The blend row's labels are one word
+   * each (Smooth / Vivid / sRGB) and the reason to pick one lives in a `data-tip`
+   * on each button — but a jelly segment is painted on canvas inside a shadow
+   * root, so a per-segment tooltip has nowhere to hang. The rationale for the
+   * SELECTED style moves onto the host instead: still discoverable by hover,
+   * focus and touch, and it describes the choice that is actually in effect.
+   */
+  function wireSegRow(
+    seg: HTMLElement,
+    onPick: (val: string) => void,
+    tipFor?: (val: string) => string,
+  ): void {
+    const select = (val: string | undefined): void => {
+      if (!val) return;
+      segPress(seg, val);
+      segTip(seg, tipFor?.(val));
+      onPick(val);
+    };
+    const onClick = (e: Event): void =>
+      select((e.target as HTMLElement).closest<HTMLElement>('[data-val]')?.dataset.val);
+    const onChange = (e: Event): void => {
+      if (!(e.target instanceof Element) || e.target.tagName !== 'JELLY-SEGMENTED') return;
+      select((e as CustomEvent<{ value?: string }>).detail?.value);
+    };
+    seg.addEventListener('click', onClick);
+    seg.addEventListener('change', onChange);
+    cleanups.push(() => {
+      seg.removeEventListener('click', onClick);
+      seg.removeEventListener('change', onChange);
+    });
+
+    const upgrade = (): void => {
+      if (!jellyActive() || seg.querySelector('jelly-segmented')) return;
+      const btns = [...seg.querySelectorAll<HTMLElement>('[data-val]')];
+      if (!btns.length) return;
+      const cur = btns.find(b => b.getAttribute('aria-pressed') === 'true')?.dataset.val
+        ?? btns[0]!.dataset.val!;
+      const segs = btns.map(b =>
+        `<jelly-segment value="${escape(b.dataset.val!)}">${escape(b.textContent?.trim() ?? '')}</jelly-segment>`).join('');
+      seg.innerHTML = `<jelly-segmented class="lab-limit-seg" value="${escape(cur)}"
+        label="${escape(seg.getAttribute('aria-label') ?? '')}">${segs}</jelly-segmented>`;
+      segTip(seg, tipFor?.(cur));
+    };
+    upgrade();
+    // The flag can be on while the bundle is still loading (`jellyActive` is the
+    // sync gate), so the row above may have stayed native. Upgrade once it lands,
+    // rather than making the reader navigate away and back. A failed chunk load is
+    // swallowed: the plain control is already on screen and works.
+    void ensureJelly().then(ok => { if (ok && seg.isConnected) upgrade(); }).catch(() => {});
+  }
+
+  /** The selected option's rationale, on the jelly host. No-op on a native row,
+   *  where each button still carries its own `data-tip`. */
+  function segTip(seg: HTMLElement, tip: string | undefined): void {
+    const j = seg.querySelector<HTMLElement>('jelly-segmented');
+    if (!j) return;
+    if (tip) j.dataset.tip = tip;
+    else delete j.dataset.tip;
+  }
+
+  /** Move a row's selection, whichever form it is in. */
+  function segPress(seg: HTMLElement, val: string): void {
+    const j = seg.querySelector('jelly-segmented');
+    if (j) {
+      // Guarded: re-setting the attribute the control just reported would be a
+      // second change event, and the pair would ping-pong.
+      if (j.getAttribute('value') !== val) j.setAttribute('value', val);
+      return;
+    }
+    seg.querySelectorAll<HTMLElement>('[data-val]')
+      .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.val === val)));
+  }
+
   const spaceSeg = $('[data-lab-blend-space]');
   const hueSeg = $('[data-lab-blend-hue]');
   /** Show the hue row only where hue travel is a real choice. */
   const syncHueRow = (): void => { if (hueSeg) hueSeg.hidden = !isPolarSpace(blendSpace); };
-  const press = (seg: HTMLElement, btn: HTMLElement): void => {
-    seg.querySelectorAll<HTMLElement>('[data-val]')
-      .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
-  };
   if (spaceSeg) {
-    const onSpace = (e: Event): void => {
-      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
-      if (!btn || !btn.dataset.val) return;
-      blendSpace = btn.dataset.val as ColorSpaceTag;
-      press(spaceSeg, btn);
+    wireSegRow(spaceSeg, (val) => {
+      blendSpace = val as ColorSpaceTag;
       syncHueRow();
       renderBlend();
-    };
-    spaceSeg.addEventListener('click', onSpace);
-    cleanups.push(() => spaceSeg.removeEventListener('click', onSpace));
+    }, (val) => t(BLEND_STYLES.find(b => b.space === val)?.why ?? ''));
   }
   if (hueSeg) {
-    const onHue = (e: Event): void => {
-      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
-      if (!btn || !btn.dataset.val) return;
-      blendHue = btn.dataset.val as HueDirection;
-      press(hueSeg, btn);
-      renderBlend();
-    };
-    hueSeg.addEventListener('click', onHue);
-    cleanups.push(() => hueSeg.removeEventListener('click', onHue));
+    wireSegRow(hueSeg, (val) => { blendHue = val as HueDirection; renderBlend(); });
   }
   syncHueRow();
 
@@ -1947,10 +2203,24 @@ function paintSwatch(el: HTMLElement, d: ColorDescription): void {
 }
 
 /** Multiply a hex toward black by `k` — the solid's soft top-light. */
-function shade(hex: string, k: number): string {
-  const n = (i: number): number =>
-    Math.round(Math.min(255, Math.max(0, parseInt(hex.slice(i, i + 2), 16) * k)));
-  return `rgb(${n(1)} ${n(3)} ${n(5)})`;
+/**
+ * A solid patch's fill: its OKLCH encoded for the surface, times the shading.
+ *
+ * The two branches are the same operation at different widths, which is the whole
+ * point — on an sRGB surface this is exactly what `shade(hex, k)` produced, and on
+ * a P3 one the colour is real rather than mapped. `encodeOklch` is the engine's
+ * own painter path, so a quad here and a pixel in a slice chart cannot disagree.
+ *
+ * The multiply lands on the ENCODED channels, not on L, matching what the hex path
+ * has always done — shading is a lighting effect on the drawing, not a claim about
+ * the colour, and moving it into OKLCH would quietly change every existing chart.
+ */
+function shadedFill(o: { l: number; c: number; h: number }, k: number, encode: EncodeSpace): string {
+  const [r, g, b] = encodeOklch(o.l, o.c, o.h, encode);
+  const n = (v: number): string => Math.min(1, Math.max(0, v * k)).toFixed(4);
+  return encode === 'display-p3'
+    ? `color(display-p3 ${n(r)} ${n(g)} ${n(b)})`
+    : `rgb(${Math.round(+n(r) * 255)} ${Math.round(+n(g) * 255)} ${Math.round(+n(b) * 255)})`;
 }
 
 /**
@@ -1990,7 +2260,7 @@ function contrastCardShell(key: string, label: string, pickable = false): string
  */
 function shellHtml(): string {
   const seg = (): string =>
-    `<div class="view-seg lab-limit" role="group" aria-label="${escape(t('See it against'))}" data-lab-limit></div>`;
+    `<div class="view-seg lab-seg lab-limit" role="group" aria-label="${escape(t('See it against'))}" data-lab-limit></div>`;
 
   // Plot first, caption under it — a figure/figcaption, so "this text describes
   // the thing above" is in the markup and not just in the CSS order.
@@ -2190,7 +2460,7 @@ function shellHtml(): string {
                 control above the charts: it governs everything under it, so it reads
                 as a heading row rather than as one more field. */''}
           <div class="lab-blend-styles">
-            <div class="view-seg lab-limit" role="group" aria-label="${escape(t('Blend'))}" data-lab-blend-space>
+            <div class="view-seg lab-seg" role="group" aria-label="${escape(t('Blend'))}" data-lab-blend-space>
               ${/* `data-tip`, not `title`: the rationale for each style is the whole
                     reason the pills are labelled so briefly, and a `title` is invisible
                     to every touch and keyboard user. The tooltip primitive
@@ -2204,7 +2474,7 @@ function shellHtml(): string {
             ${/* Hue travel only means anything in a polar space, so the row is present but
                   inert until one is chosen — hidden rather than absent, so choosing Vivid
                   does not reflow the section. */''}
-            <div class="view-seg lab-blend-hue" role="group" aria-label="${escape(t('Hue route'))}"
+            <div class="view-seg lab-seg lab-blend-hue" role="group" aria-label="${escape(t('Hue route'))}"
               data-lab-blend-hue${isPolarSpace(BLEND_DEFAULT_SPACE) ? '' : ' hidden'}>
               ${HUE_ROUTES.map(r => `<button type="button" class="view-seg-btn" data-val="${r.dir}"
                 aria-pressed="${r.dir === BLEND_DEFAULT_HUE}">${escape(t(r.label))}</button>`).join('')}

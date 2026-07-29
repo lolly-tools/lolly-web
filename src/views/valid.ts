@@ -274,7 +274,8 @@ function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadat
 // Which glyph heads each metadata section.
 const META_GROUP_ICON: Record<MetaGroup, IconName> = {
   location: 'mapPin', device: 'cpu', capture: 'camera', software: 'tool',
-  authorship: 'user', timestamps: 'calendar', description: 'document', technical: 'hash',
+  authorship: 'user', timestamps: 'calendar', description: 'document',
+  structure: 'package', technical: 'hash',
 };
 
 // An offline world locator: the photo's GPS fix plotted on an embedded land
@@ -1681,8 +1682,24 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
 
   // Which section a PDF finding's label belongs in (its findings arrive as flat
   // {label, detail, tone} rows from host.pdf.analyze).
+  // The structural scan emits a FIXED label set (bridge/pdf-structure.ts), so it
+  // routes by exact match rather than by the substring guessing the Info/XMP
+  // fields need — a new structural label should land deliberately, not by
+  // accident of which keyword it happens to contain.
+  // A Map, not an object literal: a bare `LOOKUP[label]` answers truthily for
+  // 'constructor' and friends, and `label` here is data read out of a file.
+  const PDF_STRUCTURE_LABELS = new Map<string, MetaGroup>([
+    ['attachments', 'structure'], ['javascript', 'structure'], ['launch actions', 'structure'],
+    ['form submission', 'structure'], ['remote documents', 'structure'], ['links', 'structure'],
+    ['form values', 'structure'], ['xfa form', 'structure'], ['annotations', 'structure'],
+    ['hidden layers', 'structure'], ['layers', 'structure'],
+    ['digital signature', 'authorship'], ['pages', 'technical'],
+  ]);
+
   const pdfGroup = (label: string): MetaGroup => {
     const l = label.toLowerCase();
+    const structural = PDF_STRUCTURE_LABELS.get(l);
+    if (structural) return structural;
     if (l === 'created' || l === 'modified' || l.includes('date')) return 'timestamps';
     if (l.includes('produc') || l.includes('created with') || l.includes('creatortool') || l.includes('software')) return 'software';
     if (l.includes('author') || l.includes('creator')) return 'authorship';

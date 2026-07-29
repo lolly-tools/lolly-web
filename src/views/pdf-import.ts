@@ -31,8 +31,8 @@ import {
 import type { PDFContext, PDFObject } from 'pdf-lib';
 import {
   interpretPdfPage, parseToUnicode, toUnicodeDecoder, finalizeBoxes, safeColor, pdfNodesToSvg,
-  unfilterPng, isShadowPlate, cullPdfNodes,
-  type DesignMapOptions,
+  unfilterPng, isShadowPlate, cullPdfNodes, extractPageText,
+  type DesignMapOptions, type PageText,
 } from '@lolly/engine';
 import type { CullWindow } from '../../../../engine/src/pdf-svg.ts';
 import type { PdfNode, PdfFontInfo, PdfXObject, PdfShading, PdfPattern, PdfGradientStop, PdfSoftMaskDef } from '../../../../engine/src/pdf-map.ts';
@@ -745,16 +745,39 @@ export interface PdfPageSvgOpts {
   rasterFallback?: boolean;
 }
 
-/** An opened document: page count + a cached page→SVG converter. */
+/** An opened document: page count + cached page→SVG / page→text converters. */
 export interface PdfHandle {
   pageCount: number;
   pageToSvg(index: number, opts?: PdfPageSvgOpts): Promise<PdfPageSvg>;
+  /**
+   * Reconstruct a page's prose from the SAME interpreted nodes the SVG path
+   * uses. No second parse and no OCR: for a born-digital PDF the glyphs and
+   * their positions are already in the file, and `extractPageText` puts them
+   * back into reading order. A page that is a scanned image comes back with
+   * `scanned: true` and no text, which callers must surface as such.
+   *
+   * OPTIONAL, and callers must feature-detect it. A .pptx deck borrows this
+   * interface to reuse the page picker (views/pptx-import.ts) but has no PDF
+   * node graph behind it, so it simply does not offer the method — which is the
+   * truthful answer, rather than a stub returning empty text that would read as
+   * "this deck has no words in it".
+   */
+  pageToText?(index: number, warn?: (msg: string) => void): PageText;
 }
 
 function makeHandle(doc: PDFDocument): PdfHandle {
   const cache = new Map<string, PdfPageSvg>();
+  const textCache = new Map<number, PageText>();
   return {
     pageCount: doc.getPageCount(),
+    pageToText(index: number, warn: (msg: string) => void = () => {}): PageText {
+      const hit = textCache.get(index);
+      if (hit) return hit;
+      const { nodes, width, height } = interpretPage(doc, index, warn);
+      const out = extractPageText(nodes, { width, height });
+      textCache.set(index, out);
+      return out;
+    },
     async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText, rasterFallback = true, cull }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
       const ckey = `${index}|${cull ? `${cull.x},${cull.y},${cull.width},${cull.height},${cull.pad ?? ''}` : ''}`;
       const hit = cache.get(ckey);

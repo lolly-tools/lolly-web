@@ -87,6 +87,16 @@ export async function analyzePdf(bytes: Uint8Array): Promise<{ findings: PdfFind
       || xmpField(xmp, /<xmp:CreatorTool>([\s\S]*?)<\/xmp:CreatorTool>/i);
     add('XMP metadata', who ? `XMP packet — ${who}` : 'embedded XMP packet', 'warn');
   }
+
+  // Structural findings — what the document CARRIES and DOES, as opposed to what
+  // it says about itself. Lazily imported so a caller that only wants Info/XMP
+  // doesn't pay for the graph walkers, and defensive: a document too broken to
+  // walk structurally must still return its metadata.
+  try {
+    const { scanPdfStructure } = await import('./pdf-structure.ts');
+    findings.push(...scanPdfStructure(doc));
+  } catch { /* structural scan unavailable — metadata findings still stand */ }
+
   return { findings };
 }
 
