@@ -32,7 +32,8 @@ import type { PDFContext, PDFObject } from 'pdf-lib';
 import {
   interpretPdfPage, parseToUnicode, toUnicodeDecoder, finalizeBoxes, safeColor, pdfNodesToSvg,
   unfilterPng, isShadowPlate, cullPdfNodes, extractPageText,
-  type DesignMapOptions, type PageText,
+  findHiddenText as engineFindHiddenText,
+  type DesignMapOptions, type PageText, type HiddenTextFinding,
 } from '@lolly/engine';
 import type { CullWindow } from '../../../../engine/src/pdf-svg.ts';
 import type { PdfNode, PdfFontInfo, PdfXObject, PdfShading, PdfPattern, PdfGradientStop, PdfSoftMaskDef } from '../../../../engine/src/pdf-map.ts';
@@ -763,6 +764,17 @@ export interface PdfHandle {
    * "this deck has no words in it".
    */
   pageToText?(index: number, warn?: (msg: string) => void): PageText;
+  /**
+   * Find text the page paints an opaque shape over — the failed-redaction check
+   * (engine/src/pdf-redaction.ts). Runs on the same interpreted nodes as
+   * everything else, so it is nearly free once a page has been read.
+   *
+   * `maxPages` bounds the walk for callers that must stay responsive on a large
+   * document; the returned `scanned` count says how far it actually got, so a
+   * caller can say "the first N pages" rather than implying the whole file was
+   * checked. Optional for the same reason as `pageToText`.
+   */
+  findHiddenText?(opts?: { maxPages?: number; minCoverage?: number }): { findings: HiddenTextFinding[]; scanned: number };
 }
 
 function makeHandle(doc: PDFDocument): PdfHandle {
@@ -777,6 +789,21 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       const out = extractPageText(nodes, { width, height });
       textCache.set(index, out);
       return out;
+    },
+    findHiddenText({ maxPages, minCoverage }: { maxPages?: number; minCoverage?: number } = {}):
+      { findings: HiddenTextFinding[]; scanned: number } {
+      const total = doc.getPageCount();
+      const scanned = Math.max(0, Math.min(total, maxPages ?? total));
+      const findings: HiddenTextFinding[] = [];
+      for (let i = 0; i < scanned; i++) {
+        try {
+          // Straight from the interpreter and NOT reordered — the check reads
+          // "painted after" from array position, so a sorted list would be wrong.
+          const { nodes } = interpretPage(doc, i);
+          for (const f of engineFindHiddenText(nodes, { minCoverage })) findings.push({ ...f, page: i });
+        } catch { /* one unreadable page must not cost the rest of the scan */ }
+      }
+      return { findings, scanned };
     },
     async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText, rasterFallback = true, cull }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
       const ckey = `${index}|${cull ? `${cull.x},${cull.y},${cull.width},${cull.height},${cull.pad ?? ''}` : ''}`;

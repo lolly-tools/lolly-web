@@ -78,6 +78,42 @@
 .pdfx-sum { font-size: 0.85rem; opacity: 0.72; }
 .pdfx-bar-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 
+/* ─── hidden-text (failed redaction) alert ──────────────────────────────────── */
+/* Loud on purpose. This is the one finding that should stop someone from sending
+   the file, so it outranks everything else in the report. */
+
+.pdfx-hidden {
+  margin: 1.5rem 0;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--danger, #b3261e);
+  border-radius: var(--radius-md, 10px);
+  background: color-mix(in oklab, var(--danger, #b3261e) 8%, transparent);
+}
+.pdfx-hidden-head {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin: 0 0 0.5rem; font-size: 1.05rem; line-height: 1.3;
+}
+.pdfx-hidden-lede { margin: 0 0 0.9rem; font-size: 0.92rem; line-height: 1.55; }
+
+.pdfx-hidden-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.4rem; }
+.pdfx-hidden-row {
+  display: flex; gap: 0.7rem; align-items: baseline;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface, canvas);
+}
+.pdfx-hidden-where {
+  flex: none; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.6;
+}
+.pdfx-hidden-text {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85rem; line-height: 1.5;
+  /* The recovered words are the evidence — they must wrap and stay selectable,
+     never be clipped to an ellipsis. */
+  overflow-wrap: anywhere; white-space: pre-wrap;
+  user-select: text;
+}
+
 /* ─── tabs ──────────────────────────────────────────────────────────────────── */
 
 .pdfx-tabs {
