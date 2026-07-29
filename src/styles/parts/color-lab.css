@@ -672,11 +672,57 @@
    gamuts, then AT MOST ONE press-profile pill, then the `+` that opens the
    profile panel — so the count is 3, 4 or 5 and only the first four share the
    width. `+` is a fixed-width affordance, not a fourth option. */
-.lab-limit {
+/* Styled as the app's own view tabs (`.view-toggle`, parts/projects.css): a
+   trough holding borderless pills, rather than a row of separately outlined
+   buttons. Same control, same look — this row does for gamuts what that one does
+   for views, and the reader has already learned to read it. The trough also lets
+   the row be TALLER without four heavy outlines: by this point down the page this
+   is the focal control, and the previous height was set by a toolbar it does not
+   sit in.
+   Kept as `.lab-limit` overrides rather than by adopting `.view-toggle`'s classes
+   because that control is a fixed, centred nav of links and this one is a
+   full-width group of buttons — sharing the class would drag its `position:
+   fixed` wrapper and mobile icon rules along with the paint. */
+.lab-seg {
   display: flex;
   width: 100%;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) + 3px);
+  background: hsl(var(--muted) / 0.65);
 }
-.lab-limit .view-seg-btn { flex: 1 1 0; min-width: 0; }
+.lab-seg .view-seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 0.82rem;
+  border-color: transparent;
+  border-radius: calc(var(--radius) * 0.8);
+}
+/* Only the gamut row gets the extra height. It is the focal control of its
+   section; the blend rows sit beside a picker and a ramp and would shout over
+   them at the same size. */
+.lab-limit .view-seg-btn { padding-block: 0.62rem; }
+/* The trough IS the unpressed surface — a fill per pill would draw a second box
+   inside it. Left transparent rather than removed, so the pill still has a hover
+   and focus surface of its own. */
+.lab-seg .view-seg-btn:not([aria-pressed="true"]) { background: transparent; }
+.lab-seg .view-seg-btn:not([aria-pressed="true"]):hover {
+  background: hsl(var(--background) / 0.7);
+  border-color: transparent;
+}
+/* Jelly effects: the same row as one <jelly-segmented>. The control paints its
+   own track, so the trough above is left to be the surface (transparent track)
+   exactly as the nav pill does — otherwise a canvas fill sits inside a CSS box
+   and the two edges disagree by a pixel. */
+.lab-seg .lab-limit-seg {
+  flex: 1 1 0;
+  min-width: 0;
+  --jelly-track: transparent;
+  --jelly-segmented-font-size: 0.82rem;
+  --jelly-segmented-padding: 0;
+  --jelly-segmented-padding-inline: 12px;
+}
 /* The press pill can carry a long profile name; it gets a little more room than
    an even share and truncates rather than wrapping the row onto two lines.
    Both of these carry the class of the rule above, because a bare .lab-limit-press

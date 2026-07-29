@@ -1566,6 +1566,21 @@ interface UtilityView {
 }
 
 const utilityViews = (): UtilityView[] => [{
+  id: 'verify',
+  href: '#/verify',
+  // The same glyph the footer's Verify pill uses, deliberately: the card exists
+  // because people miss that pill, so it has to read as the same destination
+  // rather than as a second, separate thing.
+  icon: 'shieldCheck',
+  name: t('Verify & Inspect'),
+  description: t('Check any file on-device: who made it, what it has been through, and what it hides. Metadata, attachments, scripts and tracking links.'),
+}, {
+  id: 'pdf-extract',
+  href: '#/pdf',
+  icon: 'document',
+  name: t('Take a PDF apart'),
+  description: t('Pull the words out of any PDF, page by page, and keep them as plain text or markdown. Nothing is uploaded.'),
+}, {
   id: 'color-lab',
   href: '#/lab',
   icon: 'palette',

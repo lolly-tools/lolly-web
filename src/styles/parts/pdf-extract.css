@@ -1,0 +1,149 @@
+/* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
+   (order declared once in styles/app.css). Wrapping it means its rules keep a
+   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   matter when Vite injects this chunk at runtime. Do not rely on load order. */
+@layer views {
+/* ─── /pdf — take a PDF apart ─────────────────────────────────────────────────
+   Shares the platform chrome (.tools-home/.plat-header) with the other utility
+   views; these rules cover the drop zone, the action bar and the reconstructed
+   page column. The reading column is deliberately NARROW — this is prose that
+   came out of a document, and it should read like prose, not like a data dump
+   spanning a 27" display. */
+
+.pdfx-view { overflow-y: auto; }
+.pdfx-view .tools-home,
+.pdfx-view {
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ─── drop zone ─────────────────────────────────────────────────────────────── */
+
+.pdfx-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  width: min(720px, 92vw); margin: 2rem auto;
+  padding: 2.5rem 1.5rem;
+  /* Dashed is reserved app-wide for drop targets — this is one, so it earns it. */
+  border: 2px dashed var(--line, currentColor);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--surface-2, transparent);
+  color: inherit; text-align: center; cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+.pdfx-drop:hover,
+.pdfx-drop:focus-visible { border-color: var(--brand-primary, currentColor); }
+.pdfx-drop.is-over {
+  border-color: var(--brand-primary, currentColor);
+  background: color-mix(in oklab, var(--brand-primary, currentColor) 8%, transparent);
+  transform: scale(1.01);
+}
+.pdfx-drop strong { font-size: 1.05rem; }
+.pdfx-drop span:last-child { font-size: 0.85rem; opacity: 0.72; }
+.pdfx-drop-icon { display: block; opacity: 0.6; }
+
+/* ─── status lines ──────────────────────────────────────────────────────────── */
+
+.pdfx-busy,
+.pdfx-error,
+.pdfx-note {
+  width: min(720px, 92vw); margin: 1rem auto; text-align: center;
+}
+.pdfx-error { color: var(--danger, #b3261e); }
+.pdfx-note {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface-2, transparent);
+  font-size: 0.9rem; text-align: left;
+}
+.pdfx-note--warn { background: color-mix(in oklab, var(--warn, #b26a00) 12%, transparent); }
+
+/* ─── action bar ────────────────────────────────────────────────────────────── */
+
+.pdfx-result { width: min(900px, 94vw); margin: 0 auto; padding-bottom: 5rem; }
+
+.pdfx-bar {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; flex-wrap: wrap; gap: 0.75rem 1rem;
+  align-items: center; justify-content: space-between;
+  padding: 0.85rem 0;
+  background: var(--surface, canvas);
+  /* A full-bleed hairline under a sticky bar that is itself inset — without the
+     negative margin the rule stops short of the reading column's edges. */
+  box-shadow: 0 1px 0 var(--line, currentColor);
+}
+.pdfx-bar-meta { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.pdfx-file {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch;
+}
+.pdfx-sum { font-size: 0.85rem; opacity: 0.72; }
+.pdfx-bar-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+/* ─── tabs ──────────────────────────────────────────────────────────────────── */
+
+.pdfx-tabs {
+  display: flex; gap: 0.25rem;
+  margin: 1.25rem 0 0.5rem;
+  border-bottom: 1px solid var(--line, currentColor);
+}
+.pdfx-tab {
+  padding: 0.5rem 0.9rem;
+  border: 0; border-bottom: 2px solid transparent;
+  background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.pdfx-tab.is-active {
+  border-bottom-color: var(--brand-primary, currentColor);
+  font-weight: 600;
+}
+/* One tab is not a choice — hide the strip until a second extraction pass lands
+   and it becomes navigation rather than decoration. */
+.pdfx-tabs:has(.pdfx-tab:only-child) { display: none; }
+
+/* ─── pages ─────────────────────────────────────────────────────────────────── */
+
+.pdfx-page { padding: 1.5rem 0; border-bottom: 1px solid var(--line, currentColor); }
+.pdfx-page:last-child { border-bottom: 0; }
+
+.pdfx-page-n {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  opacity: 0.65;
+}
+.pdfx-page-meta { font-weight: 400; letter-spacing: 0; text-transform: none; }
+.pdfx-page-copy { margin-inline-start: auto; }
+/* The per-page copy button is quiet until the page is hovered or it is focused —
+   one button per page would otherwise be a column of noise down the margin. */
+.pdfx-page-copy { opacity: 0; transition: opacity 120ms ease; }
+.pdfx-page:hover .pdfx-page-copy,
+.pdfx-page-copy:focus-visible { opacity: 1; }
+
+.pdfx-page-body { max-width: 68ch; }
+.pdfx-b { margin: 0 0 0.85em; line-height: 1.6; }
+.pdfx-b--li { margin-inline-start: 1.25em; text-indent: -0.9em; }
+.pdfx-b--li::before { content: "• "; opacity: 0.6; }
+
+/* Headings keep their RELATIVE weight from the document rather than adopting the
+   app's own scale — the point is to show the structure that was recovered. */
+.pdfx-b--h { font-weight: 700; margin: 1.4em 0 0.5em; line-height: 1.25; }
+.pdfx-b--h[data-level="1"] { font-size: 1.6rem; }
+.pdfx-b--h[data-level="2"] { font-size: 1.35rem; }
+.pdfx-b--h[data-level="3"] { font-size: 1.15rem; }
+.pdfx-b--h[data-level="4"],
+.pdfx-b--h[data-level="5"],
+.pdfx-b--h[data-level="6"] { font-size: 1rem; }
+
+.pdfx-scan,
+.pdfx-empty {
+  display: flex; align-items: center; gap: 0.6rem;
+  margin: 0; padding: 1rem 1.15rem;
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface-2, transparent);
+  font-size: 0.92rem; opacity: 0.85;
+}
+.pdfx-scan-icon { flex: none; opacity: 0.7; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfx-drop, .pdfx-page-copy { transition: none; }
+  .pdfx-drop.is-over { transform: none; }
+}
+}

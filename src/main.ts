@@ -38,7 +38,7 @@ import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from '
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components' | 'lab';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components' | 'lab' | 'pdf';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -54,6 +54,7 @@ type Route =
   | { name: 'components' }
   | { name: 'utilities' }
   | { name: 'lab'; params?: string }
+  | { name: 'pdf' }
   | { name: 'gallery' };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
@@ -76,7 +77,7 @@ let mountedRouteSig = '';
 // Announce client-side route changes (the view swaps via innerHTML, which
 // assistive tech wouldn't otherwise notice).
 function announceRoute(name: RouteName): void {
-  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', utilities: 'Utilities', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit', components: 'Component library', lab: 'Colour Lab' };
+  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', utilities: 'Utilities', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit', components: 'Component library', lab: 'Colour Lab', pdf: 'Take a PDF apart' };
   announce(`${labels[name] ?? 'Page'} loaded`);
 }
 
@@ -312,6 +313,13 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // gamut solid and the slice charts, which no other view on a cold path needs.
       const { mountColorLab } = await import('./views/color-lab.ts');
       await mountColorLab(view, host as unknown as Parameters<typeof mountColorLab>[1], route.params ?? '');
+      break;
+    }
+    case 'pdf': {
+      // Take a PDF apart (#/pdf). Lazy: it pulls the PDF interpreter and pdf-lib,
+      // which nothing on the landing path needs.
+      const { mountPdfExtract } = await import('./views/pdf-extract.ts');
+      await mountPdfExtract(view, host as unknown as Parameters<typeof mountPdfExtract>[1]);
       break;
     }
     case 'components': {
@@ -790,6 +798,7 @@ function parseRoute(): Route {
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
     if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities' }; // gallery filtered to the utility category
     if (parts[0] === 'lab') return { name: 'lab', params: query || '' }; // Colour Lab (?c=<any css colour>)
+    if (parts[0] === 'pdf') return { name: 'pdf' }; // take a PDF apart — text/asset extraction
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
     return { name: 'gallery' };
   }

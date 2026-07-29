@@ -262,10 +262,15 @@ test('every audio container the catalog ships or the uploader accepts is registe
   }
 
   // format id (or upload extension) -> the mediabunny container that reads it.
-  // 'zzfxm' is procedural: synthesised as PCM, it never touches a demuxer.
+  // null = never reaches a demuxer, so no container is needed:
+  //   'zzfxm' is procedural — synthesised straight to PCM from a seed or a song JSON.
+  //   tracker modules are SONG DATA, not encoded audio — libopenmpt renders them to PCM
+  //   (lib/mod-render.ts), the same bypass, which is why the provider takes a
+  //   `renderModule` hook alongside its zzfxm one. A demuxer would reject these bytes.
   const CONTAINER_FOR: Record<string, string | null> = {
     mp3: 'MP3', opus: 'OGG', ogg: 'OGG', oga: 'OGG', wav: 'WAVE',
     m4a: 'MP4', aac: 'ADTS', flac: 'FLAC', zzfxm: null,
+    mod: null, xm: null, s3m: null, it: null, stm: null, mtm: null,
   };
 
   for (const fmt of catalogFormats) {
