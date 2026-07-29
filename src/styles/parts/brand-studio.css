@@ -1214,4 +1214,67 @@ background-image:
   color: hsl(var(--muted-foreground));
   font-size: .85rem;
 }
+
+/* ── "In other spaces": the per-target face list ────────────────────────────
+   One row per space or press the swatch can be expressed in. A row is either
+   derived or authored, and the difference has to be readable at a glance —
+   that is the whole point of the control, so `is-set` carries weight and an
+   accent rail rather than a subtle tint. */
+.be-faces { display: flex; flex-direction: column; gap: 2px; }
+.be-face {
+  display: grid;
+  /* `minmax(0, 1fr)` on the value cell, not a bare `1fr`: a grid item's automatic
+     minimum is its content, so a long `color(rec2020 …)` string refused to shrink
+     and pushed the readout into an ellipsis while empty space sat beside it. */
+  grid-template-columns: 5.2rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: calc(var(--radius) * 0.6);
+  font-size: 0.72rem;
+}
+.be-face:nth-child(odd) { background: hsl(var(--muted) / 0.4); }
+.be-face-key { font-weight: 600; color: hsl(var(--muted-foreground)); }
+.be-face-val { font-family: var(--font-mono); font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; }
+/* Authored: an accent rail on the leading edge and a heavier key. Not a
+   one-sided BORDER on a card — this is a row in a list, and the rail is the
+   list's own emphasis, which is a different thing from a bordered box. */
+.be-face.is-set { background: hsl(var(--primary) / 0.09); box-shadow: inset 2px 0 0 hsl(var(--primary)); }
+.be-face.is-set .be-face-key { color: hsl(var(--foreground)); }
+/* An override whose profile is not mounted: shown, never actionable. Dimmed and
+   italic, carried by weight and colour rather than by a dashed border — dashed
+   means drop area in this language and nothing else. */
+.be-face.is-absent { opacity: 0.6; font-style: italic; }
+.be-face-drift {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.66rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  cursor: help;
+}
+.be-face-tag { font-size: 0.66rem; color: hsl(var(--muted-foreground)); }
+.be-face-acts { display: inline-flex; gap: 2px; }
+.be-face-btn {
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.be-face-btn[aria-pressed="true"] {
+  background: hsl(var(--card));
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+.be-face-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+/* The value field spans the row beneath its own cells — a fifth column would
+   squeeze the readout on the narrow popover, and the input needs the width more
+   than the row needs to stay one line. */
+.be-face-in { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 0.7rem; }
 }

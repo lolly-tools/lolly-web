@@ -58,7 +58,13 @@ import { wireTileSelect } from '../lib/tile-select.ts';
 import type { PickerHost } from './picker.ts';
 import { mountAudioThumbs } from './picker.ts';
 import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
-import { peaksFingerprint } from '../lib/audio-peaks.ts';
+import { peaksFingerprint, derivePeaks, memoPeaks } from '../lib/audio-peaks.ts';
+import { createVizCycle } from '../lib/viz-cycle.ts';
+import { audioThumbSvg, type AudioThumbShape } from '../lib/audio-thumb.ts';
+import { audioThumbPool, audioThumbInk, type ThumbTheme } from '../lib/audio-thumb-colour.ts';
+import {
+  loadAudioCovers, saveAudioCover, resolveAudioLook, vizPresetOf, type AudioCover,
+} from '../lib/audio-covers.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
 import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
@@ -527,6 +533,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // the bundled specs, plus any on-device Google fonts the user added. Replaces
   // the old hardcoded FONTS list so a custom brand no longer shows SUSE's faces.
   let catFonts: CatFont[] = [];
+  /** The user's per-asset cover overrides + the brand colour pool they resolve against.
+   *  Both live for the mount: the pool is theme-dependent and the overrides are read on
+   *  every tile paint, so re-deriving either per tile would be pure waste. */
+  let coverMap: Map<string, AudioCover> = new Map();
+  let coverPool: string[] = [];
 
   // Multi-select of the user's OWN uploads (a closure Set of user-asset ids; survives the
   // render() that wipes viewEl.innerHTML). Only user uploads are selectable — shared
@@ -662,6 +673,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     ]);
     if (!mounted) return;
     palette = livePal;
+    coverMap = loadAudioCovers(prof);
+    coverPool = audioThumbPool(livePal, host, (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light') as ThumbTheme);
     catFonts = await computeBrandFonts().catch(() => [] as CatFont[]);
     loadFailed = failed;
     profile = prof;
@@ -793,8 +806,24 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           : `src="${escape(ref.url)}"`;
         // A big live level meter above the controls (same bar look + theming as the
         // Neurospicy player's — lib/audio-meter.ts draws both). Wired in openDetails.
-        return `<${tag} class="cat-thumb cat-thumb-audio">`
-          + `<canvas class="cat-audio-meter" data-audio-meter width="640" height="160" aria-hidden="true"></canvas>`
+        // The audio surface ESCALATES rather than switching modes: the bars analyser is
+        // what you get for free, a visualiser is one click up, and immersive is one more —
+        // the same ladder the Neurospicy player uses (inline → panel → fullscreen). The
+        // cover commit lives at the top of it because "keep what I'm looking at" is the
+        // whole interaction; there is no separate picker to learn.
+        return `<${tag} class="cat-thumb cat-thumb-audio" data-audio-stage>`
+          + `<canvas class="cat-audio-meter" data-audio-meter width="640" height="160" role="button" tabindex="0" aria-label="${escape(t('Switch visualisation'))}"></canvas>`
+          + `<div class="cat-audio-viz" data-audio-viz hidden></div>`
+          + `<div class="cat-audio-vizbar" data-audio-vizbar hidden>`
+            + `<button type="button" class="cat-viz-btn" data-viz-prev title="${escape(t('Previous look'))}" aria-label="${escape(t('Previous look'))}">‹</button>`
+            + `<span class="cat-viz-name" data-viz-name></span>`
+            + `<button type="button" class="cat-viz-btn" data-viz-next title="${escape(t('Next look'))}" aria-label="${escape(t('Next look'))}">›</button>`
+            + `<button type="button" class="cat-viz-btn" data-viz-shuffle title="${escape(t('Surprise me'))}" aria-label="${escape(t('Surprise me'))}">🎲</button>`
+            + `<button type="button" class="cat-viz-btn" data-viz-immerse title="${escape(t('Immersive'))}" aria-label="${escape(t('Immersive'))}">⛶</button>`
+            + `<button type="button" class="cat-viz-btn is-primary" data-viz-cover>${escape(t('Use as cover'))}</button>`
+          + `</div>`
+          + `<div class="cat-viz-colours" data-viz-colours hidden></div>`
+          + `<button type="button" class="cat-viz-hint" data-viz-toggle aria-pressed="false">${escape(t('Tap the meter for the visualiser'))}</button>`
           + `<audio ${srcAttr} controls preload="metadata" data-audio-preview></audio>`
           + `<p class="cat-audio-note" role="status" hidden></p></${tag}>`;
       }
@@ -1085,10 +1114,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const entries: FeaturedEntry[] = items.map(a => ({
       id: a.id,
       name: String(a.meta?.name ?? a.id),
-      // A user-uploaded lottie's url is JSON, and a video's url is mp4/webm — an <img>
-      // (what the featured-row renders) would break on either, so omit the preview
-      // (the strip shows its themed backdrop) rather than a broken tile.
-      preview: (a.meta?._placeholder || (a.type === 'lottie' && a.source === 'user') || a.type === 'video') ? undefined : a.url,
+      // A user-uploaded lottie's url is JSON, a video's is mp4/webm, and an AUDIO asset's
+      // is an .opus/.mp3/.xm — an <img> (what the featured-row renders) breaks on all of
+      // them, so omit the preview rather than ship a broken tile.
+      preview: (a.meta?._placeholder || (a.type === 'lottie' && a.source === 'user') || a.type === 'video' || a.type === 'audio') ? undefined : a.url,
+      // ...and for audio, fill the strip's `icon` slot with the SAME waveform the grid
+      // draws. That slot exists to be the always-present art behind a missing preview,
+      // which is exactly what a favourited track needs — otherwise a starred audio asset
+      // is a card with a name and nothing above it (the fourth renderer to hit this).
+      icon: a.type === 'audio' ? audioCardArt(a) : undefined,
       formats: a.format ? [a.format] : undefined,
       href: `#/c?asset=${encodeURIComponent(a.id)}`,   // → this view + the details modal
       featured: {},                                     // no tool variants: strip just shows the preview
@@ -1121,6 +1155,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         assets.insertBefore(mount, assets.firstChild);
       }
       mountFavStrip();
+      void warmFavAudioArt();
     } else {
       featuredHandle?.destroy(); featuredHandle = null; mount?.remove();
     }
@@ -1329,7 +1364,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // destination (this modal over the catalog), not a bare download.
   // Dispose hook for the audio preview's level meter (attachAudioMeter). openDetails
   // always closeDetails()-es first — including ←/→ paging — so this can't leak.
-  let detailsMeterDispose: (() => void) | null = null;
+  /** The details modal's meter handle — its dispose, plus accessors for the AnalyserNode
+   *  and context the MilkDrop preview must SHARE (one MediaElementSource per element). */
+  let detailsMeterDispose: import('../lib/audio-meter.ts').MeterHandle | null = null;
+  /** Releases the details modal's live visualiser (its WebGL2 context) + key handler. */
+  let vizTeardown: (() => void) | null = null;
+  let vizCycleStop: (() => void) | null = null;
   function closeDetails(): void {
     detailsModal?.close(); // cleanup (meter/lottie/wav dispose + nulling the refs) runs in its onClose
   }
@@ -1482,6 +1522,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       onClose: () => {
         detailsMeterDispose?.();
         detailsMeterDispose = null;
+        vizTeardown?.();
+        vizTeardown = null;
         // Destroy any Lottie player mounted in the preview — lottie-web ticks every mounted player
         // from one global rAF and won't stop on removal alone, so an un-reaped modal player leaks a loop.
         destroyLottiePlayers(modal.el);
@@ -1684,7 +1726,371 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // shared AudioContext may run) and is disposed with the modal (closeDetails).
       const meterEl = dlg.querySelector<HTMLCanvasElement>('[data-audio-meter]');
       if (meterEl) detailsMeterDispose = attachAudioMeter(meterEl, audioEl);
+      wireAudioViz(dlg, ref, detailsMeterDispose);
     }
+  }
+
+  /**
+   * The audio surface's escalation ladder: bars analyser → visualiser → immersive, with
+   * "use as cover" as the commit at any rung.
+   *
+   * Deliberately NOT a swatch picker. The thing a user wants to say is "keep what I am
+   * looking at", so the chooser IS the viewer — you audition the track, flip through
+   * looks while it plays, and pin the one you like. That also means there is nothing
+   * extra to learn: it is the Neurospicy player's interaction, in the place where you
+   * are already listening to the file.
+   *
+   * MilkDrop needs its audio INJECTED (per-frame time-domain windows), so the wave
+   * payload is decoded once, lazily, only when someone actually opens the visualiser —
+   * a details modal is a deliberate act, unlike a grid of tiles.
+   */
+  function wireAudioViz(dlg: HTMLElement, ref: AssetRef, meterHandle: import('../lib/audio-meter.ts').MeterHandle | null): void {
+    const stage = dlg.querySelector<HTMLElement>('[data-audio-stage]');
+    const toggle = dlg.querySelector<HTMLButtonElement>('[data-viz-toggle]');
+    const vizEl = dlg.querySelector<HTMLElement>('[data-audio-viz]');
+    const bar = dlg.querySelector<HTMLElement>('[data-audio-vizbar]');
+    const nameEl = dlg.querySelector<HTMLElement>('[data-viz-name]');
+    if (!stage || !toggle || !vizEl || !bar) return;
+
+    // The looks on offer: the five generated shapes. A MilkDrop rung belongs here too,
+    // but it BAKES to pixels (a grid cannot hold 20 GL contexts), so it is its own step
+    // and deliberately not folded in yet — see the task notes.
+    // The ladder's rungs: the five drawn shapes first (always available, no GPU), then
+    // MilkDrop presets where WebGL2 exists. A `viz:` entry pops against flat vector
+    // peers, which is the point of offering it at all.
+    // MILKDROP ONLY IN HERE. The drawn waveform shapes are the GRID's job — they are the
+    // free, always-available default that every tile falls back to. This surface is the
+    // player experience, so offering a static bar chart alongside a live visualiser just
+    // pads the list with rungs nobody escalated to see.
+    type Look = { id: string; label: string; viz: string };
+    const looks: Look[] = [];
+    const current = resolveAudioLook(ref.id, coverPool, coverMap);
+    let at = 0;
+    let open = false;
+    // The colour the user has pinned, if any — undefined means "let the brand choose",
+    // which is the default and stays the default unless they touch the strip.
+    let pinnedColour: number | undefined = coverMap.get(assetBaseId(ref.id))?.colour;
+
+    const coursesEl = dlg.querySelector<HTMLElement>('[data-viz-colours]');
+
+    const paint = (): void => {
+      const look = looks[at]!;
+      if (nameEl) {
+        const pinned = coverMap.get(assetBaseId(ref.id));
+        // The position matters once the list is hundreds long — without it you cannot
+        // tell whether you have seen ten presets or a tenth of them.
+        nameEl.textContent = `${look.label}  ·  ${at + 1}/${looks.length}`;
+        // Say plainly when what you're looking at is already the saved cover, so the
+        // button is never a mystery and re-pinning is obviously a no-op.
+        const same = pinned && (look.viz ? vizPresetOf(pinned) === look.viz : pinned.shape === look.id);
+        nameEl.dataset.pinned = String(Boolean(same));
+      }
+      // The colour strip: the brand's own pool, plus an explicit "Auto" that hands the
+      // choice back to the brand. Auto is FIRST and is the default, because letting the
+      // brand pick is the normal case and pinning a colour is the exception.
+      if (coursesEl) {
+        coursesEl.hidden = coverPool.length === 0;
+        coursesEl.innerHTML =
+          `<button type="button" class="cat-viz-swatch is-auto${pinnedColour === undefined ? ' is-on' : ''}" data-viz-colour="" title="${escape(t('Brand picks the colour'))}">${escape(t('Auto'))}</button>`
+          + coverPool.map((hex, i) =>
+            `<button type="button" class="cat-viz-swatch${pinnedColour === i ? ' is-on' : ''}" data-viz-colour="${i}" style="--sw:${escape(hex)}" title="${escape(hex)}" aria-label="${escape(hex)}"></button>`).join('');
+      }
+      const ink = pinnedColour !== undefined && pinnedColour < coverPool.length
+        ? { hex: coverPool[pinnedColour]! }
+        : audioThumbInk(ref.id, coverPool);
+      if (ink) vizEl.style.setProperty('--audio-thumb-ink', ink.hex);
+
+      if (look.viz) { void mountLiveViz(look.viz); return; }
+      unmountViz();
+      vizEl.innerHTML = vizPeaks
+        ? audioThumbSvg(vizPeaks, { shape: look.id as AudioThumbShape, label: String(ref.meta?.name ?? ref.id) })
+        : audioThumbPlaceholder({});
+    };
+
+    /**
+     * The LIVE MilkDrop preview.
+     *
+     * It runs off the SAME AnalyserNode the bars meter uses, because an <audio> element
+     * can only ever produce one MediaElementSource and can never lose it — building a
+     * second would throw and leave the preview silent. So the two visualisations are
+     * genuinely two views of one signal, and tapping between them is instant.
+     *
+     * Not driven, not deterministic: this is the player experience, so butterchurn runs
+     * its own rAF loop against live audio exactly as the Neurospicy dock does. The
+     * deterministic path exists only for BAKING a cover, which is a different job.
+     */
+    let vizHandle: { destroy(): void } | null = null;
+    const mountLiveViz = async (presetId: string): Promise<void> => {
+      unmountViz();
+      const analyser = meterHandle?.analyser() ?? null;
+      const canvas = document.createElement('canvas');
+      canvas.className = 'cat-viz-canvas';
+      vizEl.replaceChildren(canvas);
+      // Device pixels: butterchurn never sets canvas.width/height itself and renders to
+      // exactly the size it was told, so a mismatch puts the frame in a corner.
+      const box = vizEl.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.round(box.width * dpr));
+      canvas.height = Math.max(1, Math.round(box.height * dpr));
+      const { mountViz } = await import('../lib/butterchurn-viz.ts');
+      const { buildVizPalette } = await import('../lib/viz-palette.ts');
+      vizHandle = await mountViz(canvas, undefined, presetId, undefined, buildVizPalette(coverPool), {
+        // A live analyser when the track is playing; without one butterchurn simply
+        // renders its idle field rather than failing, so a paused preview still shows
+        // the preset instead of a black box.
+        audio: { analyser },
+      });
+      if (!vizHandle) vizEl.innerHTML = audioThumbPlaceholder({});
+    };
+    const unmountViz = (): void => { vizHandle?.destroy(); vizHandle = null; };
+
+    let vizPeaks: Float32Array | null = null;
+    /** The time-domain windows a MilkDrop preview needs — decoded ONCE, and only when
+     *  someone actually escalates to a viz look, since it is far larger than the peaks. */
+    let vizWave: import('../lib/audio-cover-viz.ts').VizAudio | null = null;
+    const show = async (on: boolean): Promise<void> => {
+      open = on;
+      vizEl.hidden = !on;
+      bar.hidden = !on;
+      toggle.setAttribute('aria-pressed', String(on));
+      if (meterElOf(dlg)) meterElOf(dlg)!.hidden = on;
+      if (!on) { cycle.stop(); return; }
+      cycle.start();
+      paint();
+      // Real peaks or the honest glyph — never a fabricated waveform.
+      if (!vizPeaks) {
+        vizPeaks = (await derivePeaks(host, ref, ref.id).catch(() => null))?.peaks ?? null;
+        if (open) paint();
+      }
+      // MilkDrop rungs appear only where WebGL2 exists — no context, no option, and the
+      // drawn shapes still cover everyone. Loaded once, after the first open, so the
+      // preset index is never fetched for a user who never escalates.
+      if (!looks.length) await addVizLooks();
+    };
+
+    /**
+     * Append the MilkDrop rungs, once, on first escalation.
+     *
+     * Only presets VERIFIED to render are offered: the staged index carries an `ok` flag
+     * from a GPU audit, and 31 of the 452 draw pure black or blow out to a flat white
+     * field. Offering one of those as cover art would look like a bug in the app rather
+     * than a preset that does not survive a cold start.
+     */
+    const addVizLooks = async (): Promise<void> => {
+      const { canBakeViz } = await import('../lib/audio-cover-viz.ts');
+      if (!canBakeViz()) return;
+      // The wave windows a preview needs. Far larger than the peaks, so this is the
+      // moment to pay for it — the user has escalated deliberately.
+      if (!vizWave) {
+        try {
+          const a = await host.audio!.analyse(ref, { fps: 30, samples: 1024, window: 8 });
+          vizWave = { bytes: a.frames.wave, samples: a.frames.samples, count: a.frames.count,
+            // The loudest frame in the middle 80%: a cover should show the track doing
+            // something, and clips routinely open on silence.
+            poster: pickPoster(a.frames.rms) };
+        } catch { return; }
+      }
+      // OURS FIRST: brand-native, eval-free, and guaranteed to carry the brand colour —
+      // the right thing to land on before a wall of other people's work.
+      const { VIZ_PRESETS } = await import('../lib/viz-presets.ts');
+      for (const d of VIZ_PRESETS) looks.push({ id: `viz:${d.id}`, label: d.name, viz: d.id });
+
+      // Then EVERY artist preset verified to render, best tier first. Not capped: the
+      // whole point of the artist pack is range, and a short curated slice throws away
+      // the reason for carrying 450 of them. The 31 measured black or blown-out are the
+      // only exclusions — one of those as cover art reads as a broken app, not as a
+      // preset that does not survive a cold start.
+      const { stockPresetIndex } = await import('../lib/viz-stock.ts');
+      const stock = await stockPresetIndex().catch(() => []);
+      const usable = stock.filter(p => p.ok !== false)
+        .sort((a, b) => (a.tier ?? 9) - (b.tier ?? 9));
+      for (const p of usable) looks.push({ id: `viz:${p.id}`, label: p.author ? `${p.name} · ${p.author}` : p.name, viz: p.id });
+
+      // Land on the user's saved cover if they have one, so re-opening shows what they
+      // chose rather than restarting at the top of a 400-long list.
+      if (current.viz) {
+        const found = looks.findIndex(l => l.viz === current.viz);
+        if (found >= 0) at = found;
+      }
+      if (open) paint();
+    };
+
+    // TAP THE VISUALISATION ITSELF to switch — the Neurospicy player's interaction, not
+    // a separate control to find. Both surfaces are tappable so it toggles back, and the
+    // keyboard gets the same affordance since the canvas is a button.
+    // Auto-cycling, on the SAME policy the Neurospicy dock uses (lib/viz-cycle.ts) —
+    // shared intervals, shared saved preference, shared reduced-motion default. A user
+    // who set a rhythm for the dock gets it here without setting it twice.
+    const cycle = createVizCycle({
+      // Only while the visualiser is actually on screen and the track is playing: a
+      // paused preview is a still field, so rotating it just churns the GPU.
+      shouldRun: () => open && Boolean(looks[at]?.viz) && !audioElOf(dlg)?.paused,
+      onTick: () => { at = (at + 1) % looks.length; paint(); },
+    });
+    vizCycleStop = () => cycle.stop();
+
+    const flip = (): void => { void show(!open); };
+    // Escape steps DOWN one rung rather than closing everything: immersive → inline →
+    // (the modal's own handler) closed. Capture, so it beats the dialog's close.
+    const onEsc = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      if (stage.classList.contains('is-immersive')) {
+        e.stopPropagation(); e.preventDefault();
+        stage.classList.remove('is-immersive');
+        if (looks[at]!.viz) void mountLiveViz(looks[at]!.viz);
+      } else if (open) {
+        e.stopPropagation(); e.preventDefault();
+        void show(false);
+      }
+    };
+    dlg.addEventListener('keydown', onEsc, true);
+    // The GL context must not outlive the modal — they are the scarce resource here, and
+    // closeDetails is the one teardown every close path runs through.
+    vizTeardown = () => { dlg.removeEventListener('keydown', onEsc, true); cycle.stop(); unmountViz(); };
+    toggle.addEventListener('click', flip);
+    meterElOf(dlg)?.addEventListener('click', flip);
+    meterElOf(dlg)?.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') { e.preventDefault(); flip(); }
+    });
+    vizEl.addEventListener('click', (e) => {
+      // Only a tap on the picture itself flips back — a click that lands on the bar's
+      // controls must not also collapse the thing you are adjusting.
+      if ((e.target as HTMLElement).closest('.cat-audio-vizbar, .cat-viz-colours')) return;
+      flip();
+    });
+    dlg.querySelector('[data-viz-prev]')?.addEventListener('click', () => { at = (at + looks.length - 1) % looks.length; cycle.kick(); paint(); });
+    dlg.querySelector('[data-viz-next]')?.addEventListener('click', () => { at = (at + 1) % looks.length; cycle.kick(); paint(); });
+    dlg.querySelector('[data-viz-immerse]')?.addEventListener('click', () => {
+      // Immersive is a STATE of this surface, not a new one — same reasoning as the
+      // Neurospicy panel's fullscreen: Escape then lands you back on the player you
+      // were using rather than closing the whole modal out from under you.
+      const on = stage.classList.toggle('is-immersive');
+      // Re-mount at the new size: butterchurn renders to the buffer dimensions it was
+      // given, so a surface that changed size needs the canvas rebuilt or the picture
+      // stays at the old resolution in a corner of the new box.
+      if (looks[at]!.viz) void mountLiveViz(looks[at]!.viz);
+      if (on) stage.focus?.();
+    });
+    dlg.querySelector('[data-viz-shuffle]')?.addEventListener('click', () => {
+      // Random, not next: with hundreds of presets, stepping is a poor way to discover
+      // and "surprise me" is what people actually want from a wall this size.
+      if (looks.length > 1) { let n = at; while (n === at) n = Math.floor(Math.random() * looks.length); at = n; }
+      cycle.kick(); paint();
+    });
+
+    dlg.querySelector('[data-viz-colours]')?.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-viz-colour]');
+      if (!btn) return;
+      // '' is the explicit Auto rung — it CLEARS the pin rather than choosing a colour,
+      // so handing the choice back to the brand is a first-class action and not something
+      // you reach by guessing which swatch happens to match.
+      const raw = btn.dataset.vizColour ?? '';
+      pinnedColour = raw === '' ? undefined : Number.parseInt(raw, 10);
+      paint();
+    });
+
+    dlg.querySelector('[data-viz-cover]')?.addEventListener('click', () => {
+      const look = looks[at]!;
+      void setAudioCover(ref.id, {
+        shape: (look.viz ? `viz:${look.viz}` : look.id) as AudioCover['shape'],
+        ...(pinnedColour !== undefined ? { colour: pinnedColour } : {}),
+      }, vizWave).then(paint);
+    });
+  }
+
+  /** Guards against re-entering the warm-up: mountFavStrip re-runs on every favourite
+   *  toggle, and each run would otherwise re-queue the same derives. */
+  let warmingFavArt = false;
+
+  /**
+   * Measure the favourited AUDIO assets so the strip can draw real waveforms.
+   *
+   * The strip builds its markup synchronously, so it can only draw peaks already in
+   * memory — which on a cold load is none, leaving a starred track as a card with a name
+   * and nothing above it. Favourites are the one set where measuring up front is
+   * justified: they are few by definition and they are the assets the user looks at most.
+   * Bounded, sequential, and it re-renders ONCE at the end rather than per asset.
+   */
+  async function warmFavAudioArt(): Promise<void> {
+    if (warmingFavArt) return;
+    const need = favItems().filter(a => a.type === 'audio' && !memoPeaks(a.id)).slice(0, 12);
+    if (!need.length) return;
+    warmingFavArt = true;
+    try {
+      let got = false;
+      for (const a of need) {
+        if (!mounted) return;
+        if (await derivePeaks(host, a, a.id).catch(() => null)) got = true;
+      }
+      // One re-render for the whole batch: a strip that re-mounted per asset would
+      // restart its cover-flow animation a dozen times on a cold load.
+      if (got && mounted) mountFavStrip();
+    } finally {
+      warmingFavArt = false;
+    }
+  }
+
+  /**
+   * A favourited audio asset's strip art: its cover if it has one, else the generated
+   * waveform — the same look the grid shows, so a track is recognisable in both places.
+   *
+   * Synchronous by necessity (the strip builds its markup in one pass), so it draws from
+   * the peaks ALREADY cached in memory and falls back to the honest glyph otherwise. It
+   * never kicks off a decode: the strip can hold every favourite at once, and measuring
+   * them all because a row mounted is exactly the stampede the grid's laziness avoids.
+   */
+  function audioCardArt(ref: AssetRef): string {
+    const look = resolveAudioLook(ref.id, coverPool, coverMap);
+    const peaks = memoPeaks(ref.id);
+    const svg = peaks
+      ? audioThumbSvg(peaks, { shape: look.shape, label: String(ref.meta?.name ?? ref.id) })
+      : audioThumbPlaceholder({});
+    // The ink rides on a wrapper: the strip drops this string into its own tile, so a
+    // custom property on the SVG root is the only way to colour it from here.
+    return look.ink ? `<span class="cat-strip-art" style="color:${escape(look.ink.hex)}">${svg}</span>` : svg;
+  }
+
+  /** The loudest frame in the middle 80% — the same rule the audiogram's poster uses,
+   *  and for the same reason: a still of a track should not be its opening silence. */
+  function pickPoster(rms: Float32Array): number {
+    const lo = Math.floor(rms.length * 0.1), hi = Math.ceil(rms.length * 0.9);
+    let best = lo, bv = -1;
+    for (let i = lo; i < hi && i < rms.length; i++) if (rms[i]! > bv) { bv = rms[i]!; best = i; }
+    return best;
+  }
+
+  function audioElOf(dlg: HTMLElement): HTMLAudioElement | null {
+    return dlg.querySelector<HTMLAudioElement>('[data-audio-preview]');
+  }
+
+  function meterElOf(dlg: HTMLElement): HTMLCanvasElement | null {
+    return dlg.querySelector<HTMLCanvasElement>('[data-audio-meter]');
+  }
+
+  /** Pin (or clear) an asset's cover, then reflect it everywhere it shows. */
+  async function setAudioCover(id: string, cover: AudioCover | null, wave?: unknown): Promise<void> {
+    const base = assetBaseId(id);
+    if (cover) coverMap.set(base, cover); else coverMap.delete(base);
+    if (profile) await saveAudioCover(host, profile, id, cover);
+    // Any previous bake is now wrong — it was rendered for a different preset, or for a
+    // cover that no longer exists. Dropping it is cheaper than being subtly stale, and a
+    // needed bake re-renders in a second.
+    const { dropBakes, bakeCover, bakeKey, brandKeyFor, BAKE_SIZE } = await import('../lib/audio-cover-bake.ts');
+    await dropBakes(base).catch(() => {});
+    // A MilkDrop cover is the only kind that needs pixels, and it needs them NOW: the
+    // grid can only read a bake, never make one, so committing without rendering would
+    // leave the tile on its waveform forever.
+    const preset = vizPresetOf(cover);
+    if (preset && wave) {
+      const { renderVizFrame } = await import('../lib/audio-cover-viz.ts');
+      await bakeCover(bakeKey(base, preset, brandKeyFor(coverPool)), BAKE_SIZE, {
+        render: (el) => renderVizFrame(el, preset, coverPool, wave as never, BAKE_SIZE),
+      }).catch(() => null);
+    }
+    // Re-mount the grid's waveform upgrader so the new look lands on the tile
+    // immediately. It destroys and rebuilds, which is what a changed cover needs, and
+    // is cheap: peaks are already cached, so nothing re-decodes.
+    if (mounted) mountAudioThumbGrid();
   }
 
   // ── actions ──────────────────────────────────────────────────────────────────

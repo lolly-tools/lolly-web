@@ -53,6 +53,7 @@ import {
   musicPlayerBodyHtml, trackPickerHtml, wireMusicPlayerBody, refreshMusicPlayer,
 } from './music-player.ts';
 import { vizSupported } from '../lib/viz-support.ts';
+import { CYCLE_CHOICES, loadCycleSeconds, saveCycleSeconds } from '../lib/viz-cycle.ts';
 import { drawMeterBars, drawMeterBaseline } from '../lib/audio-meter.ts';
 import {
   BRAND_TINTS, loadStockPreset, readBrandTint, stockPresetIndex, writeBrandTint,
@@ -66,7 +67,6 @@ import { icon } from '../lib/icons.ts';
 import { escape } from '../utils.ts';
 
 const STYLE_ID = 'lolly-viz-overlay-styles';
-const CYCLE_KEY = 'lolly:vizCycle';
 const SCHEME_KEY = 'lolly:vizScheme';
 const MODE_KEY = 'lolly:vizMode';
 const PANEL_KEY = 'lolly:vizPanelBox';
@@ -86,15 +86,10 @@ function announcePanel(open: boolean): void {
 /** Vertical room the floating panel reserves for its player below the 4:3 canvas, so the
  *  default size shows a properly proportioned frame rather than a squashed one. */
 const PLAYER_ALLOWANCE = 150;
-/**
- * Auto-cycle intervals offered in the menu, in seconds. 5 is a restless slideshow, 40
- * lets a preset actually develop (several build over 10+ seconds of feedback), 20 sits
- * between. `0` means off and is rendered as its own choice rather than a separate
- * toggle — one row, four states, no ambiguity about what "on" currently means.
- */
-const CYCLE_CHOICES = [0, 5, 20, 40] as const;
+/** Auto-cycle intervals + the saved preference now live in lib/viz-cycle.ts, shared
+ *  with the catalog's audio details modal so the two surfaces cannot drift apart on
+ *  what "cycling" means or on what the user already chose. */
 /** The interval a fresh install starts on. */
-const CYCLE_DEFAULT = 40;
 /**
  * The visualizer is a full-screen takeover, so it sits at the very top of the
  * z-stack — the app's own chrome climbs to 100001 (the portalled popovers and the
@@ -319,27 +314,18 @@ function randomStartPresetId(): string {
 }
 
 /**
- * The saved cycle interval in seconds, 0 for off. Cycling is ON by default — the
- * visualizer is meant to be left running and one preset forever is the boring way to do
- * that — but reduced motion defaults to OFF, since swapping the whole scene on a timer
- * is itself motion.
+ * The saved cycle interval, delegated to lib/viz-cycle.ts.
  *
- * Migrates the previous boolean form ('1'/'0') so an existing preference isn't lost.
+ * The policy — which intervals exist, the reduced-motion default, and migrating the old
+ * boolean form — is shared with the catalog's audio details modal, so a rhythm chosen in
+ * one place is honoured in the other and neither can drift. Only the '0' fast path stays
+ * local: the shared loader already returns 0 for it via the choices check.
  */
 function readCyclePref(): number {
-  try {
-    const saved = localStorage.getItem(CYCLE_KEY);
-    if (saved === '1') return CYCLE_DEFAULT;
-    if (saved === '0') return 0;
-    if (saved !== null) {
-      const n = Number(saved);
-      if (CYCLE_CHOICES.includes(n as (typeof CYCLE_CHOICES)[number])) return n;
-    }
-  } catch { /* private mode — fall through to the default */ }
-  return reducedMotion ? 0 : CYCLE_DEFAULT;
+  return loadCycleSeconds();
 }
 function writeCyclePref(seconds: number): void {
-  try { localStorage.setItem(CYCLE_KEY, String(seconds)); } catch { /* best-effort */ }
+  saveCycleSeconds(seconds);
 }
 
 const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;

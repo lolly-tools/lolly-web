@@ -12,6 +12,8 @@
  *                     asset (today: timeline scrub proxies, lib/clip-proxy.ts)
  *   - audio-peaks   — DERIVED overview waveforms for audio assets, ~128 bytes
  *                     each (lib/audio-peaks.ts)
+ *   - audio-cover-bakes — DERIVED MilkDrop cover images, keyed by
+ *                     (asset|preset|brand) (lib/audio-cover-bake.ts)
  *
  * Why IndexedDB over localStorage: blobs (images), no 5MB ceiling, structured
  * queries. The capability bridge hides this from tools — they call
@@ -22,7 +24,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 9;
+const DB_VERSION = 10;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -138,6 +140,18 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // part of the portable backup (it is recomputable from the audio itself,
         // which IS backed up).
         db.createObjectStore('audio-peaks', { keyPath: 'id' });
+      }
+      if (oldVersion < 10) {
+        // Baked MilkDrop cover art. The ONLY cover kind that stores pixels, and only
+        // because a live visualiser needs a WebGL2 context — browsers cap those at ~16
+        // and drop the oldest, so a grid cannot mount one per tile. The user's stored
+        // cover is still the PRESET ID; these bytes are a cache keyed by
+        // (asset|preset|brand), so a rebrand simply misses and re-bakes, which is how a
+        // MilkDrop cover re-skins without the recipe changing.
+        // Derived and evictable like 'audio-peaks': absent from REQUIRED_STORES so a
+        // missing store can never escalate into wiping real data, and out of the
+        // portable backup since it is recomputable from the recipe.
+        db.createObjectStore('audio-cover-bakes', { keyPath: 'key' });
       }
     },
     blocking() {

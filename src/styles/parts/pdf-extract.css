@@ -11,17 +11,19 @@
    spanning a 27" display. */
 
 .pdfx-view { overflow-y: auto; }
-.pdfx-view .tools-home,
-.pdfx-view {
-  width: 100%;
-  margin: 0 auto;
+.pdfx-view .platform-layout {
+  /* A reading column, not a dashboard: this page is mostly recovered prose, and
+     the asset grids are happy at the same measure. Narrower than the verify
+     report, which has to fit several boxed sections side by side. */
+  width: 100%; max-width: min(1080px, 94vw); margin: 0 auto;
+  padding: 3.25rem 1.25rem 5rem; /* top clears the fixed back pill */
 }
 
 /* ─── drop zone ─────────────────────────────────────────────────────────────── */
 
 .pdfx-drop {
   display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
-  width: min(720px, 92vw); margin: 2rem auto;
+  width: 100%; margin: 2rem auto;
   padding: 2.5rem 1.5rem;
   /* Dashed is reserved app-wide for drop targets — this is one, so it earns it. */
   border: 2px dashed var(--line, currentColor);
@@ -46,7 +48,7 @@
 .pdfx-busy,
 .pdfx-error,
 .pdfx-note {
-  width: min(720px, 92vw); margin: 1rem auto; text-align: center;
+  width: 100%; margin: 1rem auto; text-align: center;
 }
 .pdfx-error { color: var(--danger, #b3261e); }
 .pdfx-note {
@@ -59,10 +61,12 @@
 
 /* ─── action bar ────────────────────────────────────────────────────────────── */
 
-.pdfx-result { width: min(900px, 94vw); margin: 0 auto; padding-bottom: 5rem; }
+.pdfx-result { width: 100%; margin: 0 auto; padding-bottom: 2rem; }
 
 .pdfx-bar {
-  position: sticky; top: 0; z-index: 2;
+  /* Clears the FIXED back pill, whose bottom edge sits at 62px. At top:0 the
+     bar sticks UNDER the pill and its first button is permanently unclickable. */
+  position: sticky; top: 4.5rem; z-index: 2;
   display: flex; flex-wrap: wrap; gap: 0.75rem 1rem;
   align-items: center; justify-content: space-between;
   padding: 0.85rem 0;
@@ -130,9 +134,82 @@
   border-bottom-color: var(--brand-primary, currentColor);
   font-weight: 600;
 }
-/* One tab is not a choice — hide the strip until a second extraction pass lands
-   and it becomes navigation rather than decoration. */
+/* One tab is not a choice. A text-only document therefore shows no strip at all
+   rather than a lone decorative "Text" button. */
 .pdfx-tabs:has(.pdfx-tab:only-child) { display: none; }
+
+/* ─── images ────────────────────────────────────────────────────────────────── */
+
+.pdfx-assets {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  margin-top: 1rem;
+}
+.pdfx-asset {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  margin: 0; padding: 0.6rem;
+  border: 1px solid var(--line, currentColor);
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface-2, transparent);
+}
+.pdfx-asset-art {
+  display: grid; place-items: center;
+  aspect-ratio: 4 / 3; overflow: hidden;
+  border-radius: var(--radius-sm, 6px);
+  /* A checkerboard, so a transparent PNG and a white one are distinguishable —
+     "is this asset transparent?" is the first thing you ask of an extracted logo. */
+  background-image:
+    linear-gradient(45deg, var(--line, #8884) 25%, transparent 25%, transparent 75%, var(--line, #8884) 75%),
+    linear-gradient(45deg, var(--line, #8884) 25%, transparent 25%, transparent 75%, var(--line, #8884) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+.pdfx-asset-art img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.pdfx-asset-meta { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.pdfx-asset-name { font-size: 0.85rem; font-weight: 600; }
+.pdfx-asset-sub { font-size: 0.75rem; opacity: 0.7; overflow-wrap: anywhere; }
+.pdfx-asset-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: auto; }
+
+/* ─── fonts ─────────────────────────────────────────────────────────────────── */
+
+.pdfx-fonts,
+.pdfx-atts { margin: 1rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.6rem; }
+
+.pdfx-font {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line, currentColor);
+  border-radius: var(--radius-md, 10px);
+}
+.pdfx-font-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.pdfx-font-name { font-weight: 600; }
+.pdfx-font-sub { font-size: 0.8rem; opacity: 0.7; }
+.pdfx-font-save { margin-inline-start: auto; }
+/* The caveats are the honest half of this panel, so they are readable body text
+   rather than fine print hidden behind a tooltip. */
+.pdfx-font-caveat { margin: 0.5rem 0 0; font-size: 0.83rem; line-height: 1.5; opacity: 0.8; }
+
+.pdfx-tag {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-2, transparent);
+  font-size: 0.7rem; letter-spacing: 0.03em; text-transform: uppercase;
+}
+.pdfx-tag--warn {
+  background: color-mix(in oklab, var(--warn, #b26a00) 22%, transparent);
+}
+
+/* ─── attachments ───────────────────────────────────────────────────────────── */
+
+.pdfx-att {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line, currentColor);
+  border-radius: var(--radius-md, 10px);
+}
+.pdfx-att-icon { flex: none; opacity: 0.6; }
+.pdfx-att-name { font-weight: 600; overflow-wrap: anywhere; }
+.pdfx-att-sub { font-size: 0.8rem; opacity: 0.7; }
+.pdfx-att .btn { margin-inline-start: auto; }
 
 /* ─── pages ─────────────────────────────────────────────────────────────────── */
 

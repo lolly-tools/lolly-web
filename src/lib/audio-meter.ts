@@ -53,9 +53,25 @@ let previewCtx: AudioContext | null = null;
  * a MediaElementSource is CORS-tainted and outputs SILENCE — worse than no meter —
  * so those get the plain element (the canvas hides itself).
  */
-export function attachAudioMeter(canvas: HTMLCanvasElement, audioEl: HTMLAudioElement): () => void {
+export interface MeterHandle {
+  /** Tear down the meter and release its listeners. */
+  (): void;
+  /**
+   * The live AnalyserNode, once the graph exists (first play), else null.
+   *
+   * Exposed because an element can only ever produce ONE MediaElementSource and can
+   * never lose it — so anything else that wants this element's audio (the MilkDrop
+   * visualiser in the catalog's details modal) MUST share this node rather than build a
+   * second source, which would throw and leave the preview silent.
+   */
+  analyser(): AnalyserNode | null;
+  /** The shared preview AudioContext, which butterchurn needs alongside the node. */
+  context(): BaseAudioContext | null;
+}
+
+export function attachAudioMeter(canvas: HTMLCanvasElement, audioEl: HTMLAudioElement): MeterHandle {
   const c2d = canvas.getContext('2d');
-  if (!c2d) return () => { /* nothing attached */ };
+  if (!c2d) return Object.assign(() => { /* nothing attached */ }, { analyser: () => null, context: () => null });
   const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   let analyser: AnalyserNode | null = null;
   let source: MediaElementAudioSourceNode | null = null;
@@ -121,9 +137,15 @@ export function attachAudioMeter(canvas: HTMLCanvasElement, audioEl: HTMLAudioEl
   };
   audioEl.addEventListener('play', onPlay);
 
-  return () => {
-    disposed = true;
-    audioEl.removeEventListener('play', onPlay);
-    try { source?.disconnect(); analyser?.disconnect(); } catch { /* already torn down */ }
-  };
+  return Object.assign(
+    () => {
+      disposed = true;
+      audioEl.removeEventListener('play', onPlay);
+      try { source?.disconnect(); analyser?.disconnect(); } catch { /* already torn down */ }
+    },
+    {
+      analyser: () => analyser,
+      context: () => (analyser ? previewCtx : null),
+    },
+  );
 }

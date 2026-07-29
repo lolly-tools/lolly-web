@@ -279,6 +279,18 @@ export function resetPeaksCache(): void {
  * can call it for every visible tile and get either an instant waveform or an
  * instant "draw the glyph". Never throws.
  */
+/**
+ * Peaks already in memory for this session, or null — SYNCHRONOUS.
+ *
+ * For a caller that must build markup in one pass and cannot await, like the favourites
+ * strip. Deliberately does not touch IndexedDB and never starts a decode: a surface that
+ * can hold every favourite at once must not measure them all because it mounted. A miss
+ * simply means "draw the glyph", and the ordinary lazy path fills the memo soon after.
+ */
+export function memoPeaks(assetId: string): Float32Array | null {
+  return memo.get(assetId)?.peaks ?? null;
+}
+
 export async function cachedPeaks(assetId: string, want = ''): Promise<PeaksResult | null> {
   if (!assetId) return null;
   const hit = memo.get(assetId);

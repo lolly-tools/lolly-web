@@ -19,7 +19,8 @@
  * a fixed layout.
  */
 
-import { colorToHex, TOKEN_EXT } from '@lolly/engine';
+import { colorToHex, TOKEN_EXT, readFaces, writeFace } from '@lolly/engine';
+import type { StoredFace } from '@lolly/engine';
 import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
 // The exclusion READ lives in a leaf module so the boot-path tokens bridge can
 // filter excluded swatches without importing this (engine-barrel-heavy) file;
@@ -256,6 +257,43 @@ export function primaryAnchorPath(doc: unknown): string[] | null {
  *  neither is set. */
 export function getSwatchPrintOverride(doc: unknown, path: string[]): PrintLock | null {
   return readPrintLock(leafAt(doc, path));
+}
+
+// ── Per-space faces (the generalisation of the print lock) ───────────────────
+// A swatch's overrides for every space and press it can be expressed in, keyed
+// by target id (`gamutSourceId`: a CSS space name, or `icc:<digest>:<intent>`).
+// The shape, the read/write and the rules live in the engine (color-faces.ts)
+// so the export walkers can consult them; these two are just the doc plumbing.
+//
+// Deliberately NOT a migration of `cmyk`/`spot`. Those are a shipped contract
+// that brand packs in the wild already carry and that `tokens.colors()` already
+// surfaces, so rewriting them on read would churn every pack the moment it was
+// opened. They coexist: a CMYK build set through the print lock stays where it
+// is, and a face is what a target-specific override becomes from here.
+
+/** The swatch at `path`'s per-target overrides. Empty when it has none. */
+export function getSwatchFaces(doc: unknown, path: string[]): Map<string, StoredFace> {
+  const leaf = leafAt(doc, path);
+  const ext = leaf && isRec(leaf.$extensions) ? (leaf.$extensions as Rec)[TOKEN_EXT] : null;
+  return readFaces(ext);
+}
+
+/** Set (or clear, with null) one target's override on the swatch at `path`. */
+export function setSwatchFace(
+  doc: unknown, path: string[], target: string, face: StoredFace | null,
+): boolean {
+  const leaf = leafAt(doc, path);
+  if (!leaf) return false;
+  if (face === null) {
+    const ext = isRec(leaf.$extensions) ? (leaf.$extensions as Rec) : null;
+    const ns = ext && isRec(ext[TOKEN_EXT]) ? (ext[TOKEN_EXT] as Rec) : null;
+    if (ns) { writeFace(ns as Record<string, unknown>, target, null); cleanupExt(leaf); }
+    return true;
+  }
+  const ext = (isRec(leaf.$extensions) ? leaf.$extensions : (leaf.$extensions = {} as Rec)) as Rec;
+  const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
+  writeFace(ns as Record<string, unknown>, target, face);
+  return true;
 }
 
 /** Deletes the vendor extension entry once both `cmyk` and `spot` are gone,
