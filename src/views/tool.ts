@@ -49,6 +49,7 @@ import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { setupMobileSheet, flickDirection } from '../lib/mobile-sheet.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
+import { createShutter } from '../lib/shutter.ts';
 import { exportSizeDriver } from './export-size.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { createNetAPI } from '../bridge/net.ts';
@@ -985,51 +986,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   viewEl.querySelector('#capture-hint-dismiss')
     ?.addEventListener('click', () => viewEl.querySelector('#capture-hint-notice')?.remove());
 
-  // Export shutter: a camera-iris that closes over the whole stage so the brief
-  // full-res resize during export (the "shake") is never seen, then opens.
-  const SHUTTER_FLAPS = 6;
-  let shutterEl: HTMLDivElement | null = null;
-  if (stageEl) {
-    shutterEl = document.createElement('div');
-    shutterEl.className = 'export-shutter';
-    shutterEl.setAttribute('aria-hidden', 'true');
-    shutterEl.innerHTML = Array.from({ length: SHUTTER_FLAPS },
-      (_, i) => `<span class="flap" style="--i:${i}"></span>`).join('');
-    stageEl.appendChild(shutterEl);
-  }
-  const SHUTTER_MS = 430; // ≥ the .flap transition (0.42s) so it's fully closed/open
-  const shutterFullscreen = (): boolean => window.matchMedia('(max-width: 640px)').matches;
-  function closeShutter(): Promise<void> {
-    if (!shutterEl) return Promise.resolve();
-    // Mobile: lift the shutter out of the stage so it covers the WHOLE screen —
-    // over the sidebar sheet and export controls — for a more engaging capture.
-    // (An ancestor's backdrop-filter is a fixed-positioning containing block, so
-    // moving to <body> is what actually reaches the viewport.) Desktop: unchanged,
-    // the shutter stays scoped to the stage.
-    if (shutterFullscreen()) {
-      document.body.appendChild(shutterEl);
-      shutterEl.classList.add('export-shutter--fullscreen');
-    }
-    shutterEl.classList.add('is-active');
-    void shutterEl.offsetWidth;          // reflow so the transition starts from "open"
-    shutterEl.classList.add('is-closed');
-    playSfx('shutter');                  // the satisfying ka-chunk, synced to the iris closing
-    return new Promise(r => setTimeout(r, SHUTTER_MS));
-  }
-  function openShutter(): void {
-    if (!shutterEl) return;
-    shutterEl.classList.remove('is-closed');                          // sweep back out
-    setTimeout(() => {
-      shutterEl!.classList.remove('is-active');                       // then unmount
-      if (shutterEl!.classList.contains('export-shutter--fullscreen')) {
-        shutterEl!.classList.remove('export-shutter--fullscreen');
-        stageEl?.appendChild(shutterEl!);                             // back into the stage
-      }
-    }, SHUTTER_MS);
-  }
+  // Export shutter: a canvas camera-iris that closes over the whole stage so the
+  // brief full-res resize during export (the "shake") is never seen, then opens.
+  // The mechanism, tuning and frame budget live in lib/shutter.ts.
+  const shutter = createShutter(stageEl);
+  const closeShutter = (): Promise<void> => shutter.close();
+  const openShutter = (): void => shutter.open();
   // Standalone visual (no export gating) — used by Copy, whose clipboard write
   // must stay in the user-gesture context, so we can't await the shutter first.
-  function playShutter(): void { closeShutter().then(openShutter); }
+  function playShutter(): void { shutter.play(); }
   const actionsEl  = viewEl.querySelector<PanelEl>('#tool-actions');
   const sidebarEl  = viewEl.querySelector<HTMLElement>('#tool-sidebar');
 
@@ -1458,7 +1423,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     lottieModule?.destroyLottiePlayers(); // else animationManager ticks detached trees
     videoModule?.destroyVideoPlayers();   // drop remembered <video> positions
     vizModule?.destroyToolViz();          // else a WebGL2 context stays pinned per visited tool
-    styleEl.remove(); shutterEl?.remove(); ro.disconnect(); stageZoom?.destroy(); exportTeardown?.();
+    styleEl.remove(); shutter.destroy(); ro.disconnect(); stageZoom?.destroy(); exportTeardown?.();
     filmstrip?.destroy();
     window.removeEventListener('keydown', onHistoryKey);
     clearTimeout(historyToastTimer); historyToastEl?.remove();

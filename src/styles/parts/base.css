@@ -66,10 +66,11 @@
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
   }
-  /* The export shutter sweeps via a transition (not an animation), so the rule
-     above doesn't reach it. Cover/uncover instantly for reduced motion — it still
-     hides the export "shake"; the JS waits on a timer, not transitionend. */
-  .export-shutter .flap { transition: none !important; }
+  /* The export shutter is painted on canvas, so neither the rule above nor a
+     CSS override reaches it — lib/shutter.ts checks prefers-reduced-motion
+     itself and jumps straight to sealed. It still hides the export "shake".
+     This only has to stop the closed-flash from pulsing. */
+  .export-shutter__flash.is-on { animation: none !important; }
 }
 
 /* ─── Reset / base ──────────────────────────────────────────────────────── */
