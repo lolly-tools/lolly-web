@@ -29,7 +29,7 @@ import { t } from '../i18n.ts';
 import { viewToggle, type ViewToggleKey } from './view-toggle.ts';
 import { langFabHtml, attachLangMenu } from './lang-menu.ts';
 import { attachProfileMenu } from './profile-menu.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 export interface ViewTopbarProfile {
   firstname?: string;

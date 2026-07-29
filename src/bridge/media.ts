@@ -17,7 +17,7 @@
  *     balanced by a stop().
  */
 
-import type { MediaAPI, MediaFrame } from '../../../../engine/src/bridge/host-v1.ts';
+import type { MediaAPI, MediaFrame } from '@lolly-tools/core/host-v1';
 
 type FrameCallback = (frame: MediaFrame) => void;
 

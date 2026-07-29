@@ -7,7 +7,7 @@
  * The WASM loads on first call; subsequent calls are synchronous from cache.
  */
 
-import type { TextAPI } from '../../../../engine/src/bridge/host-v1.ts';
+import type { TextAPI } from '@lolly-tools/core/host-v1';
 import type { Blob as HbBlob, Face as HbFace, Font as HbFont, Feature as HbFeature } from 'harfbuzzjs';
 
 type HarfBuzzModule = typeof import('harfbuzzjs');

@@ -10,7 +10,7 @@
 
 import { stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
 import { sessionVersionStamp, migrateSessionRecord } from '../../../../engine/src/session-record.ts';
-import type { StateAPI, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
+import type { StateAPI, StateEntry } from '@lolly-tools/core/host-v1';
 
 /** The saved payload: input values plus the runtime's `__`-prefixed markers. */
 export interface SavedStateData {

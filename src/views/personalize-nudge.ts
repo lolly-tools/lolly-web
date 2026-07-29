@@ -16,7 +16,7 @@
  *   - pinned top-right so it never meets the bottom-pinned privacy strip.
  */
 
-import type { Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { Profile } from '@lolly-tools/core/host-v1';
 
 /** The slice of the host this module writes through — the web shell's profile
  *  setter (host.profile.set, not on the tool-facing ProfileAPI). */

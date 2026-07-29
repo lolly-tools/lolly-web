@@ -30,7 +30,7 @@
 
 import { createTokenSet, aliasPath } from '../../../../engine/src/tokens.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
-import type { TokensAPI, TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
+import type { TokensAPI, TokenSet } from '@lolly-tools/core/host-v1';
 // The exclusion read lives in its own leaf module (not lib/brand-doc.ts, whose
 // engine-barrel import would drag studio code into this bridge's boot graph).
 import { getExcludedSwatches } from '../lib/brand-exclusions.ts';

@@ -21,7 +21,7 @@
  */
 
 import { parseSvgPath, parseColorToSrgb8 } from '@lolly/engine';
-import type { HostV1, TextPathResult } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, TextPathResult } from '@lolly-tools/core/host-v1';
 import type { PathSegment } from '../../../../engine/src/svg-path.ts';
 import type { VectorPathPrim, VectorImagePrim, VectorPrim, Rgb } from '../../../../engine/src/emf.ts';
 import { gaussianShadowRings } from '../../../../engine/src/css-box.ts';

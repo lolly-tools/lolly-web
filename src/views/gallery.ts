@@ -47,7 +47,7 @@ import { announce } from '../a11y.ts';
 import { playSfx, playGalleryAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { sessionRow } from '../folder-tiles.ts';
 
-import type { HostV1, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, StateEntry } from '@lolly-tools/core/host-v1';
 import { toolSeedHref } from '../lib/seed-url.ts';
 import type { WebStateAPI } from '../bridge/state.ts';
 import type { WebProfileAPI } from '../bridge/profile.ts';

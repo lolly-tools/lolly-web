@@ -18,7 +18,7 @@
  */
 
 import { stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
-import type { HostV1, Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, Profile } from '@lolly-tools/core/host-v1';
 
 type FavHost = HostV1 & { profile: { set(p: Profile): Promise<unknown> } };
 

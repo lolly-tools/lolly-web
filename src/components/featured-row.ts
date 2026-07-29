@@ -29,7 +29,7 @@ import { toolSeedHref } from '../lib/seed-url.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { currentTheme } from '../theme.ts';
 import { icon } from '../lib/icons.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { PreviewsAPI } from '../bridge/previews.ts';
 
 export interface FeaturedVariant {

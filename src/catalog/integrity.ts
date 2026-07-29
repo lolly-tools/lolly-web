@@ -27,7 +27,12 @@ declare global {
   }
 }
 
-const PINNED_KEY: string = import.meta.env.VITE_CATALOG_PUBLIC_KEY_JWK ?? '';
+// Optional-chained on `env`, not just the var: under plain Node (the test
+// runner imports this module via tool-loader.ts → picker.ts) `import.meta.env`
+// itself is undefined and the bare read throws at module scope, killing every
+// test file whose import graph touches the picker. Vite statically replaces
+// `import.meta.env.VITE_*` either way, so the built app still gets the pin.
+const PINNED_KEY: string = import.meta.env?.VITE_CATALOG_PUBLIC_KEY_JWK ?? '';
 
 let cached: Promise<ToolIntegrityOpts | null> | null = null;
 

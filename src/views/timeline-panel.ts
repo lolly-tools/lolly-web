@@ -58,7 +58,7 @@ import {
   snapTime, splitBox, trimClip,
   type Box, type MediaDurFn, type TimeCfg,
 } from './timeline-math.ts';
-import type { AssetRef, AudioLevel, RecorderAPI, RecordSession } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AssetRef, AudioLevel, RecorderAPI, RecordSession } from '@lolly-tools/core/host-v1';
 import { isTypingTarget } from '../lib/typing-target.ts';
 import '../styles/parts/timeline.css';
 

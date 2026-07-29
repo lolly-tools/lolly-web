@@ -2,7 +2,7 @@
 /**
  * ClipboardAPI — text and image clipboard ops with graceful fallback.
  */
-import type { ClipboardAPI } from '../../../../engine/src/bridge/host-v1.ts';
+import type { ClipboardAPI } from '@lolly-tools/core/host-v1';
 
 // Download extension for an image MIME. A bare `type.split('/')[1]` yields
 // "svg+xml" for SVG (→ a broken "image.svg+xml" name); map the common types and

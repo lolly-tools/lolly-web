@@ -95,6 +95,7 @@
 .pro-addrow .pro-btn,                             /* pro/pro.css */
 .me-primary,                                      /* multi-edit.css */
 .cat-act-fav.is-fav,                              /* catalog.css */
+.cat-tp-btn.cat-tp-play,                          /* catalog.css — audio transport play/pause */
 .view-seg-btn[aria-pressed="true"],               /* gallery.css — canonical segmented control */
 .gallery-pill.active,                             /* gallery.css — category/sort pill */
 .plat-pill,                                       /* platform.css — inline qualifier badge */

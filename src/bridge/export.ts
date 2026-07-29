@@ -57,7 +57,7 @@ import { chromePaintsOverLive, countToolMutations, createStaticChromeGuard, stat
 export { videoSupport, cmykTiffSupport, tiffSupport } from './format-support.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
 import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from '../../../../engine/src/pptx.ts';
-import type { HostV1, ExportMeta, IngredientCredential } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, ExportMeta, IngredientCredential } from '@lolly-tools/core/host-v1';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
 import type { PrintGeometry, LabelSlot } from '../../../../engine/src/print-marks.ts';
 import type { Dimension } from '../../../../engine/src/units.ts';

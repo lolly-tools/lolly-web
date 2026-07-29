@@ -11,7 +11,7 @@
  * Tools whose needs aren't met are surfaced as "desktop only" rather than mounted
  * into a state where their core action throws.
  */
-import type { Capability } from '../../../engine/src/bridge/host-v1.ts';
+import type { Capability } from '@lolly-tools/core/host-v1';
 
 const CAPABILITY_LABELS: Record<Capability, string> = {
   capture: 'page capture',

@@ -14,7 +14,7 @@
  * headless CLI render) means the tool draws its ordinary canvas style, never that it
  * refuses to render.
  */
-import type { VizAPI, VizPresetInfo } from '../../../../engine/src/bridge/host-v1.ts';
+import type { VizAPI, VizPresetInfo } from '@lolly-tools/core/host-v1';
 import { vizSupported } from '../lib/viz-support.ts';
 
 export type { VizAPI, VizPresetInfo };

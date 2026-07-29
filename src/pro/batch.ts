@@ -12,7 +12,7 @@
  */
 import { renderRowToBlob, getTool, isExportable } from './render-export.ts';
 import { playSfx } from '../lib/sfx.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 /** A batch row with the per-row export overrides the grid / CSV can set. */
 export interface BatchRow {

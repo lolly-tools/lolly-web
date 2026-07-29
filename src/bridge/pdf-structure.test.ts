@@ -16,7 +16,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scanPdfStructure } from './pdf-structure.ts';
-import type { PdfFinding } from '../../../../engine/src/bridge/host-v1.ts';
+import type { PdfFinding } from '@lolly-tools/core/host-v1';
 
 // ─── harness ──────────────────────────────────────────────────────────────────
 

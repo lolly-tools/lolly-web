@@ -12,7 +12,7 @@
  */
 
 import { stripAssetModifiers } from '../../../../engine/src/photo-treatment.ts';
-import type { AssetRef, HostV1, Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AssetRef, HostV1, Profile } from '@lolly-tools/core/host-v1';
 
 /** One display group; may declare tag-matched `sub` groups (rendered as nested
  *  collapsible sections). Currently unused — headshots are a top-level group — but

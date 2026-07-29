@@ -33,7 +33,7 @@
 // static import would drag the whole render engine onto the render-blocking boot chunk.
 // Regenerating personalized previews is deferred post-paint work, so it loads then.
 import { rasterToThumbnailDataUrl } from './lib/raster-thumb.ts';
-import type { HostV1, Profile } from '../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, Profile } from '@lolly-tools/core/host-v1';
 
 /** The slice of a catalog index entry this module reads. */
 export interface PersonalizableToolEntry {

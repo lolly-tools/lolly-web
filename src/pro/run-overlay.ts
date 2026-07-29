@@ -20,7 +20,7 @@ import { buildZip, saveBlob, saveSequential } from './zip.ts';
 import { QUIPS, quipLines } from './quips.ts';
 import type { BatchRow, BatchFile, BatchResult } from './batch.ts';
 import type { ZipTier } from '@lolly/engine';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 /** Profile fields the zip credit block uses. */
 interface BatchAuthor {

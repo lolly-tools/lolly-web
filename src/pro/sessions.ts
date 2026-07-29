@@ -16,7 +16,7 @@
  */
 import { getTool, isExportable } from './render-export.ts';
 import { BATCH_SLOT_PREFIX, isBatchSlot } from '../lib/batch-slots.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 

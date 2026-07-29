@@ -38,7 +38,7 @@ import { unzipAsync } from '../lib/zip.ts';
 // (fzstd — pure JS, by the fflate author). kiwi-schema is Evan Wallace's official decoder.
 import { decodeBinarySchema, compileSchema } from 'kiwi-schema';
 import { Decompress as ZstdDecompress } from 'fzstd';
-import type { HostV1, AssetRef } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, AssetRef } from '@lolly-tools/core/host-v1';
 
 // A 2-D affine matrix (a,b,c,d,e,f), as read from getCTM / rebuilt for flatten transforms.
 interface Matrix { a: number; b: number; c: number; d: number; e: number; f: number; }

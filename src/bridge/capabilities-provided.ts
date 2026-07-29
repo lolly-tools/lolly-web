@@ -9,7 +9,7 @@
  * bridge-overrides (e.g. the Tauri desktop shell adds 'capture' and 'filesystem')
  * so the SAME gallery/tool code gates the right tools per shell.
  */
-import type { Capability } from '../../../../engine/src/bridge/host-v1.ts';
+import type { Capability } from '@lolly-tools/core/host-v1';
 
 // 'screen' is listed unconditionally rather than feature-detected here: this module is a
 // static declaration read at boot, and getDisplayMedia's absence (an insecure context, an

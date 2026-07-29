@@ -179,6 +179,10 @@
   padding: 8px 10px; border-radius: 8px; cursor: pointer;
 }
 .fc-pop-item:hover:not(:disabled) { background: hsl(var(--muted)); }
+/* Radio rows (the pen's spline type): the current one reads as chosen, not merely hovered,
+   so it stays legible while the pointer is somewhere else in the list. */
+.fc-pop-item.is-on { color: hsl(var(--primary)); font-weight: 600; }
+.fc-pop-item.is-on::after { content: ''; margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .fc-pop-item:disabled,
 .fc-pop-gitem:disabled{ opacity: 0.38; cursor: default; }
 .fc-pop-item.fc-pop-danger:hover:not(:disabled),

@@ -422,6 +422,93 @@ export function moveNodes(p: AuthoredPath, indices: Iterable<number>, dx: number
   };
 }
 
+/** Which edge of the selection's own bounding box `alignNodes` snaps to. Deliberately the
+ *  same six names the box-level `AlignEdge` uses, so one menu can drive either. */
+export type NodeAlignEdge = 'left' | 'hcentre' | 'right' | 'top' | 'vcentre' | 'bottom';
+
+/** The selection's bounding box, over node POSITIONS only. Handles are excluded on
+ *  purpose: a handle is a tangent, not a point the user placed, so letting one stretch the
+ *  reference box would make "align left" depend on curvature. */
+function nodesAABB(nodes: SplineNode[], idx: number[]): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  if (!idx.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const i of idx) {
+    const n = nodes[i]!;
+    if (n.x < minX) minX = n.x;
+    if (n.x > maxX) maxX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.y > maxY) maxY = n.y;
+  }
+  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+}
+
+/** The selected indices, deduplicated, in range, and in path order. */
+function selIdx(p: AuthoredPath, indices: Iterable<number>): number[] {
+  return [...new Set(indices)].filter((i) => Number.isInteger(i) && i >= 0 && i < p.nodes.length).sort((a, b) => a - b);
+}
+
+/**
+ * Align the selected nodes to an edge of THEIR OWN bounding box.
+ *
+ * Nodes have no size, so unlike boxes there is no edge-versus-centre distinction to get
+ * wrong: "align left" is exactly "give them all the selection's minimum x". Handles are
+ * offsets and ride along untouched, which is the point — straightening a row of points
+ * must not also flatten the curves passing through them.
+ *
+ * The reference is the SELECTION's box, never the whole path's and never the canvas's.
+ * Aligning two points should move at most one of them, and a reference the user did not
+ * select is how an align becomes a surprise.
+ */
+export function alignNodes(p: AuthoredPath, indices: Iterable<number>, edge: NodeAlignEdge): AuthoredPath {
+  const idx = selIdx(p, indices);
+  const ref = idx.length >= 2 ? nodesAABB(p.nodes, idx) : null;
+  if (!ref) return p;
+  const set = new Set(idx);
+  return {
+    ...p,
+    nodes: p.nodes.map((n, k) => {
+      if (!set.has(k)) return n;
+      switch (edge) {
+        case 'left': return { ...n, x: ref.minX };
+        case 'right': return { ...n, x: ref.maxX };
+        case 'hcentre': return { ...n, x: (ref.minX + ref.maxX) / 2 };
+        case 'top': return { ...n, y: ref.minY };
+        case 'bottom': return { ...n, y: ref.maxY };
+        case 'vcentre': return { ...n, y: (ref.minY + ref.maxY) / 2 };
+        default: return n;
+      }
+    }),
+  };
+}
+
+/**
+ * Space the selected nodes evenly along an axis, holding the two extremes still.
+ *
+ * Equal SPACING rather than equal gaps, because a point has no width and the two are the
+ * same thing for points — which is why this needs no AABB per item the way
+ * `distributeBoxes` does. Ordering is by coordinate, NOT by index: the nodes a user rubber-
+ * bands across a traced outline are rarely consecutive along the path, and distributing
+ * them in path order would shuffle them past each other.
+ */
+export function distributeNodes(p: AuthoredPath, indices: Iterable<number>, axis: 'h' | 'v'): AuthoredPath {
+  const idx = selIdx(p, indices);
+  if (idx.length < 3) return p;
+  const co = (i: number): number => (axis === 'h' ? p.nodes[i]!.x : p.nodes[i]!.y);
+  const order = idx.slice().sort((a, b) => co(a) - co(b) || a - b);
+  const first = co(order[0]!), last = co(order[order.length - 1]!);
+  const step = (last - first) / (order.length - 1);
+  const target = new Map<number, number>();
+  order.forEach((i, k) => target.set(i, first + step * k));
+  return {
+    ...p,
+    nodes: p.nodes.map((n, k) => {
+      const v = target.get(k);
+      if (v === undefined) return n;
+      return axis === 'h' ? { ...n, x: v } : { ...n, y: v };
+    }),
+  };
+}
+
 /**
  * Point one of node `i`'s handles at an absolute position, then re-apply the node's
  * continuity constraint.

@@ -25,6 +25,7 @@
  */
 
 import { escape } from '../utils.ts';
+import { audioTransportHtml, wireAudioTransport } from '../lib/audio-transport.ts';
 import type { VizHandle } from '../lib/butterchurn-viz.ts';
 import { t } from '../i18n.ts';
 import { genAiPill, assetAiKind, GENAI_CLAIM } from '../lib/genai-pill.ts';
@@ -88,7 +89,7 @@ import {
 import { setPendingVerify } from '../lib/verify-handoff.ts';
 import { lollyBadge } from '../lib/lolly-badge.ts';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
-import type { AssetRef, HostV1, IngredientCredential, Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AssetRef, HostV1, IngredientCredential, Profile } from '@lolly-tools/core/host-v1';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 
@@ -819,7 +820,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           + `<canvas class="cat-audio-meter" data-audio-meter width="640" height="160" role="button" tabindex="0" aria-label="${escape(t('Switch visualisation'))}"></canvas>`
           + `<div class="cat-audio-viz" data-audio-viz hidden></div>`
           + `<div class="cat-stage-bar">`
-            + `<audio ${srcAttr} controls preload="metadata" data-audio-preview></audio>`
+            // The element is the PLAYBACK ENGINE, not the UI: the meter and the visualiser
+            // both tap it, and an element yields only one MediaElementSource ever, so it
+            // stays exactly where it is. Only its native chrome goes — see lib/audio-transport.
+            + `<audio ${srcAttr} preload="metadata" data-audio-preview></audio>`
+            + audioTransportHtml({
+              play: t('Play'), pause: t('Pause'), seek: t('Seek'),
+              mute: t('Mute'), unmute: t('Unmute'), volume: t('Volume'),
+            })
             // The look controls only exist once you have escalated — before that the bar
             // is just a player, which is all an asset you are auditioning needs.
             // Two dials, deliberately separate: PRESET (the form) and COLOUR (the paint).
@@ -1378,6 +1386,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   /** The details modal's meter handle — its dispose, plus accessors for the AnalyserNode
    *  and context the MilkDrop preview must SHARE (one MediaElementSource per element). */
   let detailsMeterDispose: import('../lib/audio-meter.ts').MeterHandle | null = null;
+  /** The themed transport driving the preview's <audio> — disposed with the modal. */
+  let detailsTransport: import('../lib/audio-transport.ts').AudioTransport | null = null;
   /** Releases the details modal's live visualiser (its WebGL2 context) + key handler. */
   let vizTeardown: (() => void) | null = null;
   let vizCycleStop: (() => void) | null = null;
@@ -1536,6 +1546,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       onClose: () => {
         detailsMeterDispose?.();
         detailsMeterDispose = null;
+        detailsTransport?.destroy();
+        detailsTransport = null;
         vizTeardown?.();
         vizTeardown = null;
         // Destroy any Lottie player mounted in the preview — lottie-web ticks every mounted player
@@ -1740,6 +1752,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // shared AudioContext may run) and is disposed with the modal (closeDetails).
       const meterEl = dlg.querySelector<HTMLCanvasElement>('[data-audio-meter]');
       if (meterEl) detailsMeterDispose = attachAudioMeter(meterEl, audioEl);
+      detailsTransport = wireAudioTransport(dlg, audioEl, {
+        play: t('Play'), pause: t('Pause'), seek: t('Seek'),
+        mute: t('Mute'), unmute: t('Unmute'), volume: t('Volume'),
+      });
       wireAudioViz(dlg, ref, detailsMeterDispose);
       // The resting art was built synchronously from whatever peaks were already in
       // memory — which on a cold open is none, so the stage showed the glyph instead of

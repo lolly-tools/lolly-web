@@ -16,6 +16,7 @@ import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { isSfxMuted, setSfxMuted, playSfx } from '../lib/sfx.ts';
 import { getNeurospicy, setNeurospicyEnabled, applyNeurospicy } from '../lib/neurospicy.ts';
+import { applyAtmosphere } from '../lib/atmosphere.ts';
 import { isNeuroDockCollapsed } from '../lib/neuro-dock-pref.ts';
 // The dock itself (and, through it, components/music-player.ts) is dynamic-imported:
 // every use below is inside a click handler or a post-render sync, and the module
@@ -27,7 +28,7 @@ import { flagEnabledSync } from '../feature-flags.ts';
 
 /** Phone-width viewport — the collapsed dock is hidden here and reopened from this menu. */
 const isMobileViewport = (): boolean => typeof matchMedia !== 'undefined' && matchMedia('(max-width: 520px)').matches;
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 /** The slice of the host this control needs — the profile record it spreads + persists. */
 interface SoundToggleHost {
@@ -56,6 +57,9 @@ export async function applySfxMuted(host: SoundToggleHost, muted: boolean): Prom
   // Master mute: stop the Neurospicy focus loop when muting, resume it (if still enabled) when
   // un-muting. The runtime host is the full WebHost (has assets), so the cast is safe.
   void applyNeurospicy(host as unknown as Parameters<typeof applyNeurospicy>[0]);
+  // Same master-mute contract for the Atmosphere beds: muting stops them, un-muting
+  // brings back exactly the layers that were up.
+  applyAtmosphere(host);
   try {
     const profile = await host.profile.get();
     await host.profile.set({ ...profile, sfxMuted: muted });

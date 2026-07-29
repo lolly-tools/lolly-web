@@ -7,7 +7,7 @@
  * when the user edits their profile mid-session.
  */
 
-import type { Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { Profile } from '@lolly-tools/core/host-v1';
 
 const KEY = 'me';
 

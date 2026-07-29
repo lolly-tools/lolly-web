@@ -73,10 +73,10 @@ test('the pairing is stable — the same id always yields the same ink', () => {
 test('real catalog ids yield many distinct IDENTITIES, which is the actual goal', () => {
   const pool = audioThumbPool(SUSE, host, 'light');
   // The real catalog ids, not synthetic ones — this is the grid a user actually sees.
-  const ids = ['lolly/loops/3-am-echoes', 'lolly/loops/after-school-rain', 'lolly/modules/ambient-starfield',
-    'lolly/modules/bubble-machine', 'lolly/modules/headspin', 'lolly/songs/drift', 'lolly/modules/take-a-walk',
+  const ids = ['lolly/loops/3-am-echoes', 'lolly/loops/after-school-rain', 'lolly/modules/aleja-deszczu',
+    'lolly/modules/jazznocn', 'lolly/modules/headspin', 'lolly/songs/drift', 'lolly/modules/take-a-walk',
     'lolly/modules/jazzical-interpolation', 'lolly/loops/fireplace-loop', 'lolly/modules/wild-perspective',
-    'lolly/modules/blue-intermission', 'lolly/modules/dream-candy'];
+    'lolly/modules/blue-intermission', 'lolly/songs/amber-glow'];
 
   // Identity is the PAIR, so that is what to measure. Asserting instead that all N
   // colours appear across 12 ids tests the hash's luck, not the design: 3 of 4 across

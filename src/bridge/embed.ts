@@ -19,7 +19,7 @@
  */
 
 import { parseEmbedUrl, parseUrlState } from '@lolly/engine';
-import type { HostV1, ExportFormat } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, ExportFormat } from '@lolly-tools/core/host-v1';
 import { getTool } from './tool-loader.ts';
 
 // 1×1 transparent GIF — the placeholder a neutralised embed shows until (and if)

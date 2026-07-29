@@ -11,7 +11,7 @@ import { mountRecordingHelp, createTipFlasher, type RecordingHelp } from '../lib
 import { blobToMp3 } from '../lib/audio-encode.ts';
 import { storeRecordingAsset } from './picker.ts';
 import { fmtBytes } from '../lib/device-info.ts';
-import type { AssetRef, RecordOpts } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AssetRef, RecordOpts } from '@lolly-tools/core/host-v1';
 import type { ToolRuntime, WebToolHost } from './tool.ts';
 
 /**

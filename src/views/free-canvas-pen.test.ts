@@ -29,8 +29,9 @@ import {
 import type { Box } from './free-canvas-math.ts';
 import { initFreeCanvas } from './free-canvas.ts';
 import {
-  PEN_DEFAULT_KIND, PEN_KINDS, convertKind, denormNodes, dragHandle, insertNodeOnCurve,
-  kindSwitchIsLossy, lowerAuthored, normNodes, penCommitFromNative, refitFrame,
+  PEN_DEFAULT_KIND, PEN_KINDS, alignNodes, convertKind, deleteNodes, denormNodes,
+  distributeNodes, dragHandle, insertNodeOnCurve, kindSwitchIsLossy, lowerAuthored,
+  normNodes, penCommitFromNative, refitFrame,
 } from './free-canvas-pen.ts';
 
 // ── jsdom bootstrap (same shape as free-canvas-vector.test.ts) ─────────────────
@@ -368,6 +369,79 @@ function maxDeviation(a: Array<{ x: number; y: number }>, b: Array<{ x: number; 
 
 // ══ pure: free-canvas-pen.ts ══════════════════════════════════════════════════
 
+// ── choosing the spline type BEFORE drawing ───────────────────────────────────
+//
+// The pen bar's switcher only exists once there is a draft, so the type used to be
+// something you discovered after drawing in the wrong one — and only `hyperbezier → cubic`
+// converts losslessly. Press-and-hold (or right-click) the rail button instead.
+
+const penBtn = (f: Fixture): HTMLButtonElement =>
+  f.stageEl.querySelector<HTMLButtonElement>('.fc-btn-pen')!;
+const popItems = (f: Fixture): HTMLButtonElement[] =>
+  [...f.stageEl.querySelectorAll<HTMLButtonElement>('.fc-popover .fc-pop-item')];
+
+test('right-clicking the pen button offers every spline type, marking the current one', () => {
+  const f = mount([]);
+  penBtn(f).dispatchEvent(new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  frames();
+  const items = popItems(f);
+  assert.equal(items.length, PEN_KINDS.length, 'one row per kind the engine can lower');
+  const checked = items.filter((b) => b.getAttribute('aria-checked') === 'true');
+  assert.equal(checked.length, 1, 'exactly one is current');
+  assert.match(checked[0]!.textContent || '', /smooth/i, 'and it is the hyperbezier default');
+  assert.equal(items.every((b) => b.getAttribute('role') === 'menuitemradio'), true,
+    'they are radios, not commands');
+  f.destroy();
+});
+
+test('choosing a spline type arms the pen and the next path is drawn in it', () => {
+  const f = mount([]);
+  assert.equal(f.stageEl.classList.contains('fc-penning'), false, 'the pen is not armed yet');
+  penBtn(f).dispatchEvent(new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  frames();
+  const straight = popItems(f).find((b) => /straight/i.test(b.textContent || ''));
+  assert.ok(straight, 'Straight lines is on the menu');
+  click(straight!);
+  frames();
+  assert.equal(f.stageEl.classList.contains('fc-penning'), true, 'the menu left the pen armed');
+  place(f, 200, 200);
+  frames();
+  place(f, 400, 300);
+  frames();
+  place(f, 600, 200);
+  frames();
+  key('Enter');
+  frames();
+  assert.equal(decoded(pathBoxes(f)[0]!).kind, 'line', 'drawn in the type chosen up front');
+  f.destroy();
+});
+
+test('a press-and-HOLD opens the same menu, and the click that ends it does not toggle the pen', async () => {
+  const f = mount([]);
+  const b = penBtn(f);
+  b.dispatchEvent(pointerEvent('pointerdown', { x: 20, y: 200 }));
+  await new Promise((r) => setTimeout(r, 500));          // past HOLD_MS
+  frames();
+  assert.equal(popItems(f).length, PEN_KINDS.length, 'the hold opened the type menu');
+  // The real pointerup delivers a click; it must be eaten, or the pen toggles behind the menu.
+  b.dispatchEvent(pointerEvent('pointerup', { x: 20, y: 200 }));
+  click(b);
+  frames();
+  assert.equal(f.stageEl.classList.contains('fc-penning'), false, 'the hold did not also arm the pen');
+  f.destroy();
+});
+
+test('a press that TRAVELS is a drag, not a hold, so no menu opens', async () => {
+  const f = mount([]);
+  const b = penBtn(f);
+  b.dispatchEvent(pointerEvent('pointerdown', { x: 20, y: 200 }));
+  b.dispatchEvent(pointerEvent('pointermove', { x: 20, y: 240 }));   // past HOLD_SLOP
+  await new Promise((r) => setTimeout(r, 500));
+  frames();
+  assert.equal(popItems(f).length, 0, 'no menu');
+  f.destroy();
+});
+
 test('the default kind is hyperbezier and spiro is not offered', () => {
   assert.equal(PEN_DEFAULT_KIND, 'hyperbezier');
   assert.equal(PEN_KINDS[0], 'hyperbezier', 'and it leads the switcher');
@@ -620,10 +694,10 @@ test('a click-DRAG pulls the handles out symmetrically, the way the drag went', 
   f.destroy();
 });
 
-test('Alt-click places a CORNER, so no handles are pulled', () => {
+test('Alt-click with no drag places a CORNER, so no handles are pulled', () => {
   const f = mount([]);
   armPen(f);
-  place(f, 200, 200, { drag: [240, 220], alt: true });
+  place(f, 200, 200, { alt: true });
   frames();
   place(f, 400, 300);
   frames();
@@ -631,7 +705,75 @@ test('Alt-click places a CORNER, so no handles are pulled', () => {
   frames();
   const p = decoded(pathBoxes(f)[0]!);
   assert.equal(p.nodes[0]!.continuity, 'corner');
-  assert.equal(p.nodes[0]!.hOutX, undefined, 'a corner ignores the handle pull');
+  assert.equal(p.nodes[0]!.hOutX, undefined, 'a corner with no pull authors no handle');
+  f.destroy();
+});
+
+// The tracing gesture: a corner whose two sides are independent, authored in ONE pass
+// instead of drawing everything smooth and breaking the pairs afterwards in node-edit mode.
+test('Alt-DRAG breaks the pair — it steers the outgoing arm and leaves the incoming one', () => {
+  const f = mount([]);
+  armPen(f);
+  place(f, 200, 200, { drag: [240, 220] });       // node 0: an ordinary symmetric pull
+  frames();
+  place(f, 400, 300, { drag: [440, 280], alt: true });   // node 1: broken, +40 / −20
+  frames();
+  place(f, 600, 400);
+  frames();
+  key('Enter');
+  frames();
+  const box = pathBoxes(f)[0]!;
+  const p = decoded(box);
+  const w = Number(box.w), h = Number(box.h);
+  const n1 = p.nodes[1]!;
+  assert.equal(n1.continuity, 'corner', 'the break is recorded, not just drawn');
+  assert.ok(Math.abs(n1.hOutX! * w - 40) < 1e-3, `hOut x ${n1.hOutX! * w} ≈ 40`);
+  assert.ok(Math.abs(n1.hOutY! * h + 20) < 1e-3, `hOut y ${n1.hOutY! * h} ≈ -20`);
+  // NOT the mirror: the incoming arm still holds the segment drawn before the break.
+  const mirrored = n1.hInX !== undefined && Math.abs(n1.hInX! * w + 40) < 1e-3
+    && Math.abs(n1.hInY! * h - 20) < 1e-3;
+  assert.ok(!mirrored, 'the incoming arm was left alone, not mirrored onto the outgoing one');
+  f.destroy();
+});
+
+// `hyperbezier` reads a handle as a tangent PIN and discards its length, and `hbArm`'s
+// signed shape function reverses the control arm once that pin is more than a right angle
+// from its chord — so a pull "backwards" rendered the curve leaving the OPPOSITE way. The
+// pen promotes to `cubic` on the first real pull instead, which honours the handle exactly.
+test('a handle pull promotes a hyperbezier draft to cubic, losslessly', () => {
+  const f = mount([]);
+  armPen(f);
+  place(f, 200, 200);                              // click only — still the smooth-auto kind
+  frames();
+  place(f, 400, 300, { drag: [360, 340] });        // pull BACK past a right angle of the chord
+  frames();
+  place(f, 600, 200);
+  frames();
+  key('Enter');
+  frames();
+  const box = pathBoxes(f)[0]!;
+  const p = decoded(box);
+  const w = Number(box.w), h = Number(box.h);
+  assert.equal(p.kind, 'cubic', 'the pull switched the draft to the kind that honours it');
+  const n1 = p.nodes[1]!;
+  assert.ok(Math.abs(n1.hOutX! * w + 40) < 1e-3, `hOut x ${n1.hOutX! * w} ≈ -40 (the way the drag went)`);
+  assert.ok(Math.abs(n1.hOutY! * h - 40) < 1e-3, `hOut y ${n1.hOutY! * h} ≈ 40 (the way the drag went)`);
+  f.destroy();
+});
+
+// A click-only draft never pulls a handle, so it must stay on the auto-smoothing kind.
+test('click-click-click leaves the draft on the smooth-auto kind', () => {
+  const f = mount([]);
+  armPen(f);
+  place(f, 200, 200);
+  frames();
+  place(f, 400, 300);
+  frames();
+  place(f, 600, 200);
+  frames();
+  key('Enter');
+  frames();
+  assert.equal(decoded(pathBoxes(f)[0]!).kind, 'hyperbezier');
   f.destroy();
 });
 
@@ -813,6 +955,109 @@ test('Delete removes the selected node; the last two are kept with a reason', ()
   assert.equal(f.commits(), commits2, 'nothing committed');
   assert.match(flashText(f), /at least two points/i);
   assert.equal(decoded(f.boxes()[0]!).nodes.length, 2);
+  f.destroy();
+});
+
+// ── closed paths keep being closed ────────────────────────────────────────────
+//
+// Insert and delete both wrap: `insertNodeOnCurve` indexes segment `at` as node `at` →
+// node `(at+1) % n`, so the CLOSING segment is an ordinary segment and a click on it
+// splices at the end; `deleteNodes` rebuilds the node list and spreads the rest of the
+// path, so `closed` rides through untouched. Both are easy to regress into "the path
+// silently opened", which on a traced outline destroys the fill.
+
+const squareBox = (): Box => cubicBox({ nodes: [
+  { x: 0, y: 0, continuity: 'corner' }, { x: 1, y: 0, continuity: 'corner' },
+  { x: 1, y: 1, continuity: 'corner' }, { x: 0, y: 1, continuity: 'corner' },
+], closed: true });
+
+test('inserting on a CLOSED path\'s closing segment splices between the last node and the first', () => {
+  const f = mount([squareBox()]);
+  enterNodeEdit(f, [400, 400]);
+  const before = decoded(f.boxes()[0]!);
+  assert.equal(before.nodes.length, 4);
+  // The closing segment is the LEFT edge, native (300,500) → (300,300). Click its midpoint.
+  const commits = f.commits();
+  place(f, 300, 400);
+  frames();
+  assert.equal(f.commits() - commits, 1, 'one commit');
+  const after = decoded(f.boxes()[0]!);
+  assert.equal(after.nodes.length, 5, 'the node went in');
+  assert.equal(after.closed, true, 'and the path is still closed');
+  // Spliced at the END, which for the closing segment is between node 3 and node 0.
+  const pts = nativeNodes(f.boxes()[0]!);
+  assertClose(pts[4]!, { x: 300, y: 400 }, 1e-3, 'the new node sits where the curve was clicked');
+  f.destroy();
+});
+
+test('deleting a node from a CLOSED path leaves it closed', () => {
+  const f = mount([squareBox()]);
+  enterNodeEdit(f, [400, 400]);
+  place(f, 500, 300);                            // select node 1 (top-right corner)
+  frames();
+  key('Delete');
+  frames();
+  const after = decoded(f.boxes()[0]!);
+  assert.equal(after.nodes.length, 3, 'the node went');
+  assert.equal(after.closed, true, 'and the path did NOT spring open');
+  f.destroy();
+});
+
+// The pure operation, so the wrap is pinned independently of the pointer plumbing above.
+test('deleteNodes preserves `closed` and `kind`, and refuses to leave fewer than two', () => {
+  const p = { kind: 'cubic' as const, closed: true, nodes: [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 },
+  ] };
+  const one = deleteNodes(p, [2]);
+  assert.equal(one?.closed, true);
+  assert.equal(one?.kind, 'cubic');
+  assert.equal(one?.nodes.length, 3);
+  assert.equal(deleteNodes(p, [0, 1, 2]), null, 'two is the floor, so this refuses');
+});
+
+// ── align + distribute over selected nodes ────────────────────────────────────
+
+test('alignNodes snaps the selection to an edge of ITS OWN box, and leaves the rest alone', () => {
+  const p = { kind: 'cubic' as const, closed: false, nodes: [
+    { x: 0, y: 10, hOutX: 5, hOutY: 5 }, { x: 3, y: 20 }, { x: 9, y: 30 }, { x: 100, y: 100 },
+  ] };
+  const top = alignNodes(p, [0, 1, 2], 'top');
+  assert.deepEqual(top.nodes.map((n) => n.y), [10, 10, 10, 100], 'the three went to the minimum y');
+  assert.deepEqual(top.nodes.map((n) => n.x), [0, 3, 9, 100], 'and nothing moved sideways');
+  assert.equal(top.nodes[3]!.y, 100, 'the unselected node is not part of the reference box');
+  // Handles are OFFSETS, so an align carries them rather than flattening the curve.
+  assert.equal(top.nodes[0]!.hOutX, 5);
+  assert.equal(top.nodes[0]!.hOutY, 5);
+
+  const mid = alignNodes(p, [0, 2], 'vcentre');
+  assert.equal(mid.nodes[0]!.y, 20, 'centre of 10..30');
+  assert.equal(mid.nodes[2]!.y, 20);
+  assert.equal(mid.nodes[1]!.y, 20, 'coincidentally, but it was NOT written');
+  assert.equal(alignNodes(p, [1], 'left').nodes[1]!.x, 3, 'one node has nothing to align to');
+});
+
+test('distributeNodes equalises spacing by COORDINATE, holding the extremes still', () => {
+  const p = { kind: 'cubic' as const, closed: false, nodes: [
+    { x: 0, y: 0 }, { x: 90, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 },
+  ] };
+  // Selected out of path order and out of coordinate order — the sort is by x, so the
+  // extremes are node 0 (x=0) and node 1 (x=90).
+  const out = distributeNodes(p, [0, 1, 2, 3], 'h');
+  assert.deepEqual(out.nodes.map((n) => n.x), [0, 90, 30, 60], 'evenly spaced in x, in place');
+  assert.deepEqual(distributeNodes(p, [0, 1], 'h').nodes.map((n) => n.x), [0, 90, 10, 20],
+    'two points are already evenly spaced, so this is a no-op');
+});
+
+test('the Arrange button turns on with two selected points and off with one', () => {
+  const f = mount([squareBox()]);
+  enterNodeEdit(f, [400, 400]);
+  const btn = (): HTMLButtonElement | null => f.stageEl.querySelector('[data-pen="arrange"]');
+  place(f, 300, 300);                            // one node selected
+  frames();
+  assert.equal(btn()?.disabled, true, 'one point is not an arrangement');
+  drag(f, [250, 250], [550, 320]);               // marquee the top two
+  frames();
+  assert.equal(btn()?.disabled, false, 'two are');
   f.destroy();
 });
 

@@ -42,7 +42,7 @@ import { getInstanceBase, setInstanceBase, instanceFetch } from '../lib/instance
 import { validateInstanceUrl, shapeProbeResult, type ProbeOutcome } from '../lib/instance-probe.ts';
 import { syncCatalog } from '../catalog/sync.ts';
 import { importBackup, MAX_RESTORE_TOTAL_BYTES } from '../data-transfer.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 
 // validateInstanceUrl / shapeProbeResult (the pure URL-validation and probe-

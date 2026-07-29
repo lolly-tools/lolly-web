@@ -45,7 +45,7 @@ import { noteScrubSource } from '../lib/scrub-registry.ts';
 // The `zzfxm:` procedural-audio id — an ENGINE-owned asset-id scheme, exactly like
 // tool-url.ts's, because every shell that resolves an asset has to recognise it.
 import { isZzfxmRef, parseZzfxmRef, formatZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
-import type { AssetRef, AssetQuery } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AssetRef, AssetQuery } from '@lolly-tools/core/host-v1';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
 

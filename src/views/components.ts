@@ -49,7 +49,7 @@ import '../styles/parts/editor.css'; // .stage-nav (the tool canvas's zoom HUD) 
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { armViewEnter } from '../view-enter.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { AUDIT_SECTIONS, type Specimen } from './components-data.ts';
 
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';

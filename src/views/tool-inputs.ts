@@ -39,7 +39,7 @@ import { brandFontFamilies } from '../user-fonts.ts';
 import { storeUserUpload, askLollyIntent } from './picker.js';
 import flatpickr from 'flatpickr';
 
-import type { AssetRef, ComposeAPI, InputFile } from '../../../../engine/src/bridge/host-v1.js';
+import type { AssetRef, ComposeAPI, InputFile } from '@lolly-tools/core/host-v1';
 import type { InputModelItem, InputValue, InputSpec, BlockFieldSpec } from '../../../../engine/src/inputs.js';
 import type { LoadedTool } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';

@@ -13,7 +13,7 @@
  * tested directly (see tests/audio-coaching.test.ts). The DOM HUD lives in
  * `audio-coaching.ts`, which re-exports everything here.
  */
-import type { AudioLevel } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AudioLevel } from '@lolly-tools/core/host-v1';
 import type { TipCue } from './recording-tips.ts';
 
 export type CoachTarget = 'soft' | 'normal' | 'loud';

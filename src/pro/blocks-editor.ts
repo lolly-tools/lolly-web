@@ -31,7 +31,7 @@
 import { controlHtml, readControlValue } from './controls.ts';
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
 import type { InputSpec, InputValue, BlockFieldSpec } from '../../../../engine/src/inputs.ts';
-import type { HostV1, AssetRef, AssetQuery } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, AssetRef, AssetQuery } from '@lolly-tools/core/host-v1';
 
 /** One block record: a field-id → value map. */
 type BlockRecord = Record<string, InputValue | undefined>;

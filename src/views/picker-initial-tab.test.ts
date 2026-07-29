@@ -21,7 +21,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
-import type { AssetRef } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AssetRef } from '@lolly-tools/core/host-v1';
 
 // picker.ts imports its own stylesheet (the lazy-view pattern). Node has no idea what a
 // .css module is; Vite is what resolves it for real.
