@@ -11,7 +11,7 @@
  * See shells/chrome-extension/.
  */
 
-import type { CaptureAPI, AssetRef } from '../../../../engine/src/bridge/host-v1.ts';
+import type { CaptureAPI, AssetRef } from '@lolly-tools/core/host-v1';
 
 declare global {
   interface Window {

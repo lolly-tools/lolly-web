@@ -15,7 +15,7 @@
  */
 import { toCssPx, serializeUrlState, packQuery, isPackAvailable, PACK_PARAM } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import type { Unit } from '../../../../engine/src/units.ts';

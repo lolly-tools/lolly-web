@@ -11,7 +11,7 @@
  *    still works via a deep link).
  */
 
-import type { Profile } from '../../../engine/src/bridge/host-v1.ts';
+import type { Profile } from '@lolly-tools/core/host-v1';
 import { orgFlagGovernance } from './org/index.ts';
 
 export interface FeatureFlag {

@@ -21,7 +21,7 @@
 
 import { colorToHex, TOKEN_EXT, readFaces, writeFace } from '@lolly/engine';
 import type { StoredFace } from '@lolly/engine';
-import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
+import type { SpotColor } from '@lolly-tools/core/host-v1';
 // The exclusion READ lives in a leaf module so the boot-path tokens bridge can
 // filter excluded swatches without importing this (engine-barrel-heavy) file;
 // re-exported here so studio callers keep their single brand-doc import.

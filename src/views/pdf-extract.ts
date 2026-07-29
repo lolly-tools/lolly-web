@@ -31,7 +31,7 @@ import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { PdfHandle, EmbeddedFont, EmbeddedImage, EmbeddedAttachment, ExtractedVector } from './pdf-import.ts';
 
 /** Beyond this a page-by-page reconstruction stops being interactive. */

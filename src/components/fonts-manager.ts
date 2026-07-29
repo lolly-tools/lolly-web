@@ -11,7 +11,7 @@
 import { installFontAsset, getInstalledFonts, removeFontAsset, refreshFontRegistry } from '../lib/font-asset-handler.ts';
 import { validateFontFile } from '../lib/font-utils.ts';
 import { setPrimaryFont, setMonoFont } from '../user-fonts.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { announce } from '../a11y.ts';
 import { t } from '../i18n.ts';
 

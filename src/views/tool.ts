@@ -62,7 +62,7 @@ import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` c
 // Type-only imports (erased at build). The `@lolly/engine` barrel re-exports
 // values but not these type-only names, so they come straight from the engine
 // internals — resolved by the bundler through the `.js` specifier convention.
-import type { HostV1, AssetRef, ComposeAPI, ClipboardAPI, StateAPI, Profile } from '../../../../engine/src/bridge/host-v1.js';
+import type { HostV1, AssetRef, ComposeAPI, ClipboardAPI, StateAPI, Profile } from '@lolly-tools/core/host-v1';
 import type { InputModelItem, InputValue, InputSpec, BlockFieldSpec } from '../../../../engine/src/inputs.js';
 import type { LoadedTool, ToolManifest } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';

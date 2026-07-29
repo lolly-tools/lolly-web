@@ -5,7 +5,7 @@
 
 import { parseFontMetadata, detectFontFormat } from './font-utils.ts';
 import type { FontMetadata } from './font-utils.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 export interface InstalledFont {
   id: string;

@@ -209,7 +209,7 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   // named maps; these were never in scope). Counts surveyed 2026-07-13 — down only.
   'components/color-field.ts': 2,
   'components/help-tip.ts': 1,
-  'components/music-player.ts': 8,
+  'components/music-player.ts': 6,   // play/pause now come from lib/icons.ts (2026-07-29)
   'components/profile-menu.ts': 2,
   'components/view-toggle.ts': 3,
   'lib/audio-coaching.ts': 1,

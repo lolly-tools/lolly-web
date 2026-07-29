@@ -17,7 +17,7 @@
  * shell (see the capability-gating follow-up).
  */
 
-import type { CaptureAPI } from '../../../../engine/src/bridge/host-v1.ts';
+import type { CaptureAPI } from '@lolly-tools/core/host-v1';
 
 export function createCaptureAPI(): CaptureAPI {
   return {

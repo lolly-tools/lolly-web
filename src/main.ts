@@ -20,6 +20,7 @@ import { loadUserFonts } from './lib/load-user-fonts.ts';
 import { registerUserFonts } from './lib/register-user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateNeurospicy, armNeurospicy, getNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
+import { hydrateAtmosphere, armAtmosphere } from './lib/atmosphere.ts';
 import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
 import { installRangeUpgrader } from './components/custom-slider.ts';
@@ -69,6 +70,83 @@ initTheme();
 // opens the native popup on arrow keys instead of cycling the value).
 initSelectPreview();
 
+/**
+ * Which piece of a route's sub-state its dedup signature keys on (see
+ * routeSignature). Absent ⇒ the route name alone is the whole signature.
+ */
+type RouteSigKey = 'toolId' | 'folderId' | 'params';
+
+/** Everything the router needs to know about one route, in one place. */
+interface RouteSpec {
+  /** Spoken name, announced to assistive tech after the view mounts. */
+  label: string;
+  /** The view-toggle tab this route lights up. Absent ⇒ no tab bar. */
+  tab?: ViewToggleKey;
+  /** Scoping classes #view carries while this route is mounted. */
+  viewClasses?: readonly string[];
+  /** The sub-state the dedup signature keys on. */
+  sigKey?: RouteSigKey;
+}
+
+/**
+ * THE route table — the single source of truth for per-route chrome. The tab a
+ * route lights up, the scoping classes #view carries, the announced label and
+ * the dedup signature's shape are all derived from here, so adding a view means
+ * adding one row (plus its parseRoute branch and its lazy mount case) rather
+ * than editing four parallel lists that silently half-work when one is missed.
+ */
+const ROUTES: Record<RouteName, RouteSpec> = {
+  gallery: { label: 'Tools gallery', tab: 'tools', viewClasses: ['gallery-view'] },
+  // Utilities IS the gallery view (mountGallery in only-utility mode), so it must
+  // carry the same scoping class — gallery.css's desktop saved-list grid, footer
+  // padding and every other .gallery-view rule apply identically. Without it the
+  // mounted markup is styled by nothing and the view renders broken/blank.
+  utilities: { label: 'Utilities', tab: 'utilities', viewClasses: ['gallery-view', 'utilities-view'] },
+  tool: { label: 'Tool', viewClasses: ['tool-view'], sigKey: 'toolId' },
+  profile: { label: 'Profile', viewClasses: ['profile-view'], sigKey: 'params' },
+  // The dashboard keys on its query too, so a deep link that only changes a flag
+  // (#/d → #/d?print, or an old #/platform?x redirect) re-mounts and re-applies
+  // the open+scroll, instead of being deduped as the same 'dashboard' route.
+  dashboard: { label: 'Dashboard', viewClasses: ['dashboard-view'], sigKey: 'params' },
+  pro: { label: 'Batch mode', viewClasses: ['pro-view'] },
+  projects: { label: 'Projects', tab: 'projects', viewClasses: ['projects-view'], sigKey: 'folderId' },
+  catalog: { label: 'Catalogue', tab: 'catalog', viewClasses: ['catalog-view'] },
+  verify: { label: 'Verify', viewClasses: ['verify-view'] },
+  // The studio keys on ?tab= for the same reason — "Manage fonts" (#/start?tab=type)
+  // clicked while already on #/start must switch steps, not dedupe to a no-op.
+  start: { label: 'Brand setup', viewClasses: ['start-view'], sigKey: 'params' },
+  // Multi-edit keys on its selection (?s=slot,slot…) so editing a different
+  // selection re-mounts with the new set instead of deduping.
+  multi: { label: 'Multi-edit', viewClasses: ['multi-view'], sigKey: 'params' },
+  components: { label: 'Component library' },
+  // The Lab gets NO tab. It's a utility you open and come back from, like any tool
+  // page — so it gets the back pill and no tab bar. Lighting the Utilities tab
+  // here would suggest the pill is where you are rather than where you'd go,
+  // and the tabs would compete with the report's own numbered sequence.
+  lab: { label: 'Colour Lab' },
+  pdf: { label: 'Take a PDF apart', viewClasses: ['pdfx-view'] },
+};
+
+/** Every scoping class in ROUTES → the routes that own it, in declaration order. */
+const VIEW_CLASS_OWNERS: ReadonlyMap<string, ReadonlySet<RouteName>> = (() => {
+  const owners = new Map<string, Set<RouteName>>();
+  for (const [name, spec] of Object.entries(ROUTES) as Array<[RouteName, RouteSpec]>) {
+    for (const cls of spec.viewClasses ?? []) {
+      let set = owners.get(cls);
+      if (!set) { set = new Set(); owners.set(cls, set); }
+      set.add(name);
+    }
+  }
+  return owners;
+})();
+
+/** Routes whose signature keys on `params`, so re-navigating WITHIN them isn't a leave. */
+const PARAM_KEYED_ROUTES: ReadonlySet<RouteName> = new Set(
+  (Object.entries(ROUTES) as Array<[RouteName, RouteSpec]>)
+    .filter(([, spec]) => spec.sigKey === 'params')
+    .map(([name]) => name),
+);
+
 let _lastRouteName: RouteName | null = null;
 // Signature of the route currently mounted — used to drop a redundant re-navigate to the
 // SAME route (a single tool open fires hashchange AND popstate → two navigates). See navigate().
@@ -77,23 +155,25 @@ let mountedRouteSig = '';
 // Announce client-side route changes (the view swaps via innerHTML, which
 // assistive tech wouldn't otherwise notice).
 function announceRoute(name: RouteName): void {
-  const labels: Record<RouteName, string> = { gallery: 'Tools gallery', utilities: 'Utilities', tool: 'Tool', profile: 'Profile', dashboard: 'Dashboard', pro: 'Batch mode', projects: 'Projects', catalog: 'Catalogue', verify: 'Verify', start: 'Brand setup', multi: 'Multi-edit', components: 'Component library', lab: 'Colour Lab', pdf: 'Take a PDF apart' };
-  announce(`${labels[name] ?? 'Page'} loaded`);
+  announce(`${ROUTES[name]?.label ?? 'Page'} loaded`);
 }
 
 /** The view-toggle tab a route lights up — null for routes without the tab bar. */
 function navKeyForRoute(name: RouteName): ViewToggleKey | null {
-  switch (name) {
-    case 'gallery': return 'tools';
-    case 'utilities': return 'utilities';
-    // NOT the Lab. It's a utility you open and come back from, like any tool
-    // page — so it gets the back pill and no tab bar. Lighting the Utilities tab
-    // here would suggest the pill is where you are rather than where you'd go,
-    // and the tabs would compete with the report's own numbered sequence.
-    case 'projects': return 'projects';
-    case 'catalog': return 'catalog';
-    default: return null;
-  }
+  return ROUTES[name]?.tab ?? null;
+}
+
+/**
+ * The dedup signature for a parsed route: its name plus whatever sub-state
+ * ROUTES says changes what's mounted. See navigate() for the rationale.
+ */
+function routeSignature(route: Route): string {
+  const key = ROUTES[route.name]?.sigKey;
+  if (!key) return route.name;
+  const sub = route as { toolId?: string; folderId?: string | null; params?: string };
+  if (key === 'toolId') return `${route.name}:${sub.toolId ?? ''}`;
+  if (key === 'folderId') return `${route.name}:${sub.folderId ?? ''}`;
+  return `${route.name}:${sub.params ?? ''}`;
 }
 
 async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<void> {
@@ -112,21 +192,8 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   // events repack the query mid-mount, and same-tool param edits apply in place
   // (runtime.setInput), never by re-mount; every other route's sub-state is stable across
   // a burst. Explicit refreshes — boot, the gallery's post-sync re-render — force past this.
-  const routeSig =
-    route.name === 'tool'       ? `tool:${route.toolId}`
-    : route.name === 'projects' ? `projects:${route.folderId ?? ''}`
-    : route.name === 'profile'  ? `profile:${route.params ?? ''}`
-    // The dashboard keys on its query too, so a deep link that only changes a flag
-    // (#/d → #/d?print, or an old #/platform?x redirect) re-mounts and re-applies
-    // the open+scroll, instead of being deduped as the same 'dashboard' route.
-    : route.name === 'dashboard' ? `dashboard:${route.params ?? ''}`
-    // The studio keys on ?tab= for the same reason — "Manage fonts" (#/start?tab=type)
-    // clicked while already on #/start must switch steps, not dedupe to a no-op.
-    : route.name === 'start'     ? `start:${route.params ?? ''}`
-    // Multi-edit keys on its selection (?s=slot,slot…) so editing a different
-    // selection re-mounts with the new set instead of deduping.
-    : route.name === 'multi'     ? `multi:${route.params ?? ''}`
-    : route.name;
+  // Which sub-state each route keys on is declared in ROUTES (sigKey) above.
+  const routeSig = routeSignature(route);
   // The URL this navigation left (hashchange oldURL / navigateTo's capture) —
   // consumed on EVERY navigate, even a deduped one, so a stale stash can't
   // leak into a later record. popstate leaves no stash; recordLeave() then
@@ -141,7 +208,12 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   // whose signature keys on params (start/dashboard/profile/multi) re-navigate
   // within themselves (#/start?tab=color → ?tab=type), and a forced same-sig
   // remount (lolly:remount) isn't a leave at all.
-  const viewIdent = (sig: string): string => sig.replace(/^(start|dashboard|profile|multi):[\s\S]*$/, '$1');
+  const viewIdent = (sig: string): string => {
+    const colon = sig.indexOf(':');
+    if (colon < 0) return sig;
+    const name = sig.slice(0, colon);
+    return PARAM_KEYED_ROUTES.has(name as RouteName) ? name : sig;
+  };
   if (prevSig && viewIdent(routeSig) !== viewIdent(prevSig)) recordLeave(leftHref);
 
   const view = document.getElementById('view') as ViewElement;
@@ -184,22 +256,10 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     ? beginViewFade(view)
     : null;
 
-  view.classList.toggle('tool-view', route.name === 'tool');
-  // Utilities IS the gallery view (mountGallery in only-utility mode), so it must
-  // carry the same scoping class — gallery.css's desktop saved-list grid, footer
-  // padding and every other .gallery-view rule apply identically. Without it the
-  // mounted markup is styled by nothing and the view renders broken/blank.
-  view.classList.toggle('gallery-view', route.name === 'gallery' || route.name === 'utilities');
-  view.classList.toggle('utilities-view', route.name === 'utilities');
-  view.classList.toggle('profile-view', route.name === 'profile');
-  view.classList.toggle('dashboard-view', route.name === 'dashboard');
-  view.classList.toggle('pro-view', route.name === 'pro');
-  view.classList.toggle('projects-view', route.name === 'projects');
-  view.classList.toggle('catalog-view', route.name === 'catalog');
-  view.classList.toggle('verify-view', route.name === 'verify');
-  view.classList.toggle('start-view', route.name === 'start');
-  view.classList.toggle('multi-view', route.name === 'multi');
-  view.classList.toggle('pdfx-view', route.name === 'pdf');
+  // Scoping classes, from ROUTES: every class any route declares is toggled on
+  // EVERY navigation, so the outgoing view's class comes off as the incoming
+  // view's goes on. (A route with no viewClasses, e.g. the Lab, scopes itself.)
+  for (const [cls, owners] of VIEW_CLASS_OWNERS) view.classList.toggle(cls, owners.has(route.name));
   view.classList.toggle('is-returning', returning);
 
   // When the route NAME changes, the view-scoping class above changes with it
@@ -555,8 +615,13 @@ async function boot(): Promise<void> {
   // enabled and it was on) arm a one-shot gesture to resume the loop, since audio can't
   // autoplay before a gesture.
   hydrateNeurospicy((profile as { neurospicy?: unknown }).neurospicy);
+  // The Atmosphere beds live in the same player, keep their own persisted levels,
+  // and resume on the same first-gesture terms (armAtmosphere is a no-op unless the
+  // user themselves left a layer above zero).
+  hydrateAtmosphere((profile as { atmosphere?: unknown }).atmosphere);
   if (flagEnabledSync('neurospicy')) {
     armNeurospicy(host as unknown as Parameters<typeof armNeurospicy>[0]);
+    armAtmosphere(host as unknown as Parameters<typeof armAtmosphere>[0]);
     // Show the bottom-right dock if the mode was left on. The dock (and the music
     // player inside it) is dynamic-imported and only when the mode is actually
     // enabled: syncNeuroDock's off-branch is hideNeuroDock(), a no-op for a dock

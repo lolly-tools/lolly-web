@@ -4,7 +4,7 @@
  */
 
 import { getInstalledFonts } from './font-asset-handler.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 const FONT_STYLE_ID = 'user-fonts-style';
 

@@ -40,7 +40,7 @@
 import { assetBaseId } from './asset-favourites.ts';
 import { audioThumbShape, type AudioThumbShape } from './audio-thumb.ts';
 import { audioThumbInk, type AudioThumbInk } from './audio-thumb-colour.ts';
-import type { HostV1, Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, Profile } from '@lolly-tools/core/host-v1';
 
 type CoverHost = HostV1 & { profile: { set(p: Profile): Promise<unknown> } };
 

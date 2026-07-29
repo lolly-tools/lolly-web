@@ -40,7 +40,7 @@ import { batchToCsv, csvToBatch, parseClipboardGrid, coerceCell } from './io.ts'
 import { createSessionStore, rowsFromSnapshot, snapshotFromState } from './sessions.ts';
 import { runBatchWithProgress } from './run-overlay.ts';
 import { rowsForFolder } from './folder-rows.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { Unit } from '../../../../engine/src/units.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';

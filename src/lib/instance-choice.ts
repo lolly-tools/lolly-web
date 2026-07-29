@@ -17,7 +17,7 @@
  * definition.
  */
 import { openDB } from '../bridge/db.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 /** Key of the "user has been asked" flag inside the 'profile' KV store — same
  *  store lib/instance.ts keeps its own 'instance-base' key in. Distinct from

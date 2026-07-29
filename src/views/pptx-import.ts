@@ -27,7 +27,7 @@ import type {
   PptxReadColor, PptxReadSlide, PptxReadTheme,
   PptxPicNode, PptxShapeNode, PptxTableNode, PptxTextNode,
 } from '../../../../engine/src/pptx-read.ts';
-import type { AssetRef, HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AssetRef, HostV1 } from '@lolly-tools/core/host-v1';
 // Type-only — erased at runtime, so this does NOT load the pdf-lib chunk.
 import type { PdfHandle, PdfPageSvg } from './pdf-import.ts';
 

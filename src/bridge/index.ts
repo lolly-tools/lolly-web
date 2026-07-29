@@ -7,7 +7,7 @@
  * the rest.
  */
 
-import type { HostV1, AssetRef, AssetPickerOpts } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, AssetRef, AssetPickerOpts } from '@lolly-tools/core/host-v1';
 // Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
 // boot path, and engine/src/index.ts is one shared facade whose retained export
 // set is the UNION over every importer — touching it here drags createRuntime

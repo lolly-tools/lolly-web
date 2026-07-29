@@ -13,7 +13,7 @@
  * the picker's storeUserUpload. Nothing here writes outside those funnels.
  */
 
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { colorToHex, isAlias } from '@lolly/engine';
 import {
   listStudioTokens, addStudioToken, setStudioTokenValue, deleteStudioToken,

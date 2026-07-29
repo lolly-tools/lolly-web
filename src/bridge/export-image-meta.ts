@@ -9,7 +9,7 @@
  * bytes untouched. No DOM and no module state.
  */
 import { crc32 } from '@lolly/engine';
-import type { ExportMeta } from '../../../../engine/src/bridge/host-v1.ts';
+import type { ExportMeta } from '@lolly-tools/core/host-v1';
 import type { ExportOpts } from './export.ts';
 
 // ── PNG physical-resolution metadata ────────────────────────────────────────

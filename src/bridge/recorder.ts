@@ -19,7 +19,7 @@
 
 import type {
   RecorderAPI, MeterAPI, RecordOpts, RecordSession, AudioLevel, StillOpts,
-} from '../../../../engine/src/bridge/host-v1.ts';
+} from '@lolly-tools/core/host-v1';
 // Import the tiny mime-candidate list directly (NOT videoMimeType from export.ts) —
 // recorder.ts is wired into the bridge at boot, and pulling in export.ts (the whole
 // rasteriser) would drag it into the preload bundle. video-mime.ts is dependency-free.

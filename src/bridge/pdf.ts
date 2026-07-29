@@ -16,7 +16,7 @@
  * only the first PDF a user opens pulls it in.
  */
 import type { PDFDocument as PDFDocumentType, PDFName as PDFNameType } from 'pdf-lib';
-import type { PdfAPI, PdfCompressOpts, PdfCompressResult, PdfFinding } from '../../../../engine/src/bridge/host-v1.ts';
+import type { PdfAPI, PdfCompressOpts, PdfCompressResult, PdfFinding } from '@lolly-tools/core/host-v1';
 
 const PDF_LOAD_OPTS = { ignoreEncryption: true, updateMetadata: false };
 

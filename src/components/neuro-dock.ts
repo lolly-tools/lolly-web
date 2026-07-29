@@ -63,7 +63,11 @@ button.neuro-dock-grip:focus-visible { outline: 2px solid hsl(var(--primary)); o
 .neuro-dock-btn { flex: 0 0 auto; width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s ease, color .12s ease; }
 .neuro-dock-btn:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .neuro-dock-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
-.neuro-dock-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+/* The body scrolls rather than letting the bottom-anchored dock grow off the TOP of
+   a short viewport — with the visualizer panel, the transport, both volumes and an
+   expanded Atmosphere section open at once, that is easy to reach on a laptop. The
+   header (track picker, minimize, close) stays put outside the scroller. */
+.neuro-dock-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100dvh - 10rem); overflow-y: auto; }
 /* The inline visualizer slot. It replaces the player's strip level meter as the dock's
    main visual (viz-overlay.ts paints into it at 4:3); when WebGL2 is missing the slot
    is never created and music-player.ts's meter comes back instead. */

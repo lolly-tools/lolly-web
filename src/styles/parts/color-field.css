@@ -63,8 +63,32 @@
   letter-spacing: .01em;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
+  /* CLAMP, don't overflow. A friendly name is short in most brands ("Pine", "White")
+     and long in others — an imported brand names a token by its whole role, e.g.
+     "Ink — brand ink, semantic text, dark-theme surface". With nowrap and no clamp
+     that text cannot shrink, and because the trigger is `justify-content: end` the
+     overflow goes LEFT, straight across the field's own label. Measured 71px of
+     collision, which is what put "MODULE COLOR" on top of its value in the docs
+     screenshots — in English, German and Japanese alike.
+     `min-width: 0` is the load-bearing half: a flex item's default `min-width: auto`
+     refuses to shrink below its content, so ellipsis alone would never engage. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .color-trigger-name:empty { display: none; }   /* custom colours have no name → just the circle */
+
+/* A tool sidebar row FLOATS its label over the control (tool.css, the
+   `:has(input…)` floating-label rule — which a colour row matches because the popover
+   carries a hex input, even though the row's own control is a button). The label is
+   absolutely positioned at the left, OUT OF FLOW, so the trigger cannot see it: a long
+   name grew leftward underneath it, and even the swatch circle landed on the label's
+   last letter. Reserve the label's side of the row so both stay clear of it.
+   45% measured with headroom — the English labels here end at 34-38% of the trigger,
+   and the reserve has to survive translation (German runs longer).
+   Scoped away from the empty-name case, which centres a lone swatch in the whole
+   trigger on purpose; padding would re-centre it in the remainder and strand it. */
+.input-row .color-trigger:not(:has(.color-trigger-name:empty)) { padding-inline-start: 45%; }
 
 /* When the field is squeezed in next to other controls, drop the name and collapse to
    just the swatch circle — centred in whatever box the trigger keeps (auto margins beat

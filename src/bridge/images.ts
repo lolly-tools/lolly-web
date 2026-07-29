@@ -19,7 +19,7 @@
  */
 import type {
   ImagesAPI, ImageInfo, ImageResizeOpts, ImageEncodeOpts, ImageResult, ImageEncodeFormat,
-} from '../../../../engine/src/bridge/host-v1.ts';
+} from '@lolly-tools/core/host-v1';
 import { decodeImageBitmap, MAX_SOURCE_PIXELS } from './image-resize.ts';
 import { sniffAnimatedRaster } from '@lolly/engine';
 

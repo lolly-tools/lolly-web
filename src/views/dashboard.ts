@@ -65,7 +65,7 @@ import type { StudioToken } from '../lib/token-studio.ts';
 import type { ExportEntry } from '../lib/export-history.ts';
 import { attachDropRouter } from '../lib/drop-router.ts';
 import type { PickerHost } from './picker.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).

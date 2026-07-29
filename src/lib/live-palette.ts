@@ -14,7 +14,7 @@
  * regression this fixes.
  */
 import { PALETTE, type PaletteEntry } from '../palette.ts';
-import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
+import type { SpotColor } from '@lolly-tools/core/host-v1';
 
 /** The host slice this module reads. */
 interface LivePaletteHost {

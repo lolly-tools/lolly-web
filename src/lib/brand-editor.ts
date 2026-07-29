@@ -50,7 +50,7 @@ import { parseProfileLimit, profileFor, mountedSources } from './color-profiles.
 import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
 import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
-import type { HostV1, TokenSet } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, TokenSet } from '@lolly-tools/core/host-v1';
 import type { WebTokensAPI } from '../bridge/tokens.ts';
 import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
@@ -61,7 +61,7 @@ import {
 } from './brand-doc.ts';
 import type { BrandSwatch, PrintLock } from './brand-doc.ts';
 import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
-import type { SpotColor } from '../../../../engine/src/bridge/host-v1.ts';
+import type { SpotColor } from '@lolly-tools/core/host-v1';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex, brandRadiusValue } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
 import { STORAGE_FORMATS, formatColor, serializeColor, storageFormatOf } from './color-formats.ts';

@@ -56,7 +56,7 @@ import { serializeUrlState } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import { getSessionSource } from '../lib/session-source.ts';
-import type { HostV1, Profile, AssetRef } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, Profile, AssetRef } from '@lolly-tools/core/host-v1';
 import type { WebStateAPI } from '../bridge/state.ts';
 import type { BatchFile } from '../pro/batch.ts';
 

@@ -17,7 +17,7 @@
  */
 
 import { parseToolUrl, buildEmbedUrl, parseUrlState, expandQuery, RESERVED, assertComposeStack } from '@lolly/engine';
-import type { HostV1, ComposeSpec, ComposeUrlOpts, AssetRef, ExportFormat } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, ComposeSpec, ComposeUrlOpts, AssetRef, ExportFormat } from '@lolly-tools/core/host-v1';
 import { renderRowToBlob } from '../pro/render-export.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import type { Unit } from '../../../../engine/src/units.ts';

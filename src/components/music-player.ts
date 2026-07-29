@@ -18,13 +18,22 @@ import {
   trackCategory, NEURO_CATEGORY_ORDER,
   type NeurospicyHost, type NeuroTrack,
 } from '../lib/neurospicy.ts';
+import {
+  ATMOSPHERE_LAYERS, ATMOSPHERE_GROUPS, getAtmosphere, atmosphereLevel, activeAtmosphereCount,
+  setAtmosphereLevel, toggleAtmosphereLayer, setAtmospherePanelOpen,
+  type AmbienceKind,
+} from '../lib/atmosphere.ts';
 import { getSfxVolume, setSfxVolume } from '../lib/sfx.ts';
 import { drawMeterBars, drawMeterBaseline } from '../lib/audio-meter.ts';
 import { SOMAFM_HOME } from '../lib/radio.ts';
 import { escape } from '../utils.ts';
+// The transport glyphs come from the shared registry, so this player and the catalog's
+// audio preview cannot drift into looking like different controls.
+import { icon, hasIcon } from '../lib/icons.ts';
 
-const PLAY = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M7 4.5a1 1 0 0 1 1.53-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 7 19.5z"/></svg>`;
-const PAUSE = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>`;
+const PLAY = icon('play', { size: 18, filled: true });
+const PAUSE = icon('pause', { size: 18, filled: true });
+
 const PREV = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M6 5h2v14H6zM20 5.5v13a1 1 0 0 1-1.53.85l-9-6.5a1 1 0 0 1 0-1.7l9-6.5A1 1 0 0 1 20 5.5z"/></svg>`;
 const NEXT = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5.5v13a1 1 0 0 0 1.53.85l9-6.5a1 1 0 0 0 0-1.7l-9-6.5A1 1 0 0 0 4 5.5z"/></svg>`;
 const CARET = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
@@ -101,6 +110,37 @@ const CSS = `
 .neuro-track-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .neuro-track-mood { flex: 0 0 auto; font-size: .62rem; text-transform: uppercase; letter-spacing: .02em; color: hsl(var(--muted-foreground)); }
 .neuro-empty { padding: 8px 10px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
+/* ── Atmosphere: the collapsed-by-default background-noise mixer at the bottom of
+   the player. One line per bed (icon · label · slider), sized so all seven rows
+   still leave the dock a player rather than a mixing desk. */
+.neuro-atmo { border-top: 1px solid hsl(var(--border) / .6); padding-top: 8px; }
+.neuro-atmo-head { display: flex; align-items: center; gap: 7px; width: 100%; padding: 3px 2px; border: none; background: transparent; color: hsl(var(--muted-foreground)); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; cursor: pointer; border-radius: var(--radius); }
+.neuro-atmo-head:hover { color: hsl(var(--foreground)); }
+.neuro-atmo-head:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+.neuro-atmo-caret { display: inline-flex; transition: transform .15s ease; transform: rotate(-90deg); }
+.neuro-atmo[data-open="true"] .neuro-atmo-caret { transform: none; }
+/* Count of layers currently turned up — the only cue that something is sounding
+   while the section is folded away. */
+.neuro-atmo-count { margin-left: auto; font-size: .7rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: hsl(var(--primary)); }
+.neuro-atmo-count[hidden] { display: none; }
+/* Seven rows on top of a full player can push the bottom-docked panel off the top
+   of a short viewport, so the rows scroll rather than growing the dock without
+   limit. Tall screens still show all seven without a scrollbar. */
+.neuro-atmo-rows { display: flex; flex-direction: column; gap: 1px; padding-top: 4px; max-height: min(40vh, 250px); overflow-y: auto; }
+.neuro-atmo-rows[hidden] { display: none; }
+.neuro-atmo-group { padding: 6px 2px 2px; font-size: .62rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: hsl(var(--muted-foreground) / .75); }
+.neuro-atmo-group:first-child { padding-top: 0; }
+.neuro-atmo-row { display: flex; align-items: center; gap: 8px; padding: 1px 0; }
+.neuro-atmo-icon { flex: 0 0 auto; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: calc(var(--radius) * .8); background: hsl(var(--muted) / .6); color: hsl(var(--muted-foreground)); cursor: pointer; transition: background .12s ease, color .12s ease, transform .1s ease; }
+.neuro-atmo-icon svg { width: 14px; height: 14px; }
+.neuro-atmo-icon:hover { color: hsl(var(--foreground)); }
+.neuro-atmo-icon:active { transform: scale(.9); }
+.neuro-atmo-icon:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+.neuro-atmo-row.is-on .neuro-atmo-icon { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.neuro-atmo-label { flex: 0 0 6.6em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .74rem; color: hsl(var(--muted-foreground)); }
+.neuro-atmo-row.is-on .neuro-atmo-label { color: hsl(var(--foreground)); }
+.neuro-atmo-row input[type="range"] { flex: 1; min-width: 0; }
+@media (prefers-reduced-motion: reduce) { .neuro-atmo-caret, .neuro-atmo-icon { transition: none; } }
 .neuro-vol { display: flex; align-items: center; gap: 9px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
 .neuro-vol span { flex: 0 0 3.4em; }
 .neuro-vol input[type="range"] { flex: 1; }
@@ -247,6 +287,49 @@ export interface MusicPlayerBodyOptions {
   /** The inline "Music" volume slider. Off when the host supplies its own control —
    *  any `[data-mp-volume]` input inside the same scope gets wired either way. */
   volume?: boolean;
+  /** The Atmosphere section (background-noise beds mixed under the music). */
+  atmosphere?: boolean;
+}
+
+/**
+ * The Atmosphere mixer: a folded section of one-line rows, icon · label · slider.
+ * Clicking an icon turns that bed on at the level it last had (or a default), and
+ * dragging the slider does both jobs at once — there is no separate enable, which
+ * is the point of a mixer strip. Levels are independent of the music volume and
+ * persist; lib/atmosphere.ts owns all of that.
+ */
+function atmosphereHtml(): string {
+  const open = getAtmosphere().open;
+  const count = activeAtmosphereCount();
+  const rowHtml = (l: (typeof ATMOSPHERE_LAYERS)[number]): string => {
+    const v = atmosphereLevel(l.id);
+    const glyph = hasIcon(l.icon) ? icon(l.icon, { size: 14 }) : '';
+    return `<div class="neuro-atmo-row${v > 0 ? ' is-on' : ''}" data-atmo-row="${escape(l.id)}">`
+      + `<button type="button" class="neuro-atmo-icon" data-atmo-toggle="${escape(l.id)}" aria-pressed="${v > 0}"`
+      + ` title="${escape(l.label)}" aria-label="${escape(l.label)}">${glyph}</button>`
+      + `<span class="neuro-atmo-label">${escape(l.label)}</span>`
+      + `<input type="range" class="field-range" min="0" max="1" step="0.01" value="${v}"`
+      + ` data-atmo-range="${escape(l.id)}" aria-label="${escape(l.label)} level">`
+      + `</div>`;
+  };
+  // Grouped (Outside / Places / Noise) — fifteen unlabelled rows would be a wall.
+  // The headings are one line each and carry no controls, so the section stays a
+  // list you scan rather than a panel you read.
+  const rows = ATMOSPHERE_GROUPS.map((g) => {
+    const items = ATMOSPHERE_LAYERS.filter((l) => l.group === g);
+    if (!items.length) return '';
+    return `<div class="neuro-atmo-group">${escape(g)}</div>${items.map(rowHtml).join('')}`;
+  }).join('');
+  return `<div class="neuro-atmo" data-mp-atmo data-open="${open}">
+      <!-- No aria-controls/id pair: the player body can be mounted several times at
+           once (dock + popover + popout), and a duplicated id is worse than the
+           implicit association a neighbouring aria-expanded already gives. -->
+      <button type="button" class="neuro-atmo-head" data-mp-atmo-toggle aria-expanded="${open}">
+        <span class="neuro-atmo-caret">${CARET}</span><span>Atmosphere</span>
+        <span class="neuro-atmo-count" data-mp-atmo-count${count ? '' : ' hidden'}>${count} on</span>
+      </button>
+      <div class="neuro-atmo-rows" data-mp-atmo-rows${open ? '' : ' hidden'}>${rows}</div>
+    </div>`;
 }
 
 /** The player body (meter, transport, volumes). The track picker is rendered
@@ -254,7 +337,7 @@ export interface MusicPlayerBodyOptions {
  *  same [data-music-player] scope (the dock <section>) so wiring finds them. */
 export function musicPlayerBodyHtml(opts: MusicPlayerBodyOptions = {}): string {
   ensureStyles();
-  const { meter = true, effects = true, volume = true } = opts;
+  const { meter = true, effects = true, volume = true, atmosphere = true } = opts;
   const playing = isNeurospicyPlaying();
   return `<div class="neuro-player">
       ${meter ? `<canvas class="neuro-meter" data-mp-meter width="260" height="24" aria-hidden="true"></canvas>` : ''}
@@ -269,6 +352,7 @@ export function musicPlayerBodyHtml(opts: MusicPlayerBodyOptions = {}): string {
       </div>
       ${volume ? `<label class="neuro-vol"><span>Music</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getNeurospicy().volume}" data-mp-volume aria-label="Music volume"></label>` : ''}
       ${effects ? `<label class="neuro-vol"><span>Effects</span><input type="range" class="field-range" min="0" max="1" step="0.05" value="${getSfxVolume()}" data-mp-sfx aria-label="Interface sound volume — how much of the UI you hear"></label>` : ''}
+      ${atmosphere ? atmosphereHtml() : ''}
     </div>`;
 }
 
@@ -306,7 +390,29 @@ export function paintMusicPlayer(root: ParentNode): void {
     btn.setAttribute('aria-current', String(btn.dataset.id === curId));
   }
   paintModeButton(wrap);
+  paintAtmosphere(wrap);
   updateProgress(wrap);
+}
+
+/** Sync the Atmosphere rows to the stored levels — for a repaint driven from
+ *  outside this instance (another mounted player moved a slider, the master mute
+ *  changed). The input being dragged right now is left alone: writing its value
+ *  back mid-drag would fight the pointer. */
+export function paintAtmosphere(root: ParentNode): void {
+  const wrap = playerRoot(root) ?? (root as ParentNode);
+  const active = wrap instanceof HTMLElement ? wrap.ownerDocument.activeElement : null;
+  for (const l of ATMOSPHERE_LAYERS) {
+    const row = wrap.querySelector<HTMLElement>(`[data-atmo-row="${l.id}"]`);
+    if (!row) continue;
+    const v = atmosphereLevel(l.id);
+    row.classList.toggle('is-on', v > 0);
+    row.querySelector<HTMLButtonElement>('[data-atmo-toggle]')?.setAttribute('aria-pressed', String(v > 0));
+    const range = row.querySelector<HTMLInputElement>('[data-atmo-range]');
+    if (range && range !== active) range.value = String(v);
+  }
+  const count = activeAtmosphereCount();
+  const badge = wrap.querySelector<HTMLElement>('[data-mp-atmo-count]');
+  if (badge) { badge.textContent = `${count} on`; badge.hidden = count === 0; }
 }
 
 /** Reflect playback position in the thin skip-to bar. Radio hides it — a live
@@ -442,6 +548,38 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
     void host.profile.get().then((p) => host.profile.set({ ...p, sfxVolume: Number(sfx.value) })).catch(() => { /* best-effort */ });
   });
 
+  // ── Atmosphere: fold toggle, per-layer icon toggles, per-layer sliders ──
+  const atmo = wrap.querySelector<HTMLElement>('[data-mp-atmo]');
+  if (atmo) {
+    const rows = atmo.querySelector<HTMLElement>('[data-mp-atmo-rows]');
+    const head = atmo.querySelector<HTMLButtonElement>('[data-mp-atmo-toggle]');
+    head?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = atmo.dataset.open !== 'true';
+      atmo.dataset.open = String(open);
+      head.setAttribute('aria-expanded', String(open));
+      if (rows) rows.hidden = !open;
+      setAtmospherePanelOpen(open);
+    });
+    // Delegated, so the handlers survive any future re-render of the rows.
+    atmo.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest?.<HTMLElement>('[data-atmo-toggle]');
+      if (!btn) return;
+      e.stopPropagation();
+      toggleAtmosphereLayer(host, btn.dataset.atmoToggle as AmbienceKind);
+      paintAtmosphere(wrap);
+    });
+    atmo.addEventListener('input', (e) => {
+      const range = (e.target as HTMLElement).closest?.<HTMLInputElement>('[data-atmo-range]');
+      if (!range) return;
+      e.stopPropagation();
+      // The slider IS the enable: dragging up from zero starts that bed, dragging
+      // back to zero stops it. setAtmosphereLevel handles both.
+      setAtmosphereLevel(host, range.dataset.atmoRange as AmbienceKind, Number(range.value));
+      paintAtmosphere(wrap);
+    });
+  }
+
   // Searchable dropdown open/close.
   wrap.querySelector<HTMLButtonElement>('[data-mp-picker-btn]')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -566,6 +704,13 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
     else ownDoc.removeEventListener('lolly:neuro-tracks', onTracks);
   };
   ownDoc.addEventListener('lolly:neuro-tracks', onTracks);
+  // Atmosphere levels are global, so a change made in ANOTHER mounted player (or by
+  // the master mute) has to show up here. Self-removing on the same terms as above.
+  const onAtmo = (): void => {
+    if (wrap.isConnected) paintAtmosphere(wrap);
+    else ownDoc.removeEventListener('lolly:atmosphere', onAtmo);
+  };
+  ownDoc.addEventListener('lolly:atmosphere', onAtmo);
 
   startMeter(wrap);
 }

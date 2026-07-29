@@ -8,7 +8,7 @@
  * each loop is decoded into an AudioBuffer and played via an AudioBufferSourceNode(loop=true)
  * — so mp3/aac priming gaps never apply. Shell chrome (host audio), never the engine.
  */
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 import { renderSongToAudioBuffer } from './zzfxm-render.ts';
 import { renderModToAudioBuffer, isModuleFormat } from './mod-render.ts';
@@ -142,6 +142,16 @@ function audio(): { ctx: AudioContext; gain: GainNode } | null {
 
 /** The analyser on the focus-loop graph, for a level meter. Null until audio starts. */
 export function getNeurospicyAnalyser(): AnalyserNode | null { return analyser; }
+
+/**
+ * The shared focus-audio context, built and resumed on demand — for the Atmosphere
+ * ambience layers (lib/atmosphere.ts), which sound alongside the music rather than
+ * through it. Browsers cap how many AudioContexts a page may hold, so ambience
+ * borrows this one instead of opening a second; it connects to `ctx.destination`
+ * directly, NOT to this module's gain, so the music volume slider never drags the
+ * ambience with it (the point of the feature: noise under music, mixed separately).
+ */
+export function neuroAudioContext(): AudioContext | null { return audio()?.ctx ?? null; }
 
 /** Is the current selection a live stream rather than a decodable track? */
 export function isNeurospicyRadio(): boolean {

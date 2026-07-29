@@ -40,9 +40,10 @@ import {
 import type { AuthoredPath, Continuity, Cubic, HyperbezierSolution, SplineKind, SplineNode } from '@lolly/engine';
 import type { PenFrame } from './free-canvas-pen.ts';
 import {
-  PEN_DEFAULT_KIND, PEN_KINDS, closesOnClick, convertKind, decodePathContours,
-  defaultContinuity, deleteNodes, denormNodes, dragHandle, encodePathField, encodePathFields,
-  frameToLocal, handlePoint, insertNodeOnCurve, kindReadsHandles, localToFrame, lowerAuthored,
+  PEN_DEFAULT_KIND, PEN_KINDS, alignNodes, closesOnClick, convertKind, decodePathContours,
+  defaultContinuity, deleteNodes, denormNodes, distributeNodes, dragHandle, encodePathField,
+  encodePathFields, frameToLocal, handlePoint, insertNodeOnCurve, kindReadsHandles,
+  localToFrame, lowerAuthored, type NodeAlignEdge,
   moveNodes, nearestOnPath, nodeAt, normNodes, pathPaintIsVisible, pathPaintSeed,
   penCommitFromNative, penFrame, pickPathPaint, pullHandles,
   refitFrame, resolveDrawnInk, setNodeContinuity,
@@ -296,7 +297,10 @@ interface PopGrid { sep?: undefined; grid: PopGridItem[]; cols?: number }
 // `key` tags the rendered row with `data-pop="<key>"` so a long-lived menu can be
 // refreshed in place — the undo/redo pair stays open while you step back, and its
 // enabled state has to follow the history stack rather than the moment it opened.
-interface PopAction { sep?: undefined; grid?: undefined; label: string; icon?: string; run(): void; disabled?: boolean; danger?: boolean; keepOpen?: boolean; key?: string }
+// `on` makes a row a RADIO rather than a command — set it (even to false) and the row
+// reports `aria-checked` and paints its current state. Used by the pen's spline-type menu,
+// where the point of opening it is to see which type you are already on.
+interface PopAction { sep?: undefined; grid?: undefined; label: string; icon?: string; run(): void; disabled?: boolean; danger?: boolean; keepOpen?: boolean; key?: string; on?: boolean }
 type PopItem = PopSep | PopGrid | PopAction;
 
 // Gesture state — filled in by beginGesture with pointerId/startClient.
@@ -850,7 +854,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let penWarm: HyperbezierSolution | null = null;
   const PEN_HIT_PX = 9;                          // grab radius for a node/handle, SCREEN px
   const PEN_CURVE_PX = 7;                        // "on the curve" band for insert, SCREEN px
-  const PEN_PULL_MIN = 2;                        // drag past this and a click became a handle PULL, SCREEN px
+  const PEN_PULL_MIN = 3;                        // drag past this and a click became a handle PULL, SCREEN px
+  // Alt during a `pendraw` drag BREAKS the handle pair, and latches for the rest of that
+  // drag rather than being read fresh each move: a break is a declaration about the node,
+  // not a per-frame state, and reading it live makes the corner flicker back to smooth on
+  // any move event that happens to arrive without the modifier.
+  let penPullBroken = false;
   // The paint the user last put on a path, so the NEXT path they draw matches it — the
   // drawing-app convention, and the reason a session of pen work doesn't mean recolouring
   // every shape. Session-only (never persisted, never in the model): it is a memory of an
@@ -1370,15 +1379,67 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // against THIS stage (a different tool, a resized window).
   if (railSession) placeRail(railSession);
 
-  function toolBtn(label: string, svg: string, onClick: (b: HTMLButtonElement, e: MouseEvent) => void, extraClass = ''): HTMLButtonElement {
+  /** How long a press has to be held before it counts as "open this tool's options"
+   *  rather than "use this tool". Long enough not to fire on a slow click, short enough
+   *  to feel like a press rather than a hang. */
+  const HOLD_MS = 420;
+  /** Pointer travel that turns a hold into a drag and cancels the menu, SCREEN px. */
+  const HOLD_SLOP = 8;
+
+  /**
+   * A rail button, optionally with a press-and-hold menu of its own.
+   *
+   * `hold` is the touch-reachable half of a right-click: press and keep pressing, or
+   * right-click, and the tool offers its options instead of running. The short click is
+   * untouched — the tool still does its main job on a tap, which is what makes this safe
+   * to add to a button people already use. The two never both fire: a hold that opened a
+   * menu swallows the click that the pointerup would otherwise deliver.
+   */
+  function toolBtn(
+    label: string,
+    svg: string,
+    onClick: (b: HTMLButtonElement, e: MouseEvent) => void,
+    extraClass = '',
+    hold?: (b: HTMLButtonElement) => void,
+  ): HTMLButtonElement {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'fc-btn ' + extraClass;
     b.title = label;
     b.setAttribute('aria-label', label);
     b.innerHTML = icon(svg);
-    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(b, e); });
-    b.addEventListener('pointerdown', (e) => e.stopPropagation());
+    let holdTimer: ReturnType<typeof setTimeout> | 0 = 0;
+    let holdFired = false;
+    let holdFrom: { x: number; y: number } | null = null;
+    const cancelHold = (): void => {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+      holdFrom = null;
+    };
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // The pointerup that ends a hold still delivers a click. Eat exactly that one.
+      if (holdFired) { holdFired = false; return; }
+      onClick(b, e);
+    });
+    b.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      if (!hold || e.button > 0) return;          // secondary buttons take the contextmenu path
+      holdFired = false;
+      holdFrom = { x: e.clientX, y: e.clientY };
+      // Bare `setTimeout`/`clearTimeout`, matching `flashTimer` above — pairing
+      // `window.setTimeout` with a bare `clearTimeout` cancels nothing wherever the two
+      // are not the same object, which is every jsdom-hosted test in this file.
+      holdTimer = setTimeout(() => { holdTimer = 0; holdFired = true; hold(b); }, HOLD_MS);
+    });
+    if (hold) {
+      // A press that travels is someone scrolling the rail, not someone holding it.
+      b.addEventListener('pointermove', (e) => {
+        if (holdFrom && Math.hypot(e.clientX - holdFrom.x, e.clientY - holdFrom.y) > HOLD_SLOP) cancelHold();
+      });
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, cancelHold);
+      b.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); cancelHold(); hold(b); });
+      b.setAttribute('aria-haspopup', 'true');
+    }
     toolbar.appendChild(b);
     return b;
   }
@@ -1475,8 +1536,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Alt is free here because a pen click returns long before `selectionForHit`, where Alt
     // means "drill into the group".
     if (cv.pathField) {
-      modeBtns.pen = toolBtn(t('Pen - click to place points, drag to curve, Alt for a corner'), SVG.pen,
-        () => { mode === 'pen' ? toPointer() : setMode('pen'); }, 'fc-btn-pen');
+      modeBtns.pen = toolBtn(t('Pen - click to place points, drag to curve, Alt for a corner. Hold for the spline type'), SVG.pen,
+        () => { mode === 'pen' ? toPointer() : setMode('pen'); }, 'fc-btn-pen',
+        (b) => openPenKindMenu(b));
     }
     // Timeline (opt-in via the canvas time-model fields — a tool with nowhere to store
     // a start/duration has no timeline). Toggles the docked panel; the panel module
@@ -1553,7 +1615,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'fc-pop-item' + (it.danger ? ' fc-pop-danger' : '');
+      b.className = 'fc-pop-item' + (it.danger ? ' fc-pop-danger' : '') + (it.on ? ' is-on' : '');
+      if (it.on !== undefined) { b.setAttribute('role', 'menuitemradio'); b.setAttribute('aria-checked', String(it.on)); }
       if (it.key) b.dataset.pop = it.key;
       b.disabled = it.disabled === true;
       b.innerHTML = (it.icon ? `<span class="fc-pop-ic">${it.icon}</span>` : '') + `<span>${it.label}</span>`;
@@ -3384,6 +3447,45 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  draws a curve rather than a polyline. */
   let penDrawKind: SplineKind = PEN_DEFAULT_KIND;
 
+  /** One set of spline-type names for every surface that offers them — the pen bar's
+   *  `<select>` and the rail button's hold menu. Built per call rather than frozen at
+   *  module load so a language switch renames them. */
+  function penKindLabels(): Record<string, string> {
+    return {
+      hyperbezier: t('Smooth (auto)'), cubic: t('Bezier handles'),
+      'catmull-rom': t('Through the points'), bspline: t('B-spline'), line: t('Straight lines'),
+    };
+  }
+
+  /**
+   * The spline type, chosen from the rail BEFORE anything is drawn.
+   *
+   * Until this existed the switcher only appeared in the pen bar, which only appears once
+   * there is a draft — so choosing the type meant drawing a path in the wrong one first
+   * and converting, and `hyperbezier → cubic` is the only conversion that is lossless.
+   * Picking up the pen already knowing what you want to draw is the normal case for
+   * tracing, so it gets a normal path to it.
+   */
+  function openPenKindMenu(anchor: HTMLElement): void {
+    const labels = penKindLabels();
+    spawnPopover(anchor, PEN_KINDS.map((k) => ({
+      label: labels[k] || k,
+      on: k === penDrawKind,
+      run: () => setPenDrawKind(k),
+    })));
+  }
+
+  /** Choose the type and arm the pen, so the menu leaves you ready to draw rather than
+   *  back where you started. An in-progress draft follows the choice, exactly as it does
+   *  from the pen bar's own switcher. */
+  function setPenDrawKind(to: SplineKind): void {
+    penDrawKind = to;
+    if (penDraft) { penDraft = { ...penDraft, kind: to }; penWarm = null; }
+    if (mode !== 'pen') setMode('pen');
+    else renderChrome();
+    announce(t('Spline type: {name}', { name: penKindLabels()[to] || to }));
+  }
+
   const penScale = (): number => metrics().scale || 1;
   const penTol = (): number => PEN_HIT_PX / penScale();
 
@@ -3415,6 +3517,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     nodes.push({ x: at.x, y: at.y, continuity: corner ? 'corner' : defaultContinuity(kind) });
     penDraft = { kind, nodes, closed: false };
     penCursor = null;
+    penPullBroken = corner;   // Alt held at placement arms the break for the drag that follows
     beginGesture(e, { type: 'pendraw', origin: at, index: nodes.length - 1 });
     paintPen();
     syncPenChrome();
@@ -3629,6 +3732,47 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     penEditWrite(next);
   }
 
+  /**
+   * Align / distribute the SELECTED NODES — the same six-plus-two operations the object
+   * bar offers, and deliberately the same icons and the same grid shape, because "align
+   * left" means the same thing to a user whether the things being aligned are boxes or
+   * points. The two never collide: this button only exists while node editing, where
+   * `selection` (boxes) is empty by construction.
+   *
+   * Straightening a traced outline is the reason it is here. A hand-placed run of points
+   * along a straight edge is never actually straight, and the alternative is nudging each
+   * one with the arrow keys.
+   */
+  function openPenArrangeMenu(anchor: HTMLElement): void {
+    if (!penEdit || penSel.size < 2) return;
+    const canDist = penSel.size >= 3;
+    const align = (edge: NodeAlignEdge): void => {
+      if (!penEdit) return;
+      penWarm = null;               // the nodes moved, so a warm hyperbezier start is stale
+      penEditWrite(alignNodes(penEdit.path, penSel, edge));
+    };
+    const dist = (axis: 'h' | 'v'): void => {
+      if (!penEdit) return;
+      penWarm = null;
+      penEditWrite(distributeNodes(penEdit.path, penSel, axis));
+    };
+    spawnPopover(anchor, [
+      { cols: 3, grid: [
+        { label: t('Align left'), icon: icon(SVG.alignL), run: () => align('left') },
+        { label: t('Align centre'), icon: icon(SVG.alignC), run: () => align('hcentre') },
+        { label: t('Align right'), icon: icon(SVG.alignR), run: () => align('right') },
+        { label: t('Align top'), icon: icon(SVG.alignT), run: () => align('top') },
+        { label: t('Align middle'), icon: icon(SVG.alignM), run: () => align('vcentre') },
+        { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => align('bottom') },
+      ] },
+      // Evenly spacing three points needs three points.
+      { cols: 2, grid: [
+        { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => dist('h'), disabled: !canDist },
+        { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => dist('v'), disabled: !canDist },
+      ] },
+    ]);
+  }
+
   function penSetContinuity(c: Continuity): void {
     if (!penEdit || !penSel.size) return;
     penEditWrite(setNodeContinuity(penEdit.path, penSel, c));
@@ -3768,7 +3912,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function syncPenChrome(): void {
     const p = penEdit ? penEdit.path : penDraft;
     if (!p) { if (penChromeKey) clearPenChrome(); return; }
-    const withHandles = !!penEdit && kindReadsHandles(p.kind);
+    // Handles are drawn while DRAWING as well as while editing. A pen's click-drag is the
+    // one gesture whose whole feedback is the arm you are pulling, and on the very first
+    // node of a path there is no segment yet, so without the arm the drag has no visible
+    // effect at all — you are aiming a tangent blind. `handlePoint` returns null for a node
+    // with no authored handle, so a click-only node still shows a bare dot and only the
+    // nodes actually dragged grow arms.
+    const withHandles = kindReadsHandles(p.kind);
     const key = `${penEdit ? 'e:' + penEdit.id : 'd'}:${p.nodes.length}:${withHandles ? 'h' : '-'}`;
     if (key !== penChromeKey) {
       penChromeKey = key;
@@ -3894,10 +4044,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const drawing = !!penDraft;
     const selN = penSel.size;
     const cont = selN ? String(p.nodes[[...penSel][0]!]?.continuity ?? defaultContinuity(p.kind)) : '';
-    const kindLabel: Record<string, string> = {
-      hyperbezier: t('Smooth (auto)'), cubic: t('Bezier handles'),
-      'catmull-rom': t('Through the points'), bspline: t('B-spline'), line: t('Straight lines'),
-    };
+    const kindLabel = penKindLabels();
     // Paint belongs to the BOX, so it only appears once there is one: a draft lives in JS
     // state until it commits, and its paint comes from the add-kind's seed.
     const painted = !drawing && !!penEdit;
@@ -3919,6 +4066,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           ['symmetric', t('Symmetric point - handles stay in line and equal'), SVG.contSymmetric],
         ]) +
         `<button type="button" class="fc-cbtn${p.closed ? ' is-on' : ''}" data-pen="closed" aria-pressed="${p.closed}" title="${escape(t('Closed path'))}" aria-label="${escape(t('Closed path'))}">${icon(SVG.penClose)}</button>` +
+        `<button type="button" class="fc-cbtn" data-pen="arrange"${selN >= 2 ? '' : ' disabled'} title="${escape(t('Align and distribute the selected points'))}" aria-label="${escape(t('Align and distribute the selected points'))}">${icon(SVG.align)}</button>` +
         `<button type="button" class="fc-cbtn fc-danger" data-pen="del"${selN ? '' : ' disabled'} title="${escape(t('Delete the selected points'))}" aria-label="${escape(t('Delete the selected points'))}">${icon(SVG.trash)}</button>`) +
       '<span class="fc-sep fc-sep-v"></span>' +
       `<button type="button" class="fc-cbtn" data-pen="done" title="${escape(drawing ? t('Finish this path (Enter)') : t('Finish editing points (Esc)'))}" aria-label="${escape(drawing ? t('Finish this path') : t('Finish editing points'))}">${icon(SVG.penDone)}</button>` +
@@ -3943,6 +4091,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       e.stopPropagation();
       const which = b.dataset.pen;
       if (which === 'closed') penToggleClosed();
+      else if (which === 'arrange') openPenArrangeMenu(b);
       else if (which === 'del') penDeleteSelected();
       else if (which === 'done') { if (penDraft) penFinishDraw(); else endPenEdit(); }
     }));
@@ -5143,8 +5292,36 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (penEdit) { endPenEdit(); return; }
     closePopover();
     deselectEdge();
-    if (selection.size) selection = new Set<string>();
+    // A SHIFT/⌘ drag is additive, so it must not wipe what is already selected — same
+    // rule the in-artboard marquee follows.
+    const additive = e.shiftKey || e.metaKey;
+    if (selection.size && !additive) selection = new Set<string>();
     renderChrome();
+    // …and a plain left-drag out here MARQUEES, exactly as it does over the artboard.
+    // Nothing claimed that gesture before: stageNav pans on middle-drag or Space+drag
+    // and lets plain left-clicks through, while the marquee lived on canvasEl — so a
+    // left-drag on the backdrop fell between the two and did nothing at all, which is
+    // what made the whole area outside the artboard feel inert.
+    // Touch is left alone: stageNav owns one-finger pan there, as it does inside.
+    if (e.pointerType !== 'mouse' || spacePan) return;
+    beginGesture(e, { type: 'marquee', origin: clientToNative(e.clientX, e.clientY), additive });
+    rubber.hidden = false;
+    // The gesture captures the pointer on canvasEl, so the move/up handlers bound there
+    // keep receiving it even though the drag started outside.
+  }
+
+  /** Right-click on the backdrop opens the SAME menu as right-click on empty artboard —
+   *  guarded to a direct hit so a bubbled event from a box or the toolbar can't reach it. */
+  function onBackdropContextMenu(e: MouseEvent): void {
+    if (e.target !== e.currentTarget) return;
+    onContextMenu(e);
+  }
+
+  /** Space is stageNav's pan modifier (Space+left-drag). Tracked here only so the
+   *  backdrop marquee yields to it — stageNav owns the pan and exposes no state. */
+  let spacePan = false;
+  function onSpaceKey(e: KeyboardEvent): void {
+    if (e.code === 'Space' && !isTypingTarget()) spacePan = e.type === 'keydown';
   }
 
   // pointermove fires far faster than paint (60–120 Hz); coalesce to one rAF per frame so
@@ -5173,14 +5350,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       drawRubber(gesture.origin, nat);
       return;
     }
-    // Pen: pull the just-placed node's handles out symmetrically, the universal
-    // click-and-drag idiom. A `corner` node ignores it (pullHandles says so), which is what
-    // makes Alt-click-drag place a hard corner rather than a curve.
+    // Pen: pull the just-placed node's handles out, the universal click-and-drag idiom.
+    // Symmetrically by default; Alt BREAKS the pair and steers only the outgoing arm, which
+    // is the gesture tracing lives on — it is how a curve turns a corner into a new curve
+    // without giving up the one already drawn. Alt with no drag still places a hard corner,
+    // because the break only takes effect past `PEN_PULL_MIN`.
     if (gesture.type === 'pendraw') {
       if (!penDraft) return;
       const i = gesture.index;
       const n = penDraft.nodes[i];
       if (!n) return;
+      const pulled = Math.hypot(nat.x - gesture.origin.x, nat.y - gesture.origin.y) > PEN_PULL_MIN / penScale();
       // A click-DRAG is the Bézier idiom: it names a direction AND a length. `hyperbezier`
       // can only honour the direction, and only within a right angle of its chord — past
       // that `hbArm`'s signed shape function puts the control arm on the far side of the
@@ -5190,8 +5370,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // the fix belongs here: the first real pull promotes the draft to `cubic`, whose
       // lowering honours the handle exactly. The bake is lossless (see `convertKind`), so
       // the shape drawn so far does not move, and the kind pill flips to say what happened.
-      if (penDraft.kind === 'hyperbezier' && (n.continuity ?? 'smooth') !== 'corner'
-          && Math.hypot(nat.x - gesture.origin.x, nat.y - gesture.origin.y) > PEN_PULL_MIN / penScale()) {
+      if (penDraft.kind === 'hyperbezier' && pulled) {
         penDraft = convertKind(penDraft, 'cubic', penWarm).path;
         penWarm = null;
         announce(t('Switched to Bezier handles - this curve kind honours the handle you drag.'));
@@ -5199,7 +5378,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       const nodes = penDraft.nodes.slice();
       const cur = nodes[i] ?? n;   // re-read: the promotion above rebuilds the node array
-      nodes[i] = pullHandles({ ...cur, x: gesture.origin.x, y: gesture.origin.y }, nat.x - gesture.origin.x, nat.y - gesture.origin.y);
+      const dx = nat.x - gesture.origin.x, dy = nat.y - gesture.origin.y;
+      const at = { ...cur, x: gesture.origin.x, y: gesture.origin.y };
+      // Whichever branch runs owns the node's continuity outright: `pullHandles` refuses a
+      // `corner` node, and `defaultContinuity` is `'corner'` for every kind except
+      // `hyperbezier` — so without this a click-drag in a `cubic` draft silently did nothing.
+      // Breaking keeps `hIn` exactly where it is: on the first broken frame that is the arm
+      // the bake left holding the segment already drawn, so "keep what is behind me, aim what
+      // is ahead" needs no recomputation.
+      if (e.altKey) penPullBroken = true;
+      nodes[i] = !pulled ? at
+        : penPullBroken ? { ...at, continuity: 'corner', hOutX: dx, hOutY: dy }
+        : pullHandles({ ...at, continuity: 'smooth' }, dx, dy);
       penDraft = { ...penDraft, nodes };
       paintPen();
       positionPenChrome();
@@ -6477,8 +6667,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   stageEl.addEventListener('pointerup', onStageTouchUp, true);
   stageEl.addEventListener('pointercancel', onStageTouchUp, true);
   canvasEl.addEventListener('pointerdown', onCanvasPointerDown);
-  stageEl.addEventListener('pointerdown', onBackdropPointerDown);   // deselect on backdrop click
+  stageEl.addEventListener('pointerdown', onBackdropPointerDown);   // deselect/marquee on backdrop
   viewEl.addEventListener('pointerdown', onBackdropPointerDown);
+  stageEl.addEventListener('contextmenu', onBackdropContextMenu);
+  viewEl.addEventListener('contextmenu', onBackdropContextMenu);
+  window.addEventListener('keydown', onSpaceKey);
+  window.addEventListener('keyup', onSpaceKey);
   canvasEl.addEventListener('pointermove', onGestureMove);
   canvasEl.addEventListener('pointerup', onGestureEnd);
   canvasEl.addEventListener('pointercancel', onGestureEnd);
@@ -6603,6 +6797,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       canvasEl.removeEventListener('pointerdown', onCanvasPointerDown);
       stageEl.removeEventListener('pointerdown', onBackdropPointerDown);
       viewEl.removeEventListener('pointerdown', onBackdropPointerDown);
+      stageEl.removeEventListener('contextmenu', onBackdropContextMenu);
+      viewEl.removeEventListener('contextmenu', onBackdropContextMenu);
+      window.removeEventListener('keydown', onSpaceKey);
+      window.removeEventListener('keyup', onSpaceKey);
       canvasEl.removeEventListener('pointermove', onGestureMove);
       canvasEl.removeEventListener('pointerup', onGestureEnd);
       canvasEl.removeEventListener('pointercancel', onGestureEnd);

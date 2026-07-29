@@ -5,7 +5,7 @@ import {
   parseCover, formatCover, loadAudioCovers, saveAudioCover, resolveAudioLook,
 } from './audio-covers.ts';
 import { audioThumbShape } from './audio-thumb.ts';
-import type { Profile } from '../../../../engine/src/bridge/host-v1.ts';
+import type { Profile } from '@lolly-tools/core/host-v1';
 
 const POOL = ['#30ba78', '#0c322c', '#fe7c3f', '#2453ff'];
 const ID = 'lolly/modules/take-a-walk';
@@ -79,7 +79,7 @@ test('with no cover the look is exactly the generated one', () => {
 });
 
 test('covers for OTHER assets never leak onto this one', () => {
-  const covers = new Map([['lolly/modules/dream-candy', { shape: 'blob' as const }]]);
+  const covers = new Map([['lolly/modules/headspin', { shape: 'blob' as const }]]);
   assert.equal(resolveAudioLook(ID, POOL, covers).shape, audioThumbShape(ID));
   assert.equal(resolveAudioLook(ID, POOL, covers).custom, false);
 });

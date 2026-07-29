@@ -41,6 +41,7 @@ import { storeUserUpload } from './picker.ts';
 import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
 import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
+import { stopAtmosphere } from '../lib/atmosphere.ts';
 import { syncNeuroDock } from '../components/neuro-dock.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
@@ -60,7 +61,7 @@ import type { UserFontsHost } from '../user-fonts.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
 import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import { relativeTime, fmtBytes, sessionRow } from '../folder-tiles.ts';
-import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI, StateEntry } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI, StateEntry } from '@lolly-tools/core/host-v1';
 import type { FeatureFlag } from '../feature-flags.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 
@@ -506,7 +507,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // Toggling the Neurospicy feature: silence any loop when turning it off (the UI is
     // gone, so leave no invisible audio), and show/hide the bottom-right dock to match.
     if (flagId === NEUROSPICY_FLAG.id) {
-      if (!input.checked) stopNeurospicy();
+      // Atmosphere lives in the same player, so it goes quiet on the same terms —
+      // its controls disappear with the dock and audio must not outlive them.
+      if (!input.checked) { stopNeurospicy(); stopAtmosphere(); }
       syncNeuroDock(host as unknown as Parameters<typeof syncNeuroDock>[0]);
     }
     // Toggling Jelly effects applies on the spot: load the bundle if needed, then

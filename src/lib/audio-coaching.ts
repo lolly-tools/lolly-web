@@ -11,7 +11,7 @@
  *   - 'check'  (arming / sound-check, mic raw): silence is expected, so judge the room.
  *   - 'record' (the take): coach the speaking level; only flag a genuinely bad floor.
  */
-import type { AudioLevel } from '../../../../engine/src/bridge/host-v1.ts';
+import type { AudioLevel } from '@lolly-tools/core/host-v1';
 import { announce } from '../a11y.ts';
 import { coachAudio } from './audio-coach-core.ts';
 import type { CoachTarget, CoachPhase } from './audio-coach-core.ts';

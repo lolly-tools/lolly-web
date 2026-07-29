@@ -22,7 +22,7 @@
 // The variant thumbnails render post-paint (the cross-fade builds up), so it loads then.
 import { rasterToThumbnailDataUrl } from './raster-thumb.ts';
 import { bundledLook } from './preview-bundle.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { PreviewsAPI } from '../bridge/previews.ts';
 
 type FeaturedHost = HostV1 & { previews?: PreviewsAPI };

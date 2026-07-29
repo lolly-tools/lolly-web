@@ -20,7 +20,7 @@ import { playSfx } from '../lib/sfx.ts';
 import type { ZipTier } from '@lolly/engine';
 import { rowsForFolder, rowFromToolSession, rowFromBatchRow, slug, isMotionRow } from './folder-rows.ts';
 import { isBatchSlot } from '../folder-tiles.ts';
-import type { HostV1 } from '../../../../engine/src/bridge/host-v1.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { BatchRow, BatchFile } from './batch.ts';
 import type { ExportRow } from './folder-rows.ts';
 

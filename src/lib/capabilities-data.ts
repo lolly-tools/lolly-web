@@ -349,7 +349,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     desc: 'When work does leave the device — a share link, a download, a PDF — you decide who can open it. Every lock is applied on-device, and passwords and keys are never sent to a server.',
     cards: [
       { icon: ICONS.link, title: 'Password-gated links', features: [
-        { name: 'Encrypted share links', desc: 'Any share link can be encrypted: the design is AES-256-GCM-encrypted under a key stretched from the password with PBKDF2-SHA256 (210k iterations). The link carries <em>only</em> the ciphertext — opening it prompts the recipient for the password and rebuilds the design in their browser. The password never travels in the link and nothing is sent to a server.' },
+        { name: 'Encrypted share links', desc: 'Any share link can be encrypted: the design is AES-256-GCM-encrypted under a key stretched from the password with PBKDF2-SHA256 (210k iterations). The link carries <em>only</em> the ciphertext — opening it prompts the recipient for the password and rebuilds the design in their browser. The password never travels in the link and never reaches a server — the server sees only ciphertext in the URL, and decryption happens entirely in the recipient’s browser.' },
       ] },
       { icon: ICONS.lock, title: 'Locked PDFs', features: [
         { name: 'Two lock strengths', desc: 'A PDF can carry a <strong>Standard</strong> open-password (a basic 40-bit lock that opens in any PDF app and can ride in a share link — a deterrent for short-lived material) or a <strong>Strong</strong> one (AES-256; opens in newer PDF apps only, and its password is typed at export, never in a link). Strong locks also apply to Print/CMYK and multi-page PDFs.' },
