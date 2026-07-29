@@ -136,6 +136,10 @@ export interface PanelEl extends HTMLElement {
   _colorPopoverDismiss?: (e: MouseEvent) => void;
   _blockMenuDismiss?: (e: MouseEvent) => void;
   _helpTipDismiss?: (e: MouseEvent) => void;
+  /** The audio-slot waveform enhancer parked by renderInputs — holds an
+   *  IntersectionObserver and in-flight decodes, so it is destroyed and rebuilt on
+   *  every re-render and released by _inputsDispose. */
+  _audioThumbs?: { destroy(): void };
   /** Aggregate disposer renderInputs maintains: removes the document-level capture
    *  dismissers above and destroys the panel's flatpickr instances. The ONE call
    *  every consumer's teardown makes (tool view, embed editor, multi-edit). */

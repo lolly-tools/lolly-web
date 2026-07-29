@@ -44,6 +44,11 @@ import type { InputModelItem, InputValue, InputSpec, BlockFieldSpec } from '../.
 import type { LoadedTool } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 
+import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
+import { peaksFingerprint } from '../lib/audio-peaks.ts';
+// The same enhancer the picker and catalog grids use — an audio slot starts as an
+// honest glyph and upgrades in place once its peaks are measured.
+import { mountAudioThumbs } from './picker.ts';
 import { asRow, type BlockRow } from './tool-types.ts';
 import type { WebToolHost, PanelEl, EmbedDescribe, FlatpickrHost } from './tool.ts';
 
@@ -1424,7 +1429,38 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // this instead of re-listing the expandos, so a new leak source added here can
   // never be missed at a call site. Reads the live expandos/instances at dispose
   // time, so the latest render's listeners are always the ones removed.
+  // Upgrade any audio slot's glyph to its real waveform. Parked on the same aggregate
+  // disposer as everything else here: the enhancer holds an IntersectionObserver and
+  // in-flight decodes, and a panel re-render must not leave a previous one measuring
+  // into a detached node.
+  el._audioThumbs?.destroy();
+  el._audioThumbs = mountAudioThumbs(
+    el,
+    host,
+    // The slot already HAS its resolved ref (the runtime's resolveAssetRefs ran before
+    // this render), so the ref comes straight off the model — the enhancer never has to
+    // reach a catalog this panel has no access to. Blocks nest their own asset fields,
+    // so the walk covers array values too.
+    (id) => {
+      for (const item of model) {
+        const v = item.value as unknown;
+        if (v && typeof v === 'object' && (v as AssetRef).id === id) return v as AssetRef;
+        if (Array.isArray(v)) {
+          for (const row of v) {
+            for (const cell of Object.values((row ?? {}) as Record<string, unknown>)) {
+              if (cell && typeof cell === 'object' && (cell as AssetRef).id === id) return cell as AssetRef;
+            }
+          }
+        }
+      }
+      return undefined;
+    },
+    () => el.isConnected,
+  );
+
   el._inputsDispose = () => {
+    el._audioThumbs?.destroy();
+    el._audioThumbs = undefined;
     if (el._colorPopoverDismiss) document.removeEventListener('click', el._colorPopoverDismiss, true);
     if (el._blockMenuDismiss)    document.removeEventListener('click', el._blockMenuDismiss, true);
     if (el._helpTipDismiss)      document.removeEventListener('click', el._helpTipDismiss, true);
@@ -1574,9 +1610,20 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       const thumbUrl = v?.url;
       const thumb = v?.type === 'lottie'
         ? `<span class="asset-picker-thumb-inline asset-picker-thumb-lottie" aria-hidden="true">&#9654;</span>`
-        : thumbUrl
-          ? `<img class="asset-picker-thumb-inline" src="${escape(thumbUrl)}" alt="">`
-          : '';
+        // An audio ref's URL is an .mp3/.opus/.xm — an <img> at it can only ever
+        // render the browser's broken-image icon. Same trap the picker and catalog
+        // grids had; this is the THIRD renderer, so the audio branch has to be added
+        // wherever a thumbnail is chosen by type, not just where it was first noticed.
+        // The glyph is the honest placeholder; the tile upgrades to the real waveform
+        // once peaks exist (mountAudioThumbs finds it by [data-audio-thumb]).
+        : v?.type === 'audio'
+          ? `<span class="asset-picker-thumb-inline asset-picker-thumb-audio"
+                   data-audio-thumb="${escape(v.id)}"
+                   data-audio-fp="${escape(peaksFingerprint(v))}"
+                   aria-hidden="true">${audioThumbPlaceholder({})}</span>`
+          : thumbUrl
+            ? `<img class="asset-picker-thumb-inline" src="${escape(thumbUrl)}" alt="">`
+            : '';
       // An image minted from a pasted Lolly link keeps its origin in meta.toolUrl —
       // the canonical, re-renderable embed URL (see compose.renderUrl). Surface that
       // provenance and an Edit affordance that re-opens the source tool's own inputs
