@@ -32,6 +32,7 @@ import { getToolIntegrity } from '../catalog/integrity.ts';
 // leaving simple/typical links in their hand-editable readable form.
 const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
+import { createHistory, cloneValue } from './tool-history.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
@@ -128,8 +129,6 @@ export type WebToolHost = HostV1 & {
  */
 export type ToolRuntime = Runtime & { setInputNoHistory?: Runtime['setInput'] };
 
-/** One recorded undo/redo step. */
-interface HistoryEntry { id: string; label: string; before: InputValue; after: InputValue; }
 /** The header (or editor-rail) ↶/↷ pair the history helpers drive. */
 interface HistoryControls { sync(canUndo: boolean, canRedo: boolean): void; }
 
@@ -513,10 +512,10 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // id + time) into a single step — one gesture, one undo. Restoring just replays
   // setInput, so the existing subscriber refreshes the sidebar + canvas for free
   // and the onInput hook re-derives any computed inputs (we never store those).
-  const HISTORY_LIMIT = 100;
-  const COALESCE_MS = 500;
-  const undoStack: HistoryEntry[] = [];   // { id, label, before, after }
-  const redoStack: HistoryEntry[] = [];
+  // The history RULES (coalescing, the byte-carrying filter, the cap, the redo
+  // chain) live in ./tool-history.ts — pure and unit-tested. This view keeps the
+  // wiring: the runtime, the toast and the button sync.
+  const inputHistory = createHistory();
   let applyingHistory = false;
   let historyControls: HistoryControls | null = null;   // ↶/↷ buttons — header pair, or the editor's toolbar pair (set on mount)
   let historyToastEl: HTMLElement | null = null;
@@ -525,30 +524,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // undo/redo leaves an old entry on top still carrying its original time, so if we
   // keyed coalescing off the entry the next edit could wrongly merge into it (losing
   // a state). applyHistory resets this, so a post-undo edit always starts fresh.
-  let lastRecordId: string | null = null, lastRecordTime = 0;
-  const refreshHistoryUI = () => historyControls?.sync(undoStack.length > 0, redoStack.length > 0);
-
-  const cloneValue = (v: InputValue): InputValue => { try { return structuredClone(v); } catch { return v; } };
-  const sameValue = (a: InputValue, b: InputValue): boolean => {
-    if (a === b) return true;
-    try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
-  };
-  // A value carrying raw file bytes (a `file` input's in-memory ref). We DON'T
-  // record these: the ref's object URL is revoked when the input is replaced or
-  // cleared and there's no durable id to re-resolve from, so a restored entry
-  // would point at a dead URL — and deep-cloning megabytes per entry is
-  // wasteful. A blob:/data: URL WITHOUT bytes is fine to record: asset refs
-  // ({source, id, url}) re-derive their URL from the durable source+id, so
-  // history stays live for asset picks and canvas boxes with images (the old
-  // blob:-URL test here silently disabled ALL undo in Layout Studio once any
-  // box image resolved through the asset-blob cache).
-  const carriesBytes = (v: InputValue): boolean => {
-    if (!v || typeof v !== 'object') return false;
-    const rec = v as { bytes?: unknown };
-    if (rec.bytes instanceof Uint8Array || rec.bytes instanceof ArrayBuffer) return true;
-    return (Array.isArray(v) ? v : Object.values(v)).some(c => carriesBytes(c as InputValue));
-  };
-
+  const refreshHistoryUI = () => historyControls?.sync(inputHistory.canUndo(), inputHistory.canRedo());
   const baseSetInput = runtime.setInput.bind(runtime);
   // Expose the UNWRAPPED setter on the runtime so other scopes (notably renderActions'
   // programmatic width/height px-sync) can set inputs without the change landing in the
@@ -557,18 +533,11 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   runtime.setInput = (id: string, value: InputValue) => {
     if (!applyingHistory) {
       const cur = runtime.getModel().find(i => i.id === id);
-      if (cur && !sameValue(cur.value, value) && !carriesBytes(value) && !carriesBytes(cur.value)) {
-        const now = Date.now();
-        const last = undoStack[undoStack.length - 1];
-        if (last && lastRecordId === id && now - lastRecordTime < COALESCE_MS) {
-          last.after = cloneValue(value);   // extend the gesture, keep its original `before`
-        } else {
-          // `label` (the input's human name) is what the toast shows on undo/redo.
-          undoStack.push({ id, label: cur.label || cur.id, before: cloneValue(cur.value), after: cloneValue(value) });
-          if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
-        }
-        lastRecordId = id; lastRecordTime = now;
-        redoStack.length = 0;   // a fresh edit breaks the redo chain
+      // `label` (the input's human name) is what the toast shows on undo/redo.
+      if (cur && inputHistory.record(
+        { id, label: cur.label || cur.id, before: cur.value, after: value },
+        Date.now(),
+      ) !== 'ignored') {
         historyToastEl?.classList.remove('is-visible');   // dismiss a now-stale undo/redo toast
         refreshHistoryUI();
       }
@@ -578,24 +547,20 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
 
   const applyHistory = (id: string, value: InputValue) => {
     applyingHistory = true;
-    lastRecordId = null;   // an undo/redo ends any gesture — the next edit starts a new step
+    inputHistory.endGesture();   // an undo/redo ends any gesture — the next edit starts a new step
     try { runtime.setInput(id, cloneValue(value)); }
     finally { applyingHistory = false; }
   };
   const undoHistory = () => {
-    const entry = undoStack[undoStack.length - 1];
+    const entry = inputHistory.undo();
     if (!entry) { showHistoryToast({ empty: 'undo' }); return; }
-    undoStack.pop();
-    redoStack.push(entry);
     applyHistory(entry.id, entry.before);
     showHistoryToast({ kind: 'undo', label: entry.label });
     refreshHistoryUI();
   };
   const redoHistory = () => {
-    const entry = redoStack[redoStack.length - 1];
+    const entry = inputHistory.redo();
     if (!entry) { showHistoryToast({ empty: 'redo' }); return; }
-    redoStack.pop();
-    undoStack.push(entry);
     applyHistory(entry.id, entry.after);
     showHistoryToast({ kind: 'redo', label: entry.label });
     refreshHistoryUI();
