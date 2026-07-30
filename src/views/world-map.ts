@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // ─── World locator map ────────────────────────────────────────────────────────
 // A low-detail world land outline (amCharts "worldLow"; ~1k points, one path) used
 // to plot a photo's GPS fix inline on /verify — fully offline, no tile server, no

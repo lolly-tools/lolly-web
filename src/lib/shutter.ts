@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /* Export shutter — a canvas camera-iris that closes over the stage while the
    brief full-res resize during export (the "shake") happens, then opens again.
    Replaces the six CSS flaps that lived inline in views/tool.ts.

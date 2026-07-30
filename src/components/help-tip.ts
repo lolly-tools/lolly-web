@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // On-demand input help. Instead of printing every input's help text as an always-
 // visible line under each control — which lengthens and clutters a long sidebar —
 // each input gets a small info button next to its label that reveals the help on

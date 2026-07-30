@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // Canonical formatting helpers, shared across views.
 //
 // These used to be copy-pasted (in divergent forms) across gallery, folder

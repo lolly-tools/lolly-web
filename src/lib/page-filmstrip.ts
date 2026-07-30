@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // A slide-sorter filmstrip for paged tools (render.paged) — a rail of live thumbnails
 // beside the canvas that lets you see every page at once, click one to jump to it, and
 // step with the ← → / ↑ ↓ arrow keys. The rail runs down the LEFT by default, or along

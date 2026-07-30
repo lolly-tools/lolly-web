@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /**
  * Font file utilities: metadata extraction, validation, format detection.
  * Supports TTF, OTF, WOFF, WOFF2 with minimal footprint.

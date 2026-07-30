@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // Design Import — Adobe InDesign IDML parser.
 //
 // A raw .indd is a proprietary binary database with no open parser, so this path takes

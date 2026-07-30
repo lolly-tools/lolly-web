@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // free-canvas-math.js — DOM-free geometry for the WYSIWYG "editor" layout.
 //
 // The web shell's free-canvas overlay (free-canvas.js) is the only DOM here; ALL

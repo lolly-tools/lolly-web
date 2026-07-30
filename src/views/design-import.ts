@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // Design Import — DOM parser (Figma SVG / any SVG / Penpot .penpot|.zip → Layout Studio boxes).
 //
 // This is the SHELL half of the import feature: it lives in the web shell because it

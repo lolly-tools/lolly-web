@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // timeline-math.ts — DOM-free time math for the timeline panel (Fable timeline, phase 2).
 //
 // Sibling of free-canvas-math.ts: that module owns the SPATIAL half of a `boxes`

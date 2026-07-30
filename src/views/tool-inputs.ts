@@ -370,6 +370,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     : null;
   const selStart     = (active as HTMLInputElement | null)?.selectionStart;
   const selEnd       = (active as HTMLInputElement | null)?.selectionEnd;
+  // A popped-out table's cells live in a floating panel, OUTSIDE this root. The
+  // rebuild below makes a fresh duplicate of that grid in the sidebar, so the
+  // by-field-id restore would find the duplicate and yank the caret out of the
+  // panel the user is typing in. Remember where the caret actually was: the
+  // restore skips it, and the re-pop further down hands it to the new panel.
+  const focusFloating = !!active?.closest?.('.floatp .table-input');
 
   // A vector that carries the SAME trailing index as the colour right above it is
   // that colour's sub-control, not its sibling — mesh-gradient's `color3` → `pos3`.
@@ -550,7 +556,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     }
   }
 
-  if (blockFocusId) {
+  if (blockFocusId && !focusFloating) {
     const restored = el.querySelector<HTMLInputElement>(`[data-field-id="${CSS.escape(blockFocusId)}"]`);
     if (restored) {
       restored.focus();
@@ -942,7 +948,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // sidebar rebuild structural edits trigger: the rebuild orphans the old
     // panel around its stale wrapper, so wiring closes it and re-pops the FRESH
     // wrapper into a new panel at the same geometry (tablePops, module scope).
-    const openPanel = (geom?: Partial<CSSStyleDeclaration>): void => {
+    const openPanel = (geom?: Partial<CSSStyleDeclaration>, refocus?: string): void => {
       void import('../lib/float-panel.ts').then(({ popOut }) => {
         const inp = panelModel.find(i => i.id === tid);
         const panel = popOut(wrap, {
@@ -956,6 +962,17 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         if (!panel) return;
         if (geom) Object.assign(panel.root.style, geom);
         tablePops.set(tid, panel);
+        // The caret was in the panel this run replaced, so put it back in the
+        // equivalent cell of the fresh one — the sidebar restore deliberately
+        // skipped it (focusFloating), and without this the rebuild that cost the
+        // user their panel would cost them their place in it too.
+        if (refocus) {
+          const cell = wrap.querySelector<HTMLTextAreaElement>(`[data-field-id="${CSS.escape(refocus)}"]`);
+          if (cell) {
+            cell.focus();
+            if (selStart != null && cell.setSelectionRange) cell.setSelectionRange(selStart, selEnd!);
+          }
+        }
       });
     };
     const stale = tablePops.get(tid);
@@ -963,7 +980,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const s = stale.root.style;
       const geom = { left: s.left, top: s.top, width: s.width, height: s.height };
       stale.close();
-      openPanel(geom);
+      openPanel(geom, focusFloating ? blockFocusId : undefined);
     }
     wrap.querySelector('[data-table-pop]')?.addEventListener('click', () => {
       const cur = tablePops.get(tid);
@@ -1828,13 +1845,20 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         ? `<div class="table-scroll"><table class="table-grid">
             <thead><tr>${head}<th class="table-rowctl"></th></tr></thead><tbody>${body}</tbody></table></div>`
         : `<p class="table-empty-hint">Paste a table copied from your spreadsheet, doc, or chat — or start one below.</p>`;
+      // The pop-out sits at the grid's top-right corner, not in the toolbar
+      // below: it acts on the TABLE, and in a sidebar that toolbar can be a long
+      // scroll away from the header you were reading when you decided the grid
+      // was too cramped. Its own bar rather than an overlay on the corner cell —
+      // the last column's remove-× already lives there.
       return `<div class="table-input" data-table-id="${id}">
+        <div class="table-headbar">
+          <button type="button" class="table-pop" data-table-pop title="Pop out into a floating window" aria-label="Pop out into a floating window">&#x2922;</button>
+        </div>
         ${grid}
         <div class="table-toolbar">
           <button type="button" class="table-btn" data-table-add-row${t.columns.length ? '' : ' disabled'}>+ Row</button>
           <button type="button" class="table-btn" data-table-add-col>+ Column</button>
           <span class="table-toolbar-gap"></span>
-          <button type="button" class="table-btn table-btn--pop" data-table-pop title="Pop out into a floating window" aria-label="Pop out into a floating window">&#x2922;</button>
           <button type="button" class="table-btn" data-table-paste title="Replace with the table on your clipboard">Paste</button>
           <button type="button" class="table-btn" data-table-copy${t.rows.length ? '' : ' disabled'} title="Copy as a table for Sheets, Docs, Slack&#8230;">Copy</button>
         </div>

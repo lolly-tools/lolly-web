@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // Capability probes for format availability. These are tiny, stateless (bar one
 // memo) DOM/navigator/MediaRecorder feature checks the tool view calls at mount to
 // gate the format picker. They live HERE, not in export.ts, so importing them does

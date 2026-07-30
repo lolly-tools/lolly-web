@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // doc-editor.ts — the TipTap (ProseMirror) rich-document editor for Doc Studio
 // (render.layout:'document'). Lazy-imported only for document-layout tools, so the
 // gallery and every other tool stay lean.

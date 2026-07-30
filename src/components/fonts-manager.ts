@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /**
  * Font upload and management component.
  * Can be mounted in brand config or catalog contexts.

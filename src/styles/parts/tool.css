@@ -1447,6 +1447,30 @@ background-color:hsl(var(--background) / 1);
 }
 .table-grid tbody tr:hover .table-del-row, .table-del-row:focus-visible { opacity: 1; }
 .table-del-col:hover, .table-del-row:hover { color: hsl(var(--destructive, 0 72% 51%)); background: hsl(var(--destructive, 0 72% 51%) / 0.08); }
+/* Pop-out, pinned to the grid's top-right. Its own bar rather than an overlay on
+   the corner cell, which already carries that column's remove-×. The negative
+   margin pulls the icon down onto the grid's top edge so the bar costs almost no
+   vertical space in a sidebar — it reads as sitting ON the table, not above it. */
+.table-headbar {
+  display: flex; justify-content: flex-end;
+  min-height: 0; margin-bottom: -8px;
+  position: relative; z-index: 1;
+}
+.table-pop {
+  width: 24px; height: 24px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  color: hsl(var(--muted-foreground));
+  font: inherit; font-size: calc(13px * var(--a11y-fs)); line-height: 1; cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.table-pop:hover { border-color: hsl(var(--ring)); color: hsl(var(--foreground)); }
+/* Already floating: the panel's own bar owns close/fullscreen, so the trigger
+   would be a second, differently-worded way to do the same thing. */
+.floatp .table-headbar { display: none; }
+
 .table-toolbar { display: flex; gap: 6px; align-items: center; }
 .table-toolbar-gap { flex: 1; }
 .table-btn {
