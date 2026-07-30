@@ -34,6 +34,7 @@ const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
 import { createHistory, cloneValue } from './tool-history.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { hasGuide, guideButtonHtml, showToolGuide, autoOpenToolGuide } from '../components/tool-guide.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { docsHref, currentLang, t } from '../i18n.ts';
@@ -779,6 +780,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             <div class="sidebar-header-row">
               <span class="sidebar-title-wrap">
                 <span class="sidebar-title">${escape(tool.manifest.name)}</span>
+                ${hasGuide(tool.manifest) ? guideButtonHtml() : ''}
                 ${canSaveSession ? `<button type="button" class="multi-edit-btn" id="multi-edit-btn" data-tip="${escape(t('Make variants'))}" aria-label="${escape(t('Make variants'))}" aria-haspopup="menu" aria-expanded="false">${icon('grid', { className: 'multi-edit-icon' })}</button>` : ''}
               </span>
               <button class="fullscreen-toggle" id="fullscreen-toggle" ${sidebarOpen ? 'open' : ''} aria-label="${escape(sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar'))}"></button>
@@ -968,6 +970,23 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   function playShutter(): void { shutter.play(); }
   const actionsEl  = viewEl.querySelector<PanelEl>('#tool-actions');
   const sidebarEl  = viewEl.querySelector<HTMLElement>('#tool-sidebar');
+
+  // The tool's own walkthrough (manifest `guide`, components/tool-guide.ts): the
+  // help button beside the title, plus one automatic open per device on a tool
+  // the user hasn't opened before. mountModal bodies its dialog, so the handle is
+  // kept to close it on teardown — a guide must not outlive the tool it explains.
+  let openGuide: { close(): void } | null = null;
+  viewEl.querySelector<HTMLButtonElement>('#tool-guide-btn')
+    ?.addEventListener('click', () => { openGuide = showToolGuide(tool.manifest); });
+  // The automatic first-visit open is for someone who came to MAKE the thing.
+  // Anyone arriving on a finished render — a fullscreen/auto-export share link,
+  // or a chromeless editor embed — gets the button and nothing in their way.
+  // Deferred a frame so the dialog opens over a painted canvas, not a blank one.
+  if (showAside && !isFull && !autoExport && !autoCopy) {
+    requestAnimationFrame(() => {
+      if (viewEl.isConnected) openGuide = autoOpenToolGuide(tool.manifest) ?? openGuide;
+    });
+  }
 
   // ── Sidebar ──────────────────────────────────────────────────────────────
 
@@ -1406,6 +1425,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // The export popup (actionsEl) wires its own help tip for the C2PA card
     // (renderActions, not renderInputs — outside the disposer's remit).
     if (actionsEl?._helpTipDismiss)     document.removeEventListener('click', actionsEl._helpTipDismiss, true);
+    openGuide?.close(); openGuide = null;
   };
 
   // Temporarily remove the CSS scale so dom-to-image sees native dimensions.

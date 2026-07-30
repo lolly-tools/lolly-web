@@ -355,8 +355,12 @@
 }
 
 /* Multi-edit trigger — icon-only, labelled by the [data-tip] tooltip primitive.
-   Opens the how-many-copies menu (see tool-actions.ts). */
-.multi-edit-btn {
+   Opens the how-many-copies menu (see tool-actions.ts).
+   `.tool-guide-btn` (components/tool-guide.ts) is its neighbour in the sidebar
+   header and the same control shape — an icon-only button whose tooltip is its
+   label — so it aliases onto every rule here rather than restating the box. */
+.multi-edit-btn,
+.tool-guide-btn {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -371,11 +375,14 @@
   color: hsl(var(--muted-foreground));
   transition: background 0.12s, color 0.12s;
 }
-.multi-edit-btn:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
-.multi-edit-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.multi-edit-btn:hover,
+.tool-guide-btn:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+.multi-edit-btn:focus-visible,
+.tool-guide-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .multi-edit-btn[disabled] { opacity: 0.5; cursor: default; }
 /* Icon-only, like .history-btn above — the glyph carries the whole control. */
-.multi-edit-btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
+.multi-edit-btn svg,
+.tool-guide-btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
 /* The how-many-copies dropdown (body-mounted via mountBodyPopover — position:fixed,
    so it escapes the sidebar's overflow clipping). Surface mirrors .profile-menu. */

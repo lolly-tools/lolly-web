@@ -377,3 +377,86 @@
     background-color: hsl(var(--destructive) / 0.08);
   }
 
+
+/* ─── Tool guide (components/tool-guide.ts) ─────────────────────────────────
+   The tool's own "now what?" walkthrough — manifest data, rendered as a dialog
+   behind the help button beside the sidebar title. Box + backdrop alias the
+   share dialog's (it's the same size of thing: one focused panel of steps);
+   only the step list and its tabs are new here. */
+.tool-guide-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 2);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  padding: 0;
+  max-width: 440px;
+  width: 90vw;
+  box-shadow: 0 8px 32px hsl(0 0% 0% / 0.2);
+}
+.tool-guide-dialog::backdrop {
+  background: hsl(0 0% 0% / 0.45);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+.tool-guide-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tool-guide-title {
+  margin: 0;
+  font-size: calc(15px * var(--a11y-fs));
+  font-weight: 600;
+}
+/* Track tabs — only rendered when a tool declares more than one route
+   (e.g. desktop vs phone). Segmented, so the alternative is visible rather
+   than hidden behind a menu. */
+.tool-guide-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.5);
+}
+.tool-guide-tab {
+  flex: 1 1 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: calc(12px * var(--a11y-fs));
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.tool-guide-tab:hover { color: hsl(var(--foreground)); }
+.tool-guide-tab[aria-selected="true"] {
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  box-shadow: 0 1px 3px hsl(0 0% 0% / 0.12);
+}
+.tool-guide-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.tool-guide-steps {
+  margin: 0;
+  padding-left: 1.35em;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-size: calc(13px * var(--a11y-fs));
+  line-height: 1.5;
+}
+.tool-guide-steps li::marker { color: hsl(var(--muted-foreground)); font-weight: 600; }
+.tool-guide-steps strong { font-weight: 650; }
+.tool-guide-note {
+  margin: 0;
+  font-size: calc(12px * var(--a11y-fs));
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+.tool-guide-actions { display: flex; justify-content: flex-end; }
