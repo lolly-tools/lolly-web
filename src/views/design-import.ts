@@ -1093,6 +1093,21 @@ async function storeSvgAsset(host: HostV1 | undefined, svgEl: SVGSVGElement, nam
   }
 }
 
+// Settle for a bake whose boxes carry no image/lottie/video ref: enough for layout
+// + fonts to quiesce, without the decode headroom the default reserves.
+const FAST_SETTLE_MS = 50;
+
+// True when any box carries an image ref (finalizeBoxes writes the whole AssetRef,
+// or a bare id string, into `image` — and that one field is where a lottie or video
+// ref lands too). Only such a frame needs the full decode settle.
+function boxesHaveMedia(boxes: unknown[]): boolean {
+  return boxes.some((b) => {
+    const img = b && typeof b === 'object' ? (b as { image?: unknown }).image : null;
+    if (!img) return false;
+    return typeof img === 'object' ? (img as { id?: unknown }).id != null && (img as { id?: unknown }).id !== '' : String(img) !== '';
+  });
+}
+
 // Bake one frame's boxes into a stored SVG asset via an offscreen Layout Studio
 // render. compose.render suppresses watermark/provenance (the result is an
 // intermediate), and the SVG goes through the full HTML→SVG walker — text as
@@ -1110,10 +1125,21 @@ async function bakeSceneAsset(host: HostV1 | undefined, warn: (msg: string) => v
       format: 'svg',
       width: Math.max(1, Math.round(width)),
       height: Math.max(1, Math.round(height)),
+      // One-shot: the bytes are copied into a stored asset immediately and the
+      // render is never requested again, so it must not evict the live compose
+      // cache. Ownership of rendered.url therefore sits HERE (revoked below).
+      transient: true,
+      // The full settle only buys time for media to decode; a boxes-only frame
+      // has nothing to wait for, and an import bakes 30+ of them back to back.
+      settleMs: boxesHaveMedia(boxes) ? undefined : FAST_SETTLE_MS,
     });
-    const blob = await (await fetch(rendered.url)).blob();
-    const svgFile = new File([blob], `${name}.svg`, { type: 'image/svg+xml' });
-    return await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], svgFile);
+    try {
+      const blob = await (await fetch(rendered.url)).blob();
+      const svgFile = new File([blob], `${name}.svg`, { type: 'image/svg+xml' });
+      return await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], svgFile);
+    } finally {
+      try { URL.revokeObjectURL(rendered.url); } catch { /* not a blob URL */ }
+    }
   } catch (err) {
     warn(`Couldn’t render “${name}” (${String((err as Error) && (err as Error).message || err)}).`);
     return null;

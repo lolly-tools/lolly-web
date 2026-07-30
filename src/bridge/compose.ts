@@ -13,7 +13,9 @@
  * Recursion guards live in the engine (assertComposeStack — one depth/cycle
  * policy shared by every shell bridge). An LRU of rendered results keyed by
  * tool+inputs+format+size makes the per-keystroke preview re-render free
- * and bounds object-URL memory (oldest URL revoked on eviction).
+ * and bounds object-URL memory (oldest URL revoked on eviction). A spec marked
+ * `transient` bypasses that LRU in both directions and hands URL ownership to the
+ * caller — a bulk one-shot bake must not flush the cache it will never read.
  */
 
 import { parseToolUrl, buildEmbedUrl, parseUrlState, expandQuery, RESERVED, assertComposeStack } from '@lolly/engine';
@@ -61,14 +63,19 @@ export function createComposeAPI(host: HostV1) {
   const cache = new Map<string, { assetRef: AssetRef; blobUrl: string }>();
 
   async function render(spec: ComposeSpec): Promise<AssetRef> {
-    const { toolId, inputs = {}, format, width, height, unit, dpi, _stack = [] } = spec ?? {};
+    const { toolId, inputs = {}, format, width, height, unit, dpi, transient, settleMs, _stack = [] } = spec ?? {};
     if (typeof toolId !== 'string' || !toolId) throw new Error('compose: missing toolId');
 
     assertComposeStack(_stack, toolId);
 
-    const key = cacheKey(toolId, inputs, format, width, height, unit, dpi);
-    const hit = cache.get(key);
-    if (hit) { cache.delete(key); cache.set(key, hit); return hit.assetRef; } // LRU bump
+    // `transient` bypasses the LRU on BOTH sides: a one-shot bulk render is never
+    // re-requested, so caching it would evict live preview entries for nothing and
+    // pin a multi-MB blob. The URL is then unowned here — the caller revokes it.
+    const key = transient ? '' : cacheKey(toolId, inputs, format, width, height, unit, dpi);
+    if (!transient) {
+      const hit = cache.get(key);
+      if (hit) { cache.delete(key); cache.set(key, hit); return hit.assetRef; } // LRU bump
+    }
 
     // Thread the ANCESTOR stack (_stack), not `path`: the child's own runtime
     // re-appends its id in resolveNestedRenders, so passing `path` (which already
@@ -76,7 +83,7 @@ export function createComposeAPI(host: HostV1) {
     const { blob, format: fmt } = await renderRowToBlob(
       { toolId, values: inputs as Record<string, InputValue> },
       host,
-      { format, width, height, unit: unit as Unit | undefined, dpi, composeStack: _stack, watermark: false, embedMeta: false, thumbnail: true },
+      { format, width, height, unit: unit as Unit | undefined, dpi, composeStack: _stack, watermark: false, embedMeta: false, thumbnail: true, settleMs },
     );
 
     const url = URL.createObjectURL(blob);
@@ -90,6 +97,8 @@ export function createComposeAPI(host: HostV1) {
       // (and the parent's own export) this is one moment of a moving asset.
       meta: { compose: toolId, ...(isMotionFormat(fmt) ? { animated: true } : {}) },
     };
+
+    if (transient) return assetRef;
 
     cache.set(key, { assetRef, blobUrl: url });
     if (cache.size > CACHE_CAP) {
