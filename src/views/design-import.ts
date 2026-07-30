@@ -29,6 +29,8 @@ import {
   safeColor,
   parsePenpotContent,
   penpotShapeToNode,
+  penpotGroupToSvg,
+  penpotGradientSvgDef,
   figmaNodesToNodes,
   figmaNodesToScenes,
   readingOrder,
@@ -611,19 +613,8 @@ async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: a
     if (shape && shape.id) shapesById[shape.id] = shape;
   }
 
-  const nodes: any[] = [];
   const imageCache = new Map<string, AssetRef>();
-  for (const shape of orderPenpotShapes(shapesById)) {
-    let node: any = null;
-    try { node = penpotShapeToNode(shape); } catch { node = null; }
-    if (!node) continue;
-    if (node._fillImageId) {
-      const ref = await loadPenpotMedia(host, files, fileId, node._fillImageId, imageCache, warn);
-      if (ref) node.image = ref; else node.kind = 'box';
-      delete node._fillImageId;
-    }
-    nodes.push(node);
-  }
+  const nodes = await penpotItemsToNodes(orderPenpotShapes(shapesById), { host, files, fileId, imageCache, warn });
   if (!nodes.length) throw new Error('This Penpot file has no importable shapes on its first page.');
 
   const { width, height } = shiftToOrigin(nodes);
@@ -634,12 +625,36 @@ function safeJsonParse(text: string): any {
   try { return JSON.parse(text); } catch { return null; }
 }
 
+// A group subtree flattened to one SVG asset by penpotGroupToSvg — the walks emit
+// this marker instead of the group's shapes, and penpotItemsToNodes stores + places it.
+interface PenpotVectorGroupItem { __vectorGroupSvg: string; shape: any; }
+
+// Mark a whole subtree consumed so a flattened group's shapes never double-paint
+// (and the orphan sweep can't revisit them).
+function markPenpotSubtreeSeen(shapesById: Record<string, any>, id: string, seen: Set<string>): void {
+  if (seen.has(id)) return;
+  seen.add(id);
+  const s = shapesById[id];
+  for (const k of (s && Array.isArray(s.shapes) ? s.shapes : [])) markPenpotSubtreeSeen(shapesById, String(k), seen);
+}
+
+// Try to flatten a `group` subtree into one vector-group marker; null → walk per-shape.
+// A `bool`'s `content` already carries the resolved boolean outline, so its operand
+// children are consumed (marked seen), never painted separately.
+function penpotFlattenStep(shapesById: Record<string, any>, s: any, seen: Set<string>): PenpotVectorGroupItem | null {
+  if (String(s.type || '') !== 'group') return null;
+  const svg = penpotGroupToSvg(s, (cid: string) => shapesById[cid]);
+  if (!svg) return null;
+  for (const k of (Array.isArray(s.shapes) ? s.shapes : [])) markPenpotSubtreeSeen(shapesById, String(k), seen);
+  return { __vectorGroupSvg: svg, shape: s };
+}
+
 // DFS from the root frame following each container's `shapes` array (paint order,
 // back-to-front); append any unreachable orphans in map order. penpotShapeToNode drops
 // the root frame itself, so it just seeds the order. A `hidden` shape hides its whole
 // subtree in Penpot — importing it visible was a fidelity bug, so it prunes here.
 // (`hideInViewer` is NOT pruned on this path: it's visible in Penpot's editor, and
-// this import feeds an editor.)
+// this import feeds an editor.) All-vector groups collapse to one flatten marker.
 function orderPenpotShapes(shapesById: Record<string, any>): any[] {
   const out: any[] = [];
   const seen = new Set<string>();
@@ -647,13 +662,82 @@ function orderPenpotShapes(shapesById: Record<string, any>): any[] {
     const s = shapesById[id];
     if (!s || seen.has(id) || s.hidden === true) return;
     seen.add(id);
+    const flat = penpotFlattenStep(shapesById, s, seen);
+    if (flat) { out.push(flat); return; }
     out.push(s);
+    if (String(s.type || '') === 'bool' && typeof s.content === 'string' && s.content) {
+      for (const k of (Array.isArray(s.shapes) ? s.shapes : [])) markPenpotSubtreeSeen(shapesById, String(k), seen);
+      return;
+    }
     const kids = Array.isArray(s.shapes) ? s.shapes : [];
     for (const k of kids) visit(k);
   };
   visit('00000000-0000-0000-0000-000000000000');
   for (const id of Object.keys(shapesById)) visit(id);
   return out;
+}
+
+// Store one flattened vector-group SVG, deduped by its serialized markup (identical
+// component instances at identical page positions collapse to one stored asset).
+async function storePenpotVectorSvg(host: HostV1 | undefined, svg: string, cache: Map<string, AssetRef>, warn: (msg: string) => void): Promise<AssetRef | null> {
+  const key = 'ppvec:' + svg;
+  if (cache.has(key)) return cache.get(key)!;
+  try {
+    const file = new File([svg], `penpot-vector-${cache.size}.svg`, { type: 'image/svg+xml' });
+    const ref = await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file);
+    cache.set(key, ref);
+    return ref;
+  } catch (err) {
+    warn(`Couldn’t import a Penpot vector group (${String((err as Error) && (err as Error).message || err)}).`);
+    return null;
+  }
+}
+
+// Resolve an ordered walk (shapes + vector-group markers) to DesignNodes — the ONE
+// Penpot item→node path, shared by the single-page import and the scenes walk so the
+// two can't drift. Handles image fills (_fillImageId), per-shape vector bakes
+// (_vectorPath, mirroring the Figma resolveFigMedia call), and flattened groups.
+async function penpotItemsToNodes(
+  items: any[],
+  { host, files, fileId, imageCache, warn }: {
+    host: HostV1 | undefined; files: Record<string, Uint8Array>; fileId: string;
+    imageCache: Map<string, AssetRef>; warn: (msg: string) => void;
+  },
+): Promise<any[]> {
+  const nodes: any[] = [];
+  for (const item of items) {
+    if (item && (item as PenpotVectorGroupItem).__vectorGroupSvg) {
+      const { __vectorGroupSvg: svg, shape: g } = item as PenpotVectorGroupItem;
+      const ref = await storePenpotVectorSvg(host, svg, imageCache, warn);
+      if (!ref) continue; // storage failed → the group is dropped (children were consumed)
+      const sel = (g.selrect && typeof g.selrect === 'object') ? g.selrect : g;
+      const op = Number.isFinite(+g.opacity) ? Math.min(1, Math.max(0, +g.opacity)) : 1;
+      nodes.push({
+        // fill:'' — the flattened SVG is transparent outside its art; no seed backing.
+        kind: 'image', image: ref, fit: 'fill', fill: '',
+        x: Number(sel.x) || 0, y: Number(sel.y) || 0,
+        w: Number(sel.width) || 1, h: Number(sel.height) || 1,
+        rot: Number(g.rotation) || 0,
+        opacity: Math.round(op * 100),
+      });
+      continue;
+    }
+    let node: any = null;
+    try { node = penpotShapeToNode(item); } catch { node = null; }
+    if (!node) continue;
+    if (node._fillImageId) {
+      const ref = await loadPenpotMedia(host, files, fileId, node._fillImageId, imageCache, warn);
+      if (ref) node.image = ref; else node.kind = 'box';
+      delete node._fillImageId;
+    } else if (node._vectorPath) {
+      const ref = await storeFigVector(host, node._vectorPath, node._vectorFill, node._vectorStroke, node._vectorSize, imageCache, warn, node._vectorGradient);
+      if (ref) node.image = ref;
+      else { node.kind = 'box'; node.fill = (node._vectorFill && node._vectorFill !== 'none') ? node._vectorFill : ''; }
+      delete node._vectorPath; delete node._vectorFill; delete node._vectorStroke; delete node._vectorSize; delete node._vectorGradient;
+    }
+    nodes.push(node);
+  }
+  return nodes;
 }
 
 // Resolve a Penpot image fill to bytes and store it: fillImage.id → the media meta json
@@ -825,17 +909,26 @@ async function loadFigImage(host: HostV1 | undefined, files: Record<string, Uint
   }
 }
 
-// Rasterise a reconstructed Figma vector path into a standalone SVG image asset, placed at
-// the node's rect (viewBox = the shape's local size). storeUserUpload re-sanitises the SVG.
-async function storeFigVector(host: HostV1 | undefined, d: any, fill: any, stroke: any, size: any, cache: Map<string, AssetRef>, warn: (msg: string) => void): Promise<AssetRef | null> {
+// Rasterise a reconstructed vector path into a standalone SVG image asset, placed at
+// the node's rect. The viewBox honours an optional `size.x/y` origin — Figma vectors
+// are shape-local (0 0), Penpot path coords are absolute page space (selrect origin).
+// A Penpot `fillColorGradient` bakes as a native SVG gradient def (never the Lolly
+// grad-spec route); stroke alignment is approximated as centre (SVG has no inner/outer).
+// storeUserUpload re-sanitises the SVG.
+async function storeFigVector(host: HostV1 | undefined, d: any, fill: any, stroke: any, size: any, cache: Map<string, AssetRef>, warn: (msg: string) => void, gradient?: any): Promise<AssetRef | null> {
   try {
     const w = Math.max(1, Math.round((size && size.w) || 1));
     const h = Math.max(1, Math.round((size && size.h) || 1));
+    const ox = (size && Number.isFinite(+size.x)) ? +size.x : 0;
+    const oy = (size && Number.isFinite(+size.y)) ? +size.y : 0;
     const hex = (v: string, dflt: string): string => (/^#[0-9a-fA-F]{3,8}$/.test(v || '') ? v : dflt);
-    const fillAttr = (fill === 'none') ? 'none' : hex(fill, '#000000');
+    const gradDef = gradient ? penpotGradientSvgDef(gradient, 'pg0', 1) : '';
+    const fillAttr = gradDef ? 'url(#pg0)' : (fill === 'none') ? 'none' : hex(fill, '#000000');
+    const strokeOp = (stroke && stroke.opacity != null && +stroke.opacity < 1) ? ` stroke-opacity="${+stroke.opacity}"` : '';
     const strokeAttr = (stroke && stroke.color)
-      ? ` stroke="${hex(stroke.color, '#000000')}" stroke-width="${Math.max(0.1, +stroke.width || 1)}"` : '';
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">` +
+      ? ` stroke="${hex(stroke.color, '#000000')}" stroke-width="${Math.max(0.1, +stroke.width || 1)}"${strokeOp}` : '';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${ox} ${oy} ${w} ${h}" width="${w}" height="${h}">` +
+      (gradDef ? `<defs>${gradDef}</defs>` : '') +
       `<path d="${String(d).replace(/"/g, '')}" fill="${fillAttr}"${strokeAttr}/></svg>`;
     if (cache.has('figvec:' + svg)) return cache.get('figvec:' + svg)!;
     const file = new File([svg], `fig-vector-${cache.size}.svg`, { type: 'image/svg+xml' });
@@ -1258,22 +1351,10 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
   const imageCache = new Map<string, AssetRef>();
   const frames: Array<{ name: string; width: number; height: number; boxes: unknown[] }> = [];
 
-  // Map an ordered shape subtree to nodes (with media), preserving paint order.
-  const shapesToNodes = async (shapes: any[]): Promise<any[]> => {
-    const nodes: any[] = [];
-    for (const shape of shapes) {
-      let node: any = null;
-      try { node = penpotShapeToNode(shape); } catch { node = null; }
-      if (!node) continue;
-      if (node._fillImageId) {
-        const ref = await loadPenpotMedia(host, files, fileId, node._fillImageId, imageCache, warn);
-        if (ref) node.image = ref; else node.kind = 'box';
-        delete node._fillImageId;
-      }
-      nodes.push(node);
-    }
-    return nodes;
-  };
+  // Map an ordered walk (shapes + flatten markers) to nodes — the shared resolver,
+  // so this path and the single-page import can't drift.
+  const shapesToNodes = (items: any[]): Promise<any[]> =>
+    penpotItemsToNodes(items, { host, files, fileId, imageCache, warn });
 
   for (let p = 0; p < pageIds.length; p++) {
     const pid = pageIds[p]!;
@@ -1290,11 +1371,20 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
     // `hideInViewer` deliberately does NOT prune here: on a nested board it means
     // "don't show as its own slide in Penpot's viewer" — the content still paints
     // inside its parent. It only filters which TOP-LEVEL boards become scenes.
+    // An all-vector group collapses to ONE flatten marker (icons/illustrations bake
+    // as a single SVG asset instead of hundreds of selrect boxes); a bool's content
+    // already carries its resolved outline, so its operand children are consumed.
     const subtree = (id: string, seen: Set<string>): any[] => {
       const s = shapesById[id];
       if (!s || seen.has(id) || s.hidden === true) return [];
       seen.add(id);
+      const flat = penpotFlattenStep(shapesById, s, seen);
+      if (flat) return [flat];
       const out = [s];
+      if (String(s.type || '') === 'bool' && typeof s.content === 'string' && s.content) {
+        for (const k of (Array.isArray(s.shapes) ? s.shapes : [])) markPenpotSubtreeSeen(shapesById, String(k), seen);
+        return out;
+      }
       for (const k of (Array.isArray(s.shapes) ? s.shapes : [])) out.push(...subtree(k, seen));
       return out;
     };
