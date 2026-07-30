@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import {
   withBrandFontToken, familyFromTokenValue, listUserFonts, removeUserFont,
   setPrimaryFont, primaryFontFamily, USER_FONT_PREFIX,
-  withRadiusToken, setBrandRadius,
+  withRadiusToken, setBrandRadius, installGoogleFont,
 } from './user-fonts.ts';
 import type { UserFontsHost } from './user-fonts.ts';
 
@@ -175,6 +175,59 @@ test('removing the primary family promotes the next installed one', async () => 
   await removeUserFont(host, inter!);
   assert.equal(await primaryFontFamily(host), 'Sora');
   assert.equal((await listUserFonts(host)).length, 1);
+});
+
+// ── installGoogleFont: the neverPrimary opt-out ──────────────────────────────
+// A design-file import installs fonts as a side effect and must never restyle
+// the whole app via the font.brand token — even when no primary exists yet.
+// The network is stubbed: a canned css2 stylesheet plus fake font bytes.
+
+const FAKE_CSS2 = `/* latin */
+@font-face {
+  font-family: 'Work Sans';
+  font-style: normal;
+  font-weight: 100 900;
+  src: url(https://fonts.gstatic.com/s/worksans/v19/fake.woff2) format('woff2');
+  unicode-range: U+0000-00FF;
+}`;
+
+async function withStubbedGoogleFonts<T>(fn: () => Promise<T>): Promise<T> {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.startsWith('https://fonts.googleapis.com/css2')) return new Response(FAKE_CSS2, { status: 200 });
+    if (url.includes('fonts.gstatic.com')) return new Response(new Uint8Array([0x77, 0x4f, 0x46, 0x32]), { status: 200 });
+    throw new Error('unexpected fetch: ' + url);
+  }) as typeof fetch;
+  try { return await fn(); } finally { globalThis.fetch = realFetch; }
+}
+
+test('installGoogleFont with neverPrimary does NOT claim font.brand when no primary exists', async () => {
+  await withStubbedGoogleFonts(async () => {
+    const host = memoryHost();
+    const fam = await installGoogleFont(host, 'Work Sans', { neverPrimary: true });
+    assert.equal(fam.family, 'Work Sans');
+    assert.ok(fam.assetIds.length >= 1, 'faces stored as user assets');
+    assert.equal(await primaryFontFamily(host), '', 'font.brand stays unset');
+    assert.equal(fam.primary, false);
+  });
+});
+
+test('installGoogleFont without the flag keeps the only-font promotion', async () => {
+  await withStubbedGoogleFonts(async () => {
+    const host = memoryHost();
+    await installGoogleFont(host, 'Work Sans');
+    assert.equal(await primaryFontFamily(host), 'Work Sans', 'the first font becomes the primary');
+  });
+});
+
+test('installGoogleFont with neverPrimary leaves an existing primary untouched', async () => {
+  await withStubbedGoogleFonts(async () => {
+    const host = memoryHost();
+    await setPrimaryFont(host, 'Inter');
+    await installGoogleFont(host, 'Work Sans', { neverPrimary: true });
+    assert.equal(await primaryFontFamily(host), 'Inter');
+  });
 });
 
 test('removing the last family clears font.brand (back to platform default)', async () => {

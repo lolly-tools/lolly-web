@@ -56,6 +56,9 @@ import type { TimeCfg } from './timeline-math.ts';
 import type { TimelinePanel } from './timeline-panel.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import { takePendingDesignImport } from '../lib/drop-router.ts';
+// The boot-path slice of user-fonts (NOT ../user-fonts.ts, which would drag the
+// whole Google-font fetcher into this view chunk — see user-fonts.ts:73-80).
+import { brandFontFamilies } from '../lib/register-user-fonts.ts';
 import { LOLLY_ICON } from '../lib/lolly-badge.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
@@ -703,7 +706,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     : `'${s}', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`);
   const fontStackFor = (v: any): string => {
     const s = String(v ?? '');
-    return s && fontOptions.some((o) => o.value === s) ? stackOf(s) : stackOf(defaultFont);
+    // Installed user-font families count too: hooks.js already paints any brand
+    // font the kit carries, so the format-bar overlay must preview it rather
+    // than coercing the preview to the default face.
+    return s && (fontOptions.some((o) => o.value === s) || brandFontFamilies().includes(s))
+      ? stackOf(s) : stackOf(defaultFont);
   };
   const fontOptionsHtml = (cur?: any): string => fontOptions.map((o) =>
     `<option value="${escapeHtml(o.value)}"${String(cur) === o.value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
@@ -742,6 +749,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       fonts: {
         defaultFamily: defaultFont,
         ...(monoOpt ? { monoFamily: monoOpt.value, monoMaxWeight: maxWeightFor(monoOpt.value) } : {}),
+        // Every family the shell can actually resolve — the manifest's own wire
+        // values plus installed user fonts — passes through mapFontFamily
+        // verbatim instead of bucketing to the two-family vocabulary.
+        knownFamilies: [...new Set([...fontOptions.map((o) => o.value), ...brandFontFamilies()])],
       },
       seedColors: {
         boxBg: seedColor('box', cfg.fillField || 'bg'),

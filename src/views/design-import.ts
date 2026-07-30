@@ -28,6 +28,7 @@ import {
   finalizeBoxes,
   safeColor,
   parsePenpotContent,
+  collectPenpotFontUsage,
   penpotShapeToNode,
   penpotGroupToSvg,
   penpotGradientSvgDef,
@@ -45,6 +46,9 @@ import { unzipAsync } from '../lib/zip.ts';
 import { decodeBinarySchema, compileSchema } from 'kiwi-schema';
 import { Decompress as ZstdDecompress } from 'fzstd';
 import type { HostV1, AssetRef } from '@lolly-tools/core/host-v1';
+import { installGoogleFont } from '../user-fonts.ts';
+import type { UserFontsHost } from '../user-fonts.ts';
+import { bustFontRegistry } from '../bridge/font-registry.ts';
 
 // A 2-D affine matrix (a,b,c,d,e,f), as read from getCTM / rebuilt for flatten transforms.
 interface Matrix { a: number; b: number; c: number; d: number; e: number; f: number; }
@@ -152,7 +156,7 @@ export async function parseDesignFile(
       return parseIdmlZip(files, { host, warn, map });
     }
     if (files['canvas.fig']) return parseFig(files, { host, warn, map });
-    return parsePenpotZip(files, { host, warn, map });
+    return parsePenpotZip(files, { host, warn, interactive, map });
   }
 
   // Otherwise treat the bytes as SVG text.
@@ -547,14 +551,14 @@ async function storeZipImage(host: HostV1 | undefined, zipFiles: Record<string, 
 // Penpot ZIP
 // ---------------------------------------------------------------------------
 
-async function parsePenpotZip(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignImportResult> {
+async function parsePenpotZip(files: Record<string, Uint8Array>, { host, warn, interactive, map }: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignImportResult> {
   // The current Penpot `.penpot` export (binfile-v3) is a ZIP of per-shape JSON — no
   // page SVGs. Detect it by its manifest and shape-file layout and parse the JSON.
   const manifest = files['manifest.json'] ? safeJsonParse(strFromU8(files['manifest.json'])) : null;
   const isExportFiles = manifest && typeof manifest.type === 'string' && /export-files/.test(manifest.type);
   const hasShapeJson = Object.keys(files).some((p) => /\/pages\/[^/]+\/[^/]+\.json$/i.test(p));
   if (isExportFiles && hasShapeJson) {
-    return parsePenpotBinfile(files, manifest, { host, warn, map });
+    return parsePenpotBinfile(files, manifest, { host, warn, interactive, map });
   }
 
   // Legacy path: the standard SVG export (a ZIP of page SVGs with penpot: metadata),
@@ -584,7 +588,7 @@ async function parsePenpotZip(files: Record<string, Uint8Array>, { host, warn, m
 // data (selrect + rotation), so the pure engine mapper (penpotShapeToNode) does the
 // shape→box work; here we only walk the file structure, order shapes, load embedded
 // media, and frame the result.
-async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: any, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignImportResult> {
+async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: any, { host, warn, interactive, map }: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignImportResult> {
   const fileId = Array.isArray(manifest.files) && manifest.files[0] ? manifest.files[0].id : null;
   if (!fileId) throw new Error('This Penpot file has no importable file.');
 
@@ -597,6 +601,10 @@ async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: a
     if (m) { if (!pageShapes.has(m[1]!)) pageShapes.set(m[1]!, []); pageShapes.get(m[1]!)!.push(path); }
   }
   if (!pageShapes.size) throw new Error('This Penpot file has no pages to import.');
+
+  // Make the deck's own font families resolvable BEFORE any box mapping, so
+  // finalizeBoxes passes them through instead of bucketing.
+  map = await ensurePenpotDeckFonts(files, pageDir, { host, warn, interactive, map });
 
   // Import the first page (by declared index).
   const pageIndex = (pid: string) => {
@@ -623,6 +631,60 @@ async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: a
 
 function safeJsonParse(text: string): any {
   try { return JSON.parse(text); } catch { return null; }
+}
+
+// Make a Penpot deck's own font families resolvable before any box mapping.
+// Walks every page-shape JSON under pageDir, tallies the fonts its text shapes
+// use (engine collectPenpotFontUsage — the gfont- provider knowledge lives HERE,
+// not in the engine), and for each family not already known: a Google-sourced
+// family (`gfont-` fontId) is fetched once and kept on-device (interactive
+// sessions only — the established add-a-font pattern, never as the primary), and
+// a bundled/custom family warns and stays bucketed to the brand default (no
+// fetch: the css2 probe ladder is doomed and slow for non-Google ids). Returns
+// the map with fonts.knownFamilies extended, for EVERY subsequent finalizeBoxes.
+async function ensurePenpotDeckFonts(
+  files: Record<string, Uint8Array>, pageDir: string,
+  { host, warn, interactive, map }: {
+    host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions;
+  },
+): Promise<DesignMapOptions> {
+  const usage = new Map<string, { google: boolean; weights: Set<number> }>();
+  for (const path of Object.keys(files)) {
+    if (!path.startsWith(pageDir) || !/\.json$/i.test(path)) continue;
+    const shape = safeJsonParse(strFromU8(files[path]!));
+    if (!shape || String(shape.type || '') !== 'text' || !shape.content) continue;
+    for (const u of collectPenpotFontUsage(shape.content)) {
+      if (!u.fontFamily) continue;
+      let e = usage.get(u.fontFamily);
+      if (!e) { e = { google: false, weights: new Set() }; usage.set(u.fontFamily, e); }
+      if (u.fontId.startsWith('gfont-')) e.google = true;
+      e.weights.add(u.fontWeight);
+    }
+  }
+  const knownFamilies = [...(map?.fonts?.knownFamilies ?? [])];
+  const isKnown = (family: string): boolean =>
+    knownFamilies.some((k) => k.toLowerCase() === family.toLowerCase());
+  let installed = false;
+  for (const [family, info] of usage) {
+    if (isKnown(family)) continue;
+    if (info.google && interactive && host) {
+      try {
+        const fam = await installGoogleFont(host as unknown as UserFontsHost, family, { neverPrimary: true });
+        knownFamilies.push(fam.family);
+        installed = true;
+        warn(`Added “${fam.family}” from Google Fonts to your kit (used by this file).`);
+      } catch {
+        warn(`Couldn’t fetch “${family}”. Substituted the brand font.`);
+      }
+    } else if (!info.google) {
+      warn(`This file uses “${family}”, which isn’t included in the export. Substituted the brand font.`);
+    }
+  }
+  // installGoogleFont doesn't bust the vector-export font registry itself (only
+  // removeUserFont does) — bust once after the batch so a later export
+  // re-resolves the freshly installed faces.
+  if (installed) bustFontRegistry();
+  return { ...map, fonts: { ...map?.fonts, knownFamilies } };
 }
 
 // A group subtree flattened to one SVG asset by penpotGroupToSvg — the walks emit
@@ -705,7 +767,14 @@ async function penpotItemsToNodes(
   },
 ): Promise<any[]> {
   const nodes: any[] = [];
+  let warnedBgBlur = false;
   for (const item of items) {
+    // Penpot background-blur needs a BackgroundImage source and has no box
+    // equivalent — the shape imports without it (once per import batch).
+    if (item?.blur?.type === 'background-blur' && item.blur.hidden !== true && !warnedBgBlur) {
+      warnedBgBlur = true;
+      warn('Background blur isn’t supported — imported without it.');
+    }
     if (item && (item as PenpotVectorGroupItem).__vectorGroupSvg) {
       const { __vectorGroupSvg: svg, shape: g } = item as PenpotVectorGroupItem;
       const ref = await storePenpotVectorSvg(host, svg, imageCache, warn);
@@ -719,6 +788,10 @@ async function penpotItemsToNodes(
         w: Number(sel.width) || 1, h: Number(sel.height) || 1,
         rot: Number(g.rotation) || 0,
         opacity: Math.round(op * 100),
+        // ROOT-group layer blur rides the image box (like root opacity); leaf blurs
+        // are already baked inside the flattened SVG as feGaussianBlur defs.
+        ...(g.blur?.type === 'layer-blur' && g.blur.hidden !== true && Number(g.blur.value) > 0
+          ? { blur: Number(g.blur.value) } : {}),
       });
       continue;
     }
@@ -1148,7 +1221,7 @@ export async function parseDesignScenes(
       return { scenes: asset ? [{ name: 'Spread 1', asset }] : [] };
     }
     if (files['canvas.fig']) return parseFigScenes(files, { host, warn, map });
-    return parsePenpotZipScenes(files, { host, warn, map });
+    return parsePenpotZipScenes(files, { host, warn, interactive, map });
   }
 
   // Plain SVG (incl. a Figma frame exported as SVG): one scene, stored as-is
@@ -1283,12 +1356,12 @@ async function parseFigScenes(files: Record<string, Uint8Array>, { host, warn, m
 
 // Penpot ZIP → per-board scenes. Binfile-v3 walks every page's top-level boards;
 // the legacy SVG export stores each page's SVG directly (it is already the frame).
-async function parsePenpotZipScenes(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+async function parsePenpotZipScenes(files: Record<string, Uint8Array>, { host, warn, interactive, map }: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignScenesResult> {
   const manifest = files['manifest.json'] ? safeJsonParse(strFromU8(files['manifest.json'])) : null;
   const isExportFiles = manifest && typeof manifest.type === 'string' && /export-files/.test(manifest.type);
   const hasShapeJson = Object.keys(files).some((p) => /\/pages\/[^/]+\/[^/]+\.json$/i.test(p));
   if (isExportFiles && hasShapeJson) {
-    return parsePenpotBinfileScenes(files, manifest, { host, warn, map });
+    return parsePenpotBinfileScenes(files, manifest, { host, warn, interactive, map });
   }
 
   const svgPaths = Object.keys(files).filter((p) => /\.svg$/i.test(p) && !/[/\\]$/.test(p));
@@ -1328,7 +1401,7 @@ async function parsePenpotZipScenes(files: Record<string, Uint8Array>, { host, w
 // one scene each, cropped to the board; loose top-level shapes collect into one
 // extra scene per page. Same shape→node mapping + media loading as the single-page
 // import (parsePenpotBinfile), so the two paths can't drift visually.
-async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manifest: any, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manifest: any, { host, warn, interactive, map }: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignScenesResult> {
   const fileId = Array.isArray(manifest.files) && manifest.files[0] ? manifest.files[0].id : null;
   if (!fileId) throw new Error('This Penpot file has no importable file.');
 
@@ -1340,6 +1413,10 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
     if (m) { if (!pageShapes.has(m[1]!)) pageShapes.set(m[1]!, []); pageShapes.get(m[1]!)!.push(path); }
   }
   if (!pageShapes.size) throw new Error('This Penpot file has no pages to import.');
+
+  // Fonts first: the deck's families must be known (and any Google faces
+  // installed) before the first finalizeBoxes maps a text box.
+  map = await ensurePenpotDeckFonts(files, pageDir, { host, warn, interactive, map });
 
   const pageMeta = (pid: string): any => (files[`${pageDir}${pid}.json`] ? safeJsonParse(strFromU8(files[`${pageDir}${pid}.json`]!)) : null);
   const pageIds = [...pageShapes.keys()].sort((a, b) => {
