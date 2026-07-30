@@ -64,6 +64,12 @@ const CANVAS_CLASS = 'pro-export-canvas';
 // real-time capture (Phase-1 buffers every frame) or a multi-MB data URL.
 const EMBED_MAX_DURATION = 6;
 
+// Post-mount settle before capture. Batch path historically settled a touch faster
+// than the live view (350 vs the shared 400ms default); preserved explicitly so the
+// extraction into mountToolCanvas changed nothing. Overridable per render via
+// RenderRowOpts.settleMs — see the constraint documented there.
+const SETTLE_MS = 350;
+
 /** One batch row: which tool to render and the input values to seed it with. */
 interface BatchRow {
   toolId: string;
@@ -104,6 +110,12 @@ interface RenderRowOpts {
    * embeds it on raster formats and ignores it elsewhere.
    */
   imprint?: boolean;
+  /**
+   * Override the post-mount settle (default SETTLE_MS). Only for a caller that
+   * KNOWS the child mounts no image/lottie/video — the default exists to give
+   * that media time to decode, and a short settle would capture it blank.
+   */
+  settleMs?: number;
 }
 
 /**
@@ -158,7 +170,7 @@ function withToolNet(host: HostV1, manifest: ToolManifest): HostV1 {
 async function mountToolCanvas(
   styles: string | null | undefined,
   hydrated: string,
-  { layoutW, fixedHeight, composeStack, host }: { layoutW: number; fixedHeight?: number; composeStack?: readonly string[]; host: HostV1 },
+  { layoutW, fixedHeight, composeStack, host, settleMs }: { layoutW: number; fixedHeight?: number; composeStack?: readonly string[]; host: HostV1; settleMs?: number },
 ): Promise<{ stage: ExportStage; canvas: HTMLDivElement }> {
   const stage: ExportStage = document.createElement('div');
   stage.setAttribute('aria-hidden', 'true');
@@ -207,9 +219,7 @@ async function mountToolCanvas(
     // so the vars must be on the node before the settle/capture below.
     await applyBrandVars(canvas, host);
     runTemplateScripts(canvas);
-    // Batch path historically settled a touch faster than the live view (350 vs
-    // the shared 400ms default); preserved explicitly so extraction changed nothing.
-    await waitForQuiescence(canvas, { silenceMs: 350 });
+    await waitForQuiescence(canvas, { silenceMs: settleMs !== undefined && settleMs > 0 ? settleMs : SETTLE_MS });
     // Resolve embeds to local blob/data URLs before export so the embedded render
     // appears in the output. The compose stack is threaded so an embed inside a
     // composed child stays guarded (undefined → [] for the paged path).
@@ -259,7 +269,7 @@ type ExportStage = HTMLDivElement & { _lottieCleanup?: () => void };
  *        in `unit` (px/mm/cm/in/pt); blank falls back to the tool's native size.
  *        `dpi` sets raster resolution for physical units.
  */
-export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, width, height, unit = 'px', dpi, composeStack, watermark, embedMeta, thumbnail, thumbAssets, strongPassword, c2pa, imprint }: RenderRowOpts = {}): Promise<RenderRowResult> {
+export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, width, height, unit = 'px', dpi, composeStack, watermark, embedMeta, thumbnail, thumbAssets, strongPassword, c2pa, imprint, settleMs }: RenderRowOpts = {}): Promise<RenderRowResult> {
   const tool = await getTool(row.toolId);
   if (!isExportable(tool.manifest)) {
     throw new Error(`"${tool.manifest.name}" is render-only and cannot be exported.`);
@@ -294,7 +304,7 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
   const outW = dim(width);
   const outH = dim(height);
 
-  const { stage, canvas } = await mountToolCanvas(tool.styles, runtime.getHydrated(), { layoutW, fixedHeight: layoutH, composeStack, host });
+  const { stage, canvas } = await mountToolCanvas(tool.styles, runtime.getHydrated(), { layoutW, fixedHeight: layoutH, composeStack, host, settleMs });
 
   try {
     const fmt = chooseFormat(tool.manifest, format);
