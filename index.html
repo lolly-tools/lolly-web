@@ -77,6 +77,17 @@
         var r = localStorage.getItem('brand-radius');
         if (r) document.documentElement.style.setProperty('--radius', r);
       } catch (e) { /* corrupt cache — boot JS rewrites it */ }
+      // Accessibility prefs (lib/a11y-prefs.ts is canonical; this is its FOUC
+      // mirror): set the gating attributes before CSS paints so large text /
+      // high contrast don't flash the regular look for a beat.
+      try {
+        var ax = JSON.parse(localStorage.getItem('lolly-a11y') || 'null');
+        if (ax) {
+          if (ax.reduceMotion) document.documentElement.dataset.a11yMotion = 'reduce';
+          if (ax.highContrast) document.documentElement.dataset.a11yContrast = 'high';
+          if (ax.largeText) document.documentElement.dataset.a11yText = 'large';
+        }
+      } catch (e) { /* corrupt cache — boot JS rewrites it */ }
       // Apply the saved language's <html lang> before paint (glyph fallback/Han
       // unification depends on it) — the FOUC-mirror half of i18n.ts's canonical
       // profile.lang store. A hand-inlined alias map + LANG_META.htmlLang mirror

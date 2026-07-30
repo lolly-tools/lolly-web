@@ -34,7 +34,7 @@
 .floatp-title {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -46,7 +46,7 @@
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: 999px;
   background: none; color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 0.85rem; line-height: 1;
+  font: inherit; font-size: calc(0.85rem * var(--a11y-fs)); line-height: 1;
   cursor: pointer;
 }
 .floatp-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
@@ -80,7 +80,7 @@
 }
 .floatp-restore {
   font: inherit;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   font-weight: 600;
   padding: 0.4rem 0.9rem;
   border: 1px solid hsl(var(--border));

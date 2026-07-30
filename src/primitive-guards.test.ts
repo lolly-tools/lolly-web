@@ -679,7 +679,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/pdf-extract.ts': 4,
   'views/pdf-import.ts': 1,
   'views/picker.ts': 27,
-  'views/profile.ts': 19,
+  'views/profile.ts': 20,
   'views/projects.ts': 10,
   'views/record-control.ts': 6,
   'views/screen-capture-control.ts': 4,

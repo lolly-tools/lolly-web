@@ -110,10 +110,10 @@
 }
 .dash-wheel-preview.is-active .dash-wheel-pv-swatch { box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.15); }
 .dash-wheel-pv-text { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
-.dash-wheel-pv-name { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
-.dash-wheel-pv-hex { font-size: 1.05rem; color: hsl(var(--muted-foreground)); font-family: 'SUSE Mono', ui-monospace, monospace; }
+.dash-wheel-pv-name { font-size: calc(1.3rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+.dash-wheel-pv-hex { font-size: calc(1.05rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-family: 'SUSE Mono', ui-monospace, monospace; }
 /* Idle state — a quieter, smaller prompt until a dot is hovered. */
-.dash-wheel-preview:not(.is-active) .dash-wheel-pv-name { font-size: 1rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
+.dash-wheel-preview:not(.is-active) .dash-wheel-pv-name { font-size: calc(1rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground)); }
 
 @media (prefers-reduced-motion: reduce) { .dash-wheel-dot, .dash-wheel-pv-swatch { transition: none; } }
 }

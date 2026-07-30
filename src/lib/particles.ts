@@ -8,12 +8,14 @@
  * every chip is gone — so it's fire-and-forget from wherever a control lives.
  *
  * Used to visually celebrate a moment — e.g. turning ON Neurospicy Mode — from the toggle's spot.
- * Skipped under prefers-reduced-motion: a screen-filling blast is exactly the motion a calm-mode
- * user asked NOT to have (and this control's audience especially).
+ * Skipped under reduced motion — the OS preference or the app's own (lib/a11y-prefs.ts):
+ * a screen-filling blast is exactly the motion a calm-mode user asked NOT to have (and this
+ * control's audience especially).
  */
 
 import { hexToOklch, contrastRatio } from '@lolly/engine';
 import { tokenValueToHex } from '../brand-vars.ts';
+import { prefersReducedMotion } from './a11y-prefs.ts';
 
 /** The chip palette: [box-fill, ink] pairs. Brand-derived when tokens are
  * loaded (see brandChipPairs); this SUSE set is the fallback for a tokenless
@@ -177,7 +179,7 @@ function makeChipSprite(dpr: number, palette: ReadonlyArray<readonly [string, st
  */
 export function celebrateBurst(x: number, y: number, host?: ChipPairsHost): void {
   if (typeof document === 'undefined' || typeof window === 'undefined') return;
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return; // calm mode — no blast
+  if (prefersReducedMotion()) return; // calm mode — no blast
   void chipPairs(host).then(palette => burstWith(x, y, palette));
 }
 

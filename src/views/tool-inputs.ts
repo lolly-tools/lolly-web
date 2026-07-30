@@ -25,6 +25,7 @@ import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { installTablePaste, htmlTableToTsv } from '../lib/table-paste.ts';
 import { splitMarkdownIntoBlocks } from '../lib/markdown.ts';
 import { playSliderTick, playScrubTick } from '../lib/sfx.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { icon, hasIcon } from '../lib/icons.ts';
 // Generic per-input display policy (empty/no-op unless a deployment's control plane
 // has populated it via src/org/) — a rendering overlay only; the engine input model
@@ -89,13 +90,10 @@ async function fileToRef(file: File): Promise<InputFile> {
   };
 }
 
-// Honour the OS "reduce motion" setting for the JS-driven scroll/reveal below.
-// The global CSS reset zeroes CSS animations + scroll-behavior, but it can't reach
-// an explicit JS scrollIntoView({behavior:'smooth'}) or a WAAPI tween — those have
-// to be gated here.
-function prefersReducedMotion(): boolean {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
+// The JS-driven scroll/reveal below is gated on lib/a11y-prefs.ts's shared read
+// (the OS setting OR the app's own preference). The global CSS reset zeroes CSS
+// animations + scroll-behavior, but it can't reach an explicit JS
+// scrollIntoView({behavior:'smooth'}) or a WAAPI tween — those have to be gated in JS.
 
 // Bring a sidebar control into view and flash a one-shot "you are here" pulse on
 // its row. The single entry point for every canvas-click and block-expand scroll,

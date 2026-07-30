@@ -22,7 +22,7 @@
   border-radius: 999px;
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
-  font-size: .75rem;
+  font-size: calc(.75rem * var(--a11y-fs));
   font-weight: 500;
   line-height: 1.3;
   white-space: nowrap;
@@ -48,7 +48,7 @@
 .chip--count,
 .cat-group-count,   /* components.css — catalogue-summary group counts */
 .plat-ramp-count {  /* platform.css — palette ramp counts */
-  font-size: .7rem;
+  font-size: calc(.7rem * var(--a11y-fs));
   font-weight: 600;
   padding: .05rem .45rem;
 }
@@ -58,7 +58,7 @@
 .chip--flag,
 .plat-pill,     /* platform.css — inline qualifier next to a table value */
 .be-ps-chip {   /* brand-studio.css — print-substitute flag */
-  font-size: .58rem;
+  font-size: calc(.58rem * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: .04em;
   padding: .12rem .38rem;
@@ -88,7 +88,7 @@
   padding: .35rem .65rem;
   border-radius: var(--radius);
   background: hsl(var(--muted) / .6);
-  font-size: .82rem;
+  font-size: calc(.82rem * var(--a11y-fs));
 }
 
 /* ═══ Cards / panels (rec 10) ═════════════════════════════════════════════ */
@@ -138,7 +138,7 @@
   border-radius: var(--radius);
   background: hsl(var(--primary) / .12);
   color: hsl(var(--primary));
-  font-size: .68rem;
+  font-size: calc(.68rem * var(--a11y-fs));
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .06em;

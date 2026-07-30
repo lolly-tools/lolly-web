@@ -23,7 +23,7 @@
   padding: 3px 10px;
   min-height: 0;
   border-bottom: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: background 0.12s;
   display: flex !important;
   border-radius: 1.05em;
@@ -75,7 +75,7 @@
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
 }
-.saved-thumb--batch svg { width: 24px; height: 24px; }
+.saved-thumb--batch svg { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); }
 /* Keep the user's session name verbatim (the row otherwise capitalizes). */
 .saved-row--batch h4 { text-transform: none; }
 
@@ -90,7 +90,7 @@
 .saved-row:not(:hover) .saved-label, .saved-row:not(:hover) .session-size, .saved-row:not(:hover) .saved-delete { opacity: .5; }
 
 .session-size {
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   margin-left: auto;
   margin-right: 8px;
@@ -141,7 +141,7 @@
   color: hsl(var(--muted-foreground));
   border: 1px solid transparent;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s, background 0.12s;
 }

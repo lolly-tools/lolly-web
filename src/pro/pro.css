@@ -27,7 +27,7 @@
 }
 
 /* Header title + subtitle were removed — the toolbar is the top bar now. */
-.pro-exit { font-size: .85rem; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.pro-exit { font-size: calc(.85rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); white-space: nowrap; }
 .pro-exit:hover { color: hsl(var(--foreground)); }
 
 /* Toolbar */
@@ -49,7 +49,7 @@
 }
 .pro-spacer { flex: none; } /* desktop: the toolbar group grows to fill, so the spacer is inert here; it only pushes controls right on mobile (see media query) */
 .pro-toolbar-sep { width: 1px; align-self: stretch; background: hsl(var(--border)); margin: .1rem .25rem; }
-.pro-count { font-size: .8rem; color: hsl(var(--muted-foreground)); }
+.pro-count { font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .pro-collapsed-bar .pro-count { margin-left: auto; white-space: nowrap;     font-weight: 600;color: hsl(var(--foreground) / 1);
 
 } /* pushed to the right of the columns bar */
@@ -93,7 +93,7 @@
   .pro-toolbar-group .pro-format select { flex: 1; }
   .pro-toolbar-group .pro-btn { text-align: left; }
 }
-.pro-format { font-size: .8rem; color: hsl(var(--muted-foreground)); display: inline-flex; align-items: center; gap: .4rem; }
+.pro-format { font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); display: inline-flex; align-items: center; gap: .4rem; }
 
 /* UI zoom (the −/100%/+ pill), left of the format select. Markup/click-wiring/
    disabled-state come from components/zoom-hud.ts (mountZoomHud), same as the
@@ -110,7 +110,7 @@
   display: grid; place-items: center; width: 1.95rem; height: 1.95rem;
   border: 0; border-radius: calc(var(--radius) * .6);
   background: transparent; color: hsl(var(--foreground)); cursor: pointer;
-  font-size: 1.05rem; font-weight: 700; line-height: 1;
+  font-size: calc(1.05rem * var(--a11y-fs)); font-weight: 700; line-height: 1;
   transition: background .12s ease;
 }
 .pro-zoom-btn:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
@@ -120,7 +120,7 @@
   min-width: 3rem; padding: .3rem .2rem; text-align: center;
   border: 0; border-radius: calc(var(--radius) * .6);
   background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer;
-  font: inherit; font-size: .72rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  font: inherit; font-size: calc(.72rem * var(--a11y-fs)); font-weight: 600; font-variant-numeric: tabular-nums;
   transition: background .12s ease;
 }
 .pro-zoom-pct:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
@@ -139,7 +139,7 @@
 .pro-dpi-field { gap: .3rem; }
 .pro-dpi-field input { width: 4.2rem; text-align: right; }
 .pro-dpi-field input:disabled { opacity: .45; }
-.pro-dpi-suffix { font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.pro-dpi-suffix { font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 /* Active unit shown beside the Width/Height column headers. */
 .pro-col-unit { font-weight: 400; color: hsl(var(--muted-foreground)); }
 
@@ -154,14 +154,14 @@
 /* Not the shared box: a borderless oversized name field whose only chrome is
    the wrapper. It states font/colour itself now that the deleted rule above no
    longer hands them out (a bare input inherits neither). */
-.pro-zip input { font: inherit; font-size: 1.5rem; color: hsl(var(--foreground)); border: none; background: transparent; flex: 0 0 auto; min-width: 0; width: auto; padding: 0; text-align: left; }
+.pro-zip input { font: inherit; font-size: calc(1.5rem * var(--a11y-fs)); color: hsl(var(--foreground)); border: none; background: transparent; flex: 0 0 auto; min-width: 0; width: auto; padding: 0; text-align: left; }
 .pro-zip input:focus { outline: none; }
 /* ".zip" rendered as a small uppercase pill so it reads as a format badge that
    trails the typed name. The border has no colour of its own → currentColor. */
 .pro-zip-ext {
   flex: none;
   color: hsl(var(--muted-foreground));
-  font-size: .8rem;
+  font-size: calc(.8rem * var(--a11y-fs));
   white-space: nowrap;
   padding: .25em .5em;
   padding-top: .2em;
@@ -172,10 +172,10 @@
   font-weight: 700;
 }
 /* Hidden mirror: matches the input's font so JS can measure the typed text width. */
-.pro-zip-measure { position: absolute; left: -9999px; top: 0; visibility: hidden; white-space: pre; pointer-events: none; font-size: 1.5rem; }
+.pro-zip-measure { position: absolute; left: -9999px; top: 0; visibility: hidden; white-space: pre; pointer-events: none; font-size: calc(1.5rem * var(--a11y-fs)); }
 .pro-btn {
   font: inherit;
-  font-size: .85rem;
+  font-size: calc(.85rem * var(--a11y-fs));
   font-weight: 600;
   cursor: pointer;
   padding: .45rem .66rem;
@@ -210,7 +210,7 @@
    no horizontal scroll. Dragging a column gives it a fixed px width; once the
    sized columns total more than the viewport the table grows and scrolls — so the
    user can still widen a cell to edit, it's just not forced on everyone. */
-.pro-grid { border-collapse: collapse; table-layout: fixed; width: 100%; font-size: .85rem; }
+.pro-grid { border-collapse: collapse; table-layout: fixed; width: 100%; font-size: calc(.85rem * var(--a11y-fs)); }
 .pro-grid th, .pro-grid td {
   border-bottom: 1px solid hsl(var(--border));
   border-right: 1px solid hsl(var(--border));
@@ -279,7 +279,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 }
 .pro-col-label:hover { color: hsl(var(--primary)); text-decoration: underline; }
 .pro-col-flag {
-  font-size: .6rem; text-transform: uppercase; letter-spacing: .04em;
+  font-size: calc(.6rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .04em;
   color: hsl(var(--muted-foreground)); border: 1px solid hsl(var(--border));
   border-radius: 999px; padding: .1rem .4rem; cursor: help;
 }
@@ -415,14 +415,14 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 
 /* Template search popover (body-mounted, docked to the cell's top-left). */
 .pro-tpl-popover { padding: 0; max-height: 60vh; display: flex; flex-direction: column; overflow: hidden; border-top-left-radius: 0; }
-.pro-tpl-search { flex: none; margin: 0; border: none; border-bottom: 1px solid hsl(var(--border)); border-radius: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-size: .9rem; padding: .6rem .7rem; }
+.pro-tpl-search { flex: none; margin: 0; border: none; border-bottom: 1px solid hsl(var(--border)); border-radius: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-size: calc(.9rem * var(--a11y-fs)); padding: .6rem .7rem; }
 .pro-tpl-search:focus { outline: none; }
 .pro-tpl-list { list-style: none; margin: 0; padding: .25rem; overflow-y: auto; flex: 1; min-height: 0; }
-.pro-tpl-opt { display: flex; align-items: center; gap: .5rem; width: 100%; text-align: left; font: inherit; font-size: .85rem; cursor: pointer; background: transparent; border: none; border-radius: calc(var(--radius) * .35); padding: .45rem .55rem; color: hsl(var(--foreground)); }
+.pro-tpl-opt { display: flex; align-items: center; gap: .5rem; width: 100%; text-align: left; font: inherit; font-size: calc(.85rem * var(--a11y-fs)); cursor: pointer; background: transparent; border: none; border-radius: calc(var(--radius) * .35); padding: .45rem .55rem; color: hsl(var(--foreground)); }
 .pro-tpl-opt:hover, .pro-tpl-opt.is-active { background: hsl(var(--accent)); }
 .pro-tpl-opt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.pro-tpl-opt-exp { flex: none; font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--destructive)); }
-.pro-tpl-none { padding: .6rem .7rem; font-size: .8rem; color: hsl(var(--muted-foreground)); }
+.pro-tpl-opt-exp { flex: none; font-size: calc(.6rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--destructive)); }
+.pro-tpl-none { padding: .6rem .7rem; font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .pro-eye, .pro-fmt {
   position: relative;
   display: inline-flex; align-items: center; justify-content: center;
@@ -434,7 +434,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-eye svg, .pro-fmt svg { pointer-events: none; }
 /* The format pill widens to hold the extension label (e.g. WEBP). */
 .pro-fmt { width: 2.4rem; }
-.pro-fmt-ext { font-size: .62rem; font-weight: 600; line-height: 1; letter-spacing: .02em; pointer-events: none; }
+.pro-fmt-ext { font-size: calc(.62rem * var(--a11y-fs)); font-weight: 600; line-height: 1; letter-spacing: .02em; pointer-events: none; }
 /* The native <select> overlays the document icon at zero opacity. */
 .pro-fmt-select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: none; appearance: none; }
 .pro-fmt--set { color: hsl(var(--primary)); border-color: hsl(var(--primary)); } /* per-row override active */
@@ -448,7 +448,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 
 /* Collapsed-column tags (restore on click) */
 .pro-collapsed-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .85rem .25rem; }
-.pro-collapsed-bar-label { font-size: .72rem; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: .05em; margin-right: .25rem; }
+.pro-collapsed-bar-label { font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: .05em; margin-right: .25rem; }
 /* + Row / +5 anchored together at the bottom-left of the table. */
 .pro-addrow { display: inline-flex; gap: .35rem; flex: none; }
 /* ── Bottom-bar hierarchy (most → least prominent) ──
@@ -481,7 +481,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 
 /* 3 — small ghost pill: no fill, thin solid border, muted text. Most recessive. */
 .pro-collapsed-tag {
-  font: inherit; font-size: .7rem; font-weight: 500; cursor: pointer;
+  font: inherit; font-size: calc(.7rem * var(--a11y-fs)); font-weight: 500; cursor: pointer;
   border: 1px solid hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground));
   border-radius: 999px; padding: .16rem .5rem;
 }
@@ -516,7 +516,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 
 /* 2 — solid outlined uppercase pill: clearly an action, below the filled +Row. */
 .pro-cols-action {
-  font: inherit; font-size: .75rem; font-weight: 700; cursor: pointer;
+  font: inherit; font-size: calc(.75rem * var(--a11y-fs)); font-weight: 700; cursor: pointer;
   text-transform: uppercase; letter-spacing: .04em;
   border: 1px solid hsl(var(--border)); background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground));
   border-radius: 999px; padding: .3rem .8rem;
@@ -535,14 +535,14 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-grid td.pro-cell--editing { outline: 2px solid hsl(var(--primary)); outline-offset: -2px; box-shadow: inset 0 0 0 1px hsl(var(--primary)); }
 .pro-grid .pro-cell--editing .pro-control,
 .pro-grid .pro-cell--editing .pro-template-select { cursor: text; }
-.pro-cell-default { font-size: .75rem; }
+.pro-cell-default { font-size: calc(.75rem * var(--a11y-fs)); }
 /* Last column holds the close ✕ (the reorder grip now lives in the left gutter):
    a hard fixed width, never grows or shrinks. */
 .pro-cell-actions, .pro-col-actions { width: 3.4em; min-width: 3.4em; max-width: 3.4em; text-align: center; vertical-align: middle; padding: 0; }
 .pro-row-remove {
   display: inline-flex; align-items: center; justify-content: center;
   border: none; background: transparent; cursor: pointer; color: hsl(var(--muted-foreground));
-  font-size: .9rem; line-height: 1; padding: .3rem .45rem; border-radius: 999px;
+  font-size: calc(.9rem * var(--a11y-fs)); line-height: 1; padding: .3rem .45rem; border-radius: 999px;
   transition: background .12s, color .12s;
 }
 .pro-row-remove:hover { color: hsl(var(--destructive)); background: hsl(var(--muted)); }
@@ -551,7 +551,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
    and any other click — or a 3s timeout — disarms it. Prevents stray-click loss. */
 .pro-row-remove.is-armed {
   background: hsl(var(--destructive)); color: hsl(var(--destructive-foreground));
-  font-size: .68rem; font-weight: 700; padding: .25rem .4rem;
+  font-size: calc(.68rem * var(--a11y-fs)); font-weight: 700; padding: .25rem .4rem;
 }
 .pro-row-remove.is-armed:hover { background: hsl(var(--destructive)); filter: brightness(1.08); }
 /* Grip: the grab affordance for drag-to-reorder (see reorder.js). Dimmed until
@@ -593,7 +593,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   align-items: flex-start;
   gap: .75rem;
   color: hsl(var(--muted-foreground));
-  font-size: .85rem;
+  font-size: calc(.85rem * var(--a11y-fs));
   padding: 1rem .25rem;
   max-width: 46rem;
   /* Toast-style reveal on load — grows in place (no movement) by animating
@@ -626,14 +626,14 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   box-shadow: 0 12px 32px rgba(0,0,0,.22);
   padding: .8rem;
 }
-.pro-popover-title { font-weight: 700; font-size: .85rem; margin-bottom: .6rem; }
+.pro-popover-title { font-weight: 700; font-size: calc(.85rem * var(--a11y-fs)); margin-bottom: .6rem; }
 .pro-popover-control { margin-bottom: .7rem; }
 .pro-popover-control .pro-control { width: 100%; }
 /* …except a tick, which is a fixed 16px object (.field-check), not a box.
    It has to restate the 16px rather than say `auto`: .field-check drops the
    native widget (appearance:none), and an appearance-less checkbox has no
    intrinsic size — `width:auto` shrink-to-fits an empty box to ZERO. */
-.pro-popover-control input[type="checkbox"].pro-control { width: 16px; }
+.pro-popover-control input[type="checkbox"].pro-control { width: calc(16px * var(--a11y-fs)); }
 .pro-popover-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 
 /* Saved-sessions popover */
@@ -648,25 +648,25 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   border: 1px solid transparent; border-radius: calc(var(--radius) * .5);
 }
 .pro-sess-load:hover { background: hsl(var(--accent)); border-color: hsl(var(--border)); }
-.pro-sess-name { font-weight: 600; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pro-sess-when { flex: none; font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.pro-sess-name { font-weight: 600; font-size: calc(.85rem * var(--a11y-fs)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pro-sess-when { flex: none; font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .pro-sess-del {
   flex: none; width: 1.8rem; border: 1px solid transparent; border-radius: calc(var(--radius) * .5);
-  background: none; color: hsl(var(--muted-foreground)); cursor: pointer; font-size: .8rem; line-height: 1;
+  background: none; color: hsl(var(--muted-foreground)); cursor: pointer; font-size: calc(.8rem * var(--a11y-fs)); line-height: 1;
 }
 .pro-sess-del:hover { background: hsl(var(--destructive) / .12); color: hsl(var(--destructive)); }
-.pro-sess-empty { margin: 0 0 .6rem; font-size: .82rem; color: hsl(var(--muted-foreground)); }
+.pro-sess-empty { margin: 0 0 .6rem; font-size: calc(.82rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .pro-sess-save { display: flex; gap: .4rem; border-top: 1px solid hsl(var(--border)); padding-top: .6rem; }
 .pro-sess-input {
-  flex: 1; min-width: 0; padding: .35rem .5rem; font: inherit; font-size: .85rem;
+  flex: 1; min-width: 0; padding: .35rem .5rem; font: inherit; font-size: calc(.85rem * var(--a11y-fs));
   background: hsl(var(--background)); color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .5);
 }
 .pro-sess-input:focus { outline: none; border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / .35); }
 /* Offline CSV round-trip inside the sessions dialog. */
 .pro-sess-csv { display: flex; align-items: center; gap: .4rem; margin-top: .6rem; padding-top: .6rem; border-top: 1px solid hsl(var(--border)); }
-.pro-sess-csv-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); margin-right: auto; }
-.pro-sess-csv .pro-btn { font-size: .8rem; }
+.pro-sess-csv-label { font-size: calc(.72rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); margin-right: auto; }
+.pro-sess-csv .pro-btn { font-size: calc(.8rem * var(--a11y-fs)); }
 
 /* Progress + log */
 .pro-progress {
@@ -681,7 +681,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   background: hsl(var(--card));
 }
 .pro-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .6rem; }
-.pro-progress-msg { color: hsl(var(--muted-foreground)); font-size: .9rem; margin: 0; }
+.pro-progress-msg { color: hsl(var(--muted-foreground)); font-size: calc(.9rem * var(--a11y-fs)); margin: 0; }
 
 /* Rotating wait-time quip (two lines, gentle fade on each swap). */
 .pro-quip {
@@ -696,7 +696,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-quip span:first-child { color: hsl(var(--foreground)); font-style: normal; }
 @keyframes pro-quip-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .pro-quip { animation: none; } }
-.pro-log { list-style: none; margin: 0; padding: 0; font-size: .8rem; max-height: 16rem; overflow-y: auto; font-family: var(--font-mono, ui-monospace, monospace); }
+.pro-log { list-style: none; margin: 0; padding: 0; font-size: calc(.8rem * var(--a11y-fs)); max-height: 16rem; overflow-y: auto; font-family: var(--font-mono, ui-monospace, monospace); }
 .pro-log li { padding: .15rem 0; }
 .pro-log-ok { color: hsl(var(--muted-foreground)); }
 .pro-log-err { color: hsl(var(--destructive)); }
@@ -735,10 +735,10 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-blk-head, .pro-blk-foot { display: flex; align-items: center; gap: .6rem; padding: .75rem 1rem; flex: 0 0 auto; }
 .pro-blk-head { justify-content: space-between; border-bottom: 1px solid hsl(var(--border)); }
 .pro-blk-foot { justify-content: flex-end; border-top: 1px solid hsl(var(--border)); }
-.pro-blk-title { margin: 0; font-size: .95rem; font-weight: 700; }
+.pro-blk-title { margin: 0; font-size: calc(.95rem * var(--a11y-fs)); font-weight: 700; }
 .pro-blk-x {
   appearance: none; border: 0; background: transparent; cursor: pointer;
-  font-size: 1rem; line-height: 1; padding: .25rem .4rem; color: hsl(var(--muted-foreground));
+  font-size: calc(1rem * var(--a11y-fs)); line-height: 1; padding: .25rem .4rem; color: hsl(var(--muted-foreground));
 }
 .pro-blk-x:hover { color: hsl(var(--foreground)); }
 
@@ -764,12 +764,12 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   padding: .4rem .5rem .4rem 1rem;
 }
 .pro-blk-preview-title {
-  font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  font-size: calc(.72rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
   color: hsl(var(--muted-foreground));
 }
 .pro-blk-preview-x {
   appearance: none; border: 0; background: transparent; cursor: pointer;
-  font-size: .85rem; line-height: 1; padding: .2rem .4rem; border-radius: 6px;
+  font-size: calc(.85rem * var(--a11y-fs)); line-height: 1; padding: .2rem .4rem; border-radius: 6px;
   color: hsl(var(--muted-foreground));
 }
 .pro-blk-preview-x:hover { color: hsl(var(--destructive)); background: hsl(var(--muted)); }
@@ -788,7 +788,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-blk-preview.is-loading .pro-blk-preview-stage { opacity: .5; }
 .pro-blk-preview-img { max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 2px 10px hsl(0 0% 0% / .18); }
 .pro-blk-preview-frame { width: 100%; height: 100%; min-height: 220px; border: 0; background: #fff; border-radius: 4px; }
-.pro-blk-preview-msg { margin: 0; font-size: .8rem; color: hsl(var(--muted-foreground)); }
+.pro-blk-preview-msg { margin: 0; font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .pro-blk-preview-msg.is-error { color: hsl(var(--destructive)); }
 
 .pro-blk-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 1rem; }
@@ -816,26 +816,26 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 }
 .pro-blk-chev { flex: 0 0 auto; color: hsl(var(--muted-foreground)); transition: transform .12s; }
 .pro-blk-card.is-open .pro-blk-chev { transform: rotate(90deg); }
-.pro-blk-card-n { flex: 0 0 auto; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); }
-.pro-blk-card-prev { flex: 1 1 auto; min-width: 0; font-size: .78rem; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pro-blk-card-n { flex: 0 0 auto; font-size: calc(.7rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); }
+.pro-blk-card-prev { flex: 1 1 auto; min-width: 0; font-size: calc(.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pro-blk-card:not(.is-open) .pro-blk-card-body { display: none; }
 @media (prefers-reduced-motion: reduce) { .pro-blk-chev { transition: none; } }
 .pro-blk-del {
-  flex: 0 0 auto; appearance: none; cursor: pointer; font-size: .8rem; line-height: 1;
+  flex: 0 0 auto; appearance: none; cursor: pointer; font-size: calc(.8rem * var(--a11y-fs)); line-height: 1;
   width: 1.55rem; height: 1.55rem; border-radius: calc(var(--radius) * .3);
   border: 1px solid transparent; background: transparent; color: hsl(var(--muted-foreground));
 }
 .pro-blk-del:hover { border-color: hsl(var(--destructive)); color: hsl(var(--destructive)); }
 .pro-blk-card-body { display: flex; flex-direction: column; gap: .55rem; padding: .65rem; }
 .pro-blk-field { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
-.pro-blk-flabel { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--muted-foreground)); }
+.pro-blk-flabel { font-size: calc(.68rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--muted-foreground)); }
 /* Panel fields fill their card and run a touch tighter than the primitive's
    default padding; everything else about the box comes from .field-* now. */
 .pro-blocks-panel .pro-control { width: 100%; padding: .45rem .55rem; }
 /* …except a tick, which is a fixed 16px object (.field-check), not a box.
    16px, not `auto`: .field-check sets appearance:none, and a checkbox with no
    native widget has no intrinsic size — `auto` would collapse it to zero. */
-.pro-blocks-panel input[type="checkbox"].pro-control { width: 16px; padding: 0; }
+.pro-blocks-panel input[type="checkbox"].pro-control { width: calc(16px * var(--a11y-fs)); padding: 0; }
 /* The tighter padding above is a shorthand, so it also eats the chevron gutter
    .field-select reserves. Hand it back — the caret must not sit on the text. */
 .pro-blocks-panel select.pro-control { padding-inline-end: 32px; }
@@ -850,7 +850,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
    recipe moves, this is the call site to chase. */
 .pro-blk-asset {
   display: inline-flex; align-items: center; gap: .4rem; justify-content: flex-start;
-  font: inherit; font-size: 13px; color: hsl(var(--foreground));
+  font: inherit; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--foreground));
   background-color: hsl(var(--background));
   border: 0;
   border-radius: var(--radius);

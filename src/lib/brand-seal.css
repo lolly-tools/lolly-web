@@ -15,7 +15,7 @@
 .dash-lock-text { min-width: 0; }
 .dash-lock-title {
   margin: 0 0 0.35rem;
-  font-size: 1.15rem;
+  font-size: calc(1.15rem * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: -0.01em;
 }

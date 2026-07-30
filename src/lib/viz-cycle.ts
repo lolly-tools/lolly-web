@@ -26,6 +26,8 @@
  * preference sets the default, it does not overrule a deliberate choice.
  */
 
+import { prefersReducedMotion } from './a11y-prefs.ts';
+
 /** Intervals offered, in seconds. 0 is Off. 5 is a restless slideshow and 40 lets a
  *  preset actually breathe, which is why the default sits at the slow end. */
 export const CYCLE_CHOICES = [0, 5, 20, 40] as const;
@@ -37,10 +39,6 @@ export const CYCLE_DEFAULT: CycleSeconds = 40;
 /** localStorage key. Shared deliberately: someone who has chosen a rhythm for the dock
  *  has expressed a preference about visualisers, not about one widget. */
 export const CYCLE_KEY = 'lolly:vizCycle';
-
-function prefersReducedMotion(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
 
 /**
  * The saved interval in seconds, 0 for off.

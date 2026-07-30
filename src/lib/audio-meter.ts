@@ -13,6 +13,8 @@
  * can't run before a user gesture anyway).
  */
 
+import { prefersReducedMotion } from './a11y-prefs.ts';
+
 type WinAudio = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
 
 /** One frame of frequency bars (bottom-anchored, louder = more opaque). */
@@ -72,7 +74,10 @@ export interface MeterHandle {
 export function attachAudioMeter(canvas: HTMLCanvasElement, audioEl: HTMLAudioElement): MeterHandle {
   const c2d = canvas.getContext('2d');
   if (!c2d) return Object.assign(() => { /* nothing attached */ }, { analyser: () => null, context: () => null });
-  const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // A function, not a captured boolean: a meter attached at page load would
+  // otherwise latch the value before boot hydration applied the profile pref,
+  // and never notice a later toggle.
+  const reduced = prefersReducedMotion;
   let analyser: AnalyserNode | null = null;
   let source: MediaElementAudioSourceNode | null = null;
   let disposed = false;
@@ -120,7 +125,7 @@ export function attachAudioMeter(canvas: HTMLCanvasElement, audioEl: HTMLAudioEl
 
   const draw = (): void => {
     if (disposed || !canvas.isConnected) { running = false; return; }
-    if (analyser && !audioEl.paused && !audioEl.ended && !reduced) {
+    if (analyser && !audioEl.paused && !audioEl.ended && !reduced()) {
       const color = getComputedStyle(canvas).color || '#888';
       c2d.clearRect(0, 0, canvas.width, canvas.height);
       drawMeterBars(c2d, canvas.width, canvas.height, analyser, color);

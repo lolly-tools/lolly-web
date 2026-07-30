@@ -14,7 +14,7 @@
 }
 
 .not-found-code {
-  font-size: 96px;
+  font-size: calc(96px * var(--a11y-fs));
   font-weight: 700;
   line-height: 1;
   margin: 0 0 8px;
@@ -23,7 +23,7 @@
 }
 
 .not-found-title {
-  font-size: 22px;
+  font-size: calc(22px * var(--a11y-fs));
   font-weight: 600;
   margin: 0 0 12px;
   color: hsl(var(--foreground));
@@ -49,7 +49,7 @@
   border-radius: var(--radius);
   text-decoration: none;
   font-weight: 500;
-  font-size: 14px;
+  font-size: calc(14px * var(--a11y-fs));
   transition: opacity 0.12s;
 }
 
@@ -62,7 +62,7 @@
   display: block;
   margin-top: 16px;
   color: hsl(var(--muted-foreground));
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   text-decoration: none;
 }
 .not-found-back:hover {
@@ -123,9 +123,9 @@ button {
   input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not([type="radio"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="image"]),
   textarea,
   select {
-    font-size: 16px !important;
+    font-size: calc(16px * var(--a11y-fs)) !important;
   }
-  .pro-zip input { font-size: 1.5rem !important; }
+  .pro-zip input { font-size: calc(1.5rem * var(--a11y-fs)) !important; }
 
   /* Comfortable ~44px tap targets for the tappable controls. */
   .input-row select,

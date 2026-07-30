@@ -58,11 +58,11 @@
 }
 .privacy-notice-text {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground, var(--foreground)));
 }
 .privacy-notice-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.privacy-notice-dismiss { padding: 3px 12px; font-size: 12px; }
+.privacy-notice-dismiss { padding: 3px 12px; font-size: calc(12px * var(--a11y-fs)); }
 /* Extra bottom clearance so the last card row isn't hidden behind both bars. */
 .app-view.gallery-view.has-privacy-notice { padding-bottom: calc(8.5rem + env(safe-area-inset-bottom)); }
 
@@ -98,35 +98,37 @@
 .personalize-nudge-icon {
   align-self: start;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; flex: none;
+  /* Badge + glyph ride --a11y-fs with the title beside them, so the icon stays the
+     same optical weight as the heading rather than shrinking against it. */
+  width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs)); flex: none;
   border-radius: 10px;
   color: hsl(var(--primary));
   background: hsl(var(--primary) / 0.12);
 }
-.personalize-nudge-icon svg { width: 19px; height: 19px; }
+.personalize-nudge-icon svg { width: calc(19px * var(--a11y-fs)); height: calc(19px * var(--a11y-fs)); }
 
 .personalize-nudge-body { min-width: 0; }
 .personalize-nudge-title {
   margin: 0 0 4px; padding-right: 20px; /* clear the × in the corner */
-  font-size: 14px; font-weight: 650; line-height: 1.3;
+  font-size: calc(14px * var(--a11y-fs)); font-weight: 650; line-height: 1.3;
   color: hsl(var(--foreground));
 }
 .personalize-nudge-text {
-  margin: 0; font-size: 12.5px; line-height: 1.45;
+  margin: 0; font-size: calc(12.5px * var(--a11y-fs)); line-height: 1.45;
   color: hsl(var(--muted-foreground, var(--foreground)));
 }
 .personalize-nudge-actions {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px;
 }
 .personalize-nudge-cta {
-  padding: 6px 14px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+  padding: 6px 14px; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600; line-height: 1.3;
   background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
   border: 0; border-radius: 999px; text-decoration: none; cursor: pointer;
   transition: background .12s;
 }
 .personalize-nudge-cta:hover { background: hsl(var(--primary) / .9); }
 .personalize-nudge-dismiss {
-  padding: 6px 10px; font-size: 12.5px; font-weight: 500; line-height: 1.3;
+  padding: 6px 10px; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 500; line-height: 1.3;
   background: transparent; color: hsl(var(--muted-foreground)); border: 0;
   border-radius: 999px; cursor: pointer;
   transition: background .12s, color .12s;
@@ -135,9 +137,11 @@
 
 .personalize-nudge-close {
   position: absolute; top: 7px; right: 7px;
-  width: 26px; height: 26px;
+  /* The box holds a ✕ glyph that already scales — at a fixed 26px the 1.2 glyph
+     fills it edge to edge and the hit target stops growing with everything else. */
+  width: calc(26px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs));
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 18px; line-height: 1;
+  font-size: calc(18px * var(--a11y-fs)); line-height: 1;
   color: hsl(var(--muted-foreground));
   background: transparent; border: 0; border-radius: 8px; cursor: pointer;
   transition: background .12s, color .12s;
@@ -197,7 +201,7 @@
   color: hsl(var(--muted-foreground));
   pointer-events: none;
 }
-.gallery-search-icon svg { width: 16px; height: 16px; }
+.gallery-search-icon svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 /* Jelly effects mode (lib/jelly.ts): the field is a <jelly-input>; the search
    icon and ✕ overlay its canvas, so they need stacking above it, and the inner
    field needs matching inline padding so text clears the icon. The native field
@@ -217,9 +221,18 @@
 .gallery-search {
   width: 100%;
   min-width:4em;
-  padding: 8px 34px;   /* left room for the magnifier, right room for the ✕ (both always reserved — the field always ships the clear button) */
+  /* Left room for the magnifier, right room for the ✕ (both always reserved — the
+     field always ships the clear button).
+     KNOWN LIMIT under largeText: both ornaments scale with the type, so at 1.2 the
+     ✕ reaches 34.8px in from the right edge and the query text grazes it by ~0.8px.
+     Left flat deliberately. The fix would be to scale this reservation, and the
+     multiplier is not allowed on padding (a11y-prefs-contract.test.ts: spacing that
+     follows the type is scaled where its TOKEN is declared, never restated at a use
+     site) — which is the right rule, and 0.8px of overlap is not worth minting a
+     global token for one field or weakening a guard that has caught real bugs. */
+  padding: 8px 34px;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border));
@@ -237,9 +250,9 @@
    the UA default against the `display:inline-flex` below. */
 .gallery-search-clear {
   position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-  width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+  width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); display: inline-flex; align-items: center; justify-content: center;
   border: 0; border-radius: 50%; background: transparent; color: hsl(var(--muted-foreground));
-  font-size: 13px; line-height: 1; cursor: pointer;
+  font-size: calc(13px * var(--a11y-fs)); line-height: 1; cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 .gallery-search-clear[hidden] { display: none; }
@@ -247,7 +260,7 @@
 .gallery-search-clear:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 
 .gallery-no-results {
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   padding: 8px 0;
 }
@@ -277,14 +290,17 @@
 }
 /* Every footer nav link shows its icon + text label on desktop; on phones the label
    collapses away (see the media query) so each button is just its icon. */
+/* Icons scale on --a11y-fs: below 640px .gallery-nav-label is hidden (see the media
+   query below) and these buttons are icon-only, so a fixed 15px would leave the
+   footer nav untouched by largeText on exactly the screen it matters most. */
 .gallery-footer > .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.gallery-footer > .btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.gallery-footer > .btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); flex-shrink: 0; }
 
 /* Jelly footer nav items (flag): the <jelly-button> paints its own capsule, so it
    just needs to hold its width in the row and size its slotted icon (the slotted
    svg is light-DOM, so this outer rule reaches it). */
 .gallery-footer .gallery-nav-jelly { flex: 0 0 auto; }
-.gallery-footer .gallery-nav-jelly svg { width: 15px; height: 15px; flex-shrink: 0; }
+.gallery-footer .gallery-nav-jelly svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); flex-shrink: 0; }
 
 /* Phones: full-width search on top, the nav links sharing the row beneath it — each
    collapsed to just its icon (label hidden) rather than dropped, so Platform &
@@ -308,11 +324,11 @@
 }
 .gallery-empty-title {
   margin: 0 0 .4rem;
-  font-size: 1.05rem;
+  font-size: calc(1.05rem * var(--a11y-fs));
   font-weight: 600;
   color: hsl(var(--foreground));
 }
-.gallery-empty-hint { margin: 0; font-size: .9rem; }
+.gallery-empty-hint { margin: 0; font-size: calc(.9rem * var(--a11y-fs)); }
 .gallery-empty-hint a,
 .gallery-retry { color: hsl(var(--primary)); font-weight: 600; }
 .gallery-retry {
@@ -326,7 +342,7 @@
 .gallery-retry:disabled { opacity: .6; cursor: default; text-decoration: none; }
 
 .saved-row h4{font-weight: 600;
-    font-size: 12px;
+    font-size: calc(12px * var(--a11y-fs));
     margin: 0;}
 
 /* One entrance language. Every mount-time reveal in the app (gallery cards,
@@ -394,7 +410,7 @@ stroke-width:.81;
   right: 10px;
   padding: 2px 7px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: calc(10px * var(--a11y-fs));
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -413,7 +429,7 @@ stroke-width:.81;
   right: 12px;                 /* line up with .gtile-continue's gutter, not the 8px inset */
   bottom: 8px;
   font-family: inherit;        /* the Open chip uses the UI font, not SUSE Mono */
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   letter-spacing: 0;
   text-transform: capitalize;  /* "Experimental", echoing the Open chip's case */
@@ -485,13 +501,20 @@ stroke-width:.81;
 }
 /* hover + open (aria-expanded) tint is centralised with the rest of the top-right
    cluster in overrides.css (@layer overrides — the tools-home glass treatment). */
-.filter-fab svg { width: 18px; height: 18px; }
+/* The glyph rides the SAME --a11y-fs the row's type does — this button carries no
+   visible label, so under largeText the mark IS the label, and the box around it
+   (var(--chrome-h)) already grows. One knob, so the two can't drift apart. */
+.filter-fab svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 /* Dot marking a non-default category filter. */
 .filter-fab.has-active::after {
   content: "";
   position: absolute;
   top: -1px; right: -1px;
-  width: 10px; height: 10px;
+  /* This dot is the ONLY signal that a filter is hiding tools, and it is already
+     the smallest mark in the row — it scales too, or largeText makes it relatively
+     smaller against a button that grew. The 2px ring stays put: it is a separation
+     stroke against the background, not type. */
+  width: calc(10px * var(--a11y-fs)); height: calc(10px * var(--a11y-fs));
   border-radius: 50%;
   background: hsl(var(--primary));
   border: 2px solid hsl(var(--background));
@@ -519,7 +542,7 @@ stroke-width:.81;
 .filter-popover[hidden] { display: none; }
 .filter-pop-head {
   margin: 0;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .06em;
@@ -533,14 +556,14 @@ stroke-width:.81;
   margin: 0;
   padding-top: 12px;
   border-top: 1px solid hsl(var(--border));
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 600;
   cursor: pointer;
 }
 /* The tick itself is `.field-check` (parts/fields.css); the popover runs it a
    couple of pixels larger than the 16px default so it reads at a glance in a
    sparse list. */
-.filter-pop-check input { width: 18px; height: 18px; }
+.filter-pop-check input { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 
 /* Sort control at the top of the popover — a native <select> for familiarity and
    free keyboard/AT support, styled to match the search field. */
@@ -552,7 +575,7 @@ stroke-width:.81;
   flex: 1;
   padding: 7px 10px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--a11y-fs));
   font-weight: 600;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
@@ -591,7 +614,9 @@ stroke-width:.81;
    (down = default order, up = reversed) shows which way the results run. */
 .gallery-sort-dir {
   flex: none;
-  width: 40px;
+  /* Square-ish against the sort <select> beside it, whose height is type-driven —
+     a frozen 40px would go oblong the moment the row's type grew. */
+  width: calc(40px * var(--a11y-fs));
   display: inline-flex; align-items: center; justify-content: center;
   color: hsl(var(--foreground));
   background: hsl(var(--background));
@@ -600,7 +625,7 @@ stroke-width:.81;
   cursor: pointer;
   transition: color 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
 }
-.gallery-sort-dir svg { width: 19px; height: 19px; }
+.gallery-sort-dir svg { width: calc(19px * var(--a11y-fs)); height: calc(19px * var(--a11y-fs)); }
 .gallery-sort-dir:hover { border-color: hsl(var(--ring)); }
 .gallery-sort-dir:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 /* Default (descending): the down arrow leads; the up arrow is dimmed. */
@@ -641,7 +666,7 @@ stroke-width:.81;
   border-radius: calc(var(--radius)*1.5);
   padding: 7px 14px;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -1070,8 +1095,10 @@ stroke-width:.81;
   top: 50%;
   transform: translateY(-50%);
   z-index: 2;
-  width: 26px;
-  height: 26px;
+  /* Labelless overlay control — the arrow IS the affordance, so it takes the type
+     multiplier like the rest of the chrome. */
+  width: calc(26px * var(--a11y-fs));
+  height: calc(26px * var(--a11y-fs));
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -1083,7 +1110,7 @@ stroke-width:.81;
   opacity: 0;
   transition: opacity .15s, background .15s;
 }
-.gcar-nav svg { width: 15px; height: 15px; }
+.gcar-nav svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .gcar-prev { left: 6px; }
 .gcar-next { right: 6px; }
 .gcar:hover .gcar-nav, .gcar:focus-within .gcar-nav { opacity: .92; }
@@ -1129,7 +1156,7 @@ stroke-width:.81;
   /* Top-left so the action overlay can sit just "after" it on the top-right. */
   left: 8px;
   line-height: 1;
-  font-size: 10px;
+  font-size: calc(10px * var(--a11y-fs));
   font-weight: 700;
   color: #fff;
   background: #000a;
@@ -1143,7 +1170,7 @@ stroke-width:.81;
   right: 12px;
   bottom: 8px;
   line-height: 1;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   /* Theme tokens, not hard-coded #fff — keeps contrast in dark / suse themes. */
   color: hsl(var(--primary-foreground));
@@ -1199,7 +1226,7 @@ stroke-width:.81;
 .gtile-tile--iconled { flex-direction: column; gap: 8px; padding: 20px 16px; }
 .gtile-tile-icon { display: flex; color: hsl(var(--muted-foreground) / .45); line-height: 0; }
 .gtile-tile-icon svg { width: 40px; height: 40px; }
-.gtile-tile-txt { font-size: 12px; line-height: 1.35; color: hsl(var(--muted-foreground) / .5);; font-weight: 400; font-style: italic; }
+.gtile-tile-txt { font-size: calc(12px * var(--a11y-fs)); line-height: 1.35; color: hsl(var(--muted-foreground) / .5);; font-weight: 400; font-style: italic; }
 /* A saved session whose preview failed to capture — still resumable, so it reads
    as an action (not the italic "no sessions" note). */
 .gtile-tile--resume { width: 100%; border: 0; cursor: pointer; text-align: left; background: transparent; }
@@ -1235,7 +1262,7 @@ stroke-width:.81;
 .gtile-cap .tool-card-icon svg { width: 36px; height: 36px; }
 .gtile-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; }
 .gtile-name {
-  font-size: 14px;
+  font-size: calc(14px * var(--a11y-fs));
   font-weight: 600;
   line-height: 1.2;
   color: inherit;
@@ -1261,7 +1288,7 @@ a.gtile-name:focus-visible::after {
    hero's Continue. */
 .gtile-new {
   flex: none;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 700;
   line-height: 1;
   color: hsl(var(--primary));
@@ -1280,7 +1307,7 @@ a.gtile-name:focus-visible::after {
 .gtile-newbadge {
   align-self: flex-start;
   margin-bottom: 4px;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: .07em;
   text-transform: uppercase;
@@ -1291,7 +1318,7 @@ a.gtile-name:focus-visible::after {
   padding: 3px 7px;
 }
 .gtile-sub {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   margin-top: 2px;
   white-space: nowrap;
@@ -1303,7 +1330,7 @@ a.gtile-name:focus-visible::after {
    padding of its own (the column already starts past the icon). */
 .gtile-desc {
   margin: 5px 0 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
   /* Clamp to two lines so the caption block is a predictable height across every
@@ -1326,7 +1353,7 @@ a.gtile-name:focus-visible::after {
 .meta-fmt-grp { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .meta-fmt-kind {
   flex: 0 0 3.6em;
-  font-size: 10px;
+  font-size: calc(10px * var(--a11y-fs));
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1341,7 +1368,7 @@ a.gtile-name:focus-visible::after {
   gap: 5px;
 }
 .meta-fmt {
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 500;
   letter-spacing: 0.02em;
   line-height: 1;
@@ -1371,8 +1398,12 @@ a.gtile-name:focus-visible::after {
   gap: 6px;
 }
 .gtile-iconbtn {
-  width: 26px;
-  height: 26px;
+  /* Star / info / ⋯ over a tile preview: aria-labelled, no visible text, so the
+     glyph and its tap target take the multiplier. (The svg below is 1em against
+     the button's inherited, UNSCALED font-size, so it needs the factor spelled
+     out — it does not come along for free.) */
+  width: calc(26px * var(--a11y-fs));
+  height: calc(26px * var(--a11y-fs));
   padding: 0;
   flex: none;
   display: inline-flex;
@@ -1390,7 +1421,7 @@ a.gtile-name:focus-visible::after {
   border-color: hsl(var(--primary) / 0.5);
   background: hsl(var(--primary) / 0.08);
 }
-.gtile-iconbtn svg { width: 1em; height: 1em; stroke-width:.125em}
+.gtile-iconbtn svg { width: calc(1em * var(--a11y-fs)); height: calc(1em * var(--a11y-fs)); stroke-width:.125em}
 
 /* ── Utilities view (#/u) ─────────────────────────────────────────────────────
    A utility's icon is a clear enough affordance on its own, so these tiles drop
@@ -1497,12 +1528,12 @@ a.gtile-name:focus-visible::after {
 .meta-dialog-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .meta-dialog-head { display: flex; align-items: center; gap: 12px; }
 .meta-dialog-icon { flex: none; }
-.meta-dialog-icon svg { width: 40px; height: 40px; opacity: 0.6 !important; }
-.meta-dialog-head h2 { margin: 0; font-size: 16px; }
-.meta-dialog-sub { margin: 2px 0 0; font-size: 12px; color: hsl(var(--muted-foreground)); }
-.meta-dialog-desc { margin: 0; font-size: 13px; line-height: 1.5; color: hsl(var(--foreground)); }
+.meta-dialog-icon svg { width: calc(40px * var(--a11y-fs)); height: calc(40px * var(--a11y-fs)); opacity: 0.6 !important; }
+.meta-dialog-head h2 { margin: 0; font-size: calc(16px * var(--a11y-fs)); }
+.meta-dialog-sub { margin: 2px 0 0; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.meta-dialog-desc { margin: 0; font-size: calc(13px * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--foreground)); }
 .meta-dialog-facts { margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.meta-dialog-facts > div { display: grid; grid-template-columns: 5.5em 1fr; gap: 8px; font-size: 12.5px; }
+.meta-dialog-facts > div { display: grid; grid-template-columns: 5.5em 1fr; gap: 8px; font-size: calc(12.5px * var(--a11y-fs)); }
 .meta-dialog-facts dt { color: hsl(var(--muted-foreground)); font-weight: 600; }
 .meta-dialog-facts dd { margin: 0; }
 .meta-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
@@ -1536,7 +1567,7 @@ a.gtile-name:focus-visible::after {
 .meta-defaults { border-top: 1px solid hsl(var(--border) / 0.6); padding-top: 10px; }
 .meta-defaults-title {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1556,7 +1587,7 @@ a.gtile-name:focus-visible::after {
   grid-template-columns: minmax(7em, auto) 1fr;
   gap: 8px;
   align-items: baseline;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   line-height: 1.6;
 }
 .meta-default-row dt {
@@ -1574,27 +1605,29 @@ a.gtile-name:focus-visible::after {
 }
 .meta-default-value {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--a11y-fs));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .meta-default-swatch {
-  width: 12px;
-  height: 12px;
+  /* Sized off the value text it sits beside, so the dot doesn't shrink away as
+     the row's type grows. */
+  width: calc(12px * var(--a11y-fs));
+  height: calc(12px * var(--a11y-fs));
   border-radius: 50%;
   flex: none;
   box-shadow: inset 0 0 0 1px hsl(var(--border));
 }
 .meta-default-note {
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   border: 1px solid hsl(var(--border));
   border-radius: 999px;
   padding: 0 6px;
   flex: none;
 }
-.meta-default-more dd { color: hsl(var(--muted-foreground)); font-size: 11.5px; }
+.meta-default-more dd { color: hsl(var(--muted-foreground)); font-size: calc(11.5px * var(--a11y-fs)); }
 .history-list { max-height: 50vh; overflow: auto; margin: 0; padding: 0; }
 
 /* Top-right cluster: history button sits to the LEFT of the profile pill. */
@@ -1631,7 +1664,7 @@ a.gtile-name:focus-visible::after {
   border-radius: 999px;
   background: hsl(var(--card));
   color: hsl(var(--foreground));
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--a11y-fs));
   font-weight: 650;
   box-shadow: 0 10px 30px hsl(var(--foreground) / 0.25);
   opacity: 0;

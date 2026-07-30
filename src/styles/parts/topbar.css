@@ -59,11 +59,33 @@
    its right edge runs under the cluster — "Catálogo" ends up beneath the filter and
    history buttons. Above the 640px collapse there's still room, we're just centring
    against the wrong box: centre the pill in the space to the LEFT of the cluster
-   instead of the whole viewport, and tighten the tab padding so long labels fit. */
+   instead of the whole viewport, and tighten the tab padding so long labels fit.
+
+   The reserve has to TRACK the cluster, not sit at a frozen px. `19em` resolves
+   against the wrapper's own inherited 14px — a size --a11y-fs never touches —
+   while every control it is standing in for (three var(--chrome-h) FABs and the
+   profile pill's 13px label) grows with the multiplier, so under largeText the
+   reserve stayed put while the thing it reserves for got wider and the labels
+   slid straight back under the buttons the reserve exists to avoid.
+
+   So the bounded box is written as a WIDTH minus the reserve rather than as a
+   right inset. Same box — the wrapper is position:fixed, so its containing block
+   is the viewport and `left:.75em` + `width:100% - .75em - 19em` is exactly the
+   old `left:.75em; right:19em` — but width is a size, which is what the type
+   multiplier is allowed to scale (see the a11y contract test); an inset is not,
+   deliberately, because scaling insets is how a type preference turns back into
+   a whole-UI zoom. `* 1` computes byte-identically to the bare 19em it replaces.
+   The fallback is spelled out because an undefined var makes a calc() invalid at
+   computed-value time, which for `width` means falling back to `auto` — an
+   unbounded pill, i.e. the collision this whole block prevents.
+   (The 10px gaps inside the cluster don't grow, so this slightly OVER-reserves at
+   large factors — the safe direction: the pill narrows, it never runs under the
+   buttons.) */
 @media (min-width: 641px) and (max-width: 900px) {
   .gallery-topbar .view-toggle-wrap {
     left: .75em;
-    right: 19em;          /* the cluster's footprint: filter + history + lang + profile pill */
+    /* 19em = the cluster's footprint: filter + history + lang + profile pill. */
+    width: calc(100% - .75em - 19em * var(--a11y-fs, 1));
     transform: none;      /* bounded box now, so the translateX(-50%) centring goes */
     justify-content: center;
   }
@@ -101,7 +123,7 @@
 .profile-menu-seg {
   flex: 1; padding: 8px 6px; border: 0; border-radius: 999px;
   background: transparent; color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.2; cursor: pointer;
+  font: inherit; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600; line-height: 1.2; cursor: pointer;
   transition: background .12s, color .12s;
 }
 .profile-menu-seg:hover { color: hsl(var(--foreground)); }
@@ -114,31 +136,37 @@
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   width: 100%; padding: 11px 12px; border: 0; border-radius: var(--radius);
   background: transparent; color: hsl(var(--foreground));
-  font: inherit; font-size: 14px; font-weight: 500; text-align: left; text-decoration: none;
+  font: inherit; font-size: calc(14px * var(--a11y-fs)); font-weight: 500; text-align: left; text-decoration: none;
   cursor: pointer;
 }
 .profile-menu-item:hover { background: hsl(var(--accent)); }
 .profile-menu-item:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
 .profile-menu-item svg { color: hsl(var(--muted-foreground)); flex: none; }
 .profile-menu-count {
-  min-width: 20px; height: 18px; padding: 0 6px;
+  /* Box scales with the numeral inside it — see .history-fab-count. */
+  min-width: calc(20px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); padding: 0 6px;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700; line-height: 1;
+  font-size: calc(11px * var(--a11y-fs)); font-weight: 700; line-height: 1;
   color: hsl(var(--primary-foreground)); background: hsl(var(--primary)); border-radius: var(--radius);
 }
 /* box shape (utilities.css) stays as-is; background/color/backdrop-filter/
    transition come from the shared .btn--glass alias (buttons.css), which loads
    after utilities.css so it wins the cascade without needing an edit there. */
 /* hover tint centralised with the top-right cluster in overrides.css (@layer overrides). */
-.history-fab svg { width: 18px; height: 18px; }
+/* The glyph rides the SAME --a11y-fs the row's type does — this button carries no
+   visible label, so under largeText the mark IS the label, and the box around it
+   (var(--chrome-h)) already grows. One knob, so the two can't drift apart. */
+.history-fab svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .history-fab-count {
   position: absolute;
   top: -4px;
   right: -4px;
-  min-width: 16px;
-  height: 16px;
+  /* The badge box scales with its own digits — a fixed 16px round at a 20% larger
+     numeral stops being round and starts cropping the descender of a "9". */
+  min-width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
   padding: 0 4px;
-  font-size: 10px;
+  font-size: calc(10px * var(--a11y-fs));
   font-weight: 700;
   line-height: 1;
   color: hsl(var(--primary-foreground));
@@ -170,7 +198,9 @@
   border-radius: var(--radius);
   cursor: pointer;
 }
-.lang-fab svg { width: 24px; height: 24px;  }
+/* Same one-knob rule as .history-fab/.filter-fab — an unlabelled mark inside a box
+   that already scales. */
+.lang-fab svg { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs));  }
 /* hover + open (aria-expanded) tint centralised with the top-right cluster in
    overrides.css (@layer overrides — the tools-home glass treatment). */
 
@@ -211,7 +241,7 @@
   display: flex; align-items: center; gap: 10px;
   width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius);
   background: transparent; color: hsl(var(--foreground));
-  font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer;
+  font: inherit; font-size: calc(13.5px * var(--a11y-fs)); font-weight: 500; text-align: left; cursor: pointer;
 }
 /* Flag garnish beside each language — the emoji flags are natively rounded; the
    soft drop-shadow gives them the lifted-sticker look. A fixed column width sized
@@ -221,7 +251,7 @@
   flex: 0 0 auto;
   display: inline-flex; align-items: center;     place-content: flex-end; gap: 3px;
   min-width: 4em;
-  font-size: 16px; line-height: 1;
+  font-size: calc(16px * var(--a11y-fs)); line-height: 1;
   filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
 }
 .lang-menu-name { flex: 1 1 auto; min-width: 0; }
@@ -244,7 +274,7 @@
 .lang-sort-tab {
   flex: 1 1 auto; white-space: nowrap; padding: 4px 8px; border: 0; cursor: pointer;
   background: transparent; color: hsl(var(--muted-foreground));
-  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em;
+  font-family: var(--font-mono); font-size: calc(10.5px * var(--a11y-fs)); letter-spacing: .04em;
   border-radius: 999px; transition: background .12s, color .12s;
 }
 .lang-sort-tab:hover { color: hsl(var(--foreground)); }

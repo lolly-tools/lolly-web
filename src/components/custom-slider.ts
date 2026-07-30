@@ -23,10 +23,9 @@
 import { playSliderTick } from '../lib/sfx.ts';
 import { jellyEnabled } from '../lib/jelly.ts';
 import { escape } from '../utils.ts';
-
-function prefersReducedMotion(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
+// The shared read (OS query OR the app's own pref) rather than a local matchMedia,
+// so the profile toggle reaches the egg-trail spring too.
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 
 export interface CustomSliderSpec {
   min: number;

@@ -79,8 +79,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  /* Icon-only control: the box rides the chrome icon scale (tokens.css) with
+     the glyph it holds, so the mark never shrinks inside a growing button. */
+  width: calc(26px * var(--a11y-fs));
+  height: calc(26px * var(--a11y-fs));
   border: none;
   background: none;
   cursor: pointer;
@@ -89,7 +91,7 @@
   border-radius: 999px;
   transition: background 0.12s, color 0.12s;
 }
-.lab-chrome-btn svg { width: 16px; height: 16px; }
+.lab-chrome-btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .lab-chrome-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .lab-chrome-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 
@@ -102,14 +104,14 @@
 .lab-sub {
   margin: 0.5rem 0 0;
   max-width: 46rem;
-  font-size: 1rem;
+  font-size: calc(1rem * var(--a11y-fs));
   line-height: 1.5;
   color: hsl(var(--muted-foreground));
 }
 
 .lab-h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: calc(1.15rem * var(--a11y-fs));
   letter-spacing: -0.01em;
 }
 .lab-section { display: flex; flex-direction: column; gap: 0.85rem; }
@@ -130,7 +132,7 @@
   border-radius: 999px;
   background: hsl(var(--primary) / 0.14);
   color: hsl(var(--primary));
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -144,13 +146,13 @@
 }
 .lab-h3 {
   margin: 0.5rem 0 0;
-  font-size: 0.95rem;
+  font-size: calc(0.95rem * var(--a11y-fs));
   letter-spacing: -0.01em;
 }
 .lab-section-note {
   margin: -0.35rem 0 0;
   max-width: 52rem;
-  font-size: 0.85rem;
+  font-size: calc(0.85rem * var(--a11y-fs));
   line-height: 1.5;
   color: hsl(var(--muted-foreground));
 }
@@ -251,7 +253,7 @@
 .lab-sw-alt code { font-family: 'SUSE Mono', ui-monospace, monospace; }
 .lab-swatch { container-type: inline-size; }
 .lab-sw-space {
-  font-size: 0.75rem;
+  font-size: calc(0.75rem * var(--a11y-fs));
   text-transform: uppercase;
   letter-spacing: 0.08em;
   opacity: 0.8;
@@ -298,7 +300,7 @@
 .lab-entry { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 .lab-field { display: flex; flex-direction: column; gap: 0.3rem; }
 .lab-field-label {
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--a11y-fs));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -306,11 +308,11 @@
 }
 .lab-raw {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: 0.85rem;
+  font-size: calc(0.85rem * var(--a11y-fs));
 }
 .lab-hint, .lab-err {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   line-height: 1.45;
 }
 .lab-hint { color: hsl(var(--muted-foreground)); }
@@ -359,7 +361,7 @@
 }
 .lab-card-label {
   margin: 0;
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--a11y-fs));
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -367,14 +369,14 @@
 }
 .lab-card-value {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: calc(1.5rem * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 .lab-card-note {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }
@@ -402,12 +404,12 @@
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  font-size: 0.85rem;
+  font-size: calc(0.85rem * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
 }
 .lab-ceil-name { color: hsl(var(--muted-foreground)); }
 .lab-ceil-val { font-weight: 600; }
-.lab-ceil-gain { font-weight: 400; color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
+.lab-ceil-gain { font-weight: 400; color: hsl(var(--muted-foreground)); font-size: calc(0.78rem * var(--a11y-fs)); }
 /* A ceiling this colour is already beyond — struck through so the bound is
    unmistakable at a glance. It marks a boundary crossed, not a value rejected. */
 .lab-ceil.is-past .lab-ceil-val { text-decoration: line-through; opacity: 0.55; }
@@ -419,18 +421,18 @@
 .lab-press[data-state="out"] { box-shadow: 0 0 0 2px oklch(0.72 0.16 85); }
 .lab-press-name {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--a11y-fs));
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
 }
-.lab-press-verdict { font-size: 1.15rem; }
+.lab-press-verdict { font-size: calc(1.15rem * var(--a11y-fs)); }
 .lab-press-rows { margin: 0.1rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.2rem; }
 .lab-press-row {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  font-size: 0.85rem;
+  font-size: calc(0.85rem * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
 }
 .lab-press-k { color: hsl(var(--muted-foreground)); }
@@ -447,19 +449,19 @@
 .labp-modal { max-width: 34rem; width: min(34rem, calc(100vw - 2rem)); }
 .labp { display: flex; flex-direction: column; gap: 0.7rem; }
 .labp-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.labp-title { margin: 0; font-size: 1.1rem; }
+.labp-title { margin: 0; font-size: calc(1.1rem * var(--a11y-fs)); }
 .labp-close {
   border: 0;
   background: none;
   color: hsl(var(--muted-foreground));
-  font-size: 1.4rem;
+  font-size: calc(1.4rem * var(--a11y-fs));
   line-height: 1;
   cursor: pointer;
 }
 .labp-close:hover { color: hsl(var(--foreground)); }
 .labp-intro, .labp-hint, .labp-msg {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }
@@ -477,12 +479,12 @@
    lines taller and read as instructions rather than as an aside. */
 .labp-where {
   margin: 0.4rem 0 0;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 .labp-where code {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--a11y-fs));
   overflow-wrap: anywhere;
 }
 
@@ -494,7 +496,7 @@
 .labp-conds { margin-top: 1rem; }
 .labp-conds-h {
   margin: 0 0 0.4rem;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -530,13 +532,13 @@
 .labp-cond[data-busy] .labp-cond-btn { cursor: progress; opacity: 0.7; }
 .labp-cond-id {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: 0.76rem;
+  font-size: calc(0.76rem * var(--a11y-fs));
   font-weight: 600;
 }
-.labp-cond-name { font-size: 0.78rem; }
+.labp-cond-name { font-size: calc(0.78rem * var(--a11y-fs)); }
 .labp-cond-note {
   grid-column: 2;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 /* A loaded condition is the stronger state, so it gets the mark and the full-strength
@@ -549,7 +551,7 @@
 }
 .labp-cond:not([data-state="loaded"]) .labp-cond-id { opacity: 0.75; }
 .labp-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
-.labp-empty { font-size: 0.85rem; color: hsl(var(--muted-foreground)); }
+.labp-empty { font-size: calc(0.85rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .labp-row {
   display: grid;
   gap: 0.45rem;
@@ -561,14 +563,14 @@
 .labp-row.is-active { box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.6); }
 .labp-row-head { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
 .labp-row-id { display: grid; gap: 0.1rem; min-width: 0; }
-.labp-row-name { font-size: 0.92rem; overflow-wrap: anywhere; }
-.labp-row-meta { font-size: 0.75rem; color: hsl(var(--muted-foreground)); }
+.labp-row-name { font-size: calc(0.92rem * var(--a11y-fs)); overflow-wrap: anywhere; }
+.labp-row-meta { font-size: calc(0.75rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .labp-remove {
   flex: 0 0 auto;
   border: 0;
   background: none;
   padding: 0;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   text-decoration: underline;
   cursor: pointer;
@@ -587,7 +589,7 @@
 .labp-intents .view-seg-btn {
   flex: 1 1 5.5rem;
   min-width: 0;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   padding-inline: 0.4rem;
 }
 @media (max-width: 30rem) {
@@ -610,9 +612,9 @@
   gap: 0.35rem;
 }
 .lab-contrast-card.is-best { box-shadow: inset 0 0 0 2px currentColor; }
-.lab-contrast-sample { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.lab-contrast-sample { margin: 0; font-size: calc(1.05rem * var(--a11y-fs)); font-weight: 600; }
 .lab-best {
-  font-size: 0.68rem;
+  font-size: calc(0.68rem * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -620,14 +622,14 @@
 }
 .lab-contrast-ratio {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: calc(1.7rem * var(--a11y-fs));
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
 .lab-contrast-badges { margin: 0; display: flex; gap: 0.35rem; }
 .lab-wcag {
-  font-size: 0.7rem;
+  font-size: calc(0.7rem * var(--a11y-fs));
   font-weight: 600;
   letter-spacing: 0.04em;
   padding: 0.15rem 0.45rem;
@@ -642,7 +644,7 @@
 .lab-wcag[data-level="fail"] { opacity: 0.65; text-decoration: line-through; }
 .lab-contrast-note {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: calc(0.9rem * var(--a11y-fs));
   line-height: 1.5;
 }
 
@@ -661,7 +663,7 @@
    20px. This rule is left with only what is specific to sitting in the target row. */
 .lab-bounds {
   flex: 0 0 auto;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   white-space: nowrap;
 }
 
@@ -695,7 +697,7 @@
 .lab-seg .view-seg-btn {
   flex: 1 1 0;
   min-width: 0;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--a11y-fs));
   border-color: transparent;
   border-radius: calc(var(--radius) * 0.8);
 }
@@ -719,7 +721,7 @@
   flex: 1 1 0;
   min-width: 0;
   --jelly-track: transparent;
-  --jelly-segmented-font-size: 0.82rem;
+  --jelly-segmented-font-size: calc(0.82rem * var(--a11y-fs));
   --jelly-segmented-padding: 0;
   --jelly-segmented-padding-inline: 12px;
 }
@@ -749,7 +751,7 @@
 /* The solid's two embeddings — a compact pair under the figure's own caption,
    not a page-level control: it changes one picture. */
 .lab-embed { display: flex; margin: 0.15rem 0; }
-.lab-embed .view-seg-btn { flex: 1 1 0; font-size: 0.75rem; padding-block: 0.3rem; }
+.lab-embed .view-seg-btn { flex: 1 1 0; font-size: calc(0.75rem * var(--a11y-fs)); padding-block: 0.3rem; }
 
 /* As many charts per row as fit at a readable size — 2-up on a laptop, all four
    in a row on a wide display. A 20rem floor is about where a plot stops being
@@ -786,7 +788,7 @@
   gap: 0.5rem;
   margin-bottom: 0.35rem;
 }
-.lab-chart-title { margin: 0; font-size: 0.95rem; letter-spacing: -0.01em; }
+.lab-chart-title { margin: 0; font-size: calc(0.95rem * var(--a11y-fs)); letter-spacing: -0.01em; }
 .lab-chart-num {
   /* Drag the number sideways to change it (lib/scrub.ts). `pan-y` is the load-bearing
      half of touch support: it hands us horizontal gestures while leaving vertical ones
@@ -798,7 +800,7 @@
   padding: 0.2rem 0.35rem;
   font: inherit;
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   text-align: right;
   border: 1px solid hsl(var(--border));
@@ -816,7 +818,7 @@
 
 .lab-chart-plane {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -833,16 +835,16 @@
      it has no axis or legend row above it to pad the difference. */
   margin-top: auto;
 }
-.lab-chart-head h3 { margin: 0; font-size: 1rem; letter-spacing: -0.01em; }
+.lab-chart-head h3 { margin: 0; font-size: calc(1rem * var(--a11y-fs)); letter-spacing: -0.01em; }
 .lab-chart-why {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   line-height: 1.4;
   color: hsl(var(--muted-foreground));
 }
 .lab-chart-at {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
@@ -911,7 +913,7 @@
 .lab-blend-raw {
   width: 13rem;
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--a11y-fs));
 }
 .lab-blend-raw[aria-invalid="true"] { border-color: hsl(var(--destructive, 0 72% 51%)); }
 
@@ -949,16 +951,16 @@
   gap: 0.4rem 0.55rem;
 }
 .lab-apca-lc {
-  font-size: 1.45rem;
+  font-size: calc(1.45rem * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
-.lab-apca-use { font-size: 0.76rem; opacity: 0.9; }
+.lab-apca-use { font-size: calc(0.76rem * var(--a11y-fs)); opacity: 0.9; }
 /* The polarity marker: present only when the text is lighter than its ground,
    which is exactly the case WCAG cannot see. */
 .lab-apca-pol {
-  font-size: 0.68rem;
+  font-size: calc(0.68rem * var(--a11y-fs));
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 0.1rem 0.4rem;
@@ -972,7 +974,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   opacity: 0.85;
 }
 /* The third surface's popover trigger, on the card it scores. Width-capped: the
@@ -1018,13 +1020,13 @@
 
 .lab-step-oklch {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .lab-step-hex {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem * var(--a11y-fs));
   opacity: 0.7;
 }
 
@@ -1032,7 +1034,7 @@
 .lab-notations {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  font-size: calc(0.88rem * var(--a11y-fs));
 }
 .lab-notations th, .lab-notations td {
   text-align: left;
@@ -1041,7 +1043,7 @@
   vertical-align: baseline;
 }
 .lab-notations thead th {
-  font-size: 0.68rem;
+  font-size: calc(0.68rem * var(--a11y-fs));
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1054,19 +1056,19 @@
 }
 .lab-notations code {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: 0.85rem;
+  font-size: calc(0.85rem * var(--a11y-fs));
   word-break: break-all;
 }
 /* A space too narrow to hold the colour: shown, but never as if it were the value. */
 .lab-notations tr.is-inexact code { opacity: 0.62; }
 .lab-note-fit {
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   color: oklch(0.58 0.16 40);
   white-space: nowrap;
 }
 .lab-copy {
   font: inherit;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem * var(--a11y-fs));
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
   border: 1px solid hsl(var(--border));
@@ -1114,7 +1116,7 @@
   .lab-notations tbody th {
     grid-area: space;
     font-family: inherit;
-    font-size: 0.68rem;
+    font-size: calc(0.68rem * var(--a11y-fs));
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -1169,10 +1171,10 @@
 }
 .lab-cloud-add-ic svg { width: 1.05rem; height: 1.05rem; }
 .lab-cloud-add-txt { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
-.lab-cloud-add-txt strong { font-size: 0.85rem; font-weight: 650; }
+.lab-cloud-add-txt strong { font-size: calc(0.85rem * var(--a11y-fs)); font-weight: 650; }
 .lab-cloud-add-txt em {
   font-style: normal;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   line-height: 1.35;
   color: hsl(var(--muted-foreground));
 }
@@ -1182,7 +1184,7 @@
 .lab-cloud-clear {
   flex: 0 0 auto;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem * var(--a11y-fs));
   font-weight: 600;
   padding: 0.3rem 0.8rem;
   border-radius: 999px;
@@ -1204,7 +1206,7 @@
   border-radius: 999px;
   background: none;
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 0.9rem; line-height: 1;
+  font: inherit; font-size: calc(0.9rem * var(--a11y-fs)); line-height: 1;
   cursor: pointer;
 }
 .lab-pop-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
@@ -1220,7 +1222,7 @@
 .lab-chart--solid .lab-chart-bar .lab-chart-title { flex: 1 1 auto; margin: 0; }
 .lab-cloud-stats {
   margin: 0.35rem 0 0;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }
@@ -1248,13 +1250,13 @@
   padding-top: 1.75rem;
   border-top: 1px solid hsl(var(--border));
 }
-.lab-device .lab-h2 { font-size: 1rem; color: hsl(var(--muted-foreground)); }
+.lab-device .lab-h2 { font-size: calc(1rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .lab-device-grid { margin-top: 0.15rem; }
 .lab-device-more { margin: 0; }
 /* A quiet text link, not a button: this is a way OUT of the page for someone who
    wants the rest of the snapshot, not an action the report is asking for. */
 .lab-device-link {
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   text-decoration: none;

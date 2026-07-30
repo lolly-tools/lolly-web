@@ -29,10 +29,10 @@
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .8);
   text-decoration: none; color: inherit;
 }
-.me-back svg { display: block; width: 16px; height: 16px; }
+.me-back svg { display: block; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .me-back:hover { border-color: hsl(var(--primary) / .55); }
-.me-title { margin: 0; font-size: 1.02rem; font-weight: 700; }
-.me-count { margin-inline-start: .5rem; font-size: .78rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
+.me-title { margin: 0; font-size: calc(1.02rem * var(--a11y-fs)); font-weight: 700; }
+.me-count { margin-inline-start: .5rem; font-size: calc(.78rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground)); }
 .me-head-actions { margin-inline-start: auto; display: flex; gap: .5rem; }
 /* fill (background/color) is aliased in ../styles/parts/buttons.css's .btn--primary list */
 .me-primary { border-color: transparent; }
@@ -55,7 +55,7 @@
   .me-sidebar { position: static; max-height: none; border-right: 0; border-bottom: 1px solid hsl(var(--border)); }
 }
 .me-search input {
-  width: 100%; padding: .5rem .7rem; font: inherit; font-size: .84rem;
+  width: 100%; padding: .5rem .7rem; font: inherit; font-size: calc(.84rem * var(--a11y-fs));
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .8);
   background: hsl(var(--background)); color: hsl(var(--foreground));
 }
@@ -80,9 +80,9 @@
 }
 .me-card[open] > summary::before { transform: rotate(45deg); }
 @media (prefers-reduced-motion: reduce) { .me-card > summary::before { transition: none; } }
-.me-card-title { font-size: .84rem; font-weight: 700; }
-.me-card-count { font-size: .72rem; color: hsl(var(--muted-foreground)); }
-.me-card--shared > summary .me-card-title { text-transform: uppercase; letter-spacing: .03em; font-size: .76rem; }
+.me-card-title { font-size: calc(.84rem * var(--a11y-fs)); font-weight: 700; }
+.me-card-count { font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.me-card--shared > summary .me-card-title { text-transform: uppercase; letter-spacing: .03em; font-size: calc(.76rem * var(--a11y-fs)); }
 .me-card--nomatch { opacity: .45; }
 .me-inputs { padding: .2rem .8rem .8rem; }
 /* Search filtering sets [hidden] on .input-row wrappers whose own display
@@ -102,20 +102,20 @@
   border-top: 1px solid hsl(var(--border) / .6);
 }
 .me-export-label {
-  flex: 1 0 100%; font-size: .64rem; font-weight: 700; letter-spacing: .06em;
+  flex: 1 0 100%; font-size: calc(.64rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
 .me-exp-field {
   display: grid; gap: .15rem;
-  font-size: .64rem; font-weight: 600; color: hsl(var(--muted-foreground));
+  font-size: calc(.64rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground));
 }
 /* The controls are `.field-input --sm` / `.field-select --sm` (parts/fields.css):
    the compact box, its focus look and the disabled state all live there now. The
    only thing this row genuinely differs on is how wide a number field gets. */
 .me-exp-field input { width: 4.6rem; }
 .me-exp-dpi[hidden] { display: none; }
-.me-download { margin-inline-start: auto; font-size: .76rem; }
-.me-export-note { margin: .4rem .8rem .7rem; font-size: .74rem; color: hsl(var(--muted-foreground)); }
+.me-download { margin-inline-start: auto; font-size: calc(.76rem * var(--a11y-fs)); }
+.me-export-note { margin: .4rem .8rem .7rem; font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 
 /* ── Grid area + zoom toolbar ── */
 .me-gridwrap { min-width: 0; display: flex; flex-direction: column; }
@@ -140,7 +140,7 @@
   background: transparent; color: hsl(var(--foreground)); cursor: pointer;
   transition: background .12s ease;
 }
-.me-zoom-btn svg { width: 16px; height: 16px; }
+.me-zoom-btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .me-zoom-btn:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .me-zoom-btn:disabled { opacity: .38; cursor: default; }
 .me-zoom-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
@@ -148,7 +148,7 @@
 .me-zoom-fit { border-inline-end: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6) 0 0 calc(var(--radius) * .6); margin-inline-end: .1rem; }
 .me-zoom-read {
   min-width: 4.4rem; text-align: center;
-  font-size: .72rem; font-weight: 600; color: hsl(var(--muted-foreground));
+  font-size: calc(.72rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
 
@@ -183,8 +183,8 @@
   padding: .5rem .7rem;
   border-top: 1px solid hsl(var(--border) / .6);
 }
-.me-cap-label { font-size: .78rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.me-cap-tool { font-size: .68rem; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.me-cap-label { font-size: calc(.78rem * var(--a11y-fs)); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-cap-tool { font-size: calc(.68rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); white-space: nowrap; }
 
 /* Error card (bad selection / vanished session). */
 .me-error { max-width: 32rem; margin: 4rem auto; text-align: center; display: grid; gap: 1rem; justify-items: center; }

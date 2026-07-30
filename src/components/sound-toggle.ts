@@ -119,6 +119,9 @@ const SWITCH_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .sound-switch-knob, .sound-switch-track, .sound-switch-icon { transition: none; }
 }
+/* And for the app's own preference (data-a11y-motion, lib/a11y-prefs.ts) —
+   parts/base.css leaves transitions alone by design, so this has to repeat. */
+html[data-a11y-motion="reduce"] :is(.sound-switch-knob, .sound-switch-track, .sound-switch-icon) { transition: none; }
 /* Neurospicy sits directly under Sound as ONE group — no dividing rule between them; the loop
    picker + volume tuck underneath its own switch. */
 .neurospicy { display: flex; flex-direction: column; gap: 9px; margin-top: 9px; transition: opacity .18s ease; }

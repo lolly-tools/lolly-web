@@ -18,7 +18,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: calc(10px * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: .1em;
   text-transform: uppercase;
@@ -246,6 +246,9 @@
   box-sizing: border-box;
   color: hsl(var(--muted-foreground) / .22);   /* faint — never competes with real art */
 }
+/* NOT on the icon scale: this is stand-in ARTWORK filling a picture frame, not a
+   mark labelling a control — it is sized to the tile's stage, and growing it with
+   the type would push it into the 18% padding that keeps it off the floor shadow. */
 .ftile-iconfill svg { max-width: 120px; max-height: 120px; stroke-width: 2px; }
 /* A true hairline regardless of scale (vector-effect isn't inherited → put it on the shapes). */
 .ftile-iconfill svg :is(path, circle, rect, line, polyline, polygon, ellipse) { vector-effect: non-scaling-stroke; }
@@ -303,7 +306,7 @@
   /* Lower-left corner of the preview stage — out of the way of the top toggle/controls. */
   bottom: clamp(10px, 2vh, 18px); left: clamp(12px, 1.6vw, 20px);
   z-index: 3;
-  font-size: 10px;
+  font-size: calc(10px * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -325,7 +328,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
   color: #fff;
   background: #000a;
@@ -543,7 +546,7 @@
   gap: 5px;
   height: var(--cf-go-h);
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
   color: #fff;
   background: #000a;
@@ -611,7 +614,7 @@
   /* Smaller cover, smaller button — and no blur here either (the fan drops its own
      backdrop-filter above for the same per-frame paint reason). */
   .featured--coverflow .featured-go {
-    font-size: 11px;
+    font-size: calc(11px * var(--a11y-fs));
     -webkit-backdrop-filter: none;
             backdrop-filter: none;
     background: #000c;

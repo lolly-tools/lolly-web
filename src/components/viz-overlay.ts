@@ -55,6 +55,7 @@ import {
 import { vizSupported } from '../lib/viz-support.ts';
 import { CYCLE_CHOICES, loadCycleSeconds, saveCycleSeconds } from '../lib/viz-cycle.ts';
 import { drawMeterBars, drawMeterBaseline } from '../lib/audio-meter.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import {
   BRAND_TINTS, loadStockPreset, readBrandTint, stockPresetIndex, writeBrandTint,
   type BrandTint, type StockPresetInfo,
@@ -257,6 +258,7 @@ const CSS = `
 .viz-inline[data-mode="meter"] { aspect-ratio: auto; height: 52px;
   background: hsl(var(--muted) / .45); }
 @media (prefers-reduced-motion: reduce) { .viz-inline { transition: none; } }
+html[data-a11y-motion="reduce"] .viz-inline { transition: none; }
 /* The inline panel is overflow:hidden (it crops the canvas to its 4:3 box), which also
    crops any menu opened inside it — and the options menu is taller than the panel. So
    the inline surface's menu is PORTALLED to <body> as position:fixed instead, the same
@@ -289,7 +291,11 @@ const CSS = `
 @media (prefers-reduced-motion: reduce) { .viz-expand { transition: none; } }
 @media (prefers-reduced-motion: reduce) {
   .viz-bar, .viz-player { transition: none; }
-}`;
+}
+/* Repeated for the app's own preference (data-a11y-motion, lib/a11y-prefs.ts):
+   parts/base.css tames animations under the attribute but deliberately leaves
+   transitions alone, so each component still owns the ones it kills. */
+html[data-a11y-motion="reduce"] :is(.viz-expand, .viz-bar, .viz-player) { transition: none; }`;
 
 function ensureStyles(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
@@ -311,7 +317,7 @@ function ensureStyles(doc: Document): void {
  * before the artist index loads) and once after `initStock`, over the whole library.
  */
 function randomStartPresetId(): string {
-  if (reducedMotion) return defaultVizPresetId(true);
+  if (prefersReducedMotion()) return defaultVizPresetId(true);
   const pool = presetPool();
   return pool[Math.floor(Math.random() * pool.length)] ?? defaultVizPresetId(false);
 }
@@ -330,8 +336,6 @@ function readCyclePref(): number {
 function writeCyclePref(seconds: number): void {
   saveCycleSeconds(seconds);
 }
-
-const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 type SurfaceKind = 'inline' | 'panel';
 
@@ -634,7 +638,9 @@ function startMeter(s: Surface): void {
     const colour = meterColour(s);
     c2d.clearRect(0, 0, w, h);
     const a = getNeurospicyAnalyser();
-    if (a && vizHasSignal() && !reducedMotion) drawMeterBars(c2d, w, h, a, colour);
+    // Read per frame: the app pref is a live attribute on <html>, so a toggle
+    // mid-playback parks the bars on the baseline without restarting the loop.
+    if (a && vizHasSignal() && !prefersReducedMotion()) drawMeterBars(c2d, w, h, a, colour);
     else drawMeterBaseline(c2d, w, h, colour);
     s.meterRaf = clock.requestAnimationFrame(frame);
   };
@@ -785,7 +791,7 @@ function presetPool(): string[] {
  * and none of it is appropriate for someone who asked for less movement.
  */
 function nextCyclePresetId(): string {
-  if (reducedMotion) return nextVizPresetId(currentPresetId, true);
+  if (prefersReducedMotion()) return nextVizPresetId(currentPresetId, true);
   const pool = presetPool();
   if (pool.length <= 1) return currentPresetId;
   const others = pool.filter((id) => id !== currentPresetId);
@@ -807,7 +813,7 @@ function startCycle(): void {
     // Colour changes WITH the style, and at random: the schemes are few, so stepping them
     // in order reads as an obvious loop after one lap. Skipped under reduced motion —
     // swapping the whole palette is itself motion.
-    if (!reducedMotion && schemes.length > 1) {
+    if (!prefersReducedMotion() && schemes.length > 1) {
       applyScheme(randomVizSchemeId(schemes, currentSchemeId), { remember: false });
     }
   }, cycleSeconds * 1000);

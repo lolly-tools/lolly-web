@@ -12,6 +12,7 @@
  */
 import './recent-stack.css';
 import { escapeHtml } from './html.ts';
+import { prefersReducedMotion } from './a11y-prefs.ts';
 
 export interface StackItem { thumb: string; label: string; href: string }
 export interface StackHandle { destroy(): void }
@@ -20,7 +21,9 @@ export interface StackHandle { destroy(): void }
 export function createRecentStack(root: HTMLElement, items: StackItem[]): StackHandle {
   const N = items.length;
   const VISIBLE = 3;                 // how many cards peek behind the front one
-  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  // Read once per stack: the deck's motion decisions are made as it is built, and a
+  // toggle mid-session lands on the next mount (the dashboard rebuilds it on entry).
+  const reduce = prefersReducedMotion();
 
   root.classList.add('dash-stack');
   root.setAttribute('tabindex', '0');

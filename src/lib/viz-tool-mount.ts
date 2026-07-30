@@ -38,8 +38,9 @@
  *   data-viz-brand    artist-preset brand influence: off | subtle | strong | full
  *   data-viz-wave     base64 of `count × samples` time-domain bytes (128 = silence)
  *   data-viz-meta     JSON { count, samples, fps, poster }
- *   data-viz-calm     'true' → force the reduced-motion treatment (which is applied from
- *                     the media query anyway; the attribute only ever adds to it)
+ *   data-viz-calm     'true' → the calm treatment: the calm preset pool only, no artist
+ *                     preset. The TOOL's setting, deliberately not the viewer's motion
+ *                     preference — see readConfig().
  *   data-viz-fallback selector, relative to the marker's root, of the 2D canvas to hide
  *                     once this mounts
  */
@@ -92,10 +93,6 @@ interface Entry {
 
 const registry = new Map<Element, Entry>();
 
-function prefersReducedMotion(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
 function readConfig(el: HTMLElement): VizToolConfig {
   return {
     preset: el.dataset.lollyViz || '',
@@ -103,9 +100,18 @@ function readConfig(el: HTMLElement): VizToolConfig {
     hero: el.dataset.vizHero || '',
     brand: el.dataset.vizBrand || 'strong',
     meta: el.dataset.vizMeta || '',
-    // Reduced motion is the VIEWER's preference, not the tool's: a tool has no way to
-    // know it, so it is read here and the attribute can only ever add to it.
-    calm: el.dataset.vizCalm === 'true' || prefersReducedMotion(),
+    // Calm is the TOOL's setting, never the viewer's. It used to also read the viewer's
+    // reduced-motion preference, on the reasoning that a tool cannot know it — but this
+    // canvas is a render, and `calm` does not merely slow it down: ownPresetId() below
+    // refuses to leave the calm pool and applyConfig() skips the artist-preset fetch
+    // entirely, so a viewer preference silently chose a DIFFERENT VISUALISER, and the
+    // export clock films this same mount. An Audiogram exported with reduced motion on
+    // came out as a different picture than the one the author configured, and than the
+    // CLI renders from the same URL. Motion inside the render canvas is the user's
+    // creative output — which is exactly why parts/base.css exempts the canvas subtree
+    // from the reduced-motion rule too. A user who wants a calm visualiser has the
+    // tool's own control for it.
+    calm: el.dataset.vizCalm === 'true',
     fallback: el.dataset.vizFallback || '',
   };
 }
@@ -167,7 +173,7 @@ function paletteFor(cfg: VizToolConfig): VizPalette {
 }
 
 /** Our own preset for this config — the one that mounts first even when an artist preset
- *  was asked for, since that one has to be fetched. Reduced motion never leaves the calm
+ *  was asked for, since that one has to be fetched. A calm config never leaves the calm
  *  pool, and never reaches an artist preset at all. */
 function ownPresetId(cfg: VizToolConfig): string {
   if (cfg.calm) {

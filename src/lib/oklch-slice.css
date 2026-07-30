@@ -163,7 +163,7 @@
 
 .okls-axis {
   position: relative;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
@@ -210,7 +210,7 @@
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  font-size: 0.58rem;
+  font-size: calc(0.58rem * var(--a11y-fs));
   color: hsl(var(--foreground) / 0.75);
 }
 .okls-axis--y .okls-axis-name {
@@ -228,7 +228,7 @@
   flex-wrap: wrap;
   gap: 0.15rem 0.8rem;
   margin: 0.1rem 0 0;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 /* `baseline`, not `center`: a key whose text wraps to two lines in a narrow chart
@@ -301,7 +301,7 @@
 .gsl-key {
   flex: 0 0 auto;
   width: 1rem;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: 0.04em;
   color: hsl(var(--muted-foreground));
@@ -393,7 +393,7 @@
   flex: 0 0 auto;
   min-width: 3.1rem;
   text-align: right;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   color: hsl(var(--foreground));
 }

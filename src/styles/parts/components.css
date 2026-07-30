@@ -3,7 +3,7 @@
 .loading,
 .empty {
   color: hsl(var(--muted-foreground));
-  font-size: 14px;
+  font-size: calc(14px * var(--a11y-fs));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -50,7 +50,7 @@
 .note,
 .plat-note {              /* platform.css */
   margin: 0; max-width: 72ch; padding: .75rem .9rem;
-  font-size: .85rem; line-height: 1.55; color: hsl(var(--muted-foreground));
+  font-size: calc(.85rem * var(--a11y-fs)); line-height: 1.55; color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / .5);
 }
 .note strong,
@@ -73,13 +73,13 @@
   padding: 12px 16px;
   border: 1px solid hsl(var(--destructive) / 0.4);
   background: hsl(var(--destructive) / 0.06);
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
 }
 
 .error-list {
   margin: 8px 0 0;
   padding-left: 20px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   opacity: 0.85;
 }
 
@@ -93,7 +93,7 @@
 .cat-group { min-width: 0; }
 .cat-group-title {
   display: flex; align-items: center; gap: .5rem;
-  margin: 0 ; font-size: .78rem; font-weight: 650;
+  margin: 0 ; font-size: calc(.78rem * var(--a11y-fs)); font-weight: 650;
   text-transform: uppercase; letter-spacing: .07em; color: hsl(var(--muted-foreground));
 }
 /* Box + [hidden] reassert merged into .chip--count (chips.css, byte-identical
@@ -134,9 +134,9 @@
   padding: .85rem .9rem;
 }
 .cat-stat-tile-icon { color: hsl(var(--muted-foreground)); margin-bottom: .45rem; }
-.cat-stat-tile-icon svg { display: block; width: 22px; height: 22px; }
-.cat-stat-tile-num { font-size: 1.45rem; font-weight: 700; line-height: 1; }
-.cat-stat-tile-label { font-size: .78rem; color: hsl(var(--muted-foreground)); }
+.cat-stat-tile-icon svg { display: block; width: calc(22px * var(--a11y-fs)); height: calc(22px * var(--a11y-fs)); }
+.cat-stat-tile-num { font-size: calc(1.45rem * var(--a11y-fs)); font-weight: 700; line-height: 1; }
+.cat-stat-tile-label { font-size: calc(.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 
 /* Secondary "by status" row — compact icon chips beneath the tool tiles.
    Capitalize composes .chip--status (chips.css); the rest (gap, padding,
@@ -147,13 +147,13 @@
 .cat-stat-tags { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 .cat-stat-tag {
   padding: .3rem .65rem .3rem .5rem;
-  background: hsl(var(--muted) / .6); font-size: .78rem;
+  background: hsl(var(--muted) / .6); font-size: calc(.78rem * var(--a11y-fs));
 }
 .cat-stat-tag-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
-.cat-stat-tag-icon svg { display: block; width: 15px; height: 15px; }
+.cat-stat-tag-icon svg { display: block; width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .cat-stat-tag strong { font-weight: 700; }
 
-.cat-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: .85rem; font-style: italic; }
+.cat-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(.85rem * var(--a11y-fs)); font-style: italic; }
 
 /* ─── Activity summary (lib/activity-summary.ts) ───────────────────────────────
    Same story as Catalogue summary above: one source, rendered on BOTH the
@@ -234,7 +234,7 @@
 
 .muted {
   color: hsl(var(--muted-foreground));
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
 }
 
 /* background/color/text-shadow/backdrop-filter/transition come from the shared
@@ -245,7 +245,7 @@
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   line-height: 1;
   cursor: pointer;
   z-index: 9;
@@ -309,7 +309,7 @@
     min-height: var(--chrome-h);
     text-decoration: none;
     font-weight: 600;
-    font-size: 13px;
+    font-size: calc(13px * var(--a11y-fs));
     line-height: 1;
     border: 1px solid hsl(var(--primary));
     padding: 0 10px 0 3em;
@@ -404,7 +404,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.4);
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -421,7 +421,7 @@
   padding: 3px 8px;
   border-radius: 7px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   line-height: 1.35;
   white-space: nowrap;
   pointer-events: none;

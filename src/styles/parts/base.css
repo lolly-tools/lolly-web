@@ -27,7 +27,7 @@
   /* Fill (background/color) comes from buttons.css's .btn--primary alias list —
      it imports after this sheet, so its single declaration wins. */
   z-index: 9999;
-  font-size: 14px;
+  font-size: calc(14px * var(--a11y-fs));
   font-weight: 600;
   border-end-end-radius: var(--radius); /* logical: hugs the start corner in LTR and RTL alike */
   overflow: visible;
@@ -57,11 +57,19 @@
    descendants and their pseudo-elements — are exempt: that motion is the user's
    creative output, and animated tools (e.g. Bag Video) must keep animating to
    render as intended. The exemption is repeated on ::before/::after so the
-   pseudo-elements of canvas content aren't frozen. */
+   pseudo-elements of canvas content aren't frozen.
+   The same reasoning covers the OFFSCREEN render stages, which hold the identical
+   tool markup and are what an export is captured FROM: .pro-export-canvas
+   (pro/render-export.ts — /pro batch rows, every authored `compose` child,
+   featured-row renders, boot personalize previews) and .me-scale/.me-canvas
+   (views/multi-edit.ts). Freezing those doesn't calm any chrome — nobody ever sees
+   them animate — it just writes a frozen or wrong frame into the exported file, so
+   a motion preference would change exported pixels. Every exempt selector names a
+   canvas/stage box, so the ':not()' list can only ever spare those subtrees. */
 @media (prefers-reduced-motion: reduce) {
-  *:not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *),
-  *:not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *)::before,
-  *:not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *)::after {
+  *:not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *, .pro-export-canvas, .pro-export-canvas *, .me-scale, .me-scale *, .me-canvas, .me-canvas *),
+  *:not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *, .pro-export-canvas, .pro-export-canvas *, .me-scale, .me-scale *, .me-canvas, .me-canvas *)::before,
+  *:not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *, .pro-export-canvas, .pro-export-canvas *, .me-scale, .me-scale *, .me-canvas, .me-canvas *)::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
@@ -72,6 +80,21 @@
      This only has to stop the closed-flash from pulsing. */
   .export-shutter__flash.is-on { animation: none !important; }
 }
+
+/* The app's own "Reduce motion" preference (profile → data-a11y-motion on
+   <html>, lib/a11y-prefs.ts) — the SAME rules as the OS block above, gated on
+   the attribute instead, for users whose OS setting is out of reach or who only
+   want this app calmed. Kept adjacent so the two blocks can't drift; JS-driven
+   motion goes through lib/a11y-prefs.ts's prefersReducedMotion(), which ORs the
+   two signals the same way. Attribute absent (the default) ⇒ nothing matches. */
+html[data-a11y-motion="reduce"] :not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *, .pro-export-canvas, .pro-export-canvas *, .me-scale, .me-scale *, .me-canvas, .me-canvas *),
+html[data-a11y-motion="reduce"] :not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *, .pro-export-canvas, .pro-export-canvas *, .me-scale, .me-scale *, .me-canvas, .me-canvas *)::before,
+html[data-a11y-motion="reduce"] :not(.tool-canvas, .tool-canvas *, #tool-content, #tool-content *, .pro-export-canvas, .pro-export-canvas *, .me-scale, .me-scale *, .me-canvas, .me-canvas *)::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+html[data-a11y-motion="reduce"] .export-shutter__flash.is-on { animation: none !important; }
 
 /* ─── Reset / base ──────────────────────────────────────────────────────── */
 
@@ -99,6 +122,14 @@ html { scrollbar-gutter: stable; }
 body {
   margin: 0;
   font-family: var(--font-brand);
+  /* Deliberately NOT on the --a11y-fs multiplier, unlike every other chrome
+     font-size. This declaration is inherited by tool markup: neither #tool-content,
+     .pro-export-canvas nor .me-canvas sets a font-size of its own, and 13 shipped
+     templates (chart-creator, d3, text-helper, qr-code, battlecards, …) declare no
+     font-size at all while screencap sizes in `em` — so all of them resolve against
+     this value, in the live canvas AND on the offscreen stages an export is captured
+     from. Scaling it here would move exported text metrics, which no preference may
+     do. Large-text reaches chrome through the per-declaration calc()s instead. */
   font-size: 0.875rem;
   line-height: 1.5;
   background: hsl(var(--background));
@@ -144,7 +175,7 @@ em, i, cite { font-family: var(--font-italic, var(--font-brand)); }
   border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: background 0.12s, color 0.12s;
   white-space: nowrap;
 }

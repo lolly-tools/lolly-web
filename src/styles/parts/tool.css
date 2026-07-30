@@ -44,7 +44,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 15px;
+  font-size: calc(15px * var(--a11y-fs));
   font-weight: 700;
   padding: 13px 22px;
   cursor: pointer;
@@ -53,7 +53,11 @@
 .render-pill-btn:hover { background: rgba(255, 255, 255, 0.14); }
 .render-pill-btn:active { background: rgba(0, 0, 0, 0.12); }
 .render-pill-btn:focus-visible { outline: 2px solid hsl(var(--primary-foreground)); outline-offset: -4px; border-radius: 999px; }
-.render-pill-icon { width: 18px; height: 18px; flex-shrink: 0; }
+/* The arrow/check rides the same multiplier as the "Export"/"Save" word beside
+   it — an icon paired with a growing label has to grow with it, or the pill
+   reads as a big word next to a stale mark. The pill has no fixed height, so
+   the taller glyph reflows the padding box instead of being clipped by it. */
+.render-pill-icon { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); flex-shrink: 0; }
 /* Hairline divider between the two halves. */
 .render-pill-sep {
   width: 1px;
@@ -103,12 +107,12 @@
    queries. Only the surrounding .export-popup-head/-body spacing is genuinely
    per-breakpoint and stays in the two blocks. */
 .export-popup-title {
-  font-size: 13px; font-weight: 700; text-transform: uppercase;
+  font-size: calc(13px * var(--a11y-fs)); font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
 }
 .export-popup-close {
   border: none; background: none; cursor: pointer; padding: 4px 8px;
-  font-size: 18px; line-height: 1; color: hsl(var(--muted-foreground));
+  font-size: calc(18px * var(--a11y-fs)); line-height: 1; color: hsl(var(--muted-foreground));
 }
 
 /* Desktop (>640px): the Render button lives bottom-left of the sidebar and the
@@ -243,7 +247,23 @@
   gap: 8px;
 }
 
-.history-btn svg { flex: none; width: 16px; height: 16px; }
+/* ─── Icon-only controls and the type scale ──────────────────────────────────
+   .history-btn, .lang-fab-sm and .multi-edit-btn carry an <svg> and NOTHING
+   else — their name is an aria-label, so 100% of what a sighted user reads is
+   the glyph. Under largeText every label-bearing control beside them grew and
+   these did not, which is exactly backwards: the icon IS the label here.
+
+   An icon is a glyph, so it rides the SAME --a11y-fs the text does — there is
+   deliberately no second icon scale to keep in step, and an icon that grows
+   with its label is the expectation. The BOXES keep their px lengths: the
+   multiplier sizes glyphs, not geometry, and every glyph still clears its box
+   at the large-text factor (19.2px in a 30px button, 18px in a 26px one).
+
+   In CSS only. lib/icons.ts keeps emitting its inline width/height attributes
+   — a CSS rule outranks a presentational attribute, which is why sizing here
+   works — and templating the factor into that markup would put it somewhere
+   other code measures and clones. */
+.history-btn svg { flex: none; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 
 /* Undo / redo buttons in the sidebar header — compact icon buttons centred
    between Tools (left) and the theme toggle (right). The tappable counterpart to
@@ -280,18 +300,22 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-.lang-fab-sm svg { width: 15px; height: 15px; }
+/* Icon-only, like .history-btn above — the glyph carries the whole control. */
+.lang-fab-sm svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .lang-fab-sm:hover,
 .lang-fab-sm[aria-expanded="true"] { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 @media (pointer: coarse) {
   .lang-fab-sm { width: 40px; height: 40px; }
-  .lang-fab-sm svg { width: 17px; height: 17px; }
+  .lang-fab-sm svg { width: calc(17px * var(--a11y-fs)); height: calc(17px * var(--a11y-fs)); }
 }
 
 /* Touch: larger tap targets for the header undo/redo (44px guideline). */
 @media (pointer: coarse) {
   .history-btn { width: 40px; height: 40px; }
-  .history-btn svg { width: 18px; height: 18px; }
+  /* Touch restates the glyph length, so it restates the multiplier with it —
+     left as a bare 18px this rule would win on source order and pin the icon
+     out of the type scale on exactly the devices the preference matters on. */
+  .history-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 }
 
 /* Second row of the sidebar header: tool title (left, truncating) + expand toggle
@@ -316,7 +340,7 @@
 }
 
 .sidebar-title {
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 600;
   color: hsl(var(--foreground));
   white-space: nowrap;
@@ -350,7 +374,8 @@
 .multi-edit-btn:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .multi-edit-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .multi-edit-btn[disabled] { opacity: 0.5; cursor: default; }
-.multi-edit-btn svg { width: 15px; height: 15px; }
+/* Icon-only, like .history-btn above — the glyph carries the whole control. */
+.multi-edit-btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
 /* The how-many-copies dropdown (body-mounted via mountBodyPopover — position:fixed,
    so it escapes the sidebar's overflow clipping). Surface mirrors .profile-menu. */
@@ -366,7 +391,7 @@
 }
 .multi-edit-menu-head {
   padding: 2px 4px 8px;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
@@ -381,7 +406,7 @@
   background: transparent;
   color: hsl(var(--foreground));
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 600;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
@@ -400,7 +425,7 @@
   border-radius: var(--radius);
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  font-size: 16px;
+  font-size: calc(16px * var(--a11y-fs));
   line-height: 1;
   transition: background 0.12s, color 0.12s;
 }
@@ -413,8 +438,13 @@
    mask so it still inherits the toggle's colour + hover, unlike a coloured glyph. */
 .fullscreen-toggle[open]::before {
   content: "";
-  width: 17px;
-  height: 17px;
+  /* One affordance drawn two ways: the expanded state is a "→" text glyph (which
+     already grows, off the button's calc(16px * var(--a11y-fs))), the collapsed
+     state this masked panel mark (which did not). The mark takes the same
+     factor so the control doesn't change size when it changes state. The 28px
+     button keeps its length — 20.4px inside 28px still clears. */
+  width: calc(17px * var(--a11y-fs));
+  height: calc(17px * var(--a11y-fs));
   background-color: currentColor;
   --sidebar-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cline x1='9' y1='3' x2='9' y2='21'/%3E%3C/svg%3E");
   -webkit-mask: var(--sidebar-icon) no-repeat center / contain;
@@ -457,7 +487,7 @@
 .clear-inputs-confirm, .clear-inputs-cancel {
   appearance: none; width: 100%; place-self: stretch;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  padding: 9px 16px; font: inherit; font-size: 13px; cursor: pointer;
+  padding: 9px 16px; font: inherit; font-size: calc(13px * var(--a11y-fs)); cursor: pointer;
   transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 }
 .clear-inputs-confirm { border-color: hsl(var(--destructive)); color: #fff; background: hsl(var(--destructive)); font-weight: 600; }
@@ -468,7 +498,26 @@
   flex: 1;
   /* Hold the open width so the controls don't reflow (squish/wrap) frame-by-frame
      while the panel collapses — they stay put and get clipped, so the collapse
-     glides. --sb-open-w is set by the shell as the sidebar opens/resizes. */
+     glides. --sb-open-w is set by the shell as the sidebar opens/resizes.
+
+     NOT on the largeText multiplier, deliberately, and neither is the 272px on
+     --sidebar-w above. The panel's width is not CSS's to decide: setSidebarWidth
+     (views/tool.ts) writes `sidebar.style.width` as an INLINE px value — which
+     outranks every sheet and every layer — from SIDEBAR_DEFAULT (a TS constant)
+     or from localStorage['sidebarWidth'], and then PUBLISHES that same number
+     into --sb-open-w / --sidebar-w. The two literals here are only the pre-JS
+     fallback. So scaling them could not widen anything; it could only make this
+     min-width exceed the real inline width, and .sidebar is overflow-x:hidden,
+     which would clip the right edge off every control — permanently, for the
+     one user who asked for larger text. A dragged width makes it worse again:
+     that px number is persisted verbatim and no stylesheet can revise it, so
+     the same preference would produce two different layouts depending on
+     whether the user had ever touched the drag handle.
+     A scaled default therefore belongs at SIDEBAR_DEFAULT, together with a
+     decision about what to do with an already-stored width — not here. What IS
+     fixed here is the contents: everything in the panel truncates or wraps at
+     272px (the grid track is minmax(0,1fr), every trigger/label ellipsises),
+     so 20% larger type reflows inside the box rather than being cut off. */
   min-width: var(--sb-open-w, 272px);
   overflow-y: auto;
   overflow-x: hidden;
@@ -504,7 +553,7 @@
   gap: 8px;
   margin: 0 0 12px;
   padding: 9px 10px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--a11y-fs));
   line-height: 1.4;
   color: hsl(var(--foreground));
   background: hsl(var(--destructive) / 0.08);
@@ -519,7 +568,7 @@
   background: none;
   color: hsl(var(--foreground) / 0.55);
   cursor: pointer;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   line-height: 1;
   padding: 2px 5px;
   border-radius: 5px;
@@ -541,7 +590,7 @@
   border-radius: var(--radius);
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  font-size: 16px;
+  font-size: calc(16px * var(--a11y-fs));
   line-height: 1;
   display: none;
   align-items: center;
@@ -695,7 +744,12 @@
   display: inline-block; max-width: 100%; vertical-align: middle;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.help-tip-btn svg { display: block; }
+/* The "i" is the entire button — the 16px box is just its tap target, so the
+   MARK takes the multiplier and the box does not (15.6px still clears 16px at
+   the large-text factor, and growing the box would nudge the label's baseline
+   on every row that has help text). 13px matches the inline attributes the
+   icon ships with (components/help-tip.ts); a CSS rule outranks them. */
+.help-tip-btn svg { display: block; width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
 .block-control { position: relative; }
 /* Generic tip host (outside the sidebar — e.g. the export dialog's C2PA card):
    anchor the drop-down pop to it, same as a .block-control. */
@@ -706,7 +760,7 @@
   background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border));
   box-shadow: 0 8px 22px hsl(var(--foreground) / 0.16);
-  font-size: 11px; font-weight: 400; line-height: 1.4;
+  font-size: calc(11px * var(--a11y-fs)); font-weight: 400; line-height: 1.4;
   letter-spacing: 0; text-transform: none; white-space: normal;
 }
 /* Block sub-field cells are narrow — let their tip take its own width. */
@@ -743,7 +797,7 @@
 
 /* Base label — used for selects, checkboxes, asset-pickers, etc. */
 .input-label {
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -751,7 +805,7 @@
 }
 
 .input-value {
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -768,9 +822,34 @@
 .input-row:not(.input-row--static-label):has(textarea) .input-label {
   position: absolute;
   left: 10px;
-  top: 23px;
+  /* The vertical offset FOLLOWS THE TYPE instead of being a frozen number.
+     The field below is `1px border + 16px padding + one line box` and its line
+     box is `line-height 1.5 × calc(13px * var(--a11y-fs))` — the very same
+     font-size this label carries — so as the type grows the box grows with it
+     and a hardcoded `top` slides out of position (it drifted from 3.75px above
+     the field's centre to 5.7px at the large-text factor, and kept going).
+
+     Written as "today's value + a delta that is exactly 0 at --a11y-fs:1", not
+     as a fresh centring formula: 0.75em is HALF the field's line box, and
+     9.75px is that same half with no preference set, so the bracket cancels and
+     nothing moves for a user who never opted in.
+        --a11y-fs 1    →  23px + (9.75px − 9.75px) = 23px      (field centre 26.75px)
+        --a11y-fs 1.2  →  23px + (11.7px − 9.75px) = 24.95px   (field centre 28.7px)
+     The 3.75px the resting label already sits ABOVE the field's centre is
+     therefore preserved, not silently corrected — that offset predates this
+     work, it is what every text field in the product looks like today, and
+     changing it is a design decision, not an accessibility fix. A <textarea>
+     takes the same rule and wants exactly this behaviour: its label is pinned
+     near the top of a tall box, so tracking the FIRST line box is right there
+     too, where centring the box would not be.
+
+     line-height is restated rather than left to inherit (it is the same 1.5
+     that parts/base.css puts on <body>, so this changes nothing today) because
+     the em arithmetic above is only true while it holds. */
+  line-height: 1.5;
+  top: calc(23px + (0.75em - 9.75px));
   transform: translateY(-50%);
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -795,9 +874,23 @@
 .input-row:not(.input-row--static-label):has(input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(:placeholder-shown)) .input-label,
 .input-row:not(.input-row--static-label):has(textarea:focus) .input-label,
 .input-row:not(.input-row--static-label):has(textarea:not(:placeholder-shown)) .input-label {
-  top: 7px;
+  /* BOTTOM-anchored, because what has to be protected here is the gap between
+     the micro-label and the value glyphs underneath it. The label's box hangs
+     DOWNWARD from `top` (1.5em tall, off its own 10px type), while the field's
+     value starts at a fixed 17px — 1px border + 16px padding — that does not
+     move. So a fixed `top` means every increase in the label's type is spent
+     eating into the value: the two ran ~0.75px clear at rest and overlapped by
+     ~1.1px at the large-text factor. Subtracting the line box's GROWTH holds
+     the label's lower edge where it is and lets it grow up into the padding.
+        --a11y-fs 1    →  max(2px, 7px − (15px − 15px)) = 7px
+        --a11y-fs 1.2  →  max(2px, 7px − (18px − 15px)) = 4px
+     Byte-identical with no preference set, and the clearance is preserved (in
+     fact recovered) with one. The max() floor is not reachable at either
+     factor; it is there so retuning the multiplier upward can never push the
+     label out through the field's top border. */
+  top: max(2px, 7px - (1.5em - 15px));
   transform: translateY(0);
-  font-size: 10px;
+  font-size: calc(10px * var(--a11y-fs));
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -837,7 +930,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: border-color 0.12s;
   appearance: auto;
   padding: 16px 14px 16px;
@@ -859,13 +952,17 @@
   background-image: var(--field-chevron);   /* the ONE chevron — parts/fields.css */
   background-repeat: no-repeat;
   background-position: right 10px center;
-  background-size: 14px;
+  /* The caret is part of the control's glyph set, not its frame: a fixed 14px
+     chevron beside 15.6px text reads as a shrunken select. It is a CSS-painted
+     mark, so the multiplier rides background-size. The 32px right padding still
+     clears it — 10px inset + 16.8px at the large-text factor. */
+  background-size: calc(14px * var(--a11y-fs));
   color: hsl(var(--foreground));
   border: 0;
   box-shadow: inset 0 1px #fff1, 0 .1rem .3rem #0002;
   border-radius: var(--radius);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: border-color 0.12s;
   /* appearance:none drops the native menulist widget. The old appearance:auto +
      transition combo made Chrome re-lay-out the native control on every hover
@@ -933,7 +1030,7 @@
 }
 
 .input-row--checkbox .input-label {
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -943,8 +1040,11 @@
 
 .input-row input[type="checkbox"] {
   flex-shrink: 0;
-  width: 15px;
-  height: 15px;
+  /* The tick is a glyph like any other, and it is the whole state readout of a
+     boolean row — a 15px box beside 15.6px type reads as a control that shrank.
+     The row has no fixed height, so it reflows around the taller box. */
+  width: calc(15px * var(--a11y-fs));
+  height: calc(15px * var(--a11y-fs));
   cursor: pointer;
   accent-color: hsl(var(--primary));
 }
@@ -965,12 +1065,13 @@
   gap: 6px;
 }
 .input-row--pill .input-label {
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 500;
 }
 .input-row--pill input[type="checkbox"] {
-  width: 13px;
-  height: 13px;
+  /* Same as the full-size row above, at the pill's tighter length. */
+  width: calc(13px * var(--a11y-fs));
+  height: calc(13px * var(--a11y-fs));
 }
 /* Active chip reads as filled (the base .input-row--checkbox:has(:checked) only
    tints faintly — a pill wants a clearer on-state). */
@@ -994,7 +1095,7 @@
 .input-row:has(.blocks-input) .input-label{
   position: static;
   transform: none;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1012,7 +1113,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: border-color 0.12s;
   color-scheme: light dark;
 }
@@ -1043,7 +1144,7 @@ input.fp-datetime {
   border-radius: 0.75rem;
   box-shadow:    0 8px 32px hsl(var(--foreground) / 0.12);
   font-family:   SUSE, ui-sans-serif, system-ui, sans-serif;
-  font-size:     13px;
+  font-size:     calc(13px * var(--a11y-fs));
   color:         hsl(var(--popover-foreground));
 }
 
@@ -1080,7 +1181,7 @@ input.fp-datetime {
 span.flatpickr-weekday {
   background: transparent;
   color:      hsl(var(--muted-foreground));
-  font-size:  11px;
+  font-size:  calc(11px * var(--a11y-fs));
   font-weight: 600;
   letter-spacing: .04em;
 }
@@ -1186,7 +1287,7 @@ span.flatpickr-weekday {
   /* Match a sidebar <select>'s height (39.5px) so a collapsed section lines up
      with the dropdowns in the input list — minus the section's 2px border. */
   min-height: 32px;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   text-transform: uppercase; 
   letter-spacing: 0.06em;
@@ -1216,8 +1317,12 @@ background-color:hsl(var(--background) / 1);
 .input-section-summary::after {
   content: '';
   display: block;
-  width: 8px;
-  height: 8px;
+  /* The open/closed caret is the summary's only non-text part and the sole cue
+     that a section folds, so it takes the same factor as the summary's words.
+     The 1.5px strokes deliberately do NOT scale: a hairline is a hairline at any
+     type size, and thickening it reads as a bolder rule, not a bigger arrow. */
+  width: calc(8px * var(--a11y-fs));
+  height: calc(8px * var(--a11y-fs));
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg);
@@ -1266,7 +1371,7 @@ background-color:hsl(var(--background) / 1);
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   transition: border-color 0.12s;
 }
 .block-field:hover { border-color: hsl(var(--ring) / 0.4); }
@@ -1277,7 +1382,7 @@ background-color:hsl(var(--background) / 1);
   display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer;
   color: hsl(var(--muted-foreground)); border-radius: var(--radius);
-  font-size: 12px; transition: color 0.12s, background 0.12s;
+  font-size: calc(12px * var(--a11y-fs)); transition: color 0.12s, background 0.12s;
 }
 .block-remove:hover,
 .block-asset-clear:hover{ color: hsl(var(--destructive, 0 72% 51%)); background: hsl(var(--destructive, 0 72% 51%) / 0.08); }
@@ -1289,7 +1394,7 @@ background-color:hsl(var(--background) / 1);
   border: 1px dashed hsl(var(--border));
   border-radius: var(--radius);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 12px; cursor: pointer;
+  font: inherit; font-size: calc(12px * var(--a11y-fs)); cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
 .block-add:hover,
@@ -1318,7 +1423,7 @@ background-color:hsl(var(--background) / 1);
   padding: 4px 6px;
   background: none; border: none; border-radius: 0; box-shadow: none;
   color: hsl(var(--foreground));
-  font: inherit; font-size: 12px; line-height: 1.4;
+  font: inherit; font-size: calc(12px * var(--a11y-fs)); line-height: 1.4;
   resize: none;
   field-sizing: content;
 }
@@ -1329,7 +1434,7 @@ background-color:hsl(var(--background) / 1);
   position: absolute; top: 50%; right: 2px; transform: translateY(-50%);
   width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer; border-radius: var(--radius);
-  color: hsl(var(--muted-foreground)); font-size: 10px; opacity: 0;
+  color: hsl(var(--muted-foreground)); font-size: calc(10px * var(--a11y-fs)); opacity: 0;
   transition: opacity 0.12s, color 0.12s;
 }
 .table-grid th:hover .table-del-col, .table-del-col:focus-visible { opacity: 1; }
@@ -1337,7 +1442,7 @@ background-color:hsl(var(--background) / 1);
 .table-del-row {
   width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer; border-radius: var(--radius);
-  color: hsl(var(--muted-foreground)); font-size: 10px; opacity: 0;
+  color: hsl(var(--muted-foreground)); font-size: calc(10px * var(--a11y-fs)); opacity: 0;
   transition: opacity 0.12s, color 0.12s;
 }
 .table-grid tbody tr:hover .table-del-row, .table-del-row:focus-visible { opacity: 1; }
@@ -1350,7 +1455,7 @@ background-color:hsl(var(--background) / 1);
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 12px; cursor: pointer;
+  font: inherit; font-size: calc(12px * var(--a11y-fs)); cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
 .table-btn:hover:not(:disabled) { border-color: hsl(var(--ring)); color: hsl(var(--foreground)); }
@@ -1358,9 +1463,9 @@ background-color:hsl(var(--background) / 1);
 .table-empty-hint {
   margin: 0; padding: 14px 12px;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  color: hsl(var(--muted-foreground)); font-size: 12px; text-align: center;
+  color: hsl(var(--muted-foreground)); font-size: calc(12px * var(--a11y-fs)); text-align: center;
 }
-.table-count { margin: 0; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.table-count { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(11px * var(--a11y-fs)); }
 
 /* Drop-to-add: a blocks input that declares `dropToAdd` (e.g. logo-wall) becomes
    a drop zone. The empty-state prompt doubles as a "choose files" button; the
@@ -1373,7 +1478,7 @@ background-color:hsl(var(--background) / 1);
   border: 1.5px dashed hsl(var(--border));
   border-radius: var(--radius);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 13px; text-align: center; cursor: pointer;
+  font: inherit; font-size: calc(13px * var(--a11y-fs)); text-align: center; cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
 /* Quick-start group — "Paste Markdown" + "Import CSV/JSON" paired at the TOP of a
@@ -1388,7 +1493,7 @@ background-color:hsl(var(--background) / 1);
   border: 1px solid hsl(var(--primary) / 0.35);
   border-radius: 999px;
   color: hsl(var(--primary));
-  font: inherit; font-size: 13px; font-weight: 600; line-height: 1;
+  font: inherit; font-size: calc(13px * var(--a11y-fs)); font-weight: 600; line-height: 1;
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s, background 0.12s, box-shadow 0.12s;
 }
@@ -1412,7 +1517,7 @@ background-color:hsl(var(--background) / 1);
   border: 1px solid hsl(var(--border));
   border-radius: 999px;
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 11px; font-weight: 500;
+  font: inherit; font-size: calc(11px * var(--a11y-fs)); font-weight: 500;
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
@@ -1446,11 +1551,15 @@ background-color:hsl(var(--background) / 1);
   user-select: none;
 }
 .block-item.is-typed .block-head:active { cursor: grabbing; }
-.block-grip { flex: none; fill: hsl(var(--muted-foreground)); opacity: 0.45; }
+/* Grip + collapse chevron: the block header's two wordless affordances (drag to
+   reorder, click to fold). Both take the multiplier so they stay findable
+   alongside the type label between them; both keep their aspect (10×16, 12×12)
+   and both sit well inside their boxes at the large-text factor. */
+.block-grip { flex: none; fill: hsl(var(--muted-foreground)); opacity: 0.45; width: calc(10px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .block-item.is-typed .block-head:hover .block-grip { opacity: 0.8; }
 .block-type-label {
   flex: 1; min-width: 0;
-  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  font-size: calc(11px * var(--a11y-fs)); font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
 }
 /* Drag-reorder feedback */
@@ -1484,7 +1593,7 @@ background-color:hsl(var(--background) / 1);
 .block-remove.is-confirming {
   width: auto; height: 22px; padding: 0 9px;
   background: hsl(var(--destructive, 0 72% 51%)); color: #fff;
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: calc(10px * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
 }
 .block-remove.is-confirming:hover { background: hsl(var(--destructive, 0 72% 51%)); color: #fff; }
 .block-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; align-items: end; }
@@ -1537,7 +1646,7 @@ background-color:hsl(var(--background) / 1);
 .block-control { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .block-control--full { grid-column: 1 / -1; }
 .block-control-label {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  font-size: calc(10px * var(--a11y-fs)); font-weight: 600; letter-spacing: 0.04em;
   text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
 .block-fields .block-field--full { grid-column: 1 / -1; }
@@ -1545,7 +1654,7 @@ background-color:hsl(var(--background) / 1);
    a checkbox + inline label on its own full-width row. */
 .block-control--checkbox { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; }
 .block-control--checkbox .block-control-label {
-  text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; color: hsl(var(--foreground));
+  text-transform: none; letter-spacing: 0; font-size: calc(12px * var(--a11y-fs)); font-weight: 600; color: hsl(var(--foreground));
 }
 .block-field--checkbox { width: auto; flex: none; margin: 0; cursor: pointer; }
 .block-item.is-typed .block-field--checkbox { padding: 0 !important; }
@@ -1569,7 +1678,7 @@ background-color:hsl(var(--background) / 1);
   color: hsl(var(--muted-foreground)); cursor: pointer;
 }
 .block-collapse:hover { background: hsl(var(--muted-foreground) / 0.12); color: hsl(var(--foreground)); }
-.block-collapse svg { transition: transform 0.15s ease; }
+.block-collapse svg { transition: transform 0.15s ease; width: calc(12px * var(--a11y-fs)); height: calc(12px * var(--a11y-fs)); }
 .block-item.is-collapsed .block-collapse svg { transform: rotate(-90deg); }
 
 .block-item.is-collapsed { padding: 0; border-radius: 999px; background: hsl(var(--muted) / 0.5); }
@@ -1589,7 +1698,7 @@ background-color:hsl(var(--background) / 1);
 .block-item.is-collapsed .block-head-preview {
   display: block; flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0;
+  font-size: calc(12px * var(--a11y-fs)); font-weight: 400; text-transform: none; letter-spacing: 0;
   color: hsl(var(--foreground)); opacity: 0.7;
 }
 
@@ -1600,7 +1709,7 @@ background-color:hsl(var(--background) / 1);
   padding: 0; overflow: hidden;
   border: 1px dashed hsl(var(--border)); border-radius: var(--radius);
   background: hsl(var(--background)); cursor: pointer;
-  font: inherit; font-size: 11px; color: hsl(var(--muted-foreground));
+  font: inherit; font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground));
   transition: border-color 0.12s, color 0.12s;
 }
 .block-asset-trigger img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1609,7 +1718,7 @@ background-color:hsl(var(--background) / 1);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1617,13 +1726,13 @@ background-color:hsl(var(--background) / 1);
 .block-asset-clear {
   flex-shrink: 0; width: 24px; border: none; border-radius: var(--radius);
   background: none; cursor: pointer; color: hsl(var(--muted-foreground));
-  font-size: 11px; transition: color 0.12s, background 0.12s;
+  font-size: calc(11px * var(--a11y-fs)); transition: color 0.12s, background 0.12s;
 }
 /* ✦ Edit — shown only for a block image that came from a Lolly link. */
 .block-asset-edit {
   flex-shrink: 0; width: 24px; border: none; border-radius: var(--radius);
   background: none; cursor: pointer; color: hsl(var(--primary));
-  font-size: 12px; transition: background 0.12s, filter 0.12s;
+  font-size: calc(12px * var(--a11y-fs)); transition: background 0.12s, filter 0.12s;
 }
 .block-asset-edit:hover { background: hsl(var(--primary) / 0.1); filter: brightness(1.1); }
 /* ❄ Edit / ↻ Re-bake — a block image that's a baked (frozen) tool render.
@@ -1649,7 +1758,7 @@ background-color:hsl(var(--background) / 1);
   width: 100%; padding: 9px 12px;
   background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
   border: 1px solid transparent; border-radius: var(--radius);
-  font-weight: 600; font-size: 12.5px;
+  font-weight: 600; font-size: calc(12.5px * var(--a11y-fs));
   transition: filter 0.12s;
 }
 .block-add--prominent:hover { filter: brightness(1.08); border-color: transparent; color: hsl(var(--primary-foreground)); }
@@ -1661,7 +1770,7 @@ background-color:hsl(var(--background) / 1);
 }
 .block-add-option {
   text-align: left; padding: 7px 9px; border: none; border-radius: calc(var(--radius) - 2px);
-  background: none; cursor: pointer; font: inherit; font-size: 12px;
+  background: none; cursor: pointer; font: inherit; font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--foreground)); transition: background 0.1s;
 }
 .block-add-option:hover:not(:disabled) { background: hsl(var(--muted)); }
@@ -1711,7 +1820,7 @@ background-color:hsl(var(--background) / 1);
     align-items: center;
     justify-content: flex-start;
     padding-left: 4px;
-    font-size: 10px;
+    font-size: calc(10px * var(--a11y-fs));
     font-weight: 600;
     line-height: 1;
     color: hsl(var(--muted-foreground));
@@ -1741,7 +1850,7 @@ background-color:hsl(var(--background) / 1);
   border-radius: 0;
   border-right-width: 0;           /* collapse internal dividers */
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   text-align: left;
   -moz-appearance: textfield;
@@ -1798,7 +1907,7 @@ background-color:hsl(var(--background) / 1);
     padding: 2px 4px;
     border-radius: var(--radius);
     color: hsl(var(--primary));
-    font-size: 9px;
+    font-size: calc(9px * var(--a11y-fs));
     font-weight: 400;
     cursor: pointer;
     float: right;
@@ -1841,7 +1950,12 @@ background-color:hsl(var(--background) / 1);
   border-color: hsl(var(--primary) / 0.55);
   background: hsl(var(--primary) / 0.07);
 }
-.icon-toggle svg { display: block; }
+/* An `icon-toggle` input renders as a glyph with no visible text (its state and
+   its next state live in the aria-label + title), so the glyph is the control.
+   Scoped to svg on purpose: the same button falls back to a TEXT label when the
+   chosen option has no icon, and that path already scales through font-size.
+   The 32px box is unchanged — 19.2px inside it at the large-text factor. */
+.icon-toggle svg { display: block; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 
 .asset-picker-thumb-inline {
   flex: none;
@@ -1858,7 +1972,7 @@ background-color:hsl(var(--background) / 1);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 
@@ -1868,7 +1982,7 @@ background-color:hsl(var(--background) / 1);
   text-align: left;
   padding: 7px 10px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1887,7 +2001,7 @@ background-color:hsl(var(--background) / 1);
   background: hsl(var(--background));
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: color 0.12s, border-color 0.12s;
 }
 
@@ -1908,7 +2022,7 @@ background-color:hsl(var(--background) / 1);
 .asset-from-tool-label {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
   overflow: hidden;
@@ -1923,7 +2037,7 @@ background-color:hsl(var(--background) / 1);
    image is a static copy, not a live render. */
 .asset-from-tool--baked .asset-from-tool-spark { color: hsl(var(--muted-foreground)); }
 /* Inline re-bake failure (shares the picker's .asset-picker-error colour). */
-.asset-rebake-error { margin: 4px 0 0; font-size: 11px; }
+.asset-rebake-error { margin: 4px 0 0; font-size: calc(11px * var(--a11y-fs)); }
 
 /* A slot holding a live Lolly render (AssetRef carries meta.toolUrl) is marked
    is-lolly: brand-tinted border + ✦ spark on the trigger, so "this is a live
@@ -1940,7 +2054,7 @@ background-color:hsl(var(--background) / 1);
   flex: none;
   padding: 3px 10px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   transition: border-color 0.12s, color 0.12s;
 }
 .asset-edit:hover { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
@@ -1970,12 +2084,12 @@ background-color:hsl(var(--background) / 1);
   padding: 14px 20px;
   border-bottom: 1px solid hsl(var(--border));
 }
-.embed-editor-spark { color: hsl(var(--primary)); font-size: 16px; flex: none; }
-.embed-editor-title { margin: 0; font-size: 15px; font-weight: 600; flex: 1; min-width: 0; }
+.embed-editor-spark { color: hsl(var(--primary)); font-size: calc(16px * var(--a11y-fs)); flex: none; }
+.embed-editor-title { margin: 0; font-size: calc(15px * var(--a11y-fs)); font-weight: 600; flex: 1; min-width: 0; }
 .embed-editor-from { color: hsl(var(--muted-foreground)); font-weight: 400; }
 .embed-editor-close {
   flex: none; background: none; border: none;
-  font-size: 22px; line-height: 1; cursor: pointer;
+  font-size: calc(22px * var(--a11y-fs)); line-height: 1; cursor: pointer;
   color: hsl(var(--muted-foreground));
   padding: 2px 6px; border-radius: var(--radius);
   transition: color 0.12s, background 0.12s;
@@ -2006,7 +2120,7 @@ background-color:hsl(var(--background) / 1);
 .embed-editor-actions .ee-apply {
   padding: 7px 16px;
   border-radius: var(--radius);
-  font: inherit; font-size: 13px; font-weight: 600;
+  font: inherit; font-size: calc(13px * var(--a11y-fs)); font-weight: 600;
   cursor: pointer;
   transition: opacity 0.12s, border-color 0.12s;
 }
@@ -2046,7 +2160,7 @@ background-color:hsl(var(--background) / 1);
   border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: border-color 0.12s, color 0.12s;
 }
 
@@ -2068,7 +2182,7 @@ background-color:hsl(var(--background) / 1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-family: var(--font-mono);
   color: hsl(var(--muted-foreground));
 }
@@ -2082,7 +2196,7 @@ background-color:hsl(var(--background) / 1);
   background: hsl(var(--background));
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   transition: color 0.12s, border-color 0.12s;
 }
 
@@ -2103,15 +2217,18 @@ background-color:hsl(var(--background) / 1);
   border-radius: var(--radius);
   background: hsl(var(--primary) / 0.06);
   color: hsl(var(--primary));
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
   line-height: 1.3;
 }
 
 .on-device-badge svg {
   flex: none;
-  width: 18px;
-  height: 18px;
+  /* This badge is a privacy claim and the shield carries as much of it as the
+     words do, so the two grow together. flex:none above already stops the row
+     shrinking it back. */
+  width: calc(18px * var(--a11y-fs));
+  height: calc(18px * var(--a11y-fs));
 }
 
 /* ─── Tool stage & canvas ───────────────────────────────────────────────── */
@@ -2153,7 +2270,7 @@ background-color:hsl(var(--background) / 1);
   border: 1px solid hsl(var(--border));
   border-radius: 999px;
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
   cursor: pointer;
   backdrop-filter: blur(4px);
@@ -2238,7 +2355,7 @@ background-color:hsl(var(--background) / 1);
   border: 1px solid hsl(var(--border));
   border-radius: 999px;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 700;
   cursor: pointer;
   backdrop-filter: blur(6px);
@@ -2301,7 +2418,7 @@ background-color:hsl(var(--background) / 1);
   background: hsl(var(--destructive));
   color: hsl(var(--destructive-foreground, 0 0% 100%));
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -2339,7 +2456,7 @@ background-color:hsl(var(--background) / 1);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: #fff;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
   pointer-events: none;
 }
@@ -2417,7 +2534,7 @@ background-color:hsl(var(--background) / 1);
   border-radius: 50%;
   background: hsl(var(--card) / 0.95);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: 17px; font-weight: 700; line-height: 1;
+  font: inherit; font-size: calc(17px * var(--a11y-fs)); font-weight: 700; line-height: 1;
   cursor: pointer;
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
@@ -2538,8 +2655,8 @@ background-color:hsl(var(--background) / 1);
   border-top-color: #30ba78;
   animation: canvas-proc-spin 0.9s linear infinite;
 }
-.canvas-processing-text { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
-.canvas-processing-sub { font-size: 13px; opacity: 0.82; }
+.canvas-processing-text { font-size: calc(18px * var(--a11y-fs)); font-weight: 700; letter-spacing: -0.01em; }
+.canvas-processing-sub { font-size: calc(13px * var(--a11y-fs)); opacity: 0.82; }
 @keyframes canvas-proc-spin { to { transform: rotate(360deg); } }
 @keyframes canvas-proc-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
@@ -2573,7 +2690,7 @@ background-color:hsl(var(--background) / 1);
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
   cursor: pointer;
 }
@@ -2727,7 +2844,7 @@ background-color:hsl(var(--background) / 1);
    authors it); the ← → / ↑ ↓ keys step. Lives in #tool-stage OUTSIDE the scaled
    #tool-canvas, so it stays a fixed size. Mounted by lib/page-filmstrip.ts; the
    .has-pagestrip class on #tool-stage gates it (single-page tools show nothing). */
-#tool-stage { --pagestrip-w: 172px; }
+#tool-stage { --pagestrip-w: 172px; --pagestrip-h: 138px; }
 .pagestrip { display: none; }
 #tool-stage.has-pagestrip .pagestrip {
   display: flex; flex-direction: column; gap: 10px;
@@ -2756,7 +2873,7 @@ background-color:hsl(var(--background) / 1);
   display: flex; align-items: center; justify-content: center;
   border: 0; border-radius: 50%;
   background: rgba(0, 0, 0, 0.55); color: #fff;
-  font-size: 15px; line-height: 1; cursor: pointer;
+  font-size: calc(15px * var(--a11y-fs)); line-height: 1; cursor: pointer;
   opacity: 0; transition: opacity 0.12s, background 0.12s;
 }
 .pagestrip-thumb:hover .pagestrip-del,
@@ -2775,10 +2892,37 @@ background-color:hsl(var(--background) / 1);
 .pagestrip-thumb:hover .pagestrip-frame { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22); }
 .pagestrip-thumb.is-active .pagestrip-frame { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
 .pagestrip-num {
-  font-size: 10px; font-weight: 600; color: hsl(var(--muted-foreground));
+  font-size: calc(10px * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground));
   padding-left: 2px;
 }
 .pagestrip-thumb.is-active .pagestrip-num { color: hsl(var(--primary)); }
+
+/* ── Bottom filmstrip (render.filmstrip: "bottom") ───────────────────────────
+   Same rail, laid along the bottom edge instead of the left — the deck-strip shape,
+   for tools whose pages are wide and few (battlecards, decks) where a left rail eats
+   the width the card actually needs. The module fixes each thumbnail's HEIGHT in this
+   mode (widths follow the page aspect), so --pagestrip-h below is exact and no
+   measure-then-relayout pass is needed (--pagestrip-h is set with --pagestrip-w above). */
+#tool-stage.has-pagestrip.is-pagestrip-bottom .pagestrip {
+  flex-direction: row; align-items: flex-end;
+  left: 0; right: 0; top: auto; bottom: 0;
+  width: auto; height: var(--pagestrip-h);
+  padding: 12px 14px;
+  overflow-x: auto; overflow-y: hidden;
+  border-right: 0;
+  border-top: 1px solid hsl(var(--border));
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+/* The page surface clears the strip from below, not from the left. */
+#tool-stage.has-pagestrip.is-pagestrip-bottom .tool-canvas-outer {
+  left: 0;
+  bottom: var(--pagestrip-h);
+}
+/* Thumbs size to their own (aspect-derived) width and never squash to fit the row. */
+#tool-stage.is-pagestrip-bottom .pagestrip-thumb { width: auto; flex: 0 0 auto; }
+#tool-stage.is-pagestrip-bottom .pagestrip-open { width: auto; align-items: flex-start; }
+#tool-stage.is-pagestrip-bottom .pagestrip-frame { width: auto; }
 
 /* A sidebar block briefly flagged when its slide (or thumbnail) was jumped to. */
 .block-item.is-slide-linked {
@@ -2852,7 +2996,7 @@ background-color:hsl(var(--background) / 1);
      on the card, which is low-contrast on the SUSE dark-teal card). */
   background: hsl(var(--destructive));
   color: hsl(var(--destructive-foreground));
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 500;
   text-align: center;
   box-shadow: 0 6px 20px hsl(0 0% 0% / 0.2);

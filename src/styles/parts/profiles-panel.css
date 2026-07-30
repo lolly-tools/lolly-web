@@ -23,7 +23,7 @@
      sub-heading inside Print (`.labp-conds-h`, color-lab.css) is the small uppercase
      muted label — two levels, told apart by case and colour rather than by size alone. */
   margin: 0 0 0.5rem;
-  font-size: 0.95rem;
+  font-size: calc(0.95rem * var(--a11y-fs));
   font-weight: 650;
   color: hsl(var(--foreground));
 }
@@ -70,7 +70,7 @@
    size lives on the glyph rather than the button so the word beside it stays the
    row's own type size; a 1.15rem WORD would out-shout the three gamut options it
    sits next to, and this pill is an invitation, not a fourth option. */
-.lab-limit .view-seg-btn.lab-limit-add .lab-limit-add-g { font-size: 1.15rem; }
+.lab-limit .view-seg-btn.lab-limit-add .lab-limit-add-g { font-size: calc(1.15rem * var(--a11y-fs)); }
 .lab-limit .view-seg-btn.lab-limit-add:hover {
   border-color: hsl(var(--primary));
   background: hsl(var(--primary) / 0.24);

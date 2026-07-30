@@ -28,6 +28,7 @@
 
 import './type-demo.css';
 import { escapeHtml } from './html.ts';
+import { prefersReducedMotion } from './a11y-prefs.ts';
 
 const TYPED = 'lolly qr-code --url=lolly.tools';
 const ITALIC = '// vector, exact, instant';
@@ -215,7 +216,7 @@ interface FaceCtl {
 export function wireTypeDemo(root: HTMLElement): () => void {
   const demo = root.querySelector<HTMLElement>('[data-type-demo]');
   if (!demo) return () => {};
-  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  const reduce = prefersReducedMotion();
 
   // ── Weight controls (both faces) ──────────────────────────────────────────
   const faces: FaceCtl[] = [];

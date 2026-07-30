@@ -13,7 +13,7 @@
    primitive (chips.css) — only the page-hero sizing deltas stay local. */
 .plat-header { margin: .5rem 0 1.85rem; }
 .plat-title { font-size: clamp(1.7rem, 3.4vw, 2.3rem); }
-.plat-sub { margin: 0 0 1rem; max-width: 62ch; font-size: 1rem; line-height: 1.55; }
+.plat-sub { margin: 0 0 1rem; max-width: 62ch; font-size: calc(1rem * var(--a11y-fs)); line-height: 1.55; }
 .plat-header-text { min-width: 0; }
 .plat-header-text > :last-child { margin-bottom: 0; }
 /* .plat-note is now fully folded into components.css's `.note` family (component
@@ -79,23 +79,23 @@
    the shared `.section-card` fold primitive (disclosure.css, component audit
    rec 7). Both merges keep `.plat-section*` as the live class names in
    markup (dashboard.ts) so nothing there needs to change. */
-.plat-section-desc { margin: .55rem 0 0; max-width: 74ch; color: hsl(var(--muted-foreground)); font-size: .9rem; line-height: 1.5; }
+.plat-section-desc { margin: .55rem 0 0; max-width: 74ch; color: hsl(var(--muted-foreground)); font-size: calc(.9rem * var(--a11y-fs)); line-height: 1.5; }
 .plat-section-desc code, .plat-note code,
 .plat-swatch-hex, .plat-swatch-cmyk, .plat-table td code {
   font-family: var(--font-mono);
 }
 
-.plat-legend { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; margin: 0 0 1rem; font-size: .8rem; color: hsl(var(--muted-foreground)); }
+.plat-legend { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; margin: 0 0 1rem; font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .plat-legend-item { display: inline-flex; align-items: center; gap: .5rem; }
 
 .plat-ramp-title {
   display: flex; align-items: center; gap: .5rem;
-  margin: 1.5rem 0 .7rem; font-size: .78rem; font-weight: 650;
+  margin: 1.5rem 0 .7rem; font-size: calc(.78rem * var(--a11y-fs)); font-weight: 650;
   text-transform: uppercase; letter-spacing: .07em; color: hsl(var(--muted-foreground));
 }
 /* Box + font-size/weight/padding merged into .chip--count (chips.css, byte-
    identical to .cat-group-count) — nothing left to restate here. */
-.plat-ramp-note { margin: -.3rem 0 .8rem; max-width: 74ch; color: hsl(var(--muted-foreground)); font-size: .82rem; line-height: 1.5; }
+.plat-ramp-note { margin: -.3rem 0 .8rem; max-width: 74ch; color: hsl(var(--muted-foreground)); font-size: calc(.82rem * var(--a11y-fs)); line-height: 1.5; }
 .plat-ramp-note strong { color: hsl(var(--foreground)); }
 
 .plat-swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: .75rem; }
@@ -116,7 +116,7 @@
 }
 .plat-swatch-chip::after {
   content: 'Copied'; position: absolute; inset: 0; display: grid; place-content: center;
-  font-size: .7rem; font-weight: 600; color: #fff; background: hsl(0 0% 0% / .55);
+  font-size: calc(.7rem * var(--a11y-fs)); font-weight: 600; color: #fff; background: hsl(0 0% 0% / .55);
   opacity: 0; transition: opacity .12s; pointer-events: none;
 }
 .plat-swatch-chip.is-copied::after { opacity: 1; }
@@ -127,19 +127,19 @@
    so it stays its own full recipe rather than joining that merge. */
 .plat-chip-flag { font-family:"SUSE Mono";
   position: absolute; top: .25rem; right: .5rem;
-  font-size: .55rem; font-weight: 700; letter-spacing: -.04em; line-height: 1;
+  font-size: calc(.55rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -.04em; line-height: 1;
   padding: .2rem .32rem; border-radius: calc(var(--radius)*.6);
   background: hsl(0 0% 100% / .88); color: hsl(0 0% 10%);
 }
 .plat-chip-flag.is-static { position: static; display: inline-block; }
-.plat-swatch-name { margin: .45rem .55rem 0; font-size: .8rem; font-weight: 600; }
-.plat-swatch-hex { margin: .12rem .55rem 0; font-size: .72rem; color: hsl(var(--muted-foreground)); }
-.plat-swatch-cmyk { margin: .05rem .55rem .55rem; font-size: .68rem; color: hsl(var(--foreground)); }
+.plat-swatch-name { margin: .45rem .55rem 0; font-size: calc(.8rem * var(--a11y-fs)); font-weight: 600; }
+.plat-swatch-hex { margin: .12rem .55rem 0; font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.plat-swatch-cmyk { margin: .05rem .55rem .55rem; font-size: calc(.68rem * var(--a11y-fs)); color: hsl(var(--foreground)); }
 .plat-swatch-cmyk.is-generic { color: hsl(var(--muted-foreground) / .85); font-style: italic; }
 
-.plat-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.plat-table { width: 100%; border-collapse: collapse; font-size: calc(.85rem * var(--a11y-fs)); }
 .plat-table th, .plat-table td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid hsl(var(--border)); }
-.plat-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); font-weight: 600; }
+.plat-table th { font-size: calc(.72rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); font-weight: 600; }
 .plat-table td code { font-size: .85em; }
 .plat-table tr.is-default td:first-child { font-weight: 600; }
 /* Box (font-size/weight/letter-spacing/padding/radius) merged into
@@ -160,14 +160,14 @@
 /* Surface composes .card--sub (chips.css) — only the padding is a local delta. */
 .plat-font { padding: 1.1rem 1.2rem; }
 .plat-font-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .5rem; }
-.plat-font-name { font-size: 1.4rem; font-weight: 600; }
-.plat-font-role { font-size: .75rem; color: hsl(var(--muted-foreground)); }
+.plat-font-name { font-size: calc(1.4rem * var(--a11y-fs)); font-weight: 600; }
+.plat-font-role { font-size: calc(.75rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .plat-font-specimen { padding: .3rem 0 .8rem; border-bottom: 1px solid hsl(var(--border)); margin-bottom: .8rem; }
-.plat-font-aa { font-size: 3.2rem; font-weight: 500; line-height: 1; }
-.plat-font-pangram { margin: .5rem 0 .7rem; font-size: 1rem; line-height: 1.35; }
-.plat-font-weights { display: flex; flex-wrap: wrap; gap: .8rem; font-size: 1rem; color: hsl(var(--muted-foreground)); }
+.plat-font-aa { font-size: calc(3.2rem * var(--a11y-fs)); font-weight: 500; line-height: 1; }
+.plat-font-pangram { margin: .5rem 0 .7rem; font-size: calc(1rem * var(--a11y-fs)); line-height: 1.35; }
+.plat-font-weights { display: flex; flex-wrap: wrap; gap: .8rem; font-size: calc(1rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .plat-kv { margin: 0; display: grid; gap: .35rem; }
-.plat-kv > div { display: flex; gap: .6rem; font-size: .8rem; }
+.plat-kv > div { display: flex; gap: .6rem; font-size: calc(.8rem * var(--a11y-fs)); }
 .plat-kv dt { flex: 0 0 4.25rem; color: hsl(var(--muted-foreground)); }
 .plat-kv dd { margin: 0; min-width: 0; }
 
@@ -194,21 +194,21 @@
 .plat-client-title {
   display: flex; align-items: center; gap: .5rem;
   margin: 0 0 .7rem; padding-bottom: .5rem; border-bottom: 1px solid hsl(var(--border));
-  font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: hsl(var(--muted-foreground));
+  font-size: calc(.7rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: hsl(var(--muted-foreground));
 }
 .plat-client-icon { display: inline-flex; flex: 0 0 auto; color: hsl(var(--card-foreground)); }
-.plat-client-icon svg { display: block; width: 32px; height: 32px; }
+.plat-client-icon svg { display: block; width: calc(32px * var(--a11y-fs)); height: calc(32px * var(--a11y-fs)); }
 /* Card-level caption (e.g. the "inferred, not probed" note on Rendering stack). */
-.plat-client-note { margin: -.35rem 0 .7rem; font-size: .72rem; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.plat-client-note { margin: -.35rem 0 .7rem; font-size: calc(.72rem * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); }
 .plat-kv--wide dt { flex: 0 0 8rem; }
 .plat-kv--wide dd { word-break: break-word; }
 .plat-kv .is-stacked { flex-direction: column; gap: .15rem; }
 .plat-kv .is-stacked dt { flex: none; }
-.plat-kv dd.is-mono { font-family: var(--font-mono); font-size: .72rem; word-break: break-all; color: hsl(var(--muted-foreground)); }
-.plat-kv dd.is-lead { font-size: .95rem; font-weight: 650; line-height: 1.2; }
+.plat-kv dd.is-mono { font-family: var(--font-mono); font-size: calc(.72rem * var(--a11y-fs)); word-break: break-all; color: hsl(var(--muted-foreground)); }
+.plat-kv dd.is-lead { font-size: calc(.95rem * var(--a11y-fs)); font-weight: 650; line-height: 1.2; }
 .plat-kv .is-hero { flex-direction: column; align-items: flex-start; gap: .25rem; }
-.plat-kv .is-hero dt { flex: none; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; }
-.plat-kv dd.is-hero { font-size: 1.6rem; font-weight: 700; line-height: 1.1; color: hsl(var(--card-foreground)); word-break: break-word; }
+.plat-kv .is-hero dt { flex: none; font-size: calc(.68rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .06em; }
+.plat-kv dd.is-hero { font-size: calc(1.6rem * var(--a11y-fs)); font-weight: 700; line-height: 1.1; color: hsl(var(--card-foreground)); word-break: break-word; }
 
 /* Mobile: these sub-cards sit INSIDE .plat-section-body, so their gutter is the third
    term in the nesting stack that sheet's ≤640px block trims (page pad → fold → this).
@@ -228,13 +228,13 @@
    when space is tight the width shrinks and the height follows it, instead of the width
    collapsing against a fixed height and squashing the dot into an oval. */
 .plat-theme-dots span { width: 22px; aspect-ratio: 1; min-width: 0; border-radius: var(--radius); box-shadow: inset 0 0 0 1px hsl(var(--border)); }
-.plat-theme-sample { font-size: 1.6rem; font-weight: 600; }
+.plat-theme-sample { font-size: calc(1.6rem * var(--a11y-fs)); font-weight: 600; }
 
 .plat-stats { display: flex; flex-wrap: wrap; gap: .6rem; }
 /* Box merged into .chip--stat (chips.css, [hidden] reassert folded in there
    too) — capitalize is the only local delta left. */
 .plat-stat { text-transform: capitalize; }
-.plat-stat strong { font-size: 1rem; }
+.plat-stat strong { font-size: calc(1rem * var(--a11y-fs)); }
 .plat-chip {
   display: inline-block;
   background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground));
@@ -246,7 +246,7 @@
 .cap-card { display: flex; flex-direction: column; }
 .cap-feat { margin: 0; display: grid; gap: .85rem; }
 .cap-feat > div { display: block; }
-.cap-feat dt { margin: 0 0 .12rem; font-size: .82rem; font-weight: 650; color: hsl(var(--foreground)); }
-.cap-feat dd { margin: 0; font-size: .8rem; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.cap-feat dt { margin: 0 0 .12rem; font-size: calc(.82rem * var(--a11y-fs)); font-weight: 650; color: hsl(var(--foreground)); }
+.cap-feat dd { margin: 0; font-size: calc(.8rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); }
 .cap-feat dd code { font-family: var(--font-mono); font-size: .92em; }
 }

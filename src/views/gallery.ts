@@ -33,6 +33,7 @@ import { mountFeaturedRow, resolveExamples } from '../components/featured-row.ts
 import { previewMedia } from '../lib/preview-media.ts';
 import { renderFeaturedVariant, renderFeaturedPages, displayFormatOf } from '../lib/featured-render.ts';
 import { currentTheme } from '../theme.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { segHtml } from '../lib/seg.ts';
@@ -765,7 +766,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // from a tool (cards are already known) nor on filter/search re-renders (those
   // show instantly). Tracked here so render() can decide and disconnect cleanly.
   const isReturning = viewEl.classList.contains('is-returning');
-  const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  // Read once at mount, like darkTheme below: the hero rotation timer and the
+  // entrance cascade are both decided as the view is built, so a toggle mid-session
+  // takes effect on the next gallery visit.
+  const prefersReduced = prefersReducedMotion();
   // Which theme-tagged example looks the tiles show (transparent-ink looks are filtered
   // to the matching UI theme — see galleryExampleLooks). Read once at mount, like the
   // featured row; switching theme refreshes on the next gallery visit.
@@ -781,7 +785,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // per-render re-wiring. Work is staggered across phases (tiles don't all flip
   // at once), and skips tiles that are off-screen or hovered (leave the one the
   // user is aiming at still). Paused wholesale while the tab is hidden; disabled
-  // outright under prefers-reduced-motion. Torn down via the cleanup registry.
+  // outright under reduced motion (OS or the app's own pref). Torn down via the
+  // cleanup registry.
   const HERO_ROTATE_MS = 2100;
   const HERO_ROTATE_PHASES = 3;
   if (!prefersReduced) {

@@ -40,7 +40,7 @@
   align-items: center;
   gap: 6px;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   font-weight: 600;
   padding: 7px 13px;
   border-radius: 9px;
@@ -50,7 +50,7 @@
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.deck-strip__load svg { width: 16px; height: 16px; }
+.deck-strip__load svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .deck-strip__load:hover {
   background: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 8%, hsl(var(--background, 0 0% 100%)));
   border-color: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 40%, transparent);
@@ -186,7 +186,7 @@
   left: 3px;
   bottom: 2px;
   z-index: 2;
-  font-size: 9px;
+  font-size: calc(9px * var(--a11y-fs));
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   padding: 0 4px;
@@ -199,12 +199,14 @@
   top: 2px;
   right: 3px;
   z-index: 2;
-  width: 15px;
-  height: 15px;
+  /* Icon-only control: the box rides the chrome icon scale (tokens.css) with
+     the glyph it holds, so the mark never shrinks inside a growing button. */
+  width: calc(15px * var(--a11y-fs));
+  height: calc(15px * var(--a11y-fs));
   display: grid;
   place-items: center;
   border-radius: 50%;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   line-height: 1;
   color: #fff;
   background: rgba(0, 0, 0, 0.5);
@@ -218,7 +220,7 @@
 .deck-thumb--add {
   background: hsl(var(--muted, 220 14% 96%));
   color: hsl(var(--muted-foreground, 220 10% 45%));
-  font-size: 22px;
+  font-size: calc(22px * var(--a11y-fs));
   font-weight: 300;
   display: grid;
   place-items: center;
@@ -245,8 +247,8 @@
   flex-direction: column;
   gap: 8px;
 }
-.deck-load__hd { font-weight: 700; font-size: 0.95rem; }
-.deck-load__hint { margin: 0; font-size: 0.78rem; color: hsl(var(--muted-foreground, 220 10% 45%)); line-height: 1.4; }
+.deck-load__hd { font-weight: 700; font-size: calc(0.95rem * var(--a11y-fs)); }
+.deck-load__hint { margin: 0; font-size: calc(0.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground, 220 10% 45%)); line-height: 1.4; }
 .deck-load__hint code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
@@ -259,7 +261,7 @@
   min-height: 150px;
   resize: vertical;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   line-height: 1.4;
   padding: 8px 10px;
   border-radius: 8px;
@@ -268,7 +270,7 @@
   color: inherit;
 }
 .deck-load__err {
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   color: hsl(var(--destructive, 0 70% 45%));
 }
 /* Drag-a-deck-file feedback — mirrors the app's dropzone affordance. */
@@ -279,7 +281,7 @@
 .deck-load__row { display: flex; justify-content: flex-end; gap: 8px; }
 .deck-load__btn {
   font: inherit;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--a11y-fs));
   font-weight: 600;
   padding: 7px 14px;
   border-radius: 8px;
@@ -338,10 +340,10 @@
   display: inline-flex;
   color: hsl(var(--muted-foreground, 220 10% 45%));
 }
-.deck-bar__ico svg { width: 16px; height: 16px; display: block; }
+.deck-bar__ico svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
 .deck-bar__sel {
   font: inherit;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   padding: 3px 4px;
   border-radius: 6px;
   border: 1px solid transparent;
@@ -357,8 +359,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  height: 26px;
+  /* Box on the chrome icon scale with its glyph (tokens.css). */
+  min-width: calc(28px * var(--a11y-fs));
+  height: calc(26px * var(--a11y-fs));
   padding: 0 5px;
   border-radius: 7px;
   border: 1px solid transparent;
@@ -367,7 +370,7 @@
   cursor: pointer;
 }
 .deck-bar__btn:hover { background: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 14%, transparent); }
-.deck-bar__btn svg { width: 16px; height: 16px; display: block; }
+.deck-bar__btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
 
 /* ── Inline layout-slide text editing (step 5) ──────────────────────────────────
    The REAL rendered `.sl-head` / `.sl-body` in the tool canvas become contenteditable —
@@ -399,10 +402,12 @@
 }
 .deck-fmt__btn {
   font: inherit;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--a11y-fs));
   font-weight: 600;
-  min-width: 26px;
-  height: 26px;
+  /* B/I/U carry their letter as TYPE, which already scales — the box has to
+     follow it on the icon scale or the letter clips at the first factor up. */
+  min-width: calc(26px * var(--a11y-fs));
+  height: calc(26px * var(--a11y-fs));
   padding: 0 7px;
   border-radius: 6px;
   border: 1px solid transparent;
@@ -463,7 +468,7 @@
 }
 .deck-free__btn {
   font: inherit;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--a11y-fs));
   font-weight: 600;
   padding: 4px 9px;
   border-radius: 7px;
@@ -474,8 +479,8 @@
 }
 .deck-free__btn:hover:not(:disabled) { background: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 14%, transparent); }
 .deck-free__btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.deck-free__btn--icon { min-width: 28px; padding: 5px 6px; display: inline-flex; align-items: center; justify-content: center; }
-.deck-free__btn--icon svg { width: 17px; height: 17px; display: block; }
+.deck-free__btn--icon { min-width: calc(28px * var(--a11y-fs)); padding: 5px 6px; display: inline-flex; align-items: center; justify-content: center; }
+.deck-free__btn--icon svg { width: calc(17px * var(--a11y-fs)); height: calc(17px * var(--a11y-fs)); display: block; }
 .deck-free__btn--del:not(:disabled) { color: hsl(var(--destructive, 0 70% 45%)); }
 
 /* ── The box inspector — a second row under the arrange toolbar ─────────────────
@@ -496,7 +501,7 @@
   align-items: center;
   gap: 5px;
   padding: 2px 6px;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   font-weight: 600;
   color: hsl(var(--muted-foreground, 220 10% 45%));
   white-space: nowrap;
@@ -506,7 +511,7 @@
 .deck-free__num,
 .deck-free__sel {
   font: inherit;
-  font-size: 0.74rem;
+  font-size: calc(0.74rem * var(--a11y-fs));
   font-weight: 600;
   color: hsl(var(--foreground, 220 20% 15%));
   background: hsl(var(--background, 0 0% 100%) / 0.7);
@@ -517,7 +522,7 @@
 }
 .deck-free__num { width: 3.6em; text-align: right; cursor: text; }
 .deck-free__num::placeholder { opacity: 0.5; font-weight: 500; }
-.deck-free__check { width: 14px; height: 14px; accent-color: hsl(var(--primary, 231 60% 55%)); cursor: pointer; }
+.deck-free__check { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); accent-color: hsl(var(--primary, 231 60% 55%)); cursor: pointer; }
 /* Colour picker (the app's OKLCH float field) + its clear button. An unset colour means
    "inherit the slide's ink / no fill" — a state the picker can't show — so the trigger is
    dimmed when unset, and the clear button sets it back to inherit. */
@@ -526,7 +531,7 @@
 .deck-free__colour.is-unset .deck-free__cpick { opacity: 0.55; }
 .deck-free__clear {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: calc(0.8rem * var(--a11y-fs));
   line-height: 1;
   padding: 2px 3px;
   border: 0;
@@ -537,7 +542,7 @@
 }
 .deck-free__clear:hover:not(:disabled) { background: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 14%, transparent); }
 .deck-free__clear:disabled { opacity: 0.25; cursor: default; }
-.deck-free__btn--link { font-size: 0.7rem; padding: 3px 7px; }
+.deck-free__btn--link { font-size: calc(0.7rem * var(--a11y-fs)); padding: 3px 7px; }
 /* Marquee-drag surface (below the boxes) + the rubber-band rectangle it draws. */
 .deck-free__bg { position: absolute; inset: 0; z-index: 0; pointer-events: auto; }
 .deck-free__marquee {
@@ -603,7 +608,7 @@
   justify-content: center;
   padding: 6px;
   text-align: center;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground, 220 10% 45%));
   pointer-events: none;
 }
