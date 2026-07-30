@@ -286,6 +286,13 @@ export async function pdfToVectorSvg(b64: string, host?: OutlineHost, opts: Vect
   const page = await handle.pageToSvg(0, {
     warn: (msg) => warnings.push(msg),
     outlineText,
+    // A docs shot is TERMINAL output — it is written to a file and shown in an
+    // <img>, never re-exported — so it can hoist repeated path data into
+    // <defs>/<use>. That matters here because Chromium prints a dashed border as
+    // four separately-clipped copies of the whole dash ring: 37% of a brand-studio
+    // capture, 50% of a logo-grid one. Asset ingest must NOT set this (svg-ir's
+    // EMF/EPS/DXF path skips <use>) — see PdfPageSvgOpts.dedupePaths.
+    dedupePaths: true,
     resolveImage: (rect) => matchRaster(rasters, {
       x: rect.x / PT_PER_PX, y: rect.y / PT_PER_PX, w: rect.w / PT_PER_PX, h: rect.h / PT_PER_PX,
     }),
