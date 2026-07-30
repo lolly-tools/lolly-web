@@ -66,6 +66,11 @@
   flex-wrap: wrap;
   gap: 4px 12px;
   margin-bottom: 12px;
+  /* Leave the fixed top-right cluster its room. It used to be one 44px FAB the
+     sub-line could pass under; it now carries Import and Export too, and a
+     sentence running beneath three controls is unreadable. Capped against the
+     viewport so a narrow window doesn't reserve most of the line. */
+  padding-right: min(19rem, 30vw);
 }
 .start-eyebrow {
   margin: 0;
@@ -168,9 +173,34 @@
   50%      { box-shadow: 0 0 0 5px hsl(var(--primary) / 0); }
 }
 
-/* ── The persistent action row: Import/Export always on the left; the primary
-      Save & continue appears on the right the moment anything changes. Sticky
-      under the top of the viewport so the actions never scroll out of reach. ── */
+/* ── The brand-file actions in the top-right chrome cluster, on the language
+      selector's line. They act on the WHOLE brand, not the open step, so they
+      belong to the chrome — and the in-flow row they used to occupy spent a band
+      of the first screen on two buttons that are never step-specific. ───────── */
+.start-topright .be-btn {
+  /* --chrome-h is the shared height of every control in this row (tokens.css), so
+     the two buttons and the language FAB line up by construction rather than by a
+     hand-matched number. */
+  height: var(--chrome-h);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding-inline: 0.85rem;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+/* Narrow screens: the labels go and the two become glyph buttons the size of the
+   language FAB. Their aria-label/title carry the name (start.ts). */
+@media (max-width: 640px) {
+  .start-topright .be-btn { width: var(--chrome-h); padding: 0; justify-content: center; }
+  .start-topright .start-act-label { display: none; }
+}
+
+/* ── The action row: the primary Save & continue plus the transient note, and
+      NOTHING at rest — start.ts hides the row whenever both are empty, so a step
+      you're only reading spends no vertical space on it. Sticky under the top of
+      the viewport so it never scrolls out of reach once it's there. ─────────── */
+.start-actions[hidden] { display: none; }
 .start-actions {
   position: sticky;
   top: 10px;
@@ -190,7 +220,7 @@
 .start-save { margin-inline-start: auto; }
 .start-save[hidden] { display: none; }
 
-/* ── Import panel (folds open under the action row) ─────────────────────── */
+/* ── The import card, and the modal it now opens in ──────────────────────── */
 /* Import is the inviting way in — bringing your existing brand across is the best
    first move, so the button wears the house glowing-CTA look (the same brand-
    coloured gloss as .be-cta.is-active): a top-lit gradient mixed off --primary, a
@@ -215,20 +245,27 @@
     color-mix(in oklab, hsl(var(--primary)), black 14%));
   box-shadow: inset 0 1px 0 hsl(0 0% 100% / .45), 0 6px 18px -5px hsl(var(--primary) / .95);
 }
-.be-btn.start-import-cta[aria-expanded="true"] { transform: none; }
+.be-btn.start-import-cta.is-open { transform: none; }
 @media (prefers-reduced-motion: no-preference) {
-  .be-btn.start-import-cta:not(:hover):not([aria-expanded="true"]) { animation: start-import-glow 3s ease-in-out infinite; }
+  .be-btn.start-import-cta:not(:hover):not(.is-open) { animation: start-import-glow 3s ease-in-out infinite; }
 }
 @keyframes start-import-glow {
   0%, 100% { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .38), 0 3px 12px -5px hsl(var(--primary) / .55); }
   50%      { box-shadow: inset 0 1px 0 hsl(0 0% 100% / .38), 0 5px 16px -5px hsl(var(--primary) / .9); }
 }
 
+/* The dialog: wider than the plain .modal so the five format tiles stay on one
+   line, and capped so a long result list scrolls inside it rather than growing the
+   dialog past the viewport. */
+.start-import-modal {
+  width: min(52rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 3rem);
+  overflow-y: auto;
+}
 .start-import-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin: -8px 0 18px;
 }
 .start-import-panel[hidden] { display: none; }
 /* The card IS the control — a label wrapping the file input, so a click

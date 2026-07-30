@@ -10,7 +10,8 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString } from '@lolly/engine';
+import { parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString, normalizeTableValue, looksLikeTable, parseTableText, toTsv, toHtmlTable } from '@lolly/engine';
+import type { TableValue } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { escape, NAV_EVENTS } from '../utils.js';
 import { mountModal } from '../components/modal.ts';
@@ -21,7 +22,7 @@ import { customSliderHtml, mountCustomSlider, SLIDER_DRAG_EVENT } from '../compo
 import { canSkipInputsRebuild } from './inputs-sync.js';
 import { jellyActive, jellyEnabled } from '../lib/jelly.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
-import { installTablePaste } from '../lib/table-paste.ts';
+import { installTablePaste, htmlTableToTsv } from '../lib/table-paste.ts';
 import { splitMarkdownIntoBlocks } from '../lib/markdown.ts';
 import { playSliderTick, playScrubTick } from '../lib/sfx.ts';
 import { icon, hasIcon } from '../lib/icons.ts';
@@ -402,14 +403,14 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // (which keys on `:has(input…)` / `:not(:placeholder-shown)` in the light DOM)
     // can't see them. Pin those rows to a static label above the field instead.
     const isJellyField = jellyActive() && (input.control === 'text-input' || input.control === 'textarea');
-    const isStaticLabel = input.control === 'datetime-local-input' || isJellyField;
+    const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || isJellyField;
     // Composite controls hold MANY interactive elements. A wrapping <label> makes the
     // browser forward any dead-space click to the label's first labelable descendant —
     // so a `blocks` input forwards gap / pill-body / near-miss clicks to block #0's
     // collapse chevron (the reported "clicking the 2nd scene expands the 1st"), and a
     // `vector` input forwards to its first number field. Wrap these in a <div role=group>
     // instead: the caption still names them (aria-labelledby), but it never proxies clicks.
-    const isComposite = ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker'].includes(input.control);
+    const isComposite = ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker', 'table'].includes(input.control);
     const cls = `input-row${isCheckbox ? ' input-row--checkbox' : ''}${isPill ? ' input-row--pill' : ''}${isStaticLabel ? ' input-row--static-label' : ''}${isSubControl(input, prev) ? ' input-row--sub' : ''}`;
     const valueTag = input.control === 'slider'
       ? ` <span class="input-value">${parseFloat(String(input.value ?? 0))}</span>`
@@ -821,6 +822,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // Block field changes
   el.querySelectorAll<HTMLInputElement>('[data-field-id]').forEach(field => {
+    // Table cells carry data-field-id only for rebuild-deferral + focus
+    // restoration; their value path is the table wiring below, not blocks.
+    if (field.closest('.table-input')) return;
     // A jelly-switch block boolean (flag) emits `change` (never `input`), has no
     // `.type`/`.validity`, and reports its state on `.checked` — so it needs its
     // own event + value path. Everything else stays on the native `input` path.
@@ -853,6 +857,136 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       }
       runtime.setInput(blockId, arr);
       onDirty?.(blockId);
+    });
+  });
+
+  // Table inputs — the whole grid is visible DOM, so every commit re-reads it
+  // from the cell inputs rather than trusting `panelModel`: cell typing defers
+  // the panel rebuild (like block fields), so the closure's model snapshot can
+  // lag behind edits made since the last repaint.
+  el.querySelectorAll<HTMLElement>('.table-input').forEach(wrap => {
+    const tid = wrap.dataset.tableId!;
+    const read = (): TableValue => ({
+      columns: [...wrap.querySelectorAll<HTMLInputElement>('thead .table-cell')].map(h => h.value),
+      rows: [...wrap.querySelectorAll('tbody tr')].map(tr =>
+        [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].map(c => c.value)),
+    });
+    const commit = (t: TableValue): void => { void runtime.setInput(tid, t); onDirty?.(tid); };
+
+    wrap.querySelectorAll<HTMLInputElement>('.table-cell').forEach(cell => {
+      cell.addEventListener('input', () => commit(read()));
+    });
+
+    // Structural edits commit a mutated read(); the pressed button isn't a
+    // field, so the full rebuild runs and repaints the new shape.
+    wrap.querySelector('[data-table-add-row]')?.addEventListener('click', () => {
+      const t = read();
+      const r = t.rows.length;
+      t.rows.push(t.columns.map(() => ''));
+      // Land the caret in the new row's first cell once the rebuilt markup exists.
+      void runtime.setInput(tid, t).then(() => requestAnimationFrame(() =>
+        el.querySelector<HTMLInputElement>(`[data-field-id="${CSS.escape(`${tid}:t:${r}:0`)}"]`)?.focus()));
+      onDirty?.(tid);
+    });
+    wrap.querySelector('[data-table-add-col]')?.addEventListener('click', () => {
+      const t = read();
+      t.columns.push(`Column ${t.columns.length + 1}`);
+      t.rows.forEach(r => r.push(''));
+      if (!t.rows.length) t.rows.push(t.columns.map(() => '')); // first column seeds a first row
+      commit(t);
+    });
+    wrap.querySelectorAll<HTMLButtonElement>('[data-table-del-row]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const t = read();
+        t.rows.splice(Number(btn.dataset.tableDelRow), 1);
+        commit(t);
+      }));
+    wrap.querySelectorAll<HTMLButtonElement>('[data-table-del-col]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const t = read();
+        const c = Number(btn.dataset.tableDelCol);
+        t.columns.splice(c, 1);
+        t.rows.forEach(r => r.splice(c, 1));
+        commit(t);
+      }));
+
+    // Paste anywhere in the grid: a multi-cell clipboard replaces the WHOLE
+    // table — the spreadsheet is the batch editor, a paste is "here's the new
+    // data". A spreadsheet's text/html <table> flavour is preferred (explicit
+    // grid, no delimiter guessing); a single plain value falls through to the
+    // focused cell like any text input.
+    wrap.addEventListener('paste', e => {
+      const tsvFromHtml = htmlTableToTsv(e.clipboardData?.getData('text/html') ?? '');
+      const text = tsvFromHtml || e.clipboardData?.getData('text/plain') || '';
+      if (!tsvFromHtml && !looksLikeTable(text)) return;
+      const parsed = parseTableText(text);
+      if (!parsed) return;
+      e.preventDefault();
+      commit(parsed);
+      announce(`Table replaced: ${parsed.rows.length} rows, ${parsed.columns.length} columns`);
+    });
+    wrap.querySelector('[data-table-paste]')?.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        const parsed = looksLikeTable(text) ? parseTableText(text) : null;
+        if (parsed) {
+          commit(parsed);
+          announce(`Table replaced: ${parsed.rows.length} rows, ${parsed.columns.length} columns`);
+        } else {
+          announce('No table on the clipboard — copy cells from your spreadsheet first');
+        }
+      } catch {
+        announce('Clipboard unavailable — click a cell and paste instead');
+      }
+    });
+    // Pop-out: lift the grid into a floating, resizable window (lib/float-panel)
+    // so a dense pasted table can be scanned full-width. Survives the full
+    // sidebar rebuild structural edits trigger: the rebuild orphans the old
+    // panel around its stale wrapper, so wiring closes it and re-pops the FRESH
+    // wrapper into a new panel at the same geometry (tablePops, module scope).
+    const openPanel = (geom?: Partial<CSSStyleDeclaration>): void => {
+      void import('../lib/float-panel.ts').then(({ popOut }) => {
+        const inp = panelModel.find(i => i.id === tid);
+        const panel = popOut(wrap, {
+          title: inp?.label ?? 'Table',
+          // Inside the tool layout, not <body>: the wiring above queries the
+          // wrapper through this view's root, and fixed-position still floats
+          // here (no transform/filter ancestor between it and the viewport).
+          mount: (el.closest('.tool-layout') as HTMLElement | null) ?? undefined,
+          onClose: () => { if (tablePops.get(tid) === panel) tablePops.delete(tid); },
+        });
+        if (!panel) return;
+        if (geom) Object.assign(panel.root.style, geom);
+        tablePops.set(tid, panel);
+      });
+    };
+    const stale = tablePops.get(tid);
+    if (stale && !wrap.closest('.floatp')) {
+      const s = stale.root.style;
+      const geom = { left: s.left, top: s.top, width: s.width, height: s.height };
+      stale.close();
+      openPanel(geom);
+    }
+    wrap.querySelector('[data-table-pop]')?.addEventListener('click', () => {
+      const cur = tablePops.get(tid);
+      if (cur) { cur.close(); return; }
+      openPanel();
+    });
+
+    // Copy out both flavours in one item: TSV (Sheets/Excel) + a real <table>
+    // (Docs/Notion/Slack render it as a grid). writeText is the fallback.
+    wrap.querySelector('[data-table-copy]')?.addEventListener('click', async () => {
+      const t = read();
+      try {
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/plain': new Blob([toTsv(t)], { type: 'text/plain' }),
+          'text/html': new Blob([toHtmlTable(t)], { type: 'text/html' }),
+        })]);
+        announce('Table copied');
+      } catch {
+        try { await navigator.clipboard.writeText(toTsv(t)); announce('Table copied'); }
+        catch { announce('Clipboard unavailable'); }
+      }
     });
   });
 
@@ -1523,6 +1657,10 @@ function attachedControlHtml(input: InputModelItem): string {
   return `<button type="button" class="icon-toggle" data-toggle-id="${escape(input.id)}" title="${escape(title)}" aria-label="${escape(title)}">${glyph}</button>`;
 }
 
+// Open table-input float panels, keyed by input id — module scope so a panel
+// survives the sidebar rebuilds that replace its wrapper (see the table wiring).
+const tablePops = new Map<string, import('../lib/float-panel.ts').FloatPanel>();
+
 function controlHtml(input: InputModelItem, modelValues: Record<string, InputValue> = {}, policy?: InputPolicy): string {
   const id  = escape(input.id);
   const val = escape(input.value ?? '');
@@ -1671,6 +1809,40 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       return `<div class="time-input-wrap"><input type="time" data-input-id="${id}" value="${val}"></div>`;
     case 'datetime-local-input':
       return `<input type="text" class="fp-datetime" data-input-id="${id}" data-fp-value="${val}" placeholder="Live — current time" readonly>`;
+    case 'table': {
+      // A user-defined grid: columns AND rows are data (unlike blocks, whose
+      // fields come from the manifest). Cells carry data-field-id so typing
+      // defers the panel rebuild (isEditingBlockField) and focus survives the
+      // eventual repaint; the ':t:' segment keeps them out of the blocks
+      // field handler, which skips anything inside .table-input.
+      const t = normalizeTableValue(input.value) ?? { columns: [], rows: [] };
+      const cellAttrs = (r: number, c: number): string => `data-field-id="${id}:t:${r}:${c}"`;
+      const head = t.columns.map((c, ci) => `<th>
+          <input class="table-cell table-cell--head" ${cellAttrs(-1, ci)} value="${escape(c)}" aria-label="Column ${ci + 1} heading">
+          <button type="button" class="table-del-col" data-table-del-col="${ci}" aria-label="Remove column ${escape(c || String(ci + 1))}">&#x2715;</button>
+        </th>`).join('');
+      // Body cells are textareas, not inputs: cell copy is often a full
+      // paragraph (field-sizing: content auto-grows them; rows=1 is the floor).
+      const body = t.rows.map((row, ri) => `<tr>${row.map((cell, ci) =>
+          `<td><textarea class="table-cell" rows="1" ${cellAttrs(ri, ci)} aria-label="${escape(t.columns[ci] || `Column ${ci + 1}`)}, row ${ri + 1}">${escape(cell)}</textarea></td>`).join('')
+        }<td class="table-rowctl"><button type="button" class="table-del-row" data-table-del-row="${ri}" aria-label="Remove row ${ri + 1}">&#x2715;</button></td></tr>`).join('');
+      const grid = t.columns.length
+        ? `<div class="table-scroll"><table class="table-grid">
+            <thead><tr>${head}<th class="table-rowctl"></th></tr></thead><tbody>${body}</tbody></table></div>`
+        : `<p class="table-empty-hint">Paste a table copied from your spreadsheet, doc, or chat — or start one below.</p>`;
+      return `<div class="table-input" data-table-id="${id}">
+        ${grid}
+        <div class="table-toolbar">
+          <button type="button" class="table-btn" data-table-add-row${t.columns.length ? '' : ' disabled'}>+ Row</button>
+          <button type="button" class="table-btn" data-table-add-col>+ Column</button>
+          <span class="table-toolbar-gap"></span>
+          <button type="button" class="table-btn table-btn--pop" data-table-pop title="Pop out into a floating window" aria-label="Pop out into a floating window">&#x2922;</button>
+          <button type="button" class="table-btn" data-table-paste title="Replace with the table on your clipboard">Paste</button>
+          <button type="button" class="table-btn" data-table-copy${t.rows.length ? '' : ' disabled'} title="Copy as a table for Sheets, Docs, Slack&#8230;">Copy</button>
+        </div>
+        ${t.rows.length ? `<p class="table-count">${t.rows.length} row${t.rows.length === 1 ? '' : 's'} &middot; ${t.columns.length} column${t.columns.length === 1 ? '' : 's'}</p>` : ''}
+      </div>`;
+    }
     case 'blocks': {
       const items   = Array.isArray(input.value) ? input.value : [];
       const fields  = input.fields ?? [];

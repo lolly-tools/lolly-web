@@ -828,8 +828,8 @@
    borders, square inner corners, compact height) and this rule — 4 classes/attrs
    to their 1 — would otherwise win the cascade and hand them the full-size
    floating-label box. See the .vec-num block below for their real styling. */
-.input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(.vec-num),
-.input-row textarea {
+.input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(.vec-num):not(.table-cell),
+.input-row textarea:not(.table-cell) {
   width: 100%;
 
   background: hsl(var(--background) / .5);
@@ -875,8 +875,8 @@
   -moz-appearance: none;
 }
 
-.input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(.vec-num):hover,
-.input-row textarea:hover,
+.input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(.vec-num):not(.table-cell):hover,
+.input-row textarea:not(.table-cell):hover,
 .input-row select:hover {
   border-color: hsl(var(--ring) / 0.4);
 }
@@ -1296,6 +1296,71 @@ background-color:hsl(var(--background) / 1);
 .blocks-drop-hint:hover,
 .blocks-collapse-all:hover,
 .block-asset-trigger:hover{ border-color: hsl(var(--ring)); color: hsl(var(--foreground)); }
+
+/* ── Table input ─────────────────────────────────────────────────────────────
+   A user-defined grid (columns AND rows are data). Kept deliberately minimal:
+   the real batch editor is the user's spreadsheet — this is the paste target
+   and touch-up surface. The grid scrolls horizontally inside its own box so a
+   wide table never widens the sidebar. */
+.table-input { display: flex; flex-direction: column; gap: 6px; }
+.table-scroll { overflow-x: auto; max-width: 100%; border: 1px solid hsl(var(--border)); border-radius: var(--radius); }
+.table-grid { border-collapse: collapse; width: 100%; }
+.table-grid th, .table-grid td { padding: 0; border: 0; }
+.table-grid th { position: relative; }
+.table-grid td + td, .table-grid th + th { border-left: 1px solid hsl(var(--border) / 0.6); }
+.table-grid tbody tr { border-top: 1px solid hsl(var(--border) / 0.6); }
+/* Cells are FLAT — no per-cell border, radius, or shadow (the shared
+   `.input-row input` recipe opts out via :not(.table-cell)); the only rounding
+   is the outer .table-scroll box. Body cells are textareas that auto-grow to
+   their paragraph (field-sizing: content where supported). */
+.table-cell {
+  width: 100%; min-width: 72px; box-sizing: border-box; display: block;
+  padding: 4px 6px;
+  background: none; border: none; border-radius: 0; box-shadow: none;
+  color: hsl(var(--foreground));
+  font: inherit; font-size: 12px; line-height: 1.4;
+  resize: none;
+  field-sizing: content;
+}
+.table-cell--head { font-weight: 600; padding-right: 20px; white-space: nowrap; }
+.table-grid thead tr { background: hsl(var(--muted, var(--border)) / 0.35); }
+.table-cell:focus { outline: none; background: hsl(var(--ring) / 0.08); }
+.table-del-col {
+  position: absolute; top: 50%; right: 2px; transform: translateY(-50%);
+  width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; border-radius: var(--radius);
+  color: hsl(var(--muted-foreground)); font-size: 10px; opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.table-grid th:hover .table-del-col, .table-del-col:focus-visible { opacity: 1; }
+.table-rowctl { width: 24px; }
+.table-del-row {
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; border-radius: var(--radius);
+  color: hsl(var(--muted-foreground)); font-size: 10px; opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.table-grid tbody tr:hover .table-del-row, .table-del-row:focus-visible { opacity: 1; }
+.table-del-col:hover, .table-del-row:hover { color: hsl(var(--destructive, 0 72% 51%)); background: hsl(var(--destructive, 0 72% 51%) / 0.08); }
+.table-toolbar { display: flex; gap: 6px; align-items: center; }
+.table-toolbar-gap { flex: 1; }
+.table-btn {
+  padding: 5px 10px;
+  background: none;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  color: hsl(var(--muted-foreground));
+  font: inherit; font-size: 12px; cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.table-btn:hover:not(:disabled) { border-color: hsl(var(--ring)); color: hsl(var(--foreground)); }
+.table-btn:disabled { opacity: 0.45; cursor: default; }
+.table-empty-hint {
+  margin: 0; padding: 14px 12px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  color: hsl(var(--muted-foreground)); font-size: 12px; text-align: center;
+}
+.table-count { margin: 0; color: hsl(var(--muted-foreground)); font-size: 11px; }
 
 /* Drop-to-add: a blocks input that declares `dropToAdd` (e.g. logo-wall) becomes
    a drop zone. The empty-state prompt doubles as a "choose files" button; the
