@@ -243,3 +243,36 @@ test('emission is deterministic — the same markup exports byte-identical SVG',
     const b = await render(OUTFIT('Same'));
     assert.equal(a, b, 'two identical renders diverged — the output is not snapshot-safe');
   });
+
+// ── tiled conic backgrounds (the transparency checkerboard) ──────────────────
+
+test('a TILED conic background becomes one <pattern>, not an element-sized sweep',
+  { skip: SKIP }, async () => {
+    // The stage's transparency checkerboard is
+    //   repeating-conic-gradient(...) 50% / 2em 2em
+    // Until 2026-07-30 the walker passed the ELEMENT box to parseConicGradient and
+    // fanned wedges across it, ignoring background-size — so a 32px checkerboard
+    // rendered as a single 800x500 four-quadrant sweep. Not a raster, but silently
+    // WRONG PIXELS, which is worse. Chromium cannot help here either: PDF has no
+    // conic shading type, so the print path rasterises it (measured), which makes
+    // the walker the only way to get a crisp checkerboard.
+    const svg = await render(
+      `<div style="width:200px;height:120px;background:` +
+      `repeating-conic-gradient(rgba(255,255,255,.025) 0% 25%, rgba(0,0,0,.025) 0% 50%) 50% / 2em 2em"></div>`);
+    const pats = svg.match(/<pattern\b[^>]*>/g) ?? [];
+    assert.equal(pats.length, 1, 'expected exactly one <pattern> for the tiled conic');
+    assert.match(pats[0] as string, /width="32"/, 'the pattern tile must be the 2em background-size, not the element width');
+    assert.match(pats[0] as string, /height="32"/);
+    assert.equal((svg.match(/<image\b/g) ?? []).length, 0, 'a tiled conic must never rasterise');
+  });
+
+test('an UNTILED conic is still emitted as a wedge fan, unchanged', { skip: SKIP }, async () => {
+  // Guards the other side of the branch: no background-size means the sweep covers
+  // the element, and that path must keep behaving exactly as it did.
+  const svg = await render(
+    `<div style="width:200px;height:120px;background:` +
+    `repeating-conic-gradient(rgba(255,255,255,.5) 0% 25%, rgba(0,0,0,.5) 0% 50%)"></div>`);
+  assert.equal((svg.match(/<pattern\b/g) ?? []).length, 0, 'an untiled conic must not become a pattern');
+  assert.ok((svg.match(/<path\b/g) ?? []).length > 8, 'expected a wedge fan');
+  assert.equal((svg.match(/<image\b/g) ?? []).length, 0);
+});

@@ -56,7 +56,7 @@ import { exportSizeDriver } from './export-size.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { createNetAPI } from '../bridge/net.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
-import { mountFilmstrip, type Filmstrip } from '../lib/page-filmstrip.ts';
+import { mountFilmstrip, type Filmstrip, type FilmstripSide } from '../lib/page-filmstrip.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
 import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
 
@@ -688,6 +688,11 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // bounding what the editor shows. Excludes the chromeless editor/document layouts,
   // which own their own canvas presentation.
   const pagedDoc = tool.manifest.render.paged === true && !chromeless && !hideSidebar;
+  // Which edge the slide-sorter rail runs along. Left (a vertical rail) suits tall
+  // documents; "bottom" is the deck-strip shape for tools whose pages are wide and few,
+  // where a left rail would eat the width the page needs. Unknown values fall back to
+  // the default rather than producing a rail nothing styles.
+  const filmstripSide: FilmstripSide = tool.manifest.render.filmstrip === 'bottom' ? 'bottom' : 'left';
   // Whether the input aside is present. Chromeless modes drop it but aren't hideSidebar.
   const showAside = !hideSidebar && !chromeless;
   const noAside   = !showAside;   // no visible input aside (hidden-canvas OR editor)
@@ -2466,7 +2471,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         if (pagedDoc && outerEl && prevScrollTop) outerEl.scrollTop = prevScrollTop;
         // Slide-sorter filmstrip: mount on the first paged paint, refresh thereafter.
         if (pagedDoc && outerEl && canvasEl) {
-          if (!filmstrip) filmstrip = mountFilmstrip(outerEl, canvasEl, inputsEl);
+          if (!filmstrip) filmstrip = mountFilmstrip(outerEl, canvasEl, inputsEl, filmstripSide);
           else filmstrip.refresh();
         }
       } catch (err) {

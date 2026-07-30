@@ -2586,12 +2586,57 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     if (bgRgb) g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, rgbaCss(bgRgb)));
     if (bgImg && bgImg !== 'none') {
       const gid = ++uid;
+      // The positioning area (the padding box) and its origin. Hoisted out of the
+      // url() branch below because the CONIC branch needs it too — see the tile
+      // handling there.
+      const area = {
+        w: Math.max(0, w - num2(style, 'borderLeftWidth') - num2(style, 'borderRightWidth')),
+        h: Math.max(0, h - num2(style, 'borderTopWidth') - num2(style, 'borderBottomWidth')),
+      };
+      const ax = x + num2(style, 'borderLeftWidth'), ay = y + num2(style, 'borderTopWidth');
+
       const gradEl = buildLinearGradientEl(NS, bgImg, x, y, w, h, gid)
         || buildRadialGradientEl(NS, bgImg, x, y, w, h, gid);
-      const conic = gradEl ? null : parseConicGradient(bgImg, w, h);
+      // A conic gradient is sized by `background-size` like any other background
+      // image, so resolve the placement BEFORE parsing: a tiled conic (the
+      // transparency checkerboard is `repeating-conic-gradient(...) 50% / 2em 2em`)
+      // must be parsed at ONE TILE, not at the element box. Parsing at the box and
+      // fanning across it — which is what this did until 2026-07-30 — turns a 32px
+      // checkerboard into a single element-sized four-quadrant sweep: not a raster,
+      // but silently wrong pixels, which is worse.
+      // `intrinsic` is null: a gradient has no intrinsic size, so `auto` resolves to
+      // the area and the untiled case behaves exactly as before.
+      const conicPl = gradEl ? null
+        : placeBackground(style.backgroundSize, style.backgroundPosition, style.backgroundRepeat, area, null);
+      const conicTiles = Boolean(conicPl && conicPl.w > 0 && conicPl.h > 0
+        && (conicPl.repeatX || conicPl.repeatY)
+        && (conicPl.w < area.w - 0.5 || conicPl.h < area.h - 0.5));
+      const conic = gradEl ? null
+        : parseConicGradient(bgImg, conicTiles ? conicPl!.w : w, conicTiles ? conicPl!.h : h);
       if (gradEl) {
         defs.appendChild(gradEl);
         g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, `url(#svggrad-${gid})`));
+      } else if (conic && conicTiles && conicPl) {
+        // A TILED conic: emit one tile's fan inside a real <pattern>, mirroring the
+        // url() tiling branch below. Chromium cannot keep this vector through
+        // printToPDF at all (PDF has no conic/angular shading type — measured), so
+        // the walker is the only path that renders a checkerboard crisply.
+        const tile = conicFanEl(NS, conic, 0, 0, conicPl.w, conicPl.h, gid);
+        if (tile) {
+          const pid = `fcconicpat-${++uid}`;
+          const pat = document.createElementNS(NS, 'pattern');
+          pat.setAttribute('id', pid);
+          pat.setAttribute('patternUnits', 'userSpaceOnUse');
+          // Modulo the offset onto the repeating axes so the phase matches what the
+          // browser painted (background-position: 50% on a 2em tile is not 0).
+          pat.setAttribute('x', String(n2(ax + (conicPl.repeatX ? conicPl.x % conicPl.w : conicPl.x))));
+          pat.setAttribute('y', String(n2(ay + (conicPl.repeatY ? conicPl.y % conicPl.h : conicPl.y))));
+          pat.setAttribute('width', String(n2(conicPl.repeatX ? conicPl.w : Math.max(conicPl.w, area.w))));
+          pat.setAttribute('height', String(n2(conicPl.repeatY ? conicPl.h : Math.max(conicPl.h, area.h))));
+          pat.appendChild(tile);
+          defs.appendChild(pat);
+          g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, `url(#${pid})`));
+        }
       } else if (conic) {
         // SVG has no conic primitive, so the sweep is drawn as a fan of wedges. It is
         // the last thing on these pages that forced a raster: on the qr fixture a
@@ -2617,11 +2662,6 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           // hero: a 14px right-centred select chevron came out smeared across the
           // whole field, and this app's field primitive puts one on every select and
           // every checkbox.
-          const area = {
-            w: Math.max(0, w - num2(style, 'borderLeftWidth') - num2(style, 'borderRightWidth')),
-            h: Math.max(0, h - num2(style, 'borderTopWidth') - num2(style, 'borderBottomWidth')),
-          };
-          const ax = x + num2(style, 'borderLeftWidth'), ay = y + num2(style, 'borderTopWidth');
           const pl = placeBackground(style.backgroundSize, style.backgroundPosition,
             style.backgroundRepeat, area, await intrinsicSize(href));
 
