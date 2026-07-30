@@ -33,6 +33,11 @@ import '../styles/picker.css';   // async CSS chunk (lazy view — not on the la
 import DOMPurify from 'dompurify';
 import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
+// Format + embeddability rules — pure and unit-tested in ./picker-formats.test.ts.
+import {
+  extFromMime, audioFormatOf, formatsForType, isEmbeddable, imageFormatSeed,
+  relTime as relTimeAt, VIDEO_FMTS, RASTER_MOTION_FMTS, IMG_FORMATS,
+} from './picker-formats.ts';
 import { fmtBytes } from '../lib/format.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -1889,8 +1894,6 @@ async function render(
 
 // Video containers (need a <video>) vs animated rasters (animate in an <img>). A
 // motion slot offers both; a still/image slot offers animated rasters but not video.
-const VIDEO_FMTS = new Set(['webm', 'mp4']);
-const RASTER_MOTION_FMTS = new Set(['gif', 'apng']);
 
 // Constrain the offered child-render formats to the slot's asset type. A 'vector'
 // slot semantically wants vector (e.g. an inline-recolourable logo) → restrict to
@@ -1900,52 +1903,10 @@ const RASTER_MOTION_FMTS = new Set(['gif', 'apng']);
 // <img>), but not <video>-only formats (webm/mp4 need the video slot). assetType
 // constrains the LIBRARY picker, not what a tool render can produce; a constraint that
 // empties falls back to the full list.
-function formatsForType(formats: readonly string[], type: string | undefined): readonly string[] {
-  if (type === 'vector') {
-    const svgOnly = formats.filter(f => f === 'svg');
-    return svgOnly.length ? svgOnly : formats;
-  }
-  if (type === 'video' || type === 'lottie') {
-    const motion = formats.filter(f => VIDEO_FMTS.has(f) || RASTER_MOTION_FMTS.has(f));
-    return motion.length ? motion : formats;
-  }
-  const kept = formats.filter(f => !VIDEO_FMTS.has(f));
-  return kept.length ? kept : formats;
-}
 
-// Image formats a composed tool render can take (mirrors compose.js IMAGE_FORMATS).
-const IMG_FORMATS = new Set(['svg', 'png', 'jpg', 'jpeg', 'webp']);
 
-// Can this catalog tool be rendered to an embeddable image? It must be exportable and
-// emit at least one image format (and SVG specifically for a vector slot). Mirrors the
-// gate compose uses — described tools that only export e.g. pdf/ics are dropped, as are
-// non-exportable transform utilities (strip-data, compress-pdf).
-function isEmbeddable(t: PickerTool | undefined, needsSvg: boolean): boolean {
-  if (!t || t.exportable !== true || !Array.isArray(t.formats)) return false;
-  const fmts = t.formats.map(f => String(f).toLowerCase());
-  return needsSvg ? fmts.includes('svg') : fmts.some(f => IMG_FORMATS.has(f));
-}
 
-// A saved session records its last export format; seed the render card with it only
-// when it's an image format (else let describeUrl choose, defaulting to SVG).
-function imageFormatSeed(fmt: unknown): string | undefined {
-  const f = String(fmt ?? '').toLowerCase();
-  return IMG_FORMATS.has(f) ? (f === 'jpeg' ? 'jpg' : f) : undefined;
-}
 
-// Compact relative time for a saved session ("3d ago"). Browser-only (Date.now).
-function relTime(iso: string | undefined): string {
-  const ts = iso ? Date.parse(iso) : NaN;
-  if (Number.isNaN(ts)) return '';
-  const s = Math.max(0, (Date.now() - ts) / 1000);
-  if (s < 60) return t('just now');
-  const m = s / 60; if (m < 60) return t('{n}m ago', { n: Math.floor(m) });
-  const h = m / 60; if (h < 24) return t('{n}h ago', { n: Math.floor(h) });
-  const d = h / 24; if (d < 7)  return t('{n}d ago', { n: Math.floor(d) });
-  const w = d / 7;  if (w < 5)  return t('{n}w ago', { n: Math.floor(w) });
-  const mo = d / 30; if (mo < 12) return t('{n}mo ago', { n: Math.floor(mo) });
-  return t('{n}y ago', { n: Math.floor(d / 365) });
-}
 
 // A muted, looping, autoplaying <video> thumbnail. muted + playsinline are
 // mandatory for the browser to allow autoplay; preload="metadata" keeps a grid of
@@ -2256,7 +2217,7 @@ function sessionCard(s: PickerSession): string {
     <button type="button" class="asset-picker-card asset-picker-sessitem" data-session-slot="${escapeHtml(s.slot)}" title="${escapeHtml(name)}">
       ${sessionThumb(s.thumb, s.toolIcon)}
       <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
-      <span class="asset-picker-sessitem-when">${escapeHtml(relTime(s.updatedAt))}</span>
+      <span class="asset-picker-sessitem-when">${escapeHtml(relTimeAt(s.updatedAt, Date.now(), t))}</span>
     </button>
   `;
 }
@@ -2602,20 +2563,6 @@ function videoFormatOf(file: File): string {
 
 // The stored format string for an audio track. Prefer the extension (the OS-supplied
 // MIME for audio is often blank or generic), falling back to a MIME sniff. .oga → ogg.
-function audioFormatOf(file: File): string {
-  const n = file.name.toLowerCase(), t = file.type.toLowerCase();
-  const m = n.match(/\.(mp3|wav|ogg|oga|opus|m4a|aac|flac)$/);
-  if (m) return m[1] === 'oga' ? 'ogg' : m[1]!;
-  if (/mpeg|mp3/.test(t)) return 'mp3';
-  if (/wav/.test(t)) return 'wav';
-  if (/opus/.test(t)) return 'opus';
-  if (/ogg/.test(t)) return 'ogg';
-  if (/aac/.test(t)) return 'aac';
-  if (/flac/.test(t)) return 'flac';
-  if (/mp4|m4a/.test(t)) return 'm4a';
-  const ext = extFromMime(file.type);
-  return ext && ext !== 'bin' ? ext : 'mp3';
-}
 
 // How long a metadata probe may block an upload. An ingest probe is a nicety (it
 // only feeds a badge and the timeline's default clip length), so it must never be
@@ -3132,21 +3079,6 @@ function readDimensions(file: Blob): Promise<{ width?: number; height?: number }
   });
 }
 
-function extFromMime(mime: string): string {
-  if (mime.includes('json')) return 'json';
-  if (mime.includes('svg')) return 'svg';
-  if (mime.includes('png')) return 'png';
-  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
-  if (mime.includes('webp')) return 'webp';
-  if (mime.includes('gif')) return 'gif';
-  if (mime.includes('avif')) return 'avif';
-  if (mime.includes('heic') || mime.includes('heif')) return 'heic';
-  if (mime.includes('tiff')) return 'tiff';
-  if (mime.includes('webm')) return 'webm';
-  if (mime.includes('quicktime')) return 'mov';
-  if (mime.includes('mp4') || mime.includes('m4v')) return 'mp4';
-  return 'bin';
-}
 
 // Swap a filename's extension for `ext` (e.g. "photo.jpg" -> "photo.webp").
 // Appends if there was no extension; collapses an already-matching one.
