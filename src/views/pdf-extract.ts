@@ -26,6 +26,7 @@ import { joinPageText } from '@lolly/engine';
 import type { PageText, HiddenTextFinding } from '@lolly/engine';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { t } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -81,22 +82,40 @@ const nPlaces = (n: number): string => (n === 1 ? t('1 place') : t('{n} places',
 
 // ── rendering ─────────────────────────────────────────────────────────────────
 
+/**
+ * The page picture beside the prose. Rendered LAZILY (an IntersectionObserver
+ * fills it as it approaches the viewport — a 400-page document must not pay for
+ * 400 SVG renders up front) and vector: the same `pageToSvg` path design-import
+ * uses, so what you see is the actual page, not a raster approximation.
+ * `user-select: none` in CSS keeps a drag-select over the report picking up
+ * words only — the picture is a duplicate of the text beside it, which is also
+ * why it is aria-hidden.
+ */
+const pageArtMarkup = (index: number): string =>
+  `<figure class="pdfx-page-art" data-page-art="${index}" aria-hidden="true"></figure>`;
+
 function pageMarkup(p: PageText, index: number): string {
   if (p.scanned) {
     return `
       <section class="pdfx-page pdfx-page--scan" data-page="${index}">
         <h3 class="pdfx-page-n">${t('Page {n}', { n: index + 1 })}</h3>
-        <p class="pdfx-scan">
-          <span class="pdfx-scan-icon" aria-hidden="true">${icon('camera', { size: 20 })}</span>
-          ${t('This page is a scanned image. It holds a picture of text, not text, so there is nothing to extract without OCR.')}
-        </p>
+        <div class="pdfx-page-cols">
+          <p class="pdfx-scan">
+            <span class="pdfx-scan-icon" aria-hidden="true">${icon('camera', { size: 20 })}</span>
+            ${t('This page is a scanned image. It holds a picture of text, not text, so there is nothing to extract without OCR.')}
+          </p>
+          ${pageArtMarkup(index)}
+        </div>
       </section>`;
   }
   if (!p.blocks.length) {
     return `
       <section class="pdfx-page pdfx-page--empty" data-page="${index}">
         <h3 class="pdfx-page-n">${t('Page {n}', { n: index + 1 })}</h3>
-        <p class="pdfx-empty">${t('No text on this page.')}</p>
+        <div class="pdfx-page-cols">
+          <p class="pdfx-empty">${t('No text on this page.')}</p>
+          ${pageArtMarkup(index)}
+        </div>
       </section>`;
   }
 
@@ -122,8 +141,31 @@ function pageMarkup(p: PageText, index: number): string {
         <span class="pdfx-page-meta">${escape(nWords(wordCount(p)))}${notes.length ? ` · ${escape(notes.join(' · '))}` : ''}</span>
         <button type="button" class="btn btn--ghost pdfx-page-copy" data-copy-page="${index}">${t('Copy')}</button>
       </h3>
-      <div class="pdfx-page-body">${body}</div>
+      <div class="pdfx-page-cols">
+        <div class="pdfx-page-body">${body}</div>
+        ${pageArtMarkup(index)}
+      </div>
     </section>`;
+}
+
+/**
+ * The floating page strip — quick nav, docked to the right centre of the view.
+ *
+ * One button per page, filled with the SAME lazily-rendered SVG the page art
+ * uses (the handle caches per page, so a thumb and its full-size twin cost one
+ * render between them). Clicking scrolls the reading column to that page; the
+ * button carrying `.is-current` follows the scroll position. Not rendered for a
+ * single page — one thumbnail is not navigation.
+ */
+function thumbsMarkup(pages: PageText[]): string {
+  if (pages.length < 2) return '';
+  const thumbs = pages.map((_, i) => `
+    <button type="button" class="pdfx-thumb${i ? '' : ' is-current'}" data-goto="${i}"
+      aria-label="${escape(t('Page {n}', { n: i + 1 }))}">
+      <span class="pdfx-thumb-art" data-thumb-art="${i}" aria-hidden="true"></span>
+      <span class="pdfx-thumb-n">${i + 1}</span>
+    </button>`).join('');
+  return `<nav class="pdfx-thumbs" data-thumbs aria-label="${escape(t('Pages'))}">${thumbs}</nav>`;
 }
 
 /**
@@ -358,6 +400,7 @@ function resultMarkup(x: Extracted): string {
       ${imagesMarkup(x)}
       ${fontsMarkup(x)}
       ${attachmentsMarkup(x)}
+      ${thumbsMarkup(x.pages)}
     </div>`;
 }
 
@@ -394,9 +437,173 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   const out = viewEl.querySelector<HTMLElement>('[data-out]')!;
 
   let current: Extracted | null = null;
+  /** The open document — kept for the lazy per-page SVG renders. */
+  let curHandle: PdfHandle | null = null;
+  /** Memoised page → object-URL renders, so page art and its thumb share one. */
+  let artPromises = new Map<number, Promise<string | null>>();
+  let observers: Array<{ disconnect(): void }> = [];
+
+  function unwire(): void {
+    for (const o of observers) o.disconnect();
+    observers = [];
+  }
+
+  /**
+   * Render page `i` to a self-contained SVG object URL, once. A stale resolve
+   * (the report was replaced mid-render) returns null WITHOUT minting a URL, so
+   * nothing leaks past `releasePreviews`.
+   *
+   * The SVG is destined for an `<img>`, where the browser loads no external
+   * resources and no document fonts — a bare `<text>` run would paint in a
+   * generic fallback face at the original face's positions. So text is outlined
+   * to real paths through the app's shaper, with `embedFonts` inlining an
+   * @font-face for any run the outliner could not resolve — the same recipe as
+   * lib/pdf-vector-shot.ts, whose comment explains it, for the same destination.
+   */
+  function pageArtUrl(i: number): Promise<string | null> {
+    let p = artPromises.get(i);
+    if (!p) {
+      const h = curHandle;
+      p = (async () => {
+        if (!h) return null;
+        try {
+          const { makeTextOutliner, embedFonts } = await import('../lib/pdf-vector-shot.ts');
+          const page = await h.pageToSvg(i, {
+            outlineText: makeTextOutliner([], host.text),
+            // Terminal <img> output, never re-exported — safe to hoist repeats.
+            dedupePaths: true,
+          });
+          const svg = await embedFonts(page.svg, []);
+          if (curHandle !== h) return null;
+          const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+          previewUrls.push(url);
+          return url;
+        } catch (err) {
+          host.log('warn', 'pdf-extract: page render failed', { page: i, error: (err as Error)?.message });
+          return null;
+        }
+      })();
+      artPromises.set(i, p);
+    }
+    return p;
+  }
+
+  /**
+   * Wire the lazy renders and the current-page highlight for a fresh report.
+   *
+   * Two observers: one fills page art and strip thumbs as they near their
+   * viewport (`rootMargin` pre-renders a screen ahead so the picture is usually
+   * there when the page is), one watches which page section crosses the middle
+   * band of the screen and lights its thumb.
+   */
+  function wirePages(): void {
+    unwire();
+    const strip = out.querySelector<HTMLElement>('[data-thumbs]');
+
+    // The sticky action bar wraps (narrow viewports, largeText), so its real
+    // height is measured into a custom property rather than hard-coded — the
+    // scroll-margin on pages and the sticky offset on page art both track it.
+    const bar = out.querySelector<HTMLElement>('.pdfx-bar');
+    if (bar) {
+      const ro = new ResizeObserver(() => {
+        const top = Number.parseFloat(getComputedStyle(bar).top) || 0;
+        out.style.setProperty('--pdfx-bar-bottom', `${Math.ceil(top + bar.offsetHeight)}px`);
+      });
+      ro.observe(bar);
+      observers.push(ro);
+    }
+
+    const artIo = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const el = en.target as HTMLElement;
+        artIo.unobserve(el);
+        const i = Number(el.dataset.pageArt ?? el.dataset.thumbArt);
+        void pageArtUrl(i).then((url) => {
+          if (!el.isConnected) return;
+          if (!url) { el.hidden = true; return; }
+          el.innerHTML = `<img src="${escape(url)}" alt="" decoding="async">`;
+        });
+      }
+    }, { rootMargin: '600px 0px' });
+    // The strip is its own scroller, so its thumbs observe against it — a thumb
+    // far down a 200-page strip renders when scrolled to, not on load.
+    const thumbIo = strip ? new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const el = en.target as HTMLElement;
+        thumbIo!.unobserve(el);
+        void pageArtUrl(Number(el.dataset.thumbArt)).then((url) => {
+          if (!url || !el.isConnected) return;
+          el.innerHTML = `<img src="${escape(url)}" alt="" decoding="async">`;
+        });
+      }
+    }, { root: strip, rootMargin: '200px 0px' }) : null;
+
+    for (const el of out.querySelectorAll<HTMLElement>('[data-page-art]')) artIo.observe(el);
+    if (thumbIo) for (const el of out.querySelectorAll<HTMLElement>('[data-thumb-art]')) thumbIo.observe(el);
+    observers.push(artIo);
+    if (thumbIo) observers.push(thumbIo);
+
+    if (strip) {
+      const pageCount = out.querySelectorAll('.pdfx-page').length;
+      let lastCur = -1;
+      const setCurrent = (cur: number): void => {
+        if (cur === lastCur) return;
+        lastCur = cur;
+        for (const th of strip.querySelectorAll<HTMLElement>('.pdfx-thumb')) {
+          const on = Number(th.dataset.goto) === cur;
+          th.classList.toggle('is-current', on);
+          // Keep the lit thumb inside the strip's own scroll window — but only
+          // nudge the strip, never the page (scrollIntoView would move both).
+          if (on && (th.offsetTop < strip.scrollTop
+            || th.offsetTop + th.offsetHeight > strip.scrollTop + strip.clientHeight)) {
+            strip.scrollTop = th.offsetTop - strip.clientHeight / 2 + th.offsetHeight / 2;
+          }
+        }
+      };
+
+      // The view is its own scroller (.pdfx-view { overflow-y: auto }); fall
+      // back to the document for safety if that ever changes.
+      const scroller = (): Element =>
+        (viewEl.scrollHeight > viewEl.clientHeight ? viewEl : document.scrollingElement ?? viewEl);
+      const atEnd = (): boolean => {
+        const s = scroller();
+        return s.scrollTop + s.clientHeight >= s.scrollHeight - 4;
+      };
+
+      const visible = new Set<number>();
+      const apply = (): void => {
+        // At the bottom of the scroller the reader is on the LAST page, even
+        // when it is too short to ever reach the middle band — without this its
+        // thumb can never light and clicking it appears to do nothing.
+        if (atEnd()) { setCurrent(pageCount - 1); return; }
+        if (visible.size) setCurrent(Math.min(...visible));
+      };
+
+      const curIo = new IntersectionObserver((entries) => {
+        for (const en of entries) {
+          const i = Number((en.target as HTMLElement).dataset.page);
+          if (en.isIntersecting) visible.add(i);
+          else visible.delete(i);
+        }
+        apply();
+      }, { rootMargin: '-45% 0px -45% 0px' });
+      for (const el of out.querySelectorAll<HTMLElement>('.pdfx-page')) curIo.observe(el);
+      observers.push(curIo);
+
+      // Capture-phase, so it hears the view's own scroller as well as the
+      // document. Cheap: reads two geometry values; setCurrent exits on no-op.
+      const onScroll = (): void => apply();
+      document.addEventListener('scroll', onScroll, { passive: true, capture: true });
+      observers.push({ disconnect: () => document.removeEventListener('scroll', onScroll, { capture: true }) });
+    }
+  }
 
   function fail(message: string): void {
     current = null;
+    curHandle = null;
+    unwire();
     out.hidden = false;
     drop.hidden = false;
     out.innerHTML = `<p class="pdfx-error">${escape(message)}</p>`;
@@ -473,18 +680,25 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     catch (err) { host.log('warn', 'pdf-extract: attachment scan failed', { error: (err as Error)?.message }); }
 
     releasePreviews();
+    unwire();
     current = {
       fileName: file.name, pages, truncated: Math.max(0, total - count), hidden,
       fonts, images, imagesSkipped, attachments, vectors,
     };
+    curHandle = handle;
+    artPromises = new Map();
     drop.hidden = true;
     out.innerHTML = resultMarkup(current);
+    wirePages();
     playSfx('land');
   }
 
   function reset(): void {
     releasePreviews();
+    unwire();
     current = null;
+    curHandle = null;
+    artPromises = new Map();
     out.hidden = true;
     out.innerHTML = '';
     drop.hidden = false;
@@ -588,6 +802,10 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       tab.classList.toggle('is-active', on);
       tab.setAttribute('aria-selected', String(on));
     }
+    // The strip navigates the reading column, so it rides with the Text panel
+    // only — floating page numbers over the Fonts list would point at nothing.
+    const strip = out.querySelector<HTMLElement>('[data-thumbs]');
+    if (strip) strip.hidden = id !== 'text';
   }
 
   function saveBytes(bytes: Uint8Array, filename: string, mime: string): void {
@@ -600,6 +818,13 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
 
     const tab = el.closest<HTMLElement>('[data-tab]');
     if (tab?.dataset.tab) { showPanel(tab.dataset.tab); return; }
+
+    const goto = el.closest<HTMLElement>('[data-goto]');
+    if (goto) {
+      out.querySelector(`.pdfx-page[data-page="${Number(goto.dataset.goto)}"]`)
+        ?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+      return;
+    }
 
     const pageBtn = el.closest<HTMLElement>('[data-copy-page]');
     if (pageBtn) {

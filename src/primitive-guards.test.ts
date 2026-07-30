@@ -684,7 +684,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/free-canvas.ts': 40,
   'views/gallery.ts': 6,
   'views/multi-edit.ts': 3,
-  'views/pdf-extract.ts': 4,
+  'views/pdf-extract.ts': 6,
   'views/pdf-import.ts': 1,
   'views/picker.ts': 27,
   'views/profile.ts': 20,

@@ -20,7 +20,9 @@ import { resolveVectorFont, type VectorFont } from '../bridge/font-registry.ts';
 import type { CullWindow } from '../../../../engine/src/pdf-svg.ts';
 
 /** The slice of the host this module needs: the HarfBuzz text shaper. */
-interface TextApi { toPath: (o: unknown) => Promise<{ d: string; notdef?: number }> }
+/* Method shorthand on purpose: it checks bivariantly, so the host bridge's real
+   TextAPI (whose toPath takes TextToPathOpts, not unknown) is assignable. */
+interface TextApi { toPath(o: unknown): Promise<{ d: string; notdef?: number }> }
 interface OutlineHost { text?: TextApi }
 
 export interface VectorShotResult {
@@ -117,7 +119,7 @@ async function toDataUri(url: string): Promise<string | null> {
  * per-print subset naming); families with no match are left on their
  * sans-serif fallback and reported as warnings.
  */
-async function embedFonts(svg: string, warnings: string[]): Promise<string> {
+export async function embedFonts(svg: string, warnings: string[]): Promise<string> {
   const families = new Set<string>();
   for (const m of svg.matchAll(/font-family="([^",]+)/g)) families.add(m[1]!.trim());
 
@@ -233,7 +235,7 @@ function matchRaster(rasters: DomRaster[], rect: { x: number; y: number; w: numb
  * hundreds of runs. Returns per-line path `d`, or null to keep the <text>
  * fallback (font unresolved, or any glyph uncovered by the whole fallback chain).
  */
-function makeTextOutliner(warnings: string[], textApi?: TextApi): (run: { text: string; fontFamily: string; fontWeight: string | number; fontSize: number }) => Promise<string[] | null> {
+export function makeTextOutliner(warnings: string[], textApi?: TextApi): (run: { text: string; fontFamily: string; fontWeight: string | number; fontSize: number }) => Promise<string[] | null> {
   if (!textApi?.toPath) { warnings.push('no text shaper — text kept as <text>'); return async () => null; }
 
   const fontCache = new Map<string, VectorFont | null>();

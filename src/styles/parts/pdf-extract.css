@@ -223,7 +223,14 @@
 
 /* ─── pages ─────────────────────────────────────────────────────────────────── */
 
-.pdfx-page { padding: 1.5rem 0; border-bottom: 1px solid var(--line, currentColor); }
+.pdfx-page {
+  padding: 1.5rem 0; border-bottom: 1px solid var(--line, currentColor);
+  /* Thumb-strip jumps land under the sticky action bar without this. The bar
+     WRAPS on narrow viewports and grows under largeText, so its measured bottom
+     edge arrives as --pdfx-bar-bottom (ResizeObserver in pdf-extract.ts); the
+     fixed fallback only covers the beat before the first measurement. */
+  scroll-margin-top: calc(var(--pdfx-bar-bottom, 8rem) + 0.5rem);
+}
 .pdfx-page:last-child { border-bottom: 0; }
 
 .pdfx-page-n {
@@ -254,6 +261,99 @@
 .pdfx-b--h[data-level="4"],
 .pdfx-b--h[data-level="5"],
 .pdfx-b--h[data-level="6"] { font-size: calc(1rem * var(--a11y-fs)); }
+
+/* ─── page art (the picture of the page beside its prose) ───────────────────── */
+
+.pdfx-page-cols {
+  display: grid; gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) clamp(150px, 24%, 240px);
+}
+/* A page whose SVG render failed hides its figure — collapse the track too, or
+   the prose stays squeezed against a permanently blank right gutter. */
+.pdfx-page-cols:has(.pdfx-page-art[hidden]) { grid-template-columns: minmax(0, 1fr); }
+/* The figure stretches to the row height (default grid alignment) so the img
+   inside it can STICK while a long page's prose scrolls past — sticky needs
+   room to travel, and an align-self:start item has none. */
+.pdfx-page-art {
+  margin: 0; min-width: 0;
+  /* The picture duplicates the words beside it. A drag-select over the report
+     must come out as text only, so neither the art nor its box is selectable. */
+  user-select: none; -webkit-user-select: none;
+}
+.pdfx-page-art[hidden] { display: none; }
+.pdfx-page-art img {
+  /* Clears the sticky action bar at its MEASURED height (see scroll-margin-top
+     note on .pdfx-page). */
+  position: sticky; top: calc(var(--pdfx-bar-bottom, 8rem) + 0.5rem);
+  display: block; width: 100%; height: auto;
+  /* A PDF page is paper: white whatever the app theme, so text and artwork
+     drawn for a white page stay legible in dark mode. */
+  background: #fff;
+  border: 1px solid var(--line, currentColor);
+  border-radius: var(--radius-sm, 6px);
+}
+
+@media (max-width: 760px) {
+  .pdfx-page-cols { grid-template-columns: 1fr; gap: 0.9rem; }
+  /* On one column the picture leads — a small page image above its prose reads
+     as a header, and sticky has nothing useful to do. */
+  .pdfx-page-art { order: -1; max-width: 200px; }
+  .pdfx-page-art img { position: static; }
+}
+
+/* ─── thumbnail strip (quick nav, docked right-centre) ──────────────────────── */
+
+.pdfx-thumbs {
+  position: fixed; inset-inline-end: 0.75rem; top: 50%; transform: translateY(-50%);
+  z-index: 3;
+  display: flex; flex-direction: column; gap: 0.3rem;
+  max-height: min(70vh, 36rem); overflow-y: auto;
+  padding: 0.4rem;
+  border: 1px solid var(--line, currentColor);
+  border-radius: var(--radius-md, 10px);
+  background: color-mix(in oklab, var(--surface, canvas) 88%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  user-select: none; -webkit-user-select: none;
+  scrollbar-width: none;
+}
+.pdfx-thumbs::-webkit-scrollbar { display: none; }
+.pdfx-thumbs[hidden] { display: none; }
+
+.pdfx-thumb {
+  display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+  width: 3.4rem; padding: 0.25rem;
+  border: 0; border-radius: var(--radius-sm, 6px);
+  background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.pdfx-thumb:hover,
+.pdfx-thumb:focus-visible { background: var(--surface-2, transparent); }
+.pdfx-thumb.is-current {
+  background: color-mix(in oklab, var(--brand-primary, currentColor) 16%, transparent);
+}
+.pdfx-thumb-art {
+  display: grid; place-items: center;
+  width: 100%; height: 3.1rem; overflow: hidden;
+  background: #fff; /* paper, same as the full-size art */
+  border: 1px solid var(--line, currentColor);
+  border-radius: 3px;
+}
+.pdfx-thumb-art img { max-width: 100%; max-height: 100%; display: block; }
+.pdfx-thumb-n { font-size: calc(0.68rem * var(--a11y-fs)); opacity: 0.7; }
+
+/* Keep the reading column clear of the strip: while the strip EXISTS, cap the
+   layout a strip-width short of the viewport on BOTH sides (margin:auto keeps
+   it centred, so the cap must be symmetric). Keyed on existence, not [hidden]:
+   the strip hides on non-text tabs, and a cap that came and went with it would
+   reflow the whole column under the cursor on every tab click. The reserved
+   margin is harmless while Images/Fonts are showing. */
+.pdfx-view:has([data-thumbs]) .platform-layout {
+  max-width: min(1080px, calc(100vw - 12rem));
+}
+@media (max-width: 760px) {
+  /* No room beside a one-column layout — the strip would sit ON the prose. */
+  .pdfx-thumbs { display: none; }
+  .pdfx-view:has([data-thumbs]) .platform-layout { max-width: min(1080px, 94vw); }
+}
 
 .pdfx-scan,
 .pdfx-empty {
