@@ -5,11 +5,11 @@ This file exists so you can find the code for a feature without reading all of i
 The counts below are GENERATED — `npm run build:web-src-readme`, checked in CI by `npm run check:web-src-readme`, so they cannot rot the way the hand-measured ones did. They convey proportion; don't cite them as an API.
 
 <!-- web-src-dirs:start -->
-Roughly 175,000 lines of TypeScript, tests included, and 25,000 lines of CSS.
+Roughly 176,000 lines of TypeScript, tests included, and 25,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 45 files, 53,806 lines | 20 files, 12,998 lines | none |
+| `views/` | 46 files, 53,965 lines | 21 files, 13,197 lines | none |
 | `lib/` | 144 files, 34,472 lines | 54 files, 11,059 lines | 6 files, 1,033 lines |
 | `bridge/` | 56 files, 25,471 lines | 36 files, 8,803 lines | none |
 | `components/` | 28 files, 10,974 lines | 6 files, 1,904 lines | none |
@@ -58,7 +58,7 @@ Do not be ambushed by these. The largest source files, by line count:
 |---|---|---|
 | 8,780 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
 | 6,834 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
-| 3,564 | `views/catalog.ts` | none |
+| 3,564 | `views/catalog.ts` | partial — the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 3,369 | `views/tool.ts` | none |
 | 3,156 | `views/picker.ts` | `picker-initial-tab.test.ts` only |
 | 3,087 | `views/timeline-panel.ts` | yes |
@@ -78,7 +78,7 @@ Do not be ambushed by these. The largest source files, by line count:
 | 1,477 | `pro/index.ts` | yes |
 <!-- web-src-largest:end -->
 
-The pattern is consistent and worth internalising: the **pure helpers** extracted out of a big view are well covered (`free-canvas-math.ts`, `timeline-math.ts`, `valid-verdict.ts`, `export-css.ts`, `text-svg.ts`, `svg-ir.ts`), while the DOM-mounting bodies of the big views mostly are not. When you change one of the uncovered files, the cheapest way to get coverage is to extract the logic into a sibling pure module and test that, which is how the covered ones came to exist.
+The pattern is consistent and worth internalising: the **pure helpers** extracted out of a big view are well covered (`free-canvas-math.ts`, `timeline-math.ts`, `valid-verdict.ts`, `export-css.ts`, `text-svg.ts`, `svg-ir.ts`, `catalog-filter.ts`), while the DOM-mounting bodies of the big views mostly are not. When you change one of the uncovered files, the cheapest way to get coverage is to extract the logic into a sibling pure module and test that, which is how the covered ones came to exist.
 
 Largest stylesheets, for the same reason: `styles/parts/tool.css` (2,850), `gallery.css` (1,654), `brand-studio.css` (1,280), `color-lab.css` (1,265), `styles/picker.css` (1,188), `valid.css` (1,166) and `tool-chrome.css` (1,030).
 
