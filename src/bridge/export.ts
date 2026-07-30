@@ -2899,8 +2899,18 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           return;
         }
         try {
+          // Inline EVERY scheme, not just data:/blob:. An http/relative src was
+          // previously written straight into `<image href="/catalog/…">`, and an SVG
+          // consumed as `<img src="shot.svg">` — which is how /info serves every docs
+          // screenshot, and how any exported SVG is normally viewed — runs in secure
+          // static mode with NO network access, so that image renders BLANK and the
+          // file is not self-contained. The sibling CSS-url branch already fetches
+          // and inlines http (cssUrlToHref, :1651), so this was the `<img>` branch
+          // being inconsistent with it rather than a deliberate exemption.
+          // Falls back to the raw src on failure (cross-origin without CORS, 404),
+          // which is exactly the old behaviour — never worse than before.
           const dataUrl0 = src.startsWith('data:') ? src
-            : src.startsWith('blob:') ? await blobToDataUrl(src) : src;
+            : await blobToDataUrl(src).catch(() => src);
           // CSS filter() (e.g. grayscale/contrast presets) is baked into the bitmap
           // via the browser so the vector image matches screen/PNG instead of
           // exporting full-colour. No-op + graceful fallback when filter is none.
@@ -5717,8 +5727,18 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
         if (svgEl) return;
       }
         try {
+          // Inline EVERY scheme, not just data:/blob:. An http/relative src was
+          // previously written straight into `<image href="/catalog/…">`, and an SVG
+          // consumed as `<img src="shot.svg">` — which is how /info serves every docs
+          // screenshot, and how any exported SVG is normally viewed — runs in secure
+          // static mode with NO network access, so that image renders BLANK and the
+          // file is not self-contained. The sibling CSS-url branch already fetches
+          // and inlines http (cssUrlToHref, :1651), so this was the `<img>` branch
+          // being inconsistent with it rather than a deliberate exemption.
+          // Falls back to the raw src on failure (cross-origin without CORS, 404),
+          // which is exactly the old behaviour — never worse than before.
           const dataUrl0 = src.startsWith('data:') ? src
-            : src.startsWith('blob:') ? await blobToDataUrl(src) : src;
+            : await blobToDataUrl(src).catch(() => src);
           // Bake any CSS filter() into the bitmap (browser canvas) so PDF matches
           // screen/PNG; no-op + graceful fallback when filter is none.
           const dataUrl = await bakeImageFilter(el, dataUrl0, style.filter);

@@ -276,3 +276,28 @@ test('an UNTILED conic is still emitted as a wedge fan, unchanged', { skip: SKIP
   assert.ok((svg.match(/<path\b/g) ?? []).length > 8, 'expected a wedge fan');
   assert.equal((svg.match(/<image\b/g) ?? []).length, 0);
 });
+
+// ── self-containment: every <image> href must be inlinable ───────────────────
+
+test('an <img> with a PATH src is inlined as a data: URI, not left as a fetchable href',
+  { skip: SKIP }, async () => {
+    // A docs screenshot is served as `<img src="/info/shots/x.svg">`, and an SVG
+    // consumed that way runs in SECURE STATIC MODE with no network access — so a
+    // bare `href="/catalog/thumb.png"` renders blank and the file is not
+    // self-contained. Until 2026-07-30 only data: and blob: were inlined; an
+    // http/relative src fell through verbatim. The sibling CSS-url branch
+    // (cssUrlToHref) already fetched http, so this was an inconsistency, not a
+    // deliberate exemption. It is the hard blocker on migrating the docs corpus to
+    // the walker: any shot framing a catalogue thumbnail would lose its images.
+    const pg = await page();
+    await pg.route('**/thumb-fixture.png', (route: any) => route.fulfill({
+      status: 200, contentType: 'image/png',
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'),
+    }));
+    const svg = await render('<img src="/thumb-fixture.png" width="40" height="30">');
+    assert.match(svg, /<image[^>]*href="data:image\//, 'the path src must be inlined as a data: URI');
+    assert.doesNotMatch(svg, /href="https?:\/\/[^"]*thumb-fixture/, 'no fetchable href may survive');
+    assert.doesNotMatch(svg, /href="\/thumb-fixture/, 'no root-relative href may survive');
+  });
