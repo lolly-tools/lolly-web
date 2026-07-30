@@ -2866,6 +2866,17 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       const clone = el.cloneNode(true) as Element;
       stripCommentNodes(clone);
       unscopeStyleEls(clone);
+      // `currentColor` inside the svg resolves against the inherited CSS `color`
+      // on screen, but the emitted file is a STANDALONE svg with no HTML
+      // ancestors, so there it falls back to the initial value — black. The
+      // gallery's ghost icons (`stroke="currentColor"` under a blue-`color`
+      // span) are exactly that: blue on screen, black ink in the walked shot.
+      // Stamp the live computed color onto the clone root as a presentation
+      // attribute — it is (0,0,0) specificity, so an inner node's own
+      // color rule still wins wherever its CSS survives the clone; the PDF
+      // walker needs no mirror because it resolves paints per node from the
+      // live DOM via computedPaint (see the note above the `path` branch).
+      if (style.color) clone.setAttribute('color', style.color);
       clone.setAttribute('x',      String(x));
       clone.setAttribute('y',      String(y));
       clone.setAttribute('width',  String(w));
