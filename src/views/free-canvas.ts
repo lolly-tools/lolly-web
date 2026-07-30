@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // free-canvas.js — the WYSIWYG direct-manipulation overlay for render.layout:'editor'.
 //
 // This is the ONLY DOM in the free-canvas feature; all geometry lives in the pure,

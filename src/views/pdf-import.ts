@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // Design Import + asset upload — PDF / Adobe Illustrator (.ai) parser.
 //
 // The SHELL half of the PDF import path. An Illustrator .ai file saved with PDF

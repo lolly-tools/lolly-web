@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // rich-text.js — the tiny per-character rich-text model behind Layout Studio's
 // WYSIWYG inline text editing (free-canvas.js).
 //

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // footer-nav.ts — the shared bottom nav bar used by the Tools gallery, Projects and
 // Catalogue views: [Pro?] [Dashboard]  <search>  [Verify] [What?]. Kept in one place
 // so the links, icons, labels and layout stay identical across every listing view

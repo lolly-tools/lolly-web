@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // Unit tests for the Layout Studio rich-text char model (rich-text.js).
 // charsFromDom is DOM-agnostic (nodeType/nodeName/childNodes/nodeValue only),
 // so these tests feed it plain object trees — no jsdom.

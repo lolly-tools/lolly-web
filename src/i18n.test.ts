@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // Unit tests for i18n.ts's persist-time URL handling (and the RTL dir stamp).
 //
 // A `lang` URL override is session-only and out-ranks the saved preference in

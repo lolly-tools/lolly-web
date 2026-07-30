@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /**
  * Deck Builder — live on-canvas editor overlay (render.layout:"deck").
  *

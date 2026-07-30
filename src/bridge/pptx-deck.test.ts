@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /**
  * Authored-deck-model lowering tests (the pure tool→native-pptx half).
  * Run under node:test. Covers colour parsing, px→EMU, defensive coercion of untrusted

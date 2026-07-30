@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // doc-pages.ts — Doc Studio pagination in the TipTap editor.
 //
 // The editor is a single continuous surface; these two pieces make it read as an

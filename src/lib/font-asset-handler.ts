@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /**
  * Font asset installation and management.
  * Integrates with host.assets (IndexedDB) for offline-first storage.

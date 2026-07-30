@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /**
  * Load user-uploaded fonts from IndexedDB and inject @font-face rules.
  * Called during app initialization so fonts are available before the UI renders.
