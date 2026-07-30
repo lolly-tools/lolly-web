@@ -64,6 +64,7 @@ import { VIZ_PRESETS, defaultVizPresetId, nextVizPresetId, vizPresetById } from 
 import { randomVizSchemeId, vizSchemeById, vizSchemes, type VizScheme } from '../lib/viz-schemes.ts';
 import type { VizPaletteHost } from '../lib/viz-palette.ts';
 import { icon } from '../lib/icons.ts';
+import { panelGripsHtml, wirePanelGrips } from '../lib/panel-grips.ts';
 import { escape } from '../utils.ts';
 
 const STYLE_ID = 'lolly-viz-overlay-styles';
@@ -103,25 +104,27 @@ const CSS = `
   display: flex; align-items: center; justify-content: center; }
 .viz-surface canvas { display: block; width: 100%; height: 100%; }
 /* The floating PANEL: an enlarged player over the app, moved by dragging its toolbar and
-   resized from its corner. CSS resize needs a non-visible overflow, which it already has.
-   Position and size are restored from the last session. */
+   resized from any edge or corner (the eight grips of lib/panel-grips.ts — this used to be
+   the native CSS resize corner, which is one corner and fires no events, so people who
+   reached for a side found nothing there). Position and size are restored from the last
+   session. */
 .viz-panel.is-idle-blank { background: hsl(var(--card) / .82); backdrop-filter: blur(12px); }
 .viz-panel { border-radius: 16px; box-shadow: 0 24px 70px rgb(0 0 0 / .55);
-  border: 1px solid rgb(255 255 255 / .12); resize: both; min-width: 280px; min-height: 220px;
+  border: 1px solid rgb(255 255 255 / .12); min-width: 280px; min-height: 220px;
   max-width: 100vw; max-height: 100vh; }
+/* No transition on left/top/width/height: they're written on every pointermove, so an
+   eased one lags the cursor by its own duration and the panel swims. */
+.viz-panel.is-resizing, .viz-panel.is-dragging { user-select: none; }
 /* Fullscreen strips the framing — the panel becomes the whole screen. */
 .viz-panel:fullscreen { border-radius: 0; border: none; width: 100vw !important;
-  height: 100vh !important; inset: 0 !important; resize: none; }
+  height: 100vh !important; inset: 0 !important; }
 /* Dragging by the toolbar; the buttons keep their own cursor. */
 .viz-panel .viz-bar { cursor: grab; }
 .viz-panel.is-dragging .viz-bar { cursor: grabbing; }
 .viz-panel .viz-bar button, .viz-panel .viz-bar .viz-vol { cursor: pointer; }
-/* A visible grip for the native resize corner, which is otherwise invisible on dark. */
-.viz-panel::after { content: ''; position: absolute; right: 3px; bottom: 3px;
-  width: 12px; height: 12px; pointer-events: none;
-  background: linear-gradient(135deg, transparent 45%, rgb(255 255 255 / .35) 45%,
-    rgb(255 255 255 / .35) 55%, transparent 55%); }
-.viz-panel:fullscreen::after { display: none; }
+/* The corner mark rides the SE grip itself (lib/panel-grips.css) and takes its colour
+   from here, since the panel is dark whatever the theme is. */
+.viz-panel .panel-grip--se { color: #fff; }
 /* Toolbar: the visible twin of the right-click menu, so no action is mouse-secret.
    Fades out when the pointer rests, like a video player's controls.
    NO scrim gradient behind it: a dark band across the top of the frame hides part of the
@@ -516,7 +519,8 @@ function buildSurface(kind: SurfaceKind, host: HTMLElement): Surface {
       <div class="viz-player-head">${trackPickerHtml()}</div>
       ${musicPlayerBodyHtml({ meter: false, effects: false, volume: false })}
     </section>` : ''}
-    <div class="viz-menu" data-viz-menu hidden role="menu"></div>`;
+    <div class="viz-menu" data-viz-menu hidden role="menu"></div>
+    ${kind === 'panel' ? panelGripsHtml() : ''}`;
 
   const menu = root.querySelector<HTMLElement>('[data-viz-menu]')!;
   if (kind === 'inline') {
@@ -1024,8 +1028,27 @@ function wireDrag(s: Surface): void {
   bar.addEventListener('pointerup', end);
   bar.addEventListener('pointercancel', end);
 
-  // The native CSS resize corner gives no event, so observe the box instead — that also
-  // catches a window resize re-clamping the panel.
+  // Resize from any edge or corner. The shared eight-grip primitive (lib/panel-grips.ts,
+  // also worn by the Colour Lab's popped-out charts) replaced the native CSS `resize`
+  // corner: one corner is not where people reach, and it reported nothing, so the canvas
+  // had to be re-measured by observation rather than told.
+  s.cleanup.push(wirePanelGrips(s.root, {
+    read: () => ({ x: s.root.offsetLeft, y: s.root.offsetTop, w: s.root.offsetWidth, h: s.root.offsetHeight }),
+    apply: (b) => {
+      s.root.style.left = `${b.x}px`;
+      s.root.style.top = `${b.y}px`;
+      s.root.style.width = `${b.w}px`;
+      s.root.style.height = `${b.h}px`;
+    },
+    clamp: clampPanel,
+    min: { w: 280, h: 220 },
+    locked: () => document.fullscreenElement !== null,
+    onMove: () => s.handle?.resize(),
+    onEnd: () => persistPanel(s),
+  }));
+
+  // A window resize re-clamps the panel, and that change arrives through no gesture —
+  // so the box is observed as well as driven.
   if (typeof ResizeObserver === 'function') {
     const ro = new ResizeObserver(() => {
       s.handle?.resize();

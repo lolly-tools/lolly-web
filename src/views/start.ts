@@ -10,10 +10,14 @@
  *   - the STEP TABS (Logos → Colours → Type → Tokens → Catalogue) — the editor
  *     renders all five panels and this view flips `data-active-tab` on it, so
  *     switching tabs never re-mounts anything;
- *   - the persistent ACTION ROW: Import… (a W3C/Tokens-Studio JSON, a Penpot
- *     file, an SVG's colours, or a Lolly brand file) and Export are always on;
- *     a primary "Save & continue" appears the moment anything changes and
- *     walks the user to the next step;
+ *   - the TOP-RIGHT CLUSTER, on the language selector's line: Import… (a
+ *     W3C/Tokens-Studio JSON, a Penpot file, an SVG's colours, or a Lolly brand
+ *     file — a modal carrying the one drop card) and Export. Both act on the
+ *     whole brand rather than the open step, which is why they sit in the chrome
+ *     and not in the page;
+ *   - the ACTION ROW, which appears only when it has something to carry: the
+ *     primary "Save & continue" the moment anything changes (walking the user to
+ *     the next step) and the transient export/error note;
  *   - the FINISH card — after the last step, the three ways onward
  *     (Profile, or Tools / Projects / Dashboard).
  *
@@ -39,6 +43,7 @@ import type { UserFontsHost } from '../user-fonts.ts';
 import { unzipBrandBytes } from '../brand-transfer.ts';
 import { addSwatch } from '../lib/brand-doc.ts';
 import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-dialog.ts';
+import { mountModal, type ModalHandle } from '../components/modal.ts';
 import { applyTheme } from '../theme.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
@@ -117,17 +122,28 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // Read-only deep-link flag: `#/start?tab=color&wheel` opens the OKLCH Colour
   // chart on mount. Consumed here; never propagated into a generated share link.
   const wantWheel = startSearch.has('wheel');
-  // The import panel is OPEN by default — bringing a brand in is the first thing
-  // most people do here, and hiding it behind a disclosure buried the one action
-  // the step exists for. `?import=0` collapses it (for a shot of the resting CTA,
-  // or a link that wants the steps in focus); `?import` is accepted too and is a
-  // no-op against the default, so a link stays honest if the default ever flips.
-  const importOpen = startSearch.get('import') !== '0';
+  // The importer is a MODAL now (it used to be a panel folded open under the
+  // action row, which spent a third of the first screen on it before anyone had
+  // asked). So `?import` opens the dialog on arrival — for a link that hands off
+  // straight into "bring your brand across" — and the resting state is the glowing
+  // Import button in the top-right cluster. `?import=0` keeps meaning "shut", so
+  // the links that carried it still land where they always did.
+  const importOpen = startSearch.has('import') && startSearch.get('import') !== '0';
   let activeTab: BrandTabKey = (TAB_KEYS.has(tabParam) ? tabParam : 'logos') as BrandTabKey;
 
   viewEl.innerHTML = `
     <div class="start start--studio">
-      <div class="gallery-topright">${langFabHtml()}</div>
+      <!-- Brand-file actions ride the top-right chrome cluster, on the language
+           selector's line: they belong to the studio as a whole rather than to any
+           one step, and the row they used to sit in cost a band of vertical space
+           on every step for two buttons. Import opens a modal (below). -->
+      <div class="gallery-topright start-topright">
+        <button type="button" class="be-btn start-import-cta" data-start-import aria-haspopup="dialog"
+          aria-label="${escape(t('Import…'))}" title="${escape(t('Import…'))}"><span class="start-import-cta-ic" aria-hidden="true">↓</span> <span class="start-act-label">${t('Import…')}</span></button>
+        <button type="button" class="be-btn start-export-btn" data-start-export data-sfx="whoosh"
+          aria-label="${escape(t('Export'))}" title="${escape(t('Export'))}"><span aria-hidden="true">↑</span> <span class="start-act-label">${t('Export')}</span></button>
+        ${langFabHtml()}
+      </div>
       ${backPill}
       <header class="start-head">
         <p class="start-eyebrow">${t('Brand setup')}</p>
@@ -150,15 +166,20 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           </button>`).join('')}
       </nav>
 
-      <!-- The persistent action row: Import/Export always on; Save & continue
-           appears on change. One row, one place, whichever step is open. -->
-      <div class="start-actions" role="toolbar" aria-label="${escape(t('Brand actions'))}">
-        <button type="button" class="be-btn start-import-cta" data-start-import aria-expanded="${importOpen}"><span class="start-import-cta-ic" aria-hidden="true">↓</span> ${t('Import…')}</button>
-        <button type="button" class="be-btn" data-start-export data-sfx="whoosh">↑ ${t('Export')}</button>
+      <!-- The action row now carries ONLY what the current step has to say: the
+           primary Save & continue and the transient note. Empty means gone (hidden
+           by syncActionRow), so a step at rest spends no vertical space on chrome
+           — Import/Export moved to the top-right cluster above. -->
+      <div class="start-actions" role="toolbar" aria-label="${escape(t('Brand actions'))}" data-start-actions hidden>
         <span class="start-actions-note" data-start-note aria-live="polite"></span>
         <button type="button" class="be-cta start-save" data-start-save hidden></button>
       </div>
-      <div class="start-import-panel" data-start-import-panel${importOpen ? '' : ' hidden'}>
+      <!-- The import card lives here at rest, inside a hidden holder, and is MOVED
+           into the modal when Import is clicked (and back on close) — so the file
+           input, the drop target and every delegated listener below are wired once
+           against nodes that outlive any one dialog. -->
+      <div class="start-import-home" data-start-import-home hidden>
+      <div class="start-import-panel" data-start-import-panel>
         <!-- The whole card is the control: click anywhere (it's the file input's
              label) or drop a file on it. The format tiles lead so people
              recognise THEIR export at a glance, in preference order. -->
@@ -176,6 +197,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           <span class="start-import-drophint">${t('or drag & drop it here')}</span>
         </label>
         <div class="start-import-result" hidden></div>
+      </div>
       </div>
 
       <div class="start-editor-wrap">
@@ -214,6 +236,12 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const saveBtn = viewEl.querySelector<HTMLButtonElement>('[data-start-save]')!;
   const noteEl = viewEl.querySelector<HTMLElement>('[data-start-note]');
   const finishEl = viewEl.querySelector<HTMLElement>('[data-start-finish]')!;
+  const actionsRow = viewEl.querySelector<HTMLElement>('[data-start-actions]')!;
+
+  /** The row exists only while it has something in it — no empty sticky bar. */
+  const syncActionRow = (): void => {
+    actionsRow.hidden = saveBtn.hidden && !noteEl?.textContent;
+  };
 
   const tabIndex = (key: BrandTabKey): number => BRAND_TABS.findIndex(t => t.id === key);
   const nextTab = (key: BrandTabKey): BrandTabKey | null => BRAND_TABS[tabIndex(key) + 1]?.id ?? null;
@@ -224,6 +252,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     if (show !== undefined) saveBtn.hidden = !show;
     const next = nextTab(activeTab);
     saveBtn.textContent = next ? t('Save & continue') : t('Save & finish');
+    syncActionRow();
   };
   const nudge = (tab: BrandTabKey): void => {
     const next = nextTab(tab);
@@ -305,6 +334,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   saveBtn.addEventListener('click', () => {
     editor?.saveDraft();
     saveBtn.hidden = true;
+    syncActionRow();
     const next = nextTab(activeTab);
     if (next) { selectTab(next, { focus: true }); playSfx('click'); }
     else finish();
@@ -315,7 +345,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     if (!noteEl) return;
     noteEl.textContent = msg;
     noteEl.classList.toggle('is-error', isError);
-    if (msg) setTimeout(() => { if (noteEl.isConnected && noteEl.textContent === msg) noteEl.textContent = ''; }, 4000);
+    syncActionRow();
+    if (msg) {
+      setTimeout(() => {
+        if (!noteEl.isConnected || noteEl.textContent !== msg) return;
+        noteEl.textContent = '';
+        syncActionRow();
+      }, 4000);
+    }
   };
   viewEl.querySelector<HTMLButtonElement>('[data-start-export]')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
@@ -326,12 +363,51 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     btn.disabled = false;
   });
 
-  // ── Import panel toggle ──────────────────────────────────────────────────────
+  // ── Import: a modal, carrying the one card ───────────────────────────────────
+  // The card itself is NOT rebuilt per open — it's moved out of its hidden holder
+  // into the dialog and back again, so the file input, the drop target and the
+  // delegated result handlers below stay wired to the same nodes for the life of
+  // the view. Everything else is the shared modal primitive: Escape, backdrop
+  // dismissal, focus containment and restore come free (components/modal.ts).
   const importBtn = viewEl.querySelector<HTMLButtonElement>('[data-start-import]');
+  const importHome = viewEl.querySelector<HTMLElement>('[data-start-import-home]')!;
   const importPanel = viewEl.querySelector<HTMLElement>('[data-start-import-panel]')!;
-  importBtn?.addEventListener('click', () => {
-    importPanel.hidden = !importPanel.hidden;
-    importBtn.setAttribute('aria-expanded', String(!importPanel.hidden));
+  let importModal: ModalHandle<void> | null = null;
+
+  function openImport(): void {
+    if (importModal) return;
+    importModal = mountModal<void>(`
+      <h2 class="modal-title">${t('Import your brand')}</h2>
+      <p class="modal-msg">${t('Bring across what you already have — a design-token file, a Penpot project, an SVG’s colours, or a Lolly brand file.')}</p>
+      <div data-import-mount></div>`, {
+      className: 'modal start-import-modal',
+      ariaLabel: escape(t('Import your brand')),
+      // The file picker is the point of the dialog, so focus lands on the card
+      // (the label's own hidden input) rather than the browser's first guess.
+      initialFocus: el => el.querySelector<HTMLElement>('.start-import-file'),
+      onClose: () => {
+        importModal = null;
+        importHome.appendChild(importPanel);   // back to the holder, still wired
+        importBtn?.classList.remove('is-open');
+      },
+    });
+    importModal.el.querySelector<HTMLElement>('[data-import-mount]')!.appendChild(importPanel);
+    importBtn?.classList.add('is-open');
+  }
+  const closeImport = (): void => importModal?.close();
+
+  importBtn?.addEventListener('click', () => { openImport(); playSfx('click'); });
+  // A link can still arrive with the importer open (`#/start?import`), which is how
+  // an "import your brand" entry point elsewhere hands off. `?import=0` is the
+  // historic form for "leave it shut" and stays a no-op against today's default.
+  if (importOpen) openImport();
+
+  // Dragging a file anywhere over the studio opens the importer, so the drop has
+  // somewhere to land — a modal you must open first would otherwise take away the
+  // drag & drop the card advertises.
+  shell.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer?.types.includes('Files') || importModal) return;
+    openImport();
   });
 
   // ── Install (the JSON-import path funnels here) ──────────────────────────────
@@ -359,8 +435,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       // landed either way, but only a still-mounted view touches its own DOM
       // (or the URL: selectTab replaceStates, which would rewrite the NEW view's).
       if (!shell.isConnected) return;
-      importPanel.hidden = true;
-      importBtn?.setAttribute('aria-expanded', 'false');
+      closeImport();
       importResult.hidden = true;
       btn.disabled = false;
       btn.textContent = prevLabel;
@@ -536,8 +611,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           applyTheme(localStorage.getItem('theme') || 'light');
           markWelcomeDismissed();
           if (!shell.isConnected) return;
-          importPanel.hidden = true;
-          importBtn?.setAttribute('aria-expanded', 'false');
+          closeImport();
           importResult.hidden = true;
           selectTab('color');
           playSfx('saveProfile');
@@ -646,26 +720,27 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   //    reach this) ──────────────────────────────────────────────────────────────
   const onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape' || installing) return; // no Esc-teardown mid-install
+    // The import dialog owns the key while it's open: the native <dialog> handles
+    // Escape itself (its `cancel` event), but the keydown still bubbles up here —
+    // without this guard one press would close the dialog AND leave the studio.
+    if (importModal) return;
     // The Esc stack: floating popovers first (they close themselves and
     // stopImmediatePropagation before this handler — the query is a
     // belt-and-braces guard so the sheet never folds under a popover that
     // somehow let the key through), then an expanded palette sheet folds to
-    // peek, then the import panel, then back to where the user came from.
+    // peek, then back to where the user came from.
     const popoverOpen = !!editorMount.querySelector(
       '[data-be-editor]:not([hidden]), [data-grad-pop]:not([hidden]), .color-picker-field:not(.color-field--inline) .color-popover:not([hidden])');
     if (!popoverOpen && paletteSheet?.collapse()) { e.preventDefault(); return; }
     e.preventDefault();
-    // An open import panel folds first; a second Esc leaves.
-    if (!importPanel.hidden) {
-      importPanel.hidden = true;
-      importBtn?.setAttribute('aria-expanded', 'false');
-      return;
-    }
     navigateTo(backHref);
   };
   document.addEventListener('keydown', onKey);
   (viewEl as ViewElement)._cleanup = () => {
     document.removeEventListener('keydown', onKey);
+    // A dialog outlives the view it was opened from (it's body-mounted), so leaving
+    // the studio must take it with it.
+    closeImport();
     paletteSheet?.teardown();
     paletteSheet = null;
     editor?.teardown();

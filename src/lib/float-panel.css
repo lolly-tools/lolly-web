@@ -60,27 +60,12 @@
    the reader is dragging bigger. */
 .floatp-body > * { width: 100%; max-width: none; margin: 0; }
 
-/* ── Grips: four edges, four corners ─────────────────────────────────────────
-   Invisible, and generous — 10px reads as an edge on a mouse and is still findable
-   with a thumb, where a 4px hairline is not. `touch-action: none` on each, or the
-   browser claims the drag for a scroll before the first pointermove arrives. */
-.floatp-grip { position: absolute; touch-action: none; }
-.floatp-grip--n, .floatp-grip--s { left: 10px; right: 10px; height: 10px; cursor: ns-resize; }
-.floatp-grip--e, .floatp-grip--w { top: 10px; bottom: 10px; width: 10px; cursor: ew-resize; }
-.floatp-grip--n { top: -2px; }
-.floatp-grip--s { bottom: -2px; }
-.floatp-grip--e { right: -2px; }
-.floatp-grip--w { left: -2px; }
-.floatp-grip--ne, .floatp-grip--nw, .floatp-grip--se, .floatp-grip--sw { width: 16px; height: 16px; }
-.floatp-grip--nw { top: -2px; left: -2px; cursor: nwse-resize; }
-.floatp-grip--se { bottom: -2px; right: -2px; cursor: nwse-resize; }
-.floatp-grip--ne { top: -2px; right: -2px; cursor: nesw-resize; }
-.floatp-grip--sw { bottom: -2px; left: -2px; cursor: nesw-resize; }
+/* The grips themselves (four edges, four corners) are the shared primitive —
+   lib/panel-grips.css, worn by the visualizer's enlarged player too. */
 
-/* Fullscreen: the panel IS the screen, so the grips would resize nothing and the
-   rounding would show black corners. */
+/* Fullscreen: the panel IS the screen, so the grips would resize nothing (they
+   hide themselves) and the rounding would show black corners. */
 .floatp:fullscreen { border-radius: 0; width: 100% !important; height: 100% !important; }
-.floatp:fullscreen .floatp-grip { display: none; }
 
 /* ── The placeholder ────────────────────────────────────────────────────────
    Holds the popped-out figure's exact box open so nothing on the page moves.

@@ -25,6 +25,7 @@
  */
 
 import './float-panel.css';
+import { panelGripsHtml, wirePanelGrips } from './panel-grips.ts';
 
 const MIN_W = 240;
 const MIN_H = 160;
@@ -97,8 +98,7 @@ export function popOut(el: HTMLElement, opts: FloatPanelOpts): FloatPanel | null
       </span>
     </div>
     <div class="floatp-body" data-floatp-body></div>
-    ${(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const)
-      .map(d => `<span class="floatp-grip floatp-grip--${d}" data-floatp-grip="${d}"></span>`).join('')}`;
+    ${panelGripsHtml()}`;
   root.querySelector('[data-floatp-body]')!.appendChild(el);
   el.dataset.floating = '1';
   (opts.mount ?? doc.body).appendChild(root);
@@ -175,7 +175,15 @@ export function popOut(el: HTMLElement, opts: FloatPanelOpts): FloatPanel | null
   on(doc, 'fullscreenchange', () => notify());
 
   wireDrag(root, doc, notify, on);
-  wireGrips(root, doc, notify, on);
+  cleanups.push(wirePanelGrips(root, {
+    read: () => read(root),
+    apply: b => apply(root, b),
+    clamp: b => fit(b, doc),
+    min: { w: MIN_W, h: MIN_H },
+    locked: () => doc.fullscreenElement === root,
+    onMove: notify,
+    onEnd: notify,
+  }));
 
   // A window resize can leave the panel off screen (a rotated phone, a shrunk
   // window). Re-fit rather than leaving it unreachable.
@@ -248,60 +256,6 @@ function wireDrag(root: HTMLElement, doc: Document, notify: () => void, on: On):
   };
   on(bar, 'pointerup', end);
   on(bar, 'pointercancel', end);
-}
-
-/**
- * Eight grips: the four edges and the four corners.
- *
- * A grip's direction says which edges MOVE, which is why the west and north ones
- * change `x`/`y` as well as the size — dragging a left edge rightward makes the
- * panel narrower AND moves its origin, and getting that wrong makes the panel
- * appear to slide away from the pointer.
- *
- * The minimum is enforced against the moving edge rather than after the fact, so
- * a panel squeezed to its floor stops dead instead of continuing to travel.
- */
-function wireGrips(root: HTMLElement, doc: Document, notify: () => void, on: On): void {
-  for (const grip of root.querySelectorAll<HTMLElement>('[data-floatp-grip]')) {
-    const dir = grip.dataset.floatpGrip ?? '';
-    let from: { px: number; py: number; b: Box } | null = null;
-    on(grip, 'pointerdown', (e: PointerEvent) => {
-      if (doc.fullscreenElement === root) return;
-      from = { px: e.clientX, py: e.clientY, b: read(root) };
-      grip.setPointerCapture(e.pointerId);
-      root.classList.add('is-resizing');
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    on(grip, 'pointermove', (e: PointerEvent) => {
-      if (!from) return;
-      const dx = e.clientX - from.px, dy = e.clientY - from.py;
-      const b = { ...from.b };
-      if (dir.includes('e')) b.w = from.b.w + dx;
-      if (dir.includes('s')) b.h = from.b.h + dy;
-      if (dir.includes('w')) {
-        // Clamp the travel, not the result: past the minimum the left edge must
-        // stop, and computing x from an already-clamped width is what does that.
-        b.w = Math.max(MIN_W, from.b.w - dx);
-        b.x = from.b.x + (from.b.w - b.w);
-      }
-      if (dir.includes('n')) {
-        b.h = Math.max(MIN_H, from.b.h - dy);
-        b.y = from.b.y + (from.b.h - b.h);
-      }
-      apply(root, fit(b, doc));
-      notify();
-    });
-    const end = (e: PointerEvent): void => {
-      if (!from) return;
-      from = null;
-      root.classList.remove('is-resizing');
-      if (grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId);
-      notify();
-    };
-    on(grip, 'pointerup', end);
-    on(grip, 'pointercancel', end);
-  }
 }
 
 /** Text into markup. Local rather than imported so this primitive has no deps. */
