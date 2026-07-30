@@ -195,6 +195,16 @@ test('an inline svg using currentColor keeps the page\'s inherited color', { ski
     'the passthrough clone must carry the computed color for currentColor to resolve against');
 });
 
+test('a replaced element inside a plain-inline wrapper is not dropped', { skip: SKIP }, async () => {
+  // The block walk skips a no-own-box wrapper (an unstyled <a>/<span>) and the
+  // inline text walk returns at own-box children on the assumption the block
+  // walk visited them — so an <img> inside an unstyled inline link vanished.
+  const svg = await render(root(
+    `<a href="#"><img src="${PNG20x10}" width="20" height="10"></a>`));
+  assert.match(svg, /<image[^>]*href="data:image\/png/,
+    'the image must be emitted even though its wrapper has no box of its own');
+});
+
 test('cover still fills the box — the case the old behaviour got right', { skip: SKIP }, async () => {
   const svg = await render(root(
     `<div style="width:200px;height:100px;background:url('${PNG20x10}') no-repeat center / cover"></div>`));

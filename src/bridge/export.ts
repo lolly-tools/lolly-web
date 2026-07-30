@@ -3106,8 +3106,26 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       ? orderModifiedChildren(renderedChildren(el),
           (c) => Number.parseInt(window.getComputedStyle(c).order || '0', 10) || 0)
       : renderedChildren(el);
+    // A child WITHOUT a box of its own is a plain-inline wrapper (<span>, an
+    // unstyled <a>): its text belongs to emitInlineTextSvg below — but an own-box
+    // DESCENDANT inside it (an <img>, an inline <svg>, an <input>) belonged to
+    // NOBODY: this loop skipped the wrapper, and the inline text walk returns at
+    // own-box children on the assumption this loop visited them. A preview <img>
+    // inside an unstyled inline <a> therefore vanished from the shot, silently —
+    // the nested form of the bare-<svg> bug above. Descend through inline
+    // wrappers and visit their own-box descendants; drawing them can only add,
+    // because the previous behaviour was nothing. (Their TEXT is untouched: the
+    // inline walk descends the same wrappers for text nodes, and still returns
+    // at every own-box element, so nothing double-paints.)
+    const visitThroughInline = async (wrapper: Element): Promise<void> => {
+      for (const c of renderedChildren(wrapper)) {
+        if (hasOwnBox(c)) await visitSvgNode(c, contentG, childCtx);
+        else await visitThroughInline(c);
+      }
+    };
     for (const child of kids) {
       if (hasOwnBox(child)) await visitSvgNode(child, contentG, childCtx);
+      else await visitThroughInline(child);
     }
     // Shadow text: a host's own text pass below reads el.childNodes, which for a
     // shadow host is the LIGHT tree — the part that only renders where a <slot> puts
