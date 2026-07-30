@@ -18,7 +18,7 @@ import '../styles/parts/editor.css';
 import '../styles/parts/document.css';
 import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
-import { loadTool, parseUrlState, annotateTemplate, toCssPx, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
+import { loadTool, parseUrlState, annotateTemplate, toCssPx, normalizeTableValue, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import type { HdrSettings } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
@@ -57,6 +57,7 @@ import { exportSizeDriver } from './export-size.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { createNetAPI } from '../bridge/net.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
+import { mountTableCellEditing, markdownSafeUrl, type TableEditOpts } from '../lib/table-canvas-edit.ts';
 import { mountFilmstrip, type Filmstrip, type FilmstripSide } from '../lib/page-filmstrip.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
 import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
@@ -2411,6 +2412,28 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   let vizPending: Promise<unknown> = Promise.resolve();
   let vizModule: VizModule | null = null;
 
+  // On-canvas table-cell editing for paginated tools (render.paginate): cells the
+  // template stamped data-cell / data-cell-pick become editable / pickable, and
+  // every edit bakes straight back to the source table input — the same setInput
+  // path a sidebar keystroke rides. Re-wired each paint (the innerHTML swap
+  // discards listeners, like every other canvas enhancer).
+  const paginateSource = tool.manifest.render.paginate?.source;
+  const tableEditOpts: TableEditOpts | null = paginateSource ? {
+    getTable: () => normalizeTableValue(runtime.getModel().find(i => i.id === paginateSource)?.value)
+      ?? { columns: [], rows: [] },
+    commit: (next) => { void runtime.setInput(paginateSource, next); },
+    pickImage: async (tag) => {
+      const ref = await host.assets.pick({ tags: tag ? [tag] : undefined, title: t('Pick an image') });
+      if (!ref?.url) return null;
+      // A user-upload's blob: URL dies with the session — inline small ones as
+      // data: so the markdown ref survives reloads and the table's Copy button.
+      const url = await markdownSafeUrl(ref.url);
+      const meta = ref.meta as { name?: unknown } | undefined;
+      return { url, alt: typeof meta?.name === 'string' ? meta.name : ref.id };
+    },
+    pickLabel: t('Pick an image'),
+  } : null;
+
   // The RENDER half of the subscriber is coalesced behind requestAnimationFrame:
   // a full canvas rebuild swaps innerHTML, re-walks annotations, and re-executes
   // every template <script> (chart/QR/map libs re-instantiate), so doing it per
@@ -2454,6 +2477,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // Keep the canvas's accessible summary current when it's a live a11yLabel.
         if (tool.manifest.a11yLabel) contentEl.setAttribute('aria-label', canvasLabel());
         runTemplateScripts(contentEl);
+        if (tableEditOpts) mountTableCellEditing(contentEl, tableEditOpts);
         embedsPending = hydrateEmbeds(contentEl, { host, isCurrent: () => gen === renderGen });
         // Lottie markers are mounted by the shell, not the template (tools stay
         // data-only). Once the module has loaded, run the pass even on marker-less

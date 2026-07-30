@@ -660,6 +660,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'lib/page-filmstrip.ts': 1,
   'lib/recent-stack.ts': 1,
   'lib/recording-tips.ts': 2,
+  // The revert path of an on-canvas cell edit: restores the element's OWN
+  // pre-focus innerHTML (engine-rendered markup captured on focus), no
+  // interpolation of user text.
+  'lib/table-canvas-edit.ts': 1,
   'lib/upload-dropzone.ts': 3,
   'org/approval-dialog.ts': 3,
   'org/banner.ts': 1,

@@ -749,6 +749,17 @@ export interface PdfPageSvgOpts {
    * surfaces: asset upload and the docs-screenshot pipeline.
    */
   rasterFallback?: boolean;
+  /**
+   * Hoist byte-identical `<path>` elements into `<defs>` + `<use>` — see
+   * PdfSvgOptions.dedupePaths for what it collapses and why the copies exist.
+   *
+   * Default false, and it must stay false for asset ingest: an ingested page is
+   * stored as a user SVG asset that can be placed on a canvas and exported to
+   * EMF/EPS/DXF, and `svg-ir.ts` skips `<use>` outright, so hoisted ink would
+   * silently disappear from those formats. Only the docs-screenshot pipeline
+   * (lib/pdf-vector-shot.ts) sets it, because a shot is terminal output.
+   */
+  dedupePaths?: boolean;
 }
 
 // ── embedded font programs ────────────────────────────────────────────────────
@@ -1274,8 +1285,8 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       }
       return { findings, scanned };
     },
-    async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText, rasterFallback = true, cull, idPrefix }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
-      const ckey = `${index}|${cull ? `${cull.x},${cull.y},${cull.width},${cull.height},${cull.pad ?? ''}` : ''}|${idPrefix ?? ''}`;
+    async pageToSvg(index: number, { warn = () => {}, resolveImage, outlineText, rasterFallback = true, cull, idPrefix, dedupePaths }: PdfPageSvgOpts = {}): Promise<PdfPageSvg> {
+      const ckey = `${index}|${cull ? `${cull.x},${cull.y},${cull.width},${cull.height},${cull.pad ?? ''}` : ''}|${idPrefix ?? ''}|${dedupePaths ? 'd' : ''}`;
       const hit = cache.get(ckey);
       if (hit) return hit;
       const { nodes: allNodes, width, height, imageStreams, tiles } = interpretPage(doc, index, warn);
@@ -1352,7 +1363,7 @@ function makeHandle(doc: PDFDocument): PdfHandle {
         }
       }
       const out: PdfPageSvg = {
-        svg: pdfNodesToSvg(nodes, { width, height, images, ...(idPrefix ? { idPrefix } : {}) }),
+        svg: pdfNodesToSvg(nodes, { width, height, images, ...(idPrefix ? { idPrefix } : {}), ...(dedupePaths ? { dedupePaths } : {}) }),
         width: Math.max(1, Math.round(width)),
         height: Math.max(1, Math.round(height)),
         elementCount: allNodes.length,
