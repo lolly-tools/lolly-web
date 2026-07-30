@@ -85,12 +85,33 @@ export function domReflectsValue(el: HTMLElement, input: SyncableInput): boolean
  * The model still updates on every keystroke either way, so the canvas stays live;
  * the panel repaints from the model on the next interaction.
  */
+/**
+ * A table input can be POPPED OUT into a floating panel (lib/float-panel), which
+ * mounts the grid on `.tool-layout` — outside `#tool-inputs`. Its cells still hold
+ * the authoritative value, so the containment test above has to follow the GRID,
+ * not the sidebar box.
+ *
+ * Getting this wrong is worse than the sidebar flicker the deferral exists to
+ * prevent. In the sidebar a rebuild replaces the cell and `renderInputs` restores
+ * the caret by `data-field-id`; in a panel the rebuild also orphans the panel
+ * around the stale wrapper, so the wiring closes it and re-pops the FRESH wrapper
+ * into a new one. The element the caret would be restored into no longer exists,
+ * and typing dies after a single character.
+ *
+ * Structural like its caller — `closest` is feature-tested so a plain test stub
+ * simply reports "not in a panel" rather than throwing.
+ */
+function inPoppedTable(active: { closest?: (s: string) => unknown }): boolean {
+  return typeof active.closest === 'function' && !!active.closest('.floatp .table-input');
+}
+
 function isEditingBlockField(el: HTMLElement): boolean {
   // Structural, NOT instanceof: the unit tests drive this with plain stubs (no
   // DOM globals). `type` is the discriminator for inputs; textareas report none.
   const active = (el && el.ownerDocument && el.ownerDocument.activeElement) as
-    (Element & { type?: string; tagName?: string; dataset?: DOMStringMap }) | null;
-  if (!active || !active.dataset || !active.dataset.fieldId || !el.contains(active)) return false;
+    (Element & { type?: string; tagName?: string; dataset?: DOMStringMap; closest?: (s: string) => unknown }) | null;
+  if (!active || !active.dataset || !active.dataset.fieldId) return false;
+  if (!el.contains(active) && !inPoppedTable(active)) return false;
   if (active.type === 'number') return true;
   // A block text field renders with NO type attribute (see blockField), so `type`
   // reads back as 'text'; a textarea has no type at all. Everything else a block
