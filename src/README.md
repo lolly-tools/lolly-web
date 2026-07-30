@@ -1,21 +1,25 @@
 # Code map: `shells/web/src`
 
-Roughly 175,000 lines of TypeScript, tests included, and 25,000 lines of CSS. This file exists so you can find the code for a feature without reading all of it. For what the shell *is*, how the bridge is composed and how to run it, see [`../README.md`](../README.md).
+This file exists so you can find the code for a feature without reading all of it. For what the shell *is*, how the bridge is composed and how to run it, see [`../README.md`](../README.md).
 
-Counts below were measured with `wc -l` on 2026-07-29 and will drift. They are here to convey proportion, not as a fact to cite.
+The counts below are GENERATED — `npm run build:web-src-readme`, checked in CI by `npm run check:web-src-readme`, so they cannot rot the way the hand-measured ones did. They convey proportion; don't cite them as an API.
+
+<!-- web-src-dirs:start -->
+Roughly 175,000 lines of TypeScript, tests included, and 25,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 45 files, 53,761 lines | 20 files, 12,978 lines | none |
-| `lib/` | 144 files, 34,320 lines | 54 files, 11,005 lines | 6 files, 1,027 lines |
-| `bridge/` | 56 files, 25,730 lines | 35 files, 8,522 lines | none |
-| `styles/` | none | 1 file, 150 lines | 47 files, 22,903 lines |
-| `components/` | 28 files, 10,946 lines | 6 files, 1,898 lines | none |
-| `pro/` | 18 files, 5,335 lines | 4 files, 329 lines | 2 files, 1,121 lines |
-| `org/` | 5 files, 1,292 lines | 4 files, 792 lines | none |
-| `catalog/` | 2 files, 499 lines | none | none |
+| `views/` | 45 files, 53,806 lines | 20 files, 12,998 lines | none |
+| `lib/` | 144 files, 34,472 lines | 54 files, 11,059 lines | 6 files, 1,033 lines |
+| `bridge/` | 56 files, 25,471 lines | 36 files, 8,803 lines | none |
+| `components/` | 28 files, 10,974 lines | 6 files, 1,904 lines | none |
+| `pro/` | 18 files, 5,350 lines | 4 files, 333 lines | 2 files, 1,123 lines |
+| `org/` | 5 files, 1,297 lines | 4 files, 796 lines | none |
+| `catalog/` | 2 files, 501 lines | none | none |
+| `styles/` | none | 1 file, 151 lines | 47 files, 22,950 lines |
 
-Plus 33 `.ts` files at the top level of `src/`, 7,099 lines all told, of which eight are tests and three are ambient declarations. `main.ts` is 992 of that.
+Plus 33 `.ts`/`.js` files at the top level of `src/`, 7,351 lines all told, of which 8 are tests and 3 are ambient declarations. `main.ts` is 1,052 of that.
+<!-- web-src-dirs:end -->
 
 ## How do I find a feature
 
@@ -49,23 +53,30 @@ If the feature is about producing bytes rather than showing a screen, skip the v
 
 Do not be ambushed by these. The largest source files, by line count:
 
+<!-- web-src-largest:start -->
 | Lines | File | Direct test coverage |
 |---|---|---|
-| 8,779 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by nine `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. |
-| 6,833 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
-| 3,563 | `views/catalog.ts` | none |
-| 3,368 | `views/tool.ts` | none |
-| 3,155 | `views/picker.ts` | `picker-initial-tab.test.ts` only |
-| 3,086 | `views/timeline-panel.ts` | yes |
-| 2,906 | `views/color-lab.ts` | yes |
-| 2,668 | `views/deck-editor.ts` | yes |
-| 2,642 | `lib/brand-editor.ts` | none |
-| 2,344 | `views/tool-inputs.ts` | none |
-| 2,291 | `views/tool-actions.ts` | yes |
-| 2,134 | `views/gallery.ts` | none |
-| 2,094 | `views/valid.ts` | `valid-verdict.test.ts` only |
-| 1,970 | `views/projects.ts` | none |
-| 1,928 | `views/profile.ts` | none |
+| 8,780 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
+| 6,834 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
+| 3,564 | `views/catalog.ts` | none |
+| 3,369 | `views/tool.ts` | none |
+| 3,156 | `views/picker.ts` | `picker-initial-tab.test.ts` only |
+| 3,087 | `views/timeline-panel.ts` | yes |
+| 2,907 | `views/color-lab.ts` | yes |
+| 2,669 | `views/deck-editor.ts` | yes |
+| 2,651 | `lib/brand-editor.ts` | none |
+| 2,345 | `views/tool-inputs.ts` | none |
+| 2,292 | `views/tool-actions.ts` | yes |
+| 2,135 | `views/gallery.ts` | none |
+| 2,095 | `views/valid.ts` | `valid-verdict.test.ts` only |
+| 1,971 | `views/projects.ts` | none |
+| 1,929 | `views/profile.ts` | none |
+| 1,919 | `components/color-field.ts` | yes |
+| 1,652 | `views/pdf-import.ts` | yes |
+| 1,629 | `lib/clip-thumbs.ts` | yes |
+| 1,599 | `bridge/sequence-providers.ts` | yes |
+| 1,477 | `pro/index.ts` | yes |
+<!-- web-src-largest:end -->
 
 The pattern is consistent and worth internalising: the **pure helpers** extracted out of a big view are well covered (`free-canvas-math.ts`, `timeline-math.ts`, `valid-verdict.ts`, `export-css.ts`, `text-svg.ts`, `svg-ir.ts`), while the DOM-mounting bodies of the big views mostly are not. When you change one of the uncovered files, the cheapest way to get coverage is to extract the logic into a sibling pure module and test that, which is how the covered ones came to exist.
 
