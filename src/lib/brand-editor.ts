@@ -1330,6 +1330,14 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const renderPreviews = (): void => {
     if (!previewsEl) return;
     const scenes = palettePreviewSvgs(paletteHexes(), { steps });
+    // `s.svg` is interpolated RAW, deliberately — it is markup, so escaping it
+    // would render the tags as text. It is safe because lib/palette-preview.ts
+    // BUILDS these scenes from developer-authored templates and passes every
+    // user-supplied colour through its `col()` whitelist (hex or 'transparent',
+    // nothing else) before it reaches an attribute; the module contains no
+    // <script>, href or url(), and palette-preview.test.ts pins all of that
+    // against hostile colour strings. `s.label` is ours but escaped anyway,
+    // since it is text rather than markup.
     previewsEl.innerHTML = scenes.map(s => `<figure class="be-pv"><div class="be-pv-art">${s.svg}</div><figcaption class="be-pv-cap">${escape(s.label)}</figcaption></figure>`).join('');
   };
   const renderGenerator = (): void => { renderCandidates(); renderPreviews(); };
