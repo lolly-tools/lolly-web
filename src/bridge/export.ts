@@ -5562,9 +5562,39 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
           if (href) {
             const { src, fmt } = await imageForPdf(href);
             const dims = await imageDims(src);
-            const fit = dims ? bgFitRect(dims.w, dims.h, x, y, w, h, style) : { x, y, w, h, overflows: false };
-            const draw = () => pdf.addImage(src, fmt, fit.x, fit.y, fit.w, fit.h);
-            if (hasRadius || fit.overflows) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, draw);
+            // Place it the way the SVG walker does (placeBackground honours
+            // background-size, -position AND -repeat) rather than via the old cover-fitting
+            // helper, which understood only cover/contain/two-length and DEFAULTED
+            // TO COVER (removed in the same commit — this was its last caller). That default was harmless while firstCssUrl silently dropped
+            // every inline-SVG data-URI; now that those resolve, an auto-sized
+            // 14px chevron on a 176x29 box would be drawn at 176x176 — a giant
+            // smeared caret where there used to be nothing at all.
+            const pl = dims ? placeBackground(
+              style.backgroundSize, style.backgroundPosition, style.backgroundRepeat,
+              { w, h }, { w: dims.w, h: dims.h },
+            ) : null;
+            const draw = pl && pl.w > 0 && pl.h > 0
+              ? () => {
+                  // Tile across whichever axes repeat, bounded by the box. A
+                  // no-repeat background places exactly once.
+                  const stepX = pl.repeatX ? pl.w : Infinity;
+                  const stepY = pl.repeatY ? pl.h : Infinity;
+                  const x0 = pl.repeatX ? pl.x % pl.w - pl.w : pl.x;
+                  const y0 = pl.repeatY ? pl.y % pl.h - pl.h : pl.y;
+                  for (let ty = y0; ty < h; ty += stepY) {
+                    for (let tx = x0; tx < w; tx += stepX) {
+                      if (tx + pl.w > 0 && ty + pl.h > 0) pdf.addImage(src, fmt, x + tx, y + ty, pl.w, pl.h);
+                      if (!Number.isFinite(stepX)) break;
+                    }
+                    if (!Number.isFinite(stepY)) break;
+                  }
+                }
+              : () => pdf.addImage(src, fmt, x, y, w, h);
+            // Clip when the placement can spill: a rounded box, a tiling run, or a
+            // single tile larger than its area.
+            const spills = Boolean(pl && (pl.repeatX || pl.repeatY
+              || pl.x < -0.5 || pl.y < -0.5 || pl.x + pl.w > w + 0.5 || pl.y + pl.h > h + 0.5));
+            if (hasRadius || spills) await withPdfRoundedClip(pdf, x, y, w, h, radii, uniform, draw);
             else draw();
           }
         } catch { /* skip the bg image — the box's own content still renders vector */ }
@@ -6644,20 +6674,6 @@ async function imageDims(src: string): Promise<{ w: number; h: number } | null> 
     bmp.close?.();
     return d;
   } catch { return null; }
-}
-
-// The fitted rect for a background-image inside the box (x,y,w,h), by `background-size` —
-// jsPDF's addImage stretches, so compute the fit ourselves to avoid distortion. cover →
-// fill+crop (overflows, clip to box); contain → fit inside; exact two-value / stretch →
-// the box. `background-position` anchors it. `overflows` tells the caller to clip.
-function bgFitRect(natW: number, natH: number, x: number, y: number, w: number, h: number, style: CSSStyleDeclaration): { x: number; y: number; w: number; h: number; overflows: boolean } {
-  const size = (style.backgroundSize || 'auto').trim().toLowerCase();
-  const stretch = /\S+\s+\S+/.test(size) && !size.includes('auto') && size !== 'cover' && size !== 'contain';
-  if (!(natW > 0) || !(natH > 0) || stretch) return { x, y, w, h, overflows: false };
-  const s = size === 'contain' ? Math.min(w / natW, h / natH) : Math.max(w / natW, h / natH);   // default cover
-  const iw = natW * s, ih = natH * s;
-  const [px, py] = objectPositionFractions(style.backgroundPosition);
-  return { x: x + (w - iw) * px, y: y + (h - ih) * py, w: iw, h: ih, overflows: iw > w + 0.5 || ih > h + 0.5 };
 }
 
 // Pick the jsPDF.addImage format from a data: URL's REAL MIME (the previous
