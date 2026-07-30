@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unit tests for the STREAMING encode+mux session (createStreamingMux).
+ * Unit tests for the STREAMING encode+mux session (createStreamingMux) and the
+ * BUFFERED path (encodeMuxWebCodecs).
  *
  * WebCodecs doesn't exist in node, so the session is driven through its injection
  * seam: stub VideoEncoder / AudioEncoder / VideoFrame / AudioData classes plus a
@@ -13,7 +14,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createStreamingMux, HIGH_WATER, type EncodePick, type EncodeOpts } from './video-encode-core.ts';
+import { createStreamingMux, encodeMuxWebCodecs, HIGH_WATER, type EncodeAudio, type EncodePick, type EncodeOpts } from './video-encode-core.ts';
 import { videoFrameSchedule } from './video-mime.ts';
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────

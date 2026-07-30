@@ -86,7 +86,9 @@ import { applyPdfX } from './export-pdfx.ts';
 import { isOwnProfile, resolveEmbeddedProfile } from '../lib/press-profile-embed.ts';
 import type { EmbedResolution } from '../lib/press-profile-embed.ts';
 // Moved to export-pdf-vector.ts; re-exported because export-pptx.ts imports it from here.
-export { pureRotationDeg };
+// renderSvg/renderEmf/renderEps/renderDxf: the per-format entry points, exported
+// only for the byte-exact golden suite (export-format-golden.test.ts).
+export { pureRotationDeg, renderSvg, renderEmf, renderEps, renderDxf };
 
 // ── Local types ─────────────────────────────────────────────────────────────
 type Rgb = [number, number, number];
@@ -7564,7 +7566,11 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // fast — before the slow Phase 1 capture — and degrades to silent + warning.
   // Pass the clip length so any fade-out lands at the end of the replay.
   const { audio, mimeType } = await prepareExportAudio(opts, preferred, opts.duration ?? 5);
-  if (!mimeType) { audio?.stop(); throw new Error(NO_VIDEO_MSG); }
+  // A missing recorder mime is NOT fatal here: the WebCodecs encode below needs no
+  // MediaRecorder at all (e.g. a browser with VideoEncoder AVC but no MediaRecorder
+  // mp4). It only rules out the MediaRecorder paths — the opt-in stream capture and
+  // the Phase 2 replay — so NO_VIDEO_MSG moves to the guard before Phase 2, thrown
+  // only once the WebCodecs pick has ALSO come up empty.
 
   // A tool with a continuously-animating <canvas> can OPT IN to real-time stream
   // capture by marking it `data-capture-stream` — the canvas's own rAF loop is
@@ -7576,7 +7582,9 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   const captureEl = (typeof (node as any).captureStream === 'function')
     ? (node as HTMLCanvasElement)
     : (streamCanvas && typeof streamCanvas.captureStream === 'function' ? streamCanvas : null);
-  if (captureEl) {
+  // Stream capture is inherently MediaRecorder; without a mime it falls through to
+  // the frame-by-frame path (losing the seamless loop, keeping the export).
+  if (captureEl && mimeType) {
     const waitMs     = (opts.wait     ?? 1) * 1000;
     const durationMs = (opts.duration ?? 5) * 1000;
     const canvasFps  = opts.fps ?? 30;
@@ -7635,7 +7643,12 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, bitrate);
     const wantAudio = !!opts.audio?.url;
     const audioPick = pick && wantAudio ? await pickWebCodecsAudio(pick.container) : null;
-    if (pick && (!wantAudio || audioPick)) {
+    // With no MediaRecorder fallback (!mimeType) the WebCodecs path is taken even
+    // when its audio codec is missing — a silent clip + warning beats NO_VIDEO_MSG.
+    if (pick && wantAudio && !audioPick && !mimeType) {
+      _host?.log?.('warn', 'This browser cannot encode an audio track into the chosen container; exporting silent video.');
+    }
+    if (pick && (!wantAudio || audioPick || !mimeType)) {
       // Resolve the offline music bed once; a failure here (bedOk=false) falls through to
       // the MediaRecorder Phase 2, which muxes the live audio track instead.
       let track: WebCodecsAudioTrack | null = null;
@@ -7648,6 +7661,11 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
           if (bed) track = { ...audioPick, buffer: bed };
         }
       } catch { bedOk = false; }
+      if (!bedOk && !mimeType) {
+        // No Phase 2 to fall back to; encode silent rather than fail the export.
+        bedOk = true; track = null;
+        _host?.log?.('warn', 'Audio bed unavailable; exporting silent video.');
+      }
 
       // Off-thread encode (opt-in, probe-gated): hand the buffered frames + a COPY of the
       // bed PCM to a Worker so the encode/mux runs off the main thread. Transfer is one-way,
@@ -7684,6 +7702,14 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
         }
       }
     }
+  }
+
+  // Phase 2 needs a MediaRecorder mime. Reaching here without one means the
+  // WebCodecs attempt above also came up empty — nothing can encode.
+  if (!mimeType) {
+    frames.forEach(b => b.close());
+    audio?.stop();
+    throw new Error(NO_VIDEO_MSG);
   }
 
   // Phase 2: replay pre-rendered frames at target fps into captureStream.
