@@ -301,3 +301,41 @@ test('an <img> with a PATH src is inlined as a data: URI, not left as a fetchabl
     assert.doesNotMatch(svg, /href="https?:\/\/[^"]*thumb-fixture/, 'no fetchable href may survive');
     assert.doesNotMatch(svg, /href="\/thumb-fixture/, 'no root-relative href may survive');
   });
+
+// ── CSS url() parsing: the select chevron ────────────────────────────────────
+
+test('a background-image whose data-URI contains quotes is emitted, not dropped',
+  { skip: SKIP }, async () => {
+    // firstCssUrl matched `(["\']?)([^)"\']+)\\1` — a character class banning BOTH
+    // quote marks from the URL body. An inline SVG data-URI is full of
+    // `xmlns=\'…\'`, so the match failed, firstCssUrl returned null, the background
+    // branch never ran, and NOTHING was emitted. That silently removed the select
+    // chevron (--field-chevron, styles/parts/fields.css:42 — one declaration, on
+    // every <select> in the app) from every SVG and PDF export, not just docs
+    // screenshots. Measured before the fix: 0 <image> for this markup.
+    const chevron = "url(\"data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' "
+      + "width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23888888\'"
+      + "%3E%3Cpolyline points=\'6 9 12 15 18 9\'/%3E%3C/svg%3E\")";
+    const svg = await render(
+      `<style>.chev{width:200px;height:36px;background-color:#fff;background-image:${chevron};`
+      + `background-repeat:no-repeat;background-position:right 10px center}</style>`
+      + `<div class="chev"></div>`);
+    assert.ok((svg.match(/<image\b/g) ?? []).length >= 1,
+      'the quoted SVG data-URI background must be emitted');
+    assert.match(svg, /href="data:image\/svg\+xml/, 'and inlined as a data: URI');
+  });
+
+test('a plain path and an unquoted url() still parse (no regression from the quote fix)',
+  { skip: SKIP }, async () => {
+    const pg = await page();
+    await pg.route('**/bg-fixture.png', (route: any) => route.fulfill({
+      status: 200, contentType: 'image/png',
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'),
+    }));
+    const svg = await render(
+      '<style>.bg{width:60px;height:40px;background-image:url(/bg-fixture.png);'
+      + 'background-repeat:no-repeat}</style><div class="bg"></div>');
+    assert.match(svg, /<image[^>]*href="data:image\//, 'an unquoted path url() must still resolve and inline');
+  });
