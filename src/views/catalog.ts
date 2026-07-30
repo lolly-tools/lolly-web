@@ -25,6 +25,16 @@
  */
 
 import { escape } from '../utils.ts';
+import {
+  matchesType as matchesTypeRule,
+  visibleAssets as visibleAssetsRule,
+  buildSearchHaystack,
+  matchesQuery as matchesQueryRule,
+  favItems as favItemsRule,
+  selectableIds as selectableIdsRule,
+  pruneSelection as pruneSelectionRule,
+  type TypeFilter,
+} from './catalog-filter.ts';
 import { audioTransportHtml, wireAudioTransport } from '../lib/audio-transport.ts';
 import type { VizHandle } from '../lib/butterchurn-viz.ts';
 import { t } from '../i18n.ts';
@@ -110,7 +120,8 @@ interface CatFont {
 // option per export format (which would be a huge, noisy list): Image = raster
 // photos/logos, Vector = SVG/EPS artwork, Motion = video + Lottie animations, Audio =
 // the music/audio tiles admitted into the catalogue view (see the allAssets filter below).
-type TypeFilter = 'all' | 'image' | 'vector' | 'motion' | 'audio';
+// TypeFilter + its bucket table live in catalog-filter.ts with the predicates
+// that read them, so the type and the rule cannot drift apart.
 // Toolbar glyphs (Lucide house style). Each button shows icon + label on desktop and
 // collapses to the icon alone on mobile (see .cat-btn-label in catalog.css).
 const catIco = (inner: string): string =>
@@ -146,13 +157,9 @@ const TYPE_FILTERS: { key: TypeFilter; label: string; icon: string; sfx?: string
   { key: 'motion', label: 'Motion', icon: CAT_ICONS.motion, sfx: 'reel' },
   { key: 'audio', label: 'Audio', icon: CAT_ICONS.audio, sfx: 'waveform' },
 ];
-// Which asset types each filter bucket admits ('all' matches everything).
-const TYPE_FILTER_TYPES: Record<Exclude<TypeFilter, 'all'>, Set<string>> = {
-  image: new Set(['raster']),
-  vector: new Set(['vector']),
-  motion: new Set(['video', 'lottie']),
-  audio: new Set(['audio']),
-};
+
+/** Stand-in for the search index when there is no query to match against. */
+const EMPTY_HAYSTACK: ReadonlyMap<string, string> = new Map();
 
 // The web shell's concrete host exposes more than the tool-facing HostV1 contract; we
 // reach for the user-asset helpers + profile.set(). main.ts passes the concrete WebHost
@@ -912,34 +919,25 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </div>`;
   }
 
-  // Assets the user hasn't hidden.
-  const visibleAssets = (): AssetRef[] => allAssets.filter(a => !hiddenSet.has(assetBaseId(a.id)));
-  // Filetype-filter predicate (sticky toolbar) — 'all' passes everything; otherwise the
-  // asset's type must fall in the selected bucket (image/vector/motion/audio).
-  function matchesType(a: AssetRef): boolean {
-    return typeFilter === 'all' || TYPE_FILTER_TYPES[typeFilter].has(a.type);
-  }
-  // Footer-search predicate: match the name, id, tags, category label or format.
-  function matchesQuery(a: AssetRef): boolean {
-    if (!query) return true;
+  // The rules below live in ./catalog-filter.ts — pure, DOM-free and unit-tested
+  // (catalog-filter.test.ts). This view keeps the mutable state; the module owns
+  // the logic. These wrappers just bind the current state to it, so every call
+  // site in mountCatalog reads exactly as it did before the extraction.
+  const visibleAssets = (): AssetRef[] => visibleAssetsRule(allAssets, hiddenSet, assetBaseId);
+  const matchesType = (a: AssetRef): boolean => matchesTypeRule(a, typeFilter);
+  // The search index, memoised across keystrokes and dropped whenever the asset
+  // set or the category overrides change (see setOverrides and the reload path).
+  // Built on FIRST SEARCH, never merely on render — indexing every asset for a
+  // user who never types in the box would be pure waste.
+  function haystack(): ReadonlyMap<string, string> {
     if (!searchHaystack) {
-      searchHaystack = new Map();
-      for (const x of allAssets) {
-        const tags = ((x.meta?.tags as string[] | undefined) ?? []).join(' ');
-        searchHaystack.set(x.id, `${String(x.meta?.name ?? '')} ${x.id} ${tags} ${categoryLabel(libCategory(x, overrides))} ${x.format ?? x.type}`.toLowerCase());
-      }
+      searchHaystack = buildSearchHaystack(allAssets, x => categoryLabel(libCategory(x, overrides)));
     }
-    return (searchHaystack.get(a.id) ?? '').includes(query);
+    return searchHaystack;
   }
-  // Favourited, visible assets — deduped by base id, catalog-then-user order.
-  function favItems(): AssetRef[] {
-    const seen = new Set<string>(); const out: AssetRef[] = [];
-    for (const a of visibleAssets()) {
-      const b = assetBaseId(a.id);
-      if (favSet.has(b) && !seen.has(b)) { seen.add(b); out.push(a); }
-    }
-    return out;
-  }
+  const matchesQuery = (a: AssetRef): boolean =>
+    !query || matchesQueryRule(a, query, haystack());
+  const favItems = (): AssetRef[] => favItemsRule(visibleAssets(), favSet, assetBaseId);
 
   // The "Your uploads" section — a standard `.cat-group` that is ALWAYS rendered in the
   // browse view (even with zero uploads): its body leads with a drop area, so adding files
@@ -986,7 +984,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // A delete can empty the active filter's bucket — its toolbar button would vanish
     // (shownFilters below only offers non-empty buckets) while the filter kept hiding
     // every asset with no visible control explaining why. Fall back to All instead.
-    if (typeFilter !== 'all' && !allAssets.some(a => TYPE_FILTER_TYPES[typeFilter as Exclude<TypeFilter, 'all'>].has(a.type))) typeFilter = 'all';
+    if (typeFilter !== 'all' && !allAssets.some(a => matchesTypeRule(a, typeFilter))) typeFilter = 'all';
     // Filter by search first; the count + category buckets both read the matched set.
     const visible = visibleAssets().filter(matchesQuery).filter(matchesType);
 
@@ -1089,7 +1087,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // dropped while searching (there are no folds to manage in a flat results grid).
     // Only offer a bucket the catalogue actually has assets for — e.g. a brand with no
     // video/Lottie/audio assets never sees an always-empty Motion or Audio button.
-    const shownFilters = TYPE_FILTERS.filter(f => f.key === 'all' || allAssets.some(a => TYPE_FILTER_TYPES[f.key as Exclude<TypeFilter, 'all'>].has(a.type)));
+    const shownFilters = TYPE_FILTERS.filter(f => f.key === 'all' || allAssets.some(a => matchesTypeRule(a, f.key as TypeFilter)));
     const filterSeg = `
       <div class="cat-typefilter" role="group" aria-label="${escape(t('Filter by file type'))}">
         ${shownFilters.map(f => `<button type="button" class="cat-typefilter-opt${typeFilter === f.key ? ' is-on' : ''}" data-typefilter="${f.key}"${f.sfx ? ` data-sfx="${f.sfx}"` : ''} data-voice="${escape(t(f.label))}" aria-pressed="${typeFilter === f.key}" aria-label="${escape(t(f.label))}" title="${escape(t(f.label))}">${f.icon}<span class="cat-btn-label">${t(f.label)}</span></button>`).join('')}
@@ -2328,15 +2326,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // search + filetype), so "Select all" and pruneSelection() can never reach a tile that
   // isn't on screen: an off-screen id in the selection would ride into a bulk delete
   // invisibly. (The filetype filter belongs here for the same reason the search does.)
-  const selectableIds = (): Set<string> =>
-    new Set(visibleAssets().filter(matchesQuery).filter(matchesType).filter(a => a.source === 'user').map(a => a.id));
+  const selectableIds = (): Set<string> => selectableIdsRule(
+    visibleAssets(),
+    // An empty query short-circuits inside the rule, so hand it an empty index
+    // rather than building one nobody will read.
+    { query, haystack: query ? haystack() : EMPTY_HAYSTACK, typeFilter },
+  );
 
   // Drop selected ids that are gone (deleted, or filtered out by a search) so the count
   // stays honest. Runs at the top of every render().
   function pruneSelection(): void {
-    if (!selected.size) return;
-    const present = selectableIds();
-    for (const id of [...selected]) if (!present.has(id)) selected.delete(id);
+    pruneSelectionRule(selected, selectableIds());
   }
 
   function toggleSelect(id: string): void {
