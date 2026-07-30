@@ -152,6 +152,11 @@ export async function openDropChooser(
   if (single && (s.design || s.pdf) && toolExists('layout-studio')) {
     choices.push({ id: 'design', label: t('Edit in Layout Studio'), primary: true });
   }
+  // Frames → timed scenes: the same design/PDF sniff can open as a video sequence
+  // (free-canvas's scene-mode import consumes the stash on mount).
+  if (single && (s.design || s.pdf) && toolExists('sequence-studio')) {
+    choices.push({ id: 'sequence', label: t('Make a video from its frames') });
+  }
   if (single && s.pdf) {
     choices.push({ id: 'library', label: t('Add pages to your library') });
     if (toolExists('compress-pdf')) choices.push({ id: 'compress', label: t('Compress this PDF') });
@@ -192,6 +197,10 @@ export async function openDropChooser(
     case 'design':
       pendingDesign = first;
       routeToConsumer('#/tool/layout-studio', onToolRoute('layout-studio'));
+      break;
+    case 'sequence':
+      pendingDesign = first;
+      routeToConsumer('#/tool/sequence-studio', onToolRoute('sequence-studio'));
       break;
     case 'compress':
       pendingToolFile = { toolId: 'compress-pdf', file: first };

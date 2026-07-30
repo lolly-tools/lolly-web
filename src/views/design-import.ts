@@ -30,6 +30,8 @@ import {
   parsePenpotContent,
   penpotShapeToNode,
   figmaNodesToNodes,
+  figmaNodesToScenes,
+  type DesignFrameScene,
   type DesignMapOptions,
 } from '@lolly/engine';
 import { strFromU8 } from 'fflate';
@@ -711,7 +713,17 @@ async function parseFig(files: Record<string, Uint8Array>, { host, warn, map }: 
   if (!nodes.length) throw new Error('This .fig has no visible shapes on its first page.');
 
   // Resolve image fills (images/<hash>) and reconstructed vector paths into asset refs.
-  const imageCache = new Map<string, AssetRef>();
+  await resolveFigMedia(host, files, nodes, new Map<string, AssetRef>(), warn);
+
+  const { width, height } = shiftToOrigin(nodes);
+  return { boxes: finalizeBoxes(nodes, { prefix: 'f', ...map }), width, height, background: '#ffffff' };
+}
+
+// Resolve a node list's private media placeholders (_imageHash from image fills,
+// _vectorPath from reconstructed VECTOR outlines) into stored user-asset refs.
+// Shared by the single-canvas import (parseFig) and the per-frame scenes walk;
+// `imageCache` dedupes identical media across every caller-scoped batch.
+async function resolveFigMedia(host: HostV1 | undefined, files: Record<string, Uint8Array>, nodes: any[], imageCache: Map<string, AssetRef>, warn: (msg: string) => void): Promise<void> {
   for (const n of nodes) {
     if (n._vectorPath) {
       const ref = await storeFigVector(host, n._vectorPath, n._vectorFill, n._vectorStroke, n._vectorSize, imageCache, warn);
@@ -723,9 +735,6 @@ async function parseFig(files: Record<string, Uint8Array>, { host, warn, map }: 
       delete n._imageHash;
     }
   }
-
-  const { width, height } = shiftToOrigin(nodes);
-  return { boxes: finalizeBoxes(nodes, { prefix: 'f', ...map }), width, height, background: '#ffffff' };
 }
 
 async function decodeCanvasFig(bytes: Uint8Array): Promise<any> {
@@ -971,4 +980,325 @@ function typeFromExt(ext: string): string {
   if (e === 'webp') return 'image/webp';
   if (e === 'gif') return 'image/gif';
   return 'image/png';
+}
+
+// ---------------------------------------------------------------------------
+// Frame → scene import (sequence editors)
+// ---------------------------------------------------------------------------
+//
+// The sequence editor's counterpart to parseDesignFile: instead of merging one
+// page into a single boxes array, every frame/board/page of the file becomes one
+// stored SVG *asset*, ready to drop onto the timeline as a timed scene. Formats
+// that already ARE per-page vector artwork (PDF/.ai pages, plain SVG, legacy
+// Penpot page SVGs) go straight to the asset store; formats that parse into
+// boxes (Penpot binfile-v3 boards, Figma .fig frames, IDML) are baked through an
+// offscreen Layout Studio render (host.compose.render → SVG), so a baked frame
+// is pixel-identical to importing that frame into Layout Studio and exporting it.
+
+/** One imported frame, ready to place as a timeline scene. */
+export interface DesignSceneAsset { name: string; asset: AssetRef; }
+export interface DesignScenesResult { scenes: DesignSceneAsset[]; }
+
+// Frames beyond this are skipped with a warning — same ceiling as the PDF page
+// picker (MAX_PICK_PAGES), far above any real storyboard.
+const MAX_SCENES = 60;
+
+/**
+ * Parse a design file into per-frame scene assets.
+ * @param {File|Blob} file
+ * @param {{ host, log?, interactive?, map? }} ctx — same contract as parseDesignFile;
+ *   `interactive` drives the multi-page PDF picker (all pages pre-selected),
+ *   `map` carries the target tool's font/seed vocabulary into the frame bakes.
+ * @returns {Promise<DesignScenesResult>} scenes in document order; empty when the
+ *   user cancelled a picker. Per-frame failures warn and continue.
+ */
+export async function parseDesignScenes(
+  file: File | Blob,
+  { host, log, interactive, map }: {
+    host?: HostV1; log?: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions;
+  } = {},
+): Promise<DesignScenesResult> {
+  const warn: (msg: string) => void = typeof log === 'function' ? log : () => {};
+  if (file.size > MAX_IMPORT_BYTES) {
+    throw new Error(`This file is too large to import (over ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} MB).`);
+  }
+  const buf = new Uint8Array(await file.arrayBuffer());
+
+  // PDF / .ai: the multi-page SVG ingest already does exactly this — one stored
+  // vector asset per picked page (all pre-selected in 'multi' mode).
+  if (isPdf(buf)) {
+    const { ingestPdfAsSvgAssets } = await import('./pdf-import.ts');
+    const refs = await ingestPdfAsSvgAssets(host as HostV1, file, { mode: interactive ? 'multi' : 'single', warn });
+    return { scenes: refs.map((asset, i) => ({ name: sceneName(asset, i), asset })) };
+  }
+
+  if (isIndd(buf, file && (file as File).name)) {
+    throw new Error('A raw .indd file can’t be read directly. In InDesign choose File → Export → InDesign Markup (.idml) and import the .idml.');
+  }
+
+  const isZip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+  if (isZip) {
+    const files = await unzipAsync(buf, {
+      maxEntryBytes: MAX_ZIP_ENTRY_BYTES,
+      maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
+      tooLarge: name => `This archive expands too large to import (${name}).`,
+    });
+    if (isIdml(files)) {
+      // IDML: parse the first spread into boxes and bake it as a single scene.
+      const { parseIdmlZip } = await import('./idml-import.ts');
+      const res = await parseIdmlZip(files, { host, warn, map });
+      const asset = await bakeSceneAsset(host, warn, 'Spread 1', res.boxes, res.width, res.height);
+      return { scenes: asset ? [{ name: 'Spread 1', asset }] : [] };
+    }
+    if (files['canvas.fig']) return parseFigScenes(files, { host, warn, map });
+    return parsePenpotZipScenes(files, { host, warn, map });
+  }
+
+  // Plain SVG (incl. a Figma frame exported as SVG): one scene, stored as-is
+  // after sanitisation — full vector fidelity, no box mapping needed.
+  const svgText = new TextDecoder('utf-8').decode(buf);
+  const svgEl = sanitizeSvg(svgText);
+  if (!svgEl) throw new Error('This file isn’t a readable SVG. Export your design as SVG and try again.');
+  const name = baseName((file as File).name, 'design');
+  const asset = await storeSvgAsset(host, svgEl, name, warn);
+  return { scenes: asset ? [{ name, asset }] : [] };
+}
+
+// Display name for a stored ref: its own name, else "<i+1>".
+function sceneName(asset: AssetRef, i: number): string {
+  const n = asset && asset.meta && typeof asset.meta.name === 'string' ? asset.meta.name : '';
+  return n.replace(/\.svg$/i, '') || `Page ${i + 1}`;
+}
+
+function baseName(name: unknown, fallback: string): string {
+  const s = String(name || '').replace(/\.[a-z0-9]+$/i, '').trim();
+  return s || fallback;
+}
+
+// Serialize a sanitized <svg> and persist it as a user vector asset. Sanitisation
+// already stripped scripts + external hrefs; storeUserUpload runs DOMPurify again
+// on ingest, so the stored bytes pass the same gate as any user upload.
+async function storeSvgAsset(host: HostV1 | undefined, svgEl: SVGSVGElement, name: string, warn: (msg: string) => void): Promise<AssetRef | null> {
+  try {
+    const text = new XMLSerializer().serializeToString(svgEl);
+    const svgFile = new File([text], `${name}.svg`, { type: 'image/svg+xml' });
+    return await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], svgFile);
+  } catch (err) {
+    warn(`Couldn’t store “${name}” (${String((err as Error) && (err as Error).message || err)}).`);
+    return null;
+  }
+}
+
+// Bake one frame's boxes into a stored SVG asset via an offscreen Layout Studio
+// render. compose.render suppresses watermark/provenance (the result is an
+// intermediate), and the SVG goes through the full HTML→SVG walker — text as
+// paths, image embeds — so the baked frame needs no fonts at playback. The
+// transparent background lets the frame's own bg box (or the sequence canvas)
+// show through. Returns null (with a warn) when Layout Studio isn't available
+// in this build or the render fails; the caller skips that frame.
+async function bakeSceneAsset(host: HostV1 | undefined, warn: (msg: string) => void, name: string, boxes: unknown[], width: number, height: number): Promise<AssetRef | null> {
+  try {
+    const compose = host && host.compose;
+    if (!compose || typeof compose.render !== 'function') throw new Error('tool composition isn’t available here');
+    const rendered = await compose.render({
+      toolId: 'layout-studio',
+      inputs: { boxes, background: 'transparent' },
+      format: 'svg',
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+    });
+    const blob = await (await fetch(rendered.url)).blob();
+    const svgFile = new File([blob], `${name}.svg`, { type: 'image/svg+xml' });
+    return await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], svgFile);
+  } catch (err) {
+    warn(`Couldn’t render “${name}” (${String((err as Error) && (err as Error).message || err)}).`);
+    return null;
+  }
+}
+
+// Bake a list of {name, width, height, boxes} frames, with progress + the scene cap.
+async function bakeFrames(
+  host: HostV1 | undefined, warn: (msg: string) => void,
+  frames: Array<{ name: string; width: number; height: number; boxes: unknown[] }>,
+): Promise<DesignSceneAsset[]> {
+  if (frames.length > MAX_SCENES) {
+    warn(`This file has ${frames.length} frames — only the first ${MAX_SCENES} were imported.`);
+    frames = frames.slice(0, MAX_SCENES);
+  }
+  const scenes: DesignSceneAsset[] = [];
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i]!;
+    if (frames.length > 1) warn(`Rendering “${f.name}” (${i + 1}/${frames.length})…`);
+    const asset = await bakeSceneAsset(host, warn, f.name, f.boxes, f.width, f.height);
+    if (asset) scenes.push({ name: f.name, asset });
+  }
+  return scenes;
+}
+
+// Figma .fig → per-frame scenes: engine walk splits top-level frames, then each
+// frame's media resolves and bakes independently (one shared image cache).
+async function parseFigScenes(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+  const canvasFig = files['canvas.fig'];
+  if (!canvasFig || !canvasFig.length) throw new Error('This .fig has no canvas data.');
+  let doc: any;
+  try { doc = await decodeCanvasFig(canvasFig); }
+  catch (err) {
+    throw new Error('Couldn’t read this .fig — Figma may have changed its file format. Try exporting the frames as SVG instead. (' + String((err as Error) && (err as Error).message || err) + ')');
+  }
+  const sceneDefs: DesignFrameScene[] = figmaNodesToScenes(doc && doc.nodeChanges, doc && doc.blobs);
+  if (!sceneDefs.length) throw new Error('This .fig has no importable frames.');
+
+  const imageCache = new Map<string, AssetRef>();
+  const frames: Array<{ name: string; width: number; height: number; boxes: unknown[] }> = [];
+  for (const sc of sceneDefs) {
+    await resolveFigMedia(host, files, sc.nodes as any[], imageCache, warn);
+    const boxes = finalizeBoxes(sc.nodes as any[], { prefix: 'f', ...map });
+    if (boxes.length) frames.push({ name: sc.name, width: sc.width, height: sc.height, boxes });
+  }
+  return { scenes: await bakeFrames(host, warn, frames) };
+}
+
+// Penpot ZIP → per-board scenes. Binfile-v3 walks every page's top-level boards;
+// the legacy SVG export stores each page's SVG directly (it is already the frame).
+async function parsePenpotZipScenes(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+  const manifest = files['manifest.json'] ? safeJsonParse(strFromU8(files['manifest.json'])) : null;
+  const isExportFiles = manifest && typeof manifest.type === 'string' && /export-files/.test(manifest.type);
+  const hasShapeJson = Object.keys(files).some((p) => /\/pages\/[^/]+\/[^/]+\.json$/i.test(p));
+  if (isExportFiles && hasShapeJson) {
+    return parsePenpotBinfileScenes(files, manifest, { host, warn, map });
+  }
+
+  const svgPaths = Object.keys(files).filter((p) => /\.svg$/i.test(p) && !/[/\\]$/.test(p));
+  if (svgPaths.length) {
+    const scenes: DesignSceneAsset[] = [];
+    for (const path of svgPaths.sort().slice(0, MAX_SCENES)) {
+      let svgText: string;
+      try { svgText = strFromU8(files[path]!); }
+      catch { warn(`Skipped a Penpot page that wasn’t text (${path}).`); continue; }
+      const svgEl = sanitizeSvg(svgText);
+      if (!svgEl) { warn(`Skipped an unreadable Penpot page (${path}).`); continue; }
+      const name = baseName(path.split('/').pop(), `Page ${scenes.length + 1}`);
+      // Legacy page SVGs can reference sibling zip images; those refs were stripped
+      // by sanitisation, so pages WITH images go through the box walk + bake to keep
+      // them, and image-free pages store directly (cheaper, perfect fidelity).
+      const hasZipImage = /<image[\s>]/i.test(svgText) && !/href\s*=\s*"data:/i.test(svgText);
+      if (hasZipImage) {
+        const { nodes, width, height } = await svgToNodes(svgEl, { host, warn, penpot: true, zipFiles: files });
+        const boxes = finalizeBoxes(nodes, map);
+        if (!boxes.length) continue;
+        const asset = await bakeSceneAsset(host, warn, name, boxes, width, height);
+        if (asset) scenes.push({ name, asset });
+      } else {
+        const asset = await storeSvgAsset(host, svgEl, name, warn);
+        if (asset) scenes.push({ name, asset });
+      }
+    }
+    if (svgPaths.length > MAX_SCENES) warn(`This file has ${svgPaths.length} pages — only the first ${MAX_SCENES} were imported.`);
+    if (!scenes.length) throw new Error('This Penpot file didn’t contain any importable pages.');
+    return { scenes };
+  }
+
+  throw new Error('Could not read this Penpot file. In Penpot use “Export as .penpot” (or export the board as SVG) and import that.');
+}
+
+// Penpot binfile-v3 → scenes: every page's top-level boards (type 'frame') become
+// one scene each, cropped to the board; loose top-level shapes collect into one
+// extra scene per page. Same shape→node mapping + media loading as the single-page
+// import (parsePenpotBinfile), so the two paths can't drift visually.
+async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manifest: any, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+  const fileId = Array.isArray(manifest.files) && manifest.files[0] ? manifest.files[0].id : null;
+  if (!fileId) throw new Error('This Penpot file has no importable file.');
+
+  const pageDir = `files/${fileId}/pages/`;
+  const pageShapes = new Map<string, string[]>();
+  for (const path of Object.keys(files)) {
+    if (!path.startsWith(pageDir)) continue;
+    const m = path.slice(pageDir.length).match(/^([^/]+)\/([^/]+)\.json$/i);
+    if (m) { if (!pageShapes.has(m[1]!)) pageShapes.set(m[1]!, []); pageShapes.get(m[1]!)!.push(path); }
+  }
+  if (!pageShapes.size) throw new Error('This Penpot file has no pages to import.');
+
+  const pageMeta = (pid: string): any => (files[`${pageDir}${pid}.json`] ? safeJsonParse(strFromU8(files[`${pageDir}${pid}.json`]!)) : null);
+  const pageIds = [...pageShapes.keys()].sort((a, b) => {
+    const ia = pageMeta(a), ib = pageMeta(b);
+    return (ia && Number.isFinite(ia.index) ? ia.index : 0) - (ib && Number.isFinite(ib.index) ? ib.index : 0);
+  });
+
+  const ROOT = '00000000-0000-0000-0000-000000000000';
+  const imageCache = new Map<string, AssetRef>();
+  const frames: Array<{ name: string; width: number; height: number; boxes: unknown[] }> = [];
+
+  // Map an ordered shape subtree to nodes (with media), preserving paint order.
+  const shapesToNodes = async (shapes: any[]): Promise<any[]> => {
+    const nodes: any[] = [];
+    for (const shape of shapes) {
+      let node: any = null;
+      try { node = penpotShapeToNode(shape); } catch { node = null; }
+      if (!node) continue;
+      if (node._fillImageId) {
+        const ref = await loadPenpotMedia(host, files, fileId, node._fillImageId, imageCache, warn);
+        if (ref) node.image = ref; else node.kind = 'box';
+        delete node._fillImageId;
+      }
+      nodes.push(node);
+    }
+    return nodes;
+  };
+
+  for (let p = 0; p < pageIds.length; p++) {
+    const pid = pageIds[p]!;
+    const shapesById: Record<string, any> = {};
+    for (const path of pageShapes.get(pid)!) {
+      const shape = safeJsonParse(strFromU8(files[path]!));
+      if (shape && shape.id) shapesById[shape.id] = shape;
+    }
+    const meta = pageMeta(pid);
+    const pageName = (meta && typeof meta.name === 'string' && meta.name) || `Page ${p + 1}`;
+
+    // DFS one top-level subtree in paint order (container `shapes` arrays).
+    const subtree = (id: string, seen: Set<string>): any[] => {
+      const s = shapesById[id];
+      if (!s || seen.has(id)) return [];
+      seen.add(id);
+      const out = [s];
+      for (const k of (Array.isArray(s.shapes) ? s.shapes : [])) out.push(...subtree(k, seen));
+      return out;
+    };
+
+    const root = shapesById[ROOT];
+    const topIds: string[] = root && Array.isArray(root.shapes) ? root.shapes : Object.keys(shapesById).filter((id) => id !== ROOT);
+    const seen = new Set<string>([ROOT]);
+    const loose: any[] = [];
+    for (const id of topIds) {
+      const s = shapesById[id];
+      if (!s) continue;
+      if (String(s.type || '') === 'frame') {
+        const nodes = await shapesToNodes(subtree(id, seen));
+        if (!nodes.length) continue;
+        const sel = (s.selrect && typeof s.selrect === 'object') ? s.selrect : s;
+        const fx = Number(sel.x) || 0, fy = Number(sel.y) || 0;
+        for (const n of nodes) { n.x -= fx; n.y -= fy; }
+        const boxes = finalizeBoxes(nodes, map);
+        if (!boxes.length) continue;
+        frames.push({
+          name: (typeof s.name === 'string' && s.name) || `Board ${frames.length + 1}`,
+          width: Math.max(1, Math.round(Number(sel.width) || 0)) || 1080,
+          height: Math.max(1, Math.round(Number(sel.height) || 0)) || 1080,
+          boxes,
+        });
+      } else {
+        loose.push(...subtree(id, seen));
+      }
+    }
+    if (loose.length) {
+      const nodes = await shapesToNodes(loose);
+      if (nodes.length) {
+        const { width, height } = shiftToOrigin(nodes);
+        const boxes = finalizeBoxes(nodes, map);
+        if (boxes.length) frames.push({ name: pageName, width, height, boxes });
+      }
+    }
+  }
+  if (!frames.length) throw new Error('This Penpot file has no importable boards.');
+  return { scenes: await bakeFrames(host, warn, frames) };
 }

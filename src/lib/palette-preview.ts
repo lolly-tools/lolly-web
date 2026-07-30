@@ -17,7 +17,7 @@
  * Pure + deterministic: the same palette always yields the same three SVGs.
  */
 
-import { contrastRatio } from '@lolly/engine';
+import { contrastText } from '../brand-vars.ts';
 
 export interface PalettePreview {
   /** Human name for the scene ("Poster", "Chart", "UI card"). */
@@ -53,12 +53,14 @@ function toRgb(hex: string): [number, number, number] | null {
 }
 
 /** A readable ink colour (near-black or white) for text/marks sitting on `bg` —
- *  whichever wins the engine's WCAG contrastRatio (one implementation of the
- *  luminance math app-wide; this file used to carry its own approximation). */
+ *  the app-wide inversion rule (contrastText, brand-vars.ts), with its black
+ *  softened to this preview's near-black. It briefly ran a WCAG-ratio winner
+ *  here instead, which flips far darker than the shared rule and left these
+ *  marks disagreeing with every swatch beside them. */
 function ink(bg: string): string {
   const hex = col(bg);
   if (hex === 'transparent') return '#141414';
-  return contrastRatio('#141414', hex) >= contrastRatio('#ffffff', hex) ? '#141414' : '#ffffff';
+  return contrastText(hex) === '#ffffff' ? '#ffffff' : '#141414';
 }
 
 /** Mix a colour toward black (amt<0) or white (amt>0); returns valid #rrggbb. */

@@ -212,6 +212,31 @@ export function tokenValueToHex(value: unknown): string | null {
   return typeof hex === 'string' && /^#[0-9a-f]{6}/i.test(hex) ? hex.slice(0, 7) : null;
 }
 
+/**
+ * Black or white — whichever reads on `hex`. Perceptual luminance threshold.
+ *
+ * **This is the ONE inversion rule for ink sitting on a colour**, app-wide: the
+ * flip point Andy picked from the colour picker's dial disc (the full history
+ * lives with the picker surfaces in components/color-field.ts, which re-exports
+ * this). It is defined HERE because the chrome accent below is on the boot path
+ * and color-field.ts pulls in the engine barrel.
+ *
+ * The chrome's `--primary-foreground` is COMPUTED with it from the brand
+ * primary rather than taken from the authored `on-primary` token: authored
+ * pairs kept shipping dark inks on mid-tone accents (SUSE's near-black teal on
+ * Jungle green) that sat on the wrong side of the flip point every other
+ * surface uses. The authored `on-primary` still reaches tool templates
+ * untouched via `--brand-on-primary` (applyBrandVars), so exported pixels
+ * never move; the high-contrast accent keeps its own APCA search, which
+ * outranks this rule.
+ */
+export function contrastText(hex: string): string {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
+  if (!m) return '#000000';
+  const r = parseInt(m[1]!, 16), g = parseInt(m[2]!, 16), b = parseInt(m[3]!, 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#000000' : '#ffffff';
+}
+
 // ── Warm accent (--brand-warn) ───────────────────────────────────────────────
 // "Needs attention" UI (the render pill / editor toolbar's unsaved cue) used to
 // hard-code an amber. Instead, scan the active brand's own colours (ramps,
@@ -244,8 +269,7 @@ export function nearestWarmHex(swatches: ReadonlyArray<{ value: unknown }>): { h
     if (!best || dist < best.dist) best = { hex, dist };
   }
   if (!best) return null;
-  const ink = contrastRatio(best.hex, '#000000') >= contrastRatio(best.hex, '#ffffff') ? '#000000' : '#ffffff';
-  return { hex: best.hex, ink };
+  return { hex: best.hex, ink: contrastText(best.hex) };
 }
 
 // ── High contrast: the accent has to clear the bar too ───────────────────────
@@ -421,12 +445,14 @@ function hcAccentBlock(selector: string, primary: string | null, onPrimary: stri
   return `${selector} {\n  --primary: ${p};\n  --primary-foreground: ${fg};\n}`;
 }
 
-/** One shell theme's accent overrides, or '' when primary didn't resolve. */
-function accentBlock(selector: string, primary: string | null, onPrimary: string | null): string {
+/** One shell theme's accent overrides, or '' when primary didn't resolve. The
+ * ink is COMPUTED from the fill via the app-wide inversion rule (contrastText),
+ * not taken from the brand's authored on-primary — see contrastText's note. */
+function accentBlock(selector: string, primary: string | null): string {
   const p = primary && hexToHslTriple(primary);
   if (!p) return '';
-  const fg = onPrimary && hexToHslTriple(onPrimary);
-  return `${selector} {\n  --primary: ${p};\n  --ring: ${p};\n${fg ? `  --primary-foreground: ${fg};\n` : ''}}`;
+  const fg = hexToHslTriple(contrastText(primary));
+  return `${selector} {\n  --primary: ${p};\n  --ring: ${p};\n  --primary-foreground: ${fg};\n}`;
 }
 
 /**
@@ -440,7 +466,7 @@ function accentBlock(selector: string, primary: string | null, onPrimary: string
  * grey chrome and a vivid brand yields a tinted one — never garish: surface
  * chroma is capped at 0.08.
  */
-export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string, darkOnPrimaryHex: string | null): string {
+export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string): string {
   const surf = hexToOklch(lightPrimaryHex);
   const acc = hexToOklch(darkPrimaryHex);
   if (!surf || !acc) return '';
@@ -449,7 +475,9 @@ export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string, d
   const t = (l: number, cMul: number, hue = h) =>
     hexToHslTriple(oklchToHex({ l, c: Math.min(cBase * cMul, 0.08), h: hue }));
   const accent = hexToHslTriple(darkPrimaryHex);
-  const accentFg = (darkOnPrimaryHex && hexToHslTriple(darkOnPrimaryHex)) ?? t(0.23, 0.7);
+  // The accent ink follows the fill by the app-wide inversion rule, same as the
+  // accent blocks — never the authored on-primary (see contrastText's note).
+  const accentFg = hexToHslTriple(contrastText(darkPrimaryHex));
   const v = (name: string, val: string | null) => (val ? `  --${name}: ${val};\n` : '');
   // Lightness stops lifted from the SUSE construction: bg .29, card .35,
   // muted .38, secondary .39, accent-surface .40, border .51; text .95/.84.
@@ -542,11 +570,11 @@ export function chromeBrandCss(
   dark: { primary: string | null; onPrimary: string | null },
 ): string {
   return [
-    accentBlock(':root, [data-theme="light"]', light.primary, light.onPrimary),
-    accentBlock('[data-theme="dark"]', dark.primary, dark.onPrimary),
+    accentBlock(':root, [data-theme="light"]', light.primary),
+    accentBlock('[data-theme="dark"]', dark.primary),
     // The brand theme is CONSTRUCTED, not accent-patched: surfaces from the
     // light primary's hue, accent from the dark primary (see brandThemeCss).
-    light.primary && dark.primary ? brandThemeCss(light.primary, dark.primary, dark.onPrimary) : '',
+    light.primary && dark.primary ? brandThemeCss(light.primary, dark.primary) : '',
     // Lolly's own mark follows the brand hue (identity, not verdict).
     lollyMarkCss(light.primary, dark.primary),
     // High contrast, per theme and gated on the attribute, so a user with no

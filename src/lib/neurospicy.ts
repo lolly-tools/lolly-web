@@ -46,6 +46,16 @@ async function persistProfile(host: NeurospicyHost): Promise<void> {
   try { const p = await host.profile.get(); await host.profile.set({ ...p, neurospicy: { ...state } }); } catch { /* best-effort */ }
 }
 export function getNeurospicy(): NeurospicyState { return { ...state }; }
+/** Demo override for the ?neuro deep-link (lib/neuro-demo.ts): assign player state
+ *  IN MEMORY only — no persistLocal, no persistProfile — so a shared demo link
+ *  affects exactly one page load. `paused: false` makes isNeurospicyPlaying()
+ *  report the "playing" look; nothing here touches the audio graph, so no audio
+ *  ever autoplays. */
+export function demoNeurospicy(partial: Partial<NeurospicyState> & { paused?: boolean }): void {
+  const { paused: p, ...rest } = partial;
+  state = { ...state, ...rest };
+  if (p !== undefined) paused = p;
+}
 /** Reconcile from the profile (canonical) at boot; leaves defaults if absent. */
 export function hydrateNeurospicy(fromProfile: unknown): void {
   if (fromProfile && typeof fromProfile === 'object') { state = { ...DEFAULTS, ...(fromProfile as Partial<NeurospicyState>) }; persistLocal(); }
