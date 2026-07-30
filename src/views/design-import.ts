@@ -31,6 +31,7 @@ import {
   penpotShapeToNode,
   figmaNodesToNodes,
   figmaNodesToScenes,
+  readingOrder,
   type DesignFrameScene,
   type DesignMapOptions,
 } from '@lolly/engine';
@@ -635,13 +636,16 @@ function safeJsonParse(text: string): any {
 
 // DFS from the root frame following each container's `shapes` array (paint order,
 // back-to-front); append any unreachable orphans in map order. penpotShapeToNode drops
-// the root frame itself, so it just seeds the order.
+// the root frame itself, so it just seeds the order. A `hidden` shape hides its whole
+// subtree in Penpot — importing it visible was a fidelity bug, so it prunes here.
+// (`hideInViewer` is NOT pruned on this path: it's visible in Penpot's editor, and
+// this import feeds an editor.)
 function orderPenpotShapes(shapesById: Record<string, any>): any[] {
   const out: any[] = [];
   const seen = new Set<string>();
   const visit = (id: string) => {
     const s = shapesById[id];
-    if (!s || seen.has(id)) return;
+    if (!s || seen.has(id) || s.hidden === true) return;
     seen.add(id);
     out.push(s);
     const kids = Array.isArray(s.shapes) ? s.shapes : [];
@@ -1256,9 +1260,13 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
     const pageName = (meta && typeof meta.name === 'string' && meta.name) || `Page ${p + 1}`;
 
     // DFS one top-level subtree in paint order (container `shapes` arrays).
+    // A hidden shape hides its whole subtree — same as Figma's visible:false.
+    // `hideInViewer` deliberately does NOT prune here: on a nested board it means
+    // "don't show as its own slide in Penpot's viewer" — the content still paints
+    // inside its parent. It only filters which TOP-LEVEL boards become scenes.
     const subtree = (id: string, seen: Set<string>): any[] => {
       const s = shapesById[id];
-      if (!s || seen.has(id)) return [];
+      if (!s || seen.has(id) || s.hidden === true) return [];
       seen.add(id);
       const out = [s];
       for (const k of (Array.isArray(s.shapes) ? s.shapes : [])) out.push(...subtree(k, seen));
@@ -1269,28 +1277,42 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
     const topIds: string[] = root && Array.isArray(root.shapes) ? root.shapes : Object.keys(shapesById).filter((id) => id !== ROOT);
     const seen = new Set<string>([ROOT]);
     const loose: any[] = [];
+    const boards: Array<{ shape: any; at: { x: number; y: number; w: number; h: number } }> = [];
     for (const id of topIds) {
       const s = shapesById[id];
-      if (!s) continue;
+      if (!s || s.hidden === true || s.hideInViewer === true) continue;
+      // A component MASTER board (componentRoot + mainInstance) is a definition,
+      // not deck content — Penpot files keep them on a "Main components" page and
+      // every slide already carries its own instance copies. Skip them wholesale.
+      if (s.componentRoot === true && s.mainInstance === true) continue;
       if (String(s.type || '') === 'frame') {
-        const nodes = await shapesToNodes(subtree(id, seen));
-        if (!nodes.length) continue;
         const sel = (s.selrect && typeof s.selrect === 'object') ? s.selrect : s;
-        const fx = Number(sel.x) || 0, fy = Number(sel.y) || 0;
-        for (const n of nodes) { n.x -= fx; n.y -= fy; }
-        const boxes = finalizeBoxes(nodes, map);
-        if (!boxes.length) continue;
-        frames.push({
-          name: (typeof s.name === 'string' && s.name) || `Board ${frames.length + 1}`,
-          width: Math.max(1, Math.round(Number(sel.width) || 0)) || 1080,
-          height: Math.max(1, Math.round(Number(sel.height) || 0)) || 1080,
-          boxes,
-        });
+        boards.push({ shape: s, at: {
+          x: Number(sel.x) || 0, y: Number(sel.y) || 0,
+          w: Number(sel.width) || 0, h: Number(sel.height) || 0,
+        } });
       } else {
         loose.push(...subtree(id, seen));
       }
     }
-    if (loose.length) {
+    // Boards play in READING order (rows top-to-bottom, left-to-right): root
+    // `shapes` order is Z/creation order, which plays a deck backwards.
+    for (const { shape: s, at } of readingOrder(boards, (b) => b.at)) {
+      const nodes = await shapesToNodes(subtree(s.id, seen));
+      if (!nodes.length) continue;
+      for (const n of nodes) { n.x -= at.x; n.y -= at.y; }
+      const boxes = finalizeBoxes(nodes, map);
+      if (!boxes.length) continue;
+      frames.push({
+        name: (typeof s.name === 'string' && s.name) || `Board ${frames.length + 1}`,
+        width: Math.max(1, Math.round(at.w)) || 1080,
+        height: Math.max(1, Math.round(at.h)) || 1080,
+        boxes,
+      });
+    }
+    // Loose shapes only make a scene when the page has NO boards — next to
+    // boards they're scratch content and a union-bounds scene of it is noise.
+    if (loose.length && !boards.length) {
       const nodes = await shapesToNodes(loose);
       if (nodes.length) {
         const { width, height } = shiftToOrigin(nodes);
