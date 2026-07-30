@@ -2230,6 +2230,14 @@ async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | 
   // independent (unaffected by the editor's zoom), the same basis the paged-page capture and
   // the offscreen renderVariantAt dims use; the manifest is the fallback when the node has no
   // box yet. For a default-size session this equals the manifest, so nothing else changes.
+  // A paged tool's canvas is EVERY page stacked (battlecards' four cards make a
+  // 1:3 strip) — as a tile that squashes into an unrecognisable ribbon. The
+  // thumbnail should be what one card/page looks like, so capture the FIRST
+  // [data-pdf-page] box at its own laid-out size instead of the whole document.
+  const firstPage = manifest.render.paged === true
+    ? canvasEl?.querySelector<HTMLElement>('[data-pdf-page]') ?? null : null;
+  if (firstPage) canvasEl = firstPage;
+
   const nw = canvasEl?.offsetWidth  || manifest.render.width  || 600;
   const nh = canvasEl?.offsetHeight || manifest.render.height || 600;
 

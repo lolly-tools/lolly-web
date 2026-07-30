@@ -1,6 +1,8 @@
-// A slide-sorter filmstrip for paged tools (render.paged) — a vertical rail of live
-// thumbnails down the side of the canvas that lets you see every page at once, click one
-// to jump to it, and step with the ← → / ↑ ↓ arrow keys. When a page carries a
+// A slide-sorter filmstrip for paged tools (render.paged) — a rail of live thumbnails
+// beside the canvas that lets you see every page at once, click one to jump to it, and
+// step with the ← → / ↑ ↓ arrow keys. The rail runs down the LEFT by default, or along
+// the BOTTOM when the manifest asks for it (render.filmstrip: "bottom") — the deck-strip
+// shape, which suits a card/slide deck where pages are wide and few. When a page carries a
 // `data-block-index` (deck-studio tags each slide with the sidebar block that authors it),
 // the link is two-way: clicking a thumbnail also scrolls + focuses that block, and clicking
 // the block scrolls its slide into view.
@@ -18,15 +20,31 @@ export interface Filmstrip {
   destroy(): void;
 }
 
-const THUMB_W = 132; // px — thumbnail width; height derives from each page's aspect
+export type FilmstripSide = 'left' | 'bottom';
 
-export function mountFilmstrip(outer: HTMLElement, canvas: HTMLElement, inputs: HTMLElement | null): Filmstrip {
+// A thumbnail is sized on the axis the rail does NOT scroll along, so every thumb in the
+// rail matches on that axis and the rail's own thickness is constant: a vertical rail
+// fixes the WIDTH (heights vary with each page's aspect), a horizontal one fixes the
+// HEIGHT (widths vary). That constant is what lets the CSS reserve a fixed strip and the
+// canvas inset it, with no measure-then-relayout pass.
+const THUMB_W = 132; // px — left rail: thumbnail width
+const THUMB_H = 96;  // px — bottom rail: thumbnail height
+
+export function mountFilmstrip(
+  outer: HTMLElement,
+  canvas: HTMLElement,
+  inputs: HTMLElement | null,
+  side: FilmstripSide = 'left',
+): Filmstrip {
   const host = outer.parentElement;
   if (!host) return { refresh() {}, destroy() {} };
+  const bottom = side === 'bottom';
 
   const rail = document.createElement('nav');
-  rail.className = 'pagestrip';
+  rail.className = bottom ? 'pagestrip pagestrip--bottom' : 'pagestrip';
   rail.setAttribute('aria-label', 'Slides');
+  rail.setAttribute('aria-orientation', bottom ? 'horizontal' : 'vertical');
+  host.classList.toggle('is-pagestrip-bottom', bottom);
   host.appendChild(rail);
 
   let thumbs: HTMLElement[] = [];
@@ -72,7 +90,8 @@ export function mountFilmstrip(outer: HTMLElement, canvas: HTMLElement, inputs: 
       t.setAttribute('aria-current', on ? 'true' : 'false');
     });
     const t = thumbs[i];
-    if (t) t.scrollIntoView({ block: 'nearest' });
+    // 'nearest' on both axes: the rail scrolls on whichever one it actually runs along.
+    if (t) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   function step(delta: number): void {
@@ -143,7 +162,7 @@ export function mountFilmstrip(outer: HTMLElement, canvas: HTMLElement, inputs: 
         const rect = page.getBoundingClientRect();
         const pw = Math.max(1, rect.width || page.offsetWidth || 1280);
         const ph = Math.max(1, rect.height || page.offsetHeight || 720);
-        const scale = THUMB_W / pw;
+        const scale = bottom ? THUMB_H / ph : THUMB_W / pw;
         const label = (page.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
 
         // Container (not a button — it holds two buttons: jump + delete).
@@ -159,8 +178,8 @@ export function mountFilmstrip(outer: HTMLElement, canvas: HTMLElement, inputs: 
         // A scaled clone of the real page, rendered via the re-scoped styles above.
         const frame = document.createElement('span');
         frame.className = 'pagestrip-frame pagestrip-render';
-        frame.style.width = THUMB_W + 'px';
-        frame.style.height = Math.round(ph * scale) + 'px';
+        frame.style.width = (bottom ? Math.round(pw * scale) : THUMB_W) + 'px';
+        frame.style.height = (bottom ? THUMB_H : Math.round(ph * scale)) + 'px';
         const clone = page.cloneNode(true) as HTMLElement;
         clone.removeAttribute('data-pdf-page');
         clone.querySelectorAll('script,[data-slide-notes]').forEach(n => n.remove());
@@ -220,7 +239,7 @@ export function mountFilmstrip(outer: HTMLElement, canvas: HTMLElement, inputs: 
       window.removeEventListener('keydown', onKey);
       inputs?.removeEventListener('click', onInputsClick);
       clearThumbs();
-      host!.classList.remove('has-pagestrip');
+      host!.classList.remove('has-pagestrip', 'is-pagestrip-bottom');
       rail.remove();
     },
   };
