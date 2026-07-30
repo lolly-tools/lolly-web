@@ -186,26 +186,11 @@
 /* ── "Hide colourful previews" (a11y pref, html[data-a11y-previews="hidden"]) ──
    The Projects grid, folder overlay and export rail are the one EXCEPTION to
    hiding imagery: a session thumbnail you can't see is a session you can't find,
-   so instead of removing them we take the colour out. Each thumbnail blends its
-   own luminosity onto a flat primary backdrop (the same output as laying the
-   primary over the image in `color` blend mode): structure survives, but every
-   tile shares one hue, so the grid stops flickering with competing colours. A
-   gentle contrast drop calms it further. Full colour returns inside the tool. */
-html[data-a11y-previews="hidden"] .folder-tile { isolation: isolate; }
-html[data-a11y-previews="hidden"] .folder-tile .tile-primary { background: hsl(var(--primary)); }
-html[data-a11y-previews="hidden"] .folder-tile .tile-meta { background: hsl(var(--card)); }
+   so instead of removing them we calm them — half the saturation, half the
+   contrast (Andy's tuned values), structure intact. Full colour returns inside
+   the tool. */
 html[data-a11y-previews="hidden"] img.tile-cover,
-html[data-a11y-previews="hidden"] img.folder-cell {
-  mix-blend-mode: luminosity;
-  filter: contrast(0.85);
-  opacity: 0.92;
-}
-html[data-a11y-previews="hidden"] .folder-export-tile {
-  background: hsl(var(--primary));
-  isolation: isolate;
-}
+html[data-a11y-previews="hidden"] img.folder-cell,
 html[data-a11y-previews="hidden"] .folder-export-tile img {
-  mix-blend-mode: luminosity;
-  filter: contrast(0.85);
-  opacity: 0.92;
+  filter: saturate(.5) contrast(.5);
 }

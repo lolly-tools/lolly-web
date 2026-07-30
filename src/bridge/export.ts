@@ -17,7 +17,7 @@ import {
   parseCssLength, cornerRadii, uniformRadius, insetCorners, roundedRectPath, parseBoxShadow, parseTextShadow, gaussianShadowBands, gaussianShadowRings,
   parseCssMatrix, matAboutPivot, isAxisAlignedMat, matToSvg, type Mat2D,
   parseClipShape, parseRadialGradient, parseConicGradient, parseDropShadowFilter, type ConicGradient,
-  splitCssArgs, parseGradientAngle, parseGradientStop,
+  splitCssArgs, parseGradientAngle, parseGradientStop, expandGradientStops,
   parseColor, interpolateColor, colorToSrgb8,
   embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
   buildExportMeta,
@@ -3697,12 +3697,12 @@ function buildLinearGradientEl(NS: string, bgImage: string, elX: number, elY: nu
   grad.setAttribute('y2', String(cy - cosA * len));
 
   const n = stops.length;
-  stops.forEach((raw: string, i: number) => {
-    const { colorStr, opacity, offset } = parseGradientStop(raw.trim(), i, n);
-    if (!colorStr) return;
+  const parsedStops = expandGradientStops(
+    stops.map((raw: string, i: number) => parseGradientStop(raw.trim(), i, n)).filter((st) => st.colorStr));
+  parsedStops.forEach(({ colorStr, opacity, offset }) => {
     const s = document.createElementNS(NS, 'stop');
     s.setAttribute('offset',     offset);
-    s.setAttribute('stop-color', colorStr);
+    s.setAttribute('stop-color', colorStr!);
     if (opacity < 1) s.setAttribute('stop-opacity', String(opacity));
     grad.appendChild(s);
   });
@@ -3746,7 +3746,10 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
       col: st.colorStr!, op: st.opacity,
       at: parseFloat(st.offset) / (st.offset.endsWith('%') ? 100 : 360),
       // Parsed once per stop, not once per sampled wedge (this fan is up to 360 of them).
-      cc: parseColor(st.colorStr!),
+      // parseGradientStop returns an OPAQUE colorStr with the alpha split into
+      // `opacity` — re-parsing the hex alone read `transparent` as opaque black,
+      // which painted the checkerboard idiom's clear wedges solid. Restore it.
+      cc: (() => { const c = parseColor(st.colorStr!); return c ? { ...c, alpha: st.opacity } : null; })(),
     }))
     .filter((st) => Number.isFinite(st.at));
   if (raw.length < 2) return null;
@@ -8684,7 +8687,20 @@ function detachExportHidden(node: Element): () => void {
     .filter(el => !el.parentElement?.closest('[data-export-hide]'));
   const slots = marked.map(el => ({ el, parent: el.parentNode, next: el.nextSibling }));
   slots.forEach(({ el }) => el.remove());
-  return () => slots.forEach(({ el, parent, next }) => { if (parent) (parent as any).insertBefore(el, next); });
+  // Restore in REVERSE document order: a marked node's saved `next` may be ANOTHER
+  // marked node (an editor stage's .fc-overlay / .fc-toolbar-dock / .tl-panel are
+  // adjacent siblings), and every one of them is detached before any is put back —
+  // forward order then throws insertBefore's NotFoundError. Going backwards puts
+  // the reference sibling in first. The parentNode re-check covers the other way
+  // the anchor rots: the live tool re-rendering during the awaits inside a render.
+  return () => {
+    for (let i = slots.length - 1; i >= 0; i--) {
+      const { el, parent, next } = slots[i]!;
+      if (!parent) continue;
+      const ref = next && next.parentNode === parent ? next : null;
+      (parent as any).insertBefore(el, ref);
+    }
+  };
 }
 
 // ── Text-based export formats ─────────────────────────────────────────────────
