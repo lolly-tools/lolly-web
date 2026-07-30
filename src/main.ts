@@ -14,7 +14,7 @@ import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChang
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
-import { hydrateA11yPrefs } from './lib/a11y-prefs.ts';
+import { hydrateA11yPrefs, currentA11yPrefs, setA11yPref } from './lib/a11y-prefs.ts';
 import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { loadUserFonts } from './lib/load-user-fonts.ts';
@@ -591,6 +591,15 @@ async function boot(): Promise<void> {
   // Accessibility prefs ride the profile the same way (localStorage is only
   // their FOUC mirror, applied by the index.html inline script) — reconcile.
   hydrateA11yPrefs(profile.a11y);
+  // One-time migration: "Hide previews" used to be a device-local gallery toggle
+  // (localStorage 'lolly-hide-previews'); it is now the hidePreviews a11y pref.
+  // Carry an ON choice into the profile once, then retire the old key.
+  try {
+    if (localStorage.getItem('lolly-hide-previews') === '1' && !currentA11yPrefs().hidePreviews) {
+      await setA11yPref(host, 'hidePreviews', true);
+    }
+    localStorage.removeItem('lolly-hide-previews');
+  } catch { /* storage off — nothing to migrate */ }
 
   // Language — same precedence chain as the theme, plus a session-only `lang`
   // URL override (never written back to the profile — see i18n.ts). Awaited

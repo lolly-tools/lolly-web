@@ -376,6 +376,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       label: 'Reduce motion',
       info: 'Turns off the transitions, slides and animated flourishes in the app. Your tool canvas and any animated export keep moving exactly as designed.',
     },
+    // Sits under Reduce motion on purpose: both trim visual stimulation. The
+    // galleries keep every card (and its favourite/pin/info actions) as calm
+    // icon + text; Projects keeps its thumbnails but tints them to one colour
+    // (parts/folders.css) so they stay recognisable without the colour noise.
+    {
+      key: 'hidePreviews',
+      label: 'Hide colourful previews',
+      info: 'Swaps the gallery preview artwork for calm icon and text cards, and softens your project thumbnails to a single colour so they stay recognisable. Inside a tool everything shows in full colour, and nothing you export changes.',
+    },
     {
       key: 'highContrast',
       label: 'High contrast',

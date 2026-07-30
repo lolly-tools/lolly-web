@@ -546,12 +546,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
             </div>
             <p class="filter-pop-head">${t('Filter')}</p>
             <div class="filter-pop-pills" aria-label="${escape(t('Filter tools by category'))}"></div>
-            <label class="filter-pop-check">
-              ${jellyActive()
-                ? `<jelly-switch class="filter-hide-previews" size="sm" label="${escape(t('Hide previews'))}"></jelly-switch>`
-                : `<input type="checkbox" class="filter-hide-previews field-check">`}
-              <span>${t('Hide previews')}</span>
-            </label>
           </div>` : '',
         profile: { firstname: profile.firstname },
       })}
@@ -568,7 +562,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
           <p class="gallery-empty-hint">${t('Try turning on categories in {link}.', { link: `<a href="#/profile?focus=feature-flags">${t('your feature flags')}</a>` })}</p>
         </div>
       `) : `
-        ${featuredEntries.length ? '<div class="featured-mount"></div>' : ''}
+        <div class="featured-mount"></div>
         <p class="gallery-search-status visually-hidden" role="status" aria-live="polite"></p>
         <div class="tool-masonry${opts.only === 'utility' ? ' tool-masonry--utility' : ''}"></div>
       `}
@@ -1285,29 +1279,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // returnFocus=false makes this a no-op when already closed.
   cleanups.push(() => filterDisclosure.close());
 
-  // "Hide previews" — collapse every card (grid AND featured strip) to icon + text,
-  // keeping a slim Continue bar on resumable sessions. Device-level view preference,
-  // persisted like the theme. The class rides the gallery ROOT so it reaches the
-  // featured strip too (not just the masonry).
-  const HIDE_PREVIEWS_KEY = 'lolly-hide-previews';
-  const galleryEl = viewEl.querySelector<HTMLElement>('.gallery');
-  const hideCheckbox = viewEl.querySelector<HTMLInputElement>('.filter-hide-previews');
-  let hidePreviews = false;
-  try { hidePreviews = localStorage.getItem(HIDE_PREVIEWS_KEY) === '1'; } catch { /* storage off */ }
-  if (hideCheckbox) hideCheckbox.checked = hidePreviews;
-  // Both the gallery root (drives the featured strip's collapse) and the masonry
-  // (existing grid rules key on `.tool-masonry.hide-previews`) carry the class.
-  const setHidePreviews = (on: boolean): void => {
-    galleryEl?.classList.toggle('hide-previews', on);
-    masonry?.classList.toggle('hide-previews', on);
-  };
-  setHidePreviews(hidePreviews);
-  hideCheckbox?.addEventListener('change', () => {
-    hidePreviews = hideCheckbox!.checked;
-    try { localStorage.setItem(HIDE_PREVIEWS_KEY, hidePreviews ? '1' : '0'); } catch { /* storage off */ }
-    setHidePreviews(hidePreviews);
-    updateFeaturedVisibility();
-  });
+  // "Hide previews" is no longer a per-gallery toggle: it moved to the profile's
+  // Accessibility card as the "Hide colourful previews" pref (lib/a11y-prefs.ts),
+  // and the CSS that collapses cards + the featured strip now keys off
+  // html[data-a11y-previews="hidden"] directly — nothing to wire here.
 
   // Global sort — persisted like the theme; re-renders the grid in place.
   const sortSelect = viewEl.querySelector<HTMLSelectElement>('.gallery-sort');

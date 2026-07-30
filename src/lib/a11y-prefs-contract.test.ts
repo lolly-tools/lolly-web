@@ -45,6 +45,7 @@ const PREFS = [
   { key: 'reduceMotion', attr: 'data-a11y-motion', value: 'reduce', dataset: 'a11yMotion', sheet: 'styles/parts/base.css' },
   { key: 'highContrast', attr: 'data-a11y-contrast', value: 'high', dataset: 'a11yContrast', sheet: 'styles/tokens.css' },
   { key: 'largeText', attr: 'data-a11y-text', value: 'large', dataset: 'a11yText', sheet: 'styles/parts/a11y.css' },
+  { key: 'hidePreviews', attr: 'data-a11y-previews', value: 'hidden', dataset: 'a11yPreviews', sheet: 'styles/parts/gallery.css' },
 ] as const;
 
 /** The type multiplier every chrome font-size is written through. */

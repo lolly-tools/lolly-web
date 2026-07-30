@@ -739,13 +739,16 @@ stroke-width:.81;
   }
 }
 
-/* "Hide previews" toggle (filter popover): drop ALL preview thumbnails for a
+/* "Hide colourful previews" (the a11y pref, profile → Accessibility — was the
+   filter popover's device-local toggle): drop ALL preview thumbnails for a
    compact gallery. Demo-preview heroes collapse entirely (the card body's name
    link already opens the tool). Saved-session heroes keep a slim "Continue" bar —
    image hidden, resume affordance kept — since the chips are absolutely positioned
-   over the (now hidden) image and would otherwise be stranded on a 0-height box. */
-.tool-masonry.hide-previews .gtile-hero--preview { display: none; }
-.tool-masonry.hide-previews .gtile-hero:not(.gtile-hero--preview) {
+   over the (now hidden) image and would otherwise be stranded on a 0-height box.
+   Gated on html[data-a11y-previews="hidden"] like every a11y pref (dormant by
+   default; the contract test polices the form). */
+html[data-a11y-previews="hidden"] .tool-masonry .gtile-hero--preview { display: none; }
+html[data-a11y-previews="hidden"] .tool-masonry .gtile-hero:not(.gtile-hero--preview) {
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -754,12 +757,12 @@ stroke-width:.81;
   background: none;        /* drop the checkerboard placeholder */
   line-height: normal;     /* was 0 (for the image) — let the chip size the bar */
 }
-.tool-masonry.hide-previews .gtile-hero:not(.gtile-hero--preview) .gtile-hero-img,
-.tool-masonry.hide-previews .gtile-hero:not(.gtile-hero--preview) .gtile-stamp {
+html[data-a11y-previews="hidden"] .tool-masonry .gtile-hero:not(.gtile-hero--preview) .gtile-hero-img,
+html[data-a11y-previews="hidden"] .tool-masonry .gtile-hero:not(.gtile-hero--preview) .gtile-stamp {
   display: none;           /* image gone; timestamp is redundant with the caption sub-line */
 }
-.tool-masonry.hide-previews .gtile-hero:not(.gtile-hero--preview) .gtile-continue,
-.tool-masonry.hide-previews .gtile-hero:not(.gtile-hero--preview) .badge{
+html[data-a11y-previews="hidden"] .tool-masonry .gtile-hero:not(.gtile-hero--preview) .gtile-continue,
+html[data-a11y-previews="hidden"] .tool-masonry .gtile-hero:not(.gtile-hero--preview) .badge{
   position: static;        /* flow inside the bar instead of floating over the image */
   opacity: 1;              /* normally revealed on hover — always show it here */
 }
@@ -767,8 +770,13 @@ stroke-width:.81;
    gone they'd be invisible (faint, no contrast) and collide with the Continue bar.
    Drop them into normal flow at the card's bottom-right, fully opaque. Keep them
    positioned (relative + z-index) so they stay above the stretched .gtile-name
-   click target and remain clickable. */
-.tool-masonry.hide-previews .gtile-actions {
+   click target and remain clickable.
+   Utility tiles are EXEMPT: they never had a preview, and their fixed 4/3 box
+   (aspect-ratio + overflow:hidden) means an in-flow actions row is pushed past
+   the bottom edge and clipped — which silently removed favourite/pin/info from
+   the Utilities view whenever previews were hidden. They keep the absolute
+   top-right cluster they show with previews on. */
+html[data-a11y-previews="hidden"] .tool-masonry .gtile:not(.gtile--utility) .gtile-actions {
   position: relative;
   top: auto;
   right: auto;
@@ -776,36 +784,36 @@ stroke-width:.81;
   justify-content: flex-end;
   padding: 0 12px 10px;
 }
-.tool-masonry.hide-previews .gtile-iconbtn { color: hsl(var(--muted-foreground)); }
+html[data-a11y-previews="hidden"] .tool-masonry .gtile .gtile-iconbtn { color: hsl(var(--muted-foreground)); }
 /* Icon-led / resume / "desktop only" tiles are previews too — collapse them so
    every hidden-preview card is just its icon + text body (the icon lives in the
    caption row; the name link still opens the tool). */
-.tool-masonry.hide-previews .gtile-tile { display: none; }
+html[data-a11y-previews="hidden"] .tool-masonry .gtile-tile { display: none; }
 
 /* Featured strip, previews OFF: it STAYS (per Andy) but each hero collapses to a
    compact icon + name + blurb, so it reads like the collapsed grid cards below
    rather than a wall of empty preview stages. Scoped to the gallery root because
    the strip lives OUTSIDE .tool-masonry. */
-.gallery.hide-previews .featured { --ftile-h: auto; }
-.gallery.hide-previews .ftile { width: clamp(220px, 26vw, 300px); }
-.gallery.hide-previews .ftile-link { height: auto; }
-.gallery.hide-previews .ftile-stage { flex: 0 0 auto; min-height: 0; }
-.gallery.hide-previews .ftile-img,
-.gallery.hide-previews .ftile-open,
-.gallery.hide-previews .featured-go,
-.gallery.hide-previews .ftile-dots,
-.gallery.hide-previews .ftile-stage::after { display: none; }
+html[data-a11y-previews="hidden"] .gallery .featured { --ftile-h: auto; }
+html[data-a11y-previews="hidden"] .gallery .ftile { width: clamp(220px, 26vw, 300px); }
+html[data-a11y-previews="hidden"] .gallery .ftile-link { height: auto; }
+html[data-a11y-previews="hidden"] .gallery .ftile-stage { flex: 0 0 auto; min-height: 0; }
+html[data-a11y-previews="hidden"] .gallery .ftile-img,
+html[data-a11y-previews="hidden"] .gallery .ftile-open,
+html[data-a11y-previews="hidden"] .gallery .featured-go,
+html[data-a11y-previews="hidden"] .gallery .ftile-dots,
+html[data-a11y-previews="hidden"] .gallery .ftile-stage::after { display: none; }
 /* Keep the icon visible even once real art has loaded (.ftile.has-art hides it),
    and pull it into flow as a small, legible mark rather than the faint z-index:-1
    ghost that normally sits behind the preview. */
-.gallery.hide-previews .ftile .ftile-iconfill {
+html[data-a11y-previews="hidden"] .gallery .ftile .ftile-iconfill {
   display: flex;
   position: static;
   z-index: 0;
   padding: 14px 0 6px;
   color: hsl(var(--muted-foreground) / .7);
 }
-.gallery.hide-previews .ftile-iconfill svg { max-width: 52px; max-height: 52px; }
+html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px; max-height: 52px; }
 @media (min-width: 1500px) { .tool-masonry { --cols: 5; } }
 @media (min-width: 1800px) { .tool-masonry { --cols: 6; } }
 @media (min-width: 2100px) { .tool-masonry { --cols: 7; } }
@@ -1143,7 +1151,7 @@ stroke-width:.81;
 }
 .gcar-dot.is-active { background: #fff; transform: scale(1.25); }
 /* Hide the whole strip in "hide previews" mode, like the demo-preview hero. */
-.tool-masonry.hide-previews .gcar { display: none; }
+html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
 .gtile-hero::after {
   content: '';
   position: absolute;
@@ -1483,27 +1491,49 @@ a.gtile-name:focus-visible::after {
    hero/carousel image — NOT a live `:has(.gtile-hero, .gcar)` selector, which re-matched
    the whole grid on every filter/sort mutation. The JS keeps the class in sync (e.g. it
    drops it when a demo preview 404s and morphs to a text tile). Pixel-identical. */
-.tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-iconbtn {
+.tool-masonry .gtile.gtile--has-preview .gtile-iconbtn {
   color: #fff;
 
 }
-.tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-iconbtn:hover {
+.tool-masonry .gtile.gtile--has-preview .gtile-iconbtn:hover {
   color: #fff;
   border-color: transparent;
   background: rgba(0, 0, 0, .34);   /* a soft scrim disc for press feedback, à la .gtile-stamp */
+}
+/* Previews hidden (the a11y pref): the hero is display:none, so the white-on-
+   artwork treatment above would paint invisible white glyphs on the plain card.
+   These used to be `:not(.hide-previews)` guards on the rules above, but a
+   :not() on a11y state is banned (the pref must be dormant by default), so the
+   hidden-previews side restores the token colours instead — each selector
+   repeats the .gtile--has-preview chain so it out-specifies its white twin. */
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-iconbtn {
+  color: hsl(var(--muted-foreground));
+}
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-iconbtn:hover {
+  color: hsl(var(--primary));
+  border-color: hsl(var(--primary) / 0.5);
+  background: hsl(var(--primary) / 0.08);
 }
 /* Favourited over a preview: a SOLID white star (filled, vs the hollow outline
    when off) + the halo. The brand --primary is Pine (a dark green) even in light
    theme, so a primary-filled star would vanish on dark previews — white keeps the
    "on" state unmistakable on any artwork. (Empty tiles / hide-previews mode keep
    the brand-green fill from the base rule, where the surface is a known token.) */
-.tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-fav.is-fav,
-.tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-fav.is-fav:hover { color: #fff; }
-.tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-fav.is-fav svg { fill: #fff; }
+.tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav,
+.tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav:hover { color: #fff; }
+.tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav svg { fill: #fff; }
 /* Pinned over a preview: same solid-white on-state as the star (see above). */
-.tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-pin.is-pinned,
-.tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-pin.is-pinned:hover { color: #fff; }
-.tool-masonry:not(.hide-previews) .gtile.gtile--has-preview .gtile-pin.is-pinned svg { fill: #fff; }
+.tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned,
+.tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned:hover { color: #fff; }
+.tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned svg { fill: #fff; }
+/* Previews hidden: restore the brand-green on-state (same reasoning as the
+   iconbtn restore above — the artwork the white was for is gone). */
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav,
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav:hover,
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned,
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned:hover { color: hsl(var(--primary)); }
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav svg,
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned svg { fill: hsl(var(--primary)); }
 
 .gtile--unavailable { opacity: 0.6; }
 

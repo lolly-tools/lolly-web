@@ -8,6 +8,7 @@
  * attribute on <html> that all the gated CSS keys off:
  *
  *   data-a11y-motion="reduce" · data-a11y-contrast="high" · data-a11y-text="large"
+ *   · data-a11y-previews="hidden"
  *
  * Strictly additive (the jelly-effects model): every attribute defaults to
  * ABSENT, no selector matches, and the regular experience is untouched. The
@@ -15,22 +16,32 @@
  * in parts/base.css, high contrast in tokens.css, large text in parts/a11y.css
  * — and, like those blocks, never reaches inside the tool render canvas: a
  * user's creative output must not change because the app chrome calmed down.
+ *
+ * hidePreviews ("Hide colourful previews") swaps the tool galleries to calm
+ * icon + text cards (parts/gallery.css) and tints the Projects/session
+ * thumbnails to a single primary-hued monotone (parts/folders.css) — the one
+ * place imagery is kept, since a thumbnail you can't recognise is a thumbnail
+ * you can't use. It was the gallery filter popover's device-local "Hide
+ * previews" toggle before 2026-07-30; it lives here now because its audience is
+ * the same one the other three serve.
  */
 
 export interface A11yPrefs {
   reduceMotion?: boolean;
   highContrast?: boolean;
   largeText?: boolean;
+  hidePreviews?: boolean;
 }
 
 /** localStorage FOUC mirror key — read by the inline script in index.html. */
 export const A11Y_STORE_KEY = 'lolly-a11y';
 
 /** Pref key → the <html> dataset property + value it switches. */
-const ATTRS: Array<[keyof A11yPrefs, 'a11yMotion' | 'a11yContrast' | 'a11yText', string]> = [
+const ATTRS: Array<[keyof A11yPrefs, 'a11yMotion' | 'a11yContrast' | 'a11yText' | 'a11yPreviews', string]> = [
   ['reduceMotion', 'a11yMotion', 'reduce'],
   ['highContrast', 'a11yContrast', 'high'],
   ['largeText', 'a11yText', 'large'],
+  ['hidePreviews', 'a11yPreviews', 'hidden'],
 ];
 
 /** The prefs in force right now, read back from the applied attributes. */
@@ -40,6 +51,7 @@ export function currentA11yPrefs(): A11yPrefs {
     reduceMotion: d.a11yMotion === 'reduce',
     highContrast: d.a11yContrast === 'high',
     largeText: d.a11yText === 'large',
+    hidePreviews: d.a11yPreviews === 'hidden',
   };
 }
 
