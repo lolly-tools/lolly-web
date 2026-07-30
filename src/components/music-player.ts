@@ -25,6 +25,7 @@ import {
 } from '../lib/atmosphere.ts';
 import { getSfxVolume, setSfxVolume } from '../lib/sfx.ts';
 import { drawMeterBars, drawMeterBaseline } from '../lib/audio-meter.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { SOMAFM_HOME } from '../lib/radio.ts';
 import { escape } from '../utils.ts';
 // The transport glyphs come from the shared registry, so this player and the catalog's
@@ -101,6 +102,7 @@ const CSS = `
 .neuro-warn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: var(--radius); }
 .neuro-warn svg { width: 13px; height: 13px; }
 @media (prefers-reduced-motion: reduce) { .neuro-cat-caret { transition: none; } }
+html[data-a11y-motion="reduce"] .neuro-cat-caret { transition: none; }
 .neuro-track { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: none; border-radius: var(--radius); background: transparent; color: hsl(var(--foreground)); font-size: .82rem; text-align: left; cursor: pointer; transition: background .12s ease; }
 .neuro-track:hover { background: hsl(var(--muted)); }
 .neuro-track[aria-current="true"] { background: hsl(var(--primary) / .14); font-weight: 600; }
@@ -141,6 +143,7 @@ const CSS = `
 .neuro-atmo-row.is-on .neuro-atmo-label { color: hsl(var(--foreground)); }
 .neuro-atmo-row input[type="range"] { flex: 1; min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .neuro-atmo-caret, .neuro-atmo-icon { transition: none; } }
+html[data-a11y-motion="reduce"] :is(.neuro-atmo-caret, .neuro-atmo-icon) { transition: none; }
 .neuro-vol { display: flex; align-items: center; gap: 9px; font-size: .8rem; color: hsl(var(--muted-foreground)); }
 .neuro-vol span { flex: 0 0 3.4em; }
 .neuro-vol input[type="range"] { flex: 1; }
@@ -152,7 +155,12 @@ const CSS = `
 .neuro-warn-tip.is-shown { opacity: 1; pointer-events: auto; }
 .neuro-warn-tip a { color: hsl(var(--primary)); text-decoration: underline; font-weight: 600; }
 .neuro-warn-tip a:hover { text-decoration: none; }
-@media (prefers-reduced-motion: reduce) { .neuro-tbtn, .neuro-track, .neuro-picker-caret, .neuro-warn-tip { transition: none; } }`;
+@media (prefers-reduced-motion: reduce) { .neuro-tbtn, .neuro-track, .neuro-picker-caret, .neuro-warn-tip { transition: none; } }
+/* The app's own preference (data-a11y-motion, lib/a11y-prefs.ts) repeats each
+   transition-killing rule above: parts/base.css deliberately does NOT zero
+   transitions globally, so every component that tames its own has to honour
+   both signals. Attribute absent ⇒ nothing matches. */
+html[data-a11y-motion="reduce"] :is(.neuro-tbtn, .neuro-track, .neuro-picker-caret, .neuro-warn-tip) { transition: none; }`;
 
 function ensureStyles(): void {
   if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
@@ -716,7 +724,6 @@ export function wireMusicPlayerBody(root: ParentNode, host: NeurospicyHost): voi
 }
 
 // ── level meter (local songs only) ──────────────────────────────────────────
-const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
  * Advance just the seek bar, for a player body with no meter canvas.
@@ -772,7 +779,10 @@ function startMeter(root: ParentNode): void {
       // Something is actually sounding — a local track or a tapped radio stream. Reduced
       // motion parks the meter on its baseline but keeps looping, so the (slow,
       // informational) progress bar still tracks the track.
-      if (a && !reducedMotion) drawMeterBars(c2d, w, h, a, color);
+      // Asked per frame, not once at import: the app's own pref (a data attribute
+      // on <html>) can be flipped while the meter is running, and at import time
+      // boot hydration hasn't applied the profile value yet.
+      if (a && !prefersReducedMotion()) drawMeterBars(c2d, w, h, a, color);
       else drawMeterBaseline(c2d, w, h, color);
       requestAnimationFrame(draw);
     } else {

@@ -28,7 +28,7 @@
 .cl-jump { display: flex; flex-wrap: wrap; gap: .4rem; }
 .cl-head .cl-jump { flex-basis: 100%; }
 .cl-jump a {
-  font-size: .72rem; padding: .28rem .6rem; border-radius: 999px; text-decoration: none;
+  font-size: calc(.72rem * var(--a11y-fs)); padding: .28rem .6rem; border-radius: 999px; text-decoration: none;
   border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); background: hsl(var(--card));
 }
 .cl-jump a:hover { border-color: hsl(var(--ring) / .6); color: hsl(var(--foreground)); }
@@ -39,20 +39,20 @@
   margin: 0 0 2.4rem; padding: 1.1rem 1.2rem; border-radius: var(--radius);
   border: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .35);
 }
-.cl-recs > h2 { margin: 0 0 .3rem; font-size: 1.05rem; }
-.cl-recs-lede { margin: 0 0 .7rem; font-size: .82rem; color: hsl(var(--muted-foreground)); }
+.cl-recs > h2 { margin: 0 0 .3rem; font-size: calc(1.05rem * var(--a11y-fs)); }
+.cl-recs-lede { margin: 0 0 .7rem; font-size: calc(.82rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .cl-open { margin: 0; padding-inline-start: 1.1rem; display: flex; flex-direction: column; gap: .35rem; }
-.cl-open li { font-size: .8rem; line-height: 1.5; }
+.cl-open li { font-size: calc(.8rem * var(--a11y-fs)); line-height: 1.5; }
 .cl-open code {
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: .72rem;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(.72rem * var(--a11y-fs));
   background: hsl(var(--muted) / .6); padding: .05rem .3rem; border-radius: 4px;
 }
 
 /* Section = one primitive family or one view. */
 .cl-section { margin: 0 0 2.6rem; scroll-margin-top: 1rem; }
 .cl-section-head { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 1rem; padding-bottom: .4rem; border-bottom: 2px solid hsl(var(--border)); }
-.cl-section-head h2 { margin: 0; font-size: 1.25rem; letter-spacing: -.01em; }
-.cl-section-kind { font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.cl-section-head h2 { margin: 0; font-size: calc(1.25rem * var(--a11y-fs)); letter-spacing: -.01em; }
+.cl-section-kind { font-size: calc(.66rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 
 /* The specimen grid — cards auto-fit, wide ones can opt to span. */
 .cl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
@@ -89,27 +89,27 @@
 /* A host-bound component can't render without the bridge — show its call instead. */
 .cl-code {
   display: block; max-width: 100%; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: .68rem; line-height: 1.5;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(.68rem * var(--a11y-fs)); line-height: 1.5;
   color: hsl(var(--muted-foreground));
 }
 
 /* Caption strip under each specimen. */
 .cl-meta { padding: .6rem .75rem; border-top: 1px solid hsl(var(--border)); }
-.cl-name { font-weight: 650; font-size: .82rem; display: flex; align-items: center; gap: .4rem; }
+.cl-name { font-weight: 650; font-size: calc(.82rem * var(--a11y-fs)); display: flex; align-items: center; gap: .4rem; }
 /* Render-kind tag: live (green) / CSS-only (neutral) / host-bound (amber). */
-.cl-kind { flex: 0 0 auto; font-size: .58rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: .08rem .34rem; border-radius: 999px; }
+.cl-kind { flex: 0 0 auto; font-size: calc(.58rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: .08rem .34rem; border-radius: 999px; }
 .cl-kind--live { background: hsl(150 60% 45% / .16); color: hsl(158 64% 32%); }
 .cl-kind--css { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
 .cl-kind--host { background: hsl(38 92% 50% / .18); color: hsl(32 80% 40%); }
-.cl-desc { margin: .15rem 0 0; font-size: .72rem; line-height: 1.45; color: hsl(var(--muted-foreground)); }
-.cl-src { margin: .35rem 0 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: .64rem; color: hsl(var(--muted-foreground)); word-break: break-all; }
+.cl-desc { margin: .15rem 0 0; font-size: calc(.72rem * var(--a11y-fs)); line-height: 1.45; color: hsl(var(--muted-foreground)); }
+.cl-src { margin: .35rem 0 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(.64rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); word-break: break-all; }
 .cl-eg { margin: .3rem 0 0; display: flex; flex-wrap: wrap; gap: .3rem; }
 .cl-eg span {
-  font-size: .62rem; padding: .08rem .38rem; border-radius: 999px;
+  font-size: calc(.62rem * var(--a11y-fs)); padding: .08rem .38rem; border-radius: 999px;
   background: hsl(var(--muted) / .7); color: hsl(var(--muted-foreground));
 }
 /* Flag a sample whose render threw, rather than showing a silent empty stage. */
-.cl-broken { font-size: .72rem; color: hsl(var(--destructive)); font-family: var(--font-mono, monospace); }
+.cl-broken { font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--destructive)); font-family: var(--font-mono, monospace); }
 
 /* ── Primitives-section live-specimen scaffolding — the app CSS these borrow
    (lib/icons.ts glyphs, .stage-nav, mountBodyPopover content) has no opinion on
@@ -127,7 +127,7 @@
 }
 .cl-icon-cell:hover { background: hsl(var(--muted) / .6); }
 .cl-icon-cell svg { color: hsl(var(--muted-foreground)); }
-.cl-icon-cell span { font-size: .6rem; color: hsl(var(--muted-foreground)); text-align: center; word-break: break-word; }
+.cl-icon-cell span { font-size: calc(.6rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); text-align: center; word-break: break-word; }
 
 /* Zoom HUD live demo — .stage-nav positions itself absolute bottom/right, so
    the specimen needs a sized, positioned host to dock into (normally the tool
@@ -149,7 +149,7 @@
   box-shadow: 0 12px 32px hsl(0 0% 0% / .24);
 }
 .cl-popover-demo-item {
-  padding: 7px 10px; border-radius: var(--radius); font-size: .78rem; cursor: pointer;
+  padding: 7px 10px; border-radius: var(--radius); font-size: calc(.78rem * var(--a11y-fs)); cursor: pointer;
 }
 .cl-popover-demo-item:hover, .cl-popover-demo-item:focus-visible { background: hsl(var(--accent)); outline: none; }
 

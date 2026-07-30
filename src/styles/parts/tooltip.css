@@ -27,7 +27,7 @@
   padding: 4px 8px;
   background: hsl(var(--foreground));
   color: hsl(var(--background));
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;

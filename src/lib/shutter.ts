@@ -20,6 +20,7 @@
    Tuned in scratchpad/iris3.html; the constants below are that tool's readout. */
 
 import { playSfx } from './sfx.ts';
+import { prefersReducedMotion } from './a11y-prefs.ts';
 
 export interface Shutter {
   /** Close the iris. Resolves once it is fully sealed. */
@@ -403,8 +404,11 @@ export function createShutter(stage: HTMLElement | null): Shutter {
   let cur = ENTER_AT;
   let destroyed = false;
 
-  const reduced = (): boolean =>
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  // Motion only — the iris still opens and closes, it just jumps to the sealed
+  // state instead of tweening. Nothing here touches the export itself: the
+  // shutter paints on its own overlay canvas, never on the tool canvas, so the
+  // exported bytes are the same either way.
+  const reduced = prefersReducedMotion;
   const fullscreen = (): boolean => window.matchMedia('(max-width: 640px)').matches;
 
   function paint(prog: number): void {

@@ -75,17 +75,17 @@
 .start-eyebrow {
   margin: 0;
   padding: 4px 11px;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   letter-spacing: 0.08em;
 }
 .start-title {
   margin: 0;
-  font-size: 20px;
+  font-size: calc(20px * var(--a11y-fs));
   font-weight: 800;
   letter-spacing: -0.015em;
   line-height: 1.2;
 }
-.start-sub { font-size: 12.5px; line-height: 1.5; flex: 1 1 26ch; }
+.start-sub { font-size: calc(12.5px * var(--a11y-fs)); line-height: 1.5; flex: 1 1 26ch; }
 /* Short screens: the sentence goes entirely — the tabs already say where we are. */
 @media (max-height: 720px) {
   .start-sub { display: none; }
@@ -117,7 +117,7 @@
   background: hsl(var(--card));
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 600;
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
@@ -215,7 +215,7 @@
   background: hsl(var(--card) / 0.92);
   backdrop-filter: blur(8px);
 }
-.start-actions-note { font-size: 12px; color: hsl(var(--muted-foreground)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.start-actions-note { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .start-actions-note.is-error { color: hsl(var(--destructive)); }
 .start-save { margin-inline-start: auto; }
 .start-save[hidden] { display: none; }
@@ -314,19 +314,19 @@
 .start-import-fmt-icon {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: calc(30px * var(--a11y-fs));
+  height: calc(30px * var(--a11y-fs));
   color: hsl(var(--foreground) / 0.8); /* the mono marks; the Lolly tile's img keeps its own colour */
 }
 .start-import-fmt-icon img { display: block; border-radius: 6px; }
-.start-import-fmt-name { font-size: 12.5px; font-weight: 700; color: hsl(var(--foreground)); }
+.start-import-fmt-name { font-size: calc(12.5px * var(--a11y-fs)); font-weight: 700; color: hsl(var(--foreground)); }
 .start-import-fmt-ext {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 .start-import-btn { cursor: pointer; }
-.start-import-drophint { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: -8px; }
+.start-import-drophint { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin-top: -8px; }
 .start-import-result {
   display: flex;
   flex-direction: column;
@@ -337,22 +337,22 @@
   border-radius: var(--radius);
   background: hsl(var(--background));
 }
-.start-import-name { margin: 0; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.start-import-name { margin: 0; font-size: calc(13px * var(--a11y-fs)); font-weight: 700; overflow-wrap: anywhere; }
 .start-import-source {
   margin-left: 8px;
   padding: 2px 7px;
   border-radius: 999px;
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--a11y-fs));
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   vertical-align: middle;
 }
-.start-import-stats { margin: 0; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
-.start-import-warn { margin: 0; font-size: 12px; color: hsl(var(--muted-foreground)); font-style: italic; }
-.start-import-err { margin: 0; font-size: 12.5px; font-weight: 600; color: hsl(var(--destructive)); }
+.start-import-stats { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.start-import-warn { margin: 0; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-style: italic; }
+.start-import-err { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600; color: hsl(var(--destructive)); }
 .start-cta--import { align-self: flex-start; }
 
 /* ── The studio mount ────────────────────────────────────────────────────── */
@@ -362,7 +362,7 @@
    studio's normal-flow panels still scroll beneath it. */
 .start-editor-wrap { display: flex; flex-direction: column; gap: 22px; z-index: auto; }
 .start-editor-mount { display: block; }
-.start-editor-loading { margin: 0; font-size: 13px; color: hsl(var(--muted-foreground)); }
+.start-editor-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 /* The studio's own panels already gap themselves (.be gap); match that rhythm
    so the whole page reads as one column of evenly-spaced cards. */
 .start-editor-mount .be { gap: 22px; }
@@ -412,12 +412,12 @@
   background: hsl(var(--primary) / 0.06);
 }
 .start-finish[hidden] { display: none; }
-.start-finish-title { margin: 0 0 6px; font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
-.start-finish-sub { margin: 0 0 14px; font-size: 13.5px; color: hsl(var(--muted-foreground)); }
+.start-finish-title { margin: 0 0 6px; font-size: calc(18px * var(--a11y-fs)); font-weight: 800; letter-spacing: -0.01em; }
+.start-finish-sub { margin: 0 0 14px; font-size: calc(13.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .start-finish-links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .start-finish-links a { text-decoration: none; }
 .start-finish-primary { display: inline-flex; align-items: center; gap: 6px; }
-.start-finish-or { font-size: 12px; color: hsl(var(--muted-foreground)); margin-inline: 4px; }
+.start-finish-or { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin-inline: 4px; }
 
 /* ── SVG colour review (the "no formal tokens — pick which colours to keep"
       path) — a checkbox grid, each chip a uniform-border rounded swatch card
@@ -453,7 +453,7 @@
 }
 .start-color-hex {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   overflow: hidden;
   text-overflow: ellipsis;

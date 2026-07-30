@@ -25,6 +25,8 @@
  * caller falls back to today's instant swap.
  */
 
+import { prefersReducedMotion } from './lib/a11y-prefs.ts';
+
 /** Handle returned by beginViewFade — call commit() once the new view has mounted. */
 export interface ViewFade {
   /** Fade the outgoing snapshot out (or drop it instantly if superseded). Idempotent. */
@@ -35,17 +37,13 @@ export interface ViewFade {
 // first fade finishes drops the earlier overlay instantly so fades never stack.
 let activeOverlay: HTMLDivElement | null = null;
 
-function reducedMotion(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
 /**
  * Snapshot the current contents of `view` into a pinned overlay and empty `view`.
  * Returns a handle whose commit() fades the snapshot out, or null when no fade
  * should run (reduced motion, nothing to snapshot, or no document body).
  */
 export function beginViewFade(view: HTMLElement): ViewFade | null {
-  if (reducedMotion() || !document.body || !view.firstChild) return null;
+  if (prefersReducedMotion() || !document.body || !view.firstChild) return null;
 
   // A still-running fade from a previous navigation: drop it now so overlays can't
   // pile up (each is a full-viewport layer — two would double-composite the chrome).

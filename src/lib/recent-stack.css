@@ -55,7 +55,7 @@
 .dash-stack-cap {
   display: block;
   padding: 0.5rem 0.7rem;
-  font-size: 0.76rem;
+  font-size: calc(0.76rem * var(--a11y-fs));
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -76,14 +76,14 @@
   border: 1px solid hsl(var(--border));
   background: hsl(var(--card));
   color: hsl(var(--foreground));
-  font-size: 1.15rem;
+  font-size: calc(1.15rem * var(--a11y-fs));
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .dash-stack-nav:hover { background: hsl(var(--muted) / 0.5); border-color: hsl(var(--primary) / 0.5); }
 .dash-stack-count {
-  font-size: 0.75rem;
+  font-size: calc(0.75rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
   min-width: 3.5rem;
@@ -101,7 +101,7 @@
   margin: .7rem auto 0; width: fit-content; max-width: 100%;
   padding: .45rem 1rem; border-radius: 999px;
   border: 1px solid hsl(var(--border)); background: hsl(var(--card));
-  color: hsl(var(--foreground)); font-size: .82rem; font-weight: 600;
+  color: hsl(var(--foreground)); font-size: calc(.82rem * var(--a11y-fs)); font-weight: 600;
   text-decoration: none; transition: background .15s ease, border-color .15s ease;
 }
 .dash-stack-open:hover { background: hsl(var(--muted) / .5); border-color: hsl(var(--primary) / .5); }

@@ -11,7 +11,7 @@
       positioning context for the swatch-editor popover. */
 
 .be { position: relative; display: grid; gap: 1.1rem; }
-.be-locked { margin: 0; font-size: .86rem; line-height: 1.6; color: hsl(var(--muted-foreground)); }
+.be-locked { margin: 0; font-size: calc(.86rem * var(--a11y-fs)); line-height: 1.6; color: hsl(var(--muted-foreground)); }
 /* Background/text colour compose .card (chips.css, same --card/--card-foreground
    pair); border/radius/padding are real deltas — .be-panel is bordered and at
    the plain 1x radius, unlike .plat-section's borderless 1.25x. */
@@ -19,10 +19,10 @@
 /* .be-panel-head/-title/-sub compose .section-header (chips.css) — only the
    small uppercase panel-label sizing stays a local delta. */
 .be-panel-head { margin-bottom: .9rem; }
-.be-panel-title { font-size: .84rem; letter-spacing: .02em; text-transform: uppercase; color: hsl(var(--foreground)); }
-.be-panel-sub { margin: .3rem 0 0; max-width: 74ch; font-size: .8rem; line-height: 1.55; }
+.be-panel-title { font-size: calc(.84rem * var(--a11y-fs)); letter-spacing: .02em; text-transform: uppercase; color: hsl(var(--foreground)); }
+.be-panel-sub { margin: .3rem 0 0; max-width: 74ch; font-size: calc(.8rem * var(--a11y-fs)); line-height: 1.55; }
 .be-panel-sub strong { color: hsl(var(--foreground)); font-weight: 600; }
-.be-err { margin: .5rem 0 0; font-size: .78rem; color: hsl(var(--destructive)); }
+.be-err { margin: .5rem 0 0; font-size: calc(.78rem * var(--a11y-fs)); color: hsl(var(--destructive)); }
 
 /* .be-btn/.be-cta/.be-add compose parts/buttons.css's `.btn` system (component
    audit rec 2): the pressed/hover FILLS are declared once there (`.btn--primary`'s
@@ -35,7 +35,7 @@
 .be-btn, .be-cta, .be-add {
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6);
   background: hsl(var(--background)); color: hsl(var(--foreground));
-  font: inherit; font-size: .78rem; font-weight: 600; padding: .45rem .85rem; cursor: pointer;
+  font: inherit; font-size: calc(.78rem * var(--a11y-fs)); font-weight: 600; padding: .45rem .85rem; cursor: pointer;
 }
 .be-cta { border-color: transparent; }
 .be-cta:hover { background: hsl(var(--primary) / .88); }
@@ -90,7 +90,7 @@
   flex: 0 0 auto;
   min-width: 7.5ch;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   text-align: right;
 }
@@ -105,22 +105,22 @@
 
 /* Screen readout — the primary's on-screen (sRGB) form (its print form sits in
    the shared print-lock control, .be-lock, right below). */
-.be-subst { display: grid; gap: .3rem; margin-top: .35rem; font-size: .78rem; }
+.be-subst { display: grid; gap: .3rem; margin-top: .35rem; font-size: calc(.78rem * var(--a11y-fs)); }
 .be-subst-line { display: flex; align-items: center; gap: .6rem; }
 .be-subst-key {
-  flex: 0 0 3.4rem; font-size: .66rem; font-weight: 700; letter-spacing: .06em;
+  flex: 0 0 3.4rem; font-size: calc(.66rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
-.be-subst-val { font-family: var(--font-mono); font-size: .76rem; color: hsl(var(--foreground)); }
+.be-subst-val { font-family: var(--font-mono); font-size: calc(.76rem * var(--a11y-fs)); color: hsl(var(--foreground)); }
 .be-subst-tag {
-  margin-inline-start: auto; font-size: .64rem; font-weight: 600; letter-spacing: .04em;
+  margin-inline-start: auto; font-size: calc(.64rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .04em;
   text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
 
 /* Shared print-lock control (independent CMYK lock + Spot-colour lock) — the
    Colour panel's primary field and the Palette panel's swatch popover both
    mount one; each block locks/pins independently of the other. */
-.be-lock { display: grid; gap: .6rem; margin-top: .2rem; font-size: .78rem; }
+.be-lock { display: grid; gap: .6rem; margin-top: .2rem; font-size: calc(.78rem * var(--a11y-fs)); }
 /* The collapsible bodies set their own display (grid/flex), which would beat the
    UA's [hidden] { display: none } — restate it so `hidden` actually hides. */
 .be-lock-body[hidden], .be-lock-spot[hidden], .be-ps-body[hidden] { display: none; }
@@ -129,13 +129,13 @@
 .be-lock-block.is-pinned .be-subst-val { color: hsl(var(--primary)); font-weight: 600; }
 .be-lock-body { display: grid; gap: .5rem; margin-top: .1rem; }
 .be-lock-spot { display: flex; gap: .5rem; flex-wrap: wrap; }
-.be-lock-field { display: grid; gap: .12rem; flex: 1 1 10rem; font-size: .68rem; color: hsl(var(--muted-foreground)); }
+.be-lock-field { display: grid; gap: .12rem; flex: 1 1 10rem; font-size: calc(.68rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .be-lock-field em { font-style: normal; opacity: .75; }
 /* color + font: inherit come from the shared .field-input alias list
    (components.css, component audit rec 13); the rest (sizing/token deltas)
    stays local. */
 .be-lock-field input {
-  padding: .32rem .5rem; font-size: .78rem;
+  padding: .32rem .5rem; font-size: calc(.78rem * var(--a11y-fs));
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background));
 }
@@ -143,12 +143,12 @@
 .be-cmyk-inputs { display: flex; gap: .35rem; }
 .be-cmyk-in { display: grid; gap: .12rem; justify-items: center; }
 .be-cmyk-in span {
-  font-family: var(--font-mono); font-size: .62rem; font-weight: 700; color: hsl(var(--muted-foreground));
+  font-family: var(--font-mono); font-size: calc(.62rem * var(--a11y-fs)); font-weight: 700; color: hsl(var(--muted-foreground));
 }
 /* color + font: inherit come from the shared .field-input alias list
    (components.css, component audit rec 13); the rest stays local. */
 .be-cmyk-in input {
-  width: 3.1rem; padding: .28rem .35rem; text-align: center; font-size: .76rem;
+  width: 3.1rem; padding: .28rem .35rem; text-align: center; font-size: calc(.76rem * var(--a11y-fs));
   font-family: var(--font-mono); border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background));
 }
@@ -156,22 +156,22 @@
 /* A locked swatch's small tag — reused on the tile, the popover header + here. */
 .be-swatch-lock {
   display: inline-block; margin-inline-start: .4rem; padding: .05rem .35rem;
-  font-size: .58rem; font-weight: 700; letter-spacing: .05em; vertical-align: middle;
+  font-size: calc(.58rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em; vertical-align: middle;
   color: hsl(var(--primary)); border: 0; 
 }
 .be-derive-controls { display: grid; gap: .8rem; align-content: start; }
 .be-field { display: grid; gap: .35rem; }
-.be-field-label { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-field-label { font-size: calc(.72rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .be-seg { flex-wrap: wrap; }
 /* Shades slider — how many divisions each ramp carries (3–20). */
 .be-steps-field .be-field-label { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
-.be-steps-val { font-family: var(--font-mono); font-size: .8rem; font-weight: 700; color: hsl(var(--foreground)); }
+.be-steps-val { font-family: var(--font-mono); font-size: calc(.8rem * var(--a11y-fs)); font-weight: 700; color: hsl(var(--foreground)); }
 .be-steps-slider { width: 100%; cursor: pointer; }
 
 .be-preview { display: grid; gap: .9rem; align-content: start; }
 .be-ramps { display: grid; gap: .5rem; }
 .be-ramp-row { display: grid; grid-template-columns: 5.2rem 1fr; align-items: center; gap: .6rem; }
-.be-ramp-label { font-size: .72rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
+.be-ramp-label { font-size: calc(.72rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground)); }
 /* flex, not a fixed-column grid — the ramp can be 3 to 20 steps (the Shades
    slider), so cells must always share the full row width equally, not just 9/9ths
    of one sized for a hardcoded step count. */
@@ -183,12 +183,12 @@ button.be-ramp-cell { cursor: pointer; }
 button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), inset 0 0 0 4px hsl(var(--card)); }
 .be-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .7rem; }
 .be-spec { border: 1px solid; border-radius: calc(var(--radius) * .7); padding: .8rem .85rem; display: grid; gap: .35rem; }
-.be-spec-name { font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.be-spec-h { margin: 0; font-size: .95rem; font-weight: 700; letter-spacing: -.01em; }
-.be-spec-b { margin: 0; font-size: .74rem; line-height: 1.5; }
+.be-spec-name { font-size: calc(.68rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.be-spec-h { margin: 0; font-size: calc(.95rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -.01em; }
+.be-spec-b { margin: 0; font-size: calc(.74rem * var(--a11y-fs)); line-height: 1.5; }
 .be-spec-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .2rem; }
-.be-spec-btn { border-radius: var(--radius); padding: .28rem .7rem; font-size: .72rem; font-weight: 600; }
-.be-spec-ratio { font-size: .68rem; font-variant-numeric: tabular-nums; }
+.be-spec-btn { border-radius: var(--radius); padding: .28rem .7rem; font-size: calc(.72rem * var(--a11y-fs)); font-weight: 600; }
+.be-spec-ratio { font-size: calc(.68rem * var(--a11y-fs)); font-variant-numeric: tabular-nums; }
 
 /* ── Build your palette (the brand generator): harmony picker → named candidate
       chips (each + Add to officiate into the brand) → "applied" preview scenes. */
@@ -203,11 +203,11 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-cand.is-added { opacity: .62; }
 .be-cand-sw { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12); }
 .be-cand-meta { display: grid; gap: 1px; min-width: 0; margin-inline-end: auto; }
-.be-cand-name { font-size: .78rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.be-cand-hex { font-family: var(--font-mono); font-size: .66rem; color: hsl(var(--muted-foreground)); }
+.be-cand-name { font-size: calc(.78rem * var(--a11y-fs)); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-cand-hex { font-family: var(--font-mono); font-size: calc(.66rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .be-cand-add {
   flex: 0 0 auto; border: 1px solid hsl(var(--primary) / .4); background: hsl(var(--primary) / .1);
-  color: hsl(var(--primary)); font: inherit; font-size: .72rem; font-weight: 700;
+  color: hsl(var(--primary)); font: inherit; font-size: calc(.72rem * var(--a11y-fs)); font-weight: 700;
   padding: .3rem .6rem; border-radius: 999px; cursor: pointer; transition: background .12s;
 }
 .be-cand-add:hover:not(:disabled) { background: hsl(var(--primary) / .18); }
@@ -218,10 +218,10 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-pv { margin: 0; display: grid; gap: .35rem; }
 .be-pv-art { border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6); overflow: hidden; background: hsl(var(--background)); }
 .be-pv-art svg { display: block; width: 100%; height: auto; }
-.be-pv-cap { font-size: .68rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-pv-cap { font-size: calc(.68rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 
 /* Palette. The wheel lives in the folded "Colour chart" card below the grid. */
-.be-wheel-hint { margin: .55rem 0 0; font-size: .68rem; line-height: 1.4; color: hsl(var(--muted-foreground)); text-align: center; }
+.be-wheel-hint { margin: .55rem 0 0; font-size: calc(.68rem * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); text-align: center; }
 /* Editable wheel affordances: crosshair over empty space (= add), grab on a dot.
    Both surfaces — the hue disc and the neutral rail — take the same treatment. */
 .dash-wheel.is-editable,
@@ -245,19 +245,19 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 /* The fixed-channel scrubber — which plane you're looking through. */
 .be-slice-fixed { display: flex; align-items: center; gap: .45rem; flex: 1 1 11rem; min-width: 0; }
 .be-slice-fixed-label {
-  font-size: .62rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
+  font-size: calc(.62rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
   color: hsl(var(--muted-foreground)); white-space: nowrap;
 }
 .be-slice-range { flex: 1 1 auto; min-width: 4rem; }
 .be-slice-fixed-val {
-  font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap;
+  font-size: calc(.7rem * var(--a11y-fs)); font-variant-numeric: tabular-nums; white-space: nowrap;
   min-width: 2.6rem; text-align: right; color: hsl(var(--foreground));
 }
 
 /* Palette: grouped shape-only swatch tiles — name + hex live in title/aria
    (and in the editor popover a click opens), never on the tile itself. */
 .be-pal-top { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .9rem; }
-.be-pal-count { font-size: .74rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.be-pal-count { font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
 /* Each group is a <details open>; the summary row is the group's header. */
 .be-pal-group + .be-pal-group { margin-top: 1rem; }
 .be-pal-group-head {
@@ -265,11 +265,11 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   cursor: pointer; list-style: none;
 }
 .be-pal-group-head::-webkit-details-marker { display: none; }
-.be-pal-group-head::after { content: '▸'; font-size: .7rem; color: hsl(var(--muted-foreground)); transition: rotate .12s; }
+.be-pal-group-head::after { content: '▸'; font-size: calc(.7rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); transition: rotate .12s; }
 .be-pal-group[open] > .be-pal-group-head::after { rotate: 90deg; }
 @media (prefers-reduced-motion: reduce) { .be-pal-group-head::after { transition: none; } }
 .be-pal-group-head .be-add { margin-inline-start: auto; }
-.be-pal-group-label { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-pal-group-label { font-size: calc(.72rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .be-pal-group-n { margin-inline-start: .4rem; font-weight: 500; opacity: .7; }
 /* Dense grid of pure swatches; corner rounding rides the brand radius token —
    a full-radius brand rounds these into circles, and that's the intent. */
@@ -352,7 +352,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-editor-lockbadge { flex: 0 0 auto; }
 .be-editor-field { display: grid; gap: .3rem; }
 .be-editor-name {
-  width: 100%; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .82rem; font-weight: 600;
+  width: 100%; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: calc(.82rem * var(--a11y-fs)); font-weight: 600;
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground));
   outline: none;
@@ -360,7 +360,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 /* "Stored as" — how the token document writes this swatch's value. Tiny on purpose. */
 .be-stored { display: flex; align-items: center; gap: .5rem; }
 .be-stored[hidden] { display: none; }
-.be-stored-label { font-size: .64rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-stored-label { font-size: calc(.64rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 /* .be-stored-seg composes the shared `.view-seg` primitive (component audit rec 1 —
    lib/seg.ts; the markup now carries both classes). Every declaration below is a
    real delta from `.view-seg`'s gapped-pill look — a compact JOINED trough (no gap,
@@ -374,7 +374,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-stored-seg { display: inline-flex; flex-wrap: nowrap; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45); overflow: hidden; }
 .be-stored-seg button {
   border: 0; background: transparent; color: hsl(var(--muted-foreground));
-  font: inherit; font-size: .64rem; font-weight: 700; letter-spacing: .03em;
+  font: inherit; font-size: calc(.64rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .03em;
   padding: .22rem .48rem; cursor: pointer;
 }
 .be-stored-seg button + button { border-inline-start: 1px solid hsl(var(--border) / .6); }
@@ -389,10 +389,10 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-subst-details { border-top: 1px solid hsl(var(--border) / .6); padding-top: .5rem; }
 .be-subst-details summary {
   display: flex; align-items: center; gap: .5rem; cursor: pointer; list-style: none;
-  font-size: .64rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground));
+  font-size: calc(.64rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
 .be-subst-details summary::-webkit-details-marker { display: none; }
-.be-subst-details summary::after { content: '▸'; margin-inline-start: auto; font-size: .7rem; transition: rotate .12s; }
+.be-subst-details summary::after { content: '▸'; margin-inline-start: auto; font-size: calc(.7rem * var(--a11y-fs)); transition: rotate .12s; }
 .be-subst-details[open] summary::after { rotate: 90deg; }
 @media (prefers-reduced-motion: reduce) { .be-subst-details summary::after { transition: none; } }
 .be-subst-chips { display: inline-flex; gap: .3rem; }
@@ -400,7 +400,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
    the mono value string needs its own font-family/size/case/spacing/padding
    overrides since it displays exact print-substitute values, not a label. */
 .be-ps-chip {
-  font-family: var(--font-mono); font-size: .62rem; text-transform: none; letter-spacing: 0;
+  font-family: var(--font-mono); font-size: calc(.62rem * var(--a11y-fs)); text-transform: none; letter-spacing: 0;
   padding: .1rem .4rem;
   background: hsl(var(--primary) / .12); color: hsl(var(--foreground));
 }
@@ -410,7 +410,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
    color + font: inherit come from the shared .field-input alias list
    (components.css, component audit rec 13); the rest stays local. */
 .be-fmt-input {
-  flex: 1 1 auto; min-width: 0; padding: .4rem .55rem; font-size: .8rem;
+  flex: 1 1 auto; min-width: 0; padding: .4rem .55rem; font-size: calc(.8rem * var(--a11y-fs));
   font-family: var(--font-mono); border: 1px solid hsl(var(--input));
   border-radius: calc(var(--radius) * .5); background: hsl(var(--background));
   outline: none;
@@ -429,7 +429,7 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-editor-del {
   border: 1px solid hsl(var(--destructive) / .5); border-radius: calc(var(--radius) * .5);
   background: transparent; color: hsl(var(--destructive));
-  font: inherit; font-size: .74rem; font-weight: 600; padding: .35rem .7rem; cursor: pointer;
+  font: inherit; font-size: calc(.74rem * var(--a11y-fs)); font-weight: 600; padding: .35rem .7rem; cursor: pointer;
 }
 .be-editor-del:hover { background: hsl(var(--destructive) / .1); }
 .be-editor-del[hidden] { display: none; }
@@ -442,20 +442,20 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
    wraps under the name when the row is tight, rather than overflowing it. */
 .be-font-roles { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .3rem .45rem; }
 .be-font-row.is-primary { border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .05); }
-.be-font-aa { flex: 0 0 auto; width: 2rem; font-size: 1.1rem; line-height: 1; text-align: center; color: hsl(var(--foreground)); }
+.be-font-aa { flex: 0 0 auto; width: 2rem; font-size: calc(1.1rem * var(--a11y-fs)); line-height: 1; text-align: center; color: hsl(var(--foreground)); }
 .be-font-meta { display: grid; gap: 1px; min-width: 0; margin-inline-end: auto; }
-.be-font-name { font-size: .82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.be-font-sub { font-size: .7rem; color: hsl(var(--muted-foreground)); }
-.be-font-badge { font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--primary)); }
+.be-font-name { font-size: calc(.82rem * var(--a11y-fs)); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-font-sub { font-size: calc(.7rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.be-font-badge { font-size: calc(.66rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--primary)); }
 .be-font-del {
   flex: 0 0 auto; border: 0; background: transparent; cursor: pointer; padding: .25rem .4rem;
-  color: hsl(var(--muted-foreground)); font-size: .8rem; border-radius: 6px;
+  color: hsl(var(--muted-foreground)); font-size: calc(.8rem * var(--a11y-fs)); border-radius: 6px;
 }
 .be-font-del:hover { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .1); }
-.be-font-empty { font-size: .78rem; color: hsl(var(--muted-foreground)); padding: .4rem .1rem; }
+.be-font-empty { font-size: calc(.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); padding: .4rem .1rem; }
 .be-font-add { display: flex; gap: .5rem; flex-wrap: wrap; }
 .be-font-add input {
-  flex: 1 1 16rem; min-width: 0; padding: .45rem .6rem; font: inherit; font-size: .8rem;
+  flex: 1 1 16rem; min-width: 0; padding: .45rem .6rem; font: inherit; font-size: calc(.8rem * var(--a11y-fs));
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground));
 }
@@ -464,15 +464,15 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-logo-grid { display: grid; gap: 1.3rem; }
 .be-logo-group { display: grid; gap: .6rem; }
 .be-logo-group-head { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; }
-.be-logo-group-name { font-size: .8rem; font-weight: 700; letter-spacing: .01em; color: hsl(var(--foreground)); }
-.be-logo-group-hint { font-size: .74rem; color: hsl(var(--muted-foreground)); }
+.be-logo-group-name { font-size: calc(.8rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .01em; color: hsl(var(--foreground)); }
+.be-logo-group-hint { font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .be-logo-row { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .be-logo-slot { display: grid; gap: .4rem;}
 .be-logo-slot-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.2rem; }
-.be-logo-slot-name { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-logo-slot-name { font-size: calc(.72rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .be-logo-del {
   border: 0; background: transparent; cursor: pointer; padding: .1rem .3rem; line-height: 1;
-  color: hsl(var(--muted-foreground)); font-size: .8rem; border-radius: 6px;
+  color: hsl(var(--muted-foreground)); font-size: calc(.8rem * var(--a11y-fs)); border-radius: 6px;
 }
 .be-logo-del:hover { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .1); }
 .be-logo-drop {
@@ -515,8 +515,8 @@ background-image:
    neutral card so a one-colour dark mark still shows. */
 .be-logo-slot[data-treatment$="reverse"] .be-logo-art { background: hsl(var(--foreground)); padding: .5rem; }
 .be-logo-slot[data-treatment="mono"] .be-logo-art { background: hsl(var(--muted) / .5); padding: .5rem; }
-.be-logo-empty { font-size: 1.6rem; font-weight: 300; color: hsl(var(--muted-foreground) / .7); }
-.be-logo-hint { margin: 0; font-size: .7rem; line-height: 1.45; color: hsl(var(--muted-foreground)); }
+.be-logo-empty { font-size: calc(1.6rem * var(--a11y-fs)); font-weight: 300; color: hsl(var(--muted-foreground) / .7); }
+.be-logo-hint { margin: 0; font-size: calc(.7rem * var(--a11y-fs)); line-height: 1.45; color: hsl(var(--muted-foreground)); }
 
 /* Share. */
 .be-share-row { display: flex; gap: .5rem; flex-wrap: wrap; }
@@ -640,15 +640,15 @@ background-image:
 /* ── Colour-from-logo suggestion (Colour tab, fed by the Logos tab). */
 .be-suggest { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: -.3rem 0 .8rem; }
 .be-suggest[hidden] { display: none; }
-.be-suggest-note { display: inline-flex; align-items: center; gap: .45rem; font-size: .78rem; color: hsl(var(--muted-foreground)); }
-.be-suggest-note code { font-family: var(--font-mono); font-size: .74rem; color: hsl(var(--foreground)); }
+.be-suggest-note { display: inline-flex; align-items: center; gap: .45rem; font-size: calc(.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.be-suggest-note code { font-family: var(--font-mono); font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--foreground)); }
 .be-suggest-sw {
   width: 16px; height: 16px; border-radius: 4px; background: var(--sw, transparent);
   box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .15);
 }
 .be-suggest-dismiss {
   border: 0; background: transparent; color: hsl(var(--muted-foreground));
-  font-size: .8rem; cursor: pointer; padding: .15rem .3rem;
+  font-size: calc(.8rem * var(--a11y-fs)); cursor: pointer; padding: .15rem .3rem;
 }
 .be-suggest-dismiss:hover { color: hsl(var(--foreground)); }
 
@@ -657,11 +657,11 @@ background-image:
       that family and a shared row class briefly broke their button row.) */
 .be-specimen { display: grid; gap: .9rem; }
 .be-typerole { display: grid; gap: .25rem; padding: .7rem .8rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .55); }
-.be-typerole-role { font-size: .64rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
-.be-typerole-sample { font-size: .95rem; line-height: 1.5; color: hsl(var(--foreground)); overflow-wrap: break-word; }
-.be-typerole-sample--h { font-size: 1.5rem; line-height: 1.2; font-weight: 700; }
-.be-typerole-sample--mono { font-size: .84rem; }
-.be-typerole-face { font-size: .68rem; color: hsl(var(--muted-foreground)); }
+.be-typerole-role { font-size: calc(.64rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-typerole-sample { font-size: calc(.95rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--foreground)); overflow-wrap: break-word; }
+.be-typerole-sample--h { font-size: calc(1.5rem * var(--a11y-fs)); line-height: 1.2; font-weight: 700; }
+.be-typerole-sample--mono { font-size: calc(.84rem * var(--a11y-fs)); }
+.be-typerole-face { font-size: calc(.68rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 /* Assigned optional-role chips (code / headings / italic) read as muted pills,
    distinct from the primary-coloured "Primary" badge. */
 .be-font-badge--mono,
@@ -673,14 +673,14 @@ background-image:
 .be-logo-identity { display: grid; gap: 1rem; }
 .be-logo-identity + .be-logo-identity { margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid hsl(var(--border) / .7); }
 .be-logo-identity-head { display: flex; align-items: baseline; gap: .6rem; }
-.be-logo-identity-name { margin: 0; font-size: .78rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--foreground)); }
+.be-logo-identity-name { margin: 0; font-size: calc(.78rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--foreground)); }
 .be-logo-slot[data-treatment="custom"] .be-logo-art { background: hsl(var(--muted) / .35); padding: .5rem; }
 .be-logo-addmark {
   display: grid; gap: .45rem; align-content: center; padding: .7rem;
   border: 1px dashed hsl(var(--border)); border-radius: calc(var(--radius) * .55);
 }
 .be-logo-addmark-name {
-  width: 100%; min-width: 0; padding: .35rem .5rem; font: inherit; font-size: .76rem;
+  width: 100%; min-width: 0; padding: .35rem .5rem; font: inherit; font-size: calc(.76rem * var(--a11y-fs));
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .45);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
@@ -691,7 +691,7 @@ background-image:
 .be-logo-addmark-pick:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .be-logo-addidentity { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid hsl(var(--border) / .7); }
 .be-logo-addidentity input {
-  flex: 1 1 16rem; min-width: 0; padding: .45rem .6rem; font: inherit; font-size: .8rem;
+  flex: 1 1 16rem; min-width: 0; padding: .45rem .6rem; font: inherit; font-size: calc(.8rem * var(--a11y-fs));
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
@@ -699,34 +699,34 @@ background-image:
 
 /* ── Tokens tab: grouped rows, one editor per kind. */
 .be-tok-list { display: grid; gap: 1rem; margin-bottom: 1rem; }
-.be-tok-empty, .be-cat-empty { margin: 0; font-size: .8rem; color: hsl(var(--muted-foreground)); }
+.be-tok-empty, .be-cat-empty { margin: 0; font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .be-tok-group { display: grid; gap: .4rem; }
 .be-tok-group-head { display: flex; align-items: baseline; gap: .4rem; }
-.be-tok-group-label { font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
-.be-tok-group-n { font-size: .64rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.be-tok-group-label { font-size: calc(.66rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-tok-group-n { font-size: calc(.64rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
 .be-tok-row {
   display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
   padding: .45rem .6rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .5);
 }
-.be-tok-name { font-size: .78rem; font-weight: 600; min-width: 7rem; }
+.be-tok-name { font-size: calc(.78rem * var(--a11y-fs)); font-weight: 600; min-width: 7rem; }
 .be-tok-editor { display: flex; align-items: center; gap: .45rem; flex: 1 1 auto; flex-wrap: wrap; }
 .be-tok-dim, .be-tok-num {
-  padding: .3rem .45rem; font: inherit; font-size: .76rem; font-family: var(--font-mono);
+  padding: .3rem .45rem; font: inherit; font-size: calc(.76rem * var(--a11y-fs)); font-family: var(--font-mono);
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .45);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
 .be-tok-num { width: 5.5rem; }
 .be-tok-dim:focus, .be-tok-num:focus { border-color: hsl(var(--ring) / .6); }
 .be-tok-range { flex: 1 1 8rem; min-width: 6rem; }
-.be-tok-out { font-family: var(--font-mono); font-size: .72rem; color: hsl(var(--muted-foreground)); min-width: 2.6rem; }
-.be-tok-unit { font-size: .74rem; color: hsl(var(--muted-foreground)); }
+.be-tok-out { font-family: var(--font-mono); font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); min-width: 2.6rem; }
+.be-tok-unit { font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .be-tok-shadow-chip {
   width: 26px; height: 26px; flex: 0 0 auto; border-radius: calc(var(--radius) * .4);
   background: hsl(var(--card)); border: 1px solid hsl(var(--border) / .6);
 }
-.be-tok-shadow-in { display: grid; gap: .1rem; justify-items: center; font-size: .6rem; color: hsl(var(--muted-foreground)); }
+.be-tok-shadow-in { display: grid; gap: .1rem; justify-items: center; font-size: calc(.6rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .be-tok-shadow-in input {
-  width: 3.4rem; padding: .22rem .3rem; font: inherit; font-size: .68rem; font-family: var(--font-mono); text-align: center;
+  width: 3.4rem; padding: .22rem .3rem; font: inherit; font-size: calc(.68rem * var(--a11y-fs)); font-family: var(--font-mono); text-align: center;
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .4);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
@@ -736,7 +736,7 @@ background-image:
 .be-tok-shadow-cf .color-picker-field, .be-tok-shadow-cf .color-trigger { width: 100%; }
 .be-tok-del {
   margin-inline-start: auto; border: 0; background: transparent; cursor: pointer;
-  color: hsl(var(--muted-foreground)); font-size: .78rem; padding: .2rem .35rem;
+  color: hsl(var(--muted-foreground)); font-size: calc(.78rem * var(--a11y-fs)); padding: .2rem .35rem;
 }
 .be-tok-del:hover { color: hsl(var(--destructive)); }
 .be-tok-add { display: flex; gap: .5rem; flex-wrap: wrap; }
@@ -745,7 +745,7 @@ background-image:
    flexible name field. */
 .be-tok-add-kind { flex: 0 0 auto; }
 .be-tok-add-name {
-  flex: 1 1 14rem; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: .8rem;
+  flex: 1 1 14rem; min-width: 0; padding: .4rem .55rem; font: inherit; font-size: calc(.8rem * var(--a11y-fs));
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
@@ -759,7 +759,7 @@ background-image:
 }
 .be-grad-preview { flex: 0 0 auto; width: 64px; height: 30px; border-radius: calc(var(--radius) * .4); box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .1); }
 .be-grad-meta { display: grid; gap: .3rem; min-width: 0; flex: 1 1 auto; }
-.be-grad-name { font-size: .78rem; font-weight: 600; }
+.be-grad-name { font-size: calc(.78rem * var(--a11y-fs)); font-weight: 600; }
 .be-grad-stops { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
 /* Stop chips — each stop wears its (resolved) colour; an alias chip carries a
    corner dot so "follows the swatch" is visible at a glance. */
@@ -784,20 +784,20 @@ background-image:
   display: none; align-items: center; justify-content: center;
   border: 1px solid hsl(var(--border)); border-radius: 999px;
   background: hsl(var(--popover)); color: hsl(var(--muted-foreground));
-  font-size: .55rem; line-height: 1; cursor: pointer;
+  font-size: calc(.55rem * var(--a11y-fs)); line-height: 1; cursor: pointer;
 }
 .be-grad-stopwrap:hover .be-grad-stopdel,
 .be-grad-stopwrap:focus-within .be-grad-stopdel { display: inline-flex; }
 .be-grad-stopdel:hover { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / .5); }
 .be-grad-addstop {
   width: 22px; height: 22px; border: 1px dashed hsl(var(--border)); border-radius: 5px;
-  background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer; font-size: .8rem; line-height: 1;
+  background: transparent; color: hsl(var(--muted-foreground)); cursor: pointer; font-size: calc(.8rem * var(--a11y-fs)); line-height: 1;
 }
 .be-grad-addstop:hover { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
-.be-grad-nstops, .be-grad-angle { display: inline-flex; align-items: center; gap: .15rem; font-size: .72rem; color: hsl(var(--muted-foreground)); }
+.be-grad-nstops, .be-grad-angle { display: inline-flex; align-items: center; gap: .15rem; font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .be-grad-nstops input,
 .be-grad-angle input {
-  width: 3.6rem; padding: .22rem .3rem; font: inherit; font-size: .72rem; font-family: var(--font-mono); text-align: center;
+  width: 3.6rem; padding: .22rem .3rem; font: inherit; font-size: calc(.72rem * var(--a11y-fs)); font-family: var(--font-mono); text-align: center;
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .4);
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
@@ -827,7 +827,7 @@ background-image:
 .be-grad-pop-sw.is-active { box-shadow: 0 0 0 2px hsl(var(--ring)); }
 .be-grad-pop-custom summary {
   cursor: pointer; list-style: none;
-  font-size: .64rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground));
+  font-size: calc(.64rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
 .be-grad-pop-custom summary::-webkit-details-marker { display: none; }
 .be-grad-pop-customrow { display: flex; gap: .4rem; margin-top: .45rem; }
@@ -836,14 +836,14 @@ background-image:
 /* ── Catalogue tab: dropzone + the sorted recap. */
 .be-cat-groups { display: grid; gap: .45rem; margin-top: .9rem; }
 .be-cat-group { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
-.be-cat-group-label { font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
-.be-cat-group-n { margin-inline-start: .3rem; font-size: .66rem; font-weight: 400; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.be-cat-group-label { font-size: calc(.68rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-cat-group-n { margin-inline-start: .3rem; font-size: calc(.66rem * var(--a11y-fs)); font-weight: 400; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
 .be-cat-group-names { display: inline-flex; gap: .35rem; flex-wrap: wrap; }
 .be-cat-name {
-  font-size: .7rem; color: hsl(var(--foreground)); background: hsl(var(--muted) / .5);
+  font-size: calc(.7rem * var(--a11y-fs)); color: hsl(var(--foreground)); background: hsl(var(--muted) / .5);
   padding: .12rem .5rem; border-radius: 999px; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.be-cat-more { font-size: .7rem; color: hsl(var(--muted-foreground)); align-self: center; }
+.be-cat-more { font-size: calc(.7rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); align-self: center; }
 
 /* ── Mobile palette sheet (≤640px, Colour tab) — views/start.ts mounts
       .stu-sheet + its sibling grip as DIRECT children of .start while the
@@ -924,7 +924,7 @@ background-image:
   }
   .stu-sheet-group { display: grid; gap: 6px; }
   .stu-sheet-group-label {
-    font-size: .68rem; font-weight: 700; letter-spacing: .05em;
+    font-size: calc(.68rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em;
     text-transform: uppercase; color: hsl(var(--muted-foreground));
   }
   .stu-sheet-grid { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1034,11 +1034,11 @@ background-image:
 }
 
 .fonts-upload-icon {
-  font-size: 1.5rem;
+  font-size: calc(1.5rem * var(--a11y-fs));
 }
 
 .fonts-upload-text {
-  font-size: .9rem;
+  font-size: calc(.9rem * var(--a11y-fs));
   line-height: 1.4;
   color: hsl(var(--foreground));
 }
@@ -1055,7 +1055,7 @@ background-image:
 .fonts-upload-alt {
   margin: .4rem 0 0;
   text-align: center;
-  font-size: .8rem;
+  font-size: calc(.8rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 /* `is-uploading` lands on the LABEL, which used to contain this button — so the
@@ -1084,7 +1084,7 @@ background-image:
 
 .fonts-upload-hint {
   display: block;
-  font-size: .75rem;
+  font-size: calc(.75rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   margin-top: .25rem;
 }
@@ -1097,7 +1097,7 @@ background-image:
   padding: 1rem;
   text-align: center;
   color: hsl(var(--muted-foreground));
-  font-size: .85rem;
+  font-size: calc(.85rem * var(--a11y-fs));
   font-style: italic;
 }
 
@@ -1138,7 +1138,7 @@ background-image:
   border-radius: calc(var(--radius) * 0.6);
   background-color: hsl(var(--primary) / 0.08);
   color: hsl(var(--primary));
-  font-size: 0.75rem;
+  font-size: calc(0.75rem * var(--a11y-fs));
   font-weight: 500;
   cursor: pointer;
   transition: all .15s ease;
@@ -1153,14 +1153,14 @@ background-image:
   font-weight: 600;
   color: hsl(var(--foreground));
   word-break: break-word;
-  font-size: .85rem;
+  font-size: calc(.85rem * var(--a11y-fs));
 }
 
 .fonts-item-meta {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
-  font-size: .7rem;
+  font-size: calc(.7rem * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 
@@ -1190,7 +1190,7 @@ background-image:
   border: 0;
   background-color: transparent;
   color: hsl(var(--destructive));
-  font-size: .9rem;
+  font-size: calc(.9rem * var(--a11y-fs));
   line-height: 1;
   cursor: pointer;
   transition: all .15s ease;
@@ -1212,7 +1212,7 @@ background-image:
   padding: 1rem;
   text-align: center;
   color: hsl(var(--muted-foreground));
-  font-size: .85rem;
+  font-size: calc(.85rem * var(--a11y-fs));
 }
 
 /* ── "In other spaces": the per-target face list ────────────────────────────
@@ -1231,11 +1231,11 @@ background-image:
   gap: 0.4rem;
   padding: 0.3rem 0.4rem;
   border-radius: calc(var(--radius) * 0.6);
-  font-size: 0.72rem;
+  font-size: calc(0.72rem * var(--a11y-fs));
 }
 .be-face:nth-child(odd) { background: hsl(var(--muted) / 0.4); }
 .be-face-key { font-weight: 600; color: hsl(var(--muted-foreground)); }
-.be-face-val { font-family: var(--font-mono); font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; }
+.be-face-val { font-family: var(--font-mono); font-size: calc(0.7rem * var(--a11y-fs)); overflow: hidden; text-overflow: ellipsis; }
 /* Authored: an accent rail on the leading edge and a heavier key. Not a
    one-sided BORDER on a card — this is a row in a list, and the rail is the
    list's own emphasis, which is a different thing from a bordered box. */
@@ -1247,18 +1247,18 @@ background-image:
 .be-face.is-absent { opacity: 0.6; font-style: italic; }
 .be-face-drift {
   font-variant-numeric: tabular-nums;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem * var(--a11y-fs));
   padding: 0.05rem 0.3rem;
   border-radius: 999px;
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
   cursor: help;
 }
-.be-face-tag { font-size: 0.66rem; color: hsl(var(--muted-foreground)); }
+.be-face-tag { font-size: calc(0.66rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .be-face-acts { display: inline-flex; gap: 2px; }
 .be-face-btn {
   font: inherit;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem * var(--a11y-fs));
   font-weight: 600;
   padding: 0.15rem 0.45rem;
   border: 1px solid transparent;
@@ -1276,5 +1276,5 @@ background-image:
 /* The value field spans the row beneath its own cells — a fifth column would
    squeeze the readout on the narrow popover, and the input needs the width more
    than the row needs to stay one line. */
-.be-face-in { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 0.7rem; }
+.be-face-in { grid-column: 1 / -1; font-family: var(--font-mono); font-size: calc(0.7rem * var(--a11y-fs)); }
 }

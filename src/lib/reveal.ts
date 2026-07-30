@@ -8,8 +8,16 @@
  * Reduced motion: the CSS animation is gated to `prefers-reduced-motion: no-preference`,
  * so items just appear instantly; the sound self-gates in sfx.ts. So callers never need
  * their own reduced-motion check.
+ *
+ * A `no-preference` gate is the additive INVERSE, though: it cannot be closed by
+ * adding a selector, so the app's own preference (data-a11y-motion) would leave
+ * this animation running for a user whose OS has no preference set. The stagger is
+ * therefore skipped in JS below — the animation and its per-item delay only exist
+ * on `.reveal-item`, so not adding the class IS the off-switch, exactly as
+ * armViewEnter (view-enter.ts) handles the same inversion.
  */
 import { playSfx } from './sfx.ts';
+import { prefersReducedMotion } from './a11y-prefs.ts';
 
 interface RevealOpts {
   /** Per-item delay step (ms). */ step?: number;
@@ -24,6 +32,21 @@ interface RevealOpts {
  *  clips any position:fixed popover inside it (e.g. a colour field's swatch panel). */
 export function staggerReveal(items: Element[], { step = 14, max = 160, sound = true }: RevealOpts = {}): void {
   if (!items.length) return;
+  // Calm mode drops the MOTION and keeps the cue: reduced motion is a statement about
+  // movement, not about audio (sfx.ts says so in as many words, and mute is its own
+  // preference). Playing it before the early return is deliberate — a version that
+  // returned first silently took the shuffle away from every OS-reduced-motion user,
+  // who had always heard it back when only the CSS was gated.
+  if (prefersReducedMotion()) {
+    if (sound) playSfx('shuffle');
+    // Strip any class a pre-toggle run left behind, or re-showing that item would
+    // replay the cascade the user just turned off.
+    for (const el of items) {
+      el.classList.remove('reveal-item');
+      (el as HTMLElement).style.removeProperty('--reveal-delay');
+    }
+    return;
+  }
   for (const el of items) el.classList.remove('reveal-item');   // reset any in-flight run
   void (items[0] as HTMLElement).offsetWidth;                   // one reflow re-arms the animation
   items.forEach((el, i) => {

@@ -65,7 +65,7 @@
   border-radius: var(--radius);
   box-shadow: inset 0 1px #fff1, 0 .1rem .3rem #0002;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: box-shadow 0.12s, background-color 0.12s, background-position 0.12s;
 }
 
@@ -79,7 +79,7 @@
 .field-input--sm,
 .field-select--sm {
   padding: 5px 8px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--a11y-fs));
   border-radius: calc(var(--radius) * .5);
 }
 /* (`.field-select--sm`'s own chevron gutter is set AFTER the `.field-select`
@@ -89,7 +89,7 @@
    `.field-input` alias list in components.css already carries. */
 .field-input--mono {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   background-color: hsl(var(--muted) / .4);
 }
 
@@ -99,7 +99,16 @@
   background-image: var(--field-chevron);
   background-repeat: no-repeat;
   background-position: right 10px center;
-  background-size: 14px;
+  /* The caret is on the chrome icon scale (see tokens.css) like every other mark:
+     every <select> in the app grows its option text under `largeText`, and a
+     fixed caret beside grown text reads as a control that half-responded.
+     The data-URI itself needs no variant — it carries a `viewBox`, so the
+     authored width='14' is only its intrinsic size and `background-size` is
+     what actually paints it, at any scale, from the one asset.
+     The 32px gutter is NOT scaled: at every factor the painted caret still
+     ends inside it (10px inset + 14 × factor), and a padding that grows with
+     the type is the whole-UI zoom this mechanism exists to avoid. */
+  background-size: calc(14px * var(--a11y-fs));
   /* appearance:none drops the native menulist widget. The old appearance:auto +
      transition combo made Chrome re-lay-out the native control on every hover
      frame, producing a ~1px baseline jitter (tool.css records the same finding).
@@ -110,7 +119,7 @@
 }
 /* Must follow the block above, not the other `--sm` declarations — equal
    specificity, so source order is the whole argument. */
-.field-select--sm { padding-inline-end: 24px; background-size: 12px; }
+.field-select--sm { padding-inline-end: 24px; background-size: calc(12px * var(--a11y-fs)); }
 
 /* Hover LIFTS. The chevron drifts a hair down the moment the control is live —
    a one-pixel promise that the thing opens downward. */
@@ -164,7 +173,7 @@
    muted. Same values as `.input-label` (tool.css) and `.section-card-head`. */
 .field-label {
   display: block;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .06em;
@@ -194,8 +203,18 @@
 .field-check,
 .field-radio {
   flex: none;
-  width: 16px;
-  height: 16px;
+  /* On the chrome icon scale (tokens.css). This is the tick that says
+     "provenance is on" / "watermark is off" — an icon-only control with no
+     visible mark of its own until it is checked — and at a flat 16px it sat
+     beside a 15.6px label under `largeText`, i.e. the one control on the row
+     that ignored the preference. The 1.5px hairline below is NOT scaled: it is
+     a boundary, not a glyph. */
+  width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
+  /* The radio's dot radius, scaled HERE rather than inside the gradient that
+     paints it: the multiplier belongs on a length, not buried in a paint value
+     where nothing can see it. Inherited by :checked below. */
+  --field-dot: calc(3px * var(--a11y-fs));
   margin: 0;
   appearance: none;
   -webkit-appearance: none;
@@ -225,21 +244,25 @@
   background-color: hsl(var(--primary));
   border-color: hsl(var(--primary));
 }
+/* The tick and the dot ride the box, so the mark keeps its proportion inside
+   the control at every factor. Both are centred by `background-position: center`
+   / `at center` above rather than by an offset, so nothing has to be re-centred
+   as they grow. */
 .field-check:checked {
   background-image: var(--field-tick);
-  background-size: 11px;
+  background-size: calc(11px * var(--a11y-fs));
 }
 /* The radio dot is drawn, not fetched — a radial-gradient can read the token
    directly, so the dot is theme-correct with no second asset. */
 .field-radio:checked {
-  background-image: radial-gradient(circle at center, hsl(var(--primary-foreground)) 0 3px, transparent 3.5px);
+  background-image: radial-gradient(circle at center, hsl(var(--primary-foreground)) 0 var(--field-dot), transparent calc(var(--field-dot) + 0.5px));
 }
 
 .field-check:indeterminate {
   background-color: hsl(var(--primary));
   border-color: hsl(var(--primary));
   background-image: linear-gradient(hsl(var(--primary-foreground)) 0 0);
-  background-size: 8px 2px;
+  background-size: calc(8px * var(--a11y-fs)) calc(2px * var(--a11y-fs));
 }
 
 .field-check:focus-visible,
@@ -552,7 +575,7 @@ input.field-range.is-upgraded { display: none; }
 }
 :where(optgroup) {
   font-weight: 700;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 
@@ -578,9 +601,12 @@ input.field-range.is-upgraded { display: none; }
   .field-range { height: 28px; }
   .field-range::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9px; }
   .field-range::-moz-range-thumb { width: 22px; height: 22px; }
+  /* The touch floor is flat, and the icon scale is applied ON TOP of it rather
+     than to the 16px base — same shape as tokens.css's --chrome-h at a coarse
+     pointer, so the preference can never scale a finger target away. */
   .field-check,
-  .field-radio { width: 20px; height: 20px; }
-  .field-check:checked { background-size: 13px; }
+  .field-radio { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
+  .field-check:checked { background-size: calc(13px * var(--a11y-fs)); }
 }
 
 /* ─── prefers-contrast: more ─────────────────────────────────────────────── */

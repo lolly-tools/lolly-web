@@ -29,13 +29,13 @@
    border-in-a-card trick); the active one gets a filled background, matching the
    segmented filter pattern (.cat-typefilter). */
 .welcome-langs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 20px 0 0; padding: 18px 0 0; border-top: 1px solid hsl(var(--border)); }
-.welcome-langs .lang-switch-icon { width: 15px; height: 15px; flex: none; color: hsl(var(--muted-foreground)); margin-right: 2px; }
+.welcome-langs .lang-switch-icon { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); flex: none; color: hsl(var(--muted-foreground)); margin-right: 2px; }
 .welcome-lang {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / 0.6);
@@ -51,7 +51,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  font-size: 14px;
+  font-size: calc(14px * var(--a11y-fs));
   line-height: 1;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
 }
@@ -60,7 +60,7 @@
 
 .welcome-eyebrow {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -68,13 +68,13 @@
 }
 .welcome-title {
   margin: 0 0 6px;
-  font-size: 23px;
+  font-size: calc(23px * var(--a11y-fs));
   font-weight: 750;
   letter-spacing: -0.015em;
 }
 .welcome-sub {
   margin: 0 0 20px;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--a11y-fs));
   line-height: 1.55;
   color: hsl(var(--muted-foreground));
 }
@@ -108,9 +108,9 @@
    stay muted. */
 .welcome-card-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
 .welcome-card--brand .welcome-card-icon { color: hsl(var(--primary)); }
-.welcome-card-kicker { font-size: 15px; font-weight: 700; }
-.welcome-card-line { font-size: 12.5px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
-.welcome-card-cta { margin-top: auto; padding-top: 4px; font-size: 12.5px; font-weight: 650; color: hsl(var(--primary)); }
+.welcome-card-kicker { font-size: calc(15px * var(--a11y-fs)); font-weight: 700; }
+.welcome-card-line { font-size: calc(12.5px * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.welcome-card-cta { margin-top: auto; padding-top: 4px; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 650; color: hsl(var(--primary)); }
 
 /* ── Tips strip — slim, above the masonry, until dismissed ─────────────────── */
 .brand-tips {
@@ -125,7 +125,7 @@
   border-radius: 999px;
   background: hsl(var(--card));
   color: hsl(var(--muted-foreground));
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--a11y-fs));
 }
 .brand-tips-text { margin: 0; line-height: 1.4; }
 .brand-tips-dot { opacity: 0.55; }
@@ -141,7 +141,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   line-height: 1;
   cursor: pointer;
 }

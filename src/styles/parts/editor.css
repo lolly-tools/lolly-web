@@ -112,7 +112,7 @@
 }
 [data-theme="dark"] .fc-toolbar .fc-btn.fc-btn-lolly { --lolly-accent: 145 52% 60%; }
 .fc-toolbar .fc-btn.fc-btn-lolly:hover:not(:disabled) { background: hsl(var(--muted)); }
-.fc-toolbar .fc-btn.fc-btn-lolly svg { width: 22px; height: 22px; }
+.fc-toolbar .fc-btn.fc-btn-lolly svg { width: calc(22px * var(--a11y-fs)); height: calc(22px * var(--a11y-fs)); }
 /* Unsaved work: Save lives in the menu now, so the mark carries the render pill's cue. */
 .fc-toolbar .fc-btn.fc-btn-lolly.is-unsaved,
 .fc-toolbar .fc-btn.fc-btn-lolly.is-unsaved:hover:not(:disabled) {
@@ -137,7 +137,15 @@
    invisible-but-space-taking 40px hole in the rail (Arrange, the mic button, every
    conditionally-hidden icon). Same restatement as .tl-panel[hidden] in timeline.css. */
 .fc-btn[hidden] { display: none; }
-.fc-btn svg { width: 21px; height: 21px; }
+/* Every button in this rail is an aria-label + a glyph: the icon carries 100% of
+   the control's meaning, so it scales on the type multiplier like any label would
+   (one knob — see the --a11y-fs note in parts/a11y.css). A fixed-px glyph inside a
+   box that already grows would leave largeText doing nothing for the whole palette.
+   The 40px box is left alone deliberately: a 1.2× glyph is 25.2px and still clears
+   it, and the rail's drag geometry (clampRailPos in free-canvas.ts) measures the box.
+   The SELECTION chrome below (handles, pen nodes, gradient stops) is excluded on
+   purpose — those sizes are matched to screen-px hit tolerances owned by JS. */
+.fc-btn svg { width: calc(21px * var(--a11y-fs)); height: calc(21px * var(--a11y-fs)); }
 .fc-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
 .fc-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* Undo/redo dim out at the ends of history (same treatment as .history-btn). */
@@ -175,7 +183,7 @@
 .fc-pop-item {
   display: flex; align-items: center; gap: 9px;
   border: none; background: transparent; color: inherit;
-  font: inherit; font-size: 13.5px; text-align: left;
+  font: inherit; font-size: calc(13.5px * var(--a11y-fs)); text-align: left;
   padding: 8px 10px; border-radius: 8px; cursor: pointer;
 }
 .fc-pop-item:hover:not(:disabled) { background: hsl(var(--muted)); }
@@ -187,7 +195,7 @@
 .fc-pop-gitem:disabled{ opacity: 0.38; cursor: default; }
 .fc-pop-item.fc-pop-danger:hover:not(:disabled),
 .fc-cbtn.fc-danger:hover{ background: #ef4444; color: #ffffff; }
-.fc-pop-ic svg { width: 16px; height: 16px; display: block; }
+.fc-pop-ic svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
 .fc-pop-sep { height: 1px; background: hsl(var(--border)); margin: 4px 2px; }
 /* Icon-only action grid inside a popover (align = 3 cols, distribute = 2). Fixed-width
    columns so both grids share the same square button size and sit left-aligned. */
@@ -201,7 +209,7 @@
   height: 34px; border: none; background: transparent; color: inherit;
   border-radius: 8px; cursor: pointer;
 }
-.fc-pop-gitem svg { width: 18px; height: 18px; display: block; }
+.fc-pop-gitem svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); display: block; }
 .fc-pop-gitem:hover:not(:disabled) { background: hsl(var(--muted)); }
 /* Right-click context menu — longer, so cap its height and scroll. */
 .fc-context-menu { max-height: min(80vh, 560px); overflow-y: auto; min-width: 210px; }
@@ -213,10 +221,10 @@
    field, its unit and the confirm button on one line, so the whole prompt is one row
    under its heading. */
 .fc-num-panel { min-width: 250px; }
-.fc-num-panel .fc-panel-head { font-weight: 700; font-size: 13px; }
-.fc-num-hint { margin: -3px 0 0; font-size: 11.5px; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.fc-num-panel .fc-panel-head { font-weight: 700; font-size: calc(13px * var(--a11y-fs)); }
+.fc-num-hint { margin: -3px 0 0; font-size: calc(11.5px * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); }
 .fc-num-row { display: flex; align-items: center; gap: 7px; }
-.fc-num-row > i { font-style: normal; font-size: 11.5px; color: hsl(var(--muted-foreground)); }
+.fc-num-row > i { font-style: normal; font-size: calc(11.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 /* The confirm button is the shared `.btn .btn--primary` primitive (buttons.css) — only
    its behaviour inside this one row is local. Restating the fill pair here would beat the
    primitive from the `views` layer, which is what primitive-guards.test.ts ratchets. */
@@ -296,13 +304,13 @@
   min-width: 32px; height: 32px; padding: 0 7px;
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: 8px; background: transparent;
-  color: hsl(var(--foreground)); font: inherit; font-size: 14px; font-weight: 700;
+  color: hsl(var(--foreground)); font: inherit; font-size: calc(14px * var(--a11y-fs)); font-weight: 700;
   cursor: pointer;
 }
-.fc-cbtn svg { width: 18px; height: 18px; }
+.fc-cbtn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .fc-cbtn:hover { background: hsl(var(--muted)); }
 .fc-readout {
-  font-size: 11px; color: hsl(var(--muted-foreground));
+  font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground));
   padding: 0 6px; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 
@@ -334,7 +342,7 @@
   position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
   max-width: min(430px, 88%); z-index: 26; pointer-events: none;
   padding: 9px 14px; border-radius: 10px;
-  font-size: 12.5px; line-height: 1.45; text-wrap: pretty;
+  font-size: calc(12.5px * var(--a11y-fs)); line-height: 1.45; text-wrap: pretty;
   background: hsl(var(--card) / 0.92); color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border)); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
@@ -415,7 +423,9 @@
 /* Armed pen / node-edit cursors, matching .fc-arming's vocabulary. */
 .tool-stage.fc-penning { cursor: crosshair; }
 .tool-stage.fc-node-editing { cursor: default; }
-.fc-pen-kind { max-width: 148px; }
+/* A max-width capping a list of worded options (corner / smooth / symmetric) — it
+   has to follow the type or the wider labels are what gets cut. */
+.fc-pen-kind { --fc-pen-kind-cap: calc(148px * var(--a11y-fs)); max-width: var(--fc-pen-kind-cap); }
 /* The lossy-switch confirmation reuses the one-number prompt's panel; only its row differs
    (two buttons rather than a field + a button). */
 .fc-confirm-row { justify-content: flex-end; }
@@ -497,14 +507,17 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
   isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
   border: 1px solid hsl(var(--border)); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
 }
-.fc-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
-.fc-row > span { flex: 0 0 86px; color: hsl(var(--muted-foreground)); }
+.fc-row { display: flex; align-items: center; gap: 9px; font-size: calc(12.5px * var(--a11y-fs)); }
+/* The label column and the numeric readout are rigid flex bases holding TEXT, so
+   they have to follow the type: at a fixed 86px/32px a 1.2× label or a "100%"
+   readout paints past its own cell and into the control beside it. */
+.fc-row > span { flex: 0 0 auto; flex-basis: calc(86px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 /* The box itself is `.field-select` / `.field-range` (fields.css). All a panel row
    adds is how the control shares the row: fill the cell, never push it wider than
    its label. Restating padding/border/background here would silently beat the
    primitive — `views` outranks `primitives` — so it deliberately does not. */
 .fc-row select, .fc-row input[type="range"] { flex: 1; min-width: 0; }
-.fc-row > b { flex: 0 0 32px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fc-row > b { flex: 0 0 auto; flex-basis: calc(32px * var(--a11y-fs)); text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 /* Toggle rows (ligatures / stylistic alternates) — checkbox sits at the right edge.
    The tick is `.field-check` + `.field-toggle` (which also dims the row while the
    box is disabled); only the label's flex behaviour is local. */
@@ -522,7 +535,7 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 /* Connector inspector (org-chart) — the properties popover for a selected line. */
 .fc-edge-panel { min-width: 236px; }
 .fc-edge-count {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  font-size: calc(11px * var(--a11y-fs)); font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
   color: hsl(var(--primary)); padding: 1px 2px 5px; margin-bottom: 2px;
   border-bottom: 1px solid hsl(var(--border));
 }
@@ -530,9 +543,9 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .fc-edge-actions { justify-content: flex-end; margin-top: 2px; }
 .fc-edge-actions .fc-cbtn {
   width: auto; display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 11px; font: inherit; font-size: 12px; font-weight: 600; border-radius: 8px;
+  padding: 6px 11px; font: inherit; font-size: calc(12px * var(--a11y-fs)); font-weight: 600; border-radius: 8px;
 }
-.fc-edge-actions .fc-cbtn svg { width: 15px; height: 15px; }
+.fc-edge-actions .fc-cbtn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
 /* Canvas-size panel — presets grid + custom width/height. */
 .fc-size-panel { min-width: 262px; }
@@ -542,14 +555,14 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
   display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
   padding: 7px 9px; border-radius: 8px; cursor: pointer;
   border: 1px solid hsl(var(--border)); background: hsl(var(--background)); color: inherit;
-  font: inherit; font-size: 12px; text-align: left;
+  font: inherit; font-size: calc(12px * var(--a11y-fs)); text-align: left;
 }
 .fc-size-preset b { font-weight: 600; }
-.fc-size-preset span { font-size: 10.5px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.fc-size-preset span { font-size: calc(10.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
 .fc-size-preset:hover { border-color: hsl(var(--ring) / 0.5); }
 .fc-size-preset.is-current { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.08); }
 .fc-size-panel .fc-row input[type="number"] {
-  flex: 1; min-width: 0; font: inherit; font-size: 12.5px; padding: 4px 6px;
+  flex: 1; min-width: 0; font: inherit; font-size: calc(12.5px * var(--a11y-fs)); padding: 4px 6px;
   border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
 }
 
@@ -563,8 +576,8 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 }
 .fc-pages-step .fc-step-btn:hover:not(:disabled) { border-color: hsl(var(--ring) / 0.5); }
 .fc-pages-step .fc-step-btn:disabled { opacity: 0.4; cursor: default; }
-.fc-pages-step .fc-step-btn svg { width: 18px; height: 18px; }
-.fc-pages-count { min-width: 1.6ch; text-align: center; font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
+.fc-pages-step .fc-step-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
+.fc-pages-count { min-width: 1.6ch; text-align: center; font-weight: 700; font-size: calc(18px * var(--a11y-fs)); font-variant-numeric: tabular-nums; }
 
 /* Inline text editing — the box's own text element becomes contentEditable. */
 .lolly-box-text.fc-editing {
@@ -631,8 +644,13 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 /* Both are `.field-select .field-select--sm .field-select--auto`; the only thing
    the bar has an opinion about is how wide a font/weight name may get before it
    ellipsises, so that is all that is left here. */
-.fc-fmt-weight, .fc-fmt-font { max-width: 104px; }
-.fc-fmt-font { max-width: 118px; }
+/* This cap is an ellipsis threshold on a TEXT control, so it follows the type: held
+   at a fixed px a larger face simply loses characters, which is the opposite of what
+   the preference was asked for. The cap is a token so the three places that set a
+   different one (below, and the type pill's two) re-point it rather than each
+   restating the multiplier. */
+.fc-fmt-weight, .fc-fmt-font { --fc-fmt-cap: calc(104px * var(--a11y-fs)); max-width: var(--fc-fmt-cap); }
+.fc-fmt-font { --fc-fmt-cap: calc(118px * var(--a11y-fs)); }
 
 /* Type pill — font · weight · colour joined into one connected control. Only the
    pill's outer corners round, so the three read as a single object. The -1px pull
@@ -647,8 +665,8 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .fc-fmt-typegroup > * { margin: 0; }
 .fc-fmt-typegroup > * + * { margin-left: -1px; }
 .fc-fmt-typegroup .fc-fmt-font,
-.fc-fmt-typegroup .fc-fmt-weight { border-radius: 0; max-width: 108px; }
-.fc-fmt-typegroup .fc-fmt-weight { max-width: 92px; }
+.fc-fmt-typegroup .fc-fmt-weight { border-radius: 0; --fc-fmt-cap: calc(108px * var(--a11y-fs)); }
+.fc-fmt-typegroup .fc-fmt-weight { --fc-fmt-cap: calc(92px * var(--a11y-fs)); }
 /* Colour segment: the swatch chip only (hex hidden), squared, filling the pill
    height so it lines up with the two selects. */
 .fc-fmt-typegroup .fc-fmt-color,
@@ -677,17 +695,26 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
    inserted text still renders in the SUSE font, where the trio shapes into the
    brand mark. flex:none so the wider label never shrinks and clips. */
 .fc-fmt-emoji {
-  flex: none; min-width: 0; padding: 0 7px; letter-spacing: 1px; font-size: 13px;
+  flex: none; min-width: 0; padding: 0 7px; letter-spacing: 1px; font-size: calc(13px * var(--a11y-fs));
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
 /* Segmented control (align / vertical align) inside the Text panel. */
 .fc-seg { display: inline-flex; flex: 1; min-width: 0; gap: 2px; padding: 2px;
   border-radius: 8px; background: hsl(var(--muted)); }
+/* The segments share the row (`flex: 1`) and the label is nowrap, so anything the
+   basis can't hold has to be contained BY the button: without the overflow guard a
+   wider label paints outside its own box and over its neighbours, and the segment
+   under the pointer stops being the one the label says it is. `min-height` rather
+   than `height` for the same reason on the other axis — the box grows with the type
+   instead of cropping it. Both are inert at --a11y-fs: 1 (26px content in a 26px
+   min-height box, labels that already fit), so the control is unchanged for anyone
+   who set no preference. */
 .fc-seg-btn {
-  flex: 1; min-width: 0; height: 26px; padding: 0 6px;
+  flex: 1; min-width: 0; min-height: 26px; height: auto; padding: 0 6px;
   border: none; border-radius: 6px; background: transparent; color: inherit;
-  font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+  font: inherit; font-size: calc(12px * var(--a11y-fs)); cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
 }
 .fc-seg-btn:hover { background: hsl(var(--background) / 0.6); }
 .fc-seg-btn.is-on {
@@ -698,19 +725,22 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 
 /* Icon segment buttons (align / shape / fit) — centre the glyph. */
 .fc-seg-btn.fc-seg-ic { display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; }
-.fc-seg-btn.fc-seg-ic svg { width: 16px; height: 16px; }
+.fc-seg-btn.fc-seg-ic svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 
 /* Image-position anchor picker: a 3×3 grid where each cell IS its anchor. The dot
    is a target affordance; the selected cell lights up like any .fc-seg-btn.is-on. */
 .fc-seg.fc-posgrid { display: grid; flex: none; grid-template-columns: repeat(3, 24px); grid-auto-rows: 24px; }
-.fc-pos-btn { flex: none; width: auto; height: auto; padding: 0; display: grid; place-items: center; }
+/* A 3×3 cell is sized by its grid track, not by the segment row — so it clears the
+   segment's row height BOTH ways (`.fc-seg-btn` sets a min-height as well now, and
+   an unreset floor would push each cell past its 24px track). */
+.fc-pos-btn { flex: none; width: auto; height: auto; min-height: 0; padding: 0; display: grid; place-items: center; }
 .fc-pos-btn i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.35; transition: opacity 0.1s; }
 .fc-pos-btn:hover i { opacity: 0.6; }
 .fc-pos-btn.is-on i { opacity: 1; }
 
 /* Leading icon+label for More-panel rows (radius / opacity / fit / shape / blend). */
 .fc-row-lbl { display: inline-flex; align-items: center; gap: 6px; }
-.fc-row-lbl svg { width: 15px; height: 15px; flex: none; }
+.fc-row-lbl svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); flex: none; }
 .fc-row-lbl > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Text-only inputs / steppers / dims / info panels share the number+text field look.
@@ -720,7 +750,7 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
    the primitive rather than out-ranking it from the same layer; migrate the remaining
    free-canvas panel fields and this rule can go entirely. */
 .fc-panel input[type="number"]:not(.field-input), .fc-panel input[type="text"]:not(.field-input) {
-  flex: 1; min-width: 0; font: inherit; font-size: 12.5px; padding: 4px 6px;
+  flex: 1; min-width: 0; font: inherit; font-size: calc(12.5px * var(--a11y-fs)); padding: 4px 6px;
   border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
 }
 .fc-panel .fc-cfield { flex: 1; }
@@ -728,7 +758,7 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 /* Size stepper (A− / number / A+) in the Text panel. */
 .fc-stepper { flex: 1; display: inline-flex; align-items: center; gap: 6px; }
 .fc-stepper input[type="number"] { text-align: center; }
-.fc-stepper .fc-cbtn { min-width: 30px; height: 28px; border: 1px solid hsl(var(--input)); border-radius: 7px; font-size: 13px; }
+.fc-stepper .fc-cbtn { min-width: 30px; height: 28px; border: 1px solid hsl(var(--input)); border-radius: 7px; font-size: calc(13px * var(--a11y-fs)); }
 .fc-stepper .fc-cbtn:hover { background: hsl(var(--muted)); }
 
 /* More panel: sub-heading (Shadow) + a taller, scrollable body. */
@@ -751,15 +781,27 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
    icon-led row: two labelled number cells (X·Y, W·H) or a number + drag slider. */
 .fc-dims-panel { min-width: 236px; }
 .fc-dims { display: flex; flex-direction: column; gap: 8px; }
-.fc-dims-row { display: grid; grid-template-columns: 18px 1fr 1fr; align-items: center; gap: 8px; }
+/* The leading icon column is sized to its glyph, so the track scales with it — a
+   fixed 18px track would clip a 1.2× icon against the fields beside it. The track
+   widths are tokens (the rotation row below re-points them) rather than a factor
+   restated inside each grid-template-columns. */
+.fc-dims-row {
+  display: grid;
+  --fc-dims-ic-col: calc(18px * var(--a11y-fs));
+  grid-template-columns: var(--fc-dims-ic-col) 1fr 1fr;
+  align-items: center; gap: 8px;
+}
 .fc-dims-ic { display: inline-flex; color: hsl(var(--muted-foreground)); }
-.fc-dims-ic svg { width: 16px; height: 16px; }
+.fc-dims-ic svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .fc-dims-f { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
-.fc-dims-f > span { flex: none; width: 9px; font-weight: 600; font-size: 11px; color: hsl(var(--muted-foreground)); }
-.fc-dims-f > i { flex: none; font-style: normal; font-size: 10.5px; color: hsl(var(--muted-foreground)); }
+.fc-dims-f > span { flex: none; width: calc(9px * var(--a11y-fs)); font-weight: 600; font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.fc-dims-f > i { flex: none; font-style: normal; font-size: calc(10.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .fc-dims-f input[type="number"] { flex: 1; min-width: 0; }
 /* Rotation row: a narrower number cell + a drag slider filling the rest. */
-.fc-dims-rot { grid-template-columns: 18px 86px 1fr; }
+.fc-dims-rot {
+  --fc-dims-num-col: calc(86px * var(--a11y-fs));
+  grid-template-columns: var(--fc-dims-ic-col) var(--fc-dims-num-col) 1fr;
+}
 /* `.field-range` draws it (fields.css); the grid cell only needs it to be
    allowed to shrink below its intrinsic width. */
 .fc-dims-slider { min-width: 0; }
@@ -767,12 +809,12 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 /* Document info panel — editable name + at-a-glance meta rows. */
 .fc-info-panel { min-width: 262px; }
 .fc-info-meta { display: flex; flex-direction: column; gap: 5px; padding-top: 9px; border-top: 1px solid hsl(var(--border)); }
-.fc-info-line { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
+.fc-info-line { display: flex; justify-content: space-between; gap: 14px; font-size: calc(12px * var(--a11y-fs)); }
 .fc-info-line > span { color: hsl(var(--muted-foreground)); }
 .fc-info-line > b { font-weight: 600; text-align: right; word-break: break-word; }
 /* "Embedded in exports" sub-heading + the provenance opt-in note. */
-.fc-panel-head.fc-info-sub { margin-top: 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: hsl(var(--muted-foreground)); }
-.fc-info-note { font-size: 11px; line-height: 1.4; color: hsl(var(--muted-foreground)); margin-top: 2px; }
+.fc-panel-head.fc-info-sub { margin-top: 14px; font-size: calc(11px * var(--a11y-fs)); text-transform: uppercase; letter-spacing: 0.06em; color: hsl(var(--muted-foreground)); }
+.fc-info-note { font-size: calc(11px * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); margin-top: 2px; }
 .fc-info-note a { color: hsl(var(--primary)); text-decoration: underline; }
 .fc-info-note:empty { display: none; }
 
@@ -874,6 +916,10 @@ button.fc-readout:empty { display: none; }
 .stage-nav[data-zoomed="1"],
 .stage-nav:focus-within { opacity: 1; }
 
+/* The pill around these already grows (min-height is --chrome-h, which carries the
+   type multiplier — tokens.css), so the segments inside it grow on the same factor:
+   held at a flat 26px they would shrink INSIDE a taller pill, and "100%" at 1.2×
+   no longer fits the percentage segment's 48px floor. */
 .stage-nav-btn,
 .stage-nav-pct {
   border: none;
@@ -881,13 +927,13 @@ button.fc-readout:empty { display: none; }
   cursor: pointer;
   font: inherit;
   color: hsl(var(--foreground));
-  height: 26px;
+  height: calc(26px * var(--a11y-fs));
   border-radius: 999px;
   transition: background 0.12s, color 0.12s;
 }
-.stage-nav-btn { width: 26px; font-size: 16px; line-height: 1; }
-.stage-nav-pct { min-width: 48px; font-size: 12px; font-variant-numeric: tabular-nums; }
-.stage-nav-fit { width: auto; padding: 0 10px; font-size: 12px; font-weight: 600; }
+.stage-nav-btn { width: calc(26px * var(--a11y-fs)); font-size: calc(16px * var(--a11y-fs)); line-height: 1; }
+.stage-nav-pct { min-width: calc(48px * var(--a11y-fs)); font-size: calc(12px * var(--a11y-fs)); font-variant-numeric: tabular-nums; }
+.stage-nav-fit { width: auto; padding: 0 10px; font-size: calc(12px * var(--a11y-fs)); font-weight: 600; }
 .stage-nav-btn:hover,
 .stage-nav-pct:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 
@@ -897,7 +943,7 @@ button.fc-readout:empty { display: none; }
    BOTH icons at 16px; without it a global svg rule wins and — on mobile, where the
    button becomes width:auto — the icon balloons. */
 .stage-nav-theme svg,
-.stage-nav-sound svg { width: 16px; height: 16px; }
+.stage-nav-sound svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .stage-nav-sep {
   flex: none;
   align-self: center;

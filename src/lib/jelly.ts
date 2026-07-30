@@ -52,10 +52,18 @@ jelly-button, jelly-input, jelly-switch, jelly-checkbox, jelly-segmented {
 jelly-button::before, jelly-button::after { content: none; }
 /* Chrome-wide scale: jelly's size tables suit marketing pages; Lolly's chrome
    runs denser. Page-level rules beat shadow :host size tables, so this is the
-   one knob for every surface (dialogs, action rows, forms). */
+   one knob for every surface (dialogs, action rows, forms).
+   Every size here rides var(--a11y-fs) — the largeText multiplier — for the same
+   reason the note below gives about download-btn-jelly: this sheet is injected
+   UNLAYERED, so @layer a11y cannot reach it, and jelly mode replaces whole
+   controls (switches, inputs, buttons) with shadow-DOM ones. Left off the
+   multiplier, turning on Large text would leave an entire alternate control layer
+   at its original size — including the switch that turns jelly mode on. The
+   default is 1 (styles/parts/a11y.css), so this is byte-identical when off, and
+   the height scales with the label so the capsule does not crush. */
 jelly-button {
-  --jelly-button-font-size: .85rem;
-  --jelly-button-height: 2.35rem;
+  --jelly-button-font-size: calc(.85rem * var(--a11y-fs));
+  --jelly-button-height: calc(2.35rem * var(--a11y-fs));
   --jelly-button-min-width: 0;
 }
 /* The shadow button is content-sized and sits at the inline start of its
@@ -69,12 +77,12 @@ jelly-button::part(button) { width: 100%; }
 jelly-button.download-btn-jelly {
   /* the component drives vertical bulk via height (its padding-block is 0) —
      3.25rem ≈ the old native padding plus the extra breathing room */
-  --jelly-button-height: 3.25rem;
-  --jelly-button-font-size: .95rem;
+  --jelly-button-height: calc(3.25rem * var(--a11y-fs));
+  --jelly-button-font-size: calc(.95rem * var(--a11y-fs));
   font-weight: 700;
 }
 jelly-input {
-  --jelly-input-font-size: .9rem;
+  --jelly-input-font-size: calc(.9rem * var(--a11y-fs));
   --jelly-input-padding-inline: .65rem;
 }`;
 

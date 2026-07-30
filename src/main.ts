@@ -14,6 +14,7 @@ import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChang
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
+import { hydrateA11yPrefs } from './lib/a11y-prefs.ts';
 import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { loadUserFonts } from './lib/load-user-fonts.ts';
@@ -585,6 +586,10 @@ async function boot(): Promise<void> {
   const profile = await host.profile.get();
   const profileTheme = (profile as { theme?: string }).theme;
   if (profileTheme) applyTheme(profileTheme, false);
+
+  // Accessibility prefs ride the profile the same way (localStorage is only
+  // their FOUC mirror, applied by the index.html inline script) — reconcile.
+  hydrateA11yPrefs(profile.a11y);
 
   // Language — same precedence chain as the theme, plus a session-only `lang`
   // URL override (never written back to the profile — see i18n.ts). Awaited

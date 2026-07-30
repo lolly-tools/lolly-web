@@ -17,15 +17,15 @@
   display: flex; align-items: center; justify-content: center; gap: 10px;
   margin-bottom: .9rem; padding: 14px 16px;
   border: 2px dashed hsl(var(--border)); border-radius: var(--radius);
-  color: hsl(var(--muted-foreground)); font-size: .9rem; text-align: center;
+  color: hsl(var(--muted-foreground)); font-size: calc(.9rem * var(--a11y-fs)); text-align: center;
   cursor: pointer;
   transition: border-color .12s, background .12s, color .12s;
 }
 .updz-icon { display: inline-flex; flex: none; }
-.updz-icon svg { width: 20px; height: 20px; }
+.updz-icon svg { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
 .updz--empty { flex-direction: column; gap: 12px; padding: 2.6rem 1.5rem; }
-.updz--empty .updz-icon svg { width: 28px; height: 28px; }
-.updz--compact { margin-bottom: 0; padding: 9px 12px; gap: 8px; font-size: .85rem; }
+.updz--empty .updz-icon svg { width: calc(28px * var(--a11y-fs)); height: calc(28px * var(--a11y-fs)); }
+.updz--compact { margin-bottom: 0; padding: 9px 12px; gap: 8px; font-size: calc(.85rem * var(--a11y-fs)); }
 .updz--compact .updz-hint { display: none; }
 .updz:hover, .updz:focus-within { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
 .updz:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }

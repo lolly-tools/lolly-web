@@ -61,7 +61,7 @@
   background: hsl(var(--card) / 0.96);
   border-top: 1px solid hsl(var(--border));
   box-shadow: 0 -10px 30px rgb(0 0 0 / 0.18);
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   user-select: none;
   touch-action: none;         /* the panel owns its own pointer gestures */
 }
@@ -110,7 +110,7 @@
 .tl-transport { gap: 6px; }
 .tl-time {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
   color: hsl(var(--muted-foreground));
@@ -119,7 +119,9 @@
 
 /* Buttons — same silhouette as the editor rail's .fc-btn, one size down. */
 .tl-btn {
-  width: 30px; height: 30px; padding: 0;
+  /* Icon-only, so the box follows its glyph on the icon scale; the
+     coarse-pointer 36px below is a finger target and stays flat. */
+  width: calc(30px * var(--a11y-fs)); height: calc(30px * var(--a11y-fs)); padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 auto;
   border: 0; border-radius: 9px;
@@ -133,7 +135,7 @@
    hole plus the .tl-tools gap. The panel hides the `+` for a timed tool that declares
    no addKinds, so restate it, exactly as `.tl-scenery[hidden]` does further down. */
 .tl-btn[hidden] { display: none; }
-.tl-btn svg { width: 16px; height: 16px; }
+.tl-btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .tl-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
 .tl-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .tl-btn:disabled { opacity: 0.35; cursor: default; }
@@ -142,8 +144,8 @@
   background: var(--brand-primary, hsl(var(--primary)));
   color: var(--brand-on-primary, hsl(var(--primary-foreground)));
 }
-.tl-play { width: 34px; height: 34px; border-radius: 11px; background: hsl(var(--muted)); }
-.tl-play svg { width: 17px; height: 17px; }
+.tl-play { width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs)); border-radius: 11px; background: hsl(var(--muted)); }
+.tl-play svg { width: calc(17px * var(--a11y-fs)); height: calc(17px * var(--a11y-fs)); }
 .tl-play:hover:not(:disabled) { background: hsl(var(--accent)); }
 
 /* Every panel glyph is now a registry icon (lib/icons.ts) rendered as an <svg>,
@@ -186,13 +188,13 @@
 .tl-rec.is-countin .tl-rec-dot { animation: none; opacity: 0.45; }
 .tl-rec-time {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   min-width: 34px;
   text-align: center;
   white-space: nowrap;
 }
-.tl-rec.is-countin .tl-rec-time { font-size: 14px; font-weight: 700; }
+.tl-rec.is-countin .tl-rec-time { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; }
 /* The level meter: a fill inside a track, width driven from dBFS in paintLevel. */
 .tl-rec-meter {
   position: relative;
@@ -215,7 +217,7 @@
 .tl-rec-note {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
   overflow: hidden;
@@ -265,14 +267,14 @@
   flex: 0 0 auto;
 }
 .tl-field .field-label {
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--a11y-fs));
   text-transform: uppercase;
   letter-spacing: 0.045em;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
-.tl-num  { width: 68px; font-size: 12px; padding: 5px 7px; font-variant-numeric: tabular-nums; }
-.tl-select { width: auto; font-size: 12px; padding: 5px 24px 5px 7px; }
+.tl-num  { width: 68px; font-size: calc(12px * var(--a11y-fs)); padding: 5px 7px; font-variant-numeric: tabular-nums; }
+.tl-select { width: auto; font-size: calc(12px * var(--a11y-fs)); padding: 5px 24px 5px 7px; }
 
 /* ─── Ruler ──────────────────────────────────────────────────────────────────
    The inner strip is TRANSLATED to follow the tracks' scrollLeft (never
@@ -300,7 +302,7 @@
   position: absolute;
   left: 4px; top: 2px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   line-height: 1;
   color: hsl(var(--muted-foreground));
@@ -348,7 +350,7 @@
   background: transparent;
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--a11y-fs));
   cursor: pointer;
 }
 .tl-dropslot:hover { color: hsl(var(--foreground)); border-color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.5); }
@@ -421,7 +423,7 @@
   max-width: 100%;
   margin: 0 4px 3px;
   padding: 1px 4px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--a11y-fs));
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -436,7 +438,7 @@
   padding: 0 3px;
   border-radius: 4px;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: calc(9px * var(--a11y-fs));
   line-height: 1.5;
   color: hsl(var(--background));
   background: hsl(var(--foreground) / 0.7);
@@ -539,7 +541,7 @@
 }
 .tl-scenery[hidden] { display: none; }
 .tl-scenery-label {
-  font-size: 10px;
+  font-size: calc(10px * var(--a11y-fs));
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: hsl(var(--muted-foreground));
@@ -575,7 +577,7 @@
   background: transparent;
   color: hsl(var(--foreground));
   font: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -594,7 +596,9 @@
    element, which keeps the pill a two-child flex row. */
 .tl-chip-add {
   flex: 0 0 auto;
-  width: 22px;
+  /* On the icon scale with its `+`; the coarse-pointer bump below is a finger
+     target, not a glyph, and stays a flat 32px. */
+  width: calc(22px * var(--a11y-fs));
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
   border: 0;
@@ -606,7 +610,7 @@
   color: hsl(var(--muted-foreground));
   cursor: pointer;
 }
-.tl-chip-add svg { width: 11px; height: 11px; }
+.tl-chip-add svg { width: calc(11px * var(--a11y-fs)); height: calc(11px * var(--a11y-fs)); }
 .tl-chip-add:hover {
   background: var(--brand-primary, hsl(var(--primary)));
   color: var(--brand-on-primary, hsl(var(--primary-foreground)));
@@ -625,7 +629,7 @@
   background: transparent;
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
@@ -646,7 +650,7 @@
   gap: 14px;
   min-width: min(300px, 78vw);
 }
-.tl-junction-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.tl-junction-title { margin: 0; font-size: calc(1rem * var(--a11y-fs)); font-weight: 600; }
 .tl-junction-kinds { display: flex; gap: 8px; }
 .tl-junction-kind { flex: 1 1 0; justify-content: center; }
 /* Selected kind: the brand fill lives in buttons.css (.btn--primary); this is the

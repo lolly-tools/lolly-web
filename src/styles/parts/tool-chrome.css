@@ -27,7 +27,7 @@
   border: 1px solid hsl(var(--border));
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
   color: hsl(var(--foreground));
-  font-size: 0.8125rem;
+  font-size: calc(0.8125rem * var(--a11y-fs));
   line-height: 1.2;
   pointer-events: none;
   opacity: 0;
@@ -41,7 +41,7 @@
   transform: translateX(-50%) translateY(0);
 }
 .toast-icon { display: inline-flex; flex: none; color: hsl(var(--muted-foreground)); }
-.toast-icon svg { width: 16px; height: 16px; display: block; }
+.toast-icon svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
 .toast-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toast-label { color: hsl(var(--muted-foreground)); }
 /* A toast carrying a sentence rather than a label. The default message is
@@ -89,10 +89,15 @@
     /* Clearance below the peek bar so the preview doesn't run up under it. Driven
        by --peek-h (the measured header height, set in setupMobileSheet) so the
        taller two-row header still fully shows in peek; 56px is the fallback.
-       Static — independent of the sheet height — so the preview never rescales. */
-    --preview-top: calc(var(--peek-h, 56px) + 0dvh);
+       Static — independent of the sheet height — so the preview never rescales.
+       The FALLBACK carries the type multiplier: --peek-h is measured, so it already
+       follows a larger header, but a flat 56px is what applies whenever the measure
+       hasn't landed (first paint, or setupMobileSheet not yet run) and at 1.2× that
+       is shorter than the header it is meant to clear — the peek sheet would crop
+       its own title row and the preview would start underneath it. */
+    --preview-top: calc(var(--peek-h, calc(56px * var(--a11y-fs))) + 0dvh);
   }
-  .tool-layout[data-sheet="peek"] { --sheet-h: var(--peek-h, 56px); }
+  .tool-layout[data-sheet="peek"] { --sheet-h: var(--peek-h, calc(56px * var(--a11y-fs))); }
   .tool-layout[data-sheet="half"] { --sheet-h: 50dvh; }
   .tool-layout[data-sheet="full"] { --sheet-h: 90dvh; }
 
@@ -278,16 +283,26 @@
    don't add phantom gaps between rows. */
 .tool-actions:empty { display: none; }
 
+/* The chip wraps INSIDE its own box rather than pushing past the column: these sit
+   in a fixed-width sidebar that does not grow, and a label that overflows it is
+   both unreadable and untappable at its right edge. `normal` costs nothing while
+   there is room — a flex item's shrink-to-fit width is its max-content width either
+   way — so it only takes effect where the chip could not have fitted anyway: a long
+   German/Portuguese mark name, or any label at a larger type scale. `anywhere`
+   because several of those are one unbreakable compound word. */
 .export-option {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--foreground));
   cursor: pointer;
   user-select: none;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--background));
@@ -314,7 +329,7 @@
   display: flex;
   align-items: center;
   gap: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 
@@ -347,7 +362,7 @@
   border: 1px solid hsl(var(--input));
   border-radius: 0;                      /* segmented pill — outer caps added below */
   font: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   text-align: left;
   appearance: textfield;
@@ -395,15 +410,23 @@
   background-color: hsl(var(--background));
   background-image: var(--field-chevron);  /* the one shared caret (parts/fields.css) */
   background-repeat: no-repeat;
-  background-position: center bottom 3px;  /* chevron centred beneath the text */
-  background-size: 7px;                    /* tiny — matched to the 7px DPI caption scale */
+  /* Chevron centred beneath the text. The caret is matched to the 7px DPI caption,
+     which scales with the type, so the caret does too — and the bottom padding IS
+     the room it needs (gap + caret, 3 + 7), expressed as that sum so the three can
+     never drift apart. Scale the caret alone and it grows up into the unit text
+     instead of sitting under it. */
+  --dim-unit-caret: calc(7px * var(--a11y-fs));
+  --dim-unit-caret-gap: calc(3px * var(--a11y-fs));
+  background-position: center bottom var(--dim-unit-caret-gap);
+  background-size: var(--dim-unit-caret);
   border: 1px solid hsl(var(--input));
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   line-height: 1;
   text-align: center;
   text-align-last: center;                 /* centre the selected value over the chevron */
-  padding: 0 6px 10px;    /* symmetric sides; bottom room for the stacked chevron */
+  /* symmetric sides; bottom room for the stacked chevron (its gap + its size) */
+  padding: 0 6px calc(var(--dim-unit-caret-gap) + var(--dim-unit-caret));
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
@@ -428,18 +451,20 @@
   color: hsl(var(--muted-foreground));
 }
 .dim-dpi > span {                   /* the micro "DPI" caption, under the number */
-  font-size: 7px;
+  font-size: calc(7px * var(--a11y-fs));
   line-height: 1;
   letter-spacing: 0.06em;
   color: hsl(var(--muted-foreground));
   pointer-events: none;
 }
 .export-dims .dim-dpi input[type="number"] {
-  width: 2.9rem;             /* border-box: just fits a 4-digit dpi (max 1200) */
+  /* border-box: just fits a 4-digit dpi (max 1200) — "just", so the width follows
+     the type or the 1.2× digits are what gets cut. */
+  width: calc(2.9rem * var(--a11y-fs));
   border: 0;                 /* the .dim-dpi container carries the segment border */
   background: transparent;
   padding: 0 4px;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   line-height: 1;
   text-align: center;        /* centred over the caption */
   cursor: text;              /* not a scrub field */
@@ -489,7 +514,7 @@
   border-radius: 8px;
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
@@ -551,8 +576,10 @@
 /* Copy and Save each carry a line-art glyph ahead of their label. */
 .copy-btn,
 .save-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+/* Copy / Save / Share shed their labels in the @container rule below, at which
+   point the glyph IS the button — so these scale with the type either way. */
 .copy-icon,
-.save-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.save-icon { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); flex-shrink: 0; }
 
 /* Share button — equal flex sibling of Copy and Save in the actions row (sized
    by .export-action-buttons button), link glyph riding ahead of the label. */
@@ -562,7 +589,7 @@
   justify-content: center;
   gap: 7px;
 }
-.copy-url-icon { width: 15px; height: 15px; flex-shrink: 0; }
+.copy-url-icon { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); flex-shrink: 0; }
 
 /* When the actions row gets too narrow for icon + label to sit comfortably
    side by side, drop the labels and let Copy/Save/Share collapse to their
@@ -656,7 +683,9 @@
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
 }
-.audio-preview svg { width: 18px; height: 18px; display: block; }
+/* Icon-only control (aria-label + glyph), so the glyph is the whole of what the
+   button says; the 38px box still clears it at 1.2×. */
+.audio-preview svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); display: block; }
 .audio-preview:hover:not(:disabled) { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
 .audio-preview.is-playing {
   background: hsl(var(--primary));
@@ -670,7 +699,7 @@
   display: flex;
   gap: 14px;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 .audio-fade label { display: inline-flex; align-items: center; gap: 6px; }
@@ -699,14 +728,14 @@
   border-radius: var(--radius);
   background: hsl(var(--aspect-warn) / 0.12);
   color: hsl(var(--foreground));
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   line-height: 1.45;
 }
 .export-aspect-warning[hidden] { display: none; }
 .aspect-warn-icon {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
   margin-top: 1px;
   color: hsl(var(--aspect-warn));
 }
@@ -735,8 +764,9 @@
 .protection-head::after {
   content: '';
   display: block;
-  width: 8px;
-  height: 8px;
+  /* A caret drawn beside a heading is that heading's glyph — it scales with it. */
+  width: calc(8px * var(--a11y-fs));
+  height: calc(8px * var(--a11y-fs));
   margin-left: auto;
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
@@ -759,7 +789,7 @@
 .export-pdfpass input[type="password"] {
   width: 100%;
   padding: 9px 12px;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   box-sizing: border-box;
 }
 /* Encryption-strength selector (Standard 40-bit vs Strong AES-256). Box, chevron,
@@ -787,7 +817,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
 .hdr-slider > span { flex: 0 0 auto; min-width: 52px; }
@@ -809,7 +839,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--foreground));
   cursor: pointer;
 }
@@ -843,13 +873,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--foreground));
 }
 .print-bleed input[type="number"] {
   width: 72px;
   padding: 7px 10px;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   box-sizing: border-box;
 }
 /* Mark toggles reuse the .export-option chip; wrap so they pack side by side in a
@@ -868,7 +898,7 @@
   border: 1px solid hsl(var(--input));
   border-radius: var(--radius);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   transition: border-color 0.12s;
 }
 
@@ -893,12 +923,14 @@
   background-image: var(--field-chevron);  /* the one shared caret (parts/fields.css) */
   background-repeat: no-repeat;
   background-position: right 10px center;
-  background-size: 14px;
+  /* The caret follows the type like the label it sits beside; the 28px gutter above
+     already holds it at 1.2× (10px offset + 16.8px caret), so the padding stands. */
+  background-size: calc(14px * var(--a11y-fs));
   color: hsl(var(--foreground));
   border: 1px solid hsl(var(--input));
   border-radius: var(--radius);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--a11y-fs));
   cursor: pointer;
   transition: border-color 0.12s;
   /* Custom chevron + appearance:none — same native-menulist jitter fix as
@@ -922,7 +954,7 @@
   align-items: center;
   column-gap: 8px;
   row-gap: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   padding: 6px 8px;
   border: 1px solid hsl(var(--border));
@@ -941,7 +973,7 @@
 .video-params input[type="number"] {
   width: 48px;
   padding: 5px 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   text-align: center;
   appearance: textfield;
   -moz-appearance: textfield;
@@ -950,15 +982,19 @@
 /* Dither / 60fps toggles — shown inside .video-params for gif / webm. Separated
    from the timing fields by the cluster gap so they wrap without a stray
    divider hanging at the start of a wrapped line. */
+/* Same reasoning as `.export-option`: the toggle may fold inside its own box rather
+   than push past the sidebar column. `.vp-field` above keeps its nowrap on purpose —
+   there the point is that a "label · input · unit" trio never splits. */
 .gif-dither-toggle {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   cursor: pointer;
   user-select: none;
-  white-space: nowrap;
+  white-space: normal;
+  min-width: 0;
 }
 
 /* Its tick is `.field-check` — nothing to restate here (the 5px row gap above is
@@ -973,8 +1009,8 @@
    without this reset those info buttons render as bordered pills. Restore the
    transparent icon-only affordance (and hover state) the sidebar's input helpers use. */
 .tool-actions .help-tip-btn {
-  width: 16px;
-  height: 16px;
+  width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
   padding: 0;
   border: none;
   background: transparent;

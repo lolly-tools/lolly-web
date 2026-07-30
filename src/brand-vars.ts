@@ -28,7 +28,7 @@
 // (Handlebars) + loadTool/validate (Ajv) + c2pa onto first paint. See
 // scripts/check-bundle-budget.ts.
 import { colorToHex, isAlias } from '../../../engine/src/tokens.ts';
-import { parseOklch, oklchToHex, hexToOklch, contrastRatio } from '../../../engine/src/brand-derive.ts';
+import { parseOklch, oklchToHex, hexToOklch, contrastRatio, parseHex } from '../../../engine/src/brand-derive.ts';
 
 /** The seven semantic slots (token leaf under `color.semantic`) → CSS var. */
 const SLOTS = [
@@ -248,6 +248,179 @@ export function nearestWarmHex(swatches: ReadonlyArray<{ value: unknown }>): { h
   return { hex: best.hex, ink };
 }
 
+// ── High contrast: the accent has to clear the bar too ───────────────────────
+// tokens.css's high-contrast blocks deliberately leave --primary /
+// --primary-foreground alone, because this module owns them at runtime for an
+// arbitrary brand (see the "WHAT IS DELIBERATELY NOT TOUCHED" note there). That
+// ownership argument is right, but it leaves the ONE control the user came to
+// press as the only thing the pref doesn't touch: SUSE's Jungle #30ba78 pairs
+// at APCA Lc 53 with its dark ink and 54 with white or black — under even the
+// Lc 60 large-text floor, in the dark and brand themes. So the fix belongs
+// here, where the accent is constructed.
+//
+// The move is a HUE-PRESERVING lightness search: hold the primary's OKLCH hue
+// and chroma, walk its LIGHTNESS away from the authored value until the paired
+// ink clears the bar, and take whichever of the two directions converges with
+// the smaller move — so a brand's accent shifts as little as it can, and a
+// purple brand stays purple. Only --primary/--primary-foreground are emitted:
+// --ring is deliberately NOT re-pointed at the brand, because tokens.css's
+// high-contrast blocks force the theme's brightest ink there on purpose (a dim
+// brand primary can be an invisible focus ring), and that decision outranks
+// brand identity.
+//
+// Unlike brandMarkPrimary, a near-neutral primary cannot be declined here — a
+// CTA still has to be legible — and it doesn't need to be: the search moves
+// along L with chroma HELD, so a starter brand's ink (OKLCH chroma ~0.012)
+// stays neutral and its unstable hue never becomes visible.
+
+/** The bar a CTA label must clear. Lc 75 is APCA's body-text minimum and the bar
+ *  the contrast pass set itself (tokens.css header) — but the bisection below
+ *  converges on the MINIMUM clearing lightness, so a target of 75 lands every
+ *  repaired pair at Lc 75.0-75.4: a tenth of a point of headroom on a floor,
+ *  for a 13px/600 button label. 80 buys real margin for a few hundredths of
+ *  OKLCH lightness, and still leaves the fill recognisably the brand's. */
+export const HC_TARGET_LC = 80;
+/** Lightness resolution of the search — finer than the eye, and 24 bisection
+ *  steps get there regardless, so this only guards the loop. */
+const HC_L_EPSILON = 0.001;
+
+// APCA-W3 (APCA-1.0.98G), the minimum needed to SCORE a pair. Ported from the
+// engine's own apcaContrast (engine/src/color-tools.ts, itself ported from
+// chroma.js — BSD-3-Clause, © 2011-2025 Gregor Aisch; algorithm by Andrew
+// Somers / Myndex) rather than imported, because this module is on the boot
+// path and color-tools.ts drags gamut/icc/brand-schemes/css-color with it —
+// exactly the ~37 KB that a dedicated perf pass moved OFF boot (see the deep-
+// import note at the top of this file, and scripts/check-bundle-budget.ts).
+// The constants are the spec's magic numbers; do not "clean them up".
+// brand-vars.test.ts pins this port against the engine function so the two
+// cannot drift.
+const HC_APCA = {
+  mainTRC: 2.4, normBG: 0.56, normTXT: 0.57, revTXT: 0.62, revBG: 0.65,
+  sRco: 0.2126729, sGco: 0.7151522, sBco: 0.072175,
+  blkThrs: 0.022, blkClmp: 1.414, loClip: 0.1, deltaYmin: 0.0005,
+  scale: 1.14, offset: 0.027,
+} as const;
+
+function apcaY(rgb: [number, number, number]): number {
+  const { mainTRC, sRco, sGco, sBco, blkThrs, blkClmp } = HC_APCA;
+  const y = sRco * (rgb[0] / 255) ** mainTRC + sGco * (rgb[1] / 255) ** mainTRC
+    + sBco * (rgb[2] / 255) ** mainTRC;
+  return y > blkThrs ? y : y + (blkThrs - y) ** blkClmp;
+}
+
+/**
+ * |Lc| between two opaque #rrggbb colours — the magnitude only, since every
+ * caller here compares against a band floor and APCA's sign is just polarity.
+ * NaN for anything unparseable, so every `>= floor` check honestly fails
+ * (the contrastRatio convention). Exported for the drift test.
+ */
+export function apcaLcAbs(textHex: string, bgHex: string): number {
+  const t = parseHex(textHex);
+  const b = parseHex(bgHex);
+  if (!t || !b) return NaN;
+  const ytxt = apcaY([t[0], t[1], t[2]]);
+  const ybg = apcaY([b[0], b[1], b[2]]);
+  const { normBG, normTXT, revTXT, revBG, loClip, deltaYmin, scale, offset } = HC_APCA;
+  if (Math.abs(ybg - ytxt) < deltaYmin) return 0;
+  const sapc = ybg > ytxt
+    ? (ybg ** normBG - ytxt ** normTXT) * scale
+    : (ybg ** revBG - ytxt ** revTXT) * scale;
+  return Math.abs(sapc) < loClip ? 0 : (Math.abs(sapc) - offset) * 100;
+}
+
+/** The primary/ink pair a theme would use at lightness `l`, if any ink clears
+ *  the bar there. `dir` is the search direction (-1 darker, +1 lighter), which
+ *  fixes the pure ink; the brand's OWN on-primary is preferred when it sits on
+ *  the right side of the fill, so a brand keeps its authored ink where it can. */
+function hcPairAt(
+  l: number,
+  base: { l: number; c: number; h: number },
+  dir: -1 | 1,
+  onPrimary: string | null,
+  onPrimaryL: number | null,
+): { fill: string; ink: string } | null {
+  const fill = oklchToHex({ l, c: base.c, h: base.h });
+  const inks: string[] = [];
+  if (onPrimary && onPrimaryL != null && (dir < 0 ? onPrimaryL > l : onPrimaryL < l)) inks.push(onPrimary);
+  inks.push(dir < 0 ? '#ffffff' : '#000000');
+  for (const ink of inks) if (apcaLcAbs(ink, fill) >= HC_TARGET_LC) return { fill, ink };
+  return null;
+}
+
+/**
+ * The high-contrast replacement for one theme's accent pair, or null when the
+ * authored pair already clears Lc 75 (nothing to fix — the brand's colour
+ * stands) or when no lightness of this hue can (a fully saturated hue whose
+ * whole L range fails, which sRGB doesn't actually contain, but the search
+ * refuses to guess rather than emit a pair it can't justify).
+ *
+ * `onPrimary` null means the ink is whatever tokens.css statically pairs with
+ * this theme's accent — unknowable from here — so the search runs anyway and
+ * the returned block always states its ink explicitly.
+ *
+ * Exported for tests.
+ */
+export function highContrastAccent(
+  primary: string | null,
+  onPrimary: string | null,
+): { fill: string; ink: string } | null {
+  const base = primary ? hexToOklch(primary) : null;
+  if (!primary || !base) return null;
+  if (onPrimary && apcaLcAbs(onPrimary, primary) >= HC_TARGET_LC) return null;
+  const onPrimaryL = onPrimary ? (hexToOklch(onPrimary)?.l ?? null) : null;
+
+  const found: Array<{ fill: string; ink: string; move: number }> = [];
+  for (const dir of [-1, 1] as const) {
+    // The authored lightness first: when only the INK was wrong, the fill must
+    // not move at all (move 0 beats every other candidate).
+    const here = hcPairAt(base.l, base, dir, onPrimary, onPrimaryL);
+    if (here) { found.push({ ...here, move: 0 }); continue; }
+    // |Lc| grows monotonically as the fill moves away from the ink's own
+    // luminance, and the max of the two candidate inks is monotone too, so the
+    // smallest clearing move is a boundary — bisect for it. If the extreme
+    // itself fails, no lightness in this direction can.
+    const bound = dir < 0 ? 0 : 1;
+    if (!hcPairAt(bound, base, dir, onPrimary, onPrimaryL)) continue;
+    let fail = base.l, pass = bound;
+    for (let i = 0; i < 24 && Math.abs(pass - fail) > HC_L_EPSILON; i++) {
+      const mid = (fail + pass) / 2;
+      if (hcPairAt(mid, base, dir, onPrimary, onPrimaryL)) pass = mid; else fail = mid;
+    }
+    const pair = hcPairAt(pass, base, dir, onPrimary, onPrimaryL);
+    if (pair) found.push({ ...pair, move: Math.abs(pass - base.l) });
+  }
+  // Smallest lightness move wins; a tie keeps the darker direction (searched
+  // first), so the emitted CSS is deterministic.
+  const best = found.sort((a, b) => a.move - b.move)[0];
+  return best ? { fill: best.fill, ink: best.ink } : null;
+}
+
+/**
+ * The `html[data-a11y-contrast="high"]`-gated accent pair for one theme, or ''
+ * when the theme's authored pair already clears the bar.
+ *
+ * SPECIFICITY, and why the selectors are shaped like tokens.css's: this sheet
+ * is generated at runtime and cannot know the attribute's future state, so it
+ * emits BOTH blocks and lets the cascade choose. The gated block therefore has
+ * to beat the ungated one it sits beside in the SAME stylesheet — and source
+ * order is not enough to rely on, because the ungated light block is spelled
+ * `:root, [data-theme="light"]` and would otherwise be reached by a dark
+ * document too. Leading with the `html` type selector plus the contrast
+ * attribute makes each gated block (0,2,1) — or (0,3,1) for light's two
+ * :not()s — against the ungated (0,1,0), so it wins on specificity alone,
+ * independently of order. The light selector is spelled "neither dark nor
+ * brand" for the same reason tokens.css spells it that way: a document with no
+ * [data-theme] at all is light, and the block must not leak into the two
+ * themes that carry their own.
+ */
+function hcAccentBlock(selector: string, primary: string | null, onPrimary: string | null): string {
+  const hc = highContrastAccent(primary, onPrimary);
+  const p = hc && hexToHslTriple(hc.fill);
+  const fg = hc && hexToHslTriple(hc.ink);
+  if (!p || !fg) return '';
+  return `${selector} {\n  --primary: ${p};\n  --primary-foreground: ${fg};\n}`;
+}
+
 /** One shell theme's accent overrides, or '' when primary didn't resolve. */
 function accentBlock(selector: string, primary: string | null, onPrimary: string | null): string {
   const p = primary && hexToHslTriple(primary);
@@ -280,9 +453,15 @@ export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string, d
   const v = (name: string, val: string | null) => (val ? `  --${name}: ${val};\n` : '');
   // Lightness stops lifted from the SUSE construction: bg .29, card .35,
   // muted .38, secondary .39, accent-surface .40, border .51; text .95/.84.
+  // --foreground-canvas repeats --foreground on purpose: it is the ink the render
+  // canvas keeps when the high-contrast preference re-points --foreground, so a
+  // comfort setting cannot move exported pixels (styles/tokens.css carries the
+  // full note, and the static theme blocks there declare the same pair). It must
+  // be emitted HERE too — this block reconstructs the brand theme at runtime and
+  // would otherwise leave the canvas pinned to the static SUSE ink.
   return `[data-theme="brand"] {
   color-scheme: dark;
-${v('background', t(0.29, 1))}${v('foreground', t(0.95, 0.35))}${v('card', t(0.35, 1.18))}${v('card-foreground', t(0.95, 0.35))}${v('popover', t(0.35, 1.18))}${v('popover-foreground', t(0.95, 0.35))}${v('primary', accent)}${v('primary-foreground', accentFg)}${v('secondary', t(0.39, 1.27))}${v('secondary-foreground', t(0.95, 0.35))}${v('muted', t(0.38, 1.2))}${v('muted-foreground', t(0.84, 0.55))}${v('accent', t(0.40, 1.3))}${v('accent-foreground', t(0.95, 0.35))}${v('border', t(0.51, 1.45))}${v('input', t(0.51, 1.45))}${v('ring', accent)}${v('store-1', t(0.65, 0.75, acc.h))}${v('store-2', t(0.70, 0.75, acc.h))}${v('store-3', t(0.74, 0.75, acc.h))}${v('store-4', t(0.79, 0.75, acc.h))}${v('store-other', t(0.62, 0.4))}}`;
+${v('background', t(0.29, 1))}${v('foreground', t(0.95, 0.35))}${v('foreground-canvas', t(0.95, 0.35))}${v('card', t(0.35, 1.18))}${v('card-foreground', t(0.95, 0.35))}${v('popover', t(0.35, 1.18))}${v('popover-foreground', t(0.95, 0.35))}${v('primary', accent)}${v('primary-foreground', accentFg)}${v('secondary', t(0.39, 1.27))}${v('secondary-foreground', t(0.95, 0.35))}${v('muted', t(0.38, 1.2))}${v('muted-foreground', t(0.84, 0.55))}${v('accent', t(0.40, 1.3))}${v('accent-foreground', t(0.95, 0.35))}${v('border', t(0.51, 1.45))}${v('input', t(0.51, 1.45))}${v('ring', accent)}${v('store-1', t(0.65, 0.75, acc.h))}${v('store-2', t(0.70, 0.75, acc.h))}${v('store-3', t(0.74, 0.75, acc.h))}${v('store-4', t(0.79, 0.75, acc.h))}${v('store-other', t(0.62, 0.4))}}`;
 }
 
 // ── Lolly's own mark, recoloured to the guest brand ──────────────────────────
@@ -370,6 +549,21 @@ export function chromeBrandCss(
     light.primary && dark.primary ? brandThemeCss(light.primary, dark.primary, dark.onPrimary) : '',
     // Lolly's own mark follows the brand hue (identity, not verdict).
     lollyMarkCss(light.primary, dark.primary),
+    // High contrast, per theme and gated on the attribute, so a user with no
+    // prefs set gets exactly the blocks above and nothing else can match.
+    // Each theme is judged on its OWN pair — a brand whose light accent already
+    // clears Lc 75 (SUSE's Pine does, at 98) emits no light block at all.
+    hcAccentBlock('html[data-a11y-contrast="high"]:not([data-theme="dark"]):not([data-theme="brand"])',
+      light.primary, light.onPrimary),
+    hcAccentBlock('html[data-a11y-contrast="high"][data-theme="dark"]', dark.primary, dark.onPrimary),
+    // The brand theme wears the DARK primary as its accent (brandThemeCss), so
+    // it takes the same adjustment — but only when that constructed theme was
+    // emitted at all. Without it the static tokens.css brand block is in
+    // charge, and patching its accent from a brand that didn't produce it would
+    // pair a colour with an ink neither of them chose.
+    light.primary && dark.primary
+      ? hcAccentBlock('html[data-a11y-contrast="high"][data-theme="brand"]', dark.primary, dark.onPrimary)
+      : '',
   ].filter(Boolean).join('\n');
 }
 

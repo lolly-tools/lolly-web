@@ -15,8 +15,10 @@
  *     by hand — so it never fights the user — and resumes shortly after.
  *   - Within a tile, the active look cross-fades every ~4.6s with a slow Ken-Burns
  *     drift, so a still tile still breathes.
- *   - `prefers-reduced-motion` turns ALL of that off: no drift, no cross-fade, no
- *     variant rendering. The strip stays a plain, manually-scrollable row of tiles.
+ *   - Reduced motion — the OS preference OR the app's own (lib/a11y-prefs.ts) —
+ *     turns ALL of that off: no drift, no cross-fade, no variant rendering. The
+ *     strip stays a plain, manually-scrollable row of tiles. Read once per mount,
+ *     so a mid-session toggle takes effect on the next mount of the row.
  *
  * The tile art is object-fit:contain over a themed backdrop (never cropped — a
  * cropped logo or badge is worse than a letterboxed one), and every tile is a real
@@ -24,6 +26,7 @@
  */
 
 import { escape } from '../utils.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { renderFeaturedVariant, displayFormatOf } from '../lib/featured-render.ts';
 import { toolSeedHref } from '../lib/seed-url.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -178,7 +181,7 @@ export function mountFeaturedRow(
   opts: { viewMode?: FeaturedViewMode; label?: string; ariaLabel?: string; tileDragOut?: boolean; tileMenu?: boolean; labelHref?: string; labelHelp?: string; onActivate?: (id: string) => void } = {},
 ): FeaturedRowHandle {
   const entries = [...entriesIn].sort(byFeaturedOrder);
-  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  const reduced = prefersReducedMotion();
   let coverflow = opts.viewMode === 'coverflow';
   // Drag-out mode (Projects "Uncategorised" ribbon): each tile is a native HTML5 drag
   // source so a loose session can be dragged onto a "Move to" folder. The consumer wires

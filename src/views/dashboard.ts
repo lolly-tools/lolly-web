@@ -51,6 +51,7 @@ import type { PaletteEntry } from '../palette.ts';
 import { livePalette } from '../lib/live-palette.ts';
 import { groupPalette, swatch, isTransparent, inkText, isLockedInk } from '../lib/swatches.ts';
 import { currentTheme } from '../theme.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, hexToOklch, formatOklch, createTokenSet } from '@lolly/engine';
 import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
@@ -1020,7 +1021,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   // Build-up: the capability cards start hidden and float in, staggered, when their grid
   // scrolls into view. Opt-in via [data-build] so that WITHOUT this JS (or under
   // reduced-motion) the cards are simply visible — never a blank grid.
-  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = prefersReducedMotion();
   if (!reduceMotion && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries, obs) => {
       for (const ent of entries) {

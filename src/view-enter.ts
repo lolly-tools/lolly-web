@@ -18,6 +18,8 @@
  * opacity before jumping to 0.
  */
 
+import { prefersReducedMotion } from './lib/a11y-prefs.ts';
+
 const STEP_MS = 50;  // matches the 0.05s ladder step in app.css
 const DUR_MS = 320;  // matches --enter-dur (0.32s)
 
@@ -32,8 +34,11 @@ type EnterHost = HTMLElement & { _enterTimer?: ReturnType<typeof setTimeout> | 0
 export function armViewEnter(viewEl: EnterHost, selector: string = ENTER_NODES): void {
   // Reduced motion: leave the view un-armed. Because the hidden `from` state and
   // the animation only exist under `.is-entering`, content simply renders
-  // instantly — no animation-delay survives to hold a node invisible.
-  if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  // instantly — no animation-delay survives to hold a node invisible. That also
+  // means the app's own pref needs no CSS counterpart here: not arming is the
+  // whole off-switch, even though the keyframes sit behind a `no-preference`
+  // media query the attribute can't close.
+  if (prefersReducedMotion()) {
     return;
   }
 

@@ -2,7 +2,8 @@
 /**
  * Profile view — personal details + appearance preferences.
  *
- * Theme selection auto-saves on click (it's a preference, not a form field).
+ * Theme selection auto-saves on click (it's a preference, not a form field), as
+ * do the sound switch and the Accessibility card's three prefs.
  * The other personal details save on form submit.
  *
  * Activity / Storage / Feature flags / Content Credentials are collapsible
@@ -20,6 +21,8 @@ import '../styles/parts/tool.css';      // .help-tip-btn/-pop/-host styles — s
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
 import { setTheme } from '../lib/set-theme.ts';
+import { currentA11yPrefs, setA11yPref, prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import type { A11yPrefs } from '../lib/a11y-prefs.ts';
 import { currentLang, switchLang, t, docsHref } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
@@ -352,6 +355,76 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             ${flagRow(PRO_FLAG)}
             ${flagRow(STRIP_UPLOAD_META_FLAG)}`;
 
+  // ── Accessibility prefs (lib/a11y-prefs.ts) ──────────────────────────────────
+  // Three opt-in comfort switches. Deliberately NOT feature flags and NOT in the
+  // collapsed Feature flags drawer: someone who needs reduced motion or larger
+  // type must be able to find these on a page they can barely read, so they get a
+  // plain always-open card beside Appearance (both answer "how does the app dress
+  // for me"), and their state lives on profile.a11y rather than in the flag map.
+  //
+  // Initial checked state comes from currentA11yPrefs() — what is APPLIED to
+  // <html> right now — not from profile.a11y. The two normally agree (main.ts
+  // hydrates the profile value into the attributes at boot, after the index.html
+  // FOUC script applied the localStorage mirror), but they can diverge: an
+  // untouched/absent profile.a11y leaves a device-local mirror choice standing on
+  // purpose, and a profile write can fail while the attribute stays live. A switch
+  // that disagreed with the page the user is looking at would be the worse lie.
+  const a11yState: A11yPrefs = currentA11yPrefs();
+  const A11Y_ROWS: Array<{ key: keyof A11yPrefs; label: string; info: string }> = [
+    {
+      key: 'reduceMotion',
+      label: 'Reduce motion',
+      info: 'Turns off the transitions, slides and animated flourishes in the app. Your tool canvas and any animated export keep moving exactly as designed.',
+    },
+    {
+      key: 'highContrast',
+      label: 'High contrast',
+      info: 'Strengthens the borders, text and focus rings of the app around your work. Your brand colours and everything on the canvas stay exactly as you set them.',
+    },
+    // Large text multiplies CHROME font sizes only (--a11y-fs, styles/parts/a11y.css) —
+    // px paddings and control heights are untouched, and the root font-size never moves
+    // so `rem`-styled tools export byte-identically. The copy promises exactly that and
+    // no more: over-promising "bigger controls" is the one claim this mechanism can't keep.
+    {
+      key: 'largeText',
+      label: 'Large text',
+      info: 'Grows the app type: labels, menus and button text. The controls themselves keep their size, so only the words inside them get bigger. Type inside your designs is untouched, so nothing you export reflows.',
+    },
+  ];
+  // Same markup contract as flagRow: the .feature-flag primitives (so there is one
+  // toggle-row look in this view), the explicit label `for`/id link (without it a
+  // row click lands on the help-tip <button> instead of the switch — the
+  // "mouse-blocked toggle" bug), and a control that carries `.checked` + emits a
+  // bubbling `change` in both jelly and CSS-switch modes. The pop takes its own
+  // width here (the (i) host is a few px wide, and help-tip-pop's default
+  // `left:0;right:0` would size to it) — see .a11y-pref-info in profile.css.
+  //
+  // The scope text is also wired as the switch's accessible DESCRIPTION, which the
+  // generic linkHelpDescriptions() can't do for a row like this (it looks for a
+  // control inside the tip's own host, and the host here holds only the button +
+  // pop). Native control only: a <jelly-switch>'s real checkbox lives in shadow
+  // DOM, so an aria-describedby on the host would never reach it — the same
+  // boundary the `label` attribute works around for the accessible name.
+  const a11yRow = (row: { key: keyof A11yPrefs; label: string; info: string }) => {
+    const tip = helpTip(t(row.info));
+    const ctlId = `a11y-${row.key}`;
+    const on = a11yState[row.key] ? ' checked' : '';
+    const control = jellyOn
+      ? `<jelly-switch id="${escape(ctlId)}" class="feature-flag-jelly" data-a11y="${escape(row.key)}" size="sm" label="${escape(t(row.label))}"${on}></jelly-switch>`
+      : `<input type="checkbox" id="${escape(ctlId)}" class="feature-flag-input" data-a11y="${escape(row.key)}" aria-describedby="${tip.id}"${on}>
+        <span class="feature-flag-switch" aria-hidden="true"></span>`;
+    return `
+    <li>
+      <label class="feature-flag" for="${escape(ctlId)}">
+        <span class="feature-flag-label">${escape(t(row.label))}<span class="feature-flag-info a11y-pref-info help-tip-host">${tip.button}${tip.pop}</span></span>
+        ${control}
+      </label>
+    </li>`;
+  };
+  // A function for the same reason flagListHtml() is one: toggling the Jelly flag
+  // re-renders these rows in place so their control kind swaps with the rest.
+  const a11yListHtml = () => A11Y_ROWS.map(a11yRow).join('');
+
   viewEl.innerHTML = `
     ${backPillHtml()}
     <div class="gallery-topbar" style="justify-content:flex-end">
@@ -445,6 +518,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </div>
       </section>
 
+      <section class="profile-card profile-card--a11y">
+        <h2>${t('Accessibility')}</h2>
+        <p class="profile-appearance-sub">${t('Comfort settings for the app around your work. Each one is off until you turn it on, and none of them touch your designs or your exports.')}</p>
+        <ul class="feature-flags profile-a11y-prefs" id="a11y-prefs">${a11yListHtml()}
+        </ul>
+      </section>
+
       <section class="profile-card">
         <h2>${t('Lolly instance')}</h2>
         <p class="profile-appearance-sub">${t('Where this install gets its tools and catalogue from.')}</p>
@@ -522,6 +602,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         list.innerHTML = flagListHtml();
         list.querySelector<HTMLElement>(`[data-flag="${flagId}"]`)?.focus();
       }
+      // The Accessibility card's rows use the same two control kinds, so they swap
+      // with the flag rows — otherwise the page would show both looks at once.
+      // Rebuilt from a11yState (not the DOM), which the pref listener keeps current.
+      const a11yList = viewEl.querySelector('#a11y-prefs');
+      if (a11yList) a11yList.innerHTML = a11yListHtml();
       // The identity form swaps its controls in place too, carrying any unsaved
       // edits across (both control kinds expose `.value` on the [name] element).
       const form = viewEl.querySelector('#profile-form');
@@ -534,6 +619,19 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         if (save) save.outerHTML = saveButtonHtml();
       }
     }
+    announce(input.checked ? t('Enabled') : t('Disabled'));
+  });
+
+  // Accessibility prefs — auto-save each toggle, same shape as the flag listener
+  // above (and its own container, so a pref never lands in profile.featureFlags).
+  // setA11yPref switches the <html> attribute FIRST and persists after, so the
+  // change is visible on the same frame even if the profile write is slow or fails.
+  viewEl.querySelector('#a11y-prefs')?.addEventListener('change', async e => {
+    const input = (e.target as Element).closest<HTMLInputElement>('[data-a11y]');
+    if (!input) return;
+    const key = input.dataset.a11y as keyof A11yPrefs;
+    a11yState[key] = input.checked;   // keeps a jelly-flag re-render in step with the live state
+    await setA11yPref(host, key, input.checked);
     announce(input.checked ? t('Enabled') : t('Disabled'));
   });
 
@@ -758,7 +856,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // ICONS.image (near-identical circle-radius/path-endpoint roundings of the same
   // Lucide "image" icon; component-audit rec 5).
   const SESS_PLACEHOLDER_ICON = icon('image', { strokeWidth: 1.8 });
-  const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Honours the in-app Reduce motion pref as well as the OS one (lib/a11y-prefs.ts),
+  // so the counter roll-up and the smooth panel scroll below calm down for a user
+  // whose device never advertised a motion preference.
+  const reduceMotion = () => prefersReducedMotion();
 
   // Approximate, theme-agnostic byte formatting (KB/MB/GB) shared by the meter.
   const fmtPct = (usage: number, quota: number | null) => {
