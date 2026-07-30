@@ -19,6 +19,7 @@ import { icon } from '../lib/icons.ts';
 import { vizSupported } from '../lib/viz-support.ts';
 import { isNeuroDockCollapsed, setNeuroDockCollapsed } from '../lib/neuro-dock-pref.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { neuroDemoActive } from '../lib/neuro-demo.ts';
 
 const DOCK_ID = 'neuro-dock';
 // Path data lives in lib/icons.ts as 'neuroBeat' — deduped against sound-toggle.ts's
@@ -123,7 +124,9 @@ function build(host: NeurospicyHost): HTMLElement {
   const el = document.createElement('section');
   el.id = DOCK_ID;
   el.className = 'neuro-dock is-hidden';
-  el.dataset.collapsed = String(isCollapsed());
+  // A ?neuro demo capture always builds expanded, whatever the collapse pref says —
+  // read-only: the pref itself is never written from the demo path.
+  el.dataset.collapsed = String(neuroDemoActive() ? false : isCollapsed());
   el.setAttribute('aria-label', 'Neurospicy music player');
   // [data-music-player] sits on the section so the header's track picker and the
   // body's transport/volume controls share one wiring scope (music-player.ts).
@@ -215,15 +218,36 @@ function build(host: NeurospicyHost): HTMLElement {
   return el;
 }
 
+/** Options for showNeuroDock/syncNeuroDock. The legacy boolean form still means
+ *  `{ animateIn }` — sound-toggle.ts passes it straight through. */
+export interface NeuroDockShowOpts {
+  /** Spring the dock up from the corner with a confetti burst (mode just enabled). */
+  animateIn?: boolean;
+  /** Show expanded regardless of the collapsed pref — WITHOUT writing the pref
+   *  (setCollapsedPref is deliberately not called): the ?neuro demo must not
+   *  persist anything. A user's own minimize afterwards still works normally. */
+  forceExpanded?: boolean;
+}
+function normShowOpts(o: boolean | NeuroDockShowOpts): NeuroDockShowOpts {
+  return typeof o === 'boolean' ? { animateIn: o } : o;
+}
+
 /** Show the dock. When `animateIn` (i.e. the mode was just switched on), spring it
  *  up from the corner and pop a confetti burst there to point the eye at it. */
-export function showNeuroDock(host: NeurospicyHost, animateIn = false): void {
+export function showNeuroDock(host: NeurospicyHost, opts: boolean | NeuroDockShowOpts = false): void {
   if (typeof document === 'undefined') return;
+  const { animateIn = false, forceExpanded = false } = normShowOpts(opts);
   // `build()` schedules the inline mount itself, so a fresh dock must NOT also be nudged
   // by refreshDockViz below — that used to fire two overlapping mounts in one microtask
   // drain (ensureMounted coalesces them now, but asking once is clearer).
   const first = !dock;
   dock ??= build(host);
+  // Expand in place (dataset only, never the pref) for a dock that already existed
+  // collapsed; a fresh build under the demo is already expanded (see build()).
+  if (forceExpanded && dock.dataset.collapsed === 'true') {
+    dock.dataset.collapsed = 'false';
+    dock.querySelector<HTMLButtonElement>('[data-dock-min]')?.setAttribute('aria-label', 'Minimize player');
+  }
   const wasHidden = dock.classList.contains('is-hidden');
   dock.classList.remove('is-hidden');
   refreshMusicPlayer(dock);
@@ -262,7 +286,7 @@ export function reopenNeuroDock(host: NeurospicyHost): void {
 
 /** Show or hide the dock to match state: visible only when the feature flag is on
  *  AND the mode is enabled. Call at boot and whenever the mode is toggled. */
-export function syncNeuroDock(host: NeurospicyHost, animateIn = false): void {
-  if (flagEnabledSync('neurospicy') && getNeurospicy().enabled) showNeuroDock(host, animateIn);
+export function syncNeuroDock(host: NeurospicyHost, opts: boolean | NeuroDockShowOpts = false): void {
+  if (flagEnabledSync('neurospicy') && getNeurospicy().enabled) showNeuroDock(host, opts);
   else hideNeuroDock();
 }

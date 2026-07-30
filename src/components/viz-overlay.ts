@@ -53,6 +53,7 @@ import {
   musicPlayerBodyHtml, trackPickerHtml, wireMusicPlayerBody, refreshMusicPlayer,
 } from './music-player.ts';
 import { vizSupported } from '../lib/viz-support.ts';
+import { neuroDemoActive } from '../lib/neuro-demo.ts';
 import { CYCLE_CHOICES, loadCycleSeconds, saveCycleSeconds } from '../lib/viz-cycle.ts';
 import { drawMeterBars, drawMeterBaseline } from '../lib/audio-meter.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
@@ -317,9 +318,39 @@ function ensureStyles(doc: Document): void {
  * before the artist index loads) and once after `initStock`, over the whole library.
  */
 function randomStartPresetId(): string {
+  if (neuroDemoActive()) return DEMO_PRESET_ID;   // a capture must open on the same preset every run
   if (prefersReducedMotion()) return defaultVizPresetId(true);
   const pool = presetPool();
   return pool[Math.floor(Math.random() * pool.length)] ?? defaultVizPresetId(false);
+}
+
+// ── the ?neuro demo (lib/neuro-demo.ts) — deterministic, silent, capture-only ─
+
+/** The preset a ?neuro demo pins instead of the random start: the first `calm`
+ *  entry in VIZ_PRESETS (Aurora). Hardcoded so a registry reorder shows up as a
+ *  visible screenshot diff rather than silently drifting the baseline. */
+const DEMO_PRESET_ID = 'aurora';
+
+/**
+ * The demo's injected audio: a fixed 1024-byte time-domain window of summed sines
+ * around the webaudio silence midpoint (128), generated once. With `seed: 0` and
+ * `deterministic: true` every capture renders the visualizer from identical input
+ * — no analyser, no AudioContext, no sound.
+ */
+let demoWaveCache: Uint8Array | null = null;
+function demoWave(): Uint8Array {
+  if (!demoWaveCache) {
+    const w = new Uint8Array(1024);
+    for (let i = 0; i < w.length; i++) {
+      const t = i / w.length;
+      w[i] = Math.round(128
+        + 42 * Math.sin(2 * Math.PI * 3 * t)
+        + 22 * Math.sin(2 * Math.PI * 7 * t + 1.3)
+        + 11 * Math.sin(2 * Math.PI * 13 * t + 2.1));
+    }
+    demoWaveCache = w;
+  }
+  return demoWaveCache;
 }
 
 /**
@@ -351,6 +382,9 @@ type SurfaceKind = 'inline' | 'panel';
 type VizMode = 'milkdrop' | 'meter';
 
 function readModePref(): VizMode {
+  // The ?neuro demo exists to show the visualizer; the meter default would leave a
+  // flat baseline (its analyser never exists in the demo). In-memory only.
+  if (neuroDemoActive()) return 'milkdrop';
   try { return localStorage.getItem(MODE_KEY) === 'milkdrop' ? 'milkdrop' : 'meter'; } catch { return 'meter'; }
 }
 function writeModePref(m: VizMode): void {
@@ -584,15 +618,19 @@ const NOTE_BY_SIGNAL: Record<NeuroSignalState, string | null> = {
 };
 
 function refreshNote(s: Surface): void {
+  // A ?neuro demo renders from injected audio, so the audio-readiness states below
+  // don't apply: never blank, never a "press play"/"connecting" note over the shot.
+  const demo = neuroDemoActive();
   // Blank out the surface when there is genuinely nothing to draw, so the dock shows its
   // own background instead of an opaque black panel.
-  const blank = s.mode === 'milkdrop' && (!vizSupported() || !vizAudioReady() || !vizHasSignal());
+  const blank = s.mode === 'milkdrop' && !demo && (!vizSupported() || !vizAudioReady() || !vizHasSignal());
   s.root.classList.toggle('is-idle-blank', blank);
   if (s.mode === 'meter') { setNote(s, null); return; }
   if (!vizSupported()) {
     setNote(s, s.kind === 'inline' ? null : 'This browser can&rsquo;t run the visualizer &mdash; it needs WebGL&nbsp;2.');
     return;
   }
+  if (demo) { setNote(s, null); return; }
   if (!vizAudioReady() || !vizHasSignal()) {
     if (s.kind === 'inline') { setNote(s, null); return; }
     if (!vizAudioReady()) { setNote(s, 'Press play to start the visualizer.'); return; }
@@ -1270,7 +1308,9 @@ function wireSurface(s: Surface): void {
 function ensureMounted(s: Surface): Promise<void> {
   // The bar meter owns the canvas in that mode — don't create a GL context over it.
   if (s.mode === 'meter') { startMeter(s); return Promise.resolve(); }
-  if (s.handle || !vizAudioReady() || !vizSupported()) return Promise.resolve();
+  // A ?neuro demo mounts against injected audio, so the analyser (which only exists
+  // once real audio has started — never in a capture) must not gate it.
+  if (s.handle || (!vizAudioReady() && !neuroDemoActive()) || !vizSupported()) return Promise.resolve();
   // Coalesce concurrent callers onto the one in-flight mount. Assigned synchronously,
   // before any await, or the guard would have the same hole it is here to close.
   if (s.mounting) return s.mounting;
@@ -1304,7 +1344,12 @@ async function mountOnce(s: Surface): Promise<void> {
   const scheme = await initSchemes();
   let handle: VizHandle | null = null;
   try {
-    handle = await mountViz(forCanvas, vizHost, currentPresetId, onError, scheme?.palette ?? null);
+    handle = await mountViz(forCanvas, vizHost, currentPresetId, onError, scheme?.palette ?? null,
+      // The ?neuro demo has no analyser (audio never starts in a capture), so feed
+      // butterchurn a fixed injected window with a pinned per-frame seed instead.
+      neuroDemoActive()
+        ? { audio: { frame: () => ({ wave: demoWave(), seed: 0 }) }, deterministic: true }
+        : undefined);
   } catch (err) {
     onError(err);
     return;

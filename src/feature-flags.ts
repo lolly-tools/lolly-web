@@ -113,6 +113,15 @@ export function isFlagOn(profile: Profile | null | undefined, flag: FeatureFlag)
 // Hydrated from the profile at boot; kept in sync on each toggle. Defaults ON (like
 // flagEnabled), so an unhydrated mirror still shows opt-out features.
 const FLAG_MIRROR_KEY = 'lolly:featureFlags';
+
+// In-memory flag overrides — NEVER persisted. The ?neuro demo deep-link
+// (lib/neuro-demo.ts) lights a flag for exactly one page load without touching the
+// localStorage mirror or the profile; consulted BEFORE the mirror, so it also wins
+// over the docs pipeline's capture-neutral pin (which forces the mirror copy off).
+const memOverride = new Map<string, boolean>();
+export function overrideFlagInMemory(id: string, on: boolean): void {
+  memOverride.set(id, on);
+}
 export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
   // Bake control-plane governance into the mirror so the synchronous reads match
   // the default-aware ones: seed an unset governed flag with its instance default,
@@ -134,6 +143,8 @@ export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
   try { localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify(eff)); } catch { /* best-effort */ }
 }
 export function flagEnabledSync(id: string): boolean {
+  const mem = memOverride.get(id);
+  if (mem !== undefined) return mem;
   try {
     return (JSON.parse(localStorage.getItem(FLAG_MIRROR_KEY) || '{}') as Record<string, boolean>)[id] !== false;
   } catch { return true; }

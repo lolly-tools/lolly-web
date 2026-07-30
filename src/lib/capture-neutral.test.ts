@@ -36,7 +36,7 @@ globalThis.localStorage = dom.window.localStorage;
 
 const { CAPTURE_NEUTRAL_KEY, NEUTRALISED_FLAGS, applyCaptureNeutral, captureNeutralPinned } =
   await import('./capture-neutral.ts');
-const { flagEnabledSync, JELLY_FLAG, NEUROSPICY_FLAG } = await import('../feature-flags.ts');
+const { flagEnabledSync, overrideFlagInMemory, JELLY_FLAG, NEUROSPICY_FLAG } = await import('../feature-flags.ts');
 const { applyA11yPrefs, A11Y_STORE_KEY } = await import('./a11y-prefs.ts');
 
 const SRC = dirname(dirname(fileURLToPath(import.meta.url)));          // shells/web/src
@@ -212,4 +212,43 @@ test('main.ts pins neutral state at the one point in boot where it works', () =>
     assert.ok(at > 0, `expected main.ts to still contain ${read}`);
     assert.ok(pin < at, `the pin must run BEFORE ${read}`);
   }
+
+  // The ?neuro demo hook (lib/neuro-demo.ts) must sit AFTER the pin: its in-memory
+  // flag override is what outranks the pin's mirror write, and running it earlier
+  // would let the hydrates/pin ordering silently regress under a demo capture.
+  const demoHook = MAIN_TS.indexOf('peekNeuroDemo()');
+  assert.ok(demoHook > 0, 'main.ts must call peekNeuroDemo()');
+  assert.ok(pin < demoHook, 'the ?neuro demo hook must run AFTER applyCaptureNeutral()');
+  // ...and after both hydrates, which would otherwise overwrite the demo state.
+  for (const hydrate of ['hydrateNeurospicy(', 'hydrateAtmosphere(']) {
+    const at = MAIN_TS.indexOf(hydrate);
+    assert.ok(at > 0 && at < demoHook, `the ?neuro demo hook must run AFTER ${hydrate}`);
+  }
+});
+
+// Kept LAST in this file on purpose: overrideFlagInMemory is module-level state in
+// feature-flags.ts with no un-override API (the demo is one page load), so the
+// override this test sets would leak into any flag assertion declared after it.
+test('overrideFlagInMemory is memory-only, outranks the mirror, and leaves the pin alone', () => {
+  reset();
+  localStorage.setItem(CAPTURE_NEUTRAL_KEY, '1');
+  assert.equal(applyCaptureNeutral(), true);
+  assert.equal(flagEnabledSync(NEUROSPICY_FLAG.id), false, 'the pin forces neurospicy off');
+  const mirror = localStorage.getItem('lolly:featureFlags');
+
+  overrideFlagInMemory(NEUROSPICY_FLAG.id, true);
+  assert.equal(flagEnabledSync(NEUROSPICY_FLAG.id), true,
+    'the in-memory override is consulted before the mirror');
+  assert.equal(localStorage.getItem('lolly:featureFlags'), mirror,
+    'overrideFlagInMemory must not write localStorage — a ?neuro link affects one page load only');
+
+  // applyCaptureNeutral's behaviour is unchanged by the override existing: it still
+  // applies, still writes the same mirror, and still clears the a11y prefs.
+  applyA11yPrefs({ highContrast: true });
+  assert.equal(applyCaptureNeutral(), true);
+  assert.equal(localStorage.getItem('lolly:featureFlags'), mirror);
+  assert.equal(document.documentElement.dataset.a11yContrast, undefined);
+  // The override still wins the sync read afterwards — that precedence is the point.
+  assert.equal(flagEnabledSync(NEUROSPICY_FLAG.id), true);
+  assert.equal(flagEnabledSync(JELLY_FLAG.id), false, 'un-overridden flags still read the pinned mirror');
 });

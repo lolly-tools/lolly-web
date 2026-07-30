@@ -789,6 +789,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       enterMsField: cv.enterMsField, exitMsField: cv.exitMsField, muteField: cv.muteField,
       laneField: cv.laneField, idField: cfg.idField,
     } : null;
+  // Scene-mode import (`canvas.import.mode: 'scenes'`, e.g. Sequence Studio): an
+  // imported design's frames land as timed clips appended to the main sequence
+  // instead of replacing the canvas. An explicit manifest opt-in — Layout Studio
+  // also declares the time model, and its import must keep replacing the board.
+  const importScenesMode: boolean = !!(timeCfg && importCfg
+    && (importCfg as { mode?: unknown }).mode === 'scenes');
 
   // Opt-in snap-to-grid. gridOn is toggled from the rail; gridSize is native px.
   const gridSize = Math.max(2, Math.round(cv.grid?.size ?? 20));
@@ -1643,9 +1649,50 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     popover.style.left = pos.left + 'px';
     popover.style.top = pos.top + 'px';
   }
+  // Sequence editors (timeCfg) import a design file as SCENES instead: every
+  // frame/board/page becomes a stored vector asset placed as one full-canvas clip
+  // in the main sequence, appended after the existing timing so nothing the user
+  // authored moves. One commit → one undo step; the timeline opens to show the
+  // play-through. Returns the number of scenes added.
+  async function importAsScenes(f: File | Blob, setStatus: (m: string) => void): Promise<number> {
+    const { parseDesignScenes } = await import('./design-import.ts');
+    const { DEFAULT_CLIP_S } = await import('./timeline-math.ts');
+    const res = await parseDesignScenes(f, { host: host as any, log: setStatus, interactive: true, map: importMap });
+    const scenes = res.scenes;
+    if (!scenes.length) throw new Error(t('Nothing importable was found in that file.'));
+    const tc = timeCfg!;
+    const { w: cw, h: ch } = canvasWH();
+    const all = [...getBoxes()];
+    // Append after the current sequence's end — never disturb existing timing.
+    let at = 0;
+    for (const b of all) {
+      if (String(b[tc.laneField] ?? '') !== 'seq') continue;
+      const s = num(b[tc.startField], NaN);
+      if (!Number.isFinite(s)) continue;
+      const d = num(b[tc.durField], NaN);
+      at = Math.max(at, s + (Number.isFinite(d) && d > 0 ? d : DEFAULT_CLIP_S));
+    }
+    for (const sc of scenes) {
+      const id = freshId(all);
+      all.push({
+        [cfg.idField]: id, [cfg.kindField]: 'image',
+        [cfg.xField]: 0, [cfg.yField]: 0, [cfg.wField]: cw, [cfg.hField]: ch,
+        ...(cfg.imageField ? { [cfg.imageField]: sc.asset } : {}),
+        ...(cfg.fitField ? { [cfg.fitField]: 'contain' } : {}),
+        [tc.laneField]: 'seq', [tc.startField]: at, [tc.durField]: DEFAULT_CLIP_S,
+      } as unknown as Box);
+      at += DEFAULT_CLIP_S;
+    }
+    if (disposed) return 0;
+    selection = new Set<string>();
+    commit(all);
+    openTimeline();
+    return scenes.length;
+  }
   // Import a design file (Figma SVG / Penpot). The heavy DOM parser is lazy-loaded so it
   // only ships to sessions that actually import. On success we REPLACE the whole boxes
   // array (through the normal commit path) and resize the artboard to the file's frame.
+  // On a sequence editor the same panel imports frames as scenes (importAsScenes).
   function openImportPanel(anchor: HTMLElement): void {
     closePopover();
     const panel = document.createElement('div');
@@ -1658,6 +1705,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       '<p style="margin:0 0 10px;font-size:12px;line-height:1.45;opacity:.82;">' +
       t('Drop a Figma <b>.fig</b> / SVG, a Penpot <b>.penpot</b>, an Illustrator <b>.ai</b> or <b>.pdf</b>, or an InDesign <b>.idml</b> (File → Export → InDesign Markup). (For editable text from a Figma <b>SVG</b>, uncheck “Outline text” on export.)') +
       '</p>' +
+      (importScenesMode ? '<p style="margin:0 0 10px;font-size:12px;line-height:1.45;opacity:.82;">' +
+        t('Every frame becomes its own scene on the timeline, ready for timing tweaks, music and voiceover.') +
+        '</p>' : '') +
       '<button type="button" class="fc-import-choose" style="width:100%;padding:8px 12px;border:0;border-radius:8px;' +
       `background:#30BA78;color:#0c322c;font-weight:700;font-size:13px;cursor:pointer;">${t('Choose file…')}</button>` +
       '<div class="fc-import-status" role="status" aria-live="polite" style="margin-top:8px;font-size:12px;line-height:1.4;min-height:16px;"></div>';
@@ -1685,18 +1735,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       status.textContent = t('Importing…');
       chooseBtn.disabled = true;
       try {
-        const { parseDesignFile } = await import('./design-import.ts');
-        // interactive: a multi-page PDF/.ai asks which page (shared page-picker dialog)
-        // instead of silently importing the first. `map` carries this tool's font
-        // vocabulary + seed colours (importMap above) into the engine's box mapper.
-        const res = await parseDesignFile(f, { host: host as any, log: (m: string) => { status.textContent = m; }, interactive: true, map: importMap });
-        const boxes = (Array.isArray(res.boxes) ? res.boxes : []) as Box[];
-        if (!boxes.length) throw new Error(t('Nothing importable was found in that file.'));
-        selection = new Set<string>();
-        commit(boxes);
-        if (setCanvasSize && res.width > 0 && res.height > 0) setCanvasSize(res.width, res.height, 'px');
-        status.style.color = '#128a5b';
-        status.textContent = boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length });
+        if (importScenesMode) {
+          // Sequence editor: frames become timed scenes (importAsScenes above).
+          const n = await importAsScenes(f, (m: string) => { status.textContent = m; });
+          status.style.color = '#128a5b';
+          status.textContent = n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n });
+        } else {
+          const { parseDesignFile } = await import('./design-import.ts');
+          // interactive: a multi-page PDF/.ai asks which page (shared page-picker dialog)
+          // instead of silently importing the first. `map` carries this tool's font
+          // vocabulary + seed colours (importMap above) into the engine's box mapper.
+          const res = await parseDesignFile(f, { host: host as any, log: (m: string) => { status.textContent = m; }, interactive: true, map: importMap });
+          const boxes = (Array.isArray(res.boxes) ? res.boxes : []) as Box[];
+          if (!boxes.length) throw new Error(t('Nothing importable was found in that file.'));
+          selection = new Set<string>();
+          commit(boxes);
+          if (setCanvasSize && res.width > 0 && res.height > 0) setCanvasSize(res.width, res.height, 'px');
+          status.style.color = '#128a5b';
+          status.textContent = boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length });
+        }
         setTimeout(() => { if (popover === panel) closePopover(); }, 1400);
       } catch (err) {
         status.style.color = '#c0362c';
@@ -6766,6 +6823,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     void (async () => {
       announce(t('Importing…'));
       try {
+        if (importScenesMode) {
+          // Sequence editor: the dropped design's frames become timed scenes.
+          const n = await importAsScenes(pendingImport, (m: string) => announce(m));
+          if (disposed) return;
+          announce(n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n }));
+          return;
+        }
         const { parseDesignFile } = await import('./design-import.ts');
         const res = await parseDesignFile(pendingImport, {
           host: host as any, log: (m: string) => announce(m), interactive: true, map: importMap,

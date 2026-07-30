@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The visualizer's capability probe, deliberately alone in its own module with no
- * imports: the dock has to decide SYNCHRONOUSLY whether to render its visualizer
+ * imports (neuro-demo.ts, the one exception, is itself import-free at top level):
+ * the dock has to decide SYNCHRONOUSLY whether to render its visualizer
  * button, and everything else in the feature (butterchurn itself, the presets, the
  * palette derivation, the overlay chrome) should stay out of the main bundle until
  * someone actually presses it. Importing this costs nothing; importing the engine
  * wrapper would drag the whole graph in.
  */
+
+import { neuroDemoActive } from './neuro-demo.ts';
 
 let cached: boolean | null = null;
 let cachedLax: boolean | null = null;
@@ -21,6 +24,15 @@ let cachedLax: boolean | null = null;
  * throwaway GL contexts to re-ask is not free.
  */
 export function vizSupported(): boolean {
+  // A ?neuro demo capture runs on headless SwiftShader, which fails the strict
+  // failIfMajorPerformanceCaveat probe by definition (it IS a software rasteriser)
+  // — so the demo takes the lax answer instead. neuro-demo.ts is import-free at
+  // module level, so this module's "no imports" cheapness holds.
+  if (neuroDemoActive()) return vizPossible();
+  return strictProbe();
+}
+
+function strictProbe(): boolean {
   if (cached !== null) return cached;
   if (typeof document === 'undefined') return false;
   try {
@@ -45,7 +57,7 @@ export function vizSupported(): boolean {
  * So: strict where it is ambient, lax where it was asked for.
  */
 export function vizPossible(): boolean {
-  if (vizSupported()) return true;
+  if (strictProbe()) return true;
   if (cachedLax !== null) return cachedLax;
   if (typeof document === 'undefined') return false;
   try {

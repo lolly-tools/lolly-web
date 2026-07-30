@@ -45,6 +45,7 @@
 import { contrastRatio, deltaEOk, parseColor, formatColor, convertColor, colorToHexString, BEYOND_TIER } from '@lolly/engine';
 import type { CssColor } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
+import { contrastText } from '../brand-vars.ts';
 import { escape } from '../utils.ts';
 import { wireTabs } from '../lib/tabs.ts';
 import {
@@ -464,13 +465,12 @@ export function lchTrackGradients(l: number, c: number, h: number): { l: string;
  * the two ratios are numerically equal, which is a contrast-compliance question, not
  * a legibility one — it hands black to almost every mid-tone. 0.299/0.587/0.114 at
  * 150 flips where the eye flips.
+ *
+ * The implementation lives in brand-vars.ts now (re-exported here unchanged):
+ * the app chrome's accent ink is computed with the same rule, and that module
+ * is on the boot path where this file's engine-barrel import is off-limits.
  */
-export function contrastText(hex: string): string {
-  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
-  if (!m) return '#000000';
-  const r = parseInt(m[1]!, 16), g = parseInt(m[2]!, 16), b = parseInt(m[3]!, 16);
-  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#000000' : '#ffffff';
-}
+export { contrastText };
 
 // ── Dials ────────────────────────────────────────────────────────────────────
 // A ring per channel, sitting above the sliders: the axis's ramp poured into a

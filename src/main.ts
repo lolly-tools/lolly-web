@@ -25,6 +25,7 @@ import { hydrateAtmosphere, armAtmosphere } from './lib/atmosphere.ts';
 import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
 import { applyCaptureNeutral } from './lib/capture-neutral.ts';
+import { peekNeuroDemo, applyNeuroDemo } from './lib/neuro-demo.ts';
 import { installRangeUpgrader } from './components/custom-slider.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
@@ -639,6 +640,14 @@ async function boot(): Promise<void> {
   // and resume on the same first-gesture terms (armAtmosphere is a no-op unless the
   // user themselves left a layer above zero).
   hydrateAtmosphere((profile as { atmosphere?: unknown }).atmosphere);
+  // The ?neuro demo deep-link (docs screenshots — see lib/neuro-demo.ts): stage the
+  // sound dock for THIS page load only — flag lit in memory, silent demo player +
+  // atmosphere state, dock shown expanded. Must sit AFTER applyCaptureNeutral()
+  // (the demo's in-memory flag override outranks the pin's mirror write) and after
+  // the two hydrates above (they would overwrite the demo state). Fire-and-forget:
+  // it waits internally for the catalog-synced track list.
+  const neuroDemo = peekNeuroDemo();
+  if (neuroDemo) void applyNeuroDemo(host as unknown as Parameters<typeof applyNeuroDemo>[0], neuroDemo);
   if (flagEnabledSync('neurospicy')) {
     armNeurospicy(host as unknown as Parameters<typeof armNeurospicy>[0]);
     armAtmosphere(host as unknown as Parameters<typeof armAtmosphere>[0]);

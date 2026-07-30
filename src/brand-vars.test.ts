@@ -86,7 +86,7 @@ test('chromeBrandCss emits light/dark accent blocks plus the constructed brand t
 test('brandThemeCss constructs the full mid-toned chrome from the two primaries', () => {
   // The SUSE palette itself: surfaces from Pine, accent Jungle — the construction
   // should land in the neighbourhood of the static tokens.css block.
-  const css = brandThemeCss('#0c322c', '#30ba78', '#08211d');
+  const css = brandThemeCss('#0c322c', '#30ba78');
   for (const name of ['background', 'foreground', 'card', 'popover', 'muted', 'secondary',
     'accent', 'border', 'input', 'ring', 'primary', 'primary-foreground',
     'store-1', 'store-4', 'store-other']) {
@@ -105,7 +105,7 @@ test('brandThemeCss constructs the full mid-toned chrome from the two primaries'
   const bgL = parseFloat(bg[3]!);
   assert.ok(bgL > 6 && bgL < 22, `background stays mid-dark (${bgL}%)`);
   // A neutral (ink) brand constructs a *grey* chrome — low saturation everywhere.
-  const neutral = brandThemeCss('#0e1217', '#f3f5f8', '#0e1217');
+  const neutral = brandThemeCss('#0e1217', '#f3f5f8');
   const sats = [...neutral.matchAll(/--(?:background|card|muted|border): [\d.]+ ([\d.]+)%/g)].map(m => parseFloat(m[1]!));
   assert.ok(sats.length >= 4 && sats.every(s => s < 20), `neutral brand stays near-grey (${sats.join(', ')})`);
 });
@@ -114,13 +114,12 @@ test('an unresolvable primary yields no block; both missing yields empty css', (
   const darkOnly = chromeBrandCss({ primary: null, onPrimary: null }, { primary: '#f7f7f5', onPrimary: null });
   assert.ok(!darkOnly.includes('[data-theme="light"]'));
   assert.ok(darkOnly.includes('[data-theme="dark"]'));
-  // Missing on-primary leaves the foreground override out of the UNGATED block
-  // (the static tokens.css ink stays in charge). The high-contrast block below
-  // is the one exception, by design: it cannot see that ink, so it states its
-  // own — see 'high contrast forces an explicit ink…'.
+  // The foreground is COMPUTED from the fill (contrastText — the app-wide
+  // inversion rule), so it is always stated, authored on-primary or not:
+  // #f7f7f5 is a near-white fill, so its ink is black.
   const ungatedDark = /^\[data-theme="dark"\] \{[^}]*\}/m.exec(darkOnly)?.[0] ?? '';
   assert.ok(ungatedDark.includes('--primary:'));
-  assert.ok(!ungatedDark.includes('--primary-foreground:'));
+  assert.ok(ungatedDark.includes('--primary-foreground: 0 0% 0%'));
   assert.equal(chromeBrandCss({ primary: null, onPrimary: null }, { primary: null, onPrimary: null }), '');
 });
 
@@ -219,19 +218,19 @@ test('chromeBrandCss appends attribute-gated high-contrast accents, per theme', 
 });
 
 test('high contrast forces an explicit ink when the theme ink is unknowable', () => {
-  // No on-primary → the ungated block leaves tokens.css's static ink in place,
-  // which may be anything. The gated block cannot read it, so it states the
-  // maximal one; the fill itself is left where the brand put it (Lc 101 already).
+  // The gated block never reads the ungated one's computed ink — it states the
+  // maximal one itself; the fill is left where the brand put it (Lc 101 already).
   const css = chromeBrandCss({ primary: null, onPrimary: null }, { primary: '#f7f7f5', onPrimary: null });
   const gated = /html\[data-a11y-contrast="high"\]\[data-theme="dark"\] \{([^}]*)\}/.exec(css)?.[1] ?? '';
   assert.ok(gated.includes('--primary: 60 11.1% 96.5%'), 'fill unchanged');
   assert.ok(gated.includes('--primary-foreground: 0 0% 0%'), 'ink stated explicitly');
 });
 
-test('the ungated chrome CSS is byte-identical with no pref set', () => {
-  // Additivity: the gated blocks are appended last and nothing above them
-  // changed, so stripping them must reproduce the pre-feature stylesheet
-  // exactly. The literal below is that output for the SUSE palette.
+test('the ungated chrome CSS is pinned, with computed accent inks', () => {
+  // The gated high-contrast blocks are appended last; everything above them is
+  // the no-pref stylesheet, pinned here for the SUSE palette. The accent inks
+  // are contrastText's picks (white on the dark teal AND on Jungle green) —
+  // the authored on-primary pair is deliberately not consulted.
   const css = chromeBrandCss(
     { primary: '#0c322c', onPrimary: '#f7f7f5' },
     { primary: '#30ba78', onPrimary: '#08211d' },
@@ -241,14 +240,14 @@ test('the ungated chrome CSS is byte-identical with no pref set', () => {
     ':root, [data-theme="light"] {',
     '  --primary: 170.5 61.3% 12.2%;',
     '  --ring: 170.5 61.3% 12.2%;',
-    '  --primary-foreground: 60 11.1% 96.5%;',
+    '  --primary-foreground: 0 0% 100%;',
     '}',
     '[data-theme="dark"] {',
     '  --primary: 151.3 59% 45.9%;',
     '  --ring: 151.3 59% 45.9%;',
-    '  --primary-foreground: 170.4 61% 8%;',
+    '  --primary-foreground: 0 0% 100%;',
     '}',
-    brandThemeCss('#0c322c', '#30ba78', '#08211d'),
+    brandThemeCss('#0c322c', '#30ba78'),
     lollyMarkCss('#0c322c', '#30ba78'),
   ].join('\n'));
 });

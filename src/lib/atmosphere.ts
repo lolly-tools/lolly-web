@@ -135,6 +135,15 @@ export function hydrateAtmosphere(fromProfile: unknown): void {
   for (const [id, v] of Object.entries(state.levels)) lastAudible.set(id as AmbienceKind, v);
 }
 
+/** Demo override for the ?neuro deep-link (lib/neuro-demo.ts): set levels + the
+ *  panel-open state IN MEMORY only — no persistLocal/persistProfile, and no
+ *  startLayer, so nothing ever sounds. A dock built after this renders the
+ *  Atmosphere section open at these levels. Levels are whitelisted through the
+ *  same sanitise() the persisted blob goes through. */
+export function demoAtmosphere(levels: AtmosphereLevels, opts: { open?: boolean } = {}): void {
+  state = sanitise({ levels, open: opts.open ?? state.open });
+}
+
 export function getAtmosphere(): AtmosphereState { return { levels: { ...state.levels }, open: state.open }; }
 export function atmosphereLevel(id: AmbienceKind): number { return state.levels[id] ?? 0; }
 /** How many layers are currently turned up — the panel's collapsed-state badge. */
