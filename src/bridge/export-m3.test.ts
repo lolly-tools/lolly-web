@@ -180,6 +180,21 @@ test('a tiling background becomes a <pattern>, not a screenshot', { skip: SKIP }
     'the box must not be rasterised as one big image');
 });
 
+// ── inline SVG passthrough ────────────────────────────────────────────────────
+
+test('an inline svg using currentColor keeps the page\'s inherited color', { skip: SKIP }, async () => {
+  // The clone is emitted into a STANDALONE svg with no HTML ancestors, where
+  // currentColor falls back to black — the gallery's ghost icons (blue via an
+  // inherited CSS `color`) exported as black ink. The walker must stamp the
+  // live computed color onto the clone root so currentColor resolves the same.
+  const svg = await render(root(
+    `<span style="color:rgb(20,30,220)">
+       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/></svg>
+     </span>`));
+  assert.match(svg, /<svg[^>]*color="rgb\(20, 30, 220\)"[^>]*>/,
+    'the passthrough clone must carry the computed color for currentColor to resolve against');
+});
+
 test('cover still fills the box — the case the old behaviour got right', { skip: SKIP }, async () => {
   const svg = await render(root(
     `<div style="width:200px;height:100px;background:url('${PNG20x10}') no-repeat center / cover"></div>`));
