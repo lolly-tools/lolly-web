@@ -303,10 +303,12 @@ export async function setItalicFont(host: UserFontsHost, family: string | null):
 /**
  * Download a Google Fonts family and make it local: one user asset per face,
  * FontFaces registered immediately, and — when `primary` (or when it's the
- * only font) — font.brand updated so the whole app wears it.
+ * only font) — font.brand updated so the whole app wears it. `neverPrimary`
+ * suppresses that only-font promotion (a design-file import must never restyle
+ * the whole app via the font.brand token).
  */
 export async function installGoogleFont(
-  host: UserFontsHost, family: string, opts: { primary?: boolean } = {},
+  host: UserFontsHost, family: string, opts: { primary?: boolean; neverPrimary?: boolean } = {},
 ): Promise<UserFontFamily> {
   const name = family.trim();
   if (!GOOGLE_FAMILY_RE.test(name)) throw new Error(`"${family}" doesn't look like a font family name.`);
@@ -345,7 +347,7 @@ export async function installGoogleFont(
   }
   await registerUserFonts(host); // load the new faces into document.fonts
   const families = await listUserFonts(host);
-  const mustBePrimary = opts.primary || !(await primaryFontFamily(host));
+  const mustBePrimary = opts.primary || (!opts.neverPrimary && !(await primaryFontFamily(host)));
   if (mustBePrimary) await setPrimaryFont(host, canonical);
   return families.find(f => f.family === canonical)
     ?? { family: canonical, assetIds: stored, bytes: 0, weights: '', italic: faces.some(f => f.style === 'italic'), primary: mustBePrimary };
