@@ -982,7 +982,14 @@
 /* :focus ring — the one shared recipe at the foot of this sheet. */
 
 
-.input-row textarea {
+/* `:not(.table-cell)` for the same reason the box recipe above carries it: a table
+   cell is a GRID cell, not a field. It opts out of all three of these. The drag
+   handle is the visible half — a cell dragged taller keeps that explicit height
+   while its row-mates stay content-sized, so one resize leaves the row ragged, and
+   there is nothing to resize FOR when the only thing a cell holds is text that
+   already auto-grows. The min/max-height are the invisible half: an 80px floor on
+   every cell turns a compact grid into a wall of boxes. */
+.input-row textarea:not(.table-cell) {
   resize: vertical;
   min-height: 80px;
   /* Grow to fit content as the user types — native, no JS, no jitter — so a
