@@ -641,6 +641,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'components/progress-toast.ts': 2,
   'components/sound-toggle.ts': 2,
   'components/theme-toggle.ts': 1,
+  // The guide dialog's track panel, re-rendered on a tab switch. Its only
+  // interpolations come from inlineMarkup(), which escape()s the manifest string
+  // and then re-admits `**bold**` alone.
+  'components/tool-guide.ts': 1,
   'components/view-toggle.ts': 1,
   'components/viz-overlay.ts': 5,
   'components/welcome-dialog.ts': 2,

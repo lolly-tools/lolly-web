@@ -24,6 +24,7 @@ import { hydrateNeurospicy, armNeurospicy, getNeurospicy, invalidateNeurospicyTr
 import { hydrateAtmosphere, armAtmosphere } from './lib/atmosphere.ts';
 import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
+import { applyCaptureNeutral } from './lib/capture-neutral.ts';
 import { installRangeUpgrader } from './components/custom-slider.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
@@ -616,6 +617,11 @@ async function boot(): Promise<void> {
   // (or without) the profile — the Sound control's Neurospicy player in popovers — can
   // gate synchronously.
   hydrateFeatureFlags(profile as Parameters<typeof hydrateFeatureFlags>[0]);
+  // An automated screenshot run pins neutral chrome: effect flags off, a11y prefs
+  // clear. It has to land HERE — after the line above rewrites the flag mirror from
+  // the profile (which discards anything seeded earlier), and before the two reads
+  // just below act on it. Inert for everyone else. See lib/capture-neutral.ts.
+  if (applyCaptureNeutral()) console.info('[lolly] neutral capture state pinned');
   // Neurospicy Mode — reconcile the saved focus-loop state, then (only if the feature is
   // enabled and it was on) arm a one-shot gesture to resume the loop, since audio can't
   // autoplay before a gesture.

@@ -23,6 +23,7 @@ import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { jellyActive } from '../lib/jelly.ts';
+import { captureNeutralPinned } from '../lib/capture-neutral.ts';
 import { mountModal } from './modal.ts';
 
 /** Tools whose guide has been auto-opened on this device, joined by `,`. */
@@ -127,6 +128,12 @@ export function showToolGuide(manifest: GuideManifest): { close(): void } | null
 export function autoOpenToolGuide(manifest: GuideManifest): { close(): void } | null {
   const id = manifest.id;
   if (!id || !hasGuide(manifest)) return null;
+  // An automated screenshot run never gets the first-run modal: it would bake a
+  // dialog over the very tool a docs baseline is framing, and it would do it to
+  // every tool shot at once, since a capture context is always a fresh device.
+  // Asking the pin beats seeding one id per tool — a new tool cannot drift out of
+  // it. See lib/capture-neutral.ts.
+  if (captureNeutralPinned()) return null;
   if (guideSeen(id)) return null;
   markGuideSeen(id);
   return showToolGuide(manifest);
