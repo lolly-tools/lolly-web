@@ -595,3 +595,163 @@ test('R9: lib/icons.ts glyph bodies are well-formed (balanced quotes and tags)',
   assert.ok(scanned >= 60, `only ${scanned} markup glyphs parsed — the R9 regex has rotted`);
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
 });
+
+// ── R10 (raw-HTML sinks) ──────────────────────────────────────────────────────
+// maintainability-2026-07-29.md item 3: ~461 innerHTML sites following the
+// `escape()` discipline by convention, with nothing pinning it. This is that pin.
+//
+// WHY A COUNT RATCHET AND NOT A CONTENT RULE. The obvious rule — "every ${…} in a
+// raw-HTML template must be escaped" — was measured against the tree first: 508
+// interpolations, 134 already wrapped in escape(), and of the remaining 374 the
+// overwhelming majority are `t('a literal')`, a nested ternary of literals, a
+// CONSTANT, or an `xHtml(…)`/`.map(…).join('')` helper that returns composed
+// markup. A rule flagging those would be ~374 false positives on day one and
+// would be deleted within a week. So the guard pins the INVENTORY instead: a new
+// raw-HTML sink cannot appear without a deliberate allowlist bump, which is the
+// moment a reviewer looks at whether its interpolations are escaped.
+//
+// Empty clears (`el.innerHTML = ''`) are excluded — they are teardown and cannot
+// inject. Changing one into a real assignment moves it INTO the count, so the
+// exclusion cannot be used to smuggle a sink past the ratchet.
+//
+// Counts are exact in both directions (see checkRatchet), so deleting a sink is
+// an attrition win that must be recorded, and the ledger cannot rot.
+
+// The `\s*` belongs INSIDE the empty-clear lookahead, not before it: as
+// `\s*(?!…)` the star backtracks to zero-width, the lookahead then sees a space
+// instead of the quote, and `el.innerHTML = ''` counts as a sink. That bug was in
+// the first draft of this rule and was caught by the attrition mutation test.
+const RAW_HTML_SINK = /\.(?:inner|outer)HTML\s*\+?=(?!=)(?!\s*['"]\s*['"]\s*[;,)])|\binsertAdjacentHTML\s*\(/;
+
+const RAW_HTML_ALLOWED: Record<string, number> = {
+  'bridge/clipboard.ts': 2,
+  'bridge/embed.ts': 1,
+  'components/color-field.ts': 5,
+  'components/custom-slider.ts': 1,
+  'components/featured-row.ts': 2,
+  'components/fonts-manager.ts': 3,
+  'components/headshot-cropper.ts': 1,
+  'components/instance-sheet.ts': 1,
+  'components/lang-menu.ts': 2,
+  'components/modal.ts': 1,
+  'components/music-player.ts': 5,
+  'components/neuro-dock.ts': 1,
+  'components/profile-menu.ts': 1,
+  'components/profiles-manager.ts': 3,
+  'components/progress-toast.ts': 2,
+  'components/sound-toggle.ts': 2,
+  'components/theme-toggle.ts': 1,
+  'components/view-toggle.ts': 1,
+  'components/viz-overlay.ts': 5,
+  'components/welcome-dialog.ts': 2,
+  'components/zoom-hud.ts': 1,
+  'folder-overlay.ts': 3,
+  'lib/audio-coaching.ts': 1,
+  'lib/audio-transport.ts': 2,
+  'lib/brand-editor.ts': 22,
+  'lib/brand-studio-tabs.ts': 9,
+  'lib/catalog-summary.ts': 2,
+  'lib/float-panel.ts': 2,
+  'lib/gamut-slider.ts': 1,
+  'lib/page-filmstrip.ts': 1,
+  'lib/recent-stack.ts': 1,
+  'lib/recording-tips.ts': 2,
+  'lib/upload-dropzone.ts': 3,
+  'org/approval-dialog.ts': 3,
+  'org/banner.ts': 1,
+  'org/index.ts': 1,
+  'org/share-links.ts': 4,
+  'pro/blocks-editor.ts': 4,
+  'pro/folder-export.ts': 2,
+  'pro/index.ts': 9,
+  'pro/render-export.ts': 1,
+  'pro/run-overlay.ts': 7,
+  'views/catalog.ts': 8,
+  'views/color-lab.ts': 18,
+  'views/components-data.ts': 1,
+  'views/components.ts': 7,
+  'views/dashboard.ts': 11,
+  'views/deck-editor.ts': 9,
+  'views/doc-editor.ts': 1,
+  'views/free-canvas.ts': 40,
+  'views/gallery.ts': 6,
+  'views/multi-edit.ts': 3,
+  'views/pdf-extract.ts': 4,
+  'views/pdf-import.ts': 1,
+  'views/picker.ts': 27,
+  'views/profile.ts': 19,
+  'views/projects.ts': 10,
+  'views/record-control.ts': 6,
+  'views/screen-capture-control.ts': 4,
+  'views/start.ts': 7,
+  'views/timeline-panel.ts': 4,
+  'views/tool-actions.ts': 7,
+  'views/tool-inputs.ts': 9,
+  'views/tool.ts': 16,
+  'views/valid.ts': 19,
+};
+
+test('R10: raw-HTML sinks are a pinned inventory, not a growing one', () => {
+  const found = new Map<string, number[]>();
+  for (const f of TS) {
+    const hits = hitLines(f.text, RAW_HTML_SINK);
+    if (hits.length) found.set(f.rel, hits);
+  }
+  // Non-vacuity: the regex must still find the tree it was written against.
+  const total = [...found.values()].reduce((n, l) => n + l.length, 0);
+  assert.ok(total > 300,
+    `only ${total} raw-HTML sinks found — RAW_HTML_SINK has rotted and this guard is passing vacuously`);
+  checkRatchet(found, RAW_HTML_ALLOWED,
+    'A new raw-HTML sink needs review: every interpolated value must be escape()d ' +
+    '(utils.ts) or provably safe markup. If it is right, bump this file\'s allowlist entry.');
+});
+
+// ── R11 (one escaping implementation) ────────────────────────────────────────
+// The reason R10 can be a count ratchet rather than a content rule is that
+// `escape` (utils.ts) is a single, correct implementation everyone reaches for.
+// That only holds while nobody re-forks it — and forking it is not hypothetical:
+// pro/index.ts carried its own `escapeHtml` whose character class was [&<>"],
+// missing the SINGLE QUOTE that utils.ts escapes. Every one of its 19 call sites
+// happened to sit in a double-quoted attribute, so it was not exploitable — but
+// the next `data-x='${escapeHtml(v)}'` would have been. It was deleted on
+// 2026-07-30 in favour of the shared escape, which that file already imported.
+
+const ESCAPE_DEF = /\bfunction\s+escape(?:Html|Text|Attr)?\s*\(|\bconst\s+escape(?:Html|Text|Attr)?\s*=\s*\(/;
+
+const ESCAPE_DEF_ALLOWED: Record<string, number> = {
+  // The one shared implementation. Everything else must import this.
+  'utils.ts': 1,
+  // A deliberate zero-import primitive: float-panel.ts imports nothing but its
+  // own CSS, so it inlines an escape that is character-for-character equivalent
+  // to utils.ts's ([&<>"'] — the single quote included). Verified equivalent, not
+  // assumed; if it ever diverges it becomes a fork and should import instead.
+  'lib/float-panel.ts': 1,
+  // A local alias that immediately DELEGATES to the shared escape
+  // (`function escapeHtml(s) { return escape(s); }`), kept because the file's
+  // 6.8k lines call it by that name. Not an independent implementation.
+  'views/free-canvas.ts': 1,
+};
+
+test('R11: HTML escaping is implemented once (utils.ts escape), never re-forked', () => {
+  const defs = new Map<string, number[]>();
+  for (const f of TS) {
+    const hits = hitLines(f.text, ESCAPE_DEF);
+    if (hits.length) defs.set(f.rel, hits);
+  }
+  checkRatchet(defs, ESCAPE_DEF_ALLOWED,
+    "Don't re-implement HTML escaping — `import { escape } from '<...>/utils.ts'`. " +
+    'A hand-rolled one drifts: the pro/index.ts fork omitted the single quote and ' +
+    "would have injected inside any single-quoted attribute.");
+});
+
+test('R11: the shared escape covers every character an attribute or text node needs', () => {
+  // The ratchet above says "one implementation"; this says that one is correct.
+  // & < > " ' — the omission that made the pro/index.ts fork dangerous was "'".
+  const src = ALL.find(f => f.rel === 'utils.ts')?.text ?? '';
+  assert.ok(src.includes('export function escape'), 'utils.ts no longer exports escape');
+  for (const ch of ['&', '<', '>', '"', "'"]) {
+    assert.ok(src.includes(`'${ch}'`) || src.includes(`"${ch}"`) || (ch === "'" && src.includes('"\'"')),
+      `utils.ts escape does not mention ${ch} — an unescaped ${ch} breaks out of an attribute`);
+  }
+  assert.match(src, /&#39;|&apos;/, "escape must map the single quote to an entity (the pro/index.ts fork's omission)");
+});

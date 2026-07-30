@@ -589,10 +589,10 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       shown = ql ? tools.filter(t => (t.name ?? t.id).toLowerCase().includes(ql)) : tools;
       active = Math.min(active, Math.max(0, shown.length - 1));
       listEl.innerHTML = shown.length
-        ? shown.map((t, i) => `<li><button type="button" role="option" id="pro-tpl-opt-${i}" aria-selected="${i === active ? 'true' : 'false'}" class="pro-tpl-opt${i === active ? ' is-active' : ''}" data-tool="${escapeHtml(t.name)}">
-            <span class="pro-tpl-opt-name">${escapeHtml(t.name)}</span>${t.status === 'experimental' ? '<span class="pro-tpl-opt-exp">exp</span>' : ''}
+        ? shown.map((t, i) => `<li><button type="button" role="option" id="pro-tpl-opt-${i}" aria-selected="${i === active ? 'true' : 'false'}" class="pro-tpl-opt${i === active ? ' is-active' : ''}" data-tool="${escape(t.name)}">
+            <span class="pro-tpl-opt-name">${escape(t.name)}</span>${t.status === 'experimental' ? '<span class="pro-tpl-opt-exp">exp</span>' : ''}
           </button></li>`).join('')
-        : `<li class="pro-tpl-none">No templates match “${escapeHtml(q)}”.</li>`;
+        : `<li class="pro-tpl-none">No templates match “${escape(q)}”.</li>`;
       syncActiveDescendant();
     };
     const highlight = () => {
@@ -919,10 +919,10 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const pop: PopoverEl = document.createElement('div');
     pop.className = 'pro-popover';
     pop.innerHTML = `
-      <div class="pro-popover-title">Fill “${escapeHtml(col.label)}” · ${targets.length} row${targets.length === 1 ? '' : 's'}</div>
+      <div class="pro-popover-title">Fill “${escape(col.label)}” · ${targets.length} row${targets.length === 1 ? '' : 's'}</div>
       <div class="pro-popover-control">${
         isColor
-          ? colorFieldHtml(`bulk~${escapeHtml(key)}`, colorValue, { float: true, swatchesOnly: col.spec!.swatchesOnly === true })
+          ? colorFieldHtml(`bulk~${escape(key)}`, colorValue, { float: true, swatchesOnly: col.spec!.swatchesOnly === true })
           : controlHtml(col.spec!, col.spec!.default ?? '', 'data-bulk-input', { label: col.label })
       }</div>
       <div class="pro-popover-actions">
@@ -1026,15 +1026,15 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       <div class="pro-popover-title">Batch sessions</div>
       ${list.length ? `<ul class="pro-sess-list">${list.map((s: any) => `
         <li class="pro-sess-item">
-          <button type="button" class="pro-sess-load" data-load="${escapeHtml(s.slot)}" data-name="${escapeHtml(s.name)}" title="Load “${escapeHtml(s.name)}”">
-            <span class="pro-sess-name">${escapeHtml(s.name)}</span>
-            <span class="pro-sess-when">${escapeHtml(relTime(s.updatedAt))}</span>
+          <button type="button" class="pro-sess-load" data-load="${escape(s.slot)}" data-name="${escape(s.name)}" title="Load “${escape(s.name)}”">
+            <span class="pro-sess-name">${escape(s.name)}</span>
+            <span class="pro-sess-when">${escape(relTime(s.updatedAt))}</span>
           </button>
-          <button type="button" class="pro-sess-del" data-del="${escapeHtml(s.slot)}" title="Delete" aria-label="Delete ${escapeHtml(s.name)}">✕</button>
+          <button type="button" class="pro-sess-del" data-del="${escape(s.slot)}" title="Delete" aria-label="Delete ${escape(s.name)}">✕</button>
         </li>`).join('')}</ul>`
         : `<p class="pro-sess-empty">No saved sessions yet — save the current grid below.</p>`}
       <div class="pro-sess-save">
-        <input type="text" class="pro-sess-input" placeholder="Session name" value="${escapeHtml(state.zipName.trim())}" autocomplete="off" spellcheck="false" maxlength="60">
+        <input type="text" class="pro-sess-input" placeholder="Session name" value="${escape(state.zipName.trim())}" autocomplete="off" spellcheck="false" maxlength="60">
         <button type="button" class="pro-btn pro-btn--primary" data-save>Save</button>
       </div>
       <div class="pro-sess-csv">
@@ -1058,7 +1058,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       if (!data) { showProgress(`<p class="pro-progress-msg pro-log-err">That session couldn't be loaded.</p>`); return; }
       await applySnapshot(data);
       closeSessions();
-      showProgress(`<p class="pro-progress-msg">Loaded session “${escapeHtml(btn.dataset.name)}”.</p>`);
+      showProgress(`<p class="pro-progress-msg">Loaded session “${escape(btn.dataset.name)}”.</p>`);
     }));
 
     pop.querySelectorAll<HTMLElement>('[data-del]').forEach(btn => btn.addEventListener('click', async (e) => {
@@ -1080,7 +1080,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       if (leaveAfterSave) { closeSessions(); goHome(); return; }
       await drawSessions(pop);
       pop.querySelector<HTMLElement>('.pro-sess-input')?.focus();
-      showProgress(`<p class="pro-progress-msg">Saved session “${escapeHtml(name)}”.</p>`);
+      showProgress(`<p class="pro-progress-msg">Saved session “${escape(name)}”.</p>`);
     };
     pop.querySelector('[data-save]')!.addEventListener('click', doSave);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } });
@@ -1116,7 +1116,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
         const rows = await rowsForFolder(host, folder);
         if (!rows.length) { showProgress(`<p class="pro-progress-msg">That folder has no renderable rows.</p>`); return; }
         await applySnapshot({ rows, zipName: folder.name });
-        showProgress(`<p class="pro-progress-msg">Opened folder “${escapeHtml(folder.name)}” — ${rows.length} row${rows.length === 1 ? '' : 's'} flattened into the grid.</p>`);
+        showProgress(`<p class="pro-progress-msg">Opened folder “${escape(folder.name)}” — ${rows.length} row${rows.length === 1 ? '' : 's'} flattened into the grid.</p>`);
       },
     });
   }
@@ -1299,7 +1299,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     catch { showProgress(`<p class="pro-progress-msg pro-log-err">Couldn't read that file.</p>`); return; }
     const { rows, errors } = await csvToBatch(text, { getTool, makeRow: newRow });
     if (!rows.length) {
-      showProgress(`<p class="pro-progress-msg pro-log-err">${escapeHtml(errors[0] || 'No rows found in the file.')}</p>`);
+      showProgress(`<p class="pro-progress-msg pro-log-err">${escape(errors[0] || 'No rows found in the file.')}</p>`);
       return;
     }
     state.rows = rows;
@@ -1309,7 +1309,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const ok = rows.filter((r: any) => r.toolId).length;
     showProgress(`<p class="pro-progress-msg">Loaded ${ok} row${ok === 1 ? '' : 's'} from CSV.${
       errors.length ? ` <span class="pro-log-err">${errors.length} issue${errors.length === 1 ? '' : 's'}.</span>` : ''
-    }</p>${errors.length ? `<ol class="pro-log">${errors.map((e: any) => `<li class="pro-log-err">${escapeHtml(e)}</li>`).join('')}</ol>` : ''}`);
+    }</p>${errors.length ? `<ol class="pro-log">${errors.map((e: any) => `<li class="pro-log-err">${escape(e)}</li>`).join('')}</ol>` : ''}`);
   }
 
   // Fill values from a pasted spreadsheet range, anchored at the focused cell.
@@ -1415,7 +1415,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   function reportFatal(err: any) {
     state.running = false;
     renderGrid();
-    showProgress(`<p class="pro-progress-msg pro-log-err">Batch failed: ${escapeHtml(String(err.message ?? err))}</p>`);
+    showProgress(`<p class="pro-progress-msg pro-log-err">Batch failed: ${escape(String(err.message ?? err))}</p>`);
   }
 
   // ── Cleanup (called by the router on navigation away) ───────────────────────
@@ -1444,9 +1444,6 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   }
 }
 
-function escapeHtml(s: unknown) {
-  return String(s ?? '').replace(/[&<>"]/g, c => (({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[c]!));
-}
 
 // Unsaved-changes guard for leaving /pro. Reuses the shared `.unsaved-dialog`
 // styling (app.css) and the shared mountModal lifecycle (components/modal.ts)
