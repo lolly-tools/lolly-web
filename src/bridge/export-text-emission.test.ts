@@ -211,6 +211,23 @@ test('text-transform is applied BEFORE shaping, not left to the renderer',
       'uppercased "abc" must shape identically to a literal "ABC"');
   });
 
+test('font-feature-settings reaches the shaper (frac changes the emitted geometry)',
+  { skip: SKIP }, async () => {
+    // featureSettingsToHb (the parser) is covered in text-svg.test.ts; this is
+    // the missing half — proof the COMPUTED style actually reaches toPath
+    // through export.ts. `frac` is a discretionary feature only reachable via
+    // font-feature-settings (no CSS default turns it on), and probing Outfit
+    // through the real HarfBuzz confirmed it is effective in this face (as are
+    // kern/liga/tnum), so identical outlines here mean the feature was dropped
+    // on the way to the shaper.
+    const plain = pathData(await render(OUTFIT('1/2')))[0];
+    const frac = pathData(await render(OUTFIT('1/2', "font-feature-settings:'frac' 1")))[0];
+    assert.ok(plain && frac, 'both runs must outline');
+    assert.notEqual(plain, frac,
+      'font-feature-settings was dropped on the way to toPath — declared OpenType ' +
+      'features would silently not apply to vector exports');
+  });
+
 // ── the refusal paths ────────────────────────────────────────────────────────
 
 test('a run the font cannot cover (notdef) keeps its <text> instead of emitting tofu',
@@ -221,6 +238,22 @@ test('a run the font cannot cover (notdef) keeps its <text> instead of emitting 
     const svg = await render(OUTFIT('漢字テスト'));
     assert.equal(pathCount(svg), 0, 'uncovered glyphs must NOT be outlined');
     assert.ok(textCount(svg) >= 1, 'the run must survive as <text>');
+  });
+
+test('CHARACTERIZATION: a mixed run (covered Latin + one uncovered CJK char) falls back to <text> as a WHOLE',
+  { skip: SKIP }, async () => {
+    // Characterization, not judgement: this pins what export.ts does TODAY with
+    // a run the font only partly covers (Outfit shapes the Latin, but the CJK
+    // char is .notdef — HarfBuzz probe: notdef=1 with real outline data for the
+    // rest). Observed behaviour: the notdef refusal is per-RUN, so the whole
+    // run — including the perfectly coverable Latin — stays a single <text>;
+    // there is no split-run or per-glyph tofu path. If a future change splits
+    // the run and outlines the covered segment, update this test deliberately.
+    const svg = await render(OUTFIT('Latin 漢 mix'));
+    assert.equal(pathCount(svg), 0, 'today, NO part of a partly-covered run is outlined');
+    assert.ok(textCount(svg) >= 1, 'the run survives as <text>');
+    assert.match(svg, /Latin/, 'the covered Latin stays inside the fallback <text>');
+    assert.match(svg, /漢/, 'the uncovered char stays inside the fallback <text>');
   });
 
 test('convertPaths:false keeps every run as selectable <text>', { skip: SKIP }, async () => {

@@ -76,12 +76,46 @@ export function durableSupport(): boolean {
   return !tauri;
 }
 
-// Which video containers this browser can actually record. Safari/iOS = mp4 only;
-// Firefox = webm only; recent Chrome = both. The view uses this to gate the format
+// WebCodecs half of the video gate. renderVideo tries a VideoEncoder encode FIRST,
+// so a browser whose MediaRecorder can't produce a container (e.g. no MediaRecorder
+// mp4, but VideoEncoder AVC) still makes a real file — the picker must offer it.
+// VideoEncoder.isConfigSupported is async while videoSupport() is a sync gate, so
+// the probe is kicked off once at module load and cached; until it resolves
+// videoSupport() reports the MediaRecorder-only answer. That transient under-report
+// is deliberate progressive enhancement — the option appears on the next gate read,
+// it is never wrongly offered. Exported (with the encoder injectable) so the
+// resolve-then-OR behaviour is unit-testable under node.
+const _wcVideo = { webm: false, mp4: false };
+type ConfigProbe = { isConfigSupported?: (c: object) => Promise<{ supported?: boolean } | null | undefined> };
+export async function probeWebCodecsVideoSupport(
+  VE: ConfigProbe | undefined = (globalThis as { VideoEncoder?: ConfigProbe }).VideoEncoder,
+): Promise<{ webm: boolean; mp4: boolean }> {
+  const isSupported = VE?.isConfigSupported?.bind(VE);
+  if (typeof isSupported !== 'function') return _wcVideo;
+  const ok = async (codec: string): Promise<boolean> => {
+    try {
+      // Nominal 720p — export.ts's pickWebCodecsVideo re-probes at the real size.
+      return !!(await isSupported({ codec, width: 1280, height: 720, bitrate: 2_000_000, framerate: 24 }))?.supported;
+    } catch { return false; }
+  };
+  // The same codec candidates pickWebCodecsVideo tries, per container.
+  const [mp4, webm] = await Promise.all([
+    Promise.all(['avc1.640033', 'avc1.4d0033'].map(ok)).then((r) => r.some(Boolean)),
+    Promise.all(['vp09.00.10.08', 'vp8'].map(ok)).then((r) => r.some(Boolean)),
+  ]);
+  _wcVideo.mp4 = mp4;
+  _wcVideo.webm = webm;
+  return _wcVideo;
+}
+void probeWebCodecsVideoSupport();
+
+// Which video containers this browser can actually produce: what MediaRecorder can
+// record (Safari/iOS = mp4 only; Firefox = webm only; recent Chrome = both), OR'd
+// with the cached WebCodecs probe above. The view uses this to gate the format
 // picker so users only see formats their browser can produce. Deliberately probes
 // the video-only lists — audio is optional, so a browser that can't mux audio
 // still offers the format (it records silent, with a log warning).
 export function videoSupport(): { webm: boolean; mp4: boolean } {
   const ok = (t: string) => canRecord() && (MediaRecorder.isTypeSupported?.(t) ?? false);
-  return { webm: WEBM_CODECS.some(ok), mp4: MP4_CODECS.some(ok) };
+  return { webm: WEBM_CODECS.some(ok) || _wcVideo.webm, mp4: MP4_CODECS.some(ok) || _wcVideo.mp4 };
 }

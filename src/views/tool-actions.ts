@@ -115,17 +115,17 @@ function readMarks(el: Element | null | undefined): string {
 // archives them (see renderZip).
 const ZIP_BUNDLE = new Set(['png', 'jpg', 'jpeg', 'webp', 'webp-anim', 'avif', 'svg', 'svg-anim', 'emf', 'eps', 'eps-cmyk', 'dxf', 'pdf', 'pdf-cmyk', 'cmyk-tiff', 'tiff', 'gif', 'apng', 'ico']);
 
-// Which video containers this browser's MediaRecorder can actually record.
-// Safari/iOS = mp4 only; Firefox = webm only; recent Chrome = both. Used to gate
-// the video format options so users only ever see what their browser can produce.
-const VIDEO = videoSupport();
+// Which video containers this browser can actually produce (MediaRecorder OR the
+// WebCodecs probe — see videoSupport). Read per call, NOT snapshotted at module
+// load: the WebCodecs half resolves asynchronously just after boot, and a module-
+// scope const would freeze the pre-probe answer forever.
 // Print TIFF is desktop-only with working canvas readback (see cmykTiffSupport);
 // hide it everywhere it can't be produced or cleanly downloaded.
 const CMYK_TIFF_OK = cmykTiffSupport();
 const TIFF_OK = tiffSupport();
 const keepFormat = (f: string): boolean =>
-  f === 'webm' ? VIDEO.webm
-  : f === 'mp4' ? VIDEO.mp4
+  f === 'webm' ? videoSupport().webm
+  : f === 'mp4' ? videoSupport().mp4
   : f === 'cmyk-tiff' ? CMYK_TIFF_OK
   : f === 'tiff' ? TIFF_OK
   : true;
@@ -277,8 +277,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Mirrors VECTOR_FORMATS in engine/src/inputs.js — formats where text→path
   // outlining (the 'Convert paths' toggle) applies. Bitmap formats don't.
   const isVectorFmt   = (f: string | undefined): boolean => f === 'svg' || f === 'pdf' || f === 'pdf-cmyk';
-  // Show only the video containers this browser can record (Safari→mp4, Firefox→webm,
-  // recent Chrome→both); non-video formats always pass. See keepFormat / VIDEO.
+  // Show only the video containers this browser can produce (Safari→mp4, Firefox→webm,
+  // recent Chrome→both); non-video formats always pass. See keepFormat / videoSupport.
   const formats       = manifest.render.formats.filter(keepFormat);
   const hasAnimated   = formats.some(isAnimatedFmt);
   // matchExportFormat: default the export to a dropped file's OWN format (a JPEG →
