@@ -86,6 +86,7 @@
           if (ax.reduceMotion) document.documentElement.dataset.a11yMotion = 'reduce';
           if (ax.highContrast) document.documentElement.dataset.a11yContrast = 'high';
           if (ax.largeText) document.documentElement.dataset.a11yText = 'large';
+          if (ax.hidePreviews) document.documentElement.dataset.a11yPreviews = 'hidden';
         }
       } catch (e) { /* corrupt cache — boot JS rewrites it */ }
       // Apply the saved language's <html lang> before paint (glyph fallback/Han

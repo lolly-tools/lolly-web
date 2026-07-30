@@ -11,7 +11,7 @@
  * matchMedia isn't implemented by jsdom, so it's a controllable stub here —
  * which is also how the "no matchMedia at all" CLI/jsdom case gets exercised.
  *
- * All three prefs are pure attribute switches here — the visual half is CSS
+ * All four prefs are pure attribute switches here — the visual half is CSS
  * gated on the attribute (largeText scales chrome type through the `--a11y-fs`
  * multiplier), so nothing below asserts a rendered size. The CSS side's shape is
  * pinned statically in a11y-prefs-contract.test.ts.
@@ -56,11 +56,11 @@ const {
   A11Y_STORE_KEY, applyA11yPrefs, currentA11yPrefs, hydrateA11yPrefs, setA11yPref, prefersReducedMotion,
 } = await import('./a11y-prefs.ts');
 
-/** The three attributes as they appear in HTML, for direct attribute reads. */
-const ATTR = { reduceMotion: 'data-a11y-motion', highContrast: 'data-a11y-contrast', largeText: 'data-a11y-text' } as const;
-const VALUE = { reduceMotion: 'reduce', highContrast: 'high', largeText: 'large' } as const;
+/** The four attributes as they appear in HTML, for direct attribute reads. */
+const ATTR = { reduceMotion: 'data-a11y-motion', highContrast: 'data-a11y-contrast', largeText: 'data-a11y-text', hidePreviews: 'data-a11y-previews' } as const;
+const VALUE = { reduceMotion: 'reduce', highContrast: 'high', largeText: 'large', hidePreviews: 'hidden' } as const;
 type Key = keyof typeof ATTR;
-const KEYS: Key[] = ['reduceMotion', 'highContrast', 'largeText'];
+const KEYS: Key[] = ['reduceMotion', 'highContrast', 'largeText', 'hidePreviews'];
 
 /** Back to a pristine document: no prefs, no mirror, OS motion pref off. */
 function reset(): void {
@@ -70,7 +70,7 @@ function reset(): void {
   installMatchMedia();
 }
 
-/** Which of the three attributes are present on <html>, with their values. */
+/** Which of the four attributes are present on <html>, with their values. */
 function liveAttrs(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, attr] of Object.entries(ATTR)) {
@@ -91,12 +91,12 @@ test('nothing on: no data-a11y-* attribute, no mirror key, every pref reads fals
   reset();
   assert.deepEqual(liveAttrs(), {});
   assert.equal(localStorage.getItem(A11Y_STORE_KEY), null);
-  assert.deepEqual(currentA11yPrefs(), { reduceMotion: false, highContrast: false, largeText: false });
+  assert.deepEqual(currentA11yPrefs(), { reduceMotion: false, highContrast: false, largeText: false, hidePreviews: false });
 });
 
 test('applying an all-off object is indistinguishable from never applying anything', () => {
   reset();
-  applyA11yPrefs({ reduceMotion: false, highContrast: false, largeText: false });
+  applyA11yPrefs({ reduceMotion: false, highContrast: false, largeText: false, hidePreviews: false });
   assert.deepEqual(liveAttrs(), {});
   assert.equal(localStorage.getItem(A11Y_STORE_KEY), null);
   applyA11yPrefs(undefined);
@@ -117,10 +117,10 @@ test('each pref sets EXACTLY its own attribute, to its own value', () => {
   }
 });
 
-test('all three on, then each cleared in turn: attributes are removed, not blanked', () => {
+test('all four on, then each cleared in turn: attributes are removed, not blanked', () => {
   reset();
-  applyA11yPrefs({ reduceMotion: true, highContrast: true, largeText: true });
-  assert.deepEqual(liveAttrs(), { reduceMotion: 'reduce', highContrast: 'high', largeText: 'large' });
+  applyA11yPrefs({ reduceMotion: true, highContrast: true, largeText: true, hidePreviews: true });
+  assert.deepEqual(liveAttrs(), { reduceMotion: 'reduce', highContrast: 'high', largeText: 'large', hidePreviews: 'hidden' });
   applyA11yPrefs({ highContrast: true });
   assert.deepEqual(liveAttrs(), { highContrast: 'high' });
   // An empty-string attribute would still match [data-a11y-text] presence
@@ -134,7 +134,7 @@ test('currentA11yPrefs reads the live DOM, including attributes set by the FOUC 
   reset();
   // Exactly what index.html's inline script does before any module runs.
   document.documentElement.dataset.a11yText = 'large';
-  assert.deepEqual(currentA11yPrefs(), { reduceMotion: false, highContrast: false, largeText: true });
+  assert.deepEqual(currentA11yPrefs(), { reduceMotion: false, highContrast: false, largeText: true, hidePreviews: false });
 });
 
 test('an unexpected attribute value is not treated as on (only the exact token counts)', () => {
@@ -161,7 +161,7 @@ test('the mirror round-trips through currentA11yPrefs (what the FOUC script re-a
   const stored = mirror() as Record<string, boolean>;
   reset(); // new page load: attributes gone, mirror is all the boot script has
   applyA11yPrefs(stored);
-  assert.deepEqual(currentA11yPrefs(), { reduceMotion: true, highContrast: false, largeText: true });
+  assert.deepEqual(currentA11yPrefs(), { reduceMotion: true, highContrast: false, largeText: true, hidePreviews: false });
 });
 
 test('blocked storage does not stop the attributes from applying', () => {
@@ -238,7 +238,7 @@ test('setA11yPref applies immediately and persists { ...profile, a11y } once', a
   assert.equal(writes.length, 1);
   assert.deepEqual(writes[0], {
     firstname: 'Ada', theme: 'dark',
-    a11y: { reduceMotion: false, highContrast: false, largeText: true },
+    a11y: { reduceMotion: false, highContrast: false, largeText: true, hidePreviews: false },
   });
 });
 
@@ -250,7 +250,7 @@ test('setA11yPref merges onto the prefs already in force, and can turn one back 
   assert.deepEqual(liveAttrs(), { reduceMotion: 'reduce', highContrast: 'high' });
   await setA11yPref(host, 'reduceMotion', false);
   assert.deepEqual(liveAttrs(), { highContrast: 'high' });
-  assert.deepEqual((writes.at(-1) as { a11y: unknown }).a11y, { reduceMotion: false, highContrast: true, largeText: false });
+  assert.deepEqual((writes.at(-1) as { a11y: unknown }).a11y, { reduceMotion: false, highContrast: true, largeText: false, hidePreviews: false });
 });
 
 test('a REJECTED profile write still leaves the pref applied (persistence is best-effort)', async () => {
@@ -320,8 +320,8 @@ test('prefersReducedMotion does not throw where matchMedia does not exist (CLI/j
   reset();
 });
 
-test('the other two prefs do not leak into the motion signal', () => {
+test('the other prefs do not leak into the motion signal', () => {
   reset();
-  applyA11yPrefs({ highContrast: true, largeText: true });
+  applyA11yPrefs({ highContrast: true, largeText: true, hidePreviews: true });
   assert.equal(prefersReducedMotion(), false);
 });
