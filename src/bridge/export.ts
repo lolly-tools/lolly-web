@@ -1642,8 +1642,17 @@ function rotationPivot(
 // The first url(...) in a CSS value (e.g. background-image), unquoted; null if none.
 function firstCssUrl(value: string | null | undefined): string | null {
   if (!value) return null;
-  const m = String(value).match(/url\(\s*(["']?)([^)"']+)\1\s*\)/);
-  return m ? m[2]!.trim() : null;
+  // The quote character is the TERMINATOR, so a quote of the other kind inside the
+  // URL survives. The old pattern was `(["']?)([^)"']+)\1`, whose character class
+  // banned BOTH quote marks from the body — which silently dropped every inline
+  // SVG data-URI, since those are full of `xmlns='…'`. That is how the select
+  // chevron (--field-chevron, styles/parts/fields.css:42 — one declaration, on
+  // every <select> in the app) vanished from SVG and PDF exports: firstCssUrl
+  // returned null, so the background branch never ran and nothing was emitted.
+  // Three alternatives, in CSS's own order: "double", 'single', or bare.
+  const m = String(value).match(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]([^)]*[^)\s])?))\s*\)/);
+  if (!m) return null;
+  return (m[1] ?? m[2] ?? m[3] ?? '').trim() || null;
 }
 
 // A CSS url() → a self-contained href: a data: URI stays as-is; blob:/http/relative are
