@@ -383,7 +383,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     {
       key: 'hidePreviews',
       label: 'Hide colourful previews',
-      info: 'Swaps the gallery preview artwork for calm icon and text cards, and softens your project thumbnails to a single colour so they stay recognisable. Inside a tool everything shows in full colour, and nothing you export changes.',
+      info: 'Swaps the gallery preview artwork for calm icon and text cards, and lowers the colour and contrast of your project thumbnails so they stay recognisable without shouting. Inside a tool everything shows in full colour, and nothing you export changes.',
     },
     {
       key: 'highContrast',

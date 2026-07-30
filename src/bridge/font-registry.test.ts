@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFontFamilies, parseUnicodeRange, rangesCover, coverageCount, pickFaces } from './font-registry.ts';
+import { parseFontFamilies, parseUnicodeRange, rangesCover, coverageCount, pickFaces , isFontContentType } from './font-registry.ts';
 
 // ── parseFontFamilies ────────────────────────────────────────────────────────
 
@@ -148,4 +148,18 @@ test('an italic face serves an italic run', () => {
 test('a run no face can draw yields an empty chain (caller keeps <text>)', () => {
   const faces = [face({ weight: '100 900', unicodeRange: LATIN })];
   assert.deepEqual(pickFaces(faces, { fontFamily: 'X' }, '漢字'), []);
+});
+
+// ── isFontContentType — the SPA-fallback trap ────────────────────────────────
+// A dev/dist server answers a MISSING /catalog font with 200 text/html (SPA
+// fallback), so "resp.ok" alone would mint an HTML page as a font. This pure
+// predicate is what keeps that out of the registry.
+test('isFontContentType rejects HTML/SPA-fallback responses and accepts font types', () => {
+  assert.equal(isFontContentType('text/html; charset=utf-8'), false);
+  assert.equal(isFontContentType('text/plain'), false);
+  assert.equal(isFontContentType('application/xhtml+xml'), false);
+  assert.equal(isFontContentType(''), false);
+  assert.equal(isFontContentType('font/ttf'), true);
+  assert.equal(isFontContentType('font/woff2'), true);
+  assert.equal(isFontContentType('application/octet-stream'), true);
 });

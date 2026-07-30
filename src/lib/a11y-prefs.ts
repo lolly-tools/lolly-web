@@ -18,10 +18,10 @@
  * user's creative output must not change because the app chrome calmed down.
  *
  * hidePreviews ("Hide colourful previews") swaps the tool galleries to calm
- * icon + text cards (parts/gallery.css) and tints the Projects/session
- * thumbnails to a single primary-hued monotone (parts/folders.css) — the one
- * place imagery is kept, since a thumbnail you can't recognise is a thumbnail
- * you can't use. It was the gallery filter popover's device-local "Hide
+ * icon + text cards (parts/gallery.css) and desaturates + lowers the contrast
+ * of the Projects/session thumbnails (parts/folders.css) — the one place
+ * imagery is kept, since a thumbnail you can't recognise is a thumbnail you
+ * can't use. It was the gallery filter popover's device-local "Hide
  * previews" toggle before 2026-07-30; it lives here now because its audience is
  * the same one the other three serve.
  */

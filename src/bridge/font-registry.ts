@@ -242,7 +242,11 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
   // Skip any family already backed by real bytes (SUSE's hardcoded branch, Outfit's
   // platform face, an installed user font): those take precedence and are complete.
   for (const f of discoverFontFaces()) {
-    if (f.family === 'suse' || f.family === 'suse mono') continue;
+    // The SUSE families are NOT excluded here: their hardcoded /catalog static
+    // branch in resolveVectorFont only holds under a brand that ships the TTFs,
+    // and under lolly-start the shell-served SUSEMono woff2 discovered from
+    // fonts.css is the only outlineable source. The bytes-backed precedence
+    // check below still lets a real static win.
     const existing = byFamily.get(f.family);
     if (existing?.some((e) => e.assetId || e.staticUrl)) continue;
     const list = existing ?? [];
@@ -252,12 +256,35 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
   return byFamily;
 }
 
+/** url → "these bytes are actually a font". A dev/dist server's SPA fallback
+ *  answers a MISSING catalog font with 200 text/html, so `resp.ok` is not the
+ *  question — "is it a font" is. Memoised per url. */
+const urlProbes = new Map<string, Promise<boolean>>();
+export function isFontContentType(ct: string): boolean {
+  const t = ct.toLowerCase();
+  return t !== '' && !t.startsWith('text/') && !t.includes('html');
+}
+async function fontUrlUsable(url: string): Promise<boolean> {
+  let p = urlProbes.get(url);
+  if (!p) {
+    p = (async () => {
+      try {
+        const r = await fetch(url, { method: 'HEAD' });
+        return r.ok && isFontContentType(r.headers.get('content-type') ?? '');
+      } catch { return false; }
+    })();
+    urlProbes.set(url, p);
+  }
+  return p;
+}
+
 /** Drop the cached registry (and every decoded face) after an install/removal. */
 export function bustFontRegistry(): void {
   registryPromise = null;
   for (const url of sfntUrls.values()) URL.revokeObjectURL(url);
   sfntUrls.clear();
   sfntPending.clear();
+  urlProbes.clear();
 }
 
 /**
@@ -295,6 +322,13 @@ async function faceUrl(face: RegistryFace): Promise<string> {
     // here — Google/brand @font-face serve woff2, and HarfBuzz can't read woff1 either, so
     // a woff1-only face falls through to the caller's <text> fallback via a .notdef.)
     const isWoff2 = bytes[0] === 0x77 && bytes[1] === 0x4f && bytes[2] === 0x46 && bytes[3] === 0x32;
+    // Reject non-font bytes outright (an SPA fallback serves HTML at 200 — base64ing
+    // that into a Blob mints a "font" HarfBuzz chokes on far less legibly). sfnt
+    // magics: 00 01 00 00 (TrueType), OTTO, true, ttcf; woff1 stays rejected as before.
+    const magic = String.fromCharCode(bytes[0] ?? 0, bytes[1] ?? 0, bytes[2] ?? 0, bytes[3] ?? 0);
+    const isSfnt = magic === 'OTTO' || magic === 'true' || magic === 'ttcf'
+      || (bytes[0] === 0 && bytes[1] === 1 && bytes[2] === 0 && bytes[3] === 0);
+    if (!isWoff2 && !isSfnt) throw new Error(`font-registry: ${cacheKey} is not an sfnt/woff2 (magic "${magic}")`);
     const sfnt = isWoff2
       ? await (await import('woff2-encoder/decompress')).default(bytes)
       : bytes;
@@ -326,9 +360,12 @@ export async function resolveVectorFont(style: FontStyleSlice, text: string): Pr
   for (const family of families) {
     const key = family.toLowerCase();
     if (key === 'suse' || key === 'suse mono') {
+      // The catalog statics only exist under a brand that ships them; elsewhere
+      // the path SPA-falls-back to an HTML page, so probe before trusting it and
+      // otherwise fall THROUGH to the registry (the shell-served SUSEMono woff2
+      // discovered from fonts.css outlines fine once decompressed).
       const url = resolveSuseFontUrl({ ...style, fontFamily: family });
-      if (url) return { url };
-      continue;
+      if (url && await fontUrlUsable(url)) return { url };
     }
     const list = faces.get(key);
     if (!list?.length) continue;
