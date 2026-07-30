@@ -914,6 +914,26 @@ function parseRoute(): Route {
     // /components is the browsable component library, not a tool shortcut — a bare
     // /components would otherwise fall through to /#/tool/components and 404.
     if (pathParts[0] === 'components') { window.location.replace('/#/components'); return { name: 'components' }; }
+    // The remaining view shortlinks that carry an OG share card (scripts/build-view-og.ts
+    // → vercel.json rewrites them to a crawler-visible stub). In production a human never
+    // reaches this branch — the stub bounces them into the hash route — but in dev, and on
+    // any fall-through, these MUST resolve to their view rather than to /#/tool/<slug>,
+    // which would 404 on a tool id that doesn't exist. Same contract as /pro and /start.
+    const PATH_VIEWS: Record<string, { hash: string; route: Route }> = {
+      tools:     { hash: '#/',     route: { name: 'gallery' } },
+      u:         { hash: '#/u',    route: { name: 'utilities' } },
+      utilities: { hash: '#/u',    route: { name: 'utilities' } },
+      c:         { hash: '#/c',    route: { name: 'catalog' } },
+      lab:       { hash: '#/lab',  route: { name: 'lab' } },
+      pdf:       { hash: '#/pdf',  route: { name: 'pdf' } },
+      profile:   { hash: '#/profile', route: { name: 'profile', params: '' } },
+    };
+    const view = PATH_VIEWS[pathParts[0]!];
+    if (view) {
+      const q = window.location.search;
+      window.location.replace(`/${view.hash}${q}`);
+      return view.route.name === 'profile' ? { name: 'profile', params: q.slice(1) } : view.route;
+    }
     // /b and /brand → the Dashboard's Design System tab (shortlinks, not tools).
     if (pathParts[0] === 'b' || pathParts[0] === 'brand') {
       const q = window.location.search ? `${window.location.search.slice(1)}&tab=brand` : 'tab=brand';
