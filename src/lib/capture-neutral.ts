@@ -54,6 +54,13 @@ export function captureNeutralPinned(): boolean {
  */
 export function applyCaptureNeutral(): boolean {
   if (!captureNeutralPinned()) return false;
+  // The MIRROR only, deliberately. flagEnabledSync consults an in-memory override
+  // first, and lib/neuro-demo.ts uses it so a `?neuro` demo link can turn the mode
+  // on for exactly one page load; that precedence is intentional and pinned by a
+  // test, so this must not fight it. No docs recipe uses the demo route, and the
+  // case where one did is caught where it actually matters — NEUTRAL_PROBE in
+  // build-docs-shots.ts looks for the mounted dock in the rendered page, which is
+  // an outcome check no flag-layer ordering can slip past.
   for (const id of NEUTRALISED_FLAGS) setFlagMirror(id, false);
   applyA11yPrefs({});
   return true;
