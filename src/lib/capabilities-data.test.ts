@@ -21,6 +21,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { CAPABILITY_SECTIONS } from './capabilities-data.ts';
 
 /** Just enough of tool.schema.json's shape to read the export-format enum. */
@@ -118,6 +119,29 @@ test('every card carries search keywords', () => {
   assert.deepEqual(bare, [], `cards missing keywords: ${bare.join(', ')}`);
   for (const c of allCards) {
     assert.equal(c.keywords, c.keywords!.toLowerCase(), `keywords for "${c.title}" must be lowercase — the filter lowercases the query, not the haystack`);
+  }
+});
+
+test('every card screenshot resolves to a committed file', () => {
+  // A `shot` slug becomes /info/shots/<slug>.svg in the detail dialog. Those
+  // files are committed baselines (scripts/build-docs-shots.ts), so a typo or a
+  // retired slug is a broken image inside a dialog — invisible until someone
+  // opens that one card. This is the check that makes the mapping safe to grow.
+  const dir = new URL('../../public/info/shots/', import.meta.url);
+  const missing = allCards
+    .filter((c) => c.shot && !existsSync(new URL(`${c.shot}.svg`, dir)))
+    .map((c) => `${c.title} → ${c.shot}.svg`);
+  assert.deepEqual(missing, [], `card screenshots that do not exist: ${missing.join(', ')}`);
+});
+
+test('card screenshots use the committed light variant, never .dark', () => {
+  // The pipeline can emit `<slug>.dark.svg`, but those are NOT committed — a
+  // dark slug resolves only on the machine that generated it and 404s
+  // everywhere else. The dialog frames the light shot on its own light surface
+  // instead; see the `shot` docs in capabilities-data.ts.
+  for (const c of allCards) {
+    if (!c.shot) continue;
+    assert.doesNotMatch(c.shot, /\.dark$/, `card "${c.title}" references a dark-variant shot, which is not committed`);
   }
 });
 

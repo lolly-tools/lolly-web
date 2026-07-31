@@ -394,7 +394,7 @@ function wireCopyButtons(root: ParentNode): void {
 // directly) into the lazily-loaded `caps` namespace, merged into the catalog by the
 // loadNamespace('caps') below. A feature's `desc` carries authored inline HTML, so it
 // stays raw — its translation preserves the same tags (the pipeline validates that).
-function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }>; keywords?: string }): string {
+function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }>; keywords?: string; shot?: string }): string {
   // The modal detail (full feature list) rides in an inert <template>.
   const feats = `<dl class="cap-feat dash-cap-feat">${
     card.features.map((f) => `<div><dt>${escape(t(f.name))}</dt><dd>${t(f.desc)}</dd></div>`).join('')
@@ -414,8 +414,13 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
     ...card.features.map((f) => `${t(f.name)} ${t(f.desc)}`),
     card.keywords ?? '',
   ].join(' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  // The shot is NOT rendered here — only carried on the item, so the dialog can
+  // build an <img> at open time. A 264px card has no room for a screenshot, and
+  // eagerly emitting ~45 <img> tags would fetch ~45 SVGs for a panel where most
+  // are never opened. One image, on demand, for the card you actually clicked.
+  const shotAttr = card.shot ? ` data-cap-shot="${escape(card.shot)}"` : '';
   return `
-    <div class="dash-cap-item" data-cap-hay="${escape(haystack)}">
+    <div class="dash-cap-item" data-cap-hay="${escape(haystack)}"${shotAttr}>
       <button type="button" class="dash-cap-card" data-cap-open aria-haspopup="dialog"
               aria-label="${escape(card.features.length === 1 ? t('{title} — 1 detail', { title: t(card.title) }) : t('{title} — {n} details', { title: t(card.title), n: card.features.length }))}">
         <span class="dash-cap-card-top">
@@ -482,6 +487,10 @@ async function capabilitiesSection(): Promise<string> {
   // sections reads as "broken", so say so in words.
   const empty = `
       <p class="dash-cap-empty" data-cap-empty hidden>${escape(t('Nothing matches that. Try a format (“svg”, “pptx”), a task (“print”, “share”) or a tool name.'))}</p>`;
+  // The dialog is two-pane on a wide screen: the screenshot carries the left
+  // (the thing being described), the feature list the right (what is true about
+  // it). On a card with no shot the figure is removed entirely and the dialog
+  // narrows to a single reading column — an empty pane would be worse than none.
   const modal = `
       <dialog class="dash-cap-modal" data-cap-modal>
         <div class="dash-cap-modal-card">
@@ -490,7 +499,16 @@ async function capabilitiesSection(): Promise<string> {
             <h3 class="dash-cap-modal-title" data-cap-modal-title></h3>
             <button type="button" class="dash-cap-modal-close" data-cap-modal-close aria-label="${escape(t('Close'))}">✕</button>
           </header>
-          <div class="dash-cap-modal-body" data-cap-modal-body></div>
+          <div class="dash-cap-modal-panes">
+            <figure class="dash-cap-modal-shot" data-cap-modal-shot hidden>
+              <!-- NOT loading="lazy": the src is only set when a card is opened, so
+                   there is nothing to defer, and deferring left the pane visibly
+                   blank for a beat after the dialog appeared. -->
+              <img data-cap-modal-img alt="" decoding="async">
+              <figcaption>${escape(t('Screenshot of the app, captured as signed vector'))}</figcaption>
+            </figure>
+            <div class="dash-cap-modal-body" data-cap-modal-body></div>
+          </div>
         </div>
       </dialog>`;
   return collapse({
@@ -1045,14 +1063,35 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     const mIcon = capModal.querySelector<HTMLElement>('[data-cap-modal-icon]')!;
     const mTitle = capModal.querySelector<HTMLElement>('[data-cap-modal-title]')!;
     const mBody = capModal.querySelector<HTMLElement>('[data-cap-modal-body]')!;
+    const mShot = capModal.querySelector<HTMLElement>('[data-cap-modal-shot]');
+    const mImg = capModal.querySelector<HTMLImageElement>('[data-cap-modal-img]');
     const close = () => { if (typeof capModal.close === 'function') capModal.close(); else capModal.removeAttribute('open'); };
     viewEl.querySelectorAll<HTMLButtonElement>('[data-cap-open]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const tpl = btn.closest('.dash-cap-item')?.querySelector<HTMLTemplateElement>('template.dash-cap-detail');
+        const item = btn.closest('.dash-cap-item');
+        const tpl = item?.querySelector<HTMLTemplateElement>('template.dash-cap-detail');
         if (!tpl) return;
+        const title = btn.querySelector('.dash-cap-title')?.textContent ?? '';
         mIcon.innerHTML = btn.querySelector('.dash-cap-icon')?.innerHTML ?? '';
-        mTitle.textContent = btn.querySelector('.dash-cap-title')?.textContent ?? '';
+        mTitle.textContent = title;
         mBody.replaceChildren(tpl.content.cloneNode(true));
+        // The screenshot, only for cards that name one. `src` is set per open
+        // (and cleared on the way out) so the dialog can never show the previous
+        // card's picture for the instant before a new one decodes.
+        const slug = (item as HTMLElement | null)?.dataset.capShot;
+        if (mShot && mImg) {
+          if (slug) {
+            mImg.src = `/info/shots/${slug}.svg`;
+            // The shot illustrates prose that is right beside it, so a described
+            // alt would be read twice. Name what it is, and let the list speak.
+            mImg.alt = t('{title} — screenshot', { title });
+            mShot.hidden = false;
+          } else {
+            mImg.removeAttribute('src');
+            mShot.hidden = true;
+          }
+          capModal.classList.toggle('has-shot', Boolean(slug));
+        }
         if (typeof capModal.showModal === 'function') capModal.showModal(); else capModal.setAttribute('open', '');
       });
     });

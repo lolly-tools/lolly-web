@@ -94,6 +94,25 @@ export interface CapCard {
   title: string;
   features: CapFeature[];
   /**
+   * Slug of a committed docs screenshot to show in this card's detail dialog —
+   * `<slug>` resolves to `/info/shots/<slug>.svg`, the same signed vector
+   * captures the /info site uses (see scripts/build-docs-shots.ts).
+   *
+   * Three rules, all load-bearing:
+   *  - LIGHT VARIANT ONLY. The pipeline also emits `<slug>.dark.svg`, but those
+   *    are not committed, so referencing one 404s outside the machine that
+   *    generated it. The dialog frames the shot on its own light surface in both
+   *    themes instead of pretending a dark variant exists.
+   *  - The slug must EXIST. A missing file is a broken image in a dialog, so
+   *    capabilities-data.test.ts asserts every slug resolves to a real file.
+   *  - The shot must actually DEPICT the card. Each slug here was picked by
+   *    reading its recipe's alt text in docs/*.md, not by guessing from the
+   *    name. A screenshot of the wrong screen is worse than no screenshot —
+   *    which is why `shot` is optional and roughly a third of the cards have
+   *    none rather than a loose approximation.
+   */
+  shot?: string;
+  /**
    * Extra search terms for this card — NOT rendered and NOT translated.
    * The visible copy is already indexed by the Capabilities search; this is for
    * the words a person types that the copy doesn't literally use (format ids,
@@ -119,18 +138,18 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'making editing', id: 'cap-making', title: 'Making things', icon: ICONS.edit,
     desc: 'The surfaces you work on. All of them drive the same engine and the same render path, so the preview on screen is the file that comes out — there is no separate render step to be surprised by.',
     cards: [
-      { icon: ICONS.edit, title: 'Tool editing', keywords: 'editor sidebar preview wysiwyg zoom pan shortcuts keyboard dark mode', features: [
+      { icon: ICONS.edit, title: 'Tool editing', shot: 'aud-web-split', keywords: 'editor sidebar preview wysiwyg zoom pan shortcuts keyboard dark mode', features: [
         { name: 'Controls left, canvas right', desc: 'Change any input and the canvas re-renders on the spot — no “generate” button, no queue.' },
         { name: 'The preview is the file', desc: 'The canvas is rendered by the same engine that writes the export, from the same inputs. What you are looking at is what the file will contain.' },
         { name: 'Zoom & pan', desc: 'Cmd/Ctrl-scroll or pinch to zoom; <code>Space</code>-drag or middle-drag to pan; <code>0</code> fits the canvas, <code>1</code> sets 100%.' },
         { name: 'Light & dark canvas', desc: 'Tools that declare it read your device’s light/dark preference and adapt the canvas. Tools that don’t declare it render one fixed way, on purpose — a printed piece has no dark mode.' },
       ] },
-      { icon: ICONS.canvas, title: 'Free-canvas layout', keywords: 'layout studio drag resize rotate snap guides text box shapes design', features: [
+      { icon: ICONS.canvas, title: 'Free-canvas layout', shot: 'pen-editor-rail', keywords: 'layout studio drag resize rotate snap guides text box shapes design', features: [
         { name: 'Direct manipulation', desc: 'Some tools open as a chromeless free canvas (<strong>Layout Studio</strong>): drag, resize and rotate boxes of text, shapes and images, with guides that snap to edges and centres.' },
         { name: 'Edit in place', desc: 'Double-click a text box to type; fills and images come from the same shared pickers as every other tool.' },
         { name: 'Still one render path', desc: 'A free canvas exports through the identical engine path as a template-driven tool — so the canvas <em>is</em> the file, and every export format below applies to it unchanged.' },
       ] },
-      { icon: ICONS.doc, title: 'Documents & decks', keywords: 'multi page pdf pagination deck slides presentation pptx doc editor', features: [
+      { icon: ICONS.doc, title: 'Documents & decks', shot: 'ov2-deck-studio-output', keywords: 'multi page pdf pagination deck slides presentation pptx doc editor', features: [
         { name: 'Pages that flow', desc: 'Text and image blocks flow onto as many pages as they need, with a manual page break where you want one. Each page is a true, separately-sized PDF page — A4, US Letter or A5, portrait or landscape. See the <strong>Multi-Page PDF</strong> tool.' },
         { name: 'Editable hand-off', desc: 'A deck exports to PPTX as native text boxes, real shapes and extractable images — not slides of flat screenshots. See <strong>Export formats → Documents &amp; data</strong>.' },
       ] },
@@ -139,12 +158,12 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Frames never leave the device', desc: 'The shell reads frames locally and hands the tool plain RGBA pixels; nothing is uploaded, and the camera is released the moment you stop or leave the tool.' },
         { name: 'Or just a snapshot', desc: '“Take a photo” in any image picker grabs a single frame straight into your local image library — no upload, no camera roll.' },
       ] },
-      { icon: ICONS.mobile, title: 'On a phone', keywords: 'mobile touch sheet gestures pinch tablet ipad android', features: [
+      { icon: ICONS.mobile, title: 'On a phone', shot: 'vt-phone-palette', keywords: 'mobile touch sheet gestures pinch tablet ipad android', features: [
         { name: 'Controls sheet', desc: 'Inputs become a sheet with a drag grip that snaps to peek / half / full, so the preview stays visible while you edit.' },
         { name: 'Render sheet', desc: 'A floating Render button opens every format, size, copy, save and share control, sized for touch.' },
         { name: 'Touch canvas', desc: 'Pinch to zoom, drag to pan, double-tap to fit.' },
       ] },
-      { icon: ICONS.install, title: 'Install & full-screen', keywords: 'pwa offline home screen app install fullscreen kiosk deep link', features: [
+      { icon: ICONS.install, title: 'Install & full-screen', shot: 'exp-url-full', keywords: 'pwa offline home screen app install fullscreen kiosk deep link', features: [
         { name: 'Installable PWA', desc: 'Install from the address bar or add to your home screen for a full-screen app; it updates itself when online and keeps working when you are not.' },
         { name: 'Open in a set mode', desc: '<code>full</code> opens fullscreen with the sidebar collapsed; <code>options</code> opens with the export panel already expanded.' },
       ] },
@@ -154,16 +173,16 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'formats export', id: 'cap-formats', title: 'Export formats', icon: ICONS.image,
     desc: '30 format ids across vector, raster, print, motion, documents and data (jpg and jpeg are one encoder under two names). A tool offers only the formats its manifest declares, and the picker hides any this browser cannot encode — so the list you see is the list that will actually write a file.',
     cards: [
-      { icon: ICONS.vector, title: 'Vector', keywords: 'svg eps emf dxf illustrator postscript outlines paths cut file laser cnc plotter', features: [
+      { icon: ICONS.vector, title: 'Vector', shot: 'vt-wordmark-vector', keywords: 'svg eps emf dxf illustrator postscript outlines paths cut file laser cnc plotter', features: [
         { name: 'SVG', desc: 'Scalable and self-contained. Text runs are shaped with HarfBuzz and written as real <code>&lt;path&gt;</code> outlines, so the file renders identically on a machine that has never had the font. A run with no resolvable font file falls back to a live <code>&lt;text&gt;</code> element rather than silently dropping.' },
         { name: 'EMF · EPS · EPS (CMYK)', desc: 'EMF pastes into PowerPoint and Word as editable vector; EPS is PostScript vector for Illustrator and press workflows, with a DeviceCMYK variant. Text is outlined to paths in all three.' },
         { name: 'DXF (cut file)', desc: 'AutoCAD R12 interchange for laser cutters, vinyl plotters and CNC/CAD: outline paths in millimetres, colour mapped to the nearest AutoCAD Color Index. Line-art only — no fills, gradients or images.' },
       ] },
-      { icon: ICONS.image, title: 'Raster', keywords: 'png jpg jpeg webp avif ico bitmap dpi icc srgb transparent alpha hdr', features: [
+      { icon: ICONS.image, title: 'Raster', shot: 'exp-format-picker', keywords: 'png jpg jpeg webp avif ico bitmap dpi icc srgb transparent alpha hdr', features: [
         { name: 'PNG · JPG · WebP · AVIF · ICO', desc: 'Alpha where the format supports it, the real DPI written into the file (PNG carries a <code>pHYs</code> chunk), and an embedded sRGB ICC profile so colour reproduces rather than drifts.' },
         { name: 'HDR (Rec.2100 PQ)', desc: '<code>hdr</code> is available on PNG, JPG, AVIF and TIFF. HDR PNG is written as a genuine 16-bit IDAT; HDR JPG is an ordinary SDR JPEG with the HDR rendition appended as an ISO 21496-1 gain map. WebP is deliberately excluded — it has no working HDR decode path, so a PQ WebP would just look dark.' },
       ] },
-      { icon: ICONS.printer, title: 'Print', keywords: 'pdf cmyk tiff press prepress fogra swop bleed', features: [
+      { icon: ICONS.printer, title: 'Print', shot: 'exp-export-dims', keywords: 'pdf cmyk tiff press prepress fogra swop bleed', features: [
         { name: 'PDF · Print PDF (CMYK) · Print TIFF (CMYK)', desc: 'True page sizes and DeviceCMYK separations. Print TIFF needs desktop-class canvas readback and is hidden where it cannot be produced. Full detail in <strong>Print production</strong> below.' },
       ] },
       { icon: ICONS.film, title: 'Motion', keywords: 'mp4 webm gif apng animated webp video animation loop svg keyframes fps', features: [
@@ -179,7 +198,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.zip, title: 'Bundles', keywords: 'zip archive multiple formats password encrypt download', features: [
         { name: 'ZIP', desc: 'Several formats of one design in a single download, optionally password-locked (ZipCrypto or AES-256), with any PDF inside individually locked too. Visual formats only — data and video are not bundled.' },
       ] },
-      { icon: ICONS.layers, title: 'Deep pixels (float)', keywords: 'exr openexr radiance hdr rgbe float 32 bit vfx compositing nuke depth', features: [
+      { icon: ICONS.layers, title: 'Deep pixels (float)', shot: 'exp-hdr-card', keywords: 'exr openexr radiance hdr rgbe float 32 bit vfx compositing nuke depth', features: [
         { name: 'OpenEXR · Radiance HDR', desc: 'Float interchange for compositing and VFX. The engine has both writers; they are fed by a float rasterisation only the Node/CLI shell can supply today, so on the web they never enter the picker — you will see them from the CLI, not from this browser.' },
         { name: 'Bit depth is stated, not chosen', desc: 'Where the pipeline writes 16 bits the export panel says so rather than offering a control over a decision that has already been made. The one honest opt-out is the other direction — <code>?depth=8</code>, to keep a file small.' },
       ] },
@@ -189,23 +208,23 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'import', id: 'cap-import', title: 'Import formats', icon: ICONS.install,
     desc: 'What you can bring in. Every file is parsed on your device and none of them are uploaded: design files open as an editable layout, images join your local library, tables fill a tool’s repeating blocks.',
     cards: [
-      { icon: ICONS.image, title: 'Images', keywords: 'png jpg jpeg webp avif heic heif iphone photo exif gps strip gif apng animated svg sanitise', features: [
+      { icon: ICONS.image, title: 'Images', shot: 'auth-catalogue-uploads', keywords: 'png jpg jpeg webp avif heic heif iphone photo exif gps strip gif apng animated svg sanitise', features: [
         { name: 'PNG · JPG · WebP · AVIF · HEIC/HEIF', desc: 'Drop a photo into any image picker or your <strong>My images</strong> library. Stills are downscaled and stripped of EXIF/GPS on ingest; iPhone HEIC/HEIF decodes through a bundled fallback even where the browser cannot. AVIF reads wherever the browser decodes it.' },
         { name: 'Animated GIF · aPNG · animated WebP', desc: 'Recognised and kept <em>verbatim</em>, frames intact — a looping GIF stays a looping GIF when you place it, rather than collapsing to its first frame.' },
         { name: 'SVG', desc: 'Sanitised on the way in — scripts, <code>on*</code> handlers and <code>javascript:</code> URLs are stripped — then normalised to a clean viewBox before it is stored.' },
       ] },
-      { icon: ICONS.vector, title: 'Design files', keywords: 'figma fig penpot illustrator ai indesign idml pdf sketch import layout editable', features: [
+      { icon: ICONS.vector, title: 'Design files', shot: 'layout-studio', keywords: 'figma fig penpot illustrator ai indesign idml pdf sketch import layout editable', features: [
         { name: 'Figma · Penpot · Illustrator · InDesign · PDF', desc: 'Layout Studio parses a native Figma <code>.fig</code>, a Penpot export, an Illustrator <code>.ai</code>, an InDesign <code>.idml</code> or any <code>.pdf</code> in the browser into editable boxes. Text stays text, shapes stay shapes, and art too complex to decompose flattens faithfully rather than disappearing.' },
         { name: 'Any SVG is the wide door', desc: 'Nearly every design app exports SVG, and an SVG becomes an editable, brand-conformed layout. If your app is not named above, this is the route in.' },
       ] },
-      { icon: ICONS.doc, title: 'Data & animation', keywords: 'csv json table rows paste spreadsheet lottie bodymovin dotlottie', features: [
+      { icon: ICONS.doc, title: 'Data & animation', shot: 'auth-blocks-rows', keywords: 'csv json table rows paste spreadsheet lottie bodymovin dotlottie', features: [
         { name: 'CSV · JSON', desc: 'Paste or drop a table and a tool’s repeating blocks fill from it — RFC 4180 CSV (quoted fields, embedded newlines) or JSON rows/arrays, up to a thousand rows.' },
         { name: 'Lottie (.json · .lottie)', desc: 'Bodymovin JSON and dotLottie animations are validated and placed as live vector animations.' },
       ] },
       { icon: ICONS.film, title: 'Video', keywords: 'mp4 mov webm footage clip verbatim transcode', features: [
         { name: 'MP4 · MOV · WebM', desc: 'Stored <em>verbatim</em> — never transcoded — with dimensions probed locally, ready to place in motion tools.' },
       ] },
-      { icon: ICONS.credential, title: 'Content Credentials (read)', keywords: 'c2pa verify provenance manifest signature authenticity cai check', features: [
+      { icon: ICONS.credential, title: 'Content Credentials (read)', shot: 'cc-verify-drop', keywords: 'c2pa verify provenance manifest signature authenticity cai check', features: [
         { name: 'Verify provenance in any file', desc: 'Verify checks a signed <a href="https://c2pa.org" target="_blank" rel="noopener">C2PA</a> manifest in PDF, PNG/aPNG, JPG, GIF, SVG, TIFF, WebP, MP4 and WebM/MKV — cryptographically, entirely on-device, on files Lolly did not make. See <a href="#/verify">Verify</a>.' },
       ] },
     ],
@@ -214,7 +233,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'print', id: 'cap-print', title: 'Print production', icon: ICONS.printer,
     desc: 'Press-ready output computed on your device. The engine owns the dimension and colour maths and each shell draws it, so a CLI-rendered press file and a browser-rendered one are the same file. No print service, nothing uploaded.',
     cards: [
-      { icon: ICONS.ruler, title: 'Physical sizing', keywords: 'mm cm inch points picas dpi resolution 300 size dimensions bleed page', features: [
+      { icon: ICONS.ruler, title: 'Physical sizing', shot: 'um-units-a4', keywords: 'mm cm inch points picas dpi resolution 300 size dimensions bleed page', features: [
         { name: 'Real units & DPI', desc: 'Set width × height in <code>mm</code>, <code>cm</code>, <code>in</code>, <code>pt</code> or <code>pc</code> at a DPI (300 by default). PDF becomes a true page, raster renders the exact pixel count and records the resolution, SVG keeps the physical unit with a px viewBox.' },
         { name: 'One implementation of the maths', desc: 'Unit conversion lives in a single engine module and each shell’s export bridge applies it per format — which is why the CLI and the browser cannot drift on page size.' },
       ] },
@@ -230,7 +249,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.id, title: 'Press conditions', keywords: 'outputintent fogra39 fogra51 swop icc rip coated uncoated profile', features: [
         { name: 'OutputIntent', desc: 'A CMYK PDF declares its target press condition — Coated FOGRA39 by default, with FOGRA51, SWOP and others available — so a RIP knows how the inks are meant to read. Screen and raster output stay sRGB.' },
       ] },
-      { icon: ICONS.marks, title: 'Bleed & marks', keywords: 'crop marks registration trimbox bleedbox trim plate printer', features: [
+      { icon: ICONS.marks, title: 'Bleed & marks', shot: 'exp-print-marks-card', keywords: 'crop marks registration trimbox bleedbox trim plate printer', features: [
         { name: 'Trim, bleed & marks', desc: 'Add bleed with declared TrimBox/BleedBox, plus crop, registration and bleed marks in the margin. Registration marks print on every plate, which is what makes them useful.' },
       ] },
       { icon: ICONS.swatch, title: 'Colour bars', keywords: 'colour bar calibration verification strip process control operator', features: [
@@ -239,7 +258,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.stamp, title: 'Proof-margin credits', keywords: 'timestamp made with credit annotation proof margin trimmed', features: [
         { name: 'Trimmed at the final cut', desc: 'An optional timestamp, “Made with…” line and tool/author credit sit in the margin. They are a proof annotation and are cut off in the finished piece.' },
       ] },
-      { icon: ICONS.lock, title: 'Lockable press files', keywords: 'password protect pdf encrypt aes open password', features: [
+      { icon: ICONS.lock, title: 'Lockable press files', shot: 'exp-pdf-password', keywords: 'password protect pdf encrypt aes open password', features: [
         { name: 'Passwords apply here too', desc: 'Any PDF, Print and CMYK PDFs included, can carry a <strong>Standard</strong> (40-bit, link-embeddable) or <strong>Strong</strong> (AES-256) open-password. Full detail under <strong>Security &amp; access control</strong>.' },
       ] },
     ],
@@ -248,11 +267,11 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'work sessions projects sharing', id: 'cap-work', title: 'Your work: save, organise, share', icon: ICONS.save,
     desc: 'Where what you make lives, and how it gets to other people. All of it is device-local by default — there is no account and no sync server — and every route out is one you trigger.',
     cards: [
-      { icon: ICONS.save, title: 'Sessions & projects', keywords: 'save named session continue folders organise nest drag rename projects', features: [
+      { icon: ICONS.save, title: 'Sessions & projects', shot: 'projects', keywords: 'save named session continue folders organise nest drag rename projects', features: [
         { name: 'Named sessions', desc: 'Keep as many saved sessions per tool as you like, all device-local; Continue reopens your most recent.' },
         { name: 'Projects & folders', desc: 'Group sessions into folders that nest as deep as you like in the <strong>Projects</strong> view — drag to move, rename, and file a new session straight into a folder as you save it.' },
       ] },
-      { icon: ICONS.link, title: 'Share a link', keywords: 'url share permalink short link copy paste bookmark commit query params', features: [
+      { icon: ICONS.link, title: 'Share a link', shot: 'aud-url-mode-qr', keywords: 'url share permalink short link copy paste bookmark commit query params', features: [
         { name: 'The URL is the design', desc: 'Every input lives in the link. Paste it to a colleague, bookmark it, or commit it to a repo — it is text, so it diffs.' },
         { name: 'Shortest link', desc: 'A large design would make a long URL, so the Share dialog offers a <strong>Shortest link</strong> that packs the whole state into a compact token. The readable long form is always available alongside it.' },
         { name: 'Act on open', desc: 'Append <code>&amp;export</code> to download the file on open, or <code>&amp;copy</code> to arm copy-to-clipboard.' },
@@ -263,19 +282,19 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'A selection', desc: 'Multi-select tiles (checkbox, marquee drag, or Shift-click) and render the lot in one pass; a single session renders straight to its native file.' },
         { name: 'Everything you have', desc: 'The Storage panel renders <em>every</em> saved session across all tools into one nested zip, produced alongside the profile/data backup — so a single export carries both the editable state and the finished files.' },
       ] },
-      { icon: ICONS.grid, title: 'Batch (Pro) mode', keywords: 'grid rows variants languages sizes matrix csv batch pro', features: [
+      { icon: ICONS.grid, title: 'Batch (Pro) mode', shot: 'ov2-batch-grid', keywords: 'grid rows variants languages sizes matrix csv batch pro', features: [
         { name: 'A grid of variants', desc: 'Each row is a set of inputs and the whole grid exports together — a dozen languages, or every size variant, in one pass.' },
       ] },
-      { icon: ICONS.transfer, title: 'Move to another device', keywords: 'backup restore export import migrate zip checksum no account offline', features: [
+      { icon: ICONS.transfer, title: 'Move to another device', shot: 'pd-transfer-controls', keywords: 'backup restore export import migrate zip checksum no account offline', features: [
         { name: 'Portable backup', desc: 'One checksummed zip carries your profile, every session and thumbnail, your images and your preferences; import merges it into another install. No account, no cloud, no sync service to depend on.' },
       ] },
-      { icon: ICONS.image, title: 'Copy to clipboard', keywords: 'clipboard paste slack email doc copy image', features: [
+      { icon: ICONS.image, title: 'Copy to clipboard', shot: 'export-panel', keywords: 'clipboard paste slack email doc copy image', features: [
         { name: 'Straight into a message', desc: 'Paste an image directly into Slack, email or a document. Where the browser blocks clipboard images, it falls back to a download rather than failing silently.' },
       ] },
-      { icon: ICONS.extension, title: 'Browser extension', keywords: 'chrome extension capture screenshot page grab', features: [
+      { icon: ICONS.extension, title: 'Browser extension', shot: 'exp-url-shot-notice', keywords: 'chrome extension capture screenshot page grab', features: [
         { name: 'Capture into a tool', desc: 'Pull a page or a screenshot out of the browser and into a Lolly tool to finish and export it.' },
       ] },
-      { icon: ICONS.cube, title: 'A tool as an image URL', keywords: 'embed img src css url background live render hotlink asset', features: [
+      { icon: ICONS.cube, title: 'A tool as an image URL', shot: 'auth-url-render', keywords: 'embed img src css url background live render hotlink asset', features: [
         { name: 'Just an asset URL', desc: 'A tool render is addressable as an image, so a template can drop it into an <code>&lt;img src&gt;</code> or a CSS <code>url()</code> exactly like a library image — and it re-renders from the link rather than going stale as a copied file would.' },
       ] },
     ],
@@ -284,13 +303,13 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'platforms', id: 'cap-platforms', title: 'Platforms & runtimes', icon: ICONS.layers,
     desc: 'One platform-agnostic engine — currently HostV1 1.92 — behind every surface. The engine has no knowledge of the DOM, storage or networking; each host injects those through a versioned capability bridge, which is the mechanism that stops the GUI and the CLI from diverging.',
     cards: [
-      { icon: ICONS.globe, title: 'Web (PWA)', keywords: 'browser chrome safari firefox offline installable service worker', features: [
+      { icon: ICONS.globe, title: 'Web (PWA)', shot: 'gallery', keywords: 'browser chrome safari firefox offline installable service worker', features: [
         { name: 'Installable & offline', desc: 'Fully usable offline after the first load, installs as an app, and updates itself when it next has a connection.' },
       ] },
       { icon: ICONS.desktop, title: 'Desktop', keywords: 'mac macos linux windows tauri native app', features: [
         { name: 'macOS & Linux', desc: 'Native packages built with Tauri, running the same engine with filesystem-backed storage instead of IndexedDB.' },
       ] },
-      { icon: ICONS.phone, title: 'Mobile', keywords: 'ios android tauri app store native', features: [
+      { icon: ICONS.phone, title: 'Mobile', shot: 'incl-utility-card', keywords: 'ios android tauri app store native', features: [
         { name: 'iOS & Android', desc: 'Installable mobile packages via Tauri, with the touch-first UI described under <strong>Making things</strong>.' },
       ] },
       { icon: ICONS.terminal, title: 'Command line', keywords: 'cli headless script ci pipeline stdout node npm', features: [
@@ -310,12 +329,12 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'automation determinism ai', id: 'cap-automation', title: 'Automation & reproducibility', icon: ICONS.bot,
     desc: 'Built to be driven by a script, a pipeline or an agent as easily as by a person — and to produce the same bytes when it is. Output here is a build artifact, not a stochastic guess.',
     cards: [
-      { icon: ICONS.url, title: 'URL mode', keywords: 'query params link api get request deep link parameters reserved', features: [
+      { icon: ICONS.url, title: 'URL mode', shot: 'ov2-url-palette', keywords: 'query params link api get request deep link parameters reserved', features: [
         { name: 'Every input is a parameter', desc: 'Inputs are URL parameters by design — this is the contract, not a convenience feature layered on top.' },
         { name: '29 reserved controls', desc: 'Alongside your inputs: <code>format</code>, <code>export</code>, <code>copy</code>, <code>width</code>/<code>w</code>, <code>height</code>/<code>h</code>, <code>unit</code>, <code>dpi</code>, <code>bleed</code>, <code>marks</code>, <code>cuts</code>, <code>c2pa</code>, <code>imprint</code>, <code>durable</code>, <code>hdr</code>, <code>depth</code>, <code>password</code>, <code>profile</code>, <code>slot</code>, <code>output</code>, <code>filename</code>, <code>lang</code>, <code>full</code>, <code>options</code>, <code>nostage</code>, <code>_v</code>, <code>z</code>, <code>zx</code>. Those names are reserved, so a tool input can never shadow one.' },
         { name: 'Compact encoding', desc: 'A tool can opt into short parameter aliases, <code>#</code>-less colours and tilde-delimited arrays, which is what keeps a rich design inside a pasteable link.' },
       ] },
-      { icon: ICONS.terminal, title: 'CLI & pipelines', keywords: 'ci cd build script og image social card generate makefile github actions', features: [
+      { icon: ICONS.terminal, title: 'CLI & pipelines', shot: 'vt-d3-url-chart', keywords: 'ci cd build script og image social card generate makefile github actions', features: [
         { name: 'Generate at build time', desc: 'Produce OG images, QR codes, social cards and data visuals as a build step, repeatably — instead of committing binaries to Git and hoping someone remembers to regenerate them.' },
       ] },
       { icon: ICONS.mcp, title: 'MCP server (add-on)', keywords: 'model context protocol agent claude ide connector oauth bearer token render', features: [
@@ -324,10 +343,10 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Known limit: this one is hosted', desc: 'Unlike the rest of Lolly the MCP server is <strong>server-side</strong> — covering the full format range means driving a headless browser against a built web shell — so it is <strong>not suitable for offline or air-gapped deployments</strong>. The on-device shells remain the offline path.' },
         { name: 'Connecting a client', desc: 'Register the endpoint as a custom connector (OAuth 2.1) in any client that supports one, or point an MCP-capable agent or IDE at it with a bearer token. Either way it authenticates before it can render — see <strong>Security &amp; access control</strong>.' },
       ] },
-      { icon: ICONS.bot, title: 'Why agents suit this', keywords: 'llm ai prompt tokens deterministic cheap no drift hallucination', features: [
+      { icon: ICONS.bot, title: 'Why agents suit this', shot: 'um-compact-shortkeys', keywords: 'llm ai prompt tokens deterministic cheap no drift hallucination', features: [
         { name: 'Cheap and deterministic', desc: 'A parameterised URL is a handful of tokens and renders the same press-quality result every time, locally. There is no model in the render path, so there is no prompt drift and no stochastic surprise in production.' },
       ] },
-      { icon: ICONS.repeat, title: 'Same inputs, same file', keywords: 'deterministic reproducible byte identical version pin audit diff regression', features: [
+      { icon: ICONS.repeat, title: 'Same inputs, same file', shot: 'at2-token-refs-in-url', keywords: 'deterministic reproducible byte identical version pin audit diff regression', features: [
         { name: 'One render path', desc: 'Web, mobile, desktop and CLI share the engine; there is exactly one code path from inputs to a file.' },
         { name: 'Pin the version', desc: 'Pin a tool version with <code>_v</code> and a saved link keeps rendering the way it did the day you made it, even after the tool moves on.' },
         { name: 'Auditable by inspection', desc: 'No model, no server and no randomness in the render path, so an output can be reviewed, diffed and version-controlled like any other build artifact.' },
@@ -338,23 +357,23 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'brand', id: 'cap-brand', title: 'Brand & design system', icon: ICONS.swatch,
     desc: 'Design decisions are fixed at the template level and only the inputs meant to vary are exposed. The constraint is the product: whatever anyone makes lands inside the rules the tool author set.',
     cards: [
-      { icon: ICONS.brush, title: 'Constraint-first tools', keywords: 'guardrails brand guidelines compliance lock template author', features: [
+      { icon: ICONS.brush, title: 'Constraint-first tools', shot: 'aud-approve-the-tool', keywords: 'guardrails brand guidelines compliance lock template author', features: [
         { name: 'Guardrails, not guidelines', desc: 'Authors hard-code typography, colour and spacing; users fill in content. A guideline asks people to comply — a tool that only permits on-brand output does not have to.' },
       ] },
-      { icon: ICONS.swatch, title: 'Tokens, themes & palette', keywords: 'design tokens dtcg theme palette colour picker cmyk swatch variables', features: [
+      { icon: ICONS.swatch, title: 'Tokens, themes & palette', shot: 'bs-token-editor', keywords: 'design tokens dtcg theme palette colour picker cmyk swatch variables', features: [
         { name: 'Defined once, used everywhere', desc: 'Shared design tokens and multiple themes; the brand palette appears in every colour picker, carrying measured CMYK ink values wherever they are known.' },
       ] },
-      { icon: ICONS.circles, title: 'Themable icons & backgrounds', keywords: 'icon library recolour two colour background pattern decorative pairing', features: [
+      { icon: ICONS.circles, title: 'Themable icons & backgrounds', shot: 'aud-brand-catalogue', keywords: 'icon library recolour two colour background pattern decorative pairing', features: [
         { name: 'Recolour to a brand pairing', desc: 'A library of two-colour icons and decorative backgrounds recolour to a chosen brand pairing in the asset picker. The colour choice rides inside the asset id, so it survives URL mode and re-bakes on every render instead of being flattened once.' },
       ] },
-      { icon: ICONS.font, title: 'Type', keywords: 'font variable ttf otf woff google fonts upload family weight local', features: [
+      { icon: ICONS.font, title: 'Type', shot: 'bs-type-specimen', keywords: 'font variable ttf otf woff google fonts upload family weight local', features: [
         { name: 'Local variable fonts', desc: 'The brand faces ship with the app — no webfont request and no CDN dependency at render time, which is also why export works offline.' },
         { name: 'Bring your own', desc: 'Upload a TTF/OTF/WOFF or pick a Google Font that is fetched once and then kept on-device; family, weight and style are parsed from the file itself. Uploaded faces feed the same text-outlining path, so they export as paths like the bundled ones.' },
       ] },
-      { icon: ICONS.user, title: 'Personalisation', keywords: 'profile name email headshot prefill bind opt in signature', features: [
+      { icon: ICONS.user, title: 'Personalisation', shot: 'pd-use-my-details', keywords: 'profile name email headshot prefill bind opt in signature', features: [
         { name: 'Bind an input to your profile', desc: 'Any input can pre-fill from your saved name, contact details or headshot — opt-in, and overridable per session.' },
       ] },
-      { icon: ICONS.tag, title: 'Maturity tags', keywords: 'official community experimental watermark status review approved', features: [
+      { icon: ICONS.tag, title: 'Maturity tags', shot: 'fq-experimental-badge', keywords: 'official community experimental watermark status review approved', features: [
         { name: 'Approved by default', desc: 'Every tool declares official, community or experimental. Experimental tools watermark their exports — applied by the host at export time, so it cannot be edited out of the tool.' },
       ] },
     ],
@@ -363,19 +382,19 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'privacy', id: 'cap-privacy', title: 'Privacy & data ownership', icon: ICONS.shield,
     desc: 'Rendering, storage and export never require a server, so creative production stays on the device by default. The two optional hosted add-ons are named explicitly rather than folded into the claim.',
     cards: [
-      { icon: ICONS.shield, title: 'On-device by default', keywords: 'no cloud local analytics telemetry tracking server private', features: [
+      { icon: ICONS.shield, title: 'On-device by default', shot: 'pv-ondevice-badge', keywords: 'no cloud local analytics telemetry tracking server private', features: [
         { name: 'No cloud rendering, no telemetry', desc: 'Rendering happens locally and there is no analytics or telemetry collection. What you create is on your machine.' },
       ] },
-      { icon: ICONS.device, title: 'Local storage', keywords: 'indexeddb browser database quota clear storage usage sessions', features: [
+      { icon: ICONS.device, title: 'Local storage', shot: 'pd-storage-meter', keywords: 'indexeddb browser database quota clear storage usage sessions', features: [
         { name: 'Your browser’s database', desc: 'Profile, saved sessions, uploaded images and the catalogue cache live in IndexedDB (the filesystem on desktop). The Storage panel shows what is stored, how much space it takes, and clears it.' },
       ] },
-      { icon: ICONS.image, title: 'Image hygiene', keywords: 'exif gps metadata strip downscale my images library location', features: [
+      { icon: ICONS.image, title: 'Image hygiene', shot: 'aud-strip-data', keywords: 'exif gps metadata strip downscale my images library location', features: [
         { name: 'Stripped on the way in', desc: 'Images you add are downscaled and stripped of EXIF/GPS before they are stored in your local library — so a photo you place cannot leak the location it was taken.' },
       ] },
-      { icon: ICONS.shield, title: 'On-device utilities', keywords: 'strip hidden data metadata remove clean pdf jpeg png svg transform file', features: [
+      { icon: ICONS.shield, title: 'On-device utilities', shot: 'use-utilities', keywords: 'strip hidden data metadata remove clean pdf jpeg png svg transform file', features: [
         { name: 'File in, clean file out', desc: 'Transform utilities take a file you supply, process it entirely on your device and hand back a cleaned copy — never uploaded, never watermarked. <strong>Strip Hidden Data</strong> removes EXIF/GPS, camera, author and editor metadata from JPEG, PNG, SVG and PDF. This is the replacement for pasting a confidential file into a single-purpose website.' },
       ] },
-      { icon: ICONS.credential, title: 'Content Credentials (write)', keywords: 'c2pa cai provenance sign manifest tamper evident authorship', features: [
+      { icon: ICONS.credential, title: 'Content Credentials (write)', shot: 'exp-c2pa-card', keywords: 'c2pa cai provenance sign manifest tamper evident authorship', features: [
         { name: 'Signed on your device', desc: 'Exports can carry a signed <a href="https://c2pa.org" target="_blank" rel="noopener">C2PA</a> manifest — the <a href="https://contentauthenticity.org" target="_blank" rel="noopener">Content Authenticity Initiative</a> standard — created locally, so a file can prove what made it with no cloud signing service in the loop. PDF, PNG, JPG, GIF, SVG, TIFF, WebP, MP4 and WebM all take the credential, recording the tool, the author (profile opt-in) and the export.' },
       ] },
       { icon: ICONS.lock, title: 'Self-host & air-gap', keywords: 'firewall on premise intranet offline deploy static no backend', features: [
@@ -390,7 +409,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.link, title: 'Password-gated links', keywords: 'encrypted share link aes gcm pbkdf2 password recipient ciphertext', features: [
         { name: 'AES-256-GCM in the URL', desc: 'Any share link can be encrypted: the design is AES-256-GCM-encrypted under a key stretched from your password with PBKDF2-SHA256 at 210,000 iterations. The link carries <em>only</em> ciphertext — opening it prompts the recipient and rebuilds the design in their browser. The password never travels in the link and never reaches a server.' },
       ] },
-      { icon: ICONS.lock, title: 'Locked PDFs', keywords: 'pdf password encrypt aes 256 rc4 40 bit open password acrobat', features: [
+      { icon: ICONS.lock, title: 'Locked PDFs', shot: 'cc-pdf-lock', keywords: 'pdf password encrypt aes 256 rc4 40 bit open password acrobat', features: [
         { name: 'Two strengths, stated plainly', desc: '<strong>Standard</strong> is a 40-bit open-password: it opens in any PDF app and can ride inside a share link — a deterrent for short-lived material, not real cryptography. <strong>Strong</strong> is AES-256: it opens only in newer PDF apps, and its password is typed at export and never carried in a link. Strong also applies to Print/CMYK and multi-page PDFs.' },
       ] },
       { icon: ICONS.zip, title: 'Locked downloads', keywords: 'zip encryption zipcrypto winzip aes 7zip windows explorer unzip', features: [
@@ -404,7 +423,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.mcp, title: 'Agent endpoint access', keywords: 'oauth 2.1 pkce bearer token connector mcp stateless session', features: [
         { name: 'OAuth 2.1 on the MCP server', desc: 'The hosted MCP server is gated by OAuth 2.1 — register it as a custom connector, or bring a bearer token from an MCP-capable agent or IDE. Client registration, authorization codes and tokens are short-lived signed values, PKCE-protected and verified on every call, so there is no session store to breach. The on-device shells need no server at all.' },
       ] },
-      { icon: ICONS.credential, title: 'Tamper-evident provenance', keywords: 'c2pa verify signature integrity chain of custody', features: [
+      { icon: ICONS.credential, title: 'Tamper-evident provenance', shot: 'cc-change-history', keywords: 'c2pa verify signature integrity chain of custody', features: [
         { name: 'Prove what made a file', desc: 'Exports can carry a signed on-device C2PA credential recording the tool, author and export, and <a href="#/verify">Verify</a> checks any file locally. Full detail under <strong>Privacy &amp; data ownership</strong>.' },
       ] },
     ],
@@ -413,7 +432,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     flag: 'architecture', id: 'cap-architecture', title: 'Architecture (for builders)', icon: ICONS.bridge,
     desc: 'The structure the rest of this page rests on. Tools are data — a manifest, a template and optional hooks — not bundled code, which is why a new tool ships without an app update.',
     cards: [
-      { icon: ICONS.doc, title: 'Declarative tools', keywords: 'manifest template handlebars hooks json schema inputs declared authoring', features: [
+      { icon: ICONS.doc, title: 'Declarative tools', shot: 'aud-manifest-controls', keywords: 'manifest template handlebars hooks json schema inputs declared authoring', features: [
         { name: 'Manifest + template + hooks', desc: 'Inputs are declared in the manifest, never inferred from the template — which is what lets every shell render the same controls without interpreting the tool itself.' },
         { name: 'Logic-less templates', desc: 'Templates are Handlebars with no logic, so a non-developer can author one and there is no per-template XSS audit. Real logic goes in <code>hooks.js</code>, the deliberate escape hatch.' },
       ] },
@@ -424,10 +443,10 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.cube, title: 'Tool composition', keywords: 'compose nested render embed recursion depth guard reuse', features: [
         { name: 'Tools compose tools', desc: 'A tool can embed another tool’s render as an image, declared in the manifest and placed with <code>{{asset …}}</code>. It goes through the same engine path, so the embed is pixel-identical to the standalone render, and recursion is depth- and cycle-guarded.' },
       ] },
-      { icon: ICONS.sync, title: 'Synced as data', keywords: 'catalog sync manifest signed no app update ship tools', features: [
+      { icon: ICONS.sync, title: 'Synced as data', shot: 'at2-catalogue-more-group', keywords: 'catalog sync manifest signed no app update ship tools', features: [
         { name: 'No app update needed', desc: 'Tools and assets sync from a signed manifest and appear on clients automatically. Shipping a tool is publishing data, not releasing software.' },
       ] },
-      { icon: ICONS.id, title: 'Stable asset IDs', keywords: 'permanent id contract rename version replacedby checksum', features: [
+      { icon: ICONS.id, title: 'Stable asset IDs', shot: 'at2-token-linked-swatch', keywords: 'permanent id contract rename version replacedby checksum', features: [
         { name: 'An id is forever', desc: 'An asset or tool id is never reused or renamed; versioning lives in the manifest, never in the path. A link made today therefore still resolves years later — which is what makes URL-as-state a real guarantee rather than a hope.' },
       ] },
       { icon: ICONS.open, title: 'Open-source core', keywords: 'mpl licence open source engine schemas docs brand separate', features: [
