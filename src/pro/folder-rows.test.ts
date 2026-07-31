@@ -107,3 +107,112 @@ test('rowsForFolder returns [] for an empty folder', async () => {
   const host = { state: { async load() { return null; } } };
   assert.deepEqual(await rowsForFolder(host, { name: 'Empty', items: [] }), []);
 });
+
+// ── Row identity ────────────────────────────────────────────────────────────────
+// `planBatch` compacts the array it is given, so every number downstream (progress
+// index, result index, the zip's NN- prefix) is a QUEUE position, not the row. A
+// folder row therefore carries a stable, deterministic uid stamped from its source.
+
+test('rowsForFolder stamps a deterministic uid naming the source ref + ordinal', async () => {
+  const host = {
+    state: {
+      async load(slot: string) {
+        if (slot === '__batch__:VIP name badges') {
+          return {
+            __batch: true, __label: 'VIP name badges',
+            rows: [
+              { toolId: 'name-badge', values: { name: 'Ada' }, filename: 'ada.png' },
+              { toolId: 'name-badge', values: { name: 'Lin' }, filename: 'lin.png' },
+            ],
+          };
+        }
+        if (slot === 'poster:123') return { __toolId: 'poster', headline: 'Hi', __export_filename: 'hi.png' };
+        return null;
+      },
+    },
+  };
+  const folder = {
+    name: 'My Event',
+    items: [
+      { type: 'session', ref: '__batch__:VIP name badges' },
+      { type: 'session', ref: 'poster:123' },
+    ],
+  };
+  const rows = await rowsForFolder(host, folder);
+  assert.deepEqual(rows.map(r => r.uid), [
+    'My Event::__batch__:VIP name badges#0',
+    'My Event::__batch__:VIP name badges#1',
+    'My Event::poster:123',
+  ]);
+  // Deterministic: the same folder assembles the same ids (no counter, no random).
+  assert.deepEqual((await rowsForFolder(host, folder)).map(r => r.uid), rows.map(r => r.uid));
+});
+
+test('rowsForFolder uids stay unique when the same session sits in two folders', async () => {
+  // exportSelectionAsBatch CONCATENATES subtrees, so the same ref legitimately appears
+  // twice — uniqueness is a property of the path prefix, and is pinned, not assumed.
+  const host = { state: { async load() { return { __toolId: 'poster', __export_filename: 'hi.png' }; } } };
+  const rows = [
+    ...await rowsForFolder(host, { name: 'A', items: [{ type: 'session', ref: 'poster:123' }] }, null, ['Selection']),
+    ...await rowsForFolder(host, { name: 'B', items: [{ type: 'session', ref: 'poster:123' }] }, null, ['Selection']),
+  ];
+  assert.deepEqual(rows.map(r => r.uid), ['Selection/A::poster:123', 'Selection/B::poster:123']);
+  assert.equal(new Set(rows.map(r => r.uid)).size, rows.length);
+});
+
+// ── Template-less rows are part of the job ──────────────────────────────────────
+// They used to be filtered out here, BEFORE planBatch could see them, which deleted
+// them from the run report and shifted the source number of every row after them: the
+// same saved batch rendered from the /pro grid said "2 rows skipped, qr-code is row 3"
+// and rendered from Projects said nothing was skipped and called it row 1. A zip that
+// lists only its successes is not an honest record of the job.
+
+test('rowsForFolder keeps a template-less snapshot row, so positions and uids agree', async () => {
+  const host = {
+    state: {
+      async load() {
+        return {
+          __batch: true, __label: 'Wave',
+          rows: [{ toolId: '' }, { toolId: '' }, { toolId: 'qr-code', values: { url: 'x' } }],
+        };
+      },
+    },
+  };
+  const rows = await rowsForFolder(host, { name: 'G', items: [{ type: 'session', ref: '__batch__:Wave' }] });
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map(r => r.toolId), ['', '', 'qr-code']);
+  // The uid's ordinal is the row's SOURCE position — the same number planBatch will
+  // report for it — so the two can never name the row differently.
+  assert.deepEqual(rows.map(r => r.uid), [
+    'G::__batch__:Wave#0', 'G::__batch__:Wave#1', 'G::__batch__:Wave#2',
+  ]);
+});
+
+test('a [no-tool, no-tool, qr] snapshot reports 3 rows: one rendered (row 3), two skipped (rows 1, 2)', async () => {
+  // The composition folder-export.ts performs: every snapshot row → planBatch → report.
+  const { planBatch } = await import('./batch.ts');
+  const { buildPreflightReport } = await import('./manifest.ts');
+  const snapshot = [{ toolId: '' }, { toolId: '' }, { toolId: 'qr-code', values: {} }];
+  const batchRows = snapshot.map((r, k) => ({
+    ...rowFromBatchRow(r as never, ['Wave']), uid: `slot#${k}`,
+  }));
+  const plan = await planBatch(batchRows as never, {
+    getTool: async () => ({ manifest: {} }), isExportable: () => true,
+  });
+  assert.equal(plan.renderable.length, 1);
+  assert.deepEqual(plan.srcIndex, [2]);
+
+  const report = buildPreflightReport({
+    rows: plan.renderable, srcIndex: plan.srcIndex, skipped: plan.skipped,
+    results: [{ index: 0, ok: true, name: '01-qr-code.png' }],
+    zipName: 'wave.zip', engine: '0.0.0', generated: '2026-07-31T00:00:00.000Z',
+  });
+  assert.equal(report.job.rowsRequested, 3);
+  assert.equal(report.job.rowsRendered, 1);
+  assert.deepEqual(report.rows.map(r => [r.row, r.state]), [
+    [1, 'skipped'], [2, 'skipped'], [3, 'rendered'],
+  ]);
+  assert.deepEqual(report.rows.filter(r => r.state === 'skipped').map(r => r.reason), [
+    'No template selected', 'No template selected',
+  ]);
+});

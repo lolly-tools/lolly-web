@@ -13,7 +13,8 @@
  * To remove the feature: delete this folder and that one route case.
  */
 import './pro.css';
-import { serializeUrlState, toCssPx } from '@lolly/engine';
+import { serializeUrlState, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
+import { marksToCsv, csvToMarks } from '../lib/print-marks-csv.ts';
 
 // Output-dimension units the batch can target. px is the design canvas; the
 // rest are physical and convert per format at export time (engine/src/units.js).
@@ -34,11 +35,14 @@ import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { askExportLock } from '../lib/export-lock.ts';
 import { getTool, renderRowToBlob, isExportable } from './render-export.ts';
-import { planBatch } from './batch.ts';
+import { planBatch, notesFromFindings } from './batch.ts';
+import { createBatchRowCheck } from './preflight-rows.ts';
+import type { Finding } from '@lolly/engine';
+import { icon } from '../lib/icons.ts';
 import { saveBlob } from './zip.ts';
 import { batchToCsv, csvToBatch, parseClipboardGrid, coerceCell } from './io.ts';
 import { createSessionStore, rowsFromSnapshot, snapshotFromState } from './sessions.ts';
-import { runBatchWithProgress } from './run-overlay.ts';
+import { runBatchWithProgress, isBatchRunActive } from './run-overlay.ts';
 import { rowsForFolder } from './folder-rows.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { Unit } from '../../../../engine/src/units.ts';
@@ -89,6 +93,10 @@ interface GridRow {
   outHeight?: number;
   filename?: string;
   height?: number;
+  /** Per-row print overrides — beat the run-level toolbar values when set. */
+  profile?: string;
+  bleed?: string;
+  marks?: string;
 }
 
 // Render context handed to the (untyped) grid renderers.
@@ -108,6 +116,16 @@ interface BatchState {
   format: string;
   unit: string;
   dpi: number;
+  /**
+   * RUN-LEVEL print settings — the toolbar's Print popover. Exactly the same
+   * kind of thing as `format`/`unit`/`dpi` above: a default every row inherits
+   * and any row may override (pro/batch.ts `resolvePrintSettings` is the one
+   * statement of that precedence). Empty string = not set; there is no separate
+   * "off" state, matching what the single-tool export panel writes.
+   */
+  profile: string;
+  bleed: string;
+  marks: string;
   running: boolean;
   cancelRequested: boolean;
   collapsed: Set<string>;
@@ -122,7 +140,29 @@ type PopoverEl = HTMLElement & {
   _row?: string;
 };
 
-const FORMAT_OPTIONS = ['png', 'jpg', 'svg', 'emf', 'eps', 'pdf', 'webp'];
+// `pdf-cmyk` (the Print PDF) is offered at run level so a whole print run can be
+// set in one place; a tool that can't produce it degrades through chooseFormat to
+// its own first format, exactly as every other run-level format already does.
+const FORMAT_OPTIONS = ['png', 'jpg', 'svg', 'emf', 'eps', 'pdf', 'pdf-cmyk', 'webp'];
+
+// Which formats the print controls apply to. Deliberately IDENTICAL to the
+// single-tool export panel's `isCmykFmt` / `isPrintFmt` (views/tool-actions.ts):
+// the Color profile card is CMYK-only, print marks & bleed cover all three print
+// formats. Restated rather than imported because /pro must not import from views/*
+// (the isolation contract at the top of this file).
+const isCmykFmt = (f: string | undefined): boolean => f === 'pdf-cmyk' || f === 'cmyk-tiff';
+const isPrintFmt = (f: string | undefined): boolean => f === 'pdf' || f === 'pdf-cmyk' || f === 'cmyk-tiff';
+
+// The print-marks defaults the panel applies when the card is switched on
+// (tool-actions DEFAULT_PRINT_MARKS). Colour bars are added on top for the CMYK
+// formats, where the press uses them as a control strip.
+const DEFAULT_MARKS_CSV = 'crop,reg,bleed,prov';
+const DEFAULT_MARKS_CSV_CMYK = 'crop,reg,bleed,bars,prov';
+const DEFAULT_BLEED_MM = 3;
+
+// The crop-marks glyph, same registry entry the export panel's print card uses
+// (lib/icons.ts PATHS.crop) so the two surfaces read as one feature.
+const ICON_CROP = icon('crop', { size: 14, className: 'pro-print-icon' });
 
 // Input columns worth showing by default when a newly-added tool uses them
 // (everything else a tool introduces starts collapsed). Matched by input id;
@@ -167,6 +207,9 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     format: 'png',
     unit: 'px',           // unit for the Width/Height columns (px/mm/cm/in/pt)
     dpi: 300,             // raster resolution for physical units (print default)
+    profile: '',          // CMYK press condition — unset until the user picks one
+    bleed: '',            // e.g. "3mm"; empty = trim-sized, no bleed
+    marks: '',            // `marks` CSV; empty = no crop/registration/bleed marks
     running: false,
     cancelRequested: false,
     collapsed: new Set(), // column keys hidden from the matrix (restorable via tags)
@@ -213,6 +256,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
           <select id="pro-format" class="field-select field-select--auto field-select--sm"
             aria-label="${escape(t('Output format for every row'))}">${FORMAT_OPTIONS.map(f => `<option value="${f}"${f === state.format ? ' selected' : ''}>${f.toUpperCase()}</option>`).join('')}</select>
         </label>
+        <button type="button" class="pro-btn pro-print-btn" id="pro-print" hidden aria-expanded="false"
+          title="${escape(t('Bleed, print marks and the CMYK press profile for every row'))}">${ICON_CROP} ${t('Print')}</button>
         <button type="button" class="pro-btn" id="pro-sessions" title="${escape(t('Save or load a snapshot of this whole batch'))}">⛁ ${t('Sessions')}</button>
         <button type="button" class="pro-btn pro-btn--primary" id="pro-render" title="${escape(t('Render the batch'))}">${t('Render')}</button>
         ${langFabHtml()}
@@ -231,6 +276,12 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   const unitSel = viewEl.querySelector<HTMLSelectElement>('#pro-unit')!;
   const dpiInput = viewEl.querySelector<HTMLInputElement>('#pro-dpi')!;
   const zipNameInput = viewEl.querySelector<HTMLInputElement>('#pro-zip-name')!;
+  const printBtn = viewEl.querySelector<HTMLButtonElement>('#pro-print')!;
+  // Declared HERE, not beside its open/close pair below: `syncPrintButton` is a
+  // hoisted function declaration called from the first `renderGrid()`, which runs
+  // before that point in the body — a `let` down there would still be in its
+  // temporal dead zone and throw.
+  let _printPop: PopoverEl | null = null;
 
   const detachLangMenu = attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
@@ -244,8 +295,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   const toolbarGroup = viewEl.querySelector<HTMLElement>('#pro-toolbar-group')!;
   const narrowMq = window.matchMedia('(max-width: 720px)'); // keep in sync with the @media in pro.css
   const placeFormat = () => {
-    if (narrowMq.matches) toolbarGroup.append(unitField, dpiField, formatField, sessionsBtn);
-    else renderBtn.before(unitField, dpiField, formatField, sessionsBtn); // desktop order
+    if (narrowMq.matches) toolbarGroup.append(unitField, dpiField, formatField, printBtn, sessionsBtn);
+    else renderBtn.before(unitField, dpiField, formatField, printBtn, sessionsBtn); // desktop order
   };
   placeFormat();
   narrowMq.addEventListener('change', placeFormat);
@@ -430,6 +481,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const nextScroll = gridHost.querySelector('.pro-grid-scroll');
     if (nextScroll) { nextScroll.scrollLeft = scrollX; nextScroll.scrollTop = scrollY; }
     highlightRelevantTags(); // outline the hidden tags the active row actually uses
+    syncPrintButton();       // rows (and their formats) decide whether print applies
     return visible;
   }
 
@@ -556,7 +608,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   function openTemplatePicker(td: HTMLElement | null, row: GridRow | null | undefined) {
     if (!td || !row) return;
     if (_tplPop && _tplPop._row === row.uid) return; // already open for this cell
-    closeBulkPopover(); closeSessions(); closeTemplatePicker(); closeBlocksPanel();
+    closeBulkPopover(); closeSessions(); closePrintPopover(); closeTemplatePicker(); closeBlocksPanel();
 
     const pop: PopoverEl = document.createElement('div');
     pop.className = 'pro-popover pro-tpl-popover';
@@ -642,7 +694,10 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     if (t.matches('[data-row-format]')) {
       const row = rowByUid(t.dataset.rowFormat);
       // Only this row's template-cell format face changes; swap just its <tr>.
-      if (row) { row.format = t.value || undefined; replaceRow(row.uid); }
+      // replaceRow swaps one <tr> and skips renderGrid, so the Print button's
+      // gating has to be refreshed here: a single row switched to Print PDF is
+      // exactly the case that makes print settings relevant to this run.
+      if (row) { row.format = t.value || undefined; replaceRow(row.uid); syncPrintButton(); }
       return;
     }
     if (t.matches('[data-out-unit]')) {
@@ -970,6 +1025,158 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     }
   }
 
+  // ── Run-level print settings (bleed, marks, press profile) ──────────────────
+  // The grid's counterpart to the single-tool export panel's "Print marks & bleed"
+  // and "Color profile" cards. These are RUN-LEVEL defaults, in the same class as
+  // the toolbar's unit/DPI/format: every row inherits them, and a row carrying its
+  // own value wins (pro/batch.ts resolvePrintSettings). They are persisted in the
+  // batch snapshot, so a print run reopens print-ready.
+  //
+  // Gating is the panel's, unchanged: marks & bleed apply to pdf / pdf-cmyk /
+  // cmyk-tiff, the press profile to the two CMYK formats only — read off the
+  // RESOLVED format of each row (`row.format || state.format`), because a grid can
+  // be all-PNG at run level with three rows overridden to Print PDF.
+
+  /** The set of formats this run will actually produce. */
+  function effectiveFormats(): Set<string> {
+    const picked = state.rows.filter(r => r.toolId).map(r => r.format || state.format);
+    return new Set(picked.length ? picked : [state.format]);
+  }
+  // Function DECLARATIONS, not consts: `syncPrintButton` runs inside the first
+  // `renderGrid()`, which happens earlier in this function body than these lines —
+  // a `const` arrow would still be in its temporal dead zone and throw.
+  function anyPrintFormat(): boolean { return [...effectiveFormats()].some(isPrintFmt); }
+  function anyCmykFormat(): boolean { return [...effectiveFormats()].some(isCmykFmt); }
+
+  /**
+   * Show the Print button only when the run produces something printable, and
+   * badge it when settings are actually set. Settings are NOT cleared when the
+   * format moves away from print — they are inert for a non-print format and come
+   * back untouched if the user switches back, exactly like a per-row DPI.
+   */
+  function syncPrintButton() {
+    printBtn.hidden = !anyPrintFormat();
+    const on = Boolean(state.bleed || state.marks || state.profile);
+    printBtn.classList.toggle('is-on', on);
+    printBtn.setAttribute('aria-label', on
+      ? t('Print settings for every row — on')
+      : t('Print settings for every row'));
+    if (printBtn.hidden) closePrintPopover();
+  }
+
+  function closePrintPopover() {
+    if (!_printPop) return;
+    document.removeEventListener('pointerdown', _printPop._onOutside!);
+    _printPop.remove();
+    _printPop = null;
+    printBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  function openPrintPopover(anchorEl: HTMLElement) {
+    closeBulkPopover();
+    closeSessions();
+    if (_printPop) { closePrintPopover(); return; }   // second click closes
+
+    const marks = csvToMarks(state.marks);            // null when unset — keep it that way
+    const enabled = Boolean(state.bleed || state.marks);
+    const mm = state.bleed ? (parseFloat(state.bleed) || DEFAULT_BLEED_MM) : DEFAULT_BLEED_MM;
+    const initProfile = (state.profile && (CMYK_CONDITIONS as Record<string, unknown>)[state.profile])
+      ? state.profile : DEFAULT_CMYK_CONDITION;
+    const check = (on: boolean | undefined): string => (on ? ' checked' : '');
+    const pm = marks ?? csvToMarks(anyCmykFormat() ? DEFAULT_MARKS_CSV_CMYK : DEFAULT_MARKS_CSV)!;
+
+    const pop: PopoverEl = document.createElement('div');
+    pop.className = 'pro-popover pro-popover--print';
+    pop.innerHTML = `
+      <div class="pro-popover-title">${escape(t('Print marks & bleed'))}</div>
+      <label class="pro-print-enable">
+        <input type="checkbox" class="field-check" data-print-enable${check(enabled)}>
+        <span>${escape(t('Add bleed and marks to every row'))}</span>
+      </label>
+      <div class="pro-print-body" data-print-body${enabled ? '' : ' hidden'}>
+        <label class="pro-print-bleed">
+          <span>${escape(t('Bleed'))}</span>
+          <input type="number" class="pro-sess-input" data-print-bleed value="${mm}" min="0" max="25" step="0.5"
+            aria-label="${escape(t('Bleed in millimetres'))}">
+          <span>mm</span>
+        </label>
+        <div class="pro-print-toggles">
+          <label><input type="checkbox" class="field-check" data-mark="crop"${check(pm.crop)}> ${escape(t('Crop'))}</label>
+          <label><input type="checkbox" class="field-check" data-mark="reg"${check(pm.registration)}> ${escape(t('Registration'))}</label>
+          <label><input type="checkbox" class="field-check" data-mark="bleed"${check(pm.bleed)}> ${escape(t('Bleed'))}</label>
+          <label><input type="checkbox" class="field-check" data-mark="bars"${check(pm.colorBars)}> ${escape(t('Color bars'))}</label>
+          <label><input type="checkbox" class="field-check" data-mark="prov"${check(pm.provenance)}> ${escape(t('Stamp details'))}</label>
+        </div>
+      </div>
+      <div class="pro-print-cmyk"${anyCmykFormat() ? '' : ' hidden'}>
+        <label class="pro-print-profile">
+          <span>${escape(t('Color profile'))}</span>
+          <select class="field-select field-select--sm" data-cmyk-profile aria-label="${escape(t('CMYK press profile'))}">
+            ${Object.entries(CMYK_CONDITIONS).map(([id, c]) => `<option value="${escape(id)}"${id === initProfile ? ' selected' : ''}>${escape((c as { info?: string }).info ?? id)}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+      <p class="pro-print-hint">${escape(t('Applies to every row. A row that carries its own print settings keeps them.'))}</p>
+      <div class="pro-popover-actions"><button type="button" class="pro-btn" data-print-done>${escape(t('Done'))}</button></div>
+    `;
+    document.body.appendChild(pop);
+    positionPrintPopover(pop, anchorEl);
+    printBtn.setAttribute('aria-expanded', 'true');
+
+    const enableEl = pop.querySelector<HTMLInputElement>('[data-print-enable]')!;
+    const bodyEl = pop.querySelector<HTMLElement>('[data-print-body]')!;
+    const bleedEl = pop.querySelector<HTMLInputElement>('[data-print-bleed]')!;
+    const profileEl = pop.querySelector<HTMLSelectElement>('[data-cmyk-profile]')!;
+
+    // Read the card back into run-level state on every change — no Apply step, so
+    // the popover behaves like the rest of the toolbar (change it, it's set).
+    const readBack = () => {
+      if (!enableEl.checked) { state.bleed = ''; state.marks = ''; }
+      else {
+        const v = parseFloat(bleedEl.value);
+        state.bleed = v > 0 ? `${v}mm` : '';
+        state.marks = marksToCsv({
+          crop: pop.querySelector<HTMLInputElement>('[data-mark="crop"]')!.checked,
+          registration: pop.querySelector<HTMLInputElement>('[data-mark="reg"]')!.checked,
+          bleed: pop.querySelector<HTMLInputElement>('[data-mark="bleed"]')!.checked,
+          colorBars: pop.querySelector<HTMLInputElement>('[data-mark="bars"]')!.checked,
+          provenance: pop.querySelector<HTMLInputElement>('[data-mark="prov"]')!.checked,
+        });
+      }
+      // The press profile is its own card in the panel and stays independent of the
+      // marks toggle here too — a CMYK run can name a press condition with no marks.
+      state.profile = anyCmykFormat() ? profileEl.value : state.profile;
+      bodyEl.hidden = !enableEl.checked;
+      syncPrintButton();
+    };
+    pop.addEventListener('change', readBack);
+    pop.addEventListener('input', (e) => { if ((e.target as HTMLElement).matches('[data-print-bleed]')) readBack(); });
+    pop.querySelector('[data-print-done]')!.addEventListener('click', () => { closePrintPopover(); printBtn.focus(); });
+    // Escape closes, like every other overlay in the app (house rule).
+    pop.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Escape') { e.preventDefault(); closePrintPopover(); printBtn.focus(); }
+    });
+    enableEl.focus();
+
+    setTimeout(() => document.addEventListener('pointerdown', onOutside), 0);
+    function onOutside(e: PointerEvent) {
+      if (!pop.contains(e.target as Node) && e.target !== printBtn) closePrintPopover();
+    }
+    pop._onOutside = onOutside;
+    _printPop = pop;
+  }
+
+  // Right-aligned to the button (the toolbar sits at the right edge), clamped to
+  // the viewport so the wider print card can't hang off-screen.
+  function positionPrintPopover(pop: PopoverEl, anchorEl: HTMLElement) {
+    const r = anchorEl.getBoundingClientRect();
+    const w = 280;
+    pop.style.top = `${Math.round(r.bottom + window.scrollY + 6)}px`;
+    pop.style.left = `${Math.round(Math.max(8, Math.min(r.right + window.scrollX - w, window.innerWidth - w - 8)))}px`;
+  }
+
+  printBtn.addEventListener('click', () => openPrintPopover(printBtn));
+
   // ── Saved sessions ───────────────────────────────────────────────────────────
   // Replace the whole grid + view state with a saved snapshot, reloading each
   // row's manifest (same rebuild path the CSV import uses).
@@ -979,6 +1186,11 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     state.format = data.format ?? state.format;
     state.unit = data.unit ?? 'px';
     state.dpi = data.dpi ?? 300;
+    // Run-level print settings. Absent (a snapshot saved before they existed) is
+    // "not set" — never a fabricated default bleed.
+    state.profile = data.profile ?? '';
+    state.bleed = data.bleed ?? '';
+    state.marks = data.marks ?? '';
     state.zipName = data.zipName ?? '';
     state.collapsed = new Set(data.collapsed ?? []);
     state.colWidths = data.colWidths ?? {};
@@ -987,6 +1199,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     dpiInput.value = String(state.dpi);
     dpiInput.disabled = (state.unit === 'px');
     zipNameInput.value = state.zipName;
+    closePrintPopover();                      // its controls are stale after a load
     sizeZip();
     columns = renderGrid();
     nav.focusActive();
@@ -1132,7 +1345,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   }
 
   // ── Toolbar ─────────────────────────────────────────────────────────────────
-  formatSel.addEventListener('change', (e) => { state.format = (e.target as HTMLSelectElement).value; });
+  formatSel.addEventListener('change', (e) => { state.format = (e.target as HTMLSelectElement).value; syncPrintButton(); });
   zipNameInput.addEventListener('input', (e) => { state.zipName = (e.target as HTMLInputElement).value; sizeZip(); });
 
   // The toolbar unit/DPI are the DEFAULTS every row inherits (row.unit/row.dpi
@@ -1349,9 +1562,32 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // ── Batch run + delivery ────────────────────────────────────────────────────
   async function runBatchFlow() {
     if (state.running) return;
+    // `state.running` only knows about runs THIS grid started. A retry launched from the
+    // previous run's overlay is a second run that this flag never saw, and two runs
+    // sharing the offscreen stage and the same progress mount is the failure mode the
+    // overlay's lock exists for — so ask the overlay too, not just ourselves.
+    if (isBatchRunActive()) {
+      showProgress(`<p class="pro-progress-msg">An export is still running — this will be ready when it finishes.</p>`);
+      return;
+    }
     closeBulkPopover();
 
-    const { renderable, skipped } = await planBatch(state.rows);
+    // `srcIndex` maps each renderable row back to its position in state.rows — which IS
+    // the grid's visible numbering, so it is the only thing that lets the overlay and the
+    // zip manifest say "row 7" and mean the row the user is looking at. planBatch
+    // compacts; nothing may re-filter `renderable` between here and the run.
+    // The pre-pass. STATIC ONLY: it never mounts, renders or exports — it maps each
+    // row to a PreflightJob and runs the engine's rules over it, so the user is told
+    // what is wrong with row 7 BEFORE 200 rows render. The run-level settings handed
+    // in are the same four the run itself is given below, which is what makes the
+    // findings about the settings the render will actually use.
+    const check = await createBatchRowCheck(state.rows, host, {
+      format: state.format, unit: state.unit, dpi: state.dpi,
+      profile: state.profile || undefined,
+      bleed: state.bleed || undefined,
+      marks: state.marks || undefined,
+    });
+    const { renderable, skipped, srcIndex, findings } = await planBatch<Finding>(state.rows, { check });
     if (renderable.length === 0) {
       showProgress(`<p class="pro-progress-msg">Nothing to render — pick at least one exportable template.</p>`);
       return;
@@ -1383,7 +1619,21 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       // Toolbar defaults; each row may override via its own unit/dpi (batch.js).
       unit: state.unit,
       dpi: state.dpi,
+      // Run-level print settings, same precedence: a row carrying its own bleed /
+      // marks / press profile keeps it (batch.ts resolvePrintSettings). Passed
+      // unconditionally because runBatch GATES them on each row's resolved format
+      // (batch.ts printSettingsFor) — the Print button hides when the format leaves
+      // print but deliberately does not clear these, and an ungated merge signed a
+      // C2PA claim about bleed and marks onto rasters that rendered neither.
+      profile: state.profile || undefined,
+      bleed: state.bleed || undefined,
+      marks: state.marks || undefined,
       zipBaseName: zipBase,
+      srcIndex,
+      // Per-row preflight findings, keyed by queue position. Skipped rows' findings
+      // are dropped here on purpose (they have no queue position) — they belong to
+      // the run report, which gets them via `skipped` + the plan's own `findings`.
+      notes: notesFromFindings(findings, renderable.length),
       author,
       csv,
       skipped,
@@ -1419,7 +1669,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   }
 
   // ── Cleanup (called by the router on navigation away) ───────────────────────
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { detachLangMenu(); closeBulkPopover(); closeSessions(); closeTemplatePicker(); closeBlocksPanel(); nav.destroy(); detachResize(); detachReorder(); detachScrub(); zipRO.disconnect(); zoomHud.destroy(); narrowMq.removeEventListener('change', placeFormat); narrowMq.removeEventListener('change', sizeZip); document.removeEventListener('pointerdown', onDocPointer); document.removeEventListener('keydown', onAddRowKey, true); };
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { detachLangMenu(); closeBulkPopover(); closeSessions(); closePrintPopover(); closeTemplatePicker(); closeBlocksPanel(); nav.destroy(); detachResize(); detachReorder(); detachScrub(); zipRO.disconnect(); zoomHud.destroy(); narrowMq.removeEventListener('change', placeFormat); narrowMq.removeEventListener('change', sizeZip); document.removeEventListener('pointerdown', onDocPointer); document.removeEventListener('keydown', onAddRowKey, true); };
 
   // Deep link: open a saved session if the route asked for one (#/pro?session=…),
   // e.g. resuming a batch from the gallery's Saved-sessions list. Otherwise drop

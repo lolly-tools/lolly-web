@@ -37,6 +37,12 @@ export interface SessionRow {
   unit?: string;
   dpi?: number;
   height?: number;
+  /** CMYK press condition (the `profile` URL param), for pdf-cmyk / cmyk-tiff. */
+  profile?: string;
+  /** Bleed as a dimension string, e.g. "3mm". */
+  bleed?: string;
+  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  marks?: string;
 }
 
 /** The slice of live batch state a snapshot captures. */
@@ -44,6 +50,15 @@ export interface SessionStateInput {
   format: string;
   unit?: string;
   dpi?: number;
+  /**
+   * RUN-LEVEL print settings — the toolbar defaults every row inherits, stored
+   * beside `format`/`unit`/`dpi` because they are the same kind of thing: a run
+   * default a row may override. Without them a saved print batch reopened
+   * trim-sized, unmarked and profile-less.
+   */
+  profile?: string;
+  bleed?: string;
+  marks?: string;
   zipName?: string;
   collapsed: Iterable<string>;
   colWidths: Record<string, number>;
@@ -61,6 +76,12 @@ export interface SnapshotRow {
   unit?: string;
   dpi?: number;
   height?: number;
+  /** CMYK press condition (the `profile` URL param), for pdf-cmyk / cmyk-tiff. */
+  profile?: string;
+  /** Bleed as a dimension string, e.g. "3mm". */
+  bleed?: string;
+  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  marks?: string;
 }
 
 /** A serializable snapshot of a whole batch, persisted via host.state. */
@@ -69,6 +90,15 @@ export interface BatchSnapshot {
   format: string;
   unit: string;
   dpi: number;
+  /**
+   * RUN-LEVEL print settings. Optional (not defaulted like unit/dpi) because
+   * "no bleed / no marks / no press profile" is the correct reading of a snapshot
+   * written before this field existed — an absent field is never an asserted zero,
+   * and equally never a fabricated 3mm.
+   */
+  profile?: string;
+  bleed?: string;
+  marks?: string;
   zipName: string;
   collapsed: string[];
   colWidths: Record<string, number>;
@@ -102,6 +132,11 @@ export function snapshotFromState(state: SessionStateInput): BatchSnapshot {
     format: state.format,
     unit: state.unit ?? 'px',
     dpi: state.dpi ?? 300,
+    // Run-level print settings. Written only when set, so a non-print batch's
+    // snapshot is byte-identical to what it was before this feature.
+    ...(state.profile ? { profile: state.profile } : {}),
+    ...(state.bleed ? { bleed: state.bleed } : {}),
+    ...(state.marks ? { marks: state.marks } : {}),
     zipName: state.zipName ?? '',
     collapsed: [...state.collapsed],
     colWidths: { ...state.colWidths },
@@ -117,6 +152,10 @@ export function snapshotFromState(state: SessionStateInput): BatchSnapshot {
         unit: r.unit,
         dpi: r.dpi,
         height: r.height,
+        // Per-row print overrides (a row that carries one beats the run default).
+        profile: r.profile,
+        bleed: r.bleed,
+        marks: r.marks,
       })),
   };
 }
@@ -150,6 +189,9 @@ export async function rowsFromSnapshot<R extends SessionRow>(
     if (r.unit) row.unit = r.unit;
     if (r.dpi) row.dpi = r.dpi;
     if (r.height) row.height = r.height;
+    if (r.profile) row.profile = r.profile;
+    if (r.bleed) row.bleed = r.bleed;
+    if (r.marks) row.marks = r.marks;
     try {
       const manifest = (await getTool(r.toolId)).manifest;
       if (isExportable(manifest)) row.manifest = manifest;

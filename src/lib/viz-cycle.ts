@@ -28,13 +28,16 @@
 
 import { prefersReducedMotion } from './a11y-prefs.ts';
 
-/** Intervals offered, in seconds. 0 is Off. 5 is a restless slideshow and 40 lets a
- *  preset actually breathe, which is why the default sits at the slow end. */
+/** Intervals offered, in seconds. 0 is Off. 5 is a restless slideshow; 40 lets a preset
+ *  breathe but is long enough that a session can look like it only has one. */
 export const CYCLE_CHOICES = [0, 5, 20, 40] as const;
 export type CycleSeconds = (typeof CYCLE_CHOICES)[number];
 
-/** The interval a first-time user gets, when motion is not restricted. */
-export const CYCLE_DEFAULT: CycleSeconds = 40;
+/** The interval a first-time user gets, when motion is not restricted.
+ *  20s (Andy's pick, 2026-07-31) — long enough for a preset to establish itself, short
+ *  enough that the breadth of the library is visible in a sitting. 40 was the old value
+ *  and is still one click away for anyone who wants the slower rhythm. */
+export const CYCLE_DEFAULT: CycleSeconds = 20;
 
 /** localStorage key. Shared deliberately: someone who has chosen a rhythm for the dock
  *  has expressed a preference about visualisers, not about one widget. */

@@ -10,6 +10,7 @@
 import { deflateSync, strToU8, type Zippable } from 'fflate';
 import { buildEncryptedZip, crc32, type ZipTier, type ZipEntryInput } from '@lolly/engine';
 import { zipAsync } from '../lib/zip.ts';
+import { preflightJson, type PreflightReport, type UnmadeRow } from './manifest.ts';
 
 /** A rendered output described in the manifest (`lolly.txt`). */
 interface ManifestFile {
@@ -33,13 +34,33 @@ interface ZipAuthor {
 }
 
 /** Packaging metadata: zip name, author profile, and the reproducing CSV. */
-interface ZipMeta {
+export interface ZipMeta {
   zipName?: string;
   author?: ZipAuthor | null;
   csv?: string;
   /** When set with a password, the whole zip is encrypted at this tier. */
   zipLock?: ZipTier;
   password?: string;
+  /**
+   * Rows that produced no file: skipped before the run, failed during it, or never
+   * attempted because the run was cancelled. Recorded because a zip that lists only
+   * its successes is not an honest record of the job — the overlay's ", 3 failed"
+   * is UI chrome that evaporates the second the zip is mailed on, and a recipient
+   * cannot otherwise tell 480-of-480 from 480-of-500.
+   */
+  unmade?: readonly UnmadeRow[];
+  /**
+   * Per-FILE diagnostics, already flattened to display lines by the caller (this
+   * module never sees a note object). Rendered as the `[ Notes ]` block.
+   */
+  noted?: ReadonlyArray<{ name: string; lines: readonly string[] }>;
+  /** Names the original package when this zip is a retry of an earlier run. */
+  retryOf?: string;
+  /**
+   * The machine-readable sidecar, written as `preflight.json`. `lolly.txt` is the
+   * human copy; it may not be the only carrier, so the same facts ship structurally.
+   */
+  preflight?: PreflightReport;
 }
 
 // Already-compressed payloads gain nothing from deflate and cost CPU, so store
@@ -79,13 +100,41 @@ const fmtLabel = (f?: string): string => (f ? (FMT_LABEL[f] ?? String(f).toUpper
 
 const HEADER = '📐 Lolly  •  ❤️ Give Fitzy an Ovation  •  🌏 https://lolly.tools';
 
+const UNMADE_STATE_LABEL: Record<UnmadeRow['state'], string> = {
+  failed: 'Failed',
+  skipped: 'Skipped',
+  cancelled: 'Cancelled',
+};
+
+/**
+ * The rows that produced no file, one line each, in the file's existing voice and
+ * reusing `fileLines`' own `   |  ` / `  ·  ` separators. The row number is a padded
+ * FIELD, never baked into a sentence — a number that can be wrong inside a string is
+ * the defect this whole channel exists to remove.
+ */
+function unmadeLines(unmade: readonly UnmadeRow[]): string[] {
+  const rowW = Math.max(...unmade.map(u => String(u.row ?? '?').length), 1);
+  const labelW = Math.min(24, Math.max(...unmade.map(u => u.label.length), 1));
+  const stateW = Math.max(...unmade.map(u => UNMADE_STATE_LABEL[u.state].length));
+  return unmade.flatMap(u => {
+    const num = String(u.row ?? '?').padStart(rowW);
+    const head = `⚠️ row ${num}  ${u.label.padEnd(labelW)}   |  ${UNMADE_STATE_LABEL[u.state].padEnd(stateW)}  ·  ${u.reason}`;
+    // A note on an unmade row rides underneath it, indented — one row is still one
+    // entry, and the count in the heading stays the count of rows.
+    return [head, ...(u.notes ?? []).map(n => `${' '.repeat(3)}ℹ ${n}`)];
+  });
+}
+
 // The little manifest dropped into every batch zip. Top block = package name +
 // author (if set) + timestamp; then a clean one-line-per-file list; then all the
 // "reopen in Lolly" links gathered into a list at the END (each as a "## filename"
 // header with the URL on the next line, blocks blank-line separated) so they don't
 // clutter the file list. `files` is [{ name, ms, fmt, url }]; opts carries the zip
 // name + author.
-function creditText(files: ManifestFile[] = [], { zipName, author }: ZipMeta = {}): string {
+//
+// Two later blocks ride the same voice: the rows that produced no file, and the
+// per-file notes. Both are siblings of the list they qualify, never UI chrome.
+export function creditText(files: ManifestFile[] = [], { zipName, author, unmade = [], noted = [], retryOf }: ZipMeta = {}): string {
   const now = new Date();
   const date = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const time = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -118,6 +167,12 @@ function creditText(files: ManifestFile[] = [], { zipName, author }: ZipMeta = {
     `[[ 📦 ${pkg} ]]`,
   ];
 
+  // A retry is a second package for one job — say so here, at the top, so the two
+  // zips are readable as one job rather than as two unrelated runs.
+  if (retryOf) {
+    lines.push('', '[ This is a retry ]', '', `These are the rows that failed in ${retryOf} and were rendered again.`);
+  }
+
   // Author sits right under the package name.
   if (authorLine) {
     lines.push('', '[ Author Information ]', '', authorLine);
@@ -126,12 +181,35 @@ function creditText(files: ManifestFile[] = [], { zipName, author }: ZipMeta = {
   lines.push(
     '',
     `Created on ${date} at ${time} (local)`,
+  );
+
+  // One fact line under the timestamp, so a skimmer cannot miss it.
+  if (unmade.length) {
+    lines.push(`${unmade.length} of ${n + unmade.length} rows produced no file — listed below.`);
+  }
+
+  lines.push(
     '',
     '',
     `[ ${n} file${n === 1 ? '' : 's'} included ]`,
     '',
     ...fileLines,
   );
+
+  // The rows that are part of this job and not in this zip. Count-first heading,
+  // mirroring the file block. The caveat is a sibling of the list, not UI chrome —
+  // the overlay's summary line is not in the zip.
+  if (unmade.length) {
+    lines.push(
+      '',
+      '',
+      `[ ${unmade.length} row${unmade.length === 1 ? '' : 's'} produced no file ]`,
+      '',
+      'These rows were part of this job and are not in this zip.',
+      '',
+      ...unmadeLines(unmade),
+    );
+  }
 
   // Reopen links, gathered at the end. Blocks are joined by a blank line so each
   // "## filename" / URL pair stands apart.
@@ -145,6 +223,22 @@ function creditText(files: ManifestFile[] = [], { zipName, author }: ZipMeta = {
       'follow it to recreate or tweak the file at lolly.tools.',
       '',
       linkBlocks.join('\n\n'),
+    );
+  }
+
+  // Findings against files that DID render, shaped exactly like the link blocks.
+  // "Notes", never "warnings": most findings are counts, and an info state must
+  // never render as damage.
+  const noteBlocks = noted.filter(x => x.lines.length).map(x => `## ${x.name}\n${x.lines.map(l => `ℹ ${l}`).join('\n')}`);
+  if (noteBlocks.length) {
+    lines.push(
+      '',
+      '',
+      '[ Notes ]',
+      '',
+      'Findings from the preflight pass. They do not mean the file is wrong.',
+      '',
+      noteBlocks.join('\n\n'),
     );
   }
 
@@ -180,6 +274,11 @@ export async function buildZip(files: ZipFile[], meta: ZipMeta = {}): Promise<Bl
     for (const f of files) add(f.name, new Uint8Array(await f.blob.arrayBuffer()));
     add('lolly.txt', strToU8(creditText(files, meta)));
     if (meta.csv) add('lolly-batch.csv', strToU8(meta.csv));
+    // The machine copy of the same facts, inside the encryption envelope where a row
+    // naming a session path belongs. `preflight.json` breaks the `lolly-` prefix the
+    // other two members share — deliberately: the name is fixed before consumers
+    // parse it, and renaming it afterwards is exactly what cannot be done later.
+    if (meta.preflight) add('preflight.json', strToU8(preflightJson(meta.preflight)));
     const zipped = await buildEncryptedZip(encEntries, { tier: meta.zipLock, password: meta.password });
     return new Blob([zipped], { type: 'application/zip' });
   }
@@ -193,6 +292,7 @@ export async function buildZip(files: ZipFile[], meta: ZipMeta = {}): Promise<Bl
   entries['lolly.txt'] = [strToU8(creditText(files, meta)), { level: 6 }];
   // The settings that produced this batch — re-importable via Sessions ▸ Upload CSV.
   if (meta.csv) entries['lolly-batch.csv'] = [strToU8(meta.csv), { level: 6 }];
+  if (meta.preflight) entries['preflight.json'] = [strToU8(preflightJson(meta.preflight)), { level: 6 }];
   const zipped = await zipAsync(entries);
   return new Blob([zipped], { type: 'application/zip' });
 }

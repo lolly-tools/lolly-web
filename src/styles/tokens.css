@@ -159,6 +159,30 @@
   --track-rail: hsl(var(--muted) / 0.55);
 }
 
+/* The SURFACE a tool preview composites onto — the gallery tiles and example strips
+   (parts/gallery.css), and any other box that shows a tool's own render.
+
+   A preview is the tool's real output, so it is transparent wherever the tool paints
+   nothing: a lifted card SVG has no HTML container behind it, and most tools draw art,
+   not a full-bleed background. Something has to stand behind that, and it cannot be a
+   baked-in colour — cards used to carry one (bag-video's was `#0c322c`, which is this
+   codebase's `[data-theme="brand"]` --background, i.e. one theme's surface frozen into
+   art that the other two themes then had to live with).
+
+   So it is a token, derived from --muted: one step off --card in EVERY theme, and in
+   the direction each theme needs — a soft grey paper under light, a LIFTED slate under
+   dark and brand (so dark art doesn't vanish into a dark tile). A runtime brand palette
+   gets it free, since brand-vars.ts emits --muted. Tune here, not in a card. */
+:root {
+  --preview-surface: hsl(var(--muted) / 0.6);
+  /* Faint transparency checker laid OVER the surface, so "the tool painted nothing
+     here" stays legible as transparency rather than reading as a solid backdrop the
+     tool chose. Alpha on both squares → it rides whatever surface is underneath. */
+  --preview-checker: repeating-conic-gradient(
+    hsl(var(--muted-foreground) / .05) 0% 25%,
+    transparent 0% 50%) 50% / 14px 14px;
+}
+
 /* Onion-ring gamut washes — the ONE opacity scale for "outside the active gamut".
    Tier 0 is the limit itself and always paints fully opaque, so it has no token;
    each ring out is roughly half the previous, which keeps the onion order readable

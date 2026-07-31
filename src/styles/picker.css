@@ -623,7 +623,10 @@
   height: 84px;
   object-fit: contain;
   border-radius: var(--radius);
-  background: hsl(var(--muted));
+  /* Same themed shade the gallery tiles use (tokens.css) — a tool's own render is
+     transparent wherever it paints nothing. No checker in this 84px slot: at this
+     size it reads as noise rather than as transparency. */
+  background: var(--preview-surface);
 }
 /* The icon is always in the DOM but shown ONLY when there's no usable preview
    (none declared, or the <img> errored → .no-preview added in JS). */

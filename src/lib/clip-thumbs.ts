@@ -878,18 +878,18 @@ function liveSvg(el: StillSource): Element | null {
 }
 
 /**
- * A live `<svg>` as something an `<img>` can load.
+ * A live `<svg>` as a standalone SVG document's markup.
  *
- * Canvas cannot draw an SVG *element* — only an image — so the subtree is cloned,
- * given the explicit pixel size a standalone SVG document needs (a Lottie's root
- * carries `width:100%`, which is meaningless with no containing block), serialised
- * and inlined as a data: URL. A data URL rather than a blob: URL because there is
- * no revoke to forget, and a data: SVG taints no canvas.
+ * The subtree is cloned and given the explicit pixel size a standalone SVG document
+ * needs (a Lottie's root carries `width:100%`, which is meaningless with no containing
+ * block). Kept separate from the data: URL encoding because callers that want to INLINE
+ * the vector — an SVG export embedding it as an element rather than an <img> — need the
+ * markup itself, and must get it under exactly the same size/serialiser rules.
  *
  * Returns null — never throws — when there is no serialiser, no usable size, or the
  * markup is past MAX_SVG_MARKUP.
  */
-export function svgDataUrl(svg: Element): string | null {
+export function svgMarkup(svg: Element): string | null {
   const g = globalThis as { XMLSerializer?: new () => { serializeToString(n: Node): string } };
   if (typeof g.XMLSerializer !== 'function') return null;
   try {
@@ -910,10 +910,22 @@ export function svgDataUrl(svg: Element): string | null {
     clone.setAttribute('height', String(Math.round(h)));
     const markup = new g.XMLSerializer().serializeToString(clone);
     if (!markup || markup.length > MAX_SVG_MARKUP) return null;
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
+    return markup;
   } catch {
     return null;
   }
+}
+
+/**
+ * A live `<svg>` as something an `<img>` can load.
+ *
+ * Canvas cannot draw an SVG *element* — only an image — so the serialised document is
+ * inlined as a data: URL. A data URL rather than a blob: URL because there is no revoke
+ * to forget, and a data: SVG taints no canvas.
+ */
+export function svgDataUrl(svg: Element): string | null {
+  const markup = svgMarkup(svg);
+  return markup ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}` : null;
 }
 
 /** Load an `<img>`, abort-aware and time-boxed. Resolves null instead of throwing. */
@@ -1352,6 +1364,22 @@ function borrowVisibility(el: HTMLElement): () => void {
     el.classList.remove(SHOT_CLASS);
     announceShotSettled();
   };
+}
+
+/**
+ * `borrowVisibility` as a scope: run `fn` with the box photographable, restore on every
+ * path including a throw. For callers that own the whole read — the vector twin walks the
+ * live subtree synchronously-ish and returns markup, with no separate "the shot REALLY
+ * ended" moment to hand the lease to, unlike `captureNode`'s raster which restores when
+ * the library settles rather than when its own caller stops waiting.
+ */
+export async function withBorrowedVisibility<T>(el: HTMLElement, fn: () => Promise<T>): Promise<T> {
+  const restore = borrowVisibility(el);
+  try {
+    return await fn();
+  } finally {
+    restore();
+  }
 }
 
 // One shot at a time, process-wide (see the section header: the library's globals are

@@ -10,7 +10,10 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS } from '@lolly/engine';
+import type {
+  Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts,
+} from '@lolly/engine';
 import { escape } from '../utils.js';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
@@ -33,6 +36,7 @@ import { MAX_TIME_S } from './timeline-math.ts';
 import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
 import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
+import { preflightRowHtml, preflightView, applyPreflight } from './export-preflight.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
 
@@ -88,8 +92,14 @@ const isHdrFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg
 // carried as a dimension string. The Color profile (press condition) card applies to
 // the two CMYK formats.
 const DEFAULT_PRINT_MARKS: PrintMarks = { crop: true, registration: true, bleed: true, colorBars: false, provenance: true };
-const isCmykFmt  = (f: string | undefined): boolean => f === 'pdf-cmyk' || f === 'cmyk-tiff';
-const isPrintFmt = (f: string | undefined): boolean => f === 'pdf' || f === 'pdf-cmyk' || f === 'cmyk-tiff';
+// Both read the ENGINE's tables (engine/src/preflight.ts) rather than restating
+// the literals. The card that OFFERS bleed and the check that reports it missing
+// have to agree by construction: two copies is how "the panel hides the bleed card
+// but the URL still carries bleed" happens. `isCmykFmt` is the two formats that
+// build a process separation AND emit through the panel's Color profile card, i.e.
+// the separating set minus eps-cmyk, which this panel does not offer settings for.
+const isCmykFmt  = (f: string | undefined): boolean => SEPARATING_FORMATS.has(f ?? '') && f !== 'eps-cmyk';
+const isPrintFmt = (f: string | undefined): boolean => PRINT_MARK_FORMATS.has(f ?? '');
 // The `marks` CSV codec lives in lib/print-marks-csv.ts — one encoder, one
 // decoder, shared with the batch/folder render path (which previously had no way
 // to read a stored CSV back and so dropped print marks entirely).
@@ -800,6 +810,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const blockedNote = (actions.includes('download') && affordance === 'blocked')
     ? `<p class="export-blocked-note" role="status" style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center">${escape(t('Downloading is turned off for this tool on this instance.'))}</p>`
     : '';
+  // Tier 3.5 — "Before you export". LAST of the cards, below every setting and
+  // immediately above the buttons: it is not a setting, it is a statement ABOUT
+  // the settings, so it must sit under all of them or it would contradict a
+  // control the user has not reached yet. Hidden until the engine's rules have
+  // something true to say; see views/export-preflight.ts + refreshPreflight().
+  const preflightRow = preflightRowHtml();
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;
   const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : blockedNote;
 
@@ -807,7 +823,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}${preflightRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
   `;
@@ -1175,6 +1191,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       updateFidelityWarning();  // only SVG/HTML keep a frosted panel
       refreshPrintUi(); // owns [data-pdf-only] (password) visibility — see below
       refreshDepthFact();
+      refreshPreflight();   // the format is the single biggest input to every check
       onUrlSync?.('format');
       onUrlSync?.('marks');  // bars may have flipped with the format
     });
@@ -1300,20 +1317,24 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           : STD_LOCK_HINT;
     }
   }
+  // Each of these changes a setting preflight reports on (bleed, the mark set),
+  // and none of them had a fidelity-warning equivalent to ride — so they take the
+  // refresh explicitly, or the card would keep stating the previous bleed.
   el.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.addEventListener('change', () => {
-    refreshPrintUi(); onUrlSync?.('bleed'); onUrlSync?.('marks');
+    refreshPrintUi(); refreshPreflight(); onUrlSync?.('bleed'); onUrlSync?.('marks');
   });
-  el.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.addEventListener('input', () => onUrlSync?.('bleed'));
+  el.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.addEventListener('input', () => { refreshPreflight(); onUrlSync?.('bleed'); });
   ['mark-crop', 'mark-reg', 'mark-bleed', 'mark-bars', 'mark-prov'].forEach(a =>
     el.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.addEventListener('change', () => {
       if (a === 'mark-bars') barsUserSet = true;  // stop auto-tracking once chosen
+      refreshPreflight();   // the mark set changes the bleed/media boxes
       onUrlSync?.('marks');
     }));
   refreshPrintUi(); // initial state (e.g. card pre-opened from a shared link)
   refreshDepthFact(); // renders nothing unless a deep/gain-map path is already selected
 
   // Colour profile (CMYK press condition) — print-PDF only; persists via URL/save.
-  el.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.addEventListener('change', () => onUrlSync?.('profile'));
+  el.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.addEventListener('change', () => { refreshPreflight(); onUrlSync?.('profile'); });
 
   el.querySelector<HTMLInputElement>('[data-action="filename"]')?.addEventListener('input', () => onUrlSync?.('filename'));
 
@@ -1322,13 +1343,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   // Pixel-watermark toggle — round-trips through the URL as ?imprint=1 (see syncUrl).
   el.querySelector<HTMLInputElement>('[data-action="imprint"]')?.addEventListener('change', () => onUrlSync?.('imprint'));
-  el.querySelector<HTMLInputElement>('[data-action="durable"]')?.addEventListener('change', () => onUrlSync?.('durable'));
+  el.querySelector<HTMLInputElement>('[data-action="durable"]')?.addEventListener('change', () => { refreshPreflight(); onUrlSync?.('durable'); });
   el.querySelector<HTMLInputElement>('[data-action="hdr"]')?.addEventListener('change', (e) => {
     // Reveal the dials when HDR is on, hide them when off (like the print card).
     const on = (e.target as HTMLInputElement).checked;
     const body = el.querySelector<HTMLElement>('[data-hdr-body]');
     if (body) body.style.display = on ? 'grid' : 'none';
     refreshDepthFact();   // HDR is what makes the PNG deep / the JPEG a gain map
+    refreshPreflight();   // HDR on a format that cannot carry it is a warning
     onUrlSync?.('hdr');
   });
   for (const a of ['hdr-peak', 'hdr-reach', 'hdr-lift', 'hdr-focus']) {
@@ -1433,6 +1455,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     ? 'px'
     : (el!.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value || 'px');
   const dimDpi  = (): number => { const n = parseInt(el!.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '', 10); return n > 0 ? n : 300; };
+  // Whether the dimension fields still hold their manifest-derived defaults.
+  // Seeded true only when a URL param or a restored session supplied the size;
+  // flipped by an edit, a scrub, a size-select pick or a unit change. Preflight
+  // reads it to tell "the user set this page size" from "this is the tool's own
+  // canvas, pre-filled" — the CLI makes exactly the same distinction through
+  // `declaredBy`, and without it the two surfaces disagreed on every ordinary tool.
+  // `unit` counts as setting the size even on its own: `?unit=mm` with the fields
+  // still at the manifest numbers is a REAL 1200 x 900 mm export (exportDims below
+  // qualifies the field value with the active unit), so reading it as the tool's
+  // pixel canvas would under-report by a factor of twelve.
+  let sizeUserSet = exportDefaults.width != null || exportDefaults.height != null ||
+    (exportDefaults.unit != null && exportDefaults.unit !== 'px');
   // Ephemeral-credential lifetime pick; null when an enrolled identity replaced
   // the select (the cert window rules then) — export.js defaults absent to 30.
   const c2paDaysVal = (): number | null => { const n = Number(el!.querySelector<HTMLSelectElement>('[data-action="c2pa-days"]')?.value); return [7, 30, 90, 365].includes(n) ? n : null; };
@@ -1531,6 +1565,170 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     };
   }
 
+  // ── Preflight: "Before you export" ────────────────────────────────────────
+  //
+  // The shell collects the FACTS from its own platform and the engine applies the
+  // RULES — the same split print-marks.ts uses. Everything below reads the LIVE
+  // panel (the same readers the export path uses: rawDims/dimUnit/dimDpi, the
+  // print card, the CMYK select, cutsValue) so a finding can never be about
+  // settings a render would not use. The engine receives a plain object and never
+  // touches the DOM.
+  //
+  // STATIC ONLY. Nothing here renders, rasterises or exports: `preflight()` is
+  // pure and synchronous, and it runs on every input change through
+  // runtime.subscribe, so an async or rendering check must NOT land on this path.
+  //
+  // The palette is the one genuinely async fact. It is resolved ONCE, off
+  // host.tokens.colors() DIRECTLY — never livePalette, which silently substitutes
+  // the neutral starter PALETTE when tokens throw OR answer with nothing, and
+  // carries no provenance to tell the two apart. A throw and an empty list both
+  // become `{ known:false, why:'not-resolved' }`, so the engine withholds the
+  // plate ceiling instead of counting starter swatches as if they were the brand's.
+  let palette: Fact<readonly PreflightSwatch[]> = { known: false, why: 'not-resolved' };
+  void (async () => {
+    try {
+      const colors = await host.tokens?.colors?.();
+      if (!Array.isArray(colors) || colors.length === 0) return;   // stays 'not-resolved'
+      palette = { known: true, value: colors.map(s => ({ path: s.path, name: s.name, spot: s.spot ?? null })) };
+      refreshPreflight();
+    } catch { /* stays 'not-resolved' — never a fabricated empty palette */ }
+  })();
+
+  /** DOM truths, the only channel through which the stage reaches the engine. */
+  function stageFacts(): Fact<StageFacts> {
+    if (!canvasEl) return { known: false, why: 'needs-mount' };
+    const durationS = seqDurationS();
+    const boxes = canvasEl.querySelectorAll('[data-pdf-page]').length;
+    return {
+      known: true,
+      value: {
+        isSequence: Boolean(seqStageEl()),
+        durationMs: durationS === null ? null : Math.round(durationS * 1000),
+        pageBoxes: boxes > 0 ? boxes : null,
+      },
+    };
+  }
+
+  // The manifest slice preflight reads, narrowed explicitly rather than passed
+  // through: RenderSpec's `video` is a Record<string, unknown> bag, and the two
+  // numbers preflight wants have to be proved to be numbers here.
+  const vidNum = (k: string): number | undefined => {
+    const v = (manifest.render.video as Record<string, unknown> | undefined)?.[k];
+    return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  };
+  const preflightManifest: PreflightManifest = {
+    id: manifest.id,
+    status: manifest.status,
+    render: {
+      width: manifest.render.width,
+      height: manifest.render.height,
+      formats: manifest.render.formats,
+      export: manifest.render.export,
+      paginate: manifest.render.paginate,
+      pages: manifest.render.pages,
+      video: { wait: vidNum('wait'), duration: vidNum('duration') },
+      aspectWarning: manifest.render.aspectWarning,
+    },
+    inputs: manifest.inputs,
+  };
+
+  /** Assemble the job from the live panel, run the engine's rules, render the card. */
+  function refreshPreflight(): void {
+    if (!actions.includes('download')) return;
+    const fmt = formatEl?.value || initialFmt || formats[0] || '';
+    const unit = dimUnit() as Unit;
+    const dpi = dimDpi();
+    const { w, h } = rawDims();
+    // A dims-less tool exports at the manifest's pixel canvas: that size came from
+    // the manifest, so it is BARE PIXELS by construction and no unit was declared.
+    const fixed = manifest.render.dims === false;
+    // Both fields must hold a positive value before the ACTIVE UNIT may be applied
+    // to them. `rawDims()` returns undefined for a blank or non-positive field, and
+    // substituting `manifest.render.width` under a live `unit: 'mm'` manufactured a
+    // PHYSICAL trim out of a bare pixel number nobody declared — a 1200 x 900 px
+    // canvas reported as "Trim 1.08 m²", with `bound: 'exact'`, in the state a user
+    // passes through every time they clear the width field to retype it. That is the
+    // derivation plan §4 forbids by name, and the real export path does not do it
+    // either: it falls back to the MEASURED DOM box.
+    //
+    // So an incomplete pair reads as what it actually is — the manifest's pixel
+    // canvas, `declaredBy: 'manifest'`, no unit declared. The engine then emits
+    // `print.trim-not-physical` / `refuse.trim-when-unset` instead of an area.
+    const typed = (w ?? 0) > 0 && (h ?? 0) > 0;
+    // `declaredBy: 'url'` only when the size is genuinely the user's: a URL param,
+    // a restored session, a size-select pick or an edit. Hard-coding it meant the
+    // web could NEVER emit `refuse.trim-when-unset` while the CLI emitted it
+    // routinely for the identical job, so the two surfaces disagreed on a pre-filled
+    // tool where the user had set nothing at all.
+    const fromUser = typed && sizeUserSet;
+    const manifestSize = fixed || !fromUser;
+    const width  = manifestSize ? { value: manifest.render.width,  unit: 'px' as Unit } : { value: w!, unit };
+    const height = manifestSize ? { value: manifest.render.height, unit: 'px' as Unit } : { value: h!, unit };
+    // `unitDeclared` is true only when the SOURCE spelled a unit out — here, when
+    // the panel offers the unit selector AND the value in the field is the one the
+    // user put there. False makes the engine refuse to derive an area rather than
+    // trust a fabricated unit.
+    const unitDeclared = !manifestSize && manifest.render.units !== false;
+
+    const on = printEnabled(el);
+    const bleedMm = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? '');
+    const marks = printOpts();
+    const job: PreflightJob = {
+      source: 'web',
+      manifest: preflightManifest,
+      // Post-onInit: this panel only exists after the tool has mounted, so a
+      // paginate source table is the hydrated one and its row count is exact.
+      model: runtime.getModel() as readonly PreflightInput[],
+      modelPhase: 'post-init',
+      settings: {
+        format: fmt,
+        size: { width, height, dpi, declaredBy: manifestSize ? 'manifest' : 'url', unitDeclared },
+        // The panel is the whole truth about bleed/marks/press profile here — an
+        // absent card means the export applies none, which is a KNOWN null, not an
+        // unknown. (A batch-snapshot row, which carries none of them, is the case
+        // that must report `{ known:false, why:'not-carried' }`.)
+        bleed: { known: true, value: on && bleedMm > 0 ? { value: bleedMm, unit: 'mm' } : null },
+        marks: { known: true, value: on ? { crop: marks.cropMarks, registration: marks.registrationMarks, bleed: marks.bleedMarks, colorBars: marks.colorBars, provenance: marks.provenance } : null },
+        // The reserved `profile` param is the PRESS CONDITION, not a user profile.
+        //
+        // Reported ONLY when the setting is actually in force. The Color profile
+        // card is rendered (and its select populated with DEFAULT_CMYK_CONDITION)
+        // for any tool that OFFERS a CMYK format, and merely display:none'd for the
+        // others — so reading `.value` unconditionally asserted "the user chose
+        // fogra39" on the default SVG/PNG export of every such tool, and the card
+        // read "1 to fix" out of the box. The engine rule is right; the collector
+        // was inventing the setting.
+        pressProfile: {
+          known: true,
+          value: isCmykFmt(fmt) ? (el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || null) : null,
+        },
+        cuts: cutsValue(),
+        password: Boolean(el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.value),
+        durable: el!.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked ?? false,
+        hdr: el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ?? false,
+      },
+      palette,
+      stage: stageFacts(),
+    };
+
+    // The fact row states the size the JOB carries, so it agrees with the findings
+    // by construction: a manifest-sourced size shows as the pixel canvas it is.
+    const sizeText = manifestSize
+      ? `${manifest.render.width} × ${manifest.render.height} px`
+      : (unit === 'px' ? `${w} × ${h} px` : t('{w} × {h} {unit} at {dpi} DPI', { w: String(w), h: String(h), unit, dpi }));
+    applyPreflight(el, preflightView(preflight(job), {
+      formatLabel: fmt ? fmtLabel(fmt) : '',
+      sizeText,
+      bleedText: on && bleedMm > 0 ? `${bleedMm} mm` : null,
+    }));
+  }
+  // Same wiring as updateFidelityWarning, for the same reason: a sidebar edit can
+  // change what preflight sees (a paginate source table gaining a row), so re-run
+  // on every input change as well as on every format/size/print-setting change.
+  // Cheap: one pure synchronous pass over a plain object.
+  runtime.subscribe(() => refreshPreflight());
+  refreshPreflight();
+
   function videoParams(): { wait: number; duration: number; fps: number | undefined; live: boolean; durationUserSet: boolean } {
     const wait     = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-wait"]')?.value ?? '')     ?? 1;
     const duration = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-duration"]')?.value ?? '') ?? 5;
@@ -1555,6 +1753,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   function refreshCanvasPreview(): void {
     updateAspectWarning(); // first, so it reflects current fields even when dims are incomplete
     updateFidelityWarning();
+    refreshPreflight();    // width / height / unit / DPI all flow through here
     const { width: w, height: h } = previewPx();
     if (!((w ?? 0) > 0 && (h ?? 0) > 0)) return;
     const previewScale = Math.min(1, manifest.render.width / w!, manifest.render.height / h!);
@@ -1615,7 +1814,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     [el.querySelector<HTMLInputElement>('[data-action="export-height"]'), 'h'],
   ] as [HTMLInputElement | null, string][]).forEach(([inp, key]) => {
     if (!inp) return;
-    const onDimChange = () => { onUrlSync?.(key); refreshCanvasPreview(); invalidatePreview(); pulseCanvasResize(); };
+    const onDimChange = () => { sizeUserSet = true; onUrlSync?.(key); refreshCanvasPreview(); invalidatePreview(); pulseCanvasResize(); };
     inp.addEventListener('input', onDimChange);
     addScrubBehavior(inp, onDimChange, { format: v => `${v} ${dimUnit()}` });
   });
@@ -1625,6 +1824,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // URL just like a manual edit. The user can still override the fields afterwards.
   function setDims({ width, height, unit }: { width?: number; height?: number; unit?: string } = {}): void {
     if (manifest.render.dims === false) return;
+    sizeUserSet = true;   // a size-select pick is the user setting the page size
     const uEl = el!.querySelector<HTMLSelectElement>('[data-action="export-unit"]');
     if (uEl && unit) {
       uEl.value = unit;
@@ -1647,6 +1847,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const dpiFieldEl = el.querySelector<HTMLElement>('[data-dpi-field]');
   let curUnit = initUnit;
   unitSel?.addEventListener('change', () => {
+    sizeUserSet = true;   // choosing mm/in over px IS declaring a physical size
     const to = unitSel.value;
     const wEl = el!.querySelector<HTMLInputElement>('[data-action="export-width"]');
     const hEl = el!.querySelector<HTMLInputElement>('[data-action="export-height"]');

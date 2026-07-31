@@ -885,7 +885,11 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   border: 0;
   margin: 0;
   cursor: pointer;
-  background: repeating-conic-gradient(#ffffff06 0% 25%,#00000006 0% 50%) 50%/.5em .5em;
+  /* Themed preview surface + transparency checker (tokens.css). A preview is the
+     tool's own render, so it is transparent wherever the tool paints nothing — this
+     is what stands behind it, and it follows the theme rather than being baked into
+     the art. Checker first = on top of the surface. */
+  background: var(--preview-checker), var(--preview-surface);
   line-height: 0;
 }
 /* Every hero image/iframe fills the square and letterboxes within (never cropped, never
@@ -1007,7 +1011,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   aspect-ratio: 1 / 1;               /* uniform square preview area (matches .gtile-hero) */
   overflow: hidden;
   line-height: 0;
-  background: repeating-conic-gradient(#ffffff06 0% 25%, #00000006 0% 50%) 50% / .5em .5em;
+  background: var(--preview-checker), var(--preview-surface);   /* same shade as .gtile-hero */
 }
 .gcar-track {
   display: flex;
@@ -1618,7 +1622,7 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile
 .meta-dialog-preview {
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 0.75);
-  background: hsl(var(--muted) / 0.4);
+  background: var(--preview-checker), var(--preview-surface);   /* same shade as the tile */
   overflow: hidden;
   max-height: 220px;
   display: grid;

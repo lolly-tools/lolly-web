@@ -46,9 +46,17 @@ import { mountModal, type ModalHandle } from '../components/modal.ts';
 import { mountBodyPopover, pointAnchor, type PopoverAnchor } from '../components/body-popover.ts';
 import {
   filmstrip, peaks, stillFrames, nodeStill, nodeKey, peekNodeRaster, nodeRasterPending,
-  nodeRasterFailed, onNodeShotSettled, releaseClipThumbs, onIdle,
+  nodeRasterFailed, onNodeShotSettled, releaseClipThumbs, onIdle, svgMarkup, withBorrowedVisibility,
   MAX_NODE_RASTER_NODES,
 } from '../lib/clip-thumbs.ts';
+// The vector twin vocabulary. Imported for its markup builders ONLY: the panel must
+// never gain a static edge to bridge/export.ts (vector-paint imports nothing at all,
+// which is why the shared pieces live there), so the two twins that DO need the walker
+// reach it through a dynamic import inside the producer.
+import {
+  escXml, n3, parseSvgRoot, rectBody, stillTilePx, svgDoc, tileBody, waveformPathD,
+  type VectorTwin, type VectorTwinCanvas,
+} from '../lib/vector-paint.ts';
 import { TRANSITIONS, TRANSITION_KINDS, isTransitionKind, EASINGS, easingToWire } from '../lib/transitions.ts';
 import { mountEasingEditor, type EasingEditorHandle } from '../components/easing-editor.ts';
 import { MAX_TRANSITION_MS, MIN_TRANSITION_MS, createSequenceClock, type SequenceClock } from './sequence-clock.ts';
@@ -2291,6 +2299,25 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const { el, w, h, dpr, media } = job;
     const cv = el.querySelector<HTMLCanvasElement>('canvas.tl-clip-thumbs');
     if (!cv) return;
+
+    /**
+     * The bar's VECTOR TWIN: what this canvas would look like as SVG, for the export
+     * walker (lib/vector-paint.ts, bridge/export.ts's `vectorTwinEl`). Presence-keyed
+     * and invisible — no element, class, attribute or ThumbMode is added, so the bar's
+     * four children and the live paint are byte-for-byte what they always were, and a
+     * canvas that never gets a twin serialises exactly as it does today.
+     *
+     * It is CLEARED first and stamped only where a picture actually landed, because a
+     * stale twin is worse than none: it would describe pixels the bar is no longer
+     * showing, and the export would disagree with the screen.
+     */
+    const setTwin = (f: VectorTwin | null): void => {
+      const c = cv as VectorTwinCanvas;
+      if (f) c.__lollyVectorTwin = f;
+      else delete c.__lollyVectorTwin;
+    };
+    setTwin(null);
+
     if (!(w > 8) || !(h > 8)) return;
     const mode = thumbMode(media.kind, media.url, job.fill, job.canRaster);
     // Nothing to say about this box: leave the bar's kind tint alone rather than
@@ -2310,6 +2337,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       if (sizedOnce) return ctx2d;
       sizedOnce = true;
       cv.width = Math.round(w * dpr);
+      // Assigning width RESETS the bitmap (see above) — so whatever a twin was
+      // describing has just been erased. Cleared here rather than only at entry
+      // because `sized()` is deferred: the node branch's underlay can size the canvas
+      // passes after the twin that is still hanging off it was stamped.
+      setTwin(null);
       cv.height = Math.round(h * dpr);
       cv.style.width = `${w}px`;
       cv.style.height = `${h}px`;
@@ -2335,6 +2367,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = job.fill;
       ctx.fillRect(0, 0, w, h);
+      // One fillRect is one <rect>. The colour is captured by value: `job.fill` is a
+      // resolved colour string, and the job object is rebuilt every pass.
+      const fill = job.fill;
+      setTwin(() => svgDoc(w, h, rectBody(fill, w, h)));
       el.classList.add('has-thumbs');
     };
 
@@ -2371,6 +2407,67 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         const ctx = sized();
         if (!ctx) return;
         drawTiled(ctx, bm);
+        // ONLY once the raster actually landed. A declined, deferred, failed or aborted
+        // shot returns above and keeps `paintFill`'s honest flat-colour twin — an export
+        // must not claim a crisp walk of a box the bar never showed.
+        //
+        // The twin does not reuse the bitmap: it re-walks the LIVE box to real vector.
+        // Only numbers survive this callback (the aspect, hence the tile advance) —
+        // the bitmap belongs to the clip-thumbs LRU and is never retained.
+        const tile = stillTilePx(bm.height > 0 ? bm.width / bm.height : 0, h);
+        const box = job.box;
+        // The appearance this bitmap was keyed on. Re-checked at export time because a
+        // twin that merely re-walks the LIVE box exports whatever the box says NOW,
+        // which is not necessarily what the bar is showing: `scheduleThumbs` is
+        // debounced behind `onIdle(…, 400)`, so for at least that long after an edit the
+        // canvas still holds the OLD raster. Exporting in that window would emit a
+        // picture the user never saw — and, because `tile` is frozen from the old
+        // bitmap while the walk is sized live and stretched with
+        // preserveAspectRatio="none", a box resized in that window would export
+        // distorted. Mismatch ⇒ null ⇒ the PNG on screen, which is always honest.
+        const sigAtPaint = job.sig;
+        setTwin(async () => {
+          // The stage is live and the box may have been removed, re-laid-out or hidden
+          // by the clock since the shot; a detached node has no geometry to walk.
+          if (!box?.isConnected) return null;
+          // Recomputed from the LIVE model/style, exactly as the pass built `job.sig`.
+          // Reading the theme here rather than closing over the pass's stamp is
+          // deliberate: a theme flip between paint and export changes the picture too.
+          const rowNow = getBoxes().find((b) => String(b?.[cfg.idField] ?? '') === job.id);
+          const fillNow = getComputedStyle(box).backgroundColor || '';
+          const themeNow = document.documentElement?.getAttribute('data-theme') ?? '';
+          if (`${appearanceSig(rowNow, cfg)}\u0001${fillNow}\u0001${themeNow}` !== sigAtPaint) return null;
+          try {
+            const { renderSvgFromHtml } = await import('../bridge/export.ts');
+            // LAYOUT size, not the rendered rect — the same reasoning as
+            // `defaultNodeRasterer` in clip-thumbs: the stage carries the editor's zoom,
+            // and sizing off the rect would walk the box at whatever magnification the
+            // user happens to be at.
+            const bw = Math.max(1, Number.parseFloat(box.style.width) || box.offsetWidth || 1);
+            const bh = Math.max(1, Number.parseFloat(box.style.height) || box.offsetHeight || 1);
+            // `.seq-off` (display:none) is on every box outside the playhead window, and
+            // a walk of a display:none subtree yields nothing. withBorrowedVisibility is
+            // the right lease here precisely because this caller owns the read to
+            // completion — unlike captureNode, whose lease must outlive its own race.
+            const blob = await withBorrowedVisibility(box, () => renderSvgFromHtml(box, { width: bw, height: bh }));
+            const root = parseSvgRoot(await blob.text());
+            if (!root) return null;
+            // The canvas draws ONE bitmap repeated at its own aspect, so the vector does
+            // the same: the walk is sized to the tile box and stretched to it (the tile
+            // advance already carries the aspect, so nothing is distorted).
+            root.setAttribute('width', n3(tile));
+            root.setAttribute('height', n3(h));
+            root.setAttribute('preserveAspectRatio', 'none');
+            const inner = new XMLSerializer().serializeToString(root);
+            // Null when the bar would need more tiles than the vector form emits: the
+            // canvas loop is uncapped, so a short run would export a bar the user sees
+            // fully tiled with a blank right-hand end. The PNG is the honest answer.
+            const body = tileBody(inner, tile, w, h);
+            return body === null ? null : svgDoc(w, h, body);
+          } catch {
+            return null; // any failure leaves the walker on its unmodified raster path
+          }
+        });
       }).catch(() => { /* clip-thumbs never rejects; belt and braces */ });
       return;
     }
@@ -2415,6 +2512,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           const bh = amp * (h - 4);
           ctx.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.5), bh);
         }
+        // Same bars, as one <path> of subpaths. Built SYNCHRONOUSLY, here, for the same
+        // ownership reason the draw is: `data` is cache-owned, so the twin closes over
+        // the finished `d` string and never over the Float32Array.
+        const d = waveformPathD(data, w, h);
+        const ink = job.ink;
+        setTwin(() => svgDoc(w, h, `<path fill="${escXml(ink)}" d="${d}"/>`));
         el.classList.add('has-thumbs');
       }).catch(() => { /* clip-thumbs never rejects; belt and braces */ });
       return;
@@ -2431,6 +2534,43 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // OWNERSHIP CONTRACT (as below): cache-owned bitmap, drawn synchronously here
         // and never held past this callback.
         drawTiled(ctx, bm);
+        // A still is vector-expressible only when its SOURCE is vector. Numbers plus the
+        // source string are all that survives the callback; the bitmap is not retained.
+        const tile = stillTilePx(bm.height > 0 ? bm.width / bm.height : 0, h);
+        const src = media.url;
+        setTwin(async () => {
+          // data: only. `inlineSvgFromImg` would happily fetch a blob:/http(s) source,
+          // but the panel does no network I/O — a photograph stays a photograph, and a
+          // remote SVG simply keeps the raster path, which is correct and bounded.
+          if (!/^data:/i.test(src)) return null;
+          try {
+            const { inlineSvgFromImg } = await import('../bridge/export.ts');
+            const svg = await inlineSvgFromImg(src);
+            // svgMarkup is the same normaliser the live still path uses (root style
+            // stripped, viewBox-or-attrs sizing, size ceiling), so screen and export
+            // agree on what the source document even is.
+            const markup = svg ? svgMarkup(svg) : null;
+            const root = markup ? parseSvgRoot(markup) : null;
+            if (!root) return null;
+            // svgMarkup guarantees positive width/height attributes; a source with no
+            // viewBox needs one before width/height can scale rather than crop.
+            const nw = Number.parseFloat(root.getAttribute('width') || '');
+            const nh = Number.parseFloat(root.getAttribute('height') || '');
+            if (!(nw > 0) || !(nh > 0)) return null;
+            if (!root.getAttribute('viewBox')) root.setAttribute('viewBox', `0 0 ${n3(nw)} ${n3(nh)}`);
+            root.setAttribute('width', n3(tile));
+            root.setAttribute('height', n3(h));
+            root.setAttribute('preserveAspectRatio', 'none');
+            const inner = new XMLSerializer().serializeToString(root);
+            // Null when the bar would need more tiles than the vector form emits: the
+            // canvas loop is uncapped, so a short run would export a bar the user sees
+            // fully tiled with a blank right-hand end. The PNG is the honest answer.
+            const body = tileBody(inner, tile, w, h);
+            return body === null ? null : svgDoc(w, h, body);
+          } catch {
+            return null;
+          }
+        });
       }).catch(() => { /* see above */ });
       return;
     }
@@ -2457,6 +2597,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         x += fw;
         if (x >= w) break;
       }
+      // No twin, deliberately: decoded video frames are photographs. There is no vector
+      // form to recover, so the walker keeps rasterising this bar — which is the right
+      // answer, not a gap.
+      setTwin(null);
       el.classList.add('has-thumbs');
     }).catch(() => { /* see above */ });
   }
