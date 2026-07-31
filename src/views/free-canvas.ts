@@ -1242,7 +1242,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // turns it on. The layer itself lives inside `overlay` — a stage SIBLING of
   // #tool-canvas carrying [data-export-hide] — so no export path can reach it; see
   // onion-skin.ts's module doc for the three independent guarantees.
-  interface OnionTimeDetail { playing?: unknown; mode?: unknown; past?: unknown; future?: unknown; opacity?: unknown }
+  interface OnionTimeDetail { playing?: unknown; mode?: unknown; past?: unknown; future?: unknown; opacity?: unknown; activeIds?: unknown }
   let onionSkin: OnionSkinHandle | null = null;
   let onionLoading = false;
   let onionState: OnionPaintState | null = null;
@@ -1257,7 +1257,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function onionFrom(d: OnionTimeDetail | null | undefined): void {
     const mode = d?.mode === 'filled' ? 'filled' : d?.mode === 'outline' ? 'outline' : '';
     if (!mode) { onionOff(); return; }
-    onionState = { mode, past: d?.past, future: d?.future, opacity: d?.opacity };
+    onionState = { mode, past: d?.past, future: d?.future, opacity: d?.opacity, active: d?.activeIds };
     if (onionSkin) { onionSkin.paint(onionState); return; }
     if (onionLoading) return;
     onionLoading = true;

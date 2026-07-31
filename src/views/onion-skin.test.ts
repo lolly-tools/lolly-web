@@ -153,7 +153,10 @@ test('(c) source scan: no class is ever written, and every style/attribute write
   // Every inline-style and attribute write must target a node this module MINTED.
   // `live` / `canvasEl` are the read-only handles on the artboard; if either ever
   // appears on the left of a write, this fails.
-  const MINTED = new Set(['g', 'f', 'img', 'layer']);
+  // Nodes this module CREATED — including `clone`/`sub`, which are cloneNode products:
+  // a clone is the module's own node, and the element it was copied from is never
+  // touched (the byte-identity test below is the independent proof of that).
+  const MINTED = new Set(['g', 'f', 'img', 'layer', 'holder', 'clone', 'sub']);
   const writes = (re: RegExp): string[] => {
     const out: string[] = [];
     const r = new RegExp(re.source, 'g');
@@ -294,6 +297,101 @@ test('"Hide colourful previews" forces filled → outline', () => {
       'the filled ghost is exactly the colourful-preview noise that pref removes');
     assert.equal(f.ghosts()[0]!.querySelector('.onion-img'), null);
   } finally { html.removeAttribute('data-a11y-previews'); f.teardown(); }
+});
+
+// ── the coincident case ───────────────────────────────────────────────────────
+// A sequence's scenes are same-size and usually full-canvas, so a neighbour's rect is
+// the ACTIVE scene's rect. An outline then lands exactly on that scene's own edge (and
+// on the other ghost's), which is why the toggle read as doing nothing: measured live,
+// onion skin ON produced two coincident 1px lines at 30% and a corner chip clipped off
+// the canvas. Escalating to the picture is the only thing left that carries information.
+
+test('a ghost coincident with the ACTIVE scene escalates to the picture, even in outline mode', () => {
+  const f = mount([box('a', { bg: '#ff0000' }), box('live', { bg: '#0000ff' })], {
+    a: '<div class="lolly-box-text" style="font-size:96px">One</div>',
+  });
+  try {
+    f.skin.paint({ mode: 'outline', past: ['a'], future: [], opacity: 1, active: ['live'] });
+    const g = f.ghosts()[0]!;
+    assert.ok(g.hasAttribute('data-coincident'), 'flagged for the stylesheet');
+    assert.ok(g.querySelector('.onion-fill'), 'the neighbour’s colour');
+    const holder = g.querySelector('.onion-text') as HTMLElement;
+    assert.ok(holder, 'and its words — a text-only scene has no fill worth 12% and no <img>');
+    assert.equal(holder.textContent, 'One');
+    // Laid out at the box's NATIVE size and scaled as a unit: the font-size is native px.
+    assert.equal(holder.style.width, '100px');
+    // Past is nudged UP, future DOWN, in stage px (the translate composes before the
+    // scale): two coincident ghosts would otherwise centre their words on each other.
+    assert.equal(holder.style.transform, `translateY(${-0.25 * 100 * METRICS.scale}px) scale(${METRICS.scale})`);
+    // The clone gives up its own colour so the ghost's warm/cool coding can show
+    // through — two coincident ghosts otherwise draw the same-coloured words in the
+    // same place.
+    assert.equal((holder.firstElementChild as HTMLElement).style.color, '');
+  } finally { f.teardown(); }
+});
+
+test('a ghost whose rect DIFFERS from the active scene stays austere', () => {
+  const f = mount([box('a', { bg: '#ff0000' }), box('live', { x: 40, bg: '#0000ff' })], {
+    a: '<div class="lolly-box-text">One</div>',
+  });
+  try {
+    f.skin.paint({ mode: 'outline', past: ['a'], future: [], opacity: 1, active: ['live'] });
+    const g = f.ghosts()[0]!;
+    assert.equal(g.hasAttribute('data-coincident'), false);
+    assert.equal(g.querySelector('.onion-fill'), null, 'the outline still says everything it needs to');
+    assert.equal(g.querySelector('.onion-text'), null);
+  } finally { f.teardown(); }
+});
+
+test('no active ids at all: nothing escalates (the austere default is the fallback)', () => {
+  const f = mount([box('a', { bg: '#ff0000' })], { a: '<div class="lolly-box-text">One</div>' });
+  try {
+    f.skin.paint({ mode: 'outline', past: ['a'], future: [], opacity: 1 });
+    assert.equal(f.ghosts()[0]!.hasAttribute('data-coincident'), false);
+    assert.equal(f.ghosts()[0]!.querySelector('.onion-text'), null);
+  } finally { f.teardown(); }
+});
+
+test('"Hide colourful previews" suppresses the escalation too, not just filled mode', () => {
+  const f = mount([box('a', { bg: '#ff0000' }), box('live', { bg: '#0000ff' })], {
+    a: '<div class="lolly-box-text">One</div>',
+  });
+  const html = dom.window.document.documentElement;
+  try {
+    html.setAttribute('data-a11y-previews', 'hidden');
+    f.skin.paint({ mode: 'outline', past: ['a'], future: [], opacity: 1, active: ['live'] });
+    const g = f.ghosts()[0]!;
+    assert.equal(g.hasAttribute('data-coincident'), false,
+      'the pref removes pictures; escalating would route around it');
+    assert.equal(g.querySelector('.onion-fill'), null);
+    assert.equal(g.querySelector('.onion-text'), null);
+  } finally { html.removeAttribute('data-a11y-previews'); f.teardown(); }
+});
+
+test('the cloned text carries no id — a duplicate would capture the original’s references', () => {
+  const f = mount([box('a', { bg: '#ff0000' }), box('live', { bg: '#0000ff' })], {
+    a: '<div class="lolly-box-text" id="t1">One <span id="inner">two</span></div>',
+  });
+  try {
+    f.skin.paint({ mode: 'outline', past: ['a'], future: [], opacity: 1, active: ['live'] });
+    const holder = f.ghosts()[0]!.querySelector('.onion-text') as HTMLElement;
+    assert.ok(holder);
+    assert.equal(holder.querySelectorAll('[id]').length, 0);
+    // Non-vacuity: the original is untouched and keeps both ids.
+    assert.equal(f.canvasEl.querySelectorAll('.lolly-box-text[id], .lolly-box-text [id]').length, 2);
+  } finally { f.teardown(); }
+});
+
+test('escalation still writes NOTHING to the live box (the export contract holds)', () => {
+  const f = mount([box('a', { bg: '#ff0000' }), box('live', { bg: '#0000ff' })], {
+    a: '<div class="lolly-box-text">One</div>',
+  });
+  try {
+    const before = f.boxSnapshot();
+    f.skin.paint({ mode: 'outline', past: ['a'], future: [], opacity: 1, active: ['live'] });
+    assert.ok(f.ghosts()[0]!.querySelector('.onion-text'), 'premise: it really did escalate');
+    assert.deepEqual(f.boxSnapshot(), before);
+  } finally { f.teardown(); }
 });
 
 // ── the off state ─────────────────────────────────────────────────────────────

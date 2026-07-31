@@ -76,6 +76,12 @@ export interface OnionPaintState {
   future?: unknown;
   /** Master ghost strength, 0…1. Absent reads as 1. */
   opacity?: unknown;
+  /**
+   * The ids on screen at the playhead (`tl-time`'s own `activeIds`), used ONLY to
+   * detect the coincident case below. Absent reads as "nothing active", which simply
+   * means no ghost escalates — the austere outline, exactly as before.
+   */
+  active?: unknown;
 }
 
 export interface MountOnionSkinOpts {
@@ -159,6 +165,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
 
   function ghostFor(
     box: Box, live: Element | undefined, offset: string, mode: OnionMode, m: OnionMetrics,
+    coincident: boolean,
   ): HTMLElement | null {
     const w = num(box[cfg.wField], 0);
     const h = num(box[cfg.hField], 0);
@@ -184,7 +191,19 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
     const radius = cfg.radiusField ? num(box[cfg.radiusField], 0) : 0;
     if (radius > 0) g.style.borderRadius = `${radius * m.scale}px`;
 
-    if (mode === 'filled') {
+    // A ghost whose rect COINCIDES with the scene on screen is the one case an outline
+    // cannot serve: the ring lands exactly on the active scene's own edge (and on the
+    // other ghost's), so the feature reads as doing nothing at all. That is the normal
+    // shape of a sequence — scenes are same-size, usually full-canvas — which is why
+    // "onion skin does nothing" was the reasonable report. Here, and ONLY here, the
+    // ghost shows the neighbour's PICTURE instead of its border: what an animator wants
+    // from a coincident frame is what is in it, and there is no geometry left to draw.
+    // The `filled` default stays outline everywhere the rects genuinely differ.
+    if (mode === 'filled' || coincident) {
+      // A data attribute, not a class: the module's source scan bans `classList.*`
+      // outright (guarantee 3 — a class is the shape that would reach an exported
+      // plate), and `data-offset` above is already the idiom for a per-ghost flag.
+      if (coincident) g.setAttribute('data-coincident', '');
       const fill = cfg.fillField ? colorOf(box[cfg.fillField]) : '';
       if (fill) {
         const f = doc.createElement('div');
@@ -204,6 +223,55 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
         const fit = cfg.fitField ? String(box[cfg.fitField] ?? '') : '';
         img.style.objectFit = FITS.has(fit) ? fit : 'contain';
         g.appendChild(img);
+      }
+      // The box's OWN text element, CLONED — the same read-only borrow the <img> above
+      // is, and the reason a text-driven scene ghosts as anything at all: a scene whose
+      // whole content is a word has no fill worth 12% and no <img>, so fill+picture
+      // alone came back empty. Cloning (rather than re-implementing align/valign/fit)
+      // means the ghost says what the scene says, in the scene's own type. Ids are
+      // stripped: a duplicate id in the document would capture the original's
+      // references. The clone is laid out in NATIVE px and scaled as a unit, because
+      // the box's font-size is native and the ghost's box is stage px.
+      const textEl = live?.querySelector('.lolly-box-text');
+      if (textEl) {
+        const holder = doc.createElement('div');
+        holder.className = 'onion-text';
+        holder.style.width = `${w}px`;
+        holder.style.height = `${h}px`;
+        // PAST above, FUTURE below. Two coincident ghosts otherwise centre their words
+        // on the active scene's and on each other — measured: "One"/"Two"/"Three" came
+        // out as one unreadable smear, which is the colour-mud objection in text form.
+        // Nudging is honest here in a way it would not be for a differing rect: the
+        // geometry is identical BY DEFINITION in this branch, so there is no position
+        // left to misreport, and a filmstrip reading (previous up, next down) is what
+        // the vertical axis already means everywhere else in the editor.
+        // The translate is in STAGE px because CSS applies it in the parent's space,
+        // before the scale; the ghost's `overflow: hidden` clips a nudge that would
+        // otherwise escape a top- or bottom-aligned box.
+        const step = Math.abs(parseInt(offset, 10)) || 1;
+        const shift = (offset.startsWith('-') ? -1 : 1) * Math.min(0.42, 0.25 * step) * h * m.scale;
+        holder.style.transform = `translateY(${shift}px) scale(${m.scale})`;
+        // The box's vertical/horizontal alignment lives as INLINE flex on the box
+        // itself (free-canvas writes valign/align there), not on the text element — so
+        // a clone dropped into a plain div lands at the top-left regardless of where
+        // the scene puts it. Read the two values straight off the live element's style
+        // object: no computed style, so this works identically under test.
+        const ls = (live as HTMLElement | undefined)?.style;
+        holder.style.justifyContent = ls?.justifyContent || '';
+        holder.style.alignItems = ls?.alignItems || '';
+        const clone = textEl.cloneNode(true) as HTMLElement;
+        clone.removeAttribute('id');
+        for (const sub of clone.querySelectorAll('[id]')) sub.removeAttribute('id');
+        // The ghost's DIRECTION colour, not the scene's own — two coincident ghosts
+        // otherwise draw the same-coloured words in the same place and turn to mush,
+        // and a neighbour whose text colour matches the active scene's would vanish
+        // entirely. Dropping the inline `color` is what lets the sheet's
+        // `color: var(--onion-c)` through; the write is on the CLONE, never the live
+        // node. Warm past / cool future stays the one reading across the feature.
+        clone.style.removeProperty('color');
+        for (const sub of clone.querySelectorAll<HTMLElement>('[style*="color"]')) sub.style.removeProperty('color');
+        holder.appendChild(clone);
+        g.appendChild(holder);
       }
     }
     return g;
@@ -231,6 +299,23 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
     const boxes = boxIndex();
     const live = liveIndex();
     const m = metricsOf();
+
+    // The rects on screen at the playhead. A ghost matching one of them to within half
+    // a model pixel is the coincident case ghostFor escalates. "Hide colourful previews"
+    // suppresses the escalation outright rather than routing round it — that pref exists
+    // to remove exactly the pictures escalating would add, and an austere invisible
+    // outline is the honest answer when the user has asked for no previews.
+    const activeRects = hidden ? [] : idList(state?.active)
+      .map((id) => boxes.get(id))
+      .filter((b): b is Box => !!b)
+      .map((b) => [num(b[cfg.xField], 0), num(b[cfg.yField], 0),
+                   num(b[cfg.wField], 0), num(b[cfg.hField], 0)] as const);
+    const coincidesWithActive = (b: Box): boolean => {
+      const x = num(b[cfg.xField], 0), y = num(b[cfg.yField], 0);
+      const w = num(b[cfg.wField], 0), h = num(b[cfg.hField], 0);
+      return activeRects.some((r) => Math.abs(r[0] - x) < 0.5 && Math.abs(r[1] - y) < 0.5
+        && Math.abs(r[2] - w) < 0.5 && Math.abs(r[3] - h) < 0.5);
+    };
     // `past`/`future` arrive NEAREST-first (onionNeighbours' contract), and the walk is
     // backwards so the furthest ghost is appended first: the nearest neighbour then
     // paints on top of the one behind it, which is the depth reading every onion-skin
@@ -239,7 +324,7 @@ export function mountOnionSkin(opts: MountOnionSkinOpts): OnionSkinHandle {
       for (let k = ids.length - 1; k >= 0; k--) {
         const box = boxes.get(ids[k]!);
         if (!box) continue;
-        const g = ghostFor(box, live.get(ids[k]!), `${sign}${k + 1}`, mode, m);
+        const g = ghostFor(box, live.get(ids[k]!), `${sign}${k + 1}`, mode, m, coincidesWithActive(box));
         if (g) layer.appendChild(g);
       }
     };

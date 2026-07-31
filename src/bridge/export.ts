@@ -2771,10 +2771,28 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // rasterising the whole node), sized/positioned per background-size/position and clipped
     // to the rounded box. Only when we CAN'T vectorise (conic, repeat, unresolvable) does the
     // escape-hatch above rasterise.
-    const bgImg = ownPaintRastered ? 'none' : style.backgroundImage;
+    const bgImgAll = ownPaintRastered ? 'none' : style.backgroundImage;
     const bgRgb = ownPaintRastered ? null : parseCssColorFull(style.backgroundColor);
     if (bgRgb) g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, rgbaCss(bgRgb)));
-    if (bgImg && bgImg !== 'none') {
+    // `background-image` is a LIST: CSS lists layers top-first and paints them
+    // bottom-first, and each layer carries its own size/position/repeat (those lists
+    // cycle when shorter than the image list). Until 2026-07-31 the whole list was
+    // handed to the gradient parsers as ONE value, and `^linear-gradient\((.+)\)$` is
+    // greedy — so two stacked gradients matched as one and their stop lists were
+    // concatenated. Offsets restart mid-list, SVG clamps stops monotonically, and a
+    // flat swatch chip painted as a dark-to-white fade (docs/shots/brand-colours.svg).
+    // One gradient/image element per layer, emitted bottom-first.
+    const bgLayers = (bgImgAll && bgImgAll !== 'none' ? splitCssArgs(bgImgAll) : [])
+      .map((value, idx) => ({ value: value.trim(), idx }))
+      .filter((l) => l.value && l.value !== 'none');
+    const layerProp = (list: string | null | undefined, i: number, fallback: string) => {
+      const parts = splitCssArgs(list || '').filter((p) => p !== '');
+      return parts.length ? parts[i % parts.length]! : fallback;
+    };
+    for (const { value: bgImg, idx: layerIdx } of bgLayers.slice().reverse()) {
+      const bgSize     = layerProp(style.backgroundSize,     layerIdx, 'auto');
+      const bgPosition = layerProp(style.backgroundPosition, layerIdx, '0% 0%');
+      const bgRepeat   = layerProp(style.backgroundRepeat,   layerIdx, 'repeat');
       const gid = ++uid;
       // The positioning area (the padding box) and its origin. Hoisted out of the
       // url() branch below because the CONIC branch needs it too — see the tile
@@ -2797,7 +2815,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       // `intrinsic` is null: a gradient has no intrinsic size, so `auto` resolves to
       // the area and the untiled case behaves exactly as before.
       const conicPl = gradEl ? null
-        : placeBackground(style.backgroundSize, style.backgroundPosition, style.backgroundRepeat, area, null);
+        : placeBackground(bgSize, bgPosition, bgRepeat, area, null);
       const conicTiles = Boolean(conicPl && conicPl.w > 0 && conicPl.h > 0
         && (conicPl.repeatX || conicPl.repeatY)
         && (conicPl.w < area.w - 0.5 || conicPl.h < area.h - 0.5));
@@ -2852,8 +2870,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           // hero: a 14px right-centred select chevron came out smeared across the
           // whole field, and this app's field primitive puts one on every select and
           // every checkbox.
-          const pl = placeBackground(style.backgroundSize, style.backgroundPosition,
-            style.backgroundRepeat, area, await intrinsicSize(href));
+          const pl = placeBackground(bgSize, bgPosition, bgRepeat, area, await intrinsicSize(href));
 
           const cid = `fcbgclip-${++uid}`;
           const clip = document.createElementNS(NS, 'clipPath');
@@ -3748,6 +3765,46 @@ function fontMetricsPx(style: CSSStyleDeclaration, fontSizePx: number): { ascent
 interface PseudoDescriptor {
   text: string; bg: Rgba | null; radii: CornerRadii; uniform: CornerPair | null;
   w: number; h: number; ps: CSSStyleDeclaration; x: number; y: number;
+  /** The pseudo's own transform, LINEAR part only (rotate/scale/skew), about its
+   *  transform-origin in root space. Null for none / pure translate / 3-D — the
+   *  translate component is already folded into x/y, so a caller that ignores this
+   *  still lands the common `translate(-50%,-50%)` centring idiom correctly. */
+  mat: Mat2D | null;
+}
+
+/**
+ * Does this element establish the containing block for an ABSOLUTELY positioned
+ * descendant? `position !== static` is only the first clause of CSS Position 3 §3.
+ *
+ * Missing the rest is not academic. `.profile-link` (the top-right profile pill) is
+ * `position: static` with `backdrop-filter: blur(4px)` from the shared `.btn--glass`
+ * alias — which makes it a containing block — so the browser anchors its `::before`
+ * avatar dot to the PILL, while a position-only walk anchored it to the whole
+ * `.gallery-topright` cluster 103px to the left. The dot came out sitting on top of
+ * the settings button in every SVG and PDF export (docs/shots/use-utilities.svg).
+ * Glass/blur chrome is used throughout this app, so the position-only rule is wrong
+ * wherever a pseudo marker sits inside it.
+ */
+function establishesAbsContainingBlock(cs: CSSStyleDeclaration): boolean {
+  if (cs.position !== 'static') return true;
+  const s = cs as unknown as Record<string, string | undefined>;
+  if (cs.transform && cs.transform !== 'none') return true;
+  // The individual transform properties are equally sufficient (Transforms 2 §3).
+  for (const k of ['translate', 'rotate', 'scale']) {
+    const v = s[k];
+    if (v && v !== 'none') return true;
+  }
+  if (cs.perspective && cs.perspective !== 'none') return true;
+  if (cs.filter && cs.filter !== 'none') return true;
+  const backdrop = s.backdropFilter ?? s.webkitBackdropFilter;
+  if (backdrop && backdrop !== 'none') return true;
+  // `will-change` on any of the above is sufficient on its own — the point of the
+  // property is that the browser promotes the element BEFORE the value changes.
+  if (/\b(transform|perspective|filter|backdrop-filter|contain|translate|rotate|scale)\b/.test(cs.willChange || '')) return true;
+  if (/\b(paint|layout|strict|content)\b/.test(cs.contain || '')) return true;
+  const cv = s.contentVisibility;
+  if (cv === 'auto' || cv === 'hidden') return true;
+  return false;
 }
 
 // Resolve a CSS generated-content pseudo-element (::before/::after) into a drawable
@@ -3783,7 +3840,7 @@ function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
   if (!text.trim() && !(bg && w > 0.5 && h > 0.5)) return null;
 
   let cb: Element | null = el;
-  while (cb && window.getComputedStyle(cb).position === 'static') cb = cb.parentElement;
+  while (cb && !establishesAbsContainingBlock(window.getComputedStyle(cb))) cb = cb.parentElement;
   cb = cb || el;
   const cbRect = cb.getBoundingClientRect();
   const cbStyle = window.getComputedStyle(cb);
@@ -3792,11 +3849,20 @@ function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
   const left = parseFloat(ps.left);
   const top  = parseFloat(ps.top);
   const { radii, uniform } = resolveRadii(ps, w, h);
-  return {
-    text, bg, radii, uniform, w, h, ps,
-    x: ox + (isFinite(left) ? left : 0),
-    y: oy + (isFinite(top)  ? top  : 0),
-  };
+  // The pseudo's OWN transform. `translate(-50%, -50%)` on an absolutely positioned
+  // marker is the standard centring idiom (and is what `.profile-link::before` uses),
+  // so ignoring it drops the marker half its own size down and right of where the
+  // browser paints it — the mispositioned ghost tooltips noted above were this.
+  // The translate lands in x/y for every caller; only a rotate/scale/skew needs the
+  // matrix branch, which the SVG emitter wraps in a <g>.
+  const mat = parseCssMatrix(ps.transform);
+  const x = ox + (isFinite(left) ? left : 0) + (mat ? mat.e : 0);
+  const y = oy + (isFinite(top)  ? top  : 0) + (mat ? mat.f : 0);
+  const linear = mat && !(Math.abs(mat.a - 1) < 1e-6 && Math.abs(mat.b) < 1e-6
+    && Math.abs(mat.c) < 1e-6 && Math.abs(mat.d - 1) < 1e-6)
+    ? { a: mat.a, b: mat.b, c: mat.c, d: mat.d, e: 0, f: 0 }
+    : null;
+  return { text, bg, radii, uniform, w, h, ps, x, y, mat: linear };
 }
 
 // Emit any ::before/::after markers of `el` into the SVG group `parentG`.
@@ -3817,7 +3883,20 @@ async function svgPseudoContent(
     // pseudoDescriptor already guarantees `position: absolute`, so the pseudo is
     // a positioned descendant; only its z-index decides which layer.
     const zRaw = (ds.ps.zIndex || 'auto').trim();
-    const parentG_ = defer ? defer(zRaw === 'auto' ? 0 : (Number.parseInt(zRaw, 10) || 0)) : parentG;
+    let parentG_ = defer ? defer(zRaw === 'auto' ? 0 : (Number.parseInt(zRaw, 10) || 0)) : parentG;
+    // A rotate/scale/skew on the pseudo itself: one <g> about its transform-origin,
+    // holding the fill and the text. (The translate component is already in x/y.)
+    if (ds.mat) {
+      // A COMPUTED transform-origin is always resolved to px, so parseFloat is the
+      // whole parse — same read rotationPivot() does for real elements.
+      const o = String(ds.ps.transformOrigin || '').split(' ').map(parseFloat);
+      const pivotX = x + (Number.isFinite(o[0]!) ? o[0]! : ds.w / 2);
+      const pivotY = y + (Number.isFinite(o[1]!) ? o[1]! : ds.h / 2);
+      const tg = document.createElementNS(NS, 'g');
+      tg.setAttribute('transform', matToSvg(matAboutPivot(ds.mat, pivotX, pivotY)));
+      parentG_.appendChild(tg);
+      parentG_ = tg;
+    }
     if (ds.bg && ds.w > 0.5 && ds.h > 0.5) {
       const f = ds.bg[3] < 1
         ? `rgba(${ds.bg[0]},${ds.bg[1]},${ds.bg[2]},${ds.bg[3]})`
@@ -3883,6 +3962,11 @@ function makeSvgRect(NS: string, x: number, y: number, w: number, h: number, rx:
 // Uses gradientUnits="userSpaceOnUse" so coordinates match the canvas space.
 // Returns null if the value is not a parseable linear gradient.
 function buildLinearGradientEl(NS: string, bgImage: string, elX: number, elY: number, elW: number, elH: number, uid: number): Element | null {
+  // ONE layer only. `.+` is greedy, so a two-layer `linear-gradient(…), linear-gradient(…)`
+  // otherwise matches as a single gradient and both stop lists are concatenated into one
+  // element — offsets restart mid-list and SVG clamps them, so the second layer's colours
+  // smear over the first. Callers split the layer list and emit one element per layer.
+  if (splitCssArgs(bgImage).length > 1) return null;
   const m = bgImage.match(/^linear-gradient\((.+)\)$/s);
   if (!m) return null;
   const parts = splitCssArgs(m[1]!);
@@ -4043,6 +4127,7 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
 }
 
 function buildRadialGradientEl(NS: string, bgImage: string, elX: number, elY: number, elW: number, elH: number, uid: number): Element | null {
+  if (splitCssArgs(bgImage).length > 1) return null;   // one LAYER per element — see buildLinearGradientEl
   const g = parseRadialGradient(bgImage, elW, elH);
   if (!g) return null;
   const { rx, ry } = g;
@@ -5254,20 +5339,27 @@ function resolveStyleProp(el: any, prop: string): string | null {
 // linear/radial gradient (the caller falls back to the midpoint solid).
 async function gradientPng(bgImg: string, w: number, h: number, pxW: number, pxH: number, imprint?: ImprintState): Promise<string | null> {
   const NS = 'http://www.w3.org/2000/svg';
-  const grad = buildLinearGradientEl(NS, bgImg, 0, 0, w, h, 1)
-    || buildRadialGradientEl(NS, bgImg, 0, 0, w, h, 1);
-  if (!grad) return null;
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('xmlns', NS);
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   const defs = document.createElementNS(NS, 'defs');
-  defs.appendChild(grad);
   svg.appendChild(defs);
-  const rect = document.createElementNS(NS, 'rect');
-  rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
-  rect.setAttribute('width', String(w)); rect.setAttribute('height', String(h));
-  rect.setAttribute('fill', 'url(#svggrad-1)');
-  svg.appendChild(rect);
+  // Same layer rule as the SVG walker: `background-image` is a list, listed top-first
+  // and painted bottom-first, and each layer is its own gradient element.
+  let id = 0;
+  for (const layer of splitCssArgs(bgImg).map((l) => l.trim()).filter((l) => l && l !== 'none').reverse()) {
+    const gid = ++id;
+    const grad = buildLinearGradientEl(NS, layer, 0, 0, w, h, gid)
+      || buildRadialGradientEl(NS, layer, 0, 0, w, h, gid);
+    if (!grad) continue;
+    defs.appendChild(grad);
+    const rect = document.createElementNS(NS, 'rect');
+    rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
+    rect.setAttribute('width', String(w)); rect.setAttribute('height', String(h));
+    rect.setAttribute('fill', `url(#svggrad-${gid})`);
+    svg.appendChild(rect);
+  }
+  if (!defs.childNodes.length) return null;
   return rasterizeSvgElement(svg, pxW, pxH, false, imprint);
 }
 

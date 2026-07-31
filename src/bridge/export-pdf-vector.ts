@@ -91,6 +91,10 @@ export interface PdfGradientSpec {
 // so the PDF vector gradient lands identically to the SVG one. Returns null when the value
 // isn't a parseable single linear/radial gradient (caller falls back to raster / midpoint).
 export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number, h: number, cssToPt = 0): PdfGradientSpec | null {
+  // SINGLE layer only: a PDF shading pattern paints one gradient, and the greedy `.+`
+  // below would otherwise match a two-layer list as one and concatenate the stop lists.
+  // A layered background falls back to the caller's raster path, which stacks properly.
+  if (splitCssArgs(bgImage).length > 1) return null;
   const lin = bgImage.match(/^linear-gradient\((.+)\)$/s);
   if (lin) {
     const parts = splitCssArgs(lin[1]!);

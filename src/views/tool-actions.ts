@@ -31,7 +31,8 @@ import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { aspectWarning } from './export-size.js';
 import { MAX_TIME_S } from './timeline-math.ts';
 import { bumpMetric, recordFormat } from '../metrics.js';
-import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport } from '../bridge/format-support.js';
+import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
+import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
 
@@ -129,6 +130,10 @@ const keepFormat = (f: string): boolean =>
   : f === 'mp4' ? videoSupport().mp4
   : f === 'cmyk-tiff' ? CMYK_TIFF_OK
   : f === 'tiff' ? TIFF_OK
+  // The pro float formats (exr/hdr) need a float rasterisation the browser has no
+  // path to — see proFormatSupport. False today, so they never reach the picker and
+  // the Pro <optgroup> below never has anything to hold.
+  : isProFormat(f) ? proFormatSupport()
   : true;
 
 const fmtLabel = (f: string): string => FMT_LABEL[f] ?? f.toUpperCase();
@@ -343,13 +348,21 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   // Tier 1 — filename · format. The format selector is the highest-priority
   // control; the filename rides alongside it as the natural "name.format" pair.
+  //
+  // The float interchange formats (exr/hdr) are compositing containers, not peers
+  // of png/jpg, so they sit in their own native <optgroup> — no custom CSS, no
+  // extra space, native a11y. The group is built from what SURVIVED keepFormat, so
+  // it exists only where those formats can actually be produced; on the web that is
+  // nowhere today (see proFormatSupport), and the markup below then has no optgroup
+  // in it at all. See views/export-depth.ts.
+  const formatOptions = formatOptionsHtml(formats, initialFmt, fmtLabel);
   const filenameRow = `
       <div class="filename-extension">
         <input type="text" class="export-filename" data-action="filename"
               value="${escape(exportDefaults.filename ?? manifest.name)}" placeholder="filename" spellcheck="false">
         ${formats.length > 1 ? `
           <select data-action="format" aria-label="Export format">
-            ${formats.map(f => `<option value="${f}" ${f === initialFmt ? 'selected' : ''}>${fmtLabel(f)}</option>`).join('')}
+            ${formatOptions}
           </select>
         ` : ''}
       </div>`;
@@ -1161,6 +1174,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       syncBarsDefault(fmt);
       updateFidelityWarning();  // only SVG/HTML keep a frosted panel
       refreshPrintUi(); // owns [data-pdf-only] (password) visibility — see below
+      refreshDepthFact();
       onUrlSync?.('format');
       onUrlSync?.('marks');  // bars may have flipped with the format
     });
@@ -1185,6 +1199,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         autoSetting = false;
       }
     });
+  }
+
+  // The depth fact — what the chosen format WILL carry beyond an ordinary 8-bit
+  // image, stated and not offered (plans/deeprichpixels.md §10 item 3). Nothing is
+  // rendered unless there is something true to say, so this runs wherever either
+  // input to that truth changes: the format, and the HDR toggle. `?depth=` has no
+  // panel control by design — it rides the link, so exportDefaults is its only
+  // source. See views/export-depth.ts for the derivation.
+  function refreshDepthFact(): void {
+    const fmt = formatEl?.value ?? initialFmt;
+    const hdr = el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ?? exportDefaults.hdr;
+    applyDepthFact(el, depthFact(fmt, { hdr: !!hdr, depth: exportDefaults.depth }));
   }
 
   // Print marks card: reveal its body when enabled, and hide the open-password
@@ -1284,6 +1310,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       onUrlSync?.('marks');
     }));
   refreshPrintUi(); // initial state (e.g. card pre-opened from a shared link)
+  refreshDepthFact(); // renders nothing unless a deep/gain-map path is already selected
 
   // Colour profile (CMYK press condition) — print-PDF only; persists via URL/save.
   el.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.addEventListener('change', () => onUrlSync?.('profile'));
@@ -1301,6 +1328,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const on = (e.target as HTMLInputElement).checked;
     const body = el.querySelector<HTMLElement>('[data-hdr-body]');
     if (body) body.style.display = on ? 'grid' : 'none';
+    refreshDepthFact();   // HDR is what makes the PNG deep / the JPEG a gain map
     onUrlSync?.('hdr');
   });
   for (const a of ['hdr-peak', 'hdr-reach', 'hdr-lift', 'hdr-focus']) {
