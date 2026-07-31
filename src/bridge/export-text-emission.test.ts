@@ -377,3 +377,31 @@ test('a plain path and an unquoted url() still parse (no regression from the quo
       + 'background-repeat:no-repeat}</style><div class="bg"></div>');
     assert.match(svg, /<image[^>]*href="data:image\//, 'an unquoted path url() must still resolve and inline');
   });
+
+// ── gradient stop offsets ────────────────────────────────────────────────────
+
+test('an absolute px stop position becomes a fraction of the gradient line, not "Npx"',
+  { skip: SKIP }, async () => {
+    // <stop offset> takes a number 0-1 or a percentage. A raw "25px" is invalid SVG:
+    // resvg discards it outright (both stops of a two-stop strip collapse to the last
+    // colour) and the render drifts far from the browser's. parseRadialGradient has
+    // always divided a px stop by rx; this pins the linear analogue, dividing by the
+    // gradient-line length (2*len). On a 100px-wide box at 90deg the line is 100px,
+    // so 25px is exactly 25%.
+    const svg = await render(
+      '<style>.g{width:100px;height:30px;background-image:'
+      + 'linear-gradient(90deg,#f00 0px,#f00 25px,#00f 25px,#00f 100px)}</style><div class="g"></div>');
+    const offs = [...svg.matchAll(/offset="([^"]+)"/g)].map((m) => m[1] as string);
+    assert.ok(offs.length >= 4, `expected 4 stops, got ${offs.length}`);
+    assert.deepEqual(offs.slice(0, 4), ['0%', '25%', '25%', '100%']);
+    assert.equal(offs.some((o) => o.endsWith('px')), false, 'no px offset may survive');
+  });
+
+test('a percentage-only gradient is untouched by the px conversion', { skip: SKIP }, async () => {
+  // The common case by far, so it must not churn a single byte of existing exports
+  // or committed docs baselines.
+  const svg = await render(
+    '<style>.g{width:100px;height:30px;background-image:'
+    + 'linear-gradient(90deg,#0ea5e9 0%,#9333ea 100%)}</style><div class="g"></div>');
+  assert.deepEqual([...svg.matchAll(/offset="([^"]+)"/g)].map((m) => m[1]), ['0%', '100%']);
+});
