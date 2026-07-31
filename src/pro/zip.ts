@@ -54,6 +54,13 @@ export interface ZipMeta {
    * module never sees a note object). Rendered as the `[ Notes ]` block.
    */
   noted?: ReadonlyArray<{ name: string; lines: readonly string[] }>;
+  /**
+   * Findings about the RUN, not about a file: the platform's own refusals ("Lolly
+   * cannot predict the output file size") and the brand palette. They lead the
+   * `[ Notes ]` block, once, instead of being repeated under every filename — which
+   * is what made a clean 500-row batch ship a thousand-line note block.
+   */
+  runNotes?: readonly string[];
   /** Names the original package when this zip is a retry of an earlier run. */
   retryOf?: string;
   /**
@@ -134,7 +141,7 @@ function unmadeLines(unmade: readonly UnmadeRow[]): string[] {
 //
 // Two later blocks ride the same voice: the rows that produced no file, and the
 // per-file notes. Both are siblings of the list they qualify, never UI chrome.
-export function creditText(files: ManifestFile[] = [], { zipName, author, unmade = [], noted = [], retryOf }: ZipMeta = {}): string {
+export function creditText(files: ManifestFile[] = [], { zipName, author, unmade = [], noted = [], runNotes = [], retryOf }: ZipMeta = {}): string {
   const now = new Date();
   const date = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const time = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -230,7 +237,12 @@ export function creditText(files: ManifestFile[] = [], { zipName, author, unmade
   // "Notes", never "warnings": most findings are counts, and an info state must
   // never render as damage.
   const noteBlocks = noted.filter(x => x.lines.length).map(x => `## ${x.name}\n${x.lines.map(l => `ℹ ${l}`).join('\n')}`);
-  if (noteBlocks.length) {
+  // Run-level findings lead, under their own header, so a reader can tell "this is
+  // true of the whole job" from "this is true of that file" without counting.
+  const runBlock = runNotes.length
+    ? [`## This run\n${runNotes.map(l => `ℹ ${l}`).join('\n')}`]
+    : [];
+  if (noteBlocks.length || runBlock.length) {
     lines.push(
       '',
       '',
@@ -238,7 +250,7 @@ export function creditText(files: ManifestFile[] = [], { zipName, author, unmade
       '',
       'Findings from the preflight pass. They do not mean the file is wrong.',
       '',
-      noteBlocks.join('\n\n'),
+      [...runBlock, ...noteBlocks].join('\n\n'),
     );
   }
 

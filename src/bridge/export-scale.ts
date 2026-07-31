@@ -15,3 +15,20 @@
  * count that is four times too small (`plans/preflight-and-cost.md` §6).
  */
 export const RASTER_DEFAULT_SCALE = 2;
+
+/**
+ * The formats whose still raster is produced through `rasterStyle`, and therefore the
+ * only ones {@link RASTER_DEFAULT_SCALE} applies to.
+ *
+ * Deliberately NOT the engine's `RASTER_FORMATS`, which answers a different question
+ * ("does this format have pixels at all"): `gif`/`apng` are in that set and are
+ * captured by `createFrameSource`, whose target is the node box at 1x, so doubling
+ * them would be the same invented number in the other direction.
+ *
+ * `cmyk-tiff` is excluded because it is CONDITIONAL — `renderCmykTiff` uses
+ * `coverRasterStyle` (sized from the print geometry) whenever a bleed or any mark is
+ * set, and only falls back to `rasterStyle` when neither is. A caller that knows the
+ * print settings adds it for itself; a caller that does not must not assume.
+ */
+export const SUPERSAMPLED_EXPORT_FORMATS: ReadonlySet<string> =
+  new Set(['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff']);

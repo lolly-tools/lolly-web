@@ -171,19 +171,19 @@ const CSS = `
 .viz-menu-item[aria-checked="true"] .viz-menu-dot { background: currentColor; }
 .viz-menu-sep { height: 1px; margin: 5px 6px; background: rgb(255 255 255 / .14); }
 /* With 200+ artist presets a flat list is unusable, so the menu is a SEARCH list: a filter
-   field over a scrolling result set. The menu itself no longer scrolls — the list does, so
-   the field and the action rows stay put while results change under them. */
+   field over a scrolling result set. The field and the setting rows sit OUTSIDE the
+   scroller, so they stay put while results change under them. */
 /* The menu is settings-then-library: a short block of pill rows at a fixed height, and
    under it ONE tall scroller holding every preset. Sized generously (2026-07-31) — with
    200+ entries the old min(72vh, 520px) box, most of it spent on rows and headings, showed
    about six presets at a time.
 
-   The menu keeps its own `overflow-y: auto` as a SAFETY VALVE, not as a normal scroller:
+   The menu keeps its own 'overflow-y: auto' as a SAFETY VALVE, not as a normal scroller:
    on a tall window the settings block and the list both fit and it never scrolls, but on a
-   short one it is what stops the fixed rows being clipped outright. (`overflow: hidden`
+   short one it is what stops the fixed rows being clipped outright. ('overflow: hidden'
    here was tried and is wrong — at 86vh of a 500px window the rows plus the list's floor
    exceed the box, and hidden means the bottom of the list is simply unreachable.) Wheel
-   chaining from the list into it is already prevented by the list's `overscroll-behavior`,
+   chaining from the list into it is already prevented by the list's 'overscroll-behavior',
    which is what actually made nested scrollers feel like a fight. */
 .viz-menu { display: flex; flex-direction: column; width: min(340px, calc(100vw - 24px));
   max-height: min(86vh, 720px); overflow-y: auto; overscroll-behavior: contain; }
@@ -195,13 +195,19 @@ const CSS = `
 /* The list is the ONLY child of the flex column that can shrink (every other row is sized
    by its content), so it absorbs the whole overflow — which is why it needs a FLOOR rather
    than min-height:0. With 0 the flex algorithm was free to shrink it to exactly 0px, and
-   did: a brand whose palette yields ~6+ colour-scheme rows below the list pushed the fixed
-   rows past max-height, the list took the entire difference, and the menu showed a search
-   field with NOTHING under it. The presets were all in the DOM the whole time, in a 0px-tall
-   box — so it read as "search finds nothing" rather than as a layout collapse. The floor
-   keeps ~4 rows visible no matter how tall the rest of the menu grows; leftover overflow
-   goes to the menu's own scroller above. */
-.viz-list { flex: 1 1 auto; min-height: 18rem; overflow-y: auto; overscroll-behavior: contain;
+   did: a brand whose palette yields ~6+ colour-scheme rows pushed the fixed rows past
+   max-height, the list took the entire difference, and the menu showed a search field with
+   NOTHING under it. The presets were all in the DOM the whole time, in a 0px-tall box — so
+   it read as "search finds nothing" rather than as a layout collapse. (Those schemes are a
+   pill row now, so that particular pressure is gone, but the floor is what makes the
+   collapse impossible rather than merely unlikely.)
+
+   Raised 7rem → 14rem (2026-07-31): 7rem is ~4 rows, which is a peephole onto 200+ presets.
+   Kept as a flat rem rather than a 'min(…, 40vh)': the viewport clamp was tried, and it
+   both breaks the floor's own regression test (viz-menu-layout.test.ts parses this value)
+   and solves a problem the menu's safety-valve scroll already solves. On a window too short
+   for 14rem the menu scrolls, which is the documented behaviour, not a collapse. */
+.viz-list { flex: 1 1 auto; min-height: 14rem; overflow-y: auto; overscroll-behavior: contain;
   /* A visible, grabbable bar: this is now the only scroller in the menu and it is holding
      200+ rows, so the overlay-style thin bar that appears on scroll is not enough of an
      affordance. */
@@ -223,7 +229,7 @@ const CSS = `
 .viz-menu-row-label { flex: 0 0 auto; color: #fff; font-size: .82rem; }
 /* Pills WRAP and take the leftover width. The colour-scheme row put word-length labels
    ('Jungle / Persimmon', up to MAX_SCHEMES of them) into what had only ever held 2-4 short
-   ones, and a non-wrapping `flex: 0 0 auto` group would push the row past the menu. */
+   ones, and a non-wrapping 'flex: 0 0 auto' group would push the row past the menu. */
 .viz-pills { flex: 1 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end;
   gap: 3px; padding: 2px; border-radius: 12px; background: rgb(255 255 255 / .1); }
 .viz-pill { border: none; border-radius: 999px; padding: 3px 9px; cursor: pointer;
@@ -1246,8 +1252,11 @@ function wireSurface(s: Surface): void {
     }
     const scheme = item.dataset.vizScheme;
     if (scheme) {
+      // Stays OPEN, like the mode/tint/cycle pills it now sits beside: comparing colour
+      // schemes means flipping between them, and reopening the menu for each was the
+      // cost of it having been a full-width row. applyScheme re-renders the open menu
+      // itself (it has to — an automatic scheme change must update the checkmarks too).
       applyScheme(scheme, { remember: true });
-      closeMenu(s);
       return;
     }
     const cycle = item.dataset.vizCycle;

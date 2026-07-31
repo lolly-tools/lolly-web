@@ -129,7 +129,45 @@ test('preflight.json states every row exactly once, in source order', () => {
 test('preflight.json carries the opaque findings payload verbatim', () => {
   const r = REPORT();
   assert.deepEqual(r.rows[0]!.findings, [{ id: 'print.no-bleed', severity: 'info' }]);
-  assert.deepEqual(r.rows[1]!.findings, [], 'a skipped row has no runner slot to read from');
+  assert.deepEqual(r.rows[1]!.findings, [], 'nothing was supplied for the skipped row');
+});
+
+test('a SKIPPED row\'s findings reach the report, keyed by identity', () => {
+  // The case plan §7 says preflight most exists for. A skipped row has no runner
+  // index, so the positional channel structurally cannot carry it; without the
+  // identity channel `collect.row-not-rendered` was computed on every run and deleted
+  // on every run, and preflight.json said {"state":"skipped","findings":[]}.
+  const r = buildPreflightReport({
+    rows: ROWS, srcIndex: SRC_INDEX, results: [], skipped: SKIPPED,
+    zipName: 'z.zip', engine: '1.92.0',
+    skippedFindings: [{ uid: 'b', srcIndex: 1, items: [{ id: 'collect.row-not-rendered', severity: 'info' }] }],
+  });
+  const skippedRow = r.rows.find(x => x.state === 'skipped')!;
+  assert.equal(skippedRow.row, 2);
+  assert.deepEqual(skippedRow.findings, [{ id: 'collect.row-not-rendered', severity: 'info' }]);
+});
+
+test('a skipped row with no uid is matched on its source row number', () => {
+  const r = buildPreflightReport({
+    rows: ROWS, srcIndex: SRC_INDEX, results: [],
+    skipped: [{ row: { toolId: 'promo' }, reason: 'Render-only tool', srcIndex: 1 }],
+    zipName: 'z.zip', engine: '1.92.0',
+    skippedFindings: [{ srcIndex: 1, items: [{ id: 'collect.row-not-rendered' }] }],
+  });
+  assert.deepEqual(r.rows.find(x => x.state === 'skipped')!.findings, [{ id: 'collect.row-not-rendered' }]);
+});
+
+test('run-level findings are stated once in the envelope, never against a row', () => {
+  const r = buildPreflightReport({
+    rows: ROWS, srcIndex: SRC_INDEX, results: [{ index: 0, ok: true, name: '01-poster.png' }],
+    zipName: 'z.zip', engine: '1.92.0',
+    runFindings: [{ id: 'refuse.output-file-size', severity: 'info' }],
+  });
+  assert.deepEqual(r.runFindings, [{ id: 'refuse.output-file-size', severity: 'info' }]);
+  for (const row of r.rows) {
+    assert.equal(row.findings.some((f: any) => f.id === 'refuse.output-file-size'), false);
+  }
+  assert.ok('runFindings' in JSON.parse(preflightJson(r)));
 });
 
 test('the money fields ship as null from Phase 2 so no consumer can read an absent one as zero', () => {
@@ -192,6 +230,27 @@ test('notes on a rendered file are a [ Notes ] block, and never read as damage',
   assert.match(txt, /They do not mean the file is wrong\./);
   assert.match(txt, /## 007-event-badge\.pdf\nℹ No bleed set/);
   assert.doesNotMatch(txt, /warning/i);
+});
+
+test('a run-level note is stated once, above the per-file notes', () => {
+  // Not repeated under every filename: a 500-row batch would otherwise carry the same
+  // sentence 500 times, which is how a real finding stops being read.
+  const txt = creditText([{ name: '01-a.png' }, { name: '02-b.png' }], {
+    zipName: 'lolly-batch.zip',
+    runNotes: ['Lolly cannot predict the output file size.'],
+    noted: [{ name: '02-b.png', lines: ['A required input is blank.'] }],
+  });
+  assert.match(txt, /\[ Notes \]/);
+  assert.match(txt, /## This run\nℹ Lolly cannot predict the output file size\./);
+  assert.equal(txt.split('Lolly cannot predict').length - 1, 1);
+  // The run block leads; the per-file block follows.
+  assert.ok(txt.indexOf('## This run') < txt.indexOf('## 02-b.png'));
+});
+
+test('run-level notes alone still open the block', () => {
+  const txt = creditText([{ name: '01-a.png' }], { zipName: 'z.zip', runNotes: ['One fact about the run.'] });
+  assert.match(txt, /\[ Notes \]/);
+  assert.match(txt, /## This run/);
 });
 
 test('a retry manifest names the original package', () => {

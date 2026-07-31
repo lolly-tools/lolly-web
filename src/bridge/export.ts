@@ -1716,12 +1716,23 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
   // background (repeat at intrinsic/auto size), or MULTIPLE layered url() images.
   const bi = s.backgroundImage;
   if (bi && bi !== 'none') {
+    // PER LAYER, because `background-image` is a list and every parser below takes ONE
+    // gradient. The transparency checker is the case that proves it: authored as
+    // `background: <repeating-conic-gradient> 50% / 14px 14px, <colour>`, it computes to
+    // `repeating-conic-gradient(…), none` — the colour layer contributes a `none` — and
+    // handing that whole string to parseConicGradient fails, so the checker was declared
+    // unvectorisable and the entire node was rasterised. That is how a 1080×676 PNG of a
+    // faint checkerboard ended up inside docs/shots/use-chart-output.svg.
+    const layers = splitCssArgs(bi).map((l) => l.trim()).filter((l) => l && l !== 'none');
     // A conic gradient is drawn as a wedge fan when we can parse it — but ONLY by the
     // SVG walker. The PDF walker has no conic branch (its gradient path handles linear
     // and radial), and sampleGradientMidpoint returns null for a conic, so exempting it
     // there dropped the sweep entirely: a box with a transparent flat fill lost its
     // paint. So the exemption is scoped to the caller that can honour it.
-    if (bi.includes('conic-gradient') && !(vectorCaps?.conic && parseConicGradient(bi, 100, 100))) return 'conic-gradient';
+    for (const layer of layers) {
+      if (layer.includes('conic-gradient')
+        && !(vectorCaps?.conic && parseConicGradient(layer, 100, 100))) return 'conic-gradient';
+    }
     if (bi.includes('url(')) {
       const multiple = (bi.match(/url\(/g) || []).length > 1;
       const rep = (s.backgroundRepeat || 'repeat').toLowerCase();
@@ -2438,11 +2449,24 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 
     // General 2-D transform (rotate+scale, skew, arbitrary matrix) that isn't a pure
     // rotation: neutralise it, walk the untransformed subtree, then wrap in an SVG
-    // matrix() about the transform-origin. Pure translate/scale is left to the AABB
-    // path below (getBoundingClientRect already captures it); 3-D/perspective returns
-    // null from parseCssMatrix and falls through to the same AABB path.
+    // matrix() about the transform-origin. 3-D/perspective returns null from
+    // parseCssMatrix and falls through to the AABB path below.
+    //
+    // A pure SCALE takes this branch too, even though it is axis-aligned and
+    // getBoundingClientRect already carries it. That was the reasoning before, and it
+    // is only half true: a client rect is scaled, but a COMPUTED LENGTH is not. Walk a
+    // scaled subtree on the AABB path and every box lands correctly while every length
+    // read from getComputedStyle — font-size first, but equally border-radius, border
+    // width, shadow offset and blur — is left 1/s too big. Measured on the Layout Studio
+    // docs shot: a 1080px artboard displayed at 868 (`matrix(0.8037…)`) exported its
+    // headline 1/0.8037 = 24.4% oversize, overflowing the card it fits on screen.
+    // Neutralising instead makes the subtree self-consistent — every length and every
+    // rect in the same unscaled space — and the scale goes on once, at the top.
+    // Pure TRANSLATE stays on the AABB path: it moves boxes without distorting lengths.
     const mtx = pureRotationDeg(style.transform) === 0 ? parseCssMatrix(style.transform) : null;
-    if (mtx && !isAxisAlignedMat(mtx)) {
+    const scaled = Boolean(mtx && isAxisAlignedMat(mtx)
+      && (Math.abs(mtx.a - 1) > 1e-4 || Math.abs(mtx.d - 1) > 1e-4));
+    if (mtx && (!isAxisAlignedMat(mtx) || scaled)) {
       const prevInline = el.style.transform;
       el.style.transform = 'none';
       const unrot = el.getBoundingClientRect();
@@ -2892,8 +2916,24 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       };
       const ax = x + num2(style, 'borderLeftWidth'), ay = y + num2(style, 'borderTopWidth');
 
-      const gradEl = buildLinearGradientEl(NS, bgImg, x, y, w, h, gid)
-        || buildRadialGradientEl(NS, bgImg, x, y, w, h, gid);
+      // TILED gradient layers. A gradient is sized by `background-size` like any other
+      // background image, and the editor stage's transparency checkerboard is exactly
+      // that: two 45deg linear-gradient layers at `24px 24px`, offset `0 0, 12px 12px`.
+      // Drawing a tiled gradient across the whole element box is silently wrong pixels,
+      // so before this the only honest answer left was the raster escape hatch — which
+      // is how a 1080x676 PNG of a faint checkerboard ended up inside a docs shot.
+      // The tile becomes a real <pattern>, exactly as the conic and url() branches do.
+      const gradPl = placeBackground(bgSize, bgPosition, bgRepeat, area, null);
+      const gradTiles = Boolean(gradPl && gradPl.w > 0.5 && gradPl.h > 0.5
+        && (gradPl.repeatX || gradPl.repeatY)
+        && (gradPl.w < area.w - 0.5 || gradPl.h < area.h - 0.5));
+      // Built in the TILE's own coordinate space when tiling — a pattern's content
+      // coordinates are the tile, not the element.
+      const gradEl = gradTiles
+        ? (buildLinearGradientEl(NS, bgImg, 0, 0, gradPl.w, gradPl.h, gid)
+          || buildRadialGradientEl(NS, bgImg, 0, 0, gradPl.w, gradPl.h, gid))
+        : (buildLinearGradientEl(NS, bgImg, x, y, w, h, gid)
+          || buildRadialGradientEl(NS, bgImg, x, y, w, h, gid));
       // A conic gradient is sized by `background-size` like any other background
       // image, so resolve the placement BEFORE parsing: a tiled conic (the
       // transparency checkerboard is `repeating-conic-gradient(...) 50% / 2em 2em`)
@@ -2910,7 +2950,27 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         && (conicPl.w < area.w - 0.5 || conicPl.h < area.h - 0.5));
       const conic = gradEl ? null
         : parseConicGradient(bgImg, conicTiles ? conicPl!.w : w, conicTiles ? conicPl!.h : h);
-      if (gradEl) {
+      if (gradEl && gradTiles) {
+        // One tile of the gradient inside a <pattern>, phased by background-position
+        // (modulo the tile on each repeating axis, so the phase matches what the
+        // browser paints — `12px 12px` on a 24px tile is not 0).
+        const pid = `fcgradpat-${++uid}`;
+        const pat = document.createElementNS(NS, 'pattern');
+        pat.setAttribute('id', pid);
+        pat.setAttribute('patternUnits', 'userSpaceOnUse');
+        pat.setAttribute('x', String(n2(ax + (gradPl.repeatX ? gradPl.x % gradPl.w : gradPl.x))));
+        pat.setAttribute('y', String(n2(ay + (gradPl.repeatY ? gradPl.y % gradPl.h : gradPl.y))));
+        pat.setAttribute('width', String(n2(gradPl.repeatX ? gradPl.w : Math.max(gradPl.w, area.w))));
+        pat.setAttribute('height', String(n2(gradPl.repeatY ? gradPl.h : Math.max(gradPl.h, area.h))));
+        const cell = document.createElementNS(NS, 'rect');
+        cell.setAttribute('x', '0'); cell.setAttribute('y', '0');
+        cell.setAttribute('width', String(n2(gradPl.w))); cell.setAttribute('height', String(n2(gradPl.h)));
+        cell.setAttribute('fill', `url(#svggrad-${gid})`);
+        defs.appendChild(gradEl);
+        pat.appendChild(cell);
+        defs.appendChild(pat);
+        g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, `url(#${pid})`));
+      } else if (gradEl) {
         defs.appendChild(gradEl);
         g.appendChild(makeRoundedFill(NS, x, y, w, h, radii, uniform, `url(#svggrad-${gid})`));
       } else if (conic && conicTiles && conicPl) {
@@ -3221,7 +3281,11 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           // CSS filter() (e.g. grayscale/contrast presets) is baked into the bitmap
           // via the browser so the vector image matches screen/PNG instead of
           // exporting full-colour. No-op + graceful fallback when filter is none.
-          const dataUrl = await bakeImageFilter(el, dataUrl0, style.filter);
+          const dataUrlF = await bakeImageFilter(el, dataUrl0, style.filter);
+          // Cap the inlined resolution to what this box (w x h CSS px) can show at the
+          // export dpi — an over-provisioned preview PNG should not ship the pixels no
+          // one sees. dpi-aware, so a print export keeps its resolution.
+          const dataUrl = await downscaleRasterForBox(el, dataUrlF, Math.max(w, h), d.dpi);
           const rMin = Math.min(
             parseCssLen(style.borderTopLeftRadius,     w),
             parseCssLen(style.borderTopRightRadius,    w),
@@ -4206,26 +4270,69 @@ function conicFanEl(NS: string, cg: ConicGradient, x: number, y: number, w: numb
     return last;
   };
 
-  // One wedge per ~1.5° at page scale, fewer for a small dial. Capped so a huge
-  // element cannot emit thousands of paths.
-  const n = Math.max(48, Math.min(360, Math.round(R / 2)));
   const g = document.createElementNS(NS, 'g');
   const base = cg.fromRad - Math.PI / 2;
-  for (let i = 0; i < n; i++) {
-    const t0 = i / n, t1 = (i + 1) / n;
+  /** One wedge from sweep fraction `t0` to `t1`, in the gradient's own angular space. */
+  const wedge = (t0: number, t1: number, col: string, op: number): void => {
     const a0 = base + t0 * 2 * Math.PI;
-    // Overlap each wedge into the next by a hair: exact shared edges leave a visible
-    // seam of background colour where two antialiased edges meet.
+    // Overlap into the next wedge by a hair: exact shared edges leave a visible seam of
+    // background colour where two antialiased edges meet.
     const a1 = base + t1 * 2 * Math.PI + 0.004;
-    const { col, op } = sample((t0 + t1) / 2);
     const p = document.createElementNS(NS, 'path');
     p.setAttribute('d',
       `M${n2(cx)} ${n2(cy)}L${n2(cx + R * Math.cos(a0))} ${n2(cy + R * Math.sin(a0))}` +
-      `A${n2(R)} ${n2(R)} 0 0 1 ${n2(cx + R * Math.cos(a1))} ${n2(cy + R * Math.sin(a1))}Z`);
+      `A${n2(R)} ${n2(R)} 0 ${t1 - t0 > 0.5 ? 1 : 0} 1 ${n2(cx + R * Math.cos(a1))} ${n2(cy + R * Math.sin(a1))}Z`);
     p.setAttribute('fill', col);
     if (op < 1) p.setAttribute('fill-opacity', String(Math.round(op * 1000) / 1000));
     p.setAttribute('shape-rendering', 'crispEdges');
     g.appendChild(p);
+  };
+
+  // ── hard-stop fast path: EXACT sectors, not sampled wedges ──────────────────
+  // A conic built entirely of constant-colour bands (`A 0 25%, B 0 50%` — the
+  // checkerboard idiom) has a precise vector form: one path per band, boundaries on the
+  // stop angles. Sampling it as a uniform fan instead puts wedge edges WHERE THE COLOUR
+  // DOES NOT CHANGE, and each of those edges carries the 0.004rad overlap above — which
+  // is why a 14px checker tile came out with faint diagonal hairlines across every
+  // square. Exact sectors also collapse ~48 paths to 2.
+  const bands: { from: number; to: number; col: string; op: number }[] = [];
+  let hardStopped = stops.length >= 2;
+  for (let i = 1; i < stops.length && hardStopped; i++) {
+    const a = stops[i - 1]!, b = stops[i]!;
+    if (a.col === b.col && Math.abs(a.op - b.op) < 1e-6) {
+      if (b.at - a.at > 1e-9) bands.push({ from: a.at, to: b.at, col: a.col, op: a.op });
+    } else if (b.at - a.at > 1e-9) {
+      hardStopped = false;                    // a genuine ramp between two colours
+    }
+  }
+  if (hardStopped && bands.length) {
+    // A repeating gradient's bands tile around the circle; a non-repeating one paints
+    // its first and last colours out to the ends of the sweep (CSS Images 3 §5.4).
+    const emit = (from: number, to: number, col: string, op: number): void => {
+      const lo = Math.max(0, from), hi = Math.min(1, to);
+      if (hi - lo > 1e-9 && op > 0) wedge(lo, hi, col, op);   // a clear band paints nothing
+    };
+    if (period > 0) {
+      for (let k = 0; first + k * period < 1 + period; k++) {
+        for (const b of bands) emit(b.from + k * period, b.to + k * period, b.col, b.op);
+      }
+    } else {
+      const head = stops[0]!, tail = stops[stops.length - 1]!;
+      emit(0, first, head.col, head.op);
+      for (const b of bands) emit(b.from, b.to, b.col, b.op);
+      emit(last, 1, tail.col, tail.op);
+    }
+    void gid;
+    return g.childNodes.length ? g : null;
+  }
+
+  // One wedge per ~1.5° at page scale, fewer for a small dial. Capped so a huge
+  // element cannot emit thousands of paths.
+  const n = Math.max(48, Math.min(360, Math.round(R / 2)));
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n, t1 = (i + 1) / n;
+    const { col, op } = sample((t0 + t1) / 2);
+    wedge(t0, t1, col, op);
   }
   void gid;
   return g;
@@ -6610,6 +6717,53 @@ async function bakeImageFilter(imgEl: any, dataUrl: string, filterStr: string | 
   } catch { return dataUrl; }
 }
 
+
+// Downscale an over-provisioned raster to a resolution its DISPLAY BOX can actually
+// show, so an inlined <image> carries no pixels the reader will never see.
+//
+// The case that forced this: a gallery preview committed as a 3200x1800 PNG appears in
+// a 341px tile, so the walker was inlining 5.76M pixels for a box that resolves at ~700.
+// One such tile was 4.6 MB of a 6.6 MB shot; the mesh-gradient and street-map example
+// previews are all 1800-3200px. Faithfully inlining the source is correct but wildly
+// wasteful for a thumbnail.
+//
+// The cap is DPI-AWARE, which is the whole reason it is safe on the tool-export path and
+// not only for docs: `boxLongCss` is the box in CSS px, and `dpi/CSS_DPI` is how many
+// device pixels each CSS px is worth at the export resolution. A screen/SVG export
+// (dpi 96-192) caps at ~2x the box; a 300-dpi print export keeps ~3x, so a photo placed
+// small on a print page is not softened. Never UPSCALES, and returns the input unchanged
+// (byte-identical to before this existed) whenever the source is already within 15% of
+// the cap, so the common case pays one Image decode and nothing else.
+async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: number, dpi: number): Promise<string> {
+  if (!(boxLongCss > 0) || dataUrl.startsWith('data:image/svg')) return dataUrl;
+  try {
+    let img: any = (imgEl && imgEl.naturalWidth > 0) ? imgEl : null;
+    if (!img) {
+      img = await new Promise<HTMLImageElement>((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i); i.onerror = rej; i.src = dataUrl;
+      });
+    }
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    if (!(nw > 0 && nh > 0)) return dataUrl;
+    const factor = Math.max(2, (dpi > 0 ? dpi : CSS_DPI) / CSS_DPI);
+    const capLong = Math.max(256, Math.ceil(boxLongCss * factor));
+    const srcLong = Math.max(nw, nh);
+    if (srcLong <= capLong * 1.15) return dataUrl;         // already sane — leave it be
+    const scale = capLong / srcLong;
+    const dw = Math.max(1, Math.round(nw * scale)), dh = Math.max(1, Math.round(nh * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = dw; canvas.height = dh;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;                              // jsdom — keep the source
+    ctx.imageSmoothingEnabled = true;
+    (ctx as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, dw, dh);
+    // PNG, not JPEG: the source may carry alpha and these are UI previews, not photos,
+    // where a lossy re-encode would show. A smooth gradient at ~700px is small in PNG.
+    return canvas.toDataURL('image/png');
+  } catch { return dataUrl; }
+}
 
 // Clips an image to a circle via an offscreen canvas. Used for headshots that
 // carry border-radius: 50%. Returns a PNG data URL.

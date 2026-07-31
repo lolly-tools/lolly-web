@@ -21,9 +21,10 @@ import assert from 'node:assert/strict';
 
 import { planBatch, printSettingsFor, type BatchRow } from './batch.ts';
 import {
-  createBatchRowCheck, preflightJobForRow, preflightRow, rowSize,
-  toPreflightManifest, type BatchPreflightEnv,
+  RUN_LEVEL_IDS, createBatchRowCheck, preflightJobForRow, preflightRow, rowSize,
+  skippedFindings, toPreflightManifest, type BatchPreflightEnv,
 } from './preflight-rows.ts';
+import { RASTER_DEFAULT_SCALE } from '../bridge/export-scale.ts';
 import type { Finding } from '@lolly/engine';
 
 /** A minimal exportable manifest. `as never` only at the call boundary. */
@@ -46,11 +47,26 @@ const ENV: BatchPreflightEnv = {
 
 const CTX = { srcIndex: 0 };
 
-test('a clean row produces no warnings and no errors', () => {
+test('a clean row produces NOTHING — not one note, not one refusal', () => {
+  // The per-row channel is a claim about THIS row. `refuse.output-file-size` fires on
+  // every job ever, so left in here it put a chip on all 50 cards of a clean 50-row
+  // batch and made the headline read "50 with notes" — the noise plan §6 names.
+  // svg: no pixel count to report, so a clean row has genuinely nothing to say.
+  const m = toPreflightManifest(manifestOf({ render: { width: 1200, height: 900, formats: ['svg'] } }));
+  assert.deepEqual(preflightRow({ toolId: 'demo', values: { title: 'hello' } }, m, 0, CTX, ENV), []);
+  // png: the ONLY thing a clean raster row carries is its own count. No refusals.
+  const png = preflightRow({ toolId: 'demo', values: { title: 'hello' }, format: 'png' }, toPreflightManifest(manifestOf()), 0, CTX, ENV);
+  assert.deepEqual(png.map(f => f.id), ['count.raster-pixels'],
+    `a clean row carries its counts and nothing else, got ${JSON.stringify(png.map(f => f.id))}`);
+});
+
+test('the run-invariant findings are not dropped — they are handed to the run channel', () => {
+  const runLevel: Finding[] = [];
   const row: BatchRow = { toolId: 'demo', values: { title: 'hello' }, format: 'png' };
-  const findings = preflightRow(row, toPreflightManifest(manifestOf()), 0, CTX, ENV);
-  assert.equal(findings.filter(f => f.severity !== 'info').length, 0,
-    `expected only info findings, got ${JSON.stringify(findings.map(f => [f.id, f.severity]))}`);
+  preflightRow(row, toPreflightManifest(manifestOf()), 0, CTX, ENV, f => runLevel.push(f));
+  assert.ok(runLevel.some(f => f.id === 'refuse.output-file-size'),
+    'the platform refusal still exists; it is emitted once, at run level');
+  for (const f of runLevel) assert.ok(RUN_LEVEL_IDS.has(f.id));
 });
 
 test('the job reports the stage as UNAVAILABLE, never as an empty stage', () => {
@@ -196,12 +212,89 @@ test('no run format and no row format falls through to the tool\'s first declare
   assert.equal(job.settings.format, 'png');
 });
 
-test('a half-declared size reports the manifest canvas, because that is what renders', () => {
-  // renderRowToBlob honours the row's dimensions only when BOTH are positive.
+test('ONE declared dimension is a declaration: the other stays 0, never the manifest', () => {
+  // `bothGiven` governs LAYOUT only. `render-export.ts:315-317` builds outW/outH
+  // independently, so `width: '210mm'` really does reach the export boundary and the
+  // PDF page really is 210mm wide — the CLI's `sizeFacts` shape is the honest one.
   const size = rowSize({ toolId: 'demo', values: {}, outWidth: 210, unit: 'mm' }, toPreflightManifest(manifestOf()), {});
-  assert.deepEqual(size.width, { value: 1200, unit: 'px' });
+  assert.deepEqual(size.width, { value: 210, unit: 'mm' });
+  assert.deepEqual(size.height, { value: 0, unit: 'mm' });
+  assert.equal(size.declaredBy, 'row');
+  assert.equal(size.unitDeclared, true);
+});
+
+test('a half-declared print row gets trim-partially-declared, not two false findings', () => {
+  const row: BatchRow = { toolId: 'demo', values: {}, format: 'pdf', outWidth: 210, unit: 'mm' };
+  const ids = preflightRow(row, toPreflightManifest(manifestOf()), 0, CTX, ENV).map(f => f.id);
+  assert.ok(ids.includes('print.trim-partially-declared'), JSON.stringify(ids));
+  // Both of these are statements about a job that DID declare a physical width.
+  assert.equal(ids.includes('print.trim-not-physical'), false);
+  assert.equal(ids.includes('refuse.trim-when-unset'), false);
+});
+
+// ── The supersample the renderer applies, restated ──────────────────────────
+//
+// `rasterStyle` (bridge/export.ts) in two lines, quoted rather than referenced, so a
+// change to the default scale fails HERE rather than shipping a confident wrong count:
+//
+//   const requested = (opts.width != null && opts.width !== '') || (opts.height != null && opts.height !== '');
+//   const targetW   = requested ? toPixels(d.w, d.dpi) : Math.round(d.node.w * (opts.scale ?? RASTER_DEFAULT_SCALE));
+const rasterTargetW = (nodeW: number, requested: boolean, requestedPx: number): number =>
+  (requested ? requestedPx : Math.round(nodeW * RASTER_DEFAULT_SCALE));
+
+test('a dimension-less RASTER row reports the pixels rasterStyle will actually produce', () => {
+  const m = toPreflightManifest(manifestOf());
+  const size = rowSize({ toolId: 'demo', values: {}, format: 'png' }, m, {});
+  // renderRowToBlob passes width/height undefined → not requested → node box x scale,
+  // and the node box for a dimension-less row IS the manifest canvas (layoutW = nativeW).
+  assert.equal(size.width.value, rasterTargetW(1200, false, 0));
+  assert.equal(size.height.value, rasterTargetW(900, false, 0));
   assert.equal(size.declaredBy, 'manifest');
-  assert.equal(size.unitDeclared, false);
+});
+
+test('a dimension-less VECTOR row keeps the unscaled canvas — rasterStyle never runs for it', () => {
+  const size = rowSize({ toolId: 'demo', values: {}, format: 'pdf' }, toPreflightManifest(manifestOf()), {});
+  assert.deepEqual(size.width, { value: 1200, unit: 'px' });
+  assert.deepEqual(size.height, { value: 900, unit: 'px' });
+});
+
+test('a declared size is honoured verbatim: the supersample applies to no-request rows only', () => {
+  const size = rowSize({ toolId: 'demo', values: {}, format: 'png', outWidth: 800, outHeight: 600 }, toPreflightManifest(manifestOf()), {});
+  assert.equal(size.width.value, rasterTargetW(1200, true, 800));
+  assert.equal(size.height.value, rasterTargetW(900, true, 600));
+});
+
+test('the pixel count the engine reports for a default PNG row is the one the file has', () => {
+  const findings = preflightRow({ toolId: 'demo', values: { title: 'x' }, format: 'png' }, toPreflightManifest(manifestOf()), 0, CTX, ENV, () => {});
+  const px = findings.find(f => f.id === 'count.raster-pixels');
+  assert.ok(px, 'a raster row counts its pixels');
+  assert.equal(px!.count!.value, (1200 * RASTER_DEFAULT_SCALE) * (900 * RASTER_DEFAULT_SCALE));
+  assert.equal(px!.count!.bound, 'exact');
+});
+
+// ── Format substitution ─────────────────────────────────────────────────────
+
+test('a format the tool does not offer is reported as SUBSTITUTED, never silently swapped', () => {
+  // chooseFormat returns formats[0] with no complaint, which makes the engine's
+  // settings.format-not-offered structurally unreachable in a batch.
+  const m = manifestOf({ render: { width: 1200, height: 900, formats: ['svg', 'png'] } });
+  const row: BatchRow = { toolId: 'demo', values: { title: 'x' } };
+  const findings = preflightRow(row, toPreflightManifest(m), 0, CTX, { ...ENV, run: { format: 'pdf' } }, () => {});
+  const sub = findings.find(f => f.id === 'collect.format-substituted');
+  assert.ok(sub, JSON.stringify(findings.map(f => f.id)));
+  assert.equal(sub!.severity, 'warn');
+  assert.equal(sub!.evidence!.requested, 'pdf');
+  assert.equal(sub!.evidence!.chosen, 'svg');
+  assert.equal(sub!.rowIndex, 0);
+});
+
+test('a format the tool DOES offer is not a substitution, and neither is jpg/jpeg', () => {
+  const m = toPreflightManifest(manifestOf({ render: { width: 10, height: 10, formats: ['jpeg', 'png'] } }));
+  const has = (run: Record<string, string>, row: Partial<BatchRow> = {}) =>
+    preflightRow({ toolId: 'demo', values: { title: 'x' }, ...row } as BatchRow, m, 0, CTX, { ...ENV, run }, () => {})
+      .some(f => f.id === 'collect.format-substituted');
+  assert.equal(has({ format: 'png' }), false);
+  assert.equal(has({ format: 'jpg' }), false, 'chooseFormat holds the jpg/jpeg equivalence');
 });
 
 test('a px fallback is not a declared unit', () => {
@@ -229,7 +322,7 @@ test('createBatchRowCheck resolves the palette ONCE for the whole run', async ()
     { toolId: 'demo', values: {} }, { toolId: 'demo', values: {} }, { toolId: 'demo', values: {} },
   ];
   let loads = 0;
-  const check = await createBatchRowCheck(rows, host, { format: 'png' }, {
+  const { check } = await createBatchRowCheck(rows, host, { format: 'png' }, {
     getTool: async () => { loads++; return { manifest: manifestOf() }; },
   });
   for (let i = 0; i < rows.length; i++) check(rows[i]!, i, { srcIndex: i });
@@ -239,11 +332,11 @@ test('createBatchRowCheck resolves the palette ONCE for the whole run', async ()
 
 test('an experimental tool is reported once per row, as info', async () => {
   const rows: BatchRow[] = [{ toolId: 'demo', values: {}, format: 'png' }];
-  const check = await createBatchRowCheck(rows, {}, {}, {
+  const { check } = await createBatchRowCheck(rows, {}, {}, {
     getTool: async () => ({ manifest: manifestOf({ status: 'experimental' }) }),
   });
   const out = check(rows[0]!, 0, { srcIndex: 0 });
-  const w = out.find(f => f.id === 'export.experimental-watermark');
+  const w = out.find((f: Finding) => f.id === 'export.experimental-watermark');
   assert.ok(w);
   assert.equal(w!.severity, 'info');
 });
@@ -251,11 +344,46 @@ test('an experimental tool is reported once per row, as info', async () => {
 test('a collector that throws costs the findings, never the run', async () => {
   const logged: string[] = [];
   const rows: BatchRow[] = [{ toolId: 'demo', values: {} }];
-  const check = await createBatchRowCheck(rows, { log: (_l, m) => { logged.push(m); } }, {}, {
+  const { check } = await createBatchRowCheck(rows, { log: (_l, m) => { logged.push(m); } }, {}, {
     getTool: async () => ({ manifest: manifestOf() }),
   });
   // A row whose `values` getter explodes: the collector swallows it and returns [].
   const hostile = { toolId: 'demo', get values(): Record<string, unknown> { throw new Error('boom'); } } as unknown as BatchRow;
   assert.deepEqual(check(hostile, 0, { srcIndex: 0 }), []);
   assert.equal(logged.length, 1);
+});
+
+test('the run-level findings are collected ONCE for the whole run, with no row stamp', async () => {
+  const rows: BatchRow[] = [
+    { toolId: 'demo', values: { title: 'a' } },
+    { toolId: 'demo', values: { title: 'b' } },
+    { toolId: 'demo', values: { title: 'c' } },
+  ];
+  const { check, runFindings } = await createBatchRowCheck(rows, {}, { format: 'svg' }, {
+    getTool: async () => ({ manifest: manifestOf({ render: { width: 1200, height: 900, formats: ['svg'] } }) }),
+  });
+  const perRow = rows.map((r, i) => check(r, i, { srcIndex: i }));
+  // Three clean rows, three empty note lists — the run summary says "0 with notes".
+  assert.deepEqual(perRow, [[], [], []]);
+  const fileSize = runFindings.filter(f => f.id === 'refuse.output-file-size');
+  assert.equal(fileSize.length, 1, 'one platform fact, stated once, not once per row');
+  assert.equal(fileSize[0]!.rowIndex, undefined, 'a run-level finding names no row');
+});
+
+test('a dropped row’s findings survive as an identity-keyed channel', async () => {
+  const rows: BatchRow[] = [
+    { uid: 'r1', toolId: '', values: {} },
+    { uid: 'r2', toolId: 'demo', values: { title: 'x' }, format: 'png' },
+  ];
+  const { check } = await createBatchRowCheck(rows, {}, {}, {
+    getTool: async () => ({ manifest: manifestOf() }),
+  });
+  const plan = await planBatch<Finding>(rows, {
+    check, getTool: async (id: string) => { if (!id) throw new Error('no tool'); return { manifest: manifestOf() }; },
+  });
+  const dropped = skippedFindings(plan);
+  assert.equal(dropped.length, 1);
+  assert.equal(dropped[0]!.uid, 'r1');
+  assert.equal(dropped[0]!.srcIndex, 0, 'the source position rides inside the finding itself');
+  assert.equal(dropped[0]!.items[0]!.id, 'collect.row-not-rendered');
 });

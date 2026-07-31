@@ -18,7 +18,7 @@ import { planBatch, runBatch, notesFromFindings } from './batch.ts';
 import { runBatchWithProgress } from './run-overlay.ts';
 import { playSfx } from '../lib/sfx.ts';
 import type { ZipTier } from '@lolly/engine';
-import { createBatchRowCheck } from './preflight-rows.ts';
+import { createBatchRowCheck, skippedFindings } from './preflight-rows.ts';
 import { rowsForFolder, rowFromToolSession, rowFromBatchRow, slug, isMotionRow } from './folder-rows.ts';
 import type { Finding } from '@lolly/engine';
 import { isBatchSlot } from '../folder-tiles.ts';
@@ -133,17 +133,21 @@ export async function exportFolderAsBatch(host: FolderExportHost, folder: Folder
   // A folder row carries its own print settings (rowFromToolSession / rowFromBatchRow
   // map all three), and `printSettingsFor` resolves row-beats-run identically here
   // and at the render boundary.
-  const check = await createBatchRowCheck(rows as BatchRow[], host, { format, unit, dpi });
-  const { renderable, skipped, srcIndex, findings } = await planBatch<Finding>(rows as BatchRow[], { check });
+  const { check, runFindings } = await createBatchRowCheck(rows as BatchRow[], host, { format, unit, dpi });
+  const plan = await planBatch<Finding>(rows as BatchRow[], { check });
+  const { renderable, skipped, srcIndex, findings } = plan;
   if (renderable.length === 0) throw new Error('Nothing to export — none of these sessions can be rendered.');
 
   return runBatchWithProgress(host, renderable, {
     mount: mount!,
     format, unit, dpi,
     srcIndex,
-    // Per-row preflight findings, keyed by queue position (skipped rows have none —
-    // their findings ride the run report, not the runner's channel).
+    // Per-row preflight findings, keyed by queue position. A skipped row has no queue
+    // position, so its findings travel by identity; the run-invariant ones are emitted
+    // once rather than against every row.
     notes: notesFromFindings(findings, renderable.length),
+    skippedFindings: skippedFindings(plan),
+    runFindings,
     pathAware: true,
     zipBaseName: slug(folder.name) || 'lolly-folder',
     author: author as BatchAuthor | null,
@@ -185,12 +189,13 @@ export async function renderSessionToFile(host: FolderExportHost, slot: string, 
     // own, and `runBatchWithProgress` is called without them below — so the collector
     // is handed the same empty run block the renderer works from.
     const snapshotCheck = await createBatchRowCheck(batchRows as BatchRow[], host, {});
-    const plan = await planBatch<Finding>(batchRows as BatchRow[], { check: snapshotCheck });
+    const plan = await planBatch<Finding>(batchRows as BatchRow[], { check: snapshotCheck.check });
     if (plan.renderable.length === 0) throw new Error(plan.skipped[0]?.reason || 'This batch session can’t be rendered.');
     return runBatchWithProgress(host, plan.renderable, {
       mount: mount!, pathAware: true, zipBaseName: slug(label) || 'lolly-batch',
       author: author as BatchAuthor | null, skipped: plan.skipped, srcIndex: plan.srcIndex,
       notes: notesFromFindings(plan.findings, plan.renderable.length), onBatchRendered,
+      skippedFindings: skippedFindings(plan), runFindings: snapshotCheck.runFindings,
     });
   }
   const row = rowFromToolSession(data);
@@ -252,7 +257,8 @@ export async function exportSelectionAsBatch(host: FolderExportHost, {
   // array a second time, so an index captured before it is already wrong by the time
   // planBatch runs. Any new filter goes above, never below.
   const selectionCheck = await createBatchRowCheck(rows as BatchRow[], host, {});
-  const { renderable, skipped, srcIndex, findings } = await planBatch<Finding>(rows as BatchRow[], { check: selectionCheck });
+  const plan = await planBatch<Finding>(rows as BatchRow[], { check: selectionCheck.check });
+  const { renderable, skipped, srcIndex, findings } = plan;
   if (renderable.length === 0) throw new Error('None of the selected items can be rendered.');
 
   return runBatchWithProgress(host, renderable, {
@@ -260,6 +266,8 @@ export async function exportSelectionAsBatch(host: FolderExportHost, {
     zipBaseName: slug(label) || 'lolly-selection',
     author: author as BatchAuthor | null, skipped, srcIndex,
     notes: notesFromFindings(findings, renderable.length),
+    skippedFindings: skippedFindings(plan),
+    runFindings: selectionCheck.runFindings,
     onBatchRendered, announce, strongPassword, zipLock,
   });
 }
