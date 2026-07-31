@@ -539,6 +539,62 @@
 /* Each capability group is a collapsible accordion panel: a summary row
    (icon · title · one-line description · chevron) over a grid of feature cards
    that expands below. Folded groups keep the whole map scannable at a glance. */
+/* ── Capabilities search ──────────────────────────────────────────────────
+   Eleven sections and ~60 cards is too much to read top-to-bottom, so the
+   search is the primary way in and sits above the accordion. Sticky, because a
+   query you can no longer see is a query you cannot refine — the offset clears
+   the panel's own header. */
+.dash-cap-search {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; gap: .5rem;
+  margin: 0 0 .7rem; padding: .1rem 0;
+  background: hsl(var(--background));
+}
+.dash-cap-search-icon {
+  position: absolute; left: .7rem; display: inline-flex;
+  width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground)); pointer-events: none;
+}
+.dash-cap-search-icon svg { width: 100%; height: 100%; display: block; }
+.dash-cap-search-input {
+  flex: 1 1 auto; min-width: 0;
+  /* The left inset clears the lens glyph. Expressed in `em` so it follows this
+     input's own font-size — which already carries --a11y-fs — rather than
+     restating the multiplier on a geometry property, which the a11y contract
+     (lib/a11y-prefs-contract.test.ts) forbids at a use site. */
+  padding: .55rem .8rem .55rem 1.95em;
+  border: 1px solid hsl(var(--border)); border-radius: 999px;
+  background: hsl(var(--card) / .6); color: hsl(var(--foreground));
+  font: inherit; font-size: calc(.86rem * var(--a11y-fs));
+}
+.dash-cap-search-input::placeholder { color: hsl(var(--muted-foreground)); }
+.dash-cap-search-input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+/* The UA's own search-clear affordance would sit beside ours, so drop it. */
+.dash-cap-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.dash-cap-search-clear {
+  position: absolute; right: .5rem;
+  width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs));
+  border: 0; border-radius: 50%; cursor: pointer;
+  background: hsl(var(--muted) / .6); color: hsl(var(--muted-foreground));
+  font-size: calc(12px * var(--a11y-fs)); line-height: 1;
+}
+.dash-cap-search-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.dash-cap-count {
+  margin: -.35rem 0 .6rem .9rem;
+  color: hsl(var(--muted-foreground)); font-size: calc(.76rem * var(--a11y-fs));
+}
+.dash-cap-empty {
+  margin: .2rem 0 0; padding: 1.4rem 1rem; text-align: center;
+  color: hsl(var(--muted-foreground)); font-size: calc(.85rem * var(--a11y-fs));
+  border: 1px dashed hsl(var(--border)); border-radius: 14px;
+}
+/* The filter hides cards and whole sections with [hidden]. The UA's
+   `[hidden] { display: none }` is a plain type-less rule, so the class rules
+   below (`display: flex` on an item) would out-specify it and the "hidden"
+   card would stay on screen. These two lines are what actually make the filter
+   filter — do not fold them into the rules above. */
+.dash-cap-item[hidden], .dash-cap-group[hidden] { display: none; }
+
 .dash-cap-group {
   margin: 0 0 .7rem;
   border: 0;
@@ -562,6 +618,14 @@
 .dash-cap-group-icon svg { width: 1.85rem; height: 1.85rem; display: block; }
 .dash-cap-group-text { min-width: 0; flex: 1 1 auto; }
 .dash-cap-group-title { margin: 0; font-size: calc(1rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -.01em; }
+/* How many cards are behind a folded section — otherwise the summary gives no
+   clue whether opening it reveals one card or eight. */
+.dash-cap-group-n {
+  display: inline-block; margin-left: .45rem; vertical-align: .08em;
+  padding: .1rem .4rem; border-radius: 999px;
+  background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
+  font-size: calc(.62rem * var(--a11y-fs)); font-weight: 700;
+}
 .dash-cap-group-desc { margin: .15rem 0 0; color: hsl(var(--muted-foreground)); font-size: calc(.8rem * var(--a11y-fs)); line-height: 1.45; }
 .dash-cap-group-head .plat-section-chev { flex: 0 0 auto; margin-left: .4rem; color: hsl(var(--muted-foreground)); }
 .dash-cap-group[open] > .dash-cap-group-head .plat-section-chev { transform: rotate(90deg); }

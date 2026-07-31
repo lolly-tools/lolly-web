@@ -40,6 +40,7 @@ import { escape } from '../utils.ts';
 import { t, loadNamespace } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { icon } from '../lib/icons.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
 import { renderPaletteWheel, wirePaletteWheel } from '../lib/palette-wheel.ts';
 import { renderBrandSeal, sealColors } from '../lib/brand-seal.ts';
@@ -71,6 +72,10 @@ import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+// The Capabilities search field's leading glyph — from the shared registry, not
+// inlined (see the R3 guard in primitive-guards.test.ts). Sized in CSS off
+// --a11y-fs like every other chrome icon, so no `size` is passed here.
+const SEARCH_GLYPH = icon('search');
 
 // ── Primary tabs ─────────────────────────────────────────────────────────────
 // The dashboard splits into four tabbed panels. Every section keeps its own id /
@@ -389,7 +394,7 @@ function wireCopyButtons(root: ParentNode): void {
 // directly) into the lazily-loaded `caps` namespace, merged into the catalog by the
 // loadNamespace('caps') below. A feature's `desc` carries authored inline HTML, so it
 // stays raw — its translation preserves the same tags (the pipeline validates that).
-function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }> }): string {
+function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }>; keywords?: string }): string {
   // The modal detail (full feature list) rides in an inert <template>.
   const feats = `<dl class="cap-feat dash-cap-feat">${
     card.features.map((f) => `<div><dt>${escape(t(f.name))}</dt><dd>${t(f.desc)}</dd></div>`).join('')
@@ -398,10 +403,21 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
   const peek = `<ul class="dash-cap-peek" aria-hidden="true">${
     card.features.map((f) => `<li>${escape(t(f.name))}</li>`).join('')
   }</ul>`;
+  // The search haystack, built HERE rather than scraped from the DOM at wire time —
+  // the feature descriptions live in an inert <template> whose text a querySelector
+  // sweep would have to clone to read, and the untranslated `keywords` have no
+  // rendered home at all. Lowercased once at build so the filter is a plain
+  // substring test per keystroke. Descriptions are stripped of their inline tags,
+  // else a search for "code" would match every <code> element on the page.
+  const haystack = [
+    t(card.title),
+    ...card.features.map((f) => `${t(f.name)} ${t(f.desc)}`),
+    card.keywords ?? '',
+  ].join(' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').toLowerCase();
   return `
-    <div class="dash-cap-item">
+    <div class="dash-cap-item" data-cap-hay="${escape(haystack)}">
       <button type="button" class="dash-cap-card" data-cap-open aria-haspopup="dialog"
-              aria-label="${escape(card.features.length === 1 ? t('{title} — 1 detail', { title: t(card.title) }) : t('{title} — {n} details', { title: t(card.title), n: card.features.length }))}"
+              aria-label="${escape(card.features.length === 1 ? t('{title} — 1 detail', { title: t(card.title) }) : t('{title} — {n} details', { title: t(card.title), n: card.features.length }))}">
         <span class="dash-cap-card-top">
           <span class="dash-cap-icon" aria-hidden="true">${card.icon}</span>
           <span class="dash-cap-title">${escape(t(card.title))}</span>
@@ -426,20 +442,46 @@ async function capabilitiesSection(): Promise<string> {
   ]);
   // Each group is its own collapsible accordion panel — the section desc stays
   // visible in the summary as a table-of-contents, and the card grid expands below.
-  // The first (Experiences) opens by default; the rest are folded so the whole map
-  // is scannable at a glance. data-dash-collapse wires the shared fold sound cue.
+  // The first opens by default; the rest are folded so the whole map is scannable
+  // at a glance. data-dash-collapse wires the shared fold sound cue.
+  // A section's summary also carries its card count: the folded state otherwise
+  // gives no clue whether opening it reveals one card or eight.
   const groups = CAPABILITY_SECTIONS.map((s, idx) => `
     <details class="dash-cap-group" id="${s.id}" data-flag="${escape(s.flag)}" data-dash-collapse${idx === 0 ? ' open' : ''}>
       <summary class="dash-cap-group-head">
         <span class="dash-cap-group-icon" aria-hidden="true">${s.icon}</span>
         <div class="dash-cap-group-text">
-          <h3 class="dash-cap-group-title">${escape(t(s.title))}</h3>
+          <h3 class="dash-cap-group-title">${escape(t(s.title))}<span class="dash-cap-group-n">${s.cards.length}</span></h3>
           <p class="dash-cap-group-desc">${escape(t(s.desc))}</p>
         </div>
         ${COLLAPSE_CHEV}
       </summary>
       <div class="dash-cap-grid">${s.cards.map(capCard).join('')}</div>
     </details>`).join('');
+  // Search. This map is long by design — eleven sections, ~60 cards — so the one
+  // thing it must not require is reading it top to bottom to find "does this do
+  // CMYK". The field filters cards live and force-opens whichever sections still
+  // hold a match, so a query turns the accordion into a flat result list.
+  //
+  // It is deliberately NOT wrapped in a <form>: an Enter keypress inside a lone
+  // text input in a form triggers implicit submission and would reload the view.
+  const totalCards = CAPABILITY_SECTIONS.reduce((n, s) => n + s.cards.length, 0);
+  const search = `
+      <div class="dash-cap-search">
+        <span class="dash-cap-search-icon" aria-hidden="true">${SEARCH_GLYPH}</span>
+        <input type="search" class="dash-cap-search-input" data-cap-search
+               autocomplete="off" spellcheck="false"
+               aria-controls="dash-cap-results"
+               placeholder="${escape(t('Search {n} capabilities — try “cmyk”, “figma”, “offline”', { n: totalCards }))}"
+               aria-label="${escape(t('Search capabilities'))}">
+        <button type="button" class="dash-cap-search-clear" data-cap-search-clear hidden
+                aria-label="${escape(t('Clear search'))}">✕</button>
+      </div>
+      <p class="dash-cap-count" id="dash-cap-results" data-cap-count role="status" aria-live="polite" hidden></p>`;
+  // Shown only when a query matches nothing — an accordion of collapsed, empty
+  // sections reads as "broken", so say so in words.
+  const empty = `
+      <p class="dash-cap-empty" data-cap-empty hidden>${escape(t('Nothing matches that. Try a format (“svg”, “pptx”), a task (“print”, “share”) or a tool name.'))}</p>`;
   const modal = `
       <dialog class="dash-cap-modal" data-cap-modal>
         <div class="dash-cap-modal-card">
@@ -454,8 +496,8 @@ async function capabilitiesSection(): Promise<string> {
   return collapse({
     id: 'dash-caps',
     title: t('What Lolly can do'),
-    desc: t('The full feature set — what it makes, where it runs, how it is used. Pick any card to pop its detail open.'),
-    body: `${groups}${modal}`,
+    desc: t('Every capability, stated as a fact you can check — formats by name, limits included. Search it, or open a section. Pick any card for its detail.'),
+    body: `${search}${groups}${empty}${modal}`,
   });
 }
 
@@ -1016,6 +1058,67 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     });
     capModal.querySelector('[data-cap-modal-close]')?.addEventListener('click', close);
     capModal.addEventListener('click', (e) => { if (e.target === capModal) close(); }); // backdrop click
+  }
+
+  // ── Capabilities search ───────────────────────────────────────────────────
+  // Filters the cards live and force-opens the sections that still hold a match,
+  // so a query flattens the accordion into a result list. Every card's haystack
+  // was baked into data-cap-hay at render time (see capCard) — including the
+  // untranslated `keywords` and the feature prose that otherwise only exists
+  // inside an inert <template> — so a keystroke costs one substring test per
+  // card and never touches a template's content.
+  const capSearch = viewEl.querySelector<HTMLInputElement>('[data-cap-search]');
+  if (capSearch) {
+    const groups = [...viewEl.querySelectorAll<HTMLDetailsElement>('.dash-cap-group')];
+    const countEl = viewEl.querySelector<HTMLElement>('[data-cap-count]');
+    const emptyEl = viewEl.querySelector<HTMLElement>('[data-cap-empty]');
+    const clearBtn = viewEl.querySelector<HTMLButtonElement>('[data-cap-search-clear]');
+    // The fold state to restore when the query is cleared, captured once at wire
+    // time. Without this, clearing a search would leave every section hanging
+    // open — the user's own folding silently replaced by the filter's.
+    const wasOpen = new Map(groups.map((g) => [g, g.open]));
+
+    const apply = (raw: string): void => {
+      // Multi-word queries are AND-ed, so "print pdf" narrows instead of widening.
+      const terms = raw.toLowerCase().split(/\s+/).filter(Boolean);
+      const active = terms.length > 0;
+      let hits = 0;
+      for (const group of groups) {
+        // A section's own title and description are part of its cards' scope:
+        // matching "print production" should surface the whole section, not
+        // require the word to also appear on each card inside it.
+        const head = (group.querySelector('.dash-cap-group-text')?.textContent ?? '').toLowerCase();
+        let shown = 0;
+        for (const item of group.querySelectorAll<HTMLElement>('.dash-cap-item')) {
+          const hay = `${item.dataset.capHay ?? ''} ${head}`;
+          const match = !active || terms.every((term) => hay.includes(term));
+          item.hidden = !match;
+          if (match) shown++;
+        }
+        hits += shown;
+        group.hidden = active && shown === 0;
+        // Only drive the fold while filtering; on clear, hand it back untouched.
+        if (active) group.open = shown > 0;
+        else group.open = wasOpen.get(group) ?? false;
+      }
+      if (countEl) {
+        countEl.hidden = !active;
+        countEl.textContent = active
+          ? (hits === 1 ? t('1 capability matches') : t('{n} capabilities match', { n: hits }))
+          : '';
+      }
+      if (emptyEl) emptyEl.hidden = !(active && hits === 0);
+      if (clearBtn) clearBtn.hidden = !active;
+    };
+
+    capSearch.addEventListener('input', () => apply(capSearch.value));
+    // Esc clears rather than closing anything — the field is inside a <dialog>-free
+    // panel, so the key is free, and a filtered page with no visible way back is
+    // the trap this avoids.
+    capSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && capSearch.value) { e.stopPropagation(); capSearch.value = ''; apply(''); }
+    });
+    clearBtn?.addEventListener('click', () => { capSearch.value = ''; apply(''); capSearch.focus(); });
   }
 
   // Build-up: the capability cards start hidden and float in, staggered, when their grid
