@@ -11,6 +11,13 @@
  * SVG / vector inputs are resolution-independent and must NOT reach here — the
  * caller passes them through untouched.
  *
+ * Bit depth: createImageBitmap + a 2D canvas flatten ANY deeper source (a
+ * 16-bit PNG/TIFF, a 10-bit HEIC) to 8 bits per channel, and so does every
+ * editing/export surface downstream. That crush is reported rather than
+ * hidden: the ingest funnel (views/picker.ts storeUserUpload) sniffs the
+ * source's declared depth first via depthHint() in lib/image-sample.ts and
+ * tells the user when it exceeds 8 (plans/deeprichpixels.md Phase A).
+ *
  * Only computeResize() is pure. downscaleRaster() touches browser APIs
  * (createImageBitmap, canvas) and must run in a DOM context.
  */

@@ -952,6 +952,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     timelineBtn.setAttribute('aria-pressed', String(on));
   }
 
+  // The playhead's visibility, as the clock APPLIED it to the live DOM (sequence-dom's
+  // OFF_CLASS). A box the sequence currently hides must not swallow a canvas click —
+  // the user edits what they can see — so every pointer hit-test skips it and the
+  // click falls through to the visible box below. DOM truth, not re-derived timing:
+  // selection can never disagree with playback. No timeline mounted (or a box not yet
+  // painted) → nothing carries the class → behaviour is unchanged.
+  // 'seq-off' is bridge/sequence-dom.ts's OFF_CLASS. A LITERAL, not an import:
+  // sequence-dom statically pulls sequence-plan + transitions, and free-canvas keeps
+  // the whole sequence graph lazy (see ensureTimeline). free-canvas-seq-hit.test.ts
+  // pins this literal against the real export so the two can't drift.
+  const SEQ_OFF_CLASS = 'seq-off';
+  function seqHiddenSkip(boxes: Box[]): ((i: number) => boolean) | undefined {
+    if (!timeCfg) return undefined;
+    return (i: number) => {
+      const el = canvasEl.querySelector(`.lolly-box[data-box-id="${cssEscape(idOf(boxes[i], i))}"]`);
+      return !!el && el.classList.contains(SEQ_OFF_CLASS);
+    };
+  }
+
   // True when the block already carries authored timing — the auto-open cue. This is a
   // field-presence check, not editing arithmetic, so it stays here rather than pulling
   // timeline-math in eagerly (that module is part of the lazy chunk).
@@ -1897,7 +1916,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (editing) commitTextEdit();
     const nat = clientToNative(clientX, clientY);
     const boxes = getBoxes();
-    const hit = hitTest(boxes, nat.x, nat.y, cfg);
+    const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
     if (hit >= 0 && !selection.has(idOf(boxes[hit], hit))) {
       selection = new Set(selectionForHit(boxes, hit, soloBox));
       renderChrome();
@@ -4541,7 +4560,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (vectorCfg && !penEdit) {
       const pnat = clientToNative(e.clientX, e.clientY);
       const pboxes = getBoxes();
-      const phit = hitTest(pboxes, pnat.x, pnat.y, cfg);
+      const phit = hitTest(pboxes, pnat.x, pnat.y, cfg, seqHiddenSkip(pboxes));
       if (phit >= 0 && boxOutlineKind(pboxes[phit], vectorCfg) === 'path') {
         e.preventDefault();
         startPenEdit(idOf(pboxes[phit], phit));
@@ -4559,7 +4578,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (editing && editing.el.contains(e.target as Node)) { refreshFmtStates(); return; }
     const nat = clientToNative(e.clientX, e.clientY);
     const boxes = getBoxes();
-    const hit = hitTest(boxes, nat.x, nat.y, cfg);
+    const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
     if (hit < 0) return;
     e.preventDefault();
     selection = new Set([idOf(boxes[hit], hit)]);
@@ -5222,7 +5241,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // same card again (or empty canvas) drops the pending source; Esc / the rail button
     // exits the mode. Never starts a drag gesture.
     if (mode === 'connect') {
-      const chit = hitTest(boxes, nat.x, nat.y, cfg);
+      const chit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
       if (chit < 0) { connectSource = null; hideConnectLayer(); e.stopPropagation(); e.preventDefault(); return; }
       const cid = idOf(boxes[chit], chit);
       if (!connectSource) connectSource = cid;
@@ -5303,7 +5322,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return;
     }
 
-    const hit = hitTest(boxes, nat.x, nat.y, cfg);
+    const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
     if (hit >= 0) {
       deselectEdge();                              // picking a card drops any connector selection
       const id = idOf(boxes[hit], hit);
@@ -5718,7 +5737,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // A marquee grabs cards AND any connector lines it crosses — a mixed selection
         // (card handles + the connector panel editing every selected line at once).
         const rect = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
-        const hits = marqueeHit(boxes, rect, cfg).map((i: number) => idOf(boxes[i], i));
+        const hits = marqueeHit(boxes, rect, cfg, seqHiddenSkip(boxes)).map((i: number) => idOf(boxes[i], i));
         const edgeHits = edgesInRect(rect);
         if (g.additive) {
           for (const id of hits) selection.add(id);

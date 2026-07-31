@@ -43,6 +43,7 @@ import { getTool } from '../bridge/tool-loader.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { wireTabs } from '../lib/tabs.ts';
 import { downscaleRaster, computeResize, MAX_LONGEST_EDGE, readVideoDimensions } from '../bridge/image-resize.ts';
+import { depthHint } from '../lib/image-sample.ts';
 import { createFolderStore, childFolders, folderPath } from '../folders.ts';
 import { announce } from '../a11y.ts';
 import { choiceDialog, confirmDialog } from '../components/confirm-dialog.ts';
@@ -2917,6 +2918,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       // png/jpeg when the privacy flag is on (no quality loss, C2PA store preserved).
       await keepBytes();
     }
+
+    // Depth honesty (plans/deeprichpixels.md Phase A): every editing/export
+    // surface downstream of ingest is 8 bits per channel today, so a deeper
+    // source (a 16-bit PNG/TIFF) is flattened the first time it is drawn — even
+    // a verbatim-kept file. Same class of notice as profileHint's "no profile,
+    // read as sRGB" caveat: say what happened, once, at ingest. Fire-and-forget
+    // so the sniff can never delay or fail the upload it reports on.
+    void depthHint(raw).then((d) => {
+      if (d.bitsPerChannel != null && d.bitsPerChannel > 8) {
+        const msg = t('{n}-bit source. Lolly currently edits at 8 bits per channel; deep editing is planned.', { n: String(d.bitsPerChannel) });
+        announce(msg);
+        host.log('info', msg);
+      }
+    }).catch(() => { /* depthHint never throws by contract; belt and braces */ });
   }
 
   // Content Credentials for the STORED bytes — the raw C2PA manifest store only (no

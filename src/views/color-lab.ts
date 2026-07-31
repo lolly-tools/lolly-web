@@ -985,7 +985,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * for the exact view the reader is looking at, and re-deriving it at click time
    * is how a pick lands on a different point than the one under the cursor.
    */
-  let cloud: (ImageCloud & { assumedSpace: boolean }) | null = null;
+  let cloud: (ImageCloud & { assumedSpace: boolean; sourceBits: number | null }) | null = null;
   let cloudScreen: { x: number; y: number; depth: number }[] = [];
 
   function solidFor(lim: GamutLimit): GamutSolid {
@@ -1441,6 +1441,11 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     }
     if (cloud.clipped > 0.01) bits.push(t('{p} already clipped', { p: pct(cloud.clipped) }));
     if (cloud.dominantHue) bits.push(t('mostly {h}°', { h: String(Math.round(cloud.dominantHue.h)) }));
+    // Depth honesty, same class as the profile caveat below: the canvas read is
+    // 8-bit, so a deeper source was flattened before any figure above was counted.
+    if (cloud.sourceBits != null && cloud.sourceBits > 8) {
+      bits.push(t('{n}-bit source, read at 8-bit', { n: String(cloud.sourceBits) }));
+    }
     // The honesty clause, and it goes LAST so it reads as a caveat on the numbers
     // rather than as the headline. An untagged file is sRGB by convention only,
     // and every figure above rests on that.
@@ -1458,7 +1463,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // engine barrel this view imports anyway.
       const { sampleImageFile } = await import('../lib/image-sample.ts');
       const img = await sampleImageFile(file);
-      cloud = { ...imageColorCloud(img.data, img.width, img.height, { space: img.space }), assumedSpace: img.assumed };
+      cloud = { ...imageColorCloud(img.data, img.width, img.height, { space: img.space }), assumedSpace: img.assumed, sourceBits: img.sourceBits };
       if (cloudClear) cloudClear.hidden = false;
       cloudFig?.classList.add('has-cloud');
       showCloudStats(file.name);

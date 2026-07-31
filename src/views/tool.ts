@@ -698,8 +698,12 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // Whether the input aside is present. Chromeless modes drop it but aren't hideSidebar.
   const showAside = !hideSidebar && !chromeless;
   const noAside   = !showAside;   // no visible input aside (hidden-canvas OR editor)
-  // The one declared file input a canvas-layout tool presents as that drop zone.
-  const canvasFileInput = canvasLayout ? tool.manifest.inputs?.find(i => i.type === 'file') : null;
+  // The one declared file input presented as a full-canvas drop zone. Canvas-layout
+  // utilities have always worked this way; a sidebar tool with a `file` input (e.g.
+  // redact) gets the same canvas drop IN ADDITION to its sidebar file-picker, so a
+  // file can land on the big surface without hunting for the sidebar control. Click
+  // still only opens the picker via an explicit [data-file-pick] affordance.
+  const canvasFileInput = tool.manifest.inputs?.find(i => i.type === 'file') ?? null;
   // A sidebar tool with a `dropToAdd` blocks input (e.g. logo-wall) also turns its
   // canvas into a drop zone, so a pile of images can be dropped straight onto the
   // (usually empty) preview — not only onto the sidebar list. Canvas-layout file
@@ -2710,11 +2714,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     setupRecordControl({ stageEl, runtime, host, mode: captureMode, markSessionDirty });
   }
 
-  // Canvas-layout file utilities (render.layout:"canvas"): the whole canvas IS
-  // the file control — drag-and-drop or click anywhere to pick. The picked file
-  // still flows through the normal input model + exportFile hook, so CLI/URL mode
-  // are unaffected; only the presentation moves from the sidebar onto the canvas.
-  if (canvasLayout && canvasFileInput && contentEl) {
+  // File-input tools: the whole canvas accepts a dropped file — drag-and-drop, or
+  // click-to-pick via an explicit [data-file-pick] affordance. In canvas layout the
+  // canvas IS the file control; in sidebar layout it complements the sidebar
+  // file-picker. The picked file still flows through the normal input model +
+  // exportFile hook, so CLI/URL mode are unaffected.
+  if (canvasFileInput && contentEl) {
     setupCanvasFileDrop({ viewEl, contentEl, runtime, input: canvasFileInput, onDirty: markUserDirty });
   }
   if (canvasDropInput && contentEl) {
@@ -2853,11 +2858,15 @@ function setupCanvasFileDrop({ viewEl, contentEl, runtime, input, onDirty }: {
   });
 
   // Drag-and-drop over the whole canvas. A depth counter tracks enter/leave across
-  // child nodes so the highlight doesn't flicker as the pointer crosses them.
+  // child nodes so the highlight doesn't flicker as the pointer crosses them. Only
+  // real file drags count (same guard as setupCanvasBlocksDrop) — a dragged text
+  // selection or in-app drag must not flash the drop highlight.
   let depth = 0;
   const setDrag = (on: boolean) => contentEl.classList.toggle('is-file-dragover', on);
-  contentEl.addEventListener('dragenter', (e) => { e.preventDefault(); depth++; setDrag(true); });
+  const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
+  contentEl.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth++; setDrag(true); });
   contentEl.addEventListener('dragover', (e) => {
+    if (!hasFiles(e)) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
   });

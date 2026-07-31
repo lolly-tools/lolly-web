@@ -48,8 +48,13 @@ async function drawSvgOnCanvas(cx: CanvasRenderingContext2D | OffscreenCanvasRen
  * render (openPdfFile → pageToSvg with outlined text → embedFonts), but the
  * SVG string IS the product: no canvas, no JPEG, so this path is not gated on
  * hasImageCodec. The viewBox is in PDF points, origin top-left — the exact
- * space PdfRedactBar lives in. Pages that fail to render are skipped
- * (collectPages), and at most maxPages (default 40) come back.
+ * space PdfRedactBar lives in. Pages that fail to render are skipped but
+ * REPORTED (collectPages → `failed`, 1-based) so a missing page never passes
+ * silently; when EVERY page fails (e.g. an encrypted PDF that loads under
+ * ignoreEncryption but whose content streams cannot render) this throws, so
+ * the tool shows its render-failure state instead of the false "previews
+ * aren't available in this app" fallback. At most maxPages (default 40) come
+ * back.
  */
 export async function pdfPages(bytes: Uint8Array, opts?: { maxPages?: number }, host?: RedactHost): Promise<PdfPagesResult> {
   const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -68,7 +73,7 @@ export async function pdfPages(bytes: Uint8Array, opts?: { maxPages?: number }, 
   const { makeTextOutliner, embedFonts } = await import('../lib/pdf-vector-shot.ts');
   const handle = await openPdfFile(new Blob([input as BlobPart], { type: 'application/pdf' }));
 
-  return core.collectPages(sizes.length, maxPages, async (i) => {
+  const res = await core.collectPages(sizes.length, maxPages, async (i) => {
     const { width: wPt, height: hPt } = sizes[i]!;
     const page = await handle.pageToSvg(i, {
       // The SVG must render with no document fonts — outline every run to real
@@ -82,6 +87,10 @@ export async function pdfPages(bytes: Uint8Array, opts?: { maxPages?: number }, 
     const svg = await embedFonts(page.svg, []);
     return { svg, page: i + 1, widthPt: wPt, heightPt: hPt };
   });
+  if (!res.pages.length) {
+    throw new Error('None of the pages in this PDF could be rendered. It may be encrypted or damaged.');
+  }
+  return { pages: res.pages, truncated: res.truncated, ...(res.failed.length ? { failed: res.failed } : {}) };
 }
 
 export async function redactPdf(bytes: Uint8Array, opts: PdfRedactOpts, host?: RedactHost): Promise<PdfRedactResult> {
