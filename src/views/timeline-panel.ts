@@ -52,8 +52,9 @@ import {
 import { TRANSITIONS, TRANSITION_KINDS, isTransitionKind } from '../lib/transitions.ts';
 import { MAX_TRANSITION_MS, MIN_TRANSITION_MS, createSequenceClock, type SequenceClock } from './sequence-clock.ts';
 import {
-  DEFAULT_CLIP_S, MAX_TIME_S, MIN_DUR, MIN_TRIM_BAR_PX,
+  DEFAULT_CLIP_S, MAX_TIME_S, MIN_DUR, MIN_TRIM_BAR_PX, ONION_MAX_STEPS,
   boxTiming, deriveDuration, edgeZonePx, fmtDelta, fmtDur, fmtTime, indexOfId, isTimed,
+  onionNeighbours,
   dropIndexAt, moveOverlay, moveSeqClip, packSeq, removeAndRipple, rippleOverlays, seqBoxes,
   setClipIn, setDuration, setSpeed,
   detachAudio, isThroughEdit, joinClips, reattachAudio, splitAll,
@@ -657,6 +658,55 @@ export function appearanceSig(box: Box | undefined, cfg: TimeCfg): string {
   return parts.join('\u0001');
 }
 
+// ── onion-skin preference (device-local, absent = OFF) ────────────────────────
+//
+// A CHROME preference, not tool state: it changes what the editor draws over the
+// artboard and never touches the model, so the "no localStorage for tool state" rule
+// in CLAUDE.md does not apply. Direct precedent: projects.ts's view/sort modes and
+// multi-edit.ts's zoom. Every access is wrapped, because a private-mode browser throws
+// on the property access itself, not only on the call.
+//
+// ABSENCE is the off state — there is no `on: false` record. That keeps the default
+// unambiguous (nothing stored, nothing drawn) and means turning it off leaves no
+// residue for a future version to misread.
+const ONION_KEY = 'lolly:onion';
+
+interface OnionPref { mode: 'outline' | 'filled'; before: number; after: number; opacity: number }
+
+/** Turning it on with nothing stored: outlines, one scene either side, full strength. */
+const ONION_DEFAULT: OnionPref = { mode: 'outline', before: 1, after: 1, opacity: 1 };
+
+const onionStep = (v: unknown): number => {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) ? (n < 0 ? 0 : n > ONION_MAX_STEPS ? ONION_MAX_STEPS : n) : 1;
+};
+const onionOpacity = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? (n < 0 ? 0 : n > 1 ? 1 : n) : 1;
+};
+
+function readOnionPref(): OnionPref | null {
+  try {
+    const raw = localStorage.getItem(ONION_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw) as Partial<OnionPref> | null;
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    // Coerced field by field: a hand-edited or half-migrated record must degrade to a
+    // usable preference, never to a crash or to a mode nothing draws.
+    return {
+      mode: o.mode === 'filled' ? 'filled' : 'outline',
+      before: onionStep(o.before), after: onionStep(o.after), opacity: onionOpacity(o.opacity),
+    };
+  } catch { return null; /* storage off, or junk in the slot */ }
+}
+
+function writeOnionPref(pref: OnionPref | null): void {
+  try {
+    if (pref) localStorage.setItem(ONION_KEY, JSON.stringify(pref));
+    else localStorage.removeItem(ONION_KEY);
+  } catch { /* storage off */ }
+}
+
 export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const { stageEl, canvasEl, runtime, host, blockId, cfg, getBoxes, commit, selection, onDirty, reserve } = opts;
   const addKinds: TimelineAddKind[] = Array.isArray(opts.addKinds) ? opts.addKinds.filter((k) => k && k.id) : [];
@@ -672,6 +722,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   let lastAppearance = String.fromCharCode(0);
   let focusedId = '';
   let snapOn = true;
+  let onionPref: OnionPref | null = readOnionPref();
   let thumbAbort: AbortController | null = null;
   let cancelIdle: (() => void) | null = null;
   let syncScheduled = false;
@@ -736,6 +787,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const splitBtn = btn('tl-split', t('Split at playhead'), icon('scissors'));
   const snapBtn = btn('tl-snap', t('Snap to edges'), icon('pin'));
   snapBtn.setAttribute('aria-pressed', 'true');
+  // Onion skin — OFF by default, and the button says so before anything is clicked.
+  // A long-press / right-click on it opens the options popover (see onionMenu).
+  const onionBtn = btn('tl-onion', t('Onion skin'), icon('filmStrip'));
+  onionBtn.setAttribute('aria-pressed', 'false');
+  onionBtn.setAttribute('aria-haspopup', 'dialog');
   const zoomOutBtn = btn('tl-zoom-out', t('Zoom out'), icon('zoomOut'));
   const zoomInBtn = btn('tl-zoom-in', t('Zoom in'), icon('zoomIn'));
   const fitBtn = btn('tl-fit', t('Fit to view'), icon('resize'));
@@ -776,7 +832,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   transport.append(playBtn, timeEl);
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
-  tools.append(addBtn, micBtn, splitBtn, snapBtn, zoomOutBtn, zoomInBtn, fitBtn);
+  tools.append(addBtn, micBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn);
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
   bar.append(transport, tools, rec, recNote, inspector);
@@ -1489,6 +1545,138 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     return first;
   }, { className: 'folder-menu tl-menu', ariaLabel: t('Add to the timeline'), position: menuPosition });
 
+  // ── onion skin (opt-in, OFF by default) ──────────────────────────────────────
+  //
+  // The panel owns the PREFERENCE and the emission; views/onion-skin.ts owns the
+  // drawing and is lazily imported by free-canvas off the `tl-time` detail. Nothing
+  // here touches the model, so nothing here is undoable — a view preference is not an
+  // edit, and putting it on the undo stack would make Cmd-Z stop meaning "unmake that
+  // change to my work".
+
+  function syncOnionBtn(): void {
+    const on = !!onionPref;
+    onionBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    onionBtn.classList.toggle('is-active', on);
+  }
+  syncOnionBtn();
+
+  /**
+   * The ONE writer for the preference: persist, reflect on the button, and push a fresh
+   * `tl-time` so the canvas repaints without waiting for the clock to move (a paused
+   * timeline emits no ticks at all, which is exactly when someone is fiddling with these).
+   */
+  function setOnion(next: OnionPref | null, opts?: { speak?: boolean }): void {
+    onionPref = next;
+    writeOnionPref(next);
+    syncOnionBtn();
+    if (opts?.speak) announce(next ? t('Onion skin on') : t('Onion skin off'));
+    emitTime(clock.t());
+  }
+
+  function toggleOnion(): void {
+    setOnion(onionPref ? null : { ...ONION_DEFAULT }, { speak: true });
+  }
+
+  /** Change one option, turning the feature ON if it was off (the popover implies intent). */
+  function patchOnion(patch: Partial<OnionPref>): void {
+    setOnion({ ...(onionPref ?? ONION_DEFAULT), ...patch });
+  }
+
+  const onionMenu = mountBodyPopover(onionBtn, (el) => {
+    el.textContent = '';
+    const cur = onionPref ?? ONION_DEFAULT;
+
+    const desc = document.createElement('p');
+    desc.className = 'tl-onion-desc';
+    desc.textContent = t('Show ghosts of the scenes either side of the playhead.');
+    el.appendChild(desc);
+
+    const row = (labelText: string, control: HTMLElement): HTMLElement => {
+      const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field tl-onion-row';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = labelText;
+      wrap.append(lab, control);
+      return wrap;
+    };
+
+    // Mode. A <select> rather than a pair of radios: two mutually exclusive labelled
+    // choices is exactly what `.field-select` already is in this panel (the transition
+    // kind picker), and forking radio styling here would be a second primitive for the
+    // same job. Outlines first, because it is the default and the one that stays
+    // legible over an opaque scene.
+    const mode = document.createElement('select');
+    mode.className = 'field-select tl-select';
+    for (const [value, label] of [['outline', t('Outlines')], ['filled', t('Filled')]] as const) {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      mode.appendChild(o);
+    }
+    mode.value = cur.mode;
+    mode.addEventListener('change', () => patchOnion({ mode: mode.value === 'filled' ? 'filled' : 'outline' }));
+    el.appendChild(row(t('Mode'), mode));
+
+    // Before and after are configured INDEPENDENTLY (the Procreate Dreams pattern):
+    // "two behind, none ahead" is a real way to work, and a single symmetric count
+    // cannot express it.
+    const stepper = (value: number, onCommit: (v: number) => void): HTMLInputElement => {
+      const n = document.createElement('input');
+      n.className = 'field-input tl-num tl-onion-step';
+      n.type = 'number';
+      n.min = '0';
+      n.max = String(ONION_MAX_STEPS);
+      n.step = '1';
+      n.value = String(value);
+      n.addEventListener('change', () => onCommit(Number(n.value)));
+      return n;
+    };
+    el.appendChild(row(t('Scenes before'), stepper(cur.before, (v) => patchOnion({ before: onionStep(v) }))));
+    el.appendChild(row(t('Scenes after'), stepper(cur.after, (v) => patchOnion({ after: onionStep(v) }))));
+
+    const strength = document.createElement('input');
+    strength.className = 'field-range';
+    strength.type = 'range';
+    strength.min = '10';
+    strength.max = '100';
+    strength.step = '5';
+    strength.value = String(Math.round(cur.opacity * 100));
+    // `input`, not `change`: the whole point of the slider is watching the ghosts fade.
+    strength.addEventListener('input', () => patchOnion({ opacity: onionOpacity(Number(strength.value) / 100) }));
+    el.appendChild(row(t('Ghost strength'), strength));
+
+    return mode;
+  }, {
+    className: 'folder-menu tl-menu tl-onion-pop',
+    role: 'dialog',
+    ariaLabel: t('Onion skin options'),
+    position: menuPosition,
+  });
+
+  // Plain click toggles; a long press or a right-click opens the options. Escape and the
+  // focus restore come free from mountBodyPopover, which is why this is not hand-rolled.
+  let onionHold: ReturnType<typeof setTimeout> | 0 = 0;
+  let onionHeld = false;
+  const cancelOnionHold = (): void => { if (onionHold) { clearTimeout(onionHold); onionHold = 0; } };
+  onionBtn.addEventListener('pointerdown', () => {
+    onionHeld = false;
+    cancelOnionHold();
+    onionHold = setTimeout(() => { onionHold = 0; onionHeld = true; onionMenu.open(); }, 500);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) onionBtn.addEventListener(ev, cancelOnionHold);
+  onionBtn.addEventListener('click', () => {
+    // The long press already did something; the click that ends it must not undo it.
+    if (onionHeld) { onionHeld = false; return; }
+    toggleOnion();
+  });
+  onionBtn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelOnionHold();
+    if (onionMenu.isOpen()) onionMenu.close(true); else onionMenu.open();
+  });
+
   // ── the bar / chip context menu ─────────────────────────────────────────────
 
   /** A virtual anchor at the right-click point; `delegate` carries the keyboard route. */
@@ -2115,6 +2303,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       scheduleThumbs();
     }
     updatePlayhead(clock.t());
+    // A MODEL change can move the ghosts without moving the clock (a split, a trim, a
+    // reorder), and a paused timeline emits no ticks at all. Gated by the same signature
+    // as the tick path, so a sync that changed nothing visible still fires nothing.
+    emitTime(clock.t());
   }
 
   // ── gestures ────────────────────────────────────────────────────────────────
@@ -3537,6 +3729,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         e.preventDefault(); e.stopPropagation();
         trimBy((e.shiftKey ? TRIM_SHIFT_FRAMES : 1) * FRAME_S); return;
       case 'e': case 'E': e.preventDefault(); e.stopPropagation(); trimToPlayhead(); return;
+      // Onion skin: `o` toggles it, `O` (Shift+O) opens its options — the same
+      // bare-letter / Shift-letter split `s`/`S` and `d`/`D` already use, and the only
+      // key space left that no browser binding fights for.
+      case 'o': e.preventDefault(); e.stopPropagation(); toggleOnion(); return;
+      case 'O': e.preventDefault(); e.stopPropagation(); onionMenu.open(); return;
       case '+': case '=': e.preventDefault(); e.stopPropagation(); zoom(ZOOM_STEP); return;
       case '-': case '_': e.preventDefault(); e.stopPropagation(); zoom(1 / ZOOM_STEP); return;
       case 'f': case 'F': e.preventDefault(); e.stopPropagation(); fit(); return;
@@ -3643,16 +3840,35 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * So the fire is gated on a string signature of (playing, active ids). A tick inside
    * one clip produces the same string and costs one comparison; a cut, a seek across a
    * boundary, or pressing play produces a new one and fires exactly once.
+   *
+   * The ONION SKIN rides the same event and the same gate. Its neighbour set changes on
+   * exactly the boundaries the active set does, so folding `mode` / `opacity` / the two
+   * id lists into the signature keeps the "never once per tick" property intact while
+   * making a toggle or an option change fire immediately — `setOnion` simply calls this.
+   * With the preference OFF (the default) the whole onion half costs one `!!` per tick:
+   * `onionNeighbours` is never called, and `mode` goes out as the empty string, which is
+   * what tells free-canvas not to load the module at all.
    */
   let lastTimeKey = '\u0000';       // unmatchable, so the first tick always announces
   function emitTime(tMs: number): void {
     if (disposed) return;
     const playing = clock.playing();
-    const activeIds = activeIdsAt(getBoxes(), tMs / 1000);
-    const key = `${playing ? 1 : 0}|${activeIds.join(',')}`;
+    const boxes = getBoxes();
+    const at = tMs / 1000;
+    const activeIds = activeIdsAt(boxes, at);
+    const pref = onionPref;
+    const ghosts = pref
+      ? onionNeighbours(boxes, cfg, at, pref.before, pref.after)
+      : { past: [] as string[], future: [] as string[] };
+    const mode = pref ? pref.mode : '';
+    const opacity = pref ? pref.opacity : 1;
+    const key = `${playing ? 1 : 0}|${activeIds.join(',')}|${mode}|${opacity}|${ghosts.past.join(',')}|${ghosts.future.join(',')}`;
     if (key === lastTimeKey) return;
     lastTimeKey = key;
-    root.dispatchEvent(new CustomEvent('tl-time', { bubbles: true, detail: { atMs: tMs, activeIds, playing } }));
+    root.dispatchEvent(new CustomEvent('tl-time', {
+      bubbles: true,
+      detail: { atMs: tMs, activeIds, playing, mode, opacity, past: ghosts.past, future: ghosts.future },
+    }));
   }
   const unsubTick = clock.onTick((tMs) => { updatePlayhead(tMs); syncPlayBtn(); emitTime(tMs); });
 
@@ -3715,6 +3931,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // The menus are body-mounted, so hiding the panel does not hide them.
       addMenu.close();
       ctxMenu.close();
+      onionMenu.close();
       clock.pause();
       syncPlayBtn();   // a paused clock emits no ticks, so project the state now
       abortThumbs();
@@ -3736,6 +3953,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // Body-mounted: these outlive root.remove() unless they are closed explicitly.
     try { addMenu.close(); } catch { /* never opened */ }
     try { ctxMenu.close(); } catch { /* never opened */ }
+    try { onionMenu.close(); } catch { /* never opened */ }
+    if (onionHold) { clearTimeout(onionHold); onionHold = 0; }
     try { clock.pause(); } catch { /* already gone */ }
     abortThumbs();
     cancelIdle?.();

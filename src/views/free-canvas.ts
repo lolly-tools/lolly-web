@@ -83,6 +83,9 @@ import type { PathPaintFields } from './free-canvas-pen.ts';
 // costs no chunk, and timeline-panel.ts pulls in styles/parts/timeline.css.
 import type { TimeCfg } from './timeline-math.ts';
 import type { TimelinePanel } from './timeline-panel.ts';
+// Type-only: the ghost layer is a lazy chunk that only an editor with onion skin turned
+// ON ever fetches, so its runtime import lives inside onionFrom's dynamic `import()`.
+import type { OnionPaintState, OnionSkinHandle } from './onion-skin.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import { takePendingDesignImport } from '../lib/drop-router.ts';
 // The boot-path slice of user-fonts (NOT ../user-fonts.ts, which would drag the
@@ -1116,17 +1119,66 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *   • `tlPlaying`, which suppresses the off-playhead banner during playback — scenes
    *     coming and going is the whole point of pressing play, and a chip that blinks on
    *     every cut is noise, not information.
+   *   • the ONION SKIN, which is opt-in and OFF by default: the panel puts `mode` /
+   *     `past` / `future` / `opacity` on the same detail, and an absent (or unknown)
+   *     mode means the lazy chunk is never fetched at all.
    * Untrusted detail (anything on the page can dispatch it): only the `playing` flag is
-   * read, and only as a strict boolean.
+   * read as a strict boolean, and the onion fields are re-validated in onionFrom.
    */
   let tlPlaying = false;
   function onTlTime(e: Event): void {
     if (!timeCfg || disposed) return;
-    const d = (e as CustomEvent).detail as { playing?: unknown } | null | undefined;
+    const d = (e as CustomEvent).detail as OnionTimeDetail | null | undefined;
     tlPlaying = d?.playing === true;
+    onionFrom(d);
     renderChrome();
   }
   if (timeCfg) stageEl.addEventListener('tl-time', onTlTime);
+
+  // ── onion skin: the ghost layer, lazily mounted, never in an export ──────────
+  // The whole feature is off unless the panel says otherwise, so the module, its
+  // stylesheet and every DOM node it makes cost exactly nothing to an editor that never
+  // turns it on. The layer itself lives inside `overlay` — a stage SIBLING of
+  // #tool-canvas carrying [data-export-hide] — so no export path can reach it; see
+  // onion-skin.ts's module doc for the three independent guarantees.
+  interface OnionTimeDetail { playing?: unknown; mode?: unknown; past?: unknown; future?: unknown; opacity?: unknown }
+  let onionSkin: OnionSkinHandle | null = null;
+  let onionLoading = false;
+  let onionState: OnionPaintState | null = null;
+
+  function onionOff(): void {
+    onionState = null;
+    if (!onionSkin) return;
+    try { onionSkin.destroy(); } catch (e) { console.error(e); }
+    onionSkin = null;
+  }
+
+  function onionFrom(d: OnionTimeDetail | null | undefined): void {
+    const mode = d?.mode === 'filled' ? 'filled' : d?.mode === 'outline' ? 'outline' : '';
+    if (!mode) { onionOff(); return; }
+    onionState = { mode, past: d?.past, future: d?.future, opacity: d?.opacity };
+    if (onionSkin) { onionSkin.paint(onionState); return; }
+    if (onionLoading) return;
+    onionLoading = true;
+    void (async () => {
+      try {
+        const mod = await import('./onion-skin.ts');
+        // The mode may have been turned off again while the chunk was in flight.
+        if (disposed || !onionState) return;
+        onionSkin = mod.mountOnionSkin({
+          overlayEl: overlay, canvasEl, cfg, getBoxes, metricsOf: metrics,
+        });
+        onionSkin.paint(onionState);
+      } catch (e) { console.error(e); }
+      finally { onionLoading = false; }
+    })();
+  }
+
+  /** Re-place the ghosts after a pan / zoom / resize — they are positioned in stage px
+   *  from the model, exactly like the selection outline, so they move with it. */
+  function paintOnion(): void {
+    if (onionSkin && onionState) onionSkin.paint(onionState);
+  }
 
   /** Open the panel (used by the rail button and after creating a timed box). */
   function openTimeline(): void { void ensureTimeline(true); }
@@ -1135,6 +1187,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function destroyTimeline(): void {
     try { stageEl.removeEventListener('tl-add', onTlAdd); } catch { /* stage detached */ }
     try { stageEl.removeEventListener('tl-time', onTlTime); } catch { /* stage detached */ }
+    // No panel means no playhead means nothing to be either side OF.
+    onionOff();
     try { timelinePanel?.destroy(); } catch (e) { console.error(e); }
     timelinePanel = null;
     // Unconditional, even if destroy() above threw: a leaked reserve permanently shrinks
@@ -6423,7 +6477,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     notifySelection();
     // M2 — reposition the frame scrim only when the artboard geometry changed (pan/
     // zoom/resize set scrimDirty); a box drag/hover/selection change never moves it.
+    const movedStage = scrimDirty;
     if (scrimDirty) { positionFrameScrim(); scrimDirty = false; }
+    // Ghosts are positioned in stage px from the MODEL, exactly like the selection
+    // outline, so they have to be re-placed whenever the artboard's geometry or the
+    // model moves. Skipped on the LIVE path (`liveRects` non-null = a box drag is in
+    // flight) unless the stage itself moved: a ghosted box is off-playhead by
+    // definition and therefore never the one being dragged, so rebuilding its ghost
+    // sixty times a second buys nothing.
+    if (!liveRects || movedStage) paintOnion();
     // ── THE ONE RULE, enforcement point 2 of 3: RETENTION (see the file header) ──
     // The chrome below is positioned from the MODEL, not from the DOM: a selected box
     // the sequence is hiding would otherwise get a full outline, 8 resize handles, a

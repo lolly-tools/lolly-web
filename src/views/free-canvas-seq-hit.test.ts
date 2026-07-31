@@ -139,7 +139,7 @@ interface Fixture {
   ids(): string[];
   setOff(...ids: string[]): void;
   /** What the timeline panel dispatches when the ACTIVE SET changes — the real seam. */
-  tlTime(playing?: boolean): void;
+  tlTime(playing?: boolean, onion?: Record<string, unknown>): void;
   destroy(): void;
 }
 
@@ -186,9 +186,9 @@ function mount(boxes: Box[], cfg: Record<string, unknown> = canvasCfg()): Fixtur
         el.classList.toggle(OFF_CLASS, offIds.includes(el.getAttribute('data-box-id') as string));
       }
     },
-    tlTime(playing = false) {
+    tlTime(playing = false, onion?: Record<string, unknown>) {
       stageEl.dispatchEvent(new dom.window.CustomEvent('tl-time', {
-        bubbles: true, detail: { atMs: 0, activeIds: [], playing },
+        bubbles: true, detail: { atMs: 0, activeIds: [], playing, ...(onion || {}) },
       }));
     },
     destroy() { handle.destroy(); viewEl.remove(); doc.body.innerHTML = ''; },
@@ -381,5 +381,75 @@ test('with no time model the rule is dead code: chrome, keys and banner are unch
   assert.equal((f.stageEl.querySelector('.fc-offplayhead') as HTMLElement).hidden, true);
   pressDelete();
   assert.deepEqual(f.ids(), ['scene1', 'badge'], 'topmost-wins, byte-identical to before');
+  f.destroy();
+});
+
+// ── ONION SKIN: ghosts are decoration, never a target ─────────────────────────
+//
+// The one rule says the canvas edits exactly what the canvas SHOWS at the playhead. A
+// ghost is drawn precisely because its scene is NOT shown, so it must be impossible to
+// acquire — and the way that is guaranteed is structural, not a new branch in the hit
+// test: the ghosts live in a `pointer-events: none` layer inside `.fc-overlay`, which is
+// a stage sibling of the canvas. There is no `.lolly-box` for the hit test to find.
+
+test('a painted ghost sits outside the canvas entirely and adds no hit-testable box', async () => {
+  const f = mount(SCENES());
+  await settle();
+  f.setOff('scene2');                                  // playhead inside scene1
+  const boxesBefore = f.canvasEl.querySelectorAll('.lolly-box').length;
+  f.tlTime(false, { mode: 'outline', past: [], future: ['scene2'], opacity: 1 });
+  await settle();                                      // the lazy onion chunk resolves
+
+  const layer = f.stageEl.querySelector('.onion-layer') as HTMLElement;
+  assert.ok(layer, 'the ghost layer mounted off the tl-time detail');
+  assert.equal(f.canvasEl.contains(layer), false, 'never inside #tool-canvas — exports cannot see it');
+  assert.ok(layer.hasAttribute('data-export-hide'));
+  assert.equal(f.stageEl.querySelectorAll('.onion-ghost').length, 1, 'one ghost, for the next scene');
+  assert.equal(f.canvasEl.querySelectorAll('.lolly-box').length, boxesBefore,
+    'the artboard gained no element, so the hit test has nothing new to consider');
+  f.destroy();
+});
+
+test('clicking where a ghost is drawn still selects the VISIBLE box beneath it', async () => {
+  const f = mount(SCENES());
+  await settle();
+  f.setOff('scene2');
+  // scene2 is hidden AND ghosted, dead centre over scene1 — the worst case for the rule.
+  f.tlTime(false, { mode: 'filled', past: [], future: ['scene2'], opacity: 1 });
+  await settle();
+  assert.equal(f.stageEl.querySelectorAll('.onion-ghost').length, 1, 'precondition: a ghost is up');
+
+  clickAt(f, 500, 500);
+  pressDelete();
+  assert.deepEqual(f.ids(), ['scene2', 'badge'],
+    'the click landed on visible scene1, exactly as it does with no ghosts at all');
+  f.destroy();
+});
+
+test('turning the mode off takes the layer down, and no mode never loads the chunk', async () => {
+  const f = mount(SCENES());
+  await settle();
+  f.setOff('scene2');
+  // The default path: every tl-time the panel sends with onion OFF carries mode ''.
+  f.tlTime(false, { mode: '', past: [], future: [], opacity: 1 });
+  await settle();
+  assert.equal(f.stageEl.querySelector('.onion-layer'), null, 'nothing was mounted at all');
+
+  f.tlTime(false, { mode: 'outline', past: [], future: ['scene2'], opacity: 1 });
+  await settle();
+  assert.ok(f.stageEl.querySelector('.onion-layer'), 'on');
+
+  f.tlTime(false, { mode: '', past: [], future: [], opacity: 1 });
+  assert.equal(f.stageEl.querySelector('.onion-layer'), null, 'off again, synchronously');
+  f.destroy();
+});
+
+test('an untimed tool never mounts the ghost layer, whatever lands on the stage', async () => {
+  const f = mount(SCENES(), untimedCfg());
+  await settle();
+  f.tlTime(false, { mode: 'filled', past: ['scene1'], future: ['scene2'], opacity: 1 });
+  await settle();
+  assert.equal(f.stageEl.querySelector('.onion-layer'), null,
+    'no time model means no playhead means nothing to be either side of');
   f.destroy();
 });
