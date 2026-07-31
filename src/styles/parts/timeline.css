@@ -236,6 +236,19 @@
    which writes VIEWPORT coordinates (getBoundingClientRect) — absolute would drift by the
    scroll offset. Same fix, same reason, as `.projects-menu` in projects.css. */
 .tl-menu { position: fixed; }
+/* An action whose NAME cannot carry its meaning ("Detach audio" says what, not what
+   for) gets a second line in the plainer register. Two lines in one column, so the
+   icon still centres against the pair and the row keeps the folder-menu look. */
+.tl-menu-item--sub { align-items: flex-start; }
+.tl-menu-item--sub svg { margin-top: 2px; }
+.tl-menu-stack { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tl-menu-sub {
+  max-width: 26ch;
+  color: hsl(var(--muted-foreground));
+  font-size: calc(11px * var(--a11y-fs));
+  line-height: 1.35;
+  white-space: normal;
+}
 
 /* ─── Inspector (selected-clip precision fields) ─────────────────────────────
    The shared field primitive owns the control look (parts/fields.css) — this
@@ -405,6 +418,29 @@
   pointer-events: none;
 }
 
+/* A/V LINKED — this clip's sound lives on another lane (or IS that sound). A chain
+   glyph in the top-left corner, opposite the speed badge so the two never collide.
+   Deliberately quiet: the link is a fact about the clip, not a warning. `title` is set
+   in JS (it differs by side), so the glyph is not an aria target — the spoken form is
+   the announce() the detach/re-attach commands make. */
+.tl-clip-link {
+  position: absolute;
+  top: 2px; left: 4px;
+  display: flex;
+  padding: 1px;
+  border-radius: 4px;
+  color: hsl(var(--background));
+  background: hsl(var(--foreground) / 0.6);
+  pointer-events: none;
+}
+.tl-clip-link svg { width: calc(9px * var(--a11y-fs)); height: calc(9px * var(--a11y-fs)); }
+.tl-clip-link[hidden] { display: none; }
+/* `.is-linked` is deliberately a STATE HOOK with no box-shadow of its own. Every ring
+   this bar can wear (selected / drop-target / trimming) is a box-shadow at (0,2,0), so a
+   fourth one at the same weight would win or lose by source order alone and silently
+   swallow one of the others. The chain chip above is the signal; the pair also reads as
+   a pair through the muted half's existing hatch. */
+
 /* The filmstrip / waveform canvas, painted by lib/clip-thumbs.ts. Sized in JS. */
 .tl-clip-thumbs {
   position: absolute;
@@ -445,26 +481,88 @@
   pointer-events: none;
 }
 
-/* Trim handles. EDGE_PX in timeline-panel.ts is 8 — keep these in step. */
+/* Trim handles. The HIT area is this box; the VISIBLE grip is the 3px ::after inside
+   it. Keep the two widths in step with EDGE_PX (10) / EDGE_PX_COARSE (24) in
+   timeline-panel.ts — there is a parity test in timeline-panel.test.ts that reads this
+   file and fails if they drift. */
 .tl-edge {
   position: absolute;
   top: 0; bottom: 0;
-  width: 8px;
+  /* The `33%` is edgeZonePx's own cap, in CSS: on a bar narrower than 3x the base the
+     hit test shrinks the zone so the two sides can never meet, and the painted grip has
+     to shrink with it or it would sit somewhere the pointer is not listening. */
+  width: min(10px, 33%);
   cursor: ew-resize;
   background: transparent;
 }
 .tl-edge-in  { left: 0; }
 .tl-edge-out { right: 0; }
+/* Three states, in order of how loudly they speak:
+   • REST      — the grip appears on hover / selection (below);
+   • ACTIVE    — this edge is being dragged, or the keyboard is aimed at it: thicker,
+                 brand-coloured, and the whole clip gains an inset ring;
+   • LIMIT     — the drag is asking for more than the source has left. */
 .tl-clip:hover .tl-edge::after,
-.tl-clip.is-selected .tl-edge::after {
+.tl-clip.is-selected .tl-edge::after,
+.tl-clip.is-trimming .tl-edge::after,
+.tl-edge.is-active::after {
   content: "";
   position: absolute;
-  top: 20%; bottom: 20%;
-  left: 2.5px;
+  top: 15%; bottom: 15%;
+  left: calc(50% - 1.5px);
   width: 3px;
   border-radius: 2px;
   background: hsl(var(--foreground) / 0.55);
 }
+.tl-edge.is-active::after {
+  left: calc(50% - 2px);
+  width: 4px;
+  background: var(--brand-primary, hsl(var(--primary)));
+}
+.tl-edge.is-limit::after { background: hsl(var(--destructive)); }
+/* A trim always selects the clip first, so this rule LANDS ON TOP of `.is-selected`'s
+   ring (same specificity, declared later). It therefore has to be at least as strong as
+   that ring, or starting a trim would visibly downgrade the clip's outline. */
+.tl-clip.is-trimming {
+  box-shadow: inset 0 0 0 2px var(--brand-primary, hsl(var(--primary))), 0 2px 10px rgb(0 0 0 / 0.25);
+}
+/* Too narrow to carry two zones (MIN_TRIM_BAR_PX): the hit test already refuses, so
+   the affordance must not promise one. The clip's title says where to trim instead. */
+.tl-clip.is-tight .tl-edge { display: none; }
+
+/* The reachable-media ghost, shown for the length of a trim drag. Panel-level, not a
+   child of the bar (`.tl-clip` is overflow:hidden). SOLID outline — dashed borders in
+   this shell mean "drop area", and nothing may be dropped here. */
+.tl-clip-extent {
+  position: absolute;
+  z-index: 2;
+  border-radius: 7px;
+  outline: 1px solid hsl(var(--foreground) / 0.4);
+  background: hsl(var(--foreground) / 0.12);
+  pointer-events: none;
+}
+.tl-clip-extent[hidden] { display: none; }
+
+/* The trim readout: duration + signed delta, anchored on the edge being dragged.
+   Same chip vocabulary as the speed badge above. */
+.tl-trim-badge {
+  position: absolute;
+  z-index: 6;
+  transform: translate(-50%, -100%);
+  margin-top: -4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--a11y-fs));
+  line-height: 1.5;
+  white-space: pre;
+  color: hsl(var(--background));
+  background: hsl(var(--foreground) / 0.85);
+  pointer-events: none;
+}
+/* First lane: there is no room above, so it hangs below the bar instead. */
+.tl-trim-badge.is-below { transform: translate(-50%, 0); margin-top: 4px; }
+.tl-trim-badge[hidden] { display: none; }
 
 /* Junction (seam) chip — sits ON the cut between two sequence clips. Positioned
    by an inline `left`; the half-width offset is a MARGIN, not a transform, so
@@ -496,6 +594,20 @@
 .tl-seam.is-fade::before {
   width: 10px; height: 8px; border-radius: 2px;
   background: linear-gradient(90deg, currentColor, transparent);
+}
+/* THROUGH EDIT — a cut whose two sides are still perfectly contiguous, i.e. a split
+   nobody has committed to yet (Final Cut's hairline marker). Drawn as a hollow chip
+   with a dotted-through middle, so it reads as "not really a cut" beside the solid bar
+   of a real one. NOT dashed on the BORDER — dashed borders in this shell mean drop
+   area; the treatment lives on the ::before mark instead. */
+.tl-seam.is-through {
+  background: hsl(var(--background) / 0.85);
+  border-style: solid;
+  border-color: hsl(var(--muted-foreground) / 0.6);
+}
+.tl-seam.is-through::before {
+  width: 10px; height: 2px;
+  background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 4px);
 }
 .tl-seam:hover { color: hsl(var(--foreground)); border-color: hsl(var(--muted-foreground)); }
 .tl-seam:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
@@ -661,7 +773,10 @@
 }
 .tl-junction-dial { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; }
 .tl-junction-dial .tl-num { width: 92px; }
-.tl-junction-actions { display: flex; justify-content: flex-end; }
+/* Join sits on the LEFT of the action row, away from the primary Done — it is the
+   destructive-ish one (it removes a clip), and it is only present on a through edit. */
+.tl-junction-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.tl-junction-join { margin-inline-end: auto; }
 
 /* ─── Narrow / touch ─────────────────────────────────────────────────────────
    On a phone the inspector cannot share the bar with the transport — drop it to
@@ -700,7 +815,9 @@
   .tl-timing { padding: 8px 12px; }
   .tl-play { width: 40px; height: 40px; }
   .tl-handle { height: 14px; }
-  .tl-edge { width: 12px; }
+  /* EDGE_PX_COARSE — WCAG 2.5.8's 24px target-size floor. The panel picks the same
+     number per EVENT from e.pointerType; this is the cursor/paint half of it. */
+  .tl-edge { width: min(24px, 33%); }
   .tl-seam { width: 22px; height: 22px; margin: -11px 0 0 -11px; }
 }
 

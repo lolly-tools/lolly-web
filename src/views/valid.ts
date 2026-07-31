@@ -2086,8 +2086,49 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1): Promise<voi
   drop.addEventListener('drop', (e) => {
     e.preventDefault();
     drop.classList.remove('is-over');
-    handle(e.dataTransfer?.files);
+    if (e.dataTransfer?.files?.length) { void handle(e.dataTransfer.files); return; }
+    // No File objects — an image dragged straight off another page (even our own
+    // docs) arrives as a LINK, not bytes. Silently ignoring it reads as a broken
+    // drop zone, so resolve the link or say why we can't.
+    void handleDroppedLink(e.dataTransfer);
   });
+
+  // A cross-page image drag carries text/uri-list (and text/html with the <img>),
+  // never the pixels. Fetching the URL is the only way to get bytes — it happens
+  // solely on this explicit user drop, same-origin drops (our own docs images)
+  // always work, and a cross-origin server that refuses CORS gets a plain
+  // explanation instead of dead air.
+  async function handleDroppedLink(dt: DataTransfer | null): Promise<void> {
+    const say = (msg: string): void => {
+      reportEl.hidden = false;
+      reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${escape(msg)}</p></div>`;
+      playSfx('warn');
+    };
+    let url = dt?.getData('text/uri-list')?.split('\n').find((l) => l && !l.startsWith('#'))?.trim() ?? '';
+    if (!url) {
+      const html = dt?.getData('text/html') ?? '';
+      url = /<img[^>]+src\s*=\s*["']([^"']+)["']/i.exec(html)?.[1] ?? '';
+    }
+    if (!url) {
+      const text = dt?.getData('text/plain')?.trim() ?? '';
+      if (/^https?:\/\//i.test(text)) url = text;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      say(t('That drop carried no file. Drag a file from your computer, or drop an image from a web page.'));
+      return;
+    }
+    const name = decodeURIComponent(new URL(url).pathname.split('/').pop() || 'image');
+    reportEl.hidden = false;
+    reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: escape(name) })}</p></div>`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      await handle([new File([blob], name, { type: blob.type })]);
+    } catch {
+      say(t('Dragging an image between pages hands over a link, not the file — and {host} would not let this page fetch it. Save the image to your device and drop that file here instead.', { host: new URL(url).hostname }));
+    }
+  }
 
   // Arrived here from the catalog's "Check credentials" link? Verify that asset straight
   // away, and surface the handoff note (e.g. re-encoded-on-import caveat) above the report.

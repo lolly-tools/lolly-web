@@ -687,16 +687,22 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/pdf-extract.ts': 6,
   'views/pdf-import.ts': 1,
   'views/picker.ts': 27,
-  'views/profile.ts': 20,
+  'views/profile.ts': 21,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) — ids/names escape()d, sizes via fmtBytes, glyphs via icon()
   'views/projects.ts': 10,
   'views/record-control.ts': 6,
   'views/screen-capture-control.ts': 4,
   'views/start.ts': 7,
-  'views/timeline-panel.ts': 4,
+  // 5 as of 2026-07-31: every sink here writes icon() markup from lib/icons.ts
+  // (own SVG bodies, guarded by R9) — no interpolated data at any of them.
+  'views/timeline-panel.ts': 5,
   'views/tool-actions.ts': 7,
   'views/tool-inputs.ts': 9,
   'views/tool.ts': 16,
-  'views/valid.ts': 19,
+  // 21 as of 2026-07-31: +2 deep-scan watermark notes (trustmarkNoteHtml,
+  // contentSealNoteHtml). Reviewed — every attacker-controlled value on this
+  // page (decoded payload/message hex, schema, filenames, hex dumps of file
+  // bytes, handoff notes) is escape()d at its sink; the rest are static t().
+  'views/valid.ts': 21,
 };
 
 test('R10: raw-HTML sinks are a pinned inventory, not a growing one', () => {

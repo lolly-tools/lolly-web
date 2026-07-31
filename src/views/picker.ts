@@ -2934,6 +2934,22 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     }).catch(() => { /* depthHint never throws by contract; belt and braces */ });
   }
 
+  // The depth of what we are actually STORING — the twin of the catalog label
+  // scripts/checksum-assets.ts writes, so a user's own image carries the same
+  // written origin a pack asset does (plans/deeprichpixels.md §10 item 6).
+  //
+  // Deliberately sniffed from `blob`, not from `raw` above: those two answer
+  // different questions and only one of them is honest here. `raw` is the
+  // SOURCE, which is what the notice above reports ("16-bit source, flattened");
+  // `blob` is the bytes on the device, and a re-encoded upload really is 8-bit
+  // WebP now. Labelling the stored file with the source's depth would be the
+  // export-side lie the plan's governing principle forbids. Best-effort and
+  // never fatal: unknown stays absent.
+  let storedDepth: number | null = null;
+  if (!isLottie && !isAudio && !isMidi && !isVector && !isVideo) {
+    try { storedDepth = (await depthHint(blob)).bitsPerChannel; } catch { storedDepth = null; }
+  }
+
   // Content Credentials for the STORED bytes — the raw C2PA manifest store only (no
   // pixels/EXIF), so `host.assets.credential(id)` can serve it as an export ingredient.
   // Prefer the stored blob's own credential: a verbatim/stripped copy keeps the original's
@@ -2976,6 +2992,9 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       // Never 0/bogus: only ever set when resolved to a finite positive value.
       ...(durationMs != null ? { durationMs } : {}),
       ...(fps != null ? { fps } : {}),
+      // Bits per channel of the stored bytes, when the container states it.
+      // Absent = unknown, never assumed 8.
+      ...(storedDepth != null ? { depth: storedDepth } : {}),
     },
   };
 

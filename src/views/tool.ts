@@ -20,7 +20,7 @@ import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
 import { loadTool, parseUrlState, annotateTemplate, toCssPx, normalizeTableValue, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
-import type { HdrSettings } from '@lolly/engine';
+import type { HdrSettings, DepthSetting } from '@lolly/engine';
 import { promptDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
@@ -181,6 +181,10 @@ export interface ExportDefaults {
   hdr?: boolean;
   /** HDR author dials to seed the export-panel sliders (from a tuned `hdr=` value). */
   hdrTune?: HdrSettings;
+  /** Requested export bit depth from ?depth= (8/16/float/auto). 'auto' (the
+   *  default) is left undefined here — only a real request is carried. A REQUEST,
+   *  not a promise: depth follows provenance at the consumer. */
+  depth?: DepthSetting;
 }
 
 /** mountTool's strip-scale → export → reapply wrapper (injected into renderActions). */
@@ -237,6 +241,10 @@ export interface RunExportOpts {
   hdrReach?: number;
   hdrLift?: number;
   hdrRichness?: number;
+  /** Requested export bit depth from ?depth= (8/16/float). Absent ⇒ 'auto'. A
+   *  request only — the export bridge emits deep bits solely where the pipeline
+   *  produced them (plans/deeprichpixels.md §10). */
+  depth?: DepthSetting;
   bleed?: string;
   cropMarks?: boolean;
   registrationMarks?: boolean;
@@ -432,7 +440,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A no-op for ordinary readable links. Done once so every consumer below agrees.
   urlParams = await expandQuery(urlParams ?? '');
 
-  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, durable: urlDurable, hdr: urlHdr } = parseUrlState(urlParams, tool.manifest);
+  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
   // `?nostage` pre-checks the export panel's "Full page" toggle (HTML export only):
@@ -1547,6 +1555,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // tuned form (`hdr=1600-60-0-50`) seeds the slider dials.
     hdr:      urlHdr ? true : undefined,
     hdrTune:  urlHdr ?? undefined,
+    // Requested export bit depth from ?depth= — 'auto' (the default) carries
+    // nothing, so only an explicit 8/16/float request travels.
+    depth:    urlDepth !== 'auto' ? urlDepth : undefined,
   };
   // Rewrite the URL hash query string to reflect the current tool state so the
   // page is shareable and bookmarkable. Uses replaceState — no history entry.
@@ -2607,6 +2618,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           expOpts.hdrLift = urlHdr.lift;
           expOpts.hdrRichness = urlHdr.richness;
         }
+        // Requested bit depth (?depth=): passed through as-is for every format —
+        // 'auto' is the default and carries nothing. NO consumer logic here: the
+        // export bridge decides what the provenance chain can honestly carry.
+        if (urlDepth !== 'auto') expOpts.depth = urlDepth;
         // Print prep: honour ?bleed= / ?marks= so a deep link auto-exports a
         // print-ready file. Applied only when the link asks for it (never default).
         if (isPrintFmt(fmt) && (urlBleed || urlMarks)) {

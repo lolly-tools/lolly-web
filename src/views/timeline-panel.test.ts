@@ -34,6 +34,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 // Type-only, so it costs nothing at runtime and needs no CSS stub.
@@ -64,9 +65,12 @@ const {
   tracksKey, snapCandidates, junctionAt, isTextControl, panelKeysActive,
   clampPanelH, tickStep, frameCountFor, packSeqRow, initTimelinePanel,
   isPaintedColor, thumbMode, canRasterBox, appearanceSig,
-  MIN_PPS, MAX_PPS, MIN_PANEL_H, ONE_LANE_H, EDGE_PX, TAKE_TIMING,
+  MIN_PPS, MAX_PPS, MIN_PANEL_H, ONE_LANE_H, EDGE_PX, EDGE_PX_COARSE, TAKE_TIMING,
   MAX_NODE_RASTERS_PER_PASS, MAX_THUMB_PASSES,
 } = await import('./timeline-panel.ts');
+// The trim readout's formatters, asserted against the badge the panel paints (the
+// numbers themselves are covered in tests/timeline-math.test.ts).
+const { fmtDelta, fmtDur } = await import('./timeline-math.ts');
 // The SAME module instance the panel holds (a dynamic import of an already-evaluated
 // module is the same record), so the seam installed here is the one it calls.
 const { _setNodeRasterer, clearClipThumbCache } = await import('../lib/clip-thumbs.ts');
@@ -430,6 +434,10 @@ interface Harness {
   commits: Box[][];
   boxes: Box[];
   root: HTMLElement;
+  /** The stage the panel is docked in — where `tl-*` / `fc-seek` cross the modules. */
+  stageEl: HTMLElement;
+  /** Every ids array the panel handed to `selection.set`, in order. */
+  selSets: string[][];
   /** The tool canvas the panel reads media/mute state off. */
   canvasEl: HTMLElement;
   panel: { destroy(): void; setOpen(v: boolean): void; isOpen(): boolean };
@@ -451,7 +459,7 @@ function mount(
   initial: Box[],
   pxPerSecHint = 40,
   addKinds: Array<{ id: string; label?: string; seed?: Record<string, unknown> }> = ADD_KINDS,
-  extra: { host?: unknown; capabilities?: string[]; assetField?: string } = {},
+  extra: { host?: unknown; capabilities?: string[]; assetField?: string; linkField?: string } = {},
 ): Harness {
   const doc = dom.window.document;
   const stageEl = doc.createElement('div');
@@ -462,6 +470,7 @@ function mount(
 
   const commits: Box[][] = [];
   const reserves: number[] = [];
+  const selSets: string[][] = [];
   let boxes = initial.map((b) => ({ ...b }));
   let selected: string[] = [];
   let setSelection = (_ids: string[]): void => { /* replaced below, once the panel owns it */ };
@@ -476,12 +485,14 @@ function mount(
     },
     host: extra.host ?? {},
     blockId: 'boxes',
-    cfg,
+    // `linkField` is the manifest's OPT-IN to detach/re-attach. Absent by default, so
+    // every existing test still exercises a tool that never offers it.
+    cfg: extra.linkField ? { ...cfg, linkField: extra.linkField } : cfg,
     getBoxes: () => boxes,
     commit: (next: Box[]) => { commits.push(next.map((b) => ({ ...b }))); boxes = next.map((b) => ({ ...b })); },
     selection: {
       get: () => selected,
-      set: setSelection = (ids: string[]) => { selected = ids; for (const f of selListeners) f(); },
+      set: setSelection = (ids: string[]) => { selSets.push([...ids]); selected = ids; for (const f of selListeners) f(); },
       onChange: (cb: () => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
     },
     reserve: (px: number) => { reserves.push(px); },
@@ -510,7 +521,7 @@ function mount(
   };
 
   return {
-    commits, root, panel, bar, reserves, canvasEl,
+    commits, root, panel, bar, reserves, canvasEl, stageEl, selSets,
     select: (ids: string[]) => setSelection(ids),
     notify() { for (const f of subs) f(); },
     get boxes() { return boxes; },
@@ -672,7 +683,7 @@ test('a reorder clears is-drop-target on release — a stale ring cannot outlive
     const el = h.bar('a');
     el.dispatchEvent(pointer('pointerdown', 60));
     h.root.dispatchEvent(pointer('pointermove', 200));
-    await frames();
+    await frames(3);
     const marked = () => Array.from(h.root.querySelectorAll('.tl-clip.is-drop-target')).map((n) => (n as HTMLElement).dataset.id);
     assert.deepEqual(marked(), ['b'], 'the clip the drop would displace is highlighted during the drag');
     h.root.dispatchEvent(pointer('pointerup', 200, { altKey: true }));
@@ -688,13 +699,13 @@ test('closing the panel under a live resize drag cannot re-reserve the stage ban
     const handle = h.root.querySelector('.tl-handle') as HTMLElement;
     handle.dispatchEvent(pointer('pointerdown', 100));
     h.root.dispatchEvent(pointer('pointermove', 100));
-    await frames();
+    await frames(3);
     h.panel.setOpen(false);                       // Escape is reachable mid-drag
     assert.equal(h.reserves[h.reserves.length - 1], 0, 'closing released the band');
     // Whatever the pointer does next must not re-reserve behind a hidden panel.
     h.root.dispatchEvent(pointer('pointermove', 60));
     h.root.dispatchEvent(pointer('pointerup', 60));
-    await frames();
+    await frames(3);
     assert.equal(h.reserves[h.reserves.length - 1], 0, 'still released');
     assert.equal(h.root.hidden, true);
   } finally { h.teardown(); }
@@ -1993,4 +2004,638 @@ test('an image bar TILES one still across its width rather than stretching it', 
       if (hadCib) g.createImageBitmap = prevCib; else delete g.createImageBitmap;
     }
   });
+});
+
+// ── THE ONE RULE: selecting in the timeline keeps the selection LIVE ──────────
+//
+// free-canvas.ts's header states it verbatim. The panel owns exactly one half:
+// "selecting in the timeline moves the playhead so the selection stays live" — the
+// converse (time rewriting the selection) is the Premiere failure and is deliberately
+// NOT implemented. `selectAndReveal` is the single writer; every route into a
+// selection goes through it, so what is checked below is the behaviour, not a call.
+//
+// The clock applies a seek on the next frame, so the assertions read the playhead
+// element the tick paints rather than reaching into the clock.
+
+// `frames()` (above) is what lets the clock's rAF-coalesced apply pass — and the
+// onTick fan-out that paints the playhead — actually run.
+const playheadPx = (h: Harness): number =>
+  parseFloat((h.root.querySelector('.tl-playhead') as HTMLElement).style.left || '0');
+
+test('clicking a clip the playhead is NOT inside moves the playhead to it, once', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(3);
+    assert.equal(playheadPx(h), 0, 'precondition: the playhead is at 0s, inside clip a');
+    h.selSets.length = 0;
+
+    const el = h.bar('b');                       // 3s → 5s, i.e. 120px → 200px
+    el.dispatchEvent(pointer('pointerdown', 120 + EDGE_PX + 4));
+    h.root.dispatchEvent(pointer('pointerup', 120 + EDGE_PX + 4));
+    await frames(3);
+
+    assert.deepEqual(h.selSets, [['b']], 'the selection was written exactly once');
+    assert.equal(playheadPx(h), 120, 'and the picture moved to the top of clip b (3s × 40px/s)');
+    assert.equal(h.commits.length, 0, 'revealing is not an edit — nothing reached the model');
+  } finally { h.teardown(); }
+});
+
+test('clicking a clip the playhead is ALREADY inside costs no seek at all', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(3);
+    const el = h.bar('a');
+    el.dispatchEvent(pointer('pointerdown', EDGE_PX + 4));
+    h.root.dispatchEvent(pointer('pointerup', EDGE_PX + 4));
+    await frames(3);
+    assert.equal(playheadPx(h), 0, 'the commonest case by far, and it moves nothing');
+  } finally { h.teardown(); }
+});
+
+test('while PLAYING, selecting a clip never yanks the playhead — that would be a jump cut', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(3);
+    // The clock refuses to play an untimed canvas (it reads its length off the live
+    // DOM, not off the model), so give the artboard the length the tool hook stamps.
+    h.canvasEl.setAttribute('data-seq-ms', '5000');
+    (h.root.querySelector('.tl-play') as HTMLElement).click();   // clock.play()
+    await frames(3);
+    const at = playheadPx(h);
+
+    const el = h.bar('b');
+    el.dispatchEvent(pointer('pointerdown', 120 + EDGE_PX + 4));
+    h.root.dispatchEvent(pointer('pointerup', 120 + EDGE_PX + 4));
+    await frames(3);
+
+    assert.deepEqual(h.selSets.at(-1), ['b'], 'the selection still followed the press');
+    assert.ok(playheadPx(h) >= at && playheadPx(h) < 120,
+      `the playhead kept running from ${at}px instead of jumping to 120px (was ${playheadPx(h)}px)`);
+  } finally {
+    (h.root.querySelector('.tl-play') as HTMLElement).click();   // stop the rAF loop
+    h.teardown();
+  }
+});
+
+test('Shift-extending a selection does not seek — there is no single clip to reveal', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(3);
+    const a = h.bar('a');
+    a.dispatchEvent(pointer('pointerdown', EDGE_PX + 4));
+    h.root.dispatchEvent(pointer('pointerup', EDGE_PX + 4));
+    await frames(3);
+    assert.equal(playheadPx(h), 0);
+
+    const b = h.bar('b');
+    b.dispatchEvent(pointer('pointerdown', 120 + EDGE_PX + 4, { shiftKey: true }));
+    h.root.dispatchEvent(pointer('pointerup', 120 + EDGE_PX + 4, { shiftKey: true }));
+    await frames(3);
+
+    assert.deepEqual(h.selSets.at(-1), ['a', 'b'], 'both clips are selected');
+    assert.equal(playheadPx(h), 0, 'and the picture stayed under the FIRST of them');
+  } finally { h.teardown(); }
+});
+
+// ── the `tl-time` seam: an ACTIVE-SET change, never a tick ────────────────────
+
+test('tl-time fires when the active set changes and stays silent inside one clip', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(3);
+    const seen: Array<{ atMs: number; activeIds: string[]; playing: boolean }> = [];
+    h.stageEl.addEventListener('tl-time', (e) => { seen.push((e as CustomEvent).detail); });
+
+    // Four seeks, all inside clip a. `fc-seek` is the canvas→panel half of the seam,
+    // so this drives the panel exactly as the off-playhead banner's button does.
+    for (const atMs of [400, 900, 1500, 2900]) {
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs } }));
+      await frames(3);
+    }
+    assert.equal(seen.length, 0, 'sixty ticks a second inside one clip must not repaint the canvas');
+    assert.equal(playheadPx(h), 2.9 * 40, '…but the playhead really did move');
+
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3500 } }));
+    await frames(3);
+    assert.equal(seen.length, 1, 'crossing the cut fires exactly once');
+    assert.deepEqual(seen[0]!.activeIds, ['b']);
+    assert.equal(seen[0]!.atMs, 3500);
+    assert.equal(seen[0]!.playing, false);
+  } finally { h.teardown(); }
+});
+
+test('a junk fc-seek detail seeks to zero rather than to NaN', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(3);
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3500 } }));
+    await frames(3);
+    assert.equal(playheadPx(h), 140);
+    for (const detail of [{ atMs: 'soon' }, { atMs: Number.NaN }, { atMs: -5 }, null]) {
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail }));
+      await frames(3);
+      assert.equal(playheadPx(h), 0, `detail ${JSON.stringify(detail)} landed at 0`);
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3500 } }));
+      await frames(3);
+    }
+  } finally { h.teardown(); }
+});
+
+test('destroying the panel takes the fc-seek listener with it', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  await frames(3);
+  const stage = h.stageEl;
+  h.teardown();
+  // No clock, no listener: this must be inert rather than throw on a dead clock.
+  stage.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 1000 } }));
+});
+
+// ── TRIM v2: bigger targets, three states, a limit signal, ripple and a readout ──
+//
+// The arithmetic is timeline-math's and is unit-tested at the repo root (trimClip,
+// edgeZonePx, fmtDur, fmtDelta). What is pinned HERE is the wiring only the panel can
+// get wrong: which pointer gets which hit zone, that the LIMIT signal reads the
+// writer's own answer rather than a second copy of the clamp, that the readout says
+// what actually landed, that the ripple is live rather than deferred to release — and
+// that none of it broke "the model is written exactly once per gesture".
+//
+// Every mounted row set below totals FIVE seconds, because that is the length `mount`
+// fits its 224px viewport to in order to land on exactly 40px per second.
+
+test('the trim hit zone follows the POINTER: 20px in is a trim by finger, a move by mouse', async () => {
+  // A 2s overlay at 40px/s spans 40px → 120px. The press is 20px inside its left edge:
+  // outside the 10px cursor zone, well inside the 24px touch zone.
+  for (const [pointerType, wantDur] of [['touch', 1], ['mouse', 2]] as const) {
+    const h = mount([clip('a', 0, 5), overlay('o', 1, 2)]);
+    try {
+      const el = h.bar('o');
+      el.dispatchEvent(pointer('pointerdown', 60, { pointerType }));
+      h.root.dispatchEvent(pointer('pointermove', 100, { pointerType }));
+      await frames(3);
+      h.root.dispatchEvent(pointer('pointerup', 100, { pointerType, altKey: true }));
+
+      assert.equal(h.commits.length, 1, `${pointerType}: exactly one write`);
+      const o = h.commits[0]!.find((b) => b.id === 'o')!;
+      assert.equal(Number(o.start), 2, `${pointerType}: the in point moved a second either way`);
+      assert.equal(Number(o.dur), wantDur, pointerType === 'touch'
+        ? 'a finger 20px in grabbed the EDGE, so the clip got shorter'
+        : 'a cursor 20px in grabbed the BODY, so the clip only moved');
+    } finally { h.teardown(); }
+  }
+});
+
+test('a bar too narrow to carry two zones offers none — and says where to trim instead', () => {
+  // 0.5s at 40px/s = 20px, under MIN_TRIM_BAR_PX. Pressing its very first pixel must
+  // still be a grab, or the clip could never be moved again at this zoom.
+  const h = mount([clip('a', 0, 5), overlay('o', 1, 0.5)]);
+  try {
+    const el = h.bar('o');
+    assert.ok(el.classList.contains('is-tight'), 'the bar is marked, so the CSS can drop the grips');
+    assert.match(el.title, /too narrow to trim/, 'and its title points at the precise route');
+    el.dispatchEvent(pointer('pointerdown', 40));
+    h.root.dispatchEvent(pointer('pointermove', 80));
+    h.root.dispatchEvent(pointer('pointerup', 80, { altKey: true }));
+    const o = h.commits[0]!.find((b) => b.id === 'o')!;
+    assert.equal(Number(o.dur), 0.5, 'the length is untouched: that press was a move, not a trim');
+    assert.equal(Number(o.start), 2);
+    assert.equal(h.bar('a').classList.contains('is-tight'), false, 'a normal bar is not marked');
+  } finally { h.teardown(); }
+});
+
+test('dragging past the end of the source flags the LIMIT and commits the clamped value', async () => {
+  const h = mount([clip('a', 0, 5), overlay('o', 0, 2)]);
+  try {
+    // A 3-second source behind a 2-second clip: exactly 1s of headroom, then the wall.
+    paintMediaBoxes(h, { o: '<div class="lolly-box-audio" data-audio-src="vo.mp3" data-audio-dur="3000"></div>' });
+    const el = h.bar('o');
+    const outEdge = el.querySelector('.tl-edge[data-edge="out"]') as HTMLElement;
+
+    el.dispatchEvent(pointer('pointerdown', 78));          // within 10px of the 80px right edge
+    assert.ok(el.classList.contains('is-trimming'), 'the clip announces the mode');
+    assert.ok(outEdge.classList.contains('is-active'), 'and the edge under the pointer lights up');
+    assert.equal(outEdge.classList.contains('is-limit'), false, 'nothing has been refused yet');
+
+    h.root.dispatchEvent(pointer('pointermove', 158));     // +80px = +2s, i.e. 1s past the source
+    await frames(3);
+    assert.ok(outEdge.classList.contains('is-limit'), 'the writer refused, so the edge says so');
+
+    h.root.dispatchEvent(pointer('pointerup', 158, { altKey: true }));
+    assert.equal(h.commits.length, 1, 'still exactly one write');
+    assert.equal(Number(h.commits[0]!.find((b) => b.id === 'o')!.dur), 3, 'clamped to the media, not to the drag');
+    assert.equal(el.classList.contains('is-trimming'), false, 'and every trim state comes off on release');
+    assert.equal(outEdge.classList.contains('is-limit'), false);
+    assert.equal(outEdge.classList.contains('is-active'), false);
+    assert.equal((h.root.querySelector('.tl-trim-badge') as HTMLElement).hidden, true);
+    assert.equal((h.root.querySelector('.tl-clip-extent') as HTMLElement).hidden, true);
+  } finally { h.teardown(); }
+});
+
+test('a SUCCESSFUL trim-in on the magnetic row is not mistaken for a limit', async () => {
+  // The seq row repacks gapless from 0, so a trim-in leaves `start` exactly where it
+  // was and takes the frame off the LENGTH instead. Comparing the edge's absolute time
+  // against the request would therefore report "end of the source" on every trim-in
+  // that worked — which is why the limit test compares durations.
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const el = h.bar('a');
+    const inEdge = el.querySelector('.tl-edge[data-edge="in"]') as HTMLElement;
+    el.dispatchEvent(pointer('pointerdown', 2));                          // a's in edge
+    h.root.dispatchEvent(pointer('pointermove', 42, { altKey: true }));   // +40px = +1s
+    await frames(3);
+    assert.equal(inEdge.classList.contains('is-limit'), false, 'the writer said yes, so no limit');
+    assert.equal(el.style.width, '80px', 'and the clip really did lose a second');
+    h.root.dispatchEvent(pointer('pointerup', 42, { altKey: true }));
+    const a = h.commits[0]!.find((x) => x.id === 'a')!;
+    assert.equal(Number(a.dur), 2);
+    assert.equal(Number(a.start), 0, 'the magnetic row pinned the start, exactly as designed');
+    assert.equal(Number(a.clipIn), 1, 'the second came off the source instead');
+  } finally { h.teardown(); }
+});
+
+test('the trim badge reads the ACHIEVED duration and a signed delta', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const badge = h.root.querySelector('.tl-trim-badge') as HTMLElement;
+    assert.equal(badge.hidden, true, 'invisible until a trim starts');
+    const el = h.bar('a');
+    el.dispatchEvent(pointer('pointerdown', 118));                        // a's out edge (3s = 120px)
+    assert.equal(badge.hidden, false);
+    h.root.dispatchEvent(pointer('pointermove', 78, { altKey: true }));   // -40px = -1s
+    await frames(3);
+    assert.equal(badge.textContent, `${fmtDur(2)}  ${fmtDelta(-1)}`);
+    assert.equal(badge.textContent, '2.0s  -1.0s', 'and that is what it literally says');
+    assert.equal(h.commits.length, 0, 'a readout is not a write');
+    h.root.dispatchEvent(pointer('pointerup', 78, { altKey: true }));
+    assert.equal(badge.hidden, true);
+  } finally { h.teardown(); }
+});
+
+test('a seq trim RIPPLES live: the downstream bar moves during the drag, not on release', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const a = h.bar('a');
+    const b = h.bar('b');
+    assert.equal(b.style.left, '120px', 'precondition: b starts where a ends');
+    a.dispatchEvent(pointer('pointerdown', 118));
+    h.root.dispatchEvent(pointer('pointermove', 78, { altKey: true }));
+    await frames(3);
+    assert.equal(b.style.left, '80px', 'b followed a’s new out point mid-drag');
+    assert.equal(h.commits.length, 0, 'and the model has still not been touched');
+    h.root.dispatchEvent(pointer('pointerup', 78, { altKey: true }));
+    assert.equal(h.commits.length, 1);
+    assert.equal(Number(h.commits[0]!.find((x) => x.id === 'b')!.start), 2, 'the commit agrees with the preview');
+  } finally { h.teardown(); }
+});
+
+/** Arm the panel's keyboard the way a pointer would: hover the panel, focus a bar. */
+function armKeys(h: Harness, id: string, atPx: number): HTMLElement {
+  h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+  const el = h.bar(id);
+  el.dispatchEvent(pointer('pointerdown', atPx));
+  h.root.dispatchEvent(pointer('pointerup', atPx));
+  el.focus();
+  h.commits.length = 0;
+  return el;
+}
+const press = (el: HTMLElement, key: string, extra: Record<string, unknown> = {}): void => {
+  el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...extra }));
+};
+
+test('keyboard trim: `[` / `]` arm an edge and `,` / `.` walk it ONE frame, one write each', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const el = armKeys(h, 'a', 60);
+    press(el, '[');
+    assert.ok((el.querySelector('.tl-edge[data-edge="in"]') as HTMLElement).classList.contains('is-active'),
+      'the in edge is armed, and visibly so');
+
+    press(el, '.');
+    assert.equal(h.commits.length, 1, 'exactly one write per press');
+    // One frame at 30fps off the IN edge. The seq row is magnetic, so `start` stays 0
+    // and the frame comes off the LENGTH; the source in-point takes it instead.
+    const a1 = h.commits[0]!.find((x) => x.id === 'a')!;
+    assert.equal(Number(a1.dur), 2.967);
+    assert.equal(Number(a1.clipIn), 0.033, 'a trim-in consumed a frame of the source');
+    assert.equal(Number(a1.start), 0, 'the magnetic row still starts at zero');
+    assert.equal(Number(h.commits[0]!.find((x) => x.id === 'b')!.start), 2.967, 'and b rippled with it');
+
+    press(el, ']');
+    assert.ok((el.querySelector('.tl-edge[data-edge="out"]') as HTMLElement).classList.contains('is-active'));
+    assert.equal((el.querySelector('.tl-edge[data-edge="in"]') as HTMLElement).classList.contains('is-active'), false,
+      'only one edge is ever armed');
+
+    press(el, ',');
+    assert.equal(h.commits.length, 2);
+    assert.equal(Number(h.commits[1]!.find((x) => x.id === 'a')!.dur), 2.934, 'the out edge came back a frame');
+
+    press(el, '.', { shiftKey: true });
+    assert.equal(h.commits.length, 3, 'Shift is ten frames — still one write');
+    assert.equal(Number(h.commits[2]!.find((x) => x.id === 'a')!.dur), 3.267);
+  } finally { h.teardown(); }
+});
+
+test('keyboard trim: `e` pulls the armed edge to the playhead; with nothing armed it writes nothing', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(3);
+    const el = armKeys(h, 'a', 60);
+    press(el, 'e');
+    assert.equal(h.commits.length, 0, 'no edge is armed, so there is nothing to trim');
+
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 2000 } }));
+    await frames(3);
+    press(el, ']');
+    press(el, 'e');
+    assert.equal(h.commits.length, 1);
+    assert.equal(Number(h.commits[0]!.find((x) => x.id === 'a')!.dur), 2, 'the out edge landed on the playhead');
+  } finally { h.teardown(); }
+});
+
+test('Escape unarms the trim edge BEFORE it closes the panel', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const el = armKeys(h, 'a', 60);
+    press(el, ']');
+    const outEdge = el.querySelector('.tl-edge[data-edge="out"]') as HTMLElement;
+    assert.ok(outEdge.classList.contains('is-active'));
+
+    press(el, 'Escape');
+    assert.equal(outEdge.classList.contains('is-active'), false, 'the first Escape unarmed the edge');
+    assert.equal(h.panel.isOpen(), true, 'and did NOT close the panel out from under it');
+
+    press(el, 'Escape');
+    assert.equal(h.panel.isOpen(), false, 'the second Escape closes it, exactly as it always did');
+  } finally { h.teardown(); }
+});
+
+test('the CSS trim zones are the SAME numbers the hit test uses', () => {
+  // The stylesheet has carried a "keep these in step" comment since the panel shipped,
+  // with nothing behind it. A hit target wider or narrower than the thing it paints is
+  // the exact defect this work item exists to fix, so it is pinned rather than trusted.
+  const css = readFileSync(new URL('../styles/parts/timeline.css', import.meta.url), 'utf8');
+  // The declaration may be a bare length or edgeZonePx's cap written as min(Npx, 33%);
+  // either way the first pixel value in it is the base zone.
+  const rest = /\.tl-edge\s*\{[^}]*\bwidth:[^;]*?(\d+)px/.exec(css);
+  assert.ok(rest, '.tl-edge declares a width');
+  assert.equal(Number(rest![1]), EDGE_PX, `.tl-edge width matches EDGE_PX (${EDGE_PX})`);
+
+  const coarse = /@media\s*\(pointer:\s*coarse\)\s*\{[\s\S]*?\.tl-edge\s*\{[^}]*\bwidth:[^;]*?(\d+)px/.exec(css);
+  assert.ok(coarse, 'the coarse-pointer block overrides .tl-edge');
+  assert.equal(Number(coarse![1]), EDGE_PX_COARSE, `the coarse override matches EDGE_PX_COARSE (${EDGE_PX_COARSE})`);
+
+  // Dashed borders in this shell mean "drop area" and nothing else; the reachable-media
+  // ghost is not one.
+  const extent = /\.tl-clip-extent\s*\{[^}]*\}/.exec(css);
+  assert.ok(extent, '.tl-clip-extent is styled');
+  assert.ok(!/dashed/.test(extent![0]), 'the reachable-media ghost is a SOLID outline');
+});
+
+// ── split v2: scope, boundaries, the through edit and Join ─────────────────────
+//
+// The whole point of `splitAll` is the UNDO shape: N clips cut at one instant is ONE
+// model write, and a cut that lands on an existing edit is ZERO. Both are asserted on
+// `commits`, which is the module's actual output.
+
+test('Shift+S splits every clip the playhead is inside, in EXACTLY ONE commit', async () => {
+  // Three overlays stacked over the same instant plus a seq clip — four cuts, one write.
+  // 5s total, so the harness's stubbed viewport fits to exactly 40px per second and
+  // `seekTo` lands on the instant it names.
+  const h = mount([clip('a', 0, 5), overlay('o1', 0, 5), overlay('o2', 0, 5)]);
+  try {
+    await frames(2);
+    seekTo(h, 2);
+    await frames(2);
+    h.commits.length = 0;
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    press(h.root, 'S', { shiftKey: true });
+    assert.equal(h.commits.length, 1, 'ONE write for the whole command = ONE undo step');
+    const out = h.commits[0]!;
+    assert.equal(out.length, 6, 'three clips became six');
+    for (const id of ['a', 'o1', 'o2']) assert.equal(Number(out.find((b) => b.id === id)!.dur), 2, `${id} left half`);
+    assert.equal(new Set(out.map((b) => String(b.id))).size, 6, 'every minted id is distinct');
+  } finally { h.teardown(); }
+});
+
+test('a split at an existing cut writes NOTHING — no undo entry for a no-op', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(2);
+    // Exactly on the seam between a and b. Nothing here can split (the playhead is on
+    // both clips' boundaries), so the command must cost no commit at all.
+    seekTo(h, 3);
+    await frames(2);
+    h.commits.length = 0;
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    press(h.root, 's');
+    assert.equal(h.commits.length, 0, 'ZERO commits — the playhead is already at a cut');
+    press(h.root, 'S', { shiftKey: true });
+    assert.equal(h.commits.length, 0, 'and the same for the split-everything variant');
+  } finally { h.teardown(); }
+});
+
+test('a plain `s` splits the SELECTION when the playhead is inside it, else the clip under it', async () => {
+  const h = mount([clip('a', 0, 5), overlay('o', 0, 5)]);
+  try {
+    await frames(2);
+    seekTo(h, 2);
+    await frames(2);
+    h.select(['o']);
+    h.commits.length = 0;
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    press(h.root, 's');
+    assert.equal(h.commits.length, 1);
+    assert.equal(h.commits[0]!.length, 3, 'only the SELECTED overlay was cut, not the seq clip too');
+    assert.equal(Number(h.commits[0]!.find((b) => b.id === 'o')!.dur), 2);
+    assert.equal(Number(h.commits[0]!.find((b) => b.id === 'a')!.dur), 5, 'the seq clip is untouched');
+  } finally { h.teardown(); }
+});
+
+test('a fresh cut marks the seam as a THROUGH edit, and Join puts the clip back', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    await frames(2);
+    seekTo(h, 2);
+    await frames(2);
+    h.commits.length = 0;
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    press(h.root, 's');
+    assert.equal(h.commits.length, 1, 'the cut landed');
+    const beforeJoin = h.commits[0]!.map((x) => ({ ...x }));
+    h.notify();
+    await frames(3);
+
+    const through = Array.from(h.root.querySelectorAll('.tl-seam.is-through'));
+    assert.equal(through.length, 1, 'exactly the new cut is drawn as a through edit');
+    const newId = String(beforeJoin[1]!.id);
+    assert.deepEqual([(through[0] as HTMLElement).dataset.a, (through[0] as HTMLElement).dataset.b], ['a', newId]);
+
+    // Join, from the clip context menu (the one-sided route).
+    rightClick(h.bar('a'));
+    const join = Array.from(openMenu('.tl-ctx-menu')!.querySelectorAll('.folder-menu-item'))
+      .find((n) => n.textContent?.trim() === 'Join clips');
+    assert.ok(join, 'Join is offered on a through edit');
+    click(join!);
+    assert.equal(h.commits.length, 2, 'ONE more commit');
+    assert.deepEqual(
+      h.commits[1]!.map((x) => [x.id, x.start, x.dur]),
+      [['a', 0, 3], ['b', 3, 2]],
+      'the clip is whole again',
+    );
+  } finally { h.teardown(); }
+});
+
+test('Join is NOT offered at a seam that is a real decision', async () => {
+  // Two different sources butted together: adjacent, but never one clip.
+  const h = mount([
+    { id: 'a', start: 0, dur: 2, lane: 'seq', clipIn: 0, speed: 1, image: { id: 'one.mp4' } as never },
+    { id: 'b', start: 2, dur: 2, lane: 'seq', clipIn: 0, speed: 1, image: { id: 'two.mp4' } as never },
+  ], 40, ADD_KINDS, { assetField: 'image' });
+  try {
+    await frames(2);
+    assert.equal(h.root.querySelectorAll('.tl-seam.is-through').length, 0, 'no hairline on a real cut');
+    rightClick(h.bar('a'));
+    assert.equal(menuLabels(openMenu('.tl-ctx-menu')).includes('Join clips'), false,
+      'and the menu does not offer it either — absent, not greyed out');
+  } finally { h.teardown(); }
+});
+
+// ── detach / re-attach audio ──────────────────────────────────────────────────
+
+/** Paint a live canvas where `id` is a decoded <video>, so mediaOf() calls it a video. */
+function paintVideo(h: Harness, id: string, durSec = 8): void {
+  h.canvasEl.setAttribute('data-seq-ms', '10000');
+  for (const b of h.boxes) {
+    const el = dom.window.document.createElement('div');
+    el.className = 'lolly-box';
+    el.setAttribute('data-box-id', String(b.id));
+    if (String(b.id) === id) {
+      el.innerHTML = '<video class="lolly-box-video" src="clip.mp4"></video>';
+      const v = el.querySelector('video') as HTMLVideoElement;
+      Object.defineProperty(v, 'duration', { value: durSec, configurable: true });
+    }
+    h.canvasEl.appendChild(el);
+  }
+}
+
+/** Open the context menu on a bar and read the labels the panel put in it. */
+function ctxLabels(h: Harness, id: string): string[] {
+  rightClick(h.bar(id));
+  const out = menuLabels(openMenu('.tl-ctx-menu'));
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  return out;
+}
+
+test('Detach audio needs BOTH the manifest link field and an audio add-kind', () => {
+  // 1. link field declared, audio kind declared, and the box really is a video → offered.
+  const yes = mount([clip('v', 0, 4)], 40, ADD_KINDS, { linkField: 'linkOf' });
+  try {
+    paintVideo(yes, 'v');
+    yes.panel.setOpen(false); yes.panel.setOpen(true);
+    assert.ok(ctxLabels(yes, 'v').some((l) => l.startsWith('Detach audio')), 'offered');
+  } finally { yes.teardown(); }
+
+  // 2. no audio add-kind: there is no vocabulary for a detached sound to be born into.
+  const noKind = mount([clip('v', 0, 4)], 40, [{ id: 'clip', label: 'Clip' }], { linkField: 'linkOf' });
+  try {
+    paintVideo(noKind, 'v');
+    noKind.panel.setOpen(false); noKind.panel.setOpen(true);
+    assert.equal(ctxLabels(noKind, 'v').some((l) => l.startsWith('Detach audio')), false);
+  } finally { noKind.teardown(); }
+
+  // 3. no link field: the tool never opted in, so the feature does not exist here.
+  const noField = mount([clip('v', 0, 4)]);
+  try {
+    paintVideo(noField, 'v');
+    noField.panel.setOpen(false); noField.panel.setOpen(true);
+    assert.equal(ctxLabels(noField, 'v').some((l) => l.startsWith('Detach audio')), false);
+  } finally { noField.teardown(); }
+
+  // 4. link field, audio kind — but the box has no video to take a sound off.
+  const noVideo = mount([clip('card', 0, 4)], 40, ADD_KINDS, { linkField: 'linkOf' });
+  try {
+    assert.equal(ctxLabels(noVideo, 'card').some((l) => l.startsWith('Detach audio')), false);
+  } finally { noVideo.teardown(); }
+});
+
+test('detach then re-attach returns the model to its pre-detach shape', async () => {
+  const h = mount([clip('v', 0, 4), clip('w', 4, 2)], 40, ADD_KINDS, { linkField: 'linkOf' });
+  try {
+    paintVideo(h, 'v');
+    h.panel.setOpen(false); h.panel.setOpen(true);
+    const before = h.boxes.map((b) => ({ ...b }));
+
+    rightClick(h.bar('v'));
+    const detach = Array.from(openMenu('.tl-ctx-menu')!.querySelectorAll('.folder-menu-item'))
+      .find((n) => n.textContent?.trim().startsWith('Detach audio'))!;
+    click(detach);
+    assert.equal(h.commits.length, 1, 'detach is ONE commit');
+    const detached = h.commits[0]!;
+    assert.equal(detached.length, 3, 'one new box');
+    const sound = detached.find((b) => !before.some((x) => x.id === b.id))!;
+    assert.equal(sound.lane, '', 'on an overlay lane');
+    assert.equal(String(sound.linkOf), 'v');
+    assert.equal(String(detached.find((b) => b.id === 'v')!.linkOf), String(sound.id));
+    assert.equal(detached.find((b) => b.id === 'v')!.mute, true, 'the picture is silenced');
+
+    h.notify();
+    await frames(3);
+    // Re-attach from the VIDEO's side.
+    rightClick(h.bar('v'));
+    const back = Array.from(openMenu('.tl-ctx-menu')!.querySelectorAll('.folder-menu-item'))
+      .find((n) => n.textContent?.trim().startsWith('Re-attach audio'))!;
+    assert.ok(back, 'the same menu now offers the inverse');
+    click(back);
+    assert.equal(h.commits.length, 2, 're-attach is ONE commit');
+    // Back to the shape we started from: same ids, same timing, no link, not muted.
+    assert.deepEqual(
+      h.commits[1]!.map((b) => [b.id, b.start, b.dur, b.lane, b.mute ?? '', b.linkOf ?? '']),
+      before.map((b) => [b.id, b.start, b.dur, b.lane, '', '']),
+    );
+  } finally { h.teardown(); }
+});
+
+test('Shift+D detaches from the keyboard, and again to put it back', async () => {
+  const h = mount([clip('v', 0, 4)], 40, ADD_KINDS, { linkField: 'linkOf' });
+  try {
+    paintVideo(h, 'v');
+    h.panel.setOpen(false); h.panel.setOpen(true);
+    const el = armKeys(h, 'v', 60);
+    press(el, 'd');
+    assert.equal(h.commits.length, 0, 'a bare `d` is not the shortcut — nothing happens');
+    press(el, 'D', { shiftKey: true });
+    assert.equal(h.commits.length, 1, 'Shift+D detached');
+    assert.equal(h.commits[0]!.length, 2);
+    h.notify();
+    await frames(3);
+    press(h.bar('v'), 'D', { shiftKey: true });
+    assert.equal(h.commits.length, 2, 'and again re-attached');
+    assert.equal(h.commits[1]!.length, 1);
+  } finally { h.teardown(); }
+});
+
+test('clicking a linked bar selects BOTH halves; Alt-click selects just the one', async () => {
+  const h = mount([
+    { id: 'v', start: 0, dur: 4, lane: 'seq', mute: true, linkOf: 's' },
+    { id: 's', start: 0, dur: 4, lane: '', linkOf: 'v' },
+  ], 40, ADD_KINDS, { linkField: 'linkOf' });
+  try {
+    await frames(2);
+    // The link badge is painted on both halves, and the video side says where it went.
+    assert.ok(h.bar('v').classList.contains('is-linked'));
+    assert.ok(h.bar('s').classList.contains('is-linked'));
+    assert.equal(h.bar('v').querySelector('.tl-clip-link')?.getAttribute('title'), 'Sound is on its own lane');
+    assert.equal(h.bar('s').querySelector('.tl-clip-link')?.getAttribute('title'), 'Sound detached from this clip');
+
+    h.selSets.length = 0;
+    const el = h.bar('v');
+    el.dispatchEvent(pointer('pointerdown', 20));
+    h.root.dispatchEvent(pointer('pointerup', 20));
+    assert.deepEqual(h.selSets.at(-1), ['v', 's'], 'picture and sound travel together');
+
+    h.selSets.length = 0;
+    el.dispatchEvent(pointer('pointerdown', 20, { altKey: true }));
+    h.root.dispatchEvent(pointer('pointerup', 20, { altKey: true }));
+    assert.deepEqual(h.selSets.at(-1), ['v'], 'Alt is the established "just this one" idiom');
+    assert.equal(h.commits.length, 0, 'selecting edits nothing');
+  } finally { h.teardown(); }
 });

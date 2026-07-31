@@ -1929,6 +1929,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
               hdrRichness: hdrDial('hdr-focus', HDR_DEFAULTS.richness),
             }
           : {}),
+        // Requested bit depth from the link (?depth=8/16/float). There is no panel
+        // control for it — a depth request rides the URL and passes straight
+        // through; the export bridge is where depth-follows-provenance is applied.
+        ...(exportDefaults.depth ? { depth: exportDefaults.depth } : {}),
         ...(fmt === 'zip' ? {
           ...printOpts(),   // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
           palette: brandPalette,

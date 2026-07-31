@@ -19,6 +19,7 @@ import '../styles/parts/tool.css';      // .help-tip-btn/-pop/-host styles — s
                                          // tool view, same reuse the .tool-inputs sheet already gets
                                          // from multi-edit.ts (component audit rec 13)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
+import '../styles/parts/offline-manager.css'; // the "Offline tools" download manager section
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
 import { setTheme } from '../lib/set-theme.ts';
 import { currentA11yPrefs, setA11yPref, prefersReducedMotion } from '../lib/a11y-prefs.ts';
@@ -49,7 +50,10 @@ import { stopAtmosphere } from '../lib/atmosphere.ts';
 import { syncNeuroDock } from '../components/neuro-dock.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
-import { pinnedToolBytes, unpinAll } from '../lib/offline-pins.ts';
+import { pinnedToolBytes, unpinAll, pinTool, unpinTool, pinRecords } from '../lib/offline-pins.ts';
+import type { PinRecord } from '../lib/offline-pins.ts';
+import { prefetchAssetsById } from '../catalog/sync.ts';
+import { toolSupport } from '../capabilities.ts';
 import { derivedMediaSize, resetScrubCache } from '../lib/clip-proxy.ts';
 import { getInstanceBase, setInstanceBase } from '../lib/instance.ts';
 import { openInstanceSheet } from '../components/instance-sheet.ts';
@@ -561,6 +565,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="profile-collapse-body section-card-body" id="storage-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
+      <details class="profile-card profile-collapse" id="offline-section"${startOpen('offline-section')}>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Offline tools')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body" id="offline-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
+      </details>
+
       <details class="profile-card profile-collapse" id="feature-flags-section"${(openState['feature-flags-section'] || focusFlags) ? ' open' : ''}>
         <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Feature flags')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body section-card-body">
@@ -678,7 +687,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // and the initial-open check at the bottom catches it too) and scrolls it into
   // view. So a share link OR a screenshot recipe can reproduce an expanded section,
   // instead of that state living only in a click no URL records.
-  if (focusParam && ['activity-section', 'storage-section', 'feature-flags-section', 'identity-section'].includes(focusParam)) {
+  if (focusParam && ['activity-section', 'storage-section', 'offline-section', 'feature-flags-section', 'identity-section'].includes(focusParam)) {
     const sec = viewEl.querySelector<HTMLDetailsElement>('#' + focusParam);
     if (sec) {
       sec.open = true;
@@ -848,7 +857,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   });
 
   // Persist each section's open/closed state across visits.
-  for (const id of ['activity-section', 'storage-section', 'feature-flags-section', 'identity-section']) {
+  for (const id of ['activity-section', 'storage-section', 'offline-section', 'feature-flags-section', 'identity-section']) {
     const d = viewEl.querySelector<HTMLDetailsElement>('#' + id);
     d?.addEventListener('toggle', () => {
       openState[id] = d!.open;
@@ -1728,6 +1737,192 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // A persisted-open section renders open from the HTML `open` attribute, which does
   // NOT fire `toggle`, so kick the lazy load here (runs after first paint).
   if (storageDetails?.open) loadStorage();
+
+  // ── Offline tools: lazy, like Storage. A download manager over every tool the
+  // shell can run: search, a per-tool download → progress → tick button (the same
+  // three-layer state machine as the gallery cards' keep-offline toggle, styled
+  // by offline-manager.css), the measured on-disk size beside each downloaded
+  // tool, and a Download-all sweep. Sizes are the tool FILES recorded at pin
+  // time (PinRecord.bytes) — manifest-declared catalog assets are prefetched too
+  // but counted by the Storage section's Asset-cache slice, never double here. ──
+  const offlineDetails = viewEl.querySelector<HTMLDetailsElement>('#offline-section');
+  let offlineLoaded = false;
+  async function loadOffline() {
+    if (offlineLoaded) return;
+    offlineLoaded = true;
+    const body = viewEl.querySelector<HTMLElement>('#offline-body')!;
+    interface OfflineTool { id: string; name?: string; icon?: string; listed?: boolean; capabilities?: readonly string[] }
+    const tools = ((window.__toolIndex?.tools ?? []) as OfflineTool[])
+      // Unlisted tools (context-invoked, e.g. asset-export) and tools this shell
+      // can't run are not offered — a download the device can't use is dead weight.
+      .filter(tl => tl.listed !== false && toolSupport(tl, host.capabilities).status !== 'unavailable')
+      .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+    let pins: Record<string, PinRecord> = {};
+    try { pins = await pinRecords(); } catch { /* IDB unavailable — render all as not downloaded */ }
+
+    const rowHtml = (tl: OfflineTool): string => {
+      const rec = pins[tl.id];
+      const name = tl.name || tl.id;
+      return `
+        <li class="odl-row" data-tool="${escape(tl.id)}" data-name="${escape(name.toLowerCase())}">
+          <span class="odl-row-icon" aria-hidden="true">${tl.icon ?? ''}</span>
+          <span class="odl-row-name">${escape(name)}</span>
+          <span class="odl-row-size">${rec ? fmtBytes(rec.bytes) : ''}</span>
+          <button type="button" class="odl-pin${rec ? ' is-pinned' : ''}" data-odl="${escape(tl.id)}" aria-pressed="${rec ? 'true' : 'false'}" title="${escape(rec ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(rec ? t('Remove {name} from offline', { name }) : t('Keep {name} available offline', { name }))}">
+            <span class="pin-layer pin-dl" aria-hidden="true">${icon('download')}</span>
+            <span class="pin-layer pin-ring" aria-hidden="true">${icon('ring')}</span>
+            <span class="pin-layer pin-done" aria-hidden="true">${icon('circleCheck')}</span>
+          </button>
+        </li>`;
+    };
+
+    body.innerHTML = `
+      <p class="storage-hint-text">${t('Download a tool to keep it working with no connection — its template, hooks and fonts are stored on this device. The tick means ready offline.')}</p>
+      <div class="odl-head">
+        <span class="odl-total" id="odl-total" aria-live="polite"></span>
+        <button type="button" id="odl-all" class="btn">${t('Download all')}</button>
+        <button type="button" id="odl-none" class="btn-link-danger">${t('Remove all')}</button>
+      </div>
+      <input type="search" class="odl-search" placeholder="${escape(t('Search tools…'))}" aria-label="${escape(t('Search tools'))}">
+      <ul class="odl-list">${tools.map(rowHtml).join('')}</ul>
+      <p class="odl-empty" hidden>${t('No tools match.')}</p>`;
+    staggerReveal([...body.children], { sound: false });
+
+    const totalEl = body.querySelector<HTMLElement>('#odl-total')!;
+    const allBtn = body.querySelector<HTMLButtonElement>('#odl-all')!;
+    const noneBtn = body.querySelector<HTMLButtonElement>('#odl-none')!;
+    const updateTotals = () => {
+      const recs = Object.entries(pins).filter(([id]) => tools.some(tl => tl.id === id));
+      const bytes = recs.reduce((n, [, r]) => n + (r.bytes || 0), 0);
+      totalEl.textContent = t('{n} of {total} downloaded · {size} on disk', { n: recs.length, total: tools.length, size: fmtBytes(bytes) });
+      allBtn.hidden = recs.length >= tools.length;
+      noneBtn.hidden = recs.length === 0;
+    };
+    updateTotals();
+
+    // One row's state, updated in place after a pin/unpin lands.
+    const syncRow = (id: string) => {
+      const row = body.querySelector<HTMLElement>(`.odl-row[data-tool="${CSS.escape(id)}"]`);
+      const rec = pins[id];
+      if (!row) return;
+      const sizeEl = row.querySelector<HTMLElement>('.odl-row-size');
+      if (sizeEl) sizeEl.textContent = rec ? fmtBytes(rec.bytes) : '';
+      const btn = row.querySelector<HTMLElement>('.odl-pin');
+      const name = row.querySelector('.odl-row-name')?.textContent ?? id;
+      if (btn) {
+        btn.classList.toggle('is-pinned', !!rec);
+        btn.setAttribute('aria-pressed', String(!!rec));
+        btn.title = rec ? t('Available offline') : t('Keep available offline');
+        btn.setAttribute('aria-label', rec ? t('Remove {name} from offline', { name }) : t('Keep {name} available offline', { name }));
+      }
+      updateTotals();
+    };
+
+    // Same erased cast as the gallery's pin handler — the concrete web host
+    // satisfies sync's structural SyncHost slice at runtime.
+    const prefetch = (ids: string[]) => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], ids);
+    const celebrate = (btn: HTMLElement) => {
+      btn.classList.add('is-celebrating');
+      const done = () => btn.classList.remove('is-celebrating');
+      btn.addEventListener('animationend', done, { once: true });
+      setTimeout(done, 900); // reduced-motion fires no animationend
+    };
+    // Downloads one tool and updates its row; returns false on failure. Shared by
+    // the per-row button and the Download-all sweep (which silences the per-tool
+    // chime so a 20-tool run isn't 20 fanfares).
+    const download = async (id: string, btn: HTMLElement | null, { chime = true } = {}): Promise<boolean> => {
+      btn?.classList.add('is-busy');
+      try {
+        await pinTool(id, prefetch);
+        pins = await pinRecords();
+        syncRow(id);
+        if (btn) { celebrate(btn); }
+        if (chime) playSfx('victory');
+        return true;
+      } catch (err) {
+        host.log('warn', 'Offline download failed', { toolId: id, error: String(err) });
+        return false;
+      } finally {
+        btn?.classList.remove('is-busy');
+      }
+    };
+
+    body.querySelector('.odl-list')?.addEventListener('click', async e => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-odl]');
+      if (!btn || btn.classList.contains('is-busy')) return;
+      const id = btn.dataset.odl!;
+      const name = tools.find(tl => tl.id === id)?.name ?? id;
+      if (pins[id]) {
+        btn.classList.add('is-busy');
+        try {
+          await unpinTool(id);
+          pins = await pinRecords();
+          syncRow(id);
+          announce(t('{name} removed from offline', { name }));
+        } finally { btn.classList.remove('is-busy'); }
+      } else {
+        const ok = await download(id, btn);
+        announce(ok
+          ? t('{name} is available offline', { name })
+          : t('Couldn’t save {name} for offline — check your connection', { name }), { assertive: !ok });
+      }
+      await refreshCounter(); // the Storage meter's pins slice moved
+    });
+
+    // Sequential sweep — one spinner walks the list (parallel fetch storms help
+    // nobody on the connections this feature exists for). Failures are skipped
+    // and reported as a count; the button doubles as the progress line.
+    allBtn.addEventListener('click', async () => {
+      if (allBtn.disabled) return;
+      allBtn.disabled = true;
+      const queue = tools.filter(tl => !pins[tl.id]);
+      let failed = 0;
+      let n = 0;
+      for (const tl of queue) {
+        allBtn.textContent = t('Downloading {n} of {total}…', { n: ++n, total: queue.length });
+        const btn = body.querySelector<HTMLElement>(`.odl-pin[data-odl="${CSS.escape(tl.id)}"]`);
+        if (!await download(tl.id, btn, { chime: false })) failed++;
+      }
+      allBtn.disabled = false;
+      allBtn.textContent = t('Download all');
+      if (failed === 0) playSfx('victory');
+      announce(failed
+        ? t('{n} downloads failed — check your connection', { n: failed })
+        : t('All tools are available offline'), { assertive: failed > 0 });
+      await refreshCounter();
+    });
+
+    noneBtn.addEventListener('click', async () => {
+      const sure = await confirmDialog({
+        title: t('Remove all offline downloads?'),
+        message: t('Every downloaded tool is removed from this device. Each re-downloads on demand when you next open it online.'),
+        confirmLabel: t('Remove all'),
+        danger: true,
+      });
+      if (!sure) return;
+      await unpinAll();
+      pins = {};
+      body.querySelectorAll<HTMLElement>('.odl-row').forEach(r => syncRow(r.dataset.tool!));
+      announce(t('Offline downloads removed'));
+      await refreshCounter();
+    });
+
+    // Live search — plain substring over the display name.
+    const search = body.querySelector<HTMLInputElement>('.odl-search')!;
+    const emptyEl = body.querySelector<HTMLElement>('.odl-empty')!;
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      body.querySelectorAll<HTMLElement>('.odl-row').forEach(row => {
+        const hit = !q || (row.dataset.name ?? '').includes(q);
+        row.hidden = !hit;
+        if (hit) shown++;
+      });
+      emptyEl.hidden = shown > 0;
+    });
+  }
+  offlineDetails?.addEventListener('toggle', () => { if (offlineDetails!.open) loadOffline(); });
+  if (offlineDetails?.open) loadOffline();
 
   // ── Content Credentials: lazy, like Storage. The identity bridge (host.identity)
   // holds the device keypair + CA-issued cert; this section only ever shows either

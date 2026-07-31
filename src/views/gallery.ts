@@ -522,6 +522,19 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     for (const t of index.tools) {
       if (!seen.has(t.id) && favourites.has(t.id) && !hidden.has(t.category)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
     }
+    // Starred VIEW cards (Verify, Take a PDF apart, Colour Lab) promote into the
+    // hero strip exactly like starred tools — as icon-hero tiles, since a view has
+    // no preview or render path. `href` routes the tile to the view (the same
+    // non-tool-tile mechanism the Projects ribbon uses), and the `view:`-prefixed
+    // id can never collide with a tool's. Utilities grid only — the tiles
+    // themselves exist nowhere else.
+    if (opts.only === 'utility') {
+      for (const v of utilityViews()) {
+        if (favourites.has(viewFavKey(v.id))) {
+          out.push({ id: viewFavKey(v.id), name: v.name, icon: icon(v.icon), href: v.href, featured: { blurb: v.description } });
+        }
+      }
+    }
     return out;
   };
   const featuredEntries: FeaturedEntry[] = featuredEntriesNow();
@@ -1233,8 +1246,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       });
     });
     // Star / unstar a utility VIEW card — same favourites list as the tools,
-    // under the collision-proof view: key. No featured-strip promotion (the
-    // strip's tiles resolve tool routes + render paths a view doesn't have).
+    // under the collision-proof view: key, with the same promotion into the
+    // featured hero strip (as an icon-hero tile — a view has no render path).
     container.querySelectorAll<HTMLElement>('[data-fav-view]').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation(); e.preventDefault();
@@ -1248,6 +1261,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         const nm = utilityViews().find(v => v.id === id)?.name ?? t('tool');
         el.setAttribute('aria-label', on ? t('Remove {name} from favourites', { name: nm }) : t('Add {name} to favourites', { name: nm }));
         el.title = on ? t('In favourites') : t('Add to favourites');
+        refreshFeatured();                      // the view joins/leaves the hero strip
         if (activeCat === FAV_CAT) applyView(); // the card must hide/show in place
         else renderPills();                     // otherwise just refresh the pill count
       });
@@ -1661,7 +1675,7 @@ function viewCardMarkup(v: UtilityView, isFav: boolean): string {
       </div>
       <div class="gtile-actions">
         <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav-view="${escape(v.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: v.name }) : t('Add {name} to favourites', { name: v.name }))}">${STAR_ICON}</button>
-        <button type="button" class="gtile-iconbtn" data-info-view="${escape(v.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: v.name }))}">${INFO_ICON}</button>
+        <button type="button" class="gtile-iconbtn" data-info-view="${escape(v.id)}" title="${escape(t('About this utility'))}" aria-label="${escape(t('About {name}', { name: v.name }))}">${INFO_ICON}</button>
       </div>
     </article>`;
 }
@@ -1685,7 +1699,7 @@ function showViewInfoDialog(v: UtilityView): void {
         <div><dt>${t('Offline')}</dt><dd>${t('Ships with the app, so it always works offline')}</dd></div>
       </dl>
       <div class="meta-dialog-actions">
-        <a class="btn meta-dialog-open" href="${escape(v.href)}">${t('Open tool')}</a>
+        <a class="btn meta-dialog-open" href="${escape(v.href)}">${t('Open utility')}</a>
         <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
       </div>
     </div>`;
@@ -1749,7 +1763,7 @@ function cardMarkup(
         <div class="gtile-actions">
           <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: tool.name }) : t('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
           ${unavailable ? '' : pinButtonHtml(tool, isPinned)}
-          <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
+          <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this utility'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
           ${uHistoryBtn}
         </div>
       </article>
@@ -2008,7 +2022,7 @@ function showInfoDialog(tool: GalleryTool | undefined): void {
         <dl class="meta-defaults-list"></dl>
       </section>
       <div class="meta-dialog-actions">
-        <a class="btn meta-dialog-open" href="#/tool/${escape(tool.id)}">${t('Open tool')}</a>
+        <a class="btn meta-dialog-open" href="#/tool/${escape(tool.id)}">${tool.category === 'utility' ? t('Open utility') : t('Open tool')}</a>
         <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
       </div>
     </div>`;

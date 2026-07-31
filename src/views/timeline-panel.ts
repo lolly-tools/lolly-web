@@ -8,7 +8,8 @@
  *
  *  1. NO EDITING ARITHMETIC LIVES HERE. Every model mutation goes through
  *     ./timeline-math.ts (packSeq / moveSeqClip / removeAndRipple / trimClip /
- *     splitBox / snapTime / deriveDuration / fmtTime). The panel converts pixels to
+ *     splitAll / joinClips / detachAudio / reattachAudio / snapTime / deriveDuration /
+ *     fmtTime). The panel converts pixels to
  *     seconds and hands seconds to that module. If a gesture needs a new clamp, the
  *     clamp belongs in timeline-math beside the one it must agree with — never
  *     re-derived here, where it would silently drift from the tool hook.
@@ -51,13 +52,15 @@ import {
 import { TRANSITIONS, TRANSITION_KINDS, isTransitionKind } from '../lib/transitions.ts';
 import { MAX_TRANSITION_MS, MIN_TRANSITION_MS, createSequenceClock, type SequenceClock } from './sequence-clock.ts';
 import {
-  DEFAULT_CLIP_S, MAX_TIME_S, MIN_DUR, SNAP_PX,
-  boxTiming, deriveDuration, fmtTime, indexOfId, isTimed,
+  DEFAULT_CLIP_S, MAX_TIME_S, MIN_DUR, MIN_TRIM_BAR_PX,
+  boxTiming, deriveDuration, edgeZonePx, fmtDelta, fmtDur, fmtTime, indexOfId, isTimed,
   dropIndexAt, moveOverlay, moveSeqClip, packSeq, removeAndRipple, rippleOverlays, seqBoxes,
   setClipIn, setDuration, setSpeed,
-  snapTime, splitBox, trimClip,
+  detachAudio, isThroughEdit, joinClips, reattachAudio, splitAll,
+  snapTime, trimClip,
   type Box, type MediaDurFn, type TimeCfg,
 } from './timeline-math.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import type { AssetRef, AudioLevel, RecorderAPI, RecordSession } from '@lolly-tools/core/host-v1';
 import { isTypingTarget } from '../lib/typing-target.ts';
 import '../styles/parts/timeline.css';
@@ -185,12 +188,45 @@ export const RESERVE_PAD = 6;
 export const MIN_PPS = 4;
 export const MAX_PPS = 600;
 export const ZOOM_STEP = 1.25;
-/** Edge-trim hit zone, px each side (§3.2 asks for ~8). */
-export const EDGE_PX = 8;
+/**
+ * Edge-trim hit zone, px each side, for a PRECISE pointer (mouse / trackpad).
+ *
+ * The HIT size and the VISUAL size are deliberately different numbers: the grip drawn
+ * inside `.tl-edge` stays a 3px hairline (a fat handle on a 40px bar is the bar), while
+ * the zone that responds is this wide. IMG.LY ship the same split on their mobile
+ * timeline — "more than twice as wide as the visual appearance suggests".
+ *
+ * Was 8, which was under every published floor. See EDGE_PX_COARSE for the one that
+ * actually has a standard behind it; this one is the pointer that can be precise.
+ */
+export const EDGE_PX = 10;
+/**
+ * Edge-trim hit zone for a COARSE pointer (finger / pen), px each side.
+ *
+ * 24 is WCAG 2.5.8's target-size floor (AA), and the smallest of the three standards
+ * in play — Apple asks 44pt, Material 48dp. Those two are about a target you TAP; this
+ * is a target you press and drag along one axis, where the other axis is the full lane
+ * height, so the AA floor is the honest number rather than the ambitious one.
+ *
+ * Picked per EVENT from `e.pointerType`, not from a media query: a touch laptop reports
+ * `pointer: coarse` for the whole document while the user is on the trackpad, and
+ * `matchMedia` is also absent under jsdom. The event knows exactly which finger arrived.
+ */
+export const EDGE_PX_COARSE = 24;
 /** Seam (junction) hit zone, px each side. */
 export const SEAM_PX = 8;
+/**
+ * Snap tolerance, screen px, by pointer kind. The module default in timeline-math
+ * (SNAP_PX = 6) stays where it is — that is the value every OTHER caller of snapTime
+ * gets; these two are the panel's own gesture tolerances, raised because a snap you
+ * cannot land is a snap that does not exist, and a finger is not a cursor.
+ */
+export const SNAP_PX_FINE = 8;
+export const SNAP_PX_COARSE = 12;
 /** Arrow-key step: one frame at 30fps; Shift steps a whole second. */
 export const FRAME_S = 1 / 30;
+/** Keyboard trim step multiplier when Shift is held (`,`/`.` nudge the focused edge). */
+export const TRIM_SHIFT_FRAMES = 10;
 /** Filmstrip frames are never packed tighter than this, px. */
 const MIN_FRAME_PX = 40;
 
@@ -384,6 +420,24 @@ export function frameCountFor(widthPx: number): number {
   return clamp(Math.round(finite(widthPx, 0) / MIN_FRAME_PX), 1, 24);
 }
 
+/**
+ * Is this pointer a coarse one — i.e. does it need the WCAG-floor hit target?
+ *
+ * Written as an ALLOW-LIST of the two coarse kinds rather than "anything that is not a
+ * mouse", so an absent/unknown `pointerType` (jsdom builds MouseEvents; some browsers
+ * report '' for a synthetic event) falls back to the PRECISE zone. Guessing coarse for
+ * an unknown pointer is the dangerous direction: it steals 24px of every bar's body
+ * from the move gesture on hardware that never needed it.
+ */
+export function isCoarsePointer(pointerType: string | undefined): boolean {
+  return pointerType === 'touch' || pointerType === 'pen';
+}
+
+/** The trim hit zone a pointer of this kind is entitled to, before the bar's own cap. */
+export function edgeBase(pointerType: string | undefined): number {
+  return isCoarsePointer(pointerType) ? EDGE_PX_COARSE : EDGE_PX;
+}
+
 // ── the controller ────────────────────────────────────────────────────────────
 
 type GestureKind = 'trim' | 'move' | 'reorder' | 'seek' | 'resize';
@@ -400,7 +454,15 @@ interface Gesture {
   x: number;
   y: number;
   alt: boolean;
+  /**
+   * The pointer kind that STARTED the gesture. Captured once rather than re-read per
+   * move, because the hit zone that opened the gesture and the snap tolerance that
+   * steers it must be the same pointer's numbers from pointerdown to pointerup.
+   */
+  pointerType: string;
   edge?: 'in' | 'out';
+  /** Trim only: the limit signal has already been spoken for this gesture. */
+  limitSaid?: boolean;
   /** Snapshot of the timing at pointerdown, so the drag is always absolute, never accumulated. */
   start0: number;
   dur0: number;
@@ -747,7 +809,32 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const snapline = document.createElement('div');
   snapline.className = 'tl-snapline';
   snapline.hidden = true;
-  inner.append(laneWrap, scenery, playhead, snapline);
+  /**
+   * The ghost EXTENT: how far this clip could reach in either direction before it runs
+   * out of source. Shown for the length of a trim gesture only (FCP's "available media"
+   * idea, drawn rather than implied).
+   *
+   * A panel-level element positioned in timeline pixels, NOT a child of the bar —
+   * `.tl-clip` is `overflow: hidden`, so a child could never paint the one thing this
+   * element exists to show, which is the media that is currently OUTSIDE the bar.
+   *
+   * Solid 1px outline, not dashed: dashed borders in this shell mean "drop area".
+   */
+  const extent = document.createElement('div');
+  extent.className = 'tl-clip-extent';
+  extent.hidden = true;
+  extent.setAttribute('aria-hidden', 'true');
+  /**
+   * The trim readout: absolute duration plus a signed delta, anchored at the edge being
+   * dragged (Final Cut's pairing — the absolute number is what you are aiming for, the
+   * delta is what you have done). aria-hidden because it changes every frame; the
+   * spoken version is one announce() on release.
+   */
+  const trimBadge = document.createElement('div');
+  trimBadge.className = 'tl-trim-badge';
+  trimBadge.hidden = true;
+  trimBadge.setAttribute('aria-hidden', 'true');
+  inner.append(laneWrap, scenery, extent, playhead, snapline, trimBadge);
   tracks.appendChild(inner);
 
   root.append(handle, bar, ruler, tracks);
@@ -777,6 +864,33 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
+   * The media length a DETACHED sound borrows from the clip it came from.
+   *
+   * A detached audio box is a REFERENCE — same asset ref, same URL — but the tool hook
+   * only stamps `data-audio-dur` when the ASSET carries a `meta.durationMs`, and a video
+   * file's ref usually does not (its length is discovered by decoding it). The partner
+   * video element has already decoded, and `video.duration` is the same number the
+   * sound's own source runs for. Without this a detached sound is unclamped: you can
+   * drag its out-edge past the end of the file into silence, and "fit to media" cannot
+   * work — the exact hole `data-audio-dur` exists to close for a library track.
+   *
+   * Reads the partner's <video> DIRECTLY rather than recursing through mediaOf, so a
+   * mutually-linked pair can never loop.
+   */
+  function linkedMediaDur(id: string): number | null {
+    const link = cfg.linkField;
+    if (!link) return null;
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0) return null;
+    const partner = rows[i]![link];
+    if (partner == null || partner === '') return null;
+    const video = boxEl(String(partner))?.querySelector<HTMLVideoElement>('video.lolly-box-video');
+    const d = Number(video?.duration);
+    return Number.isFinite(d) && d > 0 ? d : null;
+  }
+
+  /**
    * A box's media, read from the LIVE CANVAS rather than the model: the hook has already
    * resolved the asset ref to a URL there, and a decoded <video> also knows its real
    * duration — which is exactly what trimClip's media clamp wants.
@@ -796,7 +910,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return {
         url: audio.getAttribute('data-audio-src') || '',
         kind: 'audio',
-        dur: Number.isFinite(ms) && ms > 0 ? ms / 1000 : null,
+        dur: Number.isFinite(ms) && ms > 0 ? ms / 1000 : linkedMediaDur(id),
       };
     }
     const video = el.querySelector<HTMLVideoElement>('video.lolly-box-video');
@@ -848,6 +962,52 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const start = timing.start ?? 0;
     const dur = timing.dur ?? Math.max(MIN_DUR, total - start);
     return { start, dur };
+  }
+
+  /** Every TIMED box whose span contains `at` (seconds). Scenery is always on and is
+   *  never listed — it has no span to leave. */
+  function activeIdsAt(boxes: Box[], at: number): string[] {
+    const total = durationSec();
+    const out: string[] = [];
+    for (const b of boxes) {
+      if (!b || !isTimed(b, cfg)) continue;
+      const { start, dur } = span(b, total);
+      if (at >= start && at < start + dur) out.push(String(b[cfg.idField] ?? ''));
+    }
+    return out;
+  }
+
+  // ── the one selection writer (free-canvas.ts's header states the rule) ────────
+  //
+  // "Selecting in the timeline moves the playhead so the selection stays live."
+  //
+  // The rule is one-directional on purpose. TIME never rewrites the selection — that
+  // is the Premiere failure ("the selection jumps back to the clip under the playhead
+  // and I wind up making changes to the wrong clip") — but SELECTION may move time,
+  // because the alternative is a selected clip the canvas cannot show and therefore
+  // cannot edit. So every route into `selection.set` inside this panel comes through
+  // here instead, and the canvas's off-playhead banner becomes a state you can only
+  // reach the long way round (scrub away from your own selection).
+  //
+  // Three refusals, each load-bearing:
+  //   • `{ reveal: false }` — a Shift-extend. Revealing on the SECOND of two clips
+  //     picks one arbitrarily and moves the picture out from under the first.
+  //   • playing — a seek mid-playback is a jump-cut nobody asked for, and during
+  //     playback the selection is going in and out of frame by definition.
+  //   • already live — the commonest case by far, and it must cost nothing.
+  function selectAndReveal(ids: string[], opts?: { reveal?: boolean }): void {
+    selection.set(ids);
+    if (opts?.reveal === false || disposed || clock.playing()) return;
+    const id = ids[0];
+    if (!id) return;
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0 || !isTimed(rows[i]!, cfg)) return;      // scenery is always on screen
+    const { start, dur } = span(rows[i]!, durationSec());
+    const at = clock.t() / 1000;
+    if (at >= start && at < start + dur) return;
+    clock.seek(start * 1000);
+    announce(t('Moved the playhead to this clip'));
   }
 
   function applyBarGeometry(el: HTMLElement, start: number, dur: number): void {
@@ -1026,10 +1186,37 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const timing = boxTiming(b, cfg);
       const isSel = sel.has(id);
       el.classList.toggle('is-selected', isSel);
-      el.classList.toggle('is-muted', b[cfg.muteField] === true || b[cfg.muteField] === 'true');
+      const muted = b[cfg.muteField] === true || b[cfg.muteField] === 'true';
+      el.classList.toggle('is-muted', muted);
+      // A/V link. The muted side is the picture (its sound is elsewhere); the other side
+      // is the sound itself. The `is-muted` hatch already reads as "silenced" on the
+      // video, so this adds the one thing the hatch cannot say: WHERE the sound went.
+      const linked = !!cfg.linkField && !!b[cfg.linkField!];
+      el.classList.toggle('is-linked', linked);
+      let linkEl = el.querySelector<HTMLElement>('.tl-clip-link');
+      if (linked && !linkEl) {
+        linkEl = document.createElement('span');
+        linkEl.className = 'tl-clip-link';
+        linkEl.innerHTML = icon('link');
+        el.appendChild(linkEl);
+      }
+      if (linkEl) {
+        linkEl.hidden = !linked;
+        const tip = muted ? t('Sound is on its own lane') : t('Sound detached from this clip');
+        if (linkEl.title !== tip) linkEl.title = tip;
+      }
       el.setAttribute('aria-selected', isSel ? 'true' : 'false');
       el.dataset.kind = mediaOf(id).kind || (seqSet.has(id) ? 'clip' : 'overlay');
-      el.title = `${text} · ${fmtTime(start)} → ${fmtTime(start + dur)}`;
+      // Too narrow to carry two trim zones (see MIN_TRIM_BAR_PX): hide the grips and
+      // say where the precise route is, rather than offering a target that would eat
+      // the whole bar. Read off the width we just WROTE — asking the DOM for
+      // offsetWidth here would force a layout per bar per keystroke.
+      const tight = timeToPx(dur, pxPerSec) < MIN_TRIM_BAR_PX;
+      el.classList.toggle('is-tight', tight);
+      const base = `${text} · ${fmtTime(start)} → ${fmtTime(start + dur)}`;
+      el.title = tight
+        ? `${base} · ${t('This clip is too narrow to trim here. Zoom in, or set its Length in the panel.')}`
+        : base;
       if (timing.speed !== 1) el.dataset.speed = String(timing.speed);
       else delete el.dataset.speed;
     }
@@ -1052,8 +1239,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const faded = Boolean(aBox && isTransitionKind(aBox[cfg.exitField]) && aBox[cfg.exitField] !== 'none')
         || Boolean(i >= 0 && isTransitionKind(boxes[i]![cfg.enterField]) && boxes[i]![cfg.enterField] !== 'none');
       chip.classList.toggle('is-fade', faded);
+      // THROUGH EDIT — a cut whose two sides are still contiguous, i.e. a split nobody
+      // has committed to yet. Final Cut's hairline marker, and the single mechanism in
+      // the whole survey that makes cutting non-frightening: you can see at a glance
+      // which seams are decisions and which are just "I cut here and changed nothing".
+      // Computed HERE rather than in rebuild's seam pass, because contiguity dies to a
+      // trim or a transition edit, neither of which changes tracksKey.
+      // The MARK is the whole affordance, exactly as Final Cut does it — the tip still
+      // says what clicking does (open the junction), because that is still what it does;
+      // the junction dialog is where the Join action appears.
+      chip.classList.toggle('is-through', isThroughEdit(boxes, cfg, chip.dataset.a || '', bId, sameSource));
     }
     inner.style.width = `${Math.max(tracks.clientWidth, timeToPx(total, pxPerSec) + 24)}px`;
+    // A rebuild mints fresh bars, so the keyboard's armed edge has to be re-painted or
+    // it silently disarms visually while still being armed in state.
+    paintFocusedEdge();
     updateRuler(total);
     updateRovingTabindex();
     renderInspector(boxes);
@@ -1170,7 +1370,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // rather than spend an undo step on a no-op.
     if (next.some((b, k) => b !== rows[k])) write(next);
     focusedId = id;
-    selection.set([id]);
+    selectAndReveal([id]);
     announce(t('Added to the timeline'));
   }
 
@@ -1194,7 +1394,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // does — same pack, same overlay ripple — inside the same commit.
     write(wasSeq ? rippleOverlays(rows, packSeq(cleared, cfg, mediaDur), cfg) : cleared);
     focusedId = '';
-    selection.set([id]);
+    selectAndReveal([id]);
     announce(t('Now always on'));
   }
 
@@ -1229,16 +1429,34 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     el.style.top = `${Math.round(top)}px`;
   }
 
-  /** One menu row. Same markup + classes as the projects/folder menus, so no new CSS. */
-  function menuItem(label: string, glyph: IconName, run: () => void, danger = false): HTMLButtonElement {
+  /**
+   * One menu row. Same markup + classes as the projects/folder menus, so no new CSS —
+   * except `sub`, a second line in the plainer register for an action whose NAME cannot
+   * carry its meaning ("Detach audio" says what, not what for). The two lines live in
+   * one column so the icon still centres against the pair.
+   */
+  function menuItem(
+    label: string, glyph: IconName, run: () => void,
+    opts?: { danger?: boolean; sub?: string },
+  ): HTMLButtonElement {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = `folder-menu-item${danger ? ' folder-menu-item--danger' : ''}`;
+    b.className = `folder-menu-item${opts?.danger ? ' folder-menu-item--danger' : ''}${opts?.sub ? ' tl-menu-item--sub' : ''}`;
     b.setAttribute('role', 'menuitem');
     b.innerHTML = icon(glyph);
     const span = document.createElement('span');
+    span.className = 'tl-menu-label';
     span.textContent = label;   // textContent, so a manifest label can never inject markup
     b.appendChild(span);
+    if (opts?.sub) {
+      const wrap = document.createElement('span');
+      wrap.className = 'tl-menu-stack';
+      const sub = document.createElement('span');
+      sub.className = 'tl-menu-sub';
+      sub.textContent = opts.sub;
+      b.replaceChild(wrap, span);
+      wrap.append(span, sub);
+    }
     b.addEventListener('click', run);
     return b;
   }
@@ -1295,12 +1513,25 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (timed) {
       // Exactly the writers that already exist — the context menu is a second DOOR onto
       // them, never a second implementation (see promote/demote above).
-      el.appendChild(menuItem(t('Split at playhead'), 'scissors', act(() => { selection.set([ctxId]); splitAtPlayhead(); })));
+      el.appendChild(menuItem(t('Split at playhead'), 'scissors', act(() => { selectAndReveal([ctxId]); splitAtPlayhead(); })));
+      // Join is offered only where it is REAL: a cut whose two sides are still perfectly
+      // contiguous, on either side of this clip. Everywhere else the item is absent
+      // rather than disabled — a menu of greyed-out rows teaches nothing.
+      const join = throughNeighbour(ctxId, rows);
+      if (join) el.appendChild(menuItem(t('Join clips'), 'link', act(() => joinAt(join.aId, join.bId))));
+      const partner = partnerOf(ctxId, rows);
+      if (partner) {
+        el.appendChild(menuItem(t('Re-attach audio'), 'volumeOn', act(() => reattachAudioAt(ctxId)),
+          { sub: t('Puts the sound back on the clip it came from.') }));
+      } else if (canDetach(ctxId)) {
+        el.appendChild(menuItem(t('Detach audio'), 'volumeOff', act(() => detachAudioAt(ctxId)),
+          { sub: t('Puts the sound on its own lane so you can move and trim it separately.') }));
+      }
       el.appendChild(menuItem(t('Make always on'), 'layers', act(() => demote(ctxId))));
     } else {
       el.appendChild(menuItem(t('Add to the timeline'), 'plus', act(() => promote(ctxId))));
     }
-    el.appendChild(menuItem(t('Delete'), 'trash', act(() => deleteBox(ctxId)), true));
+    el.appendChild(menuItem(t('Delete'), 'trash', act(() => deleteBox(ctxId)), { danger: true }));
     return el.querySelector<HTMLElement>('.folder-menu-item');
   }, { className: 'folder-menu tl-menu tl-ctx-menu', ariaLabel: t('Clip actions'), position: menuPosition });
 
@@ -1321,7 +1552,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (!id || indexOfId(getBoxes(), cfg, id) < 0) return;
     ctxId = id;
     const sel = selection.get();
-    if (sel.length !== 1 || sel[0] !== id) selection.set([id]);
+    if (sel.length !== 1 || sel[0] !== id) selectAndReveal([id]);
     if (bars.has(id)) { focusedId = id; updateRovingTabindex(); }
     ctxPoint.x = x;
     ctxPoint.y = y;
@@ -1902,20 +2133,110 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     snapline.style.left = `${timeToPx(tSec, pxPerSec)}px`;
   }
 
+  /**
+   * The snap candidate currently engaged, so a NEWLY engaged snap can be felt as well
+   * as seen. Reset by endGesture; null means "nothing is snapped right now".
+   */
+  let snappedAt: number | null = null;
+
   /** Snap a raw time unless Alt is held (the universal bypass). */
   function maybeSnap(raw: number, alt: boolean, excludeId?: string): number {
-    if (!snapOn || alt) { showSnapline(null); return raw; }
+    if (!snapOn || alt) { showSnapline(null); snappedAt = null; return raw; }
     const cands = snapCandidates(getBoxes(), cfg, clock.t() / 1000, raw, excludeId);
-    const r = snapTime(raw, cands, pxPerSec, SNAP_PX);
+    // A finger cannot land on a 6px window. The tolerance follows the pointer that
+    // started the gesture (the module default stays 6 for every other caller).
+    const px = isCoarsePointer(gesture?.pointerType) ? SNAP_PX_COARSE : SNAP_PX_FINE;
+    const r = snapTime(raw, cands, pxPerSec, px);
     showSnapline(r.snapped);
+    // Newly engaged, on a pointer with no cursor to watch: a 8ms tick is the only
+    // feedback a thumb over the bar can actually receive. Reduced motion turns it off —
+    // the pref is about involuntary sensation, not only about pixels moving.
+    if (r.snapped !== null && r.snapped !== snappedAt && isCoarsePointer(gesture?.pointerType)
+      && !prefersReducedMotion() && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try { navigator.vibrate(8); } catch { /* a denied/absent vibrator is not an error */ }
+    }
+    snappedAt = r.snapped;
     return r.t;
   }
 
-  function beginGesture(e: PointerEvent, g: Omit<Gesture, 'x' | 'y' | 'moved' | 'alt' | 'pointerId'>): void {
-    gesture = { ...g, x: e.clientX, y: e.clientY, moved: false, alt: e.altKey, pointerId: e.pointerId };
+  /** The `.tl-edge` element of one bar, by side. */
+  function edgeEl(barEl: HTMLElement | null, edge: 'in' | 'out' | null | undefined): HTMLElement | null {
+    if (!barEl || !edge) return null;
+    return barEl.querySelector<HTMLElement>(`.tl-edge[data-edge="${edge}"]`);
+  }
+
+  /** Vertical offset of `el` inside `inner`, walking the offsetParent chain. */
+  function offsetIn(el: HTMLElement): number {
+    let y = 0;
+    let n: HTMLElement | null = el;
+    while (n && n !== inner) {
+      y += n.offsetTop || 0;
+      n = n.offsetParent as HTMLElement | null;
+    }
+    return y;
+  }
+
+  function beginGesture(e: PointerEvent, g: Omit<Gesture, 'x' | 'y' | 'moved' | 'alt' | 'pointerId' | 'pointerType'>): void {
+    gesture = {
+      ...g,
+      x: e.clientX, y: e.clientY, moved: false, alt: e.altKey,
+      pointerId: e.pointerId, pointerType: e.pointerType || '',
+    };
     abortThumbs();
     try { (g.el ?? root).setPointerCapture(e.pointerId); } catch { /* jsdom / no capture */ }
     root.classList.add('is-dragging');
+    if (g.kind === 'trim') beginTrimChrome(gesture);
+  }
+
+  /**
+   * The three edge states, armed. Every class added here comes off in endGesture — the
+   * single teardown — and never at a call site, matching the `is-drop-target` discipline.
+   */
+  function beginTrimChrome(g: Gesture): void {
+    if (!g.el) return;
+    g.el.classList.add('is-trimming');
+    edgeEl(g.el, g.edge)?.classList.add('is-active');
+    // The badge's VERTICAL place is fixed for the gesture — a trim never moves a bar
+    // between lanes — so it is measured once here rather than per frame. Reading
+    // offsetTop/offsetHeight inside the rAF that has just written every bar's geometry
+    // is a forced synchronous layout, sixty times a second, for a number that cannot
+    // have changed.
+    const top = offsetIn(g.el);
+    // The first lane has nothing above it but the scroller's edge, so the badge hangs
+    // below the bar there instead of being clipped.
+    const below = top < 24;
+    const lift = isCoarsePointer(g.pointerType) ? 44 : 0;   // clear of a thumb
+    trimBadge.classList.toggle('is-below', below);
+    trimBadge.style.top = `${below ? top + (g.el.offsetHeight || 0) + lift : top - lift}px`;
+    trimBadge.hidden = false;
+    trimBadge.textContent = '';
+    showExtent(g);
+  }
+
+  /**
+   * The reachable span of the clip being trimmed, in timeline seconds, drawn as a ghost
+   * behind/around the bar: `[start - clipIn/speed, start + (media - clipIn)/speed]`.
+   * Only when the media length is known — a card, a Lottie or a procedural bed has no
+   * "end of the source" to draw.
+   */
+  function showExtent(g: Gesture): void {
+    extent.hidden = true;
+    if (!g.el) return;
+    const media = mediaOf(g.id).dur;
+    if (media == null || !(media > 0)) return;
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, g.id);
+    if (i < 0) return;
+    const timing = boxTiming(rows[i]!, cfg);
+    const speed = timing.speed || 1;
+    const from = Math.max(0, g.start0 - timing.clipIn / speed);
+    const to = g.start0 + (media - timing.clipIn) / speed;
+    if (!(to > from)) return;
+    extent.style.left = `${timeToPx(from, pxPerSec)}px`;
+    extent.style.width = `${Math.max(2, timeToPx(to - from, pxPerSec))}px`;
+    extent.style.top = `${offsetIn(g.el)}px`;
+    extent.style.height = `${g.el.offsetHeight || 0}px`;
+    extent.hidden = false;
   }
 
   function onPointerDown(e: PointerEvent): void {
@@ -1945,8 +2266,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     // Selection follows the press (Shift toggles), so the canvas chrome tracks the bar.
     const cur = selection.get();
-    if (e.shiftKey) selection.set(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
-    else if (!cur.includes(id) || cur.length !== 1) selection.set([id]);
+    // Shift-extend never reveals: with two clips selected there is no single one to
+    // put the picture on, and moving it out from under the first is a worse answer.
+    if (e.shiftKey) selectAndReveal(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id], { reveal: false });
+    else {
+      // A/V-linked pair: pressing either half selects both, so a move or a delete keeps
+      // picture and sound together. Alt selects just the one — the shell's established
+      // "solo this box" idiom, and the reason there is no global "linked selection"
+      // toggle to find and remember.
+      const partner = e.altKey ? '' : partnerOf(id);
+      selectAndReveal(partner ? [id, partner] : [id]);
+    }
     focusedId = id;
     updateRovingTabindex();
     barEl.focus?.();
@@ -1959,9 +2289,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const lane = boxTiming(boxes[i]!, cfg).lane;
 
     const rect = barEl.getBoundingClientRect();
-    const edge: 'in' | 'out' | null = e.clientX - rect.left <= EDGE_PX
-      ? 'in'
-      : rect.right - e.clientX <= EDGE_PX ? 'out' : null;
+    // The zone is decided per EVENT (finger vs cursor) and then capped by the bar's own
+    // width, so two zones can never meet and a narrow bar offers none at all. All of
+    // that arithmetic lives in timeline-math's edgeZonePx; this reads its answer.
+    const zone = edgeZonePx(rect.width, edgeBase(e.pointerType));
+    const edge: 'in' | 'out' | null = zone <= 0
+      ? null
+      : e.clientX - rect.left <= zone
+        ? 'in'
+        : rect.right - e.clientX <= zone ? 'out' : null;
 
     const base = { id, el: barEl, x0: e.clientX, y0: e.clientY, start0: start, dur0: dur, h0: panelH };
     if (edge) {
@@ -2008,6 +2344,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     );
   }
 
+  /**
+   * The trim readout, anchored at the edge under the pointer. Its row was decided in
+   * beginTrimChrome; per frame this writes only the horizontal place and the words.
+   */
+  function paintTrimBadge(g: Gesture, edgeTime: number, dur: number): void {
+    trimBadge.hidden = false;
+    trimBadge.textContent = `${fmtDur(dur)}  ${fmtDelta(dur - g.dur0)}`;
+    trimBadge.style.left = `${timeToPx(edgeTime, pxPerSec)}px`;
+  }
+
   /** Live preview — PANEL DOM ONLY. The model is untouched until pointerup. */
   function paintGesture(g: Gesture): void {
     if (g.kind === 'resize') {
@@ -2030,21 +2376,60 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // source and then snap back to 2 s on release: the inline version knew about
     // MIN_DUR but not about the media length. The writers are pure, so this costs one
     // array map per rAF frame and can never drift from the commit.
-    const previewSpan = (rows: Box[]): void => {
-      const i = indexOfId(rows, cfg, g.id);
-      if (i < 0) return;
-      const { start, dur } = span(rows[i]!, durationSec());
-      applyBarGeometry(el, start, dur);
+    //
+    // EVERY bar, not just the dragged one: trimming a seq clip ripples the whole row,
+    // and Premiere 26's answer (the downstream bars move WITH the drag rather than
+    // jumping on release) is free here — the throwaway array already holds their new
+    // starts. The seam chips ride the same numbers, exactly as restyle positions them.
+    const previewRows = (rows: Box[]): void => {
+      const total = durationSec();
+      for (const [id, node] of bars) {
+        const i = indexOfId(rows, cfg, id);
+        if (i < 0) continue;
+        const { start, dur } = span(rows[i]!, total);
+        applyBarGeometry(node, start, dur);
+      }
+      for (const chip of Array.from(laneWrap.querySelectorAll<HTMLElement>('.tl-seam'))) {
+        const i = indexOfId(rows, cfg, chip.dataset.b || '');
+        if (i < 0) continue;
+        chip.style.left = `${timeToPx(boxTiming(rows[i]!, cfg).start ?? 0, pxPerSec)}px`;
+      }
     };
     if (g.kind === 'move') {
-      previewSpan(moveOverlay(getBoxes(), cfg, g.id, maybeSnap(g.start0 + deltaSec, g.alt, g.id)));
+      previewRows(moveOverlay(getBoxes(), cfg, g.id, maybeSnap(g.start0 + deltaSec, g.alt, g.id)));
       return;
     }
     if (g.kind === 'trim') {
       const raw = g.edge === 'in' ? g.start0 + deltaSec : g.start0 + g.dur0 + deltaSec;
       const snapped = maybeSnap(raw, g.alt, g.id);
       const d = g.edge === 'in' ? snapped - g.start0 : snapped - (g.start0 + g.dur0);
-      previewSpan(trimClip(getBoxes(), cfg, g.id, g.edge ?? 'out', d, mediaOf(g.id).dur, mediaDur));
+      const rows = trimClip(getBoxes(), cfg, g.id, g.edge ?? 'out', d, mediaOf(g.id).dur, mediaDur);
+      previewRows(rows);
+      const i = indexOfId(rows, cfg, g.id);
+      if (i < 0) return;
+      const achieved = span(rows[i]!, durationSec());
+      // THE LIMIT SIGNAL. Requested vs achieved, using the writer's OWN answer — no
+      // clamp is duplicated here, which is the whole point: `fitToMedia` stays the only
+      // authority on where a clip runs out of source, and this just notices that it
+      // said no. Without it a drag past the end of the media looks like a dead pointer.
+      //
+      // Compared on the DURATION, never on the edge's absolute time: the seq row is
+      // magnetic, so a successful trim-in repacks the clip back to the same `start` it
+      // had, and an absolute comparison would report a limit on every single one. Both
+      // edges change the length by exactly the delta they achieved, on both lanes.
+      const achievedD = g.edge === 'in' ? g.dur0 - achieved.dur : achieved.dur - g.dur0;
+      const limit = Math.abs(achievedD - d) > 0.001;
+      edgeEl(el, g.edge)?.classList.toggle('is-limit', limit);
+      if (limit && !g.limitSaid) {
+        g.limitSaid = true;
+        // Direction, not edge: held back from moving the edge EARLIER is the head of the
+        // source, from moving it LATER is the tail. (A clip stopped by the MIN_DUR floor
+        // rather than by the file reports through the same pair — the visual signal is
+        // exactly right either way, and these are the nearest true words we have.)
+        announce(achievedD > d ? t('Start of the source') : t('End of the source'));
+      }
+      const at = g.edge === 'in' ? achieved.start : achieved.start + achieved.dur;
+      paintTrimBadge(g, at, achieved.dur);
       return;
     }
     if (g.kind === 'reorder') {
@@ -2071,11 +2456,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    *     so a rebuild will never clean it up — a stale ring would sit on a clip for the
    *     rest of the session;
    *   • the dragged bar's lift transform and dropIndex;
+   *   • the three trim states (`is-trimming` on the bar, `is-active`/`is-limit` on the
+   *     edge), the readout badge and the ghost extent — added in beginTrimChrome and
+   *     removed ONLY here, so no exit path can strand a red edge on a clip;
    *   • the pointer capture.
    * It also replays a model change that arrived mid-gesture and was dropped.
    */
   function endGesture(g: Gesture | null): void {
     gesture = null;
+    snappedAt = null;
     root.classList.remove('is-dragging');
     showSnapline(null);
     if (g) {
@@ -2086,7 +2475,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         delete g.el.dataset.dropIndex;
       }
     }
-    for (const node of bars.values()) node.classList.remove('is-drop-target');
+    for (const node of bars.values()) node.classList.remove('is-drop-target', 'is-trimming');
+    for (const e of Array.from(laneWrap.querySelectorAll<HTMLElement>('.tl-edge'))) {
+      e.classList.remove('is-active', 'is-limit');
+    }
+    trimBadge.hidden = true;
+    extent.hidden = true;
+    // The KEYBOARD trim focus is a persistent state, not a gesture transient; the sweep
+    // above cannot tell the two apart, so re-assert it rather than leaving the user's
+    // chosen edge unmarked after an unrelated drag.
+    paintFocusedEdge();
     // A model change that arrived mid-gesture was deferred, not dropped. Replay it.
     if (syncMissed) scheduleSync();
   }
@@ -2114,7 +2512,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const raw = g.edge === 'in' ? g.start0 + deltaSec : g.start0 + g.dur0 + deltaSec;
       const snapped = maybeSnap(raw, alt, g.id);
       const d = g.edge === 'in' ? snapped - g.start0 : snapped - (g.start0 + g.dur0);
-      write(trimClip(boxes, cfg, g.id, g.edge ?? 'out', d, mediaOf(g.id).dur, mediaDur));
+      const next = trimClip(boxes, cfg, g.id, g.edge ?? 'out', d, mediaOf(g.id).dur, mediaDur);
+      write(next);
+      // The badge was aria-hidden throughout (sixty updates a second is not speech);
+      // this is its ONE spoken form, and it reports what actually landed, not what was
+      // asked for — so a drag the media refused says so by simply reading back short.
+      const j = indexOfId(next, cfg, g.id);
+      if (j >= 0) {
+        const now = span(next[j]!, durationSec()).dur;
+        announce(t('{name}: {dur}, trimmed {delta}', {
+          name: labelFor(g.id), dur: fmtDur(now), delta: fmtDelta(now - g.dur0),
+        }));
+      }
     } else if (g.kind === 'reorder') {
       // Re-derive from the FINAL pointer position rather than trusting g.index: that one
       // is written by paintGesture, which is rAF-coalesced, so the last pointermove of a
@@ -2214,29 +2623,169 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     scheduleThumbs();
   }
 
-  /** Split the selected clip (else the seq clip under the playhead) at the playhead. */
-  function splitAtPlayhead(): void {
+  /** Does this box's span contain `at`? (Open-ended clips run to the sequence end.) */
+  function spanContains(b: Box, at: number, total = durationSec()): boolean {
+    if (!b || !isTimed(b, cfg)) return false;
+    const { start, dur } = span(b, total);
+    return at > start && at < start + dur;
+  }
+
+  /**
+   * SPLIT — one operation, three doors (the toolbar blade, `s`, and the context menu),
+   * and one scope rule shared by all of them.
+   *
+   * Scope, in the order Premiere and Descript both resolve it:
+   *   1. every SELECTED clip the playhead is inside — so a deliberate multi-selection
+   *      cuts through all of it in one press, and one undo takes the whole thing back;
+   *   2. failing that, the seq clip under the playhead — the "I just want to cut here"
+   *      case, which must not require selecting anything first;
+   *   3. failing that, say so and write nothing.
+   *
+   * `everything: true` is the Shift+S variant: every timed clip the playhead is inside,
+   * on every lane, IGNORING the selection.
+   *
+   * Two things make this cheap to undo. The cut is SNAPPED first, so a press within a
+   * few pixels of an existing edit lands exactly on it and then fails the "already at a
+   * cut" test as an equality rather than a float comparison (Premiere's razor snaps for
+   * the same reason). And `splitAll` returns the input array by IDENTITY when nothing
+   * landed, so a no-op costs no commit and no undo entry at all.
+   */
+  function splitAtPlayhead(opts?: { everything?: boolean }): void {
     const boxes = getBoxes();
-    const at = clock.t() / 1000;
-    const sel = selection.get().filter((id) => bars.has(id));
-    let id = sel.length === 1 ? sel[0]! : '';
-    if (!id) {
-      for (const b of seqBoxes(boxes, cfg)) {
-        const timing = boxTiming(b, cfg);
-        const s = timing.start ?? 0;
-        if (timing.dur !== null && at > s && at < s + timing.dur) { id = String(b[cfg.idField] ?? ''); break; }
+    const total = durationSec();
+    // Snap BEFORE deciding scope: the snapped instant is the one the cut is tested
+    // against, so "inside this clip" and "where the cut lands" can never disagree.
+    //
+    // NOT through maybeSnap — the playhead is one of its own candidates, so snapping
+    // the playhead would always find itself at distance 0 and change nothing. Passing a
+    // negative playhead drops that candidate (snapCandidates guards on `ph >= 0`) and
+    // leaves the clip edges and whole seconds, which is exactly what a razor should
+    // land on. It also draws no snapline: there is no drag here to give feedback about.
+    const raw = clock.t() / 1000;
+    const at = snapOn
+      ? snapTime(raw, snapCandidates(boxes, cfg, -1, raw), pxPerSec, SNAP_PX_FINE).t
+      : raw;
+    let ids: string[];
+    if (opts?.everything) {
+      ids = boxes.filter((b) => spanContains(b, at, total)).map((b) => String(b[cfg.idField] ?? ''));
+    } else {
+      ids = selection.get().filter((id) => {
+        const i = indexOfId(boxes, cfg, id);
+        return i >= 0 && spanContains(boxes[i]!, at, total);
+      });
+      if (!ids.length) {
+        const under = seqBoxes(boxes, cfg).find((b) => spanContains(b, at, total));
+        if (under) ids = [String(under[cfg.idField] ?? '')];
       }
     }
-    if (!id) { announce(t('Nothing to split at the playhead')); return; }
-    const next = splitBox(boxes, cfg, id, at, mintId);
-    if (!next) { announce(t('Move the playhead inside a clip to split it')); return; }
+    ids = ids.filter(Boolean);
+    if (!ids.length) { announce(t('Move the playhead inside a clip to split it')); return; }
+    const { next, split } = splitAll(boxes, cfg, ids, at, mintId);
+    // Identity, not deep equality: nothing was cut, so nothing is written and the undo
+    // stack is untouched. The commonest way here is a second press at the same instant.
+    if (next === boxes) { announce(t('The playhead is already at a cut')); return; }
     write(next);
-    // Select the right-hand half — it is the row immediately after the original.
-    const i = indexOfId(next, cfg, id);
-    const b = i >= 0 ? next[i + 1] : null;
-    const bId = b ? String(b[cfg.idField] ?? '') : '';
-    if (bId) selection.set([bId]);
-    announce(t('Clip split'));
+    // Select the right-hand halves — what you carry on editing after a cut is the part
+    // ahead of the playhead, and the panel's one selection writer keeps it on screen.
+    if (split.length) selectAndReveal(split);
+    announce(split.length > 1 ? t('Split {n} clips', { n: String(split.length) }) : t('Clip split'));
+  }
+
+  // ── A/V link: detach audio, re-attach, and the through-edit join ─────────────
+  //
+  // Detach is deliberately NOT Final Cut's: theirs is one-way, and "there's no way to
+  // resync a clip, except for Undo" is the single most-cited complaint in the survey.
+  // This is the Premiere/Resolve model — a persistent link, written on BOTH boxes, so
+  // the sound can go back where it came from from either side. All of the arithmetic is
+  // in timeline-math (`detachAudio` / `reattachAudio`); everything here is the gate.
+
+  /** The id this box is A/V-linked to, or '' (no link field, no value, or a dangling id). */
+  function partnerOf(id: string, rows: Box[] = getBoxes()): string {
+    const link = cfg.linkField;
+    if (!link || !id) return '';
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0) return '';
+    const v = rows[i]![link];
+    const other = v == null ? '' : String(v);
+    return other && indexOfId(rows, cfg, other) >= 0 ? other : '';
+  }
+
+  /**
+   * May this clip's sound be pulled onto its own lane? Four gates, all of them "does
+   * this even mean anything here" rather than policy:
+   *   • the TOOL declares a link sub-field (sequence-studio does; layout-studio does
+   *     not, and gets no affordance at all rather than a broken one);
+   *   • the tool has an `audio` add-kind — the vocabulary a detached sound is born into,
+   *     exactly the check the microphone button already makes;
+   *   • the box is actually a video (an image has no sound; a sound is already detached);
+   *   • and it is not linked already.
+   */
+  function canDetach(id: string): boolean {
+    if (!cfg.linkField || !audioKind() || !id) return false;
+    if (partnerOf(id)) return false;
+    return mediaOf(id).kind === 'video';
+  }
+
+  function detachAudioAt(id: string): void {
+    if (!id) return;
+    if (!canDetach(id)) { announce(t('This clip has no sound to detach')); return; }
+    const next = detachAudio(getBoxes(), cfg, id, mintId, audioKind()?.seed as Box | undefined);
+    if (!next) { announce(t('This clip has no sound to detach')); return; }
+    write(next);
+    announce(t('Audio detached'));
+  }
+
+  function reattachAudioAt(id: string): void {
+    if (!id || !cfg.linkField) return;
+    // Read the partner BEFORE the write: pressed from the SOUND's side, `id` is the box
+    // that is about to be removed, and a selection left pointing at a deleted row is how
+    // the inspector ends up describing something that no longer exists.
+    const partner = partnerOf(id);
+    const next = reattachAudio(getBoxes(), cfg, id, mediaDur);
+    // The one refusal worth explaining: the group exists but nothing in it is muted, so
+    // the user un-muted the picture by hand and we cannot tell the two sides apart.
+    if (!next) { announce(t('Un-mute the video before re-attaching its sound')); return; }
+    const survivor = indexOfId(next, cfg, id) >= 0 ? id : (indexOfId(next, cfg, partner) >= 0 ? partner : '');
+    write(next);
+    if (survivor) { focusedId = survivor; selectAndReveal([survivor]); }
+    announce(t('Audio re-attached'));
+  }
+
+  /**
+   * Are two clips the same source? Injected into `isThroughEdit`, which must not know
+   * what an asset is. Compared on the ref's ID (its identity), never the whole object —
+   * two refs to the same asset can differ in resolved url/meta.
+   */
+  const sameSource = (a: Box, b: Box): boolean => {
+    const field = assetFieldName();
+    const idOf = (x: Box): unknown => {
+      const v = x?.[field];
+      return v && typeof v === 'object' && !Array.isArray(v) ? (v as { id?: unknown }).id ?? null : null;
+    };
+    return JSON.stringify(idOf(a) ?? null) === JSON.stringify(idOf(b) ?? null);
+  };
+
+  /** The neighbour `id` forms a through edit with, and which side of it `id` is on. */
+  function throughNeighbour(id: string, rows: Box[] = getBoxes()): { aId: string; bId: string } | null {
+    const row = seqBoxes(rows, cfg).map((b) => String(b[cfg.idField] ?? ''));
+    const at = row.indexOf(id);
+    if (at < 0) return null;
+    const prev = at > 0 ? row[at - 1]! : '';
+    const next = at + 1 < row.length ? row[at + 1]! : '';
+    // FCP accepts a ONE-SIDED selection: pressing Join on either half of a through edit
+    // joins that edit. The clip's own out-edge is tried first, so a clip between two
+    // through edits joins forwards — the direction the playhead is travelling.
+    if (next && isThroughEdit(rows, cfg, id, next, sameSource)) return { aId: id, bId: next };
+    if (prev && isThroughEdit(rows, cfg, prev, id, sameSource)) return { aId: prev, bId: id };
+    return null;
+  }
+
+  function joinAt(aId: string, bId: string): void {
+    const next = joinClips(getBoxes(), cfg, aId, bId, mediaDur);
+    if (!next) return;
+    write(next);
+    selectAndReveal([aId]);
+    announce(t('Clips joined'));
   }
 
   /** Ids are the tool's contract; mint one that cannot collide with an existing row. */
@@ -2266,8 +2815,82 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // one place the vocabulary would slip, and it slips only for screen-reader users.
     const wasClip = bars.has(id);
     write(removeAndRipple(getBoxes(), cfg, id, mediaDur));
-    selection.set(focusedId ? [focusedId] : []);
+    selectAndReveal(focusedId ? [focusedId] : []);
     announce(wasClip ? t('Clip removed') : t('Removed'));
+  }
+
+  // ── keyboard trim (`[` / `]` pick an edge, `,` / `.` nudge it, `e` snaps it) ──
+  //
+  // The best affordance in the whole survey for an editor that has to be approachable:
+  // it needs no pointer precision at all, it works at any zoom (including one where the
+  // bar is too narrow to carry a hit zone), and "trim to the playhead" is the operation
+  // people actually want most of the time — you are already looking at the frame.
+  //
+  // Each command is ONE write() = one undo step; holding a key coalesces through
+  // tool-history's 500ms window exactly like a held arrow on the canvas.
+
+  /** Which edge the keyboard is aimed at, or null. Cleared by the first Escape. */
+  let focusedEdge: 'in' | 'out' | null = null;
+
+  /** The clip a keyboard trim would act on: the focused bar, else the selected one. */
+  function trimTargetId(): string {
+    if (focusedId && bars.has(focusedId)) return focusedId;
+    return selection.get().find((x) => bars.has(x)) || '';
+  }
+
+  /** Paint `.is-active` for the keyboard's chosen edge, and nowhere else. */
+  function paintFocusedEdge(): void {
+    // A live trim gesture OWNS the edge chrome (beginTrimChrome → endGesture). Anything
+    // that repaints mid-drag must not wipe the active/limit state out from under it.
+    if (gesture?.kind === 'trim') return;
+    const target = focusedEdge ? trimTargetId() : '';
+    for (const [id, node] of bars) {
+      for (const el of Array.from(node.querySelectorAll<HTMLElement>('.tl-edge'))) {
+        el.classList.toggle('is-active', !!target && id === target && el.dataset.edge === focusedEdge);
+      }
+    }
+  }
+
+  function focusEdge(edge: 'in' | 'out'): void {
+    if (!trimTargetId()) return;
+    focusedEdge = edge;
+    paintFocusedEdge();
+    announce(edge === 'in' ? t('Trim the start') : t('Trim the end'));
+  }
+
+  /**
+   * Nudge the focused edge by `deltaSec`. One write, one undo step.
+   *
+   * `lead` prefixes the spoken readout rather than being announce()d separately —
+   * announce() replaces the live region's text, so two calls in one turn means the
+   * first one is never heard.
+   */
+  function trimBy(deltaSec: number, lead = ''): void {
+    const id = trimTargetId();
+    if (!id || !focusedEdge) return;
+    const boxes = getBoxes();
+    const i = indexOfId(boxes, cfg, id);
+    if (i < 0) return;
+    const before = span(boxes[i]!, durationSec()).dur;
+    const next = trimClip(boxes, cfg, id, focusedEdge, deltaSec, mediaOf(id).dur, mediaDur);
+    write(next);
+    const j = indexOfId(next, cfg, id);
+    const now = j >= 0 ? span(next[j]!, durationSec()).dur : before;
+    const said = t('{name}: {dur}, trimmed {delta}', {
+      name: labelFor(id), dur: fmtDur(now), delta: fmtDelta(now - before),
+    });
+    announce(lead ? `${lead} ${said}` : said);
+  }
+
+  /** Pull the focused edge to the playhead — the no-dragging trim. */
+  function trimToPlayhead(): void {
+    const id = trimTargetId();
+    if (!id || !focusedEdge) return;
+    const boxes = getBoxes();
+    const i = indexOfId(boxes, cfg, id);
+    if (i < 0) return;
+    const { start, dur } = span(boxes[i]!, durationSec());
+    trimBy(clock.t() / 1000 - (focusedEdge === 'in' ? start : start + dur), t('Trim to the playhead'));
   }
 
   // ── record-in-place voiceover (track C) ─────────────────────────────────────
@@ -2751,7 +3374,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const patched = patchBox(rows, id, { [field]: ref as unknown as Box[string], [cfg.clipInField]: 0 });
       write(setDuration(patched, cfg, id, durSec, durSec, mediaDur));
       focusedId = id;
-      selection.set([id]);
+      selectAndReveal([id]);
       announce(t('Take replaced'));
       return;
     }
@@ -2764,7 +3387,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const placed = moveOverlay([...rows, box], cfg, id, takeStartSec);
     write(setDuration(placed, cfg, id, durSec, durSec, mediaDur));
     focusedId = id;
-    selection.set([id]);
+    selectAndReveal([id]);
     announce(t('Voiceover added to the timeline'));
   }
 
@@ -2797,6 +3420,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (ai < 0 || bi < 0) return;
     const curMs = Math.round(clamp(finite(boxes[bi]![cfg.enterMsField], 400), MIN_TRANSITION_MS, MAX_TRANSITION_MS));
     const isCut = !isTransitionKind(boxes[bi]![cfg.enterField]) || boxes[bi]![cfg.enterField] === 'none';
+    // A through edit gets its own way out: this cut has changed nothing, so the useful
+    // action here is not "which transition" but "put it back". Offered only where it is
+    // real — the same predicate that draws the seam's hairline.
+    const through = isThroughEdit(boxes, cfg, aId, bId, sameSource);
     const html = `<form method="dialog" class="tl-junction">
       <h2 class="tl-junction-title">${t('Transition between clips')}</h2>
       <div class="tl-junction-kinds">
@@ -2807,7 +3434,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         <span class="field-label">${t('Length (ms)')}</span>
         <input class="field-input tl-num" type="number" min="${MIN_TRANSITION_MS}" max="${MAX_TRANSITION_MS}" step="50" value="${curMs}" data-act="ms">
       </label>
-      <div class="tl-junction-actions"><button type="button" class="btn btn--primary" data-act="done">${t('Done')}</button></div>
+      <div class="tl-junction-actions">${through ? `<button type="button" class="btn tl-junction-join" data-act="join">${t('Join clips')}</button>` : ''}<button type="button" class="btn btn--primary" data-act="done">${t('Done')}</button></div>
     </form>`;
     const modal = mountModal<void>(html, {
       className: 'modal tl-junction-modal',
@@ -2831,7 +3458,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     };
     modal.el.addEventListener('click', (ev) => {
       const act = (ev.target as HTMLElement | null)?.closest<HTMLElement>('[data-act]')?.dataset.act;
-      if (act === 'cut') { apply('cut'); modal.close(); }
+      if (act === 'join') { modal.close(); joinAt(aId, bId); }
+      else if (act === 'cut') { apply('cut'); modal.close(); }
       else if (act === 'xfade') { apply('xfade'); modal.close(); }
       else if (act === 'done') {
         // Done must COMMIT the dialog's state, not discard it: editing only the length
@@ -2869,14 +3497,46 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         const at = Math.max(0, list.indexOf(focusedId));
         const next = list[clamp(at + (e.key === 'ArrowDown' ? 1 : -1), 0, list.length - 1)]!;
         focusedId = next;
-        selection.set([next]);
+        selectAndReveal([next]);
         updateRovingTabindex();
         bars.get(next)?.focus();
         return;
       }
       case 'Home': e.preventDefault(); e.stopPropagation(); clock.seek(0); return;
       case 'End': e.preventDefault(); e.stopPropagation(); clock.seek(total * 1000); return;
-      case 's': case 'S': e.preventDefault(); e.stopPropagation(); splitAtPlayhead(); return;
+      // Split: `s` cuts what is in scope (selection, else the clip under the playhead);
+      // Shift+S cuts EVERY timed clip the playhead is inside, on every lane, ignoring
+      // the selection. Both are one write, so both are one undo.
+      case 's': case 'S':
+        e.preventDefault(); e.stopPropagation();
+        splitAtPlayhead(e.shiftKey ? { everything: true } : undefined); return;
+      // Shift+D detaches (or re-attaches) the clip's sound. Bare letters and Shift+letter
+      // are the only unclaimed key space here: every canonical NLE chord for this
+      // (Cmd/Ctrl+B, Cmd/Ctrl+Shift+B, Cmd/Ctrl+K) collides with a browser binding whose
+      // preventDefault is unreliable, and a shortcut that silently does nothing is worse
+      // than one that has to be learned from the panel's own menu.
+      case 'd': case 'D': {
+        if (!e.shiftKey) return;
+        e.preventDefault(); e.stopPropagation();
+        const id = trimTargetId();
+        if (!id) return;
+        if (partnerOf(id)) reattachAudioAt(id); else detachAudioAt(id);
+        return;
+      }
+      // Trim, from the keyboard. `[` / `]` aim at an edge; `,` / `.` walk it a frame at
+      // a time (Shift: ten); `e` pulls it to the playhead. Bare letters and punctuation
+      // deliberately — every canonical NLE trim chord collides with a browser binding
+      // whose preventDefault() is unreliable, and a shortcut that silently does nothing
+      // is worse than one the user has to learn.
+      case '[': e.preventDefault(); e.stopPropagation(); focusEdge('in'); return;
+      case ']': e.preventDefault(); e.stopPropagation(); focusEdge('out'); return;
+      case ',': case '<':
+        e.preventDefault(); e.stopPropagation();
+        trimBy(-(e.shiftKey ? TRIM_SHIFT_FRAMES : 1) * FRAME_S); return;
+      case '.': case '>':
+        e.preventDefault(); e.stopPropagation();
+        trimBy((e.shiftKey ? TRIM_SHIFT_FRAMES : 1) * FRAME_S); return;
+      case 'e': case 'E': e.preventDefault(); e.stopPropagation(); trimToPlayhead(); return;
       case '+': case '=': e.preventDefault(); e.stopPropagation(); zoom(ZOOM_STEP); return;
       case '-': case '_': e.preventDefault(); e.stopPropagation(); zoom(1 / ZOOM_STEP); return;
       case 'f': case 'F': e.preventDefault(); e.stopPropagation(); fit(); return;
@@ -2885,11 +3545,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // "Send to timeline" / "Make always on" would be pointer-only affordances.
       case 'ContextMenu': e.preventDefault(); e.stopPropagation(); openCtxForFocused(); return;
       case 'F10': if (!e.shiftKey) return; e.preventDefault(); e.stopPropagation(); openCtxForFocused(); return;
-      // Escape abandons a TAKE first: mid-recording it is the "stop, I fluffed it"
-      // key, and closing the panel out from under a live microphone is not what the
-      // press meant. A second Escape then closes the panel as usual.
+      // The Escape LADDER, narrowest mode first: (1) an armed keyboard trim edge,
+      // (2) a live take — mid-recording Escape is the "stop, I fluffed it" key, and
+      // closing the panel out from under a live microphone is not what the press meant
+      // — (3) the panel itself. Each rung is a mode the user entered deliberately, so
+      // each one gets its own press.
       case 'Escape':
         e.preventDefault(); e.stopPropagation();
+        if (focusedEdge) { focusedEdge = null; paintFocusedEdge(); return; }
         if (takePhase !== 'idle') { cancelTake(); return; }
         setOpen(false); return;
       default:
@@ -2912,7 +3575,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   micBtn.hidden = !canRecordVoiceover();
   syncMicBtn();
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
-  splitBtn.addEventListener('click', splitAtPlayhead);
+  // Shift-click the blade is the pointer twin of Shift+S: cut everything the playhead
+  // is inside. Same one write, same one undo step.
+  splitBtn.addEventListener('click', (e) => splitAtPlayhead(e.shiftKey ? { everything: true } : undefined));
   snapBtn.addEventListener('click', () => {
     snapOn = !snapOn;
     snapBtn.setAttribute('aria-pressed', snapOn ? 'true' : 'false');
@@ -2927,7 +3592,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const seam = (e.target as HTMLElement | null)?.closest<HTMLElement>('.tl-seam');
     if (seam) { openJunction(seam.dataset.a || '', seam.dataset.b || ''); return; }
     const chip = (e.target as HTMLElement | null)?.closest<HTMLElement>('.tl-chip');
-    if (chip?.dataset.id) selection.set([chip.dataset.id]);
+    if (chip?.dataset.id) selectAndReveal([chip.dataset.id]);
   });
   scenery.addEventListener('click', (e) => {
     const target = e.target as HTMLElement | null;
@@ -2936,7 +3601,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const add = target?.closest<HTMLElement>('.tl-chip-add');
     if (add?.dataset.id) { promote(add.dataset.id); return; }
     const chip = target?.closest<HTMLElement>('.tl-chip');
-    if (chip?.dataset.id) selection.set([chip.dataset.id]);
+    if (chip?.dataset.id) selectAndReveal([chip.dataset.id]);
   });
   laneWrap.addEventListener('dblclick', (e) => {
     const at = timeAt((e as MouseEvent).clientX);
@@ -2969,7 +3634,40 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (disposed || !open) return;
     restyle(getBoxes());
   });
-  const unsubTick = clock.onTick((tMs) => { updatePlayhead(tMs); syncPlayBtn(); });
+  /**
+   * `tl-time` — the panel→canvas half of the one rule's seam (free-canvas.ts's header).
+   * Same CustomEvent-on-the-stage pattern as `tl-add` / `tl-take`, deliberately: the
+   * canvas needs to repaint its chrome when the set of ON-SCREEN boxes changes, and it
+   * must NOT repaint sixty times a second while a clip merely plays through.
+   *
+   * So the fire is gated on a string signature of (playing, active ids). A tick inside
+   * one clip produces the same string and costs one comparison; a cut, a seek across a
+   * boundary, or pressing play produces a new one and fires exactly once.
+   */
+  let lastTimeKey = '\u0000';       // unmatchable, so the first tick always announces
+  function emitTime(tMs: number): void {
+    if (disposed) return;
+    const playing = clock.playing();
+    const activeIds = activeIdsAt(getBoxes(), tMs / 1000);
+    const key = `${playing ? 1 : 0}|${activeIds.join(',')}`;
+    if (key === lastTimeKey) return;
+    lastTimeKey = key;
+    root.dispatchEvent(new CustomEvent('tl-time', { bubbles: true, detail: { atMs: tMs, activeIds, playing } }));
+  }
+  const unsubTick = clock.onTick((tMs) => { updatePlayhead(tMs); syncPlayBtn(); emitTime(tMs); });
+
+  /**
+   * `fc-seek` — the canvas→panel half. The off-playhead banner's "Go to it" asks for a
+   * time; the clock is ours, so the seek is ours. Untrusted detail (anything can
+   * dispatch a CustomEvent), hence the finite/non-negative coercion.
+   */
+  function onFcSeek(e: Event): void {
+    if (disposed) return;
+    const d = (e as CustomEvent).detail as { atMs?: unknown } | null | undefined;
+    const raw = typeof d?.atMs === 'number' ? d.atMs : Number.NaN;
+    clock.seek(Number.isFinite(raw) ? Math.max(0, raw) : 0);
+  }
+  stageEl.addEventListener('fc-seek', onFcSeek);
   /**
    * A thumbnail shot has to un-hide an off-playhead box (see clip-thumbs' node section)
    * and puts `.seq-off` back when it is done — but that restore is a GUESS taken up to
@@ -3053,6 +3751,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     try { unsubSelection?.(); } catch { /* already gone */ }
     try { unsubRuntime?.(); } catch { /* already gone */ }
     try { ro?.disconnect(); } catch { /* already gone */ }
+    try { stageEl.removeEventListener('fc-seek', onFcSeek); } catch { /* stage detached */ }
     root.removeEventListener('pointerdown', onPointerDown);
     root.removeEventListener('pointermove', onPointerMove);
     root.removeEventListener('pointerup', onPointerUp);

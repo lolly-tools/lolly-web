@@ -17,6 +17,33 @@
  * Selection is observed through the model: click, press Delete, see which box
  * left the array — a full round trip, no spies.
  *
+ * ── THE ONE RULE ────────────────────────────────────────────────────────────
+ * The whole of this file exists to pin one sentence, stated verbatim in
+ * free-canvas.ts's own header:
+ *
+ *   "The canvas edits exactly what the canvas shows at the playhead. Moving the
+ *    playhead never changes the selection; selecting in the timeline moves the
+ *    playhead so the selection stays live; when a selection is nevertheless
+ *    off-playhead, the canvas says so and offers to reconcile. The timeline
+ *    inspector and the sidebar are the precision fallbacks and are never gated
+ *    by time."
+ *
+ * ACQUISITION (the original five tests) is only a third of it. The other two
+ * thirds are covered below, because acquisition alone leaks:
+ *
+ *  • RETENTION — a selection made while a box was on screen survives the
+ *    playhead moving away. The selection chrome is positioned from the MODEL,
+ *    not from the DOM, so without suppression a hidden box gets a full outline,
+ *    eight resize handles and a contextual bar painted over nothing, and a
+ *    resize handle is the one drag entry that never goes through the hit-test.
+ *  • KEYBOARD — a nudge or a Delete needs no chrome at all, so the gate is
+ *    re-stated in onKey. Asserted the same way as everything else here: press
+ *    the key, then look at the model array.
+ *
+ * The playhead itself is simulated the way the real timeline panel drives it:
+ * the OFF_CLASS on the boxes plus a `tl-time` CustomEvent on the stage. That IS
+ * the seam — the panel dispatches exactly this, only on an active-set change.
+ *
  * Run directly:  node --test shells/web/src/views/free-canvas-seq-hit.test.ts
  */
 import { test } from 'node:test';
@@ -83,6 +110,21 @@ function canvasCfg(): Record<string, unknown> {
   };
 }
 
+/**
+ * The SAME canvas with the ten time sub-fields removed — i.e. Carousel Maker, Org
+ * Chart, Record, and every other editor that is not time-capable. `timeCfg` is null
+ * there, so the whole rule is dead code: this is what proves it costs those tools
+ * nothing, not even when a stray `seq-off` class is somehow on the page.
+ */
+function untimedCfg(): Record<string, unknown> {
+  const cfg = canvasCfg();
+  for (const k of [
+    'startField', 'durField', 'clipInField', 'speedField', 'enterField', 'exitField',
+    'enterMsField', 'exitMsField', 'muteField', 'laneField',
+  ]) delete cfg[k];
+  return cfg;
+}
+
 // Two full-canvas scenes (scene2 later in the array = on top when both visible)
 // and one small untimed overlay badge in the corner, above both.
 const SCENES = (): Box[] => ([
@@ -96,10 +138,12 @@ interface Fixture {
   boxes(): Box[];
   ids(): string[];
   setOff(...ids: string[]): void;
+  /** What the timeline panel dispatches when the ACTIVE SET changes — the real seam. */
+  tlTime(playing?: boolean): void;
   destroy(): void;
 }
 
-function mount(boxes: Box[]): Fixture {
+function mount(boxes: Box[], cfg: Record<string, unknown> = canvasCfg()): Fixture {
   const doc = dom.window.document;
   const viewEl = doc.createElement('div');
   const stageEl = doc.createElement('div');
@@ -130,7 +174,7 @@ function mount(boxes: Box[]): Fixture {
     viewEl, stageEl, canvasEl,
     runtime: runtime as never,
     host: {} as never,
-    input: { id: 'boxes', canvas: canvasCfg() as never, fields: [] },
+    input: { id: 'boxes', canvas: cfg as never, fields: [] },
     nativeW: NATIVE, nativeH: NATIVE,
   });
   return {
@@ -141,6 +185,11 @@ function mount(boxes: Box[]): Fixture {
       for (const el of canvasEl.querySelectorAll('.lolly-box')) {
         el.classList.toggle(OFF_CLASS, offIds.includes(el.getAttribute('data-box-id') as string));
       }
+    },
+    tlTime(playing = false) {
+      stageEl.dispatchEvent(new dom.window.CustomEvent('tl-time', {
+        bubbles: true, detail: { atMs: 0, activeIds: [], playing },
+      }));
     },
     destroy() { handle.destroy(); viewEl.remove(); doc.body.innerHTML = ''; },
   };
@@ -153,15 +202,16 @@ function clickAt(f: Fixture, x: number, y: number): void {
   f.canvasEl.dispatchEvent(pointer('pointerdown', x, y));
   dom.window.document.dispatchEvent(pointer('pointerup', x, y));
 }
-function pressDelete(): void {
+function press(key: string): void {
   // The auto-opened timeline panel focuses its ruler; while focus is inside
   // `.tl-panel`, onKey defers to the panel's own key handling (by design). A real
   // canvas click moves focus, jsdom's synthetic pointerdown does not — so park
   // focus on body first, as the browser would after the click.
   (dom.window.document.activeElement as HTMLElement | null)?.blur?.();
   dom.window.document.body.dispatchEvent(
-    new W.KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+    new W.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 }
+function pressDelete(): void { press('Delete'); }
 
 test('click selects the VISIBLE scene, not the hidden top-of-array one', async () => {
   const f = mount(SCENES());
@@ -209,5 +259,127 @@ test('a click where ONLY hidden boxes exist selects nothing', async () => {
   clickAt(f, 500, 500);                    // outside the badge, both scenes hidden
   pressDelete();
   assert.deepEqual(f.ids(), ['scene1', 'scene2', 'badge'], 'nothing was selected, nothing deleted');
+  f.destroy();
+});
+
+// ── RETENTION: the playhead moving away from a selection ──────────────────────
+
+test('a selection the playhead leaves loses its chrome — no outline, no handles, no bar', async () => {
+  const f = mount(SCENES());
+  await settle();
+  f.setOff('scene1');                        // playhead inside scene2's window
+  clickAt(f, 500, 500);                      // …so the click selects the visible scene2
+  assert.equal(f.stageEl.querySelectorAll('.fc-outline').length, 1, 'precondition: an outline is up');
+  assert.ok(f.stageEl.querySelectorAll('.fc-handle').length >= 8, 'precondition: the resize handles are up');
+  assert.equal((f.stageEl.querySelector('.fc-ctxbar') as HTMLElement).hidden, false, 'precondition: the object bar is up');
+
+  f.setOff('scene1', 'scene2');              // the playhead moved off the selection
+  f.tlTime();
+  assert.equal(f.stageEl.querySelectorAll('.fc-outline').length, 0, 'the outline came down');
+  assert.equal(f.stageEl.querySelectorAll('.fc-handle').length, 0,
+    'and every resize/rotate handle with it — a handle is the one drag entry that skips the hit-test');
+  assert.equal((f.stageEl.querySelector('.fc-ctxbar') as HTMLElement).hidden, true, 'and the object bar');
+
+  // Coming back restores it: this is a suppression, never a deselection.
+  f.setOff('scene1');
+  f.tlTime();
+  assert.equal(f.stageEl.querySelectorAll('.fc-outline').length, 1, 'the same selection is editable again');
+  f.destroy();
+});
+
+test('the off-playhead banner offers a way back, and it seeks to the box’s OWN start', async () => {
+  const f = mount(SCENES());
+  await settle();
+  const banner = f.stageEl.querySelector('.fc-offplayhead') as HTMLElement;
+  assert.ok(banner, 'the reconciliation chip is part of the overlay');
+  f.setOff('scene1');
+  clickAt(f, 500, 500);                      // scene2, which starts at 2s
+  assert.equal(banner.hidden, true, 'a live selection has nothing to reconcile');
+
+  f.setOff('scene1', 'scene2');
+  f.tlTime();
+  assert.equal(banner.hidden, false, 'the stuck state is the one state that gets an explanation');
+
+  const seeks: number[] = [];
+  f.stageEl.addEventListener('fc-seek', (e) => { seeks.push(Number((e as CustomEvent).detail?.atMs)); });
+  (banner.querySelector('.fc-offplayhead-go') as HTMLElement)
+    .dispatchEvent(new W.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.deepEqual(seeks, [2000], 'scene2’s authored start, in ms — a field read, not arithmetic');
+  f.destroy();
+});
+
+test('during PLAYBACK the banner stays down — scenes leaving the frame is the point', async () => {
+  const f = mount(SCENES());
+  await settle();
+  f.setOff('scene1');
+  clickAt(f, 500, 500);
+  f.setOff('scene1', 'scene2');
+  f.tlTime(true);                            // the panel says: playing
+  const banner = f.stageEl.querySelector('.fc-offplayhead') as HTMLElement;
+  assert.equal(banner.hidden, true, 'no chip blinking on every cut');
+  // The chrome suppression is NOT relaxed by playback — it is about what can be edited.
+  assert.equal(f.stageEl.querySelectorAll('.fc-handle').length, 0);
+  f.tlTime(false);
+  assert.equal(banner.hidden, false, 'and it returns the moment playback stops');
+  f.destroy();
+});
+
+// ── KEYBOARD: the third enforcement point ────────────────────────────────────
+
+test('an off-playhead selection refuses every mutating key — the model does not move', async () => {
+  const f = mount(SCENES());
+  await settle();
+  f.setOff('scene1');
+  clickAt(f, 500, 500);                      // scene2 selected while visible
+  f.setOff('scene1', 'scene2');              // …then the playhead leaves it
+  f.tlTime();
+
+  const before = JSON.stringify(f.boxes());
+  press('ArrowRight');                       // nudge
+  press('ArrowDown');
+  press('Delete');
+  press('Backspace');
+  assert.equal(JSON.stringify(f.boxes()), before,
+    'nothing was nudged and nothing was deleted — a full round trip, no spies');
+
+  // And the way out is never blocked: bring the playhead back, and the same key lands.
+  f.setOff('scene1');
+  f.tlTime();
+  pressDelete();
+  assert.deepEqual(f.ids(), ['scene1', 'badge'], 'the very same selection deletes once it is on screen');
+  f.destroy();
+});
+
+test('Escape still deselects an off-playhead selection — the escape route is not gated', async () => {
+  const f = mount(SCENES());
+  await settle();
+  f.setOff('scene1');
+  clickAt(f, 500, 500);
+  f.setOff('scene1', 'scene2');
+  f.tlTime();
+  press('Escape');
+  const banner = f.stageEl.querySelector('.fc-offplayhead') as HTMLElement;
+  assert.equal(banner.hidden, true, 'no selection, nothing stuck, no chip');
+  // Nothing was selected any more, so a Delete now removes nothing.
+  pressDelete();
+  assert.deepEqual(f.ids(), ['scene1', 'scene2', 'badge']);
+  f.destroy();
+});
+
+// ── the untimed tools pay nothing ─────────────────────────────────────────────
+
+test('with no time model the rule is dead code: chrome, keys and banner are unchanged', async () => {
+  const f = mount(SCENES(), untimedCfg());
+  await settle();
+  f.setOff('scene1', 'scene2');              // a stray class; without timeCfg it means nothing
+  clickAt(f, 500, 500);
+  assert.equal(f.stageEl.querySelectorAll('.fc-outline').length, 1, 'the chrome is untouched');
+  assert.ok(f.stageEl.querySelectorAll('.fc-handle').length >= 8);
+  assert.equal((f.stageEl.querySelector('.fc-offplayhead') as HTMLElement).hidden, true, 'and no banner');
+  f.tlTime();                                // even the seam is inert without a time model
+  assert.equal(f.stageEl.querySelectorAll('.fc-outline').length, 1);
+  assert.equal((f.stageEl.querySelector('.fc-offplayhead') as HTMLElement).hidden, true);
+  pressDelete();
+  assert.deepEqual(f.ids(), ['scene1', 'badge'], 'topmost-wins, byte-identical to before');
   f.destroy();
 });
