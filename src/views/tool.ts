@@ -1943,6 +1943,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // details. Name binds to the export bar's filename field (the canonical
         // save name); last-edited reads the resumed session's timestamp if any.
         info: {
+          id: tool.manifest.id,
           name: tool.manifest.name,
           version: tool.manifest.version,
           status: tool.manifest.status,
@@ -3193,9 +3194,14 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
   const parts: string[] = [];
 
   for (const input of runtime.getModel()) {
-    const { id, type, value, group, fields } = input;
+    const { id, type, value, fields } = input;
     const key = input.urlKey ?? id;
-    if (group === 'export') continue;
+    // `group: 'export'` inputs are NOT skipped. They are ordinary declared model
+    // values (transparentBg, convertPaths, a tool's own plate/finish switches) and
+    // syncUrl already writes them to the address bar — skipping them here meant the
+    // Share button silently dropped settings the URL was showing the user. The
+    // default-skip below keeps a plain link clean, so nothing appears until it is
+    // actually changed.
 
     if (type === 'asset') {
       // assetIdForUrl (the engine's coerceToString rule): a baked ref shares as
@@ -3293,6 +3299,42 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
     if (bleed) parts.push(`bleed=${encodeURIComponent(bleed)}`);
     const marks = readMarks(exportScope);
     if (marks) parts.push(`marks=${encodeURIComponent(marks)}`);
+  }
+
+  // The provenance / output-mode toggles. These mirror syncUrl's branches exactly
+  // (same controls, same on/off encoding), because a copied link that disagrees
+  // with the address bar the user is looking at is the bug this block fixes.
+  //
+  // Each is guarded on the control EXISTING, not just on its checked state: the
+  // toggles are rendered per-format, so a missing control means "not applicable
+  // here". Reading `.checked` off a null would look like a deliberate opt-out and
+  // would stamp e.g. `imprint=0` onto every link from a format that has no imprint.
+  const fullPageEl = exportScope?.querySelector<HTMLInputElement>('[data-action="full-page"]');
+  if (fmtEl?.value === 'html' && fullPageEl?.checked) parts.push('nostage');
+
+  // Pixel watermark is ON by default, so only the explicit opt-out travels.
+  const imprintEl = exportScope?.querySelector<HTMLInputElement>('[data-action="imprint"]');
+  if (imprintEl && !imprintEl.checked) parts.push('imprint=0');
+
+  // Durable credential and HDR are both OFF by default, so only the opt-in travels.
+  const durableEl = exportScope?.querySelector<HTMLInputElement>('[data-action="durable"]');
+  if (durableEl?.checked) parts.push('durable=1');
+
+  const hdrEl = exportScope?.querySelector<HTMLInputElement>('[data-action="hdr"]');
+  if (hdrEl?.checked) {
+    // serializeHdr emits the bare `1` when every dial is default, and the compact
+    // tuned form otherwise — so a tuned link carries its dials instead of
+    // collapsing to defaults on the recipient's side.
+    const dial = (a: string, d: number): number => {
+      const v = Number(exportScope?.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value);
+      return Number.isFinite(v) ? v : d;
+    };
+    parts.push(`hdr=${encodeURIComponent(serializeHdr({
+      peakNits: dial('hdr-peak', HDR_DEFAULTS.peakNits),
+      reach:    dial('hdr-reach', HDR_DEFAULTS.reach),
+      lift:     dial('hdr-lift', HDR_DEFAULTS.lift),
+      richness: dial('hdr-focus', HDR_DEFAULTS.richness),
+    }))}`);
   }
 
   return parts;

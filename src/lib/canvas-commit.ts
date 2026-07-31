@@ -40,6 +40,24 @@ export interface CanvasCommitEl extends HTMLElement {
    * no-op on the model and only re-derives hook extras.
    */
   __lollyNudge?: (id: string) => void;
+  /**
+   * Write `id`→`value` with NO undo-history entry, for a correction the tool
+   * makes on the user's behalf rather than an edit the user made.
+   *
+   * redact's re-measure pass is the case this exists for: bars that arrive from
+   * a share link, the sidebar or `lolly redact --bars=` have never been near a
+   * DOM, so the first render that can see the page snaps them to what they
+   * cover and stamps the node addresses vector export deletes. Committing that
+   * through the ordinary channel would put a step nobody took on top of the
+   * undo stack, wipe the redo stack, and then fight the user: undoing the
+   * correction restores the unmeasured bars, and the very next paint measures
+   * and re-commits them. Quiet writes make the correction what it actually is —
+   * bookkeeping the user never asked for and cannot meaningfully undo.
+   *
+   * NOT for anything the user did: an edit that leaves no history entry is an
+   * edit they cannot take back.
+   */
+  __lollyCommitQuiet?: (id: string, value: InputValue) => void;
 }
 
 /** mountTool installs the history-free setter on its runtime (views/tool.ts). */
@@ -54,6 +72,11 @@ type NudgeRuntime = Runtime & { setInputNoHistory?: Runtime['setInput'] };
 export function attachCanvasCommit(canvasEl: CanvasCommitEl, runtime: Runtime): void {
   canvasEl.dataset.lollyCanvas = '';
   canvasEl.__lollyCommit = (id, value) => { void runtime.setInput(id, value); };
+  canvasEl.__lollyCommitQuiet = (id, value) => {
+    // Resolved at call time: mountTool assigns setInputNoHistory after mount.
+    const set = (runtime as NudgeRuntime).setInputNoHistory ?? runtime.setInput;
+    void set(id, value);
+  };
   canvasEl.__lollyNudge = (id) => {
     const cur = runtime.getModel().find((i) => i.id === id);
     if (!cur) return;

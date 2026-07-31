@@ -30,7 +30,9 @@
  *      request cut: dozens of preview + look-bundle requests become cache hits.
  *
  * The catalog INDEX files (/catalog/tools|assets/index.json) need fresh data, so
- * they still bypass the service worker entirely (checked after the previews path).
+ * they still bypass the service worker entirely (checked after the previews path),
+ * as does the /info docs site — real static HTML that is NOT the SPA shell and
+ * must never be cached as it (see BYPASS_PATTERNS and isShellNavigation).
  *
  * Because hashed assets are immutable, the new SW claiming clients mid-session is
  * safe (it can't swap a running page's chunks), so no skipWaiting update-prompt
@@ -40,7 +42,11 @@
  * entries on activate (a one-time clear of anything already gone stale).
  */
 
-const CACHE = 'lolly-v11';
+// v12 also REMEDIATES: any install that visited an /info page under v11 has that
+// page's HTML cached as the app shell (see isShellNavigation below). Bumping the
+// generation makes activate delete that cache, so the bad entry cannot outlive
+// this deploy.
+const CACHE = 'lolly-v12';
 
 // Tools pinned "available offline": the page writes /tools/<id>/* copies into
 // this SEPARATE, unversioned bucket (shells/web/src/lib/offline-pins.ts — keep
@@ -51,8 +57,9 @@ const CACHE = 'lolly-v11';
 const PIN_CACHE = 'lolly-pins';
 
 // Stable key the app-shell document is cached under for the offline fallback.
-// Every navigation (/, /pro, /tool/...) resolves to the same SPA index.html, so
-// one canonical entry serves them all.
+// Every SPA navigation (/, /pro, /tool/...) resolves to the same index.html, so
+// one canonical entry serves them all — but ONLY navigations the SPA actually
+// owns may be stored under it. See isShellNavigation.
 const SHELL_URL = '/';
 
 // How long a tool-file fetch may run before we give up and serve cache instead.
@@ -113,6 +120,16 @@ const BYPASS_PATTERNS = [
   // JSON policy data: a NAVIGATION to it must not run through the document
   // branch below, which would cache a non-HTML body as the app shell.
   /^\/\.well-known\//,
+  // The /info docs site: ~41 pages × 27 locales of REAL static HTML, served as
+  // themselves rather than rewritten to the SPA shell. Same hazard as
+  // /.well-known/ above and it bit for real — a navigation here used to be stored
+  // under SHELL_URL, so reading the privacy policy replaced the cached app shell
+  // with that page, and the next offline load of the app served the docs instead.
+  // Bypassing keeps the docs on the network and off the shell key; an offline
+  // visit gets the browser's own error rather than the app pretending to be a doc.
+  // (Making /info work offline is a separate feature — it needs its own per-URL
+  // cache bucket, NOT the shell entry.)
+  /^\/info\//,
 ];
 
 self.addEventListener('install', event => {
@@ -228,17 +245,44 @@ async function staleWhileRevalidate(event) {
 async function networkFirstDocument(event) {
   const { request } = event;
   const cache = await caches.open(CACHE);
+  const ownsShell = isShellNavigation(new URL(request.url).pathname);
   try {
     const fresh = await fetch(request);
-    if (fresh && fresh.ok) { cache.put(SHELL_URL, fresh.clone()); return fresh; }
-    // Server reachable but unhappy (5xx) — a cached shell beats an error page.
-    const cached = await cache.match(SHELL_URL);
+    // Only a navigation the SPA actually owns may be written to the shell key —
+    // storing a real static document there poisons the offline boot for every
+    // other route. BYPASS_PATTERNS already keeps the known static paths out of
+    // this function; this is the backstop for the next one somebody adds.
+    if (fresh && fresh.ok) { if (ownsShell) cache.put(SHELL_URL, fresh.clone()); return fresh; }
+    // Server reachable but unhappy (5xx) — a cached shell beats an error page,
+    // but only where the shell is what the URL should have served anyway.
+    const cached = ownsShell ? await cache.match(SHELL_URL) : null;
     return cached || fresh;
   } catch {
-    // Offline — serve the last good shell so the app still boots.
-    const cached = await cache.match(SHELL_URL);
+    // Offline — serve the last good shell so the app still boots. A non-shell
+    // document gets the offline sentinel instead: answering it with the app
+    // would be the same lie the shell-key bug used to tell, just in reverse.
+    const cached = ownsShell ? await cache.match(SHELL_URL) : null;
     return cached || new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
   }
+}
+
+/**
+ * Does this navigation path resolve to the SPA shell?
+ *
+ * The host rewrites every path that ISN'T a real file to index.html, so the test
+ * is simply whether the last segment looks like a filename. `/`, `/pro`,
+ * `/t/url-shot` are the app; `/info/privacy.html` and `/tool/qr-code.png` (the
+ * hot-link render URLs) are real documents that happen to be reachable by a
+ * top-level navigation, and must never be written to SHELL_URL.
+ *
+ * A trailing slash reads as a directory index (`/info/de/`), which is a real
+ * document too — but those live under paths already in BYPASS_PATTERNS, and
+ * treating a bare `/` as the shell is the whole point, so only a non-empty final
+ * segment is inspected.
+ */
+function isShellNavigation(pathname) {
+  const last = pathname.slice(pathname.lastIndexOf('/') + 1);
+  return !last.includes('.');
 }
 
 // Race the network against NETWORK_TIMEOUT_MS. A fresh, ok response wins and

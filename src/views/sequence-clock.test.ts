@@ -130,11 +130,11 @@ test('isActiveAt: a zero-length clip is never on screen', () => {
 
 test('transitionAt: enter runs from the head, exit into the tail, rest is null', () => {
   const t = readTiming(box({ start: 1000, dur: 2000, enter: 'fade', enterMs: 400, exit: 'pop', exitMs: 400 }));
-  assert.deepEqual(transitionAt(t, 1000, 5000), { kind: 'fade', p: 0 });
-  assert.deepEqual(transitionAt(t, 1200, 5000), { kind: 'fade', p: 0.5 });
+  assert.deepEqual(transitionAt(t, 1000, 5000), { kind: 'fade', p: 0, ease: '' });
+  assert.deepEqual(transitionAt(t, 1200, 5000), { kind: 'fade', p: 0.5, ease: '' });
   assert.equal(transitionAt(t, 1400, 5000), null, 'enter finished → at rest');
   assert.equal(transitionAt(t, 2000, 5000), null);
-  assert.deepEqual(transitionAt(t, 2800, 5000), { kind: 'pop', p: 0.5 });
+  assert.deepEqual(transitionAt(t, 2800, 5000), { kind: 'pop', p: 0.5, ease: '' });
   const nearEnd = transitionAt(t, 2999, 5000);
   assert.equal(nearEnd?.kind, 'pop');
   assert.ok(nearEnd!.p < 0.01);

@@ -40,6 +40,17 @@ const isSpotColor = (v: unknown): v is SpotColor => {
   if (!isRec(v) || typeof v.name !== 'string') return false;
   return v.book === undefined || typeof v.book === 'string';
 };
+/** Kept deliberately in step with `readSpotColor` in engine/src/tokens.ts — that
+ *  one gates the READ side, this one the WRITE side (`readPrintLock`), and a
+ *  divergence means a lock the editor stores reads back differently everywhere
+ *  else. `finish` is checked as a plain string because `FinishKind` is an open
+ *  union, and a non-string one drops just that field rather than the ink. */
+const readSpotColor = (v: unknown): SpotColor | null => {
+  if (!isSpotColor(v)) return null;
+  if (v.finish === undefined || typeof v.finish === 'string') return v;
+  const { finish: _malformed, ...rest } = v as SpotColor & Rec;
+  return rest as SpotColor;
+};
 
 /** A swatch's print-export lock. `cmyk` and `spot` are independent — a token
  *  may carry either, both, or neither (absent fields, not present at all, when
@@ -57,7 +68,8 @@ function readPrintLock(leaf: Rec | null): PrintLock | null {
   if (!isRec(ext)) return null;
   const lock: PrintLock = {};
   if (isNumberArray(ext.cmyk) && ext.cmyk.length === 4) lock.cmyk = ext.cmyk as [number, number, number, number];
-  if (isSpotColor(ext.spot)) lock.spot = ext.spot;
+  const spot = readSpotColor(ext.spot);
+  if (spot) lock.spot = spot;
   return lock.cmyk || lock.spot ? lock : null;
 }
 
@@ -335,7 +347,10 @@ export function setSwatchSpotLock(doc: unknown, path: string[], spot: SpotColor 
   }
   const ext = (isRec(leaf.$extensions) ? leaf.$extensions : (leaf.$extensions = {} as Rec)) as Rec;
   const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
-  ns.spot = { name: spot.name, ...(spot.book ? { book: spot.book } : {}) };
+  // Field-by-field, not a spread of `spot`: the extension namespace is written
+  // into the persisted brand doc, so only known keys are allowed through. Any
+  // new SpotColor field must be added HERE too or it is silently dropped.
+  ns.spot = { name: spot.name, ...(spot.book ? { book: spot.book } : {}), ...(spot.finish ? { finish: spot.finish } : {}) };
   return true;
 }
 

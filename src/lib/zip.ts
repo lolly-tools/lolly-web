@@ -47,6 +47,14 @@ export interface UnzipGuardOpts {
   /** Builds the user-facing Error message for an over-cap archive; receives the
    *  first offending entry's name. */
   tooLarge?: (entryName: string) => string;
+  /**
+   * Optional entry selector, applied AFTER the bomb accounting so the whole
+   * archive is still measured against the caps. Entries it rejects are never
+   * inflated — a peek at a handful of tiny JSONs inside a 30 MB design archive
+   * costs the header scan, not the decompression (see design-import's
+   * `countPenpotComponents`). Absent = every entry is returned, as before.
+   */
+  pick?: (entryName: string) => boolean;
 }
 
 /** Default per-entry cap — the strictest policy previously shipping (brand packs). */
@@ -70,7 +78,7 @@ export function unzipAsync(bytes: Uint8Array, opts: UnzipGuardOpts = {}): Promis
       bomb = f.name;
       return false;
     }
-    return true;
+    return opts.pick ? opts.pick(f.name) : true;
   };
   const guard = (data: Unzipped): Unzipped => {
     if (bomb) throw new Error(tooLarge(bomb));

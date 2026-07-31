@@ -82,6 +82,14 @@ export interface SeqLayer {
   enterMs: number;
   exit: TransitionKind | null;
   exitMs: number;
+  /**
+   * The authored geometry curve for each preset, as written — a preset name or a CSS
+   * cubic-bezier, '' when unauthored. Passed through unvalidated on purpose: the one
+   * validator is lib/transitions.ts, which answers an unparseable curve with the
+   * preset's own, so preview and export cannot disagree about what junk means.
+   */
+  enterEase: string;
+  exitEase: string;
   lane: '' | 'seq';
   kind: 'static' | 'video' | 'lottie' | 'audio';
   /** Native px, straight off the inline style — the renderRecord read. */
@@ -192,6 +200,8 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     enterMs: clamp(num(el.getAttribute?.('data-t-enter-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     exit: isTransitionKind(exit) ? exit : null,
     exitMs: clamp(num(el.getAttribute?.('data-t-exit-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
+    enterEase: el.getAttribute?.('data-t-enter-ease') || '',
+    exitEase: el.getAttribute?.('data-t-exit-ease') || '',
     lane: (el.getAttribute?.('data-t-lane') ?? null) === 'seq' ? 'seq' : '',
     kind: layerKind(el),
     rect: {
@@ -365,7 +375,7 @@ function liveEndOf(layer: SeqLayer, extendMs: number): number {
  * DEFERRED into the extension window past the cut instead of running before it, and
  * B's enter is shortened to the handover length so the two alphas cross.
  */
-function transitionOf(layer: SeqLayer, tMs: number, extendMs: number, xfadeEnterMs: number | null): { kind: TransitionKind; p: number } | null {
+function transitionOf(layer: SeqLayer, tMs: number, extendMs: number, xfadeEnterMs: number | null): { kind: TransitionKind; p: number; ease: string } | null {
   const local = tMs - layer.startMs;
   const enterMs = xfadeEnterMs ?? layer.enterMs;
   let enterP = 1;
@@ -382,9 +392,12 @@ function transitionOf(layer: SeqLayer, tMs: number, extendMs: number, xfadeEnter
     if (remain < layer.exitMs) exitP = clamp(remain / layer.exitMs, 0, 1);
   }
   if (enterP >= 1 && exitP >= 1) return null;
+  // Each phase carries its OWN authored curve. A crossfade tail is the one case where
+  // the kind is not either field's ('fade', derived from the junction) — but the curve
+  // still belongs to the exit the author wrote, which is the side that is leaving.
   return enterP <= exitP
-    ? { kind: layer.enter as TransitionKind, p: enterP }
-    : { kind: (extendMs > 0 ? 'fade' : layer.exit) as TransitionKind, p: exitP };
+    ? { kind: layer.enter as TransitionKind, p: enterP, ease: layer.enterEase }
+    : { kind: (extendMs > 0 ? 'fade' : layer.exit) as TransitionKind, p: exitP, ease: layer.exitEase };
 }
 
 /**
@@ -417,7 +430,7 @@ export function sequenceDrawPlan(layers: SeqLayer[], tMs: number, totalMs: numbe
     if (layer.durMs <= 0 && extendMs <= 0) continue;
     if (t < layer.startMs || t >= liveEndOf(layer, extendMs)) continue;
     const tr = layer.kind === 'audio' ? null : transitionOf(layer, t, extendMs, xfadeEnter.get(layer.idx) ?? null);
-    const off = tr ? recTransition(tr.kind, tr.p, layer.rect.w, layer.rect.h) : IDENTITY;
+    const off = tr ? recTransition(tr.kind, tr.p, layer.rect.w, layer.rect.h, tr.ease) : IDENTITY;
     const local = Math.max(0, t - layer.startMs);
     out.push({
       layer,

@@ -93,6 +93,7 @@ import { takePendingDesignImport } from '../lib/drop-router.ts';
 import { brandFontFamilies } from '../lib/register-user-fonts.ts';
 import { LOLLY_ICON } from '../lib/lolly-badge.ts';
 import { announce } from '../a11y.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { escape } from '../utils.ts';
 import { isTypingTarget } from '../lib/typing-target.ts';
 import { BLEND_STYLES, HUE_ROUTES, isPolarSpace } from '../lib/blend-style.ts';
@@ -160,6 +161,9 @@ interface CanvasCfg {
   /** OPTIONAL time sub-field: the A/V link (detached audio). Absent on a tool that does
    *  not offer detach — the ten-field time check below does NOT include it. */
   linkField?: string;
+  /** OPTIONAL time sub-fields: the authored geometry curve for each preset. Absent
+   *  leaves every preset on its built-in curve, so they sit outside that same check. */
+  enterEaseField?: string; exitEaseField?: string;
   minSize?: number;
   addKinds?: AddKind[];
   import?: unknown;
@@ -236,6 +240,9 @@ interface DocInfo {
   getFilename?(): string;
   setFilename?(name: string): void;
   lastEdited?(): string | Promise<string> | null | undefined;
+  /** The tool's manifest id. Read by the import panel's templates pass, which
+   *  mints saved sessions that must resume into THIS tool. */
+  id?: string;
   name?: string;
   version?: string;
   status?: string;
@@ -607,6 +614,95 @@ export function placePopover(
   };
 }
 
+// ── the contextual bar's position ─────────────────────────────────────────────
+
+/** A stage-relative box, in stage px. */
+interface StageBox { left: number; top: number; right: number; bottom: number }
+
+/**
+ * Where the contextual bar goes above (or inside) a selection, in stage-relative px,
+ * given the boxes it must not collide with.
+ *
+ * The original rule was `top = max(6, selectionTop - 48)` with `left` clamped only to
+ * the stage width, and it has two failure modes that a full-frame selection hits every
+ * single time: `max(6, …)` pins the bar to the top of the stage — the same band the
+ * zoom HUD owns — and the width clamp knows nothing about that HUD, so the two pills
+ * butt together and the HUD slices the bar's coordinate readout down to a stray digit.
+ *
+ * So the placement is candidate-based, in preference order, and the first candidate
+ * that is on-stage AND clear of every blocker wins:
+ *   1. ABOVE the selection, centred on it        — the classic, and what a mid-canvas
+ *                                                  card still gets;
+ *   2. INSIDE the selection's top edge           — the flip, for a selection whose top
+ *                                                  is against the stage top (the
+ *                                                  full-frame scene box);
+ *   3. BELOW the occupied top band               — when the bar is too wide to sit
+ *                                                  beside the chrome at all.
+ * Within a band the centred x is tried first, then the nearest x that clears the
+ * blockers on either side. Nothing fits → the last band, centred and clamped, which is
+ * the old behaviour and is strictly no worse than it.
+ *
+ * `blockers` are the fixed stage chrome in stage coordinates — the zoom HUD top-right
+ * and the back pill top-left. Measured by the caller, so this stays pure numbers and
+ * honestly testable without a browser (the same bargain clampRailPos makes).
+ */
+export function placeCtxBar(
+  sel: StageBox,
+  bar: { w: number; h: number },
+  stage: { w: number; h: number },
+  blockers: StageBox[] = [],
+  o: { pad?: number; gap?: number } = {},
+): { left: number; top: number; placement: 'above' | 'inside' | 'below' } {
+  const pad = o.pad ?? 6;
+  const gap = o.gap ?? 8;
+  const wantX = (sel.left + sel.right) / 2 - bar.w / 2;
+  // An unmeasurable stage (display:none, a pre-layout ResizeObserver delivery, jsdom)
+  // gives nothing to clamp against — hand back the anchored placement rather than
+  // inventing one from zeroes, exactly as clampRailPos and placePopover do.
+  if (!(stage.w > 0) || !(stage.h > 0)) {
+    return { left: Math.round(wantX), top: Math.round(sel.top - gap - bar.h), placement: 'above' };
+  }
+  const maxX = Math.max(pad, stage.w - bar.w - pad);
+  const clampX = (x: number): number => Math.min(Math.max(x, pad), maxX);
+  const hits = (x: number, y: number, b: StageBox): boolean =>
+    x < b.right + gap && x + bar.w > b.left - gap && y < b.bottom + gap && y + bar.h > b.top - gap;
+
+  /** The best x in this band, or null when the band cannot hold the bar at all. */
+  function xInBand(y: number): number | null {
+    const active = blockers.filter((b) => y < b.bottom + gap && y + bar.h > b.top - gap);
+    const centred = clampX(wantX);
+    if (!active.some((b) => hits(centred, y, b))) return centred;
+    // Slide clear: fully left of every blocker in the band, or fully right of them.
+    // Nearest-to-centred wins, so the bar shifts as little as the collision demands.
+    const left = Math.min(...active.map((b) => b.left)) - gap - bar.w;
+    const right = Math.max(...active.map((b) => b.right)) + gap;
+    const tries = [left, right].sort((a, c) => Math.abs(a - centred) - Math.abs(c - centred));
+    for (const x of tries) {
+      if (x < pad || x > maxX) continue;
+      if (!active.some((b) => hits(x, y, b))) return x;
+    }
+    return null;
+  }
+
+  const aboveY = sel.top - gap - bar.h;
+  if (aboveY >= pad) {
+    const x = xInBand(aboveY);
+    if (x != null) return { left: Math.round(x), top: Math.round(aboveY), placement: 'above' };
+  }
+  const insideY = Math.min(Math.max(sel.top + gap, pad), Math.max(pad, stage.h - bar.h - pad));
+  const insideX = xInBand(insideY);
+  if (insideX != null) return { left: Math.round(insideX), top: Math.round(insideY), placement: 'inside' };
+  // Under the whole occupied top band. Only the blockers that were actually in the way
+  // set the floor, so an empty top-right corner never pushes the bar down the stage.
+  const inWay = blockers.filter((b) => insideY < b.bottom + gap && insideY + bar.h > b.top - gap);
+  const belowY = Math.min(
+    Math.max(insideY, ...inWay.map((b) => b.bottom + gap)),
+    Math.max(pad, stage.h - bar.h - pad),
+  );
+  const belowX = xInBand(belowY);
+  return { left: Math.round(belowX ?? clampX(wantX)), top: Math.round(belowY), placement: 'below' };
+}
+
 /**
  * The dragged rail position — CHROME state, exactly like zoom and pan. It lives in
  * the module for the life of the page and deliberately reaches neither the URL, the
@@ -838,6 +934,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // that declares no link sub-field is still fully time-capable, it just never
       // offers "Detach audio" (progressive capability — Layout Studio opts in later).
       linkField: cv.linkField || '',
+      // Also optional, for the same reason: the authored easing curves are additive on
+      // top of a time model that was complete without them, so a manifest that declares
+      // no ease sub-fields keeps every preset on its built-in curve.
+      enterEaseField: cv.enterEaseField || '',
+      exitEaseField: cv.exitEaseField || '',
     } : null;
   // Scene-mode import (`canvas.import.mode: 'scenes'`, e.g. Sequence Studio): an
   // imported design's frames land as timed clips appended to the main sequence
@@ -1461,6 +1562,42 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   overlay.appendChild(ctxbar);
   let ctxSelKey: string | null = null;   // sorted selected-id signature; rebuild ctxbar when it changes
 
+  // ── the bar's ENTRANCE ────────────────────────────────────────────────────────
+  // The bar is auto-hidden at rest and revealed by `.tool-stage:hover` (see .fc-ctxbar
+  // in editor.css), which means at the moment a card is selected the stage is ALREADY
+  // hovered: the opacity transition has nothing to run, and a fully formed bar of a
+  // dozen controls materialises between two video frames right where the pointer is.
+  // So absent→present gets a real entrance — a short settle after the gesture, then a
+  // fade and a small rise — and ONLY that transition: a reposition mid-drag must never
+  // re-play it, which is what `ctxShown` tracks.
+  //
+  // The rise is a transform, and a transform on this bar is the containing block for
+  // its colour popover's `position: fixed` (the reason .fc-ctxbar carries neither
+  // translateX nor backdrop-filter). Safe here and only here, because the keyframes
+  // fill `backwards` and NOT forwards: the computed transform is `none` again the
+  // instant the animation ends, and the class comes off on animationend. A popover
+  // cannot exist during the run anyway — rebuildCtxBar replaces the bar's innerHTML,
+  // which destroys any open one.
+  let ctxShown = false;
+  const CTX_ENTER = 'fc-ctxbar-enter';
+  ctxbar.addEventListener('animationend', () => ctxbar.classList.remove(CTX_ENTER));
+  function showCtxBar(): void {
+    if (ctxShown && !ctxbar.hidden) return;
+    ctxShown = true;
+    ctxbar.hidden = false;
+    // Reduced motion (OS query OR the app pref): appear instantly. No movement, and no
+    // transform written at all, so the popover containing-block trap stays untouched.
+    if (prefersReducedMotion()) return;
+    ctxbar.classList.remove(CTX_ENTER);
+    void ctxbar.offsetWidth;             // restart the animation on a re-selection
+    ctxbar.classList.add(CTX_ENTER);
+  }
+  function hideCtxBar(): void {
+    ctxShown = false;
+    ctxbar.hidden = true;
+    ctxbar.classList.remove(CTX_ENTER);
+  }
+
   // M1 — selection chrome (outline(s) + resize/rotate handles) is built ONCE per
   // selection set (keyed exactly like the ctxbar) and only REPOSITIONED on later
   // syncs. Rebuilding ~10 nodes + re-binding a pointerdown on each, every drag/pan/
@@ -1940,6 +2077,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         '</p>' : '') +
       '<button type="button" class="fc-import-choose" style="width:100%;padding:8px 12px;border:0;border-radius:8px;' +
       `background:#30BA78;color:#0c322c;font-weight:700;font-size:13px;cursor:pointer;">${t('Choose file…')}</button>` +
+      // Components-as-templates: revealed once the chosen file turns out to
+      // define components (countPenpotComponents peeks the zip), so a file
+      // without a design system never shows a control that would do nothing.
+      '<label class="fc-import-templates" hidden style="display:none;align-items:flex-start;gap:6px;margin-top:8px;font-size:12px;line-height:1.4;">' +
+      '<input type="checkbox" checked style="margin-top:2px;"><span></span></label>' +
       '<div class="fc-import-status" role="status" aria-live="polite" style="margin-top:8px;font-size:12px;line-height:1.4;min-height:16px;"></div>';
     panel.addEventListener('pointerdown', (e) => e.stopPropagation());
     stageEl.appendChild(panel);
@@ -1951,6 +2093,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     const status = panel.querySelector<HTMLElement>('.fc-import-status')!;
     const chooseBtn = panel.querySelector<HTMLButtonElement>('.fc-import-choose')!;
+    const tplRow = panel.querySelector<HTMLElement>('.fc-import-templates')!;
+    const tplBox = tplRow.querySelector<HTMLInputElement>('input')!;
+    const tplLabel = tplRow.querySelector<HTMLElement>('span')!;
     const fileEl = document.createElement('input');
     fileEl.type = 'file';
     fileEl.accept = '.fig,.svg,.penpot,.zip,.ai,.pdf,.idml,.indd,image/svg+xml,application/zip,application/pdf,application/illustrator';
@@ -1963,6 +2108,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!f) return;
       status.style.color = '';
       status.textContent = t('Importing…');
+      // Re-hide the components offer for the NEW file. One handler serves every pick and
+      // the panel survives a failed import (the auto-close is the last statement of the
+      // try), so without this a Penpot file's "Also save 6 components as templates" row
+      // stays on screen — checked — while a plain SVG is imported, offering something
+      // that can never happen (componentCount is re-derived per file, and is 0).
+      tplRow.hidden = true;
+      tplRow.style.display = 'none';
+      tplLabel.textContent = '';
+      tplBox.checked = true;
       chooseBtn.disabled = true;
       try {
         if (importScenesMode) {
@@ -1971,7 +2125,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           status.style.color = '#128a5b';
           status.textContent = n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n });
         } else {
-          const { parseDesignFile } = await import('./design-import.ts');
+          const { parseDesignFile, countPenpotComponents, parseDesignTemplates } = await import('./design-import.ts');
+          // A design system's component masters can also be saved as reusable
+          // templates. The offer appears as soon as the chosen file turns out to
+          // define components (a cheap peek at the zip's component records), and
+          // the pass itself runs after the board import so the canvas is never
+          // kept waiting on it. Needs the tool's identity to mint sessions with.
+          const templateToolId = info?.id || '';
+          let componentCount = 0;
+          if (templateToolId) {
+            componentCount = await countPenpotComponents(f);
+            if (componentCount > 0) {
+              tplLabel.textContent = componentCount === 1
+                ? t('Also save 1 component as a template')
+                : t('Also save {n} components as templates', { n: componentCount });
+              tplRow.hidden = false;
+              tplRow.style.display = 'flex';
+            }
+          }
           // interactive: a multi-page PDF/.ai asks which page (shared page-picker dialog)
           // instead of silently importing the first. `map` carries this tool's font
           // vocabulary + seed colours (importMap above) into the engine's box mapper.
@@ -1982,7 +2153,39 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           commit(boxes);
           if (setCanvasSize && res.width > 0 && res.height > 0) setCanvasSize(res.width, res.height, 'px');
           status.style.color = '#128a5b';
-          status.textContent = boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length });
+          const imported = boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length });
+          status.textContent = imported;
+          if (componentCount > 0 && tplBox.checked) {
+            // Never let the extra pass fail an import that already succeeded.
+            try {
+              status.textContent = `${imported} ${t('Saving templates…')}`;
+              const { templates } = await parseDesignTemplates(f, {
+                host: host as any,
+                log: (m: string) => { status.textContent = `${imported} ${m}`; },
+                // res.map carries the deck's own font families, already resolved
+                // by the board import, so nothing is fetched or warned twice.
+                map: res.map ?? importMap,
+              });
+              if (templates.length) {
+                const { fileTemplatesAsSessions } = await import('../lib/design-templates.ts');
+                const filed = await fileTemplatesAsSessions(host as any, templates, {
+                  fileName: (f as File).name,
+                  toolId: templateToolId,
+                  toolVersion: info?.version,
+                  boxesField: input.id,
+                  format: info?.formats?.[0],
+                  warn: (m: string) => { status.textContent = `${imported} ${m}`; },
+                });
+                status.textContent = `${imported} ${filed.saved === 1
+                  ? t('Saved 1 template in “{folder}”.', { folder: filed.folderName })
+                  : t('Saved {n} templates in “{folder}”.', { n: filed.saved, folder: filed.folderName })}`;
+              } else {
+                status.textContent = `${imported} ${t('No components could be saved as templates.')}`;
+              }
+            } catch (e) {
+              status.textContent = `${imported} ${t('The components couldn’t be saved as templates.')}`;
+            }
+          }
         }
         setTimeout(() => { if (popover === panel) closePopover(); }, 1400);
       } catch (err) {
@@ -4323,7 +4526,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ctxSelKey = key;
       buildPenCtxBar(p);
     }
-    ctxbar.hidden = false;
+    showCtxBar();
     positionPenCtxBar();
   }
 
@@ -4406,8 +4609,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const tl = nativeToStage(minX, minY, m);
     const br = nativeToStage(maxX, maxY, m);
     const bw = ctxbar.offsetWidth || 0;
-    ctxbar.style.left = Math.max(6, Math.min((tl.x + br.x) / 2 - bw / 2, m.sr.width - bw - 6)) + 'px';
-    ctxbar.style.top = Math.max(6, tl.y - 48) + 'px';
+    if (bw <= 0) return;   // not laid out yet — next frame, rather than a half-width-off jump
+    // Same placement rule (and the same "never under the zoom HUD or the back pill")
+    // as the object bar: the pen bar takes the object bar's perch by design.
+    const pos = placeCtxBar(
+      { left: tl.x, top: tl.y, right: br.x, bottom: br.y },
+      { w: bw, h: ctxbar.offsetHeight || 40 },
+      { w: m.sr.width, h: m.sr.height },
+      ctxBarBlockers(m.sr),
+    );
+    ctxbar.style.left = pos.left + 'px';
+    ctxbar.style.top = pos.top + 'px';
   }
 
   // ── the tool mode ─────────────────────────────────────────────────────────────
@@ -4741,6 +4953,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     rubber.hidden = true;
     clearGuides();
     setFramesClipped(true);
+    // The ctx bar's live state dies WITH the gesture: the frozen placement, the cached
+    // chrome rects, and — the visible one — the drag readout. Its values come from
+    // `liveRects`, so without a repaint of its own the bar keeps showing the coordinates
+    // the pointer left behind until the tool's own re-render lands, which is a second or
+    // more away and outlives things as unrelated as a playhead scrub. `commit()` writes
+    // the model synchronously, so the frame after this one reads the settled numbers.
+    ctxFrozen = null;
+    ctxBlockers = null;
+    if (!disposed) requestAnimationFrame(() => { if (!disposed && !gesture) renderChrome(); });
   }
 
   // ── inline text editing (double-click a box) ─────────────────────────────────
@@ -4813,7 +5034,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       pending: {},
     };
     clearChrome();               // hide handles while typing (resets chrome node cache)
-    ctxbar.hidden = true;
+    hideCtxBar();
     closeMorePanel(); closePopover();
     boxEl?.classList.add('fc-box-editing');   // reveal overflow so typing stays visible
     el.setAttribute('contenteditable', 'true');
@@ -6497,7 +6718,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const offIdx = selIndices(boxes);
       if (offIdx.length) {
         clearChrome();
-        ctxbar.hidden = true;
+        hideCtxBar();
         closeMorePanel();
         chromeKey = '';
         ctxSelKey = '';
@@ -6509,7 +6730,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     hideOffPlayhead();
     // While editing text, suppress selection chrome + ctxbar; just keep the floating
     // format bar tracking the box as the stage pans/zooms.
-    if (editing) { clearChrome(); ctxbar.hidden = true; positionFmtBar(); return; }
+    if (editing) { clearChrome(); hideCtxBar(); positionFmtBar(); return; }
     // Pen mode owns the chrome outright — no selection outline, no resize handles, and the
     // object bar replaced by the pen's own. Same suppression a text edit does, for the same
     // reason: the box's frame is not what is being manipulated.
@@ -6552,7 +6773,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (key !== ctxSelKey) {
       ctxSelKey = key;
       if (idx.length) rebuildCtxBar(boxes, idx);
-      else { ctxbar.hidden = true; closeMorePanel(); multiTapMode = false; }
+      else { hideCtxBar(); closeMorePanel(); multiTapMode = false; }
     }
     // Now that the ctx bar exists (and cannot close the panel again this frame), honour
     // a pending request to open the gradient panel, anchored on the live button.
@@ -6767,23 +6988,70 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
   }
 
+  /**
+   * The fixed stage chrome the contextual bar has to keep off, in STAGE coordinates:
+   * the zoom HUD top-right (`.stage-nav`) and the back pill top-left
+   * (`.tools-home`, which is `position: fixed` and therefore lives outside the stage
+   * in the DOM but squarely on top of it on screen). Measured, never assumed — a
+   * hard-coded HUD width goes stale the first time the theme/sound toggles or the
+   * type multiplier change it, and the back pill's label is the view's own name.
+   *
+   * Cached for the life of a gesture beside `gestureMetrics`, for the same reason: two
+   * more forced layouts per drag frame buy nothing, and this chrome cannot move while a
+   * box is being dragged.
+   */
+  let ctxBlockers: StageBox[] | null = null;
+  /** The placement held for the life of a box gesture (see positionCtxBar). */
+  let ctxFrozen: { left: number; top: number } | null = null;
+  function ctxBarBlockers(sr: DOMRect): StageBox[] {
+    if (ctxBlockers && gesture) return ctxBlockers;
+    const out: StageBox[] = [];
+    for (const el of [stageEl.querySelector<HTMLElement>('.stage-nav'),
+                      ...Array.from(document.querySelectorAll<HTMLElement>('.tools-home'))]) {
+      if (!el || el.hidden || !el.getClientRects().length) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      out.push({ left: r.left - sr.left, top: r.top - sr.top, right: r.right - sr.left, bottom: r.bottom - sr.top });
+    }
+    ctxBlockers = gesture ? out : null;
+    return out;
+  }
+
   function positionCtxBar(boxes: Box[], idx: number[], liveRects: Map<number, Rect> | null, m: Metrics): void {
-    if (editing) { ctxbar.hidden = true; return; }   // hidden while typing in a box
-    ctxbar.hidden = false;
-    // Position above the selection's union AABB. groupAABBNative computes the same
-    // rotation-aware corner union over `idx` (preferring liveRects) WITHOUT the
-    // per-frame whole-canvas `boxes.map(...)` allocation — and reuses the exact math
-    // used for the group handles above, so the two can't drift.
+    if (editing) { hideCtxBar(); return; }   // hidden while typing in a box
+    showCtxBar();
+    // The selection's union AABB. groupAABBNative computes the same rotation-aware
+    // corner union over `idx` (preferring liveRects) WITHOUT the per-frame whole-canvas
+    // `boxes.map(...)` allocation — and reuses the exact math used for the group handles
+    // above, so the two can't drift.
     const aabb = groupAABBNative(idx, boxes, liveRects);
     const tl = nativeToStage(aabb.minX, aabb.minY, m);
     const br = nativeToStage(aabb.maxX, aabb.maxY, m);
-    // Centre by computed `left` (NOT translateX) so the colour popover — which is
-    // position:fixed — isn't captured by a transformed ancestor. Clamp on-stage.
+    // Measured AFTER the bar is shown, so `offsetWidth` reflects a laid-out bar rather
+    // than the zero a `hidden` element reports — a zero here paints the first frame off
+    // by half the bar's width and then snaps, which reads as the bar jumping into place.
+    // If it still measures zero (nothing laid out yet) leave the last position alone and
+    // come back next frame rather than commit to a position built from a zero.
     const bw = ctxbar.offsetWidth || 0;
-    const stageW = m.sr.width;
-    const left = Math.max(6, Math.min((tl.x + br.x) / 2 - bw / 2, stageW - bw - 6));
-    ctxbar.style.left = left + 'px';
-    ctxbar.style.top = Math.max(6, tl.y - 48) + 'px';
+    const bh = ctxbar.offsetHeight || 0;
+    if (bw > 0) {
+      // Frozen for the duration of a box gesture. The bar is a dozen buttons sitting
+      // right under the cursor, and re-centring it on a moving selection slides every
+      // one of them out from under the pointer — the readout alone widening from
+      // "241, -235" to "113, -92 · 1920×1080" walked the fill swatch ~275px across the
+      // stage mid-drag. It re-places on release, when nothing is being aimed at.
+      const pos = liveRects && ctxFrozen
+        ? ctxFrozen
+        : placeCtxBar(
+            { left: tl.x, top: tl.y, right: br.x, bottom: br.y },
+            { w: bw, h: bh || 40 },
+            { w: m.sr.width, h: m.sr.height },
+            ctxBarBlockers(m.sr),
+          );
+      ctxFrozen = liveRects ? pos : null;
+      ctxbar.style.left = pos.left + 'px';
+      ctxbar.style.top = pos.top + 'px';
+    }
     // Transform readout.
     const first = boxes[idx[0]!];
     const r = liveRects?.get(idx[0]!) || boxRect(first, cfg);
@@ -7036,7 +7304,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Geometry changed (pan/zoom/resize) — invalidate the metrics cache and mark the
   // frame scrim for repositioning (M2: paintChrome only moves the scrim when this is
   // set, so drag/hover/selection syncs skip the 100vmax shadow repaint).
-  const onStageMove = (e: any): void => { gestureMetrics = null; scrimDirty = true; if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY }; scheduleSync(); reclampRail(); if (connectLayer.style.display !== 'none') placeConnectLayer(metrics()); };
+  const onStageMove = (e: any): void => { gestureMetrics = null; ctxBlockers = null; scrimDirty = true; if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY }; scheduleSync(); reclampRail(); if (connectLayer.style.display !== 'none') placeConnectLayer(metrics()); };
   // pointermove fires continuously while the cursor merely HOVERS the canvas. The old
   // handler rebuilt the whole selection chrome (2 getBoundingClientRect + innerHTML swap
   // + 10 handle nodes re-bound) every frame for zero visual change. Here we only track

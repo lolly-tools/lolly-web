@@ -391,6 +391,7 @@
    primitive for every adopter in the app. */
 .be-fmt-input,           /* brand-studio.css */
 .be-lock-field input,    /* brand-studio.css */
+.be-lock-field select,   /* brand-studio.css — the Finish picker, same box */
 .be-cmyk-in input,       /* brand-studio.css */
 .share-link-field {      /* dialogs.css */
   color: hsl(var(--foreground));

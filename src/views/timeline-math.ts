@@ -48,6 +48,20 @@ export interface TimeCfg {
    * null rather than inventing a field the manifest never declared.
    */
   linkField?: string;
+  /**
+   * OPTIONAL, on the same progressive-capability terms as `linkField`. The sub-fields
+   * carrying each preset's authored GEOMETRY curve — a preset name or a CSS
+   * cubic-bezier, '' when unauthored, in which case the preset keeps the built-in
+   * curve it has always had. A tool that declares neither simply never offers the
+   * control; nothing here reads them, but every writer of a box names its fields
+   * through a TimeCfg, so they have to be nameable from one.
+   *
+   * There is deliberately no opacity equivalent: alpha keeps its own fixed ramp
+   * because a fade on a slow curve turns to mud through video compression — see the
+   * authored-easing section of lib/transitions.ts.
+   */
+  enterEaseField?: string;
+  exitEaseField?: string;
 }
 
 /** A box's timing, resolved. `start`/`dur` stay null when unauthored (scenery / open-ended). */
@@ -531,7 +545,14 @@ export function trimClip(
     const hiTimeline = dur0 - MIN_DUR;
     const hiMedia = media != null ? (media - clipIn0) / speed - MIN_DUR : Number.POSITIVE_INFINITY;
     const hi = Math.min(hiTimeline, hiMedia);
-    const lo = Math.max(-clipIn0 / speed, -start0);
+    // "Can't pull the clip before t=0" is only a real constraint on an OVERLAY, whose
+    // start is its own. On the magnetic row `start` is re-derived by packOrder at the
+    // bottom of this function, so the term constrains nothing there — except at index
+    // 0, where start0 === 0 pinned the bound at 0 and made the first clip's in-point the
+    // one head trim in the sequence you could never put back.
+    const lo = t.lane === 'seq'
+      ? -clipIn0 / speed
+      : Math.max(-clipIn0 / speed, -start0);
     const dd = clamp(d, Math.min(lo, hi), Math.max(lo, hi));
     start = start0 + dd;
     dur = dur0 - dd;

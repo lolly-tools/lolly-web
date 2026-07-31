@@ -36,7 +36,8 @@ for (const k of ['window', 'document', 'HTMLElement', 'Element', 'Node']) {
 
 const {
   applySequenceTime, restoreSequenceTime, createSequenceTime, driveSequenceTime,
-  sequenceStageOf, sequenceDurationMs, OFF_CLASS,
+  sequenceStageOf, sequenceDurationMs, OFF_CLASS, SHOT_CLASS, BORROW_ATTR,
+  releaseShotBorrow,
 } = await import('./sequence-dom.ts');
 
 /**
@@ -104,6 +105,74 @@ test('seq-off follows the HALF-OPEN window, on both boundaries', () => {
   applySequenceTime(root, 2000);
   assert.equal(off(b), true, 'past the end nothing is on screen');
   restoreSequenceTime(root);
+});
+
+// ── the thumbnail shot's borrow ─────────────────────────────────────────────
+//
+// lib/clip-thumbs.ts photographs an off-playhead box by lifting `seq-off` and parking the
+// box 200vw away for up to 1.5s. The applier is the authority on visibility for that whole
+// window, not just after the shot settles: scrubbing onto a parked box used to leave the
+// LIVE scene off the viewport (a black stage) until the shot popped it back.
+
+/** Exactly what borrowVisibility does to a box it is about to photograph. */
+function borrow(el: HTMLElement, token = 't1'): void {
+  el.classList.remove(OFF_CLASS);
+  el.classList.add(SHOT_CLASS);
+  el.setAttribute(BORROW_ATTR, token);
+}
+
+test('making a borrowed box ACTIVE revokes the lease and un-parks it', () => {
+  const root = stage();
+  const a = box(root, 'a');
+
+  applySequenceTime(root, 1500);                 // a is off screen: photographable
+  assert.equal(off(a), true);
+  borrow(a);
+
+  applySequenceTime(root, 200);                  // the user scrubs onto a, mid-shot
+  assert.equal(off(a), false, 'the live scene is not hidden');
+  assert.equal(a.classList.contains(SHOT_CLASS), false,
+    'and not parked 200vw off the viewport either — this was the black stage');
+  assert.equal(a.hasAttribute(BORROW_ATTR), false, 'the lease is revoked, so the restore stands down');
+  restoreSequenceTime(root);
+});
+
+test('an INACTIVE box keeps what the shot borrowed — re-hiding it would photograph the blank', () => {
+  const root = stage();
+  const a = box(root, 'a');
+
+  applySequenceTime(root, 1500);
+  borrow(a);
+  applySequenceTime(root, 1600);                 // another tick while a is still off screen
+  assert.equal(off(a), false, 'the shot still owns the class it borrowed');
+  assert.equal(a.classList.contains(SHOT_CLASS), true, 'and is still parked, so nothing shows');
+  assert.equal(a.getAttribute(BORROW_ATTR), 't1', 'lease intact: the restore will re-hide it');
+  restoreSequenceTime(root);
+});
+
+test('restore takes the lease with it, so a late restore cannot re-hide anything', () => {
+  const root = stage();
+  const a = box(root, 'a');
+  applySequenceTime(root, 1500);
+  borrow(a);
+  restoreSequenceTime(root);
+  assert.equal(a.hasAttribute(BORROW_ATTR), false);
+  assert.equal(a.classList.contains(SHOT_CLASS), false);
+});
+
+test('releaseShotBorrow un-parks the BOX when the borrow was taken on a descendant', () => {
+  const root = stage();
+  const a = box(root, 'a');
+  const kid = dom.window.document.createElement('div');
+  a.appendChild(kid);
+  a.classList.add(SHOT_CLASS);
+  kid.setAttribute(BORROW_ATTR, 't9');
+
+  releaseShotBorrow(kid);
+  assert.equal(a.classList.contains(SHOT_CLASS), false, 'the park is on the box, the lease on the child');
+  assert.equal(kid.hasAttribute(BORROW_ATTR), false);
+  // Nothing borrowed, nothing to do — and no throw on a box that was never parked.
+  releaseShotBorrow(box(root, 'b'));
 });
 
 test('an enter transition composes with the AUTHORED rotation instead of clobbering it', () => {
@@ -222,4 +291,67 @@ test('driveSequenceTime restores the DOM on stop, even mid-clip', () => {
   const d2 = driveSequenceTime(root, { durationMs: 100, now: clock.now, schedule: clock.schedule });
   d2.stop(); d2.stop();
   assert.equal(snapshot(root), before);
+});
+
+// ── authored easing ─────────────────────────────────────────────────────────
+//
+// The ease is a per-PHASE string on the box (`data-t-enter-ease` / `data-t-exit-ease`)
+// that governs the transition's GEOMETRY only. The three properties worth pinning are
+// the ones a regression would be invisible in: an unauthored box is byte-identical to
+// what it rendered before the control existed, an authored one actually moves, and
+// junk falls back rather than throwing mid-frame.
+
+/** The same two-clip row, with an ease of the caller's choosing on `a`'s entrance. */
+function easedStage(ease: string | null): HTMLElement {
+  const root = stage();
+  const a = box(root, 'a');
+  if (ease === null) a.removeAttribute('data-t-enter-ease');
+  else a.setAttribute('data-t-enter-ease', ease);
+  return root;
+}
+
+/** `a`'s inline transform 100 ms into its 400 ms rise — a quarter of the way in. */
+function riseTransform(ease: string | null): string {
+  const root = easedStage(ease);
+  applySequenceTime(root, 100);
+  const out = box(root, 'a').style.transform;
+  restoreSequenceTime(root);
+  return out;
+}
+
+test('an unauthored ease renders exactly what it rendered before the control existed', () => {
+  const bare = riseTransform(null);
+  assert.equal(riseTransform(''), bare, 'an empty attribute is the same as no attribute');
+  assert.ok(/translate\(/.test(bare), 'the rise is still animating at t=100');
+});
+
+test('an authored ease moves the geometry, and a preset agrees with its own bezier', () => {
+  const bare = riseTransform(null);
+  const linear = riseTransform('linear');
+  assert.notEqual(linear, bare, 'linear is not the built-in easeOutCubic');
+  // The preset name and the curve it stands for are the same authored value.
+  assert.equal(riseTransform('cubic-bezier(0,0,1,1)'), linear);
+  assert.notEqual(riseTransform('overshoot'), linear);
+});
+
+test('a junk ease falls back to the preset\'s own curve rather than throwing', () => {
+  const bare = riseTransform(null);
+  for (const junk of ['wobble', 'cubic-bezier(0,0,1)', 'cubic-bezier(2,0,1,1)', 'cubic-bezier(a,b,c,d)', '<script>']) {
+    assert.equal(riseTransform(junk), bare, junk);
+  }
+});
+
+test('the ease reaches the driver too — a live take is eased like the preview', () => {
+  const clock = fakeClock();
+  const runAt = (ease: string | null): string => {
+    const root = easedStage(ease);
+    const d = driveSequenceTime(root, { durationMs: 2000, fps: 10, now: clock.now, schedule: clock.schedule });
+    d.start();
+    clock.advance(100);
+    const out = box(root, 'a').style.transform;
+    d.stop();
+    return out;
+  };
+  assert.equal(runAt(null), riseTransform(null));
+  assert.equal(runAt('linear'), riseTransform('linear'));
 });

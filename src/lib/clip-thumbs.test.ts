@@ -21,8 +21,10 @@
  *   • suspendNodeRasters — the export gate: re-entrant, idempotent release
  *   • nodeStill()     — through the `_setNodeRasterer` seam: the process-wide lock held
  *                       across a TIMEOUT (no two shots in the library at once), the
- *                       `.seq-off` borrow + offscreen park + restore, the post-shot
- *                       reconciler (onNodeShotSettled), the failure memory, the
+ *                       `.seq-off` borrow + offscreen park + restore, the LEASE handover
+ *                       to sequence-dom's applier when the playhead lands on a box
+ *                       mid-shot, the post-shot reconciler (onNodeShotSettled), the
+ *                       failure memory, the
  *                       detached-box refusal, `nodeRasterPending`, and `drainNodeRasters`
  *
  * WHAT IS **NOT** COVERED — browser-only, must be exercised in phase 2B's
@@ -863,6 +865,110 @@ test('onNodeShotSettled: the clock gets the last word after a shot that borrowed
     box.classList.add('seq-off');
     await nodeStill('sig-3', box, { h: 10 });
     assert.equal(reapplied, 1, 'and an unregistered reconciler is never called again');
+  });
+});
+
+// ── the borrow is a LEASE ────────────────────────────────────────────────────
+//
+// The restore above lands up to NODE_RASTER_TIMEOUT_MS after the borrow, and the playhead
+// does not wait for it. These three pin the handover with the REAL applier — a copy of
+// the class names here would prove nothing about the module that has to honour them.
+const seqDom = await import('../bridge/sequence-dom.ts');
+
+test('clip-thumbs copies sequence-dom’s class + attribute names exactly', () => {
+  // Both are literals in clip-thumbs.ts on purpose (importing the applier would drag
+  // sequence-plan + transitions into picker.ts's chunk for two strings). This is what
+  // makes the copies safe: rename one in sequence-dom and this fails.
+  assert.equal(seqDom.OFF_CLASS, 'seq-off');
+  assert.equal(seqDom.SHOT_CLASS, 'tl-shot');
+  assert.equal(seqDom.BORROW_ATTR, 'data-tl-borrowed');
+});
+
+/** A timed box the real applier will recognise — one clip, [0,1000). */
+function timed(box: HTMLElement): HTMLElement[] {
+  box.setAttribute('data-t-start', '0');
+  box.setAttribute('data-t-dur', '1000');
+  box.setAttribute('data-t-lane', 'seq');
+  return [box];
+}
+
+/** Put the applier's playhead at `tMs` over `els`, exactly as the clock's frame does. */
+function playheadAt(els: HTMLElement[], tMs: number): void {
+  seqDom.applyTimeToElements(els, tMs, { seqMs: 2000, store: seqDom.createAuthoredStore() });
+}
+
+/**
+ * Wait for the borrow to be taken. `nodeStill` queues behind the process-wide shot lock,
+ * so how many microtasks separate the call from the park is an implementation detail —
+ * poll for the state instead of counting ticks.
+ */
+async function untilParked(box: HTMLElement): Promise<void> {
+  for (let i = 0; i < 200 && !box.classList.contains('tl-shot'); i++) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  assert.equal(box.classList.contains('tl-shot'), true, 'the shot parked the box it borrowed');
+}
+
+test('nodeStill: scrubbing onto a box mid-shot un-parks it — the shot never hides the live scene', async () => {
+  // The headline bug: the applier removed `seq-off` and believed the scene was on screen,
+  // but `tl-shot` (translate(-200vw,-200vw)) was still on the box, so the stage stayed
+  // black for the rest of the shot and the scene popped in when it settled.
+  await withNodeStage(async ({ box }) => {
+    const els = timed(box);
+    playheadAt(els, 1500);                       // the box is off screen: photographable
+    assert.equal(box.classList.contains('seq-off'), true);
+
+    let release!: () => void;
+    const slow = new Promise<void>((r) => { release = r; });
+    _setNodeRasterer(async () => { await slow; return canvasOf(20, 10); });
+    const shot = nodeStill('sig', box, { h: 10 });
+    await untilParked(box);
+
+    playheadAt(els, 200);                        // the user scrubs onto this very box
+    assert.equal(box.classList.contains('seq-off'), false, 'live at the playhead');
+    assert.equal(box.classList.contains('tl-shot'), false, 'and ON the viewport, immediately');
+
+    release();
+    await shot;
+    assert.equal(box.classList.contains('seq-off'), false,
+      'and the late restore does NOT re-hide the frame the clock took over');
+    assert.equal(box.classList.contains('tl-shot'), false);
+  });
+});
+
+test('nodeStill: a box the clock never touches is restored exactly as before', async () => {
+  await withNodeStage(async ({ box }) => {
+    const els = timed(box);
+    playheadAt(els, 1500);
+    _setNodeRasterer(async () => canvasOf(20, 10));
+    assert.equal((await nodeStill('sig', box, { h: 10 })).length, 1);
+    assert.equal(box.classList.contains('seq-off'), true, 'still hidden, as the clock left it');
+    assert.equal(box.classList.contains('tl-shot'), false, 'the park is gone');
+    assert.equal(box.hasAttribute('data-tl-borrowed'), false, 'and the lease with it');
+  });
+});
+
+test('nodeStill: a tick that leaves the box off screen must not re-hide it mid-shot', async () => {
+  // Re-adding `seq-off` under a running shot photographs the blank the borrow exists to
+  // prevent; the box is parked offscreen, so leaving it un-hidden costs nothing visually.
+  await withNodeStage(async ({ box }) => {
+    const els = timed(box);
+    playheadAt(els, 1500);
+    let seen = '';
+    let release!: () => void;
+    const slow = new Promise<void>((r) => { release = r; });
+    _setNodeRasterer(async (el) => { await slow; seen = el.className; return canvasOf(20, 10); });
+    const shot = nodeStill('sig', box, { h: 10 });
+    await untilParked(box);
+
+    playheadAt(els, 1600);                       // another frame, still past the clip
+    assert.equal(box.classList.contains('seq-off'), false, 'the shot keeps what it borrowed');
+    assert.equal(box.classList.contains('tl-shot'), true, 'and stays parked, so nothing shows');
+
+    release();
+    await shot;
+    assert.equal(seen.includes('seq-off'), false, 'the shot photographed a VISIBLE box');
+    assert.equal(box.classList.contains('seq-off'), true, 'and the class came back afterwards');
   });
 });
 

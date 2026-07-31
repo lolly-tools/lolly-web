@@ -25,7 +25,12 @@
    after every drag. Park it outside the viewport instead: the shot passes its own
    `transform: scale()` for the clone root, so this never reaches the picture.
    Transform (not left/top) so it works whatever the box's positioning, and it is on a
-   canvas box — never on an ancestor of a position:fixed popover. */
+   canvas box — never on an ancestor of a position:fixed popover.
+
+   The park is NOT the shot's to keep: sequence-dom.ts's applier strips this class (and
+   the `data-tl-borrowed` lease beside it) the instant the playhead moves onto the box,
+   because a scene that is live at the playhead parked 200vw away is a black stage that
+   pops back when the shot settles. See `releaseShotBorrow`. */
 .lolly-box.tl-shot { transform: translate(-200vw, -200vw) !important; }
 
 /* ─── The docked band ────────────────────────────────────────────────────────
@@ -136,9 +141,14 @@
    no addKinds, so restate it, exactly as `.tl-scenery[hidden]` does further down. */
 .tl-btn[hidden] { display: none; }
 .tl-btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
-.tl-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
+.tl-btn:hover:not(:disabled):not([aria-disabled="true"]) { background: hsl(var(--muted)); }
 .tl-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-.tl-btn:disabled { opacity: 0.35; cursor: default; }
+/* `aria-disabled` gets the same greying as the real property. The split blade uses the
+   attribute rather than `disabled` precisely so it stays FOCUSABLE while inert — a
+   focused control that becomes `disabled` is unfocused by the browser, which would drop
+   focus to <body> and take the panel's whole keyboard with it. See syncSplitBtn. */
+.tl-btn:disabled,
+.tl-btn[aria-disabled="true"] { opacity: 0.35; cursor: default; }
 .tl-btn.is-active,
 .tl-btn[aria-pressed="true"] {
   background: var(--brand-primary, hsl(var(--primary)));
@@ -274,6 +284,12 @@
 .tl-onion-row { justify-content: space-between; gap: 10px; }
 .tl-onion-step { width: 4.5em; }
 
+/* The custom-easing card. Like the onion popover it is a settings card rather than a
+   list of actions, so it gets padding instead of `.folder-menu`'s flush rows; the
+   editor inside it brings its own sheet (parts/easing-editor.css) and nothing about
+   its look is restated here. */
+.tl-ease-pop { padding: 10px 12px 12px; min-width: 216px; }
+
 /* ─── Inspector (selected-clip precision fields) ─────────────────────────────
    The shared field primitive owns the control look (parts/fields.css) — this
    sheet only lays the rows out and trims them to panel scale. Do NOT restate
@@ -283,7 +299,15 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  /* NOT `justify-content: flex-end`, which is what this was and what made the first
+     half of the inspector unreachable. In a scroll container, content that overflows
+     the START edge cannot be scrolled back to — `scrollLeft: 0` is already the far
+     left — so with the row right-aligned, Start, Length, Trim in, Speed and Animate in
+     sat permanently off the left edge of the panel and only the tail (Out (ms), mute,
+     Make always on) was ever reachable. `margin-inline-start: auto` on the first field
+     buys the same right-aligned look when the row FITS and collapses to zero when it
+     does not, which is the whole trick: nothing ever overflows the start edge. */
+  justify-content: flex-start;
   flex-wrap: nowrap;
   gap: 8px;
   overflow-x: auto;
@@ -296,6 +320,17 @@
      reach the fields past the fold. */
   touch-action: pan-x;
 }
+.tl-inspector > :first-child { margin-inline-start: auto; }
+.tl-inspector[hidden] { display: none; }
+/* The arrival cue. A row of controls appearing whole, in a toolbar the eye is already
+   on, reads as a glitch; 160ms of fade and a 4px rise reads as an arrival. It runs on
+   entry only (renderInspector adds the class when the row goes from absent to present,
+   never on the rebuilds a scrub or a field edit causes). */
+@keyframes tl-inspector-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.tl-inspector.is-entering { animation: tl-inspector-in 0.16s ease-out both; }
 .tl-field {
   display: inline-flex;
   align-items: center;
@@ -312,6 +347,11 @@
 }
 .tl-num  { width: 68px; font-size: calc(12px * var(--a11y-fs)); padding: 5px 7px; font-variant-numeric: tabular-nums; }
 .tl-select { width: auto; font-size: calc(12px * var(--a11y-fs)); padding: 5px 24px 5px 7px; }
+/* The easing picker carries a `cubic-bezier(…)` option when one is authored, which is
+   ~24 characters and would push every field after it off the fold on a phone. Cap the
+   BOX, not the option text: the menu the browser opens is unaffected, so the full value
+   is still readable where it is being chosen. */
+.tl-ease { max-width: 11ch; }
 
 /* ─── Ruler ──────────────────────────────────────────────────────────────────
    The inner strip is TRANSLATED to follow the tracks' scrollLeft (never
@@ -802,6 +842,53 @@
 .tl-junction-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .tl-junction-join { margin-inline-end: auto; }
 
+/* ─── Keyboard shortcuts sheet ───────────────────────────────────────────────
+   Same modal chrome as the junction; only the two-column table is ours. The rows
+   are built as nodes in timeline-panel.ts (no innerHTML), so nothing here has to
+   defend against a translated string. */
+.tl-keys-modal .tl-keys-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: min(380px, 84vw);
+  max-height: min(70vh, 640px);
+}
+.tl-keys-title { margin: 0; font-size: calc(1rem * var(--a11y-fs)); font-weight: 600; }
+/* The list is the tall part, so IT scrolls — not the dialog — and the heading and
+   the Done button stay put on a short window. */
+.tl-keys-table {
+  display: block;
+  overflow-y: auto;
+  border-collapse: collapse;
+  width: 100%;
+}
+.tl-keys-table td {
+  padding: 5px 0;
+  vertical-align: baseline;
+  font-size: calc(13px * var(--a11y-fs));
+}
+.tl-keys-keys { width: 1%; white-space: nowrap; padding-inline-end: 14px; }
+.tl-keys-keys kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.6);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: calc(12px * var(--a11y-fs));
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.tl-keys-what { color: hsl(var(--foreground)); }
+/* The modifier line sits UNDER its row rather than beside it: it is a variation on
+   the same keys, not a second shortcut, and a third column would imply otherwise. */
+.tl-keys-hint {
+  display: block;
+  color: hsl(var(--muted-foreground));
+  font-size: calc(12px * var(--a11y-fs));
+}
+.tl-keys-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 /* ─── Narrow / touch ─────────────────────────────────────────────────────────
    On a phone the inspector cannot share the bar with the transport — drop it to
    its own scrolling row and give every hit target a finger-sized box. */
@@ -831,6 +918,11 @@
 @media (max-width: 720px) and (pointer: coarse) {
   .tl-zoom-in,
   .tl-zoom-out { display: none; }
+  /* And the shortcuts sheet: it documents a keyboard, and this is the one class of
+     device that has none. `?` still opens it if a keyboard is ever attached — this
+     hides the button, not the feature. The room goes to the controls that DO work
+     with a finger. */
+  .tl-keys { display: none; }
 }
 @media (pointer: coarse) {
   .tl-btn { width: 36px; height: 36px; }
@@ -852,6 +944,15 @@
   /* The recording dot's pulse is an ANIMATION, which the rule above does not reach.
      It carries no information the red fill doesn't — drop it, don't slow it. */
   .tl-rec-dot { animation: none !important; }
+  /* The inspector's arrival KEEPS its cue and loses only the movement: the fade still
+     marks the row as new (which is the whole point of the class), the 4px rise is what
+     someone asking for less motion asked not to have. */
+  .tl-inspector.is-entering { animation-name: tl-inspector-fade; }
+}
+html[data-a11y-motion="reduce"] .tl-inspector.is-entering { animation-name: tl-inspector-fade; }
+@keyframes tl-inspector-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 }

@@ -291,13 +291,15 @@ async function defaultRenderModule(ctx: BaseAudioContext, bytes: Uint8Array): Pr
 // Everything is re-exported, so this module's public surface is unchanged.
 export {
   readTiming, endOf, isActiveAt, transitionAt, composeTransform, composeOpacity,
-  createAuthoredStore, applyTimeToElements, OFF_CLASS,
+  createAuthoredStore, applyTimeToElements, OFF_CLASS, SHOT_CLASS, BORROW_ATTR,
+  releaseShotBorrow,
   MIN_TRANSITION_MS, MAX_TRANSITION_MS,
 } from '../bridge/sequence-dom.ts';
 export type { Timing, TransitionAt, AuthoredStore, ApplyCtx } from '../bridge/sequence-dom.ts';
 
 import {
   readTiming, isActiveAt, endOf, createAuthoredStore, applyTimeToElements, OFF_CLASS,
+  releaseShotBorrow,
   type Timing,
 } from '../bridge/sequence-dom.ts';
 
@@ -1059,8 +1061,10 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       buffers.clear();               // the last reference to every decoded buffer
       audioFailed.clear();
       pcmBytes = 0;
-      // Every class and inline property this clock ever wrote, undone.
-      for (const el of boxes()) el.classList.remove(OFF_CLASS);
+      // Every class and inline property this clock ever wrote, undone — plus any
+      // thumbnail shot's borrow, so a restore landing after this cannot re-hide a box
+      // nothing is left to un-hide it again.
+      for (const el of boxes()) { el.classList.remove(OFF_CLASS); releaseShotBorrow(el); }
       store.restoreAll();
       ticks.clear();
       try { void ctx?.close?.(); } catch { /* already closed */ }

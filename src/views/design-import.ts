@@ -35,6 +35,8 @@ import {
   penpotDashArray,
   penpotBackgroundBlurPx,
   collectPenpotExportMarks,
+  collectPenpotComponents,
+  penpotComponentSlots,
   penpotFlowOrder,
   figmaNodesToNodes,
   figmaNodesToScenes,
@@ -50,6 +52,7 @@ import { unzipAsync } from '../lib/zip.ts';
 import { decodeBinarySchema, compileSchema } from 'kiwi-schema';
 import { Decompress as ZstdDecompress } from 'fzstd';
 import type { HostV1, AssetRef } from '@lolly-tools/core/host-v1';
+import { alignBoxIds, penpotComponentThumb, type DesignTemplate, type DesignTemplateSlot } from '../lib/design-templates.ts';
 import { installGoogleFont } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
 import { bustFontRegistry } from '../bridge/font-registry.ts';
@@ -59,7 +62,14 @@ interface Matrix { a: number; b: number; c: number; d: number; e: number; f: num
 // Inherited paint accumulated down the <g> tree.
 interface Inherited { fill: string | null; opacity: number; }
 // The result shape every parse branch returns (feeds Layout Studio).
-interface DesignImportResult { boxes: unknown[]; width: number; height: number; background: string; }
+interface DesignImportResult {
+  boxes: unknown[]; width: number; height: number; background: string;
+  /** The map the boxes were finalized with, font vocabulary and all (Penpot
+   *  binfile only). Additive: a caller that wants a SECOND pass over the same
+   *  file (the components-as-templates pass) hands this back so the deck's
+   *  families are already known and no font is fetched or warned about twice. */
+  map?: DesignMapOptions;
+}
 // Options for svgToNodes (Penpot pages set penpot + zipFiles).
 interface SvgToNodesOpts {
   host: HostV1 | undefined;
@@ -630,7 +640,7 @@ async function parsePenpotBinfile(files: Record<string, Uint8Array>, manifest: a
   if (!nodes.length) throw new Error('This Penpot file has no importable shapes on its first page.');
 
   const { width, height } = shiftToOrigin(nodes);
-  return { boxes: finalizeBoxes(nodes, map), width, height, background: '#ffffff' };
+  return { boxes: finalizeBoxes(nodes, map), width, height, background: '#ffffff', map };
 }
 
 function safeJsonParse(text: string): any {
@@ -765,9 +775,14 @@ async function storePenpotVectorSvg(host: HostV1 | undefined, svg: string, cache
 // (_vectorPath, mirroring the Figma resolveFigMedia call), and flattened groups.
 async function penpotItemsToNodes(
   items: any[],
-  { host, files, fileId, imageCache, warn }: {
+  { host, files, fileId, imageCache, warn, srcIds }: {
     host: HostV1 | undefined; files: Record<string, Uint8Array>; fileId: string;
     imageCache: Map<string, AssetRef>; warn: (msg: string) => void;
+    /** Optional out-param: the source shape id of every node pushed, in step with
+     *  the returned array. Items that produce no node contribute nothing, so the
+     *  two stay aligned — that is what lets the template pass map a component's
+     *  slots back to the boxes they end up as (see parseDesignTemplates). */
+    srcIds?: string[];
   },
 ): Promise<any[]> {
   const nodes: any[] = [];
@@ -811,6 +826,7 @@ async function penpotItemsToNodes(
         ...(g.blur?.type === 'layer-blur' && g.blur.hidden !== true && Number(g.blur.value) > 0
           ? { blur: Number(g.blur.value) } : {}),
       });
+      srcIds?.push(String(g.id ?? ''));
       continue;
     }
     let node: any = null;
@@ -836,6 +852,7 @@ async function penpotItemsToNodes(
       delete node._vectorPath; delete node._vectorFill; delete node._vectorStroke; delete node._vectorSize; delete node._vectorGradient;
     }
     nodes.push(node);
+    srcIds?.push(String(item?.id ?? ''));
   }
   return nodes;
 }
@@ -1861,4 +1878,241 @@ export async function ingestPenpotExportsAsAssets(
   if (capped) warn(`This file has more than ${MAX_EXPORT_MARKS} export marks. Only the first ${MAX_EXPORT_MARKS} were baked.`);
   if (!anyMark) throw new Error('This Penpot file has no export marks. Mark shapes for export in Penpot and try again.');
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Penpot components → Layout Studio templates
+// ---------------------------------------------------------------------------
+//
+// The third Penpot route (plan: penpot-design-system.md §2). A design system's
+// component MASTERS are exactly the reusable layouts a non-designer wants, so
+// each one becomes a saved session with its text runs and image fills marked as
+// fill-in-the-blank slots.
+//
+// This is an ADDITIONAL pass, never a change to the board/scene walks: masters
+// stay excluded there (a master board is a definition, not deck content), and
+// this pass reads nothing else. It reuses the SAME resolvers — the scenes
+// subtree walk (penpotMarkSubtree), penpotItemsToNodes, finalizeBoxes and
+// shiftToOrigin — so a template can never drift from what importing that same
+// artwork onto the canvas produces.
+//
+// Two structures the plan predates, both established by phase 1.1 and honoured
+// here: masters NEST (TEXT 9's master sits inside PERSON INTRO's, so template
+// subtrees legitimately overlap and nothing may assume they are disjoint), and
+// a variant SET is one logical component whose default variant is the one
+// mapped. Both are the engine collector's business (collectPenpotComponents);
+// this side just walks what it returns.
+
+/** Templates beyond this are skipped with a warning (see MAX_SCENES). */
+const MAX_TEMPLATES = 60;
+
+export interface DesignTemplatesResult {
+  templates: DesignTemplate[];
+  /** Instance roots pointing at libraries this export does not carry. */
+  externalInstances: number;
+}
+
+/**
+ * Parse a design file's component definitions into reusable templates.
+ * @param {File|Blob} file a Penpot binfile-v3 export (.penpot / .zip).
+ * @param {{ host, log?, interactive?, map? }} ctx — same contract as parseDesignFile;
+ *   pass back `parseDesignFile`'s returned `map` so the deck's fonts are resolved
+ *   once for both passes.
+ * @returns {Promise<DesignTemplatesResult>} one entry per component, in the
+ *   collector's order (path, then name). A file with no components returns an
+ *   empty list rather than throwing: this runs AFTER a successful board import,
+ *   and a missing design system must not turn that into an error.
+ */
+export async function parseDesignTemplates(
+  file: File | Blob,
+  { host, log, interactive, map }: {
+    host?: HostV1; log?: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions;
+  } = {},
+): Promise<DesignTemplatesResult> {
+  const warn: (msg: string) => void = typeof log === 'function' ? log : () => {};
+  const empty: DesignTemplatesResult = { templates: [], externalInstances: 0 };
+  if (file.size > MAX_IMPORT_BYTES) return empty;
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const isZip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+  if (!isZip) return empty;
+  const files = await unzipAsync(buf, {
+    maxEntryBytes: MAX_ZIP_ENTRY_BYTES,
+    maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
+    tooLarge: name => `This archive expands too large to import (${name}).`,
+  });
+  const manifest = files['manifest.json'] ? safeJsonParse(strFromU8(files['manifest.json'])) : null;
+  const isExportFiles = manifest && typeof manifest.type === 'string' && /export-files/.test(manifest.type);
+  const hasShapeJson = Object.keys(files).some((p) => /\/pages\/[^/]+\/[^/]+\.json$/i.test(p));
+  if (!isExportFiles || !hasShapeJson) return empty;
+  return parsePenpotBinfileTemplates(files, manifest, { host, warn, interactive, map });
+}
+
+/**
+ * Does this archive define components at all? Answered from the zip's entry
+ * names, inflating only the tiny component records (the `pick` filter keeps a
+ * 30 MB deck's media compressed), so the import panel can offer the templates
+ * checkbox the moment a file is chosen instead of after the whole import.
+ */
+export async function countPenpotComponents(file: File | Blob): Promise<number> {
+  if (file.size > MAX_IMPORT_BYTES) return 0;
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const isZip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+    if (!isZip) return 0;
+    const COMPONENT_RE = /^files\/[^/]+\/components\/[^/]+\.json$/i;
+    const files = await unzipAsync(buf, {
+      maxEntryBytes: MAX_ZIP_ENTRY_BYTES,
+      maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
+      tooLarge: name => `This archive expands too large to import (${name}).`,
+      pick: (name) => COMPONENT_RE.test(name),
+    });
+    // Records, not logical components: a variant set collapses to one template,
+    // so this is an upper bound used only to decide whether to offer the option.
+    return Object.keys(files).filter((p) => COMPONENT_RE.test(p)).length;
+  } catch {
+    return 0;   // unreadable archive: the board import reports that itself
+  }
+}
+
+async function parsePenpotBinfileTemplates(
+  files: Record<string, Uint8Array>, manifest: any,
+  { host, warn, interactive, map }: {
+    host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions;
+  },
+): Promise<DesignTemplatesResult> {
+  const empty: DesignTemplatesResult = { templates: [], externalInstances: 0 };
+  const fileId = Array.isArray(manifest.files) && manifest.files[0] ? manifest.files[0].id : null;
+  if (!fileId) return empty;
+
+  const pageDir = `files/${fileId}/pages/`;
+  const pageShapes = new Map<string, string[]>();
+  for (const path of Object.keys(files)) {
+    if (!path.startsWith(pageDir)) continue;
+    const m = path.slice(pageDir.length).match(/^([^/]+)\/([^/]+)\.json$/i);
+    if (m) { if (!pageShapes.has(m[1]!)) pageShapes.set(m[1]!, []); pageShapes.get(m[1]!)!.push(path); }
+  }
+  if (!pageShapes.size) return empty;
+
+  const componentDir = `files/${fileId}/components/`;
+  const records: any[] = [];
+  for (const path of Object.keys(files)) {
+    if (!path.startsWith(componentDir) || !/\.json$/i.test(path)) continue;
+    const rec = safeJsonParse(strFromU8(files[path]!));
+    if (rec) records.push(rec);
+  }
+
+  // Every page's shapes: a master can live on any page (Penpot's convention is a
+  // "Main components" page, but the collector resolves by id, not by page name).
+  const pages = new Map<string, Record<string, any>>();
+  for (const [pid, paths] of pageShapes) {
+    const shapesById: Record<string, any> = {};
+    for (const path of paths) {
+      const shape = safeJsonParse(strFromU8(files[path]!));
+      if (shape && shape.id) shapesById[shape.id] = shape;
+    }
+    pages.set(pid, shapesById);
+  }
+
+  const collected = collectPenpotComponents(records, pages, { fileId });
+  // One aggregated line for libraries this export does not carry (plan §2.3):
+  // the instances themselves still import fine on the board path, they are full
+  // copies, so nothing regressed — there is simply no master to template.
+  if (collected.externals.instances > 0) {
+    const n = collected.externals.components.length;
+    warn(n === 1
+      ? '1 component comes from an external shared library and was not saved as a template. Export that library as .penpot and import it too.'
+      : `${n} components come from external shared libraries and were not saved as templates. Export those libraries as .penpot and import them too.`);
+  }
+  if (collected.warnings.length) {
+    warn(collected.warnings.length === 1
+      ? 'Skipped 1 component whose master artwork is missing from the export.'
+      : `Skipped ${collected.warnings.length} components whose master artwork is missing from the export.`);
+  }
+  if (!collected.components.length) return { ...empty, externalInstances: collected.externals.instances };
+
+  // Fonts before any box mapping, exactly like the other two walks. Handed the
+  // caller's map, an already-ensured deck resolves every family and this is a
+  // no-op (no refetch, no repeated warning).
+  map = await ensurePenpotDeckFonts(files, pageDir, { host, warn, interactive, map });
+
+  // Local instance roots by the component record they copy. Penpot writes a
+  // component preview for a frame it has rendered, which for a deck is usually
+  // the PLACED copies rather than the master sitting on the components page (in
+  // the UXDays keynote all 8 previews belong to instances), so an instance's
+  // preview is the fallback for a master that has none — it depicts the same
+  // component. `componentFile` must match: foreign instances reuse local
+  // componentIds (the phase 1.1 trap), and a library's preview is not this
+  // component's picture.
+  const instancesByComponent = new Map<string, Array<{ pageId: string; frameId: string }>>();
+  for (const [pid, shapesById] of pages) {
+    for (const shape of Object.values(shapesById)) {
+      const cid = shape && typeof shape === 'object' ? String(shape.componentId ?? '') : '';
+      if (!cid || shape.mainInstance === true || String(shape.componentFile ?? '') !== fileId) continue;
+      if (!instancesByComponent.has(cid)) instancesByComponent.set(cid, []);
+      instancesByComponent.get(cid)!.push({ pageId: pid, frameId: String(shape.id) });
+    }
+  }
+
+  const imageCache = new Map<string, AssetRef>();
+  const templates: DesignTemplate[] = [];
+  const capped = collected.components.length > MAX_TEMPLATES;
+  for (const comp of collected.components.slice(0, MAX_TEMPLATES)) {
+    const shapesById = pages.get(comp.pageId);
+    if (!shapesById || !shapesById[comp.rootShapeId]) continue;
+    try {
+      // The scenes walk's subtree step, verbatim: paint-order DFS, hidden
+      // subtrees pruned, pure-vector groups collapsed to one baked SVG.
+      const items = penpotMarkSubtree(shapesById, comp.rootShapeId, new Set<string>());
+      const srcIds: string[] = [];
+      const nodes = await penpotItemsToNodes(items, { host, files, fileId, imageCache, warn, srcIds });
+      if (!nodes.length) continue;
+      const { width, height } = shiftToOrigin(nodes);
+      const boxes = finalizeBoxes(nodes, map);
+      if (!boxes.length) continue;
+
+      // Slots → boxes. The engine reads the slots off the master subtree (text
+      // shapes and image fills); alignBoxIds says which box each mapped node
+      // became. A slot whose shape produced no box of its own (it was baked into
+      // a flattened vector group, or dropped as degenerate) is left out rather
+      // than pointed at something else.
+      const boxIdByShape = new Map<string, string>();
+      const ids = alignBoxIds(nodes, boxes);
+      for (let i = 0; i < srcIds.length; i++) {
+        const boxId = ids[i];
+        if (srcIds[i] && boxId) boxIdByShape.set(srcIds[i]!, boxId);
+      }
+      const slots: DesignTemplateSlot[] = [];
+      for (const s of penpotComponentSlots(shapesById[comp.rootShapeId], (id) => shapesById[id])) {
+        const boxId = boxIdByShape.get(s.shapeId);
+        if (!boxId) continue;
+        slots.push({ boxId, kind: s.kind, label: s.label, ...(s.text ? { text: s.text } : {}) });
+      }
+
+      // Penpot's own component preview, when the export carried one: untrusted
+      // bytes, sniffed and size-capped, used as an image source only. The
+      // master's own preview first, then any local instance of any of its
+      // variants (see instancesByComponent above).
+      let thumb = penpotComponentThumb(files, fileId, comp.pageId, comp.rootShapeId);
+      for (const v of comp.variants) {
+        if (thumb) break;
+        for (const inst of instancesByComponent.get(v.id) ?? []) {
+          thumb = penpotComponentThumb(files, fileId, inst.pageId, inst.frameId);
+          if (thumb) break;
+        }
+      }
+      templates.push({
+        name: comp.name || 'Component',
+        path: comp.path || '',
+        boxes,
+        width,
+        height,
+        slots,
+        ...(thumb ? { thumb } : {}),
+      });
+    } catch (err) {
+      warn(`Couldn’t save “${comp.name}” as a template (${String((err as Error) && (err as Error).message || err)}).`);
+    }
+  }
+  if (capped) warn(`This file defines more than ${MAX_TEMPLATES} components. Only the first ${MAX_TEMPLATES} were saved as templates.`);
+  return { templates, externalInstances: collected.externals.instances };
 }

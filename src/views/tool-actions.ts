@@ -18,6 +18,7 @@ import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
 import { livePalette } from '../lib/live-palette.ts';
 import { isOwnProfile, ownDigest, listEligible, embedRowLabel } from '../lib/press-profile-embed.ts';
+import { marksToCsv } from '../lib/print-marks-csv.ts';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { mountBodyPopover } from '../components/body-popover.ts';
 import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.js';
@@ -88,9 +89,9 @@ const isHdrFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg
 const DEFAULT_PRINT_MARKS: PrintMarks = { crop: true, registration: true, bleed: true, colorBars: false, provenance: true };
 const isCmykFmt  = (f: string | undefined): boolean => f === 'pdf-cmyk' || f === 'cmyk-tiff';
 const isPrintFmt = (f: string | undefined): boolean => f === 'pdf' || f === 'pdf-cmyk' || f === 'cmyk-tiff';
-function marksToCsv(m: Partial<PrintMarks> | null | undefined): string {
-  return m ? [m.crop && 'crop', m.registration && 'reg', m.bleed && 'bleed', m.colorBars && 'bars', m.provenance && 'prov'].filter(Boolean).join(',') : '';
-}
+// The `marks` CSV codec lives in lib/print-marks-csv.ts — one encoder, one
+// decoder, shared with the batch/folder render path (which previously had no way
+// to read a stored CSV back and so dropped print marks entirely).
 
 // Read the Print marks card from an export-panel element `el` (empty when off).
 const printEnabled  = (el: Element | null | undefined): boolean => Boolean(el?.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.checked);

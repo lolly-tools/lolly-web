@@ -134,12 +134,12 @@
 /* color + font: inherit come from the shared .field-input alias list
    (components.css, component audit rec 13); the rest (sizing/token deltas)
    stays local. */
-.be-lock-field input {
+.be-lock-field input, .be-lock-field select {
   padding: .32rem .5rem; font-size: calc(.78rem * var(--a11y-fs));
   border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .5);
   background: hsl(var(--background));
 }
-.be-lock-field input:focus { outline: none; border-color: hsl(var(--ring) / .6); }
+.be-lock-field input:focus, .be-lock-field select:focus { outline: none; border-color: hsl(var(--ring) / .6); }
 .be-cmyk-inputs { display: flex; gap: .35rem; }
 .be-cmyk-in { display: grid; gap: .12rem; justify-items: center; }
 .be-cmyk-in span {
@@ -988,7 +988,7 @@ background-image:
 .be-tok-dim:focus-visible, .be-tok-num:focus-visible, .be-tok-add-kind:focus-visible,
 .be-tok-add-name:focus-visible, .be-tok-shadow-in input:focus-visible,
 .be-grad-angle input:focus-visible, .be-grad-nstops input:focus-visible, .be-logo-addmark-name:focus-visible,
-.be-logo-addidentity input:focus-visible, .be-lock-field input:focus-visible,
+.be-logo-addidentity input:focus-visible, .be-lock-field input:focus-visible, .be-lock-field select:focus-visible,
 .be-cmyk-in input:focus-visible, .be-editor-name:focus-visible,
 .be-fmt-sel:focus-visible, .be-fmt-input:focus-visible,
 .be-stored-seg button:focus-visible {

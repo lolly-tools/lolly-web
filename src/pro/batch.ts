@@ -24,6 +24,12 @@ export interface BatchRow {
   outWidth?: number;
   outHeight?: number;
   filename?: string;
+  /** CMYK press condition (the `profile` URL param), for pdf-cmyk / cmyk-tiff. */
+  profile?: string;
+  /** Bleed as a dimension string, e.g. "3mm". */
+  bleed?: string;
+  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  marks?: string;
 }
 
 /** A rendered output ready for packaging. */

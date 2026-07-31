@@ -279,6 +279,56 @@ test('cmyk and spot locks are independent: setting/clearing one never touches th
   assert.equal(leaf.$extensions, undefined, 'empty $extensions cleaned up');
 });
 
+test('a spot lock carries its tactile finish through write → read → walk', () => {
+  const doc = load();
+  const path = primaryAnchorPath(doc)!;
+
+  // setSwatchSpotLock rebuilds the extension object field-by-field, so a new
+  // SpotColor field is silently DROPPED unless it's listed there. This is the
+  // guard on that: `finish` must survive the round trip verbatim.
+  assert.equal(setSwatchSpotLock(doc, path, { name: 'Gold foil', book: 'Luxor', finish: 'foil' }), true);
+  assert.deepEqual(getSwatchPrintOverride(doc, path), { spot: { name: 'Gold foil', book: 'Luxor', finish: 'foil' } });
+
+  // It reaches walkSwatches unchanged — that's the read the tiles and the
+  // popover's control both use.
+  const s = walkSwatches(doc, 'light').find(sw => sw.path.length === path.length && sw.path.every((seg, i) => seg === path[i]));
+  assert.equal(s?.lock?.spot?.finish, 'foil');
+
+  // No finish = an ordinary spot ink: the key is absent, not present-and-empty,
+  // so an existing brand's stored doc is byte-identical to before this shipped.
+  assert.equal(setSwatchSpotLock(doc, path, { name: 'PANTONE 186 C' }), true);
+  const bare = getSwatchPrintOverride(doc, path)!.spot!;
+  assert.deepEqual(bare, { name: 'PANTONE 186 C' });
+  assert.equal('finish' in bare, false, 'an unfinished spot writes no finish key at all');
+
+  // A finish the shell has never heard of is data, not an error — FinishKind is
+  // an open union so a brand can declare its own.
+  assert.equal(setSwatchSpotLock(doc, path, { name: 'Scodix', finish: 'raised-gloss' }), true);
+  assert.equal(getSwatchPrintOverride(doc, path)?.spot?.finish, 'raised-gloss');
+
+  // Clearing the spot takes the finish with it (a finish only exists ON a spot).
+  assert.equal(setSwatchSpotLock(doc, path, null), true);
+  assert.equal(getSwatchPrintOverride(doc, path), null);
+});
+
+test('a malformed finish in a stored doc degrades to no finish, keeping the ink', () => {
+  // Not something the editor can write — this is an imported or hand-edited
+  // brand doc. Total-function tolerance, matching engine/src/tokens.ts's
+  // readSpotColor: `name` is what a /Separation plate is named for, so a
+  // nonsense finish must cost us the field and nothing more.
+  const doc = load();
+  const path = primaryAnchorPath(doc)!;
+  const leaf = leafAt(doc, ['base', 'color', 'ramp', 'primary', '5'])!;
+  for (const bad of [42, null, { kind: 'foil' }, ['foil'], true]) {
+    leaf.$extensions = { 'com.suse.lolly': { spot: { name: 'Gold foil', book: 'Luxor', finish: bad } } };
+    assert.deepEqual(
+      getSwatchPrintOverride(doc, path),
+      { spot: { name: 'Gold foil', book: 'Luxor' } },
+      `finish: ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
 test('walkSwatches surfaces a swatch\'s print lock (cmyk and/or spot, or none)', () => {
   const doc = load();
   const path = primaryAnchorPath(doc)!;
