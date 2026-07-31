@@ -310,7 +310,7 @@ test('past the compressor ceiling the encode refuses (caller falls back to legac
   // 64x64 RGBA16 = 32 KiB of scanlines; a 4 KiB cap forces the refusal.
   await assert.rejects(
     () => encodeHdrPng16(noisy(64, 64), { width: 64, height: 64, hdr: NO_BOOST, maxDeflateBytes: 4096 }),
-    /deflate ceiling/,
+    /size ceiling/,
   );
   // Under the cap the encode still works — the refusal is the ceiling, not a
   // general failure (negative control).
