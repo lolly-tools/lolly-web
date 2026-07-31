@@ -365,3 +365,29 @@ test('onion.css: layered, pointer-transparent, non-dashed, and colour-blind safe
   assert.equal(/outline[^:]*:\s*calc\([^)]*--a11y-fs/.test(css), false);
   assert.match(css, /font-size:\s*calc\(10px \* var\(--a11y-fs\)\)/);
 });
+
+test('onion.css: no custom property is defined in terms of ITSELF', () => {
+  // A declaration whose value references its own property is a cycle (CSS Custom
+  // Properties L1 §3.2): it computes to the guaranteed-invalid value, and it does NOT
+  // fall through to the inherited one. The high-contrast branch was written as
+  // `--onion-master: max(var(--onion-master), 0.6)` on the ghost, intending to floor the
+  // value the LAYER writes inline — which instead invalidated every opacity built on it,
+  // and since opacity is not inherited, painted the ghosts at full strength over the live
+  // scene. The floor is a second token (--onion-floor) for exactly that reason.
+  const css = readFileSync(join(HERE, '..', 'styles', 'parts', 'onion.css'), 'utf8');
+  for (const [, prop, value] of css.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;{}]+)/gi)) {
+    assert.equal(
+      value!.includes(`var(${prop})`), false,
+      `${prop} references itself — that is a cycle, not a read of the inherited value`,
+    );
+  }
+  // And the floor really is wired into both opacity declarations.
+  assert.match(css, /--onion-floor:\s*0\s*;/, 'the default floor is nothing at all');
+  assert.match(css, /html\[data-a11y-contrast="high"\] \.onion-ghost \{[^}]*--onion-floor:\s*0\.6/);
+  const opacities = Array.from(css.matchAll(/opacity:\s*calc\(var\(--onion-o[12]\)[^;]*/g)).map((m) => m[0]);
+  assert.equal(opacities.length, 2, 'the base ramp and the ±1 override');
+  for (const o of opacities) {
+    assert.match(o, /max\(var\(--onion-master\), var\(--onion-floor\)\)/,
+      'every ghost opacity reads the master through the floor');
+  }
+});

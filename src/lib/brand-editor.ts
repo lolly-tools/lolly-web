@@ -61,7 +61,7 @@ import {
 } from './brand-doc.ts';
 import type { BrandSwatch, PrintLock } from './brand-doc.ts';
 import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
-import type { SpotColor } from '@lolly-tools/core/host-v1';
+import type { SpotColor, FinishKind } from '@lolly-tools/core/host-v1';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex, brandRadiusValue } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
 import { STORAGE_FORMATS, formatColor, serializeColor, storageFormatOf } from './color-formats.ts';
@@ -331,6 +331,31 @@ const autoCmykOf = (hex: string): [number, number, number, number] => {
 const samePath = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((seg, i) => seg === b[i]);
 
+/** The finishes a brand may declare an ink to BE. Ids are stable and canonical —
+ *  they become plate names in PDF finish-plate emission, so this is format
+ *  vocabulary, not brand data; the brand's *choice* among them is the data, and
+ *  it rides `$extensions` (no schema change, see setSwatchSpotLock).
+ *
+ *  Deliberately not split by foil colour (no `foil-gold`/`foil-silver`): the
+ *  spot's own name + colour already say which foil it is, and duplicating that
+ *  here would drift. A later slice can prepend brand-declared entries to this
+ *  list without any type change — `finish` is an open union. */
+const FINISHES: ReadonlyArray<{ id: string; label: () => string }> = [
+  { id: 'foil', label: () => t('Foil') },
+  { id: 'emboss', label: () => t('Emboss') },
+  { id: 'deboss', label: () => t('Deboss') },
+  { id: 'spot-uv', label: () => t('Spot UV') },
+  { id: 'soft-touch', label: () => t('Soft touch') },
+  // 'Die cut', not 'Cut' — the bare word is already a chrome string owned by the
+  // timeline panel's video-cut junction kind, and translates as the editing verb.
+  { id: 'cut', label: () => t('Die cut') },
+  { id: 'crease', label: () => t('Crease') },
+  { id: 'perforate', label: () => t('Perforate') },
+];
+/** A finish id's display label — falls back to the raw id so a brand-declared
+ *  finish this build doesn't know still reads as itself, never as blank. */
+const finishLabel = (id: string): string => FINISHES.find(f => f.id === id)?.label() ?? prettify(id);
+
 function printLockHtml(): string {
   return `
     <div class="be-lock" data-be-lock>
@@ -355,6 +380,10 @@ function printLockHtml(): string {
         <div class="be-lock-spot" data-be-lock-spot-body hidden>
           <label class="be-lock-field"><span>${t('Name')}</span><input type="text" data-be-lock-name placeholder="PANTONE 186 C" autocomplete="off" spellcheck="false"></label>
           <label class="be-lock-field"><span>${t('Book')} <em>${t('(optional)')}</em></span><input type="text" data-be-lock-book placeholder="PANTONE+ Solid Coated" autocomplete="off" spellcheck="false"></label>
+          <label class="be-lock-field"><span>${t('Finish')} <em>${t('(optional)')}</em></span><select data-be-lock-finish aria-label="${t('Print finish')}">
+            <option value="">${t('Ordinary ink')}</option>
+            ${FINISHES.map(f => `<option value="${escape(f.id)}">${escape(f.label())}</option>`).join('')}
+          </select></label>
         </div>
       </div>
     </div>`;
@@ -576,6 +605,7 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   const spotBody = mount.querySelector<HTMLElement>('[data-be-lock-spot-body]');
   const nameInput = mount.querySelector<HTMLInputElement>('[data-be-lock-name]');
   const bookInput = mount.querySelector<HTMLInputElement>('[data-be-lock-book]');
+  const finishSel = mount.querySelector<HTMLSelectElement>('[data-be-lock-finish]');
 
   const setPressed = (seg: HTMLElement | null, val: string): void =>
     seg?.querySelectorAll<HTMLElement>('[data-val]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.val === val)));
@@ -587,7 +617,8 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
     const name = nameInput?.value.trim();
     if (!name) return; // a spot lock needs a name — nothing to commit yet
     const book = bookInput?.value.trim();
-    ctx.setSpot({ name, ...(book ? { book } : {}) });
+    const finish = finishSel?.value.trim();
+    ctx.setSpot({ name, ...(book ? { book } : {}), ...(finish ? { finish: finish as FinishKind } : {}) });
     renderSpot();
   };
 
@@ -612,6 +643,9 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
   });
   nameInput?.addEventListener('input', commitSpot);
   bookInput?.addEventListener('input', () => { if (nameInput?.value.trim()) commitSpot(); });
+  // A finish is a property OF the spot, so it can only be committed once the
+  // spot has a name — same guard the Book field uses.
+  finishSel?.addEventListener('change', () => { if (nameInput?.value.trim()) commitSpot(); });
 
   function renderCmyk(): void {
     const cmyk = ctx.getCmyk();
@@ -631,6 +665,21 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
     if (spotBody) spotBody.hidden = !spot;
     if (nameInput && document.activeElement !== nameInput) nameInput.value = spot?.name ?? '';
     if (bookInput && document.activeElement !== bookInput) bookInput.value = spot?.book ?? '';
+    // A brand-declared finish this build has no <option> for would silently
+    // reset the select to '' and then be committed away — keep it addressable.
+    if (finishSel && document.activeElement !== finishSel) {
+      const cur = spot?.finish ?? '';
+      // The injected option belongs to THIS render, not to the mount — the swatch
+      // popover mounts this control once and drives it for every swatch, so an
+      // option left behind would be offered on unrelated swatches.
+      Array.from(finishSel.options).filter(o => o.dataset.beAdhoc).forEach(o => o.remove());
+      if (cur && !Array.from(finishSel.options).some(o => o.value === cur)) {
+        const opt = new Option(finishLabel(cur), cur);
+        opt.dataset.beAdhoc = '1';
+        finishSel.add(opt);
+      }
+      finishSel.value = cur;
+    }
     ctx.onRender?.();
   }
   function render(): void { renderCmyk(); renderSpot(); }
@@ -1397,7 +1446,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const lock = primaryPrintLock();
     const bits: string[] = [];
     if (lock?.cmyk) bits.push(`<span class="be-ps-chip">C${lock.cmyk[0]} M${lock.cmyk[1]} Y${lock.cmyk[2]} K${lock.cmyk[3]}</span>`);
-    if (lock?.spot) bits.push(`<span class="be-ps-chip">${escape(lock.spot.name)}</span>`);
+    if (lock?.spot) bits.push(`<span class="be-ps-chip">${escape(lock.spot.name)}${lock.spot.finish ? ` · ${escape(finishLabel(lock.spot.finish))}` : ''}</span>`);
     printChips.innerHTML = bits.length ? bits.join('') : `<span class="be-ps-chip be-ps-chip--auto">${t('auto')}</span>`;
   };
   // The primary's print lock — mounted only now, AFTER the generic [data-be-seg]
@@ -1527,7 +1576,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (!substChips) return;
     const bits: string[] = [];
     if (cur?.lock?.cmyk) bits.push(`<span class="be-ps-chip">C${cur.lock.cmyk[0]} M${cur.lock.cmyk[1]} Y${cur.lock.cmyk[2]} K${cur.lock.cmyk[3]}</span>`);
-    if (cur?.lock?.spot) bits.push(`<span class="be-ps-chip">${escape(cur.lock.spot.name)}</span>`);
+    if (cur?.lock?.spot) bits.push(`<span class="be-ps-chip">${escape(cur.lock.spot.name)}${cur.lock.spot.finish ? ` · ${escape(finishLabel(cur.lock.spot.finish))}` : ''}</span>`);
     substChips.innerHTML = bits.length ? bits.join('') : `<span class="be-ps-chip be-ps-chip--auto">${t('auto')}</span>`;
   };
 

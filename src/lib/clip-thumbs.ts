@@ -1077,17 +1077,31 @@ const OFF_CLASS = 'seq-off';
  * strobes through every frame of the sequence after every drag. timeline.css owns the
  * rule; the clone's own transform is overridden by the shot's `style` option, so the
  * picture is unaffected.
+ *
+ * Copied for the same reason as OFF_CLASS above; `bridge/sequence-dom.ts` is the source
+ * of truth for both, and clip-thumbs.test.ts pins the copies against it.
  */
 const SHOT_CLASS = 'tl-shot';
 
 /**
+ * The lease a shot stamps on every element whose `seq-off` it borrowed (see
+ * `borrowVisibility`) — `bridge/sequence-dom.ts`'s `BORROW_ATTR`. Its applier reads the
+ * attribute to decide whether it may leave a mid-shot box hidden, and CLEARS it to take
+ * a box the playhead has moved onto back off us.
+ */
+const BORROW_ATTR = 'data-tl-borrowed';
+
+/** Tells one borrow from the next, so a late restore can see that it lost the lease. */
+let borrowToken = 0;
+
+/**
  * Called after a shot has put the classes it borrowed back.
  *
- * The rasterer's restore is a GUESS — it re-adds `.seq-off` because the box had it when
- * the shot started, but the clock may have moved onto that box in the meantime, and
- * `applyTimeToElements` writing `classList.remove` on a class that is (transiently)
- * absent leaves no trace for us to notice. So the panel registers the clock's
- * `reapply()` here and the authoritative state wins, every time, one tick later.
+ * The rasterer's restore only re-hides what still holds its lease (see
+ * `borrowVisibility`), so a box the clock claimed mid-shot is left alone — but the shot
+ * spent up to NODE_RASTER_TIMEOUT_MS on a live stage, and every OTHER box's state has
+ * moved on too. So the panel registers the clock's `reapply()` here and the
+ * authoritative state is re-asserted wholesale, one tick later.
  */
 type ShotSettled = () => void;
 const shotSettled = new Set<ShotSettled>();
@@ -1302,11 +1316,15 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
  *   • the box is PARKED OFFSCREEN (SHOT_CLASS) for as long as it is un-hidden. Without
  *     it the artboard strobes through every off-playhead frame it photographs — six
  *     shots of ~100-300ms each after every drag, zoom and fit.
- *   • the restore is a GUESS, taken up to NODE_RASTER_TIMEOUT_MS earlier: the user may
- *     have scrubbed onto this box meanwhile, in which case putting `.seq-off` back
- *     leaves the ACTIVE frame invisible until the next seek (the clock's own
- *     `classList.remove` on an absent class leaves nothing for us to notice). So the
- *     clock gets the last word, through `announceShotSettled`.
+ *   • the borrow is a LEASE, not a swap. The restore lands up to NODE_RASTER_TIMEOUT_MS
+ *     later and the user may have scrubbed onto this box meanwhile — and then the park is
+ *     the damage, not the class: the applier removed `.seq-off`, believed the scene live,
+ *     and `translate(-200vw,-200vw)` held the ACTIVE frame off the viewport until the shot
+ *     settled, at which point it popped in. So every borrowed element is stamped with
+ *     BORROW_ATTR and the applier owns the handover: it clears the stamp AND the park the
+ *     moment it wants the box on screen, and the restore below re-hides only what still
+ *     carries its own token. `announceShotSettled` stays as the belt to that braces —
+ *     the clock re-asserting everything else it believes, one tick later.
  */
 function borrowVisibility(el: HTMLElement): () => void {
   const offs = [
@@ -1314,13 +1332,23 @@ function borrowVisibility(el: HTMLElement): () => void {
     ...(el.querySelectorAll?.(`.${OFF_CLASS}`) ?? []),
   ];
   if (!offs.length) return () => { /* the box is on screen: nothing borrowed */ };
+  const token = String(++borrowToken);
   el.classList.add(SHOT_CLASS);
-  for (const off of offs) off.classList.remove(OFF_CLASS);
+  for (const off of offs) {
+    off.classList.remove(OFF_CLASS);
+    off.setAttribute?.(BORROW_ATTR, token);
+  }
   let done = false;
   return () => {
     if (done) return;
     done = true;
-    for (const off of offs) off.classList.add(OFF_CLASS);
+    for (const off of offs) {
+      // Lost the lease: the clock has since made this box live (or torn its own
+      // visibility contract down entirely). Re-hiding it here is the black stage.
+      if (off.getAttribute?.(BORROW_ATTR) !== token) continue;
+      off.removeAttribute?.(BORROW_ATTR);
+      off.classList.add(OFF_CLASS);
+    }
     el.classList.remove(SHOT_CLASS);
     announceShotSettled();
   };

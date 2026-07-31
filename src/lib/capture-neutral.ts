@@ -65,3 +65,56 @@ export function applyCaptureNeutral(): boolean {
   applyA11yPrefs({});
   return true;
 }
+
+/** Attribute a settled view carries, as a `waitSelector=` recipe would name it. */
+export const CAPTURE_SETTLED_ATTR = 'data-shots-settled';
+
+/**
+ * Stamp `data-shots-settled` on `root` once every image under it has finished loading,
+ * so a capture recipe can block on the frame being FINAL rather than guess with `waitMs`.
+ * A no-op unless the capture pin is set, so nothing here runs for a real visitor.
+ *
+ * Why this is needed on top of stilling the timers: freezing motion makes the LAYOUT
+ * deterministic, but not the CONTENT. A tile whose preview had decoded in one run and
+ * not in the next produced a ±25% swing in the serialised SVG — the walker embeds the
+ * image it can see. Raster baselines absorbed that in their `tolerance=` pixel budget;
+ * a vector baseline compares exactly, so "nearly loaded" is a different file.
+ *
+ * Lazy images are forced eager first, and that is the load-bearing detail: an offscreen
+ * `loading="lazy"` tile never loads at all, so waiting on `complete` would hang forever
+ * and `waitSelector` would time out. Forcing them makes the wait terminate AND makes the
+ * set of decoded images the same every run. Errors resolve like loads — a broken preview
+ * must not stall a capture, and it is equally broken in every run.
+ */
+export function settleForCapture(root: ParentNode & { setAttribute(n: string, v: string): void }): void {
+  if (!captureNeutralPinned()) return;
+  void (async () => {
+    // Repeat until the image set STOPS GROWING. One pass is not enough: the gallery
+    // hydrates its example strips from an IntersectionObserver (armCarousels), so
+    // waiting on the images present at mount settles while more are still arriving.
+    // Settle on the whole DOM, not just images, and require the count to hold STILL
+    // across two consecutive rounds. One quiet round is not enough: the gallery
+    // hydrates its example strips from an IntersectionObserver (armCarousels), which
+    // can fire a batch after a round that looked finished — leaving one capture in
+    // roughly 4 with a whole extra strip and a +26% baseline.
+    let stable = 0;
+    let prev = -1;
+    for (let round = 0; round < 40 && stable < 2; round++) {
+      const imgs = Array.from(root.querySelectorAll('img'));
+      for (const im of imgs) im.loading = 'eager';
+      await Promise.all(imgs.map((im) => (im.complete ? Promise.resolve() : new Promise<void>((res) => {
+        im.addEventListener('load', () => res(), { once: true });
+        im.addEventListener('error', () => res(), { once: true });
+      }))));
+      // decode() turns "bytes arrived" into "pixels ready"; a rejection (a broken
+      // image) is as final as a success, so it settles rather than throws.
+      await Promise.all(imgs.map((im) => im.decode?.().catch(() => undefined)));
+      // Let any observer fire against the now-settled layout, then re-count.
+      await new Promise<void>((res) => setTimeout(res, 150));
+      const now = root.querySelectorAll('*').length;
+      stable = now === prev ? stable + 1 : 0;
+      prev = now;
+    }
+    root.setAttribute(CAPTURE_SETTLED_ATTR, 'true');
+  })();
+}

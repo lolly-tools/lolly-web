@@ -27,6 +27,7 @@
 
 import { escape } from '../utils.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { captureNeutralPinned } from '../lib/capture-neutral.ts';
 import { renderFeaturedVariant, displayFormatOf } from '../lib/featured-render.ts';
 import { toolSeedHref } from '../lib/seed-url.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -148,8 +149,14 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
   // Icon-HERO tile: no preview and no example looks means the icon isn't a
   // loading fallback here — it IS the artwork for the tile's whole life (the
   // utility entries, favourited view cards). ftile--icon styles it substantial
-  // (large, bold, brand-hued) instead of the faint loading ghost.
+  // (large, bold, brand-hued) instead of the faint loading ghost, and pairs it
+  // with the name in a pill so icon + title read as ONE centred object: for a
+  // utility the name identifies it faster than the glyph does.
   const iconHero = !entry.preview && resolveExamples(entry).length === 0;
+  // The pill lives inside the (aria-hidden) stage, so it's decoration — the
+  // link's aria-label still carries the name, and nothing is announced twice.
+  // Its visible twin in .ftile-meta is hidden by CSS on these tiles.
+  const iconName = iconHero ? `<span class="ftile-iconname">${escape(entry.name)}</span>` : '';
   const href = entry.href ?? `#/tool/${entry.id}`;
   // `data-basehref` is the tool's default route — the fallback the tile's href reverts to
   // while the committed placeholder is showing (a rendered look then points href at its own
@@ -159,6 +166,7 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
       <a class="ftile-link" href="${escape(href)}" data-basehref="${escape(href)}" aria-label="${escape(label)}" draggable="false">
         <span class="ftile-stage" aria-hidden="true">
           ${iconFill}
+          ${iconName}
           ${base}
           ${entry.isNew ? '<span class="ftile-badge">New</span>' : ''}
           <span class="ftile-open">Open ${ARROW}</span>
@@ -186,7 +194,16 @@ export function mountFeaturedRow(
   opts: { viewMode?: FeaturedViewMode; label?: string; ariaLabel?: string; tileDragOut?: boolean; tileMenu?: boolean; labelHref?: string; labelHelp?: string; onActivate?: (id: string) => void } = {},
 ): FeaturedRowHandle {
   const entries = [...entriesIn].sort(byFeaturedOrder);
-  const reduced = prefersReducedMotion();
+  // An automated screenshot run is treated as reduced motion, because every motion this
+  // component owns is JS-driven and so invisible to the capture harness's FREEZE_CSS
+  // (which can only zero CSS animations/transitions). Left running, the ambient drift
+  // moves `scrollLeft` and the cross-fade advances each tile's look between one capture
+  // and the next: re-shooting the gallery gave -22%, then -84% byte swings, which as a
+  // VECTOR baseline is churn on every run — the raster baselines only ever hid it behind
+  // their `tolerance=` pixel budget, which vector shots compare exactly and ignore.
+  // Reusing `reduced` rather than adding a second switch means the still path taken here
+  // is the one users already exercise, not a capture-only branch nothing else tests.
+  const reduced = prefersReducedMotion() || captureNeutralPinned();
   let coverflow = opts.viewMode === 'coverflow';
   // Drag-out mode (Projects "Uncategorised" ribbon): each tile is a native HTML5 drag
   // source so a loose session can be dragged onto a "Move to" folder. The consumer wires

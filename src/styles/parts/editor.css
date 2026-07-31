@@ -67,11 +67,17 @@
   background: hsl(var(--card));
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px hsl(var(--border));
   opacity: 0;
-  transition: opacity 0.18s ease;
+  /* Asymmetric on purpose (hysteresis): revealing is instant, hiding waits. The stage's
+     `:hover` drops for a frame or two whenever the pointer crosses chrome that is not a
+     stage descendant — the fixed back pill, a popover portalled elsewhere — and with a
+     symmetric transition the rail vanished for ~0.3s and came back half-faded while the
+     user was doing nothing but moving the cursor across the canvas. The grace period is
+     longer than any such gap and shorter than a deliberate "I'm done here". */
+  transition: opacity 0.18s ease 0.45s;
 }
 .tool-stage:hover .fc-toolbar,
 .fc-toolbar:hover,
-.fc-toolbar:focus-within { opacity: 1; }
+.fc-toolbar:focus-within { opacity: 1; transition-delay: 0s; }
 .fc-toolbar-dock.is-dragging .fc-toolbar {
   opacity: 1;
   cursor: grabbing;
@@ -137,6 +143,22 @@
    invisible-but-space-taking 40px hole in the rail (Arrange, the mic button, every
    conditionally-hidden icon). Same restatement as .tl-panel[hidden] in timeline.css. */
 .fc-btn[hidden] { display: none; }
+/* A KNOWN, UNFIXED defect lives here: the dock centres the rail vertically, so a button
+   that comes and goes (Arrange, gated on the selection; the recorder's mic) changes the
+   rail's height and therefore its top in the same frame — selecting a card teleports the
+   whole palette ~27px up the stage, with every icon landing somewhere other than where
+   the cursor was.
+   The obvious fix — collapse the button to zero height instead of removing it — was
+   tried and reverted, because it cannot work and must not: `[hidden] { display: none
+   !important }` in parts/a11y.css out-ranks any `display` a sheet asks for, so the
+   collapse was inert, and `hidden` means "not rendered AND not in the accessibility
+   tree", which a laid-out zero-height button is not. `styles/hidden-attribute-guard.test.ts`
+   fails the build on exactly that mistake.
+   The two real fixes, neither of which is a CSS one-liner: gate rail buttons with a class
+   (plus `inert` + `aria-hidden`) instead of the `hidden` property, which is what the
+   guard's own message recommends; or anchor the dock to a fixed top so its height grows
+   downward instead of re-centring — a deliberate change to where the rail sits, which is
+   a design decision, not a bug fix. */
 /* Every button in this rail is an aria-label + a glyph: the icon carries 100% of
    the control's meaning, so it scales on the type multiplier like any label would
    (one knob — see the --a11y-fs note in parts/a11y.css). A fixed-px glyph inside a
@@ -295,11 +317,33 @@
      the editor stage, on the bar's own hover, or while it holds focus (so an open
      colour popover keeps it up). Always-on for touch (see the coarse block below). */
   opacity: 0;
-  transition: opacity 0.18s ease;
+  /* Hysteresis, same as the rail: reveal on the spot, but make the FADE-OUT wait. The
+     stage's `:hover` blinks off for a frame or two as the pointer crosses chrome that
+     is not a stage descendant, and with a zero delay that read as the bar flickering
+     out and back while the user was doing nothing but moving the mouse. */
+  transition: opacity 0.18s ease 0.45s;
 }
 .tool-stage:hover .fc-ctxbar,
 .fc-ctxbar:hover,
-.fc-ctxbar:focus-within { opacity: 1; }
+.fc-ctxbar:focus-within { opacity: 1; transition-delay: 0s; }
+
+/* The ENTRANCE (absent → present), driven by showCtxBar() in free-canvas.ts.
+   The auto-hide above means the stage is ALREADY hovered at the moment a card is
+   selected, so the opacity transition has nothing left to run and a dozen controls
+   materialise fully formed between two frames, right under the pointer. This is the
+   only cue there is: a beat to let the gesture settle, then a fade and a small rise
+   so the eye is led to the bar rather than ambushed by it.
+
+   `backwards` and NOT `forwards` is load-bearing. A transform on this bar is the
+   containing block for its colour popover's `position: fixed` — the reason the bar is
+   centred with a computed `left` rather than a translateX — so the transform must not
+   survive the animation. backwards fills the 120ms delay only; afterwards the computed
+   transform is `none` again, and free-canvas.ts drops the class on animationend. */
+@keyframes fc-ctxbar-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: none; }
+}
+.fc-ctxbar.fc-ctxbar-enter { animation: fc-ctxbar-in 0.2s cubic-bezier(0.2, 0.7, 0.3, 1) 0.12s backwards; }
 .fc-cbtn {
   min-width: 32px; height: 32px; padding: 0 7px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -309,9 +353,17 @@
 }
 .fc-cbtn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .fc-cbtn:hover { background: hsl(var(--muted)); }
+/* The transform readout. `min-width` is the whole point: this text grows from
+   "241, -235" to "113, -92 · 1920×1080" DURING a drag, and the bar is centred on the
+   selection, so every character the readout gained shoved half of it — and every
+   button in it — sideways under the cursor. Reserve the settled form's width up front
+   (tabular-nums makes a digit's width a constant, so ch is an honest unit here) and the
+   bar stops breathing. It still grows past this for genuinely large numbers; the
+   placement freeze in positionCtxBar covers what remains. */
 .fc-readout {
   font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground));
   padding: 0 6px; white-space: nowrap; font-variant-numeric: tabular-nums;
+  min-width: 21ch; text-align: center;
 }
 
 /* Armed-create cursor + gesture body state. */
@@ -457,9 +509,22 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 .tool-stage:has(.export-shutter.is-active) .fc-overlay,
 .tool-stage:has(.export-shutter.is-active) .fc-toolbar { opacity: 0; pointer-events: none; }
 
+/* Reduced motion. showCtxBar() already declines to add .fc-ctxbar-enter when
+   prefersReducedMotion() is true (it ORs this query with the app pref), so the bar
+   simply appears; these blocks are the belt to that pair of braces, and they neutralise
+   the rail's collapse the same way. The app-pref attribute sits beside the OS query it
+   extends — a11y-prefs.ts's model, and what a11y-prefs-contract.test.ts checks for.
+   Both keep the auto-hide's fade-out DELAY: a delay is not motion, and dropping it puts
+   the flicker straight back. */
 @media (prefers-reduced-motion: reduce) {
-  .fc-toolbar, .fc-ctxbar { transition: none; }
+  .fc-toolbar, .fc-ctxbar { transition-duration: 0s; }
+  .fc-ctxbar.fc-ctxbar-enter { animation: none; }
+  .fc-toolbar .fc-btn { transition: none; }
 }
+html[data-a11y-motion="reduce"] .fc-toolbar,
+html[data-a11y-motion="reduce"] .fc-ctxbar { transition-duration: 0s; }
+html[data-a11y-motion="reduce"] .fc-ctxbar.fc-ctxbar-enter { animation: none; }
+html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 
 /* Touch: always-visible toolbar + object bar + larger hit targets (no hover to
    reveal them on, so the auto-hide above would strand them off-screen). */

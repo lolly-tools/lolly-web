@@ -70,6 +70,7 @@ interface GalleryTool {
   category?: string;
   capabilities?: readonly string[];
   privacy?: string;
+  tags?: readonly string[];   // searched alongside name/description; never displayed
   listed?: boolean;   // false = unlisted from the gallery (a mechanism invoked from context, e.g. asset-export)
   formats?: readonly string[];
   width?: number;
@@ -188,6 +189,7 @@ function dimText(tool: GalleryTool | undefined): string {
 // Shared, /pro-free batch-slot helpers (finding #13) — the gallery still takes
 // zero dependency on the removable /pro folder.
 import { BATCH_SLOT_PREFIX, isBatchSlot } from '../lib/batch-slots.ts';
+import { captureNeutralPinned, settleForCapture } from '../lib/capture-neutral.ts';
 
 // Lucide "info" and "history" — per-card action icons (own stroke-width, so the
 // thin .tool-card-icon rule doesn't apply to them). Path data lives in lib/icons.ts;
@@ -549,6 +551,14 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const savedView = localStorage.getItem(FEATURED_VIEW_STORAGE);
     if (savedView && (FEATURED_VIEWS as readonly string[]).includes(savedView)) featuredView = savedView as FeaturedViewMode;
   } catch { /* storage off */ }
+  // An automated screenshot run always frames the filmstrip, never Cover Flow — the
+  // house rule for docs shots, and it is about the OUTPUT format, not taste. Cover
+  // Flow fans its covers with a 3-D `rotateY`; `parseCssMatrix` refuses 3-D matrices,
+  // so a vector capture falls back to the axis-aligned box and the covers come out
+  // mis-scaled or blank. Cover Flow also has to keep its rAF loop running to lay the
+  // fan out (see featured-row.ts, `if (coverflow || !reduced) startRaf()`), so it can
+  // never be fully still. The filmstrip is both vector-expressible and static.
+  if (captureNeutralPinned()) featuredView = 'gallery';
 
   // Utilities live in the grid like every other category now — their own "Utilities"
   // filter pill, always sorted LAST (categoryRank → Infinity). The old bottom carousel
@@ -805,7 +815,11 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Read once at mount, like darkTheme below: the hero rotation timer and the
   // entrance cascade are both decided as the view is built, so a toggle mid-session
   // takes effect on the next gallery visit.
-  const prefersReduced = prefersReducedMotion();
+  // A capture run counts as reduced motion for the same reason the featured row does:
+  // the tile cross-fade and the entrance cascade are JS-driven, so the harness's
+  // FREEZE_CSS cannot still them, and a tile that has flipped to a different example
+  // look between two runs rewrites the baseline. See featured-row.ts's `reduced`.
+  const prefersReduced = prefersReducedMotion() || captureNeutralPinned();
   // Which theme-tagged example looks the tiles show (transparent-ink looks are filtered
   // to the matching UI theme — see galleryExampleLooks). Read once at mount, like the
   // featured row; switching theme refreshes on the next gallery visit.
@@ -938,7 +952,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!masonry) return;
     const cars = [...masonry.querySelectorAll<HTMLElement>('.gcar')];
     if (!cars.length) return;
-    if (typeof IntersectionObserver === 'undefined') {     // legacy: hydrate all, lazily
+    // Legacy (no IntersectionObserver) hydrates every strip; a capture run takes the
+    // same path deliberately. Observer-driven hydration is a race against the capture:
+    // which strips had fired depended on timing, so the same page serialised a strip
+    // more or fewer between runs (±26% and ±3% swings). Hydrating the whole set makes
+    // the CONTENT fixed, and settleForCapture then waits for it — off-frame strips are
+    // dropped by the shot pipeline's own cull, so this costs bytes in neither direction.
+    if (typeof IntersectionObserver === 'undefined' || captureNeutralPinned()) {
       cars.forEach(g => exJobs.push(() => hydrateCarousel(g)));
       pumpEx();
       return;
@@ -1089,7 +1109,15 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // gallery — not even via search (the Utilities view has its own search box).
     // In only-mode they're ordinary tiles and take the normal path below.
     if (t.category === 'utility' && !opts.only) return false;
-    if (q) return t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q);
+    // Tags carry the vocabulary the name and description do not: a tool called
+    // "Finish Preview" is what someone searching "foil" or "spot uv" wants, and
+    // "Imperfections" is what they want for "riso". Tags are search-only — they
+    // are never rendered, so this widens recall without changing any tile.
+    if (q) {
+      return t.name.toLowerCase().includes(q)
+        || (t.description ?? '').toLowerCase().includes(q)
+        || (t.tags ?? []).some(tag => tag.toLowerCase().includes(q));
+    }
     if (activeCat === FAV_CAT) return favourites.has(t.id);   // starred collection
     return activeCat === 'all' || t.category === activeCat;
   }
@@ -1152,6 +1180,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     armPreviewReveal(masonry, animateReveal);
     armCarousels();   // lazily hydrate example preview strips as their tiles near the viewport
     firstPaint = false;
+    // Capture only: stamp the view once every image (including the strips armCarousels
+    // is still hydrating) has decoded, so a `waitSelector=` recipe frames a final page.
+    settleForCapture(viewEl);
   }
 
   // IN-PLACE update for search / category / sort / direction — the hot path. Reorders

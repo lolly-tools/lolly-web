@@ -681,6 +681,64 @@ async function deepHdrPng(canvas: HTMLCanvasElement, opts: ExportOpts, d: { dpi:
   }
 }
 
+// HDR JPEG as an ISO 21496-1 / Ultra HDR gain-map file: the canvas stays an
+// ordinary SDR image and the HDR rides along as an appended gain-map image plus
+// MPF + dual (XMP + ISO) metadata. Replaces the legacy "PQ-encode the pixels and
+// tag Rec.2100" JPEG, which produced a file that only looked right in decoders
+// that honoured the profile and washed out everywhere else; a gain-map JPEG's
+// fallback is the SDR base itself, byte for byte.
+//
+// Deliberately reads the canvas WITHOUT mutating it (the marks and the map are
+// computed on a copy inside the seam), so any failure here falls through to the
+// unchanged legacy path below rather than leaving half-transformed pixels.
+// See bridge/export-gainmap-jpeg.ts. Returns null on any failure.
+async function gainMapJpeg(canvas: HTMLCanvasElement, opts: ExportOpts, d: { dpi: number }): Promise<Uint8Array | null> {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || canvas.width < 1 || canvas.height < 1) return null;
+  try {
+    const { encodeGainMapJpeg } = await import('./export-gainmap-jpeg.ts');
+    const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const quality = opts.quality ?? JPEG_QUALITY;
+    const res = await encodeGainMapJpeg(id.data, {
+      width: canvas.width, height: canvas.height,
+      hdr: { targets: hdrTargets(opts), ...hdrTune(opts) },
+      dpi: d.dpi,
+      meta: opts.meta,
+      // The base image is a genuine SDR JPEG now, so it carries the render's own
+      // profile (sRGB) rather than the Rec.2100-PQ one the legacy path stamped.
+      icc: iccWanted(opts) ? iccProfileBytes(opts.colorProfile) : null,
+      imprint: !!opts.imprint, // JPEG keeps the quantization-calibrated default strength
+      encodeJpeg: async (rgba, w, h, kind) => {
+        const scratch = document.createElement('canvas');
+        scratch.width = w; scratch.height = h;
+        const sx = scratch.getContext('2d');
+        if (!sx) throw new Error('no 2D context for the gain-map scratch canvas');
+        // Copy into a plainly-owned buffer: ImageData will not take a possibly
+        // shared-backed view, and putImageData copies anyway.
+        sx.putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0);
+        // The map is a data plane, not a picture: encode it at full quality so
+        // subsampling/ringing can't smear the boost across edges.
+        const blob = await canvasToBlob(scratch, 'image/jpeg', kind === 'map' ? 1 : quality);
+        return new Uint8Array(await blob.arrayBuffer());
+      },
+      ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+      ...(opts.durable
+        ? {
+          durable: async (rgba: Uint8ClampedArray, w: number, h: number) => {
+            const { embedLollyDurable } = await import('../lib/trustmark-embed.ts');
+            return await embedLollyDurable(rgba, w, h, { reservedId: opts.durableId });
+          },
+        }
+        : {}),
+      log: (level, msg) => _host?.log?.(level, msg),
+    });
+    return res.bytes;
+  } catch (err) {
+    _host?.log?.('warn', `jpeg: gain-map HDR encode unavailable (${(err as any)?.message || err}) — falling back to the 8-bit PQ path`);
+    return null;
+  }
+}
+
 // Map the author's 0–100 dials (export-panel sliders / tuned `hdr=` value) onto
 // the engine's hdrBoostToPQ knobs. `reach` slides the OKLab-lightness knee (higher
 // = the glow reaches further down into mid/dark tones); `lift` is the dark-colour
@@ -774,6 +832,19 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       if (hdrOn && format === 'png') {
         const deep = await deepHdrPng(canvas, opts, d);
         if (deep) return new Blob([deep as BlobPart], { type: 'image/png' });
+      }
+      // HDR JPEG goes GAIN MAP: the same `hdr=` request now writes an ISO
+      // 21496-1 / Ultra HDR gain-map JPEG — a real SDR base image with the HDR
+      // appended as a gain map (plans/deeprichpixels.md §4.2, §6 B2). That is the
+      // only HDR still output that renders as HDR in Chromium/Safari/Android and
+      // degrades to a perfect ordinary JPEG everywhere else, which is what the
+      // legacy PQ-tagged JPEG below never did. `depth=8` opts out to that legacy
+      // path (unlike HDR PNG, an 8-bit answer here is coherent). Marks, DPI,
+      // EXIF and the sRGB profile are applied inside the seam; the canvas is left
+      // untouched, so any failure falls through with nothing lost.
+      if (hdrOn && format === 'jpeg' && opts.depth !== 8) {
+        const gm = await gainMapJpeg(canvas, opts, d);
+        if (gm) return new Blob([gm as BlobPart], { type: 'image/jpeg' });
       }
       // HDR first: the PQ transform is the base encoding, so any provenance mark
       // below lands in the final (PQ) pixel space and embed/detect stay consistent.
@@ -8213,7 +8284,11 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
 // The transition vocabulary + its maths live in ../lib/transitions.ts so the timeline
 // editing chrome can offer exactly the kinds this compositor implements.
 
-interface RecObject { bmp: HTMLCanvasElement | null; x: number; y: number; w: number; h: number; rot: number; transition: string; delay: number }
+// `ease` is the authored GEOMETRY curve for this object's transition — a preset name
+// or a CSS cubic-bezier, '' when unauthored, which is the byte-identical old path.
+// Read off the DOM like `transition` itself, so this compositor stays a reader of the
+// stage the tool hook stamped rather than a second interpreter of the input model.
+interface RecObject { bmp: HTMLCanvasElement | null; x: number; y: number; w: number; h: number; rot: number; transition: string; ease: string; delay: number }
 
 async function renderRecord(node: Element, opts: ExportOpts, preferred: string): Promise<Blob> {
   const stage = ((node as HTMLElement).matches?.('[data-record-stage]')
@@ -8277,6 +8352,7 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
       out.push({
         bmp: await rasterBox(el), x, y, w, h, rot,
         transition: el.dataset.transition || 'fade',
+        ease: el.dataset.transitionEase || '',
         delay: Math.max(0, ttNum(el.dataset.delay, 0)),
       });
     }
@@ -8379,7 +8455,7 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
   };
   const drawObject = (o: RecObject, p: number): void => {
     if (!o.bmp) return;
-    const tr = recTransition(o.transition, p, o.w, o.h);
+    const tr = recTransition(o.transition, p, o.w, o.h, o.ease);
     if (tr.alpha <= 0) return;
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, tr.alpha));

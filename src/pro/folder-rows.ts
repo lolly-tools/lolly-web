@@ -19,6 +19,12 @@ export interface ExportRow {
   outHeight?: number;
   unit?: string;
   dpi?: number;
+  /** CMYK press condition (the `profile` URL param), for pdf-cmyk / cmyk-tiff. */
+  profile?: string;
+  /** Bleed as a dimension string, e.g. "3mm". */
+  bleed?: string;
+  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  marks?: string;
 }
 
 /** One snapshot row inside a saved batch session. */
@@ -47,6 +53,9 @@ interface StoredSession {
   __export_height?: string;
   __export_unit?: string;
   __export_dpi?: string;
+  __export_profile?: string;
+  __export_bleed?: string;
+  __export_marks?: string;
   rows?: BatchSessionRow[];
 }
 
@@ -110,6 +119,12 @@ export function rowFromToolSession(data: StoredSession, pathParts: string[] = []
     outHeight: posNum(data.__export_height),
     unit: data.__export_unit || 'px',
     dpi: posNum(data.__export_dpi),
+    // Print settings ride the row too. Without these a folder of print-ready PDFs
+    // rendered out trim-sized with no crop marks and no press profile — settings
+    // the user had explicitly set and that the session record had faithfully kept.
+    profile: data.__export_profile || undefined,
+    bleed: data.__export_bleed || undefined,
+    marks: data.__export_marks || undefined,
   };
 }
 

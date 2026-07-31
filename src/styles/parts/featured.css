@@ -255,21 +255,89 @@
 /* Real art decoded → drop the icon so a transparent image never shows it through. */
 .ftile.has-art .ftile-iconfill { display: none; }
 
-/* Icon-HERO tile (.ftile--icon, set by tileMarkup when the entry has no preview
-   and no example looks — the utility tools, favourited view cards): the icon is
-   the tile's artwork for its whole life, not a loading stand-in, so it drops the
-   ghost treatment for something substantial — much larger, brand-hued, and a
-   BOLD stroke. The 1em stroke composes with the non-scaling-stroke rule above:
-   it resolves to a screen-space ~16px line, matching the weight the utility
-   grid cards carry at their size. */
-.ftile--icon .ftile-iconfill { color: hsl(var(--primary) / .6); }
-.ftile--icon .ftile-iconfill svg {
-  max-width: 240px;
-  max-height: 240px;
-  width: 100%;
-  height: 100%;
-  stroke-width: 1em;
+/* ── Icon-HERO tile ──────────────────────────────────────────────────────────
+   .ftile--icon (set by tileMarkup when the entry has no preview AND no example
+   looks — the utility tools, favourited view cards). The icon is the tile's
+   artwork for its whole life, not a loading stand-in, so it drops the ghost
+   treatment: large, brand-hued, BOLD stroke, and paired with the name in a pill
+   so the two read as one centred object. For a utility the NAME identifies it
+   faster than the glyph does, which is why the title comes up into the artwork
+   instead of sitting under it (the .ftile-meta twin is hidden below).
+
+   Sized off the viewport HEIGHT, deliberately. The shared .ftile-iconfill box
+   pads 18% — and percentage padding resolves against WIDTH, while the tile's
+   height is fixed (--ftile-h). So on a wide window that padding ate the whole
+   fixed-height stage and the icon COLLAPSED as the page grew: the wider the
+   viewport, the smaller the icon. Two knobs, both height-based, so a wider
+   window never shrinks the lockup. */
+.ftile--icon {
+  --fic-size: clamp(96px, 19vh, 176px);
+  --fic-stroke: 1em;                /* screen-space, via the non-scaling-stroke rule above */
 }
+.ftile--icon .ftile-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;          /* the lockup sits centred in the stage, always */
+  gap: clamp(12px, 2.2vh, 24px);
+  padding-bottom: var(--art-floor); /* clear of the floor shadow, like the art is */
+}
+/* Join the flex flow (the base rule absolutely fills the stage) so icon + pill
+   centre together as one object rather than stacking independently. */
+.ftile--icon .ftile-iconfill {
+  position: static;
+  z-index: auto;
+  padding: 0;
+  flex: none;
+  color: hsl(var(--primary) / .6);
+}
+.ftile--icon .ftile-iconfill svg {
+  width: var(--fic-size);
+  height: var(--fic-size);
+  max-width: none;
+  max-height: none;
+  stroke-width: var(--fic-stroke);
+}
+/* A shape carrying its OWN stroke-width attribute declared itself deliberately
+   heavier than its icon's base weight — redact's redaction bar is 3.4 against a
+   1.8 base. Inheritance loses to a presentation attribute, so that shape would
+   keep its literal user-space width while everything around it jumped to the em
+   stroke, and the emphasis line would read as a hairline in exactly the context
+   it matters most. Restate it at 2x the base so the intent survives the scale-up. */
+.ftile--icon .ftile-iconfill svg :is(path, circle, rect, line, polyline, polygon, ellipse)[stroke-width] {
+  stroke-width: calc(var(--fic-stroke) * 2);
+}
+/* The title, in the artwork. Sized off height for the same reason as the icon.
+   NEVER truncated: on a utility tile the name is the single most important
+   thing on the card (it identifies the utility better than the glyph does), so
+   a long one WRAPS — the pill grows to fit rather than clipping to an ellipsis.
+   `balance` keeps a two-line name from breaking to one orphaned word. */
+.ftile--icon .ftile-iconname {
+  max-width: 88%;
+  padding: .42em 1.1em;
+  border-radius: 999px;
+  background: hsl(var(--card) / .8);
+  box-shadow: 0 1px 2px #00000012, inset 0 0 0 1px hsl(var(--border) / .5);
+  color: hsl(var(--foreground));
+  font-size: clamp(15px, 2.1vh, 21px);
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: anywhere;      /* a single unbreakable word still stays inside the pill */
+}
+/* The pill IS the title on these tiles — the caption below keeps only the blurb. */
+.ftile--icon .ftile-name { display: none; }
+
+/* Cover Flow: the covers are a third the size of the Gallery hero tiles, so the
+   lockup scales down with them (same two knobs). The pill stays visible on every
+   cover, unlike .ftile-meta — it's artwork here, and a cover whose art is an
+   unlabelled glyph is the blank card this whole treatment exists to avoid. */
+.featured--coverflow .ftile--icon {
+  --fic-size: clamp(64px, 12vh, 112px);
+  --fic-stroke: .72em;
+}
+.featured--coverflow .ftile--icon .ftile-iconname { font-size: clamp(12px, 1.5vh, 15px); }
 
 /* Ken Burns — a still tile still breathes. Scales from the base so the object stays
    planted on its floor shadow. Gentle; restarts on each cross-fade. Motion only. */

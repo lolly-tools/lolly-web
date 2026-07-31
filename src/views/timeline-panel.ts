@@ -42,14 +42,15 @@ import { t } from '../i18n.ts';
 import { icon, type IconName } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from '../lib/sfx.ts';
-import { mountModal } from '../components/modal.ts';
+import { mountModal, type ModalHandle } from '../components/modal.ts';
 import { mountBodyPopover, pointAnchor, type PopoverAnchor } from '../components/body-popover.ts';
 import {
   filmstrip, peaks, stillFrames, nodeStill, nodeKey, peekNodeRaster, nodeRasterPending,
   nodeRasterFailed, onNodeShotSettled, releaseClipThumbs, onIdle,
   MAX_NODE_RASTER_NODES,
 } from '../lib/clip-thumbs.ts';
-import { TRANSITIONS, TRANSITION_KINDS, isTransitionKind } from '../lib/transitions.ts';
+import { TRANSITIONS, TRANSITION_KINDS, isTransitionKind, EASINGS, easingToWire } from '../lib/transitions.ts';
+import { mountEasingEditor, type EasingEditorHandle } from '../components/easing-editor.ts';
 import { MAX_TRANSITION_MS, MIN_TRANSITION_MS, createSequenceClock, type SequenceClock } from './sequence-clock.ts';
 import {
   DEFAULT_CLIP_S, MAX_TIME_S, MIN_DUR, MIN_TRIM_BAR_PX, ONION_MAX_STEPS,
@@ -240,6 +241,69 @@ const MIN_FRAME_PX = 40;
  * take through in one tick by zeroing the count-in, rather than sleeping 1.8 s.
  */
 export const TAKE_TIMING = { countInMs: 600, maxMs: 10 * 60 * 1000, warnMs: 5000 };
+
+/** One row of the shortcuts sheet — and one branch of `onKey`. */
+export interface PanelShortcut {
+  /** What the sheet prints in the keys column. Key NAMES, deliberately untranslated. */
+  keys: string;
+  /** What the key does. */
+  label: string;
+  /** Second line, for a modifier that changes the same key's behaviour. */
+  hint?: string;
+  /**
+   * Every literal `KeyboardEvent.key` this row handles, with the modifier that arms
+   * it. This is the MACHINE half of the row: the drift guard in timeline-panel.test.ts
+   * drives each one through `onKey` and asserts it was handled, and checks the reverse
+   * direction against a literal list of `onKey`'s case labels — so a shortcut cannot
+   * be added without documenting it, or documented without existing.
+   *
+   * Empty for a modifier-only row (Alt), which has no keydown branch of its own.
+   */
+  events: Array<{ key: string; shiftKey?: boolean }>;
+}
+
+/**
+ * The panel's keyboard, written ONCE.
+ *
+ * Users learn splitting and trimming by shortcut — every canonical NLE chord for those
+ * (Cmd/Ctrl+B, Cmd/Ctrl+Shift+B, Cmd/Ctrl+K) collides with a browser binding whose
+ * preventDefault() is unreliable, and a shortcut that silently does nothing is worse
+ * than one that has to be learned. So the panel binds bare letters and Shift+letter,
+ * which nothing fights for — and that trade only holds if the list is SHOWN. This
+ * constant is both the sheet (`?`) and the contract `onKey` is written against.
+ *
+ * Labels go through `t()` here, at module scope, on purpose: this is a lazily imported
+ * view, so the catalog has long since loaded by the time it evaluates, and switching
+ * language reloads the page (i18n.ts's switchLang). Literal `t('…')` call sites are
+ * also what scripts/translate.ts extracts — a `t(row.label)` at render time would need
+ * every string hand-listed in extra-keys.spa.json instead.
+ */
+export const PANEL_SHORTCUTS: PanelShortcut[] = [
+  { keys: 'Space', label: t('Play or pause'), events: [{ key: ' ' }, { key: 'Spacebar' }] },
+  { keys: '← →', label: t('Move the playhead'), events: [{ key: 'ArrowLeft' }, { key: 'ArrowRight' }] },
+  { keys: 'Home  End', label: t('Jump to the start or the end'), events: [{ key: 'Home' }, { key: 'End' }] },
+  { keys: '↑ ↓', label: t('Select the previous or next clip'), events: [{ key: 'ArrowUp' }, { key: 'ArrowDown' }] },
+  { keys: '[  ]', label: t('Select the in or out edge'), events: [{ key: '[' }, { key: ']' }] },
+  {
+    keys: ',  .', label: t('Nudge the selected edge'), hint: t('Hold Shift for ten frames'),
+    events: [{ key: ',' }, { key: '.' }, { key: '<' }, { key: '>' }],
+  },
+  { keys: 'E', label: t('Trim to the playhead'), events: [{ key: 'e' }] },
+  { keys: 'S', label: t('Split at playhead'), events: [{ key: 's' }] },
+  { keys: 'Shift + S', label: t('Split every clip at the playhead'), events: [{ key: 'S', shiftKey: true }] },
+  { keys: 'Shift + D', label: t('Detach audio'), events: [{ key: 'D', shiftKey: true }] },
+  {
+    keys: 'O', label: t('Onion skin'), hint: t('Hold Shift for its options'),
+    events: [{ key: 'o' }, { key: 'O', shiftKey: true }],
+  },
+  { keys: 'Alt', label: t('Hold to turn snapping off'), events: [] },
+  { keys: '+  −', label: t('Zoom'), events: [{ key: '+' }, { key: '-' }, { key: '=' }, { key: '_' }] },
+  { keys: 'F', label: t('Fit to view'), events: [{ key: 'f' }] },
+  { keys: 'Delete', label: t('Delete the clip'), events: [{ key: 'Delete' }, { key: 'Backspace' }] },
+  { keys: 'Shift + F10', label: t('Open the clip menu'), events: [{ key: 'F10', shiftKey: true }, { key: 'ContextMenu' }] },
+  { keys: '?', label: t('Keyboard shortcuts'), events: [{ key: '?' }] },
+  { keys: 'Esc', label: t('Step back, then close'), events: [{ key: 'Escape' }] },
+];
 
 // ── pure helpers (exported: these are what the unit tests reach) ───────────────
 
@@ -795,6 +859,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const zoomOutBtn = btn('tl-zoom-out', t('Zoom out'), icon('zoomOut'));
   const zoomInBtn = btn('tl-zoom-in', t('Zoom in'), icon('zoomIn'));
   const fitBtn = btn('tl-fit', t('Fit to view'), icon('resize'));
+  // The sheet. Bare letters are the only key space the browser leaves alone, so the
+  // panel's shortcuts are unguessable by design — this is where they stop being so.
+  const keysBtn = btn('tl-keys', t('Keyboard shortcuts'), icon('keyboard'));
+  keysBtn.setAttribute('aria-haspopup', 'dialog');
 
   // ── record-in-place voiceover (track C) ──────────────────────────────────────
   // The button is only rendered when the SHELL can capture audio and the TOOL has
@@ -832,7 +900,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   transport.append(playBtn, timeEl);
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
-  tools.append(addBtn, micBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn);
+  tools.append(addBtn, micBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn);
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
   bar.append(transport, tools, rec, recNote, inspector);
@@ -1316,6 +1384,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // The mic's label follows the selection (record vs record-over), so it repaints
     // with everything else rather than needing its own observer.
     syncMicBtn();
+    // So does the blade's — its scope depends on the selection and on the model, which
+    // are exactly the two things that bring us here. The other half (the playhead
+    // crossing a clip boundary) rides `tl-time`, so neither costs a per-tick pass.
+    syncSplitBtn();
   }
 
   let rulerKey = '\u0000';
@@ -1775,6 +1847,70 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   let inspectorKey = '\u0000';
 
+  /**
+   * ENTERING is not the same as CHANGING. The inspector is a whole row of controls that
+   * lands in a toolbar the user is already looking at, and watching it land is the
+   * complaint that started this: three regions of chrome appeared between two adjacent
+   * frames of a screen recording, one of them clipping a tool button, with nothing to
+   * lead the eye. So the arrival is announced — `is-entering` runs one short fade and
+   * rise — and ONLY the arrival: a field edit or a scrub rebuilds this row constantly,
+   * and re-running the cue on every one of those is its own kind of noise.
+   *
+   * Reduced motion is honoured in the sheet rather than by withholding the class, so
+   * the cue still exists for someone who asked for less movement — it just does not
+   * move.
+   */
+  let inspectorShown = false;
+  let inspectorEnterT: ReturnType<typeof setTimeout> | null = null;
+
+  /* ── the custom-easing popover ─────────────────────────────────────────────
+     ONE instance for both directions: which box and which field it writes are
+     `easeId` / `easeField`, set by the trigger before `open()`. The trigger itself
+     cannot be the anchor — the inspector rebuilds its controls on every commit, so
+     the `<select>` that opened this is a detached node moments later. `pointAnchor`
+     with a `delegate` is the same shape openCtxMenu already uses for exactly that:
+     the point supplies geometry, the delegate takes the focus restore.
+
+     Body-mounted (via mountBodyPopover) rather than parented in the panel, because
+     the panel is a fixed-position band whose descendants must never become the
+     containing block for this card — the trap documented on `.tl-panel` and
+     `.fc-toolbar`. Escape, the outside click and the focus restore come free with it. */
+  const easePoint = pointAnchor();
+  let easeId = '';
+  let easeField = '';
+  let easeEditor: EasingEditorHandle | null = null;
+
+  const easeMenu = mountBodyPopover(easePoint, (el, pop) => {
+    const rows = getBoxes();
+    const i = easeId ? indexOfId(rows, cfg, easeId) : -1;
+    if (i < 0 || !easeField) { queueMicrotask(() => pop.close()); return null; }
+    easeEditor?.destroy();
+    easeEditor = mountEasingEditor(el, {
+      value: rows[i]![easeField],
+      // The same one-commit / one-undo-step write every other field in this row makes.
+      onCommit: (wire) => write(patchBox(getBoxes(), easeId, { [easeField]: wire })),
+    });
+    return easeEditor.focusTarget;
+  }, {
+    className: 'folder-menu tl-menu tl-ease-pop',
+    role: 'dialog',
+    ariaLabel: t('Custom easing curve'),
+    position: menuPosition,
+  });
+
+  /** Open the curve editor for one box + one ease field, anchored under its trigger. */
+  function openEaseEditor(id: string, field: string, trigger: HTMLElement): void {
+    if (!id || !field || indexOfId(getBoxes(), cfg, id) < 0) return;
+    easeId = id;
+    easeField = field;
+    const r = trigger.getBoundingClientRect();
+    easePoint.x = r.left;
+    easePoint.y = r.bottom;
+    easePoint.delegate = trigger;
+    easeMenu.close();
+    easeMenu.open();
+  }
+
   function renderInspector(boxes: Box[]): void {
     // Bars AND chips: an untimed box has no bar, and gating on `bars` alone is what
     // made "always on" a dead end — selecting a scenery chip rendered an empty bar and
@@ -1783,11 +1919,32 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const id = ids.length === 1 ? ids[0]! : '';
     const i = id ? indexOfId(boxes, cfg, id) : -1;
     const box = i >= 0 ? boxes[i]! : null;
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField]])}` : '';
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : ''])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
     inspector.textContent = '';
-    if (!box) return;
+    // An empty row still claims the bar's 10px flex gap, which reads as an unexplained
+    // notch beside the tool buttons once the selection is dropped. Take it out of the
+    // layout instead, so the toolbar returns to exactly the shape it had before.
+    inspector.hidden = !box;
+    if (!box) {
+      inspectorShown = false;
+      if (inspectorEnterT) { clearTimeout(inspectorEnterT); inspectorEnterT = null; }
+      inspector.classList.remove('is-entering');
+      return;
+    }
+    if (!inspectorShown) {
+      inspectorShown = true;
+      inspector.classList.remove('is-entering');
+      if (inspectorEnterT) clearTimeout(inspectorEnterT);
+      // A tick, not zero: the class has to land on a row the browser has already laid
+      // out, or the animation is coalesced into the same style pass that built the row
+      // and never plays at all.
+      inspectorEnterT = setTimeout(() => {
+        inspectorEnterT = null;
+        inspector.classList.add('is-entering');
+      }, 32);
+    }
     const timing = boxTiming(box, cfg);
 
     const row = (labelText: string, control: HTMLElement): HTMLElement => {
@@ -1837,6 +1994,51 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       }
       el.value = isTransitionKind(value) ? value : 'none';
       el.addEventListener('change', () => onCommit(el.value));
+      return el;
+    };
+    /**
+     * The easing picker for one direction. Governs GEOMETRY ONLY — opacity keeps its
+     * own fixed ramp (see the easing section of lib/transitions.ts), which is why there
+     * is no fade curve offered anywhere here and must not be.
+     *
+     * UNAUTHORED IS A REAL STATE and it is the default one: the empty option means "the
+     * curve this kind was born with", it is what an untouched box selects, and choosing
+     * it changes nothing — a `<select>` fires no `change` for the value it already
+     * shows, so simply rendering this row can never write a field. That property is the
+     * whole reason the built-in is an option rather than an implied absence of one.
+     *
+     * `__custom` is a ROUTE, not a value: picking it snaps the box back to whatever was
+     * authored and opens the curve editor, so the control never displays a state the
+     * model is not in.
+     */
+    const easeSelect = (field: string, value: unknown): HTMLSelectElement => {
+      const el = document.createElement('select');
+      el.className = 'field-select tl-select tl-ease';
+      el.dataset.field = field;
+      const cur = easingToWire(value);
+      const opt = (v: string, label: string): void => {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = label;
+        el.appendChild(o);
+      };
+      opt('', t('Built-in'));
+      for (const [k, label] of Object.entries(EASINGS)) opt(k, t(label));
+      // An authored bezier has no preset to select, so it brings its own option — and
+      // shows the actual numbers, because "Custom" alone tells the user nothing about
+      // the curve they are looking at.
+      if (cur && !Object.hasOwn(EASINGS, cur)) opt(cur, cur);
+      opt('__custom', t('Custom…'));
+      el.value = cur;
+      el.addEventListener('change', () => {
+        const v = el.value;
+        if (v === '__custom') {
+          el.value = cur;               // the route was taken; the value did not change
+          openEaseEditor(id, field, el);
+          return;
+        }
+        write(patchBox(getBoxes(), id, { [field]: v }));
+      });
       return el;
     };
 
@@ -1903,8 +2105,22 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // and the fields are plain value writes, so nothing here depends on a bar existing.
     inspector.appendChild(row(t('Animate in'), kindSelect(box[cfg.enterField], (v) => write(patchBox(getBoxes(), id, { [cfg.enterField]: v })))));
     inspector.appendChild(row(t('In (ms)'), numField(finite(box[cfg.enterMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.enterMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
+    // The curve sits beside its duration, not beside its kind: "how long" and "how it
+    // moves over that time" are the pair a user tunes together. Offered only where the
+    // manifest declares a field for it — a tool that never asked for authored easing is
+    // not given a control that would write a sub-field it does not read.
+    if (cfg.enterEaseField) inspector.appendChild(row(t('In curve'), easeSelect(cfg.enterEaseField, box[cfg.enterEaseField])));
     inspector.appendChild(row(t('Animate out'), kindSelect(box[cfg.exitField], (v) => write(patchBox(getBoxes(), id, { [cfg.exitField]: v })))));
     inspector.appendChild(row(t('Out (ms)'), numField(finite(box[cfg.exitMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.exitMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
+    if (cfg.exitEaseField) inspector.appendChild(row(t('Out curve'), easeSelect(cfg.exitEaseField, box[cfg.exitEaseField])));
+    // A rebuild mints a new <select>, so an editor that is still open is anchored to a
+    // detached node — its focus restore on Escape would land nowhere. Re-point the
+    // delegate at the control that replaced it.
+    if (easeMenu.isOpen() && easeId === id && easeField) {
+      const live = Array.from(inspector.querySelectorAll<HTMLSelectElement>('.tl-ease'))
+        .find((s) => s.dataset.field === easeField);
+      if (live) easePoint.delegate = live;
+    }
 
     // Mute — a playback concern, so only on something that plays.
     if (timed) {
@@ -2331,18 +2547,37 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    */
   let snappedAt: number | null = null;
 
-  /** Snap a raw time unless Alt is held (the universal bypass). */
-  function maybeSnap(raw: number, alt: boolean, excludeId?: string): number {
+  /**
+   * Snap a raw time unless Alt is held (the universal bypass).
+   *
+   * `coarse` is EXPLICIT rather than read off `gesture` at every call site, because the
+   * one call that decides what gets written — onPointerUp's — runs AFTER endGesture has
+   * already cleared `gesture`. Defaulting it off the live gesture and letting pointerup
+   * pass the value it captured is what keeps the committed number identical to the
+   * preview the user was looking at; reading it lazily meant a finger's drag previewed
+   * at the 12px tolerance and then committed at 8, i.e. snapped on screen and landed off
+   * the cut.
+   */
+  function maybeSnap(
+    raw: number,
+    alt: boolean,
+    excludeId?: string,
+    coarse: boolean = isCoarsePointer(gesture?.pointerType),
+  ): number {
     if (!snapOn || alt) { showSnapline(null); snappedAt = null; return raw; }
     const cands = snapCandidates(getBoxes(), cfg, clock.t() / 1000, raw, excludeId);
-    // A finger cannot land on a 6px window. The tolerance follows the pointer that
-    // started the gesture (the module default stays 6 for every other caller).
-    const px = isCoarsePointer(gesture?.pointerType) ? SNAP_PX_COARSE : SNAP_PX_FINE;
+    // A finger cannot land on an 8px window. The tolerance follows the pointer that
+    // started the gesture (timeline-math's own SNAP_PX default stays 6 for every other
+    // caller — this panel is the only one that knows what started the drag).
+    const px = coarse ? SNAP_PX_COARSE : SNAP_PX_FINE;
     const r = snapTime(raw, cands, pxPerSec, px);
     showSnapline(r.snapped);
-    // Newly engaged, on a pointer with no cursor to watch: a 8ms tick is the only
-    // feedback a thumb over the bar can actually receive. Reduced motion turns it off —
-    // the pref is about involuntary sensation, not only about pixels moving.
+    // Newly engaged, on a pointer with no cursor to watch: an 8ms tick is the only
+    // feedback a thumb over the bar can actually receive. Gated on the LIVE gesture, not
+    // on `coarse`: the haptic belongs to the drag, and firing it again from pointerup
+    // (where endGesture has just reset snappedAt, so every snap reads as new) would tick
+    // twice for one snap. Reduced motion turns it off — the pref is about involuntary
+    // sensation, not only about pixels moving.
     if (r.snapped !== null && r.snapped !== snappedAt && isCoarsePointer(gesture?.pointerType)
       && !prefersReducedMotion() && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
       try { navigator.vibrate(8); } catch { /* a denied/absent vibrator is not an error */ }
@@ -2689,7 +2924,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // These two branches write nothing to the model, so they must run the sync a
     // mid-gesture model change (a sidebar edit made while scrubbing) never got.
     if (g.kind === 'resize') { reserve(panelH + RESERVE_PAD); sync(); scheduleThumbs(); return; }
-    if (g.kind === 'seek') { const at = maybeSnap(timeAt(g.x), g.alt); clock.seek(at * 1000); sync(); scheduleThumbs(); return; }
+    // `gesture` is already null (endGesture, above), so every maybeSnap below has to be
+    // told what kind of pointer this was — see maybeSnap's own note.
+    const coarse = isCoarsePointer(g.pointerType);
+    if (g.kind === 'seek') { const at = maybeSnap(timeAt(g.x), g.alt, undefined, coarse); clock.seek(at * 1000); sync(); scheduleThumbs(); return; }
     if (!g.moved) { sync(); scheduleThumbs(); return; }
 
     // ── the ONE model write of the gesture ────────────────────────────────────
@@ -2699,10 +2937,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (g.kind === 'move') {
       // moveOverlay owns the clamp AND the ms rounding, so a drag and the inspector's
       // Start field land on exactly the same value for the same time.
-      write(moveOverlay(boxes, cfg, g.id, maybeSnap(g.start0 + deltaSec, alt, g.id)));
+      write(moveOverlay(boxes, cfg, g.id, maybeSnap(g.start0 + deltaSec, alt, g.id, coarse)));
     } else if (g.kind === 'trim') {
       const raw = g.edge === 'in' ? g.start0 + deltaSec : g.start0 + g.dur0 + deltaSec;
-      const snapped = maybeSnap(raw, alt, g.id);
+      const snapped = maybeSnap(raw, alt, g.id, coarse);
       const d = g.edge === 'in' ? snapped - g.start0 : snapped - (g.start0 + g.dur0);
       const next = trimClip(boxes, cfg, g.id, g.edge ?? 'out', d, mediaOf(g.id).dur, mediaDur);
       write(next);
@@ -2815,16 +3053,32 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     scheduleThumbs();
   }
 
-  /** Does this box's span contain `at`? (Open-ended clips run to the sequence end.) */
+  /**
+   * Is `at` a place this box could actually be CUT? Deliberately the same predicate
+   * splitBox uses (timeline-math), not a plain "inside the span" test:
+   *
+   *   - an open-ended clip has no end to split against, so splitBox refuses it outright
+   *     (`dur === null`) even though `span()` would happily give it one;
+   *   - splitBox also refuses within MIN_DUR of either edge rather than mint a sliver,
+   *     and at any zoom past ~80 px/s the snap tolerance is smaller than MIN_DUR, so the
+   *     playhead can rest inside that band without being pulled onto the cut.
+   *
+   * Both cases used to read as "Split clip", enabled — and then announce a refusal on
+   * the press. The label cannot promise what the press refuses, so it asks the same
+   * question.
+   */
   function spanContains(b: Box, at: number, total = durationSec()): boolean {
     if (!b || !isTimed(b, cfg)) return false;
+    if (boxTiming(b, cfg).dur === null) return false;
     const { start, dur } = span(b, total);
-    return at > start && at < start + dur;
+    return at > start + MIN_DUR && at < start + dur - MIN_DUR;
   }
 
   /**
-   * SPLIT — one operation, three doors (the toolbar blade, `s`, and the context menu),
-   * and one scope rule shared by all of them.
+   * SPLIT — one operation, four doors (the toolbar blade, `s`, the context menu, and
+   * the blade's own LABEL, which has to answer the same question a press would) and one
+   * scope rule shared by all of them. Resolved here, once, so the label can never
+   * promise something the press then refuses.
    *
    * Scope, in the order Premiere and Descript both resolve it:
    *   1. every SELECTED clip the playhead is inside — so a deliberate multi-selection
@@ -2836,14 +3090,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * `everything: true` is the Shift+S variant: every timed clip the playhead is inside,
    * on every lane, IGNORING the selection.
    *
-   * Two things make this cheap to undo. The cut is SNAPPED first, so a press within a
-   * few pixels of an existing edit lands exactly on it and then fails the "already at a
-   * cut" test as an equality rather than a float comparison (Premiere's razor snaps for
-   * the same reason). And `splitAll` returns the input array by IDENTITY when nothing
-   * landed, so a no-op costs no commit and no undo entry at all.
+   * The cut is SNAPPED first, so a press within a few pixels of an existing edit lands
+   * exactly on it and then fails the "already at a cut" test as an equality rather than
+   * a float comparison (Premiere's razor snaps for the same reason).
    */
-  function splitAtPlayhead(opts?: { everything?: boolean }): void {
-    const boxes = getBoxes();
+  function splitScope(everything = false, boxes: Box[] = getBoxes()): { at: number; ids: string[] } {
     const total = durationSec();
     // Snap BEFORE deciding scope: the snapped instant is the one the cut is tested
     // against, so "inside this clip" and "where the cut lands" can never disagree.
@@ -2858,7 +3109,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       ? snapTime(raw, snapCandidates(boxes, cfg, -1, raw), pxPerSec, SNAP_PX_FINE).t
       : raw;
     let ids: string[];
-    if (opts?.everything) {
+    if (everything) {
       ids = boxes.filter((b) => spanContains(b, at, total)).map((b) => String(b[cfg.idField] ?? ''));
     } else {
       ids = selection.get().filter((id) => {
@@ -2870,7 +3121,62 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         if (under) ids = [String(under[cfg.idField] ?? '')];
       }
     }
-    ids = ids.filter(Boolean);
+    return { at, ids: ids.filter(Boolean) };
+  }
+
+  /**
+   * The blade says what it would cut BEFORE it is pressed — the researched
+   * self-teaching affordance, and the one that makes the scope rule above learnable
+   * instead of surprising: "Split clip" when the playhead is inside one, "Split 3
+   * clips" when a selection spans it, and disabled (not a refusal announced after the
+   * press) when there is nothing under the playhead at all.
+   *
+   * Disabled is decided by the UNION of both scopes, because Shift-click is the
+   * split-everything door: a playhead inside an overlay but no seq clip still has work
+   * to do, and a disabled button would swallow that press. The LABEL stays the plain
+   * scope's — it describes what an unmodified click does.
+   *
+   * `aria-disabled`, NOT the `disabled` property. A successful split leaves the playhead
+   * exactly on the cut it just made, so both scopes resolve empty on the very next
+   * restyle — i.e. the blade goes inert the instant you use it. Per the HTML spec a
+   * FOCUSED control that becomes `disabled` is no longer focusable and the browser drops
+   * focus to <body>; this panel's keydown listener is bound on `root` and gated by
+   * panelKeysActive, so a keyboard user who pressed Enter on the blade would silently
+   * lose every panel shortcut. aria-disabled keeps the element focusable and announced
+   * as unavailable; the click handler swallows the press, and `.tl-btn[aria-disabled]`
+   * carries the same greying as `:disabled`.
+   */
+  let splitBtnKey = '\u0000';
+  function syncSplitBtn(): void {
+    const boxes = getBoxes();
+    const n = splitScope(false, boxes).ids.length;
+    // Disabled is decided by the UNION of both scopes; the label is the plain scope's.
+    const off = n === 0 && splitScope(true, boxes).ids.length === 0;
+    // The memo is on the ACHIEVED state, not on the playhead: this runs once per tick
+    // (see emitTime — the splittable set changes one frame AFTER the active set does,
+    // when the playhead steps off a clip's exact start, so it cannot ride tl-time's own
+    // gate), and the DOM must not be written sixty times a second for a label that
+    // changes twice a sequence.
+    const key = `${n}|${off ? 1 : 0}`;
+    if (key === splitBtnKey) return;
+    splitBtnKey = key;
+    const label = n === 0 ? t('Split at playhead')
+      : n === 1 ? t('Split clip')
+        : t('Split {n} clips', { n: String(n) });
+    splitBtn.setAttribute('aria-label', label);
+    splitBtn.setAttribute('data-tip', label);
+    splitBtn.setAttribute('aria-disabled', off ? 'true' : 'false');
+  }
+
+  /**
+   * Cut, once, at the resolved instant. `splitAll` returns the input array by IDENTITY
+   * when nothing landed, so a no-op costs no commit and no undo entry at all; a
+   * multi-clip cut composes on one intermediate array and writes once, so it is one
+   * undo step however many clips it touched.
+   */
+  function splitAtPlayhead(opts?: { everything?: boolean }): void {
+    const boxes = getBoxes();
+    const { at, ids } = splitScope(!!opts?.everything, boxes);
     if (!ids.length) { announce(t('Move the playhead inside a clip to split it')); return; }
     const { next, split } = splitAll(boxes, cfg, ids, at, mintId);
     // Identity, not deep equality: nothing was cut, so nothing is written and the undo
@@ -2994,6 +3300,31 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * with no argument it is the focused/selected bar (the Delete key). Scenery is
    * deletable too — it has a chip rather than a bar, and no reason to be undeletable.
    */
+  /**
+   * Delete one half of an A/V pair and the other half is left holding a link to an id
+   * that no longer exists. `partnerOf` reads a dangling id as '' (so Detach is offered
+   * again, and then refuses — `detachAudio` re-reads the raw field and returns null),
+   * while the bar paint reads the RAW field and keeps the link chip: the two disagree
+   * about whether the clip is linked, and the picture is left silent with nothing in the
+   * panel saying why. So the delete sweeps the link off every survivor pointing at the
+   * clip that went — and un-mutes it too when it was MUTED, because the only reason it
+   * was silent was that its sound lived on the clip just deleted.
+   */
+  function sweepLinksTo(rows: Box[], goneId: string): Box[] {
+    const link = cfg.linkField;
+    if (!link || !goneId) return rows;
+    let touched = false;
+    const out = rows.map((b) => {
+      if (!b || String(b[link] ?? '') !== goneId) return b;
+      touched = true;
+      const muted = b[cfg.muteField] === true || b[cfg.muteField] === 'true';
+      return muted ? { ...b, [link]: '', [cfg.muteField]: '' } : { ...b, [link]: '' };
+    });
+    // Identity when nothing was linked: the commonest delete by far, and it must not
+    // look like a change to anything downstream that compares by reference.
+    return touched ? out : rows;
+  }
+
   function deleteBox(target?: string): void {
     const id = target || focusedId || selection.get()[0] || '';
     if (!id || !(bars.has(id) || chips.has(id))) return;
@@ -3006,7 +3337,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // UI never calls it a clip — announcing "Clip removed" for an always-on image is the
     // one place the vocabulary would slip, and it slips only for screen-reader users.
     const wasClip = bars.has(id);
-    write(removeAndRipple(getBoxes(), cfg, id, mediaDur));
+    write(sweepLinksTo(removeAndRipple(getBoxes(), cfg, id, mediaDur), id));
     selectAndReveal(focusedId ? [focusedId] : []);
     announce(wasClip ? t('Clip removed') : t('Removed'));
   }
@@ -3023,6 +3354,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /** Which edge the keyboard is aimed at, or null. Cleared by the first Escape. */
   let focusedEdge: 'in' | 'out' | null = null;
+
+  /** Every row's resolved timing, as one string — "did this edit change anything?". */
+  function timingSig(rows: Box[]): string {
+    return JSON.stringify(rows.map((b) => {
+      const tm = boxTiming(b, cfg);
+      return [String(b?.[cfg.idField] ?? ''), tm.start, tm.dur, tm.clipIn, tm.speed, tm.lane];
+    }));
+  }
 
   /** The clip a keyboard trim would act on: the focused bar, else the selected one. */
   function trimTargetId(): string {
@@ -3065,7 +3404,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (i < 0) return;
     const before = span(boxes[i]!, durationSec()).dur;
     const next = trimClip(boxes, cfg, id, focusedEdge, deltaSec, mediaOf(id).dur, mediaDur);
-    write(next);
+    // A press that hit a wall must not cost an undo entry — the same rule the split blade
+    // already follows ("a split at an existing cut writes NOTHING"). Compared on the
+    // resolved TIMING of every row, not on raw field equality: trimClip writes clipIn
+    // explicitly, so a refused nudge still returns rows carrying `clipIn: 0` where the
+    // field was simply absent before, and a textual comparison would call that a change.
+    // Timing is also the whole of what a trim can touch, so nothing else can be missed.
+    // The readout below is spoken either way: silence would read as a dropped keypress,
+    // and "trimmed 0.0s" is exactly the feedback a wall deserves.
+    if (timingSig(next) !== timingSig(boxes)) write(next);
     const j = indexOfId(next, cfg, id);
     const now = j >= 0 ? span(next[j]!, durationSec()).dur : before;
     const said = t('{name}: {dur}, trimmed {delta}', {
@@ -3662,6 +4009,76 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     });
   }
 
+  // ── the shortcuts sheet ──────────────────────────────────────────────────────
+  //
+  // Built from PANEL_SHORTCUTS, which is the same list `onKey` is written against, so
+  // the sheet cannot drift from the handler (timeline-panel.test.ts drives every row
+  // through the handler and checks the reverse direction too).
+  //
+  // Nodes, not an HTML string: every cell here is a translated string, and building the
+  // table with textContent means no locale catalog can ever inject markup into it.
+
+  let keysModal: ModalHandle<void> | null = null;
+
+  function openShortcuts(): void {
+    if (keysModal) return;
+    // A native <dialog> restores focus on close all by itself (the dialog-closing
+    // steps). Captured explicitly anyway so the guarantee belongs to the panel: the
+    // sheet opens from the toolbar button AND from `?` over a focused clip bar, and
+    // "you end up back where you were" has to hold for both.
+    const opener = document.activeElement as HTMLElement | null;
+
+    const sheet = document.createElement('div');
+    sheet.className = 'tl-keys-sheet';
+    const heading = document.createElement('h2');
+    heading.className = 'tl-keys-title';
+    heading.textContent = t('Timeline keyboard shortcuts');
+    const table = document.createElement('table');
+    table.className = 'tl-keys-table';
+    const tbody = document.createElement('tbody');
+    for (const row of PANEL_SHORTCUTS) {
+      const tr = document.createElement('tr');
+      const keysCell = document.createElement('td');
+      keysCell.className = 'tl-keys-keys';
+      const kbd = document.createElement('kbd');
+      kbd.textContent = row.keys;
+      keysCell.appendChild(kbd);
+      const whatCell = document.createElement('td');
+      whatCell.className = 'tl-keys-what';
+      whatCell.textContent = row.label;
+      if (row.hint) {
+        const hint = document.createElement('span');
+        hint.className = 'tl-keys-hint';
+        hint.textContent = row.hint;
+        whatCell.appendChild(hint);
+      }
+      tr.append(keysCell, whatCell);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    const actions = document.createElement('div');
+    actions.className = 'tl-keys-actions';
+    const done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'btn btn--primary';
+    done.textContent = t('Done');
+    actions.appendChild(done);
+    sheet.append(heading, table, actions);
+
+    const modal = mountModal<void>('', {
+      className: 'modal tl-keys-modal',
+      ariaLabel: t('Timeline keyboard shortcuts'),
+      onClose: () => {
+        keysModal = null;
+        if (opener?.isConnected) opener.focus();
+      },
+    });
+    keysModal = modal;
+    modal.el.appendChild(sheet);
+    done.addEventListener('click', () => modal.close());
+    done.focus();
+  }
+
   // ── keyboard (panel-scoped; NEVER window — free-canvas owns that channel) ────
 
   let hovered = false;
@@ -3669,6 +4086,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   function onKey(e: KeyboardEvent): void {
     if (!open) return;
     if (!panelKeysActive(root, document.activeElement, hovered)) return;
+    // UNMODIFIED ONLY (Shift excepted — several bindings below read it deliberately).
+    // Every binding here is a bare letter or punctuation chosen BECAUSE no browser
+    // fights for it; that reasoning only holds if the handler also declines the chord.
+    // Without this, Cmd/Ctrl+S split instead of saving the page, Cmd/Ctrl+F fitted the
+    // timeline instead of opening Find, Cmd+[ / Cmd+] armed a trim edge instead of
+    // going back/forward, and Ctrl+- / Ctrl+= zoomed the timeline instead of the page —
+    // every one of them preventDefault()ed. free-canvas.ts guards its `v`/`p` tool
+    // letters the same way.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     const total = durationSec();
     const stepS = e.shiftKey ? 1 : FRAME_S;
     switch (e.key) {
@@ -3729,26 +4155,47 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         e.preventDefault(); e.stopPropagation();
         trimBy((e.shiftKey ? TRIM_SHIFT_FRAMES : 1) * FRAME_S); return;
       case 'e': case 'E': e.preventDefault(); e.stopPropagation(); trimToPlayhead(); return;
-      // Onion skin: `o` toggles it, `O` (Shift+O) opens its options — the same
-      // bare-letter / Shift-letter split `s`/`S` and `d`/`D` already use, and the only
-      // key space left that no browser binding fights for.
-      case 'o': e.preventDefault(); e.stopPropagation(); toggleOnion(); return;
-      case 'O': e.preventDefault(); e.stopPropagation(); onionMenu.open(); return;
+      // Onion skin: `o` toggles it, Shift+O opens its options — the same bare-letter /
+      // Shift-letter split `s`/`S` and `d`/`D` already use, and the only key space left
+      // that no browser binding fights for. Both cases fold into ONE branch and the
+      // modifier is read off the EVENT, exactly like `s`/`S`: KeyboardEvent.key reports
+      // the produced character, so with Caps Lock on a bare `o` arrives as 'O' and
+      // Shift+o as 'o' — branching on the letter's case inverts the pair.
+      case 'o': case 'O':
+        e.preventDefault(); e.stopPropagation();
+        if (e.shiftKey) onionMenu.open(); else toggleOnion();
+        return;
       case '+': case '=': e.preventDefault(); e.stopPropagation(); zoom(ZOOM_STEP); return;
       case '-': case '_': e.preventDefault(); e.stopPropagation(); zoom(1 / ZOOM_STEP); return;
       case 'f': case 'F': e.preventDefault(); e.stopPropagation(); fit(); return;
       case 'Delete': case 'Backspace': e.preventDefault(); e.stopPropagation(); deleteBox(); return;
       // The menu key and Shift+F10 are the platform's context-menu keys. Without them
       // "Send to timeline" / "Make always on" would be pointer-only affordances.
+      // `?` is the web's own "what can I press here" key. Every shortcut this panel
+      // binds is a bare letter chosen because no browser fights for it, which also
+      // means none of them is guessable — so the sheet is not a nicety.
+      case '?': e.preventDefault(); e.stopPropagation(); openShortcuts(); return;
       case 'ContextMenu': e.preventDefault(); e.stopPropagation(); openCtxForFocused(); return;
       case 'F10': if (!e.shiftKey) return; e.preventDefault(); e.stopPropagation(); openCtxForFocused(); return;
-      // The Escape LADDER, narrowest mode first: (1) an armed keyboard trim edge,
-      // (2) a live take — mid-recording Escape is the "stop, I fluffed it" key, and
-      // closing the panel out from under a live microphone is not what the press meant
-      // — (3) the panel itself. Each rung is a mode the user entered deliberately, so
-      // each one gets its own press.
+      // The Escape LADDER, narrowest mode first: (1) a LIVE pointer drag — a trim or a
+      // move mid-flight is the narrowest mode of all, and it is a visible one (the bar
+      // carries .is-trimming, the badge and the reachable-media ghost are on screen), so
+      // Escape must abandon it rather than pull the whole panel out from under the
+      // pointer; (2) an armed keyboard trim edge, (3) a live take — mid-recording Escape
+      // is the "stop, I fluffed it" key, and closing the panel out from under a live
+      // microphone is not what the press meant — (4) the panel itself. Each rung is a
+      // mode the user entered deliberately, so each one gets its own press.
       case 'Escape':
         e.preventDefault(); e.stopPropagation();
+        if (gesture) {
+          // endGesture drops the pointer capture and the chrome, so the pointerup that
+          // follows finds `gesture === null` and writes nothing — the edit is abandoned,
+          // not committed. The re-sync repaints the bars from the model, since a live
+          // ripple preview would otherwise sit on screen until the next unrelated sync.
+          endGesture(gesture);
+          scheduleSync();
+          return;
+        }
         if (focusedEdge) { focusedEdge = null; paintFocusedEdge(); return; }
         if (takePhase !== 'idle') { cancelTake(); return; }
         setOpen(false); return;
@@ -3774,13 +4221,19 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
   // Shift-click the blade is the pointer twin of Shift+S: cut everything the playhead
   // is inside. Same one write, same one undo step.
-  splitBtn.addEventListener('click', (e) => splitAtPlayhead(e.shiftKey ? { everything: true } : undefined));
+  // aria-disabled is advisory, so the press has to be swallowed here — that is the
+  // price of keeping the blade focusable while it is inert (see syncSplitBtn).
+  splitBtn.addEventListener('click', (e) => {
+    if (splitBtn.getAttribute('aria-disabled') === 'true') return;
+    splitAtPlayhead(e.shiftKey ? { everything: true } : undefined);
+  });
   snapBtn.addEventListener('click', () => {
     snapOn = !snapOn;
     snapBtn.setAttribute('aria-pressed', snapOn ? 'true' : 'false');
     snapBtn.classList.toggle('is-active', snapOn);
   });
   snapBtn.classList.add('is-active');
+  keysBtn.addEventListener('click', openShortcuts);
   zoomInBtn.addEventListener('click', () => zoom(ZOOM_STEP));
   zoomOutBtn.addEventListener('click', () => zoom(1 / ZOOM_STEP));
   fitBtn.addEventListener('click', fit);
@@ -3862,6 +4315,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       : { past: [] as string[], future: [] as string[] };
     const mode = pref ? pref.mode : '';
     const opacity = pref ? pref.opacity : 1;
+    // BEFORE the gate, and deliberately: the splittable set is NOT the active set. A
+    // clip becomes active at its exact start, where a cut is impossible, and becomes
+    // splittable one frame later — so gating the blade's label on tl-time's signature
+    // would leave it disabled for the whole clip. It carries its own memo instead, so
+    // the per-tick cost is one scope resolution and no DOM write.
+    syncSplitBtn();
     const key = `${playing ? 1 : 0}|${activeIds.join(',')}|${mode}|${opacity}|${ghosts.past.join(',')}|${ghosts.future.join(',')}`;
     if (key === lastTimeKey) return;
     lastTimeKey = key;
@@ -3886,12 +4345,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   stageEl.addEventListener('fc-seek', onFcSeek);
   /**
    * A thumbnail shot has to un-hide an off-playhead box (see clip-thumbs' node section)
-   * and puts `.seq-off` back when it is done — but that restore is a GUESS taken up to
-   * a second and a half earlier, and the user may have scrubbed onto that very box in
-   * the meantime, leaving the ACTIVE frame `display:none` until the next seek. The
-   * clock is the only authority on which boxes are on screen, so it gets the last word
-   * after every shot. Cheap: `reapply()` is one pass of class/style writes, and this
-   * only fires for a box that actually carried the class.
+   * and puts `.seq-off` back when it is done. That restore used to be a GUESS taken up
+   * to a second and a half earlier, which is exactly how long the artboard could stay
+   * black: scrub onto the box being photographed and the applier removed `seq-off` from
+   * a box still parked 200vw away, so the LIVE scene was off the viewport until the
+   * shot settled and popped it back.
+   *
+   * The borrow is a LEASE now (`data-tl-borrowed`, sequence-dom.ts): the applier revokes
+   * it the instant the playhead moves onto the box, and the shot's restore re-hides only
+   * what still carries its own token. So this is no longer the fix — it is the belt to
+   * the applier's braces, for the ordinary case where nothing raced. Cheap: `reapply()`
+   * is one pass of class/style writes, and this only fires for a box that carried the
+   * class at all.
    */
   const unsubShot = onNodeShotSettled(() => {
     if (disposed) return;
@@ -3932,6 +4397,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       addMenu.close();
       ctxMenu.close();
       onionMenu.close();
+      easeMenu.close();
+      keysModal?.close();
       clock.pause();
       syncPlayBtn();   // a paused clock emits no ticks, so project the state now
       abortThumbs();
@@ -3948,12 +4415,19 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     cancelTake();
     disposed = true;
     if (noteTimer) { clearTimeout(noteTimer); noteTimer = 0; }
+    if (inspectorEnterT) { clearTimeout(inspectorEnterT); inspectorEnterT = null; }
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility);
     endGesture(gesture);
     // Body-mounted: these outlive root.remove() unless they are closed explicitly.
     try { addMenu.close(); } catch { /* never opened */ }
     try { ctxMenu.close(); } catch { /* never opened */ }
     try { onionMenu.close(); } catch { /* never opened */ }
+    try { easeMenu.close(); } catch { /* never opened */ }
+    // The editor holds a rAF loop and a document-level pointerup; closing the popover
+    // only takes its DOM away.
+    try { easeEditor?.destroy(); } catch { /* never opened */ }
+    easeEditor = null;
+    try { keysModal?.close(); } catch { /* never opened */ }
     if (onionHold) { clearTimeout(onionHold); onionHold = 0; }
     try { clock.pause(); } catch { /* already gone */ }
     abortThumbs();

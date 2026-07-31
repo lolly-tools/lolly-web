@@ -315,7 +315,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     // for what it checks (validity), lazy-loaded like the other dashboards.
     case 'verify': {
       const { mountValid } = await import('./views/valid.ts');
-      await mountValid(view, host);
+      await mountValid(view, host, route.params);
       break;
     }
     // --- Multi-edit: 2–8 saved sessions edited side by side (grid of live

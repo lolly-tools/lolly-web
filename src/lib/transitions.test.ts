@@ -5,6 +5,7 @@ import {
   TRANSITIONS, TRANSITION_KINDS, DEFAULT_TRANSITION,
   isTransitionKind, transitionLabel,
   easeOutCubic, easeOutBack, recTransition,
+  EASINGS, easingPoints, easingToWire, cubicBezierAt,
 } from './transitions.ts';
 
 const W = 320, H = 180;
@@ -149,4 +150,85 @@ test('only pop and zoom-out ever exceed their resting scale', () => {
     return false;
   });
   assert.deepEqual(overshoots.sort(), ['pop', 'zoom-out']);
+});
+
+// ── authored easing (geometry only) ───────────────────────────────────────────
+//
+// The contract these pin, in order of how much it would cost to break it:
+//   1. an unauthored box renders EXACTLY as it did before the control existed —
+//      this is what keeps the compositor's output stable;
+//   2. an authored ease moves geometry and leaves alpha alone, because a fade that
+//      tracks a slow curve turns to mud through video compression;
+//   3. the wire format is CSS's own, and junk in it falls back rather than throwing.
+
+test('an unauthored ease is byte-identical to the curve every kind was born with', () => {
+  for (const kind of TRANSITION_KINDS) {
+    for (const p of [0, 0.1, 0.25, 1 / 3, 0.5, 0.75, 0.9, 1]) {
+      const before = recTransition(kind, p, 640, 360);
+      const after = recTransition(kind, p, 640, 360, undefined);
+      assert.deepEqual(after, before, `${kind} @ ${p} — omitting the argument must change nothing`);
+      // Junk, an empty string and an out-of-range curve all mean "not authored".
+      for (const junk of ['', 'wobble', 'cubic-bezier(2,0,1,1)', 'cubic-bezier(0,0)', null, 42]) {
+        assert.deepEqual(recTransition(kind, p, 640, 360, junk), before, `${kind} @ ${p} — ${JSON.stringify(junk)} falls back`);
+      }
+    }
+  }
+});
+
+test('an authored ease moves geometry and never touches alpha', () => {
+  // A slide, so there is a real dx to watch, and its alpha ramp is the fast one.
+  for (const p of [0.2, 0.4, 0.6, 0.8]) {
+    const base = recTransition('slide-left', p, 640, 360);
+    const eased = recTransition('slide-left', p, 640, 360, 'linear');
+    assert.equal(eased.alpha, base.alpha, `alpha is the kind's own ramp at ${p}, not the curve`);
+    assert.notEqual(eased.dx, base.dx, `dx follows the authored curve at ${p}`);
+  }
+  // Linear geometry is the identity on progress, which is checkable in closed form:
+  // dx is (1 - p) x its full distance. The tolerance is in PIXELS, not in curve
+  // units — the solver's 1e-6 on t is multiplied by a 716px slide, so a tighter
+  // bound here would be measuring the iteration count rather than the maths.
+  const full = 640 * 0.9 + 140;
+  assert.ok(Math.abs(recTransition('slide-left', 0.25, 640, 360, 'linear').dx - 0.75 * full) < 0.01);
+  assert.ok(Math.abs(recTransition('slide-left', 0.5, 640, 360, 'linear').dx - 0.5 * full) < 0.01);
+});
+
+test('every endpoint is pinned whatever the curve, so nothing lands off its mark', () => {
+  for (const ease of [...Object.keys(EASINGS), 'cubic-bezier(0.2,-0.6,0.8,1.6)']) {
+    for (const kind of TRANSITION_KINDS) {
+      const end = recTransition(kind, 1, 640, 360, ease);
+      assert.ok(Math.abs(end.dx) < 1e-6 && Math.abs(end.dy) < 1e-6, `${kind}/${ease} rests at the origin`);
+      assert.ok(Math.abs(end.rot) < 1e-6, `${kind}/${ease} rests unrotated`);
+      assert.ok(Math.abs(end.sc - 1) < 1e-6, `${kind}/${ease} rests at full size`);
+    }
+  }
+});
+
+test('overshoot curves are allowed to leave the unit interval — that is the point', () => {
+  // y outside [0,1] is legal CSS and is the whole overshoot/anticipate family; x
+  // outside it is not, because the curve would stop being a function of progress.
+  assert.ok(easingPoints('overshoot')![1] > 1, 'overshoot passes its resting value');
+  assert.ok(easingPoints('anticipate')![1] < 0, 'anticipate pulls back before it moves');
+  assert.equal(easingPoints('cubic-bezier(0,2,1,-1)')![1], 2, 'a y beyond the unit interval is accepted');
+  assert.equal(easingPoints('cubic-bezier(-0.1,0,1,1)'), null, 'a negative x is rejected');
+  assert.equal(easingPoints('cubic-bezier(0,0,1.2,1)'), null, 'an x past 1 is rejected');
+  const mid = cubicBezierAt(0.34, 1.56, 0.64, 1, 0.5);
+  assert.ok(mid > 1, 'the overshoot curve really does exceed 1 mid-flight');
+});
+
+test('the bezier solver hits its endpoints and stays monotonic in time', () => {
+  assert.equal(cubicBezierAt(0.33, 1, 0.68, 1, 0), 0);
+  assert.equal(cubicBezierAt(0.33, 1, 0.68, 1, 1), 1);
+  // Linear control points are the identity, which is the cheapest possible check
+  // that the solver inverts x correctly rather than just returning t.
+  for (const x of [0.1, 0.25, 0.5, 0.9]) {
+    assert.ok(Math.abs(cubicBezierAt(0, 0, 1, 1, x) - x) < 1e-5, `linear is the identity at ${x}`);
+  }
+  // A flat spot is where Newton-Raphson diverges; the bisection fallback must cope.
+  assert.ok(Number.isFinite(cubicBezierAt(0, 0.5, 1, 0.5, 0.5)));
+});
+
+test('the wire format round-trips and canonicalises', () => {
+  assert.equal(easingToWire('ease-out'), 'ease-out', 'a preset stays its own name');
+  assert.equal(easingToWire('cubic-bezier( 0.1 , 0.2 , 0.3 , 0.4 )'), 'cubic-bezier(0.1,0.2,0.3,0.4)');
+  assert.equal(easingToWire('nonsense'), '', 'unparseable means unauthored, not an exception');
 });

@@ -43,6 +43,35 @@ async function drawSvgOnCanvas(cx: CanvasRenderingContext2D | OffscreenCanvasRen
 }
 
 /**
+ * Fill a rounded rectangle with per-corner radii. Traced by hand rather than via
+ * `roundRect`, which is not present on every OffscreenCanvas context this shell
+ * can end up with, and which takes a uniform radius list we would have to
+ * marshal anyway.
+ */
+function fillRounded(
+  cx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  s: { x: number; y: number; w: number; h: number; radii: [number, number, number, number] },
+  color: string,
+): void {
+  cx.fillStyle = color;
+  const [tl, tr, br, bl] = s.radii;
+  if (!tl && !tr && !br && !bl) { cx.fillRect(s.x, s.y, s.w, s.h); return; }
+  const x1 = s.x + s.w, y1 = s.y + s.h;
+  cx.beginPath();
+  cx.moveTo(s.x + tl, s.y);
+  cx.lineTo(x1 - tr, s.y);
+  if (tr) cx.arcTo(x1, s.y, x1, s.y + tr, tr);
+  cx.lineTo(x1, y1 - br);
+  if (br) cx.arcTo(x1, y1, x1 - br, y1, br);
+  cx.lineTo(s.x + bl, y1);
+  if (bl) cx.arcTo(s.x, y1, s.x, y1 - bl, bl);
+  cx.lineTo(s.x, s.y + tl);
+  if (tl) cx.arcTo(s.x, s.y, s.x + tl, s.y, tl);
+  cx.closePath();
+  cx.fill();
+}
+
+/**
  * host.pdf.pages — each page as a self-contained SVG document, the preview the
  * Redact tool draws its bar overlay on. Same recipe as redactPdf's per-page
  * render (openPdfFile → pageToSvg with outlined text → embedFonts), but the
@@ -142,16 +171,39 @@ export async function redactPdf(bytes: Uint8Array, opts: PdfRedactOpts, host?: R
     } catch {
       warnings.push(`Page ${i + 1} could not be rendered. It ships as a blank page with its bars burned in.`);
     }
-    cx.fillStyle = '#000000';
-    for (const bar of bars) {
-      if (Math.floor(Number(bar?.page)) !== i + 1) continue;
-      const r = core.barToPixels(bar, dpi, cw, ch);
-      if (r) cx.fillRect(r.x, r.y, r.w, r.h);
-    }
+    // Grayscale BEFORE the bars, not after: "scanned page" mode is about the
+    // source's colour (the yellow channel colour lasers hide tracking dots in),
+    // and the bars are our own mark, not source content. Draining them too would
+    // also make the burned colour disagree with the tool's preview.
     if (opts?.grayscale) {
       const img = cx.getImageData(0, 0, cw, ch);
       core.grayscaleInPlace(img.data);
       cx.putImageData(img, 0, 0);
+    }
+    // Bar fill: the caller's tone when it is fully opaque and readable, else the
+    // neutral ink. Never a raw assignment of `opts.color` — canvas ignores an
+    // unreadable fillStyle, which here would leave white-on-white bars that
+    // redact nothing.
+    const ink = core.normaliseInk(opts?.color) ?? core.REDACT_INK_FALLBACK;
+    const labelInk = core.normaliseInk(opts?.labelColor) ?? '#ffffff';
+    const radiusPx = Math.max(0, Math.round(((Number(opts?.radius) || 0) * dpi) / 72));
+    const label = String(opts?.label || '').trim();
+    for (const bar of bars) {
+      if (Math.floor(Number(bar?.page)) !== i + 1) continue;
+      const r = core.barToPixels(bar, dpi, cw, ch);
+      if (!r) continue;
+      const shape = core.inflateForRadius(r, radiusPx, cw, ch);
+      fillRounded(cx, shape, ink);
+      // The stamp is painted ON TOP of a shape that is already fully opaque, so
+      // it can never reveal anything: the pixels beneath it are already gone.
+      const lay = label ? core.stampLayout(shape, label, Math.round((14 * dpi) / 72)) : null;
+      if (lay) {
+        cx.fillStyle = labelInk;
+        cx.textAlign = 'center';
+        cx.textBaseline = 'middle';
+        cx.font = `600 ${lay.size}px system-ui, sans-serif`;
+        cx.fillText(label, lay.cx, lay.cy);
+      }
     }
     const blob = await canvasToJpeg(canvas, 0.92);
     if (!blob) throw new Error(`Page ${i + 1} could not be encoded as an image.`);

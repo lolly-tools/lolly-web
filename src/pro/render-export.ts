@@ -15,6 +15,7 @@
  */
 import { toCssPx, serializeUrlState, packQuery, isPackAvailable, PACK_PARAM } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
+import { csvToMarks } from '../lib/print-marks-csv.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
@@ -70,10 +71,20 @@ const EMBED_MAX_DURATION = 6;
 // RenderRowOpts.settleMs — see the constraint documented there.
 const SETTLE_MS = 350;
 
-/** One batch row: which tool to render and the input values to seed it with. */
+/** One batch row: which tool to render and the input values to seed it with,
+ *  plus the per-row PRINT settings (kept structurally compatible with
+ *  pro/batch.ts `BatchRow` and pro/folder-rows.ts `ExportRow` — the row shape is
+ *  declared in three places today, so a field added for the batch path has to be
+ *  added here too or it is silently dropped at the render boundary). */
 interface BatchRow {
   toolId: string;
   values?: Record<string, InputValue>;
+  /** CMYK press condition (the `profile` URL param), for pdf-cmyk / cmyk-tiff. */
+  profile?: string;
+  /** Bleed as a dimension string, e.g. "3mm". */
+  bleed?: string;
+  /** Print marks as the `marks` CSV — decoded by lib/print-marks-csv.ts. */
+  marks?: string;
 }
 
 /** Preferred format + optional output dimensions for a batch render. */
@@ -317,11 +328,14 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
     // native DEFLATE) entirely on that path — only real exports (batch, compose child) need it.
     const url = thumbnail ? '' : toolShareUrl(tool.manifest.id, await preferCompactQuery(serializeUrlState(runtime.getModel(), {
       format: fmt, width, height, unit, dpi: unit !== 'px' ? dpi : undefined,
+      // Print settings belong in the recreate link too — a zip recipient opening
+      // lolly.txt should land on the file they were sent, bleed and marks included.
+      profile: row.profile, bleed: row.bleed, marks: row.marks,
     })));
     // watermark/embedMeta/thumbnail are forwarded only when set (compose passes
     // watermark:false + embedMeta:false so an embedded child isn't stamped); batch
     // rows leave them undefined so runtime.export keeps its normal defaults.
-    const exportOpts: { width?: string | number; height?: string | number; dpi?: number; watermark?: boolean; embedMeta?: boolean; thumbnail?: boolean; strongPassword?: string; wait?: number; duration?: number; fps?: number; c2pa?: boolean; imprint?: boolean } = { width: outW, height: outH, dpi };
+    const exportOpts: { width?: string | number; height?: string | number; dpi?: number; watermark?: boolean; embedMeta?: boolean; thumbnail?: boolean; strongPassword?: string; wait?: number; duration?: number; fps?: number; c2pa?: boolean; imprint?: boolean; colorProfile?: string; bleed?: string; cropMarks?: boolean; registrationMarks?: boolean; bleedMarks?: boolean; colorBars?: boolean; provenance?: boolean } = { width: outW, height: outH, dpi };
     if (watermark !== undefined) exportOpts.watermark = watermark;
     if (embedMeta !== undefined) exportOpts.embedMeta = embedMeta;
     if (thumbnail !== undefined) exportOpts.thumbnail = thumbnail;
@@ -334,6 +348,21 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
     // Pixel watermark: opt-in only, never a default — the bridge embeds it on
     // raster formats and ignores it elsewhere.
     if (imprint) exportOpts.imprint = true;
+    // Print settings carried on the row (from the saved session / batch CSV). The
+    // single-tool export bar assembles the same shape in printOpts(); this is the
+    // batch path's equivalent, so a folder render honours the bleed, marks and
+    // press condition the user actually chose instead of silently rendering a
+    // trim-sized, unmarked, profile-less PDF.
+    if (row.profile) exportOpts.colorProfile = row.profile;
+    if (row.bleed) exportOpts.bleed = row.bleed;
+    const rowMarks = csvToMarks(row.marks);
+    if (rowMarks) {
+      exportOpts.cropMarks = rowMarks.crop;
+      exportOpts.registrationMarks = rowMarks.registration;
+      exportOpts.bleedMarks = rowMarks.bleed;
+      exportOpts.colorBars = rowMarks.colorBars;
+      exportOpts.provenance = rowMarks.provenance;
+    }
     // Motion format → capture a short clip. Its settle time + length come from the
     // tool's own render.video declaration (the same values the single-tool export bar
     // uses), with the length clamped so a composed/embedded render stays bounded. The

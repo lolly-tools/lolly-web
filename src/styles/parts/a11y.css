@@ -294,6 +294,7 @@ html[data-a11y-contrast="high"] .doc-tt-holder .ProseMirror:focus-visible {
    under high contrast it just goes fully opaque, which is the cheapest real
    contrast win available without inventing a second indicator. */
 html[data-a11y-contrast="high"] .be-lock-field input:focus,
+html[data-a11y-contrast="high"] .be-lock-field select:focus,
 html[data-a11y-contrast="high"] .be-cmyk-in input:focus,
 html[data-a11y-contrast="high"] .be-fmt-input:focus,
 html[data-a11y-contrast="high"] .be-logo-addmark-name:focus,

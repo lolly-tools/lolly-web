@@ -66,7 +66,7 @@ const {
   clampPanelH, tickStep, frameCountFor, packSeqRow, initTimelinePanel,
   isPaintedColor, thumbMode, canRasterBox, appearanceSig,
   MIN_PPS, MAX_PPS, MIN_PANEL_H, ONE_LANE_H, EDGE_PX, EDGE_PX_COARSE, TAKE_TIMING,
-  MAX_NODE_RASTERS_PER_PASS, MAX_THUMB_PASSES,
+  MAX_NODE_RASTERS_PER_PASS, MAX_THUMB_PASSES, PANEL_SHORTCUTS,
 } = await import('./timeline-panel.ts');
 // The trim readout's formatters, asserted against the badge the panel paints (the
 // numbers themselves are covered in tests/timeline-math.test.ts).
@@ -80,6 +80,10 @@ const cfg = {
   idField: 'id', startField: 'start', durField: 'dur', clipInField: 'clipIn',
   speedField: 'speed', enterField: 'enter', exitField: 'exit',
   enterMsField: 'enterMs', exitMsField: 'exitMs', muteField: 'mute', laneField: 'lane',
+  // OPTIONAL in TimeCfg, declared here because sequence-studio declares them: the
+  // inspector offers an easing control only for a tool whose manifest asked for the
+  // sub-field, so a cfg without these must not grow one (pinned below).
+  enterEaseField: 'enterEase', exitEaseField: 'exitEase',
 };
 
 const clip = (id: string, start: number, dur: number): Box => ({ id, start, dur, lane: 'seq' });
@@ -459,7 +463,7 @@ function mount(
   initial: Box[],
   pxPerSecHint = 40,
   addKinds: Array<{ id: string; label?: string; seed?: Record<string, unknown> }> = ADD_KINDS,
-  extra: { host?: unknown; capabilities?: string[]; assetField?: string; linkField?: string } = {},
+  extra: { host?: unknown; capabilities?: string[]; assetField?: string; linkField?: string; cfgPatch?: Record<string, unknown> } = {},
 ): Harness {
   const doc = dom.window.document;
   const stageEl = doc.createElement('div');
@@ -487,7 +491,7 @@ function mount(
     blockId: 'boxes',
     // `linkField` is the manifest's OPT-IN to detach/re-attach. Absent by default, so
     // every existing test still exercises a tool that never offers it.
-    cfg: extra.linkField ? { ...cfg, linkField: extra.linkField } : cfg,
+    cfg: extra.linkField || extra.cfgPatch ? { ...cfg, ...(extra.linkField ? { linkField: extra.linkField } : {}), ...extra.cfgPatch } : cfg,
     getBoxes: () => boxes,
     commit: (next: Box[]) => { commits.push(next.map((b) => ({ ...b }))); boxes = next.map((b) => ({ ...b })); },
     selection: {
@@ -770,6 +774,210 @@ test('the inspector opens for an UNTIMED box, with empty Start/Length and the tr
     assert.equal(timingBtn(h.root).textContent, 'Add to the timeline');
     // Playback-only fields stay out of the way until there is something playing.
     assert.equal(h.root.querySelector('.tl-inspector .tl-mute'), null, 'no mute on a box with no span');
+  } finally { h.teardown(); }
+});
+
+// ── the inspector ARRIVES rather than appearing ───────────────────────────────
+//
+// From a screen recording of the studio: selecting a clip made a whole row of controls
+// materialise in the toolbar between two adjacent video frames, and the row was BOTH
+// unannounced and half-unreachable. Two separate defects, pinned separately.
+
+test('the inspector leaves the layout entirely when nothing is selected', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const ins = h.root.querySelector('.tl-inspector') as HTMLElement;
+    assert.ok(ins, 'precondition: the row exists');
+    assert.equal(ins.hidden, true, 'no selection, no row — not an empty box still claiming the bar gap');
+
+    h.select(['a']);
+    assert.equal(ins.hidden, false, 'selecting a clip brings the row back');
+    assert.ok(ins.querySelectorAll('.tl-field').length > 0, 'and it has its fields');
+
+    // The orphan this pins: the row outlived its selection for the whole remainder of
+    // the recording, with no selected clip anywhere to explain why it was there.
+    h.select([]);
+    assert.equal(ins.hidden, true, 'dropping the selection takes the row with it');
+    assert.equal(ins.querySelectorAll('.tl-field').length, 0, 'and empties it');
+  } finally { h.teardown(); }
+});
+
+test('the entrance cue runs on ARRIVAL only, not on every rebuild', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const ins = h.root.querySelector('.tl-inspector') as HTMLElement;
+    h.select(['a']);
+    // The class lands a tick later, deliberately: on the same style pass that built the
+    // row the animation is coalesced away and never plays.
+    assert.equal(ins.classList.contains('is-entering'), false, 'not in the same pass as the build');
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(ins.classList.contains('is-entering'), true, 'the arrival is announced');
+
+    // A field edit rebuilds the row against new values. That is a CHANGE, not an
+    // arrival — re-running the cue on every scrub and every keystroke is its own noise.
+    ins.classList.remove('is-entering');
+    type(field(h.root, 'Length'), '2');
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(ins.classList.contains('is-entering'), false, 'a rebuild is not an arrival');
+
+    // Leaving and coming back IS an arrival again.
+    h.select([]);
+    h.select(['b']);
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(ins.classList.contains('is-entering'), true, 're-selecting announces again');
+  } finally { h.teardown(); }
+});
+
+test('the inspector never right-aligns its overflow off the unreachable start edge', () => {
+  // Not a layout assertion — jsdom has no layout. This pins the STYLE RULE, because the
+  // bug was purely declarative and invisible to every behavioural test: with
+  // `justify-content: flex-end` on a scroll container, content overflowing the START
+  // edge cannot be scrolled back to (scrollLeft is already 0), so Start, Length, Trim in,
+  // Speed and Animate in were permanently off the left edge of a narrow panel and only
+  // the tail of the row could ever be reached.
+  const css = readFileSync(new URL('../styles/parts/timeline.css', import.meta.url), 'utf8');
+  // Comments out first: the rule that replaced the defect NAMES the defect, so a raw
+  // text scan finds `flex-end` in the prose explaining why it is gone.
+  const decls = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const block = decls.slice(decls.indexOf('.tl-inspector {'), decls.indexOf('.tl-field {'));
+  assert.ok(block.includes('justify-content: flex-start'),
+    'the inspector packs from the start, so nothing overflows the edge that cannot be scrolled to');
+  assert.ok(!/justify-content:\s*flex-end/.test(block),
+    'flex-end is the defect itself — it must not come back');
+  assert.ok(/\.tl-inspector\s*>\s*:first-child\s*\{[^}]*margin-inline-start:\s*auto/.test(decls),
+    'the right-aligned look comes from an auto start margin, which collapses instead of clipping');
+});
+
+// ── authored easing ───────────────────────────────────────────────────────────
+//
+// The state that has to survive: UNAUTHORED. The kind's built-in curve is what every
+// box has always animated with, and the whole reason the compositor's output is still
+// byte-identical is that nothing writes an ease field until someone asks for one. A
+// control that helpfully seeded `ease-out` on first render would author a curve into
+// every box the user ever selected, and there would be no way back to the original.
+
+const easeSel = (root: HTMLElement, label: string): HTMLSelectElement =>
+  field(root, label) as unknown as HTMLSelectElement;
+
+const pick = (el: HTMLSelectElement, value: string): void => {
+  el.value = value;
+  el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+};
+
+test('the easing control opens on the BUILT-IN curve, and rendering it writes nothing', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    h.select(['a']);
+    const inSel = easeSel(h.root, 'In curve');
+    const outSel = easeSel(h.root, 'Out curve');
+    assert.equal(inSel.value, '', 'unauthored is a real state, and it is the default one');
+    assert.equal(outSel.value, '');
+    assert.equal(inSel.options[0]!.value, '', 'the built-in is an OPTION, not an implied absence of one');
+    assert.equal(h.commits.length, 0, 'showing the inspector is not an edit');
+    assert.equal('enterEase' in h.boxes[0]!, false, 'and the field was never written');
+
+    // Every named curve is on offer, plus the route to the editor.
+    const values = Array.from(inSel.options).map((o) => o.value);
+    assert.deepEqual(values, ['', 'linear', 'ease-out', 'ease-in', 'ease-in-out', 'overshoot', 'anticipate', '__custom']);
+  } finally { h.teardown(); }
+});
+
+test('choosing a preset is exactly ONE commit, carrying the wire string', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    h.select(['a']);
+    pick(easeSel(h.root, 'In curve'), 'overshoot');
+    assert.equal(h.commits.length, 1, 'one commit, one undo step — like every other field in this row');
+    assert.equal(h.commits[0]!.find((b) => b.id === 'a')!.enterEase, 'overshoot');
+    assert.equal(h.commits[0]!.find((b) => b.id === 'b')!.enterEase, undefined, 'and only the selected box');
+
+    // Back to the built-in, through the same one control.
+    h.notify();
+    pick(easeSel(h.root, 'In curve'), '');
+    assert.equal(h.commits.length, 2);
+    assert.equal(h.commits[1]!.find((b) => b.id === 'a')!.enterEase, '', 'the built-in is reachable again');
+
+    h.notify();
+    pick(easeSel(h.root, 'Out curve'), 'anticipate');
+    assert.equal(h.commits[2]!.find((b) => b.id === 'a')!.exitEase, 'anticipate', 'in and out are independent');
+  } finally { h.teardown(); }
+});
+
+test('an authored bezier brings its own option, showing the numbers rather than "Custom"', () => {
+  const h = mount([{ ...clip('a', 0, 3), enterEase: 'cubic-bezier(0.2,1.4,0.6,1)' } as Box]);
+  try {
+    h.select(['a']);
+    const sel = easeSel(h.root, 'In curve');
+    assert.equal(sel.value, 'cubic-bezier(0.2,1.4,0.6,1)', 'the control shows the value the model holds');
+    const opt = Array.from(sel.options).find((o) => o.value === sel.value)!;
+    assert.equal(opt.textContent, 'cubic-bezier(0.2,1.4,0.6,1)', 'a curve nobody can see is not described by the word "Custom"');
+  } finally { h.teardown(); }
+});
+
+test('"Custom…" is a route, not a value: it opens the editor and leaves the model alone', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    h.select(['a']);
+    const sel = easeSel(h.root, 'In curve');
+    pick(sel, '__custom');
+    assert.equal(h.commits.length, 0, 'opening the editor is not an edit');
+    assert.equal(sel.value, '', 'and the control never shows a state the model is not in');
+    const pop = openMenu('.tl-ease-pop');
+    assert.ok(pop, 'the curve editor opened');
+    assert.ok(pop!.querySelector('.ease-ed-plot'), 'with the plot in it');
+    assert.equal(pop!.parentElement, dom.window.document.body,
+      'body-mounted — a fixed popover parented inside the panel is knocked off screen by any ancestor transform');
+  } finally { h.teardown(); }
+});
+
+test('the curve editor writes through the SAME one-commit path as every other field', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    h.select(['a']);
+    pick(easeSel(h.root, 'In curve'), '__custom');
+    const read = openMenu('.tl-ease-pop')!.querySelector('.ease-ed-input') as HTMLInputElement;
+    read.value = 'cubic-bezier(0.1,0.9,0.2,1.4)';
+    read.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(h.commits.length, 1, 'ONE commit');
+    assert.equal(h.commits[0]!.find((b) => b.id === 'a')!.enterEase, 'cubic-bezier(0.1,0.9,0.2,1.4)');
+  } finally { h.teardown(); }
+});
+
+test('Escape closes the curve editor and puts focus back on the control that opened it', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    h.select(['a']);
+    const sel = easeSel(h.root, 'In curve');
+    pick(sel, '__custom');
+    assert.ok(openMenu('.tl-ease-pop'), 'precondition: it is up');
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    assert.equal(openMenu('.tl-ease-pop'), null, 'Escape closes it — the standing repo rule');
+    assert.equal(dom.window.document.activeElement, sel, 'and focus comes back to the trigger, not to <body>');
+    assert.equal(h.commits.length, 0, 'opened and abandoned, the box is as unauthored as it was');
+  } finally { h.teardown(); }
+});
+
+test('destroying the panel takes the curve editor with it', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    h.select(['a']);
+    pick(easeSel(h.root, 'In curve'), '__custom');
+    assert.ok(openMenu('.tl-ease-pop'), 'precondition: a card is up');
+  } finally { h.teardown(); }
+  assert.equal(openMenu('.tl-ease-pop'), null, 'no orphan popover left on <body>');
+});
+
+test('a tool that never declared an ease sub-field is offered no curve control', () => {
+  // The manifest is the contract: writing `enterEase` into a box for a tool whose hook
+  // does not read it is inventing a field, which is exactly what linkField's absence
+  // already gates the whole detach feature on.
+  const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { enterEaseField: undefined, exitEaseField: undefined } });
+  try {
+    h.select(['a']);
+    const labels = Array.from(h.root.querySelectorAll('.tl-inspector .field-label')).map((n) => n.textContent);
+    assert.ok(labels.includes('Animate in'), 'precondition: the transition fields are still there');
+    assert.equal(labels.includes('In curve'), false);
+    assert.equal(labels.includes('Out curve'), false);
   } finally { h.teardown(); }
 });
 
@@ -2821,4 +3029,652 @@ test('`o` toggles the onion skin from the keyboard; a model change re-emits the 
       assert.equal(seen.at(-1)?.mode, '', 'and `o` again turns it off');
     } finally { h.teardown(); }
   });
+});
+
+// ── discoverability: the shortcuts sheet + the blade's resolved-scope label ────
+
+/**
+ * jsdom implements `<dialog>` only as far as the `open` property — there is no
+ * showModal(), no close(), and none of the dialog-closing steps. Fill in exactly the
+ * three things components/modal.ts touches. Two consequences, stated so nothing below
+ * reads as more than it is:
+ *   • Escape does not synthesise a `cancel` event here, so the test dispatches one —
+ *     that IS what a browser does to an open modal dialog, and it is the event
+ *     mountModal listens to;
+ *   • the focus RESTORE asserted below is the panel's own (openShortcuts remembers the
+ *     element that was focused and puts it back in onClose), not this stub's — the stub
+ *     deliberately does not move focus at all, so the assertion has something to prove.
+ */
+{
+  const proto = dom.window.HTMLDialogElement.prototype as unknown as Record<string, unknown>;
+  if (typeof proto.showModal !== 'function') {
+    proto.showModal = function showModal(this: HTMLElement): void { this.setAttribute('open', ''); };
+    proto.close = function close(this: HTMLElement): void {
+      this.removeAttribute('open');
+      this.dispatchEvent(new dom.window.Event('close'));
+    };
+  }
+}
+
+/**
+ * Every `case` label in timeline-panel.ts's `onKey` switch, maintained BY HAND.
+ *
+ * This is the half of the drift guard a machine cannot derive: it is a transcription of
+ * the source, so adding a shortcut to the handler without documenting it in
+ * PANEL_SHORTCUTS fails here rather than shipping an invisible key. Compared
+ * case-insensitively, since the handler folds `s`/`S`, `e`/`E`, `o`/`O`, `f`/`F` and
+ * `d`/`D` into one branch and reads the modifier off the event.
+ */
+const ON_KEY_BRANCHES = [
+  ' ', 'Spacebar', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End',
+  's', 'S', 'd', 'D', '[', ']', ',', '<', '.', '>', 'e', 'E', 'o', 'O',
+  '+', '=', '-', '_', 'f', 'F', 'Delete', 'Backspace', '?', 'ContextMenu', 'F10', 'Escape',
+];
+
+/** Close anything a driven shortcut may have opened (body popover or the sheet). */
+function closeOverlays(): void {
+  const doc = dom.window.document;
+  for (const dlg of Array.from(doc.querySelectorAll('dialog'))) {
+    dlg.dispatchEvent(new dom.window.Event('cancel', { cancelable: true }));
+  }
+  doc.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+}
+
+test('the shortcuts sheet cannot drift from the key handler: every documented key is handled', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), clip('c', 5, 2)], 40, ADD_KINDS, { linkField: 'linkOf' });
+  try {
+    for (const row of PANEL_SHORTCUTS) {
+      for (const ev of row.events) {
+        // Escape closes the panel, `o` opens a popover, `?` opens the sheet — put the
+        // panel back in its resting state before each press so every row is driven
+        // against the same panel, not against the wreckage of the last one.
+        h.panel.setOpen(true);
+        h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+        const e = new dom.window.KeyboardEvent('keydown', {
+          key: ev.key, shiftKey: !!ev.shiftKey, bubbles: true, cancelable: true,
+        });
+        h.root.dispatchEvent(e);
+        assert.equal(e.defaultPrevented, true, `${row.keys} (${JSON.stringify(ev)}) — "${row.label}" is documented but not handled`);
+        closeOverlays();
+      }
+    }
+    // The modifier-only row (Alt) is the one that legitimately has no branch.
+    assert.deepEqual(
+      PANEL_SHORTCUTS.filter((r) => !r.events.length).map((r) => r.keys),
+      ['Alt'],
+      'only a modifier may be documented without a keydown branch of its own',
+    );
+    for (const row of PANEL_SHORTCUTS) {
+      assert.ok(row.keys.trim(), 'every row prints a key');
+      assert.ok(row.label.trim(), `${row.keys} says what it does`);
+    }
+  } finally { h.teardown(); }
+});
+
+test('the shortcuts sheet cannot drift from the key handler: every handled key is documented', () => {
+  const documented = new Set(
+    PANEL_SHORTCUTS.flatMap((r) => r.events.map((e) => e.key.toLowerCase())),
+  );
+  const undocumented = ON_KEY_BRANCHES.filter((k) => !documented.has(k.toLowerCase()));
+  assert.deepEqual(
+    undocumented, [],
+    'onKey handles a key the sheet never mentions. Every shortcut this panel binds is a '
+      + 'bare letter or punctuation chosen because no browser fights for it — which means '
+      + 'none of them is guessable, and an undocumented one is unreachable.',
+  );
+});
+
+test('`?` opens the shortcuts sheet, and closing it puts focus back where it came from', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    const el = h.bar('a');
+    el.focus();
+    press(el, '?');
+
+    const dlg = dom.window.document.querySelector('dialog.tl-keys-modal') as HTMLDialogElement | null;
+    assert.ok(dlg, 'the sheet mounted');
+    const rows = Array.from(dlg!.querySelectorAll('.tl-keys-table tr'));
+    assert.deepEqual(
+      rows.map((r) => r.querySelector('kbd')?.textContent),
+      PANEL_SHORTCUTS.map((s) => s.keys),
+      'the sheet IS PANEL_SHORTCUTS, in order — there is no second list to keep in step',
+    );
+    assert.deepEqual(
+      rows.map((r) => r.querySelector('.tl-keys-what')?.firstChild?.textContent),
+      PANEL_SHORTCUTS.map((s) => s.label),
+    );
+    assert.ok(rows.some((r) => r.querySelector('.tl-keys-hint')), 'the modifier hints are printed too');
+
+    // Escape on an open modal dialog fires `cancel`, which is what mountModal listens to.
+    dlg!.dispatchEvent(new dom.window.Event('cancel', { cancelable: true }));
+    assert.equal(dom.window.document.querySelector('dialog.tl-keys-modal'), null, 'Escape closed and removed it');
+    assert.equal(dom.window.document.activeElement, el, 'and focus went back to the bar it was opened from');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the toolbar button opens the same sheet, and closing it returns focus to the button', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    const btn = h.root.querySelector('.tl-keys') as HTMLButtonElement;
+    assert.ok(btn, 'the panel has a shortcuts button');
+    assert.equal(btn.getAttribute('aria-label'), 'Keyboard shortcuts');
+    assert.equal(btn.getAttribute('data-tip'), 'Keyboard shortcuts', 'label AND tip, per the btn() contract');
+    btn.focus();
+    btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    const dlg = dom.window.document.querySelector('dialog.tl-keys-modal') as HTMLDialogElement | null;
+    assert.ok(dlg, 'the sheet mounted');
+    dlg!.dispatchEvent(new dom.window.Event('cancel', { cancelable: true }));
+    assert.equal(dom.window.document.activeElement, btn, 'focus returned to the trigger');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the onion button carries both an aria-label and a data-tip, like every other tool button', () => {
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    const btn = h.root.querySelector('.tl-onion') as HTMLButtonElement;
+    assert.equal(btn.getAttribute('aria-label'), 'Onion skin');
+    assert.equal(btn.getAttribute('data-tip'), 'Onion skin');
+  } finally { h.teardown(); }
+});
+
+/** The blade is inert via aria-disabled, NEVER the property — see the next test. */
+const bladeOff = (b: HTMLButtonElement): boolean => b.getAttribute('aria-disabled') === 'true';
+
+test('the Split button says what it would cut, and is disabled when it would cut nothing', async () => {
+  const h = mount([clip('a', 0, 3), overlay('o1', 0, 3), overlay('o2', 0, 3), clip('b', 3, 2)]);
+  try {
+    const btn = h.root.querySelector('.tl-split') as HTMLButtonElement;
+    await frames(3);
+    // The playhead sits at 0 — every clip STARTS there, and a cut at a clip's own start
+    // is not a split. Disabled, rather than a refusal announced after the click.
+    assert.equal(bladeOff(btn), true, 'nothing to cut at zero');
+    assert.equal(btn.getAttribute('data-tip'), 'Split at playhead');
+
+    // Inside one clip, with nothing selected: the seq clip under the playhead.
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 1500 } }));
+    await frames(3);
+    assert.equal(bladeOff(btn), false);
+    assert.equal(btn.getAttribute('data-tip'), 'Split clip');
+    assert.equal(btn.getAttribute('aria-label'), 'Split clip', 'the label and the tip are the same sentence');
+
+    // A selection that spans the playhead takes over the scope — and says how much.
+    h.select(['a', 'o1', 'o2']);
+    assert.equal(btn.getAttribute('data-tip'), 'Split 3 clips');
+    assert.equal(bladeOff(btn), false);
+
+    // Past the end of everything: nothing selected spans it, nothing lies under it.
+    h.select([]);
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 60_000 } }));
+    await frames(3);
+    assert.equal(btn.getAttribute('data-tip'), 'Split at playhead');
+    assert.equal(bladeOff(btn), true, 'and the blade goes quiet again');
+  } finally { h.teardown(); }
+});
+
+test('the Split blade goes inert with aria-disabled, never the property — pressing it must not drop focus', async () => {
+  // A successful split leaves the playhead exactly on the cut it just made, so the blade
+  // resolves "nothing to cut" on the very next restyle: it goes inert the instant you use
+  // it. With the real `disabled` property the browser unfocuses a focused control, focus
+  // falls to <body>, and since the panel's key handler is bound on `root` and gated by
+  // panelKeysActive, a keyboard user would lose EVERY panel shortcut at that moment.
+  // jsdom does not implement blur-on-disable, so the invariant is pinned structurally:
+  // the property is never written, and the press is swallowed by the handler instead.
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const btn = h.root.querySelector('.tl-split') as HTMLButtonElement;
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 1500 } }));
+    await frames(3);
+    assert.equal(bladeOff(btn), false, 'armed inside clip a');
+
+    btn.focus();
+    btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await frames(3);
+
+    assert.equal(h.commits.length, 1, 'the cut landed');
+    assert.equal(bladeOff(btn), true, 'and the blade correctly reports nothing left to cut here');
+    assert.equal(btn.disabled, false, 'but the DOM property is never written — the button stays focusable');
+    assert.equal(dom.window.document.activeElement, btn, 'so focus stays on the blade');
+
+    // Inert means inert: a second press writes nothing at all.
+    btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await frames(1);
+    assert.equal(h.commits.length, 1, 'an aria-disabled press is swallowed');
+
+    // And the panel keyboard is still live from that focus, which is the whole point.
+    const before = h.selSets.length;
+    const ev = new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    btn.dispatchEvent(ev);
+    assert.equal(ev.defaultPrevented, true, 'the panel still owns the arrow keys');
+    assert.ok(h.selSets.length > before, 'and the shortcut did its work');
+  } finally { h.teardown(); }
+});
+
+test('the blade never promises a cut the press then refuses — the MIN_DUR band and open-ended clips', async () => {
+  // splitBox refuses within MIN_DUR (0.1s) of either edge rather than mint a sliver, and
+  // refuses an open-ended clip outright (no end to split against). Snapping does not
+  // cover the first gap: the tolerance is SNAP_PX_FINE/pxPerSec, which is under 0.1s at
+  // any zoom past 80px/s. So the label has to ask splitBox's own question.
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)], 200);
+  try {
+    const btn = h.root.querySelector('.tl-split') as HTMLButtonElement;
+    // 3.050s: 50ms past the a|b cut, inside b's span but inside the MIN_DUR band, and
+    // 10px from the cut at 200px/s — beyond the 8px snap tolerance, so it stays there.
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3050 } }));
+    await frames(3);
+    assert.equal(bladeOff(btn), true, 'the blade is inert inside the sliver band');
+    assert.equal(btn.getAttribute('data-tip'), 'Split at playhead');
+    btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    assert.equal(h.commits.length, 0, 'and the press writes nothing — label and press agree');
+
+    // Clear of the band, the same clip is splittable.
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 4000 } }));
+    await frames(3);
+    assert.equal(bladeOff(btn), false);
+    assert.equal(btn.getAttribute('data-tip'), 'Split clip');
+  } finally { h.teardown(); }
+});
+
+test('an OPEN-ENDED overlay is never offered as splittable — splitBox has no end to cut against', async () => {
+  const h = mount([clip('a', 0, 5), { id: 'o', start: 1, dur: '', lane: '' } as Box]);
+  try {
+    const btn = h.root.querySelector('.tl-split') as HTMLButtonElement;
+    h.select(['o']);
+    h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 2000 } }));
+    await frames(3);
+    // `a` is under the playhead, so the blade is live — but the SELECTION scope must not
+    // pick up the open-ended overlay, or the label would read "Split 2 clips".
+    assert.equal(btn.getAttribute('data-tip'), 'Split clip', 'the open-ended overlay is not counted');
+    btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await frames(1);
+    assert.equal(h.commits.length, 1);
+    assert.equal(h.commits[0]!.filter((b) => b.id === 'o').length, 1, 'and it was not cut in two');
+  } finally { h.teardown(); }
+});
+
+test('Caps Lock cannot invert the onion pair: the branch reads e.shiftKey, not the letter case', () => {
+  // KeyboardEvent.key reports the PRODUCED character, so with Caps Lock on a bare `o`
+  // arrives as 'O' with shiftKey false, and Shift+o arrives as 'o' with shiftKey true.
+  // A handler that branched on the letter's case would swap the two.
+  for (const [key, shiftKey, wantPopover] of [
+    ['o', false, false], ['O', false, false],   // both bare forms toggle
+    ['O', true, true], ['o', true, true],       // both shifted forms open the options
+  ] as const) {
+    const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+    try {
+      h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+      const btn = onionBtnOf(h);
+      press(h.root, key, { shiftKey });
+      const pop = dom.window.document.querySelector('.tl-onion-pop');
+      if (wantPopover) {
+        assert.ok(pop, `Shift+${key}: the options popover opened`);
+        assert.equal(btn.getAttribute('aria-pressed'), 'false', 'and the layer was NOT toggled');
+      } else {
+        assert.equal(pop, null, `${key}: no popover`);
+        assert.equal(btn.getAttribute('aria-pressed'), 'true', 'the layer toggled on');
+      }
+    } finally { closeOverlays(); h.teardown(); }
+  }
+});
+
+test('the panel declines Ctrl/Cmd/Alt chords — Save, Find, Open and browser zoom are not hijacked', () => {
+  // Every binding here is a bare letter or punctuation chosen BECAUSE no browser fights
+  // for it. That reasoning only holds if the handler also declines the CHORD: otherwise
+  // Cmd+S splits instead of saving, Cmd+F fits instead of finding, and Ctrl+- zooms the
+  // timeline instead of the page — each of them preventDefault()ed.
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    const el = h.bar('a');
+    el.focus();
+    h.commits.length = 0;
+    const chords: Array<[string, Record<string, boolean>]> = [
+      ['s', { metaKey: true }], ['s', { ctrlKey: true }],
+      ['f', { metaKey: true }], ['o', { metaKey: true }],
+      ['[', { metaKey: true }], [']', { metaKey: true }],
+      ['-', { ctrlKey: true }], ['=', { ctrlKey: true }],
+      ['ArrowLeft', { altKey: true }], ['Escape', { metaKey: true }],
+    ];
+    for (const [key, mods] of chords) {
+      const e = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...mods });
+      el.dispatchEvent(e);
+      assert.equal(e.defaultPrevented, false, `${JSON.stringify(mods)}+${key} belongs to the browser`);
+    }
+    assert.equal(h.commits.length, 0, 'and none of them edited the model');
+    assert.equal(h.panel.isOpen(), true, 'nor closed the panel');
+
+    // The unmodified key still works, so the guard is a filter and not a mute.
+    const ok = new dom.window.KeyboardEvent('keydown', { key: 's', bubbles: true, cancelable: true });
+    el.dispatchEvent(ok);
+    assert.equal(ok.defaultPrevented, true, 'bare `s` is still the panel\'s');
+  } finally { h.teardown(); }
+});
+
+test('the shortcuts sheet drift guard also covers the modifier chord for every documented key', () => {
+  // The guard above drives {key, shiftKey} only, so it cannot see a handler that claims
+  // Cmd/Ctrl/Alt as well. Drive the same rows again with each modifier and require the
+  // event to survive untouched.
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)], 40, ADD_KINDS, { linkField: 'linkOf' });
+  try {
+    h.panel.setOpen(true);
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    for (const row of PANEL_SHORTCUTS) {
+      for (const ev of row.events) {
+        for (const mod of ['metaKey', 'ctrlKey', 'altKey'] as const) {
+          const e = new dom.window.KeyboardEvent('keydown', {
+            key: ev.key, shiftKey: !!ev.shiftKey, [mod]: true, bubbles: true, cancelable: true,
+          });
+          h.root.dispatchEvent(e);
+          assert.equal(e.defaultPrevented, false, `${mod}+${row.keys} — "${row.label}" swallowed a browser chord`);
+        }
+      }
+    }
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('Escape during a LIVE trim leaves the trim, not the panel — one rung per press', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    const el = h.bar('a');
+    const badge = h.root.querySelector('.tl-trim-badge') as HTMLElement;
+    el.dispatchEvent(pointer('pointerdown', 118));                      // a's out edge
+    h.root.dispatchEvent(pointer('pointermove', 78, { altKey: true }));
+    await frames(3);
+    assert.equal(el.classList.contains('is-trimming'), true, 'precondition: a visible mode');
+    assert.equal(badge.hidden, false);
+
+    press(h.root, 'Escape');
+    assert.equal(el.classList.contains('is-trimming'), false, 'the trim was abandoned');
+    assert.equal(badge.hidden, true);
+    assert.equal(h.panel.isOpen(), true, 'and the panel is STILL OPEN — Escape took one rung');
+    // The pointerup that follows finds no gesture, so nothing is written either way.
+    h.root.dispatchEvent(pointer('pointerup', 78, { altKey: true }));
+    assert.equal(h.commits.length, 0, 'an abandoned trim writes nothing');
+    await frames(3);
+    assert.equal(el.style.width, '120px', 'and the live preview was repainted back to the model');
+
+    // A second press now closes the panel, the way the ladder promises.
+    press(h.root, 'Escape');
+    assert.equal(h.panel.isOpen(), false);
+  } finally { h.teardown(); }
+});
+
+test('the first clip on the magnetic row can put its trimmed-in head BACK', () => {
+  // `trimClip`'s "can't pull the clip before t=0" bound is only real on an OVERLAY: the
+  // seq row's start is re-derived by packOrder. At index 0 it used to pin the lower
+  // bound at 0, so a head trim on the first clip was the one edit in the sequence that
+  // could never be undone by dragging the same edge back.
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const el = h.bar('a');
+    el.dispatchEvent(pointer('pointerdown', 2));                          // a's in edge
+    h.root.dispatchEvent(pointer('pointermove', 42, { altKey: true }));   // +1s
+    h.root.dispatchEvent(pointer('pointerup', 42, { altKey: true }));
+    const a1 = h.commits[0]!.find((x) => x.id === 'a')!;
+    assert.equal(Number(a1.clipIn), 1, 'precondition: a second of source is behind the in point');
+    assert.equal(Number(a1.dur), 2);
+
+    // Now drag the same edge the other way. There is a second of source to give back.
+    const el2 = h.bar('a');
+    el2.dispatchEvent(pointer('pointerdown', 2));
+    h.root.dispatchEvent(pointer('pointermove', -38, { altKey: true }));  // -1s
+    h.root.dispatchEvent(pointer('pointerup', -38, { altKey: true }));
+    assert.equal(h.commits.length, 2, 'the second drag committed');
+    const a2 = h.commits[1]!.find((x) => x.id === 'a')!;
+    assert.equal(Number(a2.clipIn), 0, 'the source in-point went back where it started');
+    assert.equal(Number(a2.dur), 3, 'and the clip got its head back');
+    assert.equal(Number(a2.start), 0, 'the magnetic row still starts at zero');
+  } finally { h.teardown(); }
+});
+
+test('deleting a detached sound un-mutes the picture and takes the dangling link with it', () => {
+  const h = mount(
+    [{ id: 'v', start: 0, dur: 4, lane: 'seq', mute: true, linkOf: 's' } as Box,
+      { id: 's', start: 0, dur: 4, lane: '' } as Box],
+    40, AUDIO_KINDS, { linkField: 'linkOf' },
+  );
+  try {
+    const sound = armKeys(h, 's', 60);
+    press(sound, 'Delete');
+    assert.equal(h.commits.length, 1);
+    const v = h.commits[0]!.find((b) => b.id === 'v')!;
+    assert.equal(h.commits[0]!.length, 1, 'the sound is gone');
+    assert.equal(String(v.linkOf ?? ''), '', 'and its partner is not left pointing at a ghost');
+    assert.ok(v.mute !== true && v.mute !== 'true',
+      'the picture was only silent because its sound lived on that clip — it is audible again');
+  } finally { h.teardown(); }
+});
+
+test('deleting the PICTURE clears the dangling link on the sound that survives it', () => {
+  const h = mount(
+    [{ id: 'v', start: 0, dur: 4, lane: 'seq', mute: true, linkOf: 's' } as Box,
+      { id: 's', start: 0, dur: 4, lane: '', linkOf: 'v' } as Box],
+    40, AUDIO_KINDS, { linkField: 'linkOf' },
+  );
+  try {
+    const pic = armKeys(h, 'v', 60);
+    press(pic, 'Delete');
+    const s = h.commits[0]!.find((b) => b.id === 's')!;
+    assert.equal(String(s.linkOf ?? ''), '', 'no dangling id survives the delete');
+    assert.ok(s.mute !== true && s.mute !== 'true', 'and an audible sound stays audible');
+  } finally { h.teardown(); }
+});
+
+test('a delete with nothing linked returns the SAME array the ripple produced', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)], 40, ADD_KINDS, { linkField: 'linkOf' });
+  try {
+    const el = armKeys(h, 'a', 60);
+    press(el, 'Delete');
+    assert.deepEqual(h.commits[0]!.map((b) => b.id), ['b'], 'the sweep is a no-op when nothing points anywhere');
+    assert.equal(Number(h.commits[0]![0]!.start), 0, 'and the ripple still ran');
+  } finally { h.teardown(); }
+});
+
+test('the reachable-media ghost is SHOWN during a trim, spanning the whole source', async () => {
+  // The suite already pins that it comes off on release; this pins that it goes ON, and
+  // where. `left`/`width` are pure arithmetic over the model (timeToPx), so jsdom's zero
+  // rects do not reach them — only `top`/`height`, which are deliberately not asserted.
+  const h = mount([clip('a', 0, 5), overlay('o', 1, 2)]);
+  try {
+    // A 6s source behind a 2s clip that starts 1s into it: reachable span is 0s → 6s.
+    paintMediaBoxes(h, { o: '<div class="lolly-box-audio" data-audio-src="vo.mp3" data-audio-dur="6000"></div>' });
+    const boxes = h.boxes;
+    (boxes.find((b) => b.id === 'o') as Box).clipIn = 1;
+    const extent = h.root.querySelector('.tl-clip-extent') as HTMLElement;
+    assert.equal(extent.hidden, true, 'hidden at rest');
+
+    const el = h.bar('o');
+    el.dispatchEvent(pointer('pointerdown', 118));                        // o's out edge (3s = 120px)
+    h.root.dispatchEvent(pointer('pointermove', 138, { altKey: true }));
+    await frames(3);
+    assert.equal(extent.hidden, false, 'the ghost is on screen for the length of the drag');
+    assert.equal(extent.style.left, '0px', 'starting where the source starts (1s of head, 1s before the clip)');
+    assert.equal(extent.style.width, '240px', 'and running the source\'s whole 6s at 40px/s');
+
+    h.root.dispatchEvent(pointer('pointerup', 138, { altKey: true }));
+    assert.equal(extent.hidden, true);
+  } finally { h.teardown(); }
+});
+
+// ── the onion-skin OPTIONS popover ────────────────────────────────────────────
+//
+// The toggle above is well covered; the popover behind it was not covered at all. Three
+// things only it can get wrong: that changing an option turns the feature ON (the
+// popover implies intent — you do not open it to configure something invisible), that
+// the long press and the click which ENDS it do not fight each other, and that the
+// controls write through the same clamped writers the stored record is read with.
+
+const onionPop = (): HTMLElement | null =>
+  dom.window.document.querySelector('.tl-onion-pop') as HTMLElement | null;
+
+test('right-clicking the onion button opens its options, and a second right-click closes them', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const btn = onionBtnOf(h);
+    assert.equal(btn.getAttribute('aria-haspopup'), 'dialog', 'the button says a dialog is behind it');
+    rightClick(btn);
+    const pop = onionPop();
+    assert.ok(pop, 'the options opened');
+    assert.equal(pop!.getAttribute('role'), 'dialog');
+    assert.equal(pop!.getAttribute('aria-label'), 'Onion skin options');
+    assert.deepEqual(
+      Array.from(pop!.querySelectorAll('.tl-onion-row .field-label')).map((n) => n.textContent),
+      ['Mode', 'Scenes before', 'Scenes after', 'Ghost strength'],
+      'mode, two INDEPENDENT counts, and the master strength',
+    );
+    assert.equal(btn.getAttribute('aria-pressed'), 'false', 'opening the options is not a toggle');
+    rightClick(btn);
+    assert.equal(onionPop(), null, 're-invoking closes, like every other disclosure here');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('Shift+O opens the options without toggling the layer', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    h.root.dispatchEvent(new dom.window.Event('pointerenter'));
+    press(h.root, 'O', { shiftKey: true });
+    assert.ok(onionPop(), 'the keyboard reaches the same dialog the pointer does');
+    assert.equal(onionBtnOf(h).getAttribute('aria-pressed'), 'false');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('changing an option turns the feature ON, and writes through the clamped writers', async () => {
+  const store = fakeStorage();
+  await withStorage(store, async () => {
+    const h = mount([clip('a', 0, 2), clip('b', 2, 2), clip('c', 4, 2), clip('d', 6, 2)]);
+    try {
+      await frames(3);
+      const btn = onionBtnOf(h);
+      assert.equal(btn.getAttribute('aria-pressed'), 'false', 'precondition: off');
+      rightClick(btn);
+
+      const mode = onionPop()!.querySelector('select') as HTMLSelectElement;
+      mode.value = 'filled';
+      mode.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      assert.equal(btn.getAttribute('aria-pressed'), 'true',
+        'you do not open the options to configure something invisible — the change turns it on');
+      assert.deepEqual(JSON.parse(store.map.get('lolly:onion')!), { mode: 'filled', before: 1, after: 1, opacity: 1 });
+
+      // The steppers are independent, and both clamp to the 0…ONION_MAX_STEPS ceiling.
+      const [before, after] = Array.from(onionPop()!.querySelectorAll('.tl-onion-step')) as HTMLInputElement[];
+      assert.equal(before!.max, '2', 'the control states the same ceiling the writer enforces');
+      before!.value = '9';
+      before!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      after!.value = '-3';
+      after!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+
+      const range = onionPop()!.querySelector('.field-range') as HTMLInputElement;
+      range.value = '40';
+      range.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+      assert.deepEqual(JSON.parse(store.map.get('lolly:onion')!), { mode: 'filled', before: 2, after: 0, opacity: 0.4 });
+
+      // And the canvas is told, with the counts honoured independently.
+      const seen: Array<{ past?: string[]; future?: string[]; opacity?: number }> = [];
+      h.stageEl.addEventListener('tl-time', (e) => { seen.push((e as CustomEvent).detail); });
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 6500 } }));
+      await frames(3);
+      const last = seen.at(-1)!;
+      assert.deepEqual(last.past, ['c', 'b'], 'two behind');
+      assert.deepEqual(last.future, [], 'none ahead');
+      assert.equal(last.opacity, 0.4);
+    } finally { closeOverlays(); h.teardown(); }
+  });
+});
+
+test('a LONG press opens the options — and the click that ends it does not toggle the layer', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const btn = onionBtnOf(h);
+    btn.dispatchEvent(pointer('pointerdown', 10));
+    await new Promise((r) => setTimeout(r, 560));           // past the 500ms hold
+    assert.ok(onionPop(), 'the hold opened the options');
+    btn.dispatchEvent(pointer('pointerup', 10));
+    click(btn);                                            // the press-ending click
+    assert.equal(btn.getAttribute('aria-pressed'), 'false',
+      'the click that ends a long press must not undo what the press did');
+
+    // A plain, short press is still a toggle.
+    closeOverlays();
+    btn.dispatchEvent(pointer('pointerdown', 10));
+    btn.dispatchEvent(pointer('pointerup', 10));
+    click(btn);
+    assert.equal(btn.getAttribute('aria-pressed'), 'true', 'a short press still toggles');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+// ── coarse-pointer snapping ───────────────────────────────────────────────────
+
+test('the snap tolerance follows the POINTER: a finger snaps from 12px, a cursor only from 8', async () => {
+  // A 2s overlay (80px at 40px/s) dragged so its in-point lands 10px — 0.25s — short of
+  // the a|b cut at 3s. Inside the 12px touch window, outside the 8px cursor one. Grabbed
+  // at 50px: clear of BOTH the 10px cursor zone and the 24px touch zone, so it is a move
+  // either way and the only difference under test is the snap tolerance.
+  for (const [pointerType, wantStart] of [['touch', 3], ['mouse', 2.75]] as const) {
+    const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 0, 2)]);
+    try {
+      const el = h.bar('o');
+      const grabAt = 50;                                     // the BODY, so this is a move
+      el.dispatchEvent(pointer('pointerdown', grabAt, { pointerType }));
+      h.root.dispatchEvent(pointer('pointermove', grabAt + 110, { pointerType }));
+      await frames(3);
+      h.root.dispatchEvent(pointer('pointerup', grabAt + 110, { pointerType }));
+      const o = h.commits[0]!.find((b) => b.id === 'o')!;
+      assert.equal(Number(o.start), wantStart, pointerType === 'touch'
+        ? 'a finger 10px out still landed ON the cut'
+        : 'a cursor 10px out stayed exactly where it was put');
+    } finally { h.teardown(); }
+  }
+});
+
+test('a newly engaged snap ticks the vibrator — on a finger only, and never under reduced motion', async () => {
+  // The panel reads the AMBIENT `navigator`, not window's — node has one of its own and
+  // this file does not copy jsdom's over the top of it.
+  const nav = globalThis.navigator as unknown as { vibrate?: (n: number) => boolean };
+  const had = Object.prototype.hasOwnProperty.call(nav, 'vibrate');
+  const prior = nav.vibrate;
+  const buzzes: number[] = [];
+  Object.defineProperty(nav, 'vibrate', { value: (n: number) => { buzzes.push(n); return true; }, configurable: true });
+  const doc = dom.window.document;
+  try {
+    for (const [pointerType, motion, want] of [
+      ['touch', '', 1], ['mouse', '', 0], ['touch', 'reduce', 0],
+    ] as const) {
+      buzzes.length = 0;
+      if (motion) doc.documentElement.setAttribute('data-a11y-motion', motion);
+      else doc.documentElement.removeAttribute('data-a11y-motion');
+      const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 0, 2)]);
+      try {
+        const el = h.bar('o');
+        const grabAt = 50;
+        el.dispatchEvent(pointer('pointerdown', grabAt, { pointerType }));
+        h.root.dispatchEvent(pointer('pointermove', grabAt + 118, { pointerType }));
+        await frames(3);
+        // Still snapped to the SAME candidate: engaged once, felt once.
+        h.root.dispatchEvent(pointer('pointermove', grabAt + 120, { pointerType }));
+        await frames(3);
+        h.root.dispatchEvent(pointer('pointerup', grabAt + 120, { pointerType }));
+        assert.equal(buzzes.length, want, `${pointerType}${motion ? ` + ${motion}d motion` : ''}`);
+        if (want) assert.deepEqual(buzzes, [8], 'one 8ms tick, not a buzz per frame');
+      } finally { h.teardown(); }
+    }
+  } finally {
+    doc.documentElement.removeAttribute('data-a11y-motion');
+    if (had) Object.defineProperty(nav, 'vibrate', { value: prior, configurable: true });
+    else delete (nav as Record<string, unknown>).vibrate;
+  }
+});
+
+test('a keyboard trim that hits a wall costs no undo entry — but still reads back', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    const el = armKeys(h, 'a', 60);
+    press(el, '[');                     // aim at the in edge; there is no source behind it
+    press(el, ',');                     // pull left: refused, clipIn is already 0
+    assert.equal(h.commits.length, 0, 'a refused nudge writes nothing at all');
+    press(el, '.');                     // and the working direction still writes once
+    assert.equal(h.commits.length, 1);
+    assert.equal(Number(h.commits[0]!.find((x) => x.id === 'a')!.clipIn), 0.033);
+  } finally { h.teardown(); }
 });

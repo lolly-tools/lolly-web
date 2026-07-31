@@ -72,13 +72,135 @@ function easeOutBack(t: number): number {
   return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
 }
 
+/* ── Authored easing ─────────────────────────────────────────────────────────
+   The curve above is the one every kind was BORN with, and it stays the answer
+   when nothing is authored — `recTransition` with no ease argument returns the
+   numbers it always returned, byte for byte, which is the property that lets the
+   compositor keep its existing output.
+
+   What an authored ease governs is GEOMETRY ONLY: dx, dy, sc, rot. Alpha keeps
+   its own fixed ramp (`pc / 0.6`, or `pc / 0.4` for the slides) because that ramp
+   is not a stylistic choice — a fade that tracks a slow curve turns to mud once
+   the frame has been through video compression, which is what the `aFast` comment
+   below has always been about. Opacity therefore has no curve control anywhere in
+   the UI, by design, not by omission.
+
+   The wire format is a string, and it is a PERMANENT CONTRACT like the kind keys:
+   either a preset name from `EASINGS` or a CSS `cubic-bezier(a,b,c,d)`. CSS's own
+   spelling, so it is readable in a URL, familiar to anyone who has written a
+   transition, and needs no bespoke serialisation. */
+
+/** The named curves offered before anyone reaches for a custom one. */
+export const EASINGS = Object.freeze({
+  linear: 'Linear',
+  'ease-out': 'Ease out',
+  'ease-in': 'Ease in',
+  'ease-in-out': 'Ease in and out',
+  overshoot: 'Overshoot',
+  anticipate: 'Anticipate',
+} as const);
+
+export type EasingName = keyof typeof EASINGS;
+
+/** The preset curves as bezier control points, in CSS order (x1, y1, x2, y2). */
+const EASING_POINTS: Readonly<Record<EasingName, readonly [number, number, number, number]>> = Object.freeze({
+  linear: [0, 0, 1, 1],
+  'ease-out': [0.33, 1, 0.68, 1],
+  'ease-in': [0.32, 0, 0.67, 0],
+  'ease-in-out': [0.65, 0, 0.35, 1],
+  // y > 1 overshoots the resting value and settles back; y < 0 pulls away first.
+  // Both are legal CSS and both are what people mean by "with a bit of life".
+  overshoot: [0.34, 1.56, 0.64, 1],
+  anticipate: [0.36, -0.4, 0.66, 1],
+});
+
+export function isEasingName(v: unknown): v is EasingName {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(EASINGS, v);
+}
+
+/** The four control points of an authored ease, or null if it isn't one. */
+export function easingPoints(v: unknown): [number, number, number, number] | null {
+  if (isEasingName(v)) return [...EASING_POINTS[v]];
+  if (typeof v !== 'string') return null;
+  const m = /^\s*cubic-bezier\(([^)]*)\)\s*$/i.exec(v);
+  if (!m) return null;
+  const n = m[1]!.split(',').map((s) => Number(s.trim()));
+  if (n.length !== 4 || n.some((x) => !Number.isFinite(x))) return null;
+  // x is TIME and must stay inside the unit interval or the curve is not a
+  // function of progress — CSS rejects the same thing. y is unbounded on purpose:
+  // that is the whole overshoot family.
+  if (n[0]! < 0 || n[0]! > 1 || n[2]! < 0 || n[2]! > 1) return null;
+  return [n[0]!, n[1]!, n[2]!, n[3]!];
+}
+
+/** Round-trip an authored ease back to its canonical wire string. */
+export function easingToWire(v: unknown): string {
+  if (isEasingName(v)) return v;
+  const p = easingPoints(v);
+  return p ? `cubic-bezier(${p.map((x) => Math.round(x * 1000) / 1000).join(',')})` : '';
+}
+
+/**
+ * y at time x on a unit cubic bezier with endpoints (0,0) and (1,1).
+ *
+ * Newton-Raphson first, because it converges in two or three steps for the curves
+ * anyone actually authors, then bisection as the guaranteed fallback — the same
+ * shape as every browser's own implementation. A near-zero derivative is where
+ * Newton diverges (a curve with a flat spot, e.g. an x1 of 0 against an x2 of 1),
+ * so that case bails to bisection rather than dividing by it.
+ */
+export function cubicBezierAt(x1: number, y1: number, x2: number, y2: number, x: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sampleX = (t: number): number => ((ax * t + bx) * t + cx) * t;
+  const sampleY = (t: number): number => ((ay * t + by) * t + cy) * t;
+  const slopeX = (t: number): number => (3 * ax * t + 2 * bx) * t + cx;
+  let t = x;
+  for (let i = 0; i < 8; i++) {
+    const dx = sampleX(t) - x;
+    if (Math.abs(dx) < 1e-6) return sampleY(t);
+    const d = slopeX(t);
+    if (Math.abs(d) < 1e-6) break;
+    t -= dx / d;
+  }
+  let lo = 0, hi = 1;
+  t = x;
+  for (let i = 0; i < 24 && Math.abs(sampleX(t) - x) > 1e-6; i++) {
+    if (sampleX(t) < x) lo = t; else hi = t;
+    t = (lo + hi) / 2;
+  }
+  return sampleY(t);
+}
+
+/**
+ * The geometry curve for one transition: the authored ease if there is a valid one,
+ * otherwise the kind's own — which is `easeOutBack` for `pop` and `easeOutCubic` for
+ * everything else, exactly as before this control existed.
+ */
+function geometryEase(kind: string, ease: unknown): (t: number) => number {
+  const p = easingPoints(ease);
+  if (p) return (t: number) => cubicBezierAt(p[0], p[1], p[2], p[3], t);
+  return kind === 'pop' ? easeOutBack : easeOutCubic;
+}
+
 // One object's animated offset at progress p∈[0,1] (0 = entrance start, 1 = at rest).
 // Distances scale with the object's own size so a small lower-third slides a small way.
-function recTransition(kind: string, p: number, w: number, h: number): { dx: number; dy: number; sc: number; alpha: number; rot: number } {
+//
+// `ease` is optional and governs GEOMETRY ONLY (see the easing section above). Omit it
+// — as every caller did before the control existed, and as every unauthored box still
+// does — and the numbers are identical to the ones this returned when the maths first
+// moved out of the compositor.
+function recTransition(kind: string, p: number, w: number, h: number, ease?: unknown): { dx: number; dy: number; sc: number; alpha: number; rot: number } {
   if (kind === 'none') return { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 0 };
   const pc = Math.max(0, Math.min(1, p));
-  const ep = easeOutCubic(pc);
-  const eb = easeOutBack(pc);
+  const curve = geometryEase(kind, ease);
+  // `ep` and `eb` are the SAME curve now — a kind picks its default through
+  // `geometryEase`, and an authored ease overrides whichever it would have used. The
+  // two names are kept because the cases below read as the shapes they always were.
+  const ep = curve(pc);
+  const eb = kind === 'pop' ? ep : easeOutBack(pc);
   const aFast = Math.min(1, pc / 0.6);   // opacity ramps in fast → crisp video/gif
   const aSlide = Math.min(1, pc / 0.4);
   let dx = 0, dy = 0, sc = 1, alpha = aFast, rot = 0;
@@ -103,4 +225,4 @@ function recTransition(kind: string, p: number, w: number, h: number): { dx: num
   return { dx, dy, sc, alpha, rot };
 }
 
-export { easeOutCubic, easeOutBack, recTransition };
+export { easeOutCubic, easeOutBack, recTransition, geometryEase };

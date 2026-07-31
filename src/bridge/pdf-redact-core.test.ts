@@ -21,6 +21,7 @@ import {
   clampDpi, barToPixels, grayscaleInPlace, buildImagePdf,
   clampMaxPages, collectPages, PAGES_MAX_DEFAULT,
   REDACT_DPI_DEFAULT, REDACT_DPI_MIN, REDACT_DPI_MAX, BAR_INFLATE_PX,
+  normaliseInk, inflateForRadius, stampLayout, REDACT_INK_FALLBACK,
 } from './pdf-redact-core.ts';
 import { scanPdfStructure } from './pdf-structure.ts';
 
@@ -208,4 +209,77 @@ test('buildImagePdf: page count and MediaBox preserved, one %%EOF, nothing else 
 
 test('buildImagePdf refuses an empty page list', async () => {
   await assert.rejects(() => buildImagePdf([]), /no pages/i);
+});
+
+// ─── the branded mark (v1.90 additive opts) ──────────────────────────────────
+
+test('normaliseInk: colour is neutral, translucency is not', () => {
+  // Colour is security-neutral — any fully opaque fill destroys the pixels under
+  // it equally — which is what lets a bar carry a brand. Alpha is NOT neutral,
+  // and neither is an unreadable string: assigning one to a canvas fillStyle is
+  // a silent no-op, and the previous fill in the page rebuild is the opaque
+  // white background, so an unvalidated colour would paint white-on-white bars
+  // that redact nothing at all.
+  assert.equal(normaliseInk('#0C322C'), '#0c322c');
+  assert.equal(normaliseInk('  #ABC  '), '#aabbcc');
+  assert.equal(normaliseInk('#0c322cff'), '#0c322c');
+  assert.equal(normaliseInk('#abcf'), '#aabbcc');
+  for (const bad of ['#0c322ccc', '#abc8', '#0c322c00', 'rgba(12,50,44,.5)', 'black', 'oklch(19% .02 275)', '', '#12345', null, 7, {}]) {
+    assert.equal(normaliseInk(bad as unknown), null, String(bad));
+  }
+  assert.equal(normaliseInk(REDACT_INK_FALLBACK), REDACT_INK_FALLBACK, 'the fallback is itself a valid ink');
+});
+
+test('inflateForRadius: the requested rect stays entirely inside the rounded shape', () => {
+  // A rounded rectangle does not cover the corners of the box it is inscribed
+  // in. Inflating by the radius first puts each arc centre exactly on a corner
+  // of the requested rect, so containment follows by construction.
+  const inShape = (s: ReturnType<typeof inflateForRadius>, x: number, y: number): boolean => {
+    if (x < s.x || x > s.x + s.w || y < s.y || y > s.y + s.h) return false;
+    const [tl, tr, br, bl] = s.radii;
+    const corner = (cx: number, cy: number, r: number, insideX: boolean, insideY: boolean): boolean => {
+      if (!r) return true;
+      if (insideX ? x > cx : x < cx) return true;
+      if (insideY ? y > cy : y < cy) return true;
+      return Math.hypot(x - cx, y - cy) <= r + 1e-9;
+    };
+    return corner(s.x + tl, s.y + tl, tl, true, true)
+      && corner(s.x + s.w - tr, s.y + tr, tr, false, true)
+      && corner(s.x + s.w - br, s.y + s.h - br, br, false, false)
+      && corner(s.x + bl, s.y + s.h - bl, bl, true, false);
+  };
+  for (const r of [{ x: 40, y: 40, w: 100, h: 22 }, { x: 4, y: 4, w: 20, h: 8 }]) {
+    for (const radius of [0, 1, 4, 9]) {
+      const s = inflateForRadius(r, radius, 400, 200);
+      for (const [x, y] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]] as [number, number][]) {
+        assert.ok(inShape(s, x, y), `corner (${x},${y}) uncovered at radius ${radius}`);
+      }
+      assert.ok(s.x <= r.x && s.y <= r.y && s.x + s.w >= r.x + r.w && s.y + s.h >= r.y + r.h);
+    }
+  }
+});
+
+test('inflateForRadius: a corner clamped to the canvas edge is painted square', () => {
+  // The clamp drags the arc centre inward, where it would cut back into the very
+  // rectangle the inflation exists to protect.
+  const s = inflateForRadius({ x: 0, y: 0, w: 50, h: 20 }, 4, 400, 200);
+  assert.deepEqual(s.radii, [0, 0, 4, 0]);
+  assert.deepEqual([s.x, s.y, s.w, s.h], [0, 0, 54, 24]);
+  // Radius 0 is the untouched rect.
+  const flat = inflateForRadius({ x: 10, y: 10, w: 5, h: 5 }, 0, 400, 200);
+  assert.deepEqual(flat, { x: 10, y: 10, w: 5, h: 5, radii: [0, 0, 0, 0] });
+  // A clamp on all four sides leaves no rounding at all.
+  const boxed = inflateForRadius({ x: 0, y: 0, w: 400, h: 200 }, 6, 400, 200);
+  assert.deepEqual(boxed.radii, [0, 0, 0, 0]);
+});
+
+test('stampLayout: a bar too small for the label goes unstamped rather than squeezed', () => {
+  const wide = stampLayout({ x: 0, y: 0, w: 300, h: 40 }, 'Records office', 20);
+  assert.ok(wide);
+  assert.equal(wide!.cx, 150);
+  assert.equal(wide!.cy, 20);
+  assert.ok(wide!.size > 0 && wide!.size <= 20);
+  assert.equal(stampLayout({ x: 0, y: 0, w: 300, h: 10 }, 'Records office', 20), null, 'too short');
+  assert.equal(stampLayout({ x: 0, y: 0, w: 40, h: 40 }, 'Records office', 20), null, 'too narrow');
+  assert.equal(stampLayout({ x: 0, y: 0, w: 300, h: 40 }, '   ', 20), null, 'nothing to say');
 });

@@ -89,7 +89,7 @@ function layer(over: Partial<SeqJobLayer> = {}): SeqJobLayer {
     el: null as never,
     idx: layerIdx++,
     startMs: 0, durMs: 1000, clipInMs: 0, speed: 1, mute: false,
-    enter: null, enterMs: 0, exit: null, exitMs: 0,
+    enter: null, enterMs: 0, exit: null, exitMs: 0, enterEase: '', exitEase: '',
     lane: 'seq', kind: 'static',
     rect: { x: 0, y: 0, w: 100, h: 100, rot: 0 },
     opacity: 1, blend: '', radius: '', clipPath: '', openEnded: false,

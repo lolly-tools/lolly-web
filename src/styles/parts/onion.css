@@ -26,6 +26,13 @@
   /* Master strength, written inline by onion-skin.ts from the panel's slider. */
   --onion-master: 1;
 
+  /* A FLOOR under the master, raised only by the high-contrast branch at the bottom of
+     this sheet. It is a second token rather than a `max()` written back into
+     --onion-master because a custom property whose value references ITSELF is a cycle
+     (CSS Custom Properties L1 §3.2) — it computes to the guaranteed-invalid value, not
+     to the inherited one, which would take every opacity below down with it. */
+  --onion-floor: 0;
+
   /* Directional coding: past = warm, future = COOL BLUE (Aseprite), never green.
      Red/green is the worst possible pair for deuteranopia and protanopia (~8% of
      men); the offset chip below is the redundant non-colour channel (WCAG 1.4.1). */
@@ -53,12 +60,12 @@
      it — a ghost must line up with where the scene will actually be. */
   outline-offset: -1.5px;
   overflow: hidden;
-  opacity: calc(var(--onion-o2) * var(--onion-master));
+  opacity: calc(var(--onion-o2) * max(var(--onion-master), var(--onion-floor)));
   transition: opacity 120ms ease;
 }
 .onion-ghost[data-offset^="-"] { --onion-c: var(--onion-past); }
 .onion-ghost[data-offset="-1"],
-.onion-ghost[data-offset="+1"] { opacity: calc(var(--onion-o1) * var(--onion-master)); }
+.onion-ghost[data-offset="+1"] { opacity: calc(var(--onion-o1) * max(var(--onion-master), var(--onion-floor))); }
 
 /* The redundant non-colour channel: a corner chip reading the signed step. Chrome
    type, so it rides --a11y-fs (the ghost's OUTLINE is geometry and deliberately does
@@ -110,11 +117,13 @@ html[data-a11y-motion="reduce"] .onion-ghost { transition: none; }
 
 /* A 1.5px outline at 0.30 alpha fails WCAG 1.4.11 against a great many brand
    backgrounds. This branch is what makes it pass: a thicker ring and a floor under the
-   master strength. Set on the GHOST, so it out-ranks the inline --onion-master the
-   layer carries (an element's own declaration beats an inherited value). */
+   master strength. The floor is raised on the GHOST, where the opacity calc above reads
+   it — it must NOT be written back into --onion-master, because a declaration that
+   references its own property is a cycle and computes to guaranteed-invalid (it does
+   not fall through to the inherited value the layer carries). */
 html[data-a11y-contrast="high"] .onion-ghost {
   outline-width: 2px;
-  --onion-master: max(var(--onion-master), 0.6);
+  --onion-floor: 0.6;
 }
 
 /* "Hide colourful previews" — onion-skin.ts already forces filled → outline in paint();

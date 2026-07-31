@@ -65,6 +65,14 @@ export interface Timing {
   enterMs: number;
   exit: TransitionKind | null;
   exitMs: number;
+  /**
+   * The authored geometry curve for each preset, as written — a preset name or a CSS
+   * cubic-bezier. '' when unauthored, and lib/transitions.ts answers an unparseable
+   * one with the preset's own built-in curve, so this is deliberately NOT validated
+   * here: there is one validator, and it is the module that consumes it.
+   */
+  enterEase: string;
+  exitEase: string;
   /** True when the box declared `data-t-mute="1"` (its audio stays silent). */
   mute: boolean;
   lane: 'seq' | '';
@@ -98,6 +106,8 @@ export function readTiming(el: Element): Timing {
     enterMs: clamp(attrNum(el, 'data-t-enter-ms', 400), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     exit: isTransitionKind(exit) ? exit : null,
     exitMs: clamp(attrNum(el, 'data-t-exit-ms', 400), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
+    enterEase: el.getAttribute('data-t-enter-ease') || '',
+    exitEase: el.getAttribute('data-t-exit-ease') || '',
     mute: el.getAttribute('data-t-mute') === '1',
     lane: el.getAttribute('data-t-lane') === 'seq' ? 'seq' : '',
   };
@@ -129,6 +139,13 @@ export interface TransitionAt {
   kind: TransitionKind;
   /** Progress 0→1, in recTransition's convention (0 = fully out, 1 = at rest). */
   p: number;
+  /**
+   * The authored geometry curve of the phase that WON, so a caller never has to
+   * re-derive which of the two eases applies from the kind it was handed (enter and
+   * exit can name the same kind, and at a crossfade the kind is not either field's).
+   * '' — the unauthored case — is exactly what recTransition ignores.
+   */
+  ease: string;
 }
 
 /**
@@ -156,8 +173,8 @@ export function transitionAt(timing: Timing, tMs: number, seqMs: number): Transi
   }
   if (enterP >= 1 && exitP >= 1) return null;
   return enterP <= exitP
-    ? { kind: timing.enter as TransitionKind, p: enterP }
-    : { kind: timing.exit as TransitionKind, p: exitP };
+    ? { kind: timing.enter as TransitionKind, p: enterP, ease: timing.enterEase }
+    : { kind: timing.exit as TransitionKind, p: exitP, ease: timing.exitEase };
 }
 
 // ── style composition (pure) ────────────────────────────────────────────────
@@ -310,6 +327,40 @@ export interface ApplyCtx {
 export const OFF_CLASS = 'seq-off';
 
 /**
+ * The class lib/clip-thumbs.ts parks a box under while it photographs it for a timeline
+ * thumbnail — `transform: translate(-200vw,-200vw) !important` in timeline.css. A shot
+ * has to lift `seq-off` to photograph anything, and parking is what keeps the un-hidden
+ * box off the live artboard for the ~100ms-1.5s that takes.
+ */
+export const SHOT_CLASS = 'tl-shot';
+
+/**
+ * Stamped by a thumbnail shot on every element whose `seq-off` it borrowed, carrying the
+ * shot's own token. It is the LEASE on that element's visibility: while it is present the
+ * shot owns the class (so a tick mid-shot must not re-hide the box it is reading), and
+ * the applier revokes the lease — attribute and park both — the moment it wants that box
+ * on screen, which is the shot's signal to stand down instead of re-hiding it.
+ *
+ * Without the lease the playhead could be scrubbed ONTO a parked box: the applier removed
+ * `seq-off`, believed the scene live, and the park kept it 200vw off the viewport for the
+ * rest of the shot — a black stage that popped back when the shot finally settled.
+ */
+export const BORROW_ATTR = 'data-tl-borrowed';
+
+/**
+ * Take a box's visibility back off any thumbnail shot holding it.
+ *
+ * `closest` rather than the element itself because the park is on the BOX while the
+ * borrow may have been taken on a descendant: un-parking the ancestor is what actually
+ * puts the pixels back on the artboard.
+ */
+export function releaseShotBorrow(el: HTMLElement): void {
+  const parked = el.closest?.(`.${SHOT_CLASS}`) as HTMLElement | null;
+  parked?.classList.remove(SHOT_CLASS);
+  if (el.hasAttribute?.(BORROW_ATTR)) el.removeAttribute(BORROW_ATTR);
+}
+
+/**
  * Put every timed element into the state it should be in at `tMs`.
  *
  * Exported taking an explicit element list so the whole visual contract — the
@@ -325,12 +376,18 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     // it is a property the tool's own boxCss is free to author, and a belt-and-braces
     // write there would be indistinguishable from the author's on restore. The class
     // is the whole contract; timeline.css owns what it means.
-    if (active) el.classList.remove(OFF_CLASS);
-    else el.classList.add(OFF_CLASS);
+    // This pass is the AUTHORITY on visibility, including over a thumbnail shot that
+    // borrowed it: making a box active revokes the lease and un-parks it in the same
+    // breath, so the scene under the playhead is on the artboard now, not when the shot
+    // gets round to settling. Going the other way the shot keeps what it borrowed — it is
+    // parked offscreen anyway, and re-hiding it here would photograph the blank the
+    // borrow exists to prevent — and its own restore puts `seq-off` back.
+    if (active) { el.classList.remove(OFF_CLASS); releaseShotBorrow(el); }
+    else if (!el.hasAttribute?.(BORROW_ATTR)) el.classList.add(OFF_CLASS);
 
     const tr = active && !rec.audio ? transitionAt(timing, tMs, ctx.seqMs) : null;
     if (tr) {
-      const off = recTransition(tr.kind, tr.p, rec.w, rec.h);
+      const off = recTransition(tr.kind, tr.p, rec.w, rec.h, tr.ease);
       const transform = composeTransform(rec.transform, off);
       const opacity = composeOpacity(rec.opacity, off.alpha);
       if (transform !== rec.lastTransform) {
@@ -421,7 +478,9 @@ export function createSequenceTime(root: HTMLElement, opts: { media?: ApplyCtx['
       // composed), so it has to be lifted separately — the same two-step the preview
       // clock's destroy() does. Leaving it behind hides every box that was off screen
       // at the last applied frame: a live capture would end with a blank canvas.
-      for (const el of boxes()) el.classList.remove(OFF_CLASS);
+      // Any in-flight shot's lease goes with it: this session is done asserting
+      // visibility, so a restore arriving afterwards must not re-hide anything.
+      for (const el of boxes()) { el.classList.remove(OFF_CLASS); releaseShotBorrow(el); }
       store.restoreAll();
     },
   };
