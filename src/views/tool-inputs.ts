@@ -407,7 +407,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // (which keys on `:has(input…)` / `:not(:placeholder-shown)` in the light DOM)
     // can't see them. Pin those rows to a static label above the field instead.
     const isJellyField = jellyActive() && (input.control === 'text-input' || input.control === 'textarea');
-    const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || isJellyField;
+    // file-picker is static too: its hidden <input type=file> otherwise matches the
+    // floating-label :has() chain (tool.css), which paints the label OVER the trigger.
+    const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || input.control === 'file-picker' || isJellyField;
     // Composite controls hold MANY interactive elements. A wrapping <label> makes the
     // browser forward any dead-space click to the label's first labelable descendant —
     // so a `blocks` input forwards gap / pill-body / near-miss clicks to block #0's
@@ -630,23 +632,37 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         const prevUrl = asRow(prev).url;
         if (prevUrl) URL.revokeObjectURL(prevUrl as string);
       };
-      trigger?.addEventListener('click', () => native?.click());
-      clearer?.addEventListener('click', () => { revokePrev(); runtime.setInput(id, null); onDirty?.(id); });
-      native?.addEventListener('change', async () => {
-        const file = native.files && native.files[0];
+      const loadFile = async (file: File | null | undefined): Promise<void> => {
         if (!file) return;
         // Manifest cap when declared, engine backstop otherwise — a pick is a
         // full read into memory, so it is never unbounded.
         const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
         if (file.size > cap) {
           announce(`That file is too large (max ${fmtBytes(cap)}).`, { assertive: true });
-          native.value = '';
+          if (native) native.value = '';
           return;
         }
         const ref = await fileToRef(file);
         revokePrev();
         runtime.setInput(id, ref);
         onDirty?.(id);
+      };
+      trigger?.addEventListener('click', () => native?.click());
+      clearer?.addEventListener('click', () => { revokePrev(); runtime.setInput(id, null); onDirty?.(id); });
+      native?.addEventListener('change', () => void loadFile(native.files && native.files[0]));
+      // The trigger's dashed border promises a drop area (house rule: dashed means
+      // droppable), so the control must actually take a drop. Depth-counted so
+      // enter/leave over children don't flicker the highlight.
+      let dragDepth = 0;
+      const setDrag = (on: boolean): void => { control.classList.toggle('is-dragover', on); };
+      control.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; setDrag(true); });
+      control.addEventListener('dragover', (e) => e.preventDefault());
+      control.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; setDrag(false); } });
+      control.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragDepth = 0;
+        setDrag(false);
+        void loadFile(e.dataTransfer?.files?.[0]);
       });
       return;
     }

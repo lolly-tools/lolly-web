@@ -2207,6 +2207,14 @@ background-color:hsl(var(--background) / 1);
   color: hsl(var(--primary));
 }
 
+/* Live drop feedback — the binding accepts drops on the whole control, so the
+   dashed border keeps its promise. */
+.file-picker.is-dragover .file-trigger {
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.05);
+}
+
 .file-chosen {
   display: flex;
   align-items: center;

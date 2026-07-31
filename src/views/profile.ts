@@ -22,6 +22,7 @@ import '../styles/parts/storage.css';   // the storage-reconciliation meter live
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
 import { setTheme } from '../lib/set-theme.ts';
 import { currentA11yPrefs, setA11yPref, prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { captureNeutralPinned } from '../lib/capture-neutral.ts';
 import type { A11yPrefs } from '../lib/a11y-prefs.ts';
 import { currentLang, switchLang, t, docsHref } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
@@ -244,8 +245,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // jelly flag itself is toggled (see the change listener below).
   // isFlagOn (not flagEnabled): the Jelly flag's built-in default is brand-aware
   // (OFF on a locked brand — see setJellyDefault in main.ts), and only the
-  // default-aware read honours it.
-  let jellyOn = await ensureJelly(isFlagOn(profile, JELLY_FLAG));
+  // default-aware read honours it. The capture-neutral pin must be consulted
+  // here too: it only rewrites the flag MIRROR, which this canonical-profile
+  // read bypasses — without the check, every docs baseline of this view carried
+  // jelly controls despite the pin.
+  let jellyOn = await ensureJelly(isFlagOn(profile, JELLY_FLAG) && !captureNeutralPinned());
   let liveProfile = profile;
   const fields = ['firstname', 'lastname', 'email', 'phone', 'city', 'country'];
   // The theme in force right now (applied at boot from the profile; localStorage

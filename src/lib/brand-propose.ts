@@ -30,7 +30,7 @@
  * imports lib modules.
  */
 
-import { hexToOklch, contrastRatio, deriveBrandTokens, createTokenSet, typographyFamilies } from '@lolly/engine';
+import { hexToOklch, contrastRatio, deriveBrandTokens, createTokenSet, typographyFamilies, tokenSetNames } from '@lolly/engine';
 import type { PenpotUsage, PenpotAppliedToken } from '@lolly/engine';
 import { addSwatch } from './brand-doc.ts';
 import { addStudioToken } from './token-studio.ts';
@@ -392,7 +392,12 @@ export function withRoleAliases(
   const out: Record<string, unknown> = { ...doc };
   const themes = Array.isArray(out.$themes) ? out.$themes : null;
 
-  if (!themes || !themes.length) {
+  // Layered-ness is `tokenSetNames`, NOT `$themes` alone: a real Penpot export of
+  // a themeless file writes `$themes: []` beside a real `$metadata.tokenSetOrder`
+  // ({"Global":…, "$themes":[], "$metadata":{"tokenSetOrder":["Global"]}}). Merging
+  // a `color` group into that doc's top level would make "color" read as a set name
+  // that tokenSetOrder never activates, so the roles would resolve to nothing at all.
+  if (!tokenSetNames(out)) {
     const color = typeof out.color === 'object' && out.color !== null ? { ...(out.color as Record<string, unknown>) } : {};
     const prev = typeof color.semantic === 'object' && color.semantic !== null ? color.semantic as Record<string, unknown> : {};
     color.semantic = { ...prev, ...semantic };
@@ -409,17 +414,26 @@ export function withRoleAliases(
   const order = Array.isArray(meta.tokenSetOrder) ? meta.tokenSetOrder.filter(s => typeof s === 'string') : null;
   // Last in the order wins, which is what a role override must do.
   if (order) meta.tokenSetOrder = [...order, setName];
+  // Penpot also writes `$metadata.activeSets`; a themeless export activates its
+  // sets there rather than through a theme, so the new set has to join that list
+  // or a round-trip back into Penpot would drop the roles.
+  const active = Array.isArray(meta.activeSets) ? meta.activeSets.filter(s => typeof s === 'string') : null;
+  if (active) meta.activeSets = [...active, setName];
   out.$metadata = meta;
 
-  out.$themes = themes.map(theme => {
-    if (typeof theme !== 'object' || theme === null) return theme;
-    const t = { ...(theme as Record<string, unknown>) };
-    const sel = typeof t.selectedTokenSets === 'object' && t.selectedTokenSets !== null
-      ? { ...(t.selectedTokenSets as Record<string, unknown>) } : {};
-    sel[setName] = 'enabled';
-    t.selectedTokenSets = sel;
-    return t;
-  });
+  // Only a doc that HAS themes needs the new set enabling in each of them; the
+  // themeless-but-layered case is already covered by the tokenSetOrder append.
+  if (themes && themes.length) {
+    out.$themes = themes.map(theme => {
+      if (typeof theme !== 'object' || theme === null) return theme;
+      const t = { ...(theme as Record<string, unknown>) };
+      const sel = typeof t.selectedTokenSets === 'object' && t.selectedTokenSets !== null
+        ? { ...(t.selectedTokenSets as Record<string, unknown>) } : {};
+      sel[setName] = 'enabled';
+      t.selectedTokenSets = sel;
+      return t;
+    });
+  }
 
   return out;
 }

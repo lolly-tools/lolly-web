@@ -84,6 +84,14 @@ const PATHS = {
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
   // Lucide "pin" — the gallery card's "available offline" toggle (filled via CSS when active).
   pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/>',
+  // Lucide "download" — the gallery card's "keep available offline" idle state.
+  download: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
+  // Lucide "circle-check" — the "available offline" done state (circle filled with
+  // the accent + contrasting tick via the gallery's .pin-done rules).
+  circleCheck: `<circle cx="12" cy="12" r="10"/>${CHECK_TICK}`,
+  // A bare circle — the offline download's progress ring (CSS turns it into a
+  // spinning arc with stroke-dasharray while a pin is in flight).
+  ring: '<circle cx="12" cy="12" r="9"/>',
   // compound sort-direction glyph (two <g> arrows, toggled by CSS via .sd-up/.sd-down)
   sortDir: '<g class="sd-up"><path d="M8 20V5"/><polyline points="4 9 8 5 12 9"/></g><g class="sd-down"><path d="M16 4v15"/><polyline points="12 15 16 19 20 15"/></g>',
   // merged: projects.ts FILTER_ICON === gallery.ts FILTER_ICON
