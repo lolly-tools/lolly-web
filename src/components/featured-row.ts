@@ -145,12 +145,17 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
   // hidden the instant art is ready (`.ftile.has-art` — a transparent preview would
   // otherwise let the icon show through behind it). '' when the tool has no icon.
   const iconFill = entry.icon ? `<span class="ftile-iconfill" aria-hidden="true">${entry.icon}</span>` : '';
+  // Icon-HERO tile: no preview and no example looks means the icon isn't a
+  // loading fallback here — it IS the artwork for the tile's whole life (the
+  // utility entries, favourited view cards). ftile--icon styles it substantial
+  // (large, bold, brand-hued) instead of the faint loading ghost.
+  const iconHero = !entry.preview && resolveExamples(entry).length === 0;
   const href = entry.href ?? `#/tool/${entry.id}`;
   // `data-basehref` is the tool's default route — the fallback the tile's href reverts to
   // while the committed placeholder is showing (a rendered look then points href at its own
   // seeded URL, so opening the tile lands in the look you're watching; see refreshLinkHref).
   return `
-    <li class="ftile" data-tool="${escape(entry.id)}">
+    <li class="ftile${iconHero ? ' ftile--icon' : ''}" data-tool="${escape(entry.id)}">
       <a class="ftile-link" href="${escape(href)}" data-basehref="${escape(href)}" aria-label="${escape(label)}" draggable="false">
         <span class="ftile-stage" aria-hidden="true">
           ${iconFill}

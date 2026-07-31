@@ -164,6 +164,15 @@ export interface ExportOpts {
   hdrReach?: number;
   hdrLift?: number;
   hdrRichness?: number;
+  /** REQUESTED bits per channel for the output (the `depth` URL param): 8, 16,
+   *  'float', or 'auto'/absent = "the deepest the provenance chain supports".
+   *  A request, NEVER a promise — depth follows provenance, so a consumer emits
+   *  deep bits only where the pipeline actually produced them (a 16-bit container
+   *  over an 8-bit canvas render is padding). First shipped consumer: the 16-bit
+   *  HDR PNG path (export-hdr-png.ts, via deepHdrPng below), which honours a
+   *  depth=8 opt-out and earns its bits from the float view transform.
+   *  See plans/deeprichpixels.md §10. */
+  depth?: 8 | 16 | 'float' | 'auto';
   /** INTERNAL, per-format-render mutable sink (created in renderFormat, never
    *  URL-serialized). Carries the imprint request down to imprintEmbedCanvas and
    *  records whether a container raster was actually marked, so stampC2pa can
@@ -635,6 +644,43 @@ function hdrCanvas(canvas: HTMLCanvasElement, opts: ExportOpts): void {
   ctx.putImageData(id, 0, 0);
 }
 
+// Deep (16-bit) HDR PNG: canvas pixels -> engine float view transform -> full-
+// precision PQ -> 16-bit IDAT with cICP/pHYs/iTXt/iCCP, all in the engine's own
+// writer. Returns the finished file bytes, or null when the deep path can't run
+// (no 2D context, an oversized/unencodable buffer) so renderRaster falls back to
+// the legacy 8-bit PQ + chunk-splice path rather than failing the export.
+// See bridge/export-hdr-png.ts for why this is real precision and not padding.
+async function deepHdrPng(canvas: HTMLCanvasElement, opts: ExportOpts, d: { dpi: number }): Promise<Uint8Array | null> {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || canvas.width < 1 || canvas.height < 1) return null;
+  try {
+    const { encodeHdrPng16 } = await import('./export-hdr-png.ts');
+    const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return await encodeHdrPng16(id.data, {
+      width: canvas.width, height: canvas.height,
+      hdr: { targets: hdrTargets(opts), ...hdrTune(opts) },
+      dpi: d.dpi,
+      meta: opts.meta,
+      icc: pqBt2020IccProfile(),
+      imprint: !!opts.imprint,
+      imprintStrength: LOSSLESS_STRENGTH, // PNG is lossless — the gentler mark
+      ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+      ...(opts.durable
+        ? {
+          durable: async (rgba: Uint8ClampedArray, w: number, h: number) => {
+            const { embedLollyDurable } = await import('../lib/trustmark-embed.ts');
+            return await embedLollyDurable(rgba, w, h, { reservedId: opts.durableId });
+          },
+        }
+        : {}),
+      log: (level, msg) => _host?.log?.(level, msg),
+    });
+  } catch (err) {
+    _host?.log?.('warn', `png: 16-bit HDR encode unavailable (${(err as any)?.message || err}) — falling back to the 8-bit PQ path`);
+    return null;
+  }
+}
+
 // Map the author's 0–100 dials (export-panel sliders / tuned `hdr=` value) onto
 // the engine's hdrBoostToPQ knobs. `reach` slides the OKLab-lightness knee (higher
 // = the glow reaches further down into mid/dark tones); `lift` is the dark-colour
@@ -719,6 +765,16 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       // Also the durable-embed path, which likewise needs canvas pixels.
       const raw = await lib.toCanvas(node, dtoOpts);
       const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
+      // HDR PNG goes DEEP: the same `hdr=` request routes through the engine's
+      // float view transform and its own 16-bit PNG writer instead of the 8-bit
+      // canvas transform + chunk splice (plans/deeprichpixels.md §10 item 2 —
+      // 8-bit PQ is the banding defect). Metadata, pixel marks and C2PA
+      // compatibility all carry over; see bridge/export-hdr-png.ts. Returns null
+      // if anything goes wrong, and the legacy 8-bit path below still runs.
+      if (hdrOn && format === 'png') {
+        const deep = await deepHdrPng(canvas, opts, d);
+        if (deep) return new Blob([deep as BlobPart], { type: 'image/png' });
+      }
       // HDR first: the PQ transform is the base encoding, so any provenance mark
       // below lands in the final (PQ) pixel space and embed/detect stay consistent.
       if (hdrOn) hdrCanvas(canvas, opts);

@@ -35,6 +35,7 @@ import {
   penpotDashArray,
   penpotBackgroundBlurPx,
   collectPenpotExportMarks,
+  penpotFlowOrder,
   figmaNodesToNodes,
   figmaNodesToScenes,
   readingOrder,
@@ -1223,7 +1224,18 @@ function typeFromExt(ext: string): string {
 // is pixel-identical to importing that frame into Layout Studio and exporting it.
 
 /** One imported frame, ready to place as a timeline scene. */
-export interface DesignSceneAsset { name: string; asset: AssetRef; }
+export interface DesignSceneAsset {
+  name: string;
+  asset: AssetRef;
+  /**
+   * The entrance this scene was navigated to with, when the source file carried a
+   * prototype flow (Penpot only today) — a value from the shared transition
+   * vocabulary (`lib/transitions.ts`). Additive and optional: files without
+   * interactions omit both fields and every existing caller is unaffected.
+   */
+  enter?: string;
+  enterMs?: number;
+}
 export interface DesignScenesResult { scenes: DesignSceneAsset[]; }
 
 // Frames beyond this are skipped with a warning — same ceiling as the PDF page
@@ -1449,7 +1461,7 @@ async function bakeRasterAsset(
 // Bake a list of {name, width, height, boxes} frames, with progress + the scene cap.
 async function bakeFrames(
   host: HostV1 | undefined, warn: (msg: string) => void,
-  frames: Array<{ name: string; width: number; height: number; boxes: unknown[] }>,
+  frames: Array<{ name: string; width: number; height: number; boxes: unknown[]; enter?: string; enterMs?: number }>,
 ): Promise<DesignSceneAsset[]> {
   if (frames.length > MAX_SCENES) {
     warn(`This file has ${frames.length} frames — only the first ${MAX_SCENES} were imported.`);
@@ -1460,7 +1472,9 @@ async function bakeFrames(
     const f = frames[i]!;
     if (frames.length > 1) warn(`Rendering “${f.name}” (${i + 1}/${frames.length})…`);
     const asset = await bakeSceneAsset(host, warn, f.name, f.boxes, f.width, f.height);
-    if (asset) scenes.push({ name: f.name, asset });
+    // enter/enterMs only ride along when the source carried a prototype flow, so a
+    // file with no interactions produces exactly the object shape it always did.
+    if (asset) scenes.push({ name: f.name, asset, ...(f.enter ? { enter: f.enter } : {}), ...(f.enterMs !== undefined ? { enterMs: f.enterMs } : {}) });
   }
   return scenes;
 }
@@ -1624,17 +1638,29 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
     }
     // Boards play in READING order (rows top-to-bottom, left-to-right): root
     // `shapes` order is Z/creation order, which plays a deck backwards.
-    for (const { shape: s, at } of readingOrder(boards, (b) => b.at)) {
+    const spatial = readingOrder(boards, (b) => b.at);
+    // …unless the file authored a prototype flow, in which case the flow IS the
+    // running order and each edge's animation becomes the destination scene's
+    // entrance. With no interactions `hasFlow` is false and `flow.ordered` is the
+    // reading order copied, so a zero-interaction file is byte-identical to before.
+    const flow = penpotFlowOrder(spatial.map((b) => String(b.shape.id)), shapesById, meta);
+    const byId = new Map(spatial.map((b) => [String(b.shape.id), b]));
+    const ordered = flow.hasFlow
+      ? flow.ordered.map((id) => byId.get(id)).filter((b): b is (typeof spatial)[number] => Boolean(b))
+      : spatial;
+    for (const { shape: s, at } of ordered) {
       const nodes = await shapesToNodes(subtree(s.id, seen));
       if (!nodes.length) continue;
       for (const n of nodes) { n.x -= at.x; n.y -= at.y; }
       const boxes = finalizeBoxes(nodes, map);
       if (!boxes.length) continue;
+      const tr = flow.transitions[String(s.id)];
       frames.push({
         name: (typeof s.name === 'string' && s.name) || `Board ${frames.length + 1}`,
         width: Math.max(1, Math.round(at.w)) || 1080,
         height: Math.max(1, Math.round(at.h)) || 1080,
         boxes,
+        ...(tr ? { enter: tr.enter, ...(tr.enterMs !== undefined ? { enterMs: tr.enterMs } : {}) } : {}),
       });
     }
     // Loose shapes only make a scene when the page has NO boards — next to

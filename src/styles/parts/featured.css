@@ -255,6 +255,22 @@
 /* Real art decoded → drop the icon so a transparent image never shows it through. */
 .ftile.has-art .ftile-iconfill { display: none; }
 
+/* Icon-HERO tile (.ftile--icon, set by tileMarkup when the entry has no preview
+   and no example looks — the utility tools, favourited view cards): the icon is
+   the tile's artwork for its whole life, not a loading stand-in, so it drops the
+   ghost treatment for something substantial — much larger, brand-hued, and a
+   BOLD stroke. The 1em stroke composes with the non-scaling-stroke rule above:
+   it resolves to a screen-space ~16px line, matching the weight the utility
+   grid cards carry at their size. */
+.ftile--icon .ftile-iconfill { color: hsl(var(--primary) / .6); }
+.ftile--icon .ftile-iconfill svg {
+  max-width: 240px;
+  max-height: 240px;
+  width: 100%;
+  height: 100%;
+  stroke-width: 1em;
+}
+
 /* Ken Burns — a still tile still breathes. Scales from the base so the object stays
    planted on its floor shadow. Gentle; restarts on each cross-fade. Motion only. */
 .featured:not(.featured--static) .ftile-img.is-active {

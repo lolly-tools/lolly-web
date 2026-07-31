@@ -18,6 +18,35 @@
 //
 // Opt-in and progressive: without this overlay the same flat `boxes` array renders
 // identically headless (CLI/URL). The engine and URL never see the editor.
+//
+// ── THE ONE RULE (sequence editing) ──────────────────────────────────────────
+// On a time-capable tool (`timeCfg`) the canvas is a window onto ONE instant, and
+// one sentence governs everything the user can touch:
+//
+//   "The canvas edits exactly what the canvas shows at the playhead. Moving the
+//    playhead never changes the selection; selecting in the timeline moves the
+//    playhead so the selection stays live; when a selection is nevertheless
+//    off-playhead, the canvas says so and offers to reconcile. The timeline
+//    inspector and the sidebar are the precision fallbacks and are never gated
+//    by time."
+//
+// It is enforced in three places, deliberately, because one of them alone leaks:
+//   1. ACQUISITION — `seqHiddenSkip` makes a click fall THROUGH a hidden box to
+//      the visible one beneath (no toast: in a stacked scene composition that
+//      would fire on every click).
+//   2. RETENTION — `paintChrome` suppresses the outline, all 8 resize handles,
+//      the rotate handle and the contextual bar when the selection is not live,
+//      so no pointer path can start a gesture on something nobody can see. The
+//      chrome is positioned from the MODEL, not the DOM, so without this it
+//      would paint full editing furniture over nothing.
+//   3. KEYBOARD — `onKey` refuses every mutating key on an off-playhead
+//      selection, because a nudge or a Delete needs no chrome at all.
+// Plus the reconciliation: an off-playhead selection raises the `.fc-offplayhead`
+// banner, whose button dispatches `fc-seek` at the box's own start. The timeline
+// panel answers it, and tells us where the playhead is via `tl-time`.
+//
+// Deliberately NOT built: a "selection follows playhead" preference. Premiere
+// ships one and users still lose work to it — time→selection is destructive.
 
 import {
   boxRect, withRect, boxCorners, rectCentre, hitTest, marqueeHit, boxAABB,
@@ -125,6 +154,9 @@ interface CanvasCfg {
   startField?: string; durField?: string; clipInField?: string; speedField?: string;
   enterField?: string; exitField?: string; enterMsField?: string; exitMsField?: string;
   muteField?: string; laneField?: string;
+  /** OPTIONAL time sub-field: the A/V link (detached audio). Absent on a tool that does
+   *  not offer detach — the ten-field time check below does NOT include it. */
+  linkField?: string;
   minSize?: number;
   addKinds?: AddKind[];
   import?: unknown;
@@ -799,6 +831,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       speedField: cv.speedField, enterField: cv.enterField, exitField: cv.exitField,
       enterMsField: cv.enterMsField, exitMsField: cv.exitMsField, muteField: cv.muteField,
       laneField: cv.laneField, idField: cfg.idField,
+      // OPTIONAL, and deliberately outside the ten-field presence check above: a tool
+      // that declares no link sub-field is still fully time-capable, it just never
+      // offers "Detach audio" (progressive capability — Layout Studio opts in later).
+      linkField: cv.linkField || '',
     } : null;
   // Scene-mode import (`canvas.import.mode: 'scenes'`, e.g. Sequence Studio): an
   // imported design's frames land as timed clips appended to the main sequence
@@ -963,12 +999,34 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // the whole sequence graph lazy (see ensureTimeline). free-canvas-seq-hit.test.ts
   // pins this literal against the real export so the two can't drift.
   const SEQ_OFF_CLASS = 'seq-off';
+  /**
+   * The ONE DOM read behind the whole rule (see the file header): is the sequence
+   * currently hiding the box carrying `id`? Everything else — hit-test skipping,
+   * chrome suppression, the keyboard gate — is a caller of this, so there is exactly
+   * one expression that can ever be wrong.
+   */
+  function seqHiddenId(id: string): boolean {
+    if (!timeCfg) return false;
+    const el = canvasEl.querySelector(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+    return el != null && el.classList.contains(SEQ_OFF_CLASS);
+  }
   function seqHiddenSkip(boxes: Box[]): ((i: number) => boolean) | undefined {
     if (!timeCfg) return undefined;
-    return (i: number) => {
-      const el = canvasEl.querySelector(`.lolly-box[data-box-id="${cssEscape(idOf(boxes[i], i))}"]`);
-      return !!el && el.classList.contains(SEQ_OFF_CLASS);
-    };
+    return (i: number) => seqHiddenId(idOf(boxes[i], i));
+  }
+  /**
+   * RETENTION, the half `seqHiddenSkip` cannot cover: a selection acquired while its
+   * box was on screen SURVIVES the playhead moving away from it. True means "at least
+   * one selected box is on screen at the playhead, so editing it means something".
+   * An untimed tool, or an empty selection, is always live.
+   */
+  function selectionLive(boxes: Box[]): boolean {
+    if (!timeCfg || !selection.size) return true;
+    for (let i = 0; i < boxes.length; i++) {
+      const id = idOf(boxes[i], i);
+      if (selection.has(id) && !seqHiddenId(id)) return true;
+    }
+    return false;
   }
 
   // True when the block already carries authored timing — the auto-open cue. This is a
@@ -1050,12 +1108,33 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   if (timeCfg) stageEl.addEventListener('tl-add', onTlAdd);
 
+  /**
+   * The other half of the cross-module seam (same CustomEvent pattern as `tl-add` /
+   * `tl-take`, deliberately — not a new coupling): the panel tells the canvas when the
+   * ACTIVE SET changed, never once per tick. Two things ride on it:
+   *   • the chrome repaint that makes the one rule track the playhead at all, and
+   *   • `tlPlaying`, which suppresses the off-playhead banner during playback — scenes
+   *     coming and going is the whole point of pressing play, and a chip that blinks on
+   *     every cut is noise, not information.
+   * Untrusted detail (anything on the page can dispatch it): only the `playing` flag is
+   * read, and only as a strict boolean.
+   */
+  let tlPlaying = false;
+  function onTlTime(e: Event): void {
+    if (!timeCfg || disposed) return;
+    const d = (e as CustomEvent).detail as { playing?: unknown } | null | undefined;
+    tlPlaying = d?.playing === true;
+    renderChrome();
+  }
+  if (timeCfg) stageEl.addEventListener('tl-time', onTlTime);
+
   /** Open the panel (used by the rail button and after creating a timed box). */
   function openTimeline(): void { void ensureTimeline(true); }
   function toggleTimeline(): void { void ensureTimeline(!timelinePanel?.isOpen()); }
 
   function destroyTimeline(): void {
     try { stageEl.removeEventListener('tl-add', onTlAdd); } catch { /* stage detached */ }
+    try { stageEl.removeEventListener('tl-time', onTlTime); } catch { /* stage detached */ }
     try { timelinePanel?.destroy(); } catch (e) { console.error(e); }
     timelinePanel = null;
     // Unconditional, even if destroy() above threw: a leaked reserve permanently shrinks
@@ -1208,6 +1287,68 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (flashTimer) clearTimeout(flashTimer);
     flashTimer = setTimeout(() => { flashEl.hidden = true; flashEl.textContent = ''; flashTimer = 0; }, 5200);
     announce(message, { assertive: true });
+  }
+
+  // The one rule's reconciliation surface. An off-playhead selection is the single
+  // STUCK state the rule can produce — the user asked for a box, it is still theirs,
+  // and the canvas simply cannot show it — so unlike a click that falls through a
+  // hidden scene (silent, by design: it would fire on every click of a stacked
+  // composition) this one gets a persistent chip with a way out. It is the only
+  // pointer-receiving child of the otherwise pointer-transparent overlay, and it is a
+  // stage sibling of #tool-canvas carrying [data-export-hide] on its parent, so no
+  // export path can see it.
+  // Built node-by-node rather than through innerHTML: two nodes with static text is
+  // not worth a raw-HTML sink (primitive-guards R10 ratchets those for a reason), and
+  // `btn btn--primary btn--sm` is the shell's ONE primary-fill recipe — restating the
+  // fill pair locally is exactly what R2 refuses.
+  const offPlayheadEl = document.createElement('div');
+  offPlayheadEl.className = 'fc-offplayhead';
+  offPlayheadEl.hidden = true;
+  const offPlayheadTxt = document.createElement('span');
+  offPlayheadTxt.className = 'fc-offplayhead-txt';
+  offPlayheadTxt.textContent = t('Not on screen at the playhead');
+  const offPlayheadGo = document.createElement('button');
+  offPlayheadGo.type = 'button';
+  offPlayheadGo.className = 'btn btn--primary btn--sm fc-offplayhead-go';
+  offPlayheadGo.textContent = t('Go to it');
+  offPlayheadEl.append(offPlayheadTxt, offPlayheadGo);
+  overlay.appendChild(offPlayheadEl);
+  let offPlayheadAtMs = 0;
+  // Guards the announcement so entering the state speaks ONCE, not on every repaint
+  // (a pan, a zoom and every tl-time all repaint the chrome).
+  let lastOffPlayheadKey = '';
+  offPlayheadGo.addEventListener('click', () => {
+    stageEl.dispatchEvent(new CustomEvent('fc-seek', { bubbles: true, detail: { atMs: offPlayheadAtMs } }));
+  });
+
+  /**
+   * Raise the banner over the artboard for an off-playhead selection. Centred with the
+   * same maths positionFrameScrim uses, so it tracks pan/zoom for free.
+   *
+   * Two suppressions, both deliberate: no timeline panel means no clock means nothing is
+   * ever `seq-off` (so this can only be a stale class), and during PLAYBACK a scene
+   * leaving the screen is expected rather than a problem to report.
+   */
+  function showOffPlayhead(boxes: Box[], idx: number[]): void {
+    if (!timeCfg || !timelinePanel || tlPlaying || !idx.length) { hideOffPlayhead(); return; }
+    const b = boxes[idx[0]!];
+    // A field read, not arithmetic: the box's own authored start, in ms.
+    offPlayheadAtMs = Math.max(0, Number(b?.[timeCfg.startField]) * 1000) || 0;
+    const m = metrics();
+    const wh = canvasWH();
+    const tl = nativeToStage(0, 0, m);
+    offPlayheadEl.style.left = `${tl.x + (wh.w * m.scale) / 2}px`;
+    offPlayheadEl.style.top = `${tl.y + (wh.h * m.scale) / 2}px`;
+    offPlayheadEl.hidden = false;
+    const key = idx.map((k) => idOf(boxes[k], k)).sort().join(',');
+    if (key !== lastOffPlayheadKey) {
+      lastOffPlayheadKey = key;
+      announce(t('This card is not on screen at the playhead. Go to it to edit it.'));
+    }
+  }
+  function hideOffPlayhead(): void {
+    if (!offPlayheadEl.hidden) offPlayheadEl.hidden = true;
+    lastOffPlayheadKey = '';
   }
 
   // Connector preview layer (opt-in): the "rubber" line while linking two cards, and a
@@ -1710,6 +1851,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         ...(cfg.imageField ? { [cfg.imageField]: sc.asset } : {}),
         ...(cfg.fitField ? { [cfg.fitField]: 'contain' } : {}),
         [tc.laneField]: 'seq', [tc.startField]: at, [tc.durField]: DEFAULT_CLIP_S,
+        // A Penpot prototype flow carries the authored transition INTO each board;
+        // scenes from a file without interactions carry neither key, so the box is
+        // written exactly as it always was (enter defaults to 'none' — a cut).
+        ...(sc.enter ? { [tc.enterField]: sc.enter } : {}),
+        ...(sc.enterMs !== undefined ? { [tc.enterMsField]: sc.enterMs } : {}),
       } as unknown as Box);
       at += DEFAULT_CLIP_S;
     }
@@ -6278,6 +6424,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // M2 — reposition the frame scrim only when the artboard geometry changed (pan/
     // zoom/resize set scrimDirty); a box drag/hover/selection change never moves it.
     if (scrimDirty) { positionFrameScrim(); scrimDirty = false; }
+    // ── THE ONE RULE, enforcement point 2 of 3: RETENTION (see the file header) ──
+    // The chrome below is positioned from the MODEL, not from the DOM: a selected box
+    // the sequence is hiding would otherwise get a full outline, 8 resize handles, a
+    // rotate handle and a contextual bar painted over empty canvas — the "edit a layer
+    // you cannot see" failure, and the ONLY drag entry point that never goes through
+    // the hit-test (a handle is its own pointerdown target). So the whole apparatus
+    // comes down and the reconciliation banner goes up instead.
+    if (timeCfg && selection.size && !selectionLive(boxes)) {
+      const offIdx = selIndices(boxes);
+      if (offIdx.length) {
+        clearChrome();
+        ctxbar.hidden = true;
+        closeMorePanel();
+        chromeKey = '';
+        ctxSelKey = '';
+        showOffPlayhead(boxes, offIdx);
+        updateToolbarState(0);
+        return;
+      }
+    }
+    hideOffPlayhead();
     // While editing text, suppress selection chrome + ctxbar; just keep the floating
     // format bar tracking the box as the stage pans/zooms.
     if (editing) { clearChrome(); ctxbar.hidden = true; positionFmtBar(); return; }
@@ -6627,6 +6794,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     selection = new Set([id]);
     renderChrome();
   }
+  /**
+   * Does this press CHANGE the selected boxes? The keyboard half of the one rule gates
+   * on exactly this set and nothing else, so navigation (Tab, ⌘A, the tool letters) and
+   * every escape route stay live on an off-playhead selection.
+   *
+   * The list mirrors onKey's own mutating branches below: arrow nudge, delete, the
+   * text-edit entry (Enter/F2 — starting a text edit on a box nobody can see is the
+   * same mistake in slow motion), duplicate, group/ungroup, and z-order.
+   */
+  function isMutatingKey(e: KeyboardEvent): boolean {
+    const k = e.key;
+    if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') return true;
+    if (k === 'Delete' || k === 'Backspace') return true;
+    if (k === 'Enter' || k === 'F2') return true;
+    if (!(e.metaKey || e.ctrlKey)) return false;
+    return k === 'd' || k === 'D' || k === 'g' || k === 'G' || k === ']' || k === '[';
+  }
   function onKey(e: KeyboardEvent): void {
     if (disposed) return;
     // The timeline panel binds its keys on its OWN root and owns them while focus is
@@ -6685,6 +6869,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
     }
     if (typingTarget()) return;
+    // ── THE ONE RULE, enforcement point 3 of 3: KEYBOARD ────────────────────────
+    // Chrome suppression closes every POINTER path onto an off-playhead box; a nudge,
+    // a Delete or a duplicate needs no chrome at all. Navigation stays live on purpose
+    // — Tab still moves, Escape (handled above, before this gate) still deselects, and
+    // ⌘A still selects all — because the way out of this state must never be blocked.
+    if (timeCfg && selection.size && isMutatingKey(e) && !selectionLive(getBoxes())) {
+      e.preventDefault();
+      announce(t('This card is not on screen at the playhead. Go to it to edit it.'));
+      return;
+    }
     // Tool shortcuts, the Illustrator/Figma letters: V pointer, P pen. Unmodified only —
     // ⌘V is paste and ⌘P is print — and after `typingTarget()`, so a live text edit or any
     // focused field gets the letter typed into it instead. Neither letter meant anything

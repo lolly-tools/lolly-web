@@ -92,6 +92,13 @@ export async function pinnedAssetIds(): Promise<Set<string>> {
   return ids;
 }
 
+/** The full pin map, tool id → record — the profile's offline download manager
+ *  reads per-tool sizes and timestamps from it. Same measured-at-pin-time
+ *  numbers pinnedToolBytes() totals. */
+export async function pinRecords(): Promise<Record<string, PinRecord>> {
+  return readPins();
+}
+
 /** Total recorded bytes + count of pinned tools (the storage meter's slice).
  *  Reads the sizes measured at (re)pin time rather than re-reading every cached
  *  blob on each meter open — pins refresh on catalog change, so drift is bounded. */

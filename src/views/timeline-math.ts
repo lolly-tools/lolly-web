@@ -40,6 +40,14 @@ export interface TimeCfg {
   muteField: string;
   laneField: string;
   idField: string;
+  /**
+   * OPTIONAL. The sub-field carrying an A/V link — the id of the box this one was
+   * detached from (or detached into), written on BOTH sides so re-attach works from
+   * either. Absent (a tool that declares no such field, e.g. layout-studio) means the
+   * whole detach/re-attach feature is simply not offered: every writer below returns
+   * null rather than inventing a field the manifest never declared.
+   */
+  linkField?: string;
 }
 
 /** A box's timing, resolved. `start`/`dur` stay null when unauthored (scenery / open-ended). */
@@ -72,6 +80,18 @@ export const DEFAULT_CLIP_S = 3;
 export const DEFAULT_SEQ_S = 5;
 /** Default snap threshold, in SCREEN pixels (the free-canvas SNAP_PX convention). */
 export const SNAP_PX = 6;
+/**
+ * Below this bar width (px) a clip offers NO trim edge zone at all.
+ *
+ * Two zones of `EDGE_PX` each on a bar narrower than ~3×EDGE_PX would meet in the
+ * middle, so every press near the centre would be a trim and the clip could never be
+ * moved or reordered again — a bar you cannot grab is worse than one you cannot trim.
+ * 28px is the width at which a 10px zone still leaves ~8px of body. See `edgeZonePx`,
+ * which is the only place that arithmetic is allowed to live; the panel reads the same
+ * constant to mark a bar `.is-tight` (hiding the grips and pointing at the inspector),
+ * so the visual affordance and the hit test can never disagree.
+ */
+export const MIN_TRIM_BAR_PX = 28;
 /**
  * Playback-rate range. THE source of truth: the hook clamps to it, sequence-clock
  * re-exports these two (rather than declaring its own pair), and every writer here
@@ -181,10 +201,75 @@ export function indexOfId(boxes: Box[], cfg: TimeCfg, id: string): number {
   return -1;
 }
 
+/** Which scenes sit either side of the one on screen — {@link onionNeighbours}' answer. */
+export interface OnionNeighbours {
+  /** Ids walking BACKWARD from the active scene, nearest first. */
+  past: string[];
+  /** Ids walking FORWARD from the active scene, nearest first. */
+  future: string[];
+}
+
+/** How many scenes an onion skin may reach in one direction. Two is Krita's / Animate's
+ *  practical ceiling and the point past which stacked ghosts stop being readable. */
+export const ONION_MAX_STEPS = 2;
+
+const onionSteps = (v: number): number => {
+  const n = Math.floor(num(v, 0));
+  return n < 0 ? 0 : n > ONION_MAX_STEPS ? ONION_MAX_STEPS : n;
+};
+
+/**
+ * The seq clips `before` steps back and `after` steps forward from whichever scene is
+ * on screen at `atSec` — the onion skin's model half (views/onion-skin.ts draws it).
+ *
+ * SEQ LANE ONLY, deliberately. A scene is the animator's unit and the seq row is the
+ * only lane with a defined "the one before this one"; an overlay has neighbours in time
+ * but not in sequence, and ghosting a lower third either side of a cut would say
+ * nothing about what the frame is becoming.
+ *
+ * The active window is HALF-OPEN `[start, start + dur)`, byte-identical to
+ * sequence-dom's `isActiveAt`, so the frame exactly at a cut belongs to the NEXT clip
+ * and the ghosts flip on the same frame the picture does. An open-ended clip runs to the
+ * derived sequence end, the same reading the panel's `span()` takes.
+ *
+ * Both counts are clamped to 0…{@link ONION_MAX_STEPS} and honoured INDEPENDENTLY (the
+ * Procreate Dreams pattern: "two behind, none ahead" is a real way to work). Nothing
+ * active, an empty lane, or 0/0 all return two empty arrays — never null, so the caller
+ * never branches on shape.
+ */
+export function onionNeighbours(
+  boxes: Box[], cfg: TimeCfg, atSec: number, before: number, after: number,
+): OnionNeighbours {
+  const back = onionSteps(before);
+  const fwd = onionSteps(after);
+  if (!back && !fwd) return { past: [], future: [] };
+  const row = seqBoxes(boxes, cfg);
+  if (!row.length) return { past: [], future: [] };
+  const total = deriveDuration(boxes, cfg) / 1000;
+  const at = num(atSec, 0);
+  let hit = -1;
+  for (let i = 0; i < row.length; i++) {
+    const tm = boxTiming(row[i], cfg);
+    const start = tm.start ?? 0;
+    const dur = tm.dur ?? Math.max(MIN_DUR, total - start);
+    if (at >= start && at < start + dur) { hit = i; break; }
+  }
+  if (hit < 0) return { past: [], future: [] };
+  const idAt = (i: number): string => {
+    const v = row[i]?.[cfg.idField];
+    return v == null ? '' : String(v);
+  };
+  const past: string[] = [];
+  for (let k = 1; k <= back && hit - k >= 0; k++) { const id = idAt(hit - k); if (id) past.push(id); }
+  const future: string[] = [];
+  for (let k = 1; k <= fwd && hit + k < row.length; k++) { const id = idAt(hit + k); if (id) future.push(id); }
+  return { past, future };
+}
+
 // ── writers ───────────────────────────────────────────────────────────────────
 
 /** Patch a box, preserving object identity when nothing actually changes. */
-function withFields(box: Box, patch: Record<string, number | string>): Box {
+function withFields(box: Box, patch: Record<string, Box[string]>): Box {
   let changed = false;
   for (const k of Object.keys(patch)) {
     if (box[k] !== patch[k]) { changed = true; break; }
@@ -599,6 +684,275 @@ export function splitBox(boxes: Box[], cfg: TimeCfg, id: string, tSec: number, m
   return out;
 }
 
+/** Result of {@link splitAll}: the new array plus which ids the cut actually landed on. */
+export interface SplitAllResult {
+  /** The boxes after every successful split. IDENTICAL to the input when none landed. */
+  next: Box[];
+  /** The ids of the RIGHT halves that were minted, in the order they were made. */
+  split: string[];
+  /** The requested ids `splitBox` refused (open-ended, or the cut was not strictly inside). */
+  skipped: string[];
+}
+
+/**
+ * Split several clips at the SAME instant, in ONE array.
+ *
+ * The reason this is a function rather than a loop at the call site: `tool-history`
+ * diffs whole input values, so N calls to `write()` are N undo steps and a "split
+ * everything at the playhead" would take five presses of ⌘Z to take back. Folding
+ * `splitBox` over one intermediate array makes the whole command a single step.
+ *
+ * `next === boxes` (identity, not deep equality) when nothing split, so the caller can
+ * skip the commit entirely and spend no undo entry on a no-op — the same discipline
+ * `promote` already uses.
+ *
+ * A refusal is per-id and never aborts the rest: splitting a selection of five clips
+ * where the playhead is outside two of them splits the other three.
+ *
+ * `mintId` is the caller's — this module still invents no ids. It is called once per
+ * split, but a minter that reads a SNAPSHOT (the panel's reads `getBoxes()`, which does
+ * not move during this fold) hands back the same id every time, so a collision against
+ * the accumulator is disambiguated here with a numeric suffix. That suffix is the one
+ * fragment of an id this module ever authors, and it only fires on a minter that has
+ * already failed to be unique.
+ */
+export function splitAll(
+  boxes: Box[], cfg: TimeCfg, ids: string[], tSec: number, mintId: () => string,
+): SplitAllResult {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  let acc = rows;
+  const split: string[] = [];
+  const skipped: string[] = [];
+  const mint = (): string => {
+    const base = String(mintId() ?? '');
+    if (base && indexOfId(acc, cfg, base) < 0) return base;
+    const stem = base || 'b';
+    let n = 2;
+    while (indexOfId(acc, cfg, `${stem}-${n}`) >= 0) n++;
+    return `${stem}-${n}`;
+  };
+  for (const raw of Array.isArray(ids) ? ids : []) {
+    const id = raw == null ? '' : String(raw);
+    if (!id) continue;
+    const next = splitBox(acc, cfg, id, tSec, mint);
+    if (!next) { skipped.push(id); continue; }
+    // splitBox inserts B immediately after A, so the minted half is the next row.
+    const i = indexOfId(next, cfg, id);
+    const b = i >= 0 ? next[i + 1] : null;
+    const bId = b ? String(b[cfg.idField] ?? '') : '';
+    if (bId) split.push(bId);
+    acc = next;
+  }
+  return { next: acc, split, skipped };
+}
+
+/** Does this field value mean "no transition"? Absent, empty and 'none' are one state. */
+function isCut(v: Box[string]): boolean {
+  return v == null || v === '' || v === 'none';
+}
+
+/** Is this box's audio silenced? Both the boolean and the stringy wire form. */
+function isMuted(box: Box | undefined, cfg: TimeCfg): boolean {
+  const v = box?.[cfg.muteField];
+  return v === true || v === 'true';
+}
+
+/**
+ * Is the cut between A and B a THROUGH EDIT — a split whose two halves are still
+ * perfectly contiguous, so joining them would restore the original clip byte for byte?
+ *
+ * Final Cut draws these as a hairline at the cut, and it is the single mechanism in the
+ * whole NLE survey that makes splitting non-frightening: you can always see which cuts
+ * are real decisions and which are just "I cut here and then changed nothing".
+ *
+ * Five conditions, all of them things `splitBox` writes and a later edit would break:
+ *   • A and B are ADJACENT on the seq row (B immediately follows A in play order);
+ *   • neither side has grown a transition across the cut;
+ *   • B's in-point is exactly where A's out-point left off, in MEDIA time — hence
+ *     `A.clipIn + A.dur * A.speed`, the same speed-aware arithmetic `splitBox` used;
+ *   • the two halves still play at the same rate;
+ *   • and they are the same source, which this module cannot decide for itself — an
+ *     asset ref is not a timing concern, so the predicate is INJECTED by the caller.
+ */
+export function isThroughEdit(
+  boxes: Box[], cfg: TimeCfg, aId: string, bId: string,
+  sameSource: (a: Box, b: Box) => boolean,
+): boolean {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  if (!aId || !bId || String(aId) === String(bId)) return false;
+  const order = seqIndices(rows, cfg);
+  const ai = order.findIndex((i) => String(rows[i]?.[cfg.idField] ?? '') === String(aId));
+  if (ai < 0 || ai + 1 >= order.length) return false;
+  const bi = order[ai + 1]!;
+  if (String(rows[bi]?.[cfg.idField] ?? '') !== String(bId)) return false;
+  const a = rows[order[ai]!]!;
+  const b = rows[bi]!;
+  if (!isCut(a[cfg.exitField]) || !isCut(b[cfg.enterField])) return false;
+  const ta = boxTiming(a, cfg);
+  const tb = boxTiming(b, cfg);
+  if (ta.dur === null || tb.dur === null) return false;
+  if (ta.speed !== tb.speed) return false;
+  if (Math.abs(tb.clipIn - (ta.clipIn + ta.dur * ta.speed)) > 0.001) return false;
+  try { return !!sameSource(a, b); } catch { return false; }
+}
+
+/**
+ * Join two adjacent seq clips back into one — Final Cut's *Trim > Join Clips*, and the
+ * real inverse of a split rather than "select both and hope".
+ *
+ * A absorbs B's length and B's OUTER edge (its exit transition), which is exactly what
+ * `splitBox` handed outward; B is removed and the row repacks. The absence of an exit is
+ * carried too, by deleting the key rather than writing `undefined` — that is what makes
+ * split → join a true round-trip on a clip that never had a transition at all.
+ *
+ * Deliberately NOT gated on {@link isThroughEdit}: that predicate decides what to OFFER,
+ * this one decides what to do. Joining two clips that are no longer contiguous is a
+ * legitimate (if lossy) edit, and refusing it here would put the policy in two places.
+ * Returns null only when the pair is not two adjacent clips of the seq row.
+ */
+export function joinClips(
+  boxes: Box[], cfg: TimeCfg, aId: string, bId: string, mediaDur?: MediaDurFn,
+): Box[] | null {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const order = seqIndices(rows, cfg);
+  const ai = order.findIndex((i) => String(rows[i]?.[cfg.idField] ?? '') === String(aId));
+  if (ai < 0 || ai + 1 >= order.length) return null;
+  const bIdx = order[ai + 1]!;
+  if (String(rows[bIdx]?.[cfg.idField] ?? '') !== String(bId)) return null;
+  const aIdx = order[ai]!;
+  const a = rows[aIdx]!;
+  const b = rows[bIdx]!;
+  const ta = boxTiming(a, cfg);
+  const tb = boxTiming(b, cfg);
+  if (ta.dur === null || tb.dur === null) return null;
+
+  const merged: Box = { ...a, [cfg.durField]: clamp(r3(ta.dur + tb.dur), MIN_DUR, MAX_TIME_S) };
+  for (const f of [cfg.exitField, cfg.exitMsField]) {
+    if (Object.prototype.hasOwnProperty.call(b, f)) merged[f] = b[f];
+    else delete merged[f];
+  }
+  const culled = rows.map((row, k) => (k === aIdx ? merged : row)).filter((_, k) => k !== bIdx);
+  return rippleOverlays(rows, packSeq(culled, cfg, mediaDur), cfg);
+}
+
+/**
+ * Detach a clip's audio onto its own lane — REFERENCE, not copy.
+ *
+ * The new box carries the SAME asset ref, start, length, in-point and rate as its
+ * source; nothing is demuxed and no new asset is created, because `sequence-render`
+ * decodes the audio track from that identical URL either way. The source is muted, and
+ * both boxes are stamped with each other's id.
+ *
+ * The link is SYMMETRIC on purpose. Final Cut's detach is one-way and it is the single
+ * most-cited complaint in the survey ("there's no way to resync a clip, except for
+ * Undo"); Premiere and Resolve keep a persistent link that can be undone from either
+ * side, and that is what a field on BOTH boxes buys. It also survives a later split:
+ * `splitBox` copies fields, so cutting the muted video yields two halves that both name
+ * the audio, and {@link reattachAudio} un-mutes both.
+ *
+ * The detached box lands on the OVERLAY lane (`lane: ''`) so `packSeq` never sees it —
+ * a magnetic row that suddenly gained a silent twin of every clip would double in length.
+ * Its transitions are cleared: an animate-in on a thing with no picture is meaningless.
+ *
+ * `seed` is the tool's own AUDIO add-kind seed, applied over the copy so the box is
+ * field-for-field what the rail's "Audio" button would have made (kind, fit, and so on).
+ * Returns null when the tool declares no link sub-field, when the box is missing, or
+ * when it is already linked.
+ */
+export function detachAudio(
+  boxes: Box[], cfg: TimeCfg, id: string, mintId: () => string, seed?: Box,
+): Box[] | null {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const link = cfg.linkField;
+  if (!link) return null;
+  const i = indexOfId(rows, cfg, id);
+  if (i < 0) return null;
+  const box = rows[i]!;
+  const cur = box[link];
+  if (cur != null && cur !== '') return null;               // already linked
+  const audioId = String(mintId() ?? '');
+  if (!audioId || indexOfId(rows, cfg, audioId) >= 0) return null;
+
+  const audio: Box = {
+    ...box,
+    ...(seed ?? {}),
+    [cfg.idField]: audioId,
+    [cfg.laneField]: '',
+    [cfg.muteField]: '',
+    [cfg.enterField]: 'none',
+    [cfg.exitField]: 'none',
+    [link]: String(id),
+  };
+  const out = rows.map((b, k) => (k === i
+    ? withFields(b!, { [cfg.muteField]: true, [link]: audioId })
+    : b));
+  out.push(audio);
+  return out;
+}
+
+/**
+ * Put a detached sound back on its clip — the inverse of {@link detachAudio}, reachable
+ * from EITHER side (press it on the video or on the sound; both mean the same thing).
+ *
+ * The link group is resolved by CLOSURE in both directions, because a video that was
+ * split after being detached is two boxes both naming the same sound. Partitioning that
+ * group by `mute` is what tells the two sides apart without a second field: the muted
+ * members are the picture (un-mute them, clear their link), everything else is the
+ * detached sound (removed).
+ *
+ * Returns null — refuses, rather than guessing — when the tool declares no link field,
+ * when the group is a singleton (nothing is actually linked), or when the muted side is
+ * EMPTY. That last one means the user un-muted the video by hand: re-attaching would
+ * have to decide which of two unmuted boxes is the picture, and deleting the wrong one
+ * is unrecoverable. Dangling ids (a partner that has since been deleted) are ignored.
+ */
+export function reattachAudio(
+  boxes: Box[], cfg: TimeCfg, id: string, mediaDur?: MediaDurFn,
+): Box[] | null {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const link = cfg.linkField;
+  if (!link) return null;
+  if (!id || indexOfId(rows, cfg, id) < 0) return null;
+
+  const idOf = (b: Box | undefined): string => {
+    const v = b?.[cfg.idField];
+    return v == null ? '' : String(v);
+  };
+  const partnerOf = (b: Box | undefined): string => {
+    const v = b?.[link];
+    return v == null ? '' : String(v);
+  };
+  const group = new Set<string>([String(id)]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const b of rows) {
+      if (!b) continue;
+      const me = idOf(b);
+      const other = partnerOf(b);
+      if (!me || !other || indexOfId(rows, cfg, other) < 0) continue;
+      if (group.has(me) && !group.has(other)) { group.add(other); grew = true; }
+      else if (group.has(other) && !group.has(me)) { group.add(me); grew = true; }
+    }
+  }
+  if (group.size < 2) return null;
+
+  const video: number[] = [];
+  const audio: number[] = [];
+  for (let k = 0; k < rows.length; k++) {
+    if (!rows[k] || !group.has(idOf(rows[k]))) continue;
+    (isMuted(rows[k], cfg) ? video : audio).push(k);
+  }
+  if (!video.length) return null;
+
+  const drop = new Set(audio);
+  const keep = new Set(video);
+  const wasSeq = audio.some((k) => boxTiming(rows[k], cfg).lane === 'seq');
+  const culled = rows
+    .map((b, k) => (keep.has(k) ? withFields(b!, { [cfg.muteField]: '', [link]: '' }) : b))
+    .filter((_, k) => !drop.has(k));
+  return wasSeq ? rippleOverlays(rows, packSeq(culled, cfg, mediaDur), cfg) : culled;
+}
+
 // ── snapping + formatting ─────────────────────────────────────────────────────
 
 /**
@@ -641,4 +995,61 @@ export function fmtTime(sec: number): string {
   const pad = (n: number): string => (n < 10 ? '0' + n : String(n));
   const body = h > 0 ? `${h}:${pad(m)}:${pad(s)}.${d}` : `${m}:${pad(s)}.${d}`;
   return neg && tenths > 0 ? '-' + body : body;
+}
+
+/**
+ * Format a LENGTH for the trim readout: `4.2s` under ten seconds, `12s` under a
+ * minute, `1:05` (fmtTime's shape, minus the tenths) beyond it.
+ *
+ * A separate function from fmtTime on purpose. fmtTime is the TRANSPORT readout — an
+ * absolute position, always `m:ss.d`, always the same width so the clock does not
+ * jitter. A duration is read as a magnitude, and `0:04.2` for a four-second clip is
+ * three characters of ceremony over `4.2s` (IMG.LY's mobile timeline is the precedent:
+ * one decimal only where a tenth is still a visible fraction of the bar).
+ *
+ * Each band is picked from the ROUNDED value, never the raw one, so 9.96 reads `10s`
+ * rather than `10.0s` and 59.9 reads `1:00` rather than `60s`.
+ */
+export function fmtDur(sec: number): string {
+  const v = num(sec, 0);
+  if (v < 0) return `-${fmtDur(-v)}`;
+  const tenths = Math.round(v * 10);
+  if (tenths < 100) return `${(tenths / 10).toFixed(1)}s`;
+  const whole = Math.round(v);
+  if (whole < 60) return `${whole}s`;
+  // fmtTime already knows when to grow an hours field; drop its tenths rather than
+  // re-deriving the m:ss split here.
+  return fmtTime(whole).replace(/\.\d$/, '');
+}
+
+/**
+ * Format a CHANGE in length: `+0.6s` / `-0.6s`, same bands as {@link fmtDur}.
+ *
+ * ASCII `+`/`-` deliberately — not `±`, not U+2212 MINUS SIGN. This string is read
+ * aloud by a screen reader as well as drawn in a badge, and the house copy style keeps
+ * the typographically fancy characters out of running text.
+ *
+ * A delta that rounds away to nothing reads `+0.0s`, never `-0.0s`.
+ */
+export function fmtDelta(sec: number): string {
+  const v = num(sec, 0);
+  const a = Math.abs(v);
+  const sign = v < 0 && Math.round(a * 10) > 0 ? '-' : '+';
+  return `${sign}${fmtDur(a)}`;
+}
+
+/**
+ * How wide each trim edge zone may be on a bar of `barWidthPx`, given the pointer's
+ * base zone (`EDGE_PX` for a mouse, `EDGE_PX_COARSE` for a finger).
+ *
+ * Returns 0 below {@link MIN_TRIM_BAR_PX} — the bar is too narrow to carry a trim
+ * target that is not also the whole clip. Above it, a third of the bar is the ceiling,
+ * so the in and out zones can never meet: 2 × floor(w/3) < w for every w ≥ 3, leaving
+ * at least one pixel of body that still starts a move.
+ */
+export function edgeZonePx(barWidthPx: number, basePx: number): number {
+  const w = num(barWidthPx, 0);
+  const base = num(basePx, 0);
+  if (!(w >= MIN_TRIM_BAR_PX) || !(base > 0)) return 0;
+  return Math.min(base, Math.floor(w / 3));
 }

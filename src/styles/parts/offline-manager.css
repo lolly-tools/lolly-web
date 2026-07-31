@@ -1,0 +1,154 @@
+/* ─── Offline tools download manager (/profile → "Offline tools") ────────────
+   A searchable icon + name list of every tool, each with the same three-layer
+   download → progress → circled-tick button the gallery cards carry
+   (gallery.css's .gtile-pin — duplicated here under .odl-pin because the two
+   sheets are separate lazy chunks; keep the two state machines visually in
+   step when touching either). Sizes shown are the tool FILES measured at pin
+   time (lib/offline-pins.ts PinRecord.bytes) — catalog asset blobs are counted
+   by the Storage section's Asset-cache slice, never double here. */
+
+/* Cascade layer: same `views` layer as the other lazy view sheets (order
+   declared once in styles/app.css) so priority is load-order independent. */
+@layer views {
+
+.odl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 8px;
+}
+.odl-total {
+  flex: 1;
+  min-width: 160px;
+  font-size: calc(13px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+.odl-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: calc(13px * var(--a11y-fs));
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+}
+.odl-search:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
+
+.odl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.odl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid hsl(var(--border) / 0.45);
+}
+.odl-row:last-child { border-bottom: none; }
+.odl-row[hidden] { display: none; }
+.odl-row-icon {
+  flex: none;
+  display: inline-flex;
+  color: hsl(var(--primary));
+}
+.odl-row-icon svg {
+  width: calc(20px * var(--a11y-fs));
+  height: calc(20px * var(--a11y-fs));
+}
+.odl-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(13px * var(--a11y-fs));
+}
+.odl-row-size {
+  flex: none;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+/* The download → progress → tick button. Mirrors gallery.css's .gtile-pin
+   states: at rest the download glyph; .is-busy shrinks it under a spinning
+   arc; .is-pinned shows the accent-filled circled tick; .is-celebrating is the
+   one-shot completion flourish (pop + tick draw). Animations die under both
+   reduced-motion paths via base.css's global kills — every state still reads
+   statically. */
+.odl-pin {
+  position: relative;
+  flex: none;
+  width: calc(28px * var(--a11y-fs));
+  height: calc(28px * var(--a11y-fs));
+  padding: 0;
+  display: inline-flex;
+  background: transparent;
+  color: hsl(var(--muted-foreground) / 0.7);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.odl-pin:hover {
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
+}
+.odl-pin svg {
+  width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
+}
+.odl-pin .pin-layer {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.18s, transform 0.18s;
+}
+.odl-pin .pin-ring,
+.odl-pin .pin-done { opacity: 0; transform: scale(0.6); }
+.odl-pin.is-busy { pointer-events: none; }
+.odl-pin.is-busy .pin-dl { opacity: 0.35; transform: scale(0.7); }
+.odl-pin.is-busy .pin-ring { opacity: 1; transform: none; }
+.odl-pin.is-busy .pin-ring svg {
+  /* r=9 circle, circumference ≈ 56.5 — a ~70% arc that spins while fetching */
+  stroke-dasharray: 40 16.55;
+  transform-origin: 50% 50%;
+  animation: odl-spin 0.9s linear infinite;
+}
+@keyframes odl-spin { to { transform: rotate(360deg); } }
+.odl-pin.is-pinned:not(.is-busy) .pin-dl { opacity: 0; transform: scale(0.6); }
+.odl-pin.is-busy .pin-done { opacity: 0; }
+.odl-pin.is-pinned:not(.is-busy) .pin-done { opacity: 1; transform: none; }
+.odl-pin.is-pinned { color: hsl(var(--primary)); }
+.odl-pin .pin-done svg circle { fill: hsl(var(--primary)); stroke: hsl(var(--primary)); }
+.odl-pin .pin-done svg path { stroke: hsl(var(--primary-foreground)); fill: none; }
+.odl-pin.is-celebrating .pin-done svg circle { animation: odl-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: 50% 50%; }
+.odl-pin.is-celebrating .pin-done svg path {
+  stroke-dasharray: 12;
+  animation: odl-tick 0.3s ease-out 0.18s backwards;
+}
+@keyframes odl-pop { from { transform: scale(0.3); } }
+@keyframes odl-tick { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
+
+.odl-empty {
+  margin: 8px 0;
+  font-size: calc(13px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+
+}
