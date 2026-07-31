@@ -21,8 +21,9 @@ import {
   drawSvgPathToPdf, svgArcToBeziers, applyTextTransform,
   buildCmykPaletteMap, assignSpotResourceNames, cmykKey, paletteHitKey,
   pdfColorHit, cmykN, substitutePdfRgb, svgLen, preserveAspectRatioAlign,
-  parseSvgColor,
+  parseSvgColor, FINISH_MASK_CMYK,
 } from './export-pdf-vector.ts';
+import { readFileSync } from 'node:fs';
 
 type Op = [string, ...unknown[]];
 
@@ -441,4 +442,138 @@ test('brandSwatchPalette: normalises to 0–1, keeps labels/spot names, dedupes 
   assert.deepEqual(out[0], { rgb: [1, 0, 0], cmyk: [0, 1, 1, 0], label: 'Red', spotName: undefined });
   assert.equal(out[1]!.spotName, 'Pine');
   assert.deepEqual(out[1]!.cmyk, rgbToCmyk(0x0C / 255, 0x32 / 255, 0x2C / 255));
+});
+
+// ── Declared finishes (host-v1 v1.91 SpotColor.finish) ───────────────────────
+// A finish is a press instruction with its own plate, not a colour. Before this,
+// `finish` was dropped at the BrandPaletteEntry type boundary, so a declared foil
+// separated as an ordinary /Separation whose tint transform resolved to the
+// swatch's own screen hex — i.e. a flattening RIP printed plausible metallic
+// gold and nothing in the file said otherwise. These pin the mask build at every
+// CMYK sink at once: hit.spot.cmyk is the PDF Separation's tint-transform C1,
+// hit.cmyk is what the flat TIFF and EPS paths paint.
+
+test('buildCmykPaletteMap: a finish never carries the swatch colour build', () => {
+  const map = buildCmykPaletteMap([{ hex: '#C9A227', spot: { name: 'Gold', finish: 'foil' } }]);
+  const hit = map.get(cmykKey(0xC9 / 255, 0xA2 / 255, 0x27 / 255))!;
+  assert.ok(hit, 'finish swatch still qualifies for substitution');
+  assert.deepEqual(hit.cmyk, FINISH_MASK_CMYK, 'TIFF/EPS sink paints the mask');
+  assert.deepEqual(hit.spot!.cmyk, FINISH_MASK_CMYK, 'PDF Separation tint transform C1 is the mask');
+  assert.equal(hit.spot!.name, 'Gold');
+  assert.equal(hit.spot!.finish, 'foil');
+  // And it is emphatically NOT the swatch's own derived build.
+  assert.notDeepEqual(hit.cmyk, rgbToCmyk(0xC9 / 255, 0xA2 / 255, 0x27 / 255));
+});
+
+test('buildCmykPaletteMap: an explicit cmyk anchor does not defeat the finish mask', () => {
+  const map = buildCmykPaletteMap([
+    { hex: '#C9A227', cmyk: [10, 30, 90, 5], spot: { name: 'Gold', finish: 'foil' } },
+  ]);
+  const hit = map.get(cmykKey(0xC9 / 255, 0xA2 / 255, 0x27 / 255))!;
+  // "An explicit lock always wins" is true for an INK and false for a finish:
+  // an anchored "gold-ish" build is exactly the silent failure being removed.
+  assert.deepEqual(hit.cmyk, FINISH_MASK_CMYK);
+  assert.deepEqual(hit.spot!.cmyk, FINISH_MASK_CMYK);
+});
+
+test('buildCmykPaletteMap: an ordinary spot ink is byte-identical to before', () => {
+  // Zero blast radius for every spot that exists today (none declare a finish).
+  const derived = rgbToCmyk(0x0C / 255, 0x32 / 255, 0x2C / 255);
+  const spotOnly = buildCmykPaletteMap([{ hex: '#0C322C', spot: { name: 'Pine' } }]);
+  const h1 = spotOnly.get(cmykKey(0x0C / 255, 0x32 / 255, 0x2C / 255))!;
+  assert.deepEqual(h1, { cmyk: derived, spot: { name: 'Pine', cmyk: derived } });
+  assert.ok(!('finish' in h1.spot!), 'no finish key on an ordinary ink');
+
+  // An explicit process anchor beside a spot lock still wins, as documented.
+  const anchored = buildCmykPaletteMap([{ hex: '#FF0000', cmyk: [0, 100, 100, 0], spot: { name: 'Warm Red' } }]);
+  assert.deepEqual(anchored.get(cmykKey(1, 0, 0)), {
+    cmyk: [0, 1, 1, 0], spot: { name: 'Warm Red', cmyk: [0, 1, 1, 0] },
+  });
+
+  // And a plain process lock with no spot is untouched.
+  const process = buildCmykPaletteMap([{ hex: '#FF0000', cmyk: [0, 100, 100, 0] }]);
+  assert.deepEqual(process.get(cmykKey(1, 0, 0)), { cmyk: [0, 1, 1, 0] });
+});
+
+test('buildCmykPaletteMap: an unrecognised finish is honoured, not discarded', () => {
+  // FinishKind is an OPEN union (host-v1): a house process must behave like any
+  // other finish, never like an error and never like a plain ink.
+  const map = buildCmykPaletteMap([{ hex: '#C9A227', spot: { name: 'Gold', finish: 'thermography' } }]);
+  const hit = map.get(cmykKey(0xC9 / 255, 0xA2 / 255, 0x27 / 255))!;
+  assert.deepEqual(hit.cmyk, FINISH_MASK_CMYK);
+  assert.equal(hit.spot!.finish, 'thermography');
+});
+
+test('brandSwatchPalette: a finish cell is the mask and names the finish', () => {
+  const out = brandSwatchPalette([
+    { hex: '#0C322C', spot: { name: 'Pine' }, label: 'Pine' },
+    { hex: '#C9A227', spot: { name: 'Gold', finish: 'foil' }, label: 'Foil' },
+    // Same ink name, different finish → must not collide in the dedupe key.
+    { hex: '#C9A227', spot: { name: 'Gold' }, label: 'Gold ink' },
+  ]);
+  assert.equal(out.length, 3);
+  assert.equal(out[0]!.spotName, 'Pine');
+  assert.deepEqual(out[0]!.cmyk, rgbToCmyk(0x0C / 255, 0x32 / 255, 0x2C / 255), 'ordinary ink unchanged');
+  assert.equal(out[1]!.spotName, 'Gold (foil)');
+  assert.deepEqual(out[1]!.cmyk, FINISH_MASK_CMYK, 'the bar must not assert a process build for a finish');
+  assert.equal(out[2]!.spotName, 'Gold');
+  assert.deepEqual(out[2]!.cmyk, rgbToCmyk(0xC9 / 255, 0xA2 / 255, 0x27 / 255));
+});
+
+test('substitutePdfRgb: a finish still switches to its /Separation, not a k operator', () => {
+  // The mask build must not demote a finish to flat process ink in the PDF path —
+  // the named plate is the one thing a printer can actually act on.
+  const map = buildCmykPaletteMap([{ hex: '#0C322C', spot: { name: 'Emboss', finish: 'emboss' } }]);
+  const spotNames = assignSpotResourceNames(map);
+  const usedSpots = new Set<string>();
+  const out = substitutePdfRgb('0.05 0.2 0.17 rg 0.05 0.2 0.17 RG', map, spotNames, undefined, usedSpots);
+  assert.equal(out, '/CS1 cs 1 scn /CS1 CS 1 SCN');
+  assert.deepEqual([...usedSpots], ['Emboss']);
+});
+
+// Contract test (same spirit as a11y-prefs-contract.test.ts): the finish fix is
+// placed in the SHARED builder precisely so a fourth CMYK format cannot
+// reintroduce the defect. Assert no sink builds its own palette map.
+test('contract: every CMYK sink obtains its palette through buildCmykPaletteMap', () => {
+  const here = new URL('.', import.meta.url).pathname;
+  const repo = `${here}../../../../`;
+  const exportTs = readFileSync(`${here}export.ts`, 'utf8');
+  const vectorTs = readFileSync(`${here}export-pdf-vector.ts`, 'utf8');
+  const engineTs = readFileSync(`${repo}engine/src/cmyk-palette.ts`, 'utf8');
+  // The FOURTH sink lives in another shell entirely. Scanning only shells/web is
+  // how the finish fix stayed web-only while `lolly … --export=eps-cmyk` went on
+  // silently converting a declared foil to gold, so the scan crosses the boundary
+  // the defect crossed.
+  const cliBridgeTs = readFileSync(`${repo}shells/cli/src/bridge.ts`, 'utf8');
+
+  for (const [label, src] of [['export.ts', exportTs], ['cli/bridge.ts', cliBridgeTs]] as const) {
+    for (const line of src.split('\n')) {
+      if (!/\b(paletteMap|cmykPalette)\s*[:=][^:=]/.test(line)) continue;
+      if (/Map</.test(line)) continue;                       // a type annotation, not a binding
+      assert.match(line.trim(), /buildCmykPaletteMap\(|brandCmykPalette\(/,
+        `${label}: a CMYK sink builds its own palette map instead of using the shared builder: ${line.trim()}`);
+    }
+    // No sink hand-constructs a spot hit (which is how `finish` got dropped).
+    assert.ok(!/spot:\s*\{\s*name/.test(src),
+      `${label} hand-constructs a spot hit — it must come from buildCmykPaletteMap`);
+  }
+
+  // The CLI's eps-cmyk sink must actually pass a palette; `cmyk: true` alone was
+  // the whole bug.
+  const eps = cliBridgeTs.slice(cliBridgeTs.indexOf("format === 'eps' || format === 'eps-cmyk'"));
+  assert.match(eps.slice(0, 2000), /cmykPalette:/,
+    'the CLI eps-cmyk sink passes no palette, so a declared finish is silently converted to its swatch colour');
+
+  // The builder is the ENGINE's, so both shells share one implementation.
+  assert.match(vectorTs, /export \{ buildCmykPaletteMap, cmykKey \}/,
+    'export-pdf-vector.ts must re-export the engine builder, never redefine one');
+  assert.match(engineTs, /export function buildCmykPaletteMap\(/);
+
+  // Both places that derive a CMYK build from a brand swatch consult the finish.
+  for (const [src, fn] of [[engineTs, 'buildCmykPaletteMap'], [vectorTs, 'brandSwatchPalette']] as const) {
+    const start = src.indexOf(`export function ${fn}(`);
+    assert.ok(start > 0, `${fn} not found`);
+    const body = src.slice(start, start + 2000);
+    assert.match(body, /FINISH_MASK_CMYK/, `${fn} must mask a declared finish`);
+  }
 });

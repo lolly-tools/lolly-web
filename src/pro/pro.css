@@ -636,6 +636,27 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-popover-control input[type="checkbox"].pro-control { width: calc(16px * var(--a11y-fs)); }
 .pro-popover-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 
+/* Run-level print settings popover (bleed, marks, CMYK press profile).
+   Same box as every other /pro popover — only the inner layout is new. */
+.pro-popover--print { width: 280px; }
+.pro-print-enable { display: flex; align-items: center; gap: .45rem; font-size: calc(.85rem * var(--a11y-fs)); cursor: pointer; }
+.pro-print-body { display: flex; flex-direction: column; gap: .5rem; margin-top: .6rem; }
+.pro-print-body[hidden] { display: none; }
+.pro-print-bleed { display: flex; align-items: center; gap: .4rem; font-size: calc(.82rem * var(--a11y-fs)); }
+.pro-print-bleed .pro-sess-input { width: 4.5rem; flex: none; }
+.pro-print-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem .5rem; }
+.pro-print-toggles label { display: flex; align-items: center; gap: .35rem; font-size: calc(.8rem * var(--a11y-fs)); cursor: pointer; }
+.pro-print-cmyk { margin-top: .7rem; padding-top: .6rem; border-top: 1px solid hsl(var(--border)); }
+.pro-print-cmyk[hidden] { display: none; }
+.pro-print-profile { display: flex; flex-direction: column; gap: .3rem; font-size: calc(.82rem * var(--a11y-fs)); }
+.pro-print-profile select { width: 100%; }
+.pro-print-hint { margin: .6rem 0 .7rem; font-size: calc(.72rem * var(--a11y-fs)); line-height: 1.45; color: hsl(var(--muted-foreground)); }
+/* The toolbar trigger. `.is-on` marks a run that actually carries print settings. */
+.pro-print-btn { display: inline-flex; align-items: center; gap: .35rem; }
+.pro-print-btn[hidden] { display: none; }
+.pro-print-btn.is-on { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
+.pro-print-icon { flex: none; }
+
 /* Saved-sessions popover */
 .pro-popover--sessions { width: 300px; }
 .pro-sess-list { list-style: none; margin: 0 0 .6rem; padding: 0; max-height: 16rem; overflow-y: auto; }
@@ -701,6 +722,9 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-log-ok { color: hsl(var(--muted-foreground)); }
 .pro-log-err { color: hsl(var(--destructive)); }
 .pro-log-skip { color: hsl(var(--muted-foreground)); font-style: italic; }
+/* Skipped rows, listed by NAME (a skipped row has no queue position to cite). */
+.pro-log-skip summary { cursor: pointer; }
+.pro-log-skiplist { list-style: none; margin: 0.2rem 0 0; padding: 0 0 0 1rem; }
 
 /* ─── Blocks cell (repeating field group) + its docked editor panel ──────────
    A blocks value is a 2-D array; the cell is a trigger that opens the panel. */

@@ -699,6 +699,112 @@
 }
 .export-settings:empty { display: none; }
 
+/* Tier 3.5 — "Before you export" (views/export-preflight.ts). The one export
+   card that is a STATEMENT rather than a setting, so it sits last, below every
+   control it describes and above the Download button.
+
+   It is a real <details>, unlike the other export cards: parts/disclosure.css
+   documents why those are JS-toggled (they hold inputs whose values must survive
+   a collapse), and this one holds no fields, only reading matter — so the native
+   element's keyboard toggling, AT semantics and find-in-page auto-open come free
+   and nothing has to be kept in sync. It reuses .section-card for the box and the
+   canonical .section-card-head/.section-card-icon anatomy for the summary.
+
+   Nothing here animates, pulses or demands attention: severity is colour and
+   wording only. There is no dismiss control, because nothing was demanded. */
+.export-preflight > summary {
+  list-style: none;
+  cursor: pointer;
+  gap: 7px;
+}
+.export-preflight > summary::-webkit-details-marker { display: none; }
+.export-preflight > summary:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: calc(var(--radius) * 0.75);
+}
+/* The verdict rides the COLLAPSED summary, so "1 to fix" is legible without
+   opening the card — which is what lets it stay collapsed by default and still
+   be honest. Pushed to the trailing edge, logical so RTL follows. */
+.preflight-verdict {
+  margin-inline-start: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-size: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.export-preflight[data-tone="fix"] .preflight-verdict {
+  color: color-mix(in oklab, hsl(var(--destructive)), hsl(var(--foreground)) 30%);
+}
+.preflight-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 2px;
+}
+/* The counted facts: the /valid view's label/value anatomy. Counting is the
+   feature, so these are listed even when there is nothing to fix. */
+.preflight-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.preflight-fact-value {
+  color: hsl(var(--foreground));
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+.preflight-findings {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+/* Severity is a TINTED FILL PLUS A FULL HAIRLINE BORDER (the community/redact
+   .rd-finding shape), never a one-sided border-left stripe — that is the named
+   house anti-pattern. Dashed borders are reserved for drop areas and appear
+   nowhere in this card. */
+.preflight-finding {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.5);
+  font-size: calc(12px * var(--a11y-fs));
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+}
+/* The same amber .export-aspect-warning already uses two cards up — there is no
+   --warning token in tokens.css, and inventing one for this card would give the
+   panel two different warning hues. */
+.preflight-finding.is-warn {
+  --aspect-warn: 38 92% 45%;
+  border-color: hsl(var(--aspect-warn) / 0.5);
+  background: hsl(var(--aspect-warn) / 0.12);
+  color: hsl(var(--foreground));
+}
+.preflight-finding.is-error {
+  border-color: hsl(var(--destructive) / 0.45);
+  background: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--foreground));
+}
+/* A NAMED GAP: "Lolly could not check this". Same tinted-fill + full-hairline
+   anatomy as the other two (never a left stripe), but drawn DOWN rather than up —
+   a refusal is not a problem and must never be styled as one. It still needs its
+   own box, because rendering it identically to a measured fact is most of the way
+   back to omitting it, and an omitted gap is indistinguishable from "nothing
+   wrong here". Neutral hue on purpose: no amber, no red. */
+.preflight-finding.is-gap {
+  border-style: solid;
+  border-color: hsl(var(--border) / 0.7);
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+}
+
 /* .export-cmyk/.export-audio/.export-pdfpass/.export-c2pa/.export-print all
    carry the literal `section-card` class now (component audit rec 7) — the
    box, icon-head and hint-line anatomy they used to restate here four times

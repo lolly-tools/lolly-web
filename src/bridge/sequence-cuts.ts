@@ -43,6 +43,7 @@ import {
   sequenceDurationMs,
   type SequenceTimeSession,
 } from './sequence-dom.ts';
+import { CUTS_FORMATS } from '@lolly/engine';
 import { sequenceError, toCodedError } from './sequence-plan.ts';
 import type { ExportOpts } from './export.ts';
 
@@ -64,8 +65,13 @@ export const MAX_CUTS = 64;
  * `cuts` entirely: a bundle of a bundle has no meaning, and a data payload has no
  * frames. `jpeg` is listed beside `jpg` because renderFormatDispatch accepts both
  * spellings.
+ *
+ * Re-exported from `engine/src/preflight.ts` rather than restated: `wantsCuts`
+ * below and the engine's `count.cuts-applies` / `count.cuts-inert` checks must
+ * decide on the SAME set, or the export panel and the preflight card disagree
+ * about whether a format has a contact sheet at all.
  */
-export const CUTS_FORMATS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp', 'svg', 'pdf']);
+export { CUTS_FORMATS };
 
 /** File extension for a zipped cut of `format` (the token is not always the ext). */
 const CUT_EXT: Record<string, string> = { jpeg: 'jpg' };

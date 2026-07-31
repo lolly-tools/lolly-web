@@ -11,6 +11,14 @@ import { BATCH_SLOT_PREFIX, isBatchSlot } from '../lib/batch-slots.ts';
 
 /** An assembled batch row with an optional nested export path. */
 export interface ExportRow {
+  /**
+   * Stable, opaque identity — see `pro/batch.ts` `BatchRow.uid`. Stamped by
+   * {@link rowsForFolder} from the SOURCE (folder path :: session ref # ordinal), so
+   * it is deterministic and survives `planBatch`'s compaction. NEVER an index: the
+   * numbers the runner emits are queue positions in the compacted array.
+   * The pure `rowFrom*` helpers do not stamp it — assembly does.
+   */
+  uid?: string;
   toolId: string | undefined;
   values: Record<string, unknown>;
   format?: string;
@@ -37,6 +45,22 @@ interface BatchSessionRow {
   outHeight?: number;
   unit?: string;
   dpi?: number;
+  /** Per-row print overrides (see `rowFromBatchRow` for the precedence). */
+  profile?: string;
+  bleed?: string;
+  marks?: string;
+}
+
+/**
+ * The RUN-LEVEL print settings a batch snapshot carries — the /pro toolbar
+ * defaults its rows inherit. A row that names its own value wins; this is the
+ * fallback, and the two are merged when the snapshot is flattened into export
+ * rows so a folder export reproduces what the saved batch would have rendered.
+ */
+export interface PrintDefaults {
+  profile?: string;
+  bleed?: string;
+  marks?: string;
 }
 
 /**
@@ -57,6 +81,15 @@ interface StoredSession {
   __export_bleed?: string;
   __export_marks?: string;
   rows?: BatchSessionRow[];
+  /**
+   * A BATCH snapshot's run-level print settings (unprefixed — the `__export_*`
+   * names above are the single-tool record's). Read only when `__batch` is set;
+   * on a single-tool record these keys would be ordinary input values, which is
+   * why nothing reads them outside the `__batch` branch of `rowsForFolder`.
+   */
+  profile?: string;
+  bleed?: string;
+  marks?: string;
 }
 
 /** One item in a saved folder. */
@@ -128,9 +161,24 @@ export function rowFromToolSession(data: StoredSession, pathParts: string[] = []
   };
 }
 
-/** Convert one snapshot row (from a batch session) into a path-stamped export row. */
-export function rowFromBatchRow(r: BatchSessionRow, pathParts: string[]): ExportRow {
+/**
+ * Convert one snapshot row (from a batch session) into a path-stamped export row.
+ *
+ * `runDefaults` is the SNAPSHOT's run-level print block; a row that names its own
+ * value wins, matching `runBatch`'s precedence for format/unit/dpi (the single
+ * statement of the rule is `resolvePrintSettings` in ./batch.ts — this module is
+ * deliberately import-free, so it restates the merge rather than importing it, and
+ * `pro/folder-rows.test.ts` pins the two to the same answer).
+ *
+ * Before this, a batch snapshot's rows reached the folder exporter with all three
+ * fields `undefined`: a folder of 40 rows the user had set to 3mm CMYK rendered
+ * trim-sized, unmarked and profile-less. An absent field is a genuine "unset", not
+ * an asserted zero — which is why `''` resolves to `undefined`, not to "no bleed".
+ */
+export function rowFromBatchRow(r: BatchSessionRow, pathParts: string[], runDefaults: PrintDefaults = {}): ExportRow {
   const leaf = stemOf(r.filename, r.toolId);
+  const pick = (a: string | undefined, b: string | undefined): string | undefined =>
+    (a != null && a !== '') ? a : (b != null && b !== '' ? b : undefined);
   return {
     toolId: r.toolId,
     values: r.values ?? {},
@@ -140,6 +188,9 @@ export function rowFromBatchRow(r: BatchSessionRow, pathParts: string[]): Export
     outHeight: r.outHeight,
     unit: r.unit,
     dpi: r.dpi,
+    profile: pick(r.profile, runDefaults.profile),
+    bleed: pick(r.bleed, runDefaults.bleed),
+    marks: pick(r.marks, runDefaults.marks),
   };
 }
 
@@ -163,11 +214,25 @@ export async function rowsForFolder(host: FolderHost, folder: Folder, allFolders
     if (!data) continue;
     if (data.__batch || isBatchSlot(item.ref)) {
       const sub = data.__label || item.ref.slice(BATCH_SLOT_PREFIX.length);
-      for (const r of data.rows ?? []) {
-        if (r.toolId) rows.push(rowFromBatchRow(r, [...path, sub]));
+      // uid is stamped HERE, from the source, not by the pure helpers: `<path>::<ref>#<k>`.
+      // The path prefix is required — exportSelectionAsBatch concatenates subtrees, so the
+      // same session ref can legitimately appear under two selected folders, and uniqueness
+      // is a property of the path, not the ref. No counter, no random: deterministic.
+      const srcRows = data.rows ?? [];
+      // The snapshot's run-level print block is the fallback for every row it holds.
+      const runPrint: PrintDefaults = { profile: data.profile, bleed: data.bleed, marks: data.marks };
+      // Pushed UNCONDITIONALLY, template or not. A pre-filter here shifted the source
+      // position of every row after a template-less one and dropped it from the run
+      // report entirely — a zip that lists only the rows it could render is not an
+      // honest record of the job. `planBatch` drops these with the reason
+      // 'No template selected', recording the source position and the uid stamped
+      // below, so `#k` and the reported row number stay the same number.
+      for (let k = 0; k < srcRows.length; k++) {
+        const r = srcRows[k]!;
+        rows.push({ ...rowFromBatchRow(r, [...path, sub], runPrint), uid: `${path.join('/')}::${item.ref}#${k}` });
       }
     } else if (data.__toolId) {
-      rows.push(rowFromToolSession(data, path));
+      rows.push({ ...rowFromToolSession(data, path), uid: `${path.join('/')}::${item.ref}` });
     }
   }
   if (allFolders) {

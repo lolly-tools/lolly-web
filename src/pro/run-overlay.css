@@ -126,6 +126,12 @@
 .pro-log-ok { color: hsl(var(--muted-foreground)); }
 .pro-log-err { color: hsl(var(--destructive)); }
 .pro-log-skip { color: hsl(var(--muted-foreground)); font-style: italic; }
+/* Skipped rows, listed by NAME (a skipped row has no queue position to cite). */
+.pro-log-skip summary { cursor: pointer; }
+.pro-log-skiplist { list-style: none; margin: 0.2rem 0 0; padding: 0 0 0 1rem; }
+/* The RUNNER position on a failure line — context, never the row number the user acts
+   on (that leads the line, in source space). Muted so the two can't be misread as one. */
+.pro-log-queue { color: hsl(var(--muted-foreground)); font-size: 0.9em; }
 
 /* ── Live preview wall — each finished export pops in as a thumbnail card ── */
 .pro-cardwall {
@@ -168,6 +174,40 @@
   box-shadow: 0 1px 4px #0004;
 }
 .pro-card-fmticon svg { display: block; width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
+
+/* Findings chip, top-RIGHT — mirrors .pro-card-fmticon exactly (same 22px box, same
+   frosted treatment) so the two corners read as one system.
+
+   Tone is --primary, deliberately the same accent .pro-card-time's ⚡ pill already uses:
+   that pill is this file's precedent for "an extra fact about a successful render", and
+   it reads as pride, not damage. --destructive belongs to .pro-log-err alone and must
+   never appear on a card — a row that rendered is not a failure. Never a one-sided
+   border either; card-level emphasis, if it is ever needed, is a full hairline + tint. */
+.pro-card-note {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: calc(12px * var(--a11y-fs));
+  line-height: 1;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.12);
+  border: 1px solid hsl(var(--primary) / 0.28);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  border-radius: 7px;
+  box-shadow: 0 1px 4px #0004;
+  cursor: help;
+}
+/* A finding that IS a warning stays on the SAME ramp — it is weighted, not recoloured.
+   No new token is invented here (the app declares no --warning), and the destructive
+   ramp stays the log's: a row that produced a file is not a failure. */
+.pro-card-note--warn { background: hsl(var(--primary) / 0.22); border-color: hsl(var(--primary) / 0.5); font-weight: 700; }
 .pro-card-img {
   display: block;
   width: 100%;

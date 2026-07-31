@@ -671,9 +671,16 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'org/share-links.ts': 4,
   'pro/blocks-editor.ts': 4,
   'pro/folder-export.ts': 2,
-  'pro/index.ts': 9,
+  // 10 as of 2026-07-31: +1 for the run-level print-settings popover (openPrintPopover).
+  // Reviewed — its only interpolations are escape(t(…)) labels, escape()d CMYK
+  // condition ids/labels, and a parsed bleed number; the checkbox states are booleans.
+  'pro/index.ts': 10,
   'pro/render-export.ts': 1,
-  'pro/run-overlay.ts': 7,
+  // 9 as of 2026-07-31: +2 for the retry's failure line, which writes into whichever
+  // .pro-log is LIVE (the retry rebuilds the mount, so the element this run captured may
+  // already be detached) and falls back to a fresh list. Reviewed — both interpolate
+  // one value, the caught message, through this module's esc().
+  'pro/run-overlay.ts': 9,
   'views/catalog.ts': 8,
   'views/color-lab.ts': 18,
   'views/components-data.ts': 1,
@@ -681,6 +688,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/dashboard.ts': 11,
   'views/deck-editor.ts': 9,
   'views/doc-editor.ts': 1,
+  // 1 as of 2026-07-31: applyPreflight writes the "Before you export" card body.
+  // Reviewed — every value at that sink comes from preflightBodyHtml, which
+  // escape()s each one: the finding text (which carries brand token data, an
+  // OPEN FinishKind union and tool-authored input labels, all attacker-shaped),
+  // the finding id, and both halves of every fact row.
+  'views/export-preflight.ts': 1,
   'views/free-canvas.ts': 40,
   'views/gallery.ts': 6,
   'views/multi-edit.ts': 3,

@@ -173,8 +173,20 @@ const CSS = `
 /* With 200+ artist presets a flat list is unusable, so the menu is a SEARCH list: a filter
    field over a scrolling result set. The menu itself no longer scrolls — the list does, so
    the field and the action rows stay put while results change under them. */
-.viz-menu { display: flex; flex-direction: column; max-height: min(72vh, 520px);
-  overflow-y: auto; overscroll-behavior: contain; }
+/* The menu is settings-then-library: a short block of pill rows at a fixed height, and
+   under it ONE tall scroller holding every preset. Sized generously (2026-07-31) — with
+   200+ entries the old min(72vh, 520px) box, most of it spent on rows and headings, showed
+   about six presets at a time.
+
+   The menu keeps its own `overflow-y: auto` as a SAFETY VALVE, not as a normal scroller:
+   on a tall window the settings block and the list both fit and it never scrolls, but on a
+   short one it is what stops the fixed rows being clipped outright. (`overflow: hidden`
+   here was tried and is wrong — at 86vh of a 500px window the rows plus the list's floor
+   exceed the box, and hidden means the bottom of the list is simply unreachable.) Wheel
+   chaining from the list into it is already prevented by the list's `overscroll-behavior`,
+   which is what actually made nested scrollers feel like a fight. */
+.viz-menu { display: flex; flex-direction: column; width: min(340px, calc(100vw - 24px));
+  max-height: min(86vh, 720px); overflow-y: auto; overscroll-behavior: contain; }
 .viz-search { flex: 0 0 auto; width: 100%; margin: 2px 0 6px; padding: 7px 10px;
   border: 1px solid rgb(255 255 255 / .18); border-radius: 8px;
   background: rgb(255 255 255 / .08); color: #fff; font-size: .8rem; }
@@ -189,7 +201,16 @@ const CSS = `
    box — so it read as "search finds nothing" rather than as a layout collapse. The floor
    keeps ~4 rows visible no matter how tall the rest of the menu grows; leftover overflow
    goes to the menu's own scroller above. */
-.viz-list { flex: 1 1 auto; min-height: 7rem; overflow-y: auto; overscroll-behavior: contain; }
+.viz-list { flex: 1 1 auto; min-height: 18rem; overflow-y: auto; overscroll-behavior: contain;
+  /* A visible, grabbable bar: this is now the only scroller in the menu and it is holding
+     200+ rows, so the overlay-style thin bar that appears on scroll is not enough of an
+     affordance. */
+  scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .3) transparent;
+  scroll-padding-block: 4px; }
+.viz-list::-webkit-scrollbar { width: 10px; }
+.viz-list::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px;
+  background: rgb(255 255 255 / .3); background-clip: padding-box; }
+.viz-list::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / .5); background-clip: padding-box; }
 .viz-list-empty { padding: 8px 10px; color: rgb(255 255 255 / .55); font-size: .78rem; }
 /* Author, right-aligned and quiet — attribution without competing with the title. */
 .viz-menu-item .viz-by { margin-left: auto; padding-left: 10px; flex: 0 0 auto;
@@ -199,9 +220,12 @@ const CSS = `
    choice rather than a separate toggle — one row, four states, no ambiguity about what
    "on" currently means. */
 .viz-menu-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; }
-.viz-menu-row-label { flex: 1 1 auto; color: #fff; font-size: .82rem; }
-.viz-pills { flex: 0 0 auto; display: inline-flex; gap: 3px; padding: 2px;
-  border-radius: 999px; background: rgb(255 255 255 / .1); }
+.viz-menu-row-label { flex: 0 0 auto; color: #fff; font-size: .82rem; }
+/* Pills WRAP and take the leftover width. The colour-scheme row put word-length labels
+   ('Jungle / Persimmon', up to MAX_SCHEMES of them) into what had only ever held 2-4 short
+   ones, and a non-wrapping `flex: 0 0 auto` group would push the row past the menu. */
+.viz-pills { flex: 1 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end;
+  gap: 3px; padding: 2px; border-radius: 12px; background: rgb(255 255 255 / .1); }
 .viz-pill { border: none; border-radius: 999px; padding: 3px 9px; cursor: pointer;
   background: transparent; color: rgb(255 255 255 / .7);
   font-size: .7rem; font-weight: 600; letter-spacing: .01em; }
@@ -316,19 +340,34 @@ function ensureStyles(doc: Document): void {
 }
 
 /**
- * The preset the visualizer opens on: a random one, every time.
+ * The preset the visualizer opens on when you leave Bars: a pinned one (Andy's pick,
+ * 2026-07-31), falling back to a random draw when it isn't staged.
  *
- * Nothing is remembered across sessions on purpose — the point of a 200+ preset library is
- * that opening the visualizer lands somewhere different, and persisting the last pick meant
- * most people only ever saw one. Reduced motion still opens on a `calm` brand-native preset;
- * the artist set is uniformly intense.
+ * It used to be random every time — the reasoning being that a 200+ library should land
+ * somewhere different each session. That is right for the CYCLE (which still draws at
+ * random, every `CYCLE_DEFAULT` seconds) and wrong for the OPENING frame: switching off
+ * the analyser is the moment the visualizer has to justify itself, and a random draw spent
+ * that moment on whatever came up — including the fifth of the pack that is technically
+ * fine but reads as almost-black. A pinned opener makes that first impression the same
+ * good one every time; breadth arrives seconds later on its own.
+ *
+ * The pin is a STOCK preset, and the artist pack is staged from a build-time dependency
+ * (see lib/viz-stock.ts) — a clone without it has no artist presets at all. So this is a
+ * preference, not a requirement: if the id isn't in the staged index, we fall back to the
+ * random draw exactly as before. Reduced motion still opens on a `calm` brand-native
+ * preset; the artist set is uniformly intense.
  *
  * Called twice per session: once synchronously (brand-native pool only, so there IS a preset
  * before the artist index loads) and once after `initStock`, over the whole library.
  */
-function randomStartPresetId(): string {
+const START_PRESET_ID = 'aderrasi-veil-of-steel-steel-storm-mash0000-bob-ross-finally-loses-it';
+
+function startPresetId(): string {
   if (neuroDemoActive()) return DEMO_PRESET_ID;   // a capture must open on the same preset every run
   if (prefersReducedMotion()) return defaultVizPresetId(true);
+  // Only once the artist index is in can we know the pin resolves; before that this falls
+  // through to the brand-native draw, and the post-initStock call settles on the pin.
+  if (stock.some((x) => x.id === START_PRESET_ID)) return START_PRESET_ID;
   const pool = presetPool();
   return pool[Math.floor(Math.random() * pool.length)] ?? defaultVizPresetId(false);
 }
@@ -775,8 +814,8 @@ function replaceCanvas(s: Surface): void {
  * cycle clock restarts so the pick gets its full turn) from an automatic rotation, which
  * must not push the timer out and stall the rotation it was started by.
  *
- * Nothing is written to storage either way — the visualizer always opens on a random preset
- * (see `randomStartPresetId`), so a remembered pick would only ever be ignored.
+ * Nothing is written to storage either way — the visualizer always opens on its own opener
+ * (see `startPresetId`), so a remembered pick would only ever be ignored.
  */
 function applyPreset(id: string, opts: { remember: boolean }): void {
   currentPresetId = id;
@@ -922,6 +961,7 @@ function menuHtml(s: Surface): string {
   // Bars mode has no preset or colour of its own — offer only what applies.
   if (s.mode !== 'milkdrop') return `${modeRow}<div class="viz-menu-sep"></div>${actions}`;
 
+
   const tintRow = stock.length > 0
     ? `<div class="viz-menu-row"><span class="viz-menu-row-label">Brand colour</span>`
       + `<span class="viz-pills" role="group" aria-label="How strongly the brand recolours artist presets">`
@@ -930,27 +970,48 @@ function menuHtml(s: Surface): string {
         + ` aria-checked="${t === brandTint}" data-viz-tint="${t}">${t === 'off' ? 'Off' : t[0]!.toUpperCase() + t.slice(1)}</button>`).join('')
       + `</span></div>`
     : '';
-  const schemeRows = schemes.length > 1
-    ? `<div class="viz-menu-label">Colour</div>`
+  // Colour schemes as a PILL ROW, like every other setting here — one horizontal group per
+  // decision, so the settings read as a compact block of toggles and the preset list gets
+  // the rest of the height. As rows they were the one setting that grew with the brand
+  // (up to MAX_SCHEMES = 6 full-width items), pushing the list down by exactly as much.
+  const schemeRow = schemes.length > 1
+    ? `<div class="viz-menu-row"><span class="viz-menu-row-label">Colour</span>`
+      + `<span class="viz-pills" role="group" aria-label="Colour scheme">`
       + schemes.map((sc) =>
-        `<button type="button" class="viz-menu-item" role="menuitemradio" data-viz-scheme="${escape(sc.id)}"`
-        + ` aria-checked="${sc.id === currentSchemeId}"><span class="viz-menu-dot"></span>${escape(sc.name)}</button>`).join('')
+        `<button type="button" class="viz-pill${sc.id === currentSchemeId ? ' is-on' : ''}" role="menuitemradio"`
+        + ` aria-checked="${sc.id === currentSchemeId}" data-viz-scheme="${escape(sc.id)}">${escape(sc.name)}</button>`).join('')
+      + `</span></div>`
     : '';
-  return `${modeRow}${tintRow}<div class="viz-menu-sep"></div>`
+  // Settings first (fixed height), then the search + list, which take everything left.
+  // `actions` moves ABOVE the list rather than below it: trailing rows under a scroller
+  // are rows the list has to give height back to, and Fullscreen/Close are one click each.
+  return `${modeRow}${tintRow}${schemeRow}<div class="viz-menu-sep"></div>${actions}`
+    + `<div class="viz-menu-sep"></div>`
     + `<input type="search" class="viz-search" data-viz-search placeholder="Search ${presetCount()} presets…" aria-label="Search presets" autocomplete="off">`
-    + `<div class="viz-list" data-viz-list>${presetListHtml()}</div>`
-    + `<div class="viz-menu-sep"></div>${schemeRows}${schemeRows ? '<div class="viz-menu-sep"></div>' : ''}${actions}`;
+    + `<div class="viz-list" data-viz-list>${presetListHtml()}</div>`;
 }
 
 function presetCount(): number { return VIZ_PRESETS.length + stock.length; }
 
 /**
- * The preset rows, filtered by `query`.
+ * The preset rows, filtered by `query` — ONE flat scrolling list of everything.
  *
- * Brand-native presets lead — they are the guaranteed-on-brand set and the shortest list —
- * then the artist presets, popular ones first. Each artist row carries its author, because
- * these are other people's work and attribution belongs next to it rather than buried in a
- * licence file.
+ * NO GROUP HEADINGS, and the brand-native presets no longer lead (2026-07-31). They used
+ * to get a "Brand" heading and the top of the list on the reasoning that they are the
+ * guaranteed-on-brand set — but every artist preset is run through the brand blend too
+ * (lib/viz-stock.ts), so "on-brand" was never the distinction it claimed to be, and
+ * Andy's read is that ours are the weakest-looking of the pack. Leading with them meant
+ * the first screen of a 200+ library was its worst screen. They stay in the list, just
+ * not announced and not first.
+ *
+ * Headings went with them: with one heading per group the sticky-free labels were pure
+ * scroll cost, and a flat list is what makes a long scroll feel short.
+ *
+ * Order is by TIER — butterchurn's own packs (1 = the 29 it opens with … 6 = in no pack),
+ * which is the only real quality signal the corpus has. Ours sort in at tier 3, so they
+ * sit mid-list among peers rather than at either extreme. Each artist row keeps its
+ * author: these are other people's work and attribution belongs next to it rather than
+ * buried in a licence file.
  */
 function presetListHtml(query = ''): string {
   const q = query.trim().toLowerCase();
@@ -960,17 +1021,17 @@ function presetListHtml(query = ''): string {
     + ` aria-checked="${id === currentPresetId}"><span class="viz-menu-dot"></span>${escape(name)}`
     + (author ? `<span class="viz-by">${escape(author)}</span>` : '') + '</button>';
 
-  const ours = VIZ_PRESETS.filter((d) => hit(d.name)).map((d) => row(d.id, d.name));
-  const theirs = stock.filter((x) => hit(x.name, x.author));
-  const popular = theirs.filter((x) => x.popular).map((x) => row(x.id, x.name, x.author));
-  const rest = theirs.filter((x) => !x.popular).map((x) => row(x.id, x.name, x.author));
-
-  const parts: string[] = [];
-  if (ours.length) parts.push(`<div class="viz-menu-label">Brand</div>${ours.join('')}`);
-  if (popular.length) parts.push(`<div class="viz-menu-label">Artist &middot; popular</div>${popular.join('')}`);
-  if (rest.length) parts.push(`<div class="viz-menu-label">Artist</div>${rest.join('')}`);
-  if (!parts.length) return '<div class="viz-list-empty">No presets match</div>';
-  return parts.join('');
+  // `tier` is optional on an index staged before tiers existed — treat a missing one as
+  // the bottom tier rather than as 0, or an old index would sort itself to the front.
+  const OURS_TIER = 3;
+  const entries: Array<{ tier: number; id: string; name: string; author?: string }> = [
+    ...VIZ_PRESETS.filter((d) => hit(d.name)).map((d) => ({ tier: OURS_TIER, id: d.id, name: d.name })),
+    ...stock.filter((x) => hit(x.name, x.author))
+      .map((x) => ({ tier: x.tier ?? (x.popular ? 1 : 6), id: x.id, name: x.name, author: x.author })),
+  ];
+  if (!entries.length) return '<div class="viz-list-empty">No presets match</div>';
+  entries.sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
+  return entries.map((e) => row(e.id, e.name, e.author)).join('');
 }
 
 /**
@@ -1348,7 +1409,7 @@ async function mountOnce(s: Surface): Promise<void> {
   // (or the cycle) has already made — that would yank the picture out from under them.
   if (!startPicked) {
     startPicked = true;
-    currentPresetId = randomStartPresetId();
+    currentPresetId = startPresetId();
   }
   const scheme = await initSchemes();
   let handle: VizHandle | null = null;
@@ -1434,7 +1495,7 @@ function destroySurface(s: Surface): void {
 
 /** Seed the module's shared preset/cycle state, once. */
 function initPrefs(): void {
-  if (!currentPresetId) currentPresetId = randomStartPresetId();
+  if (!currentPresetId) currentPresetId = startPresetId();
   cycleSeconds = readCyclePref();
 }
 

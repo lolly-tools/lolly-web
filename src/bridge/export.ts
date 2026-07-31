@@ -43,9 +43,11 @@ import { describeControl, controlText, isWidgetControl, rangeFraction, type Cont
 import { stackingRole, sortUnits, orderModifiedChildren, isFlexOrGridContainer } from './stacking-order.ts';
 import type { StackingRole } from './stacking-order.ts';
 import { unscopeStyleEls } from '../lib/scope-css.ts';
+import { parseSvgRoot, namespaceSvgRefs, type VectorTwinCanvas } from '../lib/vector-paint.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { recTransition } from '../lib/transitions.ts';
 import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
+import { RASTER_DEFAULT_SCALE } from './export-scale.ts';
 import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
 import { encodeMuxWebCodecs, type EncodeAudio } from './video-encode-core.ts';
 import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.ts';
@@ -1007,6 +1009,12 @@ function flattenRgb(rgba: Uint8ClampedArray, bg = 255): Uint8Array {
 // raster has no per-plate channel for a named ink, so a spot lock only ever
 // contributes its CMYK equivalent here — true Separation output is a PDF-only
 // capability (see renderCmykPdf); this is a deliberate scope limit, not a bug.
+// That reasoning holds for a Pantone and is WRONG for a declared FINISH (a foil,
+// a spot varnish, a die): there is no CMYK equivalent of a varnish, so an
+// "equivalent" here would be a fabricated colour. buildCmykPaletteMap therefore
+// hands this path FINISH_MASK_CMYK (100% K) for any finish swatch, and this
+// format cannot carry a finish at all — the region is written as a black mask,
+// not as a printable finish.
 // Stored uncompressed in a single strip.
 //
 // Print finishing mirrors the Print PDF, on the same engine geometry
@@ -1338,7 +1346,10 @@ async function pressConditionLabel(profile: string | undefined): Promise<string 
 // requested we fall back to the canvas at its default 2× scale.
 function rasterStyle(d: ExportDims, opts: ExportOpts): DtoRenderOpts {
   const requested = (opts.width != null && opts.width !== '') || (opts.height != null && opts.height !== '');
-  const scale = opts.scale ?? 2;
+  // The default factor is stated in bridge/export-scale.ts, because preflight has to
+  // report the pixel count this line will produce and a second literal is how the
+  // two drift apart.
+  const scale = opts.scale ?? RASTER_DEFAULT_SCALE;
   const targetW = requested ? toPixels(d.w, d.dpi) : Math.round(d.node.w * scale);
   const targetH = requested ? toPixels(d.h, d.dpi) : Math.round(d.node.h * scale);
   const renderScale = targetW / d.node.w;
@@ -1571,7 +1582,10 @@ async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
 // substitutes its locked CMYK — a spot lock's CMYK equivalent, same as the CMYK
 // TIFF path, since a true PostScript /Separation colourspace is out of scope for
 // this pass (see renderCmykPdf for the PDF path, which does emit one) — else the
-// naive conversion. No embedded output intent; gradients/images/alpha are
+// naive conversion. As with the TIFF path, a declared FINISH has no CMYK
+// equivalent to substitute: buildCmykPaletteMap gives it FINISH_MASK_CMYK
+// (100% K), so emitEps writes a black mask, and this format cannot carry a
+// finish at all. No embedded output intent; gradients/images/alpha are
 // flattened to solids upstream and text is outlined upstream, so the emitter
 // ships no fonts.
 async function renderEps(node: Element, opts: ExportOpts = {}, cmyk = false): Promise<Blob> {
@@ -1900,6 +1914,81 @@ function intrinsicSize(href: string): Promise<{ w: number; h: number } | null> {
     intrinsicCache.set(href, p);
   }
   return p;
+}
+
+// ── Vector twins for <canvas> ────────────────────────────────────────────────
+// A canvas is pixels by construction, so the walker rasterises it. But some of
+// those canvases are painting something that HAS a vector form — the sequence
+// editor's clip bars are rectangles, waveform bars and tiled thumbnails, drawn
+// to a canvas only because that is the cheap way to repaint a timeline at 60fps.
+// A painter that knows its own vector form advertises it by hanging a
+// `__lollyVectorTwin` producer off the canvas element (see lib/vector-paint.ts).
+//
+// The contract is presence-keyed and deliberately invisible: no ExportOpts field,
+// no attribute, no flag. A canvas WITHOUT the property must serialise
+// byte-identically to how it always has — that is the safety guarantee for every
+// tool export in every profile, and it is pinned by a golden in
+// export-paint-order.test.ts.
+//
+// Re-entrancy: a producer may build its markup by calling the walker itself (the
+// timeline's node-thumbnail twin does). Only the OUTERMOST walk may use twins —
+// otherwise a producer that renders a subtree containing its own canvas recurses.
+// `twinDepth` is module-scope rather than per-call because the re-entrant call is
+// a *separate* renderSvgFromHtml invocation, so a per-call local could not see it.
+let twinDepth = 0;
+const TWIN_TIMEOUT_MS = 2000;
+
+/**
+ * Resolve a canvas's vector twin into an element ready for insertion, or null.
+ *
+ * Null is the designed fall-through: every rejection (no property, nested walk,
+ * timeout, throw, unparseable markup) leaves the caller to run the unmodified
+ * toDataURL block, so the worst case is exactly today's output.
+ */
+async function vectorTwinEl(el: HTMLCanvasElement, mintPrefix: () => string): Promise<Element | null> {
+  const produce = (el as VectorTwinCanvas).__lollyVectorTwin;
+  if (typeof produce !== 'function' || twinDepth !== 0) return null;
+  twinDepth++;
+  try {
+    // A producer that never settles must not hang an export; the race abandons the
+    // wait (the producer itself keeps running, as with the runtime's hook budget).
+    //
+    // The guard is released when the PRODUCER settles, not when the race resolves.
+    // Decrementing on the timeout branch would drop `twinDepth` back to 0 while an
+    // abandoned producer is still running, so its own nested renderSvgFromHtml would
+    // then see an unguarded walker and recurse — and the timeline producer's
+    // `withBorrowedVisibility` lease strips `.seq-off` from LIVE stage boxes, so an
+    // unguarded abandoned producer is a visible artefact on screen, not just wasted work.
+    let settled = false;
+    const running = Promise.resolve(produce()).finally(() => {
+      settled = true;
+      twinDepth--;
+    });
+    const markup = await Promise.race([
+      running.catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), TWIN_TIMEOUT_MS)),
+    ]);
+    if (!settled) return null;                       // timed out; the producer owns the decrement
+    if (typeof markup !== 'string') return null;
+    const parsed = parseSvgRoot(markup);
+    if (!parsed) return null;
+    const root = document.importNode(parsed, true) as Element;
+    // Same normalisation the inline-<svg> passthrough applies (see the `tag === 'svg'`
+    // branch): comments out, scoped-style attribute selectors undone, blob: URLs
+    // inlined so the emitted file stands alone.
+    stripCommentNodes(root);
+    unscopeStyleEls(root);
+    await inlineBlobUrlsInEl(root);
+    // Ids are only unique within the twin that minted them — see namespaceSvgRefs.
+    // The prefix is minted HERE, not at the call site: `uid` is the document's id
+    // counter, and burning one on a twin that turns out to be null would shift every
+    // later id in the file relative to the same document exported without twins.
+    namespaceSvgRefs(root, mintPrefix());
+    return root;
+  } catch (e) {
+    _host?.log?.('warn', `svg: <canvas> vector twin failed, falling back to raster — ${(e as Error).message}`);
+    return null;
+  }
 }
 
 // Exported for bridge/export-paint-order.test.ts, which drives the REAL walker in
@@ -3341,7 +3430,23 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // canvas throws on toDataURL — that is unrecoverable, so it degrades to blank
     // with a warning rather than failing the export.
     if (tag === 'canvas') {
-      try {
+      // …unless the painter published a vector twin. The property is read
+      // SYNCHRONOUSLY here so a canvas without one never awaits anything — that is
+      // what keeps the untwinned path byte-identical AND allocation-free.
+      const twin = typeof (el as VectorTwinCanvas).__lollyVectorTwin === 'function'
+        ? await vectorTwinEl(el as HTMLCanvasElement, () => `tw${++uid}-`)
+        : null;
+      if (twin) {
+        // Placed on the element box with the raster branch's exact geometry and
+        // stretch semantics, so swapping raster for vector cannot move a pixel.
+        twin.setAttribute('x', String(n2(x))); twin.setAttribute('y', String(n2(y)));
+        twin.setAttribute('width', String(n2(w))); twin.setAttribute('height', String(n2(h)));
+        twin.setAttribute('preserveAspectRatio', 'none');
+        // `currentColor` in a standalone svg falls back to black — mirror the live
+        // computed colour as the inline-<svg> passthrough above does.
+        if (style.color) twin.setAttribute('color', style.color);
+        contentG.appendChild(twin);
+      } else try {
         const url = (el as HTMLCanvasElement).toDataURL('image/png');
         if (url && url.length > 'data:image/png;base64,'.length + 8) {
           const im = document.createElementNS(NS, 'image');
@@ -6532,7 +6637,11 @@ async function circularClipImage(imgEl: any, dataUrl: string): Promise<string> {
 // CONTENT, not URL — asset URLs are blob: with no extension or MIME hint, so we
 // fetch the bytes and sniff for "<svg". Known raster MIME types are skipped fast.
 // Handles blob:, http(s) and data: sources; returns null for non-SVG/unfetchable.
-async function inlineSvgFromImg(src: string): Promise<Element | null> {
+// Exported for the sequence editor's still vector twin (views/timeline-panel.ts),
+// which resolves a data: SVG source through exactly this path so the twin and the
+// walker agree on what counts as vector — reached by dynamic import, so the panel
+// keeps its no-static-edge-to-export.ts property.
+export async function inlineSvgFromImg(src: string): Promise<Element | null> {
   if (!src) return null;
   let text: string | null = null;
   if (/^data:/i.test(src)) {
@@ -6673,10 +6782,12 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   pdfDoc.setCreator(creator);
   pdfDoc.setProducer(creator);
   pdfDoc.setAuthor(m?.author || creator); // the user if known, else the app
+  // Hoisted out of the `if (m)` block: the finish note below appends to this
+  // same keyword list, and it must be in scope whether or not there is meta.
+  const kw = [m?.software, m?.source, m?.contact].filter(Boolean) as string[];
   if (m) {
     if (m.tool) pdfDoc.setTitle(m.tool);
     if (m.description) pdfDoc.setSubject(m.description);
-    const kw = [m.software, m.source, m.contact].filter(Boolean);
     if (kw.length) pdfDoc.setKeywords(kw);
   }
   const paletteMap = buildCmykPaletteMap(opts.palette ?? []);
@@ -6741,9 +6852,30 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
       if (!spot || !usedSpots.has(spot.name)) continue;
       const resourceName = spotResourceNames.get(spot.name)!;
       if (csDict.get(PDFName.of(resourceName))) continue; // already wired (dup palette entries)
+      // C1 is the alternate this separation FLATTENS to. For a declared finish
+      // (spot.finish) buildCmykPaletteMap has already made spot.cmyk the
+      // FINISH_MASK_CMYK 100%-K mask rather than the swatch's colour build, so a
+      // RIP that drops the plate paints an unmistakable black mask instead of a
+      // plausible gold/varnish colour. A RIP that honours the plate never reads
+      // it. Overprint is still NOT applied here or anywhere in this repo, so a
+      // finish knocks out the process artwork beneath it — that incompleteness
+      // is stated in the Info-dict note below, not papered over.
       const fn = pdfDoc.context.obj({ FunctionType: 2, Domain: [0, 1], C0: [0, 0, 0, 0], C1: spot.cmyk, N: 1 });
       const csArr = pdfDoc.context.obj(['Separation', spot.name, 'DeviceCMYK', pdfDoc.context.register(fn)]);
       csDict.set(PDFName.of(resourceName), pdfDoc.context.register(csArr));
+    }
+    // The finish declaration must travel WITH the file: a printer who never
+    // opens Lolly reads the Info dict, not our export panel. Written here rather
+    // than at the earlier setKeywords() because the exact used-spot set is only
+    // known after the substitution pass.
+    const finishNote = [...paletteMap.values()]
+      .map(h => h.spot)
+      .filter(s => s?.finish && usedSpots.has(s.name))
+      .map(s => `${s!.name} (${s!.finish})`);
+    if (finishNote.length) {
+      const msg = `Finish plates, mask art at 100% K, NOT overprinted: ${[...new Set(finishNote)].join('; ')}`;
+      pdfDoc.setKeywords([...kw, msg]);
+      pdfxLog('warn', `pdf: ${msg}`);
     }
   }
 

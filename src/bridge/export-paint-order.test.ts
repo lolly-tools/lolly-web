@@ -328,3 +328,141 @@ test('flag OFF: emitted order is exactly document order, even on a heavily z-ind
     for (let i = 1; i <= 12; i++) onSeq.push(at(on, i, i, i));
     assert.ok(!ASC(onSeq), 'premise: with the flag ON this fixture DOES reorder');
   });
+
+// ─── <canvas> vector twins ────────────────────────────────────────────────────
+//
+// A canvas painter can publish a `__lollyVectorTwin` producer (lib/vector-paint.ts)
+// and the walker inlines its SVG instead of a toDataURL raster. The contract is
+// presence-keyed — no ExportOpts field, no attribute, no flag — so the load-bearing
+// guarantee is the NEGATIVE one: a canvas WITHOUT the property must serialise
+// byte-identically to how it always has, for every tool export in every profile.
+//
+// That is why the scenarios below run inside ONE page against ONE canvas: comparing
+// bytes across separate Chromium launches would be comparing two layouts. Here the
+// only thing that changes between snapshot 1 and snapshot 3 is the presence of a
+// property on the element, so a difference can only be this feature leaking.
+
+/** Markup for a painted 100×50 canvas inside a 200×100 root. */
+const CANVAS_FIXTURE = `<div id="root" style="width:200px;height:100px;background:#ffffff">
+  <canvas id="cv" width="100" height="50" style="display:block;width:100px;height:50px"></canvas>
+</div>`;
+
+/** A twin whose ids (`twin-clip`) collide with any other twin's — that is the point. */
+const TWIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">`
+  + `<defs><clipPath id="twin-clip"><rect x="0" y="0" width="100" height="50"/></clipPath></defs>`
+  + `<rect id="twin-tile" clip-path="url(#twin-clip)" x="0" y="0" width="100" height="50" fill="rgb(9,9,9)"/>`
+  + `</svg>`;
+
+/**
+ * Run `steps` (an in-page async function body, given `render` and `cv`) and return
+ * its map of named SVG strings. One launch, one page, one canvas.
+ */
+async function twinScenario(steps: string): Promise<Record<string, string>> {
+  const { chromium } = browser as { chromium: any };
+  const b = await chromium.launch();
+  try {
+    const page = await b.newPage({ viewport: { width: 800, height: 600 } });
+    await page.setContent(`<!doctype html><body style="margin:0">${CANVAS_FIXTURE}</body>`);
+    await page.addScriptTag({ content: await bundle() });
+    return await page.evaluate(async (body: string) => {
+      const cv = document.getElementById('cv') as HTMLCanvasElement;
+      const g = cv.getContext('2d')!;
+      g.fillStyle = 'rgb(1,2,3)';
+      g.fillRect(0, 0, 100, 50);
+      const render = async (el: Element = document.getElementById('root')!) => {
+        const blob = await (window as any).__render(el, { convertPaths: false, rasterFallback: false });
+        return await blob.text() as string;
+      };
+      // eslint-disable-next-line no-new-func
+      const fn = new Function('render', 'cv', `return (async () => { ${body} })()`);
+      return await fn(render, cv) as Record<string, string>;
+    }, steps);
+  } finally { await b.close(); }
+}
+
+test('a canvas with NO vector twin serialises byte-identically before and after the feature exists',
+  { skip: SKIP }, async () => {
+    const out = await twinScenario(`
+      const before = await render();
+      cv.__lollyVectorTwin = () => ${JSON.stringify(TWIN_SVG)};
+      const twinned = await render();
+      delete cv.__lollyVectorTwin;
+      const after = await render();
+      return { before, twinned, after };
+    `);
+
+    // (1) The historical output: a stretched raster <image> at the element box.
+    assert.match(out.before!, /<image[^>]*href="data:image\/png/,
+      'premise: an untwinned canvas is still rasterised');
+    assert.match(out.before!, /<image[^>]*preserveAspectRatio="none"/,
+      'premise: the raster keeps its stretch semantics');
+    assert.match(out.before!, /<image[^>]*width="100"[^>]*height="50"/,
+      'premise: the raster is placed on the element box');
+
+    // (2) With a twin: the PNG is gone, the vector is in, and its ids are namespaced.
+    assert.ok(!out.twinned!.includes('data:image/png'), 'the twin must REPLACE the raster, not join it');
+    assert.ok(out.twinned!.includes('rgb(9,9,9)'), 'the twin\'s own paint must be present');
+    assert.match(out.twinned!, /id="tw\d+-twin-clip"/, 'twin ids must be namespaced at insertion');
+    assert.match(out.twinned!, /url\(#tw\d+-twin-clip\)/, 'references must follow the rename');
+    assert.ok(!/id="twin-clip"/.test(out.twinned!), 'the raw twin-local id must not survive — it collides');
+    // Placed exactly where the raster was: same box, same stretch. (The document's own
+    // root <svg> carries no preserveAspectRatio, so this can only match the twin.)
+    assert.match(out.twinned!, /<svg[^>]*\bwidth="100"[^>]*\bheight="50"[^>]*\bpreserveAspectRatio="none"/,
+      'the twin inherits the raster branch\'s box and stretch semantics');
+
+    // (3) THE GOLDEN. Same page, same layout, property removed — the bytes must return.
+    assert.equal(out.after, out.before,
+      'a canvas without __lollyVectorTwin must serialise BYTE-IDENTICALLY to the pre-feature output');
+  });
+
+test('every twin-producer failure mode falls back to the unmodified raster path',
+  { skip: SKIP }, async () => {
+    const out = await twinScenario(`
+      const shot = async (producer) => { cv.__lollyVectorTwin = producer; const s = await render(); delete cv.__lollyVectorTwin; return s; };
+      return {
+        threw:     await shot(() => { throw new Error('boom'); }),
+        rejected:  await shot(async () => { throw new Error('boom'); }),
+        malformed: await shot(() => '<svg><rect fill="red"</svg>'),
+        nul:       await shot(() => null),
+        empty:     await shot(() => ''),
+        notSvg:    await shot(() => '<html><body>nope</body></html>'),
+      };
+    `);
+    for (const [name, svg] of Object.entries(out)) {
+      assert.match(svg, /<image[^>]*href="data:image\/png/,
+        `a producer that ${name} must leave today's raster path untouched`);
+      assert.ok(!svg.includes('rgb(9,9,9)'), `${name}: nothing from a rejected twin may reach the output`);
+    }
+  });
+
+test('a twin producer that re-enters the walker gets NO twins inside it (depth guard)',
+  { skip: SKIP }, async () => {
+    // The real timeline twin builds its node thumbnails by calling the walker. If the
+    // guard were missing, an inner canvas carrying its own twin would recurse — and a
+    // twin whose producer renders its OWN subtree would not terminate at all.
+    const out = await twinScenario(`
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:0;top:200px;width:40px;height:20px';
+      const inner = document.createElement('canvas');
+      inner.width = 40; inner.height = 20;
+      inner.style.cssText = 'display:block;width:40px;height:20px';
+      const ig = inner.getContext('2d');
+      ig.fillStyle = 'rgb(7,7,7)'; ig.fillRect(0, 0, 40, 20);
+      inner.__lollyVectorTwin = () => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><rect width="40" height="20" fill="rgb(200,0,0)"/></svg>';
+      host.appendChild(inner);
+      document.body.appendChild(host);
+      cv.__lollyVectorTwin = async () => await render(host);
+      const nested = await render();
+      return { nested };
+    `);
+    const svg = out.nested!;
+    // Premise, and it is load-bearing: the OUTER twin really was used, so the raster
+    // below can only have come from the nested walk. The two canvases are deliberately
+    // different sizes (100×50 vs 40×20) so the boxes tell them apart.
+    assert.ok(!/<image[^>]*\bwidth="100"[^>]*\bheight="50"/.test(svg),
+      'premise: the outer canvas took the twin path, not the raster path');
+    assert.match(svg, /<image[^>]*href="data:image\/png[^>]*\bwidth="40"[^>]*\bheight="20"/,
+      'the INNER canvas must still rasterise — only the outermost walk may use twins');
+    assert.ok(!svg.includes('rgb(200,0,0)'),
+      'the inner canvas\'s own twin must NOT have been consulted during a nested walk');
+  });

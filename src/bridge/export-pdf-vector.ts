@@ -11,6 +11,8 @@
  */
 import { splitCssArgs, parseGradientStop, parseGradientAngle, parseRadialGradient, rgbToCmyk, roundedRectPath, parseColorToSrgb8 } from '@lolly/engine';
 import { objectPositionFractions } from './export-css.ts';
+import { FINISH_MASK_CMYK, buildCmykPaletteMap, cmykKey } from '@lolly/engine';
+import type { BrandPaletteEntry, PaletteHit, PaletteSpotHit } from '@lolly/engine';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
 import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts';
 
@@ -23,12 +25,22 @@ type Rgb = [number, number, number];
 // tint-transform's alternate space, whether or not a spot is also set; when a
 // spot is locked with no explicit cmyk, buildCmykPaletteMap derives one from
 // the swatch's own hex instead (see its own comment).
-export interface BrandPaletteEntry {
-  hex?: string;
-  cmyk?: number[];
-  label?: string;
-  spot?: { name: string; book?: string } | null;
-}
+//
+// The spot type is the CANONICAL host-v1 `SpotColor`, not a local restatement,
+// so a field added to the contract (v1.91's `finish`) can never again be
+// silently dropped at this boundary — which is exactly how a declared foil used
+// to separate as an ordinary colour plate. See FINISH_MASK_CMYK.
+export type { BrandPaletteEntry };
+
+/**
+ * The CMYK build every DECLARED FINISH gets, in every CMYK sink.
+ *
+ * Defined in `engine/src/cmyk-palette.ts` (with the full rationale) and
+ * re-exported here so every existing importer under shells/web is unchanged. It
+ * moved with `buildCmykPaletteMap`, because the CLI's eps-cmyk sink needs the
+ * same constant and could not reach a shell-local one.
+ */
+export { FINISH_MASK_CMYK };
 
 // The HTML→vector walkers position every element by its axis-aligned
 // getBoundingClientRect, which drops any CSS rotate() — a free-canvas box would
@@ -226,10 +238,20 @@ export function brandSwatchPalette(palette: BrandPaletteEntry[] | undefined): { 
     const g = parseInt(h.slice(2, 4), 16) / 255;
     const b = parseInt(h.slice(4, 6), 16) / 255;
     const frac = cmyk && cmyk.length === 4 ? (cmyk.map(v => v / 100) as [number, number, number, number]) : rgbToCmyk(r, g, b);
-    const key = `${h}:${frac.join(',')}:${spot?.name ?? ''}`;
+    const key = `${h}:${frac.join(',')}:${spot?.name ?? ''}:${spot?.finish ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ rgb: [r, g, b], cmyk: frac, label, spotName: spot?.name });
+    // The bar is a VERIFICATION strip: an RGB reference cell beside its CMYK
+    // substitution so the operator can check the conversion. A finish has no
+    // conversion to verify, so printing its swatch build would make the margin
+    // the second place in the file asserting a process build that does not
+    // exist. Its cell is the mask, and its name carries the finish.
+    out.push({
+      rgb: [r, g, b],
+      cmyk: spot?.finish ? FINISH_MASK_CMYK : frac,
+      label,
+      spotName: spot ? (spot.finish ? `${spot.name} (${spot.finish})` : spot.name) : undefined,
+    });
   }
   return out;
 }
@@ -607,29 +629,16 @@ export function applyTextTransform(str: string, transform: string | null | undef
 // independent locks (see BrandPaletteEntry's doc comment): an explicit cmyk
 // lock is never overridden by a spot lock's derived equivalent, so a
 // separately-tuned process build survives even when a spot is also set.
-export interface PaletteSpotHit { name: string; cmyk: [number, number, number, number]; }
-export interface PaletteHit { cmyk: [number, number, number, number]; spot?: PaletteSpotHit; }
-
-// Builds a lookup map from quantised RGB keys (derived from palette hex values) to
-// their locked CMYK (+ optional spot name). Shared by every CMYK export path
-// (PDF/TIFF/EPS) for exact brand-swatch matches.
-export function buildCmykPaletteMap(palette: BrandPaletteEntry[]): Map<string, PaletteHit> {
-  const map = new Map<string, PaletteHit>();
-  for (const { hex, cmyk, spot } of palette) {
-    if (!hex || (!cmyk && !spot)) continue;
-    const h = hex.replace('#', '').toLowerCase();
-    if (h.length !== 6) continue;
-    const r = parseInt(h.slice(0, 2), 16) / 255;
-    const g = parseInt(h.slice(2, 4), 16) / 255;
-    const b = parseInt(h.slice(4, 6), 16) / 255;
-    // An explicit cmyk lock always wins; a spot-only lock derives its
-    // equivalent from the swatch's own hex (same fallback used when neither
-    // is locked at all).
-    const frac = cmyk && cmyk.length === 4 ? (cmyk.map(v => v / 100) as [number, number, number, number]) : rgbToCmyk(r, g, b);
-    map.set(cmykKey(r, g, b), spot ? { cmyk: frac, spot: { name: spot.name, cmyk: frac } } : { cmyk: frac });
-  }
-  return map;
-}
+//
+// The types, the finish mask, the key quantiser and the builder all LIVE IN THE
+// ENGINE now (engine/src/cmyk-palette.ts) and are re-exported here so every
+// existing importer under shells/web is unchanged. They moved because the CLI's
+// eps-cmyk sink is a fourth CMYK sink in a different shell, and while the builder
+// was shell-local it could not reach it — so the finish fix was web-only and a
+// declared foil still separated as gold from `lolly … --export=eps-cmyk`. One
+// implementation, reachable from every shell.
+export type { PaletteSpotHit, PaletteHit };
+export { buildCmykPaletteMap, cmykKey };
 
 // Deterministic /CSn resource names for every spot-locked entry in a palette map,
 // assigned up front so substitutePdfRgb can write the final name into the content
@@ -643,16 +652,8 @@ export function assignSpotResourceNames(paletteMap: Map<string, PaletteHit>): Ma
   return names;
 }
 
-// Quantise an RGB triple (0–1) to a brand-match key. The precision MUST match
-// what jsPDF writes into the content stream: it emits colour operators at two
-// decimals (254/255 → "1.", 124/255 → "0.49"), so the palette side has to bucket
-// to two decimals too — a 3-decimal key never matches jsPDF's "0.49" against the
-// hex-exact 0.486, and every brand colour silently falls through to the generic
-// conversion. No 0–255 channel lands on a .5 boundary at ×100, so jsPDF's
-// toFixed(2) and Math.round always agree.
-export function cmykKey(r: number, g: number, b: number): string {
-  return `${Math.round(r * 100)},${Math.round(g * 100)},${Math.round(b * 100)}`;
-}
+// (cmykKey lives in engine/src/cmyk-palette.ts and is re-exported above, beside
+// buildCmykPaletteMap — the quantisation and the map it keys must move together.)
 
 // The quantised key a palette entry is matched on (mirrors buildCmykPaletteMap),
 // so usedKeys recorded during substitution can be filtered back to entries.
