@@ -30,7 +30,7 @@
  */
 
 import '../styles/parts/start.css';       // this view's shell/layout (lazy chunk)
-import { coerceTokensDoc, summarizeTokensDoc, extractPenpotProject, extractSvgColors, deriveBrandTokens, scanPenpotUsage } from '@lolly/engine';
+import { coerceTokensDoc, summarizeTokensDoc, extractPenpotProject, extractSvgColors, deriveBrandTokens, scanPenpotUsage, scanPenpotAppliedTokens } from '@lolly/engine';
 import type { PenpotUsage } from '@lolly/engine';
 import { installUserTokens } from '../bridge/tokens.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
@@ -41,7 +41,7 @@ import { wireTabs } from '../lib/tabs.ts';
 import type { MobileSheetHandle } from '../lib/mobile-sheet.ts';
 import { carryUserFontTokens, installGoogleFont } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
-import { proposeBrandRoles, proposeFonts, buildBrandDocFromUsage } from '../lib/brand-propose.ts';
+import { proposeBrandRoles, proposeFonts, buildBrandDocFromUsage, proposeRolesFromTokens, proposeFontsFromTokens, withRoleAliases } from '../lib/brand-propose.ts';
 import { bustFontRegistry } from '../bridge/font-registry.ts';
 import { unzipBrandBytes } from '../brand-transfer.ts';
 import { addSwatch } from '../lib/brand-doc.ts';
@@ -695,13 +695,39 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
             <button type="button" class="be-cta start-cta--import" data-install-look>${t('Make this look your brand')}</button>`);
           return;
         }
-        importedDoc = doc;
+        // The file declares tokens, so those ARE the brand — but a doc alone
+        // never says which token is the primary. Read how the designer applied
+        // them (and, for an older export that carries no applied references,
+        // what the file paints) so the install can also write the semantic
+        // roles as aliases to their own tokens. No usable colour tokens → the
+        // doc installs exactly as it does today.
         importedLabel = file.name.replace(/\.(penpot|zip)$/i, '') || t('My brand');
+        const appliedTokens = scanPenpotAppliedTokens(files);
+        const roles = proposeRolesFromTokens(doc, appliedTokens, scanPenpotUsage(files));
+        importedDoc = roles ? withRoleAliases(doc, roles.refs) : doc;
         const statLine = statLineFor(doc);
+        const tokenFonts = roles ? proposeFontsFromTokens(doc, appliedTokens) : null;
+        const roleChips: Array<[string, string, string | undefined]> = roles ? [
+          [t('Primary'), roles.primary, roles.refs.primary],
+          ...(roles.secondary ? [[t('Secondary'), roles.secondary, roles.refs.secondary] as [string, string, string | undefined]] : []),
+          [t('Surface'), roles.surface, roles.refs.surface],
+          [t('Text'), roles.text, roles.refs.text],
+        ] : [];
         showImportResult(`
           <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('penpot tokens')}</span></p>
           ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
           ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
+          ${roles ? `
+            <p class="start-import-stats">${t('These are the tokens the file declares. Roles below follow how the designer applied them.')}</p>
+            <ul class="start-color-grid start-look-roles" role="list">
+              ${roleChips.map(([label, hex, ref]) => `
+                <li class="start-color-chip">
+                  <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
+                  <span class="start-color-hex">${escape(ref ?? hex)}</span>
+                  <span class="start-color-role">${escape(label)}</span>
+                </li>`).join('')}
+            </ul>` : ''}
+          ${tokenFonts?.missing.length ? `<p class="start-import-stats">${escape(t('Type: {list}', { list: tokenFonts.missing.slice(0, 4).join(', ') }))}</p>` : ''}
           <button type="button" class="be-cta start-cta--import" data-install-import>${t('Install these tokens')}</button>`);
         return;
       }

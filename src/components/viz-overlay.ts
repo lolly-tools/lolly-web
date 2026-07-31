@@ -221,6 +221,15 @@ const CSS = `
    and left the now-playing label apparently blank. It dims slightly and stays live. */
 .viz-surface.is-idle:fullscreen .viz-player { opacity: .72; }
 .viz-player:hover, .viz-player:focus-within { opacity: 1 !important; }
+/* This card is dark whatever the app theme, but the embedded music-player body colours
+   its text with theme tokens — in a light theme --foreground is near-black, so the
+   ACTIVE atmosphere labels (and the transport/header/icon hover states) went black on
+   dark. Pin the text that sits directly on the card to white. The track picker is
+   exempt: its popover brings its own themed background, so tokens are right there. */
+.viz-player .neuro-atmo-row.is-on .neuro-atmo-label,
+.viz-player .neuro-tbtn:hover,
+.viz-player .neuro-atmo-head:hover,
+.viz-player .neuro-atmo-icon:hover { color: #fff; }
 /* position:relative so the track picker's panel (music-player.ts) anchors here and
    opens upward, exactly as it does in the dock. */
 .viz-player-head { position: relative; margin-bottom: 8px; }
