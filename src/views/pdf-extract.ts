@@ -201,6 +201,10 @@ function hiddenMarkup(hidden: HiddenTextFinding[]): string {
         words: nWords(words), runs: nPlaces(hidden.length), pages: nPages(pages),
       }))}</p>
       <ul class="pdfx-hidden-list">${rows}</ul>
+      <p class="pdfx-hidden-cta">
+        <a class="btn pdfx-hidden-redact" href="#/tool/redact">${t('Redact this properly')}</a>
+        <span class="pdfx-hidden-cta-note">${escape(t('The Redact tool rebuilds the file so covered text is destroyed, not hidden.'))}</span>
+      </p>
     </section>`;
 }
 

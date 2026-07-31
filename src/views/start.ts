@@ -30,7 +30,8 @@
  */
 
 import '../styles/parts/start.css';       // this view's shell/layout (lazy chunk)
-import { coerceTokensDoc, summarizeTokensDoc, extractPenpotProject, extractSvgColors, deriveBrandTokens } from '@lolly/engine';
+import { coerceTokensDoc, summarizeTokensDoc, extractPenpotProject, extractSvgColors, deriveBrandTokens, scanPenpotUsage } from '@lolly/engine';
+import type { PenpotUsage } from '@lolly/engine';
 import { installUserTokens } from '../bridge/tokens.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
 import { mountBrandEditor, BRAND_TABS } from '../lib/brand-editor.ts';
@@ -38,8 +39,10 @@ import type { BrandTabKey, BrandEditorHandle } from '../lib/brand-editor.ts';
 import { setupMobileSheet } from '../lib/mobile-sheet.ts';
 import { wireTabs } from '../lib/tabs.ts';
 import type { MobileSheetHandle } from '../lib/mobile-sheet.ts';
-import { carryUserFontTokens } from '../user-fonts.ts';
+import { carryUserFontTokens, installGoogleFont } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
+import { proposeBrandRoles, proposeFonts, buildBrandDocFromUsage } from '../lib/brand-propose.ts';
+import { bustFontRegistry } from '../bridge/font-registry.ts';
 import { unzipBrandBytes } from '../brand-transfer.ts';
 import { addSwatch } from '../lib/brand-doc.ts';
 import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-dialog.ts';
@@ -455,6 +458,9 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // ── Import path — a raw tokens JSON (W3C DTCG / Tokens Studio) or a .zip pack ─
   const importFile = viewEl.querySelector<HTMLInputElement>('.start-import-file')!;
   let importedDoc: Record<string, unknown> | null = null;
+  // The token-less Penpot path's census, held between the proposal card render
+  // and its "Make this look your brand" click (same lifecycle as importedDoc).
+  let pendingUsage: PenpotUsage | null = null;
   let importedLabel = t('My brand');
 
   // Shared "N sets · N themes · N tokens, N colours" blurb — every doc-shaped
@@ -528,6 +534,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
 
   async function handleImportFile(file: File): Promise<void> {
     importedDoc = null;
+    pendingUsage = null;
 
     // SVG has no formal-token concept — every colour it uses is "not a token",
     // so scan for what's actually there and let the user pick which to keep
@@ -624,10 +631,68 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       if (manifest?.type === 'penpot/export-files') {
         const { doc, warnings } = extractPenpotProject(files);
         if (!doc) {
-          showImportResult(`<p class="start-import-err">${t(warnings[0]
-            ? 'No design tokens found in {filename} — {warning}. Try exporting an SVG instead so we can read its colours.'
-            : 'No design tokens found in {filename}. Try exporting an SVG instead so we can read its colours.',
-            { filename: escape(file.name), warning: escape(warnings[0] ?? '') })}</p>`);
+          // No formal tokens — the common case. Scan what the file actually
+          // USES (every paint source, gradients, fonts) and propose the look
+          // as brand roles instead of dead-ending.
+          const usage = scanPenpotUsage(files);
+          const roles = proposeBrandRoles(usage);
+          if (!roles) {
+            showImportResult(`<p class="start-import-err">${t(warnings[0]
+              ? 'No design tokens found in {filename} — {warning}. Try exporting an SVG instead so we can read its colours.'
+              : 'No design tokens found in {filename}. Try exporting an SVG instead so we can read its colours.',
+              { filename: escape(file.name), warning: escape(warnings[0] ?? '') })}</p>`);
+            return;
+          }
+          pendingUsage = usage;
+          importedLabel = file.name.replace(/\.(penpot|zip)$/i, '') || t('My brand');
+          const fonts = proposeFonts(usage);
+          const gradN = usage.gradients.length;
+          const statBits = [
+            t(usage.colors.length === 1 ? '{n} colour' : '{n} colours', { n: usage.colors.length }),
+            gradN ? t(gradN === 1 ? '{n} gradient' : '{n} gradients', { n: gradN }) : null,
+            usage.fonts.length ? t(usage.fonts.length === 1 ? '{n} font' : '{n} fonts', { n: usage.fonts.length }) : null,
+          ].filter(Boolean).join(' · ');
+          const roleChips: Array<[string, string]> = [
+            [t('Primary'), roles.primary],
+            ...(roles.secondary ? [[t('Secondary'), roles.secondary] as [string, string]] : []),
+            [t('Surface'), roles.surface],
+            [t('Text'), roles.text],
+          ];
+          const fontLines = [
+            fonts.google.length ? `<p class="start-import-stats">${escape(t('Fonts: {list}', { list: fonts.google.join(', ') }))}</p>` : '',
+            fonts.missing.length ? `<p class="start-import-warn">${escape(t(fonts.missing.length === 1
+              ? '{list} has no downloadable source, so it stays as a name only.'
+              : '{list} have no downloadable source, so they stay as names only.', { list: fonts.missing.join(', ') }))}</p>` : '',
+          ].join('');
+          showImportResult(`
+            <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('look in use')}</span></p>
+            ${statBits ? `<p class="start-import-stats">${escape(statBits)}</p>` : ''}
+            <p class="start-import-warn">${t('This file declares no design tokens, so this is the look it actually uses.')}</p>
+            <ul class="start-color-grid start-look-roles" role="list">
+              ${roleChips.map(([label, hex]) => `
+                <li class="start-color-chip">
+                  <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
+                  <span class="start-color-hex">${escape(hex)}</span>
+                  <span class="start-color-role">${escape(label)}</span>
+                </li>`).join('')}
+            </ul>
+            ${roles.extras.length ? `
+              <p class="start-import-stats">${t('Keep any of the other colours as swatches:')}</p>
+              <ul class="start-color-grid" role="list">
+                ${roles.extras.map((hex, i) => `
+                  <li class="start-color-chip">
+                    <label>
+                      <input type="checkbox" data-color-idx="${i}" checked>
+                      <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
+                      <span class="start-color-hex">${escape(hex)}</span>
+                    </label>
+                  </li>`).join('')}
+              </ul>` : ''}
+            ${fontLines}
+            ${gradN ? `<p class="start-import-stats">${escape(t(gradN === 1
+              ? 'Its gradient becomes a brand token.'
+              : 'The top gradients become brand tokens.'))}</p>` : ''}
+            <button type="button" class="be-cta start-cta--import" data-install-look>${t('Make this look your brand')}</button>`);
           return;
         }
         importedDoc = doc;
@@ -713,6 +778,33 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     const doc = deriveBrandTokens({ primary: kept[0]!, name: importedLabel });
     kept.slice(1).forEach((hex, i) => addSwatch(doc, 'custom', t('Extracted {n}', { n: i + 2 }), hex));
     void install(doc, importedLabel, colorsBtn);
+  });
+
+  // Delegated: the usage-proposal CTA (the token-less Penpot path). Google
+  // faces are fetched FIRST so the doc's font roles resolve on-device — but a
+  // failed fetch is non-fatal, offline the tokens still name the family.
+  importResult.addEventListener('click', async (e) => {
+    const lookBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-install-look]');
+    if (!lookBtn || !pendingUsage || lookBtn.disabled) return;
+    const keepExtras: string[] = [];
+    importResult.querySelectorAll<HTMLElement>('.start-color-chip').forEach(li => {
+      const cb = li.querySelector<HTMLInputElement>('[data-color-idx]');
+      const hex = li.querySelector<HTMLElement>('.start-color-hex')?.textContent;
+      if (cb?.checked && hex) keepExtras.push(hex);
+    });
+    lookBtn.disabled = true;
+    const fonts = proposeFonts(pendingUsage);
+    let landed = false;
+    for (const family of fonts.google) {
+      try {
+        await installGoogleFont(host as unknown as UserFontsHost, family, { neverPrimary: true });
+        landed = true;
+      } catch { /* offline or blocked — the font token still points at the family */ }
+    }
+    if (landed) bustFontRegistry();
+    lookBtn.disabled = false;
+    const { doc } = buildBrandDocFromUsage(pendingUsage, importedLabel, { keepExtras });
+    void install(doc, importedLabel, lookBtn);
   });
 
   // ── Escape returns to the view the user came from — same target as the back

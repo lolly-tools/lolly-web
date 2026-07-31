@@ -32,6 +32,7 @@ import {
   penpotShapeToNode,
   penpotGroupToSvg,
   penpotGradientSvgDef,
+  collectPenpotExportMarks,
   figmaNodesToNodes,
   figmaNodesToScenes,
   readingOrder,
@@ -799,9 +800,10 @@ async function penpotItemsToNodes(
     try { node = penpotShapeToNode(item); } catch { node = null; }
     if (!node) continue;
     if (node._fillImageId) {
-      const ref = await loadPenpotMedia(host, files, fileId, node._fillImageId, imageCache, warn);
+      const ref = await loadPenpotMedia(host, files, fileId, node._fillImageId, imageCache, warn, node._fillFlip);
       if (ref) node.image = ref; else node.kind = 'box';
       delete node._fillImageId;
+      delete node._fillFlip;
     } else if (node._vectorPath) {
       const ref = await storeFigVector(host, node._vectorPath, node._vectorFill, node._vectorStroke, node._vectorSize, imageCache, warn, node._vectorGradient);
       if (ref) node.image = ref;
@@ -814,9 +816,12 @@ async function penpotItemsToNodes(
 }
 
 // Resolve a Penpot image fill to bytes and store it: fillImage.id → the media meta json
-// (→ mediaId + mtype) → the binary blob under objects/. Returns a full AssetRef or null.
-async function loadPenpotMedia(host: HostV1 | undefined, files: Record<string, Uint8Array>, fileId: string, fillImageId: string, cache: Map<string, AssetRef>, warn: (msg: string) => void): Promise<AssetRef | null> {
-  const key = 'ppmedia:' + fillImageId;
+// (→ mediaId + mtype) → the binary blob under objects/. `flip` ('x'|'y'|'xy', the
+// mapper's _fillFlip marker) mirrors the PIXELS before storage — boxes have no mirror
+// field, so a flipped fill must bake its flip into the stored asset. Returns a full
+// AssetRef or null.
+async function loadPenpotMedia(host: HostV1 | undefined, files: Record<string, Uint8Array>, fileId: string, fillImageId: string, cache: Map<string, AssetRef>, warn: (msg: string) => void, flip?: string): Promise<AssetRef | null> {
+  const key = 'ppmedia:' + fillImageId + (flip ? `:${flip}` : '');
   if (cache.has(key)) return cache.get(key)!;
   try {
     let mediaId = fillImageId, mtype = 'image/png';
@@ -828,7 +833,23 @@ async function loadPenpotMedia(host: HostV1 | undefined, files: Record<string, U
     const objPath = Object.keys(files).find((p) => p.startsWith(`objects/${mediaId}.`) && !/\.json$/i.test(p));
     if (!objPath) { warn('Couldn’t find an embedded Penpot image.'); return null; }
     const ext = (objPath.split('.').pop() || 'png').toLowerCase();
-    const file = new File([files[objPath]! as BlobPart], `penpot-${mediaId}.${ext}`, { type: mtype });
+    let file = new File([files[objPath]! as BlobPart], `penpot-${mediaId}.${ext}`, { type: mtype });
+    if (flip) {
+      try {
+        const bmp = await createImageBitmap(file);
+        const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+        const ctx = canvas.getContext('2d')!;
+        ctx.translate(flip.includes('x') ? bmp.width : 0, flip.includes('y') ? bmp.height : 0);
+        ctx.scale(flip.includes('x') ? -1 : 1, flip.includes('y') ? -1 : 1);
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close();
+        const blob = await canvas.convertToBlob({ type: 'image/png' });
+        file = new File([blob], `penpot-${mediaId}-flip${flip}.png`, { type: 'image/png' });
+      } catch {
+        // Undecodable bytes (or no 2d context): keep the unmirrored original.
+        warn('Couldn’t mirror a flipped Penpot image, so it was imported unmirrored.');
+      }
+    }
     const ref = await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file);
     cache.set(key, ref);
     return ref;
@@ -1173,6 +1194,10 @@ export interface DesignScenesResult { scenes: DesignSceneAsset[]; }
 // picker (MAX_PICK_PAGES), far above any real storyboard.
 const MAX_SCENES = 60;
 
+// Marked shapes beyond this are skipped with a warning — the export-marks ingest's
+// counterpart to MAX_SCENES (a mark can carry several entries; the cap counts shapes).
+const MAX_EXPORT_MARKS = 60;
+
 /**
  * Parse a design file into per-frame scene assets.
  * @param {File|Blob} file
@@ -1306,6 +1331,79 @@ async function bakeSceneAsset(host: HostV1 | undefined, warn: (msg: string) => v
     } finally {
       try { URL.revokeObjectURL(rendered.url); } catch { /* not a blob URL */ }
     }
+  } catch (err) {
+    warn(`Couldn’t render “${name}” (${String((err as Error) && (err as Error).message || err)}).`);
+    return null;
+  }
+}
+
+// Render one frame's boxes to an SVG Blob via the same offscreen Layout Studio
+// render bakeSceneAsset uses, WITHOUT storing it — the raster bake rasterises this
+// intermediate itself (rendering vector once, then drawing at each scale, keeps a
+// png@4 crisp: re-rendering the tool at 4x page size would scale the CANVAS, not
+// the content, because layout-studio boxes are absolute px).
+async function renderBoxesSvgBlob(host: HostV1 | undefined, name: string, boxes: unknown[], width: number, height: number): Promise<Blob> {
+  const compose = host && host.compose;
+  if (!compose || typeof compose.render !== 'function') throw new Error('tool composition isn’t available here');
+  const rendered = await compose.render({
+    toolId: 'layout-studio',
+    inputs: { boxes, background: 'transparent' },
+    format: 'svg',
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+    transient: true,
+    settleMs: boxesHaveMedia(boxes) ? undefined : FAST_SETTLE_MS,
+  });
+  try {
+    return await (await fetch(rendered.url)).blob();
+  } finally {
+    try { URL.revokeObjectURL(rendered.url); } catch { /* not a blob URL */ }
+  }
+}
+
+// Rasterise a baked SVG blob at the export mark's pixel size. A jpeg has no alpha,
+// so it flattens onto white (Penpot's own jpeg export does the same).
+async function rasterizeSvgBlob(svgBlob: Blob, outW: number, outH: number, format: 'png' | 'jpeg'): Promise<Blob> {
+  const url = URL.createObjectURL(svgBlob);
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('the baked SVG didn’t decode'));
+      img.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = outW;
+    canvas.height = outH;
+    const cx = canvas.getContext('2d');
+    if (!cx) throw new Error('no 2d canvas here');
+    if (format === 'jpeg') { cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, outW, outH); }
+    cx.drawImage(img, 0, 0, outW, outH);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, format === 'jpeg' ? 'image/jpeg' : 'image/png', format === 'jpeg' ? 0.92 : undefined));
+    if (!blob) throw new Error('raster encode failed');
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Bake one export mark's boxes to a stored raster asset at round(w*scale) x
+// round(h*scale) — bakeSceneAsset's raster sibling. Scale rides the file name as
+// '@{scale}x' (omitted at 1x) so a png@2 and a png@4 of the same shape stay distinct.
+async function bakeRasterAsset(
+  host: HostV1 | undefined, warn: (msg: string) => void, name: string,
+  svgBlob: Blob, width: number, height: number, format: 'png' | 'jpeg', scale: number,
+): Promise<AssetRef | null> {
+  try {
+    const outW = Math.max(1, Math.round(width * scale));
+    const outH = Math.max(1, Math.round(height * scale));
+    const blob = await rasterizeSvgBlob(svgBlob, outW, outH, format);
+    const ext = format === 'jpeg' ? 'jpg' : 'png';
+    const scaleTag = scale !== 1 ? `@${scale}x` : '';
+    const file = new File([blob], `${name}${scaleTag}.${ext}`, { type: blob.type || (format === 'jpeg' ? 'image/jpeg' : 'image/png') });
+    return await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file);
   } catch (err) {
     warn(`Couldn’t render “${name}” (${String((err as Error) && (err as Error).message || err)}).`);
     return null;
@@ -1516,4 +1614,189 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
   }
   if (!frames.length) throw new Error('This Penpot file has no importable boards.');
   return { scenes: await bakeFrames(host, warn, frames) };
+}
+
+// ---------------------------------------------------------------------------
+// Penpot export marks → library assets
+// ---------------------------------------------------------------------------
+//
+// The drop router's "marked exports" route: every shape the designer marked for
+// export in Penpot (the `exports` array on a shape) becomes stored library
+// assets at the marked formats and scales. The engine collects + normalizes the
+// marks (collectPenpotExportMarks — master/hidden subtrees pruned, entries
+// deduped); this side reuses the scenes machinery: the same subtree walk with
+// pure-vector group flattening, the same penpotItemsToNodes media resolution
+// with one shared imageCache, and the same offscreen Layout Studio bake. A group
+// that flattens pure and is marked svg stores its flattened SVG directly (full
+// fidelity, no bake); rasters render the vector intermediate once and draw it at
+// each marked scale.
+
+// The scenes walk's subtree step, shared verbatim: paint-order DFS with hidden
+// pruning, pure-vector group collapse and bool operand consumption.
+function penpotMarkSubtree(shapesById: Record<string, any>, id: string, seen: Set<string>): any[] {
+  const s = shapesById[id];
+  if (!s || seen.has(id) || s.hidden === true) return [];
+  seen.add(id);
+  const flat = penpotFlattenStep(shapesById, s, seen);
+  if (flat) return [flat];
+  const out = [s];
+  if (String(s.type || '') === 'bool' && typeof s.content === 'string' && s.content) {
+    for (const k of (Array.isArray(s.shapes) ? s.shapes : [])) markPenpotSubtreeSeen(shapesById, String(k), seen);
+    return out;
+  }
+  for (const k of (Array.isArray(s.shapes) ? s.shapes : [])) out.push(...penpotMarkSubtree(shapesById, String(k), seen));
+  return out;
+}
+
+/**
+ * Ingest a .penpot file's export-marked shapes as stored library assets.
+ * @param {File|Blob} file a Penpot binfile-v3 export (.penpot / .zip).
+ * @param {{ host, warn?, interactive? }} ctx — same contract as the other ingests;
+ *   per-mark failures warn and continue.
+ * @returns {Promise<AssetRef[]>} one ref per baked export entry.
+ */
+export async function ingestPenpotExportsAsAssets(
+  host: HostV1 | undefined,
+  file: File | Blob,
+  { warn: log, interactive = true }: { warn?: (msg: string) => void; interactive?: boolean } = {},
+): Promise<AssetRef[]> {
+  const warn: (msg: string) => void = typeof log === 'function' ? log : () => {};
+  if (file.size > MAX_IMPORT_BYTES) {
+    throw new Error(`This file is too large to import (over ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} MB).`);
+  }
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const isZip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+  if (!isZip) throw new Error('Only a .penpot export carries export marks. In Penpot use Export as .penpot and try again.');
+  const files = await unzipAsync(buf, {
+    maxEntryBytes: MAX_ZIP_ENTRY_BYTES,
+    maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
+    tooLarge: name => `This archive expands too large to import (${name}).`,
+  });
+
+  // The parsePenpotZip gate: only the binfile-v3 layout carries per-shape exports.
+  const manifest = files['manifest.json'] ? safeJsonParse(strFromU8(files['manifest.json'])) : null;
+  const isExportFiles = manifest && typeof manifest.type === 'string' && /export-files/.test(manifest.type);
+  const hasShapeJson = Object.keys(files).some((p) => /\/pages\/[^/]+\/[^/]+\.json$/i.test(p));
+  if (!isExportFiles || !hasShapeJson) {
+    throw new Error('Only a .penpot export carries export marks. In Penpot use Export as .penpot and try again.');
+  }
+  const fileId = Array.isArray(manifest.files) && manifest.files[0] ? manifest.files[0].id : null;
+  if (!fileId) throw new Error('This Penpot file has no importable file.');
+
+  const pageDir = `files/${fileId}/pages/`;
+  const pageShapes = new Map<string, string[]>();
+  for (const path of Object.keys(files)) {
+    if (!path.startsWith(pageDir)) continue;
+    const m = path.slice(pageDir.length).match(/^([^/]+)\/([^/]+)\.json$/i);
+    if (m) { if (!pageShapes.has(m[1]!)) pageShapes.set(m[1]!, []); pageShapes.get(m[1]!)!.push(path); }
+  }
+  if (!pageShapes.size) throw new Error('This Penpot file has no pages to import.');
+
+  // Fonts first: an svg-marked frame with text bakes through Layout Studio, so
+  // the deck's families must be resolvable before the first finalizeBoxes.
+  const map = await ensurePenpotDeckFonts(files, pageDir, { host, warn, interactive });
+
+  const pageMeta = (pid: string): any => (files[`${pageDir}${pid}.json`] ? safeJsonParse(strFromU8(files[`${pageDir}${pid}.json`]!)) : null);
+  const pageIds = [...pageShapes.keys()].sort((a, b) => {
+    const ia = pageMeta(a), ib = pageMeta(b);
+    return (ia && Number.isFinite(ia.index) ? ia.index : 0) - (ib && Number.isFinite(ib.index) ? ib.index : 0);
+  });
+
+  const imageCache = new Map<string, AssetRef>();
+  const nameCounts = new Map<string, number>();
+  const warnedTypes = new Set<string>();
+  const out: AssetRef[] = [];
+  let marksSeen = 0;
+  let capped = false;
+  let anyMark = false;
+
+  for (const pid of pageIds) {
+    const shapesById: Record<string, any> = {};
+    for (const path of pageShapes.get(pid)!) {
+      const shape = safeJsonParse(strFromU8(files[path]!));
+      if (shape && shape.id) shapesById[shape.id] = shape;
+    }
+    const marks = collectPenpotExportMarks(shapesById);
+    if (marks.length) anyMark = true;
+
+    for (const mark of marks) {
+      // The engine normalizer drops unknown export types SILENTLY — scan the RAW
+      // array here so a skipped format is said out loud (once per format).
+      const raw = Array.isArray((mark.shape as any).exports) ? (mark.shape as any).exports : [];
+      for (const e of raw) {
+        const t = e && typeof e === 'object' ? String((e as any).type ?? '') : '';
+        if (t && t !== 'png' && t !== 'jpeg' && t !== 'svg' && !warnedTypes.has(t)) {
+          warnedTypes.add(t);
+          warn(`Skipped a ${t} export mark. Lolly can bake png, jpeg and svg exports.`);
+        }
+      }
+      if (!mark.entries.length) continue;
+      if (++marksSeen > MAX_EXPORT_MARKS) { capped = true; break; }
+
+      const sh: any = mark.shape;
+      const sel = (sh.selrect && typeof sh.selrect === 'object') ? sh.selrect : sh;
+      const at = {
+        x: Number(sel.x) || 0, y: Number(sel.y) || 0,
+        w: Number(sel.width) || 0, h: Number(sel.height) || 0,
+      };
+      const base = (typeof sh.name === 'string' && sh.name.trim()) || 'Export';
+      const n = (nameCounts.get(base) ?? 0) + 1;
+      nameCounts.set(base, n);
+      const name = n > 1 ? `${base} ${n}` : base;
+      if (!(at.w > 0) || !(at.h > 0)) { warn(`Skipped “${name}”. It has no size.`); continue; }
+
+      try {
+        // Pure-vector rule: a group whose whole subtree bakes to one standalone
+        // SVG keeps that SVG verbatim for its svg entries (no Layout Studio pass).
+        const pureSvg = String(sh.type || '') === 'group'
+          ? penpotGroupToSvg(sh, (cid: string) => shapesById[cid]) : '';
+
+        let boxes: unknown[] | null = null;
+        const markBoxes = async (): Promise<unknown[]> => {
+          if (boxes) return boxes;
+          const seen = new Set<string>();
+          const items = penpotMarkSubtree(shapesById, String(sh.id), seen);
+          const nodes = await penpotItemsToNodes(items, { host, files, fileId, imageCache, warn });
+          for (const nd of nodes) { nd.x -= at.x; nd.y -= at.y; }
+          boxes = finalizeBoxes(nodes, map);
+          return boxes;
+        };
+        let svgBlob: Blob | null = null;
+        const markSvgBlob = async (): Promise<Blob> =>
+          svgBlob ?? (svgBlob = await renderBoxesSvgBlob(host, name, await markBoxes(), at.w, at.h));
+
+        for (const entry of mark.entries) {
+          const entryName = `${name}${entry.suffix || ''}`;
+          if (entry.type === 'svg') {
+            if (pureSvg) {
+              const key = 'ppexport:' + pureSvg;
+              const hit = imageCache.get(key);
+              if (hit) { out.push(hit); continue; }
+              const svgFile = new File([pureSvg], `${entryName}.svg`, { type: 'image/svg+xml' });
+              const ref = await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], svgFile);
+              imageCache.set(key, ref);
+              out.push(ref);
+            } else {
+              const b = await markBoxes();
+              if (!b.length) { warn(`Skipped “${entryName}”. Nothing on it could be imported.`); continue; }
+              const ref = await bakeSceneAsset(host, warn, entryName, b, at.w, at.h);
+              if (ref) out.push(ref);
+            }
+          } else {
+            const b = await markBoxes();
+            if (!b.length) { warn(`Skipped “${entryName}”. Nothing on it could be imported.`); continue; }
+            const ref = await bakeRasterAsset(host, warn, entryName, await markSvgBlob(), at.w, at.h, entry.type, entry.scale);
+            if (ref) out.push(ref);
+          }
+        }
+      } catch (err) {
+        warn(`Couldn’t export “${name}” (${String((err as Error) && (err as Error).message || err)}).`);
+      }
+    }
+    if (capped) break;
+  }
+
+  if (capped) warn(`This file has more than ${MAX_EXPORT_MARKS} export marks. Only the first ${MAX_EXPORT_MARKS} were baked.`);
+  if (!anyMark) throw new Error('This Penpot file has no export marks. Mark shapes for export in Penpot and try again.');
+  return out;
 }

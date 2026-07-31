@@ -293,6 +293,14 @@ function renderLocator(lat: number, lon: number): string {
     </svg>`;
 }
 
+// Formats the Redact tool can rebuild (image and PDF only — it repaints pixels,
+// so it has nothing to offer video or audio containers). Peer of the strip-data
+// link below: strip-data removes what the file carries, redact removes what the
+// pixels show.
+const REDACTABLE_FORMATS = new Set(['JPEG', 'PNG', 'WEBP', 'SVG', 'PDF']);
+const isRedactableFormat = (format: string | undefined): boolean =>
+  !!format && REDACTABLE_FORMATS.has(format.toUpperCase());
+
 // The embedded-metadata reveal — everything the file discloses about the device,
 // place, person, and software behind it, read on-device from its own bytes and
 // laid out clinically by section. Independent of the C2PA verdict: a file with no
@@ -334,7 +342,9 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
         button: `<button type="button" class="valid-clean-link" data-clean-copy="${fileIndex}" data-clean-format="${escape(meta.format)}">${t('Download a cleaned copy')}</button>`,
         link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>`,
       })
-    : t('Remove it with the {link} tool.', { link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>` })}</p>
+    : t('Remove it with the {link} tool.', { link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>` })}${isRedactableFormat(meta.format)
+    ? ` ${t('To remove content the pixels themselves show, use the {link} tool.', { link: `<a href="#/tool/redact">${t('Redact')}</a>` })}`
+    : ''}</p>
       <div class="valid-meta-grid">
         ${locationBlock}
         ${groups.map((x) => section(x.g, t(META_GROUP_LABEL[x.g]), META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}

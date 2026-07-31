@@ -157,6 +157,13 @@ export async function openDropChooser(
   if (single && (s.design || s.pdf) && toolExists('sequence-studio')) {
     choices.push({ id: 'sequence', label: t('Make a video from its frames') });
   }
+  // A .penpot can carry per-shape export marks; the ingest bakes them through an
+  // offscreen Layout Studio render, so the route needs that tool. Whether the zip
+  // really is a marked-up Penpot file resolves inside the ingest (it throws a
+  // user-ready message otherwise).
+  if (single && s.design && toolExists('layout-studio')) {
+    choices.push({ id: 'exports', label: t('Add its marked exports to your library') });
+  }
   if (single && s.pdf) {
     choices.push({ id: 'library', label: t('Add pages to your library') });
     if (toolExists('compress-pdf')) choices.push({ id: 'compress', label: t('Compress this PDF') });
@@ -212,6 +219,9 @@ export async function openDropChooser(
       break;
     case 'library':
       await ingestToLibrary(files, host, picker);
+      break;
+    case 'exports':
+      await ingestExportsToLibrary(first, host);
       break;
   }
 }
@@ -277,6 +287,32 @@ async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerMo
   announce(stored === 1
     ? t('Added 1 file to your library.')
     : t('Added {n} files to your library.', { n: stored }));
+}
+
+// The exports route — every shape marked for export in Penpot becomes stored
+// library assets at its marked formats and scales. The heavy design-import chunk
+// loads lazily, same as the PDF/deck routes above.
+async function ingestExportsToLibrary(file: File, host: PickerHost): Promise<void> {
+  try {
+    const { ingestPenpotExportsAsAssets } = await import('../views/design-import.ts');
+    const refs = await ingestPenpotExportsAsAssets(
+      host as unknown as Parameters<typeof ingestPenpotExportsAsAssets>[0],
+      file,
+      { warn: (m: string) => announce(m, { assertive: true }) },
+    );
+    if (!refs.length) return;
+    playSfx('drop');
+    announce(refs.length === 1
+      ? t('Added 1 export to your library.')
+      : t('Added {n} exports to your library.', { n: refs.length }));
+  } catch (err) {
+    announce(
+      (err as { code?: unknown }).code
+        ? (err as Error).message
+        : t('Upload failed: {message}', { message: (err as Error).message }),
+      { assertive: true },
+    );
+  }
 }
 
 // ── scoped drag-and-drop attachment ────────────────────────────────────────────

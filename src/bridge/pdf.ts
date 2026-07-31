@@ -18,7 +18,8 @@
 import type { PDFDocument as PDFDocumentType, PDFName as PDFNameType } from 'pdf-lib';
 import type { PdfAPI, PdfCompressOpts, PdfCompressResult, PdfFinding } from '@lolly-tools/core/host-v1';
 
-const PDF_LOAD_OPTS = { ignoreEncryption: true, updateMetadata: false };
+// Shared with pdf-redact.ts (the web-only rasterise-and-rebuild half of host.pdf).
+export const PDF_LOAD_OPTS = { ignoreEncryption: true, updateMetadata: false };
 
 // Info-dictionary keys we report + remove. These are the standard document-info
 // entries; PDF/X and tooling sometimes add more, but these cover the leaks.
@@ -163,24 +164,25 @@ function compressParams(opts: PdfCompressOpts = {}): CompressParams {
   };
 }
 
-type Canvas2D = HTMLCanvasElement | OffscreenCanvas;
+export type Canvas2D = HTMLCanvasElement | OffscreenCanvas;
 
 // Can this shell decode + re-encode raster images? Needs a real browser canvas;
 // the node CLI can't, so it skips the image pass and re-saves structurally only.
-function hasImageCodec(): boolean {
+// Exported for pdf-redact.ts, which shares the same canvas prerequisites.
+export function hasImageCodec(): boolean {
   return typeof createImageBitmap === 'function' &&
     (typeof OffscreenCanvas === 'function' ||
       (typeof document !== 'undefined' && !!document.createElement));
 }
 
-function makeCanvas(w: number, h: number): Canvas2D {
+export function makeCanvas(w: number, h: number): Canvas2D {
   if (typeof OffscreenCanvas === 'function') return new OffscreenCanvas(w, h);
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   return c;
 }
 
-async function canvasToJpeg(canvas: Canvas2D, quality: number): Promise<Blob | null> {
+export async function canvasToJpeg(canvas: Canvas2D, quality: number): Promise<Blob | null> {
   if (typeof (canvas as OffscreenCanvas).convertToBlob === 'function') {
     return (canvas as OffscreenCanvas).convertToBlob({ type: 'image/jpeg', quality });
   }
@@ -324,5 +326,11 @@ export function createPdfAPI(): PdfAPI {
     analyze: (bytes) => analyzePdf(bytes),
     strip: (bytes) => stripPdf(bytes),
     compress: (bytes, opts) => compressPdf(bytes, opts),
+    // redact (v1.85) is NOT provided here, deliberately: its implementation
+    // (pdf-redact.ts) reaches the views/pdf-import renderer and a real canvas,
+    // neither of which the node CLI — which imports this same factory — has.
+    // The web bridge index wires it in from pdf-redact.ts; on the CLI the
+    // method is simply absent, which is exactly what hooks feature-detect
+    // (`typeof host.pdf?.redact === 'function'`).
   };
 }

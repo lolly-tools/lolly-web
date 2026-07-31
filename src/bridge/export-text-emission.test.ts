@@ -108,7 +108,12 @@ let shared: any = null;
 async function page(): Promise<any> {
   const { chromium } = browser as { chromium: any };
   if (!shared) {
-    shared = await chromium.launch();
+    shared = await chromium.launch({
+      // Match the production node-shell/MCP launchers (packages/node-shell/src/
+      // browsers.ts) so these BYTE goldens pin the rendering intent users get:
+      // host-profile-independent sRGB + unhinted glyph metrics.
+      args: ['--force-color-profile=srgb', '--font-render-hinting=none'],
+    });
     shared.__page = await shared.newPage({ viewport: { width: 900, height: 700 } });
     // setContent gives the page a null origin with no server, so the @font-face
     // URL and HarfBuzz's wasm both have to be served here. Serving the font by

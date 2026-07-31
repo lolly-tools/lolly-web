@@ -300,3 +300,195 @@ test('createStreamingMux: addAudio without a declared audio track rejects; empty
   await m2.addAudio(stubAudioBuffer(0));
   assert.equal(audioLog.length, 0);
 });
+
+// ── Buffered path (encodeMuxWebCodecs) ────────────────────────────────────────
+// No injection seam here: the function reads the WebCodecs GLOBALS and builds the
+// REAL muxer (mp4-muxer / webm-muxer — pure JS, importable in node). So the stub
+// encoders are installed on globalThis for the duration of a run, and they emit
+// chunks shaped like EncodedVideo/AudioChunk THROUGH real muxing — the returned
+// bytes are a genuine container, assertable by structural marker.
+
+/** Both muxers gate on `chunk instanceof EncodedVideoChunk` — a free global they
+ *  resolve at call time, so installing this class satisfies them. */
+class FakeVideoChunk {
+  type: string; timestamp: number; duration: number; bytes: Uint8Array;
+  constructor(init: { type: string; timestamp: number; duration: number; bytes: Uint8Array }) {
+    this.type = init.type; this.timestamp = init.timestamp; this.duration = init.duration; this.bytes = init.bytes;
+  }
+  get byteLength(): number { return this.bytes.length; }
+  copyTo(dst: Uint8Array): void { dst.set(this.bytes); }
+}
+class FakeAudioChunk extends FakeVideoChunk {}
+
+/** Deterministic payload so the muxed bytes are content-addressable (and
+ *  perturbable — the negative control flips it). */
+let videoPayload = 0x5c;
+
+class EmittingVideoEncoder extends StubEncoder {
+  override encode(frame: any, opts?: any): void {
+    super.encode(frame, opts);
+    const id = ((frame.rec.src as { id?: number }).id ?? 0) & 0xff;
+    this.cb.output(
+      new FakeVideoChunk({
+        type: opts?.keyFrame ? 'key' : 'delta',
+        timestamp: frame.rec.timestamp, duration: frame.rec.duration,
+        bytes: new Uint8Array([id, videoPayload, 0xc3, 0xd4, 0xe5]),
+      }),
+      { decoderConfig: { description: new Uint8Array(24) } },
+    );
+  }
+}
+
+class EmittingAudioEncoder extends StubEncoder {
+  override encode(data: any): void {
+    super.encode(data, undefined);
+    this.cb.output(
+      new FakeAudioChunk({
+        type: 'key',
+        timestamp: data.rec.timestamp,
+        duration: Math.round((data.rec.numberOfFrames / 48_000) * 1e6),
+        bytes: new Uint8Array([0xa0, data.rec.numberOfFrames & 0xff, 0x01, 0x02]),
+      }),
+      { decoderConfig: { description: new Uint8Array([0x11, 0x90]) } },
+    );
+  }
+}
+
+function installGlobals(stubs: Record<string, unknown>): () => void {
+  const g = globalThis as any;
+  const saved = new Map<string, unknown>(Object.keys(stubs).map((k) => [k, g[k]]));
+  for (const [k, v] of Object.entries(stubs)) g[k] = v;
+  return () => { for (const [k, v] of saved) { if (v === undefined) delete g[k]; else g[k] = v; } };
+}
+
+const fakeFrames = (n: number): ImageBitmap[] =>
+  Array.from({ length: n }, (_, id) => ({ id }) as unknown as ImageBitmap);
+
+async function runBuffered(opts: {
+  pick?: EncodePick; n?: number; fps?: number; audio?: EncodeAudio | null; VideoEncoder?: unknown;
+} = {}): Promise<{ buffer: ArrayBuffer; type: string }> {
+  frameLog = []; audioLog = []; StubEncoder.instances = [];
+  const restore = installGlobals({
+    VideoEncoder: opts.VideoEncoder ?? EmittingVideoEncoder,
+    AudioEncoder: EmittingAudioEncoder,
+    VideoFrame: StubVideoFrame,
+    AudioData: StubAudioData,
+    EncodedVideoChunk: FakeVideoChunk,
+    EncodedAudioChunk: FakeAudioChunk,
+  });
+  try {
+    return await encodeMuxWebCodecs(fakeFrames(opts.n ?? 3), opts.pick ?? PICK_WEBM, {
+      width: 640, height: 360, fps: opts.fps ?? 24, bitrate: 1_000_000, audio: opts.audio ?? null,
+    });
+  } finally { restore(); }
+}
+
+function bufferedAudio(length: number, mp4 = false): EncodeAudio {
+  const ch = (o: number): Float32Array => {
+    const a = new Float32Array(length);
+    for (let i = 0; i < length; i++) a[i] = o + i / 1e6;
+    return a;
+  };
+  return {
+    channels: [ch(0), ch(1)], sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000,
+    codec: mp4 ? 'mp4a.40.2' : 'opus', muxCodec: mp4 ? 'aac' : 'A_OPUS',
+  };
+}
+
+function indexOfBytes(hay: Uint8Array, needle: number[]): number {
+  outer: for (let i = 0; i <= hay.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+test('encodeMuxWebCodecs: timestamps + keyframe cadence match videoFrameSchedule; every frame closed once', async () => {
+  const fps = 24;
+  await runBuffered({ n: 50, fps });
+  const want = videoFrameSchedule(50, fps);
+  assert.deepEqual(frameLog.map((f) => f.timestamp), want.map((t) => t.timestampUs));
+  assert.deepEqual(frameLog.map((f) => f.duration), want.map((t) => t.durationUs));
+  const enc = StubEncoder.instances[0]!;
+  assert.deepEqual(enc.encodes.map((e) => e.opts.keyFrame), want.map((t) => t.keyFrame));
+  assert.deepEqual(enc.encodes.map((e, i) => (e.opts.keyFrame ? i : -1)).filter((i) => i >= 0), [0, 48]);
+  assert.deepEqual([...new Set(frameLog.map((f) => f.closes))], [1], 'every VideoFrame closed exactly once');
+  assert.deepEqual(frameLog.map((f) => (f.src as { id: number }).id), want.map((t) => t.index), 'frames encoded in schedule order');
+});
+
+test('encodeMuxWebCodecs: mp4 pick pins avc config and returns real video/mp4 bytes (ftyp)', async () => {
+  const a = await runBuffered({ pick: PICK_MP4 });
+  assert.equal(a.type, 'video/mp4');
+  const cfg = StubEncoder.instances[0]!.config;
+  assert.equal(cfg.codec, 'avc1.42001f');
+  assert.deepEqual(cfg.avc, { format: 'avc' });
+  const bytes = new Uint8Array(a.buffer);
+  // Non-vacuity: a real container, not an empty buffer — sized, structurally
+  // marked, and carrying the stub chunk payload in its mdat.
+  assert.ok(bytes.length > 200, `mp4 output too small (${bytes.length} bytes)`);
+  assert.deepEqual([...bytes.subarray(4, 8)], [0x66, 0x74, 0x79, 0x70], 'ftyp box marker');
+  assert.ok(indexOfBytes(bytes, [0x00, videoPayload, 0xc3, 0xd4, 0xe5]) >= 0, 'frame 0 payload reaches the mdat');
+
+  // Negative control: a perturbed frame payload must change the muxed bytes.
+  videoPayload = 0x7e;
+  try {
+    const b = await runBuffered({ pick: PICK_MP4 });
+    assert.notDeepEqual([...new Uint8Array(b.buffer)], [...bytes], 'perturbed payload must produce different bytes');
+  } finally { videoPayload = 0x5c; }
+});
+
+test('encodeMuxWebCodecs: webm pick returns real video/webm bytes (EBML magic), no avc pin', async () => {
+  const r = await runBuffered({ pick: PICK_WEBM });
+  assert.equal(r.type, 'video/webm');
+  assert.equal(StubEncoder.instances[0]!.config.avc, undefined);
+  const bytes = new Uint8Array(r.buffer);
+  assert.ok(bytes.length > 100, `webm output too small (${bytes.length} bytes)`);
+  assert.deepEqual([...bytes.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3], 'EBML header magic');
+  assert.ok(indexOfBytes(bytes, [0x00, videoPayload, 0xc3, 0xd4, 0xe5]) >= 0, 'frame 0 payload reaches the cluster');
+});
+
+test('encodeMuxWebCodecs: audio track chunks PCM on the schedule; absent audio constructs no AudioEncoder', async () => {
+  await runBuffered({ audio: bufferedAudio(11_000) });  // 4800 + 4800 + 1400
+  const aEnc = StubEncoder.instances.find((e) => e instanceof EmittingAudioEncoder)!;
+  assert.ok(aEnc, 'an AudioEncoder is constructed for a declared track');
+  assert.deepEqual(
+    { codec: aEnc.config.codec, sampleRate: aEnc.config.sampleRate, numberOfChannels: aEnc.config.numberOfChannels, bitrate: aEnc.config.bitrate },
+    { codec: 'opus', sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000 },
+  );
+  assert.deepEqual(audioLog.map((a) => a.numberOfFrames), [4800, 4800, 1400]);
+  const us = (frames: number): number => Math.round((frames / 48_000) * 1e6);
+  assert.deepEqual(audioLog.map((a) => a.timestamp), [us(0), us(4800), us(9600)]);
+  assert.deepEqual([...new Set(audioLog.map((a) => a.closes))], [1], 'every AudioData closed exactly once');
+  assert.equal(aEnc.flushed, 1);
+
+  await runBuffered({});                                // no audio
+  assert.equal(StubEncoder.instances.some((e) => e instanceof EmittingAudioEncoder), false);
+  assert.equal(audioLog.length, 0);
+});
+
+test('encodeMuxWebCodecs: an encoder error rejects and stops feeding frames', async () => {
+  class FailingEncoder extends EmittingVideoEncoder {
+    override encode(frame: any, opts?: any): void {
+      super.encode(frame, opts);
+      if (this.encodes.length === 3) this.cb.error(new Error('encoder exploded'));
+    }
+  }
+  await assert.rejects(() => runBuffered({ n: 10, VideoEncoder: FailingEncoder }), /encoder exploded/);
+  assert.equal(StubEncoder.instances[0]!.encodes.length, 3, 'the loop stops at the failing frame');
+  assert.deepEqual([...new Set(frameLog.map((f) => f.closes))], [1], 'no VideoFrame leaked past the failure');
+
+  class StringFailEncoder extends EmittingVideoEncoder {
+    override encode(frame: any, opts?: any): void { super.encode(frame, opts); this.cb.error('boom'); }
+  }
+  await assert.rejects(() => runBuffered({ VideoEncoder: StringFailEncoder }), /VideoEncoder error/);
+});
+
+test('encodeMuxWebCodecs: a muxer rejection inside the output callback propagates', async () => {
+  class BadChunkEncoder extends StubEncoder {
+    override encode(frame: any, opts?: any): void {
+      super.encode(frame, opts);
+      this.cb.output({ not: 'a chunk' }, undefined);     // real muxer throws its instanceof TypeError
+    }
+  }
+  await assert.rejects(() => runBuffered({ VideoEncoder: BadChunkEncoder }), /EncodedVideoChunk/);
+});

@@ -29,7 +29,12 @@
  * computed layout, so the committed bytes are pinned to the Playwright
  * Chromium build (and this repo's font files). A Chromium upgrade may
  * legitimately move them — regenerate and diff-review, exactly as with the
- * toPath goldens.
+ * toPath goldens. The same applies ACROSS OSes at the same Chromium version:
+ * text layout goes through the platform font backend (CoreText on macOS,
+ * FreeType on Linux), so glyph advances in the text-bearing fixtures can
+ * differ per-OS. These goldens were generated on macOS; if a Linux dev
+ * machine ever runs them (CI has no Chromium, so not there) a text-fixture
+ * mismatch with plausible-looking coordinates is that, not a regression.
  *
  * Run directly:            node --test shells/web/src/bridge/export-format-golden.test.ts
  * Regenerate the goldens:  UPDATE_GOLDENS=1 node --test shells/web/src/bridge/export-format-golden.test.ts
@@ -110,7 +115,12 @@ let shared: any = null;
 async function page(): Promise<any> {
   const { chromium } = browser as { chromium: any };
   if (!shared) {
-    shared = await chromium.launch();
+    shared = await chromium.launch({
+      // Match the production node-shell/MCP launchers (packages/node-shell/src/
+      // browsers.ts) so these BYTE goldens pin the rendering intent users get:
+      // host-profile-independent sRGB + unhinted glyph metrics.
+      args: ['--force-color-profile=srgb', '--font-render-hinting=none'],
+    });
     shared.__page = await shared.newPage({ viewport: { width: 900, height: 700 } });
     await shared.__page.route('**/*', async (route: any) => {
       const p = decodeURIComponent(new URL(route.request().url()).pathname);
@@ -178,6 +188,9 @@ const regenerated: Record<string, string> = {};
 
 test.after(() => {
   if (!UPDATE_GOLDENS) return;
+  // Every golden test skipped, so `regenerated` is empty — writing it would
+  // silently blank the committed fixture. Refuse loudly instead.
+  if (SKIP) assert.fail(`UPDATE_GOLDENS=1 but the suite cannot run here (${SKIP}); refusing to overwrite the fixture`);
   mkdirSync(join(HERE, '__fixtures__'), { recursive: true });
   const sorted: Record<string, string> = {};
   for (const key of Object.keys(regenerated).sort()) sorted[key] = regenerated[key]!;
@@ -277,5 +290,26 @@ test('negative control: a perturbed fixture produces different bytes in every fo
       const [other] = await renderTwice(perturbed, format);
       assert.ok(base !== other,
         `${format}: perturbing the fixture did not change the bytes — the golden is vacuous`);
+    }
+  });
+
+// ── the rendering-intent flags are PARSED, not silently ignored ──────────────
+
+test('Chromium parses --force-color-profile (counterfactual: display-p3 flips the gamut query)',
+  { skip: SKIP }, async () => {
+    // A typo'd Chromium switch is silently ignored, which would make the
+    // rendering-intent pins in packages/node-shell/src/browsers.ts a placebo.
+    // Asserting the srgb side is vacuous on an sRGB host, so assert the
+    // COUNTERFACTUAL instead: force display-p3 in a throwaway browser and the
+    // gamut media query must flip to true on ANY host. If Chromium ever renames
+    // the switch, this fails loudly instead of the pin rotting.
+    const { chromium } = browser as { chromium: any };
+    const b = await chromium.launch({ args: ['--force-color-profile=display-p3-d65'] });
+    try {
+      const p = await b.newPage();
+      assert.equal(await p.evaluate(() => matchMedia('(color-gamut: p3)').matches), true,
+        '--force-color-profile was not honoured — has the switch been renamed?');
+    } finally {
+      await b.close();
     }
   });
