@@ -67,18 +67,18 @@ async function bundle(): Promise<string> {
  * leaves NO blur in the output at all, so the flag-on assertions can't pass by
  * accident.
  */
-async function render(markup: string, backdropBlur: boolean): Promise<string> {
+async function render(markup: string, backdropBlur: boolean, rasterFallback = false): Promise<string> {
   const { chromium } = browser as { chromium: any };
   const b = await chromium.launch();
   try {
     const page = await b.newPage({ viewport: { width: 800, height: 600 } });
     await page.setContent(`<!doctype html><body style="margin:0">${markup}</body>`);
     await page.addScriptTag({ content: await bundle() });
-    return await page.evaluate(async (bb: boolean) => {
+    return await page.evaluate(async (o: { bb: boolean; rf: boolean }) => {
       const blob = await (window as any).__render(document.getElementById('root'),
-        { convertPaths: false, rasterFallback: false, backdropBlur: bb || undefined });
+        { convertPaths: false, rasterFallback: o.rf, backdropBlur: o.bb || undefined });
       return await blob.text();
-    }, backdropBlur);
+    }, { bb: backdropBlur, rf: rasterFallback });
   } finally { await b.close(); }
 }
 
@@ -151,4 +151,40 @@ test('a backdrop-filter that is more than a plain blur is not faked',
     const svg = await render(fixture().replace('blur(6px)', 'blur(6px) saturate(180%)'), true);
     assert.doesNotMatch(svg, /feGaussianBlur/,
       'expected a filter chain to be left to the raster hatch');
+  });
+
+// ── the caps must report the OUTCOME, not the request ───────────────────────
+//
+// The raster-fallback caps used to pass `backdropBlur: opts.backdropBlur === true`,
+// i.e. "the caller ASKED for reconstruction", regardless of whether the clone was
+// actually appended. A rotated or over-cap panel therefore skipped the clone AND told
+// detectUnsupportedCss the property was supported, so it never reached the raster
+// hatch either — the frost vanished with nothing emitted and nothing said. These run
+// with rasterFallback ON, which the tests above deliberately keep off, so the oracle
+// is "did the hatch fire" rather than "is there no blur".
+
+test('a rotated frosted panel reaches the raster hatch instead of silently dropping the frost',
+  { skip: SKIP }, async () => {
+    const svg = await render(fixture('transform:rotate(12deg)'), true, true);
+    assert.doesNotMatch(svg, /feGaussianBlur/, 'premise: no reconstruction under a transform');
+    assert.match(svg, /<image[^>]+href="data:image\/(png|jpeg)/,
+      'expected the panel to be rasterised rather than emitted frostless');
+  });
+
+test('a chained backdrop-filter reaches the raster hatch too',
+  { skip: SKIP }, async () => {
+    const svg = await render(fixture().replace('blur(6px)', 'blur(6px) saturate(180%)'), true, true);
+    assert.doesNotMatch(svg, /feGaussianBlur/, 'premise: a chain is never faked');
+    assert.match(svg, /<image[^>]+href="data:image\/(png|jpeg)/,
+      'expected the chained panel to be rasterised');
+  });
+
+test('a reconstructed panel does NOT rasterise — the caps stay honest in both directions',
+  { skip: SKIP }, async () => {
+    // The mirror of the two above: when the clone really was appended, the element
+    // must stay vector. Without this, "always report unsupported" would pass them.
+    const svg = await render(fixture(), true, true);
+    assert.match(svg, /<feGaussianBlur[^>]*stdDeviation="3"/, 'the reconstruction ran');
+    assert.doesNotMatch(svg, /<image[^>]+href="data:image\/(png|jpeg)/,
+      'a successfully reconstructed panel is not also rasterised');
   });

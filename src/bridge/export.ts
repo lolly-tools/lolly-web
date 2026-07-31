@@ -1266,7 +1266,20 @@ export function stripCommentNodes(root: Node): void {
 }
 
 async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
-  if (!isSvgRooted(node)) return renderSvgFromHtml(node, opts);
+  // SVG is the one export format that can express a frosted panel: the walker
+  // reconstructs `backdrop-filter: blur()` by cloning, clipping and blurring the
+  // content already emitted behind the element. On by default here (an explicit
+  // opts.backdropBlur still wins) so a tool's frosted glass survives an SVG export
+  // instead of silently flattening.
+  //
+  // Caveat, not fixed in v1: tool exports run with `stackingOrder` off, so "the
+  // content emitted so far IS what is behind" holds only where DOM order equals
+  // paint order. Layout Studio boxes are unrotated siblings in paint order and
+  // satisfy it; arbitrary tool CSS (negative z-index, reordering) may not.
+  // EMF/EPS/DXF deliberately stay off it — svg-ir drops every non-drop-shadow
+  // filter, so the reconstruction would degrade there to a SHARP backdrop clone,
+  // which is worse than the raster hatch.
+  if (!isSvgRooted(node)) return renderSvgFromHtml(node, { backdropBlur: true, ...opts });
   const svg = node.tagName?.toLowerCase() === 'svg' ? node : node.querySelector('svg');
   const clone = svg!.cloneNode(true) as Element;
   stripCommentNodes(clone);
@@ -2492,6 +2505,11 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     for (let a: Element | null = g; a && a !== rootG; a = a.parentElement) {
       if (a.hasAttribute('transform')) { bfTransformed = true; break; }
     }
+    // Did the reconstruction ACTUALLY run? The raster-fallback caps below must report
+    // the OUTCOME, not the request: a rotated or over-cap panel skips the clone, and
+    // declaring "backdrop blur is supported" there dropped the frost silently instead
+    // of sending the panel to the raster hatch the comments promised it would reach.
+    let bfHandled = false;
     if (bfPx !== null && bfPx > 0 && !bfTransformed && rootG.firstChild) {
       // Bound the duplication: a page-sized backdrop under many blurred pills would
       // copy the whole document once per pill. Past the cap, fall through and let the
@@ -2540,12 +2558,17 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
         // referenced backdrop would silently vanish from those formats.
         for (const child of Array.from(rootG.childNodes)) bd.appendChild(child.cloneNode(true));
         g.appendChild(bd);
+        bfHandled = true;
       } else {
-        _host?.log?.('info', `svg: backdrop-filter blur skipped on <${tag}> — ${backdropNodes} nodes behind it`);
+        _host?.log?.('warn', `svg: backdrop-filter blur skipped on <${tag}> — ${backdropNodes} nodes behind it; the panel rasterises instead`);
       }
+    } else if (bfRaw && bfRaw !== 'none') {
+      // Rotated panel, an empty root, or a filter chain we refuse to fake. Say so at
+      // warn level: this is a fidelity loss the user can act on, not a debug note.
+      _host?.log?.('warn', `svg: backdrop-filter not reconstructed on <${tag}> (${bfTransformed ? 'rotated' : bfPx === null ? 'not a plain blur()' : 'nothing behind it'}); the panel rasterises instead`);
     }
 
-    const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows), backdropBlur: opts.backdropBlur === true, conic: true }) : null;
+    const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows), backdropBlur: bfHandled, conic: true }) : null;
     if (rasterReason) {
       const pxScale = scaleX * Math.max(1, d.dpi / CSS_DPI);
       const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * pxScale)));

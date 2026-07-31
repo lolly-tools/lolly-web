@@ -12,8 +12,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { PenpotUsage, PenpotUsageColor, PenpotUsageGradient } from '@lolly/engine';
-import { proposeBrandRoles, proposeFonts, buildBrandDocFromUsage } from './brand-propose.ts';
+import type { PenpotUsage, PenpotUsageColor, PenpotUsageGradient, PenpotAppliedToken } from '@lolly/engine';
+import { createTokenSet } from '@lolly/engine';
+import {
+  proposeBrandRoles, proposeFonts, buildBrandDocFromUsage,
+  proposeRolesFromTokens, proposeFontsFromTokens, withRoleAliases, ROLE_SET_NAME,
+} from './brand-propose.ts';
 import { listStudioTokens } from './token-studio.ts';
 
 type FontRow = PenpotUsage['fonts'][number];
@@ -168,4 +172,149 @@ test('buildBrandDocFromUsage: composes a resolvable doc with the observed roles'
   assert.deepEqual(fonts.missing, ['Foo']);
 
   assert.throws(() => buildBrandDocFromUsage(usage(), 'Empty'), /No colours/);
+});
+
+// ── Token-first proposal ────────────────────────────────────────────────────
+// The declared-token path: roles ranked by the applied census, bridged through
+// the paint census when a file declares tokens but references none, and falling
+// back to the same chroma/hue guard rails when neither says anything.
+
+function applied(rows: Array<Partial<PenpotAppliedToken> & { name: string }>): PenpotAppliedToken[] {
+  return rows.map(r => {
+    const fills = r.fills ?? 0, strokes = r.strokes ?? 0, text = r.text ?? 0, type = r.type ?? 0, geometry = r.geometry ?? 0;
+    return { name: r.name, fills, strokes, text, type, geometry, total: fills + strokes + text + type + geometry };
+  });
+}
+
+// A small declared brand: an ink neutral, a magenta, a teal, a near-white page.
+const DECLARED = {
+  color: {
+    $type: 'color',
+    page: { $value: '#F9FAFF' },
+    ink: { $value: '#151035' },
+    magenta: { $value: '#F23AE5' },
+    teal: { $value: '#14CECA' },
+  },
+};
+
+test('proposeRolesFromTokens: null when the doc declares no usable colour tokens', () => {
+  assert.equal(proposeRolesFromTokens({ spacing: { sm: { $value: '4px', $type: 'dimension' } } }, []), null);
+  assert.equal(proposeRolesFromTokens(null, []), null);
+});
+
+test('proposeRolesFromTokens: the applied census ranks the roles and refs name the tokens', () => {
+  const roles = proposeRolesFromTokens(DECLARED, applied([
+    { name: 'color.ink', fills: 40 },      // most-filled → surface
+    { name: 'color.magenta', fills: 12 },  // top accent by weight x chroma
+    { name: 'color.teal', fills: 3 },
+    { name: 'color.page', text: 9 },       // reads on the dark surface → text
+  ]))!;
+  assert.equal(roles.surface, '#151035');
+  assert.equal(roles.surfaceLook, 'dark');
+  assert.equal(roles.primary, '#F23AE5');
+  assert.equal(roles.secondary, '#14CECA');
+  assert.equal(roles.text, '#F9FAFF');
+  assert.deepEqual(roles.refs, {
+    primary: 'color.magenta', surface: 'color.ink', secondary: 'color.teal', text: 'color.page',
+  });
+});
+
+test('proposeRolesFromTokens: the census beats raw paint frequency when they disagree', () => {
+  // The file paints the page colour most, but the designer applied the ink
+  // token to the most fills — the declared intent wins.
+  const paint = usage({ colors: [color('#F9FAFF', { fills: 900 }), color('#151035', { fills: 4 })] });
+  const roles = proposeRolesFromTokens(DECLARED, applied([
+    { name: 'color.ink', fills: 40 },
+    { name: 'color.magenta', fills: 12 },
+  ]), paint)!;
+  assert.equal(roles.surface, '#151035');
+  assert.equal(roles.refs.surface, 'color.ink');
+});
+
+test('proposeRolesFromTokens: an empty census bridges through the usage hexes', () => {
+  const paint = usage({
+    colors: [color('#F9FAFF', { fills: 200 }), color('#F23AE5', { fills: 30 }), color('#14CECA', { fills: 8 }), color('#151035', { textRuns: 12 })],
+  });
+  const roles = proposeRolesFromTokens(DECLARED, [], paint)!;
+  assert.equal(roles.surface, '#F9FAFF', 'the most-painted declared colour is the surface');
+  assert.equal(roles.refs.surface, 'color.page');
+  assert.equal(roles.primary, '#F23AE5');
+  assert.equal(roles.text, '#151035');
+});
+
+test('proposeRolesFromTokens: with no census at all the guard rails still pick sane roles', () => {
+  const roles = proposeRolesFromTokens(DECLARED, [])!;
+  assert.equal(roles.surface, '#F9FAFF', 'the least colourful declared colour is the surface');
+  assert.ok(roles.primary === '#F23AE5' || roles.primary === '#14CECA');
+  assert.equal(roles.text, '#000000', 'nothing declared clears the contrast floor → plain black');
+  assert.equal(roles.refs.text, undefined);
+});
+
+test('proposeRolesFromTokens: a low-chroma-only doc still returns a primary', () => {
+  const greys = { color: { $type: 'color', a: { $value: '#FFFFFF' }, b: { $value: '#888888' } } };
+  const roles = proposeRolesFromTokens(greys, [])!;
+  assert.ok(roles.primary);
+  assert.equal(roles.secondary, null);
+  assert.equal(roles.scheme, 'mono');
+});
+
+test('proposeRolesFromTokens: a colour sharing a gradient with the surface is not an accent', () => {
+  const doc = {
+    color: {
+      $type: 'color',
+      ink: { $value: '#151035' },
+      shade: { $value: '#312470' },
+      teal: { $value: '#14CECA' },
+    },
+  };
+  const paint = usage({
+    colors: [color('#151035', { fills: 90 }), color('#312470', { gradientStops: 76 }), color('#14CECA', { fills: 5 })],
+    gradients: [grad([['#151035', 0], ['#312470', 1]], 38)],
+  });
+  const roles = proposeRolesFromTokens(doc, [], paint)!;
+  assert.equal(roles.surface, '#151035');
+  assert.equal(roles.primary, '#14CECA', 'the surface shade never out-scores the real accent');
+});
+
+test('proposeFontsFromTokens: typography tokens rank by the census, families come off the composite', () => {
+  const doc = {
+    type: {
+      body: { $type: 'typography', $value: { fontFamilies: ['Work Sans'], fontSizes: '16px' } },
+      code: { $type: 'typography', $value: { fontFamilies: ['Spline Sans Mono'] } },
+    },
+  };
+  const fonts = proposeFontsFromTokens(doc, applied([{ name: 'type.code', type: 40 }, { name: 'type.body', type: 3 }]));
+  assert.equal(fonts.brand, 'Spline Sans Mono');
+  assert.equal(fonts.mono, 'Spline Sans Mono');
+  assert.deepEqual(fonts.google, [], 'a token doc never claims a fetchable source');
+  assert.deepEqual(fonts.missing, ['Spline Sans Mono', 'Work Sans']);
+});
+
+test('withRoleAliases: a plain DTCG doc gets color.semantic aliases, input untouched', () => {
+  const doc: Record<string, unknown> = { ...DECLARED };
+  const out = withRoleAliases(doc, { primary: 'color.magenta', surface: 'color.ink' });
+  assert.notEqual(out, doc);
+  assert.equal((doc.color as Record<string, unknown>).semantic, undefined, 'the input doc is never mutated');
+  const ts = createTokenSet(out);
+  assert.equal(ts.resolve('color.semantic.primary'), '#F23AE5');
+  assert.equal(ts.resolve('color.semantic.surface'), '#151035');
+});
+
+test('withRoleAliases: a layered doc gets its own set, ordered last and enabled everywhere', () => {
+  const doc: Record<string, unknown> = {
+    Base: { color: { $type: 'color', magenta: { $value: '#F23AE5' } } },
+    $themes: [{ name: 'Light', selectedTokenSets: { Base: 'enabled' } }],
+    $metadata: { tokenSetOrder: ['Base'] },
+  };
+  const out = withRoleAliases(doc, { primary: 'color.magenta' });
+  assert.ok(Object.hasOwn(out, ROLE_SET_NAME), 'roles land in a set, not beside the sets');
+  assert.deepEqual((out.$metadata as Record<string, unknown>).tokenSetOrder, ['Base', ROLE_SET_NAME]);
+  assert.equal((out.$themes as Array<Record<string, Record<string, string>>>)[0]!.selectedTokenSets![ROLE_SET_NAME], 'enabled');
+  assert.equal(createTokenSet(out).resolve('color.semantic.primary'), '#F23AE5');
+  assert.equal((doc.$themes as Array<Record<string, Record<string, string>>>)[0]!.selectedTokenSets![ROLE_SET_NAME], undefined);
+});
+
+test('withRoleAliases: no refs → the doc passes through unchanged', () => {
+  const doc: Record<string, unknown> = { ...DECLARED };
+  assert.equal(withRoleAliases(doc, {}), doc);
 });
