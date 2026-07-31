@@ -2639,3 +2639,186 @@ test('clicking a linked bar selects BOTH halves; Alt-click selects just the one'
     assert.equal(h.commits.length, 0, 'selecting edits nothing');
   } finally { h.teardown(); }
 });
+
+// ── onion skin: OFF by default, opt-in, device-local ──────────────────────────
+//
+// The DRAWING lives in views/onion-skin.ts (and its own test file pins the export
+// contract). What is asserted here is the preference and the seam: nothing is on until
+// someone turns it on, turning it on persists and repaints, and a browser that refuses
+// storage does not cost the user the feature for this session.
+
+/** An in-memory Storage, installed on globalThis for the duration of one test. */
+function fakeStorage(): Storage & { map: Map<string, string> } {
+  const map = new Map<string, string>();
+  return {
+    map,
+    get length() { return map.size; },
+    key: (i: number) => [...map.keys()][i] ?? null,
+    getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+    setItem: (k: string, v: string) => { map.set(k, String(v)); },
+    removeItem: (k: string) => { map.delete(k); },
+    clear: () => map.clear(),
+  } as Storage & { map: Map<string, string> };
+}
+
+/** AWAITS `run` before restoring — the panel reads `localStorage` lazily, so a
+ *  synchronous try/finally would put the real global back mid-test. */
+async function withStorage(store: unknown, run: () => Promise<void>): Promise<void> {
+  const had = Object.hasOwn(globalThis, 'localStorage');
+  const prev = (globalThis as Record<string, unknown>).localStorage;
+  Object.defineProperty(globalThis, 'localStorage', { value: store, configurable: true, writable: true });
+  try { await run(); } finally {
+    if (had) Object.defineProperty(globalThis, 'localStorage', { value: prev, configurable: true, writable: true });
+    else delete (globalThis as Record<string, unknown>).localStorage;
+  }
+}
+
+const onionBtnOf = (h: Harness): HTMLElement => h.root.querySelector('.tl-onion') as HTMLElement;
+
+test('onion skin is OFF with nothing stored, and no tl-time carries a mode', async () => {
+  const store = fakeStorage();
+  await withStorage(store, async () => {
+    const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+    try {
+      await frames(3);
+      const btn = onionBtnOf(h);
+      assert.ok(btn, 'the toggle is in the tool row');
+      assert.equal(btn.getAttribute('aria-pressed'), 'false');
+      assert.equal(btn.classList.contains('is-active'), false);
+      assert.equal(store.map.has('lolly:onion'), false, 'absence IS the off state — nothing written');
+
+      const seen: Array<{ mode?: string }> = [];
+      h.stageEl.addEventListener('tl-time', (e) => { seen.push((e as CustomEvent).detail); });
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3500 } }));
+      await frames(3);
+      assert.ok(seen.length > 0, 'precondition: crossing the cut still fires the seam');
+      for (const d of seen) assert.equal(d.mode, '', 'an empty mode is what stops free-canvas loading the chunk');
+    } finally { h.teardown(); }
+  });
+});
+
+test('toggling onion skin persists the preference and fires ONE tl-time carrying the ghosts', async () => {
+  const store = fakeStorage();
+  await withStorage(store, async () => {
+    const h = mount([clip('a', 0, 3), clip('b', 3, 2), clip('c', 5, 2)]);
+    try {
+      await frames(3);
+      // Park the playhead inside the middle clip, so there is a ghost on each side.
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3500 } }));
+      await frames(3);
+
+      const seen: Array<{ mode?: string; past?: string[]; future?: string[]; opacity?: number }> = [];
+      h.stageEl.addEventListener('tl-time', (e) => { seen.push((e as CustomEvent).detail); });
+
+      const btn = onionBtnOf(h);
+      btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      assert.equal(seen.length, 1, 'exactly one repaint request, and no waiting for a tick');
+      assert.equal(seen[0]!.mode, 'outline', 'outlines are the default: a filled ghost hides under an opaque scene');
+      assert.deepEqual(seen[0]!.past, ['a']);
+      assert.deepEqual(seen[0]!.future, ['c']);
+      assert.equal(seen[0]!.opacity, 1);
+      assert.equal(btn.getAttribute('aria-pressed'), 'true');
+      assert.ok(btn.classList.contains('is-active'));
+
+      const stored = JSON.parse(store.map.get('lolly:onion')!) as Record<string, unknown>;
+      assert.deepEqual(stored, { mode: 'outline', before: 1, after: 1, opacity: 1 });
+
+      // Off again: the record is REMOVED, not written as `on:false`.
+      btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      assert.equal(store.map.has('lolly:onion'), false);
+      assert.equal(seen.length, 2);
+      assert.equal(seen[1]!.mode, '');
+      assert.equal(btn.getAttribute('aria-pressed'), 'false');
+    } finally { h.teardown(); }
+  });
+});
+
+test('a stored preference is honoured on mount, junk and all', async () => {
+  const store = fakeStorage();
+  store.map.set('lolly:onion', JSON.stringify({ mode: 'filled', before: 9, after: -1, opacity: 0.4 }));
+  await withStorage(store, async () => {
+    const h = mount([clip('a', 0, 2), clip('b', 2, 2), clip('c', 4, 2), clip('d', 6, 2)]);
+    try {
+      await frames(3);
+      assert.equal(onionBtnOf(h).getAttribute('aria-pressed'), 'true', 'on before anything is clicked');
+      const seen: Array<{ mode?: string; past?: string[]; future?: string[]; opacity?: number }> = [];
+      h.stageEl.addEventListener('tl-time', (e) => { seen.push((e as CustomEvent).detail); });
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 6500 } }));
+      await frames(3);
+      const last = seen.at(-1)!;
+      assert.equal(last.mode, 'filled');
+      assert.equal(last.opacity, 0.4);
+      assert.deepEqual(last.past, ['c', 'b'], 'before:9 clamped to the two-step ceiling');
+      assert.deepEqual(last.future, [], 'after:-1 clamped to none');
+    } finally { h.teardown(); }
+  });
+});
+
+test('a hostile stored record degrades to a usable preference rather than throwing', async () => {
+  for (const raw of ['{', 'null', '[]', '"outline"', '{"mode":"rainbow","opacity":"loud"}']) {
+    const store = fakeStorage();
+    store.map.set('lolly:onion', raw);
+    await withStorage(store, async () => {
+      const h = mount([clip('a', 0, 3)]);
+      try {
+        await frames(2);
+        const btn = onionBtnOf(h);
+        // Only a well-formed OBJECT counts as a stored preference; the rest read as off.
+        const on = raw.startsWith('{"mode"');
+        assert.equal(btn.getAttribute('aria-pressed'), on ? 'true' : 'false', `raw ${raw}`);
+      } finally { h.teardown(); }
+    });
+  }
+});
+
+test('localStorage throwing does not break the toggle — the session still gets its ghosts', async () => {
+  const hostile = {
+    getItem() { throw new Error('denied'); },
+    setItem() { throw new Error('denied'); },
+    removeItem() { throw new Error('denied'); },
+  };
+  await withStorage(hostile, async () => {
+    const h = mount([clip('a', 0, 3), clip('b', 3, 2), clip('c', 5, 2)]);
+    try {
+      await frames(3);
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3500 } }));
+      await frames(3);
+      const seen: Array<{ mode?: string }> = [];
+      h.stageEl.addEventListener('tl-time', (e) => { seen.push((e as CustomEvent).detail); });
+      const btn = onionBtnOf(h);
+      assert.equal(btn.getAttribute('aria-pressed'), 'false', 'a read that threw reads as off');
+      btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      assert.equal(btn.getAttribute('aria-pressed'), 'true', 'the toggle still flipped');
+      assert.equal(seen.at(-1)?.mode, 'outline', 'and the canvas was still told to draw');
+    } finally { h.teardown(); }
+  });
+});
+
+test('`o` toggles the onion skin from the keyboard; a model change re-emits the ghosts', async () => {
+  const store = fakeStorage();
+  await withStorage(store, async () => {
+    const h = mount([clip('a', 0, 3), clip('b', 3, 2), clip('c', 5, 2)]);
+    try {
+      await frames(3);
+      h.stageEl.dispatchEvent(new dom.window.CustomEvent('fc-seek', { bubbles: true, detail: { atMs: 3500 } }));
+      await frames(3);
+      const seen: Array<{ mode?: string; past?: string[]; future?: string[] }> = [];
+      h.stageEl.addEventListener('tl-time', (e) => { seen.push((e as CustomEvent).detail); });
+
+      h.root.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'o', bubbles: true, cancelable: true }));
+      assert.equal(seen.at(-1)?.mode, 'outline');
+      assert.deepEqual(seen.at(-1)?.past, ['a']);
+
+      // A MODEL change moves the ghosts without moving the clock. Deleting the clip
+      // before the playhead must re-emit, or the ghost would name a box that is gone.
+      h.select(['a']);
+      h.root.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+      h.notify();
+      await frames(3);
+      assert.equal(seen.at(-1)?.past?.includes('a'), false, 'the deleted clip is no longer a ghost');
+
+      h.root.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'o', bubbles: true, cancelable: true }));
+      assert.equal(seen.at(-1)?.mode, '', 'and `o` again turns it off');
+    } finally { h.teardown(); }
+  });
+});

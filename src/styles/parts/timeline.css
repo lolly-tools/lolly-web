@@ -250,6 +250,30 @@
   white-space: normal;
 }
 
+/* The onion-skin options popover. Not a menu of actions but a small settings card, so
+   it gets padding and stacked rows instead of `.folder-menu`'s flush item list — the
+   controls themselves stay the shared `.field-*` primitives (fields.css owns their look;
+   nothing about them is restated here). The ghosts it configures are drawn by
+   views/onion-skin.ts against styles/parts/onion.css — a different sheet, because that
+   one paints over the artboard and this one is panel chrome. */
+.tl-onion-pop {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 232px;
+}
+.tl-onion-desc {
+  margin: 0 0 2px;
+  max-width: 30ch;
+  color: hsl(var(--muted-foreground));
+  font-size: calc(11px * var(--a11y-fs));
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.tl-onion-row { justify-content: space-between; gap: 10px; }
+.tl-onion-step { width: 4.5em; }
+
 /* ─── Inspector (selected-clip precision fields) ─────────────────────────────
    The shared field primitive owns the control look (parts/fields.css) — this
    sheet only lays the rows out and trims them to panel scale. Do NOT restate
