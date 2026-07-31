@@ -4364,6 +4364,34 @@ export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string,
 }
 
 /**
+ * Content Credentials for a REDACTED derivative — the host.c2pa.sign contract
+ * (engine v1.85). Signs a FRESH manifest with NO ingredients and no ingredient
+ * thumbnails: an ingredient manifest box can carry a pixel-accurate thumbnail
+ * of the un-redacted original, so the output is signed as a new work and the
+ * tool's UI says so. The action history is honest about that: a created step,
+ * a c2pa.redacted step (labelled by `o.description` when given), and the
+ * closing render/encode for the format. Unlike stampDerivedC2pa this THROWS on
+ * an unstampable format or a signing failure — the signature is an explicit
+ * user opt-in, so silently shipping unsigned bytes would misreport what the
+ * user asked for.
+ */
+export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: string, o: { description?: string } = {}): Promise<Uint8Array> {
+  const meta = await buildExportMeta(host, { name: 'Redact' });
+  const actions = exportActionSteps(format, {});
+  // The redaction sits between creation and the closing render/encode step.
+  actions.splice(1, 0, { action: 'c2pa.redacted', description: o.description || 'Covered content removed and the file rebuilt' });
+  const stamped = await signAndEmbedC2pa(new Blob([bytes as BlobPart]), format, {
+    title: meta.tool,
+    software: meta.software,
+    environment: c2paEnvironment(format, { meta } as ExportOpts),
+    author: c2paAuthor(meta),
+    rights: c2paRights(meta),
+    actions,
+  }, host as WebHost);
+  return new Uint8Array(await stamped.arrayBuffer());
+}
+
+/**
  * Content Credentials for a freshly CAPTURED clip — a recorder tool's live camera
  * or microphone take (added engine v1.35), or a screenshot / screen recording
  * (v1.54). Signs the raw bytes so the file self-asserts (the created step is IPTC
@@ -6916,7 +6944,7 @@ async function renderMusicBed(url: string, clipSec: number, sampleRate: number, 
 // wasn't requested / can't be delivered (decode failure, no audio-capable
 // recorder mime) — in which case the export degrades to a silent video with a
 // warning through the log channel rather than failing a multi-second capture.
-async function prepareExportAudio(opts: ExportOpts, preferred: string, clipSec?: number): Promise<{ audio: LoopedAudio | null; mimeType: string | null }> {
+async function prepareExportAudio(opts: ExportOpts, preferred: string, clipSec?: number, deferSilentWarn = false): Promise<{ audio: LoopedAudio | null; mimeType: string | null }> {
   if (!opts.audio?.url) return { audio: null, mimeType: videoMimeType(preferred) };
   let audio: LoopedAudio | null = null;
   try {
@@ -6929,7 +6957,10 @@ async function prepareExportAudio(opts: ExportOpts, preferred: string, clipSec?:
     if (mimeType) return { audio, mimeType };
     audio.stop();
     audio = null;
-    _host?.log?.('warn', 'This browser cannot record an audio track into the chosen container; exporting silent video.');
+    // renderVideo passes deferSilentWarn when the WebCodecs AudioEncoder may still
+    // deliver the bed — warning "silent" here would be wrong when it does; that
+    // caller warns itself once the WebCodecs audio pick has actually come up empty.
+    if (!deferSilentWarn) _host?.log?.('warn', 'This browser cannot record an audio track into the chosen container; exporting silent video.');
   }
   return { audio: null, mimeType: videoMimeType(preferred) };
 }
@@ -7565,7 +7596,11 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // Audio (opts.audio = { id?, url }) is resolved up front so a bad track fails
   // fast — before the slow Phase 1 capture — and degrades to silent + warning.
   // Pass the clip length so any fade-out lands at the end of the replay.
-  const { audio, mimeType } = await prepareExportAudio(opts, preferred, opts.duration ?? 5);
+  const { audio, mimeType } = await prepareExportAudio(opts, preferred, opts.duration ?? 5, typeof AudioEncoder !== 'undefined');
+  // Fail fast when NOTHING can encode — no recorder mime and no WebCodecs.
+  // Without this, Phase 1 would capture (and bitmap) every frame only for the
+  // Phase 2 guard below to throw the same error minutes of work later.
+  if (!mimeType && typeof VideoEncoder === 'undefined') { audio?.stop(); throw new Error(NO_VIDEO_MSG); }
   // A missing recorder mime is NOT fatal here: the WebCodecs encode below needs no
   // MediaRecorder at all (e.g. a browser with VideoEncoder AVC but no MediaRecorder
   // mp4). It only rules out the MediaRecorder paths — the opt-in stream capture and
@@ -7643,9 +7678,12 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, bitrate);
     const wantAudio = !!opts.audio?.url;
     const audioPick = pick && wantAudio ? await pickWebCodecsAudio(pick.container) : null;
-    // With no MediaRecorder fallback (!mimeType) the WebCodecs path is taken even
-    // when its audio codec is missing — a silent clip + warning beats NO_VIDEO_MSG.
-    if (pick && wantAudio && !audioPick && !mimeType) {
+    // The "silent video" warning for a dropped live track was deferred to here
+    // (prepareExportAudio, deferSilentWarn) so it only fires when the WebCodecs
+    // audio pick ALSO came up empty and no live track survives for Phase 2 —
+    // i.e. the export really will be silent. AudioEncoder-less browsers were
+    // already warned in prepareExportAudio, hence the typeof gate.
+    if (wantAudio && !audioPick && !audio && typeof AudioEncoder !== 'undefined') {
       _host?.log?.('warn', 'This browser cannot encode an audio track into the chosen container; exporting silent video.');
     }
     if (pick && (!wantAudio || audioPick || !mimeType)) {

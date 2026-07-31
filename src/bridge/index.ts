@@ -157,12 +157,18 @@ export async function createBridge(): Promise<WebHost> {
     fontUrl: async (family, opts) => (await loadText()).fontUrl!(family, opts),
   } as WebHost['text'];
 
-  // on-device PDF metadata inspect + strip/compress (pdf-lib, itself lazy inside)
+  // on-device PDF metadata inspect + strip/compress (pdf-lib, itself lazy inside).
+  // redact + pages (v1.85) are wired from their own web-only module: pdf.ts is shared with
+  // the node CLI, and pdf-redact.ts reaches the views/pdf-import renderer and a
+  // real canvas that the CLI does not have. The host is passed for the text
+  // outliner (host.text, itself a lazy facade above).
   const loadPdf = memo(async () => (await import('./pdf.ts')).createPdfAPI());
   host.pdf = {
     analyze: async (bytes) => (await loadPdf()).analyze(bytes),
     strip: async (bytes) => (await loadPdf()).strip(bytes),
     compress: async (bytes, opts) => (await loadPdf()).compress!(bytes, opts),
+    redact: async (bytes, opts) => (await import('./pdf-redact.ts')).redactPdf(bytes, opts, host),
+    pages: async (bytes, opts) => (await import('./pdf-redact.ts')).pdfPages(bytes, opts, host),
   } as WebHost['pdf'];
 
   // on-device .pptx inspect + surgical rebrand (fflate + engine pptx-read/pptx-patch)
@@ -241,6 +247,17 @@ export async function createBridge(): Promise<WebHost> {
       && (typeof window.OfflineAudioContext === 'function'
         || typeof (window as { webkitOfflineAudioContext?: unknown }).webkitOfflineAudioContext === 'function'),
     analyse: async (src, opts) => (await loadAudio()).analyse(src, opts),
+  };
+
+  // Fresh-manifest Content Credentials for redacted derivatives (v1.85) — no
+  // ingredients, no ingredient thumbnails. A lazy facade for the same reason
+  // export is: the signer lives inside the 90 KB export bridge, and nothing
+  // reaches it before an explicit user opt-in.
+  host.c2pa = {
+    sign: async (bytes, format, opts) => {
+      const { signFreshC2pa } = await import('./export.ts');
+      return signFreshC2pa(host, bytes, format, opts);
+    },
   };
 
   // pick is a bridge-level concern: it needs the full host (logging, assets.get,

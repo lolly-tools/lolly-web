@@ -117,6 +117,11 @@
   overflow-wrap: anywhere; white-space: pre-wrap;
   user-select: text;
 }
+.pdfx-hidden-cta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem;
+  margin: 0.9rem 0 0;
+}
+.pdfx-hidden-cta-note { font-size: calc(0.85rem * var(--a11y-fs)); opacity: 0.72; }
 
 /* ─── tabs ──────────────────────────────────────────────────────────────────── */
 

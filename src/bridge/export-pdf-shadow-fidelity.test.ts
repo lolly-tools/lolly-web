@@ -106,7 +106,8 @@ const W = 300, H = 160;
 
 async function pixelDiff(inner: string): Promise<[number, number]> {
   const { chromium } = browser as { chromium: any };
-  const b = await chromium.launch();
+  // srgb pin: screenshot-vs-canvas pixel comparison, as in export-shadow-fidelity.
+  const b = await chromium.launch({ args: ['--force-color-profile=srgb', '--font-render-hinting=none'] });
   try {
     const page = await b.newPage({ viewport: { width: W, height: H } });
     await page.setContent(`<!doctype html><body style="margin:0"><div id="root" style="width:${W}px;height:${H}px;background:#fff;font:600 22px/1.4 sans-serif;display:flex;align-items:center;justify-content:center">${inner}</div></body>`);
