@@ -66,18 +66,19 @@
  * top 8 bits therefore carry precisely the pattern a detector expects, while the
  * low byte keeps the PQ precision. A mark is never silently skipped.
  *
- * ─── Size / the deflate caveat (plan §9 "Phase B blocker") ───────────────────
- * `deflate.ts` has no incremental surface, so `packPng` compresses in one shot
- * with ~8x scratch and guards it with `maxDeflateBytes` (16 MiB of FILTERED
- * bytes). 16-bit RGBA is 8 bytes/px, so the guard is crossed at ~2.1 megapixels
- * — a 1080p HDR PNG (2.07 MP, ~16.6 MiB filtered) sits right at it and a 4K one
- * (8.3 MP, ~66 MiB filtered, ~530 MiB of scratch) is comfortably past. Rather
- * than fail a legitimate export or quietly drop to 8 bits, this path passes
- * `oversize: 'store'`: past the guard `packPng` emits spec-valid *stored* zlib
- * blocks in O(1) extra memory. The file is big (a 4K HDR master lands ~66 MB
- * instead of ~20-30 MB) and correct; the note is logged so the size is never a
- * surprise. This disappears the day `deflate.ts` grows a slab-fed deflater —
- * see the TODO in engine/src/png.ts.
+ * ─── Size (the plan §9b blocker, lifted in Phase B3) ─────────────────────────
+ * This path used to refuse past ~2.1 megapixels, because `deflate.ts` compressed
+ * in one shot with ~8x scratch: a 4K 16-bit master (8.3 MP, ~66 MiB filtered)
+ * meant ~530 MiB of tokenizer scratch, and the alternative — a stored,
+ * uncompressed IDAT — shipped a ~66 MB file from an existing link. Neither is
+ * acceptable, so the export fell back to the legacy 8-bit PQ path.
+ * `deflate.ts` now streams (`createZlibStream`: one 32 KB window carried across
+ * slabs, constant scratch) and `packPng` feeds it one filtered scanline at a
+ * time above its own threshold, never allocating the whole-image buffer. So a
+ * 4K 16-bit HDR PNG now compresses properly, in a few hundred KB of working
+ * memory. `maxDeflateBytes` survives as a plain sanity bound on the returned
+ * buffer (1 GiB of filtered bytes ≈ 134 MP); a caller passing a smaller cap
+ * still gets the loud refusal, which is the seam the export path falls back on.
  *
  * DOM-free on purpose: the whole path is `Uint8ClampedArray` in, `Uint8Array`
  * out, so it is driven directly by node:test with no canvas (export-hdr-png.test.ts).
@@ -87,8 +88,17 @@ import type { HdrBoostOptions } from '@lolly/engine';
 import { insertPngMeta, insertPngIcc } from './export-image-meta.ts';
 import type { ExportMeta } from '@lolly-tools/core/host-v1';
 
-/** Filtered-byte ceiling past which packPng switches to stored (uncompressed) blocks. */
-export const HDR_PNG_DEFLATE_CAP = 16 * 1024 * 1024;
+/**
+ * Filtered-byte ceiling for a deep HDR PNG. Was 16 MiB (~2.1 MP) back when
+ * deflate.ts compressed in one shot and a bigger image meant either ~8x the input
+ * in tokenizer scratch or a ~60 MB stored IDAT. deflate.ts now streams (one 32 KB
+ * window carried across slabs, constant scratch), and packPng feeds it scanline by
+ * scanline above its own threshold, so the memory argument is gone: a 4K 16-bit
+ * master compresses in a few hundred KB of working memory. This is now a plain
+ * sanity bound on the single buffer we return -- 1 GiB of filtered bytes, matching
+ * packPng's own default. See plans/deeprichpixels.md Phase B3.
+ */
+export const HDR_PNG_DEFLATE_CAP = 1024 * 1024 * 1024;
 
 export interface HdrPng16Opts {
   width: number;
@@ -183,7 +193,7 @@ export async function encodeHdrPng16(rgba: Uint8ClampedArray, o: HdrPng16Opts): 
     // ~60 MB 4K file. Until the slab-fed deflater lands (deflate.ts TODO,
     // plans/deeprichpixels.md §9b) refuse instead: the caller falls back to
     // the legacy 8-bit PQ path, so an existing link never silently balloons.
-    throw new Error(`png: ${width}x${height} at 16 bits is ${(filtered / (1024 * 1024)).toFixed(1)} MiB of scanlines, past the single-shot deflate ceiling`);
+    throw new Error(`png: ${width}x${height} at 16 bits is ${(filtered / (1024 * 1024)).toFixed(1)} MiB of scanlines, past the deep-PNG size ceiling`);
   }
   let bytes = packPng(deep, {
     width, height, channels: 4, depth: 16,
