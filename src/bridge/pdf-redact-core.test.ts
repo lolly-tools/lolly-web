@@ -170,8 +170,12 @@ test('buildImagePdf: page count and MediaBox preserved, one %%EOF, nothing else 
   for (const name of ['/EmbeddedFiles', '/JavaScript', '/OCProperties', '/Annots', '/AcroForm', '/Metadata']) {
     assert.ok(!text.includes(name), `rebuilt document must not contain ${name}`);
   }
-  // The Info dictionary was emptied — pdf-lib's default Producer/Creator are gone.
+  // The Info dictionary was emptied — pdf-lib's default Producer/Creator are gone,
+  // and save() does not re-stamp them (the keys are absent, not just blank).
   assert.ok(!text.includes('pdf-lib'), 'rebuilt document must carry no Info values');
+  for (const key of ['/Producer', '/Creator', '/CreationDate', '/ModDate']) {
+    assert.ok(!text.includes(key), `rebuilt document must not contain ${key}`);
+  }
 
   // Re-open the bytes — what a READER of the file finds.
   const { PDFDocument } = await import('pdf-lib');
