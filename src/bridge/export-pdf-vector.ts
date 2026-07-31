@@ -90,7 +90,7 @@ export interface PdfGradientSpec {
 // for the box (x,y,w,h) in pt. Geometry mirrors buildLinearGradientEl / parseRadialGradient
 // so the PDF vector gradient lands identically to the SVG one. Returns null when the value
 // isn't a parseable single linear/radial gradient (caller falls back to raster / midpoint).
-export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number, h: number): PdfGradientSpec | null {
+export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number, h: number, cssToPt = 0): PdfGradientSpec | null {
   const lin = bgImage.match(/^linear-gradient\((.+)\)$/s);
   if (lin) {
     const parts = splitCssArgs(lin[1]!);
@@ -104,7 +104,10 @@ export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number
     const cx = x + w / 2, cy = y + h / 2;
     const len = (Math.abs(w * sinA) + Math.abs(h * cosA)) / 2;
     const coords = [cx - sinA * len, cy + cosA * len, cx + sinA * len, cy - cosA * len];
-    const { stops, hasAlpha } = gradientStopList(raw);
+    // `len` is in POINTS (x/y/w/h are pt) while stop offsets are CSS px, so convert
+    // the line length back to px before dividing — otherwise the fraction is off by
+    // the pt/px scale. Falls back to 0 (no conversion) when the caller omits it.
+    const { stops, hasAlpha } = gradientStopList(raw, cssToPt > 0 ? 2 * len / cssToPt : 0);
     return stops.length >= 2 ? { type: 'axial', coords, stops, matrix: null, hasAlpha } : null;
   }
   const g = parseRadialGradient(bgImage, w, h);
@@ -134,7 +137,12 @@ export function pdfGradientSpec(bgImage: string, x: number, y: number, w: number
 
 // Shared linear-gradient stop parse: CSS stop strings → sorted {offset 0-1, [r,g,b]} plus
 // an alpha flag. Missing offsets are spread evenly (index/(n-1)), matching CSS defaults.
-function gradientStopList(raw: string[]): { stops: { offset: number; color: Rgb }[]; hasAlpha: boolean } {
+function gradientStopList(
+  raw: string[],
+  /** Gradient-line length in CSS px, so an absolute stop position can be turned into
+   *  a fraction of it. 0 for radial — that caller pre-divides by rx. */
+  lineCssPx = 0,
+): { stops: { offset: number; color: Rgb }[]; hasAlpha: boolean } {
   const out: { offset: number; color: Rgb }[] = [];
   let hasAlpha = false;
   const n = raw.length;
@@ -146,7 +154,12 @@ function gradientStopList(raw: string[]): { stops: { offset: number; color: Rgb 
     if (opacity < 1) hasAlpha = true;
     const rgb = parseSvgColor(colorStr);
     if (!rgb) { hasAlpha = true; return; }
-    let off = offset.endsWith('%') ? parseFloat(offset) / 100 : parseFloat(offset);
+    // A px stop is a distance along the gradient LINE, so it must become a fraction
+    // of that line. Unconverted it fell through as a raw number and the clamp below
+    // pinned every absolute stop to 1 — the far end.
+    let off = offset.endsWith('%') ? parseFloat(offset) / 100
+      : offset.endsWith('px') && lineCssPx > 0 ? parseFloat(offset) / lineCssPx
+      : parseFloat(offset);
     if (!Number.isFinite(off)) off = n > 1 ? i / (n - 1) : 0;
     out.push({ offset: Math.max(0, Math.min(1, off)), color: rgb });
   });

@@ -3732,7 +3732,16 @@ function buildLinearGradientEl(NS: string, bgImage: string, elX: number, elY: nu
     stops.map((raw: string, i: number) => parseGradientStop(raw.trim(), i, n)).filter((st) => st.colorStr));
   parsedStops.forEach(({ colorStr, opacity, offset }) => {
     const s = document.createElementNS(NS, 'stop');
-    s.setAttribute('offset',     offset);
+    // An absolute CSS stop position is a distance ALONG THE GRADIENT LINE, whose
+    // full length is 2*len. <stop offset> takes a number 0-1 or a percentage, so a
+    // raw "25px" is INVALID SVG: resvg discards it outright (measured — both stops
+    // of a two-stop strip collapse to the last colour), and the rendering drifts
+    // badly from the browser's (mean channel error up to 133 on a 3-stop gradient,
+    // 99.8% of pixels wrong; 0.02 once converted). parseRadialGradient's stop loop
+    // has always divided by rx for exactly this reason — this is the linear analogue.
+    s.setAttribute('offset', offset.endsWith('px') && len > 0
+      ? `${n2(parseFloat(offset) / (2 * len) * 100)}%`
+      : offset);
     s.setAttribute('stop-color', colorStr!);
     if (opacity < 1) s.setAttribute('stop-opacity', String(opacity));
     grad.appendChild(s);
@@ -5586,7 +5595,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       let placed = false;
       // 1) TRUE VECTOR — a jsPDF ShadingPattern, unless the gradient has transparent
       //    stops (PDF shading carries no per-stop alpha → would lose them).
-      const spec = pdfGradientSpec(bgImg, x, y, w, h);
+      const spec = pdfGradientSpec(bgImg, x, y, w, h, cssToPt);
       if (spec && !spec.hasAlpha) {
         placed = fillPdfShading(pdf, spec, (doc) =>
           drawSvgPathToPdf(doc, roundedRectPath(x, y, w, h, radii), (v) => v, (v) => v));
