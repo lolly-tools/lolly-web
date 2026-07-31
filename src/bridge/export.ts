@@ -2150,6 +2150,29 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     const opacity = parseFloat(style.opacity ?? '1');
     if (opacity === 0) return;
 
+    // `display: contents` generates NO box of its own (CSS Display 3 §3.1: the element
+    // is replaced by its contents for layout). getBoundingClientRect() is therefore
+    // 0x0, and the `rect.width < 0.5` guard below would drop the element AND its whole
+    // subtree — content the reader plainly sees.
+    //
+    // The gallery is exactly this shape: `.gallery-topbar` is a display:contents
+    // wrapper whose children are the fixed nav clusters, so every vector shot of the
+    // gallery came back with NO top navigation. `hasOwnBox()` already returns true for
+    // contents on the strength of "visitSvgNode recurses, so it is included rather than
+    // dropped" — this is the line that made that comment untrue.
+    //
+    // Paint nothing for the box that does not exist, and let the children paint into
+    // this element's parent group with its context, which is where CSS puts them.
+    // Own-box children only: a contents wrapper's inline TEXT already belongs to the
+    // parent's inline walk, which descends through wrappers and stops at own-box
+    // elements — so nothing is lost and nothing double-paints.
+    if (style.display === 'contents') {
+      for (const child of renderedChildren(el)) {
+        if (hasOwnBox(child)) await visitSvgNode(child, parentG, ctx);
+      }
+      return;
+    }
+
     // Where does CSS say this element's paint unit goes? One pure table lookup
     // off the style we already fetched (bridge/stacking-order.ts). The parent's
     // display is only needed for the flex/grid-item rule, so it is fetched ONLY

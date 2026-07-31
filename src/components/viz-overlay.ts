@@ -1399,12 +1399,20 @@ const DEMO_BATCH = 12;
  *  sequence completes, `data-demo-settled` on the surface root is the signal a
  *  capture recipe's waitMs must outlast. */
 function pumpDemoFrames(s: Surface, handle: VizHandle): void {
+  // Frame 0 must be the fresh-mount state: a surface that inherited any rendered
+  // history (the dock's inline viz runs its own pump before the panel opens, and a
+  // rebuilt panel continues the prior picture) would carry a different feedback
+  // trail into the fixed sequence and the capture would differ run to run.
+  handle.reset();
   let done = 0;
   const tick = (): void => {
     // Stand down if the surface was torn down or remounted under the pump.
     if (s.handle !== handle || !handle.running()) return;
     for (let i = 0; i < DEMO_BATCH && done < DEMO_FRAMES; i++, done++) handle.renderFrame(1 / 60);
     if (done < DEMO_FRAMES) { requestAnimationFrame(tick); return; }
+    // Stamped on THIS surface's root; a capture recipe's waitSelector must name the
+    // surface it frames (.viz-panel[data-demo-settled]) — the dock's inline surface
+    // is also a .viz-surface and settles on its own clock.
     s.root.dataset.demoSettled = 'true';
   };
   requestAnimationFrame(tick);

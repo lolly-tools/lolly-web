@@ -329,13 +329,17 @@ export async function mountViz(
   // graph `if (context)` and allocates its sample arrays either way, which is exactly
   // the analyser-free instance the injected path wants. vendor.d.ts types the app's
   // live path, where there is always one.
-  const viz = mod.createVisualizer(analyser?.context as BaseAudioContext, canvas, {
+  // Constructed under the seed too: the Visualizer fills its noise TEXTURES with
+  // bare Math.random() at construction (butterchurn.js noiseWrap/noise init), and
+  // preset shaders sample them every frame — unseeded, two deterministic runs still
+  // paint different fields. loadPreset/render seeding alone cannot cover this.
+  const viz = withSeed(opts?.deterministic ? 0x10dd : null, () => mod.createVisualizer(analyser?.context as BaseAudioContext, canvas, {
     width: first.w,
     height: first.h,
     pixelRatio: 1,
     meshWidth: MESH.width,
     meshHeight: MESH.height,
-  });
+  }));
   if (analyser) viz.connectAudio(analyser);
 
   // Reused across frames and pre-filled with silence, so a provider that returns a
