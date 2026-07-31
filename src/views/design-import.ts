@@ -32,6 +32,7 @@ import {
   penpotShapeToNode,
   penpotGroupToSvg,
   penpotGradientSvgDef,
+  penpotDashArray,
   collectPenpotExportMarks,
   figmaNodesToNodes,
   figmaNodesToScenes,
@@ -769,7 +770,19 @@ async function penpotItemsToNodes(
 ): Promise<any[]> {
   const nodes: any[] = [];
   let warnedBgBlur = false;
+  let warnedDash = false;
   for (const item of items) {
+    // A rectangle/ellipse imports its stroke as a CSS border, and CSS has no way to say
+    // "8px dash, 3px gap" — only the dashed keyword. Path boxes keep the exact numbers
+    // (they stroke a real SVG path), so the warning names where the loss happens.
+    if (!warnedDash && item && !/^(path|bool|group)$/.test(String(item.type || ''))
+      && Array.isArray(item.strokes)
+      && item.strokes.some((s: any) => s && String(s.strokeStyle || '') === 'dashed'
+        && ((s.strokeDash != null && Number.isFinite(+s.strokeDash))
+          || (s.strokeGap != null && Number.isFinite(+s.strokeGap))))) {
+      warnedDash = true;
+      warn('Custom dash patterns are approximated on rectangle borders.');
+    }
     // Penpot background-blur needs a BackgroundImage source and has no box
     // equivalent — the shape imports without it (once per import batch).
     if (item?.blur?.type === 'background-blur' && item.blur.hidden !== true && !warnedBgBlur) {
@@ -1019,8 +1032,20 @@ async function storeFigVector(host: HostV1 | undefined, d: any, fill: any, strok
     const gradDef = gradient ? penpotGradientSvgDef(gradient, 'pg0', 1) : '';
     const fillAttr = gradDef ? 'url(#pg0)' : (fill === 'none') ? 'none' : hex(fill, '#000000');
     const strokeOp = (stroke && stroke.opacity != null && +stroke.opacity < 1) ? ` stroke-opacity="${+stroke.opacity}"` : '';
+    // Dash decoration (Penpot only; Figma callers pass no `style` and are unchanged).
+    // penpotDashArray is the engine's single copy of Penpot's calculate-dasharray, so a
+    // path leaf baked here and a leaf baked by penpotGroupToSvg agree exactly. Both
+    // values are numbers the helper rounds, so nothing user-typed reaches the attribute.
+    const strokeW = Math.max(0.1, +stroke?.width || 1);
+    const dashArr = stroke && stroke.style
+      ? penpotDashArray(String(stroke.style), strokeW, stroke.dash, stroke.gap) : '';
+    const capRaw = String((stroke && (stroke.capStart ?? stroke.capEnd)) ?? '');
+    const cap = (capRaw === 'butt' || capRaw === 'round' || capRaw === 'square')
+      ? capRaw : (stroke && stroke.style === 'dotted' ? 'round' : '');
     const strokeAttr = (stroke && stroke.color)
-      ? ` stroke="${hex(stroke.color, '#000000')}" stroke-width="${Math.max(0.1, +stroke.width || 1)}"${strokeOp}` : '';
+      ? ` stroke="${hex(stroke.color, '#000000')}" stroke-width="${strokeW}"${strokeOp}`
+        + (dashArr ? ` stroke-dasharray="${dashArr}"` : '')
+        + (cap ? ` stroke-linecap="${cap}"` : '') : '';
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${ox} ${oy} ${w} ${h}" width="${w}" height="${h}">` +
       (gradDef ? `<defs>${gradDef}</defs>` : '') +
       `<path d="${String(d).replace(/"/g, '')}" fill="${fillAttr}"${strokeAttr}/></svg>`;

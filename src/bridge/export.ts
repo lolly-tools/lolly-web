@@ -2492,11 +2492,17 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     for (let a: Element | null = g; a && a !== rootG; a = a.parentElement) {
       if (a.hasAttribute('transform')) { bfTransformed = true; break; }
     }
-    if (bfPx !== null && bfPx > 0 && !bfTransformed && rootG.childNodes.length) {
+    if (bfPx !== null && bfPx > 0 && !bfTransformed && rootG.firstChild) {
       // Bound the duplication: a page-sized backdrop under many blurred pills would
       // copy the whole document once per pill. Past the cap, fall through and let the
       // raster hatch have it rather than emit tens of megabytes.
-      const backdropNodes = rootG.childNodes.length;
+      //
+      // Count DESCENDANTS, not children. The root walk runs with `frame: null`, so
+      // place() appends straight to rootG and it holds exactly one child — the body
+      // <g> — for the entire walk. Measuring childNodes therefore always read 1, the
+      // cap never fired, and each blurred element deep-cloned the whole accumulated
+      // tree it was supposed to protect against.
+      const backdropNodes = rootG.getElementsByTagName('*').length;
       if (backdropNodes <= BACKDROP_MAX_NODES) {
         const bId = `fcbd-${++uid}`;
         const filt = document.createElementNS(NS, 'filter');
@@ -3585,6 +3591,15 @@ function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
   const content = ps.content;
   if (!content || content === 'none' || content === 'normal') return null;
   if (ps.position !== 'absolute') return null;
+  // The same visibility gate the element walk applies (see visit(), ~L2135). A pseudo
+  // the browser does not paint must not be emitted. Two shipping idioms hide a pseudo
+  // with opacity alone and were being drawn anyway: `.plat-swatch-chip::after` (the
+  // word "Copied" over a 55%-black scrim, revealed for 900ms by a click handler) and
+  // `[data-tip]::after` (the tooltip bubble). Without this, every colour chip in a
+  // capture came back darkened and captioned, and every tooltip host grew a ghost
+  // pill — in SVG *and* PDF, since both call this one descriptor.
+  if (ps.display === 'none' || ps.visibility === 'hidden') return null;
+  if (!(parseFloat(ps.opacity || '1') > 0)) return null;
   const w = parseFloat(ps.width)  || 0;
   const h = parseFloat(ps.height) || 0;
   const bg = parseCssColorFull(ps.backgroundColor);

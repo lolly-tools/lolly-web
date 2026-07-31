@@ -30,8 +30,8 @@
  * imports lib modules.
  */
 
-import { hexToOklch, contrastRatio, deriveBrandTokens } from '@lolly/engine';
-import type { PenpotUsage } from '@lolly/engine';
+import { hexToOklch, contrastRatio, deriveBrandTokens, createTokenSet, typographyFamilies } from '@lolly/engine';
+import type { PenpotUsage, PenpotAppliedToken } from '@lolly/engine';
 import { addSwatch } from './brand-doc.ts';
 import { addStudioToken } from './token-studio.ts';
 import { withFontRoleToken } from '../user-fonts.ts';
@@ -172,6 +172,256 @@ export function proposeFonts(usage: PenpotUsage): BrandUsageFonts {
     google: byRuns.filter(([, e]) => e.google).map(([name]) => name),
     missing: byRuns.filter(([, e]) => !e.google).map(([name]) => name),
   };
+}
+
+// ── Token-first proposal — roles from what the file DECLARES ─────────────────
+// The token-less path above reads pixels; this one reads names. When a Penpot
+// file carries its own token document, the designer has already said what their
+// colours are called, and `scanPenpotAppliedTokens` says which of those tokens
+// they attached to which kind of attribute. Ranking declared tokens by that
+// census beats every hex heuristic, because it is not a guess.
+//
+// Three sources of weight, in order: the applied census; failing that (an older
+// export, or a wire shape we didn't recognise) the raw usage census bridged by
+// hex; failing that the declared swatches on their own, ordered by the same
+// chroma/hue guard rails the usage path uses.
+
+/** A role proposal that can name the token each role came from. */
+export interface TokenRoleProposal extends BrandRoleProposal {
+  /** role → the declared token's dotted path, when the role came from one. */
+  refs: Partial<Record<'primary' | 'secondary' | 'surface' | 'text', string>>;
+}
+
+const HEX6 = /^#[0-9a-fA-F]{6}/;
+const hex6 = (v: string): string | null => {
+  const m = HEX6.exec(v.trim());
+  return m ? m[0].toUpperCase() : null;
+};
+
+interface Candidate {
+  path: string;
+  hex: string;
+  chroma: number;
+  hue: number;
+  fills: number;
+  strokes: number;
+  text: number;
+  total: number;
+}
+
+/**
+ * Propose brand roles from a file's DECLARED tokens, ranked by how the designer
+ * applied them. Null when the document resolves no usable colour tokens at all
+ * — the caller then falls back to `proposeBrandRoles` over the usage census,
+ * which is what every token-less file gets today.
+ *
+ * @param doc     the reassembled token document (extractPenpotProject's output)
+ * @param applied the applied-token census (`scanPenpotAppliedTokens`), possibly empty
+ * @param usage   the paint census, used to bridge weights when `applied` is empty
+ */
+export function proposeRolesFromTokens(
+  doc: unknown,
+  applied: readonly PenpotAppliedToken[],
+  usage?: PenpotUsage | null,
+): TokenRoleProposal | null {
+  const ts = createTokenSet(doc);
+  const cands: Candidate[] = [];
+  for (const sw of ts.colors()) {
+    const hex = typeof sw.value === 'string' ? hex6(sw.value) : null;
+    const ok = hex ? hexToOklch(hex) : null;
+    if (!hex || !ok) continue;
+    cands.push({ path: sw.path, hex, chroma: ok.c, hue: ok.h, fills: 0, strokes: 0, text: 0, total: 0 });
+  }
+  if (!cands.length) return null;
+
+  // Weights: the applied census first. Token names join to createTokenSet's
+  // flattened paths verbatim — Penpot's token-name grammar has no spaces, so
+  // there is nothing to normalise and normalising would only break the join.
+  const byName = new Map(applied.map(r => [r.name, r]));
+  let weighted = false;
+  for (const c of cands) {
+    const row = byName.get(c.path);
+    if (!row) continue;
+    c.fills = row.fills; c.strokes = row.strokes; c.text = row.text; c.total = row.total;
+    if (row.total > 0) weighted = true;
+  }
+  // Bridge: no applied census (or none of it named a colour token) — fall back
+  // to how often each declared colour was actually painted.
+  if (!weighted && usage) {
+    const byHex = new Map(usage.colors.map(r => [r.hex, r]));
+    for (const c of cands) {
+      const row = byHex.get(c.hex);
+      if (!row) continue;
+      c.fills = row.fills; c.strokes = row.strokes; c.text = row.textRuns; c.total = row.total;
+      if (row.total > 0) weighted = true;
+    }
+  }
+
+  // Surface: the most-filled token. With no weights at all, the least colourful
+  // declared colour is the honest guess — a brand's surface is its neutral.
+  let surfaceC = cands[0]!;
+  if (weighted) {
+    for (const c of cands) if (c.fills > surfaceC.fills) surfaceC = c;
+  } else {
+    for (const c of cands) if (c.chroma < surfaceC.chroma) surfaceC = c;
+  }
+  const surface = surfaceC.hex;
+  const surfaceLook: 'light' | 'dark' = (hexToOklch(surface)?.l ?? 1) < 0.5 ? 'dark' : 'light';
+
+  // Same shade exclusion as the usage path: a colour sharing a gradient with
+  // the surface is that surface's ramp partner, not an accent.
+  const shades = new Set<string>();
+  for (const g of usage?.gradients ?? []) {
+    if (!g.stops.some(s => s.color === surface)) continue;
+    for (const s of g.stops) if (s.color !== surface) shades.add(s.color);
+  }
+
+  const accents = cands
+    .filter(c => c.hex !== surface && !shades.has(c.hex) && c.chroma >= ACCENT_CHROMA_MIN)
+    .map(c => ({ c, score: (weighted ? c.total : 1) * c.chroma }))
+    .sort((a, b) => b.score - a.score)   // stable: equal scores keep declaration order
+    .map(e => e.c);
+
+  const primaryC = accents[0] ?? cands.find(c => c.hex !== surface) ?? surfaceC;
+  let secondaryC: Candidate | null = null;
+  const extras: string[] = [];
+  for (const a of accents) {
+    if (a === primaryC) continue;
+    if (!secondaryC && hueArc(a.hue, primaryC.hue) >= SECONDARY_HUE_ARC_MIN) secondaryC = a;
+    else extras.push(a.hex);
+  }
+
+  let scheme: BrandRoleProposal['scheme'] = 'mono';
+  if (secondaryC) {
+    const arc = hueArc(secondaryC.hue, primaryC.hue);
+    const named: [BrandRoleProposal['scheme'], number][] =
+      [['mono', 0], ['analogous', 30], ['triad', 120], ['complement', 180]];
+    let bestD = Infinity;
+    for (const [name, at] of named) {
+      const d = Math.abs(arc - at);
+      if (d < bestD) { bestD = d; scheme = name; }
+    }
+  }
+
+  // Text: the token applied to the most text fills that actually reads on the
+  // surface; plain white/black when nothing declared clears the floor.
+  let textC: Candidate | null = null;
+  for (const c of cands) {
+    if (c.text <= (textC?.text ?? 0)) continue;
+    if (contrastRatio(c.hex, surface) >= TEXT_CONTRAST_MIN) textC = c;
+  }
+  const text = textC?.hex ?? (surfaceLook === 'dark' ? '#FFFFFF' : '#000000');
+
+  const refs: TokenRoleProposal['refs'] = { primary: primaryC.path, surface: surfaceC.path };
+  if (secondaryC) refs.secondary = secondaryC.path;
+  if (textC) refs.text = textC.path;
+
+  return {
+    primary: primaryC.hex,
+    secondary: secondaryC?.hex ?? null,
+    surface,
+    surfaceLook,
+    text,
+    scheme,
+    extras,
+    refs,
+  };
+}
+
+/**
+ * Font families a token document declares, ranked by the applied census.
+ * `google`/`missing` stay empty and complete respectively: a token document
+ * names families, it never says where they can be fetched from, and claiming a
+ * source we haven't checked would be the one thing worse than saying nothing.
+ */
+export function proposeFontsFromTokens(
+  doc: unknown,
+  applied: readonly PenpotAppliedToken[],
+): BrandUsageFonts {
+  const ts = createTokenSet(doc);
+  const byName = new Map(applied.map(r => [r.name, r]));
+  const scored: { family: string; weight: number; order: number }[] = [];
+  const seen = new Set<string>();
+  let order = 0;
+  for (const e of ts.query()) {
+    if (e.type !== 'typography' && e.type !== 'fontFamily' && e.type !== 'fontFamilies') continue;
+    const weight = byName.get(e.path)?.type ?? 0;
+    for (const family of typographyFamilies(e.value)) {
+      if (seen.has(family)) continue;
+      seen.add(family);
+      scored.push({ family, weight, order: order++ });
+    }
+  }
+  scored.sort((a, b) => (b.weight - a.weight) || (a.order - b.order));
+  const families = scored.map(s => s.family);
+  return {
+    brand: families[0] ?? null,
+    mono: families.find(f => /mono/i.test(f)) ?? null,
+    google: [],
+    missing: families,
+  };
+}
+
+/** The set a token-first install writes its semantic roles into. */
+export const ROLE_SET_NAME = 'Lolly roles';
+
+const ROLE_VARS = ['primary', 'secondary', 'surface', 'text'] as const;
+
+/**
+ * Return a copy of `doc` whose `color.semantic.*` roles ALIAS the declared
+ * tokens named in `refs`. Aliases, not literals: the installed brand then still
+ * points at the designer's own token, so editing that token moves the role with
+ * it — the same alias-write `buildBrandDocFromUsage` uses for its secondary.
+ *
+ * A layered Tokens-Studio doc gets a new top-level set (`Lolly roles`, appended
+ * to `$metadata.tokenSetOrder` and enabled in every theme) rather than having a
+ * `color` group pushed in beside its sets, where it would read as a set name. A
+ * plain DTCG doc gets the group merged in directly. `doc` is never mutated.
+ */
+export function withRoleAliases(
+  doc: Record<string, unknown>,
+  refs: TokenRoleProposal['refs'],
+): Record<string, unknown> {
+  const semantic: Record<string, unknown> = {};
+  for (const role of ROLE_VARS) {
+    const path = refs[role];
+    if (path) semantic[role] = { $value: `{${path}}`, $type: 'color' };
+  }
+  if (!Object.keys(semantic).length) return doc;
+
+  const out: Record<string, unknown> = { ...doc };
+  const themes = Array.isArray(out.$themes) ? out.$themes : null;
+
+  if (!themes || !themes.length) {
+    const color = typeof out.color === 'object' && out.color !== null ? { ...(out.color as Record<string, unknown>) } : {};
+    const prev = typeof color.semantic === 'object' && color.semantic !== null ? color.semantic as Record<string, unknown> : {};
+    color.semantic = { ...prev, ...semantic };
+    out.color = color;
+    return out;
+  }
+
+  let setName = ROLE_SET_NAME;
+  for (let i = 2; Object.hasOwn(out, setName); i++) setName = `${ROLE_SET_NAME} ${i}`;
+  out[setName] = { color: { semantic } };
+
+  const meta = typeof out.$metadata === 'object' && out.$metadata !== null
+    ? { ...(out.$metadata as Record<string, unknown>) } : {};
+  const order = Array.isArray(meta.tokenSetOrder) ? meta.tokenSetOrder.filter(s => typeof s === 'string') : null;
+  // Last in the order wins, which is what a role override must do.
+  if (order) meta.tokenSetOrder = [...order, setName];
+  out.$metadata = meta;
+
+  out.$themes = themes.map(theme => {
+    if (typeof theme !== 'object' || theme === null) return theme;
+    const t = { ...(theme as Record<string, unknown>) };
+    const sel = typeof t.selectedTokenSets === 'object' && t.selectedTokenSets !== null
+      ? { ...(t.selectedTokenSets as Record<string, unknown>) } : {};
+    sel[setName] = 'enabled';
+    t.selectedTokenSets = sel;
+    return t;
+  });
+
+  return out;
 }
 
 /**
