@@ -1356,8 +1356,14 @@ async function mountOnce(s: Surface): Promise<void> {
     handle = await mountViz(forCanvas, vizHost, currentPresetId, onError, scheme?.palette ?? null,
       // The ?neuro demo has no analyser (audio never starts in a capture), so feed
       // butterchurn a fixed injected window with a pinned per-frame seed instead.
+      // `driven` + the fixed pump below replace the rAF loop: a self-driven loop
+      // renders as many frames as the display happens to give it, and the docs
+      // pipeline compares vector baselines byte-exactly — the picture must be the
+      // SAME frame every capture, not "whatever frame 4.5s landed on". `capture`
+      // keeps the drawing buffer readable so the SVG walker's toDataURL sees the
+      // frame instead of a cleared buffer.
       neuroDemoActive()
-        ? { audio: { frame: () => ({ wave: demoWave(), seed: 0 }) }, deterministic: true }
+        ? { audio: { frame: () => ({ wave: demoWave(), seed: 0 }) }, deterministic: true, driven: true, capture: true }
         : undefined);
   } catch (err) {
     onError(err);
@@ -1373,8 +1379,35 @@ async function mountOnce(s: Surface): Promise<void> {
   // An ARTIST preset isn't in our registry, so mountViz opened on the fallback —
   // fetch and apply the real one now that there's a renderer to give it to.
   if (isStockId(currentPresetId)) void applyStockPreset(s, currentPresetId);
+  if (neuroDemoActive() && handle) pumpDemoFrames(s, handle);
   startCycle();
   refreshNote(s);
+}
+
+/** Demo frames rendered before the picture freezes, and how many per rAF tick.
+ *  180 × 1/60s = three seconds of simulated time — enough for the pinned preset's
+ *  blend-in to finish and the field to mature. Batched so SwiftShader (the docs
+ *  pipeline's software GL) never blocks the main thread for the whole sequence. */
+const DEMO_FRAMES = 180;
+const DEMO_BATCH = 12;
+
+/** Step a ?neuro demo surface through a FIXED frame sequence, then stop.
+ *  The frozen end state is the point: with a pinned preset, injected wave, seeded
+ *  randomness and a fixed frame count, every capture of the page serialises the
+ *  identical image — the demo link is a capture affordance first, and a still,
+ *  fully-formed field beats a live loop that makes the baseline churn. When the
+ *  sequence completes, `data-demo-settled` on the surface root is the signal a
+ *  capture recipe's waitMs must outlast. */
+function pumpDemoFrames(s: Surface, handle: VizHandle): void {
+  let done = 0;
+  const tick = (): void => {
+    // Stand down if the surface was torn down or remounted under the pump.
+    if (s.handle !== handle || !handle.running()) return;
+    for (let i = 0; i < DEMO_BATCH && done < DEMO_FRAMES; i++, done++) handle.renderFrame(1 / 60);
+    if (done < DEMO_FRAMES) { requestAnimationFrame(tick); return; }
+    s.root.dataset.demoSettled = 'true';
+  };
+  requestAnimationFrame(tick);
 }
 
 /** Tear a surface down without touching the others. */
