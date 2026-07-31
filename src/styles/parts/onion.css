@@ -90,9 +90,39 @@
 .onion-fill {
   position: absolute;
   inset: 0;
-  opacity: 0.12;
+  opacity: var(--onion-fill-a, 0.12);
   border-radius: inherit;
 }
+
+/* The COINCIDENT ghost (onion-skin.ts: its rect matches the scene on screen, so its
+   outline lands on that scene's own edge and says nothing). It carries the picture
+   instead — and needs more of it, because 12% inside a ghost already at 30% is 3.6%
+   over an opaque scene, which is the same invisibility by another route. Still far
+   below the live scene: 35% inside 30% is ~10%. */
+.onion-ghost[data-coincident] { --onion-fill-a: 0.35; }
+
+/* The cloned `.lolly-box-text`, laid out at the box's NATIVE size and scaled as a unit
+   (its font-size is native px; the ghost's box is stage px). `top/left: 0` with the
+   origin at the corner is what makes the scale land the text exactly where the scene
+   puts it. Non-interactive and unselectable — it is a picture of text, not text. */
+.onion-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  overflow: hidden;
+  opacity: 0.9;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Flex, so the box's own inline justify-content / align-items (which is where
+     free-canvas writes align/valign) land the words where the scene puts them. */
+  display: flex;
+  /* The direction colour, applied to the clone after onion-skin.ts strips its inline
+     `color` — see the comment there. Warm past / cool future, the same reading the
+     outline and the corner chip carry. */
+  color: var(--onion-c);
+}
+.onion-text * { color: inherit; }
 /* The box's OWN <img>, at a URL the browser already has cached (onion-skin.ts never
    rasterises anything). Halved again on top of the ghost's own ramp. */
 .onion-img {
@@ -130,6 +160,7 @@ html[data-a11y-contrast="high"] .onion-ghost {
    this is the belt to that braces, so a stale layer left by a previous paint cannot keep
    showing pictures while the pref is on. */
 html[data-a11y-previews="hidden"] .onion-fill,
+html[data-a11y-previews="hidden"] .onion-text,
 html[data-a11y-previews="hidden"] .onion-img { display: none; }
 
 }

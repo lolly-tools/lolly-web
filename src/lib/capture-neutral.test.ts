@@ -134,11 +134,15 @@ test('build-docs-shots seeds the pin key this module reads', () => {
   // It has to be set from the init script (which runs pre-boot), not merely
   // mentioned in prose. The script holds its own const — a build script cannot
   // import a web-shell module — so accept either the literal or that const.
-  const init = /const CAPTURE_INIT\s*=([\s\S]*?);\n/.exec(SHOTS_SCRIPT)?.[1] ?? '';
-  assert.ok(init, 'CAPTURE_INIT must exist');
+  // Accepts either shape: the original `const CAPTURE_INIT = '...'` or the
+  // per-theme factory it became (`const captureInit = (theme) => '...'`). What is
+  // asserted is unchanged - the neutral key must be SEEDED from the pre-boot init
+  // script, not merely mentioned somewhere in the file.
+  const init = /const (?:CAPTURE_INIT|captureInit)\s*=([\s\S]*?);\n/.exec(SHOTS_SCRIPT)?.[1] ?? '';
+  assert.ok(init, 'the pre-boot init script (CAPTURE_INIT / captureInit) must exist');
   assert.ok(
     init.includes(CAPTURE_NEUTRAL_KEY) || /\$\{CAPTURE_NEUTRAL_KEY\}/.test(init),
-    'the key must be seeded from CAPTURE_INIT',
+    'the key must be seeded from the init script',
   );
   assert.match(
     SHOTS_SCRIPT,
@@ -148,12 +152,15 @@ test('build-docs-shots seeds the pin key this module reads', () => {
 });
 
 test('build-docs-shots pins the OS-level preference queries', () => {
-  const block = /const CAPTURE_CONTEXT\s*=\s*\{([\s\S]*?)\}/.exec(SHOTS_SCRIPT)?.[1] ?? '';
-  assert.ok(block, 'CAPTURE_CONTEXT must exist');
+  const block = /const (?:CAPTURE_CONTEXT\s*=\s*|captureContext\s*=\s*\([^)]*\)\s*(?::[^=]*)?=>\s*)\(?\{([\s\S]*?)\}/.exec(SHOTS_SCRIPT)?.[1] ?? '';
+  assert.ok(block, 'the context prefs (CAPTURE_CONTEXT / captureContext) must exist');
   // These three are read by CSS before any app code runs, so no storage pin can
   // reach them — a dark-mode or high-contrast build machine would publish a
   // differently-styled baseline.
-  assert.match(block, /colorScheme:\s*'light'/);
+  // colorScheme became per-shot (light baseline, dark where a recipe asks), so
+  // accept the literal or the ternary - what matters is that it is PINNED, never
+  // left to the build machine's OS setting.
+  assert.match(block, /colorScheme:\s*(?:'light'|theme\s*===\s*'dark'\s*\?\s*'dark'\s*:\s*'light')/);
   assert.match(block, /reducedMotion:\s*'no-preference'/);
   assert.match(block, /forcedColors:\s*'none'/);
 });
@@ -165,11 +172,11 @@ test('every capture context applies both pins', () => {
   const contexts = SHOTS_SCRIPT.match(/browser\.newContext\(\{[\s\S]*?\}\)/g) ?? [];
   assert.ok(contexts.length >= 2, 'expected the vector + cropSelector contexts');
   for (const c of contexts) {
-    assert.ok(c.includes('CAPTURE_CONTEXT'), `a newContext call is missing CAPTURE_CONTEXT:\n${c}`);
+    assert.ok(/CAPTURE_CONTEXT|captureContext\(/.test(c), `a newContext call is missing the context pins:\n${c}`);
   }
   const captureUrlCall = /captureUrl\(\s*\{[\s\S]*?\}/.exec(SHOTS_SCRIPT)?.[0] ?? '';
-  assert.ok(captureUrlCall.includes('initScript: CAPTURE_INIT'), 'raster path must seed the init script');
-  assert.ok(captureUrlCall.includes('contextPrefs: CAPTURE_CONTEXT'), 'raster path must pin the prefs');
+  assert.match(captureUrlCall, /initScript:\s*(?:CAPTURE_INIT|captureInit\()/, 'raster path must seed the init script');
+  assert.match(captureUrlCall, /contextPrefs:\s*(?:CAPTURE_CONTEXT|captureContext\()/, 'raster path must pin the prefs');
 });
 
 test('the first-run tool guide is suppressed by the pin, not by a list of tool ids', () => {

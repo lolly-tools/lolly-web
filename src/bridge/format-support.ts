@@ -41,6 +41,20 @@ export function tiffSupport(): boolean {
   return cmykTiffSupport();
 }
 
+// The pro float interchange formats (OpenEXR, Radiance RGBE — plans/deeprichpixels.md
+// §4.2/§6 B3). The engine owns the writers, but they are fed by a float rasterisation
+// the WEB shell cannot do: packages/node-shell/src/raster.ts renders the tool to an
+// SVG, rasterises it with resvg and hands the un-premultiplied RGBA to packExr /
+// packRadiance. Nothing on this side produces that frame — the browser path ends at
+// 8-bit canvas bytes — so the answer is a flat false, not a probe. §10 item 4 puts
+// these formats CLI-first on purpose: offering an option the shell then refuses is
+// worse than not offering it. Flip this to a real probe (and add the encoders) if a
+// float render path ever lands in the browser; keepFormat and the picker's Pro
+// <optgroup> both read this one function, so nothing else has to change.
+export function proFormatSupport(): boolean {
+  return false;
+}
+
 // True only if this browser's MediaRecorder pipeline is usable at all (it also
 // needs canvas.captureStream).
 export function canRecord(): boolean {
