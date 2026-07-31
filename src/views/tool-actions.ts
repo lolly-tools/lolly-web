@@ -389,6 +389,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     ? `<div class="export-aspect-warning" data-aspect-warning role="alert" hidden>${ICON_WARN}<span data-aspect-warning-text></span></div>`
     : '';
 
+  // Export-fidelity guard. Some CSS the canvas can paint has no equivalent in the
+  // chosen output format, and until now it simply vanished from the file with nothing
+  // said. `backdrop-filter` (frosted glass) is the first case wired up: only SVG can
+  // reconstruct it, so every other format exports the panel unfrosted. Same hidden
+  // alert shape as the aspect guard, driven by updateFidelityWarning(). Never exported.
+  const fidelityWarnRow = `<div class="export-aspect-warning" data-fidelity-warning role="alert" hidden>${ICON_WARN}<span data-fidelity-warning-text></span></div>`;
+
   // Tier 2.5 — colour profile (Print PDF only). The CMYK press condition embedded
   // in the PDF's OutputIntent. A self-contained card so this professional/print
   // setting reads as deliberate; revealed only when "Print PDF" (pdf-cmyk) is the
@@ -786,7 +793,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
   `;
@@ -801,6 +808,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const webm60El      = el.querySelector<HTMLElement>('[data-webm-only]');
   const formatEl      = el.querySelector<HTMLSelectElement>('[data-action="format"]');
   const aspectWarnEl  = el.querySelector<HTMLElement>('[data-aspect-warning]');
+  const fidelityWarnEl = el.querySelector<HTMLElement>('[data-fidelity-warning]');
   const durationEl    = el.querySelector<HTMLInputElement>('[data-action="video-duration"]');
   const liveLabelEl   = el.querySelector<HTMLElement>('[data-live-capture]');
 
@@ -1150,6 +1158,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       el.querySelectorAll<HTMLElement>('[data-cmyk-only]').forEach(c => { c.style.display = isCmykFmt(fmt) ? 'flex' : 'none'; });
       el.querySelectorAll<HTMLElement>('[data-printmarks-only]').forEach(c => { c.style.display = isPrintFmt(fmt) ? 'flex' : 'none'; });
       syncBarsDefault(fmt);
+      updateFidelityWarning();  // only SVG/HTML keep a frosted panel
       refreshPrintUi(); // owns [data-pdf-only] (password) visibility — see below
       onUrlSync?.('format');
       onUrlSync?.('marks');  // bars may have flipped with the format
@@ -1439,6 +1448,45 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     aspectWarnEl.hidden = !msg;
   }
 
+  // Export-fidelity guard: does the canvas paint anything the chosen format cannot
+  // carry? Today that is `backdrop-filter` (frosted glass). Only SVG can express it —
+  // the walker rebuilds the backdrop by cloning, clipping and blurring what is behind
+  // the panel. Every raster format goes through a DOM serialiser that puts the node in
+  // a <foreignObject>, where the backdrop is by definition outside the subtree and the
+  // blur is dropped; PDF rasterises the panel through that same path; EMF, EPS and DXF
+  // discard every filter that is not a drop shadow. HTML is the live DOM, so it keeps it.
+  //
+  // Read from the LIVE canvas (computed styles), so a tool that never uses the effect
+  // never sees the row, and a box that turns Backdrop blur on gets it immediately.
+  const FROST_OK_FORMATS = new Set(['svg', 'html']);
+  function canvasUsesBackdropFilter(): boolean {
+    const root = canvasEl;
+    if (!root) return false;
+    const els: Element[] = [root, ...Array.from(root.querySelectorAll('*'))];
+    for (const node of els) {
+      const s = getComputedStyle(node) as CSSStyleDeclaration & { webkitBackdropFilter?: string };
+      const bf = s.backdropFilter || s.webkitBackdropFilter || '';
+      if (bf && bf !== 'none') return true;
+    }
+    return false;
+  }
+  function updateFidelityWarning(): void {
+    if (!fidelityWarnEl) return;
+    const fmt = formatEl?.value || initialFmt || formats[0] || '';
+    const msg = (fmt && !FROST_OK_FORMATS.has(fmt) && canvasUsesBackdropFilter())
+      ? `This design uses a frosted glass effect. ${fmt.toUpperCase()} exports can’t keep the blur, so the panel exports without it.`
+      : '';
+    fidelityWarnEl.querySelector<HTMLElement>('[data-fidelity-warning-text]')!.textContent = msg;
+    fidelityWarnEl.hidden = !msg;
+  }
+  // A sidebar edit can turn the effect on or off (Layout Studio's Backdrop blur field),
+  // so re-check after every input change as well as on every format change. Cheap: one
+  // computed-style pass over the canvas, and only while the export panel is mounted.
+  // Registered HERE, below the definition — the format-change handler above is wired
+  // earlier in the function and would hit the TDZ if it ran the check eagerly.
+  runtime.subscribe(() => updateFidelityWarning());
+  updateFidelityWarning();
+
   // Print marks & bleed export opts (pdf / pdf-cmyk / cmyk-tiff). Empty when the card is off,
   // so an ordinary PDF stays trim-sized with no marks.
   function printOpts(): RunExportOpts {
@@ -1477,6 +1525,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Preview the export aspect ratio on the canvas, then re-fit to the stage.
   function refreshCanvasPreview(): void {
     updateAspectWarning(); // first, so it reflects current fields even when dims are incomplete
+    updateFidelityWarning();
     const { width: w, height: h } = previewPx();
     if (!((w ?? 0) > 0 && (h ?? 0) > 0)) return;
     const previewScale = Math.min(1, manifest.render.width / w!, manifest.render.height / h!);

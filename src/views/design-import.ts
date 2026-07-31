@@ -33,6 +33,7 @@ import {
   penpotGroupToSvg,
   penpotGradientSvgDef,
   penpotDashArray,
+  penpotBackgroundBlurPx,
   collectPenpotExportMarks,
   figmaNodesToNodes,
   figmaNodesToScenes,
@@ -770,6 +771,8 @@ async function penpotItemsToNodes(
 ): Promise<any[]> {
   const nodes: any[] = [];
   let warnedBgBlur = false;
+  // One copy for both drop sites, so the batch can only ever say this once.
+  const BG_BLUR_WARN = 'Background blur on text and grouped art isn’t supported yet. Those shapes imported without it.';
   let warnedDash = false;
   for (const item of items) {
     // A rectangle/ellipse imports its stroke as a CSS border, and CSS has no way to say
@@ -783,14 +786,14 @@ async function penpotItemsToNodes(
       warnedDash = true;
       warn('Custom dash patterns are approximated on rectangle borders.');
     }
-    // Penpot background-blur needs a BackgroundImage source and has no box
-    // equivalent — the shape imports without it (once per import batch).
-    if (item?.blur?.type === 'background-blur' && item.blur.hidden !== true && !warnedBgBlur) {
-      warnedBgBlur = true;
-      warn('Background blur isn’t supported — imported without it.');
-    }
     if (item && (item as PenpotVectorGroupItem).__vectorGroupSvg) {
       const { __vectorGroupSvg: svg, shape: g } = item as PenpotVectorGroupItem;
+      // A flattened group is one baked SVG asset, so a background blur on the group
+      // itself has nowhere to land (the per-shape route keeps it; this one can't).
+      if (penpotBackgroundBlurPx(g) > 0 && !warnedBgBlur) {
+        warnedBgBlur = true;
+        warn(BG_BLUR_WARN);
+      }
       const ref = await storePenpotVectorSvg(host, svg, imageCache, warn);
       if (!ref) continue; // storage failed → the group is dropped (children were consumed)
       const sel = (g.selrect && typeof g.selrect === 'object') ? g.selrect : g;
@@ -812,6 +815,14 @@ async function penpotItemsToNodes(
     let node: any = null;
     try { node = penpotShapeToNode(item); } catch { node = null; }
     if (!node) continue;
+    // Background blur survives on the kinds whose painted region IS the box rect
+    // (plain boxes and image fills), where it becomes the `bgBlur` field. Text shapes
+    // (Penpot masks the blur to the glyphs) and baked vector art drop it — warn once
+    // per import batch so the loss is never silent.
+    if (!(node.bgBlur > 0) && penpotBackgroundBlurPx(item) > 0 && !warnedBgBlur) {
+      warnedBgBlur = true;
+      warn(BG_BLUR_WARN);
+    }
     if (node._fillImageId) {
       const ref = await loadPenpotMedia(host, files, fileId, node._fillImageId, imageCache, warn, node._fillFlip);
       if (ref) node.image = ref; else node.kind = 'box';
