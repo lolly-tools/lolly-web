@@ -304,15 +304,83 @@ test('a TILED conic background becomes one <pattern>, not an element-sized sweep
     assert.equal((svg.match(/<image\b/g) ?? []).length, 0, 'a tiled conic must never rasterise');
   });
 
-test('an UNTILED conic is still emitted as a wedge fan, unchanged', { skip: SKIP }, async () => {
-  // Guards the other side of the branch: no background-size means the sweep covers
-  // the element, and that path must keep behaving exactly as it did.
+test('an UNTILED conic with a real RAMP is still emitted as a wedge fan', { skip: SKIP }, async () => {
+  // Guards the sampling path: a genuine colour ramp has no exact vector form, so it
+  // stays a fan. (The fixture here used to be a hard-stopped gradient, which now takes
+  // the exact-sector path below — a fan was never the RIGHT answer for it, only the
+  // answer we had.)
   const svg = await render(
     `<div style="width:200px;height:120px;background:` +
-    `repeating-conic-gradient(rgba(255,255,255,.5) 0% 25%, rgba(0,0,0,.5) 0% 50%)"></div>`);
+    `conic-gradient(red, yellow, lime, aqua, blue, magenta, red)"></div>`);
   assert.equal((svg.match(/<pattern\b/g) ?? []).length, 0, 'an untiled conic must not become a pattern');
   assert.ok((svg.match(/<path\b/g) ?? []).length > 8, 'expected a wedge fan');
   assert.equal((svg.match(/<image\b/g) ?? []).length, 0);
+});
+
+test('a TILED gradient layer becomes a <pattern>, not an element-sized sweep',
+  { skip: SKIP }, async () => {
+    // The editor stage's transparency checkerboard: two 45deg linear-gradient layers at
+    // `24px 24px`, offset `0 0, 12px 12px`. A gradient is sized by background-size like
+    // any other background image, but only the conic and url() branches tiled — so this
+    // had no honest vector form and fell to the raster escape hatch. Measured: a
+    // 1080x676, 53 KB PNG of a faint checkerboard inside docs/shots/use-chart-output.svg.
+    const svg = await render(
+      `<div style="width:240px;height:144px;background-color:hsl(210 20% 92%);background-image:` +
+      `linear-gradient(45deg, rgba(0,0,0,.045) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.045) 75%),` +
+      `linear-gradient(45deg, rgba(0,0,0,.045) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.045) 75%);` +
+      `background-size:24px 24px;background-position:0 0, 12px 12px"></div>`);
+    const pats = svg.match(/<pattern\b[^>]*>/g) ?? [];
+    assert.equal(pats.length, 2, 'one pattern per tiled layer');
+    for (const pat of pats) {
+      assert.match(pat, /width="24"/, 'the tile is the background-size, not the element width');
+      assert.match(pat, /height="24"/);
+    }
+    assert.equal((svg.match(/<image\b/g) ?? []).length, 0, 'a tiled gradient must never rasterise');
+    // The second layer is phased by background-position: 12px on a 24px tile.
+    assert.ok(pats.some((pt) => /\bx="12"/.test(pt) && /\by="12"/.test(pt)),
+      'the offset layer keeps its phase');
+  });
+
+test('an UNTILED gradient still fills the element directly, with no pattern',
+  { skip: SKIP }, async () => {
+    // The other side of the branch: `background-size` absent (or covering) means the
+    // gradient spans the box, and that path must stay exactly as it was.
+    const svg = await render(
+      `<div style="width:240px;height:144px;background-image:` +
+      `linear-gradient(90deg, rgb(255,0,0), rgb(0,0,255))"></div>`);
+    assert.equal((svg.match(/<pattern\b/g) ?? []).length, 0);
+    assert.equal((svg.match(/<linearGradient\b/g) ?? []).length, 1);
+    assert.equal((svg.match(/<image\b/g) ?? []).length, 0);
+  });
+
+test('a HARD-STOPPED conic emits one EXACT sector per band, not a sampled fan',
+  { skip: SKIP }, async () => {
+    // `A 0 25%, B 0 50%` is the checkerboard idiom: constant-colour bands with
+    // instantaneous transitions. A uniform fan puts wedge edges where the colour does
+    // NOT change, and each carries the deliberate 0.004rad overlap that stops
+    // antialiasing seams — so a 14px checker tile came out with a faint diagonal
+    // hairline across every square. Measured on docs/shots/use-chart-output.svg.
+    const svg = await render(
+      `<div style="width:200px;height:120px;background:` +
+      `repeating-conic-gradient(rgb(255,0,0) 0% 25%, rgb(0,0,255) 0% 50%)"></div>`);
+    const paths = svg.match(/<path\b[^>]*>/g) ?? [];
+    assert.equal(paths.length, 4, 'two bands x two periods around the circle — exact, not sampled');
+    assert.equal((svg.match(/<image\b/g) ?? []).length, 0);
+    // Both colours survive, and neither is a blend of the two (which is what a fan
+    // sampling across a hard boundary would produce).
+    assert.equal(paths.filter((p) => /fill="#ff0000"/.test(p)).length, 2, 'the first band, once per period');
+    assert.equal(paths.filter((p) => /fill="#0000ff"/.test(p)).length, 2, 'the second band');
+  });
+
+test('a fully TRANSPARENT band paints nothing at all', { skip: SKIP }, async () => {
+  // The checker's clear squares are `transparent`. Emitting them as zero-alpha paths is
+  // pure weight in every exported file — half the sectors, painting nothing.
+  const svg = await render(
+    `<div style="width:200px;height:120px;background:` +
+    `repeating-conic-gradient(rgb(255,0,0) 0% 25%, transparent 0% 50%)"></div>`);
+  const paths = svg.match(/<path\b[^>]*>/g) ?? [];
+  assert.equal(paths.length, 2, 'only the two opaque bands are emitted');
+  assert.ok(paths.every((p) => !/fill-opacity="0"/.test(p)));
 });
 
 // ── self-containment: every <image> href must be inlinable ───────────────────
@@ -405,3 +473,145 @@ test('a percentage-only gradient is untouched by the px conversion', { skip: SKI
     + 'linear-gradient(90deg,#0ea5e9 0%,#9333ea 100%)}</style><div class="g"></div>');
   assert.deepEqual([...svg.matchAll(/offset="([^"]+)"/g)].map((m) => m[1]), ['0%', '100%']);
 });
+
+// ── scaled ancestors: computed lengths vs client rects ───────────────────────
+
+test('text inside a SCALED element exports at the size the browser paints it',
+  { skip: SKIP }, async () => {
+    // A client rect carries an ancestor's scale; a computed length does not. Walking a
+    // scaled subtree on the AABB path therefore lands every box correctly while leaving
+    // every getComputedStyle length 1/s too big. Measured on the Layout Studio docs
+    // shot: a 1080px artboard displayed at 868 (`matrix(0.8037…)`) exported its headline
+    // 1/0.8037 = 24.4% oversize, overflowing the card it fits on screen.
+    //
+    // The oracle is the BROWSER's own ink width for the same run, so this stays honest
+    // if HarfBuzz's metrics ever legitimately move.
+    const pg = await page();
+    await pg.setContent(`<!doctype html><body style="margin:0"><style>${FONT_CSS}</style>` +
+      `<div id="root" style="width:500px;height:150px;background:#fff">` +
+      `<div style="transform:scale(0.5);transform-origin:0 0;width:1000px;height:300px">` +
+      `<span id="run" style="font-family:Outfit;font-size:64px;font-weight:700;white-space:nowrap">Design once</span>` +
+      `</div></div></body>`);
+    await pg.evaluate(() => (document as any).fonts.ready);
+    await pg.addScriptTag({ content: await bundle(), type: 'module' });
+    await pg.waitForFunction(() => !!(window as any).__render);
+    const r = await pg.evaluate(async () => {
+      (window as any).__setup();
+      const painted = document.getElementById('run')!.getBoundingClientRect().width;  // scaled by 0.5
+      const blob = await (window as any).__render(document.getElementById('root'), { rasterFallback: false });
+      const svg = await blob.text();
+      // Measure the emitted ink the same way the browser measures the run.
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-9999px;top:0';
+      host.innerHTML = svg;
+      document.body.appendChild(host);
+      // getBoundingClientRect, NOT getBBox: getBBox reports the element's own user
+      // space and ignores ancestor transforms — including the very <g transform> the
+      // scale fix emits, which would make this measure the bug it is meant to catch.
+      let x0 = Infinity, x1 = -Infinity;
+      for (const pth of host.querySelectorAll('svg path')) {
+        const bb = pth.getBoundingClientRect();
+        if (bb.width < 0.5 || bb.height < 2) continue;
+        x0 = Math.min(x0, bb.left); x1 = Math.max(x1, bb.right);
+      }
+      host.remove();
+      return { painted, inked: x1 > x0 ? x1 - x0 : 0 };
+    });
+    assert.ok(r.inked > 0, 'the run was outlined at all');
+    const ratio = r.inked / r.painted;
+    assert.ok(ratio > 0.9 && ratio < 1.1,
+      `emitted ink ${r.inked.toFixed(1)}px vs painted ${r.painted.toFixed(1)}px (ratio ${ratio.toFixed(3)}) — ` +
+      'a ratio near 1/scale means the computed font-size was used without the ancestor scale');
+  });
+
+// ── over-provisioned raster previews: downscale on inline ────────────────────
+
+test('an oversized bitmap is downscaled to what its display box can show',
+  { skip: SKIP }, async () => {
+    // A gallery preview committed as a 3200x1800 PNG appears in a ~341px tile, so the
+    // walker was inlining ~5.76M pixels for a box that resolves at ~700 — one such tile
+    // was 4.6 MB of a 6.6 MB shot. The inlined <image> should carry no more resolution
+    // than the box needs at the export dpi, and none of the pixels should be visible as
+    // a quality loss (not asserted here; verified by eye on the real gallery shot).
+    const pg = await page();
+    await pg.setContent(`<!doctype html><body style="margin:0">` +
+      `<div id="root" style="width:500px;height:500px;background:#fff">` +
+      // a 2000x2000 canvas painted as an <img> source, shown in a 200px box
+      `<canvas id="src" width="2000" height="2000" style="display:none"></canvas>` +
+      `<img id="big" style="width:200px;height:200px" alt="">` +
+      `<img id="small" style="width:200px;height:200px" alt="">` +
+      `</div></body>`);
+    await pg.evaluate(() => {
+      const c = document.getElementById('src') as HTMLCanvasElement;
+      const ctx = c.getContext('2d')!;
+      // a non-flat gradient so downscale can't be a no-op collapse
+      const g = ctx.createLinearGradient(0, 0, 2000, 2000);
+      g.addColorStop(0, '#f00'); g.addColorStop(1, '#00f');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 2000, 2000);
+      (document.getElementById('big') as HTMLImageElement).src = c.toDataURL('image/png');
+      const s = document.createElement('canvas'); s.width = 128; s.height = 128;
+      s.getContext('2d')!.fillStyle = '#0a0'; s.getContext('2d')!.fillRect(0, 0, 128, 128);
+      (document.getElementById('small') as HTMLImageElement).src = s.toDataURL('image/png');
+    });
+    await pg.evaluate(() => Promise.all([...document.images].map(i => i.decode().catch(() => {}))));
+    await pg.addScriptTag({ content: await bundle(), type: 'module' });
+    await pg.waitForFunction(() => !!(window as any).__render);
+    const r = await pg.evaluate(async () => {
+      (window as any).__setup();
+      // dpi 96 (screen): the box is 200 CSS px, factor max(2, 96/96)=2 → cap 400px.
+      const svg = await (await (window as any).__render(document.getElementById('root'),
+        { rasterFallback: false, dpi: 96 })).text();
+      // decode every embedded PNG and report its pixel size
+      const dims: Array<{ w: number; h: number }> = [];
+      for (const m of svg.matchAll(/href="(data:image\/png;base64,[^"]+)"/g)) {
+        const img = new Image(); img.src = m[1];
+        await img.decode().catch(() => {});
+        dims.push({ w: img.naturalWidth, h: img.naturalHeight });
+      }
+      return { dims, count: dims.length };
+    });
+    assert.equal(r.count, 2, 'both images emitted');
+    type Dim = { w: number; h: number };
+    const dims = r.dims as Dim[];
+    const big = dims.find((d: Dim) => d.w > 200) ?? dims.reduce((a: Dim, b: Dim) => a.w >= b.w ? a : b);
+    const small = dims.find((d: Dim) => d.w <= 200) ?? dims.reduce((a: Dim, b: Dim) => a.w <= b.w ? a : b);
+    // The 2000px source is capped to ~400px (box 200 x factor 2), never left at 2000.
+    assert.ok(big.w <= 400 * 1.15 && big.w >= 300,
+      `oversized 2000px source should cap near 400px, got ${big.w}`);
+    // The 128px source is already under the cap, so it is NOT upscaled or touched.
+    assert.equal(small.w, 128, 'a small source is left exactly as it was');
+  });
+
+test('a print-dpi export keeps a higher-resolution raster than a screen export',
+  { skip: SKIP }, async () => {
+    // The cap is dpi-aware, which is what makes it safe on the tool-export path: the same
+    // 2000px source placed in a 200px box keeps more pixels at 300 dpi than at 96.
+    const pg = await page();
+    await pg.setContent(`<!doctype html><body style="margin:0">` +
+      `<div id="root" style="width:400px;height:400px;background:#fff">` +
+      `<canvas id="src" width="2000" height="2000" style="display:none"></canvas>` +
+      `<img id="big" style="width:200px;height:200px" alt=""></div></body>`);
+    await pg.evaluate(() => {
+      const c = document.getElementById('src') as HTMLCanvasElement;
+      const ctx = c.getContext('2d')!;
+      const g = ctx.createLinearGradient(0, 0, 2000, 2000);
+      g.addColorStop(0, '#f00'); g.addColorStop(1, '#00f');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 2000, 2000);
+      (document.getElementById('big') as HTMLImageElement).src = c.toDataURL('image/png');
+    });
+    await pg.evaluate(() => document.images[0]?.decode().catch(() => {}));
+    await pg.addScriptTag({ content: await bundle(), type: 'module' });
+    await pg.waitForFunction(() => !!(window as any).__render);
+    const measure = async (dpi: number) => pg.evaluate(async (d: number) => {
+      (window as any).__setup();
+      const svg = await (await (window as any).__render(document.getElementById('root'),
+        { rasterFallback: false, dpi: d })).text();
+      const m = svg.match(/href="(data:image\/png;base64,[^"]+)"/);
+      if (!m) return 0;
+      const img = new Image(); img.src = m[1]; await img.decode().catch(() => {});
+      return img.naturalWidth;
+    }, dpi);
+    const screen = await measure(96);
+    const print = await measure(300);
+    assert.ok(print > screen, `print (${print}px) must keep more than screen (${screen}px)`);
+  });

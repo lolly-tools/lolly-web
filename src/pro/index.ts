@@ -36,7 +36,7 @@ import { escape } from '../utils.ts';
 import { askExportLock } from '../lib/export-lock.ts';
 import { getTool, renderRowToBlob, isExportable } from './render-export.ts';
 import { planBatch, notesFromFindings } from './batch.ts';
-import { createBatchRowCheck } from './preflight-rows.ts';
+import { createBatchRowCheck, skippedFindings } from './preflight-rows.ts';
 import type { Finding } from '@lolly/engine';
 import { icon } from '../lib/icons.ts';
 import { saveBlob } from './zip.ts';
@@ -1581,13 +1581,14 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     // what is wrong with row 7 BEFORE 200 rows render. The run-level settings handed
     // in are the same four the run itself is given below, which is what makes the
     // findings about the settings the render will actually use.
-    const check = await createBatchRowCheck(state.rows, host, {
+    const { check, runFindings } = await createBatchRowCheck(state.rows, host, {
       format: state.format, unit: state.unit, dpi: state.dpi,
       profile: state.profile || undefined,
       bleed: state.bleed || undefined,
       marks: state.marks || undefined,
     });
-    const { renderable, skipped, srcIndex, findings } = await planBatch<Finding>(state.rows, { check });
+    const plan = await planBatch<Finding>(state.rows, { check });
+    const { renderable, skipped, srcIndex, findings } = plan;
     if (renderable.length === 0) {
       showProgress(`<p class="pro-progress-msg">Nothing to render — pick at least one exportable template.</p>`);
       return;
@@ -1630,10 +1631,13 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       marks: state.marks || undefined,
       zipBaseName: zipBase,
       srcIndex,
-      // Per-row preflight findings, keyed by queue position. Skipped rows' findings
-      // are dropped here on purpose (they have no queue position) — they belong to
-      // the run report, which gets them via `skipped` + the plan's own `findings`.
+      // Per-row preflight findings, keyed by queue position. Skipped rows have no
+      // queue position, so theirs travel by identity in `skippedFindings`, and the
+      // run-invariant ones ride `runFindings` — three channels, none of them able to
+      // stand in for another.
       notes: notesFromFindings(findings, renderable.length),
+      skippedFindings: skippedFindings(plan),
+      runFindings,
       author,
       csv,
       skipped,

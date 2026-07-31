@@ -3,13 +3,15 @@
  * The visualiser options menu's box model, pinned against the one bug it has actually had:
  * a preset list that collapsed to ZERO pixels.
  *
- * The menu is a flex column — mode/tint rows, the search field, the result list, the brand's
- * colour schemes, then the actions. Every row but the list is sized by its content, so the
- * list is the only child the flex algorithm can shrink, and it was authored `min-height: 0`.
- * Once the fixed rows exceeded the menu's max-height — which a brand with the full six
- * colour schemes (MAX_SCHEMES, lib/viz-schemes.ts) does — the list absorbed the entire
- * difference and rendered 0px tall. Every preset was in the DOM; none was visible, so it
- * read as "search returns nothing".
+ * The menu is a flex column — the setting pill rows (mode, brand tint, colour scheme, cycle)
+ * and the actions, then the search field, then the result list last. Every row but the list
+ * is sized by its content, so the list is the only child the flex algorithm can shrink, and
+ * it was authored `min-height: 0`. Once the fixed rows exceeded the menu's max-height — which
+ * a brand with the full six colour schemes (MAX_SCHEMES, lib/viz-schemes.ts) did back when
+ * each scheme was its own full-width row — the list absorbed the entire difference and
+ * rendered 0px tall. Every preset was in the DOM; none was visible, so it read as "search
+ * returns nothing". (The schemes are a wrapping pill row as of 2026-07-31, so that specific
+ * pressure is gone; the floor is what makes the collapse impossible rather than unlikely.)
  *
  * jsdom does no layout, so this asserts on the DECLARATIONS instead — which is where both
  * halves of the bug lived:

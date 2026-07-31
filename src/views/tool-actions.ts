@@ -37,6 +37,7 @@ import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
 import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
 import { preflightRowHtml, preflightView, applyPreflight } from './export-preflight.ts';
+import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/export-scale.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
 
@@ -1662,8 +1663,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // tool where the user had set nothing at all.
     const fromUser = typed && sizeUserSet;
     const manifestSize = fixed || !fromUser;
-    const width  = manifestSize ? { value: manifest.render.width,  unit: 'px' as Unit } : { value: w!, unit };
-    const height = manifestSize ? { value: manifest.render.height, unit: 'px' as Unit } : { value: h!, unit };
+    // …and when the manifest canvas is what renders, it is not always what COMES OUT.
+    // With both size fields blank the export path passes no dimension at all, so
+    // `rasterStyle` takes its not-requested branch and supersamples the node box by
+    // RASTER_DEFAULT_SCALE: a 1200 x 900 tool exported to PNG is a 2400 x 1800 file.
+    // Reporting the manifest numbers there stamped `bound: 'exact'` on a pixel count
+    // four times too small. A fixed-dims tool (`dims === false`) is exempt: it passes
+    // the manifest size explicitly, which IS a request, so no scale applies — and so
+    // is every vector/PDF format, which never reaches `rasterStyle`.
+    const supersampled = manifest.render.dims !== false && !typed && SUPERSAMPLED_EXPORT_FORMATS.has(fmt.toLowerCase());
+    const canvasScale = supersampled ? RASTER_DEFAULT_SCALE : 1;
+    const width  = manifestSize ? { value: manifest.render.width * canvasScale,  unit: 'px' as Unit } : { value: w!, unit };
+    const height = manifestSize ? { value: manifest.render.height * canvasScale, unit: 'px' as Unit } : { value: h!, unit };
     // `unitDeclared` is true only when the SOURCE spelled a unit out — here, when
     // the panel offers the unit selector AND the value in the field is the one the
     // user put there. False makes the engine refuse to derive an area rather than
@@ -1714,7 +1725,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // The fact row states the size the JOB carries, so it agrees with the findings
     // by construction: a manifest-sourced size shows as the pixel canvas it is.
     const sizeText = manifestSize
-      ? `${manifest.render.width} × ${manifest.render.height} px`
+      ? `${manifest.render.width * canvasScale} × ${manifest.render.height * canvasScale} px`
       : (unit === 'px' ? `${w} × ${h} px` : t('{w} × {h} {unit} at {dpi} DPI', { w: String(w), h: String(h), unit, dpi }));
     applyPreflight(el, preflightView(preflight(job), {
       formatLabel: fmt ? fmtLabel(fmt) : '',

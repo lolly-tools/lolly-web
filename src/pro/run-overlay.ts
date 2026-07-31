@@ -74,6 +74,18 @@ interface RunBatchProgressOpts<F = unknown> {
    */
   noteTone?: (note: F) => 'info' | 'warn';
   /**
+   * Findings for the rows `planBatch` DROPPED, keyed by identity — they have no queue
+   * position, so `notes` (which is parallel to `rows`) structurally cannot carry them.
+   * `preflight-rows.ts` `skippedFindings(plan)` builds this.
+   */
+  skippedFindings?: ReadonlyArray<{ uid?: string; srcIndex: number; items: F[] }>;
+  /**
+   * Findings about the RUN rather than any row — the platform refusals and the brand
+   * palette. Shown once, in the report envelope and above the zip's per-file notes,
+   * never as a chip on 500 cards.
+   */
+  runFindings?: readonly F[];
+  /**
    * Set on the retry run only: the original package name, so the two zips are readable
    * as one job. Callers never set this — the Retry button does.
    */
@@ -190,7 +202,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
   const {
     mount, format, unit, dpi, pathAware = false,
     zipBaseName, author = null, csv, skipped = [],
-    profile, bleed, marks, srcIndex, notes, retryOf,
+    profile, bleed, marks, srcIndex, notes, retryOf, skippedFindings, runFindings,
     noteText = defaultNoteText as (note: F) => string,
     noteTone = defaultNoteTone as (note: F) => 'info' | 'warn',
     onRendered, onBatchRendered, announce, strongPassword, zipLock,
@@ -222,6 +234,10 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     (n ?? []).some(x => noteTone(x) === 'warn') ? 'warn' : 'info';
   // Files that rendered AND carry notes, for the zip manifest's [ Notes ] block.
   const noted: Array<{ name: string; lines: readonly string[] }> = [];
+  // …and the findings that are about the run rather than any file, flattened by the
+  // same reader. They lead the [ Notes ] block; they are never counted into
+  // "N with notes", which is a count of ROWS.
+  const runNotes = linesOf(runFindings);
 
   // Each skipped row listed by name when it can be named; the old one-line summary is
   // kept as the <summary>, so a run with nothing skipped is byte-identical (empty).
@@ -451,6 +467,10 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
       // SEAM (Phase 1): the sidecar carries the payload verbatim. `notes` is opaque
       // here and stays opaque all the way into the JSON.
       findings: (k: number) => [...(notes?.[k] ?? [])] as unknown[],
+      // The two channels that are NOT queue-space: the dropped rows (no queue
+      // position at all) and the run-level findings (no row).
+      skippedFindings: skippedFindings as ReadonlyArray<{ uid?: string; srcIndex: number; items: unknown[] }> | undefined,
+      runFindings: runFindings as readonly unknown[] | undefined,
     });
 
     // A retry needs the rows themselves, which only exist on the failure arm of
@@ -489,6 +509,9 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
           // double-count them across two manifests. The CSV likewise describes the
           // original run and is not re-derived here.
           skipped: [],
+          // …and with them, their findings: a retry renders only the rows that
+          // FAILED, so a skipped row's diagnostics belong to the first package alone.
+          skippedFindings: [],
           csv: undefined,
           // strongPassword / zipLock ride along in ...opts UNCHANGED: a retry that
           // silently shipped in cleartext is the same class of bug the zip branch
@@ -517,7 +540,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
 
     // Deliver: one zip when possible; spaced sequential downloads as a fallback.
     try {
-      const zip = await buildZip(files, { zipName: `${zipBaseName}.zip`, author, csv, zipLock, password: strongPassword, unmade, noted, retryOf, preflight });
+      const zip = await buildZip(files, { zipName: `${zipBaseName}.zip`, author, csv, zipLock, password: strongPassword, unmade, noted, runNotes, retryOf, preflight });
       saveBlob(zip, `${zipBaseName}.zip`);
       draw(`<strong>Done — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.</strong>`);
       announce?.(`Batch complete — ${files.length} file${files.length === 1 ? '' : 's'} in one zip${tail}.`);

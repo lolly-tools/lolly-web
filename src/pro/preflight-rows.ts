@@ -58,7 +58,7 @@ import type {
 import type { Unit } from '../../../../engine/src/units.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import { csvToMarks } from '../lib/print-marks-csv.ts';
-import { RASTER_DEFAULT_SCALE } from '../bridge/export-scale.ts';
+import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/export-scale.ts';
 import { printSettingsFor, type BatchPlan, type BatchRow, type PrintSettings } from './batch.ts';
 import { chooseFormat, getTool } from './render-export.ts';
 
@@ -147,25 +147,15 @@ export function toPreflightManifest(manifest: ToolManifest): PreflightManifest {
 }
 
 /**
- * The formats whose still raster goes through `rasterStyle` in
- * `bridge/export.ts` — and therefore the ONLY formats that get the default
- * {@link RASTER_DEFAULT_SCALE} supersample when the caller requested no size.
+ * True when this row's still raster will be scaled by `RASTER_DEFAULT_SCALE` — i.e.
+ * when it goes through `rasterStyle`'s not-requested branch.
  *
- * Deliberately NOT the engine's `RASTER_FORMATS`, which is a wider set answering a
- * different question ("does this format have pixels at all"). `gif`/`apng` are in
- * it and are captured by `createFrameSource`, whose target is the node box at 1x
- * (`export.ts:7574-7575`); reporting them doubled would be the same invented number
- * in the other direction. `exr`/`hdr` have no branch in `renderFormatDispatch`.
- *
- * `cmyk-tiff` is here only conditionally — see {@link rowSize}: with a bleed or any
- * mark it takes `coverRasterStyle` and is sized from the print geometry instead.
+ * The base set is the bridge's own ({@link SUPERSAMPLED_EXPORT_FORMATS}); the one
+ * addition is `cmyk-tiff`, which is conditional and so cannot live in a plain set.
  */
-const SUPERSAMPLED_FORMATS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff']);
-
-/** True when this row's still raster will be scaled by `RASTER_DEFAULT_SCALE`. */
 function isSupersampled(format: string, print: PrintSettings): boolean {
   const f = format.toLowerCase();
-  if (SUPERSAMPLED_FORMATS.has(f)) return true;
+  if (SUPERSAMPLED_EXPORT_FORMATS.has(f)) return true;
   // renderCmykTiff: `geo ? coverRasterStyle(…) : rasterStyle(d, opts)`, and
   // `printGeometry` returns null when there is no bleed and no mark.
   if (f !== 'cmyk-tiff') return false;
