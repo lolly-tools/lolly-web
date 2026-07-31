@@ -197,9 +197,22 @@ const HISTORY_ICON = icon('history');
 
 // Lucide "star" — the per-card favourite toggle. Filled via CSS when active (.is-fav).
 const STAR_ICON = icon('star');
-// Lucide "pin" — the per-card "available offline" toggle. Filled via CSS when
-// active (.is-pinned) — the filled state doubles as the pinned indicator.
-const PIN_ICON = icon('pin');
+// The per-card "available offline" toggle is a three-layer button (see pinButtonHtml):
+// a download glyph at rest, a spinning progress ring while the pin's fetches are in
+// flight (.is-busy), and an accent-filled circled tick once pinned (.is-pinned) —
+// the tick doubles as the "works offline" indicator the tooltip describes.
+const DOWNLOAD_ICON = icon('download');
+const PIN_RING_ICON = icon('ring');
+const PIN_DONE_ICON = icon('circleCheck');
+
+/** The "keep available offline" download→progress→tick button, shared by both card layouts. */
+function pinButtonHtml(tool: GalleryTool, isPinned: boolean): string {
+  return `<button type="button" class="gtile-iconbtn gtile-pin${isPinned ? ' is-pinned' : ''}" data-pin="${escape(tool.id)}" aria-pressed="${isPinned}" title="${escape(isPinned ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(isPinned ? t('Remove {name} from offline', { name: tool.name }) : t('Keep {name} available offline', { name: tool.name }))}">
+    <span class="pin-layer pin-dl" aria-hidden="true">${DOWNLOAD_ICON}</span>
+    <span class="pin-layer pin-ring" aria-hidden="true">${PIN_RING_ICON}</span>
+    <span class="pin-layer pin-done" aria-hidden="true">${PIN_DONE_ICON}</span>
+  </button>`;
+}
 // Sentinel category id for the starred-favourites filter (not a real catalog category).
 const FAV_CAT = 'favourites';
 
@@ -468,16 +481,32 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     void pinnedRenderLayouts().then(layouts => layouts.forEach(warmEditorChunk)).catch(() => {});
   }
   // Favourites visible in the current catalog (not hidden by a flag) — the pill count.
-  const favCount = (): number => index.tools.filter(t => favourites.has(t.id) && !hidden.has(t.category)).length;
+  // Starred VIEW cards (their `view:`-keyed favourites) count too, but only in the
+  // Utilities grid, the one place those tiles exist.
+  const favCount = (): number => index.tools.filter(t => favourites.has(t.id) && !hidden.has(t.category)).length
+    + (opts.only === 'utility' ? utilityViews().filter(v => favourites.has(viewFavKey(v.id))).length : 0);
 
   // A catalog tool → a featured-strip entry. A tool with no manifest `featured` block
   // (a favourited plain tool) still gets one, falling back to its description as the
   // blurb — the same shape the Utilities strip uses.
-  const toFeaturedEntry = (t: GalleryTool): FeaturedEntry => ({
-    id: t.id, name: t.name, preview: t.preview, icon: t.icon, formats: t.formats,
-    status: t.status, isNew: isNew(t.id), examples: t.examples,
-    featured: t.featured ?? { blurb: t.description },
-  });
+  // Utility tools lead with their ICON, not a preview: every utility's resting
+  // state is the same empty drop area, so a strip of them is indistinguishable
+  // screenshots. Dropping preview + examples leaves the row's always-present
+  // icon fallback (.ftile-iconfill) as the tile art, which is what tells the
+  // utilities apart. (Revisit if utility tiles ever get a "after a file went
+  // through" look worth showing.)
+  const toFeaturedEntry = (t: GalleryTool): FeaturedEntry => {
+    const iconHero = t.category === 'utility';
+    const featured = t.featured ?? { blurb: t.description };
+    return {
+      id: t.id, name: t.name, preview: iconHero ? undefined : t.preview, icon: t.icon,
+      formats: t.formats, status: t.status, isNew: isNew(t.id),
+      examples: iconHero ? undefined : t.examples,
+      // `featured.variants` is the pre-`examples` alias resolveExamples() still
+      // honours, so an icon-hero entry must shed it too or the looks come back.
+      featured: iconHero && featured.variants ? { ...featured, variants: undefined } : featured,
+    };
+  };
 
   // Featured hero row — tools flagged `featured` in their manifest, PLUS the user's
   // favourites (starring a tool promotes it into the hero strip), minus any in a hidden
@@ -1090,7 +1119,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // View-backed tiles lead the utility grid; they carry no data-tool-id, so the
     // sort pass below (which re-appends tool tiles in order) leaves them in place
     // at the front rather than shuffling them among the tools.
-    const viewCards = opts.only === 'utility' ? utilityViews().map(viewCardMarkup).join('') : '';
+    const viewCards = opts.only === 'utility' ? utilityViews().map(v => viewCardMarkup(v, favourites.has(viewFavKey(v.id)))).join('') : '';
     masonry.innerHTML = viewCards + allTools
       .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), isPinned(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility'))
       .join('');
@@ -1141,11 +1170,14 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     }
     // The view tiles aren't in `allTools`, so match them on their own text. Without
     // this a search for "qr" would leave Colour Lab sitting above zero results.
+    // The Favourites pill applies to them too (their star writes a view: key into
+    // the same favourites list); other category pills leave them showing, as ever.
     for (const v of (opts.only === 'utility' ? utilityViews() : [])) {
       const el = masonry.querySelector<HTMLElement>(`[data-view-card="${v.id}"]`);
       if (!el) continue;
       const q = query.trim().toLowerCase();
-      const match = !q || `${v.name} ${v.description}`.toLowerCase().includes(q);
+      const match = (!q || `${v.name} ${v.description}`.toLowerCase().includes(q))
+        && (activeCat !== FAV_CAT || favourites.has(viewFavKey(v.id)));
       el.classList.toggle('is-filtered', !match);
       if (match) shown++;
     }
@@ -1200,6 +1232,33 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         else renderPills();                    // otherwise just refresh the pill count
       });
     });
+    // Star / unstar a utility VIEW card — same favourites list as the tools,
+    // under the collision-proof view: key. No featured-strip promotion (the
+    // strip's tiles resolve tool routes + render paths a view doesn't have).
+    container.querySelectorAll<HTMLElement>('[data-fav-view]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const id = el.dataset.favView!;
+        const key = viewFavKey(id);
+        const on = !favourites.has(key);
+        if (on) favourites.add(key); else favourites.delete(key);
+        void saveFavourites(host, profile, favourites);
+        el.classList.toggle('is-fav', on);
+        el.setAttribute('aria-pressed', String(on));
+        const nm = utilityViews().find(v => v.id === id)?.name ?? t('tool');
+        el.setAttribute('aria-label', on ? t('Remove {name} from favourites', { name: nm }) : t('Add {name} to favourites', { name: nm }));
+        el.title = on ? t('In favourites') : t('Add to favourites');
+        if (activeCat === FAV_CAT) applyView(); // the card must hide/show in place
+        else renderPills();                     // otherwise just refresh the pill count
+      });
+    });
+    container.querySelectorAll<HTMLElement>('[data-info-view]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const v = utilityViews().find(x => x.id === el.dataset.infoView);
+        if (v) showViewInfoDialog(v);
+      });
+    });
     // Pin / unpin ("available offline"). Pinning fetches the tool's files + its
     // manifest-declared catalog assets into the offline caches (lib/offline-pins.ts);
     // the button's filled state doubles as the pinned indicator. Busy-guarded so a
@@ -1228,6 +1287,15 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
           el.title = on ? t('Available offline') : t('Keep available offline');
           el.setAttribute('aria-label', on ? t('Remove {name} from offline', { name: nm }) : t('Keep {name} available offline', { name: nm }));
           announce(on ? t('{name} is available offline', { name: nm }) : t('{name} removed from offline', { name: nm }));
+          if (on) {
+            // Download complete: the circled tick pops + draws in (one-shot class so a
+            // later re-render doesn't replay it) with a small victory chime.
+            el.classList.add('is-celebrating');
+            const done = (): void => el.classList.remove('is-celebrating');
+            el.addEventListener('animationend', done, { once: true });
+            setTimeout(done, 900); // fallback: reduced-motion fires no animationend
+            playSfx('victory');
+          }
         } catch (err) {
           host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
           announce(t('Couldn’t save {name} for offline — check your connection', { name: nm }), { assertive: true });
@@ -1534,10 +1602,15 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
  * belong in the Utilities grid but have no manifest, no render and no session.
  *
  * They get a real tile, the same shape as a tool's, because to a user they are
- * the same kind of thing: something you open from this grid. What they DON'T get
- * is the actions row — favourite, keep-offline and saved-sessions are all
- * tool-store concepts keyed by tool id, and wiring a view into them would mean
- * inventing a fake tool for three subsystems to believe in.
+ * the same kind of thing: something you open from this grid — including a
+ * favourite star and a details dialog. A view's favourite lives in the SAME
+ * profile favourites list as a tool's, under a `view:`-prefixed key
+ * (viewFavKey) so it can never collide with a tool id (ids are permanent
+ * contracts, so the namespace must be carved out, not hoped about). What a view
+ * still doesn't get is keep-offline or saved-sessions: it ships with the app
+ * shell (always offline-capable, nothing to pin) and has no session store —
+ * wiring those in WOULD mean inventing a fake tool for other subsystems to
+ * believe in.
  */
 interface UtilityView {
   id: string;
@@ -1570,7 +1643,11 @@ const utilityViews = (): UtilityView[] => [{
   description: t('Inspect any colour: where it sits in OKLCH, which displays can show it, how much chroma is left, and every notation.'),
 }];
 
-function viewCardMarkup(v: UtilityView): string {
+/** The profile-favourites key for a utility VIEW card — namespaced so it can
+ *  never collide with a tool id. */
+const viewFavKey = (id: string): string => `view:${id}`;
+
+function viewCardMarkup(v: UtilityView, isFav: boolean): string {
   return `
     <article class="gtile gtile--utility gtile--view" data-view-card="${escape(v.id)}">
       <div class="gtile-body gtile-body--link">
@@ -1582,7 +1659,41 @@ function viewCardMarkup(v: UtilityView): string {
           </span>
         </div>
       </div>
+      <div class="gtile-actions">
+        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav-view="${escape(v.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: v.name }) : t('Add {name} to favourites', { name: v.name }))}">${STAR_ICON}</button>
+        <button type="button" class="gtile-iconbtn" data-info-view="${escape(v.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: v.name }))}">${INFO_ICON}</button>
+      </div>
     </article>`;
+}
+
+/** Details dialog for a utility VIEW card — the same spec-sheet chrome as a
+ *  tool's, on the facts a view actually has (no manifest, no formats, no
+ *  defaults — it's a page of the app). */
+function showViewInfoDialog(v: UtilityView): void {
+  const content = `
+    <div class="meta-dialog-body">
+      <header class="meta-dialog-head">
+        <span class="tool-card-icon meta-dialog-icon" aria-hidden="true">${icon(v.icon, { size: 24 })}</span>
+        <div>
+          <h2 id="tool-info-title">${escape(v.name)}</h2>
+          <p class="meta-dialog-sub">${escape(t('Utility'))} · ${escape(t('Built into the app'))}</p>
+        </div>
+      </header>
+      <p class="meta-dialog-desc">${escape(v.description)}</p>
+      <dl class="meta-dialog-facts">
+        <div><dt>${t('Privacy')}</dt><dd>${t('Runs entirely on your device')}</dd></div>
+        <div><dt>${t('Offline')}</dt><dd>${t('Ships with the app, so it always works offline')}</dd></div>
+      </dl>
+      <div class="meta-dialog-actions">
+        <a class="btn meta-dialog-open" href="${escape(v.href)}">${t('Open tool')}</a>
+        <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
+      </div>
+    </div>`;
+  playSfx('whisper'); // same airy elevation as the tool details dialog
+  const modal = mountModal(content, { className: 'tool-meta-dialog' });
+  modal.el.setAttribute('aria-labelledby', 'tool-info-title');
+  modal.el.querySelectorAll('.meta-dialog-close').forEach(b => b.addEventListener('click', () => modal.close()));
+  modal.el.querySelector('.meta-dialog-open')?.addEventListener('click', () => modal.close());
 }
 
 function cardMarkup(
@@ -1637,7 +1748,7 @@ function cardMarkup(
         </div>
         <div class="gtile-actions">
           <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: tool.name }) : t('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
-          ${unavailable ? '' : `<button type="button" class="gtile-iconbtn gtile-pin${isPinned ? ' is-pinned' : ''}" data-pin="${escape(tool.id)}" aria-pressed="${isPinned}" title="${escape(isPinned ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(isPinned ? t('Remove {name} from offline', { name: tool.name }) : t('Keep {name} available offline', { name: tool.name }))}">${PIN_ICON}</button>`}
+          ${unavailable ? '' : pinButtonHtml(tool, isPinned)}
           <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
           ${uHistoryBtn}
         </div>
@@ -1831,7 +1942,7 @@ function cardMarkup(
       </div>
       <div class="gtile-actions">
         <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: tool.name }) : t('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
-        ${unavailable ? '' : `<button type="button" class="gtile-iconbtn gtile-pin${isPinned ? ' is-pinned' : ''}" data-pin="${escape(tool.id)}" aria-pressed="${isPinned}" title="${escape(isPinned ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(isPinned ? t('Remove {name} from offline', { name: tool.name }) : t('Keep {name} available offline', { name: tool.name }))}">${PIN_ICON}</button>`}
+        ${unavailable ? '' : pinButtonHtml(tool, isPinned)}
         <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
         ${historyBtn}
       </div>

@@ -632,6 +632,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // render pill. Mirrors renderActions: the default action set includes 'save',
   // and an explicit empty actions list (opted-out file utilities) excludes it.
   const canSaveSession = (tool.manifest.render.actions ?? ['copy', 'download', 'save']).includes('save');
+  // An on-device transform tool (export:false with an explicit empty actions list,
+  // or no inputs) gets an EMPTY popup body from renderActions — so don't emit the
+  // Export pill or the overlay shell at all; a header that expands to nothing
+  // reads as broken chrome.
+  const exportUiEmpty = noExport
+    && ((Array.isArray(tool.manifest.render.actions) && tool.manifest.render.actions.length === 0)
+      || !hasInputs);
   const canvasLayout = tool.manifest.render.layout === 'canvas';
   // The WYSIWYG "editor" layout: a chromeless full-canvas surface (no input
   // sidebar) that KEEPS the fixed render canvas + the full render/export
@@ -822,7 +829,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
                style="width: ${nativeW}px; height: ${nativeH}px;"></div>
         </div>`}
       </div>
-      ${!hideSidebar ? `
+      ${!hideSidebar && !exportUiEmpty ? `
         <div class="render-pill" id="render-pill" role="group" aria-label="${escape(t('Export and save'))}">
           <button type="button" class="render-pill-btn render-pill-get" id="render-fab" data-sfx="hydraulicOpen" aria-label="${escape(t('Export options'))}">
             <svg class="render-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>

@@ -1470,13 +1470,52 @@ a.gtile-name:focus-visible::after {
 .gtile-fav.is-fav { color: hsl(var(--primary)); }
 .gtile-fav.is-fav svg { fill: hsl(var(--primary)); }
 .gtile-fav.is-fav:hover { color: hsl(var(--primary)); }
-/* "Available offline" (pin) toggle — same on-state treatment as the star. While
-   a pin/unpin is in flight the button dims and ignores further clicks (the JS
-   also busy-guards, this is just the visual). */
+/* "Available offline" — a three-layer download button. At rest a download glyph;
+   while the pin's fetches are in flight (.is-busy) the glyph shrinks under a
+   spinning progress arc; once pinned (.is-pinned) an accent-filled circled tick
+   takes over — the "works offline" mark the tooltip describes. On the completing
+   click only, the JS adds .is-celebrating so the tick pops + draws in (the class
+   is one-shot, so re-renders show the settled tick without replaying it). All
+   animation dies under both reduced-motion paths via base.css's global kills;
+   every state still reads statically. */
+.gtile-pin { position: relative; }
+.gtile-pin .pin-layer {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity .18s, transform .18s;
+}
+.gtile-pin .pin-ring,
+.gtile-pin .pin-done { opacity: 0; transform: scale(.6); }
+.gtile-pin.is-busy { pointer-events: none; }
+.gtile-pin.is-busy .pin-dl { opacity: .35; transform: scale(.7); }
+.gtile-pin.is-busy .pin-ring { opacity: 1; transform: none; }
+.gtile-pin.is-busy .pin-ring svg {
+  /* r=9 circle, circumference ≈ 56.5 — a ~70% arc that spins while fetching */
+  stroke-dasharray: 40 16.55;
+  transform-origin: 50% 50%;
+  animation: pin-spin .9s linear infinite;
+}
+@keyframes pin-spin { to { transform: rotate(360deg); } }
+.gtile-pin.is-pinned:not(.is-busy) .pin-dl { opacity: 0; transform: scale(.6); }
+.gtile-pin.is-busy .pin-done { opacity: 0; }
+.gtile-pin.is-pinned:not(.is-busy) .pin-done { opacity: 1; transform: none; }
 .gtile-pin.is-pinned { color: hsl(var(--primary)); }
-.gtile-pin.is-pinned svg { fill: hsl(var(--primary)); }
 .gtile-pin.is-pinned:hover { color: hsl(var(--primary)); }
-.gtile-pin.is-busy { opacity: .55; pointer-events: none; }
+/* Bold accent tick-in-a-circle: the circle fills with the accent, the tick
+   strokes in the surface colour on top of it. */
+.gtile-pin .pin-done svg circle { fill: hsl(var(--primary)); stroke: hsl(var(--primary)); }
+.gtile-pin .pin-done svg path { stroke: hsl(var(--primary-foreground)); fill: none; }
+/* Completion flourish: circle pops in, tick draws itself. */
+.gtile-pin.is-celebrating .pin-done svg circle { animation: pin-pop .45s cubic-bezier(.34,1.56,.64,1); transform-origin: 50% 50%; }
+.gtile-pin.is-celebrating .pin-done svg path {
+  stroke-dasharray: 12;
+  animation: pin-tick .3s ease-out .18s backwards;
+}
+@keyframes pin-pop { from { transform: scale(.3); } }
+@keyframes pin-tick { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
 
 /* Over a preview image the muted theme-token glyphs above vanish on dark/busy
    artwork. When a preview sits behind them (:has(.gtile-hero) — not the empty
@@ -1522,18 +1561,22 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile
 .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav,
 .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav:hover { color: #fff; }
 .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav svg { fill: #fff; }
-/* Pinned over a preview: same solid-white on-state as the star (see above). */
+/* Pinned over a preview: white-filled circle + dark tick, same "solid white
+   on-state" idea as the star — the accent fill of the base rule would vanish on
+   dark artwork. */
 .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned,
 .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned:hover { color: #fff; }
-.tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned svg { fill: #fff; }
+.tool-masonry .gtile.gtile--has-preview .gtile-pin .pin-done svg circle { fill: #fff; stroke: #fff; }
+.tool-masonry .gtile.gtile--has-preview .gtile-pin .pin-done svg path { stroke: #16241d; }
 /* Previews hidden: restore the brand-green on-state (same reasoning as the
    iconbtn restore above — the artwork the white was for is gone). */
 html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav,
 html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav:hover,
 html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned,
 html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned:hover { color: hsl(var(--primary)); }
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav svg,
-html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin.is-pinned svg { fill: hsl(var(--primary)); }
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-fav.is-fav svg { fill: hsl(var(--primary)); }
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin .pin-done svg circle { fill: hsl(var(--primary)); stroke: hsl(var(--primary)); }
+html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile-pin .pin-done svg path { stroke: hsl(var(--primary-foreground)); }
 
 .gtile--unavailable { opacity: 0.6; }
 
