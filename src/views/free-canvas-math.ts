@@ -215,9 +215,15 @@ export function selectionAABB(boxes: Box[], indices: number[], cfg: BoxFieldConf
   return { ...acc, w: acc.maxX - acc.minX, h: acc.maxY - acc.minY };
 }
 
-/** Topmost box index under a native point, honouring rotation. -1 if none. */
-export function hitTest(boxes: Box[], px: number, py: number, cfg: BoxFieldConfig): number {
+/**
+ * Topmost box index under a native point, honouring rotation. -1 if none.
+ * `skip` excludes a box from hit-testing entirely (the click falls through to
+ * whatever is below) — the sequence editor passes "hidden at the playhead", so
+ * a user can only ever select what they can currently see.
+ */
+export function hitTest(boxes: Box[], px: number, py: number, cfg: BoxFieldConfig, skip?: (i: number) => boolean): number {
   for (let i = boxes.length - 1; i >= 0; i--) {
+    if (skip && skip(i)) continue;
     const r = boxRect(boxes[i], cfg);
     const c = rectCentre(r);
     // Rotate the point into the box's local (unrotated) frame.
@@ -227,12 +233,13 @@ export function hitTest(boxes: Box[], px: number, py: number, cfg: BoxFieldConfi
   return -1;
 }
 
-/** Indices whose AABB intersects a native marquee rect {x,y,w,h}. */
-export function marqueeHit(boxes: Box[], rect: MarqueeRect, cfg: BoxFieldConfig): number[] {
+/** Indices whose AABB intersects a native marquee rect {x,y,w,h}. `skip` as in hitTest. */
+export function marqueeHit(boxes: Box[], rect: MarqueeRect, cfg: BoxFieldConfig, skip?: (i: number) => boolean): number[] {
   const mx1 = Math.min(rect.x, rect.x + rect.w), mx2 = Math.max(rect.x, rect.x + rect.w);
   const my1 = Math.min(rect.y, rect.y + rect.h), my2 = Math.max(rect.y, rect.y + rect.h);
   const out: number[] = [];
   for (let i = 0; i < boxes.length; i++) {
+    if (skip && skip(i)) continue;
     const a = boxAABB(boxes[i], cfg);
     if (a.maxX >= mx1 && a.minX <= mx2 && a.maxY >= my1 && a.minY <= my2) out.push(i);
   }

@@ -30,7 +30,20 @@ import type { InputValue } from '../../../../engine/src/inputs.js';
 export interface CanvasCommitEl extends HTMLElement {
   /** Commit `id`→`value` to the runtime that owns THIS canvas (1:1, never fanned). */
   __lollyCommit?: (id: string, value: InputValue) => void;
+  /**
+   * Re-run `id`'s CURRENT runtime value through onInput, with no undo-history
+   * entry. For canvas pollers waiting on an async extra (e.g. redact's PDF page
+   * previews): a poller that re-commits a value it captured at paint time can
+   * overwrite an edit or undo that landed in the rAF gap before repaint, and
+   * its commit coalesces into (and silently rewrites) the user's history entry.
+   * The nudge reads the live value at tick time instead, so it is always a
+   * no-op on the model and only re-derives hook extras.
+   */
+  __lollyNudge?: (id: string) => void;
 }
+
+/** mountTool installs the history-free setter on its runtime (views/tool.ts). */
+type NudgeRuntime = Runtime & { setInputNoHistory?: Runtime['setInput'] };
 
 /**
  * Bind `canvasEl` to `runtime` so an interactive tool script mounted inside it
@@ -41,4 +54,11 @@ export interface CanvasCommitEl extends HTMLElement {
 export function attachCanvasCommit(canvasEl: CanvasCommitEl, runtime: Runtime): void {
   canvasEl.dataset.lollyCanvas = '';
   canvasEl.__lollyCommit = (id, value) => { void runtime.setInput(id, value); };
+  canvasEl.__lollyNudge = (id) => {
+    const cur = runtime.getModel().find((i) => i.id === id);
+    if (!cur) return;
+    // Resolved at call time: mountTool assigns setInputNoHistory after mount.
+    const set = (runtime as NudgeRuntime).setInputNoHistory ?? runtime.setInput;
+    void set(cur.id, cur.value);
+  };
 }

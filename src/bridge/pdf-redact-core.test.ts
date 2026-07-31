@@ -98,30 +98,31 @@ test('collectPages renders in order and reports truncation against the cap', asy
   const seen: number[] = [];
   const full = await collectPages(3, 40, async (i) => { seen.push(i); return i * 10; });
   assert.deepEqual(seen, [0, 1, 2]);
-  assert.deepEqual(full, { pages: [0, 10, 20], truncated: false });
+  assert.deepEqual(full, { pages: [0, 10, 20], truncated: false, failed: [] });
 
   const capped = await collectPages(5, 2, async (i) => i);
-  assert.deepEqual(capped, { pages: [0, 1], truncated: true });
+  assert.deepEqual(capped, { pages: [0, 1], truncated: true, failed: [] });
 
   // count == maxPages is NOT truncated — nothing was left behind.
   const exact = await collectPages(2, 2, async (i) => i);
-  assert.deepEqual(exact, { pages: [0, 1], truncated: false });
+  assert.deepEqual(exact, { pages: [0, 1], truncated: false, failed: [] });
 });
 
-test('collectPages SKIPS a page whose render throws, keeping the rest', async () => {
+test('collectPages SKIPS a page whose render throws, keeping the rest and NAMING the skip', async () => {
   const out = await collectPages(4, 40, async (i) => {
     if (i === 1) throw new Error('broken page');
     return { page: i + 1 };
   });
   assert.deepEqual(out.pages.map((p) => p.page), [1, 3, 4]);
   assert.equal(out.truncated, false);
+  assert.deepEqual(out.failed, [2], 'the skipped page is reported, 1-based');
 });
 
 test('collectPages never renders past the cap, even when earlier pages fail', async () => {
   const seen: number[] = [];
   const out = await collectPages(10, 3, async (i) => { seen.push(i); throw new Error('all broken'); });
   assert.deepEqual(seen, [0, 1, 2]); // the cap bounds WORK, not successes
-  assert.deepEqual(out, { pages: [], truncated: true });
+  assert.deepEqual(out, { pages: [], truncated: true, failed: [1, 2, 3] });
 });
 
 // ─── grayscale ────────────────────────────────────────────────────────────────

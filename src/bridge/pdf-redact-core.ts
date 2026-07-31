@@ -43,20 +43,23 @@ export function clampMaxPages(v: unknown): number {
 /**
  * Drive the per-page loop of host.pdf.pages: run `renderOne` for the first
  * `maxPages` of `count` pages, SKIPPING any page whose render throws — one
- * broken page must not kill the whole preview. `truncated` reports that the
- * document has more pages than the cap allowed.
+ * broken page must not kill the whole preview. A skipped page is never silent:
+ * its 1-based number lands in `failed` so the caller can say which pages have
+ * no preview. `truncated` reports that the document has more pages than the
+ * cap allowed.
  */
 export async function collectPages<T>(
   count: number,
   maxPages: number,
   renderOne: (index: number) => Promise<T>,
-): Promise<{ pages: T[]; truncated: boolean }> {
+): Promise<{ pages: T[]; truncated: boolean; failed: number[] }> {
   const limit = Math.min(count, maxPages);
   const pages: T[] = [];
+  const failed: number[] = [];
   for (let i = 0; i < limit; i++) {
-    try { pages.push(await renderOne(i)); } catch { /* skipped — the contract */ }
+    try { pages.push(await renderOne(i)); } catch { failed.push(i + 1); }
   }
-  return { pages, truncated: count > maxPages };
+  return { pages, truncated: count > maxPages, failed };
 }
 
 /** A pixel-space rectangle, integer coordinates, ready for fillRect. */
