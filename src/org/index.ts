@@ -35,6 +35,7 @@ import { setToolInputPolicies, clearInputPolicies, setInputPolicyFailClosed } fr
 import type { InputPolicy } from '../lib/input-policy.ts';
 import { registerShareSection } from '../lib/share-sections.ts';
 import { setExportPolicy } from '../lib/export-policy.ts';
+import { setPreflightGoverned } from '../lib/preflight-policy.ts';
 import { registerApprovalOpener } from '../lib/approval-request.ts';
 import { registerSessionSource } from '../lib/session-source.ts';
 import { createInstanceSessionSource } from './session-source.ts';
@@ -93,7 +94,10 @@ export interface OrgConfig {
   session?: Session;
   profilePolicy?: Record<string, ProfileFieldSpec>;
   tools?: Record<string, ToolPolicySpec>;
-  /** Capability flags the caller has on this instance (e.g. 'link.create'). */
+  /** Capability flags the caller has on this instance (e.g. 'link.create',
+   *  'export.download', 'export.request'; 'export.preflight' turns on the
+   *  export-panel prepress card — deployment-governed, default off, see
+   *  lib/preflight-policy.ts). */
   can?: Record<string, boolean>;
   /** Control-plane governance for the shell's per-user feature flags, by flag id:
    *  `default` is applied when the user hasn't chosen; `hidden` suppresses the
@@ -304,9 +308,14 @@ function applyProfilePolicy(config: OrgConfig | null): void {
  * which is null in that case anyway.
  */
 function applyExportPolicy(config: OrgConfig | null, failClosed = false): void {
-  if (failClosed) { setExportPolicy({ canDownload: false, canRequestApproval: true, chains: {} }); return; }
-  if (!config) { setExportPolicy(undefined); return; }
+  if (failClosed) { setExportPolicy({ canDownload: false, canRequestApproval: true, chains: {} }); setPreflightGoverned(false); return; }
+  if (!config) { setExportPolicy(undefined); setPreflightGoverned(false); return; }
   const can = config.can ?? {};
+  // The export-panel preflight card is deployment-governed, default OFF — it
+  // exists only where an organisation runs a real print workflow (see the
+  // governance note in views/export-preflight.ts). Enterprise capability, not
+  // a personal toggle: it deliberately has no profile feature-flag entry.
+  setPreflightGoverned(can['export.preflight'] === true);
   const chains: Record<string, string> = {};
   for (const [toolId, spec] of Object.entries(config.tools ?? {})) {
     if (spec?.approvalChain) chains[toolId] = spec.approvalChain;
@@ -579,4 +588,5 @@ export function _resetOrgForTests(): void {
   clearInputPolicies();
   setInputPolicyFailClosed(null);
   setExportPolicy(undefined);
+  setPreflightGoverned(false);
 }

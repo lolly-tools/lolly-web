@@ -38,6 +38,7 @@
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
+import { preflightGoverned } from '../lib/preflight-policy.ts';
 import type { Count, Finding, PreflightReport } from '@lolly/engine';
 
 // ─── The view model (pure — this is the tested half) ────────────────────────
@@ -230,7 +231,8 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
 // ─── DOM ────────────────────────────────────────────────────────────────────
 
 /**
- * The card's static markup, assembled with the rest of the panel.
+ * The card's static markup, assembled with the rest of the panel — or '' when
+ * the deployment hasn't enabled the preflight surface (see setPreflightGoverned).
  *
  * Real `<details>`/`<summary>`, reusing the shared `.section-card` box and the
  * canonical `.section-card-head`/`.section-card-icon` anatomy from
@@ -238,6 +240,8 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
  * say, so the panel never shows a permanently empty header.
  */
 export function preflightRowHtml(): string {
+  // Deployment-governed, default off — see lib/preflight-policy.ts for why.
+  if (!preflightGoverned()) return '';
   return `
       <details class="section-card export-preflight" data-preflight-section style="display:none">
         <summary class="section-card-head preflight-head">${icon('checklist', { className: 'section-card-icon' })}<span>${escape(t('Before you export'))}</span><span class="preflight-verdict" data-preflight-verdict></span></summary>
