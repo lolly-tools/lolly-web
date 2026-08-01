@@ -1080,13 +1080,33 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         // card's picture for the instant before a new one decodes.
         const slug = (item as HTMLElement | null)?.dataset.capShot;
         if (mShot && mImg) {
+          mShot.classList.remove('is-dark-shot');
           if (slug) {
-            mImg.src = `/info/shots/${slug}.svg`;
+            const light = `/info/shots/${slug}.svg`;
+            // Under any non-light theme (dark, brand) prefer the dark twin the
+            // docs pipeline captured — `<slug>.dark.svg`. Not every shot has one
+            // (a light-only recipe like auth-url-render, whose bare canvas has no
+            // chrome to theme), so a one-shot onerror falls back to the light
+            // file — which also flips the frame pad back, so a light image is
+            // never left sitting on the dark pad meant for a dark capture.
+            mImg.onerror = () => {
+              mImg.onerror = null;
+              mShot.classList.remove('is-dark-shot');
+              mImg.src = light;
+            };
+            if (currentTheme() !== 'light') {
+              mShot.classList.add('is-dark-shot');
+              mImg.src = `/info/shots/${slug}.dark.svg`;
+            } else {
+              mImg.onerror = null;
+              mImg.src = light;
+            }
             // The shot illustrates prose that is right beside it, so a described
             // alt would be read twice. Name what it is, and let the list speak.
             mImg.alt = t('{title} — screenshot', { title });
             mShot.hidden = false;
           } else {
+            mImg.onerror = null;
             mImg.removeAttribute('src');
             mShot.hidden = true;
           }

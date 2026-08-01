@@ -134,15 +134,37 @@ test('every card screenshot resolves to a committed file', () => {
   assert.deepEqual(missing, [], `card screenshots that do not exist: ${missing.join(', ')}`);
 });
 
-test('card screenshots use the committed light variant, never .dark', () => {
-  // The pipeline can emit `<slug>.dark.svg`, but those are NOT committed — a
-  // dark slug resolves only on the machine that generated it and 404s
-  // everywhere else. The dialog frames the light shot on its own light surface
-  // instead; see the `shot` docs in capabilities-data.ts.
+test('a card`s `shot` is the base slug, never a variant suffix', () => {
+  // `shot` names the base slug; the dialog derives the theme variant itself by
+  // appending `.dark` under a dark/brand theme (views/dashboard.ts). A slug that
+  // already carried `.dark` or a locale would be doubled into a 404.
   for (const c of allCards) {
     if (!c.shot) continue;
-    assert.doesNotMatch(c.shot, /\.dark$/, `card "${c.title}" references a dark-variant shot, which is not committed`);
+    assert.doesNotMatch(c.shot, /\.(dark|svg|png|jpg)$/, `card "${c.title}" — \`shot\` must be the bare slug, not "${c.shot}"`);
   }
+});
+
+// Shots whose recipe is light-only ON PURPOSE — no `dark=1`, so no dark twin
+// exists and the dialog falls back to the light capture under a dark theme.
+// Keep this list tiny and reasoned: an entry is a promise that the shot has no
+// chrome worth theming (auth-url-render is a bare, chromeless tool canvas).
+const LIGHT_ONLY_SHOTS = new Set(['auth-url-render']);
+
+test('every card shot has a committed dark twin, or is a documented light-only shot', () => {
+  // The dialog prefers `<slug>.dark.svg` in dark/brand themes. A referenced slug
+  // that silently lacks a dark twin would fall back to a LIGHT capture on a dark
+  // pad — visually wrong and easy to miss. So every referenced slug must EITHER
+  // have a committed dark twin OR be an intentional entry in LIGHT_ONLY_SHOTS.
+  const dir = new URL('../../public/info/shots/', import.meta.url);
+  const problems: string[] = [];
+  for (const c of allCards) {
+    if (!c.shot) continue;
+    const hasDark = existsSync(new URL(`${c.shot}.dark.svg`, dir));
+    const allowed = LIGHT_ONLY_SHOTS.has(c.shot);
+    if (!hasDark && !allowed) problems.push(`${c.title} → ${c.shot} (no dark twin, not in LIGHT_ONLY_SHOTS)`);
+    if (hasDark && allowed) problems.push(`${c.title} → ${c.shot} (in LIGHT_ONLY_SHOTS but a dark twin exists — drop it from the list)`);
+  }
+  assert.deepEqual(problems, [], `dark-twin coverage: ${problems.join('; ')}`);
 });
 
 test('the search haystack survives tag-stripping', () => {

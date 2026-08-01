@@ -756,10 +756,12 @@
 }
 .dash-cap-modal .dash-cap-feat dd strong { color: hsl(var(--foreground)); font-weight: 650; }
 
-/* The screenshot pane. Framed on its own LIGHT surface in both themes: the
-   committed captures are light-theme vectors (the .dark.svg variants the
-   pipeline can emit are not committed), so a dark frame around a light image
-   would read as a rendering fault rather than a deliberate frame. */
+/* The screenshot pane. The image sits on a pad that MATCHES the capture shown:
+   a light shot on white, a dark shot on the theme background — because the pad
+   is really the shot's own bezel, and a light image on a dark pad (or the
+   reverse) reads as a rendering fault rather than a frame. Which capture is
+   shown is decided in JS by theme, with `.is-dark-shot` set when the dark twin
+   is used (and cleared on the fallback to a light-only shot). */
 .dash-cap-modal-shot {
   margin: 0; display: flex; flex-direction: column; gap: .55rem;
   padding: 1.25rem 1.35rem 1.5rem;
@@ -772,9 +774,12 @@
   max-height: min(62vh, 560px); object-fit: contain; object-position: top center;
   border-radius: calc(var(--radius) * .9);
   border: 1px solid hsl(var(--border));
-  background: #fff;                       /* see the light-surface note above */
+  background: #fff;                       /* light capture → white bezel */
   box-shadow: 0 6px 20px hsl(0 0% 0% / .1);
 }
+/* Dark twin shown: the capture carries dark chrome, so the bezel follows the
+   theme background instead of white. */
+.dash-cap-modal-shot.is-dark-shot img { background: hsl(var(--background)); }
 .dash-cap-modal-shot figcaption {
   color: hsl(var(--muted-foreground));
   font-size: calc(.68rem * var(--a11y-fs)); line-height: 1.4;
