@@ -2374,6 +2374,14 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return;
+    // A closed <details> still LAYS OUT its content — Chrome skips it at paint time
+    // via ::details-content, which computed style does not expose (display, visibility
+    // and content-visibility all read "visible" on the hidden subtree, and it reports a
+    // real getBoundingClientRect). So the walker drew it: the export preflight card on
+    // /info/authoring-tools rendered its collapsed Format/Size rows straight through
+    // the buttons below it. `content-visibility: hidden` set by an author is the same
+    // class of skip, and is caught here too.
+    if (isPaintSkipped(el, style)) return;
     const opacity = parseFloat(style.opacity ?? '1');
     if (opacity === 0) return;
 
@@ -3974,6 +3982,30 @@ function establishesAbsContainingBlock(cs: CSSStyleDeclaration): boolean {
   const cv = s.contentVisibility;
   if (cv === 'auto' || cv === 'hidden') return true;
   return false;
+}
+
+/**
+ * Does the browser skip painting this element even though its computed style says it
+ * is visible? Two cases, both of which lay out normally and both of which the walker
+ * would otherwise draw:
+ *
+ *   - a subtree inside a CLOSED <details> (excluding its own <summary>, which paints)
+ *   - `content-visibility: hidden`, whose subtree is laid out but never painted
+ *
+ * checkVisibility() knows about both, but its `checkOpacity`/`checkVisibilityCSS`
+ * options overlap gates the walk already applies more precisely (an opacity-0 element
+ * is dropped a line above, and the walker's own opacity handling is richer), so the
+ * DOM answer is used only as a cross-check on the two cases above.
+ */
+function isPaintSkipped(el: Element, style: CSSStyleDeclaration): boolean {
+  if (style.contentVisibility === 'hidden') return true;
+  const details = el.closest('details:not([open])');
+  // closest() matches the element itself: the <details> box is painted (it is the
+  // card), only its non-summary CONTENTS are skipped.
+  if (!details || details === el) return false;
+  // The summary is the part a closed <details> DOES paint — as is anything inside it.
+  const summary = details.querySelector(':scope > summary');
+  return !(summary && summary.contains(el));
 }
 
 // Resolve a CSS generated-content pseudo-element (::before/::after) into a drawable
@@ -5896,6 +5928,14 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
 
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return;
+    // A closed <details> still LAYS OUT its content — Chrome skips it at paint time
+    // via ::details-content, which computed style does not expose (display, visibility
+    // and content-visibility all read "visible" on the hidden subtree, and it reports a
+    // real getBoundingClientRect). So the walker drew it: the export preflight card on
+    // /info/authoring-tools rendered its collapsed Format/Size rows straight through
+    // the buttons below it. `content-visibility: hidden` set by an author is the same
+    // class of skip, and is caught here too.
+    if (isPaintSkipped(el, style)) return;
     const elOpacity = parseFloat(style.opacity ?? '1');
     if (elOpacity === 0) return;
 

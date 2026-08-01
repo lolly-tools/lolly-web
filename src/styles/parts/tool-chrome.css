@@ -805,6 +805,110 @@
   color: hsl(var(--muted-foreground));
 }
 
+/* Tier 3.6 — "Cost, worked out from your rate card" (views/cost-panel.ts). Sits
+   after the preflight card (it consumes preflight's counts) and above Download.
+   Chrome only: it carries data-export-hide and must never move a pixel of the
+   export. A real <details>, same box + head anatomy as the preflight card. There
+   is no money hue: figures read in the foreground colour, the hedge in muted. */
+.export-cost > summary {
+  list-style: none;
+  cursor: pointer;
+  gap: 7px;
+}
+.export-cost > summary::-webkit-details-marker { display: none; }
+.export-cost > summary:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: calc(var(--radius) * 0.75);
+}
+.cost-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+  font-size: calc(12px * var(--a11y-fs));
+  line-height: 1.45;
+}
+/* Rule 1 body, and the suppressed reason: plain reading matter, no figure. */
+.cost-note {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+}
+/* Reported speech (§5): the file's claims, set apart from every fact and figure. */
+.cost-source {
+  margin: 0;
+  font-size: calc(11px * var(--a11y-fs));
+  font-style: italic;
+  color: hsl(var(--muted-foreground));
+}
+/* The answer: the full-coverage total-with-source, or the partial-coverage
+   headline. The total reads in the foreground; the "no total" headline is muted,
+   because the honest state there is the absence of a figure, not a figure. */
+.cost-total {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
+}
+.cost-headline {
+  margin: 0;
+  color: hsl(var(--foreground));
+}
+/* The <details> "Show the arithmetic" table — one row per multiplication. */
+.cost-working > summary {
+  cursor: pointer;
+  font-size: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.cost-working-rows {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+.cost-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "line amount" "calc amount";
+  gap: 0 12px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.4);
+}
+.cost-row-line { grid-area: line; color: hsl(var(--foreground)); font-weight: 500; }
+.cost-row-calc {
+  grid-area: calc;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.cost-row-amount {
+  grid-area: amount;
+  align-self: center;
+  text-align: end;
+  color: hsl(var(--foreground));
+  font-variant-numeric: tabular-nums;
+}
+.cost-row.is-adjustment { background: transparent; border-color: hsl(var(--border) / 0.6); }
+/* Rule 6, under every total: the hedge, quiet but always present. */
+.cost-disclaimer {
+  margin: 0;
+  font-size: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+/* The explicit per-device reveal / opt-in actions (§5). Device-local memory only. */
+.cost-reveal {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.5);
+  color: hsl(var(--foreground));
+  font-size: calc(12px * var(--a11y-fs));
+  cursor: pointer;
+}
+.cost-reveal:hover { background: hsl(var(--muted) / 0.8); }
+
 /* .export-cmyk/.export-audio/.export-pdfpass/.export-c2pa/.export-print all
    carry the literal `section-card` class now (component audit rec 7) — the
    box, icon-head and hint-line anatomy they used to restate here four times

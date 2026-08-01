@@ -639,6 +639,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'components/profile-menu.ts': 1,
   'components/profiles-manager.ts': 3,
   'components/progress-toast.ts': 2,
+  // The row list's innerHTML replace, modelled on profiles-manager.ts. Reviewed —
+  // every interpolated value (digest, name, fact line, reported-speech claim,
+  // priced-summary) goes through escape() in rowHtml.
+  'components/rate-cards-manager.ts': 1,
   'components/sound-toggle.ts': 2,
   'components/theme-toggle.ts': 1,
   // The guide dialog's track panel, re-rendered on a tab switch. Its only
@@ -685,6 +689,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/color-lab.ts': 18,
   'views/components-data.ts': 1,
   'views/components.ts': 7,
+  // The cost card's body replace. Reviewed — costBodyHtml (views/cost-panel.ts)
+  // escape()s every interpolated value: line/calc/amount cells, the source and
+  // disclaimer sentences, and the total/headline strings. Rule 6/9's honesty
+  // sentences are t()-sourced, never raw money.
+  'views/cost-panel.ts': 1,
   'views/dashboard.ts': 11,
   'views/deck-editor.ts': 9,
   'views/doc-editor.ts': 1,
@@ -700,7 +709,8 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/pdf-extract.ts': 6,
   'views/pdf-import.ts': 1,
   'views/picker.ts': 27,
-  'views/profile.ts': 21,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) — ids/names escape()d, sizes via fmtBytes, glyphs via icon()
+  'views/profile.ts': 22,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) — ids/names escape()d, sizes via fmtBytes, glyphs via icon()
+                           // +1 2026-08-01: the offline persistence line (syncPersistLine) — both t() strings escape()d, the button markup is static
   'views/projects.ts': 10,
   'views/record-control.ts': 6,
   'views/screen-capture-control.ts': 4,

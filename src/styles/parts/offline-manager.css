@@ -1,15 +1,164 @@
-/* ─── Offline tools download manager (/profile → "Offline tools") ────────────
-   A searchable icon + name list of every tool, each with the same three-layer
-   download → progress → circled-tick button the gallery cards carry
-   (gallery.css's .gtile-pin — duplicated here under .odl-pin because the two
-   sheets are separate lazy chunks; keep the two state machines visually in
-   step when touching either). Sizes shown are the tool FILES measured at pin
-   time (lib/offline-pins.ts PinRecord.bytes) — catalog asset blobs are counted
-   by the Storage section's Asset-cache slice, never double here. */
+/* ─── "Available offline" download manager (/profile) ────────────────────────
+   Two blocks. The PARTS list (.odl-part rows: the app, the catalogue with its
+   tag scoping, guides & docs, the verify deep scan) drives lib/
+   offline-manager.ts, with one shared byte-accurate progress bar and a
+   Download-everything sweep. Below it, the searchable TOOLS list — each with
+   the same three-layer download → progress → circled-tick button the gallery
+   cards carry (gallery.css's .gtile-pin — duplicated here under .odl-pin
+   because the two sheets are separate lazy chunks; keep the two state machines
+   visually in step when touching either). Sizes shown are the tool FILES
+   measured at pin time (lib/offline-pins.ts PinRecord.bytes) — catalog asset
+   blobs are counted by the Storage section's Asset-cache slice, never double
+   here. */
 
 /* Cascade layer: same `views` layer as the other lazy view sheets (order
    declared once in styles/app.css) so priority is load-order independent. */
 @layer views {
+
+/* ── Parts rows ── */
+.odl-parts {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.odl-part {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid hsl(var(--border) / 0.45);
+}
+.odl-part:last-child { border-bottom: none; }
+.odl-part-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.odl-part-name { font-size: calc(13px * var(--a11y-fs)); font-weight: 600; }
+.odl-part-heavy {
+  font-weight: 500;
+  font-size: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  padding: 1px 7px;
+  vertical-align: 1px;
+}
+.odl-part-desc {
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.odl-part-sub {
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.odl-part-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Catalogue tag scoping ── */
+.odl-tagscope { margin: 2px 0; }
+.odl-tagscope summary {
+  cursor: pointer;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--primary));
+  width: fit-content;
+}
+.odl-tagchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0 2px;
+}
+.odl-tagchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  font-size: calc(12px * var(--a11y-fs));
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+}
+.odl-tagchip input { margin: 0; accent-color: hsl(var(--primary)); }
+.odl-tagchip:has(input:checked) {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
+}
+.odl-tagchip-size {
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Sweep header + shared progress bar ── */
+.odl-sweep {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 4px;
+}
+.odl-sweep-size {
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.odl-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 8px 0;
+}
+.odl-progress[hidden] { display: none; }
+.odl-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  overflow: hidden;
+}
+.odl-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: hsl(var(--primary));
+  transition: width 0.2s;
+}
+/* No known total (model files without Content-Length): a full-width shimmer
+   instead of a lying percentage. Dies under reduced motion (base.css kills). */
+.odl-progress-track.is-indeterminate .odl-progress-fill {
+  opacity: 0.55;
+  animation: odl-indet 1.2s ease-in-out infinite alternate;
+}
+@keyframes odl-indet { from { opacity: 0.3; } to { opacity: 0.75; } }
+.odl-progress-text {
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Persistence note + tools sub-heading ── */
+.odl-persist {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.odl-subhead {
+  margin: 18px 0 2px;
+  font-size: calc(14px * var(--a11y-fs));
+}
 
 .odl-head {
   display: flex;

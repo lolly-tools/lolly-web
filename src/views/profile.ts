@@ -52,7 +52,13 @@ import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
 import { pinnedToolBytes, unpinAll, pinTool, unpinTool, pinRecords } from '../lib/offline-pins.ts';
 import type { PinRecord } from '../lib/offline-pins.ts';
-import { prefetchAssetsById } from '../catalog/sync.ts';
+import { prefetchAssetsById, catalogDownloadSummary, catalogScopeSize, downloadCatalogScope } from '../catalog/sync.ts';
+import {
+  fetchPrecacheManifest, fetchInfoManifest, docsFileList,
+  downloadApp, downloadDocs, downloadVerify, recordCatalogDownload,
+  partRecords, removePart, storageHeadroom, persistenceState,
+} from '../lib/offline-manager.ts';
+import type { OfflinePartId, PrecacheManifest, InfoManifest, DownloadProgress, PartState } from '../lib/offline-manager.ts';
 import { toolSupport } from '../capabilities.ts';
 import { derivedMediaSize, resetScrubCache } from '../lib/clip-proxy.ts';
 import { getInstanceBase, setInstanceBase } from '../lib/instance.ts';
@@ -566,7 +572,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </details>
 
       <details class="profile-card profile-collapse" id="offline-section"${startOpen('offline-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Offline tools')}</h2>${COLLAPSE_CHEV}</summary>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Available offline')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body section-card-body" id="offline-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
@@ -1747,6 +1753,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // but counted by the Storage section's Asset-cache slice, never double here. ──
   const offlineDetails = viewEl.querySelector<HTMLDetailsElement>('#offline-section');
   let offlineLoaded = false;
+  // Set by loadOffline's wiring; called from _cleanup so a router view swap
+  // aborts an in-flight offline download instead of orphaning it (a remount
+  // could otherwise start a second concurrent run over the same buckets).
+  let offlineDownloadAbort: (() => void) | null = null;
   async function loadOffline() {
     if (offlineLoaded) return;
     offlineLoaded = true;
@@ -1776,7 +1786,67 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </li>`;
     };
 
+    // Everything the parts rows need up front — all cheap (two small manifest
+    // fetches + the already-synced asset index + IDB reads), all best-effort.
+    const [precache, infoManifest, catSummary, parts, persist] = await Promise.all([
+      fetchPrecacheManifest(),
+      fetchInfoManifest(),
+      catalogDownloadSummary(),
+      partRecords().catch(() => ({} as PartState)),
+      persistenceState(),
+    ]);
+    const sum = (files: readonly { size: number }[]) => files.reduce((n, f) => n + f.size, 0);
+    const plannedBytes: Record<OfflinePartId, number> = {
+      app: precache ? sum(precache.groups.app) : 0,
+      docs: infoManifest ? sum(docsFileList(infoManifest, currentLang())) : 0,
+      verify: precache ? sum(precache.groups.ort) + sum(precache.groups.models) : 0,
+      catalog: catSummary?.totalBytes ?? 0,
+    };
+    const liveVersion = (id: OfflinePartId): string | null =>
+      id === 'docs' ? (infoManifest?.version ?? null) : (precache?.version ?? null);
+
+    interface PartDef { id: OfflinePartId; name: string; desc: string; heavy?: boolean }
+    const partDefs: PartDef[] = [
+      { id: 'app', name: t('The app'), desc: t('Every view, editor and font — so the whole app opens and renders with no connection, not just the pages you have already visited.') },
+      { id: 'catalog', name: t('Catalogue'), desc: t('Brand assets beyond the essentials — logos, art and music your tools can pull in. Narrow it by tag if you only need some of it.') },
+      { id: 'docs', name: t('Guides & docs'), desc: t('The full documentation site in your language, screenshots included.') },
+      { id: 'verify', name: t('Verify deep scan'), desc: t('The on-device watermark scanner for the Verify page. Big — only worth it if you check content credentials away from a connection.'), heavy: true },
+    ];
+
+    const partRowHtml = (p: PartDef): string => `
+      <li class="odl-part" data-part="${p.id}">
+        <div class="odl-part-info">
+          <span class="odl-part-name">${escape(p.name)}${p.heavy ? ` <span class="odl-part-heavy">${t('large download')}</span>` : ''}</span>
+          <span class="odl-part-desc">${escape(p.desc)}</span>
+          ${p.id === 'catalog' && catSummary?.tags.length ? `
+          <details class="odl-tagscope">
+            <summary>${t('Choose by tag')}</summary>
+            <div class="odl-tagchips">${catSummary.tags.map(tg => `
+              <label class="odl-tagchip"><input type="checkbox" value="${escape(tg.tag)}"><span>${escape(tg.tag)}</span><span class="odl-tagchip-size">${fmtBytes(tg.bytes)}</span></label>`).join('')}
+            </div>
+          </details>` : ''}
+          <span class="odl-part-sub" data-part-sub="${p.id}" aria-live="polite"></span>
+        </div>
+        <span class="odl-part-actions">
+          <button type="button" class="btn" data-part-dl="${p.id}">${t('Download')}</button>
+          <button type="button" class="btn-link-danger" data-part-rm="${p.id}" hidden>${t('Remove')}</button>
+        </span>
+      </li>`;
+
     body.innerHTML = `
+      <p class="storage-hint-text">${t('Heading somewhere with no connection? Download what you need and it all keeps working — the app, your tools, the catalogue and the docs. Downloads stay on this device and refresh themselves when you are back online.')}</p>
+      <div class="odl-sweep">
+        <button type="button" id="odl-everything" class="btn">${t('Download everything')}</button>
+        <button type="button" id="odl-cancel" class="btn" hidden>${t('Cancel')}</button>
+        <span class="odl-sweep-size" id="odl-sweep-size"></span>
+      </div>
+      <div class="odl-progress" id="odl-progress" hidden>
+        <div class="odl-progress-track" role="progressbar" aria-label="${escape(t('Offline download progress'))}" aria-valuemin="0" aria-valuemax="100"><div class="odl-progress-fill"></div></div>
+        <span class="odl-progress-text" aria-live="polite"></span>
+      </div>
+      <ul class="odl-parts">${partDefs.map(partRowHtml).join('')}</ul>
+      <p class="odl-persist" id="odl-persist" hidden></p>
+      <h3 class="odl-subhead">${t('Tools')}</h3>
       <p class="storage-hint-text">${t('Download a tool to keep it working with no connection — its template, hooks and fonts are stored on this device. The tick means ready offline.')}</p>
       <div class="odl-head">
         <span class="odl-total" id="odl-total" aria-live="polite"></span>
@@ -1871,9 +1941,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     // Sequential sweep — one spinner walks the list (parallel fetch storms help
     // nobody on the connections this feature exists for). Failures are skipped
-    // and reported as a count; the button doubles as the progress line.
-    allBtn.addEventListener('click', async () => {
-      if (allBtn.disabled) return;
+    // and reported as a count; the button doubles as the progress line. Shared
+    // by the tools-row "Download all" and the section's "Download everything".
+    const sweepTools = async ({ fanfare = true } = {}): Promise<number> => {
+      if (allBtn.disabled) return 0;
       allBtn.disabled = true;
       const queue = tools.filter(tl => !pins[tl.id]);
       let failed = 0;
@@ -1885,12 +1956,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       }
       allBtn.disabled = false;
       allBtn.textContent = t('Download all');
-      if (failed === 0) playSfx('victory');
-      announce(failed
-        ? t('{n} downloads failed — check your connection', { n: failed })
-        : t('All tools are available offline'), { assertive: failed > 0 });
+      if (fanfare) {
+        if (failed === 0) playSfx('victory');
+        announce(failed
+          ? t('{n} downloads failed — check your connection', { n: failed })
+          : t('All tools are available offline'), { assertive: failed > 0 });
+      }
       await refreshCounter();
-    });
+      return failed;
+    };
+    allBtn.addEventListener('click', () => { void sweepTools(); });
 
     noneBtn.addEventListener('click', async () => {
       const sure = await confirmDialog({
@@ -1920,6 +1995,291 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       });
       emptyEl.hidden = shown > 0;
     });
+
+    // ── The parts rows: app / catalogue / docs / verify ─────────────────────
+    let partState: PartState = parts;
+    let controller: AbortController | null = null;
+    // Re-entrancy is decided on this flag, set SYNCHRONOUSLY at runParts entry
+    // — `controller` is only assigned after two awaits (headroom estimate +
+    // confirm dialog), which is exactly the window a double-click exploits.
+    let running = false;
+    // The catalogue row's recorded scope no longer matches the checked chips —
+    // display state only; the record itself is untouched until a download runs.
+    let catalogScopeDirty = false;
+    offlineDownloadAbort = () => controller?.abort();
+    const everythingBtn = body.querySelector<HTMLButtonElement>('#odl-everything')!;
+    const cancelBtn = body.querySelector<HTMLButtonElement>('#odl-cancel')!;
+    const sweepSizeEl = body.querySelector<HTMLElement>('#odl-sweep-size')!;
+    const progWrap = body.querySelector<HTMLElement>('#odl-progress')!;
+    const progTrack = progWrap.querySelector<HTMLElement>('.odl-progress-track')!;
+    const progFill = progWrap.querySelector<HTMLElement>('.odl-progress-fill')!;
+    const progText = progWrap.querySelector<HTMLElement>('.odl-progress-text')!;
+
+    // The current catalogue scope: the checked tag chips, or the whole catalogue.
+    const catalogScope = (): 'all' | string[] => {
+      const picked = [...body.querySelectorAll<HTMLInputElement>('.odl-tagchip input:checked')].map(c => c.value);
+      return picked.length ? picked : 'all';
+    };
+    let catalogPlanned = plannedBytes.catalog;
+
+    // A part is downloadable when its manifest (or index) was reachable. The
+    // dev server ships no dist/precache.json — the rows say so instead of
+    // pretending a download happened.
+    const partAvailable: Record<OfflinePartId, boolean> = {
+      app: !!precache, docs: !!infoManifest, verify: !!precache && plannedBytes.verify > 0, catalog: !!catSummary,
+    };
+    const isStale = (id: OfflinePartId): boolean => {
+      const rec = partState[id];
+      if (!rec) return false;
+      if (id === 'catalog') return catalogScopeDirty;
+      const live = liveVersion(id);
+      return (live !== null && rec.version !== live) || (id === 'docs' && rec.lang !== currentLang());
+    };
+    /** What this part would still download: full size when absent, a token
+     *  slice when downloaded-but-stale (delta re-syncs skip current files), and
+     *  zero when current — so preflights and the sweep price REMAINING work,
+     *  not work already on disk. */
+    const planned = (id: OfflinePartId): number => {
+      const full = id === 'catalog' ? catalogPlanned : plannedBytes[id];
+      if (!partState[id]) return full;
+      return isStale(id) ? Math.round(full / 8) : 0;
+    };
+
+    const syncPartRow = (id: OfflinePartId): void => {
+      const row = body.querySelector<HTMLElement>(`.odl-part[data-part="${id}"]`);
+      if (!row) return;
+      const sub = row.querySelector<HTMLElement>(`[data-part-sub="${id}"]`)!;
+      const dl = row.querySelector<HTMLButtonElement>(`[data-part-dl="${id}"]`)!;
+      const rm = row.querySelector<HTMLButtonElement>(`[data-part-rm="${id}"]`)!;
+      const rec = partState[id];
+      if (!partAvailable[id]) {
+        sub.textContent = t('Not offered by this server');
+        dl.hidden = true;
+        rm.hidden = true;
+        return;
+      }
+      if (rec) {
+        const stale = isStale(id);
+        sub.textContent = stale
+          ? (id === 'catalog' ? t('Selection changed · download to update') : t('Downloaded · update available'))
+          : t('Downloaded · {size} on disk', { size: fmtBytes(rec.bytes) });
+        dl.textContent = stale ? t('Update') : t('Downloaded');
+        dl.disabled = !stale;
+        dl.hidden = false;
+        rm.hidden = false;
+      } else {
+        sub.textContent = fmtBytes(planned(id));
+        dl.textContent = t('Download');
+        dl.disabled = false;
+        dl.hidden = false;
+        rm.hidden = true;
+      }
+    };
+
+    const syncSweepSize = (): void => {
+      // "Everything" = app + catalogue scope + docs + every tool, but NOT the
+      // heavyweight verify row — that stays a stated-size individual opt-in
+      // (a 220 MB surprise inside one button would be dishonest). planned()
+      // prices only REMAINING work, so downloaded-and-current parts cost 0.
+      const remaining = (['app', 'catalog', 'docs'] as const)
+        .filter(id => partAvailable[id])
+        .reduce((n, id) => n + planned(id), 0);
+      sweepSizeEl.textContent = remaining ? t('about {size}', { size: fmtBytes(remaining) }) : '';
+      for (const id of ['app', 'docs', 'verify', 'catalog'] as const) syncPartRow(id);
+    };
+
+    const setBusy = (busy: boolean): void => {
+      everythingBtn.disabled = busy;
+      allBtn.disabled = busy;
+      cancelBtn.hidden = !busy;
+      body.querySelectorAll<HTMLButtonElement>('[data-part-dl],[data-part-rm]').forEach(b => { b.disabled = busy; });
+      // The scope a run downloads is captured at start — freezing the chips
+      // keeps the UI from implying a mid-run change would apply to it.
+      body.querySelectorAll<HTMLInputElement>('.odl-tagchip input').forEach(c => { c.disabled = busy; });
+      progWrap.hidden = !busy;
+      if (!busy) syncSweepSize(); // restore per-row enablement from state
+    };
+
+    const showProgress = (label: string, p: DownloadProgress): void => {
+      const pct = p.total ? Math.min(100, Math.round((p.loaded / p.total) * 100)) : null;
+      progTrack.classList.toggle('is-indeterminate', pct === null);
+      if (pct === null) {
+        progTrack.removeAttribute('aria-valuenow');
+        progFill.style.width = '100%';
+        progText.textContent = t('{label} — {loaded} so far…', { label, loaded: fmtBytes(p.loaded) });
+      } else {
+        progTrack.setAttribute('aria-valuenow', String(pct));
+        progFill.style.width = `${pct}%`;
+        progText.textContent = t('{label} — {loaded} of {total}', { label, loaded: fmtBytes(p.loaded), total: fmtBytes(p.total ?? 0) });
+      }
+    };
+
+    // The erased cast sync's other callers use — the concrete web host
+    // satisfies the structural SyncHost slice at runtime.
+    const syncHost = host as unknown as Parameters<typeof downloadCatalogScope>[0];
+    const partLabel = (id: OfflinePartId): string => partDefs.find(p => p.id === id)?.name ?? id;
+
+    /** Run one part's download; true on success. The caller owns busy state
+     *  and passes the catalogue scope it CAPTURED at run start — re-reading
+     *  the live checkboxes here would let a mid-run change alter what a
+     *  started download means. */
+    const runPart = async (id: OfflinePartId, signal: AbortSignal, scope: 'all' | string[]): Promise<boolean> => {
+      const onProgress = (p: DownloadProgress) => showProgress(partLabel(id), p);
+      try {
+        if (id === 'app' && precache) await downloadApp(precache, { signal, onProgress });
+        else if (id === 'docs' && infoManifest) await downloadDocs(infoManifest, { signal, onProgress });
+        else if (id === 'verify' && precache) await downloadVerify(precache, { signal, onProgress });
+        else if (id === 'catalog') {
+          const res = await downloadCatalogScope(syncHost, scope, { signal, onProgress });
+          await recordCatalogDownload(scope, res.bytes, res.files);
+          catalogScopeDirty = false;
+        } else return false;
+        partState = await partRecords();
+        syncPartRow(id);
+        await refreshCounter();
+        return true;
+      } catch (err) {
+        if (signal.aborted) throw err;
+        host.log('warn', 'Offline part download failed', { part: id, error: String(err) });
+        return false;
+      }
+    };
+
+    /** Preflight + sequential run of several parts behind one progress bar.
+     *  Resolves true only when the run actually completed (with or without
+     *  per-part failures) — false on re-entry, decline, or cancel, so a caller
+     *  chaining more work (the Everything sweep) knows not to continue. */
+    const runParts = async (ids: OfflinePartId[]): Promise<boolean> => {
+      if (running) return false;
+      running = true;   // synchronous — closes the double-click window the two awaits below open
+      try {
+        const want = ids.filter(id => partAvailable[id] && (!partState[id] || isStale(id)));
+        if (!want.length) return true; // nothing to do IS a completed run
+        const scope = catalogScope();
+        const totalPlanned = want.reduce((n, id) => n + planned(id), 0);
+        const room = await storageHeadroom(totalPlanned);
+        if (!room.fits) {
+          const sure = await confirmDialog({
+            title: t('This might not fit'),
+            message: room.free === null
+              ? t('The browser could not say how much space is free. Download anyway?')
+              : t('About {size} to download, but only around {free} of storage looks free. You can narrow the catalogue by tag, or try anyway.', { size: fmtBytes(totalPlanned), free: fmtBytes(room.free) }),
+            confirmLabel: t('Download anyway'),
+          });
+          if (!sure) return false;
+        }
+        controller = new AbortController();
+        setBusy(true);
+        let failed = 0;
+        try {
+          for (const id of want) {
+            if (!await runPart(id, controller.signal, scope)) failed++;
+          }
+        } catch {
+          // Cancelled — everything already fetched stays cached, so the next
+          // run resumes from here. Say so instead of reading as an error.
+          announce(t('Download paused — already-saved files are kept'));
+          return false;
+        } finally {
+          controller = null;
+          setBusy(false);
+        }
+        if (failed === 0) playSfx('victory');
+        announce(failed
+          ? t('{n} downloads failed — check your connection', { n: failed })
+          : t('Saved for offline'), { assertive: failed > 0 });
+        // Downloads may deserve eviction protection now that they hold real bytes.
+        await syncPersistLine();
+        return failed === 0;
+      } finally {
+        running = false;
+      }
+    };
+
+    body.querySelector('.odl-parts')?.addEventListener('click', async e => {
+      const dl = (e.target as HTMLElement).closest<HTMLElement>('[data-part-dl]');
+      if (dl) { await runParts([dl.dataset.partDl as OfflinePartId]); return; }
+      const rm = (e.target as HTMLElement).closest<HTMLElement>('[data-part-rm]');
+      if (!rm || running) return;
+      const id = rm.dataset.partRm as OfflinePartId;
+      const sure = await confirmDialog({
+        title: t('Remove this offline download?'),
+        message: t('{name} is removed from this device. You can download it again any time you are online.', { name: partLabel(id) }),
+        confirmLabel: t('Remove'),
+        danger: true,
+      });
+      if (!sure) return;
+      await removePart(id);
+      partState = await partRecords();
+      syncPartRow(id);
+      syncSweepSize();
+      announce(t('Offline download removed'));
+      await refreshCounter();
+    });
+
+    // Tag chips re-price the catalogue row live (asset-accurate, not tag sums).
+    // Scope drift is tracked on a FLAG, never by deleting the record from the
+    // display state — any partRecords() refresh would silently resurrect a
+    // deleted entry and the row would lie about being current.
+    const normScope = (s: 'all' | string[] | readonly string[] | undefined): string => JSON.stringify(s === undefined ? 'all' : Array.isArray(s) ? [...s].sort() : s);
+    body.querySelector('.odl-tagscope')?.addEventListener('change', async () => {
+      const scope = catalogScope();
+      const size = await catalogScopeSize(scope);
+      if (size) catalogPlanned = size.bytes;
+      catalogScopeDirty = !!partState.catalog && normScope(partState.catalog.tags) !== normScope(scope);
+      syncSweepSize();
+    });
+
+    everythingBtn.addEventListener('click', async () => {
+      if (running) return;
+      // Held disabled across BOTH phases — parts and the tools sweep — so a
+      // second click can't slip in during the sweep and re-announce success.
+      everythingBtn.disabled = true;
+      try {
+        // A declined headroom warning or a mid-run Cancel resolves false: the
+        // tools sweep must NOT start after the user said stop.
+        if (!await runParts(['app', 'catalog', 'docs'])) return;
+        const failed = await sweepTools({ fanfare: false });
+        announce(failed
+          ? t('{n} downloads failed — check your connection', { n: failed })
+          : t('Everything you picked is saved for offline'), { assertive: failed > 0 });
+      } finally {
+        everythingBtn.disabled = false;
+        syncSweepSize();
+      }
+    });
+    cancelBtn.addEventListener('click', () => controller?.abort());
+
+    // Eviction protection: say where downloads stand, and offer the fix — a
+    // re-request from a click is exactly when browsers grant it.
+    const persistEl = body.querySelector<HTMLElement>('#odl-persist')!;
+    const syncPersistLine = async (state?: 'granted' | 'denied' | 'unsupported'): Promise<void> => {
+      const s = state ?? await persistenceState();
+      if (s === 'unsupported') { persistEl.hidden = true; return; }
+      persistEl.hidden = false;
+      persistEl.innerHTML = s === 'granted'
+        ? escape(t('Protected: the browser won’t clear these downloads to free up space.'))
+        : `${escape(t('The browser may clear downloads if the device runs low on space.'))} <button type="button" class="btn" id="odl-protect">${t('Protect downloads')}</button>`;
+      persistEl.querySelector('#odl-protect')?.addEventListener('click', async () => {
+        const granted = await persistenceState(true);
+        await syncPersistLine(granted);
+        announce(granted === 'granted' ? t('Downloads protected') : t('The browser declined — downloads stay best-effort'));
+      });
+    };
+    void syncPersistLine(persist);
+    // Restore the recorded catalogue scope into the chips, so the row reads
+    // consistently on re-open (unchecked chips = 'all', which would otherwise
+    // disagree with a tag-scoped record and misprice the sweep).
+    const recordedTags = partState.catalog?.tags;
+    if (Array.isArray(recordedTags) && recordedTags.length) {
+      for (const c of body.querySelectorAll<HTMLInputElement>('.odl-tagchip input')) {
+        c.checked = recordedTags.includes(c.value);
+      }
+      void catalogScopeSize(recordedTags).then(size => {
+        if (size) { catalogPlanned = size.bytes; syncSweepSize(); }
+      });
+    }
+    syncSweepSize();
   }
   offlineDetails?.addEventListener('toggle', () => { if (offlineDetails!.open) loadOffline(); });
   if (offlineDetails?.open) loadOffline();
@@ -2096,6 +2456,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     openProfileModals.clear();
     openProfileToasts.forEach(el => el.remove());
     openProfileToasts.clear();
+    // Abort any in-flight offline download — a remount would otherwise start a
+    // second concurrent run over the same buckets (the download is resumable,
+    // so aborting loses nothing already fetched).
+    offlineDownloadAbort?.();
   };
 }
 

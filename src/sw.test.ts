@@ -108,16 +108,26 @@ function loadServiceWorker(): Harness {
   };
 }
 
-/** Drive one navigation through the fetch handler and return the served body. */
-async function navigate(h: Harness, url: string): Promise<string | null> {
-  const request = { method: 'GET', url, mode: 'navigate' };
+/** Drive one request through the fetch handler and return the served body.
+ *  Background work handed to waitUntil (cache freshens) is awaited too, so a
+ *  test can assert on its effects. */
+async function drive(h: Harness, url: string, mode: string): Promise<string | null> {
+  const request = { method: 'GET', url, mode };
   // Held on an object, not a `let`: TypeScript's control-flow analysis cannot see
   // the assignment happen inside respondWith, so a local would narrow to `never`.
   const out: { responded: Promise<{ _body: string }> | null } = { responded: null };
-  h.fetchHandler({ request, respondWith: (p: Promise<{ _body: string }>) => { out.responded = p; }, waitUntil: () => {} });
+  const background: Promise<unknown>[] = [];
+  h.fetchHandler({ request, respondWith: (p: Promise<{ _body: string }>) => { out.responded = p; }, waitUntil: (p: Promise<unknown>) => background.push(p) });
   if (!out.responded) return null;   // handler declined → browser handles it (bypass)
-  return (await out.responded)._body;
+  const body = (await out.responded)._body;
+  await Promise.allSettled(background);
+  return body;
 }
+
+/** Drive one navigation through the fetch handler and return the served body. */
+const navigate = (h: Harness, url: string): Promise<string | null> => drive(h, url, 'navigate');
+/** Drive one subresource request (a script/font/wasm fetch, not a navigation). */
+const subresource = (h: Harness, url: string): Promise<string | null> => drive(h, url, 'no-cors');
 
 /** The generation cache the worker is currently writing to. */
 function shellEntry(h: Harness): string | undefined {
@@ -156,11 +166,15 @@ describe('service worker: the app shell key', () => {
       'the offline app must still boot into the app, not into documentation');
   });
 
-  test('/info is passed through to the browser rather than answered by the worker', async () => {
+  test('/info serves network-first and never populates the shell key', async () => {
     const h = loadServiceWorker();
+    h.server.set('/', 'APP_SHELL');
     h.server.set('/info/using.html', 'USING_PAGE');
-    assert.equal(await navigate(h, 'https://lolly.tools/info/using.html'), null,
-      '/info must be bypassed, so the worker never stores or serves it');
+    await navigate(h, 'https://lolly.tools/');
+    assert.equal(await navigate(h, 'https://lolly.tools/info/using.html'), 'USING_PAGE',
+      'online, /info serves the live page');
+    assert.equal(shellEntry(h), 'APP_SHELL',
+      'an /info navigation must leave the shell key untouched');
   });
 
   test('a navigation to a real file is never stored as the shell', async () => {
@@ -196,5 +210,129 @@ describe('service worker: the app shell key', () => {
 
     assert.ok(!h.caches.has('lolly-v11'), 'the poisoned generation must be deleted on activate');
     assert.ok(h.caches.has('lolly-pins'), 'the unversioned pin bucket must survive a generation bump');
+  });
+
+  test('activate keeps every page-owned offline-download bucket', async () => {
+    // The "Available offline" buckets (lib/offline-manager.ts) hold what the
+    // user explicitly downloaded — a SW deploy must never take them back.
+    const h = loadServiceWorker();
+    for (const name of ['lolly-pins', 'lolly-app', 'lolly-ort', 'lolly-info']) h.caches.set(name, new FakeCache());
+    h.caches.set('lolly-v11', new FakeCache());
+
+    await h.activate();
+
+    for (const name of ['lolly-pins', 'lolly-app', 'lolly-ort', 'lolly-info']) {
+      assert.ok(h.caches.has(name), `${name} must survive a generation bump`);
+    }
+    assert.ok(!h.caches.has('lolly-v11'));
+  });
+});
+
+describe('service worker: the offline-download buckets', () => {
+  test('offline, a downloaded /info page serves from lolly-info, per URL', async () => {
+    const h = loadServiceWorker();
+    const info = new FakeCache();
+    info.entries.set('/info/using.html', 'DOWNLOADED_USING_PAGE');
+    info.entries.set('/info/index.html', 'DOWNLOADED_INDEX');
+    h.caches.set('lolly-info', info);
+
+    h.offline.value = true;
+    assert.equal(await navigate(h, 'https://lolly.tools/info/using.html'), 'DOWNLOADED_USING_PAGE');
+    assert.equal(await navigate(h, 'https://lolly.tools/info/'), 'DOWNLOADED_INDEX',
+      'a directory URL must normalise to its index.html key');
+    assert.equal(await navigate(h, 'https://lolly.tools/info/missing.html'), 'Offline',
+      'a page that was never downloaded gets the sentinel, not a wrong page');
+  });
+
+  test('online, a successful /info fetch refreshes an already-downloaded copy in passing', async () => {
+    const h = loadServiceWorker();
+    const info = new FakeCache();
+    info.entries.set('/info/using.html', 'STALE_DOWNLOAD');
+    h.caches.set('lolly-info', info);
+    h.server.set('/info/using.html', 'FRESH_PAGE');
+
+    assert.equal(await navigate(h, 'https://lolly.tools/info/using.html'), 'FRESH_PAGE');
+    assert.equal(info.entries.get('/info/using.html'), 'FRESH_PAGE',
+      'the held copy must track the live site, not freeze at download time');
+  });
+
+  test('online, a page never downloaded is NOT hoarded into lolly-info', async () => {
+    const h = loadServiceWorker();
+    h.server.set('/info/using.html', 'USING_PAGE');
+    await navigate(h, 'https://lolly.tools/info/using.html');
+    assert.ok(!h.caches.get('lolly-info')?.entries.has('/info/using.html'),
+      'only the explicit docs download decides what lives in the bucket');
+  });
+
+  test('/ort is cache-first from lolly-ort and self-populates on first use', async () => {
+    const h = loadServiceWorker();
+    h.server.set('/ort/ort-wasm-simd-threaded.wasm', 'WASM_BYTES');
+
+    assert.equal(await subresource(h, 'https://lolly.tools/ort/ort-wasm-simd-threaded.wasm'), 'WASM_BYTES');
+    h.offline.value = true;
+    assert.equal(await subresource(h, 'https://lolly.tools/ort/ort-wasm-simd-threaded.wasm'), 'WASM_BYTES',
+      'once fetched, the runtime must serve offline from its bucket');
+  });
+
+  test('the whole app group serves offline — not just /assets/: voice, viz-presets, share stubs', async () => {
+    // Regression pin for the review finding that downloadApp filled lolly-app
+    // with /voice/, /viz-presets/, /t/ etc. but no fetch-handler rule ever
+    // read the bucket for those paths — "downloaded" yet unservable.
+    const h = loadServiceWorker();
+    const app = new FakeCache();
+    app.entries.set('/voice/welcome.mp3', 'MP3_BYTES');
+    app.entries.set('/viz-presets/stock.json', 'PRESETS');
+    app.entries.set('/t/qr-code.html', 'SHARE_STUB');
+    h.caches.set('lolly-app', app);
+
+    h.offline.value = true;
+    assert.equal(await subresource(h, 'https://lolly.tools/voice/welcome.mp3'), 'MP3_BYTES');
+    assert.equal(await subresource(h, 'https://lolly.tools/viz-presets/stock.json'), 'PRESETS');
+    assert.equal(await subresource(h, 'https://lolly.tools/t/qr-code.html'), 'SHARE_STUB');
+  });
+
+  test('online, the generic app fallback never intercepts or hoards the network copy', async () => {
+    const h = loadServiceWorker();
+    h.server.set('/viz-presets/stock.json', 'LIVE_PRESETS');
+    assert.equal(await subresource(h, 'https://lolly.tools/viz-presets/stock.json'), 'LIVE_PRESETS');
+    assert.ok(!h.caches.get('lolly-app')?.entries.has('/viz-presets/stock.json'),
+      'only the explicit app download writes the bucket');
+  });
+
+  test('the shell cold-boots from the downloaded app bucket when the generation cache is empty', async () => {
+    const h = loadServiceWorker();
+    const app = new FakeCache();
+    app.entries.set('/index.html', 'DOWNLOADED_SHELL');
+    h.caches.set('lolly-app', app);
+
+    h.offline.value = true;
+    assert.equal(await navigate(h, 'https://lolly.tools/pro'), 'DOWNLOADED_SHELL',
+      'an explicit "download the app" must survive a wiped/fresh CACHE generation');
+  });
+
+  test('offline, an extensionless /info locale URL resolves to its downloaded index.html', async () => {
+    const h = loadServiceWorker();
+    const info = new FakeCache();
+    info.entries.set('/info/de/index.html', 'GERMAN_DOCS_INDEX');
+    h.caches.set('lolly-info', info);
+
+    h.offline.value = true;
+    assert.equal(await navigate(h, 'https://lolly.tools/info/de'), 'GERMAN_DOCS_INDEX',
+      '/info/de (no trailing slash) is how a typed locale URL arrives');
+  });
+
+  test('immutable assets fall back to the pre-downloaded lolly-app bucket', async () => {
+    // A fresh CACHE generation is empty; a user who pre-downloaded the app must
+    // still get every chunk and font offline.
+    const h = loadServiceWorker();
+    const app = new FakeCache();
+    app.entries.set('https://lolly.tools/assets/lazy-view-abc123.js', 'CHUNK');
+    app.entries.set('https://lolly.tools/fonts/Outfit-latin%5Bwght%5D.woff2', 'FONT');
+    h.caches.set('lolly-app', app);
+
+    h.offline.value = true;
+    assert.equal(await subresource(h, 'https://lolly.tools/assets/lazy-view-abc123.js'), 'CHUNK');
+    assert.equal(await subresource(h, 'https://lolly.tools/fonts/Outfit-latin%5Bwght%5D.woff2'), 'FONT',
+      '/fonts/ must have an offline path — before v13 it had no rule at all');
   });
 });
