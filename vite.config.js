@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
-import { resolve, extname } from 'node:path';
-import { existsSync, statSync, readFileSync, cpSync } from 'node:fs';
+import { resolve, extname, relative, join, sep } from 'node:path';
+import { existsSync, statSync, readFileSync, cpSync, readdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 // Repo root is two directories up from shells/web/.
 const repoRoot = resolve(__dirname, '..', '..');
@@ -91,6 +92,83 @@ function serveRepoStatic() {
   };
 }
 
+// Emit dist/precache.json — the enumerable answer to "what IS the whole app?".
+// Vite has no servable manifest of its output (build.manifest is off, and it
+// wouldn't cover publicDir anyway), so until this existed nothing could
+// precache the ~350 lazy chunks: the SW precaches only '/', every other chunk
+// cached organically on first use, and a pinned tool whose editor chunk never
+// loaded online died offline with a reload card. The profile view's
+// "Available offline" manager (src/lib/offline-manager.ts) downloads these
+// groups into the SW's persistent page-owned buckets:
+//
+//   app — index.html + every hashed chunk under /assets/ + the bundled UI
+//         fonts + icons/share stubs. Everything a fully-offline boot of ANY
+//         view needs, minus content that has its own pipeline (below).
+//   ort — the onnxruntime-web runtime files ORT actually loads at scan time
+//         (ort-wasm-*; the ort.*.mjs package entrypoints ship inside the
+//         /assets/ bundle and are never fetched from /ort/). ~95 MB, opt-in.
+//
+// Deliberately NOT listed: /catalog/ + /tools/ (the catalog sync + pin engine
+// own those, with checksums), /info/ (docs build emits its own manifest.json),
+// /models/ (lib/trustmark.ts caches those in IndexedDB itself), sw.js (the
+// browser owns SW lifecycle). Runs at closeBundle, AFTER serveRepoStatic's
+// copies, by scanning the real dist/ output — so it can never drift from what
+// actually shipped. `version` hashes the listing; the manager stores it as its
+// re-sync watermark (new deploy → new hash → "update your download").
+function precacheManifest() {
+  const SKIP = new Set(['catalog', 'tools', 'schemas', 'info', 'sw.js', 'precache.json']);
+  // Content hash for files whose URL does NOT already encode their bytes.
+  // /assets/ chunks are content-hash-named (a change renames them), and the
+  // /ort/ + /models/ binaries are release-versioned and too big to hash every
+  // build — everything else (fonts, icons, share stubs, index.html, voice,
+  // viz-presets) keeps a stable name, so a same-size content change is
+  // invisible to a size compare. The hash is what offline-manager.ts's
+  // cachedMatches uses to catch that.
+  const needsHash = (url) => !url.startsWith('/assets/') && !url.startsWith('/ort/') && !url.startsWith('/models/');
+  const walk = (dir, base) => {
+    const out = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      // Finder droppings and other dotfiles are not app payload (.well-known,
+      // a dot-DIRECTORY with real policy files, stays).
+      if (entry.name.startsWith('.') && entry.name !== '.well-known') continue;
+      const full = join(dir, entry.name);
+      // sep-normalised so the emitted URLs are stable on Windows checkouts too
+      const rel = relative(base, full).split(sep).join('/');
+      if (SKIP.has(rel.split('/')[0])) continue;
+      if (entry.isDirectory()) out.push(...walk(full, base));
+      else if (entry.isFile()) {
+        const url = '/' + rel;
+        const file = { url, size: statSync(full).size };
+        if (needsHash(url)) {
+          file.hash = createHash('sha256').update(readFileSync(full)).digest('base64url').slice(0, 16);
+        }
+        out.push(file);
+      }
+    }
+    return out;
+  };
+  return {
+    name: 'lolly-precache-manifest',
+    apply: 'build',
+    closeBundle() {
+      const outDir = resolve(__dirname, 'dist');
+      if (!existsSync(outDir)) return;
+      const all = walk(outDir, outDir).sort((a, b) => a.url.localeCompare(b.url));
+      const app = all.filter(f => !f.url.startsWith('/ort/') && !f.url.startsWith('/models/'));
+      // Only the files ORT loads from /ort/ at runtime (ort-wasm-*). The other
+      // ort.*.mjs files are package dist entrypoints Vite bundles — dead weight.
+      const ort = all.filter(f => /^\/ort\/ort-wasm-/.test(f.url));
+      // /models/ downloads through lib/trustmark.ts's own IDB path — listed
+      // here ONLY so the verify part can state its true size up front.
+      const models = all.filter(f => f.url.startsWith('/models/'));
+      const version = createHash('sha256')
+        .update(all.map(f => `${f.url}:${f.size}:${f.hash ?? ''}`).join('\n'))
+        .digest('base64url').slice(0, 16);
+      writeFileSync(resolve(outDir, 'precache.json'), JSON.stringify({ version, groups: { app, ort, models } }));
+    },
+  };
+}
+
 // Bake per-brand browser/PWA chrome into index.html at build time. The static
 // theme-color in index.html is SUSE pine (#0c322c); on any OTHER brand (e.g. the
 // blank lolly.art profile) that would wrongly tint the mobile address bar / PWA
@@ -120,7 +198,10 @@ function brandChrome() {
 
 export default defineConfig({
   publicDir: 'public',
-  plugins: [serveRepoStatic(), brandChrome()],
+  // precacheManifest LAST: its closeBundle scans dist/ after serveRepoStatic's
+  // closeBundle has copied catalog/tools/schemas in (it skips those, but the
+  // ordering keeps the scan deterministic either way).
+  plugins: [serveRepoStatic(), brandChrome(), precacheManifest()],
   // The Neurospicy player + video music-bed exporter render ZzFXM songs in a
   // module worker (src/lib/zzfxm-worker.ts, which ESM-imports the engine). Emit
   // it as an ES module so the import graph survives the build unchanged.

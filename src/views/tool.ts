@@ -443,6 +443,12 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
+  // Reached via a link when the boot URL carried ANY tool configuration — a share,
+  // a bookmark, an `?options`/`?full` deep link. The cost panel keys its degrade on
+  // this (money-policy `selectionFromUrl`): a link always opens on counts, and money
+  // is revealed only by an explicit per-device action (§5). A card is NEVER a URL
+  // param, so this can never let a link ORIGINATE a money view — it can only withhold.
+  const reachedViaLink = isFull || urlFlags.size > 0;
   // `?nostage` pre-checks the export panel's "Full page" toggle (HTML export only):
   // the saved page drops the fixed-size canvas frame and fills the whole window.
   const urlNostage = urlFlags.has('nostage');
@@ -1789,7 +1795,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (id) dirtyParams.add(id);
   }
 
-  const actionsApi = renderActions(actionsEl, tool.manifest, runtime, canvasEl, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot);
+  const actionsApi = renderActions(actionsEl, tool.manifest, runtime, canvasEl, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot, reachedViaLink);
 
   // Preview-generation hook — scripts/build-previews.ts calls this to grab a VECTOR
   // SCREENSHOT (SVG) of the mounted canvas for ANY tool, even an export:false utility

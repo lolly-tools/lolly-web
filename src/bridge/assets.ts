@@ -688,7 +688,7 @@ export function createAssetsAPI(db: AssetsDb) {
      * Also prunes metadata for assets no longer in the catalog.
      * Returns { blobs, meta } counts of records deleted.
      */
-    async _pruneStale(currentAssets: AssetMetaRecord[], sessionBlobKeys: Set<string> = new Set()): Promise<{ blobs: number; meta: number }> {
+    async _pruneStale(currentAssets: AssetMetaRecord[], sessionBlobKeys: Set<string> = new Set(), keepIds: Set<string> = new Set()): Promise<{ blobs: number; meta: number }> {
       // All keys that exist at the current catalog version.
       const currentVersionKeys = new Set(
         currentAssets.flatMap(a => a.formats.map(f => `${a.id}:${f.format}:${a.version}`)),
@@ -713,7 +713,29 @@ export function createAssetsAPI(db: AssetsDb) {
         db.getAllKeys('asset-meta'),
       ]);
 
-      const staleBlobs = allBlobKeys.filter(k => !keepBlobKeys.has(k));
+      // keepIds: asset ids whose blobs must survive a catalog version bump —
+      // the offline-download and pinned-tool sets. Version-exact refs would let
+      // the bump prune these blobs BEFORE the idle re-prefetch has fetched the
+      // new version; if that re-fetch then fails (flaky airport wifi is this
+      // feature's home turf), the user's explicit download would be gone. So an
+      // OLD-version blob of a kept id survives exactly until the current-version
+      // copy is actually on device — then it prunes like anything else, so kept
+      // ids don't accumulate one blob per version forever.
+      const presentBlobKeys = new Set(allBlobKeys as string[]);
+      const currentKeyFor = new Map<string, string>();  // `${id}:${format}` → current-version key
+      for (const a of currentAssets) {
+        for (const f of a.formats) currentKeyFor.set(`${a.id}:${f.format}`, `${a.id}:${f.format}:${a.version}`);
+      }
+      const keptById = (k: string): boolean => {
+        for (const id of keepIds) {
+          if (!k.startsWith(`${id}:`)) continue;
+          const idFormat = k.slice(0, k.lastIndexOf(':'));
+          const current = currentKeyFor.get(idFormat);
+          return !current || !presentBlobKeys.has(current) || k === current;
+        }
+        return false;
+      };
+      const staleBlobs = allBlobKeys.filter(k => !keepBlobKeys.has(k) && !(keepIds.size && keptById(k)));
       const staleMeta  = allMetaKeys.filter(k => !validIds.has(k));
 
       if (staleBlobs.length) {

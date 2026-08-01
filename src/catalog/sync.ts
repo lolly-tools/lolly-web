@@ -19,8 +19,9 @@
 
 import { verifyAssetChecksum } from '../bridge/assets.ts';
 import { assertToolIndexIntegrity } from './integrity.ts';
-import { currentLang } from '../i18n.ts';
+import { currentLang, t } from '../i18n.ts';
 import { pinnedAssetIds, refreshPinnedToolFiles } from '../lib/offline-pins.ts';
+import { offlineCatalogScope, resyncOfflineParts } from '../lib/offline-manager.ts';
 import { initInstanceBase, instanceFetch, instancePath } from '../lib/instance.ts';
 
 /** One resolvable file for a catalog asset (an entry in an asset's `formats`).
@@ -30,6 +31,9 @@ interface AssetFormat {
   format: string;
   url: string;
   checksum?: string;
+  /** Byte size stamped by scripts/build-catalog-index.ts — what the offline
+   *  download UI prices tags/scopes with before fetching anything. */
+  size?: number;
 }
 
 /** A catalog asset's stored metadata, as it arrives in /catalog/assets/index.json
@@ -101,7 +105,7 @@ interface SyncHost {
   log(level: string, msg: string, data?: Record<string, unknown>): void;
   assets: {
     _syncFromIndex(assets: AssetMetaRecord[]): Promise<unknown>;
-    _pruneStale(assets: AssetMetaRecord[], sessionRefs: Set<string>): Promise<{ blobs: number; meta: number }>;
+    _pruneStale(assets: AssetMetaRecord[], sessionRefs: Set<string>, keepIds?: Set<string>): Promise<{ blobs: number; meta: number }>;
     _hasBlob(key: string): Promise<boolean>;
     _cacheBlob(key: string, blob: Blob): Promise<unknown>;
   };
@@ -146,7 +150,7 @@ function renderOfflineChip(offline: boolean): void {
     chip.id = 'sbt-offline-chip';
     chip.setAttribute('role', 'status');
     chip.setAttribute('aria-live', 'polite');
-    chip.textContent = 'Offline — showing saved content';
+    chip.textContent = t('Offline — showing saved content');
     chip.style.cssText = [
       'position:fixed', 'left:12px', 'bottom:12px', 'z-index:2147483647',
       'pointer-events:none', 'padding:6px 10px', 'border-radius:999px',
@@ -324,18 +328,23 @@ async function syncAssets(host: SyncHost): Promise<void> {
   // referenced by any saved session (browsed-but-unsaved fetches don't accumulate).
   const sessionRefs = await host.state._getAssetRefs();
   // Assets referenced by a pinned ("available offline") tool count as referenced
-  // too — a pin must survive the browsed-but-unsaved prune, at the CURRENT
-  // catalog version (a version bump re-prefetches below, in syncCorePrefetch).
+  // too — a pin must survive the browsed-but-unsaved prune. Same for the
+  // profile's downloaded catalog scope (tags or 'all'). These go through the
+  // ID-level keep-set, not version-exact refs: version-exact would let a
+  // catalog version bump prune the downloaded blobs BEFORE syncCorePrefetch's
+  // re-fetch has succeeded — the old copy must hold until the new one lands
+  // (_pruneStale reclaims it once the current-version blob is on device).
+  const keepIds = new Set<string>();
   try {
     const pinned = await pinnedAssetIds();
-    if (pinned.size) {
+    const scoped = await offlineScopeFilter();
+    if (pinned.size || scoped) {
       for (const a of index.assets) {
-        if (!pinned.has(a.id)) continue;
-        for (const f of a.formats) sessionRefs.add(`${a.id}:${f.format}:${a.version}`);
+        if (pinned.has(a.id) || scoped?.(a)) keepIds.add(a.id);
       }
     }
   } catch { /* pins unreadable — prune with session refs only */ }
-  const pruned = await host.assets._pruneStale(index.assets, sessionRefs);
+  const pruned = await host.assets._pruneStale(index.assets, sessionRefs, keepIds);
   if (pruned.blobs || pruned.meta) {
     host.log('info', `Pruned stale assets: ${pruned.blobs} blobs, ${pruned.meta} metadata entries`);
   }
@@ -343,11 +352,12 @@ async function syncAssets(host: SyncHost): Promise<void> {
   host.log('info', `Asset catalog synced: ${index.assets.length} assets`);
 }
 
-async function prefetchAsset(host: SyncHost, meta: AssetMetaRecord): Promise<void> {
+async function prefetchAsset(host: SyncHost, meta: AssetMetaRecord, signal?: AbortSignal): Promise<void> {
   for (const fmt of meta.formats) {
+    signal?.throwIfAborted();
     const key = `${meta.id}:${fmt.format}:${meta.version}`;
     if (await host.assets._hasBlob(key)) continue;
-    const resp = await instanceFetch(fmt.url);
+    const resp = await instanceFetch(fmt.url, signal ? { signal } : undefined);
     if (!resp.ok) continue;
     const blob = await resp.blob();
     try {
@@ -359,6 +369,17 @@ async function prefetchAsset(host: SyncHost, meta: AssetMetaRecord): Promise<voi
     }
     await host.assets._cacheBlob(key, blob);
   }
+}
+
+/** The predicate form of the profile's downloaded catalog scope: null when no
+ *  catalog download is recorded, else a filter over index entries. 'all' keeps
+ *  everything; a tag list keeps any asset carrying at least one selected tag. */
+async function offlineScopeFilter(): Promise<((a: AssetMetaRecord) => boolean) | null> {
+  const scope = await offlineCatalogScope().catch(() => null);
+  if (!scope) return null;
+  if (scope === 'all') return () => true;
+  const tags = new Set(scope);
+  return a => Array.isArray(a.tags) && (a.tags as string[]).some(tg => tags.has(tg));
 }
 
 export async function syncCorePrefetch(host: SyncHost): Promise<void> {
@@ -384,9 +405,15 @@ export async function syncCorePrefetch(host: SyncHost): Promise<void> {
     }
     // Pinned ("available offline") tools' asset refs ride the core prefetch, so
     // a catalog version bump re-fetches them at the new version each boot.
+    // The profile's downloaded catalog scope rides it too — same freshness
+    // guarantee for a whole-catalogue (or tag-scoped) download.
     const pinned = await pinnedAssetIds().catch(() => new Set<string>());
-    const wanted = index.assets.filter(a => a.tier === 'core' || pinned.has(a.id));
+    const scoped = await offlineScopeFilter().catch(() => null);
+    const wanted = index.assets.filter(a => a.tier === 'core' || pinned.has(a.id) || scoped?.(a));
     await Promise.allSettled(wanted.map(a => prefetchAsset(host, a)));
+    // Downloaded app/docs/verify parts re-sync on this same idle path when
+    // their manifest watermark moved (a deploy re-downloads only the delta).
+    await resyncOfflineParts().catch(() => {});
   } catch (e) {
     host.log('warn', 'Core prefetch failed', { error: String(e) });
   }
@@ -409,4 +436,125 @@ export async function prefetchAssetsById(host: SyncHost, ids: readonly string[])
   }
   const want = new Set(ids);
   await Promise.allSettled(index.assets.filter(a => want.has(a.id)).map(a => prefetchAsset(host, a)));
+}
+
+/** How the profile's offline section describes the downloadable catalogue
+ *  before anything is fetched: per-tag file counts + byte sizes (from the
+ *  index's format sizes — no network beyond the index itself), plus the
+ *  whole-catalogue total. */
+export interface CatalogDownloadSummary {
+  totalBytes: number;
+  totalAssets: number;
+  tags: Array<{ tag: string; assets: number; bytes: number }>;
+}
+
+/** The asset index for the download surfaces. `fresh` forces a re-fetch —
+ *  downloadCatalogScope uses it so a user action prices and fetches against
+ *  the CURRENT deploy, not whatever this session's boot cached (a mid-session
+ *  deploy would otherwise 404 the old format URLs unrecoverably). The cached
+ *  copy remains the offline fallback. */
+async function loadAssetIndex(fresh = false): Promise<AssetIndex | null> {
+  if (cachedAssetIndex && !fresh) return cachedAssetIndex;
+  try {
+    const resp = await instanceFetch(instancePath(`${CATALOG_BASE}/assets/index.json`));
+    if (!resp.ok) return cachedAssetIndex;
+    cachedAssetIndex = absolutizeAssetUrls(await resp.json() as AssetIndex);
+    return cachedAssetIndex;
+  } catch {
+    return cachedAssetIndex;
+  }
+}
+
+const assetBytes = (a: AssetMetaRecord): number =>
+  a.formats.reduce((n, f) => n + (typeof f.size === 'number' ? f.size : 0), 0);
+
+const scopeFilter = (scope: 'all' | readonly string[]): ((a: AssetMetaRecord) => boolean) => {
+  if (scope === 'all') return () => true;
+  const tags = new Set(scope);
+  return a => Array.isArray(a.tags) && (a.tags as string[]).some(tg => tags.has(tg));
+};
+
+/** Size up one scope over ASSETS (a per-tag sum would double-count an asset
+ *  carrying two selected tags). Null when the index is unreachable. */
+export async function catalogScopeSize(scope: 'all' | readonly string[]): Promise<{ bytes: number; assets: number } | null> {
+  const index = await loadAssetIndex();
+  if (!index) return null;
+  const wanted = index.assets.filter(scopeFilter(scope));
+  return { bytes: wanted.reduce((n, a) => n + assetBytes(a), 0), assets: wanted.length };
+}
+
+/** Size up the downloadable catalogue (null when the index is unreachable). */
+export async function catalogDownloadSummary(): Promise<CatalogDownloadSummary | null> {
+  const index = await loadAssetIndex();
+  if (!index) return null;
+  const byTag = new Map<string, { assets: number; bytes: number }>();
+  let totalBytes = 0;
+  for (const a of index.assets) {
+    const bytes = assetBytes(a);
+    totalBytes += bytes;
+    for (const tag of Array.isArray(a.tags) ? (a.tags as string[]) : []) {
+      const row = byTag.get(tag) ?? { assets: 0, bytes: 0 };
+      row.assets++;
+      row.bytes += bytes;
+      byTag.set(tag, row);
+    }
+  }
+  return {
+    totalBytes,
+    totalAssets: index.assets.length,
+    tags: [...byTag].map(([tag, row]) => ({ tag, ...row })).sort((x, y) => y.bytes - x.bytes),
+  };
+}
+
+/**
+ * Download the catalogue for offline — whole ('all') or scoped to a tag
+ * selection — through the same checksum-verified prefetch as everything else,
+ * with per-asset byte progress and cancellation. Returns the measured size for
+ * the caller to record via offline-manager's recordCatalogDownload (which is
+ * what protects the blobs from the prune and refreshes them each boot).
+ * Throws when any asset fails, so a "downloaded" catalogue is never silently
+ * partial; already-cached blobs skip straight to progress.
+ */
+export async function downloadCatalogScope(
+  host: SyncHost,
+  scope: 'all' | readonly string[],
+  opts: { signal?: AbortSignal; onProgress?: (p: { loaded: number; total: number; done: number; count: number }) => void } = {},
+): Promise<{ bytes: number; files: number }> {
+  const { signal, onProgress } = opts;
+  // A user action prices and fetches against the current deploy — never a
+  // stale boot-time index (see loadAssetIndex).
+  const index = await loadAssetIndex(true);
+  if (!index) throw new Error('catalog download: asset index unreachable');
+  const wanted = index.assets.filter(scopeFilter(scope));
+  const total = wanted.reduce((n, a) => n + assetBytes(a), 0);
+  let loaded = 0;
+  let done = 0;
+  onProgress?.({ loaded, total, done, count: wanted.length });
+  let failures = 0;
+  // Sequential like the pin sweep — parallel fetch storms help nobody on the
+  // connections this feature exists for, and progress reads better.
+  for (const a of wanted) {
+    signal?.throwIfAborted();
+    let landed = false;
+    try {
+      await prefetchAsset(host, a, signal);
+      // prefetchAsset degrades quietly (a 404 or checksum mismatch just skips
+      // that file) — right for an idle boot prefetch, but a DOWNLOAD must not
+      // claim bytes it doesn't hold. Verify every format actually landed.
+      landed = true;
+      for (const f of a.formats) {
+        if (!await host.assets._hasBlob(`${a.id}:${f.format}:${a.version}`)) { landed = false; break; }
+      }
+    } catch (e) {
+      if (signal?.aborted) throw e;
+    }
+    // Only bytes actually held count as loaded — a bar that reaches 100% by
+    // counting failures would contradict the error it's about to throw.
+    if (landed) loaded += assetBytes(a);
+    else failures++;
+    done++;
+    onProgress?.({ loaded, total, done, count: wanted.length });
+  }
+  if (failures) throw new Error(`catalog download: ${failures} of ${wanted.length} assets failed`);
+  return { bytes: total, files: wanted.length };
 }

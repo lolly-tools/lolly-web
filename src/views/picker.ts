@@ -193,7 +193,18 @@ export interface CollectOpts {
  *  widened with the web-only `type: 'image'` slot value and the editTool /
  *  current-tool banner hooks the caller (views/tool.js's openEmbedEditor) wires in. */
 interface PickerOpts {
-  type?: 'vector' | 'raster' | 'video' | 'audio' | 'lottie' | 'palette' | 'tokens' | 'font' | 'image';
+  type?:
+    | 'vector'
+    | 'raster'
+    | 'video'
+    | 'audio'
+    | 'lottie'
+    | 'palette'
+    | 'tokens'
+    | 'font'
+    | 'profile'
+    | 'ratecard'
+    | 'image';
   namespace?: string;
   tags?: string[];
   includeDeprecated?: boolean;

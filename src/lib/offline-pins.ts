@@ -162,11 +162,14 @@ async function pinFile(cache: Cache, url: string, required: boolean): Promise<nu
   return blob.size;
 }
 
-/** Literal /tools/<id>/assets/… references in the tool's own sources. Computed
- *  paths (e.g. 3d's '…/assets/' + model + '.glb') can't be enumerated from the
- *  client, so those tools stay only partially pinned. */
+/** Literal /tools/<id>/assets/… and /tools/<id>/lib/… references in the tool's
+ *  own sources. lib/ matters for the tools that ship vendored libraries (d3's
+ *  d3.min.js, street-map's leaflet bundle) — before it was matched those pins
+ *  only worked offline if the runtime /tools/ cache happened to hold the lib
+ *  from an online open. Computed paths (e.g. 3d's '…/assets/' + model + '.glb')
+ *  can't be enumerated from the client, so those tools stay partially pinned. */
 function localAssetPaths(toolId: string, sources: Array<string | null>): string[] {
-  const re = new RegExp(`/tools/${toolId}/assets/[\\w./-]+`, 'g');
+  const re = new RegExp(`/tools/${toolId}/(?:assets|lib)/[\\w./-]+`, 'g');
   const found = new Set<string>();
   for (const src of sources) {
     for (const m of src?.match(re) ?? []) found.add(m);

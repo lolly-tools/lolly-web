@@ -10,10 +10,11 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard } from '@lolly/engine';
 import type {
-  Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts,
+  Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
 } from '@lolly/engine';
+import type { MoneyContext } from '@lolly-tools/core';
 import { escape } from '../utils.js';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
@@ -37,6 +38,8 @@ import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
 import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
 import { preflightRowHtml, preflightView, applyPreflight } from './export-preflight.ts';
+import { costPanelHtml, costView, applyCostPanel } from './cost-panel.ts';
+import { listRateCards, getRateCardBlob } from '../lib/rate-cards.ts';
 import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/export-scale.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
@@ -165,7 +168,7 @@ function extFor(fmt: string, blob: Blob | null | undefined): string {
 
 // fitCanvas and exportUnscaled are passed in so refreshCanvasPreview and the
 // export actions can coordinate with the responsive-scaling logic in mountTool.
-function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: ToolRuntime, canvasEl: HTMLElement | null, host: WebToolHost, fitCanvas: () => void, exportUnscaled: ExportUnscaled, exportDefaults: ExportDefaults = {}, onUrlSync: ((key?: string) => void) | null = null, playShutter: () => void = () => {}, fileIntoFolder: string | null = null, returnTo = '/', initialSlot: string | null = null): ActionsApi | undefined {
+function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: ToolRuntime, canvasEl: HTMLElement | null, host: WebToolHost, fitCanvas: () => void, exportUnscaled: ExportUnscaled, exportDefaults: ExportDefaults = {}, onUrlSync: ((key?: string) => void) | null = null, playShutter: () => void = () => {}, fileIntoFolder: string | null = null, returnTo = '/', initialSlot: string | null = null, reachedViaLink = false): ActionsApi | undefined {
   // The slot this editing session writes to. Seeded from a resumed `?slot=` session,
   // otherwise null until the first save mints one. Every subsequent save (the Save
   // button, the render-pill quick-Save, "Save & leave") reuses it so edits UPDATE the
@@ -817,6 +820,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // control the user has not reached yet. Hidden until the engine's rules have
   // something true to say; see views/export-preflight.ts + refreshPreflight().
   const preflightRow = preflightRowHtml();
+  // Tier 3.6 — "Cost, worked out from your rate card". After preflight (it consumes
+  // preflight's counts) and above the buttons. Chrome only: data-export-hide, never a
+  // pixel of the export. Rendered only for a costable job with a card and canShowMoney.
+  const costRow = costPanelHtml();
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;
   const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : blockedNote;
 
@@ -824,7 +831,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}${preflightRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}${preflightRow}${costRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
   `;
@@ -1727,12 +1734,94 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const sizeText = manifestSize
       ? `${manifest.render.width * canvasScale} × ${manifest.render.height * canvasScale} px`
       : (unit === 'px' ? `${w} × ${h} px` : t('{w} × {h} {unit} at {dpi} DPI', { w: String(w), h: String(h), unit, dpi }));
-    applyPreflight(el, preflightView(preflight(job), {
+    const report = preflight(job);
+    applyPreflight(el, preflightView(report, {
       formatLabel: fmt ? fmtLabel(fmt) : '',
       sizeText,
       bleedText: on && bleedMm > 0 ? `${bleedMm} mm` : null,
     }));
+    // The cost pass consumes the SAME counts. Async (it reads stored cards), so it is
+    // fired and forgotten off the latest counts; a stale in-flight pass is harmless
+    // because each call re-reads the current selection and rewrites the card.
+    lastCounts = report.counts;
+    void refreshCost();
   }
+
+  // ── Cost panel state. All device-local memory, never written to a URL by syncUrl.
+  let lastCounts: readonly Count[] = [];
+  // The explicit per-device reveal (§5): a link opens on counts, and money is shown
+  // only after the user asks for it here. Never persisted for a confidential card.
+  let costRevealed = false;
+  // Opt-in to expired rates this session (§5). Never persisted.
+  let costUseExpired = false;
+
+  // The QuantityKinds a rate card can actually price — used to decide whether the job
+  // is "costable" at all, so the panel never appears on a plain logo PNG.
+  const PRICEABLE_KINDS = new Set<Count['kind']>([
+    'processPlates', 'spotPlates', 'finishPlates', 'sheets', 'area', 'pages',
+    'variantRows', 'outputFiles',
+  ]);
+
+  async function refreshCost(): Promise<void> {
+    const costable = lastCounts.some(c => PRICEABLE_KINDS.has(c.kind));
+    // The stored cards on THIS device. A link carries none — a card is never a URL
+    // param — so possession is always a local fact. `WebToolHost.assets` carries the
+    // `_*UserAsset` methods at runtime (same cast the rate-cards manager uses).
+    const rcHost = host as unknown as Parameters<typeof listRateCards>[0];
+    const cards = await listRateCards(rcHost).catch(() => []);
+    const selected = cards[0];   // most-recently-added; a full picker is future work
+
+    // Resolve + cost the selected card. The figure is still gated by `costView` →
+    // `canShowMoney`, so a link-reached mount never RENDERS one until the reveal flips
+    // (proven in cost-panel.test.ts).
+    let working: CostWorking | null = null;
+    if (selected) {
+      const parsed = await resolveCard(selected.digest);
+      if (parsed) working = computeCost(parsed, lastCounts, {});
+    }
+    const money: MoneyContext = {
+      hasCard: !!selected,
+      selectionFromUrl: reachedViaLink,
+      revealedThisSession: costRevealed,
+      cardConfidential: selected?.confidential ?? false,
+      expired: working?.expired ?? false,
+      useExpiredAnyway: costUseExpired,
+    };
+
+    applyCostPanel(el, costView(working, {
+      costable,
+      money,
+      issuerName: selected?.issuerName,
+      issued: selected?.issued,
+      validUntil: selected?.validUntil,
+    }));
+    wireCostActions();
+  }
+
+  /** Fetch + parse a stored card's bytes into a `RateCard`. Null on any failure. */
+  async function resolveCard(digest: string) {
+    const rcHost = host as unknown as Parameters<typeof getRateCardBlob>[0];
+    const blob = await getRateCardBlob(rcHost, digest).catch(() => null);
+    if (!blob) return null;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const card = parseRateCard(bytes, digest, validateRateCard);
+    return isRateCardError(card) ? null : card;
+  }
+
+  /** Attach the reveal / use-expired actions after each cost-body rewrite. The
+   *  reveal is device-local memory only — it is never written to the URL, so a shared
+   *  link can never carry the revealed state. */
+  function wireCostActions(): void {
+    el!.querySelector<HTMLButtonElement>('[data-cost-reveal]')?.addEventListener('click', () => {
+      costRevealed = true;
+      void refreshCost();
+    });
+    el!.querySelector<HTMLButtonElement>('[data-cost-use-expired]')?.addEventListener('click', () => {
+      costUseExpired = true;
+      void refreshCost();
+    });
+  }
+
   // Same wiring as updateFidelityWarning, for the same reason: a sidebar edit can
   // change what preflight sees (a paginate source table gaining a row), so re-run
   // on every input change as well as on every format/size/print-setting change.
