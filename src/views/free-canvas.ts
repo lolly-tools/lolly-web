@@ -939,6 +939,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // no ease sub-fields keeps every preset on its built-in curve.
       enterEaseField: cv.enterEaseField || '',
       exitEaseField: cv.exitEaseField || '',
+      // Same again: a shared group collapses overlays onto one panel lane row
+      // (generated captions), and a tool without a group field never groups.
+      groupField: cv.groupField || '',
     } : null;
   // Scene-mode import (`canvas.import.mode: 'scenes'`, e.g. Sequence Studio): an
   // imported design's frames land as timed clips appended to the main sequence
@@ -1161,6 +1164,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         stageEl, canvasEl, runtime,
         host: host as { log?(level: string, msg: string): void },
         blockId, cfg: timeCfg, getBoxes, commit, onDirty,
+        // The box sub-field carrying rendered text, so the panel's generated
+        // caption boxes write cue text where the tool's template reads it.
+        textField: cv.textField,
         // The tool's OWN add-kinds, so the panel's plus offers exactly what the rail's
         // does (audio included) instead of hardcoding a list it cannot know.
         addKinds,

@@ -69,3 +69,15 @@ test('connectMusic: an out-of-range in-point falls back to the whole track', () 
   assert.deepEqual(src.started, [[0, 0]]);
   assert.equal(src.loopStart, 0);
 });
+
+test('connectMusic: loop:false plays the source once (a narration over a mix-in bed)', () => {
+  // §6.1 — with a bed underneath, the primary must END so the bed's full-gain
+  // tail can happen; looping it would hold the duck forever.
+  const { ctx, src } = fakeCtx();
+  connectMusic(ctx as BaseAudioContext, buffer(30), {} as AudioNode, { clipSec: 25, loop: false }).start();
+  assert.equal(src.loop, false);
+  // The default stays looped — no caller changes without opting in.
+  const plain = fakeCtx();
+  connectMusic(plain.ctx as BaseAudioContext, buffer(30), {} as AudioNode, { clipSec: 25 }).start();
+  assert.equal(plain.src.loop, true);
+});

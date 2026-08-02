@@ -6,7 +6,7 @@
  * offline-pins.ts makes ONE TOOL a guarantee; this module makes the PROMISE a
  * guarantee: a user with an hour of airport wifi can pull down every part of
  * the app they'll need for a connectionless flight and watch a real progress
- * bar while it happens. Four downloadable parts, each landing in the
+ * bar while it happens. Five downloadable parts, each landing in the
  * service-worker bucket (or store) that actually serves it offline:
  *
  *   app     — the full build payload (dist/precache.json `app` group: every
@@ -21,6 +21,13 @@
  *             (precache.json `ort` group) into ORT_CACHE, plus the TrustMark /
  *             Content Seal models through their own IndexedDB fetchers
  *             (lib/trustmark.ts, lib/contentseal.ts). ~220 MB — opt-in.
+ *   speech  — the on-device voice models (Kokoro — plans/tts-stt-programme.md
+ *             §3): model/config/tokenizer files into transformers.js's OWN
+ *             'transformers-cache' bucket under the exact request keys its hub
+ *             probes (bridge/speech.ts cached() matches the same shape), voice
+ *             style matrices into the worker's 'lolly-speech' bucket — the
+ *             SAME caches the speech runtime reads, so a downloaded part means
+ *             zero bytes move on first synthesis. Opt-in, like verify.
  *   catalog — brand/catalog assets beyond the core tier, whole or scoped by
  *             tag. The BYTES go through catalog/sync.ts's checksum-verified
  *             prefetch into the IDB blob cache (threaded in by the view, same
@@ -56,6 +63,13 @@ export const APP_CACHE = 'lolly-app';
 export const ORT_CACHE = 'lolly-ort';
 export const INFO_CACHE = 'lolly-info';
 
+/** The speech buckets (also in sw.js's PERSISTENT_CACHES). 'transformers-cache'
+ *  is transformers.js's own bucket name — not ours to rename; a key mismatch
+ *  here would download ~92 MB the worker then re-downloads, so the speech part
+ *  writes the same path-shaped keys lib/speech-kokoro-worker.ts reads. */
+export const TRANSFORMERS_CACHE = 'transformers-cache';
+export const SPEECH_CACHE = 'lolly-speech';
+
 /** Key of the part-state record inside the 'profile' KV store (a sibling of
  *  offline-pins' map — device-local by design, see the module comment). */
 const PARTS_KEY = 'offline-parts';
@@ -72,8 +86,10 @@ export interface ManifestFile { url: string; size: number; hash?: string }
 export interface PrecacheManifest {
   version: string;
   /** `models` is size metadata only — those bytes download through
-   *  lib/trustmark.ts's own IndexedDB path, never through downloadList. */
-  groups: { app: ManifestFile[]; ort: ManifestFile[]; models: ManifestFile[] };
+   *  lib/trustmark.ts's own IndexedDB path, never through downloadList.
+   *  `speech` (the Kokoro model set, plus Whisper when it ships) is optional:
+   *  manifests built before the speech part existed don't carry the group. */
+  groups: { app: ManifestFile[]; ort: ManifestFile[]; models: ManifestFile[]; speech?: ManifestFile[] };
 }
 
 /** /info/manifest.json — emitted by docs/build.ts. `audio` is the docs
@@ -84,7 +100,7 @@ export interface InfoManifest {
   groups: { en: ManifestFile[]; shots: ManifestFile[]; audio?: ManifestFile[]; locales: Record<string, ManifestFile[]> };
 }
 
-export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog';
+export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech';
 
 /** What one downloaded part records. `version` is the manifest watermark the
  *  download completed against; resyncOfflineParts re-downloads the delta when
@@ -395,6 +411,101 @@ export async function downloadVerify(
   return rec;
 }
 
+/** Split the manifest's speech group between the two buckets the runtime
+ *  reads: voice style matrices go to SPEECH_CACHE (lib/speech-kokoro-worker.ts's
+ *  getVoiceData fetch-and-put, keyed by path), everything else — the ONNX
+ *  model, config, tokenizer, and Whisper files when they ship — to
+ *  TRANSFORMERS_CACHE under the same path keys transformers.js's hub probes
+ *  (the shape bridge/speech.ts's cached() matches). */
+export function speechFileLists(manifest: PrecacheManifest): { model: ManifestFile[]; voices: ManifestFile[] } {
+  const files = manifest.groups.speech ?? [];
+  const isVoice = (f: ManifestFile): boolean => f.url.startsWith('/models/kokoro/voices/');
+  return { model: files.filter(f => !isVoice(f)), voices: files.filter(isVoice) };
+}
+
+/** Prune a speech bucket to the manifest listing, but ONLY inside the model
+ *  directories the listing covers ('/models/kokoro/', …) — a model cached
+ *  through its own consent flow before it joins the manifest (Whisper's
+ *  staging order) must not be evicted by a Kokoro-only listing. */
+async function pruneSpeechBucket(cacheName: string, files: ManifestFile[]): Promise<void> {
+  const prefixes = [...new Set(files.map(f => f.url.split('/').slice(0, 3).join('/') + '/'))];
+  const keep = new Set(files.map(f => f.url));
+  const cache = await caches.open(cacheName);
+  for (const req of await cache.keys()) {
+    const path = new URL(req.url).pathname;
+    if (!keep.has(path) && prefixes.some(p => path.startsWith(p))) await cache.delete(req);
+  }
+}
+
+/** The cache work of the speech part, IDB-free (tested directly): model files
+ *  into transformers.js's bucket, voices into the worker's, one progress bar
+ *  across both. */
+export async function downloadSpeechFiles(
+  manifest: PrecacheManifest,
+  opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},
+): Promise<{ bytes: number; files: number }> {
+  const { signal, onProgress } = opts;
+  const { model, voices } = speechFileLists(manifest);
+  const total = [...model, ...voices].reduce((n, f) => n + f.size, 0);
+  const count = model.length + voices.length;
+  let modelP: DownloadProgress = { loaded: 0, total: 0, done: 0, count: 0 };
+  const report = (voiceP?: DownloadProgress): void => onProgress?.({
+    loaded: modelP.loaded + (voiceP?.loaded ?? 0),
+    total,
+    done: modelP.done + (voiceP?.done ?? 0),
+    count,
+  });
+  const a = await downloadList(TRANSFORMERS_CACHE, model, { signal, onProgress: p => { modelP = p; report(); } });
+  const b = await downloadList(SPEECH_CACHE, voices, { signal, onProgress: p => report(p) });
+  await pruneSpeechBucket(TRANSFORMERS_CACHE, model);
+  await pruneSpeechBucket(SPEECH_CACHE, voices);
+  return { bytes: a.bytes + b.bytes, files: a.files + b.files };
+}
+
+/** Download the speech part — the on-device voice models, into the exact
+ *  caches the speech worker reads (plans/tts-stt-programme.md §3). */
+export async function downloadSpeech(
+  manifest: PrecacheManifest,
+  opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},
+): Promise<PartRecord> {
+  const res = await downloadSpeechFiles(manifest, opts);
+  const rec: PartRecord = { at: new Date().toISOString(), version: manifest.version, ...res };
+  await recordPart('speech', rec);
+  return rec;
+}
+
+/** Delete BOTH speech buckets — removePart's cache half, exported for tests.
+ *  The runtime re-downloads (behind its own consent line) on next use. */
+export async function clearSpeechCaches(): Promise<void> {
+  if (!('caches' in globalThis)) return;
+  await caches.delete(TRANSFORMERS_CACHE);
+  await caches.delete(SPEECH_CACHE);
+}
+
+/** Measure the speech buckets for the profile storage meter. Sizes come from
+ *  the stamped manifest size (part downloads), else Content-Length (the
+ *  worker's own put keeps wire headers), else the body itself — the buckets
+ *  also fill through the Script-audio dialog's consent download, which this
+ *  must count without a part record existing. */
+export async function speechCacheBytes(): Promise<{ bytes: number; files: number }> {
+  if (!('caches' in globalThis)) return { bytes: 0, files: 0 };
+  let bytes = 0;
+  let files = 0;
+  for (const name of [TRANSFORMERS_CACHE, SPEECH_CACHE]) {
+    try {
+      const cache = await caches.open(name);
+      for (const req of await cache.keys()) {
+        const resp = await cache.match(req);
+        if (!resp) continue;
+        files++;
+        const stamped = resp.headers.get(SIZE_HEADER) ?? resp.headers.get('content-length');
+        bytes += stamped ? Number(stamped) : (await resp.blob()).size;
+      }
+    } catch { /* bucket sealed (incognito iframe) — count nothing */ }
+  }
+  return { bytes, files };
+}
+
 /** Record a completed catalog download's scope + measured size. The BYTES went
  *  through catalog/sync.ts's prefetch (threaded in by the view); this record is
  *  what keeps them protected + refreshed at every boot (sync.ts reads it back
@@ -425,6 +536,7 @@ export async function removePart(id: OfflinePartId): Promise<void> {
     if (id === 'docs') await caches.delete(INFO_CACHE);
     if (id === 'verify') await caches.delete(ORT_CACHE);
   }
+  if (id === 'speech') await clearSpeechCaches();
   if (id === 'verify') {
     try {
       const db = await openDB();
@@ -444,7 +556,7 @@ export async function removePart(id: OfflinePartId): Promise<void> {
  */
 export async function resyncOfflineParts(): Promise<void> {
   const parts = await readParts();
-  if (parts.app || parts.verify) {
+  if (parts.app || parts.verify || parts.speech) {
     const manifest = await fetchPrecacheManifest();
     if (manifest) {
       if (parts.app && parts.app.version !== manifest.version) {
@@ -452,6 +564,11 @@ export async function resyncOfflineParts(): Promise<void> {
       }
       if (parts.verify && parts.verify.version !== manifest.version) {
         await downloadVerify(manifest).catch(() => {});
+      }
+      // Guarded on the group: a manifest from before the speech part existed
+      // must not "re-sync" the record down to an empty download.
+      if (parts.speech && parts.speech.version !== manifest.version && manifest.groups.speech?.length) {
+        await downloadSpeech(manifest).catch(() => {});
       }
     }
   }

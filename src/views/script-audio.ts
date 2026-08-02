@@ -17,6 +17,11 @@
 
 import '../styles/script-audio.css';   // async CSS chunk (lazy dialog — not on the landing)
 import { pcmToWavBlob } from '../lib/pcm-wav.ts';
+import {
+  buildTtsCredential as buildTtsCredentialCore,
+  embedTtsProvenance as embedTtsProvenanceCore,
+  TTS_MODEL, type TtsRecipe,
+} from '../lib/tts-provenance.ts';
 import { audioTransportHtml, wireAudioTransport, type AudioTransport } from '../lib/audio-transport.ts';
 import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -39,6 +44,12 @@ export interface TtsAssetRecordInput {
   version?: string;
   meta?: Record<string, unknown>;
   aiGenerated?: 'full' | 'partial';
+  // Record-side Content Credential (the store host.assets.credential serves) —
+  // the same store the saved wav now carries IN its bytes (saveTtsClip embeds
+  // it via the engine's RIFF C2PA chunk), kept on the record too as the fast
+  // path for the runtime's ingredient chaining.
+  credential?: Uint8Array;
+  credentialFormat?: string;
 }
 
 /** The web host surface this dialog touches: HostV1 plus the web-only upload
@@ -123,9 +134,11 @@ export interface TtsClip {
  *  Script-audio writing view so the two surfaces can never drift on tags,
  *  provenance disclosure or the `meta.tts` captioning block. */
 export function buildTtsRecord(clip: TtsClip, now = Date.now()): TtsAssetRecordInput {
-  // Provenance is record-side only for now: C2PA_FORMATS has no wav container,
-  // so `aiGenerated: 'full'` on the record is what surfaces the Gen AI pill.
-  // TODO: embed an in-file C2PA manifest once an audio-capable container ships.
+  // Provenance is twofold: `aiGenerated: 'full'` surfaces the Gen AI pill, and
+  // saveTtsClip embeds a signed C2PA manifest INTO the wav bytes (the engine's
+  // RIFF binding) plus LIST/INFO tags, mirroring the store onto the record for
+  // the runtime's ingredient chaining (buildTtsCredential is the fallback when
+  // the embed cannot run).
   return {
     id: ttsAssetId(clip.spokenText, now),
     type: 'audio',
@@ -145,7 +158,7 @@ export function buildTtsRecord(clip: TtsClip, now = Date.now()): TtsAssetRecordI
       tts: {
         voice: clip.voice,
         speed: clip.speed,
-        model: 'kokoro-82m-q8',
+        model: TTS_MODEL,
         text: clip.spokenText,
         words: clip.result.words,
         granularity: clip.result.granularity,
@@ -154,11 +167,59 @@ export function buildTtsRecord(clip: TtsClip, now = Date.now()): TtsAssetRecordI
   };
 }
 
+/** A clip's provenance recipe — the lib's shared shape (lib/tts-provenance.ts). */
+const clipRecipe = (clip: TtsClip): TtsRecipe =>
+  ({ text: clip.spokenText, voice: clip.voice, speed: clip.speed, model: TTS_MODEL, lang: 'en' });
+
+/**
+ * Sign a record-side Content Credential for a generated clip — the machine-
+ * readable "this voice is synthetic" mark (EU AI Act Article 50; memory
+ * synthetic-audio-eu-ai-act). Thin clip-shaped wrapper over the ONE
+ * implementation in lib/tts-provenance.ts (shared with the catalog's lazy
+ * heal path); see there for the manifest shape and signing recipe. Never
+ * throws — a signing failure logs and returns null, and the clip saves
+ * uncredentialed rather than not at all.
+ */
+export async function buildTtsCredential(host: ScriptAudioHost, clip: TtsClip): Promise<{ store: Uint8Array; format: string } | null> {
+  return buildTtsCredentialCore(host, { blob: clip.wavBlob, name: ttsAssetName(clip.spokenText), recipe: clipRecipe(clip) });
+}
+
+/**
+ * Embed the clip's provenance INTO the wav bytes (LIST/INFO tags + the signed
+ * C2PA manifest as a top-level RIFF chunk). The stored blob IS the
+ * credentialed file: download, share and "Check Content Credentials" all read
+ * it straight off the bytes, exactly like an exported PNG. Thin clip-shaped
+ * wrapper over lib/tts-provenance.ts (shared with the catalog's lazy heal
+ * path). Returns null on any failure — the caller falls back to the
+ * record-side-only credential, and the clip always saves.
+ */
+export async function embedTtsProvenance(host: ScriptAudioHost, clip: TtsClip): Promise<{ blob: Blob; store: Uint8Array } | null> {
+  return embedTtsProvenanceCore(host, { blob: clip.wavBlob, name: ttsAssetName(clip.spokenText), recipe: clipRecipe(clip) });
+}
+
 /** Store a generated clip as a user audio asset and resolve its AssetRef (via
  *  the public API, so the ref carries a live object URL). Throws on a store
  *  failure — each surface owns its own error presentation. */
 export async function saveTtsClip(host: ScriptAudioHost, clip: TtsClip): Promise<AssetRef | null> {
   const record = buildTtsRecord(clip);
+  // Provenance lives in the file: the stored blob carries the LIST/INFO tags
+  // and the signed C2PA chunk, and the extracted store rides the record for
+  // ingredient chaining. When the embed cannot run (malformed bytes, signing
+  // hiccup) the record-side credential alone is the fallback — a null from
+  // both means the asset still saves with its aiGenerated flag.
+  const embedded = await embedTtsProvenance(host, clip);
+  if (embedded) {
+    record.blob = embedded.blob;
+    if (record.meta) record.meta.bytes = embedded.blob.size;
+    record.credential = embedded.store;
+    record.credentialFormat = 'wav';
+  } else {
+    const credential = await buildTtsCredential(host, clip);
+    if (credential) {
+      record.credential = credential.store;
+      record.credentialFormat = credential.format;
+    }
+  }
   await host.assets._uploadUserAsset(record);
   // The new clip should appear in the Neurospicy player right away.
   invalidateNeurospicyTracks();

@@ -86,6 +86,8 @@ interface GalleryTool {
   examples?: FeaturedVariant[];
   paged?: boolean;
   new?: boolean;
+  /** URL-mode query an injected url-source tool opens with (#/tool/<id>?<openQuery>). */
+  openQuery?: string;
 }
 
 // Sort options for the gallery masonry. 'category' (the default) groups tools by
@@ -383,7 +385,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const present = new Set(syncedIndex.tools.map((tt) => tt.id));
   const injected: GalleryTool[] = getInjectedTools()
     .filter((it) => !present.has(it.id))
-    .map((it) => ({ id: it.id, name: it.name, category: it.category ?? 'other', listed: true }));
+    .map((it) => ({ id: it.id, name: it.name, category: it.category ?? 'other', listed: true, ...(it.openQuery ? { openQuery: it.openQuery } : {}) }));
   const rawIndex: { tools: GalleryTool[] } = { tools: [...syncedIndex.tools, ...injected] };
   // Unlisted tools (manifest `listed:false`) are mechanisms invoked from context — e.g.
   // asset-export, reached from the catalog's per-asset Download — not gallery destinations.
@@ -1797,7 +1799,9 @@ function cardMarkup(
       : (tool.status !== 'official' ? `<span class="badge badge-${tool.status}">${escape(t(tool.status || ''))}</span>` : '');
 
   const iconSvg = tool.icon ? `<span class="tool-card-icon" aria-hidden="true">${tool.icon}</span>` : '';
-  const openHref = `#/tool/${escape(tool.id)}`;
+  // A url-source injected tool opens preconfigured (its URL-mode query); every other
+  // tool opens blank. escape() the query for the attribute (its & becomes &amp;).
+  const openHref = `#/tool/${escape(tool.id)}${tool.openQuery ? `?${escape(tool.openQuery)}` : ''}`;
 
   // Utilities view (#/u): the icon alone is a clear enough affordance, so drop the
   // preview hero entirely and stack a larger icon ABOVE the title + description. The

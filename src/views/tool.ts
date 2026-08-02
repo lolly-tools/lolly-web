@@ -21,6 +21,9 @@ import '../styles/parts/tool-chrome.css';
 import { loadTool, parseUrlState, annotateTemplate, toCssPx, normalizeTableValue, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import type { HdrSettings, DepthSetting } from '@lolly/engine';
+// The one declaration of the export bar's audio selection shape (mix-in bed
+// incl.) — see bridge/audio-envelope.ts; ExportOpts references it too.
+import type { ExportAudio } from '../bridge/audio-envelope.ts';
 import { promptDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
@@ -259,7 +262,7 @@ export interface RunExportOpts {
   wait?: number;
   duration?: number;
   live?: boolean;
-  audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number; start?: number };
+  audio?: ExportAudio;
   filename?: string;
   bundleFormats?: string[];
   convertPaths?: boolean;

@@ -88,14 +88,27 @@ test('member injectables populate the tool registry + render a chrome banner', a
   assert.match(bar!.innerHTML, /#\/docs/); // the link href
 });
 
-test('a url-source tool carries its toolUrl; catalog-source does not', async () => {
+test('a url-source tool resolves to its served id + URL-mode query (opens preconfigured)', async () => {
   reset();
   member(cfg([
-    { id: 'u1', kind: 'tool', title: 'Pasted', toolId: 'qr-code', source: 'url', ref: 'https://acme.example/t/qr-code?x=1' },
+    { id: 'u1', kind: 'tool', title: 'SUSE QR', toolId: 'qr-code', source: 'url', ref: 'https://acme.example/#/tool/qr-code?url=https%3A%2F%2Fsuse.com' },
   ]));
   await initOrg();
   await settle();
-  assert.equal(getInjectedTools()[0]!.toolUrl, 'https://acme.example/t/qr-code?x=1');
+  const it = getInjectedTools()[0]!;
+  assert.equal(it.id, 'qr-code'); // resolved from the URL, drives #/tool/qr-code
+  assert.equal(it.openQuery, 'url=https%3A%2F%2Fsuse.com'); // preset inputs travel as URL mode
+});
+
+test('a url-source tool with an unresolvable link is dropped (fail closed, no dead card)', async () => {
+  reset();
+  member(cfg([
+    { id: 'u2', kind: 'tool', title: 'Broken', toolId: 'x', source: 'url', ref: 'not a url' },
+    { id: 'u3', kind: 'tool', title: 'No ref', toolId: 'y', source: 'url' },
+  ]));
+  await initOrg();
+  await settle();
+  assert.equal(getInjectedTools().length, 0);
 });
 
 test('flag / resource / unknown kinds are ignored (they ride other seams)', async () => {

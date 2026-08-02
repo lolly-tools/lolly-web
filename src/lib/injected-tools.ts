@@ -14,11 +14,11 @@
  * the same way. One set at a time (last registration wins), mirroring session-source.
  *
  * The entries are pure DATA the gallery renders as ordinary tool cards — never code.
- * A `catalog`-source tool's `id` is the tool id the instance already serves under
- * `/tools/<id>/`, so clicking it loads through the normal tool-loader path with no
- * change. A `url`-source tool carries `toolUrl`, a link the picker's renderUrl path
- * turns into an image (the same safety net: it must resolve to a tool the instance
- * actually serves).
+ * A tool's `id` is the tool id the instance serves under `/tools/<id>/`, so clicking
+ * it loads through the normal tool-loader path with no change. A url-source tool is
+ * "the same tool, preconfigured": its `openQuery` carries the URL-mode params, so the
+ * card opens `#/tool/<id>?<openQuery>` — the tool with those inputs already applied.
+ * Both forms resolve to a locally-served tool (a url that doesn't is dropped upstream).
  */
 
 /** One injected tool, in neutral terms (no control-plane vocabulary leaks here). */
@@ -29,8 +29,8 @@ export interface InjectedTool {
   name: string;
   /** Card grouping; defaults to the catch-all section when absent. */
   category?: string;
-  /** Set for a url-source tool: the Lolly tool URL the picker renders. */
-  toolUrl?: string;
+  /** URL-mode query the card opens the tool with (from a url-source tool's link). */
+  openQuery?: string;
 }
 
 let current: readonly InjectedTool[] = [];

@@ -35,7 +35,8 @@ import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { aspectWarning } from './export-size.js';
 import { MAX_TIME_S } from './timeline-math.ts';
 import { bumpMetric, recordFormat } from '../metrics.js';
-import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
+import { videoSupport, audioSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
+import { isAudioFormat as isAudioFmt } from '../lib/audio-encode.js';
 import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
 import { preflightRowHtml, preflightView, applyPreflight } from './export-preflight.ts';
 import { costPanelHtml, costView, applyCostPanel } from './cost-panel.ts';
@@ -44,6 +45,7 @@ import { listRateCards, listCatalogRateCards, getRateCardBlob } from '../lib/rat
 import { mountSlot, onExtensionsChanged, slotHasResolved } from '../lib/extensions.ts';
 import type { Disposer } from '@lolly-tools/core/extension-v1';
 import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/export-scale.ts';
+import { CENTRE_LOW } from '../bridge/audio-envelope.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
 
@@ -67,7 +69,10 @@ import { jellyActive } from '../lib/jelly.ts';
 // Human-readable labels and file extensions for format identifiers that differ
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
 const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', tiff: 'TIFF', 'jpeg': 'JPG', 'webm': 'WebM', 'mp4': 'MP4', apng: 'aPNG', 'webp-anim': 'Animated WebP', 'svg-anim': 'Animated SVG',
-  emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON' };
+  emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
+  // Audio only. Opus ships in a WebM container, so the label says so rather than
+  // leaving a download named .webm looking like a video.
+  wav: 'WAV', mp3: 'MP3', m4a: 'M4A (AAC)', opus: 'Opus (WebM)' };
 const FMT_EXT: Record<string, string>   = { 'pdf-cmyk': 'pdf', 'cmyk-tiff': 'tiff', 'jpeg': 'jpg', 'eps-cmyk': 'eps', 'webp-anim': 'webp', 'svg-anim': 'svg' };
 // Animated WebP is credentialed via the still-'webp' path (renderFormat maps
 // webp-anim→webp before stamping), but the engine's C2PA_FORMATS lists only 'webp' —
@@ -145,6 +150,9 @@ const TIFF_OK = tiffSupport();
 const keepFormat = (f: string): boolean =>
   f === 'webm' ? videoSupport().webm
   : f === 'mp4' ? videoSupport().mp4
+  // wav/mp3 are pure JS and always pass; m4a/opus need the platform's WebCodecs
+  // AudioEncoder, so they are hidden where it cannot produce them.
+  : isAudioFmt(f) ? audioSupport()[f]
   : f === 'cmyk-tiff' ? CMYK_TIFF_OK
   : f === 'tiff' ? TIFF_OK
   // The pro float formats (exr/hdr) need a float rasterisation the browser has no
@@ -159,6 +167,9 @@ const fmtLabel = (f: string): string => FMT_LABEL[f] ?? f.toUpperCase();
 // fall back to the other container, so trust the Blob's MIME over the format id.
 function extFor(fmt: string, blob: Blob | null | undefined): string {
   const t = blob?.type || '';
+  // Audio first: an .m4a IS an MP4 container and Opus audio IS a WebM one, so the
+  // MIME sniff below would rename both to their video extension.
+  if (isAudioFmt(fmt)) return fmt === 'opus' ? 'webm' : fmt;
   if (t.includes('mp4'))  return 'mp4';
   if (t.includes('webm')) return 'webm';
   // A contact sheet (cuts > 1) of a still format comes back as a ZIP of N members,
@@ -736,19 +747,25 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const audioTip = hasVideo ? helpTip(
     'Plays under the clip for its full duration, looping as needed. WebM and MP4 only.'
   ) : null;
-  // A tool with its own audio slot (assetType 'audio', e.g. the audiogram) offers
-  // that slot's CURRENT pick as a bed source — resolved live at export, so changing
-  // the sidebar pick needs no popup round-trip. "Generate music" composes a seeded
-  // ZzFXM tune on-device (engine composeSong → the render worker → transient WAV).
+  // A tool with its own audio slot (assetType 'audio', e.g. the audiogram) always
+  // contributes that audio to the export (resolved live from the sidebar pick), and
+  // the card becomes two rows: the tool's audio with a level slider, plus an
+  // optional mix-in track whose CENTRE level (off/low/full) sets the bed's gain
+  // while the tool audio plays — full at the top and tail (§6.1). "Generate music"
+  // composes a seeded ZzFXM tune on-device (engine composeSong → render worker →
+  // transient WAV). Tools without an audio slot keep the single-bed card.
   const hasToolAudioInput = runtime.getModel().some(i => i.type === 'asset' && i.assetType === 'audio');
-  const audioRow = hasVideo ? `
-      <div class="export-audio" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
-        <span class="audio-head help-tip-host">${ICON_NOTE}<span>Audio track</span>${audioTip!.button}${audioTip!.pop}</span>
+  const toolAudioTip = hasToolAudioInput && hasVideo ? helpTip(
+    t('Always included when the tool has audio picked. WebM and MP4 only.')
+  ) : null;
+  const mixTip = hasToolAudioInput && hasVideo ? helpTip(
+    t('Plays at full volume before and after this tool’s audio and eases to the centre volume underneath it.')
+  ) : null;
+  const bedPickHtml = `
         <div class="audio-pick">
-          <select class="field-select" data-action="video-audio" aria-label="Audio track"
-                  title="Optional music bed muxed into the recording — plays for the clip duration, looping if the clip is longer than the track.">
+          <select class="field-select" data-action="video-audio" aria-label="${hasToolAudioInput ? escape(t('Mix-in track')) : 'Audio track'}"
+                  title="${hasToolAudioInput ? escape(t('Optional track mixed around this tool’s audio, looping if the clip is longer than the track.')) : 'Optional music bed muxed into the recording — plays for the clip duration, looping if the clip is longer than the track.'}">
             <option value="">None</option>
-            ${hasToolAudioInput ? `<option value="__tool__">${escape(t('This tool’s audio'))}</option>` : ''}
             <option value="__generate__">${escape(t('Generate music'))}</option>
           </select>
           <button type="button" class="audio-preview" data-action="audio-preview" title="Preview track" aria-label="Preview track" disabled>${ICON_PLAY}</button>
@@ -757,12 +774,34 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         <div class="audio-fade">
           <label>Fade in <input type="number" data-action="audio-fadein" min="0" max="5" step="0.5" value="1"><span>s</span></label>
           <label>Fade out <input type="number" data-action="audio-fadeout" min="0" max="5" step="0.5" value="1.5"><span>s</span></label>
+        </div>`;
+  const audioRow = !hasVideo ? '' : hasToolAudioInput ? `
+      <div class="export-audio" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
+        <span class="audio-head help-tip-host">${ICON_NOTE}<span>${escape(t('This tool’s audio'))}</span>${toolAudioTip!.button}${toolAudioTip!.pop}</span>
+        <div class="audio-fade">
+          <label>${escape(t('Level'))} <input type="number" data-action="audio-tool-level" min="0" max="100" step="5" value="100" aria-label="${escape(t('Tool audio level'))}"><span>%</span></label>
         </div>
+        <span class="audio-head help-tip-host">${ICON_NOTE}<span>${escape(t('Mix in'))}</span>${mixTip!.button}${mixTip!.pop}</span>
+        ${bedPickHtml}
+        <div class="audio-fade">
+          <label>${escape(t('Centre volume'))}
+            <select class="field-select" data-action="audio-centre" aria-label="${escape(t('Centre volume'))}"
+                    title="${escape(t('The mix-in track’s volume while this tool’s audio is playing. It always plays at full volume before and after.'))}">
+              <option value="off">${escape(t('Off'))}</option>
+              <option value="low" selected>${escape(t('Low'))}</option>
+              <option value="full">${escape(t('Full'))}</option>
+            </select>
+          </label>
+        </div>
+      </div>` : `
+      <div class="export-audio" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
+        <span class="audio-head help-tip-host">${ICON_NOTE}<span>Audio track</span>${audioTip!.button}${audioTip!.pop}</span>
+        ${bedPickHtml}
         <div class="audio-fade">
           <label>Music level <input type="number" data-action="audio-volume" min="0" max="100" step="5" value="100"><span>%</span></label>
           <label title="When your clip has its own sound, the music dips to this level under it (100% = no ducking).">Duck to <input type="number" data-action="audio-duck" min="0" max="100" step="5" value="35"><span>%</span></label>
         </div>
-      </div>` : '';
+      </div>`;
 
   // Full-page chip — HTML export only. Drops the fixed-size tool-canvas frame so
   // the saved page fills the whole browser window instead of a centred card.
@@ -1033,6 +1072,23 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         music.forEach(t => grp2.appendChild(opt(t)));
         audioSel.appendChild(grp2);
       }
+      // The user's own audio uploads (incl. Script-audio TTS clips) — the catalog
+      // query lists library assets only, so the user store is appended explicitly.
+      // Sequenced after the catalog groups so the order is stable.
+      const listUser = (host.assets as unknown as { _listUserAssets?: () => Promise<{ id: string; type: string; meta?: Record<string, unknown> }[]> })._listUserAssets;
+      return listUser?.call(host.assets).then(all => {
+        const ups = all.filter(a => a.type === 'audio');
+        if (!ups.length) return;
+        const grp3 = document.createElement('optgroup');
+        grp3.label = t('Your uploads');
+        for (const a of ups) {
+          const o = document.createElement('option');
+          o.value = a.id;
+          o.textContent = String(a.meta?.name ?? a.id.split('/').pop() ?? '');
+          grp3.appendChild(o);
+        }
+        audioSel.appendChild(grp3);
+      });
     }).catch(() => { /* pre-sync/offline — leave "None" only */ });
   }
 
@@ -1064,9 +1120,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }
     return ref.url ? { url: ref.url, format: ref.format } : null;
   }
-  // A tool that arrives with a chosen track defaults the bed to it — the user can
-  // still pick a catalog track or None. Static markup already carries the option.
-  if (audioSel && audioSel.querySelector('option[value="__tool__"]') && toolAudioRef()) audioSel.value = '__tool__';
+  // (The old `__tool__` pseudo-entry is gone: a tool with its own audio slot now
+  // always contributes that audio as the primary track of the two-row card, so
+  // the select only ever names the optional mix-in bed.)
 
   // "Generate music": a transient ZzFXM bed, seeded so the SAME tune deterministically
   // re-renders at any length (export re-renders at the clip's duration). Regenerate
@@ -1118,12 +1174,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     audioPreviewBtn.addEventListener('click', async () => {
       const id = audioSel?.value;
       if (!id) return;
-      // Key the loaded source so a regenerated tune or a changed sidebar audio pick
-      // reloads instead of replaying the stale bytes; catalog ids key as themselves.
-      const toolRef = id === '__tool__' ? toolAudioRef() : null;
-      const srcKey = id === '__generate__' ? `__generate__:${genSeed}:${genDur()}`
-        : id === '__tool__' ? `__tool__:${toolRef?.id ?? toolRef?.url ?? ''}`
-        : id;
+      // Key the loaded source so a regenerated tune reloads instead of replaying
+      // the stale bytes; catalog/user ids key as themselves.
+      const srcKey = id === '__generate__' ? `__generate__:${genSeed}:${genDur()}` : id;
       if (previewAudio && previewSrcId === srcKey && !previewAudio.paused) { stopAudioPreview(); return; }
       try {
         if (!previewAudio) {
@@ -1136,7 +1189,6 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         if (previewSrcId !== srcKey) {
           audioPreviewBtn.classList.add('is-loading');
           const url = id === '__generate__' ? await generatedWavUrl(genDur())
-            : id === '__tool__' ? (await resolveToolAudio())?.url
             : (await host.assets.get(id)).url;
           if (!url) throw new Error('no track to preview');
           previewAudio.src = url;
@@ -2179,61 +2231,82 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }
     announce('Exporting…');
 
-    // A zzfxm music bed is rendered to a transient WAV blob URL below; revoke it once
-    // the export has consumed it (declared out here so the catch can free it too).
-    let wavBlobUrl: string | null = null;
+    // Any zzfxm/tracker track is rendered to a transient WAV blob URL below (the
+    // tool audio and a mix-in bed can each mint one); revoke them once the export
+    // has consumed them (declared out here so the catch can free them too).
+    const wavBlobUrls: string[] = [];
+    const trackBlobUrl = (url: string): string => { wavBlobUrls.push(url); return url; };
+    const revokeTrackUrls = (): void => { for (const u of wavBlobUrls.splice(0)) URL.revokeObjectURL(u); };
     try {
       // Resolve the chosen catalog audio track (if any) to a plain fetchable
       // URL before the recording starts — the export bridge stays catalog-
       // agnostic, and a missing/undownloadable track fails here in the UI
       // instead of mid-record. On-demand tier fetches + caches the bytes.
       let audioOpt: { audio?: NonNullable<RunExportOpts['audio']> } = {};
-      if (isVideoFmt(fmt)) {
+      // ZzFXM songs and tracker modules have no playable audio file — render them
+      // to a transient WAV blob URL so the URL-driven muxer paths consume them
+      // exactly like an encoded loop. (mod → libopenmpt, zzfxm → the synth.)
+      const toWavIfNeeded = async (r: { url: string; format?: string }): Promise<string> =>
+        r.format === 'zzfxm' ? trackBlobUrl(await songUrlToWavBlobUrl(r.url))
+        : isModuleFormat(r.format) ? trackBlobUrl(await modUrlToWavBlobUrl(r.url))
+        : r.url;
+      if (isAudioFmt(fmt) && hasToolAudioInput) {
+        // Audio-only export: the deliverable is the tool's OWN clip from the
+        // in-point it draws from, and nothing else. No bed, no gain, no fade —
+        // the tool applies no processing to the samples, and any envelope here
+        // would defeat the untouched-source pass-through in lib/audio-encode.ts.
+        const ref = await resolveToolAudio();
+        if (ref) audioOpt = { audio: { id: toolAudioRef()?.id, url: await toWavIfNeeded(ref), volume: 1, start: stageAudioStart() } };
+      } else if (isVideoFmt(fmt)) {
         const audioId = el!.querySelector<HTMLSelectElement>('[data-action="video-audio"]')?.value;
-        if (audioId) {
-          // ZzFXM songs and tracker modules have no playable audio file — render them
-          // to a transient WAV blob URL so the URL-driven muxer paths consume them
-          // exactly like an encoded loop. (mod → libopenmpt, zzfxm → the synth.)
-          const toWavIfNeeded = async (r: { url: string; format?: string }): Promise<string> =>
-            r.format === 'zzfxm' ? (wavBlobUrl = await songUrlToWavBlobUrl(r.url))
-            : isModuleFormat(r.format) ? (wavBlobUrl = await modUrlToWavBlobUrl(r.url))
-            : r.url;
-          let audioUrl: string | null = null;
-          let audioTrackId: string | undefined = audioId;
+        const numCtl = (a: string, dflt: number): number => {
+          const v = el!.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value;
+          return v != null && v !== '' ? (Number(v) || 0) : dflt;
+        };
+        // The popup's track choice ('' | __generate__ | asset id) → a fetchable URL.
+        const resolveTrack = async (): Promise<{ url: string; id: string } | null> => {
+          if (!audioId) return null;
           if (audioId === '__generate__') {
             // A fresh worker render at THIS clip's length — the seed keeps it the
             // same tune the user auditioned, just arranged to fit.
             const pcm = await renderSong(composeSong(generatedSongSpec(genSeed, genDur())));
-            audioUrl = wavBlobUrl = URL.createObjectURL(pcmToWavBlob(pcm));
-            audioTrackId = `zzfxm-generated-${genSeed}`;
-          } else if (audioId === '__tool__') {
-            // The tool's own audio slot, read live — an emptied slot exports silent.
-            const ref = await resolveToolAudio();
-            if (ref) { audioUrl = await toWavIfNeeded(ref); audioTrackId = toolAudioRef()?.id ?? audioId; }
-          } else {
-            audioUrl = await toWavIfNeeded(await host.assets.get(audioId));
+            return { url: trackBlobUrl(URL.createObjectURL(pcmToWavBlob(pcm))), id: `zzfxm-generated-${genSeed}` };
           }
-          const numCtl = (a: string, dflt: number): number => {
-            const v = el!.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value;
-            return v != null && v !== '' ? (Number(v) || 0) : dflt;
-          };
-          const fadeIn  = numCtl('audio-fadein', 0);
-          const fadeOut = numCtl('audio-fadeout', 0);
+          return { url: await toWavIfNeeded(await host.assets.get(audioId)), id: audioId };
+        };
+        const fadeIn  = numCtl('audio-fadein', 0);
+        const fadeOut = numCtl('audio-fadeout', 0);
+        if (hasToolAudioInput) {
+          // Two-row card (§6.1): the tool's own audio is ALWAYS the primary track
+          // (read live — an emptied slot exports silent), the popup's pick is the
+          // optional mix-in bed whose centre level sets its gain under the voice.
+          const ref = await resolveToolAudio();
+          const toolUrl = ref ? await toWavIfNeeded(ref) : null;
+          const bed = await resolveTrack();
+          const level = Math.max(0, Math.min(100, numCtl('audio-tool-level', 100))) / 100;
+          const centreSel = el!.querySelector<HTMLSelectElement>('[data-action="audio-centre"]')?.value ?? 'low';
+          const centre = centreSel === 'off' ? 0 : centreSel === 'full' ? 1 : CENTRE_LOW;
+          if (toolUrl) {
+            // In-point: a tool whose visuals begin partway into its own clip (the
+            // audiogram's "Start at") stamps that offset on its stage as
+            // data-audio-start, the same read-the-stage contract as data-seq-ms —
+            // so the soundtrack starts where the picture does instead of at 0:00.
+            // A property of the tool's OWN clip, so it applies only here, never to
+            // a mix-in or standalone bed that knows nothing about the in-point.
+            audioOpt = { audio: {
+              id: toolAudioRef()?.id, url: toolUrl, volume: level, start: stageAudioStart(),
+              ...(bed ? { mix: { id: bed.id, url: bed.url, centre, fadeIn, fadeOut } } : {}),
+            } };
+          } else if (bed) {
+            // Empty tool slot: the mix-in track stands alone, today's single-bed shape.
+            audioOpt = { audio: { id: bed.id, url: bed.url, fadeIn, fadeOut, volume: 1, duck: 1, start: 0 } };
+          }
+        } else if (audioId) {
+          // Single-bed card — unchanged behaviour for tools without their own audio.
+          const bed = await resolveTrack();
           const volume  = Math.max(0, Math.min(100, numCtl('audio-volume', 100))) / 100;
           const duck    = Math.max(0, Math.min(100, numCtl('audio-duck', 100))) / 100;
-          // In-point: a tool whose visuals begin partway into its own clip (the
-          // audiogram's "Start at") stamps that offset on its stage as
-          // data-audio-start, the same read-the-stage contract as data-seq-ms — so
-          // the soundtrack starts where the picture does instead of at 0:00.
-          //
-          // ONLY for `__tool__`, and that distinction is the whole point: the offset
-          // is a property of the tool's OWN clip ("the picture starts 12s into THIS
-          // audio"), not of the export. Applied to any other selection it silently
-          // skips the first 12 seconds of an unrelated catalog music bed — a track
-          // that knows nothing about the tool's in-point. Generated music is composed
-          // to fit the clip and has no meaningful in-point either.
-          const start = audioId === '__tool__' ? stageAudioStart() : 0;
-          if (audioUrl) audioOpt = { audio: { id: audioTrackId, url: audioUrl, fadeIn, fadeOut, volume, duck, start } };
+          if (bed) audioOpt = { audio: { id: bed.id, url: bed.url, fadeIn, fadeOut, volume, duck, start: 0 } };
         }
       }
       // Surface progress on the button for slow non-animated exports — the CMYK
@@ -2412,7 +2485,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         downloadedBlob = blob;
         await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
       }
-      if (wavBlobUrl) { URL.revokeObjectURL(wavBlobUrl); wavBlobUrl = null; }
+      revokeTrackUrls();
       bumpMetric('filesRendered'); recordFormat(fmt); // local usage metric
       // Log the download to the export history (Dashboard "Latest exports"). Best-effort,
       // non-blocking: a thumbnail of what was exported + enough state to reopen it.
@@ -2426,7 +2499,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         } catch { /* history is best-effort */ }
       })();
     } catch (err) {
-      if (wavBlobUrl) { URL.revokeObjectURL(wavBlobUrl); wavBlobUrl = null; }
+      revokeTrackUrls();
       console.error('Export failed:', err);
       btn.removeAttribute('aria-busy');
       // Surface WHY so users don't just retry the same doomed export.

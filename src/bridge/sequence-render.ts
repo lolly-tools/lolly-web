@@ -110,6 +110,7 @@ import {
 // module's public surface (and sequence-render.test.ts) is unchanged.
 export { radiiOf, fitRect };
 import { videoBitrate, videoMimeCandidates } from './video-mime.ts';
+import { bedDuckEnvelope, scheduleGainEvents, MIX_RAMP_SEC, type DuckSpan } from './audio-envelope.ts';
 import { insertPngPhys, insertPngMeta, insertPngIcc, iccWanted } from './export-image-meta.ts';
 import {
   packApng,
@@ -133,6 +134,8 @@ import { OFF_CLASS } from './sequence-dom.ts';
 import { lottiePlayerFor } from '../views/lottie-mount.ts';
 import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import type { ExportOpts } from './export.ts';
+// Type only — the encoders themselves stay out of this module's graph.
+import type { AudioPcm } from '../lib/audio-encode.ts';
 
 /** The slice of the web host this renderer needs. Log only — everything else is
  *  resolved from the DOM the tool already rendered. */
@@ -304,7 +307,15 @@ interface BedFade {
   fadeOut?: number;
   clipSec?: number;
   volume?: number;
-  duck?: { level: number; startSec: number; endSec: number };
+  /** Duck the bed under the sequence's own audio: `level` is the centre gain
+   *  multiplier, `spans` the clip-time windows where sequence audio plays. The
+   *  bed runs at full volume between and around them (top/tail intro-outro). */
+  duck?: { level: number; spans: DuckSpan[] };
+  /** Gain ramp seconds. Defaults to the legacy snappy 0.25 for clip ducks
+   *  (speech-under-bed; a short clip must SIT at the ducked level — pinned by
+   *  tests/sequence-render.browser.test.ts). The §6.1 mix-in path passes the
+   *  slower musical MIX_RAMP_SEC. */
+  rampSec?: number;
   /** In-point into the SOURCE, seconds. Independent of the envelope, which is
    *  still timed from t0 against clipSec. */
   start?: number;
@@ -313,10 +324,12 @@ interface BedFade {
 /**
  * Connect a looping music bed through a gain envelope, scheduled at t=0.
  *
- * Byte-for-byte the same automation as export.ts's connectMusic (fade in, duck
- * window with 0.25 s ramps, fade out, and the same in-point + loop window),
- * started immediately because an OfflineAudioContext's currentTime is 0 and never
- * advances until rendering.
+ * The automation itself is bedDuckEnvelope (audio-envelope.ts) — the same math
+ * export.ts's mix graphs consume, so a bed ducks identically in a tool export
+ * and a sequence render: fade in, glide down to volume·level over each span of
+ * sequence audio (~0.8 s ramps, never steps), back to full between spans, fade
+ * out. Started immediately because an OfflineAudioContext's currentTime is 0 and
+ * never advances until rendering.
  */
 function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode, fade: BedFade, log: (l: string, m: string) => void): void {
   const src = ctx.createBufferSource();
@@ -336,33 +349,20 @@ function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode,
   if (offset > 0) { src.loopStart = offset; src.loopEnd = buffer.duration; }
   const gain = ctx.createGain();
   src.connect(gain).connect(dest);
-  const t0 = ctx.currentTime;
-  const g = gain.gain;
-  const vol = clamp01(fade.volume ?? 1);
-  const fadeIn = Math.max(0, fade.fadeIn ?? 0);
-  const fadeOut = Math.max(0, fade.fadeOut ?? 0);
-  const clip = fade.clipSec ?? 0;
-  if (fadeIn > 0) { g.setValueAtTime(0, t0); g.linearRampToValueAtTime(vol, t0 + fadeIn); }
-  else g.setValueAtTime(vol, t0);
-  const d = fade.duck;
-  if (d && d.level < 1 && d.endSec - d.startSec > 0.6) {
-    const RAMP = 0.25;
-    const downStart = t0 + Math.max(fadeIn, d.startSec);
-    const downEnd = downStart + RAMP;
-    const upStart = t0 + d.endSec - RAMP;
-    const upEnd = t0 + d.endSec;
-    if (upStart > downEnd) {
-      g.setValueAtTime(vol, downStart);
-      g.linearRampToValueAtTime(vol * d.level, downEnd);
-      g.setValueAtTime(vol * d.level, upStart);
-      g.linearRampToValueAtTime(vol, upEnd);
-    }
-  }
-  if (fadeOut > 0 && clip > fadeIn) {
-    const fs = Math.max(t0 + fadeIn, t0 + clip - fadeOut);
-    g.setValueAtTime(vol, fs);
-    g.linearRampToValueAtTime(0, t0 + clip);
-  }
+  const events = bedDuckEnvelope({
+    clipSec: fade.clipSec ?? 0,
+    volume: fade.volume,
+    centre: fade.duck?.level ?? 1,
+    spans: fade.duck?.spans ?? [],
+    fadeIn: fade.fadeIn,
+    fadeOut: fade.fadeOut,
+    // Clip ducks are speech-under-bed: the legacy 0.25s ramps, so a short clip
+    // actually SITS at the ducked level instead of riding a 0.8s triangle
+    // (tests/sequence-render.browser.test.ts pins this). The §6.1 mix-in call
+    // passes the slower musical MIX_RAMP_SEC explicitly.
+    rampSec: fade.rampSec ?? 0.25,
+  });
+  scheduleGainEvents(gain.gain, events, ctx.currentTime);
   src.start(0, offset);
 }
 
@@ -448,7 +448,17 @@ async function rasterBox(
 
 // ── the audio mix ───────────────────────────────────────────────────────────
 
-interface MixResult { buffer: AudioBuffer | null; hasClipAudio: boolean }
+interface MixResult {
+  buffer: AudioBuffer | null;
+  hasClipAudio: boolean;
+  /** Whether a music bed actually CONNECTED — false when none was picked and false
+   *  when the pick could not be fetched or decoded. Not the same as `opts.audio.url`
+   *  being set, which is only the request. The video path does not care (a bed that
+   *  failed leaves silent-but-harmless space under the picture); an audio-only
+   *  export does, because with no clip audio either the whole file would be that
+   *  silence. */
+  hasBed: boolean;
+}
 
 /**
  * One OfflineAudioContext carrying every clip's own sound plus the export bar's
@@ -462,7 +472,7 @@ async function mixSequenceAudio(
   layers: SeqLayer[], totalSec: number, opts: ExportOpts, host: SeqHost | null,
 ): Promise<MixResult> {
   const OAC = (globalThis as any).OfflineAudioContext ?? (globalThis as any).webkitOfflineAudioContext;
-  if (!OAC || !(totalSec > 0)) return { buffer: null, hasClipAudio: false };
+  if (!OAC || !(totalSec > 0)) return { buffer: null, hasClipAudio: false, hasBed: false };
   const log = (l: string, m: string): void => host?.log?.(l, m);
 
   const octx: OfflineAudioContext = new OAC(MIX_CHANNELS, Math.max(1, Math.ceil(totalSec * MIX_RATE)), MIX_RATE);
@@ -539,29 +549,49 @@ async function mixSequenceAudio(
     }
   }
 
+  let hasBed = false;
   if (opts.audio?.url) {
     try {
       const bytes = await (await fetch(opts.audio.url)).arrayBuffer();
       const bed = await octx.decodeAudioData(bytes);
+      // Per-span ducking: the bed returns to full volume BETWEEN clips too, not
+      // just before the first and after the last (bedDuckEnvelope merges spans
+      // whose gap is too short for the bed to meaningfully come back up).
       const duckLevel = clamp01(opts.audio.duck ?? 1);
-      const duck = spans.length && duckLevel < 1
-        ? { level: duckLevel, startSec: Math.min(...spans.map((s) => s.from)), endSec: Math.max(...spans.map((s) => s.to)) }
-        : undefined;
+      const duck = spans.length && duckLevel < 1 ? { level: duckLevel, spans } : undefined;
       connectBed(octx, bed, octx.destination, {
         fadeIn: opts.audio.fadeIn, fadeOut: opts.audio.fadeOut,
         clipSec: totalSec, volume: opts.audio.volume, duck, start: opts.audio.start,
       }, log);
+      hasBed = true;
+      // A mix-in track (a tool with its own audio, §6.1). The primary bed above
+      // loops the whole clip here, so the mix-in ducks to its centre level for
+      // the full duration rather than being silently dropped.
+      if (opts.audio.mix?.url) {
+        try {
+          const bed2 = await octx.decodeAudioData(await (await fetch(opts.audio.mix.url)).arrayBuffer());
+          const centre = clamp01(opts.audio.mix.centre ?? 1);
+          connectBed(octx, bed2, octx.destination, {
+            fadeIn: opts.audio.mix.fadeIn, fadeOut: opts.audio.mix.fadeOut,
+            clipSec: totalSec, volume: opts.audio.mix.volume,
+            duck: centre < 1 ? { level: centre, spans: [{ from: 0, to: totalSec }] } : undefined,
+            rampSec: MIX_RAMP_SEC,
+          }, log);
+        } catch (err) {
+          log('warn', `Mix-in track unavailable (${(err as { message?: string })?.message ?? err}); exporting without it.`);
+        }
+      }
     } catch (err) {
       log('warn', `Music bed unavailable (${(err as { message?: string })?.message ?? err}); exporting without it.`);
     }
   }
 
-  if (!spans.length && !opts.audio?.url) return { buffer: null, hasClipAudio: false };
+  if (!spans.length && !hasBed) return { buffer: null, hasClipAudio: false, hasBed: false };
   try {
-    return { buffer: await octx.startRendering(), hasClipAudio: spans.length > 0 };
+    return { buffer: await octx.startRendering(), hasClipAudio: spans.length > 0, hasBed };
   } catch (err) {
     log('warn', `Audio mix failed (${(err as { message?: string })?.message ?? err}); exporting silent.`);
-    return { buffer: null, hasClipAudio: false };
+    return { buffer: null, hasClipAudio: false, hasBed: false };
   }
 }
 
@@ -574,6 +604,50 @@ function mediaSrc(L: SeqLayer): string {
   }
   const v = (el.matches?.('video') ? el : el.querySelector?.('video')) as HTMLVideoElement | null;
   return v ? (v.currentSrc || v.getAttribute('src') || '') : '';
+}
+
+/**
+ * The mixed timeline audio as planar PCM: every unmuted clip's own sound plus the
+ * export bar's music bed, ducked under them. This is what an audio-only export
+ * (wav/mp3/m4a/opus) of a sequence IS — the soundtrack of the video export, in a
+ * file with no picture.
+ *
+ * It runs the SAME `mixSequenceAudio` the mp4/webm path feeds to the muxer, over
+ * the same layers at the same length, because a second mixer would drift and the
+ * exported wav would stop matching the exported mp4's sound — which is the whole
+ * point of offering the format.
+ *
+ * `null` means there is genuinely nothing to mix (no bed, and no unmuted clip that
+ * carries sound). That is exactly the case in which the video path exports silent
+ * video; the audio-only caller turns it into a refusal instead, because a file
+ * that is only silence reads as a broken export rather than an empty one.
+ *
+ * Shape matches `AudioPcm` in lib/audio-encode.ts, which is the DOM convention
+ * export.ts's `lollyAudioSource()` reads. The import is type-only so the encoders
+ * (lamejs, the muxers) stay off this module's graph.
+ */
+export async function sequenceAudioPcm(
+  node: Element, opts: ExportOpts, host: SeqHost | null = null,
+): Promise<AudioPcm | null> {
+  const parsed = parseSequenceStage(node as HTMLElement);
+  const stage = parsed ? applyDurationOverride(parsed, opts) : null;
+  if (!stage || !stage.totalMs) throw sequenceError('SEQ_DECODE_FAILED', 'not a timed sequence stage');
+  if (stage.totalMs > MAX_SEQUENCE_MS) {
+    throw sequenceError('SEQ_TOO_HEAVY', `sequence is ${Math.round(stage.totalMs / 1000)}s; the export ceiling is ${MAX_SEQUENCE_MS / 1000}s`);
+  }
+  // Length is derived through the frame grid rather than from totalMs directly,
+  // so it is the identical number renderSequence hands the mix for mp4/webm (the
+  // streaming path never caps the grid). Same fps default, same rounding.
+  const fps = Math.max(1, Math.round(opts.fps ?? 30));
+  const grid = frameTimestamps(stage.totalMs, fps);
+  if (!grid.length) throw sequenceError('SEQ_DECODE_FAILED', 'sequence has no frames');
+
+  const mix = await mixSequenceAudio(stage.layers, grid.length / fps, opts, host);
+  if (!mix.buffer || (!mix.hasClipAudio && !mix.hasBed)) return null;
+  const buffer = mix.buffer;
+  const channels: Float32Array[] = [];
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) channels.push(buffer.getChannelData(ch));
+  return { channels, sampleRate: buffer.sampleRate };
 }
 
 // ── the orchestrator ────────────────────────────────────────────────────────
@@ -764,7 +838,7 @@ export async function renderSequence(
     // Length is the ACTUAL clip length (frameCount/fps), not the authored one, so a
     // capped gif/apng and a full-length mp4 both get a bed that ends where they do.
     // OfflineAudioContext is main-thread only; the worker receives the rendered PCM.
-    const mix = streaming ? await mixSequenceAudio(stage.layers, (frameCount / fps), opts, host) : { buffer: null, hasClipAudio: false };
+    const mix = streaming ? await mixSequenceAudio(stage.layers, (frameCount / fps), opts, host) : { buffer: null, hasClipAudio: false, hasBed: false };
     const audioPick = pick && mix.buffer ? await pickWebCodecsAudio(pick.container) : null;
 
     const job: SeqJob = {

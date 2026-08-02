@@ -1,10 +1,11 @@
 {
   "slug": "index",
   "lang": "en",
-  "voice": "af_heart",
+  "voice": "bf_lily",
+  "speed": 0.8,
   "modelVersion": "onnx-community/Kokoro-82M-v1.0-ONNX",
-  "textHash": "6d83f58b7df4ea869509d0b355bd4c7cd776a43c38a6e22d9cc881ae028d3b61",
-  "duration": 892.775,
-  "bytes": 2553415,
-  "generated": "2026-08-02T09:27:06.515Z"
+  "textHash": "e699ba6969237610d18c9771d0e83bab096897673e99c1f2804aa3c27edf8969",
+  "duration": 1100.2,
+  "bytes": 3253662,
+  "generated": "2026-08-02T12:57:53.795Z"
 }

@@ -119,11 +119,15 @@ function serveRepoStatic() {
 //         both read back through the SW's lolly-ort bucket. ~95 MB + ~22 MB,
 //         opt-in.
 //
+//   speech — the on-device voice models (/models/kokoro/, plus /models/whisper/
+//         when staged), downloaded by the 'speech' offline part into the
+//         transformers-cache + lolly-speech buckets the speech runtime reads
+//         (plans/tts-stt-programme.md §3). Opt-in, ~110 MB.
+//
 // Deliberately NOT listed: /catalog/ + /tools/ (the catalog sync + pin engine
 // own those, with checksums), /info/ (docs build emits its own manifest.json),
-// /models/ (lib/trustmark.ts caches those in IndexedDB itself; /models/kokoro/
-// goes through transformers.js's own 'transformers-cache' bucket and belongs
-// to the future 'speech' offline part — plans/tts-stt-programme.md §3), sw.js
+// /models/trustmark/ bytes ride the `models` group as size metadata only
+// (lib/trustmark.ts caches those in IndexedDB itself), sw.js
 // (the browser owns SW lifecycle). Runs at closeBundle, AFTER serveRepoStatic's
 // copies, by scanning the real dist/ output — so it can never drift from what
 // actually shipped. `version` hashes the listing; the manager stores it as its
@@ -141,12 +145,16 @@ export function groupPrecacheFiles(all) {
   const ort = all.filter(f => /^\/ort(-hf\/[^/]+)?\/ort-wasm-/.test(f.url));
   // The verify part's models are the TrustMark decoders ONLY — downloaded via
   // lib/trustmark.ts's own IDB path, listed here so the part can state its true
-  // size up front. /models/kokoro/ is deliberately NOT here: it caches through
-  // transformers.js's own 'transformers-cache' bucket and belongs to the future
-  // 'speech' offline part (plans/tts-stt-programme.md §3) — counting it in
+  // size up front. /models/kokoro/ is deliberately NOT here: it belongs to the
+  // 'speech' group below (plans/tts-stt-programme.md §3) — counting it in
   // would make the verify part's size lie by ~95 MB.
   const models = all.filter(f => f.url.startsWith('/models/trustmark/'));
-  return { app, ort, models };
+  // The speech part's voice models: Kokoro today, Whisper when its STT models
+  // are staged. offline-manager.ts splits the group between transformers.js's
+  // 'transformers-cache' bucket (model/config/tokenizer) and the worker's
+  // 'lolly-speech' bucket (voice matrices) — the caches the runtime reads.
+  const speech = all.filter(f => f.url.startsWith('/models/kokoro/') || f.url.startsWith('/models/whisper/'));
+  return { app, ort, models, speech };
 }
 
 // Content hash for files whose URL does NOT already encode their bytes.

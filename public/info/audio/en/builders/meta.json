@@ -1,0 +1,11 @@
+{
+  "slug": "builders",
+  "lang": "en",
+  "voice": "bf_lily",
+  "speed": 0.8,
+  "modelVersion": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "textHash": "2f350b117f3b3249377b86a1161b48a55732af63f027f8741c9e2b9af31894e3",
+  "duration": 343.175,
+  "bytes": 1035984,
+  "generated": "2026-08-02T13:21:40.123Z"
+}

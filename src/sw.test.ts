@@ -375,6 +375,7 @@ describe('precache.json grouping (vite.config.js)', () => {
     '/models/trustmark/decoder_Q.onnx',
     '/models/kokoro/onnx/model_quantized.onnx',
     '/models/kokoro/voices/af_heart.bin',
+    '/models/whisper/onnx/encoder_model_quantized.onnx',
   ];
 
   test('groups route each path to the bucket the SW actually serves it from', async () => {
@@ -391,7 +392,12 @@ describe('precache.json grouping (vite.config.js)', () => {
       '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.mjs',
     ], 'the ort group is the ort-wasm-* files (wasm + mjs glue) of BOTH runtimes, and nothing else');
     assert.deepEqual(names(groups.models), ['/models/trustmark/decoder_Q.onnx'],
-      'verify\'s models are the TrustMark ones only — kokoro belongs to the future speech part');
+      'verify\'s models are the TrustMark ones only — kokoro belongs to the speech part');
+    assert.deepEqual(names(groups.speech), [
+      '/models/kokoro/onnx/model_quantized.onnx',
+      '/models/kokoro/voices/af_heart.bin',
+      '/models/whisper/onnx/encoder_model_quantized.onnx',
+    ], 'the speech group is the kokoro + whisper model sets — nothing else');
   });
 
   test('release-versioned binaries are exempt from content hashing', async () => {

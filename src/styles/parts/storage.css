@@ -353,6 +353,13 @@
 /* The .saved-* session-row component moved to parts/saved-list.css (always-loaded
    via app.css) — see the note by .session-size above. */
 
+/* The storage meter's voice-models slice (views/profile.ts, the speech Cache
+   Storage buckets). The other categories colour from profile.css's --store-1..5;
+   tokens.css defines no --store-6 yet, so the fallback literal carries the hue
+   (a violet, distinct from every current slice in all four themes). */
+.profile-view .store-bar .seg[data-cat="speech"],
+.profile-view .store-chip-sw[data-cat="speech"] { background: hsl(var(--store-6, 265 55% 70%)); }
+
 /* `.segmented-control`/`.segmented-btn` (component audit rec 1) used to live here —
    a byte-for-byte duplicate of `.view-seg`/`.view-seg-btn` (styles/parts/gallery.css)
    with nothing in shells/web/src ever minting the markup (verified: not one

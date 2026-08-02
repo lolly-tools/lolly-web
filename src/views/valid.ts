@@ -3,7 +3,7 @@
  * /valid — on-device Content Credentials check.
  *
  * Drop any stamped export (pdf, png/apng, jpg, gif, svg, tiff, webp, mp4,
- * webm) and the engine verifier (engine/src/c2pa-verify.js) re-checks the
+ * webm, mp3, wav) and the engine verifier (engine/src/c2pa-verify.js) re-checks the
  * credential the export pipeline embeds: assertion hashed-URIs, the COSE claim
  * signature, the certificate window and the hard binding. Nothing leaves the
  * device. When a Lolly CA root is pinned (src/ca-root.js) it is passed as a
@@ -146,6 +146,50 @@ export function inputsDigestHtml(
     <div class="valid-inputs valid-panel">
       <h3>${svgIcon('sparkle')}<span>${t('Made from')}</span></h3>
       <dl class="valid-input-list">${rows}</dl>${cta}
+    </div>`;
+}
+
+// ── Script (a synthetic-voice step's recorded text) ─────────────────────────
+// A recorded action whose `parameters` carry a `script` string is a generated
+// voice declaring its exact source text — the machine-readable Article 50 mark
+// a TTS clip's credential writes at creation (views/script-audio.ts), riding
+// ingredient chains into composed exports. Surfaced as its own panel: the
+// script plus the voice/model/lang recipe, so anyone holding the file can read
+// what was said and recreate the clip in another voice or language. Collapsed
+// beyond ~6 lines ([data-script-expand]); [data-script-copy] copies the text.
+// The parameters value is raw CBOR (a Map from our decoder) or a plain object
+// from a foreign report — read both, strings only, everything escape()d.
+const paramRecord = (p: unknown): Record<string, unknown> | null => {
+  if (p instanceof Map) {
+    const o: Record<string, unknown> = {};
+    for (const [k, v] of p) if (typeof k === 'string') o[k] = v;
+    return o;
+  }
+  return p && typeof p === 'object' ? p as Record<string, unknown> : null;
+};
+export function scriptHtml(report: VerifyReport): string {
+  const acts: Array<{ parameters?: unknown }> = report.history?.length ? report.history : (report.claim?.actions ?? []);
+  const params = acts.map((a) => paramRecord(a.parameters)).find((p) => typeof p?.script === 'string' && (p.script as string).trim());
+  if (!params) return '';
+  const script = String(params.script);
+  const recipe: Array<[string, unknown]> = [
+    [t('Voice'), params.voice], [t('Model'), params.model], [t('Language'), params.lang],
+  ];
+  const rows = recipe.filter(([, v]) => typeof v === 'string' && v)
+    .map(([k, v]) => `<div class="valid-input-row"><dt>${escape(k)}</dt><dd><span>${escape(String(v))}</span></dd></div>`).join('');
+  // Clamp long scripts: the expand button only exists when there is something
+  // hidden to reveal (>6 source lines or enough text to wrap well past them).
+  const long = script.split('\n').length > 6 || script.length > 420;
+  return `
+    <div class="valid-script valid-panel">
+      <h3>${svgIcon('mic')}<span>${t('Script')}</span></h3>
+      <p class="valid-script-note">${t('The voice is AI-generated. The credential records the exact script it was synthesized from.')}</p>
+      ${rows ? `<dl class="valid-input-list">${rows}</dl>` : ''}
+      <pre class="valid-script-text${long ? ' is-clamped' : ''}" data-script-text>${escape(script)}</pre>
+      <div class="valid-script-actions">
+        ${long ? `<button type="button" class="valid-clean-link" data-script-expand aria-expanded="false">${t('Show the full script')}</button>` : ''}
+        <button type="button" class="valid-clean-link" data-script-copy>${t('Copy script')}</button>
+      </div>
     </div>`;
 }
 
@@ -975,6 +1019,9 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const recreate = (report.madeWithLolly || report.likelyMadeWithLolly) ? resolveRecreateTool(env.tool) : undefined;
   const madeFromBlock = report.found && report.claim ? inputsDigestHtml(env.inputs, recreate ? { ...recreate, fileIndex } : undefined) : '';
   const stepsBlock = report.found && report.claim ? stepsHtml(report) : '';
+  // A synthetic-voice step's recorded script (its own panel, between "made
+  // from" and "what happened" — it is source material, not an event).
+  const scriptBlock = report.found && report.claim ? scriptHtml(report) : '';
   const checksBlock = checksHtml(report);
   const selfnoteBlock = report.found && report.claim && !report.madeWithLolly ? `
         <p class="valid-selfnote">${identity
@@ -1007,7 +1054,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // section below it) so a short card can settle into whatever column has room
   // instead of always trailing after a long change-history/assertion-log panel.
   const metaBlock = renderMetadata(meta, preview, fileIndex);
-  const panelsBlock = `<div class="valid-panels">${summaryBlock}${madeFromBlock}${stepsBlock}${checksBlock}${metaBlock}</div>`;
+  const panelsBlock = `<div class="valid-panels">${summaryBlock}${madeFromBlock}${scriptBlock}${stepsBlock}${checksBlock}${metaBlock}</div>`;
   // The two "key validations" + the signed-by caption shown under the "Made with
   // Lolly" pill — only for the flagship lolly hero; every other good state keeps
   // the single prose sub + identityLine above.
@@ -1176,10 +1223,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       </header>
 
       <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
-        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.mp4,.m4v,.mov,.webm,.mkv,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,video/mp4,video/webm,video/x-matroska" hidden>
+        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.mp4,.m4v,.mov,.webm,.mkv,.mp3,.wav,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,video/mp4,video/webm,video/x-matroska,audio/mpeg,audio/wav,audio/x-wav" hidden>
         <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
         <strong>${t('Drop files here')}</strong>
-        <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm — check one or several at once')}</span>
+        <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm · mp3 · wav — check one or several at once')}</span>
       </div>
 
       <div class="valid-report" data-report hidden></div>
@@ -2069,6 +2116,23 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     if (view) void viewPayload(view);
     const dl = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-payload-download]');
     if (dl) void downloadPayload(dl);
+    // Script panel: expand the clamped script / copy it. Both act on the pre
+    // in the SAME panel — a batch report renders one panel per file.
+    const sx = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-script-expand]');
+    if (sx) {
+      sx.closest('.valid-script')?.querySelector('[data-script-text]')?.classList.remove('is-clamped');
+      sx.setAttribute('aria-expanded', 'true');
+      sx.hidden = true;
+    }
+    const sc = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-script-copy]');
+    if (sc) {
+      const text = sc.closest('.valid-script')?.querySelector('[data-script-text]')?.textContent ?? '';
+      void navigator.clipboard.writeText(text).then(() => {
+        const was = sc.textContent;
+        sc.textContent = t('Copied');
+        setTimeout(() => { sc.textContent = was; }, 1500);
+      }).catch(() => { /* clipboard refused — the text stays selectable in the pre */ });
+    }
   });
 
   drop.addEventListener('click', () => input.click());
