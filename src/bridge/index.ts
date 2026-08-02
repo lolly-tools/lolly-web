@@ -34,6 +34,7 @@ import { createMediaAPI } from './media.ts';
 import { createRecorderAPI } from './recorder.ts';
 import { hasCaptureExtension } from './capture-extension.ts';
 import { vizSupported } from '../lib/viz-support.ts';
+import { KOKORO_MODEL_BYTES } from '../lib/speech-kokoro.ts';
 import { PROVIDED_CAPABILITIES } from './capabilities-provided.ts';
 import { openDB } from './db.ts';
 
@@ -247,6 +248,22 @@ export async function createBridge(): Promise<WebHost> {
       && (typeof window.OfflineAudioContext === 'function'
         || typeof (window as { webkitOfflineAudioContext?: unknown }).webkitOfflineAudioContext === 'function'),
     analyse: async (src, opts) => (await loadAudio()).analyse(src, opts),
+  };
+
+  // Lazy speech facade (v1.96) — on-device Kokoro TTS. Lazy for the same reason
+  // as audio: bridge/speech.ts owns a worker whose chunk drags transformers.js
+  // and the phonemizer, none of which belongs in the boot chunk. The two
+  // SYNCHRONOUS contract methods are answered here without the import:
+  // isAvailable from the same feature detection speech.ts itself uses (wasm +
+  // Worker — the latter is what answers false under jsdom), modelBytes from the
+  // pure constants module (lib/speech-kokoro.ts, a few hundred bytes).
+  const loadSpeech = memo(async () => (await import('./speech.ts')).createSpeechAPI());
+  host.speech = {
+    isAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function',
+    modelBytes: () => KOKORO_MODEL_BYTES,
+    cached: async () => (await loadSpeech()).cached(),
+    voices: async () => (await loadSpeech()).voices(),
+    synthesize: async (text, opts) => (await loadSpeech()).synthesize(text, opts),
   };
 
   // Fresh-manifest Content Credentials for redacted derivatives (v1.85) — no

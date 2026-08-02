@@ -18,6 +18,13 @@
  * Why IndexedDB over localStorage: blobs (images), no 5MB ceiling, structured
  * queries. The capability bridge hides this from tools — they call
  * host.state.save() without knowing what's underneath.
+ *
+ * DELIBERATELY NOT HERE: the Kokoro speech model (host.speech). transformers.js
+ * caches its /models/kokoro/ fetches in the Cache API bucket
+ * 'transformers-cache' all by itself (and the voice matrices ride a
+ * 'lolly-speech' bucket beside it — see lib/speech-kokoro-worker.ts), so a
+ * trustmark-style IndexedDB store would just double ~92 MB on device. Don't add
+ * one.
  */
 
 import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';

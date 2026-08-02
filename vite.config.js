@@ -1,10 +1,16 @@
 import { defineConfig } from 'vite';
-import { resolve, extname, relative, join, sep } from 'node:path';
+import { resolve, extname, relative, join, sep, dirname } from 'node:path';
 import { existsSync, statSync, readFileSync, cpSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
+// This file's directory (shells/web/). Computed from import.meta.url rather
+// than the __dirname global only Vite's config bundler shims in, so plain node
+// can import this module too — src/sw.test.ts imports the exported precache
+// grouping helpers below.
+const webDir = dirname(fileURLToPath(import.meta.url));
 // Repo root is two directories up from shells/web/.
-const repoRoot = resolve(__dirname, '..', '..');
+const repoRoot = resolve(webDir, '..', '..');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -46,9 +52,11 @@ function serveRepoStatic() {
         // it here, before Vite's transform middleware, short-circuits with the raw
         // module so the import resolves. Dev-only; the prod build has no `?import`
         // and serves public/ort/ statically from dist/. (Populated at setup from
-        // node_modules/onnxruntime-web/dist/*.{wasm,mjs}.)
-        if (url?.startsWith('/ort/')) {
-          const filePath = resolve(__dirname, 'public', url.slice(1));
+        // node_modules/onnxruntime-web/dist/*.{wasm,mjs}.) /ort-hf/ is the same
+        // story for the speech worker's transformers.js-pinned ORT runtime
+        // (public/ort-hf/<version>/, staged by scripts/copy-transformers-ort.ts).
+        if (url?.startsWith('/ort/') || url?.startsWith('/ort-hf/')) {
+          const filePath = resolve(webDir, 'public', url.slice(1));
           if (existsSync(filePath) && statSync(filePath).isFile()) {
             const data = readFileSync(filePath);
             res.setHeader('Content-Type', MIME[extname(filePath)] ?? 'application/octet-stream');
@@ -61,7 +69,7 @@ function serveRepoStatic() {
         // Serve /info/* directly from public/info/ before the SPA fallback runs.
         if (url?.startsWith('/info')) {
           const normalized = (url === '/info' || url === '/info/') ? '/info/index.html' : url;
-          const filePath = resolve(__dirname, 'public', normalized.slice(1));
+          const filePath = resolve(webDir, 'public', normalized.slice(1));
           if (existsSync(filePath) && statSync(filePath).isFile()) {
             const data = readFileSync(filePath);
             res.setHeader('Content-Type', MIME[extname(filePath)] ?? 'text/html; charset=utf-8');
@@ -81,7 +89,7 @@ function serveRepoStatic() {
       });
     },
     closeBundle() {
-      const outDir = resolve(__dirname, 'dist');
+      const outDir = resolve(webDir, 'dist');
       for (const dir of ['catalog', 'tools', 'schemas']) {
         const src = resolve(repoRoot, dir);
         // dereference: tools/ and catalog are profile VIEWS (symlink farms built
@@ -106,25 +114,55 @@ function serveRepoStatic() {
 //         view needs, minus content that has its own pipeline (below).
 //   ort — the onnxruntime-web runtime files ORT actually loads at scan time
 //         (ort-wasm-*; the ort.*.mjs package entrypoints ship inside the
-//         /assets/ bundle and are never fetched from /ort/). ~95 MB, opt-in.
+//         /assets/ bundle and are never fetched from /ort/), PLUS the speech
+//         worker's pinned transformers.js runtime under /ort-hf/<version>/ —
+//         both read back through the SW's lolly-ort bucket. ~95 MB + ~22 MB,
+//         opt-in.
 //
 // Deliberately NOT listed: /catalog/ + /tools/ (the catalog sync + pin engine
 // own those, with checksums), /info/ (docs build emits its own manifest.json),
-// /models/ (lib/trustmark.ts caches those in IndexedDB itself), sw.js (the
-// browser owns SW lifecycle). Runs at closeBundle, AFTER serveRepoStatic's
+// /models/ (lib/trustmark.ts caches those in IndexedDB itself; /models/kokoro/
+// goes through transformers.js's own 'transformers-cache' bucket and belongs
+// to the future 'speech' offline part — plans/tts-stt-programme.md §3), sw.js
+// (the browser owns SW lifecycle). Runs at closeBundle, AFTER serveRepoStatic's
 // copies, by scanning the real dist/ output — so it can never drift from what
 // actually shipped. `version` hashes the listing; the manager stores it as its
 // re-sync watermark (new deploy → new hash → "update your download").
+// Split the scanned dist/ listing into the download groups offline-manager.ts
+// reads. Exported for the grouping test in src/sw.test.ts.
+export function groupPrecacheFiles(all) {
+  // The app group is the offline boot payload: everything EXCEPT the opt-in
+  // runtime/model binaries — /ort/, /ort-hf/ (the speech worker's runtime,
+  // which the SW can only serve from lolly-ort, never lolly-app) and /models/.
+  const app = all.filter(f => !f.url.startsWith('/ort/') && !f.url.startsWith('/ort-hf/') && !f.url.startsWith('/models/'));
+  // Only the files the runtimes load at runtime (ort-wasm-*): the 1.27 build at
+  // /ort/ plus transformers.js's pinned build at /ort-hf/<version>/. The other
+  // ort.*.mjs files are package dist entrypoints Vite bundles — dead weight.
+  const ort = all.filter(f => /^\/ort(-hf\/[^/]+)?\/ort-wasm-/.test(f.url));
+  // The verify part's models are the TrustMark decoders ONLY — downloaded via
+  // lib/trustmark.ts's own IDB path, listed here so the part can state its true
+  // size up front. /models/kokoro/ is deliberately NOT here: it caches through
+  // transformers.js's own 'transformers-cache' bucket and belongs to the future
+  // 'speech' offline part (plans/tts-stt-programme.md §3) — counting it in
+  // would make the verify part's size lie by ~95 MB.
+  const models = all.filter(f => f.url.startsWith('/models/trustmark/'));
+  return { app, ort, models };
+}
+
+// Content hash for files whose URL does NOT already encode their bytes.
+// /assets/ chunks are content-hash-named (a change renames them), the /ort/ +
+// /models/ binaries are release-versioned and too big to hash every build, and
+// /ort-hf/ carries its release version in the path — everything else (fonts,
+// icons, share stubs, index.html, voice, viz-presets) keeps a stable name, so
+// a same-size content change is invisible to a size compare. The hash is what
+// offline-manager.ts's cachedMatches uses to catch that. Exported for the
+// grouping test in src/sw.test.ts.
+export const precacheNeedsHash = (url) =>
+  !url.startsWith('/assets/') && !url.startsWith('/ort/') && !url.startsWith('/ort-hf/') && !url.startsWith('/models/');
+
 function precacheManifest() {
   const SKIP = new Set(['catalog', 'tools', 'schemas', 'info', 'sw.js', 'precache.json']);
-  // Content hash for files whose URL does NOT already encode their bytes.
-  // /assets/ chunks are content-hash-named (a change renames them), and the
-  // /ort/ + /models/ binaries are release-versioned and too big to hash every
-  // build — everything else (fonts, icons, share stubs, index.html, voice,
-  // viz-presets) keeps a stable name, so a same-size content change is
-  // invisible to a size compare. The hash is what offline-manager.ts's
-  // cachedMatches uses to catch that.
-  const needsHash = (url) => !url.startsWith('/assets/') && !url.startsWith('/ort/') && !url.startsWith('/models/');
+  const needsHash = precacheNeedsHash;
   const walk = (dir, base) => {
     const out = [];
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -151,20 +189,14 @@ function precacheManifest() {
     name: 'lolly-precache-manifest',
     apply: 'build',
     closeBundle() {
-      const outDir = resolve(__dirname, 'dist');
+      const outDir = resolve(webDir, 'dist');
       if (!existsSync(outDir)) return;
       const all = walk(outDir, outDir).sort((a, b) => a.url.localeCompare(b.url));
-      const app = all.filter(f => !f.url.startsWith('/ort/') && !f.url.startsWith('/models/'));
-      // Only the files ORT loads from /ort/ at runtime (ort-wasm-*). The other
-      // ort.*.mjs files are package dist entrypoints Vite bundles — dead weight.
-      const ort = all.filter(f => /^\/ort\/ort-wasm-/.test(f.url));
-      // /models/ downloads through lib/trustmark.ts's own IDB path — listed
-      // here ONLY so the verify part can state its true size up front.
-      const models = all.filter(f => f.url.startsWith('/models/'));
+      const groups = groupPrecacheFiles(all);
       const version = createHash('sha256')
         .update(all.map(f => `${f.url}:${f.size}:${f.hash ?? ''}`).join('\n'))
         .digest('base64url').slice(0, 16);
-      writeFileSync(resolve(outDir, 'precache.json'), JSON.stringify({ version, groups: { app, ort, models } }));
+      writeFileSync(resolve(outDir, 'precache.json'), JSON.stringify({ version, groups }));
     },
   };
 }
@@ -222,7 +254,7 @@ export default defineConfig({
       // ONLY inside its `.html()`/`addHTML()` method, which lolly never calls.
       // Alias it to an empty stub so it's never built or shipped. (dompurify is
       // NOT stubbed — picker.ts uses the standalone copy directly.)
-      'html2canvas': resolve(__dirname, 'html2canvas-stub.js'),
+      'html2canvas': resolve(webDir, 'html2canvas-stub.js'),
     },
   },
   server: {

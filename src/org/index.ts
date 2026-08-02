@@ -38,6 +38,7 @@ import { setExportPolicy } from '../lib/export-policy.ts';
 import { setPreflightGoverned } from '../lib/preflight-policy.ts';
 import { registerApprovalOpener } from '../lib/approval-request.ts';
 import { registerSessionSource } from '../lib/session-source.ts';
+import { setInjectedTools } from '../lib/injected-tools.ts';
 import { createInstanceSessionSource } from './session-source.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
@@ -89,6 +90,35 @@ export interface ToolPolicySpec {
   approvalChain?: string;
 }
 
+/** A tool the instance injects into the gallery (control-plane shape). `toolId` is
+ *  the id the instance serves under `/tools/<id>/`; `source:'url'` carries a Lolly
+ *  tool URL instead. Mapped onto the neutral lib/injected-tools registry. */
+export interface ToolInjectable {
+  id: string;
+  kind: 'tool';
+  title: string;
+  toolId: string;
+  source: 'catalog' | 'url';
+  ref?: string;
+}
+
+/** A piece of declarative UI chrome the instance injects (control-plane shape).
+ *  Pure data — rendered by org/chrome.ts through escape(), never executed. */
+export interface ChromeInjectable {
+  id: string;
+  kind: 'chrome';
+  title: string;
+  slot: 'banner' | 'nav' | 'panel';
+  tone?: 'info' | 'accent' | 'warn';
+  text: string;
+  link?: { label: string; href: string };
+}
+
+/** The injectables the control plane projects into org-config. A discriminated
+ *  union keyed by `kind`; an unknown kind is ignored (flag-kind rides featureFlags,
+ *  resource-kind rides the catalog — neither reaches this list). */
+export type Injectable = ToolInjectable | ChromeInjectable;
+
 export interface OrgConfig {
   instance: { name: string };
   session?: Session;
@@ -103,6 +133,10 @@ export interface OrgConfig {
    *  `default` is applied when the user hasn't chosen; `hidden` suppresses the
    *  profile toggle (the default still applies). Absent ⇒ no instance opinion. */
   featureFlags?: Record<string, { default?: boolean; hidden?: boolean }>;
+  /** Capability the instance injects into the shell: tools added to the gallery,
+   *  declarative UI chrome (banners). Absent ⇒ no instance opinion; each descriptor
+   *  is DATA the shell renders, never code. flag/resource kinds ride other seams. */
+  injectables?: Injectable[];
   telemetry?: { level?: string; attribution?: unknown; consented?: boolean };
   inboxUnread?: number;
   policyVersion?: string | number;
@@ -376,6 +410,31 @@ export function applyOrgToolPolicies(toolId: string): void {
   setToolInputPolicies(toolId, out);
 }
 
+/**
+ * Route the instance's injectables (plans/19, control-plane side) to their generic
+ * seams: tool descriptors populate the neutral lib/injected-tools registry (the
+ * gallery lists them beside the pack's own); chrome descriptors are DOM-mounted by
+ * the caller (lazy, after emit()). flag/resource kinds ride other rails and are not
+ * in this list.
+ *
+ * Clears the tool registry first, so this both installs and drops a prior set — a
+ * dormant no-op with no control plane (or no tool injectables), leaving the gallery
+ * byte-identical to today. Descriptors are data; nothing here is executed.
+ */
+export function applyInjectables(config: OrgConfig | null): void {
+  // A control plane could send anything; a wrong TYPE here must not throw (it would
+  // abort the whole member branch after policies are half-applied). Coerce to [].
+  const list = Array.isArray(config?.injectables) ? config!.injectables : [];
+  const seen = new Set<string>();
+  const tools: Array<{ id: string; name: string; toolUrl?: string }> = [];
+  for (const d of list) {
+    if (d?.kind !== 'tool' || !d.toolId || !d.title || seen.has(d.toolId)) continue; // dedupe by served id
+    seen.add(d.toolId);
+    tools.push({ id: d.toolId, name: d.title, ...(d.source === 'url' && d.ref ? { toolUrl: d.ref } : {}) });
+  }
+  setInjectedTools(tools);
+}
+
 // ── The sign-in gate (rendered in place of the app for a gated instance) ──────
 
 /** Build the login URL: the deployment's loginPath (instance-prefixed) carrying
@@ -475,6 +534,10 @@ export async function initOrg(): Promise<OrgState | null> {
       // more restrictive state rather than falling open.
       applyExportPolicy(orgConfigState, failClosed);
       applyInputFailClosed(failClosed);
+      // Route the instance's injectables (plans/19): tool descriptors into the
+      // gallery registry (pure data, beside the apply* group); chrome descriptors
+      // are DOM-mounted lazily after emit() below. Dormant when the list is absent.
+      applyInjectables(orgConfigState);
       unregisterApprovalOpener?.();
       unregisterApprovalOpener = registerApprovalOpener((rctx) => {
         import('./approval-dialog.ts')
@@ -509,6 +572,16 @@ export async function initOrg(): Promise<OrgState | null> {
         import('./banner.ts')
           .then((m) => m.mountOrgBanner())
           .catch(() => { /* banner is additive; never block or break boot */ });
+      }
+      // Array.isArray guards a malformed (non-array) injectables value — a `.some`
+      // on a non-array would throw and abort the branch (never break boot).
+      if (Array.isArray(orgConfigState?.injectables) && orgConfigState.injectables.some((d) => d?.kind === 'chrome')) {
+        // Lazy, exactly like the banner: the chrome renderer stays out of the boot
+        // chunk and loads only when the instance actually injects some chrome.
+        const chrome = orgConfigState.injectables.filter((d): d is ChromeInjectable => d?.kind === 'chrome');
+        import('./chrome.ts')
+          .then((m) => m.mountOrgChrome(chrome))
+          .catch(() => { /* chrome is additive; never block or break boot */ });
       }
     }
 

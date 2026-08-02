@@ -671,6 +671,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'lib/upload-dropzone.ts': 3,
   'org/approval-dialog.ts': 3,
   'org/banner.ts': 1,
+  // Reviewed 2026-08-02: every interpolated value is escape()d (text, link label,
+  // link href, the Dismiss aria-label); safeHref() drops javascript:/data: schemes
+  // before an anchor is built at all; and the only unescaped interpolation is
+  // `accent`, a two-literal ternary with no user input in it.
+  'org/chrome.ts': 1,
   'org/index.ts': 1,
   'org/share-links.ts': 4,
   'pro/blocks-editor.ts': 4,
@@ -714,6 +719,17 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/projects.ts': 10,
   'views/record-control.ts': 6,
   'views/screen-capture-control.ts': 4,
+  // 3 as of 2026-08-02: the Script-audio TTS dialog. Reviewed — the shell
+  // template escape()s every attribute interpolation (the rest are static t()),
+  // the voice list escapes id/name/lang, and the preview sink writes
+  // audioTransportHtml(), which escapes its labels internally.
+  'views/script-audio.ts': 3,
+  // 5 as of 2026-08-02: the Script-audio writing view (#/script). Reviewed —
+  // both mount templates escape() every attribute interpolation (the rest are
+  // static t()), the voice list escapes id/name/lang, the preview sink writes
+  // audioTransportHtml() (labels escaped internally), and the saved line's one
+  // interpolation is the freshly minted asset id, encodeURIComponent + escape()d.
+  'views/script-studio.ts': 5,
   'views/start.ts': 7,
   // 5 as of 2026-07-31: every sink here writes icon() markup from lib/icons.ts
   // (own SVG bodies, guarded by R9) — no interpolated data at any of them.

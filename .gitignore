@@ -28,6 +28,10 @@ public/models/
 # copied from node_modules/onnxruntime-web/dist/ per fetch-trustmark-models.ts
 # (trustmark.ts sets ort.env.wasm.wasmPaths = '/ort/').
 public/ort/
+# …and transformers.js's own PINNED onnxruntime-web build (a different version,
+# not interchangeable with /ort/) — copied by scripts/copy-transformers-ort.ts
+# for the Kokoro speech worker (lib/speech-kokoro-worker.ts sets wasmPaths = '/ort-hf/').
+public/ort-hf/
 
 # Claude Code local state (worktrees etc.) — never commit
 .claude/

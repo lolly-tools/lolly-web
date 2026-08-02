@@ -36,6 +36,7 @@ import { formatMoney } from '@lolly-tools/core';
 import { canShowMoney } from '@lolly-tools/core';
 import type { MoneyContext } from '@lolly-tools/core';
 import type { CostWorking, CostRow } from '@lolly/engine';
+import type { RateCardsHost } from '../lib/rate-cards.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import {
@@ -113,6 +114,26 @@ export interface CostPanelContext {
   readonly validUntil?: string;
   /** The reader's locale for date formatting. Undefined = runtime default (valid.ts rule). */
   readonly locale?: string;
+}
+
+/**
+ * The typed context the `cost-authoring` slot mount site passes to a hydrated
+ * authoring extension (the `CostAuthoringContext` named in
+ * `@lolly-tools/core/extension-v1`'s SLOT_REGISTRY). It carries exactly the two
+ * things the extracted authoring furniture needs: the storage/consumption rail it
+ * writes cards to, and a callback so a newly-dropped or removed card re-prices the
+ * panel immediately. This is the CONSUMER-side type: core owns it; the furniture in
+ * `src/ext/cost-authoring.ts` (and any control-plane/community supplier) imports it.
+ *
+ * Core keeps the door + the counts + the calculator + card CONSUMPTION; only the
+ * AUTHORING UI is hydrated. With the slot empty, nothing here is ever constructed.
+ */
+export interface CostAuthoringContext {
+  /** The user-asset store the authoring UI reads/writes cards through (consumption
+   *  plumbing that stays in core — the furniture never re-implements storage). */
+  readonly host: RateCardsHost;
+  /** A card landed or left the library — re-run the cost pass so the panel reprices. */
+  onChange(): void | Promise<void>;
 }
 
 // ─── formatting helpers (pure) ──────────────────────────────────────────────
@@ -257,6 +278,7 @@ export function costPanelHtml(): string {
       <details class="section-card export-cost" data-cost-section data-export-hide style="display:none">
         <summary class="section-card-head cost-head">${icon('tag', { className: 'section-card-icon' })}<span data-cost-heading></span></summary>
         <div class="cost-body" data-cost-body></div>
+        <div class="cost-authoring" data-cost-authoring></div>
       </details>`;
 }
 

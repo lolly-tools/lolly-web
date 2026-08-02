@@ -55,6 +55,8 @@ const PACKAGE_BOX = '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73
 const PATHS = {
   // ---- Chrome / navigation (footer-nav, gallery, projects, profile, folder-tiles) ----
   search: MAGNIFIER,
+  // Lucide "plane" — the offline nudge's trip metaphor (views/offline-nudge.ts).
+  plane: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
   zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
   // merged: identical in footer-nav.ts (NAV_ICONS.help) and featured-row.ts (HELP_ICON)
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
@@ -197,6 +199,10 @@ const PATHS = {
   layers: '<path d="M12 2 2 7l10 5 10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
   // Microphone — "recorded live from the microphone".
   mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3M8 21h8"/>',
+  // Lucide "speech" — a voice with sound waves. The Script audio surfaces
+  // (Utilities card + #/script writing view): words in, a spoken voice out.
+  // Deliberately NOT `mic` (that claims live capture) or `music` (a tune).
+  speech: '<path d="M8.8 20v-4.1l1.9.2a2.3 2.3 0 0 0 2.164-2.1V8.3A5.37 5.37 0 0 0 2 8.25c0 2.8.656 3.95 1 4.8a.2.2 0 0 1 .2.2v3.5"/><path d="M19.8 17.8a7.5 7.5 0 0 0 .003-10.603"/><path d="M17 15a3.5 3.5 0 0 0-.025-4.975"/>',
   // A screen on a stand — "captured from the screen" (IPTC screenCapture). Deliberately
   // NOT the camera glyph: a screenshot is a different claim from a photograph.
   monitor: '<rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 16v5"/>',

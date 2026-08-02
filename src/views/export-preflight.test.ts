@@ -19,8 +19,19 @@ import { JSDOM } from 'jsdom';
 import {
   preflightView, preflightBodyHtml, preflightRowHtml, applyPreflight, messageFor,
 } from './export-preflight.ts';
+import { setPreflightGoverned } from '../lib/preflight-policy.ts';
 import type { Count, Finding, PreflightReport } from '@lolly/engine';
 import { preflight } from '@lolly/engine';
+
+// The export-panel surface is deployment-governed and DEFAULT OFF (an
+// individual exporting a PNG must never be ambushed by prepress findings —
+// lib/preflight-policy.ts). Pin the default first, then enable for the rest of
+// the suite, which tests the surface as an enabled deployment sees it.
+test('preflight card is absent by default — control-plane enables it', () => {
+  assert.equal(preflightRowHtml(), '', 'no deployment opt-in ⇒ no card markup at all');
+  setPreflightGoverned(true);
+  assert.notEqual(preflightRowHtml(), '');
+});
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
 globalThis.document = dom.window.document;

@@ -24,6 +24,7 @@ import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { syncCatalog, prefetchAssetsById } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
+import { getInjectedTools } from '../lib/injected-tools.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 import { privacyNoticeMarkup, mountPrivacyNotice } from './privacy-notice.ts';
 import { personalizeNudgeMarkup, mountPersonalizeNudge } from './personalize-nudge.ts';
@@ -369,10 +370,21 @@ export interface GalleryMountOpts {
 
 export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts: GalleryMountOpts = {}): Promise<void> {
   document.title = opts.only ? 'Utilities — Lolly' : 'Lolly';
+  // Whether the on-device speech bridge exists — computed ONCE so every
+  // utilityViews(speechOk) call in this mount sees the same card set.
+  const speechOk = !!host.speech?.isAvailable();
   // `window as unknown as …` bypasses the global Window['__toolIndex'] augmentation
   // (typed as the loosely-shaped ToolIndex in catalog/sync); this view reads it as the
   // denormalised GalleryTool slice. Erased cast — no runtime effect.
-  const rawIndex: { tools: GalleryTool[] } = (window as unknown as { __toolIndex?: { tools: GalleryTool[] } }).__toolIndex ?? { tools: [] };
+  const syncedIndex: { tools: GalleryTool[] } = (window as unknown as { __toolIndex?: { tools: GalleryTool[] } }).__toolIndex ?? { tools: [] };
+  // Fold in any tools the instance injects (lib/injected-tools, populated by the
+  // control-plane seam in src/org/). Empty by default ⇒ byte-identical. An injected
+  // tool never overrides a pack/catalog tool of the same id (the synced set wins).
+  const present = new Set(syncedIndex.tools.map((tt) => tt.id));
+  const injected: GalleryTool[] = getInjectedTools()
+    .filter((it) => !present.has(it.id))
+    .map((it) => ({ id: it.id, name: it.name, category: it.category ?? 'other', listed: true }));
+  const rawIndex: { tools: GalleryTool[] } = { tools: [...syncedIndex.tools, ...injected] };
   // Unlisted tools (manifest `listed:false`) are mechanisms invoked from context — e.g.
   // asset-export, reached from the catalog's per-asset Download — not gallery destinations.
   // Drop them once, here, so every downstream membership set (grid, search, favourites,
@@ -487,7 +499,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Starred VIEW cards (their `view:`-keyed favourites) count too, but only in the
   // Utilities grid, the one place those tiles exist.
   const favCount = (): number => index.tools.filter(t => favourites.has(t.id) && !hidden.has(t.category)).length
-    + (opts.only === 'utility' ? utilityViews().filter(v => favourites.has(viewFavKey(v.id))).length : 0);
+    + (opts.only === 'utility' ? utilityViews(speechOk).filter(v => favourites.has(viewFavKey(v.id))).length : 0);
 
   // A catalog tool → a featured-strip entry. A tool with no manifest `featured` block
   // (a favourited plain tool) still gets one, falling back to its description as the
@@ -532,7 +544,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // id can never collide with a tool's. Utilities grid only — the tiles
     // themselves exist nowhere else.
     if (opts.only === 'utility') {
-      for (const v of utilityViews()) {
+      for (const v of utilityViews(speechOk)) {
         if (favourites.has(viewFavKey(v.id))) {
           out.push({ id: viewFavKey(v.id), name: v.name, icon: icon(v.icon), href: v.href, featured: { blurb: v.description } });
         }
@@ -627,12 +639,16 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
           : gallerySearchBox({ placeholder: t('Search tools…'), ariaLabel: t('Search tools') }),
       })}
       ${privacyNoticeMarkup()}
-      ${personalizeNudgeMarkup(profile)}
+      ${personalizeNudgeMarkup(profile) || offlineNudgeMarkup(profile)}
     </div>
   `;
 
   mountPrivacyNotice(viewEl);
   mountPersonalizeNudge(viewEl, host);
+  // One toast at a time: the offline nudge renders only when the personalise
+  // nudge didn't (the || above) — it gets its turn on a later gallery mount.
+  // Both mounts are no-ops when their markup isn't present.
+  mountOfflineNudge(viewEl, host);
 
   // Wires the language menu + the profile pill's mobile menu, and (via `headshotId`)
   // resolves the profile-pill avatar OFF the first-paint path — the headshot is a blob
@@ -1161,7 +1177,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // View-backed tiles lead the utility grid; they carry no data-tool-id, so the
     // sort pass below (which re-appends tool tiles in order) leaves them in place
     // at the front rather than shuffling them among the tools.
-    const viewCards = opts.only === 'utility' ? utilityViews().map(v => viewCardMarkup(v, favourites.has(viewFavKey(v.id)))).join('') : '';
+    const viewCards = opts.only === 'utility' ? utilityViews(speechOk).map(v => viewCardMarkup(v, favourites.has(viewFavKey(v.id)))).join('') : '';
     masonry.innerHTML = viewCards + allTools
       .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), isPinned(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility'))
       .join('');
@@ -1217,7 +1233,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // this a search for "qr" would leave Colour Lab sitting above zero results.
     // The Favourites pill applies to them too (their star writes a view: key into
     // the same favourites list); other category pills leave them showing, as ever.
-    for (const v of (opts.only === 'utility' ? utilityViews() : [])) {
+    for (const v of (opts.only === 'utility' ? utilityViews(speechOk) : [])) {
       const el = masonry.querySelector<HTMLElement>(`[data-view-card="${v.id}"]`);
       if (!el) continue;
       const q = query.trim().toLowerCase();
@@ -1290,7 +1306,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         void saveFavourites(host, profile, favourites);
         el.classList.toggle('is-fav', on);
         el.setAttribute('aria-pressed', String(on));
-        const nm = utilityViews().find(v => v.id === id)?.name ?? t('tool');
+        const nm = utilityViews(speechOk).find(v => v.id === id)?.name ?? t('tool');
         el.setAttribute('aria-label', on ? t('Remove {name} from favourites', { name: nm }) : t('Add {name} to favourites', { name: nm }));
         el.title = on ? t('In favourites') : t('Add to favourites');
         refreshFeatured();                      // the view joins/leaves the hero strip
@@ -1301,7 +1317,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     container.querySelectorAll<HTMLElement>('[data-info-view]').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation(); e.preventDefault();
-        const v = utilityViews().find(x => x.id === el.dataset.infoView);
+        const v = utilityViews(speechOk).find(x => x.id === el.dataset.infoView);
         if (v) showViewInfoDialog(v);
       });
     });
@@ -1666,7 +1682,13 @@ interface UtilityView {
   description: string;
 }
 
-const utilityViews = (): UtilityView[] => [{
+/**
+ * `speechOk` gates the Script-audio card on `host.speech?.isAvailable()` —
+ * every call site inside mountGallery passes the one flag computed at mount, so
+ * the grid, the featured strip, search and the fav/info wiring can never
+ * disagree about whether the card exists.
+ */
+const utilityViews = (speechOk: boolean): UtilityView[] => [{
   id: 'verify',
   href: '#/verify',
   // The same glyph the footer's Verify pill uses, deliberately: the card exists
@@ -1687,7 +1709,17 @@ const utilityViews = (): UtilityView[] => [{
   icon: 'palette',
   name: t('Colour Lab'),
   description: t('Inspect any colour: where it sits in OKLCH, which displays can show it, how much chroma is left, and every notation.'),
-}];
+},
+// Script audio only where the speech bridge exists — a card that opened a dead
+// surface would break the grid's promise that every tile is something you can
+// actually use here and now.
+...(speechOk ? [{
+  id: 'script-audio',
+  href: '#/script',
+  icon: 'speech' as const,
+  name: t('Script audio'),
+  description: t('Write a script and turn it into natural speech, generated on your device. Nothing you type is uploaded.'),
+}] : [])];
 
 /** The profile-favourites key for a utility VIEW card — namespaced so it can
  *  never collide with a tool id. */

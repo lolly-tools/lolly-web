@@ -214,14 +214,19 @@ describe('service worker: the app shell key', () => {
 
   test('activate keeps every page-owned offline-download bucket', async () => {
     // The "Available offline" buckets (lib/offline-manager.ts) hold what the
-    // user explicitly downloaded — a SW deploy must never take them back.
+    // user explicitly downloaded, and the speech buckets hold the ~92 MB
+    // Kokoro model ('transformers-cache' — transformers.js's OWN bucket name)
+    // plus the voice bins ('lolly-speech', lib/speech-kokoro-worker.ts) — a SW
+    // deploy must never take any of them back. Before v14 the generation sweep
+    // deleted the two speech buckets on every update.
+    const KEEP = ['lolly-pins', 'lolly-app', 'lolly-ort', 'lolly-info', 'transformers-cache', 'lolly-speech'];
     const h = loadServiceWorker();
-    for (const name of ['lolly-pins', 'lolly-app', 'lolly-ort', 'lolly-info']) h.caches.set(name, new FakeCache());
+    for (const name of KEEP) h.caches.set(name, new FakeCache());
     h.caches.set('lolly-v11', new FakeCache());
 
     await h.activate();
 
-    for (const name of ['lolly-pins', 'lolly-app', 'lolly-ort', 'lolly-info']) {
+    for (const name of KEEP) {
       assert.ok(h.caches.has(name), `${name} must survive a generation bump`);
     }
     assert.ok(!h.caches.has('lolly-v11'));
@@ -272,6 +277,21 @@ describe('service worker: the offline-download buckets', () => {
     h.offline.value = true;
     assert.equal(await subresource(h, 'https://lolly.tools/ort/ort-wasm-simd-threaded.wasm'), 'WASM_BYTES',
       'once fetched, the runtime must serve offline from its bucket');
+  });
+
+  test('/ort-hf (the speech worker\'s pinned transformers.js runtime) rides the same bucket', async () => {
+    // The served path is versioned (/ort-hf/<onnxruntime-web version>/ —
+    // scripts/copy-transformers-ort.ts), so a transformers.js upgrade is a
+    // cache MISS instead of a stale wasm pinned forever. ORT_PATTERN is a
+    // prefix match, so the versioned subdir must route exactly like /ort/.
+    const h = loadServiceWorker();
+    const url = 'https://lolly.tools/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm';
+    h.server.set('/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm', 'HF_WASM_BYTES');
+
+    assert.equal(await subresource(h, url), 'HF_WASM_BYTES');
+    h.offline.value = true;
+    assert.equal(await subresource(h, url), 'HF_WASM_BYTES',
+      'the two runtimes are different builds but share lolly-ort cache-first behaviour');
   });
 
   test('the whole app group serves offline — not just /assets/: voice, viz-presets, share stubs', async () => {
@@ -334,5 +354,53 @@ describe('service worker: the offline-download buckets', () => {
     assert.equal(await subresource(h, 'https://lolly.tools/assets/lazy-view-abc123.js'), 'CHUNK');
     assert.equal(await subresource(h, 'https://lolly.tools/fonts/Outfit-latin%5Bwght%5D.woff2'), 'FONT',
       '/fonts/ must have an offline path — before v13 it had no rule at all');
+  });
+});
+
+describe('precache.json grouping (vite.config.js)', () => {
+  // The manifest groups are what offline-manager.ts downloads into the SW's
+  // buckets, so their routing is SW behaviour by proxy: a file in the wrong
+  // group lands in a bucket no fetch rule ever reads back. Regression pins for
+  // the review findings that /ort-hf/ rode the `app` group (lolly-app can
+  // never serve it — ORT_PATTERN routes /ort-hf/ to lolly-ort) and that
+  // /models/kokoro/ inflated the verify part's models size by ~95 MB.
+  const urls = [
+    '/index.html',
+    '/assets/index-abc123.js',
+    '/fonts/Outfit-latin[wght].woff2',
+    '/ort/ort-wasm-simd-threaded.wasm',
+    '/ort/ort.min.mjs',
+    '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm',
+    '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.mjs',
+    '/models/trustmark/decoder_Q.onnx',
+    '/models/kokoro/onnx/model_quantized.onnx',
+    '/models/kokoro/voices/af_heart.bin',
+  ];
+
+  test('groups route each path to the bucket the SW actually serves it from', async () => {
+    const { groupPrecacheFiles } = await import('../vite.config.js');
+    const all = urls.map(url => ({ url, size: 1 }));
+    const groups = groupPrecacheFiles(all);
+    const names = (list: { url: string }[]) => list.map(f => f.url);
+
+    assert.deepEqual(names(groups.app), ['/index.html', '/assets/index-abc123.js', '/fonts/Outfit-latin[wght].woff2'],
+      'the app group must exclude /ort/, /ort-hf/ and /models/ — lolly-app never serves those');
+    assert.deepEqual(names(groups.ort), [
+      '/ort/ort-wasm-simd-threaded.wasm',
+      '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm',
+      '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.mjs',
+    ], 'the ort group is the ort-wasm-* files (wasm + mjs glue) of BOTH runtimes, and nothing else');
+    assert.deepEqual(names(groups.models), ['/models/trustmark/decoder_Q.onnx'],
+      'verify\'s models are the TrustMark ones only — kokoro belongs to the future speech part');
+  });
+
+  test('release-versioned binaries are exempt from content hashing', async () => {
+    const { precacheNeedsHash } = await import('../vite.config.js');
+    assert.equal(precacheNeedsHash('/ort/ort-wasm-simd-threaded.wasm'), false);
+    assert.equal(precacheNeedsHash('/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.wasm'), false,
+      '/ort-hf/ carries its version in the path, like /ort/ and /models/');
+    assert.equal(precacheNeedsHash('/models/trustmark/decoder_Q.onnx'), false);
+    assert.equal(precacheNeedsHash('/fonts/Outfit-latin[wght].woff2'), true,
+      'stable-named files still need the hash to catch same-size content changes');
   });
 });

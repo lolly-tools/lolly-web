@@ -46,11 +46,14 @@
  * entries on activate (a one-time clear of anything already gone stale).
  */
 
+// v14: the Kokoro speech buckets ('transformers-cache', 'lolly-speech') join
+// the activate keep-list — before this, every SW update deleted the ~92 MB
+// model and the voice bins.
 // v13: the "Available offline" download manager (profile view) ships — /fonts/
 // gains a cache-first rule, and three page-owned unversioned buckets join
 // lolly-pins: lolly-app (pre-downloaded build assets), lolly-ort (the ONNX
 // runtime for /verify's deep scan), lolly-info (the /info docs site).
-const CACHE = 'lolly-v13';
+const CACHE = 'lolly-v14';
 
 // Tools pinned "available offline": the page writes /tools/<id>/* copies into
 // this SEPARATE, unversioned bucket (shells/web/src/lib/offline-pins.ts — keep
@@ -71,7 +74,10 @@ const PIN_CACHE = 'lolly-pins';
 //                path, so a pre-downloaded app boots fully offline even across
 //                a CACHE-generation bump (hashed filenames can't go stale; the
 //                manager re-syncs the bucket against each deploy's manifest).
-//   ORT_CACHE  — /ort/ (the onnxruntime-web wasm runtime, ~95 MB). Cache-first
+//   ORT_CACHE  — /ort/ + /ort-hf/ (two onnxruntime-web wasm runtimes: the 1.27
+//                build the watermark scanners use, and the build transformers.js
+//                pins for Kokoro speech — different versions, both same-origin,
+//                ~95 MB + ~22 MB). Cache-first
 //                HERE TOO (not just on explicit download): the runtime imports
 //                these via dynamic import()/fetch at scan time, and re-pulling
 //                tens of MB per session helps nobody. Opt-in bulk download
@@ -83,8 +89,18 @@ const APP_CACHE = 'lolly-app';
 const ORT_CACHE = 'lolly-ort';
 const INFO_CACHE = 'lolly-info';
 
+// The Kokoro speech buckets. 'transformers-cache' is transformers.js's OWN
+// Cache Storage bucket name (hard-coded in the library's hub.js) — it holds
+// the ~92 MB model + tokenizer the speech worker loads; keep the literal in
+// sync with the library. 'lolly-speech' is ours: the voice style vectors,
+// written by shells/web/src/lib/speech-kokoro-worker.ts. Neither is written
+// by this worker, but both MUST survive activate — before v14 the generation
+// sweep deleted them on every SW update, re-downloading the model each time.
+const TRANSFORMERS_CACHE = 'transformers-cache';
+const SPEECH_CACHE = 'lolly-speech';
+
 // Every bucket that survives a CACHE-generation bump (activate's keep-list).
-const PERSISTENT_CACHES = [PIN_CACHE, APP_CACHE, ORT_CACHE, INFO_CACHE];
+const PERSISTENT_CACHES = [PIN_CACHE, APP_CACHE, ORT_CACHE, INFO_CACHE, TRANSFORMERS_CACHE, SPEECH_CACHE];
 
 // Stable key the app-shell document is cached under for the offline fallback.
 // Every SPA navigation (/, /pro, /tool/...) resolves to the same index.html, so
@@ -134,9 +150,13 @@ const IMMUTABLE_PATTERNS = [
   /^\/catalog\/fonts\//,
 ];
 
-// The onnxruntime-web runtime (/verify's deep scan): cache-first out of its own
-// persistent bucket — see ORT_CACHE above.
-const ORT_PATTERN = /^\/ort\//;
+// The onnxruntime-web runtimes (/verify's deep scan at /ort/, the Kokoro speech
+// worker's pinned build at /ort-hf/<version>/ — the release-versioned subdir
+// scripts/copy-transformers-ort.ts emits, so cache-first can never pin a stale
+// wasm across a transformers.js upgrade): cache-first out of one shared
+// persistent bucket — see ORT_CACHE above. A prefix match, so the versioned
+// subdir is covered.
+const ORT_PATTERN = /^\/ort(-hf)?\//;
 
 // The /info docs site: network-first per URL with INFO_CACHE as the offline
 // fallback — see INFO_CACHE above and the /info note in BYPASS_PATTERNS.

@@ -846,7 +846,8 @@
 
 .asset-picker-footer { display: flex; align-items: center; gap: 10px; }
 .asset-picker-webcam,
-.asset-picker-screencap {
+.asset-picker-screencap,
+.asset-picker-scriptaudio {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -861,9 +862,11 @@
   transition: border-color 0.12s, background 0.12s;
 }
 .asset-picker-webcam:hover,
-.asset-picker-screencap:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
+.asset-picker-screencap:hover,
+.asset-picker-scriptaudio:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
 .asset-picker-webcam svg,
-.asset-picker-screencap svg { display: block; }
+.asset-picker-screencap svg,
+.asset-picker-scriptaudio svg { display: block; }
 
 /* "Screenshot this page" card (pasted non-Lolly URL): the page URL, muted and
    wrappable; the inline error drops the empty-state's tall centring. */
