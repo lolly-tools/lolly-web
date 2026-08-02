@@ -39,7 +39,10 @@ import { videoSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durable
 import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
 import { preflightRowHtml, preflightView, applyPreflight } from './export-preflight.ts';
 import { costPanelHtml, costView, applyCostPanel } from './cost-panel.ts';
-import { listRateCards, getRateCardBlob } from '../lib/rate-cards.ts';
+import type { CostAuthoringContext } from './cost-panel.ts';
+import { listRateCards, listCatalogRateCards, getRateCardBlob } from '../lib/rate-cards.ts';
+import { mountSlot, onExtensionsChanged, slotHasResolved } from '../lib/extensions.ts';
+import type { Disposer } from '@lolly-tools/core/extension-v1';
 import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/export-scale.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
@@ -1754,6 +1757,43 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   let costRevealed = false;
   // Opt-in to expired rates this session (§5). Never persisted.
   let costUseExpired = false;
+  // The `cost-authoring` slot is mounted at most once, the first time an authoring
+  // extension actually RESOLVES into it (not merely when the container exists).
+  // DORMANT by default: with no authoring extension registered, mountSlot leaves
+  // the slot container untouched (see lib/extensions.ts), so the panel stays
+  // counts-only. Authoring is furniture a channel hydrates; the door is here
+  // regardless.
+  let costSlotMounted = false;
+  // The aggregate disposer mountSlot returns — captured so the hydrated extension's
+  // teardown (listeners/timers/subscriptions it installed in mount()) actually runs
+  // when this panel is destroyed, via the `dispose` on the returned ActionsApi.
+  let costSlotDispose: Disposer | undefined;
+
+  // Hydrate the cost-authoring slot when — and only when — an extension actually
+  // RESOLVES into it. Gating on slotHasResolved rather than mere element existence
+  // is what makes ASYNC delivery work: a control-plane/community bundle evaluated
+  // after first paint calls registerExtension, which fires onExtensionsChanged,
+  // which re-runs this and hydrates the door. Latches once mounted.
+  function tryMountCostSlot(): void {
+    if (costSlotMounted) return;
+    const slotEl = el?.querySelector<HTMLElement>('[data-cost-authoring]');
+    if (!slotEl || !slotHasResolved('cost-authoring')) return;
+    costSlotMounted = true;
+    // `WebToolHost.assets` carries the `_*UserAsset` methods at runtime.
+    const rcHost = host as unknown as Parameters<typeof listRateCards>[0];
+    void mountSlot<CostAuthoringContext>('cost-authoring', slotEl, {
+      host: rcHost,
+      onChange: () => { void refreshCost(); },
+    }).then(d => { costSlotDispose = d; });
+  }
+  // Re-attempt the mount whenever the registry changes (async bundle delivery).
+  // Unsubscribed, and the hydrated extension torn down, in `disposeCostSlot`.
+  const costSlotUnsub = onExtensionsChanged(() => tryMountCostSlot());
+  function disposeCostSlot(): void {
+    costSlotUnsub();
+    try { costSlotDispose?.(); } catch (e) { console.error(e); }
+    costSlotDispose = undefined;
+  }
 
   // The QuantityKinds a rate card can actually price — used to decide whether the job
   // is "costable" at all, so the panel never appears on a plain logo PNG.
@@ -1767,16 +1807,30 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // The stored cards on THIS device. A link carries none — a card is never a URL
     // param — so possession is always a local fact. `WebToolHost.assets` carries the
     // `_*UserAsset` methods at runtime (same cast the rate-cards manager uses).
+    // A user-dropped card wins; with none, a CATALOG-shipped card (the org's
+    // distribution rail — brand pack, channel, control-plane provider) is
+    // offered. Possession still means "synced to this device", and the
+    // confidential/reveal semantics in money-policy hold unchanged.
     const rcHost = host as unknown as Parameters<typeof listRateCards>[0];
+    // Give the extracted authoring furniture its door: hydrate the `cost-authoring`
+    // slot the moment an extension resolves into it (empty registry → no-op, the
+    // container is left untouched and the panel is byte-identical to counts-only).
+    // A hydrated extension gets the store + an onChange that reprices. Also re-runs
+    // on async bundle delivery via the onExtensionsChanged subscription above. (The
+    // context type lives beside this consumer in cost-panel.ts; the furniture is
+    // src/ext/cost-authoring.ts, off the default path.)
+    tryMountCostSlot();
     const cards = await listRateCards(rcHost).catch(() => []);
-    const selected = cards[0];   // most-recently-added; a full picker is future work
+    const selected = cards[0]
+      ?? (await listCatalogRateCards(host as unknown as Parameters<typeof listCatalogRateCards>[0]).catch(() => []))[0];
+    // most-recently-added / first catalog card; a full picker is future work
 
     // Resolve + cost the selected card. The figure is still gated by `costView` →
     // `canShowMoney`, so a link-reached mount never RENDERS one until the reveal flips
     // (proven in cost-panel.test.ts).
     let working: CostWorking | null = null;
     if (selected) {
-      const parsed = await resolveCard(selected.digest);
+      const parsed = await resolveCard(selected);
       if (parsed) working = computeCost(parsed, lastCounts, {});
     }
     const money: MoneyContext = {
@@ -1798,13 +1852,19 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     wireCostActions();
   }
 
-  /** Fetch + parse a stored card's bytes into a `RateCard`. Null on any failure. */
-  async function resolveCard(digest: string) {
-    const rcHost = host as unknown as Parameters<typeof getRateCardBlob>[0];
-    const blob = await getRateCardBlob(rcHost, digest).catch(() => null);
+  /** Fetch + parse a card's bytes into a `RateCard` — the user-asset store for
+   *  a dropped card, the catalog rail for a shipped one. Null on any failure. */
+  async function resolveCard(entry: { digest: string; catalogUrl?: string }) {
+    let blob: Blob | null = null;
+    if (entry.catalogUrl) {
+      blob = await fetch(entry.catalogUrl).then(r => (r.ok ? r.blob() : null)).catch(() => null);
+    } else {
+      const rcHost = host as unknown as Parameters<typeof getRateCardBlob>[0];
+      blob = await getRateCardBlob(rcHost, entry.digest).catch(() => null);
+    }
     if (!blob) return null;
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    const card = parseRateCard(bytes, digest, validateRateCard);
+    const card = parseRateCard(bytes, entry.digest, validateRateCard);
     return isRateCardError(card) ? null : card;
   }
 
@@ -2478,7 +2538,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Expose actions the mount scope can trigger programmatically (e.g. `?copy`,
   // and the unsaved-changes dialog's "Save & leave"). stopAudioPreview lets the
   // popup-close + tool-teardown paths silence an in-progress audio audition.
-  return { copy: performCopy, preview, save: performSave, setDims, stopAudioPreview };
+  return { copy: performCopy, preview, save: performSave, setDims, stopAudioPreview, dispose: disposeCostSlot };
 }
 
 // Adds scroll-to-change and click-drag-to-scrub to a number input.

@@ -76,10 +76,12 @@ export interface PrecacheManifest {
   groups: { app: ManifestFile[]; ort: ManifestFile[]; models: ManifestFile[] };
 }
 
-/** /info/manifest.json — emitted by docs/build.ts. */
+/** /info/manifest.json — emitted by docs/build.ts. `audio` is the docs
+ *  narration + its player bundle (plans/docs-audio-listen.md §7); optional
+ *  because manifests built before it existed don't carry the group. */
 export interface InfoManifest {
   version: string;
-  groups: { en: ManifestFile[]; shots: ManifestFile[]; locales: Record<string, ManifestFile[]> };
+  groups: { en: ManifestFile[]; shots: ManifestFile[]; audio?: ManifestFile[]; locales: Record<string, ManifestFile[]> };
 }
 
 export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog';
@@ -179,7 +181,11 @@ export function fetchInfoManifest(): Promise<InfoManifest | null> {
 }
 
 /** The docs file list for one install: English pages + shared shots + the
- *  active locale's pages (English needs no extra group). */
+ *  active locale's pages (English needs no extra group). The `audio` group is
+ *  deliberately NOT included: narration grows linearly with pages × locales and
+ *  must never silently fatten "Available offline: Docs". If demand appears it
+ *  becomes its own opt-in part with its size shown honestly; until then online
+ *  playback caches incidentally through the SW's lolly-info bucket. */
 export function docsFileList(manifest: InfoManifest, lang: string): ManifestFile[] {
   const { en, shots, locales } = manifest.groups;
   return [...en, ...shots, ...(lang !== 'en' ? locales[lang] ?? [] : [])];

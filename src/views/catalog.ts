@@ -66,6 +66,7 @@ import {
   loadHiddenAssets, saveHiddenAssets,
 } from '../lib/asset-favourites.ts';
 import { mountUploadDropzone } from '../lib/upload-dropzone.ts';
+import { icon } from '../lib/icons.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
 import type { PickerHost } from './picker.ts';
 import { mountAudioThumbs } from './picker.ts';
@@ -963,6 +964,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // render()/renderBody()). data-empty grows the zone into the roomier column
     // layout when it IS the section (no uploads yet).
     const dropzone = `<div data-dropzone-mount${items.length ? '' : ' data-empty'}></div>`;
+    // "Script audio" beside the drop area: type a script, generate speech on-device
+    // via the optional host.speech bridge (v1.96), and the saved clip lands right
+    // here in "Your uploads". Feature-detected — absent bridge, absent button.
+    const scriptAudio = host.speech?.isAvailable()
+      ? `<div class="cat-uploads-tts"><button type="button" class="btn" data-script-audio>${icon('mic', { size: 14 })} ${t('Script audio')}</button></div>`
+      : '';
     return `<section class="cat-group cat-group--uploads${isCollapsed ? ' is-collapsed' : ''}" data-group="${key}">
       <button type="button" class="cat-group-head" data-cat-toggle="${key}" aria-expanded="${!isCollapsed}">
         <span class="cat-group-chevron">${CHEVRON}</span>
@@ -972,6 +979,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       </button>
       <div class="cat-group-body">
         ${dropzone}
+        ${scriptAudio}
         ${items.length ? `<div class="cat-uploads-bar"><button type="button" class="cat-uploads-selectall" data-selectall aria-pressed="${allSel}">${allSel ? t('Deselect all') : t('Select all')}</button></div>` : ''}
         ${colourRow}
         ${items.length ? `<div class="cat-grid">${items.map(assetTile).join('')}</div>` : ''}
@@ -3290,6 +3298,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
       const selectAll = target.closest<HTMLElement>('[data-selectall]');
       if (selectAll) { selectAllUploads(); return; }
+
+      // "Script audio" (uploads section): the lazy TTS dialog; a saved clip lands in
+      // "Your uploads", so reload + repaint exactly like a dropzone ingest.
+      const scriptAudioBtn = target.closest<HTMLElement>('[data-script-audio]');
+      if (scriptAudioBtn) {
+        const { openScriptAudioDialog } = await import('./script-audio.ts');
+        const ref = await openScriptAudioDialog(host as unknown as PickerHost);
+        if (ref && mounted) { await reload(); if (mounted) rerender(); }
+        return;
+      }
 
       const star = target.closest<HTMLElement>('[data-star]');
       if (star) { await toggleFavourite(star.dataset.star!); return; }

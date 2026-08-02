@@ -289,6 +289,11 @@
 /* Uploads section — the "Select all / Deselect all" control leads the section BODY (right-
    aligned above the grid), so it folds away with the grid when the section is collapsed
    instead of lingering on the always-visible header row (which read as confusing). */
+/* "Script audio" beside the uploads drop area (opens views/script-audio.ts). */
+.cat-uploads-tts { margin: .5rem 0 .7rem; }
+.cat-uploads-tts .btn { display: inline-flex; align-items: center; gap: 6px; }
+.cat-uploads-tts .btn svg { display: block; }
+
 .cat-uploads-bar { display: flex; justify-content: flex-end; margin-bottom: .7rem; }
 .cat-uploads-selectall {
   flex: none; font: inherit; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600;

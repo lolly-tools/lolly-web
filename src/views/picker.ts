@@ -345,6 +345,13 @@ async function render(
     && typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia)
     && typeof host.recorder?.still === 'function';
 
+  // "Script audio" beside them: type a script, synthesize speech on-device via the
+  // optional host.speech bridge (v1.96), and store the clip as a user audio asset.
+  // Offered when the slot can take the user's own audio — an audio slot, or an
+  // untyped upload slot. Feature-detected on the bridge, not capability-gated.
+  const canScriptAudio = showUserAssets && (opts.type === 'audio' || opts.type === undefined)
+    && host.speech?.isAvailable() === true;
+
   // A pasted https URL that is NOT a Lolly link can still become an image where the
   // shell can capture pages (extension installed / Tauri) — see showUrlFallback.
   const canCaptureUrl = captureCouldServe && (host.capabilities ?? []).includes('capture');
@@ -493,6 +500,7 @@ async function render(
           </label>
           ${canWebcam ? `<button type="button" class="asset-picker-webcam">${cameraGlyph} ${t('Take a photo')}</button>` : ''}
           ${canScreencap ? `<button type="button" class="asset-picker-screencap">${icon('monitor', { size: 14 })} ${t('Capture screen')}</button>` : ''}
+          ${canScriptAudio ? `<button type="button" class="asset-picker-scriptaudio">${icon('mic', { size: 14 })} ${t('Script audio')}</button>` : ''}
         </footer>
       ` : ''}
     </div>
@@ -1034,6 +1042,17 @@ async function render(
       host.log('error', 'Screen capture failed', { error: String(e) });
       announce(t('Couldn’t capture the frame.'), { assertive: true });
     }
+  });
+
+  // "Script audio": type/paste a script, pick a voice, generate speech on-device, save
+  // it as a user audio asset. The dialog is a lazy chunk (views/script-audio.ts) so the
+  // TTS UI costs nothing until asked for; teardown (abort/revoke) lives inside it.
+  root.querySelector('.asset-picker-scriptaudio')?.addEventListener('click', async () => {
+    const { openScriptAudioDialog } = await import('./script-audio.ts');
+    const ref = await openScriptAudioDialog(host);
+    if (!ref) return;
+    if (collect) { collectToast(await collect.onAsset(ref)); return; }
+    close(ref);
   });
 
   // Library sections + bucketing live in lib/asset-category.ts (shared with the Catalog

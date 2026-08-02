@@ -197,6 +197,9 @@ export interface ActionsApi {
   save?: (btn?: HTMLElement | null) => Promise<boolean>;
   setDims?: (dims?: { width?: number; height?: number; unit?: string }) => void;
   stopAudioPreview?: () => void;
+  /** Tear down the cost-authoring slot: unsubscribe the registry-change listener
+   *  and run the hydrated extension's disposer. Called from mountTool's cleanup. */
+  dispose?: () => void;
 }
 
 /** A shared monotonic bar-write guard (a holder object so shrinkUrl can share it). */
@@ -1436,6 +1439,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     runtime.stopMeter?.(); runtime.cancelRecording?.(); // release the mic / abort any take
     (stageEl as (HTMLElement & { _recordCleanup?: () => void }) | null)?._recordCleanup?.(); // viewfinder + timers
     actionsApi?.stopAudioPreview?.(); // a detached <audio> keeps playing — stop it on navigation
+    actionsApi?.dispose?.();          // unsubscribe the cost-authoring registry listener + tear down its extension
     lottieModule?.destroyLottiePlayers(); // else animationManager ticks detached trees
     videoModule?.destroyVideoPlayers();   // drop remembered <video> positions
     vizModule?.destroyToolViz();          // else a WebGL2 context stays pinned per visited tool

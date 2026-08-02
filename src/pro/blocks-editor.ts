@@ -158,7 +158,10 @@ export function openBlocksEditor({ input, value, host, assetPicker = false, onCh
     const previewPaneEl = panel.querySelector<HTMLElement>('[data-blk-preview]');
     const previewStageEl = panel.querySelector<HTMLElement>('[data-blk-prev-stage]');
     const previewToggleEl = panel.querySelector<HTMLElement>('[data-blk-prev-toggle]');
-    let previewOpen = hasPreview, previewTimer = 0, previewBusy = false, previewDirty = false, previewUrl: string | null = null;
+    // previewTimer: ReturnType<typeof setTimeout> | 0 rather than number — with
+    // transformers.js in the program (host.speech), sharp's types pull
+    // @types/node globals in and setTimeout's return stops being plain `number`.
+    let previewOpen = hasPreview, previewTimer: ReturnType<typeof setTimeout> | 0 = 0, previewBusy = false, previewDirty = false, previewUrl: string | null = null;
 
     function setPreviewMsg(text: string, isErr = false) {
       if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }

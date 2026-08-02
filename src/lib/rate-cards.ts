@@ -59,8 +59,12 @@ export interface RateCardsHost {
 export interface RateCardEntry {
   /** 16 hex chars; the content identity. */
   digest: string;
-  /** `user/ratecards/<digest>`. */
+  /** `user/ratecards/<digest>` for a dropped card; the catalog asset id for a
+   *  catalog-shipped one (see listCatalogRateCards). */
   assetId: string;
+  /** Set on catalog-shipped cards only: where the bytes re-read from. Its
+   *  absence is what distinguishes a user-dropped card. */
+  catalogUrl?: string;
   /** The dropped filename — a FACT, for a row the user can recognise. */
   name: string;
   /** The issuer name the FILE claims. Unverified reported speech. */
@@ -189,6 +193,46 @@ export async function listRateCards(host: RateCardsHost): Promise<RateCardEntry[
     .map(entryFromRef)
     .filter((e): e is RateCardEntry => e !== null)
     .sort((a, b) => b.addedAt - a.addedAt);
+}
+
+/** The slice a CATALOG rate-card listing needs — the tool-facing query/URL
+ *  surface, not the user-asset store. Kept separate from RateCardsHost so each
+ *  function states exactly what it touches. */
+export interface CatalogRateCardsHost {
+  assets: { query(filter: { type: 'ratecard' }): Promise<Array<{ id: string; url: string }>> };
+}
+
+/**
+ * Catalog-shipped rate cards — the ORG distribution rail. A deployment (brand
+ * pack, catalog channel, control-plane provider) ships a `type:'ratecard'`
+ * catalog asset and it appears here, parsed so the entry states what the file
+ * claims, with the SAME content digest a hand-dropped copy would get (so
+ * money-policy's confidential/reveal semantics and the example-card refusal
+ * hold identically, and holding the same card twice — dropped AND shipped —
+ * reads as one identity). Best-effort per card: an unreachable or invalid
+ * catalog card is skipped, never thrown, and never priced.
+ *
+ * The bytes stay on the ordinary catalog rail (synced + checksummed by
+ * catalog/sync.ts, offline via the IDB blob cache) — this module only reads.
+ */
+export async function listCatalogRateCards(host: CatalogRateCardsHost): Promise<RateCardEntry[]> {
+  const refs = await host.assets.query({ type: 'ratecard' }).catch(() => []);
+  const out: RateCardEntry[] = [];
+  for (const ref of refs) {
+    try {
+      const resp = await fetch(ref.url);
+      if (!resp.ok) continue;
+      const bytes = new Uint8Array(await resp.arrayBuffer());
+      const digest = await digestOf(bytes);
+      const card = parseRateCard(bytes, digest, validateRateCard);
+      if (isRateCardError(card)) continue;
+      const entry = entryFromCard(card, ref.id, bytes.byteLength);
+      entry.assetId = ref.id;       // the catalog identity, not user/ratecards/…
+      entry.catalogUrl = ref.url;   // where resolveCatalogRateCard re-reads it
+      out.push(entry);
+    } catch { /* unreachable/hostile card — skip */ }
+  }
+  return out;
 }
 
 /** Delete a stored card's bytes. */

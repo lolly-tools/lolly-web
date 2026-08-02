@@ -536,10 +536,10 @@ const PAYLOAD_EXT: Record<string, string> = {
 /** Extension for a downloaded payload, derived from the engine's best-effort
  *  `kind` sniff. Anything not explicitly named above (images, RAR, generic
  *  binary data) falls back to a neutral `.bin` rather than guessing wrong. */
-function payloadExt(kind: string): string {
+export function payloadExt(kind: string): string {
   return PAYLOAD_EXT[kind] ?? 'bin';
 }
-function appendedPayloadHtml(meta: FileMetadata | undefined, fileIndex: number): string {
+export function appendedPayloadHtml(meta: FileMetadata | undefined, fileIndex: number): string {
   if (!meta?.appended) return '';
   // DECLARED appends (a motion photo's video, an MPF gain map) are expected and
   // disclosed, not hidden data. The engine owns that judgement - never re-derive
@@ -747,7 +747,7 @@ function aiMarkPip(origin: AiOrigin | undefined, makerHint: string, isVideo: boo
 // after the image container ends) and the shell's pixel pass (chi-square LSB
 // analysis, engine steganalysis.ts). The legitimate motion-photo append stays
 // out of the scorecard — it's disclosed in the metadata panel instead.
-function stegoPips(meta: FileMetadata | undefined): ScorecardItem[] {
+export function stegoPips(meta: FileMetadata | undefined): ScorecardItem[] {
   const pips: ScorecardItem[] = [];
   if (meta?.appended && !appendedIsExpected(meta.appended)) {
     pips.push({ icon: 'package', label: t('Hidden data appended'), status: 'warn', hideStatus: true });

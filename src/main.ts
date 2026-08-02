@@ -10,6 +10,7 @@
  */
 
 import { createBridge } from './bridge/index.ts';
+import type { Profile } from '@lolly-tools/core/host-v1';
 import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChanged, localizeToolIndex } from './catalog/sync.ts';
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
@@ -42,7 +43,7 @@ import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from '
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components' | 'lab' | 'pdf';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -59,6 +60,7 @@ type Route =
   | { name: 'utilities' }
   | { name: 'lab'; params?: string }
   | { name: 'pdf' }
+  | { name: 'script' }
   | { name: 'gallery' };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
@@ -128,6 +130,9 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // and the tabs would compete with the report's own numbered sequence.
   lab: { label: 'Colour Lab' },
   pdf: { label: 'Take a PDF apart', viewClasses: ['pdfx-view'] },
+  // Script audio is a utility view like the Lab: no tab, the back pill instead
+  // (see the lab row's rationale above).
+  script: { label: 'Script audio', viewClasses: ['scriptst-view'] },
 };
 
 /** Every scoping class in ROUTES → the routes that own it, in declaration order. */
@@ -386,6 +391,13 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       await mountPdfExtract(view, host as unknown as Parameters<typeof mountPdfExtract>[1]);
       break;
     }
+    case 'script': {
+      // Script audio (#/script) — the writing surface over host.speech. Lazy:
+      // nothing on the landing path needs the speech plumbing.
+      const { mountScriptStudio } = await import('./views/script-studio.ts');
+      await mountScriptStudio(view, host as unknown as Parameters<typeof mountScriptStudio>[1]);
+      break;
+    }
     case 'components': {
       // The browsable component library (#/components). Lazy — it's a dev/design
       // surface, off every hot path. Its back pill is the shared one — it names
@@ -527,6 +539,24 @@ function trackVisualViewport(): void {
 async function boot(): Promise<void> {
   const host = await createBridge();
   trackVisualViewport();
+
+  // Installing the PWA re-arms the one-time offline nudge (views/offline-nudge.ts):
+  // an install puts an icon on the device while precaching only the shell, so a
+  // user who installs reasonably believes "I have the app now" — and must hear
+  // "not all of it, yet" once more, in the installed app's sharper copy, even if
+  // they dismissed the browser-tab nudge earlier. One profile write, best-effort.
+  window.addEventListener('appinstalled', () => {
+    void (async () => {
+      try {
+        // The web bridge's profile setter — not on the tool-facing ProfileAPI,
+        // same structural slice the a11y prefs and the nudges themselves use.
+        const profileApi = host.profile as { get(): Promise<Profile>; set?(p: Profile): Promise<void> };
+        const current = await profileApi.get();
+        if (!current.offlineNudgeDismissed) return;   // nudge is still armed anyway
+        await profileApi.set?.({ ...current, offlineNudgeDismissed: false });
+      } catch { /* best-effort — worst case the nudge simply doesn't reappear */ }
+    })();
+  });
 
   // Loopback-only tooling hook: the docs-screenshot pipeline (scripts/
   // build-docs-shots.ts) prints an app page to PDF in its Chromium, then asks the
@@ -902,6 +932,7 @@ function parseRoute(): Route {
     if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities' }; // gallery filtered to the utility category
     if (parts[0] === 'lab') return { name: 'lab', params: query || '' }; // Colour Lab (?c=<any css colour>)
     if (parts[0] === 'pdf') return { name: 'pdf' }; // take a PDF apart — text/asset extraction
+    if (parts[0] === 'script') return { name: 'script' }; // Script audio — the TTS writing surface
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
     return { name: 'gallery' };
   }
@@ -982,6 +1013,7 @@ function parseRoute(): Route {
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
+
 
 // ── Never a blank page: recover from a stale app shell ────────────────────────
 // A cached shell one deploy behind points its lazy chunks (the router's

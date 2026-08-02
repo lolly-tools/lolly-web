@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
+    "@huggingface/transformers": "^3.8.1",
     "@lolly/engine": "*",
     "@tiptap/core": "^3.27.1",
     "@tiptap/extension-image": "^3.27.1",
@@ -43,6 +44,7 @@
     "mp4-muxer": "^5.2.2",
     "onnxruntime-web": "^1.27.0",
     "pdf-lib": "^1.17.1",
+    "phonemizer": "^1.2.1",
     "webm-muxer": "^5.1.4",
     "woff2-encoder": "^2.0.0"
   },

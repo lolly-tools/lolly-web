@@ -31,6 +31,7 @@
 import type { Profile } from '@lolly-tools/core/host-v1';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
+import { icon } from '../lib/icons.ts';
 import { partRecords } from '../lib/offline-manager.ts';
 import { pinnedToolBytes } from '../lib/offline-pins.ts';
 
@@ -40,8 +41,6 @@ interface NudgeHost {
   profile: { get(): Promise<Profile>; set(profile: Profile): Promise<void> };
 }
 
-// Lucide "plane" — the trip is the story this toast tells.
-const PLANE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>';
 
 /** Is this session running as an installed app (not a browser tab)? */
 export function runsStandalone(): boolean {
@@ -69,7 +68,7 @@ export function offlineNudgeMarkup(profile: Profile | null | undefined): string 
   return `
     <aside class="personalize-nudge offline-nudge" role="note" aria-label="${escape(t('Offline downloads'))}">
       <button type="button" class="personalize-nudge-close" aria-label="${escape(t('Dismiss'))}">&times;</button>
-      <span class="personalize-nudge-icon" aria-hidden="true">${PLANE_ICON}</span>
+      <span class="personalize-nudge-icon" aria-hidden="true">${icon('plane')}</span>
       <div class="personalize-nudge-body">
         <p class="personalize-nudge-title">${escape(title)}</p>
         <p class="personalize-nudge-text">${escape(text)}</p>

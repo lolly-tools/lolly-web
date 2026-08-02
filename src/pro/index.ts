@@ -423,7 +423,10 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // ── Delete-row confirm (two-step) ───────────────────────────────────────────
   // A row's ✕ arms on first click and confirms on the second; declared before the
   // first renderGrid() (which clears any pending arm) so there's no TDZ on call.
-  let _armedRemove: HTMLElement | null = null, _armTimer = 0;
+  // ReturnType<typeof setTimeout> | 0 rather than number: with transformers.js
+  // in the program (host.speech), sharp's types pull @types/node globals in and
+  // setTimeout's return stops being plain `number`.
+  let _armedRemove: HTMLElement | null = null, _armTimer: ReturnType<typeof setTimeout> | 0 = 0;
   function clearRemoveArm() {
     if (_armTimer) { clearTimeout(_armTimer); _armTimer = 0; }
     if (_armedRemove) {
