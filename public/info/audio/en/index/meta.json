@@ -1,0 +1,10 @@
+{
+  "slug": "index",
+  "lang": "en",
+  "voice": "af_heart",
+  "modelVersion": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "textHash": "6d83f58b7df4ea869509d0b355bd4c7cd776a43c38a6e22d9cc881ae028d3b61",
+  "duration": 892.775,
+  "bytes": 2553415,
+  "generated": "2026-08-02T09:27:06.515Z"
+}
